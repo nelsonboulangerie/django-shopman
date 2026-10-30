@@ -53,6 +53,7 @@ const {
   refresh: refreshCanonical
 } = await useFetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), {
   credentials: 'include',
+  $fetch: useStorefrontPageFetch(),
   server: canonicalOnServer,
   lazy: import.meta.client || !canonicalOnServer
 })

@@ -1,0 +1,312 @@
+{
+  "method": "Isolated local Node 22 production build, anonymous GETs to real API; HTTP plus diagnostic channels; no worker changed, no bodies saved",
+  "http_tsv": "http://127.0.0.1:18553/menu\t200\t2.984241\t2.984534\nhttp://127.0.0.1:18553/menu\t200\t0.142094\t0.142199\nhttp://127.0.0.1:18553/menu\t200\t0.157923\t0.158037\nhttp://127.0.0.1:18553/produto/FENDU\t200\t0.966126\t0.966207\nhttp://127.0.0.1:18553/produto/FENDU\t200\t0.106409\t0.106525\nhttp://127.0.0.1:18553/produto/FENDU\t200\t0.115573\t0.115662\n",
+  "events": [
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 1,
+        "method": "GET",
+        "path": "/menu"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/public/shell/",
+      "start_ms": 31699.089625,
+      "duration_ms": 891.8289169999989,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 1,
+        "method": "GET",
+        "path": "/menu"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/site/",
+      "start_ms": 31680.570917,
+      "duration_ms": 1071.3907499999987,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 1,
+        "method": "GET",
+        "path": "/menu"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/public/catalog/",
+      "start_ms": 32787.215207999994,
+      "duration_ms": 1275.1167920000007,
+      "status": 200
+    },
+    {
+      "kind": "incoming",
+      "id": 1,
+      "method": "GET",
+      "path": "/menu",
+      "start_ms": 31360.182333,
+      "duration_ms": 2981.308917000002,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 2,
+        "method": "GET",
+        "path": "/menu"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/site/",
+      "start_ms": 34344.24316699999,
+      "duration_ms": 38.41212500000256,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 2,
+        "method": "GET",
+        "path": "/menu"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/public/shell/",
+      "start_ms": 34344.77,
+      "duration_ms": 55.6262080000015,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 2,
+        "method": "GET",
+        "path": "/menu"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/public/catalog/",
+      "start_ms": 34406.943332999996,
+      "duration_ms": 34.02750000000378,
+      "status": 200
+    },
+    {
+      "kind": "incoming",
+      "id": 2,
+      "method": "GET",
+      "path": "/menu",
+      "start_ms": 34342.045833,
+      "duration_ms": 142.0124169999981,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 3,
+        "method": "GET",
+        "path": "/menu"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/site/",
+      "start_ms": 35361.24183299999,
+      "duration_ms": 39.10495900000387,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 3,
+        "method": "GET",
+        "path": "/menu"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/public/shell/",
+      "start_ms": 35363.08375,
+      "duration_ms": 40.581749999997555,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 3,
+        "method": "GET",
+        "path": "/menu"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/public/catalog/",
+      "start_ms": 35417.692375,
+      "duration_ms": 43.45383299999958,
+      "status": 200
+    },
+    {
+      "kind": "incoming",
+      "id": 3,
+      "method": "GET",
+      "path": "/menu",
+      "start_ms": 35353.462917,
+      "duration_ms": 156.73841600000014,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 4,
+        "method": "GET",
+        "path": "/produto/FENDU"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/public/shell/",
+      "start_ms": 36390.978375,
+      "duration_ms": 32.297749999997905,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 4,
+        "method": "GET",
+        "path": "/produto/FENDU"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/site/",
+      "start_ms": 36390.569166999994,
+      "duration_ms": 40.84700000000157,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 4,
+        "method": "GET",
+        "path": "/produto/FENDU"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/public/products/FENDU/",
+      "start_ms": 36439.36625,
+      "duration_ms": 851.6605419999978,
+      "status": 200
+    },
+    {
+      "kind": "incoming",
+      "id": 4,
+      "method": "GET",
+      "path": "/produto/FENDU",
+      "start_ms": 36363.08016699999,
+      "duration_ms": 965.4702910000051,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 5,
+        "method": "GET",
+        "path": "/produto/FENDU"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/site/",
+      "start_ms": 37373.137582999996,
+      "duration_ms": 36.923249999999825,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 5,
+        "method": "GET",
+        "path": "/produto/FENDU"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/public/shell/",
+      "start_ms": 37373.40775,
+      "duration_ms": 40.76412500000151,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 5,
+        "method": "GET",
+        "path": "/produto/FENDU"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/public/products/FENDU/",
+      "start_ms": 37420.41370799999,
+      "duration_ms": 36.8450840000005,
+      "status": 200
+    },
+    {
+      "kind": "incoming",
+      "id": 5,
+      "method": "GET",
+      "path": "/produto/FENDU",
+      "start_ms": 37370.413958,
+      "duration_ms": 106.2568339999998,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 6,
+        "method": "GET",
+        "path": "/produto/FENDU"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/site/",
+      "start_ms": 38389.135541999996,
+      "duration_ms": 34.228625000003376,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 6,
+        "method": "GET",
+        "path": "/produto/FENDU"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/public/shell/",
+      "start_ms": 38390.0865,
+      "duration_ms": 36.89125000000058,
+      "status": 200
+    },
+    {
+      "kind": "outgoing",
+      "parent": {
+        "id": 6,
+        "method": "GET",
+        "path": "/produto/FENDU"
+      },
+      "method": "GET",
+      "host": "api.boulangerie.com.br",
+      "path": "/api/v1/storefront/public/products/FENDU/",
+      "start_ms": 38435.878916999995,
+      "duration_ms": 47.23858299999847,
+      "status": 200
+    },
+    {
+      "kind": "incoming",
+      "id": 6,
+      "method": "GET",
+      "path": "/produto/FENDU",
+      "start_ms": 38382.145749999996,
+      "duration_ms": 114.91816700000345,
+      "status": 200
+    }
+  ]
+}

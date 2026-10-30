@@ -1,0 +1,439 @@
+{
+  "method": "Paired fresh SSR processes, immutable anonymous snapshots in memory, injected site=1000ms/shell=900ms/primary=1800ms; alternate order; not claimed as historical production spans",
+  "live_snapshots": true,
+  "rows": [
+    {
+      "variant": "before",
+      "round": 0,
+      "route": "/menu",
+      "duration_ms": 3182.4976659999993,
+      "status": 200,
+      "visible_text_sha256": "80f3a2e2b6385f385cde1a31c8733313c748535cefdbd1a255e7336e30d3d3db",
+      "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
+      "server_timing": null,
+      "reads": [
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 252.66816599999947,
+          "finish_ms": 1254.3886249999996,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 252.8468329999996,
+          "finish_ms": 1154.4472909999995,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        },
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/public/catalog/",
+          "start_ms": 1299.6126249999998,
+          "finish_ms": 3102.5717909999994,
+          "body_sha256": "89bb0258227e5c33fddc607a811a65dcaaa8c5c5b002062b9a652e5f68cdfff7",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "round": 0,
+      "route": "/menu",
+      "duration_ms": 2135.579541,
+      "status": 200,
+      "visible_text_sha256": "80f3a2e2b6385f385cde1a31c8733313c748535cefdbd1a255e7336e30d3d3db",
+      "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
+      "server_timing": "ssr;dur=2131.68, ssr_site;dur=1011.72, ssr_shell;dur=913.89, ssr_primary;dur=2057.17",
+      "reads": [
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/public/catalog/",
+          "start_ms": 251.66625000000022,
+          "finish_ms": 2053.601958,
+          "body_sha256": "89bb0258227e5c33fddc607a811a65dcaaa8c5c5b002062b9a652e5f68cdfff7",
+          "status": 200
+        },
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 251.85216600000058,
+          "finish_ms": 1255.7398750000002,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 252.03999999999996,
+          "finish_ms": 1154.1787910000012,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "round": 1,
+      "route": "/menu",
+      "duration_ms": 2070.170167,
+      "status": 200,
+      "visible_text_sha256": "80f3a2e2b6385f385cde1a31c8733313c748535cefdbd1a255e7336e30d3d3db",
+      "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
+      "server_timing": "ssr;dur=2067.14, ssr_site;dur=1009.59, ssr_shell;dur=920.52, ssr_primary;dur=2001.29",
+      "reads": [
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/public/catalog/",
+          "start_ms": 193.30779200000143,
+          "finish_ms": 1995.846375000001,
+          "body_sha256": "89bb0258227e5c33fddc607a811a65dcaaa8c5c5b002062b9a652e5f68cdfff7",
+          "status": 200
+        },
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 193.43812500000058,
+          "finish_ms": 1195.4475000000002,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 193.5032080000001,
+          "finish_ms": 1096.3814579999998,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "before",
+      "round": 1,
+      "route": "/menu",
+      "duration_ms": 3128.083375,
+      "status": 200,
+      "visible_text_sha256": "80f3a2e2b6385f385cde1a31c8733313c748535cefdbd1a255e7336e30d3d3db",
+      "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
+      "server_timing": null,
+      "reads": [
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 235.24041699999907,
+          "finish_ms": 1236.2736249999998,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 235.41391699999986,
+          "finish_ms": 1136.8737500000007,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        },
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/public/catalog/",
+          "start_ms": 1257.4537500000006,
+          "finish_ms": 3057.322209,
+          "body_sha256": "89bb0258227e5c33fddc607a811a65dcaaa8c5c5b002062b9a652e5f68cdfff7",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "before",
+      "round": 2,
+      "route": "/menu",
+      "duration_ms": 3106.3265420000007,
+      "status": 200,
+      "visible_text_sha256": "80f3a2e2b6385f385cde1a31c8733313c748535cefdbd1a255e7336e30d3d3db",
+      "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
+      "server_timing": null,
+      "reads": [
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 186.20237499999894,
+          "finish_ms": 1187.0759589999998,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 186.2986669999991,
+          "finish_ms": 1089.7057089999998,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        },
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/public/catalog/",
+          "start_ms": 1227.4936670000006,
+          "finish_ms": 3028.773292,
+          "body_sha256": "89bb0258227e5c33fddc607a811a65dcaaa8c5c5b002062b9a652e5f68cdfff7",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "round": 2,
+      "route": "/menu",
+      "duration_ms": 2085.959541,
+      "status": 200,
+      "visible_text_sha256": "80f3a2e2b6385f385cde1a31c8733313c748535cefdbd1a255e7336e30d3d3db",
+      "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
+      "server_timing": "ssr;dur=2082.35, ssr_site;dur=1009.65, ssr_shell;dur=930.06, ssr_primary;dur=2001.73",
+      "reads": [
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/public/catalog/",
+          "start_ms": 196.6787910000021,
+          "finish_ms": 1997.9765829999997,
+          "body_sha256": "89bb0258227e5c33fddc607a811a65dcaaa8c5c5b002062b9a652e5f68cdfff7",
+          "status": 200
+        },
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 196.80520800000158,
+          "finish_ms": 1198.0991250000006,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 196.86791600000288,
+          "finish_ms": 1099.2149160000008,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "before",
+      "round": 0,
+      "route": "/produto/FENDU",
+      "duration_ms": 3077.6190829999978,
+      "status": 200,
+      "visible_text_sha256": "c3f9fd026ce97228d9a0b3b490d4333721f045ed51ab461aba9d8a5db9f97c4a",
+      "json_ld_sha256": "f32f85f5df5aab0728cac8a46e72b28fd6c1cb133825d86481d02cc8d3dc2398",
+      "server_timing": null,
+      "reads": [
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 194.62437499999942,
+          "finish_ms": 1196.2579579999983,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 194.78812499999913,
+          "finish_ms": 1097.4934580000008,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        },
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "start_ms": 1242.2672920000005,
+          "finish_ms": 3043.704999999998,
+          "body_sha256": "522fa28113afe0a902b914f09ad712e1f0c69cbe89104a04517fb6fe04a50727",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "round": 0,
+      "route": "/produto/FENDU",
+      "duration_ms": 2045.4597499999982,
+      "status": 200,
+      "visible_text_sha256": "c3f9fd026ce97228d9a0b3b490d4333721f045ed51ab461aba9d8a5db9f97c4a",
+      "json_ld_sha256": "f32f85f5df5aab0728cac8a46e72b28fd6c1cb133825d86481d02cc8d3dc2398",
+      "server_timing": "ssr;dur=2042.99, ssr_site;dur=1013.71, ssr_shell;dur=923.35, ssr_primary;dur=1997.32",
+      "reads": [
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "start_ms": 193.17612499999814,
+          "finish_ms": 1994.3367499999986,
+          "body_sha256": "522fa28113afe0a902b914f09ad712e1f0c69cbe89104a04517fb6fe04a50727",
+          "status": 200
+        },
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 193.30495899999733,
+          "finish_ms": 1195.8921249999985,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 193.3662919999988,
+          "finish_ms": 1096.1346249999988,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "round": 1,
+      "route": "/produto/FENDU",
+      "duration_ms": 2046.8510000000024,
+      "status": 200,
+      "visible_text_sha256": "c3f9fd026ce97228d9a0b3b490d4333721f045ed51ab461aba9d8a5db9f97c4a",
+      "json_ld_sha256": "f32f85f5df5aab0728cac8a46e72b28fd6c1cb133825d86481d02cc8d3dc2398",
+      "server_timing": "ssr;dur=2044.18, ssr_site;dur=1012.50, ssr_shell;dur=920.72, ssr_primary;dur=2005.52",
+      "reads": [
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "start_ms": 200.7022500000021,
+          "finish_ms": 2002.9310840000035,
+          "body_sha256": "522fa28113afe0a902b914f09ad712e1f0c69cbe89104a04517fb6fe04a50727",
+          "status": 200
+        },
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 200.8206670000036,
+          "finish_ms": 1203.5589590000018,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 200.88091700000223,
+          "finish_ms": 1102.7474170000023,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "before",
+      "round": 1,
+      "route": "/produto/FENDU",
+      "duration_ms": 3069.4562499999993,
+      "status": 200,
+      "visible_text_sha256": "c3f9fd026ce97228d9a0b3b490d4333721f045ed51ab461aba9d8a5db9f97c4a",
+      "json_ld_sha256": "f32f85f5df5aab0728cac8a46e72b28fd6c1cb133825d86481d02cc8d3dc2398",
+      "server_timing": null,
+      "reads": [
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 180.53941699999996,
+          "finish_ms": 1181.033209000001,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 180.69754199999807,
+          "finish_ms": 1081.869125000001,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        },
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "start_ms": 1230.0045419999988,
+          "finish_ms": 3032.6187500000015,
+          "body_sha256": "522fa28113afe0a902b914f09ad712e1f0c69cbe89104a04517fb6fe04a50727",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "before",
+      "round": 2,
+      "route": "/produto/FENDU",
+      "duration_ms": 3086.916709000001,
+      "status": 200,
+      "visible_text_sha256": "c3f9fd026ce97228d9a0b3b490d4333721f045ed51ab461aba9d8a5db9f97c4a",
+      "json_ld_sha256": "f32f85f5df5aab0728cac8a46e72b28fd6c1cb133825d86481d02cc8d3dc2398",
+      "server_timing": null,
+      "reads": [
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 185.81162499999846,
+          "finish_ms": 1187.100709000002,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 185.9947089999987,
+          "finish_ms": 1088.1005419999965,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        },
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "start_ms": 1234.026958999999,
+          "finish_ms": 3034.3435839999984,
+          "body_sha256": "522fa28113afe0a902b914f09ad712e1f0c69cbe89104a04517fb6fe04a50727",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "round": 2,
+      "route": "/produto/FENDU",
+      "duration_ms": 2047.3341669999936,
+      "status": 200,
+      "visible_text_sha256": "c3f9fd026ce97228d9a0b3b490d4333721f045ed51ab461aba9d8a5db9f97c4a",
+      "json_ld_sha256": "f32f85f5df5aab0728cac8a46e72b28fd6c1cb133825d86481d02cc8d3dc2398",
+      "server_timing": "ssr;dur=2044.87, ssr_site;dur=1010.63, ssr_shell;dur=923.50, ssr_primary;dur=2000.10",
+      "reads": [
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "start_ms": 194.41224999999395,
+          "finish_ms": 1996.8648749999993,
+          "body_sha256": "522fa28113afe0a902b914f09ad712e1f0c69cbe89104a04517fb6fe04a50727",
+          "status": 200
+        },
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 194.56395799999882,
+          "finish_ms": 1196.9207079999978,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 194.6237919999985,
+          "finish_ms": 1096.9929579999953,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        }
+      ]
+    }
+  ],
+  "semantics_equal": true
+}

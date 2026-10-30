@@ -1,0 +1,243 @@
+{
+  "method": "Controlled loopback backend; 150ms failure burst starts at first primary read; no production faults; warmed SSR processes; actual curl exit codes",
+  "rows": [
+    {
+      "variant": "before",
+      "mode": "transient-503",
+      "http_code": 503,
+      "curl_exitcode": 22,
+      "curl_error": "The requested URL returned error: 503",
+      "duration_ms": 15.955,
+      "reads": [
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 717.728292,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "finishedAt": 717.9445,
+          "status": 503
+        },
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 720.236125,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "finishedAt": 720.50075,
+          "status": 503
+        }
+      ]
+    },
+    {
+      "variant": "before",
+      "mode": "transient-reset",
+      "http_code": 503,
+      "curl_exitcode": 22,
+      "curl_error": "The requested URL returned error: 503",
+      "duration_ms": 13.241,
+      "reads": [
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 739.730625,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "reset": true
+        },
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 741.7075,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "reset": true
+        },
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 742.678667,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "reset": true
+        },
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 743.264584,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "reset": true
+        }
+      ]
+    },
+    {
+      "variant": "before",
+      "mode": "persistent-503",
+      "http_code": 503,
+      "curl_exitcode": 22,
+      "curl_error": "The requested URL returned error: 503",
+      "duration_ms": 8.932,
+      "reads": [
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 756.376375,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "finishedAt": 756.42975,
+          "status": 503
+        },
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 758.255292,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "finishedAt": 758.291125,
+          "status": 503
+        }
+      ]
+    },
+    {
+      "variant": "before",
+      "mode": "persistent-429",
+      "http_code": 503,
+      "curl_exitcode": 22,
+      "curl_error": "The requested URL returned error: 503",
+      "duration_ms": 9.993,
+      "reads": [
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 772.3055,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "finishedAt": 772.370542,
+          "status": 429
+        },
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 774.121042,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "finishedAt": 774.161167,
+          "status": 429
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "mode": "transient-503",
+      "http_code": 200,
+      "curl_exitcode": 0,
+      "curl_error": null,
+      "duration_ms": 214.635,
+      "reads": [
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 1329.1675,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "finishedAt": 1329.25675,
+          "status": 503
+        },
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 1533.28125,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "bodySha256": "25737aa570e131fa7e739386ff44d55f42aaf988a38a4b9cdafd97705b679dfe",
+          "finishedAt": 1533.402375,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "mode": "transient-reset",
+      "http_code": 200,
+      "curl_exitcode": 0,
+      "curl_error": null,
+      "duration_ms": 219.922,
+      "reads": [
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 1550.459125,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "reset": true
+        },
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 1552.679209,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "reset": true
+        },
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 1761.293334,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "bodySha256": "25737aa570e131fa7e739386ff44d55f42aaf988a38a4b9cdafd97705b679dfe",
+          "finishedAt": 1761.397125,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "mode": "persistent-503",
+      "http_code": 503,
+      "curl_exitcode": 22,
+      "curl_error": "The requested URL returned error: 503",
+      "duration_ms": 209.211,
+      "reads": [
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 1777.27675,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "finishedAt": 1777.364167,
+          "status": 503
+        },
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 1980.70425,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "finishedAt": 1980.801709,
+          "status": 503
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "mode": "persistent-429",
+      "http_code": 503,
+      "curl_exitcode": 22,
+      "curl_error": "The requested URL returned error: 503",
+      "duration_ms": 6.367,
+      "reads": [
+        {
+          "path": "/api/v1/storefront/public/products/FENDU/",
+          "kind": "primary",
+          "startedAt": 1993.656125,
+          "cookiePresent": false,
+          "forwardedIpPresent": false,
+          "finishedAt": 1993.777334,
+          "status": 429
+        }
+      ]
+    }
+  ]
+}
