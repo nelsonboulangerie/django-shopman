@@ -53,7 +53,7 @@ export default defineNitroPlugin((nitro) => {
       state.primary = observed(projection.path, publicSsrReadOptions())
       // A página consome a promessa. Se o render abortar antes, não deixar uma
       // rejeição sem observador; o erro original continua chegando à página.
-      void state.primary.catch(() => undefined)
+      void state.primary.catch(() => undefined) // silêncio-deliberado: só observa a rejeição; página e trace conservam o erro original
     }
     event.node.res.once('close', () => {
       if (event.node.res.writableFinished || state.reported) return
