@@ -1,0 +1,27 @@
+/* Apenas composição do aviso global. Nenhum seletor dos cards ou da fila. */
+[data-kds-app] [data-page-header-alert] {
+  flex-wrap:nowrap; padding:12px; align-items:start;
+}
+[data-kds-app] [data-page-header-alert] > [data-slot="wrapper"] {
+  display:grid; grid-template-columns:minmax(0,1fr) auto;
+  column-gap:12px; align-items:center;
+}
+[data-kds-app] [data-page-header-alert] [data-slot="title"] { grid-column:1; }
+[data-kds-app] [data-page-header-alert] [data-slot="description"] { grid-column:1; }
+[data-kds-app] [data-page-header-alert] > [data-slot="wrapper"] > [data-slot="actions"] {
+  grid-column:2; grid-row:1 / span 2; margin-top:0;
+  flex-direction:row; flex-basis:auto; align-self:center;
+}
+[data-kds-app] [data-page-header-alert] > [data-slot="actions"] {
+  flex-basis:auto; flex-direction:row;
+}
+@media(max-width:639px) {
+  [data-kds-app] [data-page-header-alert] { gap:8px; }
+  [data-kds-app] [data-page-header-alert] > [data-slot="wrapper"] { column-gap:8px; }
+  [data-kds-app] [data-page-header-alert] button { min-height:44px; }
+  [data-kds-app] [data-page-header-alert] [data-slot="close"] { min-width:44px; }
+}
+
+/* Menu secundário discreto; prioridade e rótulo ficam com o gesto principal. */
+[data-kds-app] [data-operator-action-bar-secondary] { min-width:44px; min-height:44px; box-shadow:none; }
+[data-kds-app] [data-operator-action-bar-action] { min-height:44px; }

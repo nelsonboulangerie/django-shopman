@@ -552,3 +552,9 @@ continuam sendo os componentes atuais. Detalhes, limites e reprodução em
 grade diária desktop e controles externos de simulação. As mutações de demonstração
 mantêm estado e permitem avaliar sucesso, erro, revisão e repetição. Fonte,
 limites e evidências em `native/README.md`. Nenhum arquivo do produto foi alterado.
+
+## Cozinha/KDS nativo
+
+Entrada: `kds-native.html`. Comparação explícita antes/depois dos avisos, acesso ao
+menu contextual e histórico, usando o KDS real e nove componentes preservados.
+Evidências, reprodução e limites em `kds-native/README.md`. Apenas prévias.

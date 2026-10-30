@@ -1,0 +1,50 @@
+{
+  "source_ref": "e0c22ba1ffe28e20c5c453db09160e941dfae8c6",
+  "components": [
+    {
+      "component": "KdsTicketCard",
+      "unchanged": true,
+      "sha256": "927a652c9f9bb1d5ff0107e65b1e3bd11ca00adbb11f1dddd8945f01f08ccf3c"
+    },
+    {
+      "component": "KdsPhoneQueue",
+      "unchanged": true,
+      "sha256": "8ffd81fbbd2d0a64791c375e18e7ebf00b993f3e13e672e7bc01971f9de877f8"
+    },
+    {
+      "component": "KdsHistoryDialog",
+      "unchanged": true,
+      "sha256": "1f59b9b0da8fde473bc8f206ee11af38f4f788fb67db1c4afb5a552ae518e4c7"
+    },
+    {
+      "component": "KdsHoldSheet",
+      "unchanged": true,
+      "sha256": "5b0033929c492d5f70dad1367c4d013d631d2372a9f9ee0efa34c128bf6395b2"
+    },
+    {
+      "component": "KdsSettingsDialog",
+      "unchanged": true,
+      "sha256": "80d64af631d3d920f2d768e36b4f4ee25f9547e4c62a2ae1e28dcb9b6c621759"
+    },
+    {
+      "component": "KdsTicketModal",
+      "unchanged": true,
+      "sha256": "e0d9aad1c335a31160c02206889d4e2d2d55342a0c4cf4678a81fe27b380532a"
+    },
+    {
+      "component": "KdsCardButton",
+      "unchanged": true,
+      "sha256": "4fbf3d30048c689239ecca94a94b691688dc82a3ead76bfc087546c3194e24ba"
+    },
+    {
+      "component": "KdsAllDayStrip",
+      "unchanged": true,
+      "sha256": "30591384984a85650c6aebcb974d205ad05a9f6a0a39b858e9f074b7851ce4d0"
+    },
+    {
+      "component": "KdsStationControls",
+      "unchanged": true,
+      "sha256": "ac67ad0ba2f4e3193fa81fb43dfac81ee04df2cb5e2c0f50975c13858445e849"
+    }
+  ]
+}
