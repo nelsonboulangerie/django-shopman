@@ -5,11 +5,11 @@ Fonte: `origin/main` fixado em `e0c22ba1ffe28e20c5c453db09160e941dfae8c6`.
 
 ## Preservação
 
-`preservation.json` registra SHA-256 e igualdade com a fonte de nove componentes:
-TicketCard, PhoneQueue, HistoryDialog, HoldSheet, SettingsDialog, TicketModal,
-CardButton, AllDayStrip e StationControls. Não se reescreveu nenhum deles nem a
-ordenação, cálculo de foco, gestos ou estados dos composables. O painel público
-`pickup.vue`, para TV, também não foi editado.
+`preservation.json` registra SHA-256 da fonte e da proposta de nove componentes.
+Seis seguem idênticos, incluindo TicketCard, HistoryDialog, SettingsDialog,
+CardButton, AllDayStrip e StationControls. PhoneQueue ganha sinalização de atraso;
+TicketModal, composição do cabeçalho; HoldSheet, fechar explícito. Os respectivos
+handlers, itens, notas, gestos e ações permanecem. `pickup.vue` continua intacto.
 
 Mudanças exclusivas da cópia temporária, aplicadas por `apply-preview.mjs`:
 
@@ -153,3 +153,58 @@ não reordenou os atalhos. Central → PDV simulado → retorno trouxe Encomenda
 Desktop 1440×900 sem overflow, Agora atrasado com 2px rgb(233,120,108).
 Oculta removeu a lateral e deixou um único ícone do app no cabeçalho; Compacta
 restaurou a lateral só com ícones. Build Nuxt concluído. Capturas navigation-*.png.
+
+### Refinamento após revisão adversarial
+
+`apply-refinement.mjs` segue os dois aplicadores anteriores, exclusivamente na cópia
+temporária. Novos links: `?tools=body` e `?tools=header`. A escolha acompanha as
+trocas de estação durante a sessão da prévia.
+
+- Controle conjugado Filtro + Busca + Opções, com busca elástica. Usa a busca nativa
+  da suíte, o mesmo query e os mesmos callbacks operacionais. Opções do pedido
+  continuam separadas no contexto do Pronto.
+- Header: desktop na linha principal; mobile em linha própria. Body: sem card
+  externo, rola no mobile. Quando sai da área visível com filtro ativo, cabeçalho
+  mostra termo/recorte, quantidade exibida e Limpar. Não duplica esse resumo enquanto
+  o controle estiver visível.
+- Recortes opcionais no mobile usam o filtro canônico. Mudanças e cancelamentos
+  continuam passando pelo filtro de segurança original, sempre visíveis.
+- Estação no título passa a trocar somente estação; ações da estação ficam no
+  conjunto. Mais abre o menu completo no mobile, removendo o hambúrguer duplicado.
+  Central, slots estáveis e controle nominal da lateral permanecem.
+- Timer atrasado na fila compacta ganha vermelho e palavra Atrasado, sem trocar
+  automaticamente o foco. Card original continua intacto.
+- Feedback de escrita persiste no topo com dismiss; Pronto identifica pedido e
+  estação, e uma tentativa bem-sucedida limpa o erro correspondente. Nos destinos
+  simulados de navegação, falhas pendentes também continuam visíveis.
+- Durante Desfazer, aviso explica que sair envia a confirmação e encerra a janela.
+  Não muda prazo, POST, rollback, flush ou bloqueios existentes.
+- Detalhe mobile reorganiza código/tempo/fechar, referência/horário e cliente.
+  Notas e itens inteiros. Rodapé mantém CTA, cor, variante e gesto; padding menor.
+
+Sem alterações em surfaces/ da worktree, backend ou Core; sem merge/deploy.
+
+Verificação pelo túnel nesta revisão:
+
+- 320×740: conjunto e filtros cabem sem cortar rótulos; fechar dos filtros e opções
+  do pedido no topo à direita, em variante ghost. Alvos do conjunto 44px.
+- Busca 0138: dois exibidos, total ativo explicitado e Limpar. Ao rolar o controle
+  para fora, resumo aparece no cabeçalho; Limpar restaura os tickets.
+- Detalhe em 320px: código e tempo alinhados, cliente sem truncamento, notas e
+  alergia completas; itens continuam rolando no modal original.
+- 1280×800: conjunto integrado à linha principal, largura 233px no cenário com
+  lateral expandida e controles da estação. scrollWidth = viewportWidth = 1280.
+- Foco manual em 0138 preservado; 0131 aparece com Atrasado 25m em vermelho na fila.
+- Falha preparada no simulador: Pronto 0131 voltou à fila; erro persistiu na Central
+  com estação e pedido. Retorno à Bancada conservou a mensagem, dismiss funcionou.
+- Pronto 0131 → Desfazer, dentro dos 5s: card e contagem restaurados; aviso pendente
+  removido. O prazo e a requisição continuam sendo os nativos.
+- Nuxt build final concluído em 24,4s, incluindo rótulo acessível em português.
+
+Capturas desta rodada são documentação, não baselines de CI. Fluxos físicos e
+integrações reais continuam fora da comprovação do simulador.
+- Na compilação final, em 320px: ícone da Cozinha 44×44, estação 95×44, Avisos
+  44×44; filtro e opções 44×44; busca elástica 195×44. Sem overflow horizontal.
+- 390×667: sem overflow. Troca para Encomendas preservou tools=header na sessão,
+  manteve posições da barra inferior e Central → PDV simulado → retorno trouxe
+  Encomendas. Viewport restaurado após a revisão.

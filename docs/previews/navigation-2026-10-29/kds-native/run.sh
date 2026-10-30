@@ -13,6 +13,7 @@ export NUXT_DJANGO_BASE_URL=http://127.0.0.1:38798
 npm exec nuxt build
 node "$REPO/docs/previews/navigation-2026-10-29/kds-native/apply-preview.mjs" "$PWD"
 node "$REPO/docs/previews/navigation-2026-10-29/kds-native/apply-navigation.mjs" "$PWD"
+node "$REPO/docs/previews/navigation-2026-10-29/kds-native/apply-refinement.mjs" "$PWD"
 npm exec nuxt build
 MOCK_PORT=38798 KDS_MOCK_FIXTURE=preview node "$KDS_DIR/mock/mockBackend.mjs" &
 fixture_pid=$!

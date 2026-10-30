@@ -9,8 +9,8 @@ const items=computed(()=>[
     'aria-label':i.name+(route.params.ref===i.ref?' (estação atual)':'')
   }))],
   [{label:'Todas as estações',to:'/',icon:'i-lucide-layout-grid'}],
-  [...props.actions.filter(a=>!a.label.startsWith('Ajustes da estação')).map(a=>({...a})),
-    {label:'Som e tamanho do ticket',icon:'i-lucide-settings-2',onSelect:()=>{settingsOpen.value=true;}}]
+  ...(props.actions.length ? [[...props.actions.filter(a=>!a.label.startsWith('Ajustes da estação')).map(a=>({...a})),
+    {label:'Som e tamanho do ticket',icon:'i-lucide-settings-2',onSelect:()=>{settingsOpen.value=true;}}]] : [])
 ]);
 </script>
 <template>

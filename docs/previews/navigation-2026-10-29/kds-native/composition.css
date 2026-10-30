@@ -54,3 +54,37 @@
   border-width:2px; border-color:var(--destructive);
   box-shadow:0 0 0 4px color-mix(in oklab,var(--destructive) 15%,transparent);
 }
+
+/* Controle conjugado único: busca nativa permanece montada, acionada pelo conjunto. */
+[data-kds-app] [data-preview-refined-header] [data-page-header-search],
+[data-kds-app] [data-preview-refined-header] [data-page-header-search-toggle],
+[data-kds-app] [data-preview-kds-history] { display:none; }
+/* Alvos de toque iguais, preservando ícones e variantes do kit. */
+@media(max-width:767px) {
+  [data-kds-app] [data-operator-page-header] [data-preview-app-link],
+  [data-kds-app] [data-operator-page-header] [data-slot="toggle"],
+  [data-kds-app] [data-page-header-inbox] button,
+  [data-kds-app] [data-preview-station-menu] { min-height:44px; }
+  [data-kds-app] [data-operator-page-header] [data-preview-app-link],
+  [data-kds-app] [data-operator-page-header] [data-slot="toggle"],
+  [data-kds-app] [data-page-header-inbox] button { width:44px; min-width:44px; }
+  [data-kds-app] [data-operator-page-header] > [data-slot="left"] { flex:1; }
+  [data-kds-app] [data-preview-persistent-filter] { order:2; flex-basis:100%; }
+  [data-preview-kds-context-bar] [data-operator-action-bar] { padding-top:4px; padding-bottom:8px; }
+  [data-preview-kds-context-bar] [data-operator-action-bar-surface] { padding:10px 12px; gap:4px; }
+  [data-preview-kds-context-options] { top:8px; }
+  [data-preview-detail-header] { display:grid; grid-template-columns:minmax(0,1fr) auto 44px; gap:8px; padding:12px; }
+  [data-preview-detail-identity] { display:contents; }
+  [data-preview-detail-identity] > p:first-child { grid-column:1/-1; grid-row:2; flex-wrap:wrap; overflow-wrap:anywhere; }
+  [data-preview-detail-identity] > p:nth-child(2) { grid-column:1; grid-row:1; align-self:center; }
+  [data-preview-detail-identity] > p:nth-child(n+3) { grid-column:1/-1; margin-top:0; }
+  [data-preview-detail-header] > div:not([data-preview-detail-identity]) { grid-column:2; grid-row:1; padding:8px; }
+  [data-preview-detail-header] > div:not([data-preview-detail-identity]) > span:first-child { font-size:24px; }
+  [data-preview-detail-header] [data-kds-ticket-close] { grid-column:3; grid-row:1; margin:0; width:44px; height:44px; }
+}
+[data-kds-queue-row][data-preview-late] { border-color:var(--destructive); }
+[data-kds-queue-row][data-preview-late] > span:last-child { color:var(--destructive); }
+[data-preview-write-error] [data-slot="close"] { position:absolute; inset-block-start:4px; inset-inline-end:4px; }
+[data-preview-write-error] [data-slot="title"] { padding-inline-end:44px; }
+/* Um acesso ao menu completo no mobile: Mais. Desktop mantém o controle nominal. */
+@media(max-width:1023px) { [data-preview-refined-header] [data-slot="toggle"] { display:none; } }
