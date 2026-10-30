@@ -306,7 +306,7 @@ jobs:
 
       - name: SSR read contract (isolated backend)
         run: |
-          node --test tests/ssr/ssrRead.test.mjs tests/ssr/continuumRead.test.mjs
+          node --test tests/ssr/ssrRead.test.mjs tests/ssr/continuumRead.test.mjs tests/ssr/coldImports.test.mjs
           python -m unittest discover -s ../../docs/reports/performance-2026-10-30 -p 'test_capture_tail_http.py'
         working-directory: surfaces/storefront-nuxt
 

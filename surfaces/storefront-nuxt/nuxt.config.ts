@@ -256,6 +256,10 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/tailwind.css'],
 
+  // O servidor usa só parte da biblioteca. O bundle final elimina os exports
+  // não usados, em vez de importar o índice externo inteiro no primeiro SSR.
+  nitro: { externals: { inline: ['reka-ui'] } },
+
   vite: {
     plugins: [tailwindcss()],
     optimizeDeps: {
