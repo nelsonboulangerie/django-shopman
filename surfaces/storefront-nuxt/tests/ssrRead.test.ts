@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createFetch, type $Fetch } from 'ofetch'
 import { publicTwinPath } from '../server/utils/djangoProxy'
 import { publicSsrReadOptions, ssrErrorCode, ssrProjectionPath, ssrReadSnapshot, traceSsrFetch } from '../server/utils/ssrRead'
-import { reuseSsrRead } from '../shared/utils/ssrRead'
+import { reuseSsrRead, reuseSsrRawRead } from '../shared/utils/ssrRead'
 import type { StorefrontSsrRead } from '../shared/types/ssrRead'
 
 function state (): StorefrontSsrRead {
@@ -20,10 +20,10 @@ describe('seleção da leitura antecipada', () => {
     expect(ssrProjectionPath(path, base)?.path).toBe(expected)
   })
 
-  it('não abre outros caminhos nem antecipa o catálogo Continuum', () => {
+  it('separa o snapshot Continuum e o fallback canônico', () => {
     for (const path of ['/finalizar', '/conta', '/api/v1/cart/', '/produto/bad%XX']) expect(ssrProjectionPath(path)).toBeNull()
-    expect(ssrProjectionPath('/menu', '/', true)).toBeNull()
-    expect(ssrProjectionPath('/menu', '/', 'TRUE')).toBeNull()
+    expect(ssrProjectionPath('/menu', '/', true)?.path).toBe('/api/v1/storefront/continuum/v0.2/catalog-structure/')
+    expect(ssrProjectionPath('/menu', '/', 'TRUE')).toMatchObject({ format: 'snapshot', fallbackPath: '/api/v1/storefront/catalog/' })
     expect(ssrProjectionPath('/menu', '/', 'false')?.route).toBe('catalog')
     expect(ssrProjectionPath('/menu', '/outra/')).toBeNull()
   })
@@ -119,5 +119,38 @@ describe('telemetria sem identidade do comprador', () => {
     expect(JSON.stringify(snapshot)).not.toMatch(/FENDU|not-for-logs|primaryPath/)
     expect(ssrErrorCode({ cause: { code: 'ECONNRESET', message: 'token=secret' } })).toBe('ECONNRESET')
     expect(ssrErrorCode({ code: 'secret', message: 'token=secret' })).toBeUndefined()
+  })
+})
+
+
+describe('resposta raw do snapshot Continuum', () => {
+  it('reusa corpo/status/ETag da mesma visita e delega a revalidação condicional', async () => {
+    const value = state()
+    value.primaryPath = '/api/v1/storefront/continuum/v0.2/catalog-structure/'
+    const response = Object.assign(new Response('{}', { status: 200, headers: { etag: '"fixture"' } }), { _data: { snapshot: true } })
+    value.primaryRaw = Promise.resolve(response)
+    const fallback = vi.fn().mockResolvedValue(new Response(null, { status: 304 }))
+    const raw = reuseSsrRawRead(value, fallback as unknown as $Fetch['raw'])
+    const options = { credentials: 'omit' as const, ignoreResponseError: true, headers: { accept: 'application/cloudevents+json; continuum=0.2; schema=1' } }
+    expect(await raw(value.primaryPath, options)).toBe(response)
+    expect(fallback).not.toHaveBeenCalled()
+    await raw(value.primaryPath, { ...options, headers: { ...options.headers, 'if-none-match': '"fixture"' } })
+    await raw(value.primaryPath, { ...options, query: { other: 'x' } })
+    expect(fallback).toHaveBeenCalledTimes(2)
+    expect(reuseSsrRawRead(state(), fallback)).toBe(fallback)
+  })
+
+  it('observa status raw e distingue o fallback sem serializar a requisição', async () => {
+    const value = state(); value.primaryPath = '/snapshot/'; value.fallbackPath = '/fallback/'
+    value.ownerRequest = { cookie: 'secret-cookie' }
+    const transport = vi.fn().mockImplementation(() => Promise.resolve(new Response('{"snapshot":true}', { headers: { 'content-type': 'application/json', etag: '"fixture"' } })))
+    const fetch = traceSsrFetch(createFetch({ fetch: transport }), value)
+    const response = await fetch.raw('/snapshot/', { ignoreResponseError: true })
+    expect(response.headers.get('etag')).toBe('"fixture"')
+    expect(response._data).toEqual({ snapshot: true })
+    await fetch('/fallback/')
+    expect(value.reads.map(read => read.kind)).toEqual(['primary', 'fallback'])
+    expect(value.reads.every(read => read.statuses[0] === 200)).toBe(true)
+    expect(JSON.stringify(ssrReadSnapshot(value))).not.toMatch(/secret-cookie|ownerRequest/)
   })
 })

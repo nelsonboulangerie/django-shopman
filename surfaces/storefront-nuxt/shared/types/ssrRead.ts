@@ -1,5 +1,5 @@
 export interface SsrReadTiming {
-  kind: 'site' | 'shell' | 'primary'
+  kind: 'site' | 'shell' | 'primary' | 'fallback'
   startedAt: number
   finishedAt?: number
   statuses: number[]
@@ -13,6 +13,11 @@ export interface StorefrontSsrRead {
   startedAt: number
   primaryPath: string
   primary?: Promise<unknown>
+  primaryRaw?: Promise<unknown>
+  primaryRawResponse?: unknown
+  primaryRawReceivedAtMs?: number
+  fallbackPath?: string
+  ownerRequest?: object
   reads: SsrReadTiming[]
   reported?: boolean
 }

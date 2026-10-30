@@ -7,7 +7,10 @@ export function ssrProjectionPath (pathname: string, baseURL = '/', continuum: u
   if (base && !pathname.startsWith(base + '/')) return null
   const path = base ? pathname.slice(base.length) : pathname
   if (/^\/menu\/?$/.test(path)) {
-    if (continuum === true || String(continuum || '').toLowerCase() === 'true') return null
+    if (continuum === true || String(continuum || '').toLowerCase() === 'true') {
+      return { route: 'catalog' as const, path: `${base}/api/v1/storefront/continuum/v0.2/catalog-structure/`,
+        format: 'snapshot' as const, fallbackPath: `${base}/api/v1/storefront/catalog/` }
+    }
     return { route: 'catalog' as const, path: `${base}/api/v1/storefront/catalog/` }
   }
   const match = /^\/produto\/([^/]+)\/?$/.exec(path)
@@ -52,18 +55,19 @@ export function traceSsrFetch<T extends (...args: never[]) => Promise<unknown>> 
   // Mantém a assinatura genérica de rotas do fetch original; o observador não
   // transforma o corpo nem os erros devolvidos por ele.
   const transport = fetcher as unknown as $Fetch
-  const traced = async (request: Parameters<$Fetch>[0], options?: FetchOptions) => {
+  const observe = async (request: Parameters<$Fetch>[0], options?: FetchOptions, raw = false) => {
+    const send = (request: Parameters<$Fetch>[0], options?: FetchOptions) => raw ? transport.raw(request, options) : transport(request, options)
     const path = typeof request === 'string' ? request.split('?')[0] : ''
-    const kind = path === state.primaryPath ? 'primary'
+    const kind = path === state.primaryPath ? 'primary' : path === state.fallbackPath ? 'fallback'
       : path?.endsWith('/api/v1/storefront/site/') ? 'site'
         : path?.endsWith('/api/v1/storefront/shell/') ? 'shell' : null
-    if (!kind) return transport(request, options)
+    if (!kind) return send(request, options)
     const read: SsrReadTiming = { kind, startedAt: clock(), statuses: [] }
     state.reads.push(read)
     const hooks = options?.onResponse ? [options.onResponse].flat() : []
     const requestErrorHooks = options?.onRequestError ? [options.onRequestError].flat() : []
     try {
-      return await transport(request, {
+      return await send(request, {
         ...options,
         onResponse: [...hooks, (context: FetchContext) => {
           if (context.response) {
@@ -82,7 +86,9 @@ export function traceSsrFetch<T extends (...args: never[]) => Promise<unknown>> 
       throw error
     } finally { read.finishedAt = clock() }
   }
-  return Object.assign(traced, fetcher) as unknown as T
+  const traced = (request: Parameters<$Fetch>[0], options?: FetchOptions) => observe(request, options)
+  const raw = (request: Parameters<$Fetch>[0], options?: FetchOptions) => observe(request, options, true)
+  return Object.assign(traced, fetcher, { raw }) as unknown as T
 }
 
 export function ssrReadSnapshot (state: StorefrontSsrRead, now = performance.now()) {

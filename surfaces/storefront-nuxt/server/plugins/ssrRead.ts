@@ -1,18 +1,18 @@
 import { randomUUID } from 'node:crypto'
 import { getRequestHeader, getRequestURL, getResponseHeader, setResponseHeader, type H3Event } from 'h3'
 import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
-import type { $Fetch } from 'ofetch'
+import { createFetch, type $Fetch } from 'ofetch'
 import type { StorefrontSsrRead } from '../../shared/types/ssrRead'
 import { publicTwinPath } from '../utils/djangoProxy'
 import { publicSsrReadOptions, ssrProjectionPath, ssrReadSnapshot, traceSsrFetch } from '../utils/ssrRead'
 
 function emitObservation (event: H3Event, status: number, force = false) {
   const state = event.context.storefrontSsrRead as StorefrontSsrRead | undefined
-  if (!state || state.reported) return
+  if (!state || state.reported || state.ownerRequest !== event.node.req) return
   const snapshot = ssrReadSnapshot(state)
   if (!event.node.res.headersSent) {
     const timing = [`ssr;dur=${snapshot.duration_ms.toFixed(2)}`]
-    for (const kind of ['site', 'shell', 'primary'] as const) {
+    for (const kind of ['site', 'shell', 'primary', 'fallback'] as const) {
       const duration = snapshot.reads.filter(r => r.kind === kind).reduce((sum, r) => sum + r.duration_ms, 0)
       if (duration) timing.push(`ssr_${kind};dur=${duration.toFixed(2)}`)
     }
@@ -20,7 +20,7 @@ function emitObservation (event: H3Event, status: number, force = false) {
     setResponseHeader(event, 'server-timing', [existing, ...timing].filter(Boolean).join(', '))
     setResponseHeader(event, 'x-storefront-request-id', state.id)
   }
-  const failedRead = snapshot.reads.some(read => read.error_code || read.statuses.some(code => code >= 400))
+  const failedRead = snapshot.reads.some(read => read.error_code || read.network_codes?.length || read.statuses.some(code => code >= 400))
   if (force || status >= 500 || snapshot.duration_ms >= 2000 || failedRead) {
     state.reported = true
     console.info(JSON.stringify({ ...snapshot, status }))
@@ -36,19 +36,35 @@ export default defineNitroPlugin((nitro) => {
     if (!projection) return
     const state: StorefrontSsrRead = {
       id: randomUUID(), route: projection.route, primaryPath: projection.path,
-      startedAt: performance.now(), reads: []
+      startedAt: performance.now(), reads: [], ownerRequest: event.node.req,
+      fallbackPath: 'fallbackPath' in projection ? projection.fallbackPath : undefined
     }
     event.context.storefrontSsrRead = state
     // O wrapper mantém argumentos, corpo e erro. A fronteira remove apenas a
     // inferência recursiva de rotas do Nitro durante a decoração do transporte.
     const original = event.$fetch
-    const observed = traceSsrFetch(original as unknown as $Fetch, state)
+    // O fetch do evento é uma função simples no Nitro, sem método raw. O
+    // transporte nativo vinculado ao evento fornece a resposta HTTP completa.
+    const transport = Object.assign(original, { raw: createFetch({ fetch: (request, options) => event.fetch(request instanceof URL ? request.href : request, options) }).raw })
+    const observed = traceSsrFetch(transport as unknown as $Fetch, state)
     event.$fetch = observed as unknown as typeof original
     const base = baseURL.replace(/\/+$/, '')
     const canonicalPath = base ? projection.path.slice(base.length) : projection.path
     // Uma sessão conserva a ordem antiga dos snapshots de sacola. Só a leitura
     // anônima, já admitida pela política pública do BFF, pode correr antes.
-    if (publicTwinPath('GET', canonicalPath, getRequestHeader(event, 'cookie'), false)
+    if ('format' in projection && projection.format === 'snapshot') {
+      // O quadro estrutural já é público para toda sessão. Cookie/Authorization
+      // continuam barrados pelo proxy Continuum; preço e sacola não são antecipados.
+      state.primaryRaw = observed.raw(projection.path, {
+        ...publicSsrReadOptions(), credentials: 'omit', ignoreResponseError: true,
+        headers: { accept: 'application/cloudevents+json; continuum=0.2; schema=1' }
+      }).then((response) => {
+        state.primaryRawResponse = response
+        state.primaryRawReceivedAtMs = Date.now()
+        return response
+      })
+      void state.primaryRaw.catch(() => undefined) // silêncio-deliberado: página e trace conservam a rejeição original
+    } else if (publicTwinPath('GET', canonicalPath, getRequestHeader(event, 'cookie'), false)
       && !getRequestHeader(event, 'authorization')) {
       state.primary = observed(projection.path, publicSsrReadOptions())
       // A página consome a promessa. Se o render abortar antes, não deixar uma
