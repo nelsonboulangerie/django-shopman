@@ -311,3 +311,11 @@ Decisão de recebimento usa rádios com texto integral em 320 px. Resumo da nota
 Tabs mantêm a aparência aprovada, com overflow horizontal nativo, sem quebra, alvos estáveis, tab ativa visível, navegação por setas/Home/End e respeito a movimento reduzido. Referência consultada: trilho de coleções de `surfaces/storefront-nuxt/app/pages/menu.vue`. Nenhum arquivo do Storefront alterado.
 
 Verificação: 20 telas em 390 px e 20 em desktop de 1024 px, sem overflow no cabeçalho/ferramentas. Fluxos verificados: escopo do menu de catálogo, novo produto, erro em seção diferente, proteção de rascunho, retorno à busca Geleia e decisão de recebimento em 320 px. Evidências em `refinement-evidence.json` e galeria mobile atualizada. Teclado virtual real e zoom do sistema permanecem validações em dispositivo, não comprovadas por viewport simulado. Sem alteração de Core, apps, kit ou deploy.
+
+## Verificação transversal
+
+Nova entrada `suite-review.html`, com roteiro, fontes e limites. Casos de PDV/Cozinha/Produção/Marketing/B.I. e Central. Ícones oficiais copiados como assets estáticos. Nenhum arquivo fora de `docs/previews/navigation-2026-10-29/` alterado.
+
+Verificações DOM: 38 destinos em 320, 390 e 1024 px, sem transbordamento da página, cabeçalho ou toolbar. Capturas representativas mobile 390 e desktop 1280. Fluxos verificados: duas unidades na comanda = R$ 36,00 e simulação sem cobrança; pronto/desfazer N104; WO-042 avança e aparece na Preparação; rendimento 37 preservado ao retornar da revisão e descarte protegido; confirmação de anúncio mostra Instagram e sinaliza decisão simulada; detalhe de Vendas mantém Últimos 7 dias e usa quantidade/receita. Console sem erros na última inspeção.
+
+Isso não comprova integração, tempo real, periféricos, permissões, teclado virtual ou equivalência funcional completa. A série do gráfico é fixa e declaradamente ilustrativa. Não usar esta rodada para aprovar substituição de formulários de receita ou configurações maduras.

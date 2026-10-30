@@ -498,3 +498,15 @@ ou sombra adicional. Ela continua rolando com o conteúdo; o pedido de uma super
 coesa não vira automaticamente mais uma barra fixa no mobile. A ordem dos controles
 permanece filtro → busca → opções. A composição usa os gutters da página nos três
 perfis, sem encolher controles ou criar overflow.
+
+## Rodada transversal: demais apps de operador
+
+Entrada: `suite-review.html`. Central: `suite.html?app=hub&view=home`. Compartilha o mesmo servidor e túnel temporário das prévias anteriores. Arquivos independentes de `preview.js`, sem mudar as composições já aprovadas de Gestor/Compras.
+
+Casos principais: PDV (inclusão, comanda, revisão do pagamento, caixa e fechamento); Cozinha (estações reais da casa, pronto/desfazer e Saída no Gestor); Produção (ciclo do lote, quantidade real, confirmação e ferramentas); Marketing (conteúdo/destino antes da autorização); B.I. (período, unidade, leitura detalhada e cenário). Os nomes de estações e registros são amostras, nunca um cadastro fixo proposto.
+
+Foram consultadas as seções e os shells atuais dos apps, os componentes de Produção, a página de B.I. e as identidades oficiais. Cozinha escura preservada. No PDV, Fim do dia é corredor sem laterais/barra inferior, com retorno ao Caixa. Não há intenção de tornar todas as telas iguais: a segunda lateral só aparece quando há destinos no assunto; as barras contextuais dependem da tarefa.
+
+**Limites:** rodada de validação transversal de navegação e anatomias representativas. Páginas auxiliares reservam composição e localização, com limitações na própria tela. Não substitui inventário exaustivo de cada funcionalidade ou seus componentes maduros. Sem API, dados reais, permissões, impressoras, câmera, pagamentos, envio de anúncios ou estoque. Período do B.I. demonstra contexto com valores estáticos; timers não correm. Receitas/configurações não foram reimplementadas nem consideradas aprovadas por esses exemplos parciais.
+
+Evidência: `transverse-evidence.json`, capturas `transverse-<app>-mobile.jpg` e `transverse-<app>-desktop.jpg`. Geometria de 38 destinos em 320/390/1024 px; fluxos principais testados pelo navegador. Somente dados em memória.
