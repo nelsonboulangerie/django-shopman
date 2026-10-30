@@ -43,7 +43,8 @@ const items = computed(() => [
 <template>
   <div class="md:hidden" data-compact-header>
     <h1 class="sr-only">{{ title }}</h1>
-    <div class="flex min-h-14 items-center gap-1.5 border-b border-default px-2 py-1.5" data-compact-bar>
+    <!-- Mesmo fundo da barra oficial do kit (`bg-card`: branco no tema claro). -->
+    <div class="flex min-h-14 items-center gap-1.5 border-b border-default bg-card px-2 py-1.5" data-compact-bar>
       <slot name="lead"><OperatorCompactSeal :tone="tone" :time="time" :to="to" /></slot>
       <div v-if="$slots.identity" class="min-w-0 flex-1" data-compact-identity><slot name="identity" /></div>
       <div v-if="search || $slots.filters || items.length" class="flex min-w-0 items-stretch overflow-hidden rounded-lg border border-default bg-default"

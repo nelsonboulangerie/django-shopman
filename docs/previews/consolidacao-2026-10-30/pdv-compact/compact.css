@@ -10,3 +10,7 @@
   [data-compact-page] :has(> [data-page-header-actions]),
   [data-compact-page] div:has(> [data-compact-desk-back]) { display: none !important; }
 }
+
+/* Detalhe da encomenda: o painel e os cards claros, no branco do cartão (dono, 30/10). */
+[data-preorder-layout] [data-preorder-counter-panel],
+[data-preorder-layout] .bg-default.ring { background-color: var(--card); }

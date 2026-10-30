@@ -33,6 +33,10 @@ o Receber é compacto e os cadastros são padrão.
 9. **Identidade do registro nunca some.** Detalhe, conferência e venda mostram o que
    identifica o registro: código, fornecedor, NF, comanda.
 
+10. **Cor (decisão do dono, 30/10/2026):** a linha compacta usa o mesmo fundo da barra
+    oficial do kit (`bg-card`, branco no tema claro), não o bege da página. No detalhe da
+    Encomenda, painel e cards também ficam claros/brancos.
+
 ## Diferenças, e por que existem
 
 | | Padrão (gerencial) | Compacto (operação contínua) |
