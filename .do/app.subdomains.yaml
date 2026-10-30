@@ -1130,7 +1130,7 @@ workers:
         window: TEN_MINUTES
 
   # Ingestão de pedidos iFood — polling (método primário na doc do iFood; o
-  # webhook /api/webhooks/ifood/ é o canal alternativo). Inerte sem
+  # push assinado /api/webhooks/ifood/events/ é o canal alternativo). Inerte sem
   # IFOOD_CLIENT_ID/SECRET (só loga "OAuth não configurado" e fica ocioso).
   # Roda ao lado do directive-worker, que entrega os callbacks de status.
   - name: ifood-poll-worker
