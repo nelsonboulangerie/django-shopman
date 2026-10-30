@@ -54,3 +54,10 @@ Busca da suíte (o endpoint não responde: aparece "não respondeu"), SSE (204 �
 "a cada 30 s"), tempo real ao vivo, desconexão real (`navigator.onLine`), trilha do
 anterior/próximo (carga direta não tem lista), Visto em outro dispositivo, permissões
 de quem só expede, som de verdade. Horários "573h" vêm de fixtures antigas.
+
+## Rodada desktop (`apply-desk.mjs` + `compact-kit/desk.css`)
+A 1024 e 1280px, o A cortava o título ("Ped", "Pe") e a 1024px "Retirada" e o canal
+saíam da linha dos recortes sem indício. No C: Urgência e Grade | Lista vão para o fim da
+linha dos recortes (do `xl` para cima; abaixo seguem no ⋯, como no A), a linha quebra, e
+a busca do centro é quem encolhe. Custo: a 1024px a busca fica em 119px ("Busc…" com o
+atalho /). Alternativa a decidir: a maquininha virar ícone com número abaixo do `xl`.

@@ -1,6 +1,6 @@
 // PRÉVIA (modo compacto). Copia as duas peças compartilhadas para o operator-kit de uma
 // CÓPIA temporária e acrescenta ao CSS base do kit a regra do fechar dos avisos no canto
-// superior direito (decisão consolidada). Não altera nenhum componente existente do kit.
+// superior direito (decisão consolidada) e as regras comuns da mesa (`desk.css`). Não altera nenhum componente existente do kit.
 // (Testado e descartado: aviso da tela em uma linha. Ganhou 2px sobre a prévia anterior e
 // sobrepôs a ação ao texto a 320px.)
 import {copyFile,readFile,appendFile} from 'node:fs/promises';
@@ -10,3 +10,5 @@ for(const n of ['OperatorCompactSeal.vue','OperatorCompactBar.vue'])await copyFi
 const base=join(kit,'app/assets/css/operator-base.css');
 if(!(await readFile(base,'utf8')).includes('PRÉVIA (decisão consolidada): o fechar'))
   await appendFile(base,await readFile(new URL('alert-dismiss.css',import.meta.url),'utf8'));
+if(!(await readFile(base,'utf8')).includes('PRÉVIA (rodada desktop)'))
+  await appendFile(base,await readFile(new URL('desk.css',import.meta.url),'utf8'));

@@ -143,3 +143,5 @@ swap(`    <OperatorPageHeader
 s+=HIDE;
 await writeFile(file,s);
 console.log('apply-compact: quadro e detalhe aplicados');
+// Rodada desktop (do md para cima): ver apply-desk.mjs.
+execFileSync(process.execPath,[new URL('./apply-desk.mjs',import.meta.url).pathname,root],{stdio:'inherit'});

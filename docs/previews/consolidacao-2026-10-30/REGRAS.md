@@ -37,6 +37,13 @@ o Receber é compacto e os cadastros são padrão.
     oficial do kit (`bg-card`, branco no tema claro), não o bege da página. No detalhe da
     Encomenda, painel e cards também ficam claros/brancos.
 
+11. **Mesa (rodada desktop, prévia):** o título da página nunca se corta; quem cede é a
+    busca do centro. As ações da direita nunca saem da tela. Modo de ver a lista
+    (ordenar, Grade | Lista) mora no fim da linha dos recortes, não na linha do título.
+    A linha dos recortes quebra em vez de esconder recorte fora da tela. Avisos com 44px
+    onde o ponteiro é o dedo. Medido a 1024px: o A cortava o título em 3 apps (Gestor
+    "Ped", PDV "Enco", Cozinha) e escondia "Retirada" e o canal do Gestor; o C, nenhum.
+
 ## Diferenças, e por que existem
 
 | | Padrão (gerencial) | Compacto (operação contínua) |
