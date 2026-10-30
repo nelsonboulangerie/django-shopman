@@ -13,9 +13,10 @@ export POS_VISUAL_CLIENT_ONLY=1
 export NUXT_DJANGO_BASE_URL=http://127.0.0.1:38792
 export NUXT_PUBLIC_DJANGO_BASE_URL=http://127.0.0.1:38792
 npm exec nuxt build
-cp "$REPO/docs/previews/navigation-2026-10-29/native/PosPreordersShell.vue" app/components/PosPreordersShell.vue
+node "$REPO/docs/previews/navigation-2026-10-29/native/apply-preview.mjs" "$PWD"
 NITRO_OUTPUT_DIR=.output-proposal npm exec nuxt build
-MOCK_PORT=38792 MOCK_SCENARIO=sale node tests/visual/mockBackend.mjs &
+node "$REPO/docs/previews/navigation-2026-10-29/native/prepare-mock.mjs" tests/visual/mockBackend.mjs "$NATIVE_DIR/mock-preview.mjs"
+MOCK_PORT=38792 MOCK_SCENARIO=sale node "$NATIVE_DIR/mock-preview.mjs" &
 fixture_pid=$!
 HOST=127.0.0.1 PORT=4188 node .output/server/index.mjs &
 baseline_pid=$!

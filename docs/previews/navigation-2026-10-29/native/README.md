@@ -1,81 +1,92 @@
-# PDV: conciliação reversa com o app real
+# PDV nativo: conciliação reversa, rodada 2
 
-Rodada de 30/10/2026. Somente prévia. Não é implementação no produto.
+Somente prévias. Entrada: `../pdv-native.html`. Não é implementação no produto.
 
-## Base e isolamento
+## Isolamento e reprodução
 
 Fonte fixada em `origin/main` `e0c22ba1ffe28e20c5c453db09160e941dfae8c6`.
-`run.sh` extrai POS e operator-kit para um diretório temporário exclusivo, instala
-os locks existentes com Node 22 e compila dois apps. O primeiro é byte a byte da
-fonte arquivada. O segundo substitui **somente** `PosPreordersShell.vue` pela
-composição desta pasta. Nenhum arquivo de `surfaces/` é alterado na worktree.
+Com Node 22 no PATH, executar `bash docs/previews/navigation-2026-10-29/native/run.sh`.
+As portas 38792, 4188 e 4189 precisam estar livres. O script extrai POS e kit para
+um diretório temporário exclusivo, instala os locks e compila o atual antes de
+aplicar a proposta. Não modifica `surfaces/` na worktree.
 
-O backend é `tests/visual/mockBackend.mjs` da mesma fonte, com `MOCK_SCENARIO=sale`.
-Não usa Django real, banco, credenciais nem APIs reais de pagamento/entregador.
-As portas são loopback: fixture 38792, atual 4188, proposta 4189.
-Os túneis apontam somente aos apps de demonstração.
+`apply-preview.mjs` aplica somente:
 
-A fonte de Comandas, Venda, Checkout, produtos, carrinho, resultados, Caixa,
-Ajustes, cards de Encomendas e respectivos diálogos é a mesma nas duas versões.
-A preservação é da árvore de componentes e de seus contratos/callbacks; não é
-uma alegação de teste ponta a ponta de todas as funções de negócio.
+- `PosPreordersShell.vue`: controles em card rolável, cabeçalho compacto, título
+  específico do detalhe preservado e busca global no detalhe.
+- `PosSettingsTabs.vue`: mesmos destinos, tabs roláveis e aba ativa sempre à vista.
+- `composition.css`: espaçamentos nas telas de apoio, textos de estações sem
+  truncamento e grade diária em duas colunas quando há largura. O modo lista fica.
+- Rótulo contextual `Recortes` no seletor de Encomendas.
+- `simulator.html`: controles de demonstração separados das telas do produto.
 
-## Experimento
+Sem troca de tokens, cards, botões, badges, formulários, diálogos ou callbacks.
+Comandas, Venda e Checkout não foram reescritos. Caixa conserva os grupos por
+tarefa; Fim do dia conserva seu corredor, contagem cega e ferramentas atuais.
 
-- Cabeçalho de Encomendas acompanha a rolagem, com título e ações existentes.
-- Busca específica sai do cabeçalho e fica em card com filtros, recortes,
-  período, favoritos, visualização e resumo. O card rola junto do conteúdo.
-- No detalhe, a busca global existente continua disponível no cabeçalho.
-- Alertas mantêm componente, cor semântica, texto e ações nativas no topo.
-- Slots, props e callbacks das ações permanecem. Não se reescrevem formulários.
-- Dia e semana são comparados nos mesmos recortes. O link Hoje usa `mode=day`
-  explicitamente. Nenhum default do produto foi alterado.
+## Simulador
 
-## Limites e achados pendentes
+`prepare-mock.mjs` estende uma cópia do `tests/visual/mockBackend.mjs` original.
+`mock-extension.mjs` simula contratos e estados em memória. Não importa Core,
+não se conecta ao Django real nem executa integrações externas.
 
-O simulador visual original devolve `{}` para endpoints não cobertos. Por isso,
-alguns diálogos abrem com dados incompletos; por exemplo, o calendário de reagendar.
-Não interpretar resposta vazia como sucesso de uma operação. Backend de demonstração
-não foi ampliado nesta rodada. Impressora, scanner, PIX, caixa físico, entregador,
-login real, Central e Admin não foram conectados. Não testar contato externo com
-os telefones/e-mails das fixtures.
+Cobertura adicionada:
 
-Isso não autoriza aprovação global nem implantação. Esta primeira comparação
-nativa se concentra na **moldura das Encomendas**. O restante está acessível como
-referência fiel e ainda requer propostas específicas, especialmente:
+- Datas disponíveis, janela indisponível com motivo e limite de agendamento.
+- Reagendamento com agenda/detalhe/histórico coerentes, revisão e repetição segura.
+- Busca de encomendas abertas/concluídas e resultados do PDV na busca da suíte.
+- Comentário, recebimento/entrega, cancelamento com motivo e edição com prévia.
+- Favoritos de filtros: criar, alterar e excluir.
+- Impressoras, maquininhas, envio automático e atalhos gravados para releitura.
+- Salão com o payload de deltas real, revisão, histórico e capacidade recalculada.
+- Abertura/fechamento do turno, movimentos, troco, contas e devoluções simuladas.
+- Assinatura fictícia para sangria, cancelamento pago e atendimento de troco.
+- Fechamento do dia com todos os itens preenchidos: vazio difere de zero.
+- Falha única programável e restauração da demonstração.
 
-1. Agenda: período inicial, dias vazios, ordenação das janelas e densidade. O mock
-   tem janelas fora de ordem e detalhes cujo total não bate com a soma dos itens;
-   corrigir a fixture antes de avaliar precisão financeira da tela.
-2. Detalhe: prioridade do recebimento/entrega versus reagendar, imprimir, editar,
-   comentar e cancelar. Preservar os bloqueios do servidor e aprovações gerenciais.
-3. Busca: contexto da busca entre todas as datas versus filtros do período,
-   resultado único, leitor de código e retorno ao mesmo recorte.
-4. Caixa e Fim do dia: distinguir consulta e operação, preservar contagem cega,
-   diferença entre vazio e zero, destinos e retomada. Nenhum redesign feito aqui.
-5. Ajustes: tabs roláveis, legibilidade de estações/impressoras/maquininhas,
-   explicações e permissões. Nenhum redesign feito aqui.
-6. Comandas/Venda/Checkout: referência de preservação, não candidatos a padronização
-   por simplificação. Revalidar teclado, leitor, peso, adicionais, descontos,
-   transferências, envio parcial, pagamentos e modo offline antes de qualquer
-   implementação futura.
+A gerência é **fictícia**: usuário `demo`, nome `Gerência de demonstração`, PIN
+`0000`. Nenhuma credencial real é necessária. Rotas não cobertas retornam 501,
+em vez de um sucesso vazio. Os dados são compartilhados entre A e B para comparar
+o mesmo cenário; restaurar altera somente esta demonstração.
 
-## Verificação desta rodada
+O simulador não pretende reimplementar as políticas reais do orquestrador.
+Conflitos, assinatura e idempotência aqui são cenários para exercitar a interface,
+não evidência de correção do domínio. Pagamento, impressão física, gaveta,
+câmera/leitor, autenticação, offline real, fiscal e entregador exigem validação
+nas integrações apropriadas. Central e Admin não estão conectados.
 
-As duas compilações Nuxt concluíram. No navegador pelo túnel foram inspecionados
-agenda diária, filtros nativos, detalhe e abertura do diálogo Reagendar em 390px.
-O diálogo revelou a lacuna do simulador descrita acima. Não foi confirmado
-reagendamento, cancelamento, pagamento, impressão ou chamada de entregador.
+## Evidência
 
-Página de comparação: `../pdv-native.html`. Os links de túnel são temporários e
-precisam ser atualizados ao reiniciar a infraestrutura. A página de avaliação
-fica separada das telas do PDV, sem consumir espaço vertical dentro delas.
+Comandos executados:
 
-Medições no navegador: em 390px, o primeiro card do dia começa em y=271 na
-versão atual e y=354 na proposta. O card da proposta custa 83px na abertura,
-mas desaparece durante a rolagem, deixando somente a barra de título no topo.
-Não tratar a proposta como ganho inequívoco de espaço inicial. Em 320px e 390px
-não houve overflow horizontal do documento. Desktop inspecionado em 1440×900;
-a grade diária ainda tem áreas vazias importantes que este experimento não corrige.
-A busca nativa foi aberta no desktop. Capturas nesta pasta: atual/proposta mobile,
-proposta rolada e proposta desktop. Viewport restaurado após a inspeção.
+```
+node native/prepare-mock.mjs <mock original> <cópia temporária>
+node native/verify-mock.mjs <cópia temporária>
+```
+
+Os caminhos acima são relativos a esta pasta. Saída efetiva registrada em
+`verification-round2.txt`: 13 cenários passaram. São testes de contrato/estado
+do simulador, não testes ponta a ponta de todo o produto.
+
+O build Nuxt da proposta concluiu. No navegador pelo túnel:
+
+- Reagendamento confirmado no mobile: nova data/horário e histórico após salvar.
+- Cadastro de maquininha confirmado na lista após salvar.
+- Falha de cadastro manteve os campos; repetir concluiu o cadastro.
+- Impressora gravada, abas percorridas e atalhos gravados.
+- Terminal, cozinha, planta do Salão, sessão, relatório de caixa e corredor Fim do dia inspecionados.
+- Controle remoto de restauração executado e confirmado.
+- Tab Atalhos de venda visível após navegar ao último destino.
+
+Medições e capturas:
+
+- 390px: card 149px; primeiro pedido y=326. Antes desta rodada, y=354.
+- 320px: card 149px; na rodada anterior o card media 233px.
+- Sem overflow horizontal do documento em 320/390px ou 1440px.
+- Desktop 1440×900: grade diária em duas colunas de 578,5px.
+- A busca explícita ainda custa espaço inicial em relação ao app atual (primeiro
+  card y=271 em 390px). O ganho aparece durante a rolagem dos controles.
+- Viewport restaurado após a inspeção.
+
+Capturas `round2-*` são desta rodada. Capturas sem esse prefixo documentam a
+rodada anterior. Ainda sem aprovação global do PDV, merge ou deploy.

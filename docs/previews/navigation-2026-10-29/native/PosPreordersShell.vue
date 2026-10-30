@@ -45,16 +45,16 @@ const headerPhoneActions = computed<OperatorHeaderAction[] | undefined>(() =>
   <main class="flex min-h-0 flex-1 flex-col" data-preorders-shell data-preview-native-proposal>
     <div class="relative min-h-0 flex-1 overflow-y-auto">
       <OperatorPageHeader
-        title="Encomendas" :search="!$slots.search"
+        :title="title" :search="!$slots.search"
         :actions="headerActions" :phone-actions="headerPhoneActions"
         actions-label="Mais ações das Encomendas"
         :alerts="alerts" :active-filters="activeFilters"
       >
         <template v-if="$slots.primary" #actions><slot name="primary" /></template>
       </OperatorPageHeader>
-      <div class="mx-auto grid w-full gap-4 p-4 md:py-6" :class="wide ? 'max-w-screen-2xl' : 'max-w-3xl'">
+      <div class="mx-auto grid w-full gap-3 p-3 sm:gap-4 sm:p-4 md:py-6" :class="wide ? 'max-w-screen-2xl' : 'max-w-3xl'">
         <NuxtCard v-if="$slots.search || $slots['filters-primary']" variant="outline"
-          :ui="{body:'grid gap-3 p-3 sm:p-4'}" data-preview-preorders-tools>
+          :ui="{body:'grid gap-2 p-2 sm:gap-3 sm:p-4'}" data-preview-preorders-tools>
           <div class="flex min-w-0 flex-wrap items-center gap-2" data-preview-period>
             <slot name="filters-primary" />
           </div>
@@ -63,7 +63,7 @@ const headerPhoneActions = computed<OperatorHeaderAction[] | undefined>(() =>
             <div class="min-w-0 flex-1"><slot name="search" /></div>
             <slot name="filters" />
           </div>
-          <div v-if="$slots['filters-end']" class="border-t border-default pt-3"><slot name="filters-end" /></div>
+          <div v-if="$slots['filters-end']" class="border-t border-default pt-2 sm:pt-3"><slot name="filters-end" /></div>
         </NuxtCard>
         <slot />
         <MoreBelow :key="$slots.footer ? 'with-footer' : 'no-footer'" />
@@ -83,7 +83,7 @@ const headerPhoneActions = computed<OperatorHeaderAction[] | undefined>(() =>
   [data-preview-search-row] [data-preorders-layout] { display: none; }
   [data-preview-period] { align-items: stretch; }
   [data-preview-period] [data-preorders-period] { flex: 0 1 auto; }
-  [data-preview-period] [data-preorders-quick] { flex: 1 1 10rem; min-width: 0; max-width: 100%; }
+  [data-preview-period] [data-preorders-quick] { flex: 1 1 6rem; min-width: 0; max-width: 100%; }
   [data-preview-period] [data-quick-filters-select] { width: 100%; min-width: 0; }
 }
 </style>

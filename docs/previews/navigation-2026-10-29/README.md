@@ -545,3 +545,10 @@ Substitui as réplicas estáticas como base de comparação do PDV. A primeira a
 é somente a moldura de Encomendas; Comandas, Venda, Checkout e as outras páginas
 continuam sendo os componentes atuais. Detalhes, limites e reprodução em
 `native/README.md`. Sem implementação em `surfaces/`, Core, backend ou deploy.
+
+### PDV nativo, rodada 2
+
+`pdv-native.html` agora inclui Encomendas compactadas, tabs horizontais de Ajustes,
+grade diária desktop e controles externos de simulação. As mutações de demonstração
+mantêm estado e permitem avaliar sucesso, erro, revisão e repetição. Fonte,
+limites e evidências em `native/README.md`. Nenhum arquivo do produto foi alterado.

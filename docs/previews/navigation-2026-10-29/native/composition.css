@@ -1,0 +1,16 @@
+/* Só composições da prévia: sem redefinir tokens, botões, badges ou cards. */
+[data-pos-settings-shell] [data-page-header-filters-primary] { min-width:0; max-width:100%; }
+[data-pos-settings-shell] [data-preview-settings-navigation] { width:100%; }
+[data-pos-settings-shell] [data-settings-kitchen-station] p,
+[data-pos-settings-shell] [data-settings-card-machine] p { white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
+@media(max-width:639px) {
+  [data-pos-settings-shell] > div > div { padding:12px; gap:12px; }
+  [data-session-screen] [data-session-terminal] { font-size:12px; }
+  [data-session-screen] .max-w-2xl { padding:12px; gap:20px; }
+}
+@media(min-width:1024px) {
+  /* Só a grade diária. A visualização em lista continua de largura inteira. */
+  [data-preview-native-proposal]:has([data-preorders-layout-option="grid"][aria-pressed="true"]) [data-preorders-day] {
+    grid-template-columns:repeat(auto-fit,minmax(min(25rem,100%),1fr)); align-items:start;
+  }
+}

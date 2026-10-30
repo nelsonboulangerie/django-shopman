@@ -1,0 +1,14 @@
+PASS calendário com limites e janela indisponível
+PASS reagendar atualiza detalhe, lista e revisão; repetição é idempotente
+PASS validação não muda o estado
+PASS comentário persiste e texto vazio é recusado
+PASS receber e entregar tira da fila e entra na busca concluída
+PASS cancelamento tem motivo e atualiza estado
+PASS edição abre, calcula sem gravar e confirma
+PASS impressora, maquininha e atalhos persistem após releitura
+PASS salão usa deltas e revisão do contrato atual
+PASS movimento de caixa não duplica, fechamento e abertura atualizam turno
+PASS contagem vazia difere de zero e não revela esperado
+PASS falha controlada ocorre uma vez, rota desconhecida não finge sucesso
+PASS assinatura de gerência: ausência, PIN errado e PIN fictício válido
+13 cenários passaram.
