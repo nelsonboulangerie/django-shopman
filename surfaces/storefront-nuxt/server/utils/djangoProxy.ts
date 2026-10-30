@@ -13,6 +13,7 @@ import {
 import { withQuery } from 'ufo'
 import { warnOnApiVersionMismatch } from './apiVersion'
 import { resolveDjangoBaseUrl } from './djangoBaseUrl'
+import { ssrErrorCode } from './ssrRead'
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
@@ -301,8 +302,12 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   } catch (error) {
     // Sem resposta do Django: quem responde é o BFF, e diz qual dos dois casos foi.
     const timedOut = isUpstreamTimeout(error)
-    console.warn('[bff] upstream sem resposta', { path: normalizedPath, method, timedOut })
-    setResponseHeader(event, 'server-timing', `bff;dur=${Math.max(0, performance.now() - bffStarted).toFixed(2)}`)
+    const failureCode = ssrErrorCode(error)
+    console.warn('[bff] upstream sem resposta', { path: normalizedPath, method, timedOut, failureCode: failureCode || 'unclassified' })
+    setResponseHeader(event, 'server-timing', [
+      `bff;dur=${Math.max(0, performance.now() - bffStarted).toFixed(2)}`,
+      failureCode ? `upstream_error;desc="${failureCode}"` : ''
+    ].filter(Boolean).join(', '))
     setResponseStatus(event, timedOut ? 504 : 502)
     setResponseHeader(event, 'content-type', 'application/json; charset=utf-8')
     return timedOut

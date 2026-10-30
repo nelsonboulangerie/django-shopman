@@ -23,7 +23,7 @@ const { setFromServer, qtyForSku } = useCartState()
 
 const { data, pending, error, refresh } = await useFetch<ProductResponse>(
   () => apiPath(`/api/v1/storefront/products/${encodeURIComponent(sku.value)}/`),
-  { credentials: 'include', lazy: true }
+  { credentials: 'include', lazy: true, $fetch: useStorefrontPageFetch() }
 )
 usePageContentPending(pending)
 

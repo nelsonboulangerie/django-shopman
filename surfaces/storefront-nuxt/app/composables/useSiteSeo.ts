@@ -32,10 +32,12 @@ function emptySite (): SiteSeoState {
 
 export function useSiteSeo () {
   const apiPath = useShopmanApiPath()
+  const requestFetch = import.meta.server ? useRequestFetch() : $fetch
+  const headers = import.meta.server ? { cookie: '' } : undefined
   const url = apiPath('/api/v1/storefront/site/')
   const request = useAsyncData<SiteSeoState>(
     SITE_SEO_KEY,
-    () => $fetch<SiteResponse>(url)
+    () => requestFetch<SiteResponse>(url, { headers })
       .then(response => ({ site: normalizeSite(response?.site) }))
       .catch(() => ({ site: null })),
     {

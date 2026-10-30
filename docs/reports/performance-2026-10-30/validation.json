@@ -1,0 +1,24 @@
+{
+  "unit": {
+    "files": 77,
+    "passed": 785,
+    "log": "/tmp/perf-tail-unit-final-20261030.log"
+  },
+  "component": {
+    "files": 54,
+    "passed": 340,
+    "log": "/tmp/perf-tail-component-20261030.log"
+  },
+  "production_http_tests": {
+    "passed": 8,
+    "failed": 0
+  },
+  "collector_unittest": {
+    "passed": 1
+  },
+  "typecheck": "passed",
+  "build": "passed Node 22",
+  "named_eslint": "passed",
+  "python_ruff": "passed",
+  "git_diff_check": "passed"
+}

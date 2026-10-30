@@ -304,6 +304,12 @@ jobs:
           CI: "true"
         run: make storefront-e2e
 
+      - name: SSR read contract (isolated backend)
+        run: |
+          node --test tests/ssr/ssrRead.test.mjs
+          python -m unittest discover -s ../../docs/reports/performance-2026-10-30 -p 'test_capture_tail_http.py'
+        working-directory: surfaces/storefront-nuxt
+
       - name: Upload E2E logs
         if: always()
         uses: actions/upload-artifact@v7

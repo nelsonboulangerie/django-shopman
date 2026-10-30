@@ -1,0 +1,130 @@
+{
+  "method": "V8 sampled CPU; self time; idle excluded below; aggregate only, no source content or arguments",
+  "top_self_ms": [
+    {
+      "function": "compileForInternalLoader",
+      "module": "realm",
+      "self_ms": 65.33
+    },
+    {
+      "function": "readSync",
+      "module": "node:fs",
+      "self_ms": 63.79
+    },
+    {
+      "function": "(garbage collector)",
+      "module": "",
+      "self_ms": 63.46
+    },
+    {
+      "function": "compileSourceTextModule",
+      "module": "utils",
+      "self_ms": 62.62
+    },
+    {
+      "function": "URL",
+      "module": "url",
+      "self_ms": 30.58
+    },
+    {
+      "function": "getPackageScopeConfig",
+      "module": "package_json_reader",
+      "self_ms": 28.58
+    },
+    {
+      "function": "(program)",
+      "module": "",
+      "self_ms": 25.46
+    },
+    {
+      "function": "",
+      "module": "NumberFormatter.mjs",
+      "self_ms": 23.71
+    },
+    {
+      "function": "formatCentavos",
+      "module": "entry.mjs",
+      "self_ms": 20.88
+    },
+    {
+      "function": "",
+      "module": "entry.mjs",
+      "self_ms": 17.75
+    },
+    {
+      "function": "",
+      "module": "index.mjs",
+      "self_ms": 15.04
+    },
+    {
+      "function": "processTimers",
+      "module": "timers",
+      "self_ms": 14.5
+    },
+    {
+      "function": "finalizeResolution",
+      "module": "resolve",
+      "self_ms": 13.5
+    },
+    {
+      "function": "wrapSafe",
+      "module": "loader",
+      "self_ms": 12.88
+    },
+    {
+      "function": "callbackTrampoline",
+      "module": "async_hooks",
+      "self_ms": 10.58
+    },
+    {
+      "function": "configSecureContext",
+      "module": "secure-context",
+      "self_ms": 10.46
+    },
+    {
+      "function": "parseCJS",
+      "module": "lexer",
+      "self_ms": 10.38
+    },
+    {
+      "function": "flatten",
+      "module": "stringify.js",
+      "self_ms": 10.04
+    },
+    {
+      "function": "realpathSync",
+      "module": "node:fs",
+      "self_ms": 9.41
+    },
+    {
+      "function": "renderComponentSubTree",
+      "module": "server-renderer.cjs.prod.js",
+      "self_ms": 9.0
+    },
+    {
+      "function": "deserializePackageJSON",
+      "module": "package_json_reader",
+      "self_ms": 8.75
+    },
+    {
+      "function": "promiseInitHook",
+      "module": "async_hooks",
+      "self_ms": 8.75
+    },
+    {
+      "function": "processTicksAndRejections",
+      "module": "task_queues",
+      "self_ms": 8.5
+    },
+    {
+      "function": "destr",
+      "module": "nitro.mjs",
+      "self_ms": 7.46
+    },
+    {
+      "function": "openSync",
+      "module": "node:fs",
+      "self_ms": 7.46
+    }
+  ]
+}
