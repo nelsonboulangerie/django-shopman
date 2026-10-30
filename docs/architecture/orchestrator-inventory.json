@@ -13448,27 +13448,6 @@
       ]
     },
     {
-      "path": "shopman/shop/webhooks/ifood.py",
-      "touchpoints": [
-        "API"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "IFoodWebhookView",
-            "_get_ifood_setting",
-            "logger"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/webhooks/ifood_events.py",
       "touchpoints": [
         "API"

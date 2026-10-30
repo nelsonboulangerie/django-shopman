@@ -229,15 +229,14 @@ staging.
 
 ## 6. iFood
 
-Para o contrato atual do Shopman:
+Para o contrato atual do Shopman (polling OAuth; push assinado opcional):
 
 ```env
-IFOOD_WEBHOOK_TOKEN=<shared token usado pelo endpoint legacy/local>
-IFOOD_MERCHANT_ID=<merchant id de staging/producao>
+IFOOD_CLIENT_ID=<oauth client_id>
+IFOOD_CLIENT_SECRET=<oauth client_secret>
+IFOOD_MERCHANT_ID=<merchant uuid de staging/producao>
+IFOOD_WEBHOOK_HMAC_SECRET=<so se o push /api/webhooks/ifood/events/ estiver ligado; default = IFOOD_CLIENT_SECRET>
 ```
-
-Se a integracao migrar para o formato novo do Developer Portal com assinatura
-`X-IFood-Signature`, alinhe o adapter antes de marcar o smoke como provado.
 
 ## 7. ManyChat e AccessLink
 

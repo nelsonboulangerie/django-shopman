@@ -12,9 +12,9 @@
     "TAON"
   ],
   "totals": {
-    "settings": 313,
+    "settings": 312,
     "env": 22,
-    "settings_env": 175
+    "settings_env": 174
   },
   "files": {
     "config/asgi.py": {
@@ -40,7 +40,7 @@
       "env": 1
     },
     "config/settings.py": {
-      "settings_env": 174
+      "settings_env": 173
     },
     "config/settings_test.py": {
       "settings_env": 1
@@ -467,9 +467,6 @@
       "env": 5
     },
     "shopman/shop/webhooks/efi.py": {
-      "settings": 1
-    },
-    "shopman/shop/webhooks/ifood.py": {
       "settings": 1
     },
     "shopman/shop/webhooks/ifood_events.py": {

@@ -54,7 +54,6 @@ jobs:
       DOORMAN_ACCESS_LINK_API_KEY: ci-doorman-access-link-key
       COMTELE_API_KEY: ci-comtele-key
       COMTELE_ROUTE: ci-comtele-route
-      IFOOD_WEBHOOK_TOKEN: ci-ifood-webhook-token
       MANYCHAT_API_TOKEN: ci-manychat-api-token
       MANYCHAT_WEBHOOK_SECRET: ci-manychat-webhook-secret
       SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY: ci-only-privacy-receipt-hmac-key-at-least-32-bytes

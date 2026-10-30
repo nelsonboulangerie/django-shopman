@@ -73,7 +73,7 @@ IFOOD_MERCHANT_ID=<merchant uuid>
 IFOOD_CANCELLATION_CODE=<codigo default opcional para fallback de cancelamento>
 ```
 
-`IFOOD_WEBHOOK_TOKEN` e legado/stub. O caminho primario e o worker
+O caminho primario e o worker
 `python manage.py ifood_poll --watch --interval 30`; sem OAuth ele fica ocioso.
 
 ## Roteiro minimo com testadores

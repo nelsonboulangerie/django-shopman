@@ -91,7 +91,6 @@ encrypted runtime variables no nível do app:
 DJANGO_SECRET_KEY=<segredo forte>
 DOORMAN_ACCESS_LINK_API_KEY=<segredo forte>
 EFI_WEBHOOK_TOKEN=<token webhook sandbox/produção>
-IFOOD_WEBHOOK_TOKEN=<token webhook sandbox/produção>
 MANYCHAT_WEBHOOK_SECRET=<segredo HMAC webhook>
 ```
 

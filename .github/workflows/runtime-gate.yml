@@ -182,7 +182,6 @@ jobs:
           FOCUS_NFE_ENVIRONMENT: producao
           EFI_SANDBOX: "false"
           EFI_WEBHOOK_TOKEN: ci-efi-webhook-token
-          IFOOD_WEBHOOK_TOKEN: ci-ifood-webhook-token
           MANYCHAT_API_TOKEN: ci-manychat-api-token
           MANYCHAT_WEBHOOK_SECRET: ci-manychat-webhook-secret
           SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY: ci-only-privacy-receipt-hmac-key-at-least-32-bytes

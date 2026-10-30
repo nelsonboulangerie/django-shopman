@@ -98,7 +98,6 @@ def ifood_item():
 @pytest.fixture
 def ifood_settings():
     return {
-        "webhook_token": "wh-tok",
         "merchant_id": "00000000-0000-4000-8000-000000000001",
         "catalog_id": "catalog-main",
         "catalog_context": "DEFAULT",
