@@ -339,3 +339,17 @@ Fluxos exercitados pelo navegador: observação só na linha escolhida; duas lin
 Coluna de comanda com 900 px de altura a 1440×900; folha mobile com papel modal/foco contido e fechamento por fundo. Numérico aparece apenas na edição por toque. Menu da comanda distingue transferência integral de seleção.
 
 Limites: sem integração, auth, cobrança, estoque, impressora ou journal offline. Cliente/conflitos, endereço/taxa, agenda, encomendas completas, autorização real e fechamento por cédula/produto/destino não são reproduzidos integralmente. As portas são preservadas e os limites estão declarados. Aritmética só de fixtures em memória. Teste de teclado virtual real/periféricos continua pendente. Nenhuma alteração nos apps, operator-kit, Core ou deploy.
+
+## Rodada KDS e Gestor por tarefa
+
+Entrada `ops-review.html`; telas `ops.html?app=kds` e `ops.html?app=gestor`. Anatomias reconstruídas com fixtures, sem API ou runtime real. Não é prova de equivalência funcional completa.
+
+Verificações DOM de 35 combinações (três estações do KDS; Fila, Quadro, Lista e Saída do Gestor) em 320/390/768/1024/1440 px, sem transbordamento de página/cabeçalho/conteúdo. No KDS, acesso ao restante presente também no tablet de 768 px; um ticket completo apenas no foco mobile.
+
+Fluxos exercitados: Iniciar N104 desarma Pronto por 900 ms; Pronto oferece Desfazer no mesmo botão (5 s), desfazer restaura Pronto; observação nova oferece Visto antes de concluir; N109 bloqueado mostra motivo e botão mobile indisponível; ciência de cancelamento retira N105 da fila. A janela de undo usa token por operação para não ser encerrada pelo timer de uma tentativa anterior.
+
+Gestor: código M18:1/2 na conferência B42 gera aviso com duas saídas; Retirou segue disponível sem criar trava de volumes. R7K revisa entregador João e troco 26; voltar ao formulário mantém 26. Após saída, Ver na rua mostra R7K com retorno e seus próprios dados (74, troco levado 26), sem reutilizar os de V03. Seleção R7K/B42 aplica responsável apenas a esses alvos. Divisória por teclado: 439/439/439 → 459/419/439; recolher Preparo reduz para duas colunas e tab restaura três. Saída estreita 320 px: rodapé de ações tem scrollWidth=clientWidth=255, com alvos de 48 px.
+
+Mudança pontual da Saída: valor/volumes e Conferir/Saiu ou Retirou na mesma linha, preservando contexto e liberando uma faixa vertical. Fontes mantidas em ops-review e inventário de preservação.
+
+Sem integração, permissões reais, concorrência, fiscalização, impressão, push/som ou gestos em dispositivo físico. Código e estilos restritos às prévias; apps, kit, Core e deploy não alterados.

@@ -1,3 +1,13 @@
+## Rodada operacional disponível: PDV, KDS e Gestor
+
+Entrada atual: `ops-review.html`, com links limpos, roteiro e capturas por dispositivo. PDV permanece em `pos.html`; KDS e Gestor em `ops.html?app=kds` e `ops.html?app=gestor`. Não usar `suite.html` como referência de aprovação dos interiores operacionais.
+
+KDS: um ticket em foco no mobile, próximos compactos, fila inteira acessível, A fazer com chips inteiros e +N, Iniciar/Pronto, armamento de 900 ms, Desfazer 5 s no mesmo lugar, ciência, bloqueio com motivo, histórico e cenários de erro/conexão. Nenhum áudio/push ou API real.
+
+Gestor: Fila de supervisão desktop com atenção humana, quadro por etapas ajustável/recolhível, uma etapa por tab em telas menores, Lista paginada com seleção de alvos e posto de Saída distinto. Volumes avisam sem travar; despacho e retorno têm revisão por pedido. Navegação lateral tem controle próprio e diferente das divisórias. Ícone do app abre troca de apps; hambúrguer só navega no app atual. No Gestor, reticências seguem na extremidade da linha inferior do título.
+
+São reconstruções estáticas de anatomias por tarefa, com limites funcionais declarados. Não substituem os componentes maduros e não autorizam implementação/deploy.
+
 ## Nova rodada do PDV por tarefa
 
 Entrada para avaliar: `pos-review.html`. Prévia limpa: `pos.html` (quadro), `pos.html?scene=sale&tab=12` (lançamento), `pos.html?scene=payment&tab=12` (pagamento). Fonte local das anatomias: PosTabBoard, PosProductGrid/Tile, PosTabHeader, PosCartPanel, PosPaymentWorkspace/Result, PosSaleResult, PosDrawerPulseCard e contratos. Não deriva dos cards de `suite.html`.
