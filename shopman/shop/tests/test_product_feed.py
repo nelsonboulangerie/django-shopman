@@ -1,4 +1,4 @@
-"""Product feed — canal de exibição COM formato (Google/Meta), RSS 2.0 público."""
+"""Product feed — canal de exibição da Meta, RSS 2.0 público. O Google não tem feed."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ LOJA = "https://www.loja.test"
 def feed(db, settings):
     settings.SHOPMAN_STOREFRONT_BASE_URL = LOJA
     Shop.objects.create(name="Nelson Boulangerie")
-    display_channel("google", "Google Shopping", collections=["vitrine"], fmt="google_merchant", prices_from="web")
     display_channel("meta", "Meta", collections=["vitrine"], fmt="meta_catalog", prices_from="web")
+    display_channel("meta-b", "Meta B", collections=["vitrine"], fmt="meta_catalog", prices_from="web")
     vitrine = Collection.objects.create(ref="vitrine", name="Vitrine", is_active=True)
     com_foto = Product.objects.create(
         sku="BAGUETE", name="Baguete", unit="un", base_price_q=1300,
@@ -41,8 +41,8 @@ def _items(xml: bytes):
     return ET.fromstring(xml).find("channel").findall("item")
 
 
-def test_feed_is_valid_google_rss(client, feed):
-    resp = client.get("/feed/google.xml")
+def test_feed_is_valid_meta_rss(client, feed):
+    resp = client.get("/feed/meta.xml")
     assert resp.status_code == 200
     assert resp["Content-Type"].startswith("application/xml")
     items = _items(resp.content)
@@ -53,22 +53,28 @@ def test_feed_is_valid_google_rss(client, feed):
     assert item.find(f"{G}link").text == f"{LOJA}/produto/BAGUETE"
     assert ET.fromstring(resp.content).find("channel").find("link").text == LOJA
     assert item.find(f"{G}price").text == "13.00 BRL"
-    assert item.find(f"{G}availability").text == "in_stock"  # google = underscore
+    assert item.find(f"{G}availability").text == "in stock"  # meta = espaço (verificado)
     assert item.find(f"{G}brand") is None  # marca da loja não prova a marca do produto
     assert item.find(f"{G}identifier_exists") is None  # vazio não comprova ausência
     assert item.find(f"{G}custom_label_0").text == "vitrine"  # coleção do feed
     assert item.find(f"{G}product_type").text == "Vitrine"
+    assert item.find(f"{G}excluded_destination") is None  # atributo do Google
 
 
-@pytest.mark.parametrize("channel", ["google", "meta"])
-def test_feed_uses_product_commercial_attributes(client, feed, channel):
+def test_google_channel_has_no_feed(client, feed):
+    """O canal do Google é escrito só pela Merchant API: a rota do XML não o serve."""
+    display_channel("google", "Google Shopping", collections=["vitrine"], fmt="google_merchant", prices_from="web")
+    assert client.get("/feed/google.xml").status_code == 404
+
+
+def test_feed_uses_product_commercial_attributes(client, feed):
     product = feed["com_foto"]
     product.metadata = {"social": {
         "brand": "Fabricante & Filhos", "gtin": "4006381333931",
         "mpn": "REF<123>", "condition": "new", "google_product_category": "250",
     }}
     product.save()
-    item = _items(client.get(f"/feed/{channel}.xml").content)[0]
+    item = _items(client.get("/feed/meta.xml").content)[0]
     for field, value in product.metadata["social"].items():
         assert item.find(f"{G}{field}").text == value
     assert item.find(f"{G}identifier_exists") is None
@@ -78,7 +84,7 @@ def test_feed_preserves_mpn_without_gtin(client, feed):
     product = feed["com_foto"]
     product.metadata = {"social": {"brand": "Nelson", "mpn": "BAGUETE"}}
     product.save()
-    item = _items(client.get("/feed/google.xml").content)[0]
+    item = _items(client.get("/feed/meta.xml").content)[0]
     assert item.find(f"{G}mpn").text == "BAGUETE"
     assert item.find(f"{G}gtin") is None
     assert item.find(f"{G}identifier_exists") is None
@@ -89,7 +95,7 @@ def test_feed_preserves_condition(client, feed, condition):
     product = feed["com_foto"]
     product.metadata = {"social": {"condition": condition}}
     product.save()
-    item = _items(client.get("/feed/google.xml").content)[0]
+    item = _items(client.get("/feed/meta.xml").content)[0]
     assert item.find(f"{G}condition").text == condition
 
 
@@ -98,38 +104,14 @@ def test_feed_does_not_hide_shop_database_failure(client, feed):
 
     with patch.object(Shop.objects, "only", side_effect=OperationalError("indisponível")):
         with pytest.raises(OperationalError):
-            client.get("/feed/google.xml")
-
-
-def test_meta_kind_uses_spaced_availability(client, feed):
-    item = _items(client.get("/feed/meta.xml").content)[0]
-    assert item.find(f"{G}availability").text == "in stock"  # meta = espaço (verificado)
+            client.get("/feed/meta.xml")
 
 
 def test_paused_is_out_of_stock(client, feed):
     feed["com_foto"].is_sellable = False
     feed["com_foto"].save()
-    item = _items(client.get("/feed/google.xml").content)[0]
-    assert item.find(f"{G}availability").text == "out_of_stock"
-
-
-def test_local_pause_is_out_of_stock(client, feed):
-    """Pausa por-canal (display.paused_skus) marca out_of_stock só neste feed."""
-    from shopman.shop.models import Channel
-    channel = Channel.objects.get(ref="google")
-    channel.config = {**channel.config, "display": {**channel.config["display"], "paused_skus": ["BAGUETE"]}}
-    channel.save(update_fields=["config"])
-    item = _items(client.get("/feed/google.xml").content)[0]
-    assert item.find(f"{G}availability").text == "out_of_stock"
-    # o feed Meta (sem pausa local) segue in stock
-    item_meta = _items(client.get("/feed/meta.xml").content)[0]
-    assert item_meta.find(f"{G}availability").text == "in stock"
-
-
-GOOGLE_DESTINATIONS = [
-    "Shopping_ads", "Display_ads", "Local_inventory_ads", "Free_listings",
-    "Free_local_listings", "Youtube_affiliate", "Youtube_merchandise",
-]
+    item = _items(client.get("/feed/meta.xml").content)[0]
+    assert item.find(f"{G}availability").text == "out of stock"
 
 
 def _set_display(ref: str, **values):
@@ -139,57 +121,44 @@ def _set_display(ref: str, **values):
     channel.save(update_fields=["config"])
 
 
-def test_paused_item_stays_in_every_destination(client, feed):
-    """Pausar = visível, sem compra: fora de estoque, nenhum destino excluído."""
-    _set_display("google", paused_skus=["BAGUETE"])
+def test_local_pause_is_out_of_stock(client, feed):
+    """Pausa por-canal (display.paused_skus) marca out of stock só neste feed."""
     _set_display("meta", paused_skus=["BAGUETE"])
-    google = _items(client.get("/feed/google.xml").content)[0]
-    assert google.findall(f"{G}excluded_destination") == []
-    meta = _items(client.get("/feed/meta.xml").content)[0]
-    assert meta.find("status") is None
-    assert meta.find(f"{G}availability").text == "out of stock"
-
-
-def test_local_hide_excludes_every_google_destination(client, feed):
-    """Ocultar = some do canal, mas o item fica no XML (tirar apagaria o produto no Merchant)."""
-    _set_display("google", hidden_skus=["BAGUETE"])
-    item = _items(client.get("/feed/google.xml").content)[0]
-    assert [e.text for e in item.findall(f"{G}excluded_destination")] == GOOGLE_DESTINATIONS
-    assert item.find(f"{G}availability").text == "out_of_stock"
-    assert item.find("status") is None  # campo da Meta não vaza no Google
-    # o feed Meta (sem ocultação local) segue ativo
-    meta = _items(client.get("/feed/meta.xml").content)[0]
-    assert meta.find("status") is None
-    assert meta.find(f"{G}availability").text == "in stock"
+    item = _items(client.get("/feed/meta.xml").content)[0]
+    assert item.find(f"{G}availability").text == "out of stock"
+    assert item.find("status") is None  # Pausar = visível, sem compra
+    # o outro feed (sem pausa local) segue in stock
+    other = _items(client.get("/feed/meta-b.xml").content)[0]
+    assert other.find(f"{G}availability").text == "in stock"
 
 
 def test_local_hide_archives_the_meta_item(client, feed):
+    """Ocultar = some do canal, mas o item fica no XML (tirar apagaria o produto na Meta)."""
     _set_display("meta", hidden_skus=["BAGUETE"])
     item = _items(client.get("/feed/meta.xml").content)[0]
-    assert item.find("status").text == "archived"  # sem prefixo g: (fora da spec Google)
-    assert item.findall(f"{G}excluded_destination") == []
+    assert item.find("status").text == "archived"  # sem prefixo g: (fora da spec g:)
+    # o outro feed (sem ocultação local) segue ativo
+    other = _items(client.get("/feed/meta-b.xml").content)[0]
+    assert other.find("status") is None
+    assert other.find(f"{G}availability").text == "in stock"
 
 
-@pytest.mark.parametrize("channel", ["google", "meta"])
-def test_hidden_product_is_hidden_on_every_feed(client, feed, channel):
+def test_hidden_product_is_archived(client, feed):
     feed["com_foto"].is_published = False
     feed["com_foto"].save()
-    item = _items(client.get(f"/feed/{channel}.xml").content)[0]
-    if channel == "google":
-        assert len(item.findall(f"{G}excluded_destination")) == len(GOOGLE_DESTINATIONS)
-    else:
-        assert item.find("status").text == "archived"
+    item = _items(client.get("/feed/meta.xml").content)[0]
+    assert item.find("status").text == "archived"
 
 
 def test_hide_wins_over_pause(client, feed):
-    _set_display("google", paused_skus=["BAGUETE"], hidden_skus=["BAGUETE"])
-    item = _items(client.get("/feed/google.xml").content)[0]
-    assert len(item.findall(f"{G}excluded_destination")) == len(GOOGLE_DESTINATIONS)
+    _set_display("meta", paused_skus=["BAGUETE"], hidden_skus=["BAGUETE"])
+    item = _items(client.get("/feed/meta.xml").content)[0]
+    assert item.find("status").text == "archived"
 
 
 def test_smart_collection_feed(client, db, settings):
     settings.SHOPMAN_STOREFRONT_BASE_URL = LOJA
-    display_channel("caros", "Caros", collections=["regra"], fmt="google_merchant", prices_from="web")
+    display_channel("caros", "Caros", collections=["regra"], fmt="meta_catalog", prices_from="web")
     Collection.objects.create(
         ref="regra", name="Regra", is_active=True,
         rule={"match": "all", "conditions": [{"field": "base_price_q", "op": "gte", "value": 1000}]},
@@ -220,14 +189,14 @@ def test_feed_price_comes_from_the_channel_it_points_at(client, feed):
     web = Listing.objects.create(ref="web", name="Loja online")
     ListingItem.objects.create(listing=web, product=feed["com_foto"], price_q=2500)
 
-    item = _items(client.get("/feed/google.xml").content)[0]
+    item = _items(client.get("/feed/meta.xml").content)[0]
     assert item.find(f"{G}price").text == "25.00 BRL"
 
 
 def test_feed_link_ignores_the_host_that_served_the_feed(client, feed, settings):
     """O feed sai do Django headless (api.), que não tem página de produto."""
     settings.ALLOWED_HOSTS = ["api.loja.test"]
-    resp = client.get("/feed/google.xml", HTTP_HOST="api.loja.test")
+    resp = client.get("/feed/meta.xml", HTTP_HOST="api.loja.test")
     assert resp.status_code == 200
     link = _items(resp.content)[0].find(f"{G}link").text
     assert link == f"{LOJA}/produto/BAGUETE"
@@ -237,4 +206,4 @@ def test_feed_link_ignores_the_host_that_served_the_feed(client, feed, settings)
 def test_feed_without_storefront_base_fails_closed(client, feed, settings):
     """Sem a base da loja não há link certo; feed com link 404 é reprovado item a item."""
     settings.SHOPMAN_STOREFRONT_BASE_URL = ""
-    assert client.get("/feed/google.xml").status_code == 404
+    assert client.get("/feed/meta.xml").status_code == 404

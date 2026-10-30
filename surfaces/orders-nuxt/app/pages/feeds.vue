@@ -742,6 +742,7 @@ const phoneHeaderActions = computed(() => [
               </NuxtPopover>
 
               <NuxtButton
+                v-if="sc.output_path"
                 :to="outputHref(sc)"
                 target="_blank"
                 :icon="

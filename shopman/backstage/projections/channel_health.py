@@ -11,7 +11,7 @@ abertura, a partir do que a casa já registra:
 - **TV (menuboard)**: ligada, coleções escolhidas e com produto, e as TVs
   autorizadas (``TrustedDevice`` com ``subject_type="display"``) — a TV busca o
   quadro a cada 30 s, e cada busca carimba ``last_used_at``.
-- **Feed Google/Meta**: ligado (pausado, a plataforma recebe 404) e com coleções
+- **Feed Google/Meta**: ligado (pausado, a plataforma recebe tudo fora de estoque) e com coleções
   que têm produto.
 - **Loja online**: a prontidão de Pix, cartão e código de login
   (``integration_readiness``) — sem eles o cliente não entra ou não paga.
@@ -378,9 +378,9 @@ def _display_health(channel, *, now: datetime) -> ChannelHealthProjection:
         preview = (ChannelHealthLink(label="Ver a tela da TV", target="django", path=output),)
     else:
         platform = "o Google" if fmt == "google_merchant" else "a Meta" if fmt == "meta_catalog" else "a plataforma"
-        items = [_active_item(channel, paused_label=f"Pausado: {platform} recebe erro ao buscar o feed", now=now)]
+        items = [_active_item(channel, paused_label=f"Pausado: {platform} recebe todos os produtos como fora de estoque", now=now)]
         items += _collection_items(display)
-        preview = (ChannelHealthLink(label="Ver o feed", target="django", path=output),)
+        preview = (ChannelHealthLink(label="Ver o feed", target="django", path=output),) if output else ()
     return _health(channel.ref, items, preview)
 
 

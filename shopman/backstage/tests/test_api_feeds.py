@@ -73,7 +73,7 @@ def test_board_shape(client, operator, board):
     assert by_ref["tv"]["kind"] == "menuboard"
     assert by_ref["tv"]["output_path"] == "/menuboard/tv/"
     assert [c["ref"] for c in by_ref["tv"]["collections"]] == ["paes"]
-    assert by_ref["google"]["output_path"] == "/feed/google.xml"
+    assert by_ref["google"]["output_path"] == ""  # escrito pela Merchant API, sem XML
     assert by_ref["google"]["is_active"] is False
     assert by_ref["tv"]["automatic"]["enabled"] is False
     assert by_ref["tv"]["automatic"]["lead_minutes"] == 15

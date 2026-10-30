@@ -218,43 +218,39 @@ class TestMetaCatalog:
         assert availability() == "out of stock"
 
 
-# ── Feed Google/Meta ──────────────────────────────────────────────────────────
+# ── Feed da Meta ──────────────────────────────────────────────────────────
 
 
 class TestFeed:
-    @pytest.mark.parametrize(("ref", "yes", "no"), [
-        ("google", "in_stock", "out_of_stock"),
-        ("meta", "in stock", "out of stock"),
-    ])
-    def test_sold_out_is_out_of_stock_at_read_time(self, client, pao, vitrine_pos, ref, yes, no):
+    def test_sold_out_is_out_of_stock_at_read_time(self, client, pao, vitrine_pos):
         quant = Quant.objects.create(sku="PAO", position=vitrine_pos)
         _move(quant, 2)
-        assert _feed_availability(client, ref) == yes
+        assert _feed_availability(client, "meta") == "in stock"
 
         _move(quant, -2, kind=Move.Kind.SELL)
-        assert _feed_availability(client, ref) == no
+        assert _feed_availability(client, "meta") == "out of stock"
 
         _move(quant, 1)
-        assert _feed_availability(client, ref) == yes
+        assert _feed_availability(client, "meta") == "in stock"
 
     def test_untracked_stays_in_stock(self, client, pao):
-        assert _feed_availability(client, "google") == "in_stock"
+        assert _feed_availability(client, "meta") == "in stock"
 
     def test_paused_with_stock_stays_out_of_stock(self, client, pao, vitrine_pos):
         quant = Quant.objects.create(sku="PAO", position=vitrine_pos)
         _move(quant, 10)
         Product.objects.filter(sku="PAO").update(is_sellable=False)
-        assert _feed_availability(client, "google") == "out_of_stock"
+        assert _feed_availability(client, "meta") == "out of stock"
 
     def test_local_feed_pause_still_wins(self, client, pao, vitrine_pos):
         from shopman.shop.models import Channel
 
         quant = Quant.objects.create(sku="PAO", position=vitrine_pos)
         _move(quant, 10)
-        channel = Channel.objects.get(ref="google")
+        channel = Channel.objects.get(ref="meta")
         channel.config["display"]["paused_skus"] = ["PAO"]
         channel.save()
-        assert _feed_availability(client, "google") == "out_of_stock"
+        assert _feed_availability(client, "meta") == "out of stock"
 
     def test_follows_the_web_listing_stock_scope_not_absence(self, client, pao, vitrine_pos):
         """Fora da listagem da loja não é falta: só o estoque muda o feed."""
@@ -262,7 +258,7 @@ class TestFeed:
 
         Listing.objects.create(ref="web", name="Loja", is_active=True)
         assert not ListingItem.objects.filter(product=pao).exists()
-        assert _feed_availability(client, "google") == "in_stock"
+        assert _feed_availability(client, "meta") == "in stock"
 
 
 # ── Gatilho: a passagem por zero reenvia aos canais empurrados ────────────────
