@@ -1,0 +1,2434 @@
+{
+ "generated_at": "2026-10-30T15:39:59.887Z",
+ "method": "A = origin/main + apply-conn-sim; C = A + apply-compact. Mesmo mock (fixtures gravadas), build client-only.",
+ "runs": {
+  "A": {
+   "board-320x740": {
+    "viewport": "320x740",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 1,
+    "cardsVisibleFraction": 1.21,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Visto",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Visto 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "board-320x568": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Visto",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Visto 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "board-375x667": {
+    "viewport": "375x667",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 383,
+    "cardsFullyVisible": 1,
+    "cardsVisibleFraction": 1.05,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Visto",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Visto 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "board-390x844": {
+    "viewport": "390x844",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 383,
+    "cardsFullyVisible": 1,
+    "cardsVisibleFraction": 1.54,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 390,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Visto",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Visto 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "board-1440x900": {
+    "viewport": "1440x900",
+    "contentTop": 121,
+    "firstCardTop": null,
+    "firstCardHeight": null,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0,
+    "topChrome": 121,
+    "baseChrome": 0,
+    "scrollWidth": 1440,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar por código, cliente ou item (atalho: /)",
+      "w": 267,
+      "h": 32
+     },
+     {
+      "name": "1 maquininha na rua",
+      "w": 174,
+      "h": 32
+     },
+     {
+      "name": "Som bloqueado: toque para ativar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Visto: parar o som de pedido novo",
+      "w": 80,
+      "h": 32
+     },
+     {
+      "name": "Urgência",
+      "w": 131,
+      "h": 32
+     },
+     {
+      "name": "Grade",
+      "w": 90,
+      "h": 32
+     },
+     {
+      "name": "Lista",
+      "w": 81,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Compactar a barra lateral 32x32",
+     "Buscar por código, cliente ou item (atalho: /) 267x32",
+     "1 maquininha na rua 174x32",
+     "Som bloqueado: toque para ativar 32x32",
+     "Visto: parar o som de pedido novo 80x32",
+     "Urgência 131x32",
+     "Grade 90x32",
+     "Lista 81x32",
+     "Mais ações da fila 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "dense-320x568": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Visto",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Visto 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "dense-375x667": {
+    "viewport": "375x667",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 1,
+    "cardsVisibleFraction": 1.01,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Visto",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Visto 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "after-visto-320x568": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "after-visto-375x667": {
+    "viewport": "375x667",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 383,
+    "cardsFullyVisible": 1,
+    "cardsVisibleFraction": 1.05,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "options-open": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "avisos-open": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "filters-open": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "filter-active": {
+    "viewport": "320x568",
+    "contentTop": 238,
+    "firstCardTop": 239,
+    "firstCardHeight": 303,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.87,
+    "topChrome": 238,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "filter-cleared": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "search-dialog": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "search-active": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "search-active-url": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Visto",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Visto 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "search-cleared": {
+    "error": "locator.click: Timeout 4000ms exceeded."
+   },
+   "conn-live": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Visto",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Visto 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "conn-late": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Visto",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Visto 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "conn-off": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Visto",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Visto 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "read-error": {
+    "viewport": "320x568",
+    "contentTop": 116,
+    "firstCardTop": null,
+    "firstCardHeight": null,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0,
+    "topChrome": 116,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": "Falha ao atualizar a filaMantivemos a última leitura; atualize antes de confirmar ações."
+   },
+   "read-recovered": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.79,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Visto",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Visto 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "urgent-alert": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": 190,
+    "firstCardHeight": 340,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.92,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "write-error": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": -1578,
+    "firstCardHeight": 362,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.66,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (30 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (30 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "write-error-dismissed": {
+    "viewport": "320x568",
+    "contentTop": 189,
+    "firstCardTop": -1628,
+    "firstCardHeight": 362,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.83,
+    "topChrome": 189,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (30 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações da fila 32x32",
+     "Avisos (30 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "detail-320x568": {
+    "viewport": "320x568",
+    "contentTop": 67,
+    "firstCardTop": null,
+    "firstCardHeight": null,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0,
+    "topChrome": 67,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para a fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do pedido",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Voltar para a fila 32x32",
+     "Buscar 32x32",
+     "Mais ações do pedido 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "detail-375x667": {
+    "viewport": "375x667",
+    "contentTop": 67,
+    "firstCardTop": null,
+    "firstCardHeight": null,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0,
+    "topChrome": 67,
+    "baseChrome": 65,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para a fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do pedido",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Abrir barra lateral 32x32",
+     "Voltar para a fila 32x32",
+     "Buscar 32x32",
+     "Mais ações do pedido 32x32",
+     "Avisos (29 pedem sua atenção) 32x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "detail-1440x900": {
+    "viewport": "1440x900",
+    "contentTop": 64,
+    "firstCardTop": null,
+    "firstCardHeight": null,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0,
+    "topChrome": 64,
+    "baseChrome": 0,
+    "scrollWidth": 1440,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para a fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do pedido",
+      "w": 185,
+      "h": 32
+     },
+     {
+      "name": "Pix expirado",
+      "w": 126,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Compactar a barra lateral 32x32",
+     "Voltar para a fila 32x32",
+     "Buscar pedido, cliente, produto ou tela 320x32",
+     "Mais ações do pedido 185x32",
+     "Pix expirado 126x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "detail-menu": {
+    "viewport": "320x568",
+    "contentTop": 67,
+    "firstCardTop": null,
+    "firstCardHeight": null,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0,
+    "topChrome": 67,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   }
+  },
+  "C": {
+   "board-320x740": {
+    "viewport": "320x740",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 1,
+    "cardsVisibleFraction": 1.23,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "board-320x568": {
+    "viewport": "320x568",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.81,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "board-375x667": {
+    "viewport": "375x667",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 383,
+    "cardsFullyVisible": 1,
+    "cardsVisibleFraction": 1.07,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 169,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "board-390x844": {
+    "viewport": "390x844",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 383,
+    "cardsFullyVisible": 1,
+    "cardsVisibleFraction": 1.56,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 390,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 184,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "board-1440x900": {
+    "viewport": "1440x900",
+    "contentTop": 121,
+    "firstCardTop": null,
+    "firstCardHeight": null,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0,
+    "topChrome": 121,
+    "baseChrome": 0,
+    "scrollWidth": 1440,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar por código, cliente ou item (atalho: /)",
+      "w": 267,
+      "h": 32
+     },
+     {
+      "name": "1 maquininha na rua",
+      "w": 174,
+      "h": 32
+     },
+     {
+      "name": "Som bloqueado: toque para ativar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Visto: parar o som de pedido novo",
+      "w": 80,
+      "h": 32
+     },
+     {
+      "name": "Urgência",
+      "w": 131,
+      "h": 32
+     },
+     {
+      "name": "Grade",
+      "w": 90,
+      "h": 32
+     },
+     {
+      "name": "Lista",
+      "w": 81,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da fila",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Compactar a barra lateral 32x32",
+     "Buscar por código, cliente ou item (atalho: /) 267x32",
+     "1 maquininha na rua 174x32",
+     "Som bloqueado: toque para ativar 32x32",
+     "Visto: parar o som de pedido novo 80x32",
+     "Urgência 131x32",
+     "Grade 90x32",
+     "Lista 81x32",
+     "Mais ações da fila 32x32"
+    ],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "dense-320x568": {
+    "viewport": "320x568",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.81,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "dense-375x667": {
+    "viewport": "375x667",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 1,
+    "cardsVisibleFraction": 1.03,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 169,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "after-visto-320x568": {
+    "viewport": "320x568",
+    "contentTop": 132,
+    "firstCardTop": 133,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.93,
+    "topChrome": 132,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "after-visto-375x667": {
+    "viewport": "375x667",
+    "contentTop": 132,
+    "firstCardTop": 133,
+    "firstCardHeight": 383,
+    "cardsFullyVisible": 1,
+    "cardsVisibleFraction": 1.21,
+    "topChrome": 132,
+    "baseChrome": 65,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 169,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "options-open": {
+    "viewport": "320x568",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.81,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "avisos-open": {
+    "viewport": "320x568",
+    "contentTop": 132,
+    "firstCardTop": 133,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.93,
+    "topChrome": 132,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "filters-open": {
+    "viewport": "320x568",
+    "contentTop": 132,
+    "firstCardTop": 133,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.93,
+    "topChrome": 132,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "filter-active": {
+    "viewport": "320x568",
+    "contentTop": 185,
+    "firstCardTop": 186,
+    "firstCardHeight": 303,
+    "cardsFullyVisible": 1,
+    "cardsVisibleFraction": 1,
+    "topChrome": 185,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros: Entrega",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Limpar busca e filtros",
+      "w": 66,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": "Entrega. 2 de 10 pedidos no quadro.Limpar",
+    "pageText": null
+   },
+   "filter-cleared": {
+    "viewport": "320x568",
+    "contentTop": 132,
+    "firstCardTop": 133,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.93,
+    "topChrome": 132,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "search-dialog": {
+    "viewport": "320x568",
+    "contentTop": 132,
+    "firstCardTop": 133,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.93,
+    "topChrome": 132,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "search-active": {
+    "viewport": "320x568",
+    "contentTop": 185,
+    "firstCardTop": 186,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.8,
+    "topChrome": 185,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar. Busca ativa: Maria",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Limpar busca e filtros",
+      "w": 66,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": "Busca Maria. 3 de 10 pedidos no quadro.Limpar",
+    "pageText": null
+   },
+   "search-active-url": {
+    "viewport": "320x568",
+    "contentTop": 234,
+    "firstCardTop": 235,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.67,
+    "topChrome": 234,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar. Busca ativa: Maria",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Limpar busca e filtros",
+      "w": 66,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": "Busca Maria. 3 de 10 pedidos no quadro.Limpar",
+    "pageText": null
+   },
+   "search-cleared": {
+    "viewport": "320x568",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.81,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "conn-live": {
+    "viewport": "320x568",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.81,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: ao vivo, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "conn-late": {
+    "viewport": "320x568",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.81,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: leitura atrasad",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "conn-off": {
+    "viewport": "320x568",
+    "contentTop": 218,
+    "firstCardTop": 219,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.71,
+    "topChrome": 218,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: sem conexão, úl",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "read-error": {
+    "viewport": "320x568",
+    "contentTop": 59,
+    "firstCardTop": null,
+    "firstCardHeight": null,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0,
+    "topChrome": 59,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: sem conexão.",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": "Falha ao atualizar a filaMantivemos a última leitura; atualize antes de confirmar ações."
+   },
+   "read-recovered": {
+    "viewport": "320x568",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.81,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "urgent-alert": {
+    "viewport": "320x568",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 340,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.94,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "write-error": {
+    "viewport": "320x568",
+    "contentTop": 132,
+    "firstCardTop": -1606,
+    "firstCardHeight": 362,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.76,
+    "topChrome": 132,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (30 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "write-error-dismissed": {
+    "viewport": "320x568",
+    "contentTop": 132,
+    "firstCardTop": -1607,
+    "firstCardHeight": 362,
+    "cardsFullyVisible": 1,
+    "cardsVisibleFraction": 1.03,
+    "topChrome": 132,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (30 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "detail-320x568": {
+    "viewport": "320x568",
+    "contentTop": 59,
+    "firstCardTop": null,
+    "firstCardHeight": null,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0,
+    "topChrome": 59,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar para a fila",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Mais ações do pedido",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar na suíte",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "detail-375x667": {
+    "viewport": "375x667",
+    "contentTop": 59,
+    "firstCardTop": null,
+    "firstCardHeight": null,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0,
+    "topChrome": 59,
+    "baseChrome": 65,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar para a fila",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Mais ações do pedido",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar na suíte",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (29 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "detail-1440x900": {
+    "viewport": "1440x900",
+    "contentTop": 64,
+    "firstCardTop": null,
+    "firstCardHeight": null,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0,
+    "topChrome": 64,
+    "baseChrome": 0,
+    "scrollWidth": 1440,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para a fila",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do pedido",
+      "w": 185,
+      "h": 32
+     },
+     {
+      "name": "Pix expirado",
+      "w": 126,
+      "h": 32
+     }
+    ],
+    "headerTargetsUnder44": [
+     "Compactar a barra lateral 32x32",
+     "Voltar para a fila 32x32",
+     "Buscar pedido, cliente, produto ou tela 320x32",
+     "Mais ações do pedido 185x32",
+     "Pix expirado 126x32"
+    ],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "detail-menu": {
+    "viewport": "320x568",
+    "contentTop": 59,
+    "firstCardTop": null,
+    "firstCardHeight": null,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0,
+    "topChrome": 59,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [],
+    "headerTargetsUnder44": [],
+    "attentionStrip": false,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "avisos-in-options-closed": {
+    "viewport": "320x568",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.81,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Gestor de pedidos: abrir a Central. Conexão: atualização per",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar por código, cliente ou item",
+      "w": 164,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pedidos",
+      "w": 44,
+      "h": 44
+     }
+    ],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   },
+   "avisos-in-options": {
+    "viewport": "320x568",
+    "contentTop": 181,
+    "firstCardTop": 182,
+    "firstCardHeight": 398,
+    "cardsFullyVisible": 0,
+    "cardsVisibleFraction": 0.81,
+    "topChrome": 181,
+    "baseChrome": 65,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [],
+    "headerTargetsUnder44": [],
+    "attentionStrip": true,
+    "activeStrip": null,
+    "pageText": null
+   }
+  }
+ }
+}

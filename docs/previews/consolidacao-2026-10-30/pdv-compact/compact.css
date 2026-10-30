@@ -1,0 +1,12 @@
+/* PRÉVIA C (compacto) do PDV. No celular (< md) a linha compacta é o cabeçalho inteiro:
+   some a barra de 56px do kit e as toolbars de recorte/controle. FICAM: a barra da venda
+   (#below, PosTabHeader), os avisos da tela (data-page-header-alerts) e o feedback. */
+@media (max-width: 767.98px) {
+  [data-compact-page] [data-operator-page-header],
+  [data-compact-page] [data-page-header-filter-line],
+  [data-compact-page] [data-page-header-active-filters],
+  [data-compact-page] div.border-b[data-page-header-filters-end],
+  [data-compact-page] :has(> [data-page-header-filters]),
+  [data-compact-page] :has(> [data-page-header-actions]),
+  [data-compact-page] div:has(> [data-compact-desk-back]) { display: none !important; }
+}
