@@ -2,17 +2,19 @@ import {readFile,writeFile,copyFile} from 'node:fs/promises';
 import {join} from 'node:path';
 const root=process.argv[2];if(!root)throw Error('Informe a cópia temporária do KDS.');
 const file=join(root,'app/pages/[ref].vue');let page=await readFile(file,'utf8');
-const marker='const phoneContext = computed(() => {';
-if(!page.includes(marker))throw Error('Revisar o encaixe com a fonte atual.');
-page=page.replace(marker,`// Alternativa de composição: acesso explícito ao mesmo menu do toque longo.
-const phoneOptions = computed<OperatorActionBarAction | undefined>(() => phoneFocus.value && (phoneAction.value?.label.length ?? 0) < 19 ? {
-  label: '', icon: 'i-lucide-ellipsis-vertical',
-  ariaLabel: 'Opções do pedido ' + splitRef(phoneFocus.value.order_ref).code,
-  onSelect: () => { if(phoneFocus.value) onHold(phoneFocus.value.pk); },
-} : undefined);
-`+marker);
+if(page.includes('data-preview-kds-context-bar'))throw Error('Use uma cópia nova da fonte para aplicar a prévia.');
 page=page.replace('label: `${action.label} ${code}`,','label: `${action.label} ${code}`,\n        shortLabel: action.label,');
-page=page.replace(':action="phoneAction"',':action="phoneAction"\n        :secondary="phoneOptions"');
+page=page.replace('class="contents md:hidden"','class="relative shrink-0 md:hidden in-data-[keyboard=open]:hidden" data-preview-kds-context-bar');
+const barEnd='label="Ato do pedido em foco"\n      />';
+if(!page.includes(barEnd))throw Error('Revisar o encaixe da barra de ação com a fonte atual.');
+page=page.replace(barEnd,barEnd+`
+      <NuxtButton v-if="phoneFocus" icon="i-lucide-ellipsis-vertical" color="neutral" variant="ghost" square
+        class="absolute right-5 top-4 size-11"
+        :ui="{base:'text-inverted hover:bg-(--ui-text-inverted)/10 active:bg-(--ui-text-inverted)/10'}"
+        :aria-label="'Opções do pedido ' + splitRef(phoneFocus.order_ref).code"
+        :title="'Opções do pedido ' + splitRef(phoneFocus.order_ref).code"
+        data-preview-kds-context-options
+        @click="onHold(phoneFocus.pk)" />`);
 page=page.replace('<span class="text-sm text-muted-foreground">Mais urgente primeiro, da esquerda para a direita.</span>',`<span class="hidden xl:inline text-sm text-muted-foreground">Mais urgente primeiro, da esquerda para a direita.</span>
         <NuxtButton class="ms-auto max-md:hidden" color="neutral" variant="ghost" icon="i-lucide-history"
           label="Histórico" aria-label="Histórico de hoje da estação" @click="historyOpen = true" data-preview-kds-history />`);

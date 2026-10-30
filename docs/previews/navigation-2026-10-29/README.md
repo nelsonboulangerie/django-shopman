@@ -558,3 +558,9 @@ limites e evidências em `native/README.md`. Nenhum arquivo do produto foi alter
 Entrada: `kds-native.html`. Comparação explícita antes/depois dos avisos, acesso ao
 menu contextual e histórico, usando o KDS real e nove componentes preservados.
 Evidências, reprodução e limites em `kds-native/README.md`. Apenas prévias.
+
+### KDS: dismiss e menu de contexto
+
+A comparação `kds-native.html` foi atualizada: somente o dismiss vai para o canto
+superior direito do alerta atual; os três pontos passam ao contexto acima do CTA,
+à direita. Pronto/Desfazer conservam a largura inteira. Apenas prévias.
