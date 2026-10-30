@@ -65,6 +65,15 @@ Para haver continuidade de verdade, o modo padrão teria de adotar o mesmo selo 
 grupo Filtro/Busca/⋮, ganhando só a linha do título por cima. Isso fica para decisão (item 5
 abaixo).
 
+## Decidido pelo dono (30/10/2026)
+
+- **"Mais" fixo na barra inferior** em todo app compacto (Gestor e Compras passam a ter).
+  Sem ☰ no celular compacto.
+- **Avisos como botão próprio**, 44px, com o número de não lidos à vista.
+- **Aviso denso sempre no celular da Cozinha:** texto, Visto e fechar numa linha. A
+  explicação fica no nome acessível.
+- **Na mesa, ficam os dois:** o Filtro do grupo e os recortes visíveis da toolbar.
+
 ## Ainda precisa de decisão
 
 As conclusões por app estão nos READMEs de cada pasta. As decisões transversais:

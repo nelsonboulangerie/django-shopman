@@ -34,7 +34,11 @@ swap('    <OperatorPageHeader\n      data-preview-refined-header',`    <Operator
       data-preview-refined-header`);
 await writeFile(file,s);
 const css=join(root,'app/assets/css/preview-composition.css');
-await writeFile(css,(await readFile(css,'utf8'))+`
+// Fila do celular: código, posição e tempo na 1ª linha e o resumo inteiro na 2ª, em TODO
+// celular (na prévia anterior só abaixo de 375px; a 390px o resumo quebrava em 3 linhas).
+const queueCss=(await readFile(css,'utf8')).replace('@media(max-width:374px) {','@media(max-width:767px) {');
+if(!queueCss.includes('@media(max-width:767px) {\n  [data-kds-app] [data-kds-queue-row]'))throw Error('Revisar a regra da fila da prévia anterior.');
+await writeFile(css,queueCss+`
 /* PRÉVIA C: no celular, a linha compacta é o cabeçalho inteiro; avisos e erros seguem abaixo. */
 @media (max-width: 767.98px) {
   [data-compact-page] [data-operator-page-header],
