@@ -176,6 +176,23 @@ export function allDayCounts(cards: KDSTicketProjection[]): KDSAllDayCount[] {
  *  não aceitar o toque, e isso não pisca rótulo na cara de ninguém. */
 export const KDS_ARM_DELAY_MS = 900;
 
+/** A ação da base (celular) volta a esperar `KDS_ARM_DELAY_MS` antes de aceitar toque:
+ *  - quando o MESMO pedido passa de "pendente" a "em preparo" (o toque que iniciou não
+ *    pode, quicando, marcar Pronto);
+ *  - quando o pedido em foco TROCA por outro. A base fica no mesmo lugar: ao fim do
+ *    Desfazer o pedido sai e o seguinte assume o botão, e um toque atrasado no
+ *    "Desfazer 0131" marcava "Pronto 0138". Vale também para o pedido que entra no
+ *    topo da fila durante uma atualização.
+ *  O primeiro foco da tela (sem pedido anterior) nasce armado. */
+export function barNeedsArmDelay(
+  previous: { pk?: number | null; status?: string },
+  next: { pk?: number | null; status?: string },
+): boolean {
+  if (next.pk == null) return false;
+  if (previous.pk === next.pk) return previous.status === "pending" && next.status === "in_progress";
+  return previous.pk != null;
+}
+
 /** Janela de "Desfazer" do Pronto. O Pronto tem efeito fora da cozinha
  *  (o pedido vira PRONTO e o cliente é avisado), e o "Reabrir" não desavisa
  *  ninguém — então o POST só sai quando a janela fecha. Durante a janela o card
