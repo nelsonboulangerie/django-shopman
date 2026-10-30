@@ -29,13 +29,12 @@ from shopman.shop.services import display_catalog
 
 # A Meta grafa availability com espaço (verificado).
 _AVAILABILITY = {True: "in stock", False: "out of stock"}
-_FEED_FORMAT = "meta_catalog"
 
 
 def build_feed_items(ref: str) -> list[dict]:
     """Itens do feed da Meta. Canal de outro formato não tem feed."""
     _channel, fmt = display_catalog.resolve_channel(ref)
-    if fmt != _FEED_FORMAT:
+    if fmt != "meta_catalog":
         raise display_catalog.DisplayCatalogError(f"display channel has no XML feed: {fmt!r}")
     return [
         {
