@@ -1,0 +1,223 @@
+{
+  "method": "Continuum enabled exactly as production; paired fresh SSR processes, immutable anonymous snapshots in memory, injected site=1000ms/shell=900ms/primary=1800ms; alternate order; not claimed as historical production spans",
+  "live_snapshots": true,
+  "rows": [
+    {
+      "variant": "before",
+      "round": 0,
+      "route": "/menu",
+      "duration_ms": 3191.8224999999998,
+      "status": 200,
+      "visible_text_sha256": "39aa2eaaeb55e37f6d0cbc9ce146c687d03dfc73b0eb34c3da840c93675fe507",
+      "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
+      "server_timing": null,
+      "reads": [
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 295.1902500000001,
+          "finish_ms": 1295.867875,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 295.36791700000003,
+          "finish_ms": 1198.870625,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        },
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/continuum/v0.2/catalog-structure/",
+          "start_ms": 1336.506292,
+          "finish_ms": 3140.233708,
+          "body_sha256": "f9422b4bcb53ebbbfc4753b4f76a7362ec998bddae308c413ff81351d0424e50",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "round": 0,
+      "route": "/menu",
+      "duration_ms": 2137.6258749999997,
+      "status": 200,
+      "visible_text_sha256": "39aa2eaaeb55e37f6d0cbc9ce146c687d03dfc73b0eb34c3da840c93675fe507",
+      "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
+      "server_timing": "ssr;dur=2134.37, ssr_site;dur=1014.11, ssr_shell;dur=922.69, ssr_primary;dur=2090.35",
+      "reads": [
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/continuum/v0.2/catalog-structure/",
+          "start_ms": 284.8112080000001,
+          "finish_ms": 2087.0522499999997,
+          "body_sha256": "f9422b4bcb53ebbbfc4753b4f76a7362ec998bddae308c413ff81351d0424e50",
+          "status": 200
+        },
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 284.9035409999997,
+          "finish_ms": 1285.3255,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 285.13683299999957,
+          "finish_ms": 1186.5408749999997,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "round": 1,
+      "route": "/menu",
+      "duration_ms": 2145.8330830000004,
+      "status": 200,
+      "visible_text_sha256": "39aa2eaaeb55e37f6d0cbc9ce146c687d03dfc73b0eb34c3da840c93675fe507",
+      "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
+      "server_timing": "ssr;dur=2141.51, ssr_site;dur=1013.04, ssr_shell;dur=922.80, ssr_primary;dur=2099.15",
+      "reads": [
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/continuum/v0.2/catalog-structure/",
+          "start_ms": 288.08108300000004,
+          "finish_ms": 2090.353,
+          "body_sha256": "f9422b4bcb53ebbbfc4753b4f76a7362ec998bddae308c413ff81351d0424e50",
+          "status": 200
+        },
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 288.1693329999998,
+          "finish_ms": 1289.3811670000005,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 288.1984999999995,
+          "finish_ms": 1190.6342080000004,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "before",
+      "round": 1,
+      "route": "/menu",
+      "duration_ms": 3271.015042000001,
+      "status": 200,
+      "visible_text_sha256": "39aa2eaaeb55e37f6d0cbc9ce146c687d03dfc73b0eb34c3da840c93675fe507",
+      "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
+      "server_timing": null,
+      "reads": [
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 374.6067920000005,
+          "finish_ms": 1376.5107499999995,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 374.75933299999997,
+          "finish_ms": 1276.8329580000009,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        },
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/continuum/v0.2/catalog-structure/",
+          "start_ms": 1416.363542000001,
+          "finish_ms": 3218.5632499999992,
+          "body_sha256": "f9422b4bcb53ebbbfc4753b4f76a7362ec998bddae308c413ff81351d0424e50",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "before",
+      "round": 2,
+      "route": "/menu",
+      "duration_ms": 3181.915334000001,
+      "status": 200,
+      "visible_text_sha256": "39aa2eaaeb55e37f6d0cbc9ce146c687d03dfc73b0eb34c3da840c93675fe507",
+      "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
+      "server_timing": null,
+      "reads": [
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 271.1497500000005,
+          "finish_ms": 1271.6342919999988,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 271.35091699999975,
+          "finish_ms": 1173.5996670000004,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        },
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/continuum/v0.2/catalog-structure/",
+          "start_ms": 1310.4672919999994,
+          "finish_ms": 3112.642499999998,
+          "body_sha256": "f9422b4bcb53ebbbfc4753b4f76a7362ec998bddae308c413ff81351d0424e50",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "round": 2,
+      "route": "/menu",
+      "duration_ms": 2154.0155830000003,
+      "status": 200,
+      "visible_text_sha256": "39aa2eaaeb55e37f6d0cbc9ce146c687d03dfc73b0eb34c3da840c93675fe507",
+      "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
+      "server_timing": "ssr;dur=2149.89, ssr_site;dur=1012.55, ssr_shell;dur=923.01, ssr_primary;dur=2106.56",
+      "reads": [
+        {
+          "kind": "primary",
+          "path": "/api/v1/storefront/continuum/v0.2/catalog-structure/",
+          "start_ms": 303.26658300000054,
+          "finish_ms": 2105.394375,
+          "body_sha256": "f9422b4bcb53ebbbfc4753b4f76a7362ec998bddae308c413ff81351d0424e50",
+          "status": 200
+        },
+        {
+          "kind": "site",
+          "path": "/api/v1/storefront/site/",
+          "start_ms": 303.3510419999984,
+          "finish_ms": 1305.0239999999976,
+          "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
+          "status": 200
+        },
+        {
+          "kind": "shell",
+          "path": "/api/v1/storefront/public/shell/",
+          "start_ms": 303.3758749999979,
+          "finish_ms": 1206.7305419999975,
+          "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
+          "status": 200
+        }
+      ]
+    }
+  ],
+  "semantics_equal": true
+}

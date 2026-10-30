@@ -21,13 +21,13 @@ export async function startBackend ({ liveSnapshots = false } = {}) {
   const server = createServer(async (req, res) => {
     const path = req.url.split('?')[0]
     if (!['GET', 'HEAD'].includes(req.method) || !path.startsWith('/api/v1/storefront/')) { res.writeHead(405); res.end(); return }
-    const kind = path.includes('/products/FENDU/') || path.endsWith('/catalog/') ? 'primary' : path.endsWith('/shell/') ? 'shell' : 'site'
+    const kind = path.includes('/products/FENDU/') || (path.endsWith('/catalog/') || path.endsWith('/catalog-structure/')) ? 'primary' : path.endsWith('/shell/') ? 'shell' : 'site'
     const read = { path, kind, startedAt: performance.now(), cookiePresent: !!req.headers.cookie, forwardedIpPresent: !!req.headers['x-forwarded-for'] }
     reads.push(read)
     res.once('finish', () => { read.finishedAt = performance.now(); read.status = res.statusCode })
     if (config.delays?.[kind]) await sleep(config.delays[kind])
     let failing = false
-    if (kind === 'primary' && config.mode && config.mode !== 'normal') {
+    if (kind === 'primary' && (!config.faultOnly || path.endsWith('/catalog-structure/')) && config.mode && config.mode !== 'normal') {
       firstFailure ??= performance.now()
       failing = config.mode.startsWith('persistent') || performance.now() - firstFailure < 150
     }
@@ -44,6 +44,7 @@ export async function startBackend ({ liveSnapshots = false } = {}) {
           // credencial sai do harness; o corpo fica apenas nesta memória.
           let snapshotUrl
           switch (path) {
+            case '/api/v1/storefront/continuum/v0.2/catalog-structure/': snapshotUrl = 'https://api.boulangerie.com.br/api/v1/storefront/continuum/v0.2/catalog-structure/'; break
             case '/api/v1/storefront/site/': snapshotUrl = 'https://api.boulangerie.com.br/api/v1/storefront/site/'; break
             case '/api/v1/storefront/public/shell/': snapshotUrl = 'https://api.boulangerie.com.br/api/v1/storefront/public/shell/'; break
             case '/api/v1/storefront/public/catalog/': snapshotUrl = 'https://api.boulangerie.com.br/api/v1/storefront/public/catalog/'; break
@@ -54,14 +55,14 @@ export async function startBackend ({ liveSnapshots = false } = {}) {
           if (response.status !== 200) throw new Error(`Snapshot unavailable: ${response.status}`)
           return Buffer.from(await response.arrayBuffer())
         }
-        const body = kind === 'primary'
+        const body = path.endsWith('/catalog-structure/') ? { specversion: '1.0', type: 'continuum.projection.snapshot.v0.2', data: { protocol_version: '0.2', kind: 'snapshot', stream: { id: 's_shopman_storefront_catalog_structure_v1', classification: 'public' }, target: { cursor: { epoch: 'fixture', sequence: '00000000000000000001' }, state_token: 'fixture', state_digest: 'fixture' }, freshness: { fresh_for_ms: 30000, stale_if_error_ms: 120000 }, state: { items: { FENDU: { ...product, tags: [], search_terms: [], dietary_info: [], is_new: false } }, item_order: ['FENDU'], categories: [], sections: [{ ref: 'bread', label: 'Pães', skus: ['FENDU'] }], has_items: true } } } : kind === 'primary'
           ? path.includes('/products/') ? { product, ...(!path.includes('/public/') ? { cart: null } : {}) } : { catalog: { items: [], sections: [], favorite_category_ref: '' } }
           : {}
         return Buffer.from(JSON.stringify(body))
       })())
       const body = await snapshots.get(path)
       read.bodySha256 = createHash('sha256').update(body).digest('hex')
-      res.writeHead(200, { 'content-type': 'application/json', 'x-api-version': '1', 'cache-control': 'private, no-store' })
+      res.writeHead(200, { 'content-type': path.endsWith('/catalog-structure/') ? 'application/cloudevents+json; continuum=0.2; schema=1' : 'application/json', 'x-api-version': '1', 'cache-control': 'private, no-store', ...(path.endsWith('/catalog-structure/') ? { etag: '"fixture"' } : {}) })
       res.end(req.method === 'HEAD' ? undefined : body)
     } catch { res.writeHead(502); res.end() }
   })
@@ -74,11 +75,11 @@ export async function startBackend ({ liveSnapshots = false } = {}) {
   }
 }
 
-export async function startNuxt (backendUrl, buildDirectory = '.output') {
+export async function startNuxt (backendUrl, buildDirectory = '.output', { continuumEnabled = false } = {}) {
   const reservation = createServer(); reservation.listen(0, '127.0.0.1'); await once(reservation, 'listening')
   const port = reservation.address().port; await new Promise(done => reservation.close(done))
   const child = spawn(process.execPath, [resolve(buildDirectory, 'server/index.mjs')], {
-    env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), NUXT_DJANGO_BASE_URL: backendUrl, NUXT_PUBLIC_CONTINUUM_CATALOG_ENABLED: 'false' },
+    env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), NUXT_DJANGO_BASE_URL: backendUrl, NUXT_PUBLIC_CONTINUUM_CATALOG_ENABLED: String(continuumEnabled) },
     stdio: ['ignore', 'pipe', 'pipe']
   })
   let logs = ''

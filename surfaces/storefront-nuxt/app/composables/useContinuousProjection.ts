@@ -1,3 +1,5 @@
+import { reuseSsrRawRead } from '#shared/utils/ssrRead'
+import type { StorefrontSsrRead } from '../../shared/types/ssrRead'
 import type { ContinuousSnapshotCache, ContinuumSnapshot } from '~/types/continuum'
 
 type DataState = 'absent' | 'fresh' | 'stale_usable' | 'stale_blocked' | 'invalid'
@@ -20,6 +22,9 @@ export async function useContinuousProjection<TState> (
   options: ContinuousProjectionOptions<TState>
 ) {
   const apiPath = useShopmanApiPath()
+  const requestFetch = import.meta.server ? useRequestFetch() : $fetch
+  const state = import.meta.server ? useRequestEvent()?.context.storefrontSsrRead as StorefrontSsrRead | undefined : undefined
+  const fetchRaw = reuseSsrRawRead(state, requestFetch.raw || $fetch.raw)
   // O resultado do useAsyncData já é serializado no payload SSR. Um useState
   // paralelo duplicaria o snapshot inteiro no HTML.
   const cache = shallowRef<ContinuousSnapshotCache<TState> | null>(null)
@@ -29,7 +34,7 @@ export async function useContinuousProjection<TState> (
     options.key,
     async () => {
       if (!options.enabled) return null
-      const response = await $fetch.raw<ContinuumSnapshot<TState>>(apiPath(options.path), {
+      const response = await fetchRaw<ContinuumSnapshot<TState>>(apiPath(options.path), {
         credentials: 'omit',
         headers: {
           accept: 'application/cloudevents+json; continuum=0.2; schema=1',
