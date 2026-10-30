@@ -25,6 +25,7 @@ import type { OperatorHeaderAction } from "../../../operator-kit/app/presentatio
 import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 import type { KDSHistoryEntryProjection, KDSTicketProjection } from "~/types/kds";
 import {
+  barNeedsArmDelay,
   boardFilterCounts,
   focusGrid,
   focusSlice,
@@ -410,8 +411,9 @@ const chosenPk = ref<number | null>(null);
 const phoneFocus = computed<KDSTicketProjection | null>(
   () => filteredCards.value.find((card) => card.pk === chosenPk.value) ?? filteredCards.value[0] ?? null,
 );
-// Armar o Pronto na base: o botão fica no MESMO lugar ao passar de Iniciar para Pronto,
-// então o toque que iniciou não pode, quicando, marcar Pronto também (a mesma janela do
+// Armar a ação na base: o botão fica no MESMO lugar ao passar de Iniciar para Pronto e
+// quando o pedido em foco troca (o fim do Desfazer passa o botão ao pedido seguinte), então
+// o toque que veio antes não pode cair no ato novo (`barNeedsArmDelay`, a mesma janela do
 // card, `KDS_ARM_DELAY_MS`).
 const barArmed = ref(true);
 let barArmTimer: ReturnType<typeof setTimeout> | null = null;
@@ -419,7 +421,7 @@ watch(
   () => [phoneFocus.value?.pk, phoneFocus.value?.status] as const,
   ([pk, status], [previousPk, previousStatus]) => {
     if (barArmTimer) clearTimeout(barArmTimer);
-    if (pk === previousPk && previousStatus === "pending" && status === "in_progress") {
+    if (barNeedsArmDelay({ pk: previousPk, status: previousStatus }, { pk, status })) {
       barArmed.value = false;
       barArmTimer = setTimeout(() => (barArmed.value = true), KDS_ARM_DELAY_MS);
     } else {
@@ -445,10 +447,16 @@ const phoneAction = computed<OperatorActionBarAction | null>(() => {
         label: `${action.label} ${code}`,
         icon: "i-lucide-eye",
         color: "error",
+        disabled: !barArmed.value,
         onSelect: () => void acknowledgeChange(card.pk),
       };
     case "start":
-      return { label: `Iniciar ${code}`, icon: "i-lucide-play", onSelect: () => void start(card.pk) };
+      return {
+        label: `Iniciar ${code}`,
+        icon: "i-lucide-play",
+        disabled: !barArmed.value,
+        onSelect: () => void start(card.pk),
+      };
     case "finish":
       return {
         label: `Pronto ${code}`,

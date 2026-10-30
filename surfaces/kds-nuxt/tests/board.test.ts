@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   allDayCounts,
+  barNeedsArmDelay,
   cardScale,
   fulfillmentLabel,
   boardView,
@@ -570,5 +571,20 @@ describe("a fila do cozinheiro (v4: 4 a 6 em foco, o resto vira +N)", () => {
   it("a linha compacta do celular: o primeiro item e quantos mais", () => {
     expect(queueLine(ticket({ items: items(1) }))).toBe("1× Item 0");
     expect(queueLine(ticket({ items: items(3) }))).toBe("1× Item 0 +2");
+  });
+});
+
+describe("barNeedsArmDelay", () => {
+  it("espera ao iniciar o mesmo pedido, para o toque que iniciou não marcar Pronto", () => {
+    expect(barNeedsArmDelay({ pk: 1, status: "pending" }, { pk: 1, status: "in_progress" })).toBe(true);
+  });
+  it("espera quando o pedido em foco troca: o toque atrasado do Desfazer não marca o seguinte", () => {
+    expect(barNeedsArmDelay({ pk: 131, status: "in_progress" }, { pk: 138, status: "in_progress" })).toBe(true);
+    expect(barNeedsArmDelay({ pk: 131, status: "in_progress" }, { pk: 138, status: "pending" })).toBe(true);
+  });
+  it("o primeiro foco da tela e o mesmo pedido sem início nascem armados", () => {
+    expect(barNeedsArmDelay({}, { pk: 131, status: "in_progress" })).toBe(false);
+    expect(barNeedsArmDelay({ pk: 131, status: "in_progress" }, { pk: 131, status: "in_progress" })).toBe(false);
+    expect(barNeedsArmDelay({ pk: 131, status: "in_progress" }, {})).toBe(false);
   });
 });
