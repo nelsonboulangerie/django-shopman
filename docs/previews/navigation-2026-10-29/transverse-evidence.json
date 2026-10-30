@@ -1,0 +1,1096 @@
+{
+  "scope": "Prévia transversal de anatomias, sem equivalência funcional completa",
+  "screens": {
+    "hub": [
+      "home"
+    ],
+    "pos": [
+      "board",
+      "preorders",
+      "cash",
+      "closing",
+      "seating",
+      "terminal"
+    ],
+    "kds": [
+      "cafes",
+      "lanches",
+      "encomendas",
+      "exit",
+      "pickup",
+      "station-settings"
+    ],
+    "production": [
+      "plan",
+      "mise-en-place",
+      "open",
+      "close",
+      "quality",
+      "timers",
+      "recipes",
+      "reports",
+      "board"
+    ],
+    "marketing": [
+      "decisions",
+      "scheduled",
+      "sent",
+      "campaigns",
+      "templates",
+      "offers",
+      "platforms"
+    ],
+    "bi": [
+      "production",
+      "sales",
+      "cash",
+      "customers",
+      "delivery",
+      "profiles",
+      "explore",
+      "forecast",
+      "scenarios"
+    ]
+  },
+  "geometry": [
+    {
+      "bodyOverflow": false,
+      "content": 291,
+      "headingOverflow": false,
+      "title": "Central de apps",
+      "toolbarOverflow": false,
+      "url": "?app=hub&view=home",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 471,
+      "headingOverflow": false,
+      "title": "Comandas",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=board",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 60,
+      "headingOverflow": false,
+      "title": "Encomendas",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=preorders",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 330,
+      "headingOverflow": false,
+      "title": "Caixa",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=cash",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 200,
+      "headingOverflow": false,
+      "title": "Fim do dia",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=closing",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 238,
+      "headingOverflow": false,
+      "title": "Salão e mesas",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=seating",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 449,
+      "headingOverflow": false,
+      "title": "Terminal",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=terminal",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 199,
+      "headingOverflow": false,
+      "title": "Cafés",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=cafes",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 121,
+      "headingOverflow": false,
+      "title": "Lanches",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=lanches",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 131,
+      "headingOverflow": false,
+      "title": "Encomendas",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=encomendas",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 156,
+      "headingOverflow": false,
+      "title": "Saída no Gestor",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=exit",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 122,
+      "headingOverflow": false,
+      "title": "Painel de retirada",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=pickup",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 215,
+      "headingOverflow": false,
+      "title": "Ajustes da estação",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=station-settings",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 149,
+      "headingOverflow": false,
+      "title": "Planejamento",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=plan",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 129,
+      "headingOverflow": false,
+      "title": "Preparação",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=mise-en-place",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 131,
+      "headingOverflow": false,
+      "title": "Produção",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=open",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 149,
+      "headingOverflow": false,
+      "title": "Finalização",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=close",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 141,
+      "headingOverflow": false,
+      "title": "Qualidade",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=quality",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 146,
+      "headingOverflow": false,
+      "title": "Timers",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=timers",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 286,
+      "headingOverflow": false,
+      "title": "Receitas",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=recipes",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 187,
+      "headingOverflow": false,
+      "title": "Relatórios",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=reports",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 209,
+      "headingOverflow": false,
+      "title": "Letreiro",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=board",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 132,
+      "headingOverflow": false,
+      "title": "Decisões",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=decisions",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 103,
+      "headingOverflow": false,
+      "title": "Agendados",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=scheduled",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 103,
+      "headingOverflow": false,
+      "title": "Enviados",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=sent",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 155,
+      "headingOverflow": false,
+      "title": "Campanhas",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=campaigns",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 173,
+      "headingOverflow": false,
+      "title": "Modelos",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=templates",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 157,
+      "headingOverflow": false,
+      "title": "Ofertas e cupons",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=offers",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 210,
+      "headingOverflow": false,
+      "title": "Plataformas",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=platforms",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 385,
+      "headingOverflow": false,
+      "title": "Produção",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=production",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 438,
+      "headingOverflow": false,
+      "title": "Vendas",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=sales",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 285,
+      "headingOverflow": false,
+      "title": "Caixa",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=cash",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 259,
+      "headingOverflow": false,
+      "title": "Clientes",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=customers",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 263,
+      "headingOverflow": false,
+      "title": "Entregas",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=delivery",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 275,
+      "headingOverflow": false,
+      "title": "Perfis",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=profiles",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 385,
+      "headingOverflow": false,
+      "title": "Explorar",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=explore",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 199,
+      "headingOverflow": false,
+      "title": "Projeção",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=forecast",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 166,
+      "headingOverflow": false,
+      "title": "Cenários",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=scenarios",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "content": 291,
+      "headingOverflow": false,
+      "title": "Central de apps",
+      "toolbarOverflow": false,
+      "url": "?app=hub&view=home",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 471,
+      "headingOverflow": false,
+      "title": "Comandas",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=board",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 60,
+      "headingOverflow": false,
+      "title": "Encomendas",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=preorders",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 330,
+      "headingOverflow": false,
+      "title": "Caixa",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=cash",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 200,
+      "headingOverflow": false,
+      "title": "Fim do dia",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=closing",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 238,
+      "headingOverflow": false,
+      "title": "Salão e mesas",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=seating",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 449,
+      "headingOverflow": false,
+      "title": "Terminal",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=terminal",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 199,
+      "headingOverflow": false,
+      "title": "Cafés",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=cafes",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 121,
+      "headingOverflow": false,
+      "title": "Lanches",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=lanches",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 131,
+      "headingOverflow": false,
+      "title": "Encomendas",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=encomendas",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 156,
+      "headingOverflow": false,
+      "title": "Saída no Gestor",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=exit",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 122,
+      "headingOverflow": false,
+      "title": "Painel de retirada",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=pickup",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 215,
+      "headingOverflow": false,
+      "title": "Ajustes da estação",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=station-settings",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 149,
+      "headingOverflow": false,
+      "title": "Planejamento",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=plan",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 129,
+      "headingOverflow": false,
+      "title": "Preparação",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=mise-en-place",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 131,
+      "headingOverflow": false,
+      "title": "Produção",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=open",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 149,
+      "headingOverflow": false,
+      "title": "Finalização",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=close",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 141,
+      "headingOverflow": false,
+      "title": "Qualidade",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=quality",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 146,
+      "headingOverflow": false,
+      "title": "Timers",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=timers",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 286,
+      "headingOverflow": false,
+      "title": "Receitas",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=recipes",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 187,
+      "headingOverflow": false,
+      "title": "Relatórios",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=reports",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 209,
+      "headingOverflow": false,
+      "title": "Letreiro",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=board",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 132,
+      "headingOverflow": false,
+      "title": "Decisões",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=decisions",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 103,
+      "headingOverflow": false,
+      "title": "Agendados",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=scheduled",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 103,
+      "headingOverflow": false,
+      "title": "Enviados",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=sent",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 155,
+      "headingOverflow": false,
+      "title": "Campanhas",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=campaigns",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 173,
+      "headingOverflow": false,
+      "title": "Modelos",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=templates",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 157,
+      "headingOverflow": false,
+      "title": "Ofertas e cupons",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=offers",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 210,
+      "headingOverflow": false,
+      "title": "Plataformas",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=platforms",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 385,
+      "headingOverflow": false,
+      "title": "Produção",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=production",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 438,
+      "headingOverflow": false,
+      "title": "Vendas",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=sales",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 285,
+      "headingOverflow": false,
+      "title": "Caixa",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=cash",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 259,
+      "headingOverflow": false,
+      "title": "Clientes",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=customers",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 263,
+      "headingOverflow": false,
+      "title": "Entregas",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=delivery",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 275,
+      "headingOverflow": false,
+      "title": "Perfis",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=profiles",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 385,
+      "headingOverflow": false,
+      "title": "Explorar",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=explore",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 199,
+      "headingOverflow": false,
+      "title": "Projeção",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=forecast",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 166,
+      "headingOverflow": false,
+      "title": "Cenários",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=scenarios",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "content": 291,
+      "headingOverflow": false,
+      "title": "Central de apps",
+      "toolbarOverflow": false,
+      "url": "?app=hub&view=home",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 471,
+      "headingOverflow": false,
+      "title": "Comandas",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=board",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 60,
+      "headingOverflow": false,
+      "title": "Encomendas",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=preorders",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 330,
+      "headingOverflow": false,
+      "title": "Caixa",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=cash",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 200,
+      "headingOverflow": false,
+      "title": "Fim do dia",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=closing",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 238,
+      "headingOverflow": false,
+      "title": "Salão e mesas",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=seating",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 449,
+      "headingOverflow": false,
+      "title": "Terminal",
+      "toolbarOverflow": false,
+      "url": "?app=pos&view=terminal",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 199,
+      "headingOverflow": false,
+      "title": "Cafés",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=cafes",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 121,
+      "headingOverflow": false,
+      "title": "Lanches",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=lanches",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 131,
+      "headingOverflow": false,
+      "title": "Encomendas",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=encomendas",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 156,
+      "headingOverflow": false,
+      "title": "Saída no Gestor",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=exit",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 122,
+      "headingOverflow": false,
+      "title": "Painel de retirada",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=pickup",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 215,
+      "headingOverflow": false,
+      "title": "Ajustes da estação",
+      "toolbarOverflow": false,
+      "url": "?app=kds&view=station-settings",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 149,
+      "headingOverflow": false,
+      "title": "Planejamento",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=plan",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 129,
+      "headingOverflow": false,
+      "title": "Preparação",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=mise-en-place",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 131,
+      "headingOverflow": false,
+      "title": "Produção",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=open",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 149,
+      "headingOverflow": false,
+      "title": "Finalização",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=close",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 141,
+      "headingOverflow": false,
+      "title": "Qualidade",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=quality",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 146,
+      "headingOverflow": false,
+      "title": "Timers",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=timers",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 286,
+      "headingOverflow": false,
+      "title": "Receitas",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=recipes",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 187,
+      "headingOverflow": false,
+      "title": "Relatórios",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=reports",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 209,
+      "headingOverflow": false,
+      "title": "Letreiro",
+      "toolbarOverflow": false,
+      "url": "?app=production&view=board",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 132,
+      "headingOverflow": false,
+      "title": "Decisões",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=decisions",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 103,
+      "headingOverflow": false,
+      "title": "Agendados",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=scheduled",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 103,
+      "headingOverflow": false,
+      "title": "Enviados",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=sent",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 155,
+      "headingOverflow": false,
+      "title": "Campanhas",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=campaigns",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 173,
+      "headingOverflow": false,
+      "title": "Modelos",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=templates",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 157,
+      "headingOverflow": false,
+      "title": "Ofertas e cupons",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=offers",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 210,
+      "headingOverflow": false,
+      "title": "Plataformas",
+      "toolbarOverflow": false,
+      "url": "?app=marketing&view=platforms",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 385,
+      "headingOverflow": false,
+      "title": "Produção",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=production",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 438,
+      "headingOverflow": false,
+      "title": "Vendas",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=sales",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 285,
+      "headingOverflow": false,
+      "title": "Caixa",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=cash",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 259,
+      "headingOverflow": false,
+      "title": "Clientes",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=customers",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 263,
+      "headingOverflow": false,
+      "title": "Entregas",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=delivery",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 275,
+      "headingOverflow": false,
+      "title": "Perfis",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=profiles",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 385,
+      "headingOverflow": false,
+      "title": "Explorar",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=explore",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 199,
+      "headingOverflow": false,
+      "title": "Projeção",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=forecast",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "content": 166,
+      "headingOverflow": false,
+      "title": "Cenários",
+      "toolbarOverflow": false,
+      "url": "?app=bi&view=scenarios",
+      "width": 1024
+    }
+  ],
+  "flows": [
+    "PDV: incluir item, ajustar quantidade, revisar forma e simular pagamento",
+    "Cozinha: pronto e desfazer N104",
+    "Produção: avançar WO-042 e encontrar na Preparação",
+    "Produção: rendimento 37 preservado ao voltar da confirmação; descarte protegido",
+    "Marketing: conteúdo e destino antes da autorização; resultado local sinalizado",
+    "B.I.: período Últimos 7 dias mantido no detalhe de Vendas"
+  ],
+  "limitations": [
+    "Sem teclado virtual real, autenticação, periféricos, cobrança, estoque ou envio",
+    "B.I. com série estática ilustrativa; timers sem contagem real",
+    "Configurações e receitas com composição parcial e limites visíveis"
+  ]
+}

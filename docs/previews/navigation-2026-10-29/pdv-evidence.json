@@ -1,0 +1,476 @@
+{
+  "scope": "Prévia estática de composição do núcleo operacional, não equivalência funcional completa",
+  "sourceBaseline": "Anatomias existentes do PDV, deltas de origin/main e0c22ba1f conferidos",
+  "geometry": [
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=board&tab=12",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 677,
+        "height": 161,
+        "left": 0,
+        "right": 320,
+        "top": 516,
+        "width": 320,
+        "x": 0,
+        "y": 516
+      },
+      "url": "?scene=sale&tab=12",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=payment&tab=12",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=cash&tab=12",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=closing&tab=12",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=board&tab=12",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 781,
+        "height": 143,
+        "left": 0,
+        "right": 390,
+        "top": 638,
+        "width": 390,
+        "x": 0,
+        "y": 638
+      },
+      "url": "?scene=sale&tab=12",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=payment&tab=12",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=cash&tab=12",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=closing&tab=12",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=board&tab=12",
+      "width": 768
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 961,
+        "height": 143,
+        "left": 0,
+        "right": 768,
+        "top": 818,
+        "width": 768,
+        "x": 0,
+        "y": 818
+      },
+      "url": "?scene=sale&tab=12",
+      "width": 768
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=payment&tab=12",
+      "width": 768
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=cash&tab=12",
+      "width": 768
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=closing&tab=12",
+      "width": 768
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=board&tab=12",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 768,
+        "height": 768,
+        "left": 684,
+        "right": 1024,
+        "top": 0,
+        "width": 340,
+        "x": 684,
+        "y": 0
+      },
+      "url": "?scene=sale&tab=12",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=payment&tab=12",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=cash&tab=12",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=closing&tab=12",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=board&tab=12",
+      "width": 1440
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 900,
+        "height": 900,
+        "left": 1100,
+        "right": 1440,
+        "top": 0,
+        "width": 340,
+        "x": 1100,
+        "y": 0
+      },
+      "url": "?scene=sale&tab=12",
+      "width": 1440
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=payment&tab=12",
+      "width": 1440
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=cash&tab=12",
+      "width": 1440
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "ticket": {
+        "bottom": 0,
+        "height": 0,
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "url": "?scene=closing&tab=12",
+      "width": 1440
+    }
+  ],
+  "flows": [
+    {
+      "case": "Dinheiro",
+      "totalQ": 2700,
+      "receivedQ": 5000,
+      "changeQ": 2300
+    },
+    {
+      "case": "Misto",
+      "cashAmountQ": 1300,
+      "cashReceivedQ": 2000,
+      "cardAmountQ": 1400,
+      "totalQ": 2700,
+      "changeQ": 700
+    },
+    {
+      "case": "Pix",
+      "observed": "Aguardando após Validar; Nova venda mesmo assim preserva selo Pix 1"
+    },
+    {
+      "case": "Linha",
+      "observed": "Observação aplicada apenas ao croissant selecionado"
+    },
+    {
+      "case": "Seleção",
+      "observed": "2 linhas marcadas, pagamento da comanda inteira R$ 27,00; revisão Comanda 12 → Mesa 5 e origem vazia após confirmar"
+    },
+    {
+      "case": "Numérico",
+      "observed": "Dígito 3 atualiza croissant a 3 unidades, soma R$ 53,00 com cappuccino"
+    },
+    {
+      "case": "Peso",
+      "observed": "0,25 kg a R$ 96/kg = R$ 24; cabeçalho mantém 2 itens + 0,25 kg em 3 linhas, sem somar grandezas"
+    },
+    {
+      "case": "Desktop",
+      "observed": "Comanda de 900px de altura a 1440×900; largura 340→360 por teclado na divisória; menu expandido 170px não muda largura da comanda"
+    }
+  ],
+  "limits": [
+    "Sem APIs, permissões reais, cobrança, estoque, periféricos ou modelo fiscal",
+    "Cliente, endereço, agenda, encomendas, fechamento detalhado e journal offline não reproduzidos integralmente",
+    "Teclado virtual e dispositivos físicos ainda não validados"
+  ]
+}
