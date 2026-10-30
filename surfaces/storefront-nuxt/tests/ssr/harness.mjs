@@ -42,7 +42,15 @@ export async function startBackend ({ liveSnapshots = false } = {}) {
         if (liveSnapshots) {
           // Somente GET anônimo de URLs fixas do catálogo. Nenhum cookie ou
           // credencial sai do harness; o corpo fica apenas nesta memória.
-          const response = await fetch('https://api.boulangerie.com.br' + path, { headers: { accept: 'application/json' } })
+          let snapshotUrl
+          switch (path) {
+            case '/api/v1/storefront/site/': snapshotUrl = 'https://api.boulangerie.com.br/api/v1/storefront/site/'; break
+            case '/api/v1/storefront/public/shell/': snapshotUrl = 'https://api.boulangerie.com.br/api/v1/storefront/public/shell/'; break
+            case '/api/v1/storefront/public/catalog/': snapshotUrl = 'https://api.boulangerie.com.br/api/v1/storefront/public/catalog/'; break
+            case '/api/v1/storefront/public/products/FENDU/': snapshotUrl = 'https://api.boulangerie.com.br/api/v1/storefront/public/products/FENDU/'; break
+            default: throw new Error('Snapshot path not admitted')
+          }
+          const response = await fetch(snapshotUrl, { headers: { accept: 'application/json' } })
           if (response.status !== 200) throw new Error(`Snapshot unavailable: ${response.status}`)
           return Buffer.from(await response.arrayBuffer())
         }

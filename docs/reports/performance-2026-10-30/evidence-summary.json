@@ -3,17 +3,17 @@
   "paired_latency": {
     "/menu": {
       "median_ms": {
-        "before": 3128.083375,
-        "after": 2085.959541
+        "before": 3197.6448330000003,
+        "after": 2115.8696249999994
       },
-      "reduction_percent": 33.32
+      "reduction_percent": 33.83
     },
     "/produto/FENDU": {
       "median_ms": {
-        "before": 3077.6190829999978,
-        "after": 2046.8510000000024
+        "before": 3104.8862910000025,
+        "after": 2059.515124999998
       },
-      "reduction_percent": 33.49
+      "reduction_percent": 33.67
     }
   },
   "same_visible_text_and_json_ld": true,

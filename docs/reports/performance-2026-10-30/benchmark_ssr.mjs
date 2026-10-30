@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
+import { htmlSemantics } from '../../../surfaces/storefront-nuxt/tests/ssr/semantics.mjs'
 import { startBackend, startNuxt } from '../../../surfaces/storefront-nuxt/tests/ssr/harness.mjs'
 
 const [before, after, output] = process.argv.slice(2)
@@ -13,9 +14,7 @@ const rows = []
 const hash = value => createHash('sha256').update(value).digest('hex')
 const normalize = value => value.replace(/http:\/\/127\.0\.0\.1:\d+/g, 'http://local.test')
 function semantics (body) {
-  const text = body.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-  const schemas = [...body.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]
-    .filter(match => match[1].includes('application/ld+json')).map(match => JSON.parse(match[2]))
+  const { text, schemas } = htmlSemantics(body)
   return { visible_text_sha256: hash(normalize(text)), json_ld_sha256: hash(normalize(JSON.stringify(schemas))) }
 }
 try {
