@@ -118,13 +118,38 @@ Evidência no navegador, com aviso inicial reconhecido nos dois lados:
 
 Capturas: `queue-before-320.png` e `queue-after-320.png`.
 
-### Navegação e cabeçalho: revisão ainda pendente
+### Navegação e cabeçalho: proposta isolada
 
-Escopo incluído na revisão do KDS, além dos ajustes pontuais já demonstrados:
-identidade clara da estação aberta, estabilidade e alcance da troca de estação,
-Central/troca de apps, fronteira com a Saída no Gestor e acesso aos controles
-operacionais de som/densidade. A fonte atual (`useKdsShell.ts`) dá prioridade à
-estação deste dispositivo na barra inferior, tem estações no menu e remete a
-Saída ao Gestor. Essas decisões precisam ser avaliadas como navegação de posto de
-trabalho, sem impor ao KDS a organização de um app de gestão. O painel público
-para TV é uma superfície distinta. Não foi proposta nova navegação nesta alteração.
+`apply-navigation.mjs` altera apenas a cópia temporária. Acrescenta slots opcionais
+no título do PageHeader e na identidade do SuiteShell, sem mudar os respectivos
+conteúdos padrão. Não altera o kit da worktree de produto.
+
+- Ícone da Cozinha no canto abre a Central simulada. No desktop aparece uma vez:
+  na lateral visível, ou no cabeçalho quando a lateral está oculta.
+- Nome da estação abre seletor com nomes e contagens do índice atual. Histórico,
+  atualização e som/tamanho continuam usando os callbacks e diálogos existentes.
+- Menu completo continua sendo a gaveta nativa. Atalhos inferiores mantêm posição
+  entre estações; Mais indica quando a estação atual está fora dos atalhos.
+- Controle da lateral no desktop oferece Expandida, Compacta e Oculta explicitamente,
+  usando a máquina de estados existente.
+- Central e destinos de apps são simulações de navegação, sem reconstruir operação
+  de outros apps. Saída continua sendo fronteira com o Gestor. Voltar restaura a
+  estação e o foco selecionado quando o ticket ainda existir.
+- A finalização pendente ao sair segue o comportamento nativo de desmontagem do
+  quadro. Não se promete manter a janela de Desfazer entre aplicativos.
+
+O card em foco recebe contorno claro com a mesma espessura do estado de urgência.
+Vermelho prevalece em atraso, mudança e cancelamento. Finalização mantém seu estado
+tracejado. Os componentes originais continuam intactos; o marcador de Agora no
+layout desktop é passado pelo template da página da cópia.
+
+A simulação no mesmo domínio não comprova instalação PWA, abertura entre origens,
+login real, push, SSE ou som em segundo plano. Esses ensaios seguem pendentes.
+
+Verificação desta rodada pelo túnel: 320×740 sem overflow (scrollWidth 320),
+contorno claro rgb(240,230,210) de 2px no card em foco. Toque na fila mudou
+o foco para 4821. Seletor abriu as quatro estações e ações atuais; Encomendas
+não reordenou os atalhos. Central → PDV simulado → retorno trouxe Encomendas.
+Desktop 1440×900 sem overflow, Agora atrasado com 2px rgb(233,120,108).
+Oculta removeu a lateral e deixou um único ícone do app no cabeçalho; Compacta
+restaurou a lateral só com ícones. Build Nuxt concluído. Capturas navigation-*.png.

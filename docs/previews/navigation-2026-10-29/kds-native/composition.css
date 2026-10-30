@@ -32,3 +32,25 @@
     grid-column:3; grid-row:1; white-space:nowrap;
   }
 }
+
+/* Navegação da prévia: ícone global no canto, posto no título, menu à direita. */
+[data-kds-app] [data-operator-page-header] [data-rail-cycle] { display:none; }
+[data-kds-app] [data-operator-page-header] [data-slot="title"] { min-width:0; }
+[data-kds-app] [data-preview-station-menu] { padding-inline:6px; }
+@media(max-width:639px) {
+  [data-kds-app] [data-operator-page-header] { padding-inline:8px; gap:4px; }
+  [data-kds-app] [data-operator-page-header] > [data-slot="left"],
+  [data-kds-app] [data-operator-page-header] > [data-slot="right"] { gap:2px; min-width:0; }
+  [data-kds-app] [data-operator-page-header] [data-preview-app-link],
+  [data-kds-app] [data-operator-page-header] [data-slot="toggle"],
+  [data-kds-app] [data-operator-page-header] [data-page-header-search-toggle] { width:40px; height:44px; min-width:40px; }
+}
+/* Foco claro na mesma espessura do alarme. Vermelho mantém prioridade. */
+[data-kds-app] :is([data-kds-phone-queue] > article, article[data-preview-kds-current]):not(.border-destructive):not(.border-dashed):not(:has(.bg-destructive)) {
+  border-width:2px; border-color:var(--foreground);
+  box-shadow:0 0 0 4px color-mix(in oklab,var(--foreground) 12%,transparent);
+}
+[data-kds-app] :is([data-kds-phone-queue] > article, article[data-preview-kds-current]):has(.bg-destructive):not(.border-dashed) {
+  border-width:2px; border-color:var(--destructive);
+  box-shadow:0 0 0 4px color-mix(in oklab,var(--destructive) 15%,transparent);
+}
