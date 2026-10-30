@@ -536,3 +536,12 @@ Foram consultadas as seções e os shells atuais dos apps, os componentes de Pro
 **Limites:** rodada de validação transversal de navegação e anatomias representativas. Páginas auxiliares reservam composição e localização, com limitações na própria tela. Não substitui inventário exaustivo de cada funcionalidade ou seus componentes maduros. Sem API, dados reais, permissões, impressoras, câmera, pagamentos, envio de anúncios ou estoque. Período do B.I. demonstra contexto com valores estáticos; timers não correm. Receitas/configurações não foram reimplementadas nem consideradas aprovadas por esses exemplos parciais.
 
 Evidência: `transverse-evidence.json`, capturas `transverse-<app>-mobile.jpg` e `transverse-<app>-desktop.jpg`. Geometria de 38 destinos em 320/390/1024 px; fluxos principais testados pelo navegador. Somente dados em memória.
+
+## Conciliação reversa do PDV, 30/10
+
+Entrada atual: `pdv-native.html`. Esta rodada usa o **app Nuxt real**, extraído de
+`origin/main` e executado em runtime temporário com o simulador visual existente.
+Substitui as réplicas estáticas como base de comparação do PDV. A primeira alteração
+é somente a moldura de Encomendas; Comandas, Venda, Checkout e as outras páginas
+continuam sendo os componentes atuais. Detalhes, limites e reprodução em
+`native/README.md`. Sem implementação em `surfaces/`, Core, backend ou deploy.
