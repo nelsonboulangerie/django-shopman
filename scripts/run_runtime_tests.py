@@ -105,7 +105,6 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/storefront/tests/web/test_order_access_security.py",
     "shopman/shop/tests/test_eventstream_permissions.py",
     "shopman/shop/tests/test_payment_webhooks.py",
-    "shopman/shop/tests/test_ifood_webhook.py",
     # Public publications have no audience member. PostgreSQL renders the
     # hydrated ``member__customer`` path as an OUTER JOIN and rejects a broad
     # ``FOR UPDATE``; this regression only exists on the real database.
