@@ -42,7 +42,11 @@ export async function useContinuousProjection<TState> (
         },
         ignoreResponseError: true
       })
-      const validatedAtMs = Date.now()
+      const observedAtMs = Date.now()
+      // O tempo aguardando o shell não renova a validade do snapshot já recebido.
+      const validatedAtMs = response === state?.primaryRawResponse
+        ? state.primaryRawReceivedAtMs ?? observedAtMs
+        : observedAtMs
       const ageMs = Number(response.headers.get('continuum-age-ms') || 0)
       if (response.status === 304 && cache.value) {
         cache.value = {
@@ -50,7 +54,7 @@ export async function useContinuousProjection<TState> (
           validated_at_ms: validatedAtMs,
           age_ms: Math.max(0, ageMs)
         }
-        clock.value = validatedAtMs
+        clock.value = observedAtMs
         return cache.value
       }
       if (response.status !== 200 || !options.accepts(response._data)) {
@@ -66,7 +70,7 @@ export async function useContinuousProjection<TState> (
           ageMs
         }
       )
-      clock.value = validatedAtMs
+      clock.value = observedAtMs
       return cache.value
     },
     {

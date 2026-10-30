@@ -14,6 +14,8 @@ export interface StorefrontSsrRead {
   primaryPath: string
   primary?: Promise<unknown>
   primaryRaw?: Promise<unknown>
+  primaryRawResponse?: unknown
+  primaryRawReceivedAtMs?: number
   fallbackPath?: string
   ownerRequest?: object
   reads: SsrReadTiming[]

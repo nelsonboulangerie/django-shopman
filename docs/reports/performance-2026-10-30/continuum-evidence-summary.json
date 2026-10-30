@@ -6,10 +6,10 @@
   },
   "baseline_git_sha": "e0c22ba1ffe28e20c5c453db09160e941dfae8c6",
   "paired_median_ms": {
-    "before": 3191.8224999999998,
-    "after": 2145.8330830000004
+    "before": 3154.519209,
+    "after": 2096.0519999999997
   },
-  "reduction_percent": 32.77,
+  "reduction_percent": 33.55,
   "same_visible_text_and_json_ld": true,
   "preserved": [
     "ETag and 304 conditional response",
@@ -17,7 +17,8 @@
     "canonical fallback on snapshot failure",
     "persistent failure remains HTTP 503",
     "Cookie/Authorization not passed to snapshot backend",
-    "client polling and runtime flag unchanged"
+    "client polling and runtime flag unchanged",
+    "Snapshot freshness starts at receipt; waiting for the shell does not renew the data validity window."
   ],
   "new_http_tests": {
     "passed": 14,

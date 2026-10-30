@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { startBackend, startNuxt } from './harness.mjs'
+import { continuumSsrValidatedAtMs } from './semantics.mjs'
 
 test('SSR real com Continuum habilitado', async (t) => {
   const backend = await startBackend()
@@ -10,7 +11,7 @@ test('SSR real com Continuum habilitado', async (t) => {
   await (await fetch(nuxt.url + '/menu')).text()
 
   await t.test('antecipa somente o snapshot público, com ETag, sem ler preços no SSR', async () => {
-    backend.control({ delays: { site: 200, shell: 200, primary: 100 } })
+    backend.control({ delays: { site: 300, shell: 300, primary: 30 } })
     const response = await fetch(nuxt.url + '/menu'); const body = await response.text()
     assert.equal(response.status, 200)
     assert.ok(body.includes('Produto teste SSR'), 'O quadro estrutural perdeu o produto')
@@ -22,6 +23,10 @@ test('SSR real com Continuum habilitado', async (t) => {
     assert.ok(primary[0].startedAt < reads.find(r => r.kind === 'shell').finishedAt)
     assert.equal(primary[0].cookiePresent, false)
     assert.ok(!reads.some(r => r.path.endsWith('/catalog/')))
+    const validatedAt = continuumSsrValidatedAtMs(body)
+    assert.ok(Number.isFinite(validatedAt), 'O snapshot perdeu a âncora de validade')
+    assert.ok(validatedAt < reads.find(r => r.kind === 'shell').finishedWallMs - 40,
+      'Consumir o snapshot depois do shell não pode renovar sua validade')
   })
 
   await t.test('não encaminha a sessão ao snapshot e conserva a sacola privada', async () => {

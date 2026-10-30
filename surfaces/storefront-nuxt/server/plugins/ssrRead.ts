@@ -58,6 +58,10 @@ export default defineNitroPlugin((nitro) => {
       state.primaryRaw = observed.raw(projection.path, {
         ...publicSsrReadOptions(), credentials: 'omit', ignoreResponseError: true,
         headers: { accept: 'application/cloudevents+json; continuum=0.2; schema=1' }
+      }).then((response) => {
+        state.primaryRawResponse = response
+        state.primaryRawReceivedAtMs = Date.now()
+        return response
       })
       void state.primaryRaw.catch(() => undefined) // silêncio-deliberado: página e trace conservam a rejeição original
     } else if (publicTwinPath('GET', canonicalPath, getRequestHeader(event, 'cookie'), false)

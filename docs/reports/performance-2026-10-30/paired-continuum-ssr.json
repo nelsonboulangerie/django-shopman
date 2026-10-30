@@ -6,7 +6,7 @@
       "variant": "before",
       "round": 0,
       "route": "/menu",
-      "duration_ms": 3191.8224999999998,
+      "duration_ms": 3155.34775,
       "status": 200,
       "visible_text_sha256": "39aa2eaaeb55e37f6d0cbc9ce146c687d03dfc73b0eb34c3da840c93675fe507",
       "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
@@ -15,24 +15,24 @@
         {
           "kind": "site",
           "path": "/api/v1/storefront/site/",
-          "start_ms": 295.1902500000001,
-          "finish_ms": 1295.867875,
+          "start_ms": 260.5759170000001,
+          "finish_ms": 1263.040042,
           "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
           "status": 200
         },
         {
           "kind": "shell",
           "path": "/api/v1/storefront/public/shell/",
-          "start_ms": 295.36791700000003,
-          "finish_ms": 1198.870625,
+          "start_ms": 260.7552920000003,
+          "finish_ms": 1163.5224590000003,
           "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
           "status": 200
         },
         {
           "kind": "primary",
           "path": "/api/v1/storefront/continuum/v0.2/catalog-structure/",
-          "start_ms": 1336.506292,
-          "finish_ms": 3140.233708,
+          "start_ms": 1293.0662920000004,
+          "finish_ms": 3095.750709,
           "body_sha256": "f9422b4bcb53ebbbfc4753b4f76a7362ec998bddae308c413ff81351d0424e50",
           "status": 200
         }
@@ -42,33 +42,33 @@
       "variant": "after",
       "round": 0,
       "route": "/menu",
-      "duration_ms": 2137.6258749999997,
+      "duration_ms": 2147.1971250000006,
       "status": 200,
       "visible_text_sha256": "39aa2eaaeb55e37f6d0cbc9ce146c687d03dfc73b0eb34c3da840c93675fe507",
       "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
-      "server_timing": "ssr;dur=2134.37, ssr_site;dur=1014.11, ssr_shell;dur=922.69, ssr_primary;dur=2090.35",
+      "server_timing": "ssr;dur=2139.12, ssr_site;dur=1012.13, ssr_shell;dur=926.47, ssr_primary;dur=2093.46",
       "reads": [
         {
           "kind": "primary",
           "path": "/api/v1/storefront/continuum/v0.2/catalog-structure/",
-          "start_ms": 284.8112080000001,
-          "finish_ms": 2087.0522499999997,
+          "start_ms": 256.35683300000073,
+          "finish_ms": 2081.621792000001,
           "body_sha256": "f9422b4bcb53ebbbfc4753b4f76a7362ec998bddae308c413ff81351d0424e50",
           "status": 200
         },
         {
           "kind": "site",
           "path": "/api/v1/storefront/site/",
-          "start_ms": 284.9035409999997,
-          "finish_ms": 1285.3255,
+          "start_ms": 256.4677500000007,
+          "finish_ms": 1258.8875420000004,
           "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
           "status": 200
         },
         {
           "kind": "shell",
           "path": "/api/v1/storefront/public/shell/",
-          "start_ms": 285.13683299999957,
-          "finish_ms": 1186.5408749999997,
+          "start_ms": 256.67304200000035,
+          "finish_ms": 1160.067833,
           "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
           "status": 200
         }
@@ -78,33 +78,33 @@
       "variant": "after",
       "round": 1,
       "route": "/menu",
-      "duration_ms": 2145.8330830000004,
+      "duration_ms": 2058.6793750000015,
       "status": 200,
       "visible_text_sha256": "39aa2eaaeb55e37f6d0cbc9ce146c687d03dfc73b0eb34c3da840c93675fe507",
       "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
-      "server_timing": "ssr;dur=2141.51, ssr_site;dur=1013.04, ssr_shell;dur=922.80, ssr_primary;dur=2099.15",
+      "server_timing": "ssr;dur=2054.52, ssr_site;dur=1010.58, ssr_shell;dur=929.49, ssr_primary;dur=2012.16",
       "reads": [
         {
           "kind": "primary",
           "path": "/api/v1/storefront/continuum/v0.2/catalog-structure/",
-          "start_ms": 288.08108300000004,
-          "finish_ms": 2090.353,
+          "start_ms": 205.2790840000016,
+          "finish_ms": 2007.9350000000013,
           "body_sha256": "f9422b4bcb53ebbbfc4753b4f76a7362ec998bddae308c413ff81351d0424e50",
           "status": 200
         },
         {
           "kind": "site",
           "path": "/api/v1/storefront/site/",
-          "start_ms": 288.1693329999998,
-          "finish_ms": 1289.3811670000005,
+          "start_ms": 205.34262500000114,
+          "finish_ms": 1207.5962920000002,
           "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
           "status": 200
         },
         {
           "kind": "shell",
           "path": "/api/v1/storefront/public/shell/",
-          "start_ms": 288.1984999999995,
-          "finish_ms": 1190.6342080000004,
+          "start_ms": 205.36766700000044,
+          "finish_ms": 1110.832875,
           "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
           "status": 200
         }
@@ -114,7 +114,7 @@
       "variant": "before",
       "round": 1,
       "route": "/menu",
-      "duration_ms": 3271.015042000001,
+      "duration_ms": 3154.519209,
       "status": 200,
       "visible_text_sha256": "39aa2eaaeb55e37f6d0cbc9ce146c687d03dfc73b0eb34c3da840c93675fe507",
       "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
@@ -123,24 +123,24 @@
         {
           "kind": "site",
           "path": "/api/v1/storefront/site/",
-          "start_ms": 374.6067920000005,
-          "finish_ms": 1376.5107499999995,
+          "start_ms": 255.36349999999948,
+          "finish_ms": 1258.8270420000008,
           "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
           "status": 200
         },
         {
           "kind": "shell",
           "path": "/api/v1/storefront/public/shell/",
-          "start_ms": 374.75933299999997,
-          "finish_ms": 1276.8329580000009,
+          "start_ms": 255.5529170000009,
+          "finish_ms": 1157.6988340000007,
           "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
           "status": 200
         },
         {
           "kind": "primary",
           "path": "/api/v1/storefront/continuum/v0.2/catalog-structure/",
-          "start_ms": 1416.363542000001,
-          "finish_ms": 3218.5632499999992,
+          "start_ms": 1305.9921250000007,
+          "finish_ms": 3111.3949169999996,
           "body_sha256": "f9422b4bcb53ebbbfc4753b4f76a7362ec998bddae308c413ff81351d0424e50",
           "status": 200
         }
@@ -150,7 +150,7 @@
       "variant": "before",
       "round": 2,
       "route": "/menu",
-      "duration_ms": 3181.915334000001,
+      "duration_ms": 3110.4613329999975,
       "status": 200,
       "visible_text_sha256": "39aa2eaaeb55e37f6d0cbc9ce146c687d03dfc73b0eb34c3da840c93675fe507",
       "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
@@ -159,24 +159,24 @@
         {
           "kind": "site",
           "path": "/api/v1/storefront/site/",
-          "start_ms": 271.1497500000005,
-          "finish_ms": 1271.6342919999988,
+          "start_ms": 218.40004099999896,
+          "finish_ms": 1220.6691659999997,
           "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
           "status": 200
         },
         {
           "kind": "shell",
           "path": "/api/v1/storefront/public/shell/",
-          "start_ms": 271.35091699999975,
-          "finish_ms": 1173.5996670000004,
+          "start_ms": 218.49349999999868,
+          "finish_ms": 1120.0001659999998,
           "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
           "status": 200
         },
         {
           "kind": "primary",
           "path": "/api/v1/storefront/continuum/v0.2/catalog-structure/",
-          "start_ms": 1310.4672919999994,
-          "finish_ms": 3112.642499999998,
+          "start_ms": 1252.9545409999992,
+          "finish_ms": 3055.7432499999977,
           "body_sha256": "f9422b4bcb53ebbbfc4753b4f76a7362ec998bddae308c413ff81351d0424e50",
           "status": 200
         }
@@ -186,33 +186,33 @@
       "variant": "after",
       "round": 2,
       "route": "/menu",
-      "duration_ms": 2154.0155830000003,
+      "duration_ms": 2096.0519999999997,
       "status": 200,
       "visible_text_sha256": "39aa2eaaeb55e37f6d0cbc9ce146c687d03dfc73b0eb34c3da840c93675fe507",
       "json_ld_sha256": "a0fca4f41ebbcafa3cd398ce3661f8e2a5bc2ba61be59a94c58ce18367c4238f",
-      "server_timing": "ssr;dur=2149.89, ssr_site;dur=1012.55, ssr_shell;dur=923.01, ssr_primary;dur=2106.56",
+      "server_timing": "ssr;dur=2093.04, ssr_site;dur=1013.59, ssr_shell;dur=915.49, ssr_primary;dur=2046.12",
       "reads": [
         {
           "kind": "primary",
           "path": "/api/v1/storefront/continuum/v0.2/catalog-structure/",
-          "start_ms": 303.26658300000054,
-          "finish_ms": 2105.394375,
+          "start_ms": 236.95037500000035,
+          "finish_ms": 2041.1877910000003,
           "body_sha256": "f9422b4bcb53ebbbfc4753b4f76a7362ec998bddae308c413ff81351d0424e50",
           "status": 200
         },
         {
           "kind": "site",
           "path": "/api/v1/storefront/site/",
-          "start_ms": 303.3510419999984,
-          "finish_ms": 1305.0239999999976,
+          "start_ms": 237.08937499999956,
+          "finish_ms": 1240.1140000000014,
           "body_sha256": "f00d2928c27d058af52a576f571159118cfb668ac3eeea53cbb870fa1768c5bb",
           "status": 200
         },
         {
           "kind": "shell",
           "path": "/api/v1/storefront/public/shell/",
-          "start_ms": 303.3758749999979,
-          "finish_ms": 1206.7305419999975,
+          "start_ms": 237.12758300000132,
+          "finish_ms": 1140.515374999999,
           "body_sha256": "6ae4cc9a0deba33cd620befc4e2c243ad015bc4d26c9dcb6dd1ba0a03d33b129",
           "status": 200
         }

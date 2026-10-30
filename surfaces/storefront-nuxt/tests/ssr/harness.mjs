@@ -24,7 +24,7 @@ export async function startBackend ({ liveSnapshots = false } = {}) {
     const kind = path.includes('/products/FENDU/') || (path.endsWith('/catalog/') || path.endsWith('/catalog-structure/')) ? 'primary' : path.endsWith('/shell/') ? 'shell' : 'site'
     const read = { path, kind, startedAt: performance.now(), cookiePresent: !!req.headers.cookie, forwardedIpPresent: !!req.headers['x-forwarded-for'] }
     reads.push(read)
-    res.once('finish', () => { read.finishedAt = performance.now(); read.status = res.statusCode })
+    res.once('finish', () => { read.finishedAt = performance.now(); read.finishedWallMs = Date.now(); read.status = res.statusCode })
     if (config.delays?.[kind]) await sleep(config.delays[kind])
     let failing = false
     if (kind === 'primary' && (!config.faultOnly || path.endsWith('/catalog-structure/')) && config.mode && config.mode !== 'normal') {
