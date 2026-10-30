@@ -567,9 +567,6 @@ envs:
   scope: RUN_TIME
   value: '1'
   type: GENERAL
-- key: IFOOD_WEBHOOK_TOKEN
-  scope: RUN_TIME
-  type: SECRET
 - key: IFOOD_CANCELLATION_CODE
   scope: RUN_TIME
   value: '501'
