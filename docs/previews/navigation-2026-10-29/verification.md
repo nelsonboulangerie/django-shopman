@@ -319,3 +319,11 @@ Nova entrada `suite-review.html`, com roteiro, fontes e limites. Casos de PDV/Co
 Verificações DOM: 38 destinos em 320, 390 e 1024 px, sem transbordamento da página, cabeçalho ou toolbar. Capturas representativas mobile 390 e desktop 1280. Fluxos verificados: duas unidades na comanda = R$ 36,00 e simulação sem cobrança; pronto/desfazer N104; WO-042 avança e aparece na Preparação; rendimento 37 preservado ao retornar da revisão e descarte protegido; confirmação de anúncio mostra Instagram e sinaliza decisão simulada; detalhe de Vendas mantém Últimos 7 dias e usa quantidade/receita. Console sem erros na última inspeção.
 
 Isso não comprova integração, tempo real, periféricos, permissões, teclado virtual ou equivalência funcional completa. A série do gráfico é fixa e declaradamente ilustrativa. Não usar esta rodada para aprovar substituição de formulários de receita ou configurações maduras.
+
+## Revisão corretiva app a app
+
+Inventário de preservação por tarefa, começando pelo PDV e incluindo leitura específica de KDS e Gestor. Conferidos entrypoints, componentes e contratos contra origin/main e0c22ba1f. Deltas observados: botões migrados para Nuxt, redundâncias removidas na edição de encomenda, semáforo compartilhado de tempo/pronto e orientação do alerta de volumes. Nenhum desses refinamentos deve ser revertido pela proposta.
+
+A rodada transversal é explicitamente retirada da recomendação. Exemplo de fechamento com esperado/diferença removido da prévia por contrariar contagem cega. Preservados arquivos históricos e decisões visuais explícitas. A nova página é análise documental por tarefa, não comprovação de equivalência funcional ou screenshot do app atual. Nenhum app local Nuxt respondeu nas portas 3002/3003/3004 durante a inspeção; não foi alegado teste do runtime atual.
+
+Próxima comparação começa no PDV, baseada no quadro de comandas, grade de lançamento, coluna/folha, cozinha e pagamento existentes. Não há novos mocks operacionais apresentados como substitutos neste passo.

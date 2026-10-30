@@ -1,3 +1,9 @@
+## Estado da revisão após retorno do dono
+
+A rodada transversal genérica foi retirada da recomendação de aprovação. Entrada atual: `operator-review.html#pdv`, com análise por tarefa na ordem PDV → KDS → Gestor. `operator-preservation.json` registra o inventário de preservação e os cenários. Essa página é análise de fonte/contratos, não uma nova prévia fiel dos apps ou teste de runtime.
+
+O exemplo de fechamento simplificado foi retirado por violar a contagem cega: não serve para aprovar layout nem regra de caixa. Os demais exemplos transversais mantêm aviso de reavaliação e ficam somente como histórico. As decisões explícitas de navegação/visual de Gestor e Compras continuam registradas, sem representar autorização para substituir seus componentes funcionais.
+
 # Prévias locais do Gestor e Compras
 
 Estado: proposta para avaliação. Nenhuma variante aprovada. Protótipo independente,

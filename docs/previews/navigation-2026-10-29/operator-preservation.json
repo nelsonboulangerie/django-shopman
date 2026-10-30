@@ -1,0 +1,273 @@
+{
+  "baselineRef": "origin/main e0c22ba1f",
+  "scope": "Revisão de fontes e contratos; não é teste do runtime atual",
+  "order": [
+    "pdv",
+    "kds",
+    "gestor"
+  ],
+  "apps": [
+    {
+      "id": "pdv",
+      "name": "PDV",
+      "icon": "pos",
+      "job": "Atender sem interromper o ritmo do balcão ou da mesa.",
+      "diagnosis": "A unidade de trabalho é a comanda, não uma lista de produtos. O operador alterna entre abrir/retomar, lançar, orientar a cozinha, receber e continuar o atendimento.",
+      "rows": [
+        [
+          "Abrir e retomar",
+          "Quadro próprio de comandas, busca por referência/nome, grade/lista, próxima livre e estado semântico. Rascunho sem vínculo pede associação.",
+          "A prévia começou numa venda arbitrária e chamou isso de Comandas.",
+          "Preservar o quadro como entrada. Reduzir controles só depois de medir localizar e abrir uma comanda.",
+          "PosTabBoard.vue"
+        ],
+        [
+          "Lançar rapidamente",
+          "Tile inteiro adiciona. Coleção, favorito, busca por nome/SKU, leitor, indisponibilidade, quantidade no tile e densidade pela largura disponível. Escolhas e peso têm fluxos próprios.",
+          "Cards altos com um botão Adicionar desperdiçaram área e aumentaram o percurso do dedo.",
+          "Manter os tiles e a busca operacional do PDV. Não impor a toolbar genérica de listas; a coleção já é um recorte rápido.",
+          "PosProductGrid.vue; PosProductTile.vue"
+        ],
+        [
+          "Manter contexto da venda",
+          "Cliente, recebimento e quando são fatos do pedido. A barra contextual segue no pagamento, em leitura. Agendamento/endereço podem bloquear a entrada até serem resolvidos.",
+          "A prévia omitiu o contexto e reduziu recebimento a uma escolha de pagamento.",
+          "Preservar a barra da venda. O main já remove título repetido e seletor inoperante na edição de encomenda. Reavaliar distribuição por largura real, sem recolocar essas redundâncias.",
+          "pages/index.vue; PosTabHeader.vue; PosOrderEntry.vue"
+        ],
+        [
+          "Conferir a comanda",
+          "Desktop: coluna direita de altura inteira, ajustável e com limites. Mobile/tablet: folha de baixo com resumo, situação da cozinha e ação contextual.",
+          "A coluna virou um card na área rolável e a folha virou um modal genérico.",
+          "Preservar coluna/folha e sua hierarquia. Não abrir uma segunda lateral por padrão para consumir a largura dos produtos e itens.",
+          "pages/index.vue; PosCartPanel.vue"
+        ],
+        [
+          "Editar linha ou lote",
+          "Quantidade, observação, desconto, remover, enviar e transferir respeitam linha ativa ou seleção. O pagamento continua abrangendo a comanda inteira. Teclado físico e toque têm composições próprias.",
+          "A prévia só demonstrou mais/menos e perdeu escopo, envio e trabalho em lote.",
+          "Preservar o bloco das marcadas e o editor sob demanda. Identificar sempre o alvo; não espalhar a mesma ação em três reticências.",
+          "PosCartPanel.vue"
+        ],
+        [
+          "Trabalhar com a cozinha",
+          "Envio manual/automático conforme contrato, itens enviados/novos, transferência, observação após envio e reenviar têm estados e consequências distintos.",
+          "Enviar para preparo desapareceu do gesto principal.",
+          "Preservar a ação do momento da folha. Mostrar o que ainda não foi enviado; não tratar pronto do KDS e envio do PDV como o mesmo ato.",
+          "PosCartPanel.vue; pages/index.vue"
+        ],
+        [
+          "Receber e continuar",
+          "Workspace próprio: formas compatíveis, divisão, CPF, recebimento/agendamento, validação, Pix pendente e resultado. Resultado prioriza troco congelado e Nova venda.",
+          "Três rádios e Simular conclusão não representam esse trabalho.",
+          "Manter o workspace e seus componentes. Próxima revisão visual deve cobrir pagamento misto, dinheiro, Pix aguardando e erro, sem redefinir regras.",
+          "PosPaymentWorkspace.vue; PosSaleResult.vue; PosPaymentResult.vue"
+        ],
+        [
+          "Atender longe da gaveta",
+          "Dispositivo pode operar ligado ao turno e à gaveta compartilhados. Abrir a gaveta depende do contexto físico e do cartão de dinheiro pendente.",
+          "A prévia eliminou a distância entre atender na mesa e estar diante da gaveta.",
+          "Preservar cartão pendente e ação explícita de abrir a gaveta. Não acionar a gaveta automaticamente ao finalizar na mesa.",
+          "PosDrawerPulseCard.vue; PosOperatorShell.vue"
+        ],
+        [
+          "Fechar o dia",
+          "Corredor dedicado. Contagem cega da gaveta; vitrine e revisão do dia têm passos próprios. Valores esperados não aparecem ao operador, nem depois. Branco e zero têm significado diferente.",
+          "A prévia mostrou dinheiro esperado e diferença antes da confirmação. É uma regressão de operação, não um detalhe visual.",
+          "Retirar a versão simplificada da recomendação. Preservar o ritual e as permissões; revisar só orientação, foco e transição entre passos.",
+          "pages/session/closing.vue; pages/session/index.vue"
+        ],
+        [
+          "Falha e retomada",
+          "Não salvo, conflito, capacidade offline, sessão indisponível, Pix pendente, confiança no total e capacidades vêm dos contratos reais.",
+          "Uma simulação feliz não exercitou essas situações.",
+          "Não assumir que conexão perdida equivale a logout ou que existe permissão para concluir. Cobrir estado por estado antes da aprovação.",
+          "pages/index.vue; PosOperatorShell.vue; backstage-pos-surface-contract.md"
+        ]
+      ],
+      "proposals": [
+        "Cabeçalho do PDV pode continuar mais compacto que o de Gestor/Compras. Preservar a barra contextual da venda e a busca de produto como gestos de primeira classe.",
+        "Manter o rail operacional atual como ponto de partida. A segunda lateral é uma hipótese para Ajustes, não uma regra para a venda.",
+        "Na folha mobile, otimizar só depois de comparar quantos itens, produtos e estados de cozinha continuam visíveis. Pagamento e envio não podem exigir o percurso de um modal genérico."
+      ],
+      "scenarios": [
+        "Balcão com teclado: abrir referência, buscar SKU, Enter adiciona, editar quantidade, F9 enviar e F4 pagamento.",
+        "Mesa com toque: retomar comanda, lançar com escolhas, observar item, enviar, pagar e manter a situação da gaveta.",
+        "Linha já enviada recebe observação: apresentar a consequência e a oferta de reenviar.",
+        "Seleção de duas linhas: transferir/descontar respeita o alvo; pagamento continua da comanda inteira.",
+        "Dinheiro com troco, Pix pendente, pagamento misto, erro de validação e retomada.",
+        "Fechamento cego: nenhuma expectativa exposta; branco não equivale automaticamente a contagem feita."
+      ]
+    },
+    {
+      "id": "kds",
+      "name": "KDS / Cozinha",
+      "icon": "kds",
+      "job": "Saber o que preparar agora, perceber o que mudou e concluir sem erro.",
+      "diagnosis": "O centro da experiência é prioridade e execução por estação, com o tempo e o estado do ticket. Um catálogo de cards uniformes destrói a hierarquia de atenção.",
+      "rows": [
+        [
+          "Entrar na estação",
+          "Estações vêm do cadastro da casa. Saída é um destino do Gestor. A estação do dispositivo tem significado.",
+          "A prévia usou estações de amostra sem demonstrar seu vínculo e normalizou o painel numa listagem.",
+          "Preservar os nomes reais e o vínculo do dispositivo. Não inventar uma estação genérica Preparo ou uma Saída paralela.",
+          "presentation/sections.ts; pages/index.vue"
+        ],
+        [
+          "Executar no celular",
+          "Um ticket inteiro em Agora, próximos em linhas compactas, restante em +N e agregado. Tocar traz para o foco.",
+          "Todos os tickets viraram cards completos equivalentes, reduzindo a visão da fila.",
+          "Preservar KdsPhoneQueue. Melhorar alcance do próximo ticket sem perder observações do atual.",
+          "KdsPhoneQueue.vue"
+        ],
+        [
+          "Executar na bancada",
+          "Grade considera largura e altura reais; foco, densidade, posição e restante são calculados. A fazer agrega a fila inteira.",
+          "Cards genéricos não representaram a grade de atenção nem a carga total.",
+          "Preservar a grade e o agregado. Segunda lateral recolhida no terminal dedicado deve ser avaliada contra a área operacional perdida.",
+          "pages/[ref].vue; KdsAllDayStrip.vue"
+        ],
+        [
+          "Iniciar e concluir",
+          "Ação depende de pendente/em preparo, bloqueio, ciência e desfazer. O botão na base identifica o código do pedido.",
+          "A prévia ofereceu Marcar pronto genérico sem demonstrar a máquina de estados.",
+          "Preservar Iniciar N104, Pronto N104 e motivo do bloqueio. Não colocar uma confirmação extra em toda conclusão.",
+          "presentation/board.ts; pages/[ref].vue"
+        ],
+        [
+          "Evitar toque duplo",
+          "Após iniciar, o Pronto é temporariamente desarmado para não concluir por rebote no mesmo lugar.",
+          "O exemplo não modelou essa proteção.",
+          "Manter a janela de proteção existente; validar toque rápido no dispositivo real.",
+          "pages/[ref].vue"
+        ],
+        [
+          "Corrigir engano",
+          "Desfazer temporizado ocupa o mesmo botão da base. Gestos e histórico complementam a ação.",
+          "Desfazer virou uma função em outro diálogo, com outro percurso.",
+          "Preservar a continuidade espacial e temporal. Não trocar o desfazer por um toast distante.",
+          "pages/[ref].vue; KdsPhoneQueue.vue"
+        ],
+        [
+          "Perceber mudança",
+          "Mudança e cancelamento pedem ciência. O main atual distingue neutro, aviso, atraso e pronto no contrato compartilhado de tempo; atraso também pode ser vermelho.",
+          "A simulação só tinha aguardando/pronto e tempo em selo.",
+          "Cobrir mudou, cancelado, adição e bloqueado. Não deixar Pronto cobrir uma ciência pendente.",
+          "presentation/board.ts; KdsTicketCard.vue"
+        ],
+        [
+          "Usar sem olhar menus",
+          "Swipe permitido conforme estado, toque longo, atalhos, som bloqueado/ativável e aviso no bolso têm funções próprias.",
+          "O exemplo não manteve os gestos nem a percepção sonora.",
+          "Preservar gestos e oferecer equivalentes visíveis. Ajustes de som/densidade pertencem à estação, sem deslocar o ato operacional.",
+          "KdsPhoneQueue.vue; KdsStationControls.vue; pages/[ref].vue"
+        ],
+        [
+          "Confiar na atualização",
+          "Última leitura, realtime, erro com dados anteriores e vazio de hoje são estados diferentes. Identidade escura é parte da superfície.",
+          "O painel novo só parecia operacional; não demonstrava dados velhos ou atualização.",
+          "Preservar contraste e frescor. Só ampliar o aviso quando muda a confiança ou o trabalho do operador.",
+          "pages/[ref].vue; app-identity.json"
+        ]
+      ],
+      "proposals": [
+        "Preservar Agora / Próximo / Depois no mobile. A ação fixa continua apontando ao ticket em foco.",
+        "Tratar navegação da estação como apoio. O painel dedicado não deve pagar uma coluna extra permanente para parecer igual ao escritório.",
+        "Revisar overlays de histórico, retenção e detalhe mantendo alvo, gesto, aviso e retorno ao mesmo foco."
+      ],
+      "scenarios": [
+        "Pendente → Iniciar → tentativa de rebote → Pronto → Desfazer no mesmo lugar.",
+        "Ticket alterado ou cancelado exige ciência antes da ação normal.",
+        "Novo pedido chega enquanto outro está em foco; prioridade muda sem conclusão acidental.",
+        "Swipe permitido e bloqueado; toque longo com alternativa visível.",
+        "Fila longa, +N, agregado A fazer, rotação e bancada com outra densidade.",
+        "Som bloqueado, dados velhos, erro, vazio e histórico de ticket."
+      ]
+    },
+    {
+      "id": "gestor",
+      "name": "Gestor",
+      "icon": "gestor",
+      "job": "Intervir onde é necessário, acompanhar o fluxo e despachar com clareza.",
+      "diagnosis": "Gestor é mais que uma fila única. Supervisão, operação por etapa, lista densa e posto de Saída pedem composições distintas. Catálogo e clientes também não são o mesmo posto de trabalho.",
+      "rows": [
+        [
+          "Supervisionar",
+          "Fila Precisa de você prioriza atenção humana, foco limitado, restante resumido e o sistema fez. Disponibilidade depende do dispositivo.",
+          "A prévia genérica não demonstrou atenção versus o que segue sozinho.",
+          "Preservar QueueView e a política de atenção projetada. Não inferir prioridade no frontend.",
+          "QueueView.vue; pages/index.vue"
+        ],
+        [
+          "Operar por etapa",
+          "Quadro desktop com colunas ajustáveis/recolhíveis. Mobile mostra uma coluna por vez por tabs.",
+          "Uma composição universal pode virar três colunas comprimidas ou uma lista sem etapa.",
+          "Preservar quadro e tabs por dispositivo. Aplicar rolagem horizontal sem perder etapa selecionada ou contagens.",
+          "OrderBoardColumn.vue; pages/index.vue"
+        ],
+        [
+          "Consultar em volume",
+          "Lista é uma tabela compacta, com seleção, ordenação, paginação e detalhe. Não é apenas outro tamanho de card.",
+          "Troca lista/grade genérica não cobre a anatomia de supervisão.",
+          "Preservar a tabela e o modo de seleção. Controles comuns podem mudar de lugar sem apagar funções.",
+          "OperatorTable no pages/index.vue"
+        ],
+        [
+          "Operar a Saída",
+          "Saída tem composição de posto, retirada/despacho, volumes, operador/entregador e impressos.",
+          "A mesma página usada para supervisão não evidencia as necessidades do posto.",
+          "Revisar Saída separadamente do Gestor de escritório. Não encher o posto de navegação de catálogo.",
+          "pages/index.vue; DispatchDialog.vue"
+        ],
+        [
+          "Conferir volumes",
+          "Leitor e faixa contextual avisam sacola de outro pedido, com saídas explícitas. Conferência informa, não vira trava arbitrária.",
+          "A função não apareceu na prévia.",
+          "Preservar a faixa transitória e os dois pedidos identificados. Não transformar o aviso em bloqueio novo.",
+          "VolumeCheckBar.vue"
+        ],
+        [
+          "Despachar e receber retorno",
+          "Entrega, maquininha, troco, valores recebidos e retorno do entregador têm gestos e confirmação próprios.",
+          "Ações genéricas no menu de página ocultaram o alvo operacional.",
+          "Preservar painéis específicos e ações por pedido/entregador. Conferir consequência antes de confirmar.",
+          "DispatchDialog.vue; CourierBackDialog.vue; OrderCourierPanel.vue"
+        ],
+        [
+          "Perceber risco real",
+          "Saúde do canal, permissão, pedido novo, atraso, bloqueio, negociação iFood e erro de ação são fatos diferentes.",
+          "Selo de cor sem a causa pode diluir urgência e confiança.",
+          "Preservar o sinal pertinente ao trabalho e o semáforo atual do main. Atraso e bloqueio continuam fatos diferentes, mesmo quando usam tom de erro.",
+          "ChannelQueueSignal.vue; OrderIFoodNegotiations.vue; OrderCard.vue"
+        ],
+        [
+          "Selecionar sem confundir",
+          "Barra de seleção substitui controles conforme contexto. Ação em lote declara alcance e alvo; retorno não perde o recorte.",
+          "Menus de página e registro se misturaram nas primeiras composições.",
+          "Manter a separação já corrigida, agora sobre a barra de seleção real, incluindo resultados parciais/erros.",
+          "OperatorBulkBar no pages/index.vue"
+        ],
+        [
+          "Administrar catálogo e clientes",
+          "Edição, vínculos, preço em lote, duplicidade, endereço, grupos e fusão são workspaces de domínio existentes.",
+          "Um form genérico pode conter os campos e ainda perder relações, comparação e escopo.",
+          "Preservar painéis maduros e usar navegação/composição aprovadas como casca. Não interpretar aprovação de um mock como autorização para substituir seu interior.",
+          "CatalogProductPanel.vue; CustomerDuplicatePanel.vue; CustomerMergeDialog.vue"
+        ]
+      ],
+      "proposals": [
+        "Separar explicitamente a revisão do Gestor de escritório da revisão do posto de Saída.",
+        "Manter a navegação por assuntos e o card rolável onde já foram aprovados, sem trocar a anatomia operacional real por cards de demonstração.",
+        "Comparar Quadro, Lista e Fila por tarefa e dispositivo. O seletor só oferece o que é suportado naquele contexto."
+      ],
+      "scenarios": [
+        "Supervisão com muitas ordens: quatro em foco, resto resumido e pedidos seguindo sem intervenção.",
+        "Mobile: trocar de etapa, filtrar canal/recebimento, abrir pedido e retornar ao mesmo ponto.",
+        "Desktop: ajustar colunas, mudar para Lista, selecionar e conferir o alcance da ação.",
+        "Saída: conferir sacola errada, trocar de pedido ou seguir na conferência atual.",
+        "Despacho com troco/maquininha e retorno do entregador.",
+        "Negociação iFood, erro por pedido, permissão insuficiente e dados antigos."
+      ]
+    }
+  ]
+}
