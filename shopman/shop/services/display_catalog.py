@@ -7,9 +7,9 @@ Um canal de exibição com formato declarado (``Channel`` com
 sets).
 
 Aqui mora a ÚNICA decisão sobre cada item: entra ou não, preço, disponível ou não,
-oculto ou não. Quem fala com a plataforma só traduz: o XML do feed
-(``views/product_feed.py``) e os envios pela API (``adapters/catalog_projection_google``
-e ``adapters/catalog_projection_meta``). Duas leituras da mesma regra divergiriam em
+oculto ou não. Quem fala com a plataforma só traduz: o envio ao Google pela Merchant
+API (``adapters/catalog_projection_google``), o envio à Meta (``adapters/catalog_projection_meta``)
+e o XML do feed da Meta (``views/product_feed.py``). Duas leituras da mesma regra divergiriam em
 silêncio, e a plataforma reprova item cujo dado não bate com a página da loja.
 
 **O preço vem do canal apontado por ``display.prices_from``** (a loja online, porque é
@@ -22,7 +22,7 @@ Os dois gestos do Catálogo chegam diferentes às plataformas (verificado em 23/
   Meta mostra "esgotado" na loja e tira dos anúncios; o Google para de anunciar.
 - **Ocultar** (some do canal) é ``hidden=True``: o item continua na plataforma, mas
   fora de todos os destinos. Tirar o item apaga o produto na plataforma, e religar
-  viraria cadastro novo, com nova revisão. No Google, ``excluded_destination`` para
+  viraria cadastro novo, com nova revisão. No Google, ``excludedDestinations`` com
   cada destino (support.google.com/merchants/answer/6324486); ``pause`` não serve,
   porque o ``all`` arquiva o produto depois de 14 dias (answer/11909930). Na Meta,
   ``status=archived`` ("Only active items can be seen by people in your ads, shops",
@@ -35,17 +35,16 @@ from dataclasses import dataclass
 
 FEED_FORMATS = ("google_merchant", "meta_catalog")
 
-#: Destinos do Google que o Ocultar exclui, nas duas grafias da plataforma: o valor do
-#: atributo no arquivo (answer/6324486) e o ``DestinationEnum`` da Merchant API
-#: (google/shopping/type/types.proto).
+#: Destinos do Google que o Ocultar exclui, no ``DestinationEnum`` da Merchant API
+#: (google/shopping/type/types.proto; lista de destinos em answer/6324486).
 GOOGLE_DESTINATIONS = (
-    ("Shopping_ads", "SHOPPING_ADS"),
-    ("Display_ads", "DISPLAY_ADS"),
-    ("Local_inventory_ads", "LOCAL_INVENTORY_ADS"),
-    ("Free_listings", "FREE_LISTINGS"),
-    ("Free_local_listings", "FREE_LOCAL_LISTINGS"),
-    ("Youtube_affiliate", "YOUTUBE_AFFILIATE"),
-    ("Youtube_merchandise", "YOUTUBE_SHOPPING"),
+    "SHOPPING_ADS",
+    "DISPLAY_ADS",
+    "LOCAL_INVENTORY_ADS",
+    "FREE_LISTINGS",
+    "FREE_LOCAL_LISTINGS",
+    "YOUTUBE_AFFILIATE",
+    "YOUTUBE_SHOPPING",
 )
 
 

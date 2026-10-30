@@ -2376,8 +2376,8 @@ SHOPMAN_SURFACE_URLS = {
 # ou token de quiosque na URL (`manage.py menuboard_token <ref>`). O motivo está em
 # shopman/shop/menuboard_access.py — o preço do menuboard vem do PDV, e preço
 # alcançável publicamente é preço a honrar. Default FECHADO: o estado seguro é o
-# default, e reabrir é decisão explícita. O feed XML segue público (Google/Meta
-# precisam buscá-lo).
+# default, e reabrir é decisão explícita. O feed XML da Meta segue público (a Meta
+# precisa buscá-lo); o Google não tem feed, é escrito pela Merchant API.
 SHOPMAN_MENUBOARD_PUBLIC = os.environ.get("SHOPMAN_MENUBOARD_PUBLIC", "false").strip().lower() == "true"
 
 # 2FA obrigatório no Admin (django-otp/TOTP) — gated por env. Default OFF para não

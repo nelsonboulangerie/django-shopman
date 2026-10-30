@@ -22,7 +22,7 @@ from shopman.shop.projections.types import Action
 # formato preenchido é feed de plataforma (dialeto de terceiro).
 _FORMAT_META = {
     "": {"kind": "menuboard", "label": "Menuboard (TV)", "icon": "tv", "capability": "display"},
-    "google_merchant": {"kind": "google", "label": "Feed Google", "icon": "rss", "capability": "feed"},
+    "google_merchant": {"kind": "google", "label": "Google Merchant", "icon": "rss", "capability": "feed"},
     "meta_catalog": {"kind": "meta", "label": "Feed Meta", "icon": "rss", "capability": "feed"},
 }
 
@@ -35,13 +35,16 @@ def _nonneg_int(value) -> int:
 
 
 def _output_path(ref: str, fmt: str) -> str:
-    """Caminho da saída (abrir/prever).
+    """Caminho da saída (abrir/prever); vazio quando não há o que abrir.
 
     O `?platform=` saiu: o formato é propriedade do CANAL, não parâmetro de query —
-    dois jeitos de dizer a mesma coisa é um jeito a mais de discordarem.
+    dois jeitos de dizer a mesma coisa é um jeito a mais de discordarem. O Google não
+    tem saída: o canal dele é escrito pela Merchant API.
     """
     if not fmt:
         return f"/menuboard/{ref}/"
+    if fmt == "google_merchant":
+        return ""
     return f"/feed/{ref}.xml"
 
 

@@ -1,22 +1,22 @@
 """
-Product feed — o 🛰 Feed de plataforma (``google``/``meta``), RSS 2.0 público.
+Product feed — o 🛰 Feed da Meta, RSS 2.0 público.
 
 Traduz para o XML ``g:`` a decisão de ``services/display_catalog`` (quem entra, preço,
-disponível, oculto). Pull: Google Merchant e Meta buscam a URL agendado (ambos aceitam
-o XML ``g:``). O que diverge entre as plataformas é a grafia: ``availability`` (Google
-usa underscore, Meta usa espaço) e o Ocultar (``excluded_destination`` no Google,
-``status=archived`` na Meta, campo fora da especificação do Google e por isso sem o
-prefixo ``g:``, developers.facebook.com/docs/marketing-api/catalog/reference).
+disponível, oculto). Pull: o catálogo da Meta busca a URL agendado. O Ocultar sai como
+``status=archived``, campo fora da especificação ``g:`` e por isso sem o prefixo
+(developers.facebook.com/docs/marketing-api/catalog/reference).
 
-Este é o feed PÚBLICO — Google e Meta precisam buscá-lo sem credencial —, e é
-justamente por isso que o preço nele tem de ser o preço que a loja honra.
+O Google não passa por aqui: o canal dele é escrito só pela Merchant API
+(``adapters/catalog_projection_google``), e canal de formato ``google_merchant`` responde
+404 nesta rota.
+
+Este é o feed PÚBLICO — a Meta precisa buscá-lo sem credencial —, e é justamente por
+isso que o preço nele tem de ser o preço que a loja honra.
 
 ⚠️ Vida curta: o envio pela API (``docs/plans/CATALOG-PUSH-GOOGLE-META-PLAN.md``)
-substitui este feed como escritor único de cada plataforma.
+substitui este feed como escritor único da Meta.
 
-Spec verificada (2026-07-01): support.google.com/merchants/answer/7052112 (Google) +
-facebook.com/business/help/120325381656392 (Meta). Detalhes em
-docs/plans/completed/CATALOG-FEEDS-GOOGLE-META.md.
+Spec verificada (2026-07-01): facebook.com/business/help/120325381656392.
 """
 
 from __future__ import annotations
@@ -27,18 +27,16 @@ from django.views import View
 
 from shopman.shop.services import display_catalog
 
-# availability diverge por plataforma (verificado): Google underscore, Meta espaço.
-_AVAILABILITY = {
-    "google_merchant": {True: "in_stock", False: "out_of_stock"},
-    "meta_catalog": {True: "in stock", False: "out of stock"},
-}
+# A Meta grafa availability com espaço (verificado).
+_AVAILABILITY = {True: "in stock", False: "out of stock"}
+_FEED_FORMAT = "meta_catalog"
 
 
 def build_feed_items(ref: str) -> list[dict]:
-    """Itens do feed na grafia do formato do canal."""
+    """Itens do feed da Meta. Canal de outro formato não tem feed."""
     _channel, fmt = display_catalog.resolve_channel(ref)
-    avail = _AVAILABILITY[fmt]
-    excluded = tuple(feed for feed, _api in display_catalog.GOOGLE_DESTINATIONS)
+    if fmt != _FEED_FORMAT:
+        raise display_catalog.DisplayCatalogError(f"display channel has no XML feed: {fmt!r}")
     return [
         {
             "id": item.sku,
@@ -51,19 +49,18 @@ def build_feed_items(ref: str) -> list[dict]:
             "mpn": item.mpn,
             "condition": item.condition,
             "google_product_category": item.google_product_category,
-            "availability": avail[item.available],
+            "availability": _AVAILABILITY[item.available],
             "price": f"{item.price_q / 100:.2f} BRL",
             "product_type": item.product_type,
             "custom_label_0": item.custom_label_0,
-            "excluded_destinations": excluded if item.hidden and fmt == "google_merchant" else (),
-            "status": "archived" if item.hidden and fmt == "meta_catalog" else "",
+            "status": "archived" if item.hidden else "",
         }
         for item in display_catalog.display_items(ref)
     ]
 
 
 class ProductFeedView(View):
-    """Saída RSS 2.0 pública (Google/Meta) de um canal de exibição com formato."""
+    """Saída RSS 2.0 pública do canal de exibição da Meta."""
 
     def get(self, request, ref: str):
         try:

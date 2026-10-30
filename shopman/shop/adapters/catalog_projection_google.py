@@ -3,7 +3,7 @@ Google Merchant projection — o catálogo do canal de plataforma pela Merchant 
 
 Implementa ``CatalogProjectionBackend`` (Offerman) para o canal de exibição do Google
 (``google-shopping``). É o ESCRITOR ÚNICO do catálogo no Merchant Center: a fonte de
-dados da conta é do tipo API, sem o arquivo do feed ao lado
+dados da conta é do tipo API, e o Google não tem feed XML
 (``docs/plans/CATALOG-PUSH-GOOGLE-META-PLAN.md``).
 
 Contrato (Merchant API, ``products_v1``)
@@ -25,7 +25,7 @@ Contrato (Merchant API, ``products_v1``)
   (oculto = todos os destinos em ``excludedDestinations``).
 
 A decisão de cada item (entra, preço, disponível, oculto) NÃO mora aqui: o handler
-entrega ``ProjectedItem.metadata["display"]``, a mesma decisão que o XML do feed lê.
+entrega ``ProjectedItem.metadata["display"]``, a mesma decisão que o envio à Meta lê.
 Este módulo só traduz para a grafia da API (camelCase, enums em maiúsculas, preço em
 micros).
 
@@ -222,7 +222,7 @@ def build_product_input(item: display_catalog.DisplayItem, cfg: dict) -> dict:
     if item.google_product_category:
         attributes["googleProductCategory"] = item.google_product_category
     if item.hidden:
-        attributes["excludedDestinations"] = [api for _feed, api in display_catalog.GOOGLE_DESTINATIONS]
+        attributes["excludedDestinations"] = list(display_catalog.GOOGLE_DESTINATIONS)
     return {
         "offerId": item.sku,
         "contentLanguage": _language(cfg),

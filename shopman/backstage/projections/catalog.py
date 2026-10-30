@@ -518,10 +518,11 @@ def _build_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]:
 
 
 # capability/ícone por formato de exibição. Formato VAZIO é quadro (rota nossa);
-# formato preenchido é feed de plataforma (dialeto de terceiro).
+# formato preenchido é feed de plataforma. O Google não tem saída para abrir: o canal
+# dele é escrito pela Merchant API.
 _DISPLAY_META = {
     "": {"capability": "display", "icon": "tv", "path": "/menuboard/{ref}/"},
-    "google_merchant": {"capability": "feed", "icon": "rss", "path": "/feed/{ref}.xml"},
+    "google_merchant": {"capability": "feed", "icon": "rss", "path": ""},
     "meta_catalog": {"capability": "feed", "icon": "rss", "path": "/feed/{ref}.xml"},
 }
 
