@@ -564,3 +564,10 @@ Evidências, reprodução e limites em `kds-native/README.md`. Apenas prévias.
 A comparação `kds-native.html` foi atualizada: somente o dismiss vai para o canto
 superior direito do alerta atual; os três pontos passam ao contexto acima do CTA,
 à direita. Pronto/Desfazer conservam a largura inteira. Apenas prévias.
+
+### KDS: nomes longos em 320px
+
+A fila compacta passa a duas linhas até 374px, sem corte de resumo nem fonte menor.
+Em 390px e desktop mantém a composição anterior. Comparação em `kds-native.html`.
+Navegação e cabeçalho continuam no escopo de revisão, ainda sem reorganização
+proposta nesta alteração. Somente prévias.

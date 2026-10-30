@@ -77,8 +77,8 @@ As capturas são evidência de prévia, não baselines oficiais de CI.
 
 ## Pendências explícitas
 
-- Nomes muito longos ainda ocupam muita altura nas linhas compactas em 320px.
-  Não se alterou PhoneQueue para esconder ou abreviar informações do operador.
+- Nomes longos na fila: resolvidos na composição abaixo de 375px, conforme
+  a revisão a seguir. Nenhum resumo foi cortado ou abreviado.
 - Som bloqueado depende do navegador. Push, SSE real, segundo plano, tela cheia,
   identidade/lock e ligação com Central/Gestor precisam de ensaio apropriado.
 - O menu não divide mais a linha do CTA. A linha de contexto fica 12px mais alta
@@ -95,3 +95,36 @@ Desfazer mantiveram 272px de largura e a mesma posição. Menu abriu o drawer
 atual, e Desfazer retornou o ticket. Sem overflow horizontal. Capturas atualizadas.
 Build Nuxt concluído em 16,1s. Simulador e os nove componentes preservados não
 foram alterados nesta revisão. Sem implementação no produto ou deploy.
+
+### Revisão da fila compacta em 320px
+
+Somente CSS de composição dos filhos existentes de `data-kds-queue-row`, até
+374px. Código, posição/alarme e tempo/bloqueio ocupam a primeira linha; o mesmo
+resumo completo ocupa a largura da segunda. Sem clamp, reticências, limite de
+linhas, fonte menor, truncamento ou alteração dos dados. Sem mudança de template,
+handlers, card em foco, ordem da fila ou cálculo de urgência.
+
+Evidência no navegador, com aviso inicial reconhecido nos dois lados:
+
+- 320px: primeiro resumo longo com texto idêntico, de 182px para 96px; largura
+  do resumo 255px. Linhas curtas de 64px para 76px. Total das três: 310px para 248px.
+- Toque na linha 0138 trouxe o card completo, incluindo observações por item e
+  alergia a castanhas, e atualizou o CTA para Pronto 0138.
+- Cafés em 320px: alarmes Mudou e cancelamento preservados.
+- 390px: layout flex original; alturas 82px, 64px, 64px.
+- Desktop 1440px: fila mobile fora da árvore; grade original com três colunas.
+- Sem overflow horizontal nas três larguras. Viewport restaurado.
+- Build Nuxt concluído em 20,2s. Nenhuma mudança no simulador.
+
+Capturas: `queue-before-320.png` e `queue-after-320.png`.
+
+### Navegação e cabeçalho: revisão ainda pendente
+
+Escopo incluído na revisão do KDS, além dos ajustes pontuais já demonstrados:
+identidade clara da estação aberta, estabilidade e alcance da troca de estação,
+Central/troca de apps, fronteira com a Saída no Gestor e acesso aos controles
+operacionais de som/densidade. A fonte atual (`useKdsShell.ts`) dá prioridade à
+estação deste dispositivo na barra inferior, tem estações no menu e remete a
+Saída ao Gestor. Essas decisões precisam ser avaliadas como navegação de posto de
+trabalho, sem impor ao KDS a organização de um app de gestão. O painel público
+para TV é uma superfície distinta. Não foi proposta nova navegação nesta alteração.

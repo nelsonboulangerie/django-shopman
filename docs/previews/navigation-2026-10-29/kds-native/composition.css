@@ -11,3 +11,24 @@
   min-height:36px; align-items:center; padding-inline-end:48px;
 }
 [data-preview-kds-context-bar] [data-operator-action-bar-action] { min-height:44px; }
+
+/* Em telas muito estreitas, identidade e tempo ficam acima do resumo completo.
+   Nenhum clamp, reticência, redução de fonte ou mudança dos gestos da linha. */
+@media(max-width:374px) {
+  [data-kds-app] [data-kds-queue-row] {
+    display:grid; grid-template-columns:auto minmax(0,1fr) auto;
+    column-gap:8px; row-gap:6px; padding-block:10px; align-items:center;
+  }
+  [data-kds-app] [data-kds-queue-row] > b {
+    grid-column:1; grid-row:1; width:auto;
+  }
+  [data-kds-app] [data-kds-queue-row] > span:first-child {
+    grid-column:2; grid-row:1; width:auto;
+  }
+  [data-kds-app] [data-kds-queue-row] > span:nth-of-type(2) {
+    grid-column:1 / -1; grid-row:2; width:100%;
+  }
+  [data-kds-app] [data-kds-queue-row] > span:last-child {
+    grid-column:3; grid-row:1; white-space:nowrap;
+  }
+}
