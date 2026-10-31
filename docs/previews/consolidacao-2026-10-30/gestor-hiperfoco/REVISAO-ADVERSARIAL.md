@@ -71,3 +71,29 @@ Alvo: `posto.vue` e as capturas `posto-*.png`. Cada achado foi conferido no cód
 - O destaque do próximo a sair, com sacolas, troco a levar e um gesto.
 - A volta do entregador com o valor já somado.
 - O Pix pendente fora de "Precisa de você".
+
+## Estado depois da correção (rodada 3, 31/10)
+
+Corrigidos na prévia: 1 a 12 e 14 a 18. O 13 (vermelho para o prazo de perda) espera o dono;
+o 19 é do produto (posto pelo vínculo do dispositivo).
+
+- 1 e 2: selo de conexão no cabeçalho; "Sem conexão. O que está na tela é de HH:MM." no
+  topo de todo posto; "Lendo os pedidos…" enquanto carrega; sem leitura, a tela diz que
+  não dá para saber, em vez de "Nada pede você agora."; som bloqueado com "Ligar o som".
+- 3: o erro de cada ação no próprio pedido, com a frase aprovada.
+- 4: "Saiu" faz a saída do quadro (um toque ou o diálogo); "Recusar" abre o diálogo de
+  motivo; "Ainda não pagou" diz onde receber (PDV, Encomendas), sem botão que finge.
+- 5: "Já pagou, entregar" grava antes um comentário no pedido; se não gravar, não entrega
+  ("G96 continua pronto: o Já pagou não chegou. Tente de novo."). No simulador o comentário
+  falha (não está gravado no mock): o caminho de falha foi exercitado, o de sucesso não.
+- 6: o relógio lê numa frase só: "cancela sozinho em" em cima, "0:38" embaixo; a mesma
+  frase no topo do caixa.
+- 7: busca com código, cliente ou Via Pedido (leitor ou câmera) e toque em "Também
+  prontos" trazem o pedido para o destaque.
+- 8: com a TaOn ligada, "Chamar entregador" e, depois, a frase "Sai sozinho quando o
+  entregador coletar"; sem maquininha livre, dito antes do toque.
+- 9: no caixa, o que é do passe aparece com "Resolve-se no passe.", sem botão.
+- 10: um relógio igual nos três postos; o destaque do passe ganhou "pronto há".
+- 11: interruptor do canal no celular, com o diálogo de gerente; "ligado/desligado".
+- 12: "em preparo" no lugar de "na cozinha".
+- Também: o pedido de estação no papel ganhou o "Pronto de Bebidas".
