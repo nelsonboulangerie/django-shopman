@@ -55,6 +55,8 @@ NUXT_PUBLIC_OPERATOR_HUB_URL=<url da Central> PORT=4315 node .output/server/inde
 ## Alternativas (31/10): aviso de pedido novo, som bloqueado e linha de cima do chão
 
 `apply-alternativas.mjs`, depois de `apply-modelo.mjs`. O link escolhe: `?v=a|b|c`.
+**O dono escolheu b (31/10): é o padrão sem parâmetro.** Escolha de prévia, não autorização
+para implementar.
 
 - **a**: como a prévia do modelo: faixa no topo ("Pedido novo. Som bloqueado." + som + Visto),
   linha de cima com moldura (Filtro, Busca, ⋮).

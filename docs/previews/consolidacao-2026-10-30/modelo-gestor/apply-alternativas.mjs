@@ -1,4 +1,4 @@
-// PRÉVIA (31/10/2026): três alternativas para o aviso de pedido novo, o som bloqueado e a
+// PRÉVIA (31/10/2026): três alternativas (o dono escolheu b em 31/10: é o padrão) para o aviso de pedido novo, o som bloqueado e a
 // linha de cima do chão no celular. Roda DEPOIS de apply-modelo.mjs. `?v=a|b|c` escolhe;
 // a escolha vale na navegação até recarregar sem o parâmetro.
 //   a: como a prévia do modelo (faixa no topo, grupo com moldura).
@@ -52,7 +52,7 @@ await patch(join(root, "app/pages/index.vue"), [
     "const compactOptions = computed(",
     `// PRÉVIA alternativas: ?v=a (faixa no topo), b (pílula no polegar), c (a aba Entrada acende).
 const pv = useState<"a" | "b" | "c">("preview-v", () =>
-  ["a", "b", "c"].includes(String(route.query.v)) ? (route.query.v as "a" | "b" | "c") : "a",
+  ["a", "b", "c"].includes(String(route.query.v)) ? (route.query.v as "a" | "b" | "c") : "b",
 );
 watch(() => route.query.v, (v) => { if (v === "a" || v === "b" || v === "c") pv.value = v; });
 const newestIntake = computed(() => {
