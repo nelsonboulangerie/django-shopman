@@ -1,0 +1,289 @@
+{
+ "intro": "Apps reais compilados do origin/main com dados fictícios. A é o app atual, C é a proposta (na Cozinha, B é a prévia anterior). Nada aqui foi implementado no produto. Em cada app, A e C dividem os mesmos dados: uma ação num lado aparece no outro. Cozinha: restaurar o cenário em /simulator.html do C.",
+ "apps": [
+  {
+   "dir": "kds-compact",
+   "title": "Cozinha (KDS): compacto",
+   "summary": "Uma linha no topo do celular: selo com chip de conexão, Filtro | Busca | Opções, Avisos. Sem seletor de estação no topo; a estação é a vaga ativa da barra de baixo.",
+   "links": [
+    [
+     "A · atual",
+     "https://publishing-settled-structures-fee.trycloudflare.com/bancada?conn=calm"
+    ],
+    [
+     "B · prévia anterior (PR #2048)",
+     "https://mate-watch-investigators-robot.trycloudflare.com/bancada?conn=calm"
+    ],
+    [
+     "C · compacto",
+     "https://aye-deck-degrees-media.trycloudflare.com/bancada?conn=calm"
+    ],
+    [
+     "C · aviso denso (variante)",
+     "https://aye-deck-degrees-media.trycloudflare.com/bancada?conn=calm&aviso=denso"
+    ],
+    [
+     "C · Avisos dentro das Opções (variante)",
+     "https://aye-deck-degrees-media.trycloudflare.com/bancada?avisos=options"
+    ],
+    [
+     "C · sem conexão",
+     "https://aye-deck-degrees-media.trycloudflare.com/bancada?conn=off"
+    ],
+    [
+     "A · sem conexão",
+     "https://publishing-settled-structures-fee.trycloudflare.com/bancada?conn=off"
+    ],
+    [
+     "C · ao vivo",
+     "https://aye-deck-degrees-media.trycloudflare.com/bancada?conn=live"
+    ],
+    [
+     "Simulador: restaurar e falha programada (C)",
+     "https://aye-deck-degrees-media.trycloudflare.com/simulator.html"
+    ]
+   ],
+   "notes": [
+    "Os links ?conn= forçam só a entrada do indicador de conexão, igual nos três.",
+    "Desktop: abra os mesmos links no computador; a lateral e o indicador de conexão atuais ficam."
+   ],
+   "captures": [
+    [
+     "A-320x568.png",
+     "A 320×568"
+    ],
+    [
+     "B-320x568.png",
+     "B 320×568"
+    ],
+    [
+     "C-320x568.png",
+     "C 320×568"
+    ],
+    [
+     "C-conn-off-320.png",
+     "C sem conexão"
+    ],
+    [
+     "C-options-320.png",
+     "C Opções"
+    ],
+    [
+     "C-filters-320.png",
+     "C Filtros"
+    ],
+    [
+     "A-1440x900.png",
+     "A desktop"
+    ],
+    [
+     "C-1440x900.png",
+     "C desktop"
+    ]
+   ]
+  },
+  {
+   "dir": "pdv-compact",
+   "capdir": "shots",
+   "title": "PDV: compacto",
+   "summary": "Comandas, Venda e Checkout preservados (só o topo do celular muda). Encomendas, Caixa e Ajustes ganham mais espaço: a 320×568 o 1º cartão de Encomendas sobe de y=271 para y=115.",
+   "links": [
+    [
+     "A · Encomendas",
+     "https://janet-stable-reasonably-epinions.trycloudflare.com/preorders"
+    ],
+    [
+     "C · Encomendas",
+     "https://edward-handling-lancaster-karl.trycloudflare.com/preorders"
+    ],
+    [
+     "C · busca ativa",
+     "https://edward-handling-lancaster-karl.trycloudflare.com/preorders?q=Ana"
+    ],
+    [
+     "A · detalhe",
+     "https://janet-stable-reasonably-epinions.trycloudflare.com/preorders/NB-1042"
+    ],
+    [
+     "C · detalhe",
+     "https://edward-handling-lancaster-karl.trycloudflare.com/preorders/NB-1042"
+    ],
+    [
+     "A · Comandas (toque #12 para a Venda)",
+     "https://janet-stable-reasonably-epinions.trycloudflare.com/"
+    ],
+    [
+     "C · Comandas (toque #12 para a Venda)",
+     "https://edward-handling-lancaster-karl.trycloudflare.com/"
+    ],
+    [
+     "A · Caixa",
+     "https://janet-stable-reasonably-epinions.trycloudflare.com/session"
+    ],
+    [
+     "C · Caixa",
+     "https://edward-handling-lancaster-karl.trycloudflare.com/session"
+    ],
+    [
+     "A · Ajustes, Salão",
+     "https://janet-stable-reasonably-epinions.trycloudflare.com/settings/seating"
+    ],
+    [
+     "C · Ajustes, Salão",
+     "https://edward-handling-lancaster-karl.trycloudflare.com/settings/seating"
+    ]
+   ],
+   "notes": [
+    "A Venda a 320×568 quase não melhora (8px): o aperto vem da barra da comanda mais a barra de baixo.",
+    "O resumo \"Hoje: 9 para entregar\" saiu da tela e foi para o topo do ⋮ e dos Filtros. Precisa de decisão."
+   ],
+   "captures": [
+    [
+     "A-encomendas-320x568.png",
+     "A Encomendas 320×568"
+    ],
+    [
+     "C-encomendas-320x568.png",
+     "C Encomendas 320×568"
+    ],
+    [
+     "A-encomenda-detalhe-320x568.png",
+     "A detalhe"
+    ],
+    [
+     "C-encomenda-detalhe-320x568.png",
+     "C detalhe"
+    ],
+    [
+     "A-venda-320x568.png",
+     "A Venda"
+    ],
+    [
+     "C-venda-320x568.png",
+     "C Venda"
+    ],
+    [
+     "A-caixa-320x568.png",
+     "A Caixa"
+    ],
+    [
+     "C-caixa-320x568.png",
+     "C Caixa"
+    ]
+   ]
+  },
+  {
+   "dir": "gestor-compact",
+   "capdir": ".",
+   "title": "Gestor de pedidos: compacto",
+   "summary": "Uma régua só abaixo de 768px. Visto e Som bloqueado viram faixa explícita de uma linha. Busca ativa visível. Bloqueio: a barra de baixo do Gestor não tem Mais; sem o ☰, Histórico, Catálogo, Clientes e Canais somem no celular.",
+   "links": [
+    [
+     "A · quadro",
+     "https://investigate-typing-alliance-fell.trycloudflare.com/"
+    ],
+    [
+     "C · quadro",
+     "https://plane-asset-fifty-nil.trycloudflare.com/"
+    ],
+    [
+     "C · busca ativa",
+     "https://plane-asset-fifty-nil.trycloudflare.com/?q=Maria"
+    ],
+    [
+     "C · sem conexão",
+     "https://plane-asset-fifty-nil.trycloudflare.com/?conn=off"
+    ],
+    [
+     "A · detalhe",
+     "https://investigate-typing-alliance-fell.trycloudflare.com/WEB-261006-F90"
+    ],
+    [
+     "C · detalhe",
+     "https://plane-asset-fifty-nil.trycloudflare.com/WEB-261006-F90"
+    ]
+   ],
+   "captures": [
+    [
+     "A-board-320x568.png",
+     "A 320×568"
+    ],
+    [
+     "C-board-320x568.png",
+     "C 320×568"
+    ],
+    [
+     "C-after-visto-320x568.png",
+     "C depois do Visto"
+    ],
+    [
+     "C-search-active.png",
+     "C busca ativa"
+    ],
+    [
+     "C-conn-off.png",
+     "C sem conexão"
+    ],
+    [
+     "C-detail-320x568.png",
+     "C detalhe"
+    ]
+   ]
+  },
+  {
+   "dir": "compras-receber-compact",
+   "capdir": "shots",
+   "title": "Compras: Receber compacto, cadastros no padrão",
+   "summary": "A conferência ganha 29px de lista a 320×568 e fica identificada numa linha (fornecedor, NF, volumes). Cadastros iguais ao atual. A continuidade entre os dois modos ainda tem salto (título e ☰ somem, selo aparece).",
+   "links": [
+    [
+     "A · Receber",
+     "https://next-advisory-manchester-dealers.trycloudflare.com/receive"
+    ],
+    [
+     "C · Receber",
+     "https://pine-authentication-compliance-uncle.trycloudflare.com/receive"
+    ],
+    [
+     "A · Base (padrão)",
+     "https://next-advisory-manchester-dealers.trycloudflare.com/base/materials"
+    ],
+    [
+     "C · Base (padrão)",
+     "https://pine-authentication-compliance-uncle.trycloudflare.com/base/materials"
+    ]
+   ],
+   "notes": [
+    "Para chegar à conferência: Digitar a chave da NF, qualquer texto, Ler a chave. A e C dividem o mesmo cenário.",
+    "Achado no app atual: se gravar a contagem falha, a tela já mostra 6 de 6 e oferece Confirmar entrada."
+   ],
+   "captures": [
+    [
+     "A-320x568-2-conferencia.png",
+     "A conferência"
+    ],
+    [
+     "C-320x568-2-conferencia.png",
+     "C conferência"
+    ],
+    [
+     "A-320x568-1-comeco.png",
+     "A começo"
+    ],
+    [
+     "C-320x568-1-comeco.png",
+     "C começo"
+    ],
+    [
+     "C-320x568-cont-1-base-insumos.png",
+     "C Base (padrão)"
+    ],
+    [
+     "C-320x568-10-erro-escrita.png",
+     "C erro de escrita"
+    ]
+   ]
+  }
+ ],
+ "rules": "<section><h2>Regras comuns e diferenças</h2><ul><li><b>Comuns:</b> 320px de partida, alvos de 44px; navegação global (selo leva à Central, barra de baixo leva às seções, Mais abre a gaveta), opções da página (⋮ do grupo) e ações do registro (⋮ na ponta da linha) em lugares distintos; Filtro → Busca → Opções; busca ou filtro ativo sempre à vista com Limpar; alertas e erros explícitos no topo; identidade do registro nunca some.</li><li><b>Compacto</b> (PDV, Cozinha, Gestor de pedidos, Receber): uma linha no celular, sem título de seção (a seção é a vaga ativa de baixo), cadência no topo das Opções, chip de conexão no selo, sem ☰.</li><li><b>Padrão</b> (Marketing, B.I., cadastros do Compras): título da seção visível, porque orienta entre muitas telas parecidas.</li><li><b>Desktop:</b> igual nos dois; a lateral e o indicador de conexão atuais ficam.</li></ul><p>Texto completo e decisões pendentes: REGRAS.md na pasta da prévia.</p></section>"
+}

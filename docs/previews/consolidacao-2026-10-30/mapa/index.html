@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mapa da suíte</title>
+<style>
+:root{--bg:#faf7f2;--fg:#231d17;--muted:#6b6157;--line:#e3dbd0;--card:#fff;--accent:#8a5a12;--chao:#2f6b4f;--chao-bg:#e6f2ec;--esc:#3b4f8a;--esc-bg:#e8ecf7;--tv:#6b4a8a;--tv-bg:#f0e9f6;--warn:#8a5a12;--warn-bg:#fbf0dc;--ok:#2f6b4f}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1d1814;--fg:#f1e9df;--muted:#b3a697;--line:#3a322b;--card:#26201b;--accent:#e4b465;--chao:#8fd1ae;--chao-bg:#1f3a2d;--esc:#a9b9ec;--esc-bg:#262f4a;--tv:#cdb3e6;--tv-bg:#36294a;--warn:#e4b465;--warn-bg:#3d3020;--ok:#8fd1ae}}
+:root[data-theme="dark"]{--bg:#1d1814;--fg:#f1e9df;--muted:#b3a697;--line:#3a322b;--card:#26201b;--accent:#e4b465;--chao:#8fd1ae;--chao-bg:#1f3a2d;--esc:#a9b9ec;--esc-bg:#262f4a;--tv:#cdb3e6;--tv-bg:#36294a;--warn:#e4b465;--warn-bg:#3d3020;--ok:#8fd1ae}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,sans-serif}
+main{max-width:980px;margin:auto;padding:16px}
+h1{font-size:1.5rem;margin:.2em 0 .1em}
+h2{font-size:1.2rem;margin:1.6em 0 .5em}
+h3{font-size:1.05rem;margin:1em 0 .3em}
+p{margin:.4em 0}
+.lead{color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0}
+ul{padding-left:1.15em;margin:.3em 0}
+li{margin:.3em 0}
+.tag{display:inline-block;font-size:.78rem;font-weight:600;padding:1px 8px;border-radius:99px;white-space:nowrap}
+.chao{color:var(--chao);background:var(--chao-bg)}
+.esc{color:var(--esc);background:var(--esc-bg)}
+.tv{color:var(--tv);background:var(--tv-bg)}
+.q{color:var(--warn);background:var(--warn-bg)}
+.muted{color:var(--muted)}
+.small{font-size:.9rem}
+.posto{border-top:1px solid var(--line);padding:10px 0}
+.posto:first-child{border-top:0;padding-top:0}
+.posto b{font-size:1rem}
+.posto .meta{font-size:.88rem;color:var(--muted);margin:.15em 0}
+.flow{font-size:.95rem}
+details{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:10px 0}
+summary{cursor:pointer;padding:14px;font-weight:650;list-style:none;display:flex;justify-content:space-between;gap:8px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--muted);font-weight:400;font-size:1.3rem;line-height:1}
+details[open] summary::after{content:"−"}
+details .body{padding:0 14px 14px}
+.row{display:grid;grid-template-columns:1fr;gap:2px;border-top:1px solid var(--line);padding:9px 0}
+.row:first-child{border-top:0}
+.row .k{font-weight:600}
+@media(min-width:720px){.row{grid-template-columns:200px 1fr;gap:14px}}
+.keep{border-left:3px solid var(--ok);padding-left:10px}
+.gap{border-left:3px solid var(--warn);padding-left:10px}
+code{font-size:.85em;background:var(--bg);padding:0 4px;border-radius:4px}
+</style>
+</head>
+<body>
+<main>
+
+<h1>Mapa da suíte</h1>
+<p class="lead">Como os apps de operador estão hoje no ar (código de 30/10, conferido arquivo por arquivo), pensando no posto, no momento e no dispositivo. Nada aqui muda os apps.</p>
+<p class="card"><b>Próximo passo:</b> <a href="modelo.html">o modelo de navegação (chão, escritório, parede) ›</a></p>
+<p class="small muted">Legenda: <span class="tag chao">chão</span> mão ocupada, relance, gesto grande. <span class="tag esc">escritório</span> leitura, comparação, cadastro. <span class="tag tv">monitor</span> lido de longe, sem gesto. <span class="tag q">confirmar</span> só você sabe.</p>
+
+<h2>Em quatro frases</h2>
+<div class="card">
+<ul>
+<li><b>Os oito apps já usam o mesmo esqueleto:</b> barra lateral no computador, menu ☰ e barra de baixo no celular, sino, busca da suíte, trava por PIN. O selo do app leva à Central.</li>
+<li><b>O esqueleto não sabe se a tela é de chão ou de escritório.</b> A bancada da Cozinha e o cadastro de fornecedores usam o mesmo cabeçalho e a mesma navegação. O tipo de posto (caixa, atendimento, saída, cozinha, produção, escritório) existe no sistema, mas só como dado: nenhuma tela muda por ele.</li>
+<li><b>O celular já tem fluxo próprio em seis lugares</b> (Gestor, Cozinha, Compras Receber, PDV Encomendas, revisão do Marketing, B.I.). No resto, é a tela do computador rearrumada.</li>
+<li><b>Boa parte do plano de 03/10 está no ar</b> (Saída única no Gestor, desfazer de 5 s, fim do dia às cegas, mesas, qualidade em lote, fila de decisões do Marketing). O que falta está no fim de cada app.</li>
+</ul>
+</div>
+
+<h2>Os postos: quem, onde, o que agora e o que vem depois</h2>
+<div class="card">
+<div class="posto"><b>Balcão</b> <span class="tag chao">chão</span>
+<p class="meta">Computador com gaveta, impressora, leitor e tela do cliente · PDV › Comandas, Venda, Caixa</p>
+<p class="flow">Vender → Pagamento (F4) → próxima venda (F2). Comanda: lançar → cozinha (F9) → pagar.</p></div>
+<div class="posto"><b>Balcão no tablet ou no celular</b> <span class="tag chao">chão</span>
+<p class="meta">Tablet na mesma gaveta e no mesmo turno; celular na fila · PDV › Encomendas, Comandas</p>
+<p class="flow">Ler o QR da encomenda → entregar ou cobrar o saldo. Comanda na mesa → pagar.</p></div>
+<div class="posto"><b>Estação da cozinha</b> <span class="tag chao">chão</span>
+<p class="meta">Tablet fixo; celular na estação pequena (barista) · Cozinha › estação</p>
+<p class="flow">Visto → Iniciar → Pronto (desfaz em 5 s) → o próximo ticket.</p></div>
+<div class="posto"><b>Saída (passe)</b> <span class="tag chao">chão</span>
+<p class="meta">Tablet no passe · Gestor › Saída</p>
+<p class="flow">Entregar ou despachar (desfaz em 5 s) → o próximo pronto. Entregador voltou → conferir o que voltou.</p></div>
+<div class="posto"><b>Pedidos no caixa, entre uma venda e outra</b> <span class="tag chao">chão</span>
+<p class="meta">Computador do caixa · Gestor › Pedidos (fila "Precisa de você")</p>
+<p class="flow">Aceitar ou recusar → acompanhar até sair.</p></div>
+<div class="posto"><b>Gerente em movimento</b> <span class="tag chao">chão, no bolso</span>
+<p class="meta">Celular · Gestor, Produção › Qualidade, Marketing (decisões), B.I. (olhada), Central</p>
+<p class="flow">Aviso → aceitar ou recusar, autorizar, conferir a qualidade das fornadas, selar um anúncio, desligar um canal, ver o número do dia.</p></div>
+<div class="posto"><b>Rotinas da loja</b> <span class="tag chao">chão</span>
+<p class="meta">Celular ou tablet, andando pela loja · hoje em Gestor › Ajustes › Rotinas</p>
+<p class="flow">Abertura, rotina do dia, fechamento: marcar item a item → a próxima rotina.</p></div>
+<div class="posto"><b>Forno e bancada</b> <span class="tag chao">chão</span>
+<p class="meta">Tablet no suporte; celular no bolso · Produção › Preparo, Produção, Finalização, Timers</p>
+<p class="flow">Separar e pesar → confirmar o previsto → enfornar → fechar a fornada com qualidade.</p></div>
+<div class="posto"><b>Doca</b> <span class="tag chao">chão</span>
+<p class="meta">Celular · Compras › Receber</p>
+<p class="flow">Escanear a NF → contar volumes → validade item a item → confirmar a entrada.</p></div>
+<div class="posto"><b>Contagem de estoque</b> <span class="tag chao">chão</span>
+<p class="meta">Celular ou tablet, andando · Compras › Base › Contagem (escondida no ⋯ de Insumos)</p>
+<p class="flow">Contar → motivo da diferença → lançar no estoque.</p></div>
+<div class="posto"><b>Fim do dia</b> <span class="tag chao">chão</span>
+<p class="meta">Computador ou tablet · PDV › Fim do dia (corredor de 3 passos, às cegas)</p>
+<p class="flow">Gaveta → vitrine → fechar o dia.</p></div>
+<div class="posto"><b>Telas de parede</b> <span class="tag tv">monitor</span>
+<p class="meta">TV · Cozinha › Painel de retirada; Produção › Letreiro; PDV › Tela do cliente</p></div>
+<div class="posto"><b>Escritório</b> <span class="tag esc">escritório</span>
+<p class="meta">Computador · Gestor › Ajustes (Histórico, Catálogo, Clientes, Canais, Postos); Compras › Comprar, Base, Custos; Produção › Plano, Receitas, Relatórios; Marketing › Ajustes; B.I.</p>
+<p class="flow">Planejar, cadastrar, corrigir, comparar, decidir.</p></div>
+</div>
+
+<h2>Necessidades comuns</h2>
+<div class="card">
+<div class="row"><div class="k">Saber onde estou</div><div>Selo do app, título e a seção acesa na barra. Igual em todos.</div></div>
+<div class="row"><div class="k">Ir para outra seção</div><div>Barra lateral no computador; no celular, barra de baixo com até 4 seções e "Mais".
+<p class="gap small">Diferenças: no PDV, Comandas não tem endereço próprio, a Tela do cliente abre em janela e o Fim do dia só aparece na barra de baixo. O Gestor e o Compras não têm "Mais". A Produção põe chão e escritório na mesma barra.</p></div></div>
+<div class="row"><div class="k">Ir para outro app</div><div>Só pelo selo, que leva à Central e de lá ao app.
+<p class="gap small">Não há troca direta. Os links prontos entre apps são poucos (B.I. → Produção e Gestor, PDV → Gestor). O item "Saída" da Cozinha leva ao Gestor sem dizer que muda de app.</p></div></div>
+<div class="row"><div class="k">Localizar</div><div>Uma busca da suíte em todos (tecla / ou Ctrl K; nesta tela, no app ou na suíte). Câmera para ler código no PDV, Compras, Produção e no cadastro de produto do Gestor.</div></div>
+<div class="row"><div class="k">Conexão</div><div>Selo "ao vivo" com a hora em 7 apps; o B.I. diz "lido às".
+<p class="gap small">O Compras não tem atualização sozinha: lê quando se pede.</p></div></div>
+<div class="row"><div class="k">Avisos</div><div>Um sino só, do kit, em todos. Alimentado pelo Gestor, Produção e Marketing.
+<p class="gap small">Os alarmes do B.I. continuam só no Admin. Os timers da Produção não vibram nem mandam aviso.</p></div></div>
+<div class="row"><div class="k">Autorização do gerente</div><div>Uma peça só no kit: o gerente é escolhido na lista (nunca digitado), assina com PIN ou crachá, e o gerente que está operando aparece primeiro e assina com o próprio PIN. Usada no PDV (venda que pede aprovação, cancelar venda e encomenda, estorno ao editar, destravar a gaveta, sangria e troco, nota avulsa) e no Gestor (cancelar pedido, ligar ou desligar canal).
+<p class="gap small">Fora dela: o Marketing usa a digital do dispositivo e a segunda pessoa; cancelar lote na Produção não pede gerente; a contagem do Compras pede permissão, não assinatura. E no PDV e no Gestor o gerente tem de estar no dispositivo de quem pede. Pedir à distância, por aviso no celular do gerente, só existe no Marketing (a segunda pessoa).</p></div></div>
+<div class="row"><div class="k">Quem opera</div><div>Trava, PIN ou crachá e vincular o dispositivo a um posto: iguais em todos.</div></div>
+<div class="row"><div class="k">A ação do momento</div><div>No celular, uma barra de ação na base, ao alcance do polegar, em 7 apps.</div></div>
+<div class="row"><div class="k">Voltar</div><div>Cada app resolve do seu jeito. O detalhe do pedido no Gestor volta à fila no mesmo lugar; o resto volta pela rota.</div></div>
+<div class="row"><div class="k">Cadastro (CRUD)</div><div>Ver a seção abaixo.</div></div>
+</div>
+
+<h2>Cadastro (CRUD)</h2>
+<div class="card">
+<p><b>Já é forte nos apps</b> (frente "cadastro turbo", PRs de 14/10 a 30/10):</p>
+<ul class="small">
+<li><b>Produto</b> (Gestor › Catálogo): criar, duplicar, editar, combo, tabelão com colar e desfazer, lote, importar e exportar CSV.</li>
+<li><b>Cliente e grupo de clientes</b> (Gestor › Clientes): criar, editar, duplicar, endereços, lote, unificar e desfazer.</li>
+<li><b>Insumo, fornecedor e custo</b> (Compras › Base): criar, duplicar, tabelão, lote, CSV.</li>
+<li><b>Ficha técnica</b> (Produção › Receitas): criar por foto, texto ou à mão, versões, comparar, duplicar, arquivar.</li>
+<li><b>Mesas, maquininhas, impressoras</b> (PDV › Ajustes); <b>campanhas, modelos, ofertas</b> (Marketing › Ajustes); <b>postos</b> (Gestor › Ajustes).</li>
+</ul>
+<p class="gap small"><b>Ainda só no Admin:</b> coleção (criar e renomear), canal (criar e configurar), zona de entrega, avisos ao cliente (modelos transacionais), estações da cozinha, operadores e equipe, terminal, graus e defeitos de qualidade, feriados e a configuração da loja.</p>
+<p class="gap small"><b>Desigual entre apps:</b> duplicar existe, mas cada app tem o seu painel; importar CSV só no catálogo, insumos e fornecedores; o Marketing não tem lista com filtro, lote nem duplicar. O kit já tem as peças (tabela, lote, filtros, tabelão, importar com prévia, aviso de não salvo), mas não tem a "lista de cadastro" montada que um app novo usaria inteira.</p>
+</div>
+
+<h2>App por app</h2>
+
+<details><summary>PDV <span class="tag chao">chão</span></summary><div class="body">
+<div class="row"><div class="k">Seções</div><div>Comandas (F2) · Venda e Pagamento (na mesma tela) · Encomendas · Caixa · Fim do dia · Tela do cliente · Ajustes (Terminal, Impressoras, Maquininhas, Salão, Envio à cozinha, Atalhos de venda)</div></div>
+<div class="row"><div class="k">Celular e tablet hoje</div><div>Comanda vira folha de baixo com total e Pagamento; editor da linha só ao tocar; câmera lê o QR da encomenda e abre sozinha; encomendas abrem no dia; salão vira lista.</div></div>
+<div class="row"><div class="k">Maduro, não mexer</div><div class="keep">Atalhos F2 a F10 e a trava de teclas sob diálogo · Pagamento (teclas, divisão, CPF, Pix) · Encomendas e detalhe · Fim do dia às cegas · venda sem internet · tela do cliente · editor de mesas · pulso de gaveta pelo tablet. Todos com testes.</div></div>
+<div class="row"><div class="k">Lacunas</div><div class="gap">Ajustes abre em Salão e não na primeira aba · seções que se comportam diferente (Comandas sem endereço, Tela do cliente em janela, Fim do dia só embaixo) · fechar caixa em dois lugares · terminal e calibração da impressora só no Admin · Tela do cliente não funciona no tablet.</div></div>
+</div></details>
+
+<details><summary>Gestor de pedidos <span class="tag chao">chão</span> <span class="tag esc">escritório</span></summary><div class="body">
+<div class="row"><div class="k">Seções</div><div>Pedidos (Fila, Lista, Colunas) · Saída · Ajustes: Histórico, Catálogo, Clientes (grupos, unificações), Canais, Postos, Rotinas · detalhe do pedido</div></div>
+<div class="row"><div class="k">Celular e tablet hoje</div><div>Celular: colunas viram abas, deslizar o cartão para atender ou recusar, puxar para atualizar, "Próximo" da Saída na base. Tablet em pé: abas. A fila "Precisa de você" só aparece a partir do computador.</div></div>
+<div class="row"><div class="k">Maduro, não mexer</div><div class="keep">Fila e cartão do pedido · pronto automático com desfazer · desfazer de 5 s em Entregar e Despachar · entregador e corrida · negociação do iFood · arrumação das colunas por posto · catálogo em matriz · clientes e unificação.</div></div>
+<div class="row"><div class="k">Lacunas</div><div class="gap">Rotinas moram em Ajustes, mas são trabalho de chão no celular ou tablet · a visão "Fila" aparece como "Grade" no seletor · a Saída do celular e a do posto têm duas lógicas separadas · no celular não existe a fila "Precisa de você" · canais e matéria-prima mandam para o Admin.</div></div>
+</div></details>
+
+<details><summary>Cozinha <span class="tag chao">chão</span> <span class="tag tv">monitor</span></summary><div class="body">
+<div class="row"><div class="k">Seções</div><div>Estações (uma por estação da casa) · Saída (é link para o Gestor) · Painel de retirada (TV) · Ajustes da estação (diálogo)</div></div>
+<div class="row"><div class="k">Celular e tablet hoje</div><div>Celular: um ticket em foco e os seguintes em linhas; Pronto na base; deslizar e toque longo; vibra no pedido novo; segue a estação por push. Tablet: grade de 4 a 6 tickets e "+N na fila". Tela sempre acesa, modo quiosque.</div></div>
+<div class="row"><div class="k">Maduro, não mexer</div><div class="keep">A bancada (fila otimista, desfazer de 5 s, ciência de cancelamento, reabrir) · Painel de retirada com chamada sonora e sem nomes.</div></div>
+<div class="row"><div class="k">Lacunas</div><div class="gap">Painel de retirada sem saída declarada (só "Ativar o som") · "Saída" muda de app sem aviso · estações só no Admin.</div></div>
+</div></details>
+
+<details><summary>Produção <span class="tag chao">chão</span> <span class="tag esc">escritório</span> <span class="tag tv">monitor</span></summary><div class="body">
+<div class="row"><div class="k">Seções</div><div>Plano · Preparo · Produção · Finalização · Qualidade (Alt 1 a 5) · Timers · Receitas · Relatórios · Letreiro</div></div>
+<div class="row"><div class="k">Celular e tablet hoje</div><div>No tablet com toque, painel de quantidade encaixado ao lado. Câmera lê a etiqueta do lote e fotografa a receita. Tela sempre acesa. O resto é reflow.</div></div>
+<div class="row"><div class="k">Maduro, não mexer</div><div class="keep">Plano com "Por quê" e "Planejar como sugerido" · fechar fornada com qualidade e timer do forno · qualidade em lote · pesagem e etiquetas cegas · timers · receitas com versões · Letreiro.</div></div>
+<div class="row"><div class="k">Lacunas</div><div class="gap">Plano (gerente, computador) e Qualidade (gerente, celular) dividem a barra com a bancada · a Qualidade não tem fluxo próprio de celular · timers não vibram nem avisam por push (só som, só naquele dispositivo) · chão e escritório na mesma barra · as lentes do Preparo e da Qualidade não guardam onde se estava · cancelar lote não pede gerente.</div></div>
+</div></details>
+
+<details><summary>Compras <span class="tag chao">chão</span> <span class="tag esc">escritório</span></summary><div class="body">
+<div class="row"><div class="k">Seções</div><div>Painel · Comprar · Receber · Base (Insumos, Fornecedores; Custos e Contagem por link)</div></div>
+<div class="row"><div class="k">Celular e tablet hoje</div><div>Receber muda de verdade: celular com o item numa folha e a ação na base (Escanear NF, Contei N volumes, Confirmar entrada); tablet com lista e item lado a lado. Câmera lê NF, EAN e validade, com lanterna, e vibra ao ler.</div></div>
+<div class="row"><div class="k">Maduro, não mexer</div><div class="keep">Recebimento por exceção com validade em um toque · sugestão por GTIN · Base com tabelão, lote e CSV.</div></div>
+<div class="row"><div class="k">Lacunas</div><div class="gap">Comprar e Receber lado a lado na mesma barra (a doca e o escritório misturados) · Contagem escondida no ⋯ e não é cega · pedido de compra é por insumo, sem pedido por fornecedor nem aprovação · sem atualização sozinha · tela apaga na doca.</div></div>
+</div></details>
+
+<details><summary>Marketing <span class="tag esc">escritório</span> <span class="tag chao">no bolso</span></summary><div class="body">
+<div class="row"><div class="k">Seções</div><div>Decisões · Agendados · Enviados · Ajustes (Campanhas, Modelos, Ofertas e cupons, Plataformas) · revisão do anúncio · segunda pessoa</div></div>
+<div class="row"><div class="k">Celular e tablet hoje</div><div>Na revisão do anúncio, Recusar e Continuar vão para a base com "Decide até HH:MM". O resto é reflow.</div></div>
+<div class="row"><div class="k">Maduro, não mexer</div><div class="keep">Fila de decisões por prazo · selo com a digital e segunda pessoa · rascunho recuperável · nova tentativa com recibo.</div></div>
+<div class="row"><div class="k">Lacunas</div><div class="gap">Sem lote, sem CSV, sem apagar campanha ou oferta · filtro do evento e regras de disparo no Admin.</div></div>
+</div></details>
+
+<details><summary>B.I. <span class="tag esc">escritório</span> <span class="tag chao">olhada no bolso</span></summary><div class="body">
+<div class="row"><div class="k">Seções</div><div>Sobrou ou faltou · Vendas · Caixa · Clientes · Entregas · Perfis · Explorar · Projeção · Cenários</div></div>
+<div class="row"><div class="k">Celular e tablet hoje</div><div>"Levar ao plano" vai para a base no celular; gráficos com menos datas. O resto é reflow.</div></div>
+<div class="row"><div class="k">Maduro, não mexer</div><div class="keep">Período no endereço, igual em todas as seções · "Sobrou ou faltou" com "Levar ao plano" · compartilhar a leitura · exportar cada quadro.</div></div>
+<div class="row"><div class="k">Lacunas</div><div class="gap">Alarmes sem tela e sem aviso no celular · nada do B.I. chega ao sino.</div></div>
+</div></details>
+
+<details><summary>Central <span class="tag chao">chão</span> <span class="tag esc">escritório</span></summary><div class="body">
+<div class="row"><div class="k">Seções</div><div>Uma tela: os apps, cada um com uma linha de estado e a pendência mais urgente (leva ao item exato). Avisos deste dispositivo e versão no rodapé.</div></div>
+<div class="row"><div class="k">Celular e tablet hoje</div><div>Lista no celular, grade no computador. Só reflow.</div></div>
+<div class="row"><div class="k">Maduro, não mexer</div><div class="keep">Pendência por app (sua decisão de 09/10, no lugar do "Precisa de você") · motivos de bloqueio claros (login, posto, permissão, indisponível).</div></div>
+<div class="row"><div class="k">Lacunas</div><div class="gap">É o único caminho entre apps · atualiza a cada 30 s, sem tempo real.</div></div>
+</div></details>
+
+<h2>O que as prévias de 30 e 31/10 mexeram</h2>
+<div class="card small">
+<p>Feitas antes deste mapa, e misturando assuntos. Nenhuma está nos apps. Cada uma só volta a ser proposta se o mapa a justificar.</p>
+<div class="row"><div class="k">30/10 · celular compacto</div><div>Cozinha, PDV, Gestor e Compras › Receber, só abaixo de 768 px: o topo do celular numa linha (selo com a conexão, Filtro · Busca · Opções, Avisos) e a busca ou o filtro ativo numa faixa com Limpar. Computador idêntico.</div></div>
+<div class="row"><div class="k">31/10 · Gestor</div><div>Fila: o Pix pendente sai do "Precisa de você", o prazo de perda em vermelho, "Já pagou?" na retirada. Uma página por posto (caixa, passe, gerente). Detalhe do pedido: a frase da situação no topo, que também vale para a encomenda do PDV.</div></div>
+</div>
+
+<h2>Suas respostas (31/10)</h2>
+<div class="card">
+<ul>
+<li><b>Plano da Produção:</b> gerente ou dono, geralmente no computador. <span class="tag esc">escritório</span></li>
+<li><b>Qualidade da Produção:</b> gerente, geralmente no celular. <span class="tag chao">chão, no bolso</span></li>
+<li><b>Rotinas:</b> priorizar fazer no celular ou no tablet. <span class="tag chao">chão</span></li>
+<li><b>Necessidade comum que faltava:</b> autorização do gerente para operações específicas.</li>
+</ul>
+<p class="muted small">O resto da classificação vem dos planos que você aprovou em 03/10 e do código de hoje.</p>
+</div>
+
+</main>
+</body>
+</html>
