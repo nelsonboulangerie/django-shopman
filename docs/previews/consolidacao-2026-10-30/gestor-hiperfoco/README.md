@@ -73,3 +73,13 @@ vem depois do cartão dos itens (a ordem é do kit, que o PDV também usa); o pa
 ainda aparece duas vezes no celular; a previsão de pronto ("pronto em ~4 min") não existe na
 projeção do detalhe, só no cartão da fila; o detalhe é do kit (`OperatorOrderDetail`, o mesmo
 da encomenda no PDV, decisão de 28/09): qualquer mudança de ordem vale para os dois apps.
+
+**Decidido pelo dono (31/10): a frase da situação vale nos dois** (Gestor e encomenda do PDV).
+Ela passou para o componente do kit (`OperatorOrderDetail`) e abre o detalhe antes do resumo,
+nos dois layouts. Na encomenda, antes do pronto, ela diz o combinado: "Aceito: retirada
+combinada para 29/09 · 12h às 13h." PDV com a mudança: http://127.0.0.1:4303/preorders/NB-1042
+(atual: 4301). Ficou: no celular do PDV, o cartão de ações da encomenda (que é da página do
+PDV) continua acima do detalhe, então a frase aparece logo abaixo dele.
+
+**Sugestão do dono (31/10), aplicada no passe:** estado de entregador e de pronto não se
+corta: código e cliente na primeira linha, o estado inteiro embaixo ("Saiu para entrega").

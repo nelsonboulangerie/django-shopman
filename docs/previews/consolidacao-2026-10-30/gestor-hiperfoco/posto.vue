@@ -592,8 +592,10 @@ useHead({ title: () => TITLES[modo.value] ?? "Pedidos" });
                     @click="chosen = item.card.ref"
                   >
                     <span class="op-title tnum font-bold">{{ code(item.card.ref) }}</span>
-                    <span class="min-w-0 flex-1 op-body">{{ item.card.customer_name || "Sem cliente" }} · {{ item.card.fulfillment_label }}</span>
-                    <span class="op-micro" :class="toneText[clock(item).tone]">{{ clock(item).label }} {{ clock(item).value }}</span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block op-body">{{ item.card.customer_name || "Sem cliente" }}</span>
+                      <span class="block op-micro text-muted-foreground">{{ item.card.fulfillment_label }} · <span :class="toneText[clock(item).tone]">{{ clock(item).label }} {{ clock(item).value }}</span></span>
+                    </span>
                   </button>
                 </NuxtCard>
                 <NuxtCard data-hf-entregadores>
@@ -601,8 +603,9 @@ useHead({ title: () => TITLES[modo.value] ?? "Pedidos" });
                   <p v-if="!voltas.length && !naRua.length" class="op-body text-muted-foreground">Nenhum na rua.</p>
                   <div v-for="item in voltas" :key="item.card.ref" class="border-b border-border py-2 last:border-0">
                     <p class="op-body">
-                      <span class="op-title tnum font-bold">{{ code(item.card.ref) }}</span> · {{ item.card.customer_name }} · {{ item.card.courier_status_label || item.card.status_label }}
+                      <span class="op-title tnum font-bold">{{ code(item.card.ref) }}</span> · {{ item.card.customer_name }}
                     </p>
+                    <p class="op-micro text-muted-foreground">{{ item.card.courier_status_label || item.card.status_label }}</p>
                     <div class="mt-2 rounded-md bg-muted px-3 py-2">
                       <template v-if="item.card.courier_return_lines?.length">
                         <p class="op-micro text-muted-foreground">Deve voltar com o entregador</p>
@@ -613,7 +616,10 @@ useHead({ title: () => TITLES[modo.value] ?? "Pedidos" });
                   </div>
                   <div v-for="o in naRua" :key="o.card.ref" class="flex items-baseline gap-3 border-b border-border py-2 last:border-0">
                     <span class="op-title tnum font-bold">{{ code(o.card.ref) }}</span>
-                    <span class="min-w-0 flex-1 op-body">{{ o.card.customer_name }} · {{ o.card.courier_status_label || o.card.status_label }}</span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block op-body">{{ o.card.customer_name }}</span>
+                      <span class="block op-micro text-muted-foreground">{{ o.card.courier_status_label || o.card.status_label }}</span>
+                    </span>
                   </div>
                 </NuxtCard>
               </div>
