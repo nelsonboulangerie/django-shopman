@@ -68,5 +68,16 @@ para implementar.
   Entrada. Muda a regra do Visto (abrir a Entrada passa a valer como Visto): pede o sim do
   dono. Som e linha de cima como em b.
 
+### b na Saída e o que o aviso diz (31/10)
+
+- O aviso toca para o pedido que acabou de ter algo a fazer, em qualquer zona, não só para
+  o novo da Entrada. A pílula diz o código do pedido e, embaixo, o mesmo status que o cartão
+  mostra ("NARUA · Saiu para entrega"). Antes ela dizia "Pedido novo" para tudo, e pela zona
+  diria "Pronto para sair" de um pedido que já estava na rua.
+- Ver leva à zona do pedido. Na Saída, fica nela se o pedido é da Saída ou do preparo; senão
+  sai do posto e abre Pedidos (o selo muda junto).
+- Na Saída a pílula fica acima do "Entregar", que é a ação do momento ali. Antes ela o cobria.
+- O pedido do aviso vem de `useOrdersBoard` (`attentionRef`, só nesta prévia).
+
 No simulador (navegador sem som), o "Som bloqueado" de **a** não some depois do toque; no
 aparelho some.
