@@ -74,7 +74,7 @@ Alvo: `posto.vue` e as capturas `posto-*.png`. Cada achado foi conferido no cód
 
 ## Estado depois da correção (rodada 3, 31/10)
 
-Corrigidos na prévia: 1 a 12 e 14 a 18. O 13 (vermelho para o prazo de perda) espera o dono;
+Corrigidos na prévia: 1 a 12 e 14 a 18. O 13 foi decidido pelo dono em 31/10: o prazo de perda é vermelho;
 o 19 é do produto (posto pelo vínculo do dispositivo).
 
 - 1 e 2: selo de conexão no cabeçalho; "Sem conexão. O que está na tela é de HH:MM." no

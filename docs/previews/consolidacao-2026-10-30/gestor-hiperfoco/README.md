@@ -47,3 +47,8 @@ mesma tela). A rodada 2 desenha uma tela por posto, com os mesmos dados e açõe
 "Já pagou?" antes de entregar: "Já pagou, entregar" (um toque) ou "Receber R$ X".
 Lacuna: hoje o Gestor só recebe na retirada quando `can_settle_delivery_cash`; para o
 pagamento não informado, o "Receber" da prévia só abre o pedido. Precisa de ação no servidor.
+
+**Decidido pelo dono (31/10):** o prazo de perda (pedido que o sistema vai cancelar sozinho,
+negociação que o iFood decide sozinho) é vermelho. Muda a regra do quadro, que reservava o
+vermelho ao bloqueio com motivo: agora vermelho é **perder** (prazo de perda) ou **não poder**
+(bloqueio). Atraso contra a meta continua âmbar.
