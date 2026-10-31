@@ -51,3 +51,20 @@ ORDERS_VISUAL_CLIENT_ONLY=1 NUXT_DJANGO_BASE_URL=http://127.0.0.1:38921 \
 MOCK_PORT=38921 node tests/visual/mockBackend.mjs &
 NUXT_PUBLIC_OPERATOR_HUB_URL=<url da Central> PORT=4315 node .output/server/index.mjs
 ```
+
+## Alternativas (31/10): aviso de pedido novo, som bloqueado e linha de cima do chão
+
+`apply-alternativas.mjs`, depois de `apply-modelo.mjs`. O link escolhe: `?v=a|b|c`.
+
+- **a**: como a prévia do modelo: faixa no topo ("Pedido novo. Som bloqueado." + som + Visto),
+  linha de cima com moldura (Filtro, Busca, ⋮).
+- **b**: o aviso vira uma pílula no polegar ("Pedido novo · H58", Ver, Visto), sem empurrar
+  a fila. O som pede um toque uma vez ao abrir ("Toque para começar"): o navegador só deixa
+  tocar som depois do primeiro toque, e qualquer toque já liga. Linha de cima sem moldura;
+  Filtros entra no ⋮.
+- **c**: sem aviso separado: a aba Entrada acende com "novo", e o som para quando você abre a
+  Entrada. Muda a regra do Visto (abrir a Entrada passa a valer como Visto): pede o sim do
+  dono. Som e linha de cima como em b.
+
+No simulador (navegador sem som), o "Som bloqueado" de **a** não some depois do toque; no
+aparelho some.
