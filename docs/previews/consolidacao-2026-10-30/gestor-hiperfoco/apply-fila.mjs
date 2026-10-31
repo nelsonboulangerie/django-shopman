@@ -282,3 +282,10 @@ const returnLines = computed(() =>
           class="flex items-center gap-1.5 op-micro font-medium"`,
   ],
 ]);
+
+// 9. O Gestor aberto pelo posto: página nova `/posto?modo=caixa|passe|gerente`.
+fs.copyFileSync(
+  path.join(path.dirname(new URL(import.meta.url).pathname), "posto.vue"),
+  path.join(root, "app/pages/posto.vue"),
+);
+console.log("ok: app/pages/posto.vue");

@@ -27,3 +27,23 @@ O simulador não tem pedido de retirada com pagamento pendente nem volumes decla
 cartão de retirada não foi exercitado. Tempo real, som e push não rodam. No produto, tirar o
 Pix pendente da fila é uma regra do servidor (`order_attention.attention_kind`), não do
 cartão.
+
+## Rodada 2 (31/10): o Gestor aberto pelo posto
+
+O dono não viu diferença significativa na rodada 1 (ajustes dentro do mesmo cartão e da
+mesma tela). A rodada 2 desenha uma tela por posto, com os mesmos dados e ações
+(`useOrdersBoard`): http://127.0.0.1:4313/posto?modo=caixa|passe|gerente (`posto.vue`).
+
+- **Caixa (computador, de relance):** uma frase no topo com o que pode ser perdido
+  ("I02 cancela em 0:38"), uma lista de uma linha por pedido com o prazo à esquerda e o
+  gesto à direita (A aceita o primeiro novo). Sem filtro, ordenação ou painel.
+- **Passe (tablet, em pé):** faixa vermelha só para o que pode ser perdido; o próximo a
+  sair em destaque (código grande, nome, sacolas, endereço, troco a levar, um botão);
+  "Depois" e "Entregadores" ao lado, com o que deve voltar.
+- **Gerente (celular):** "Agora na loja" numa frase; "Pode ser perdido" com
+  Aceitar/Recusar; "Atrasados"; "Canais".
+
+**Decidido pelo dono (31/10):** na retirada sem pagamento registrado, a tela pergunta
+"Já pagou?" antes de entregar: "Já pagou, entregar" (um toque) ou "Receber R$ X".
+Lacuna: hoje o Gestor só recebe na retirada quando `can_settle_delivery_cash`; para o
+pagamento não informado, o "Receber" da prévia só abre o pedido. Precisa de ação no servidor.
