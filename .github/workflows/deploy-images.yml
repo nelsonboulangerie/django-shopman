@@ -84,6 +84,7 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       any: ${{ steps.matrix.outputs.any }}
       per_app: ${{ steps.matrix.outputs.per_app }}
+      release_id: ${{ steps.release.outputs.release_id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -137,6 +138,19 @@ jobs:
           fi
           echo "base=${base}" >> "$GITHUB_OUTPUT"
           echo "base do deploy: ${base:-<nenhuma>} | topo: ${GITHUB_SHA}"
+
+      # Identidade da release (WP-RELEASE-01 R1, docs/reference/release-contract.md):
+      # `YYYYMMDD-HHMM-<sha curto>`, com a hora do COMMIT em UTC e não a do run.
+      # Rodar de novo o mesmo commit (dispatch, re-run) dá o mesmo Release ID, e é
+      # isso que o torna nome de composição e não carimbo de relógio.
+      - name: Release ID
+        id: release
+        run: |
+          set -euo pipefail
+          quando=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y%m%d-%H%M "${GITHUB_SHA}")
+          release_id="${quando}-${GITHUB_SHA::7}"
+          echo "release_id=${release_id}" >> "$GITHUB_OUTPUT"
+          echo "release: ${release_id}"
 
       # A tabela de caminhos por componente mora no script, e é a MESMA que o
       # confronto com o registry consulta lá embaixo. Duas cópias divergiriam no
@@ -198,10 +212,16 @@ jobs:
           # scripts/fetch-geolite2.sh). As imagens Nuxt ignoram o arg.
           # O valor do arg entra na chave de cache da camada: ligar ou trocar a
           # chave invalida a camada da base sozinho, sem bump de snapshot.
+          # SHOPMAN_*: a identidade da release, que vira ENV e LABEL só na ÚLTIMA
+          # camada de cada Dockerfile (o cache do pip/npm/build não muda por
+          # causa dela). Não é segredo: sai em /health/release.
           build-args: |
             SURFACE=${{ matrix.surface }}
             OPERATOR_GROUP=${{ matrix.group }}
             MAXMIND_LICENSE_KEY=${{ secrets.MAXMIND_LICENSE_KEY }}
+            SHOPMAN_BUILD_SHA=${{ github.sha }}
+            SHOPMAN_RELEASE_ID=${{ needs.changes.outputs.release_id }}
+            SHOPMAN_RELEASE_COMPONENT=${{ matrix.name }}
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ matrix.tag }}
@@ -229,7 +249,8 @@ jobs:
             "name": "${{ matrix.name }}",
             "tag": "${{ matrix.tag }}",
             "immutable_tag": "${{ matrix.tag }}-${{ github.sha }}",
-            "digest": "${{ steps.build.outputs.digest }}"
+            "digest": "${{ steps.build.outputs.digest }}",
+            "release_id": "${{ needs.changes.outputs.release_id }}"
           }
           EOF
           cat "published/${{ matrix.tag }}.json"
@@ -268,6 +289,8 @@ jobs:
       - name: Compor o manifesto do run
         env:
           RUN_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RELEASE_ID: ${{ needs.changes.outputs.release_id }}
           BUILD_RESULT: ${{ needs.build-push.result }}
           ANY: ${{ needs.changes.outputs.any }}
         run: |
@@ -291,8 +314,14 @@ jobs:
                   "nenhum manifesto chegou. O smoke pós-deploy não pode adivinhar."
               )
 
+          # `sha`/`components` são o contrato do alpha-smoke; `release_id`,
+          # `git_sha` e `source_run` são o começo do manifesto da release
+          # (docs/reference/release-contract.md). Aditivo: o smoke ignora.
           manifesto = {
               "sha": os.environ["RUN_SHA"],
+              "release_id": os.environ["RELEASE_ID"],
+              "git_sha": os.environ["RUN_SHA"],
+              "source_run": int(os.environ["RUN_ID"]),
               "build_result": os.environ["BUILD_RESULT"],
               "components": componentes,
           }
