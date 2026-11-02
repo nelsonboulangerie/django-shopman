@@ -24,6 +24,7 @@ from shopman.backstage.services.integration_readiness import _sellable_products_
 from shopman.shop.directives import CATALOG_PROJECT_SKU
 from shopman.shop.handlers.catalog_projection import CatalogProjectHandler
 from shopman.shop.models import Channel, Shop
+from shopman.shop.services import display_catalog
 from shopman.shop.tests._display import display_channel
 from shopman.shop.views.product_feed import build_feed_items
 from shopman.storefront.presentation import build_catalog
@@ -120,8 +121,8 @@ def test_archived_product_is_absent_from_every_read_surface(catalog):
     assert row.is_sellable is True
     assert not any(cell.available for cell in row.cells)
 
-    # Feeds pull Google/Meta não mantêm o item no conjunto publicado.
-    assert {item["id"] for item in build_feed_items("google")} == {"ATIVO"}
+    # O feed pull da Meta e o envio ao Google não mantêm o item no conjunto publicado.
+    assert {item.sku for item in display_catalog.display_items("google")} == {"ATIVO"}
     assert {item["id"] for item in build_feed_items("meta")} == {"ATIVO"}
 
     # Snapshot normalizado de iFood/Meta preserva o SKU como indisponível para

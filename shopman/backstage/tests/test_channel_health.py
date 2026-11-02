@@ -236,11 +236,11 @@ def test_paused_feed_and_empty_or_missing_collections(db):
     feed.is_active = False
     feed.save(update_fields=["is_active"])
     health = _health("google")
-    assert _item(health, "active").label == "Pausado: o Google recebe erro ao buscar o feed"
+    assert _item(health, "active").label == "Pausado: o Google recebe todos os produtos como fora de estoque"
     assert _item(health, "collections_gone").label == "1 coleção escolhida não existe mais"
     assert _item(health, "collections").label == "As coleções escolhidas estão sem produtos"
     assert _item(health, "paired") is None  # feed não tem TV
-    assert health.preview[0].path == "/feed/google.xml"
+    assert health.preview == ()  # escrito pela Merchant API: não há XML para ver
     assert health.summary == "3 pendências"
 
 

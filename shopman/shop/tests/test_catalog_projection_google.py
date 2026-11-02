@@ -171,24 +171,12 @@ class TestProductInput:
         feeds.set_item_hidden("google", "PAO", hidden=True)
         attrs = google.build_product_input(display_catalog.display_item("google", "PAO"), _CFG)["productAttributes"]
         assert attrs["availability"] == "OUT_OF_STOCK"
-        assert attrs["excludedDestinations"] == [api for _feed, api in display_catalog.GOOGLE_DESTINATIONS]
+        assert attrs["excludedDestinations"] == list(display_catalog.GOOGLE_DESTINATIONS)
 
     def test_sold_out_is_out_of_stock(self, stocked):
         Move.objects.create(quant=stocked, delta=Decimal(-5), kind=Move.Kind.SELL, reason="teste")
         attrs = google.build_product_input(display_catalog.display_item("google", "PAO"), _CFG)["productAttributes"]
         assert attrs["availability"] == "OUT_OF_STOCK"
-
-    def test_feed_and_api_read_the_same_decision(self, stocked):
-        from shopman.backstage.services import feeds
-        from shopman.shop.views.product_feed import build_feed_items
-
-        feeds.set_item_hidden("google", "PAO", hidden=True)
-        feed = build_feed_items("google")[0]
-        attrs = google.build_product_input(display_catalog.display_item("google", "PAO"), _CFG)["productAttributes"]
-        assert feed["availability"] == "out_of_stock" and attrs["availability"] == "OUT_OF_STOCK"
-        assert [api for f, api in display_catalog.GOOGLE_DESTINATIONS if f in feed["excluded_destinations"]] == (
-            attrs["excludedDestinations"]
-        )
 
     def test_product_input_id_is_unpadded_base64url(self):
         segment = google.product_input_id("PAO", _CFG)

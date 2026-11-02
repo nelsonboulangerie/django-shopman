@@ -343,11 +343,10 @@ class ChannelConfig:
         coluna (a natureza é a ``commerce_policy``, que precisa ser indexada e
         não pode ser herdada pela cascata).
 
-        ``format`` seleciona **dialeto de XML**, e por isso ``menuboard`` não é um
-        valor dele: menuboard é *rota*. ``/menuboard/<ref>/`` renderiza HTML com
-        SSE e ``/feed/<ref>.xml`` renderiza XML — a rota já escolhe o
-        renderizador; ao ``format`` resta dizer se o XML segue a especificação do
-        Google ou a da Meta.
+        ``format`` seleciona a **plataforma**, e por isso ``menuboard`` não é um
+        valor dele: menuboard é *rota* (``/menuboard/<ref>/`` renderiza HTML com
+        SSE). ``google_merchant`` é escrito só pela Merchant API, sem XML;
+        ``meta_catalog`` tem também o XML público em ``/feed/<ref>.xml``.
 
         ``prices_from`` é a ref do canal transacional cujo preço este canal
         anuncia. Um feed manda o cliente para a loja, então o preço correto não é

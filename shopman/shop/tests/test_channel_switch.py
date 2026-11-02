@@ -285,15 +285,15 @@ def test_feed_desligado_sai_com_tudo_fora_de_estoque(client, shop, settings):
         image_url="https://cdn.test/baguete.jpg",
     )
     CollectionItem.objects.create(collection=collection, product=product)
-    display_channel("google", "Google", collections=["vitrine"], fmt="google_merchant", prices_from="web")
+    display_channel("meta", "Meta", collections=["vitrine"], fmt="meta_catalog", prices_from="web")
 
-    channel_switch.request_switch("google", False, period="open", reason="Férias", actor=None)
+    channel_switch.request_switch("meta", False, period="open", reason="Férias", actor=None)
 
-    resp = client.get("/feed/google.xml")
+    resp = client.get("/feed/meta.xml")
     assert resp.status_code == 200  # 404 faria a plataforma seguir anunciando a última leitura
     items = ET.fromstring(resp.content).find("channel").findall("item")
     assert len(items) == 1  # o item continua: sumir apagaria o produto na plataforma
-    assert items[0].find("{http://base.google.com/ns/1.0}availability").text == "out_of_stock"
+    assert items[0].find("{http://base.google.com/ns/1.0}availability").text == "out of stock"
 
 
 # ── Notificação comum (sino) só na mudança ────────────────────────────────────

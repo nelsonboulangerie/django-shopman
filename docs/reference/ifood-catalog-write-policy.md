@@ -81,8 +81,8 @@ reconciliação periódica do `maintenance_worker`): cada transição enfileira
 estoque vem daquele canal. Diretiva ainda na fila absorve a seguinte, e o handler
 lê o estado na hora de enviar: zerar e voltar em seguida converge para o estado
 final. O mesmo vale para o catálogo da Meta (`catalog_projection_meta`), que lê o
-estoque do canal apontado por `display.prices_from`. O feed público Google/Meta
-(`views/product_feed.py`) calcula o mesmo na hora em que a plataforma o busca.
+estoque do canal apontado por `display.prices_from`. O envio ao Google (`catalog_projection_google`) segue o mesmo gatilho, e o feed
+público da Meta (`views/product_feed.py`) calcula o mesmo na hora em que a Meta o busca.
 
 Tudo isso passa pela política de escrita acima: sem ela, a diretiva registra o
 bloqueio como antes.

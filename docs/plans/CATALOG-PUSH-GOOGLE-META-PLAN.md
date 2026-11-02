@@ -17,9 +17,10 @@ Feed **e** API na mesma conta seriam duas fontes brigando: a busca do arquivo re
 que a API acabou de mandar. Por isso o envio substitui o feed, não se soma a ele.
 
 **Uma decisão, três tradutores.** Quem decide cada item (entra, preço, disponível,
-oculto) é `shopman/shop/services/display_catalog.py`. O XML do feed
-(`views/product_feed.py`), o envio ao Google (`adapters/catalog_projection_google.py`) e
-o envio à Meta (`adapters/catalog_projection_meta.py`) só traduzem.
+oculto) é `shopman/shop/services/display_catalog.py`. O envio ao Google
+(`adapters/catalog_projection_google.py`), o envio à Meta
+(`adapters/catalog_projection_meta.py`) e o XML do feed da Meta (`views/product_feed.py`)
+só traduzem.
 
 | Gesto no Catálogo | Google (API) | Meta |
 |---|---|---|
@@ -85,12 +86,18 @@ que saiu do canal.
 2. Spec: `META_CATALOG_ID`, `META_ACCESS_TOKEN` (SECRET), `META_CATALOG_PROJECTION=1`.
 3. Sem feed agendado no catálogo.
 
-## Depois que os dois envios estiverem no ar
+## O feed XML
 
-Apagar o feed XML inteiro (zero legado pré go-live): `ProductFeedView`,
-`templates/feed/products.xml`, a rota `feed/<ref>.xml` em `menuboard_urls.py` e
-`build_feed_items`. Fica só `display_catalog` com os dois envios. Não acontece neste PR
-porque o Merchant Center de teste ainda lê o arquivo.
+**Google: apagado (30/10/2026).** O canal de formato `google_merchant` não tem mais XML:
+`/feed/<ref>.xml` responde 404 para ele, o Gestor não mostra "Ver feed" e o envio pela
+Merchant API é o único escritor. A fonte de arquivo do Merchant Center saiu junto.
+
+**Meta: ainda no ar.** O envio pela Graph API existe, mas `META_CATALOG_PROJECTION` não
+está ligado no spec da DigitalOcean, então o catálogo da Meta pode estar lendo o arquivo.
+Quando o envio da Meta estiver ligado e o feed agendado sair do Commerce Manager, apagar
+o resto: `ProductFeedView`, `templates/feed/products.xml`, a rota `feed/<ref>.xml` em
+`menuboard_urls.py`, `build_feed_items` e o `output_path` de `meta_catalog` nas
+projeções do Gestor.
 
 ## Fora daqui
 
