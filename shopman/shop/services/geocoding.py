@@ -203,13 +203,15 @@ def reverse_geocode(lat: float, lng: float) -> ReverseGeocodeResult:
         with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001 — network error surfaces as domain error
-        logger.warning("reverse_geocode_http_failed lat=%s lng=%s err=%s", lat, lng, exc)
+        # Coordenada do cliente é dado pessoal, e o texto da exceção pode trazer a URL
+        # com a chave da API: o log leva só a classe do erro.
+        logger.warning("reverse_geocode_http_failed err=%s", exc.__class__.__name__)
         _record_failure("reverse_geocode", f"falha de transporte ({exc.__class__.__name__})", exc=exc)
         raise GeocodingError("Reverse geocoding request failed.") from exc
 
     status = payload.get("status", "")
     if status != "OK":
-        logger.info("reverse_geocode_empty lat=%s lng=%s status=%s", lat, lng, status)
+        logger.info("reverse_geocode_empty status=%s", status)
         _record_failure("reverse_geocode", f"status={status or '-'}")
         raise GeocodingError(f"No result (status={status}).")
 
@@ -264,7 +266,7 @@ def forward_geocode_structured(address: str) -> ReverseGeocodeResult | None:
         with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001 — rede falha vira "sem coordenada" (fallback)
-        logger.warning("forward_geocode_http_failed addr=%s err=%s", address, exc)
+        logger.warning("forward_geocode_http_failed err=%s", exc.__class__.__name__)
         _record_failure("forward_geocode", f"falha de transporte ({exc.__class__.__name__})", exc=exc)
         return None
 

@@ -429,8 +429,10 @@ def reserve_ceding_cart_holds(
             released.metadata = {**(released.metadata or {}), "ceded_to": beneficiary}
             released.save(update_fields=["metadata"])
             logger.info(
-                "stock.cart_hold_ceded hold=%s session=%s qty=%s ceded=%s to=%s",
-                hold.hold_id, cart_reference, hold.quantity, take, beneficiary,
+                # A sacola se identifica pelo hold (a chave da sessão fica no
+                # próprio hold, ``metadata.reference``), não no log.
+                "stock.cart_hold_ceded hold=%s qty=%s ceded=%s to=%s",
+                hold.hold_id, hold.quantity, take, beneficiary,
             )
             shortfall -= take
             entry = {
