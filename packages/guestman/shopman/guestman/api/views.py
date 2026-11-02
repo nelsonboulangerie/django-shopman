@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError
 from django.db.models import Avg, Count
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
@@ -27,6 +31,8 @@ from .serializers import (
     InsightsSummarySerializer,
     UpdateCustomerSerializer,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class GuestmanPagination(PageNumberPagination):
@@ -86,8 +92,18 @@ class CustomerViewSet(
                 customer_type=data.get("customer_type", "individual"),
                 price_tier_ref=data.get("price_tier_ref", "") or None,
             )
-        except Exception as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except CustomerError as e:
+            return Response({"detail": e.message}, status=status.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as e:
+            return Response({"detail": " ".join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        except IntegrityError:
+            # O texto do banco nomeia constraint e coluna; o cliente só precisa
+            # saber que o cadastro colidiu com um existente.
+            logger.info("guestman.customer_create_conflict ref=%s", ref, exc_info=True)
+            return Response(
+                {"detail": "Já existe um cliente com estes dados."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(CustomerSerializer(cust).data, status=status.HTTP_201_CREATED)
 

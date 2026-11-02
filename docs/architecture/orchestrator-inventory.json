@@ -2187,7 +2187,10 @@
             "FALLBACK_DETAIL",
             "_attach_permission_code",
             "_flatten_errors",
+            "_public_error_types",
             "exception_handler",
+            "logger",
+            "public_error_detail",
             "validation_error_payload"
           ]
         }
