@@ -78,7 +78,11 @@ def test_same_commit_is_equivalent_for_every_component():
 
 def test_live_ahead_of_expected_is_not_equivalent():
     # O vivo não é ancestral do esperado: outro ramo ou histórico reescrito.
-    assert component_unchanged_since("web", _rev("HEAD"), _rev("HEAD~1")) is False
+    try:
+        parent = _rev("HEAD~1")
+    except subprocess.CalledProcessError:
+        pytest.skip("checkout raso: sem o commit anterior para comparar")
+    assert component_unchanged_since("web", _rev("HEAD"), parent) is False
 
 
 def test_unknown_commit_or_component_is_unknown():

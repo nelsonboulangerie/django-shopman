@@ -13408,6 +13408,29 @@
       ]
     },
     {
+      "path": "shopman/shop/watchman_release.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "DEPLOY_COMPONENTS",
+            "ROOT",
+            "_deploy_components",
+            "_has_commit",
+            "component_unchanged_since"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/webhooks/__init__.py",
       "touchpoints": [
         "API"
