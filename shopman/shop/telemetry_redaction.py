@@ -76,6 +76,7 @@ _SENSITIVE_KEY_SUFFIXES = (
 _URL_KEYS = frozenset({"url", "request_url", "source_url"})
 _SAFE_SENTRY_HEADERS = frozenset({"content-type", "x-request-id"})
 
+REDACT_INPUT_MAX_CHARS = 16_384
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d\s().-]{7,}\d)(?!\w)")
 _BEARER_RE = re.compile(r"(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]+")
@@ -125,7 +126,9 @@ def redact_text(value: str) -> str:
     # observação do concierge classifica a redação como `secret`. O regex de URL
     # para em `[`, então o marcador sobrevive ao corte. A atribuição pessoal
     # fica DEPOIS da URL, senão o `[^,;]+` engoliria a URL inteira.
-    text = _BEARER_RE.sub(REDACTED, str(value))
+    # Teto antes dos regex: vários deles são superlineares, e texto de cliente
+    # (concierge, relatório de erro) não tem tamanho garantido.
+    text = _BEARER_RE.sub(REDACTED, str(value)[:REDACT_INPUT_MAX_CHARS])
     text = _SECRET_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}={REDACTED}", text)
     text = _URL_RE.sub(lambda match: strip_url_query(match.group(0)), text)
     text = _PERSONAL_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}={REDACTED}", text)

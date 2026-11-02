@@ -11,7 +11,7 @@ from django.contrib import admin
 from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django.utils.http import urlencode
+from django.utils.http import url_has_allowed_host_and_scheme, urlencode
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.debug import sensitive_post_parameters, sensitive_variables
@@ -46,7 +46,10 @@ def _safe_next(request):
         path = unquote(parsed.path)
     except ValueError:
         return reverse("admin:index")
-    if (nxt.startswith("/admin/") and not parsed.netloc and "\\" not in nxt
+    # A régua de mesma origem do Django vem primeiro (é a que o resto do
+    # ecossistema reconhece); a da casa aperta para caminho do Admin.
+    if (url_has_allowed_host_and_scheme(nxt, allowed_hosts=None, require_https=request.is_secure())
+            and nxt.startswith("/admin/") and not parsed.netloc and "\\" not in nxt
             and "%" not in parsed.path and not any(ord(c) < 32 for c in nxt)
             and not any(p in {".", ".."} for p in path.split("/"))):
         return nxt

@@ -30,6 +30,7 @@ logger = logging.getLogger("shopman.storefront.client")
 _ALLOWED_FIELDS = ("message", "kind", "source", "url", "stack", "user_agent", "app_version")
 _MAX_LEN = {"message": 500, "stack": 4000, "url": 300, "user_agent": 300, "app_version": 60}
 _MAX_DEFAULT = 120
+_REDACT_MARGIN = 256
 
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 # Sequências longas de dígitos (telefones, com separadores) → redige.
@@ -107,13 +108,17 @@ def sanitize_client_report(payload: Any) -> dict[str, str]:
         value = payload.get(field)
         if not isinstance(value, str):
             continue
-        cleaned = value.strip()
+        limit = _MAX_LEN.get(field, _MAX_DEFAULT)
+        # Corta ANTES dos regex de redação (endpoint anônimo: o texto cru pode ter
+        # megabytes e os regex são superlineares). A folga garante que um e-mail
+        # ou telefone na borda do corte final ainda seja visto inteiro.
+        cleaned = value[: limit + _REDACT_MARGIN].strip()
         if not cleaned:
             continue
         if field == "url":
             cleaned = _strip_query(cleaned)
         cleaned = _redact(cleaned)
-        report[field] = cleaned[: _MAX_LEN.get(field, _MAX_DEFAULT)]
+        report[field] = cleaned[:limit]
     return report
 
 

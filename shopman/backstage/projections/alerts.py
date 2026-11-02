@@ -62,7 +62,9 @@ class OperatorAlertsProjection:
 #: mensagem quando a chave não aparece no texto. Ele continua no banco (o
 #: dedupe e ``fiscal.emit_failed_alert_open`` procuram por ele), mas não é
 #: frase para o operador.
-_DEDUPE_SUFFIX = re.compile(r"\s*\n\s*\nDedupe: [^\n]*\s*$")
+# Sem ``\s*`` em sequência com ``\n``: os quantificadores sobrepostos davam
+# custo polinomial. O espaço antes da linha em branco sai no ``strip()``.
+_DEDUPE_SUFFIX = re.compile(r"\n[ \t\r]*\nDedupe: [^\n]*(?:\n\s*)?$")
 
 
 def readable_message(message: str) -> str:
