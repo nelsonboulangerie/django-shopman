@@ -112,6 +112,22 @@ RUN mkdir -p /app/staticfiles /app/media \
         python manage.py collectstatic --noinput -v 0 \
     && chown -R shopman:shopman /app /home/shopman
 
+# ── Identidade da release (WP-RELEASE-01 R1) ────────────────────────────────
+# Quem passa é o deploy-images.yml; build local fica sem identidade (vazio), e o
+# endereço /health/release diz isso em vez de inventar um número. Fica no FIM de
+# propósito: o valor muda a cada commit e só invalida estas camadas de metadado,
+# nunca o pip/npm/build acima. Não é segredo e não pode virar segredo: aparece em
+# resposta pública e no rótulo da imagem. Contrato: docs/reference/release-contract.md.
+ARG SHOPMAN_BUILD_SHA=""
+ARG SHOPMAN_RELEASE_ID=""
+ARG SHOPMAN_RELEASE_COMPONENT="web"
+ENV SHOPMAN_BUILD_SHA=${SHOPMAN_BUILD_SHA} \
+    SHOPMAN_RELEASE_ID=${SHOPMAN_RELEASE_ID} \
+    SHOPMAN_RELEASE_COMPONENT=${SHOPMAN_RELEASE_COMPONENT}
+LABEL org.opencontainers.image.revision=${SHOPMAN_BUILD_SHA} \
+      org.opencontainers.image.version=${SHOPMAN_RELEASE_ID} \
+      org.opencontainers.image.title=${SHOPMAN_RELEASE_COMPONENT}
+
 USER shopman
 
 EXPOSE 8000
