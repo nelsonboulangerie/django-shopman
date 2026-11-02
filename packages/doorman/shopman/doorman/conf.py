@@ -123,7 +123,13 @@ class DoormanSettings:
     # When True, after OTP verification the user can trust their device
     # to skip OTP on subsequent logins.
     DEVICE_TRUST_ENABLED: bool = True
-    DEVICE_TRUST_TTL_DAYS: int = 30
+    #: Dias SEM USO até a confiança vencer. Não é prazo fixo: cada uso renova
+    #: (``TrustedDevice.touch`` empurra ``expires_at`` e o cookie é reemitido com o
+    #: mesmo prazo). Quem volta à loja nunca mais digita código; o dispositivo
+    #: esquecido numa gaveta vence sozinho. Vale igual para cliente, quadro e
+    #: estação: os três são "este navegador já foi verificado", e nenhum ganha
+    #: permissão por ser confiável.
+    DEVICE_TRUST_TTL_DAYS: int = 180
     DEVICE_TRUST_COOKIE_NAME: str = "doorman_dt"
     # Cookie SEPARADO para display: o navegador do gestor pode confiar num quadro
     # sem atropelar a confiança de cliente do mesmo navegador (um cookie guarda um

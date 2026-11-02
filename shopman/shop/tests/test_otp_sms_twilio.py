@@ -12,10 +12,11 @@ from shopman.shop.adapters import otp_sms_twilio as sms
 
 @pytest.fixture(autouse=True)
 def _marca_da_loja(monkeypatch):
-    """A marca do SMS vem da ``Shop``; aqui, sem banco, ela é fixada."""
+    """A marca e o host do SMS vêm da ``Shop``; aqui, sem banco, eles são fixados."""
     from shopman.shop.adapters import _sms
 
     monkeypatch.setattr(_sms, "_brand", lambda: "Loja Teste")
+    monkeypatch.setattr(_sms, "_host", lambda: "")
 
 
 _CFG = {

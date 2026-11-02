@@ -1544,6 +1544,9 @@ class Command(BaseCommand):
             "document": "02119381000158",
             "brand_name": "Nelson Boulangerie",
             "short_name": "Nelson",
+            # O host da loja: vai no fim do SMS de código (``@host #código``, WebOTP),
+            # e o celular só preenche sozinho se for o host da página aberta.
+            "storefront_host": "www.nelsonboulangerie.com.br",
             "tagline": "Padaria Artesanal",
             "description": "Segue rigorosamente as normas da panificação artesanal francesa.",
             # A voz que a IA usa ao escrever para a Nelson — catálogo E anúncio, uma
