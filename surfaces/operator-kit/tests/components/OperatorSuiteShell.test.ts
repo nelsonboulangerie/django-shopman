@@ -36,6 +36,11 @@ const stubs = {
   OperatorInbox: { props: ["placement"], template: '<div data-inbox-stub :data-placement="placement" />' },
   OperatorUrgentAlert: true,
   OperatorSuiteSearch: true,
+  OperatorSwitcher: {
+    props: ["sections", "current"],
+    template:
+      '<div data-switcher-stub :data-current="current" :data-sections="sections.map((s) => s.key).join(\',\')" />',
+  },
 };
 
 const mounted: VueWrapper[] = [];
@@ -346,5 +351,68 @@ describe("OperatorSuiteShell: a barra inferior (o menu rápido)", () => {
     const wrapper = await mountShell({ sections });
     expect(quickLinks(wrapper).map((link) => link.attributes("data-section"))).toEqual(["orders", "exit", "history", "feeds", "settings"]);
     expect(wrapper.find("[data-quick-bar-more]").exists()).toBe(false);
+  });
+});
+
+// O modelo de navegação (dono, 31/10/2026) entra por app: só o shell que recebe
+// `switcherSections` troca o ☰ e a barra de baixo pelo trocador. Os outros apps ficam
+// exatamente como estavam (a barra inferior acima prova isso sem a prop).
+describe("OperatorSuiteShell: o trocador (opt-in por app)", () => {
+  const FORMS: OperatorSection[] = SECTIONS.map((section) => ({
+    ...section,
+    form: section.key === "orders" || section.key === "exit" ? "floor" : "office",
+  }));
+
+  function switcherOpen() {
+    return useState<boolean>("suite-switcher-open").value;
+  }
+
+  it("sem switcherSections: nem trocador, e o selo da barra lateral volta à Central", async () => {
+    const wrapper = await mountShell();
+    expect(wrapper.find("[data-switcher-stub]").exists()).toBe(false);
+    const seal = wrapper.get("[data-suite-rail] [data-page-header-app]");
+    expect(seal.attributes("aria-label")).toMatch(/voltar/);
+    expect(seal.attributes("aria-haspopup")).toBeUndefined();
+  });
+
+  it("tela do chão: sem barra de seções embaixo; o selo abre o trocador", async () => {
+    useState("suite-switcher-open").value = false;
+    const wrapper = await mountShell({ switcherSections: FORMS, current: "orders" });
+    expect(wrapper.find("[data-operator-quick-bar]").exists()).toBe(false);
+    expect(wrapper.get("[data-switcher-stub]").attributes("data-sections")).toBe(
+      "orders,exit,history,feeds,catalog,settings",
+    );
+    const seal = wrapper.get("[data-suite-rail] [data-page-header-app]");
+    expect(seal.attributes("aria-label")).toMatch(/trocar de seção ou de app/);
+    expect(seal.attributes("aria-haspopup")).toBe("dialog");
+    expect(seal.attributes("href")).toBeUndefined();
+    await seal.trigger("click");
+    expect(switcherOpen()).toBe(true);
+  });
+
+  it("tela do escritório: a barra de baixo tem só o escritório", async () => {
+    const wrapper = await mountShell({ switcherSections: FORMS, current: "history" });
+    expect(
+      wrapper.findAll("[data-operator-quick-bar] [data-section]").map((link) => link.attributes("data-section")),
+    ).toEqual(["history", "feeds", "catalog", "settings"]);
+  });
+
+  it("escritório com mais seções do que cabem: 'Mais' abre o trocador, não a gaveta", async () => {
+    useState("suite-switcher-open").value = false;
+    const extra: OperatorSection[] = [
+      ...FORMS,
+      { key: "customers", label: "Clientes", icon: "i-lucide-users", to: "/customers", form: "office" },
+      { key: "channels", label: "Postos", icon: "i-lucide-monitor", to: "/stations", form: "office" },
+    ];
+    const wrapper = await mountShell({ sections: extra, switcherSections: extra, current: "history" });
+    await wrapper.get("[data-operator-quick-bar] [data-quick-bar-more]").trigger("click");
+    await settle();
+    expect(switcherOpen()).toBe(true);
+    expect(wrapper.findComponent(DashboardSidebar).props("open")).toBe(false);
+  });
+
+  it("tela fora das seções (o item aberto) usa a forma declarada pelo app", async () => {
+    const wrapper = await mountShell({ switcherSections: FORMS, current: "unknown", defaultForm: "floor" });
+    expect(wrapper.find("[data-operator-quick-bar]").exists()).toBe(false);
   });
 });

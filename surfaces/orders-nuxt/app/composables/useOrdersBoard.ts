@@ -226,6 +226,8 @@ export function useOrdersBoard() {
   let attentionReady = false;
   let lastAttentionSignature = "";
   const attentionPending = ref(false);
+  // O pedido que fez o aviso tocar, para o aviso dizer qual é (não só "pedido novo").
+  const attentionRef = ref("");
   let pendingAttentionRefs = new Set<string>();
   let pendingAttentionDay = "";
   // O aviso pendente já chegou ao alto-falante ao menos uma vez?
@@ -357,6 +359,7 @@ export function useOrdersBoard() {
       pendingAttentionDay = day;
       pendingAttentionHeard = false;
       attentionPending.value = pendingAttentionRefs.size > 0;
+      attentionRef.value = decision.firstUnseen;
       announceTreatableOrder(decision.firstUnseen);
     }
   }
@@ -812,6 +815,7 @@ export function useOrdersBoard() {
     soundBlocked,
     alerting,
     attentionPending,
+    attentionRef,
     toggleSound,
     activateAttentionSound,
     acknowledgeAttention,

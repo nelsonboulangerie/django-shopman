@@ -84,7 +84,16 @@ async function restoreAuthenticatedWorkspace() {
   await refreshNuxtData();
 }
 
-const { sections, current } = useGestorSections();
+const { sections, settings, current } = useGestorSections();
+// O trocador (modelo de navegação, 31/10/2026) lista tudo, pela forma. Chão: Pedidos,
+// Saída e Rotinas (andando pela loja, dono 31/10). Escritório: o que mora em Ajustes.
+const FLOOR = new Set(["orders", "exit", "checklists"]);
+const switcherSections = computed(() => {
+  const seen = new Set<string>();
+  return [...sections.value.filter((s) => s.key !== "settings"), ...settings.value]
+    .filter((s) => (seen.has(s.key) ? false : (seen.add(s.key), true)))
+    .map((s) => ({ ...s, form: FLOOR.has(s.key) ? ("floor" as const) : ("office" as const) }));
+});
 const { alerts, activeCount, ack, accept, isAccepting } = useAlerts();
 provideOperatorInboxAlerts(() => ({
   title: "Gerais",
@@ -119,6 +128,8 @@ useOperatorWindowTitle();
         storage-key="gestor"
         :sections="sections"
         :current="current"
+        :switcher-sections="switcherSections"
+        default-form="floor"
         label="Seções do Gestor"
         :operator-name="operator?.name"
         @lock="lock"

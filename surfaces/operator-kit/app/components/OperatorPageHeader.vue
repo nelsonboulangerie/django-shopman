@@ -235,7 +235,9 @@ const actionsClass = computed(() => {
 });
 
 // No shell, o selo do app sai da barra do celular: a gaveta (☰) o mostra no topo.
-const sealClass = computed(() => (suiteRail ? "max-sm:hidden" : ""));
+// Com o trocador (modelo de navegação), não há ☰: o selo é a porta, em toda largura.
+const switcherEnabled = useState<boolean>("suite-switcher-enabled", () => false);
+const sealClass = computed(() => (suiteRail && !switcherEnabled.value ? "max-sm:hidden" : ""));
 
 // Toolbar no celular.
 const filtersMode = computed(
@@ -311,7 +313,7 @@ function clearAll() {
   <header class="contents" data-operator-page-header-landmark>
     <NuxtDashboardNavbar
       as="div"
-      :toggle="Boolean(suiteRail)"
+      :toggle="Boolean(suiteRail) && !switcherEnabled"
       class="print:hidden"
       data-operator-page-header
     >

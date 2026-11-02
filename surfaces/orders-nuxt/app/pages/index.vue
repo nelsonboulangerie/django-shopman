@@ -54,6 +54,7 @@ import {
   liveAge,
   queueGesture,
   queueItems,
+  queueCode,
   queueScopeCounts,
   type QueueScope,
   type QueueSort,
@@ -95,6 +96,7 @@ const {
   soundOn,
   soundBlocked,
   attentionPending,
+  attentionRef,
   toggleSound,
   activateAttentionSound,
   acknowledgeAttention,
@@ -1431,15 +1433,113 @@ function exportCsv() {
 function printQueue() {
   window.print();
 }
+// A linha do chão no celular (modelo de navegação, 31/10/2026): o ⋮ dela leva as MESMAS
+// ações do ⋯ do celular (som, atualizar, selecionar, exportar, imprimir).
+// O aviso não é só de pedido novo: toca para o pedido que acabou de ter algo a fazer, em
+// qualquer zona. A pílula diz qual é, com o mesmo status que o cartão mostra (a zona
+// mentia: um pedido já na rua aparecia como "pronto para sair"), e Ver leva à zona dele.
+const attention = computed(() => {
+  const zone = zones.value.find((z) => z.cards.some((c) => c.ref === attentionRef.value));
+  const card = zone?.cards.find((c) => c.ref === attentionRef.value);
+  return {
+    zone: zone?.key ?? "intake",
+    code: card ? queueCode(card) : "",
+    what: card?.status_label || "Pedido para tratar",
+  };
+});
+// O navegador só deixa tocar som depois do primeiro toque na tela, e qualquer toque já
+// liga. Em vez de "Som bloqueado" pendurado no aviso, a tela pede o toque uma vez.
+const startDismissed = ref(false);
+function startTap() {
+  startDismissed.value = true;
+  handleSoundAction();
+}
+// Ver: abre a zona do pedido. Na Saída, fica nela se o pedido é da Saída ou do preparo;
+// senão sai do posto e abre Pedidos (o selo muda junto).
+function seeAttention() {
+  const zone = attention.value.zone;
+  if (phoneExitMode.value && zone !== "expedition" && zone !== "prep") phoneExitMode.value = false;
+  pickPhoneZone(zone);
+}
+const compactOptions = computed(() => phoneHeaderActions.value.map(({ priority: _p, ...item }) => item));
+const compactTotal = computed(() => zones.value.reduce((n, z) => n + z.cards.length, 0));
+const compactFilterLabel = computed(() => activeFilters.value.map((f) => f.label).join(', '));
+function compactClear() {
+  query.value = "";
+  channel.value = "all";
+  fulfillment.value = "all";
+}
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
     <!-- Cabeçalho de UMA linha (UX-KIT-V2, prévia v4 `gestor-fila4.html`): título, ao vivo,
          busca e poucos controles (som, ordenar, visão, ⋯). Atualizar, exportar, imprimir,
          a seleção em lote e a última leitura útil moram no ⋯; Visto aparece aqui só
          enquanto há pedido novo esperando. No posto Saída (`gestor-colunas4.html`):
          "Visão: Saída", "Mostrar as 3 colunas" e o som; o resto no ⋯. -->
+    <OperatorCompactBar
+      :title="phoneExitMode ? 'Saída' : 'Pedidos'"
+      :tone="liveTone"
+      :time="readClock"
+      :conn-label="error ? 'Atualização falhou' : realtimeView.label"
+      :query="query"
+      search-button-label="Buscar por código, cliente ou item"
+      :filter-active="channel !== 'all' || fulfillment !== 'all'"
+      :filter-label="compactFilterLabel"
+      :summary="visibleCount + ' de ' + compactTotal + ' pedidos no quadro.'"
+      :options="compactOptions"
+      @clear="compactClear"
+    >
+      <template v-if="!phoneExitMode" #filters>
+        <OperatorQuickFilters
+          :model-value="fulfillment"
+          :items="fulfillmentFilterTabs"
+          label="Tipo de entrega"
+          data-fulfillment-filters
+          @update:model-value="pickFulfillment(String($event))"
+        />
+        <NuxtFormField v-if="channels.length" label="Canal">
+          <NuxtSelect v-model="channel" :items="channelItems" class="w-full" aria-label="Canal" data-channel-picker />
+        </NuxtFormField>
+        <NuxtFormField label="Ordenar">
+          <NuxtDropdownMenu :items="sortMenuItems" :content="{ align: 'start' }">
+            <NuxtButton icon="i-lucide-arrow-up-down" trailing-icon="i-lucide-chevron-down" :label="sortLabel" color="neutral" variant="outline" class="min-h-11" data-board-sort />
+          </NuxtDropdownMenu>
+        </NuxtFormField>
+        <NuxtFormField label="Ver como">
+          <NuxtTabs :model-value="view" :items="viewTabs" :content="false" variant="pill" aria-label="Visão do Gestor" data-view-switch @update:model-value="pickView" />
+        </NuxtFormField>
+      </template>
+    </OperatorCompactBar>
+    <!-- Sem conexão segue EXPLÍCITO (cor + texto), não só o chip do selo. Com a
+         leitura falhada o conteúdo já diz "Falha ao atualizar a fila"; aqui não repete. -->
+    <p v-if="liveTone === 'off' && !error" class="flex items-center gap-2 border-b border-default bg-error/10 px-3 py-2 text-sm text-error md:hidden" role="status" data-compact-offline>
+      <NuxtIcon name="i-lucide-wifi-off" class="size-4 shrink-0" /><span>Sem conexão.<template v-if="readClock"> Última leitura às {{ readClock }}.</template></span>
+    </p>
+    <!-- O aviso no polegar, sem empurrar a fila: qual pedido, o status do cartão dele, Ver
+         e Visto. Na Saída fica acima do "Entregar", a ação do momento ali. -->
+    <div v-if="attentionPending && !exitPostView" :class="phoneExitMode ? 'bottom-24' : 'bottom-4'" class="fixed inset-x-3 z-40 md:hidden" role="status" data-attention-pill>
+      <div class="flex items-center gap-2 rounded-2xl bg-inverted py-1.5 pl-4 pr-1.5 text-inverted shadow-lg">
+        <NuxtIcon name="i-lucide-bell-ring" class="size-5 shrink-0" />
+        <p class="min-w-0 flex-1 leading-tight"><strong class="block truncate">{{ attention.code || attention.what }}</strong><span v-if="attention.code" class="block truncate text-xs opacity-80">{{ attention.what }}</span></p>
+        <NuxtButton label="Ver" color="neutral" variant="ghost" class="min-h-11 text-inverted" data-attention-see @click="seeAttention" />
+        <NuxtButton icon="i-lucide-check" label="Visto" color="neutral" variant="outline" class="min-h-11" data-attention-seen @click="acknowledgeAttention" />
+      </div>
+    </div>
+    <!-- O som pede um toque do navegador uma vez; a tela pede, ao abrir. -->
+    <!-- Qualquer toque na tela já libera o som (o kit escuta o primeiro gesto); o botão
+         é a porta para quem chega pelo teclado. -->
+    <div
+      v-if="soundOn && soundBlocked && !startDismissed"
+      class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-default/95 p-6 text-center md:hidden"
+      data-sound-start
+      @pointerdown="startTap"
+    >
+      <p class="text-xl font-semibold text-highlighted">Toque para começar</p>
+      <p class="text-muted">O som dos avisos de pedido liga junto.</p>
+      <NuxtButton label="Começar" class="min-h-11" data-sound-start-button @click="startTap" />
+    </div>
     <OperatorPageHeader
       :title="exitPostView ? 'Saída' : 'Pedidos'"
       :filters-wrap="false"
@@ -1538,7 +1638,6 @@ function printQueue() {
             @click="acknowledgeAttention"
           />
         </NuxtFieldGroup>
-
         <template v-if="!compactHeader">
           <!-- ordenar: na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
                no quadro e na tabela, a ordem deles -->
