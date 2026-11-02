@@ -220,14 +220,3 @@
 :root[data-keyboard="open"] [data-slot="sheet-content"] {
   max-height: calc(var(--viewport-visible-height) - var(--viewport-visible-top));
 }
-
-/* A linha do chão (`OperatorCompactBar`): abaixo do md ela é o cabeçalho inteiro da página
-   que se declara `data-compact-page`. Somem a barra de 56px do kit e as faixas de filtro
-   dele; ficam o aviso da tela e o sinal do canal. Página sem a marca não muda. */
-@media (max-width: 767.98px) {
-  [data-compact-page] [data-operator-page-header],
-  [data-compact-page] [data-page-header-filter-line],
-  [data-compact-page] [data-page-header-active-filters],
-  [data-compact-page] [data-page-header-filters-end],
-  [data-compact-page] [data-operator-page-header-landmark] > :has([data-page-header-filters]) { display: none !important; }
-}

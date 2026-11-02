@@ -140,3 +140,19 @@ const items = computed<(readonly OperatorMoreMenuItem[])[]>(() => {
     </NuxtDrawer>
   </div>
 </template>
+
+<style>
+/* Abaixo do md, a linha do chão é o cabeçalho inteiro da página que se declara
+   `data-compact-page`: somem a barra de 56px do kit e as faixas de filtro dele; ficam o
+   aviso da tela e o sinal do canal. Mora aqui, e não no tema (`operator-base.css`), para
+   valer só onde a linha existe e não repintar as baselines de quem não a usa. */
+@media (max-width: 767.98px) {
+  [data-compact-page] [data-operator-page-header],
+  [data-compact-page] [data-page-header-filter-line],
+  [data-compact-page] [data-page-header-active-filters],
+  [data-compact-page] [data-page-header-filters-end],
+  [data-compact-page] [data-operator-page-header-landmark] > :has([data-page-header-filters]) {
+    display: none !important;
+  }
+}
+</style>
