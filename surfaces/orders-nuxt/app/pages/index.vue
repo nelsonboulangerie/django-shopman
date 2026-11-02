@@ -1527,19 +1527,26 @@ function compactClear() {
         <NuxtButton icon="i-lucide-check" label="Visto" color="neutral" variant="outline" class="min-h-11" data-attention-seen @click="acknowledgeAttention" />
       </div>
     </div>
-    <!-- O som pede um toque do navegador uma vez; a tela pede, ao abrir. -->
-    <!-- Qualquer toque na tela já libera o som (o kit escuta o primeiro gesto); o botão
-         é a porta para quem chega pelo teclado. -->
-    <div
-      v-if="soundOn && soundBlocked && !startDismissed"
-      class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-default/95 p-6 text-center md:hidden"
+    <!-- O som pede um toque do navegador uma vez; a tela pede, ao abrir (celular). Qualquer
+         toque já libera o som (o kit escuta o primeiro gesto); o botão é a porta para quem
+         chega pelo teclado. -->
+    <NuxtModal
+      :open="isPhone && soundOn && soundBlocked && !startDismissed"
+      fullscreen
+      :close="false"
+      title="Toque para começar"
+      description="O som dos avisos de pedido liga junto."
       data-sound-start
-      @pointerdown="startTap"
+      @update:open="(v) => { if (!v) startTap(); }"
     >
-      <p class="text-xl font-semibold text-highlighted">Toque para começar</p>
-      <p class="text-muted">O som dos avisos de pedido liga junto.</p>
-      <NuxtButton label="Começar" class="min-h-11" data-sound-start-button @click="startTap" />
-    </div>
+      <template #content>
+        <div class="flex h-full flex-col items-center justify-center gap-4 p-6 text-center" @pointerdown="startTap">
+          <p class="text-xl font-semibold text-highlighted">Toque para começar</p>
+          <p class="text-muted">O som dos avisos de pedido liga junto.</p>
+          <NuxtButton label="Começar" class="min-h-11" data-sound-start-button @click="startTap" />
+        </div>
+      </template>
+    </NuxtModal>
     <OperatorPageHeader
       :title="exitPostView ? 'Saída' : 'Pedidos'"
       :filters-wrap="false"

@@ -71,7 +71,7 @@ const iconName = computed(() => {
     <span v-if="place" class="flex min-w-0 flex-col text-left leading-tight">
       <span class="truncate text-xs text-muted">{{ appLabel }}</span>
       <span class="flex min-w-0 items-center gap-0.5 font-semibold text-highlighted">
-        <span class="truncate">{{ place }}</span>
+        <span class="truncate" data-compact-place>{{ place }}</span>
         <NuxtIcon name="i-lucide-chevron-down" class="size-3.5 shrink-0 text-muted" />
       </span>
     </span>

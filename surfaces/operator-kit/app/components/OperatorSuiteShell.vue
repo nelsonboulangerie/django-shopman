@@ -87,9 +87,13 @@ const quickSections = computed(() =>
 );
 // Com o trocador, a forma da tela decide a barra de baixo. Chão: nenhuma (o posto define o
 // lugar; trocar é pelo selo). Escritório: as seções do escritório, "Mais" abre o trocador.
+// Escrito já no setup (o servidor não roda `watchEffect`): o cabeçalho, filho do shell,
+// tem de desenhar o mesmo selo no servidor e na hidratação.
 const switcherEnabled = useState<boolean>("suite-switcher-enabled", () => false);
-watchEffect(() => {
-  switcherEnabled.value = Boolean(props.switcherSections) && !props.home;
+const wantsSwitcher = () => Boolean(props.switcherSections) && !props.home;
+switcherEnabled.value = wantsSwitcher();
+watch(wantsSwitcher, (enabled) => {
+  switcherEnabled.value = enabled;
 });
 const pool = computed(() => props.switcherSections ?? props.sections);
 function exactKey(path: string): string | undefined {

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // O trocador (modelo de navegação, aprovado 31/10/2026): o que o selo abre.
 // Três blocos, nesta ordem, porque é a ordem da pergunta de quem toca no selo:
-//   1. Neste app: as seções, agrupadas pela forma (no posto, escritório, na parede);
+//   1. Neste app: as seções numa lista só, as do chão primeiro. A forma decide a barra
+//      de baixo, não vira título: "no posto" e "escritório" são palavras de quem
+//      desenha, não de quem opera (dono, 02/11/2026);
 //   2. Outros apps: cada um com a pendência mais urgente (a mesma da Central), e a Central;
 //   3. Quem opera: o nome, e Trocar ou bloquear.
 // Celular e tablet: folha de baixo. Computador: painel da esquerda, ao lado da barra.
@@ -34,16 +36,9 @@ const identity = config.operatorPwa?.identity;
 const hubUrl = config.operatorHubUrl || "";
 const { attrsFor } = useOperatorAppLink();
 
-const GROUPS = [
-  { form: "floor", title: "No posto" },
-  { form: "office", title: "Escritório" },
-  { form: "wall", title: "Na parede" },
-] as const;
-const groups = computed(() =>
-  GROUPS.map((group) => ({
-    ...group,
-    items: props.sections.filter((section) => (section.form ?? "office") === group.form),
-  })).filter((group) => group.items.length),
+const FORM_ORDER = ["floor", "office", "wall"] as const;
+const ordered = computed(() =>
+  FORM_ORDER.flatMap((form) => props.sections.filter((section) => (section.form ?? "office") === form)),
 );
 const place = computed(
   () => props.sections.find((section) => section.key === props.current)?.label ?? "",
@@ -93,12 +88,11 @@ function go(section: OperatorSection) {
   >
     <template #body>
       <div class="flex flex-col gap-5 pb-2">
-        <section v-for="group in groups" :key="group.form" :aria-label="group.title">
-          <h3 class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">{{ group.title }}</h3>
+        <section :aria-label="`Seções: ${identity?.label || 'este app'}`">
           <!-- Mais de três: duas colunas, para os outros apps caberem na primeira tela. -->
-          <div class="grid gap-1" :class="group.items.length > 3 ? 'grid-cols-2' : 'grid-cols-1'">
+          <div class="grid gap-1" :class="ordered.length > 3 ? 'grid-cols-2' : 'grid-cols-1'">
             <NuxtButton
-              v-for="section in group.items"
+              v-for="section in ordered"
               :key="section.key"
               :icon="section.icon.replace('lucide:', 'i-lucide-')"
               :color="section.key === current ? 'primary' : 'neutral'"

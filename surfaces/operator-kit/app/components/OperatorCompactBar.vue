@@ -86,7 +86,8 @@ const items = computed<(readonly OperatorMoreMenuItem[])[]>(() => {
 
 <template>
   <div class="md:hidden" data-compact-header>
-    <h1 class="sr-only">{{ title }}</h1>
+    <!-- Só para leitor de tela: o `sr-only` corta de propósito (o lugar está no selo). -->
+    <h1 class="sr-only" data-clipping-allowed>{{ title }}</h1>
     <div class="flex min-h-14 items-center gap-1.5 border-b border-default bg-card px-2 py-1.5" data-compact-bar>
       <slot name="lead"><OperatorCompactSeal :tone="tone" :time="time" :place="title" /></slot>
       <div v-if="$slots.identity" class="min-w-0 flex-1" data-compact-identity><slot name="identity" /></div>
