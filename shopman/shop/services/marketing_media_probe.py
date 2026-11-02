@@ -115,7 +115,7 @@ def _absolute(url: str, *, field: str) -> str:
                 "Use uma imagem com endereço https://.",
             )
         raw = f"{base}{raw}"
-    return marketing_url_policy.validate_media_url(raw, field=field)
+    return marketing_url_policy.media_fetch_url(raw, field=field)
 
 
 def _cached_probe(url: str, *, field: str) -> PhotoFacts:

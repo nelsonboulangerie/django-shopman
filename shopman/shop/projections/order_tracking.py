@@ -1759,12 +1759,13 @@ def _contact_and_share(order) -> tuple[str, str, str]:
     shop_name = "loja"
     try:
         from shopman.shop.models import Shop
+        from shopman.shop.models.shop import is_whatsapp_link
 
         shop = Shop.load()
         if shop:
             shop_name = shop.name or "loja"
             for link in shop.social_links or []:
-                if "wa.me" in link or "whatsapp.com" in link:
+                if is_whatsapp_link(link):
                     whatsapp_url = link
                     break
             if not whatsapp_url and shop.phone:

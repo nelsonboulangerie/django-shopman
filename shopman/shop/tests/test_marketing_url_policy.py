@@ -191,3 +191,11 @@ def test_private_literal_never_becomes_trusted_even_if_misconfigured():
     with pytest.raises(MarketingContractError) as caught:
         marketing_url_policy.validate_media_url("https://127.0.0.1/image.jpg")
     assert caught.value.code == "marketing_media_private_host"
+
+
+def test_server_side_fetch_url_takes_the_host_from_the_allowlist():
+    url = "https://CDN.example./img/croissant.jpg?w=900"
+
+    assert marketing_url_policy.media_fetch_url(url) == "https://cdn.example/img/croissant.jpg?w=900"
+    with pytest.raises(MarketingContractError):
+        marketing_url_policy.media_fetch_url("https://evil.example/img/croissant.jpg")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import urlsplit
 
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
@@ -158,6 +159,22 @@ def _resolve_social_link(url: str) -> dict:
         "label": domain or "Site",
         "icon_svg": _GENERIC_LINK_ICON,
     }
+
+
+_WHATSAPP_HOSTS = frozenset({"wa.me", "whatsapp.com", "api.whatsapp.com", "web.whatsapp.com", "www.whatsapp.com"})
+
+
+def is_whatsapp_link(link: object) -> bool:
+    """O link das redes sociais aponta MESMO para o WhatsApp?
+
+    Pergunta pelo host, não por substring: ``https://exemplo.com/?wa.me`` não é
+    WhatsApp, e o botão de suporte não pode levar o cliente para lá.
+    """
+    try:
+        host = (urlsplit(str(link or "").strip()).hostname or "").rstrip(".").lower()
+    except ValueError:
+        return False
+    return host in _WHATSAPP_HOSTS
 
 
 class Shop(models.Model):
@@ -640,7 +657,7 @@ class Shop(models.Model):
         otherwise falls back to deriving from `phone`.
         """
         for link in (self.social_links or []):
-            if "wa.me" in link or "whatsapp.com" in link:
+            if is_whatsapp_link(link):
                 return link
         digits = "".join(c for c in self.phone if c.isdigit())
         if not digits:
