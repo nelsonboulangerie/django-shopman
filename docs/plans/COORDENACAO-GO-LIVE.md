@@ -357,6 +357,13 @@ para banco restaurado · dados reais do Dia 1 · GO/NO-GO.
 > provar em homologação (cartão na NFC-e). As tarefas T1 a T12 (Onda 1) são a fila de
 > código antes do go-live; T13 a T15 vêm depois; P1 a P8 são o produto adotável.
 
+> **Atualização de 02/11/2026:** a Onda 1 do laudo está entregue: T1 #2002, T2 #1996,
+> T3 #1997/#2011/#2023 (forma `99` não provada em homologação; `17` x `20` do Pix de
+> balcão é do contador), T4 #2004, T5 #2006, T6 #2005/#2067, T7 #2008, T8 #1999,
+> T9 #2007, T10 #2001, T11 #2003, T12 #2000. As provas de `evidence/glr-2026-10-23/`
+> foram apagadas (10 de 11 já falhavam no `main`). **Em andamento em 02/11:** T13 a
+> T15, itens (2) a (5) do Doorman e WP-RELEASE-01.
+
 **Nenhum bloqueio de código conhecido nesta reauditoria.** A lista de 19/10 foi
 fechada por entregas já no `main`: drift Watchman e fallbacks (#1894, #1898, #1906,
 #1909, #1918); grupos (#1899, #1912, #1913, #1916, #1919); encomenda (#1902,

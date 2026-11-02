@@ -54,7 +54,7 @@ alterar navegação, barra lateral, tema ou baselines.
 | Cache/timeout de instalação dos browsers | A instalação ainda aparece em vários jobs e scripts | Frente de CI própria; não regenerar baselines |
 | Prova do código 99 via iFood | Efeito externo não autorizado nesta transferência | Depende de decisão contextual do dono |
 | `tpIntegra=1` para cartão online e Pix | Decisão explicitamente pós-go-live | Não executar agora |
-| `evidence/glr-2026-10-23/` | A nota antiga manda apagar, mas a redundância e retenção ainda não foram provadas nesta rodada | Não apagar sem auditoria de referências |
+| `evidence/glr-2026-10-23/` | Apagado em 02/11/2026: 10 de 11 provas falhavam no `main` (defeito sumiu); a 11ª era sanidade | Encerrado |
 | Alerta `fiscal_cancel_failed` da N09 | A causa histórica foi corrigida no #2029 e a prova posterior está no #2051 | Conferir estado vivo em leitura; não apagar alerta sem reconciliação |
 
 ## Limites preservados
