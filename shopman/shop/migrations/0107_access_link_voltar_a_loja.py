@@ -22,6 +22,12 @@ SITE_BODY = (
     "{cart_note}Depois, é só voltar ao computador."
 )
 
+# Mesmo formato das outras migrações de texto (0082…), lido pelo teste que confere que a
+# cadeia de migrações chega ao texto do seed.
+TEXTS = [
+    (SITE_EVENT, SITE_OLD_SUBJECT, SITE_SUBJECT, SITE_OLD_BODY, SITE_BODY),
+]
+
 COPY_UPDATES = (
     (
         "LOGIN_WA_STEPS",
