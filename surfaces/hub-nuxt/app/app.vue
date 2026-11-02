@@ -39,6 +39,7 @@ import {
   staleQueueAlert,
   tileAriaLabel,
   tileIcon,
+  tileIconStyle,
   tileIconUrl,
   tileLinkAttrs,
   tilesByPendency,
@@ -62,7 +63,8 @@ const linkContext = computed(() => ({
 
 // O bloco mostra o ícone REAL do app (o PNG do PWA na origem do próprio app), e cai no
 // Lucide do Django quando a URL não resolve OU quando a imagem falha (app fora do ar,
-// deploy sem a família). A falha é local por bloco: um app sem ícone não apaga os outros.
+// deploy sem a família), na cor do app como o PNG. A falha é local por bloco: um app sem
+// ícone não apaga os outros.
 const brokenTileIcons = reactive(new Set<string>());
 function tileImageSrc(tile: HubTileProjection): string | null {
   return brokenTileIcons.has(tile.ref) ? null : tileIconUrl(tile);
@@ -331,7 +333,8 @@ function toneDot(tile: HubTileProjection): string {
                         >
                           <span
                             class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg text-primary"
-                            :class="tileImageSrc(tile) ? '' : 'bg-primary/10'"
+                            :class="tileImageSrc(tile) || tileIconStyle(tile) ? '' : 'bg-primary/10'"
+                            :style="tileImageSrc(tile) ? undefined : tileIconStyle(tile) ?? undefined"
                           >
                             <img
                               v-if="tileImageSrc(tile)"
@@ -407,7 +410,8 @@ function toneDot(tile: HubTileProjection): string {
                       <template #leading>
                         <span
                           class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg text-primary"
-                          :class="tileImageSrc(tile) ? '' : 'bg-primary/10'"
+                          :class="tileImageSrc(tile) || tileIconStyle(tile) ? '' : 'bg-primary/10'"
+                            :style="tileImageSrc(tile) ? undefined : tileIconStyle(tile) ?? undefined"
                         >
                           <img
                             v-if="tileImageSrc(tile)"

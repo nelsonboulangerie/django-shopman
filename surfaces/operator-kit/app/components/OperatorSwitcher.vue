@@ -7,9 +7,9 @@
 //   2. Outros apps: cada um com a pendência mais urgente (a mesma da Central), e a Central;
 //   3. Quem opera: o nome, e Trocar ou bloquear.
 // Celular e tablet: folha de baixo. Computador: painel da esquerda, ao lado da barra.
-import { computed, resolveComponent, watch } from "vue";
+import { computed, reactive, resolveComponent, watch } from "vue";
 
-import { OPERATOR_APPS } from "../../appIdentity";
+import { OPERATOR_APPS, OPERATOR_ICON_FOREGROUND, operatorAppForTile, operatorShortcutIconSrc } from "../../appIdentity";
 import type { OperatorSection } from "../presentation/appBar";
 import { useScreen } from "../composables/useScreen";
 
@@ -36,6 +36,18 @@ const identity = config.operatorPwa?.identity;
 const hubUrl = config.operatorHubUrl || "";
 const { attrsFor } = useOperatorAppLink();
 
+// O ícone de cada app é o da Central: o PNG que o próprio app publica na origem dele, num
+// quadrado de cantos arredondados; se não carregar, o símbolo Lucide do app no mesmo quadrado,
+// desenhado como o PNG (creme sobre a cor do app), para o app nunca perder a cor.
+const brokenIcons = reactive(new Set<string>());
+function iconUrl(url: string): string | null {
+  try {
+    return new URL(operatorShortcutIconSrc(), url).toString();
+  } catch {
+    return null;
+  }
+}
+
 const FORM_ORDER = ["floor", "office", "wall"] as const;
 const ordered = computed(() =>
   FORM_ORDER.flatMap((form) => props.sections.filter((section) => (section.form ?? "office") === form)),
@@ -49,7 +61,6 @@ interface HubTile {
   ref: string; label: string; url: string; icon: string; kind: string;
   status_attention: string; status_summary: string;
 }
-const TILE_TO_APP: Record<string, string> = { gestor: "orders" };
 const { data: hub, error: hubError, execute: readHub, status: hubStatus } = useFetch<{ hub?: { tiles?: HubTile[] } }>(
   "/api/v1/backstage/hub/",
   { server: false, immediate: false, key: "suite-switcher-hub" },
@@ -59,17 +70,19 @@ const apps = computed(() =>
   (hub.value?.hub?.tiles ?? [])
     .filter((tile) => tile.kind === "launch" && tile.label !== identity?.label)
     .map((tile) => {
-      const app = OPERATOR_APPS[(TILE_TO_APP[tile.ref] ?? tile.ref) as keyof typeof OPERATOR_APPS];
+      const app = operatorAppForTile(tile.ref);
       return {
         ...tile,
         short: app?.shortLabel || tile.label,
         color: app?.color || "var(--ui-primary)",
-        iconName: app?.symbol || `lucide:${tile.icon}`,
+        iconSrc: brokenIcons.has(tile.ref) ? null : iconUrl(tile.url),
+        iconName: `lucide:${app?.fallbackIcon || tile.icon}`,
         link: attrsFor(tile.url),
       };
     }),
 );
 const hubLink = computed(() => attrsFor(hubUrl));
+const hubIconSrc = computed(() => (brokenIcons.has("hub") ? null : iconUrl(hubUrl)));
 
 function go(section: OperatorSection) {
   open.value = false;
@@ -128,8 +141,10 @@ function go(section: OperatorSection) {
               class="min-h-12 w-full justify-start gap-3"
               :data-switcher-app="app.ref"
             >
-              <!-- A letra do app na cor dele: o ícone de cada app não vem no pacote dos outros. -->
-              <span class="grid size-8 shrink-0 place-items-center rounded-full font-semibold text-white" :style="{ background: app.color }" aria-hidden="true">{{ app.short.charAt(0) }}</span>
+              <span class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg" :style="{ background: app.color, color: OPERATOR_ICON_FOREGROUND }" aria-hidden="true" data-switcher-app-icon>
+                <img v-if="app.iconSrc" :src="app.iconSrc" class="size-10 rounded-lg" alt="" loading="lazy" decoding="async" @error="brokenIcons.add(app.ref)" />
+                <NuxtIcon v-else :name="app.iconName" class="size-5" />
+              </span>
               <span class="flex min-w-0 flex-1 flex-col text-left leading-tight">
                 <span class="font-medium text-highlighted">{{ app.short }}</span>
                 <span v-if="app.status_attention" class="truncate text-xs font-semibold text-warning">{{ app.status_attention }}</span>
@@ -146,7 +161,10 @@ function go(section: OperatorSection) {
               class="min-h-12 w-full justify-start gap-3"
               data-switcher-app="hub"
             >
-              <span class="grid size-8 shrink-0 place-items-center rounded-full text-white" :style="{ background: OPERATOR_APPS.hub.color }" aria-hidden="true"><NuxtIcon name="i-lucide-layout-grid" class="size-4" /></span>
+              <span class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg" :style="{ background: OPERATOR_APPS.hub.color, color: OPERATOR_ICON_FOREGROUND }" aria-hidden="true" data-switcher-app-icon>
+                <img v-if="hubIconSrc" :src="hubIconSrc" class="size-10 rounded-lg" alt="" loading="lazy" decoding="async" @error="brokenIcons.add('hub')" />
+                <NuxtIcon v-else :name="`lucide:${OPERATOR_APPS.hub.fallbackIcon}`" class="size-5" />
+              </span>
               <span class="flex flex-col text-left leading-tight">
                 <span class="font-medium text-highlighted">Central</span>
                 <span class="text-xs text-muted">Todos os apps, a tela inicial</span>

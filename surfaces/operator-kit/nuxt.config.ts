@@ -1,5 +1,7 @@
 import { fileURLToPath } from "node:url";
 
+import { OPERATOR_APPS } from "./appIdentity";
+
 // Nuxt layer compartilhado das superfícies de operador.
 //
 // Os apps (pos/orders/kds/production-nuxt + Central) fazem
@@ -79,6 +81,12 @@ export default defineNuxtConfig({
           String(entry.from).includes("@nuxt/ui"),
       );
       if (duplicate >= 0) imports.splice(duplicate, 1);
+    },
+    // O trocador mostra o símbolo de cada app quando o PNG dele não carrega. O nome sai
+    // de `app-identity.json` em tempo de execução, então a varredura não o acha: entra no
+    // pacote do cliente aqui (fora dele, o ícone vinha vazio, medido em 02/11/2026).
+    "icon:clientBundleIcons": (bundle: Set<string>) => {
+      for (const app of Object.values(OPERATOR_APPS)) bundle.add(`lucide:${app.fallbackIcon}`);
     },
     // Catálogo vivo somente no harness explícito. Nenhum consumer publica esta
     // rota em produção, mesmo que estenda a layer inteira.
