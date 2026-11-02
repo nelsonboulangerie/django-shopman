@@ -173,6 +173,30 @@ def test_estacao_sem_terminal_e_recusada():
         station_trust.provision(None, _Resposta(), "")
 
 
+def test_estacao_em_uso_renova_registro_e_cookie(client):
+    """Como cliente e quadro: vence 180 dias depois do ÚLTIMO uso, não da criação.
+
+    A estação não ganha permissão por ser confiável, então renovar com o uso não
+    alarga nada: só poupa o gestor de reprovisionar o balcão que trabalha todo dia.
+    """
+    from django.http import HttpResponse
+    from shopman.doorman.services.device_trust import DeviceTrustService
+
+    nome = _provisiona(client, "balcao")
+    dispositivo = TrustedDevice.objects.get(subject_type=SubjectType.STATION, subject_id="balcao")
+    dispositivo.expires_at = timezone.now() + timedelta(days=2)
+    dispositivo.save(update_fields=["expires_at"])
+
+    requisicao = _req(client)
+    assert station_trust.station_ref(requisicao) == "balcao"
+    resposta = DeviceTrustService.renew_cookies(requisicao, HttpResponse())
+
+    dispositivo.refresh_from_db()
+    assert dispositivo.expires_at > timezone.now() + timedelta(days=179)
+    assert resposta.cookies[nome].value == client.cookies[nome].value
+    assert resposta.cookies[nome]["max-age"] == 180 * 86400
+
+
 def _req(cliente: Client):
     return type("R", (), {"COOKIES": {k: v.value for k, v in cliente.cookies.items()}, "META": {}})()
 

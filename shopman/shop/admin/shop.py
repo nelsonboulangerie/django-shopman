@@ -2372,7 +2372,7 @@ _IDENTITY_FIELDSETS = (
     (
         "Contato",
         {
-            "fields": ("phone", "email", "default_ddd"),
+            "fields": ("phone", "email", "default_ddd", "storefront_host"),
         },
     ),
 )

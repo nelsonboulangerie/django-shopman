@@ -75,3 +75,22 @@ class AuthCustomerMiddleware(MiddlewareMixin):
         except Exception:
             logger.exception("Failed to resolve customer for user %s", user.pk)
             return None
+
+
+class DeviceTrustRenewalMiddleware:
+    """Reemite, na resposta, os cookies de dispositivo confiável usados no request.
+
+    A confiança vence depois de ``DEVICE_TRUST_TTL_DAYS`` SEM USO: o ``touch`` renova o
+    registro, e este middleware renova o cookie, que tem o mesmo prazo. Sem ele o
+    navegador apagaria o cookie no prazo da emissão, por mais que a pessoa voltasse.
+    Ver ``DeviceTrustService.renew_cookies``.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        from .services.device_trust import DeviceTrustService
+
+        return DeviceTrustService.renew_cookies(request, response)

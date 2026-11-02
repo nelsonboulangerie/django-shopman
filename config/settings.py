@@ -508,6 +508,9 @@ MIDDLEWARE = [
     # OTP verification state (request.user.is_verified()) — must follow auth.
     "django_otp.middleware.OTPMiddleware",
     "shopman.doorman.middleware.AuthCustomerMiddleware",
+    # Dispositivo confiável renova a cada uso (vence após 180 dias SEM uso): reemite o
+    # cookie de confiança que o request usou. Ver shopman.doorman.services.device_trust.
+    "shopman.doorman.middleware.DeviceTrustRenewalMiddleware",
     "simple_history.middleware.HistoryRequestMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",

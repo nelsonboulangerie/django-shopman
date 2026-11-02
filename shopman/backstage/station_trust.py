@@ -197,6 +197,11 @@ def _present_station_bindings(request):
         device = verified[token]
         if device is not None and device.subject_type == SubjectType.STATION:
             bindings.append((nome, device))
+            # O ``verify_token`` renovou o registro; o cookie acompanha na resposta,
+            # senão o navegador o apagaria no prazo da emissão (DeviceTrustRenewalMiddleware).
+            from shopman.doorman.services.device_trust import DeviceTrustService
+
+            DeviceTrustService.mark_renewal(request, nome, token)
     return bindings
 
 

@@ -40,8 +40,10 @@ DISPLAY_SEEN_STALE_AFTER = timedelta(minutes=5)
 #: Uma TV só conta como "em uso" se buscou o quadro no último dia — autorização
 #: antiga de uma TV trocada não deve acender aviso de vencimento.
 DISPLAY_IN_USE_WINDOW = timedelta(days=1)
-#: A autorização da TV vence (``DEVICE_TRUST_TTL_DAYS``) e ela passa a receber
-#: 403. Avisar com uma semana de folga.
+#: A autorização da TV vence ``DEVICE_TRUST_TTL_DAYS`` depois do ÚLTIMO uso, e ela
+#: passa a receber 403. Cada busca do quadro renova o prazo, então uma TV em uso
+#: (``DISPLAY_IN_USE_WINDOW``) só chega a uma semana do vencimento se o prazo
+#: configurado for menor que isso. Avisar com uma semana de folga.
 DISPLAY_EXPIRY_WARNING = timedelta(days=7)
 
 OK = "ok"

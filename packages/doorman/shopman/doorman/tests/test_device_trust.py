@@ -268,3 +268,120 @@ class TestDeviceTrustService:
 
         deleted = DeviceTrustService.cleanup(days=7)
         assert deleted == 1
+
+
+@pytest.mark.django_db
+class TestConfiancaRenovaComOUso:
+    """Dispositivo confiável vence depois de 180 dias SEM USO, não 180 dias da criação.
+
+    Decisão do dono de 23/10 (escada sem fricção, item 2): quem volta à loja nunca mais
+    digita código; o dispositivo esquecido vence sozinho.
+    """
+
+    _DIA = 86400
+
+    def _request(self, cookies):
+        request = RequestFactory().get("/")
+        request.COOKIES.update(cookies)
+        return request
+
+    def test_o_prazo_padrao_e_de_180_dias(self):
+        from shopman.doorman.conf import doorman_settings
+
+        assert doorman_settings.DEVICE_TRUST_TTL_DAYS == 180
+        device, _ = TrustedDevice.create_for("customer", uuid.uuid4())
+        restante = device.expires_at - timezone.now()
+        assert timedelta(days=179, hours=23) < restante <= timedelta(days=180)
+
+    def test_o_uso_empurra_o_vencimento_para_180_dias_depois_dele(self):
+        device, raw_token = TrustedDevice.create_for("customer", uuid.uuid4())
+        # Criado há 170 dias, sem uso: faltam 10.
+        device.expires_at = timezone.now() + timedelta(days=10)
+        device.save(update_fields=["expires_at"])
+
+        assert TrustedDevice.verify_token(raw_token) is not None
+
+        device.refresh_from_db()
+        assert device.expires_at - device.last_used_at == timedelta(days=180)
+
+    def test_sem_uso_vence(self):
+        device, raw_token = TrustedDevice.create_for("customer", uuid.uuid4())
+        device.expires_at = timezone.now() - timedelta(seconds=1)
+        device.save(update_fields=["expires_at"])
+
+        assert TrustedDevice.verify_token(raw_token) is None
+        device.refresh_from_db()
+        assert device.last_used_at is None  # vencido não renova
+
+    def test_check_renova_e_a_resposta_reemite_o_cookie_com_180_dias(self):
+        from django.http import HttpResponse
+
+        cid = uuid.uuid4()
+        device, raw_token = TrustedDevice.create_for("customer", cid)
+        device.expires_at = timezone.now() + timedelta(days=3)
+        device.save(update_fields=["expires_at"])
+        request = self._request({"doorman_dt": raw_token})
+
+        assert DeviceTrustService.check(request, "customer", cid)
+        response = DeviceTrustService.renew_cookies(request, HttpResponse())
+
+        cookie = response.cookies["doorman_dt"]
+        assert cookie.value == raw_token
+        assert cookie["max-age"] == 180 * self._DIA
+        assert cookie["httponly"]
+        assert "private" in response["Cache-Control"]
+        device.refresh_from_db()
+        assert device.expires_at > timezone.now() + timedelta(days=179)
+
+    def test_quadro_renova_pelo_proprio_cookie(self):
+        from django.http import HttpResponse
+
+        _, token = TrustedDevice.create_for("display", "menu-balcao")
+        nome = DeviceTrustService.cookie_name_for("display", "menu-balcao")
+        request = self._request({nome: token})
+
+        assert DeviceTrustService.check(request, "display", "menu-balcao")
+        response = DeviceTrustService.renew_cookies(request, HttpResponse())
+
+        assert response.cookies[nome].value == token
+        assert response.cookies[nome]["max-age"] == 180 * self._DIA
+
+    def test_sem_confianca_verificada_a_resposta_fica_intocada(self):
+        from django.http import HttpResponse
+
+        request = self._request({"doorman_dt": "token-que-nao-existe"})
+        assert not DeviceTrustService.check(request, "customer", uuid.uuid4())
+
+        response = DeviceTrustService.renew_cookies(request, HttpResponse())
+        assert "doorman_dt" not in response.cookies
+        assert not response.has_header("Cache-Control")
+
+    def test_revogar_no_mesmo_request_vence_a_renovacao(self):
+        from django.http import HttpResponse
+
+        cid = uuid.uuid4()
+        _, raw_token = TrustedDevice.create_for("customer", cid)
+        request = self._request({"doorman_dt": raw_token})
+        assert DeviceTrustService.check(request, "customer", cid)
+
+        response = HttpResponse()
+        DeviceTrustService.revoke_device(request, response, subject_type="customer", subject_id=cid)
+        DeviceTrustService.renew_cookies(request, response)
+
+        assert response.cookies["doorman_dt"].value == ""
+        assert response.cookies["doorman_dt"]["max-age"] == 0
+
+    def test_o_middleware_reemite(self):
+        from django.http import HttpResponse
+        from shopman.doorman.middleware import DeviceTrustRenewalMiddleware
+
+        cid = uuid.uuid4()
+        _, raw_token = TrustedDevice.create_for("customer", cid)
+        request = self._request({"doorman_dt": raw_token})
+
+        def view(req):
+            DeviceTrustService.check(req, "customer", cid)
+            return HttpResponse()
+
+        response = DeviceTrustRenewalMiddleware(view)(request)
+        assert response.cookies["doorman_dt"]["max-age"] == 180 * self._DIA

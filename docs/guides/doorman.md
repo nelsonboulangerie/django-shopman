@@ -18,7 +18,7 @@ fora de `DEBUG`, `DOORMAN_ACCESS_LINK_API_KEY` é obrigatório.
 Link de login por email com Access Link embutido. TTL de 15 minutos.
 
 ### Dispositivo Confiável (`TrustedDevice`)
-Cookie seguro que permite pular OTP em logins futuros. TTL de 30 dias.
+Cookie seguro que permite pular OTP em logins futuros. Vence depois de 180 dias SEM USO: cada uso renova o registro (`touch`) e o cookie (`DeviceTrustRenewalMiddleware`). Vale igual para cliente, quadro (TV) e estação.
 
 ### CustomerUser
 Mapeamento Django User ↔ Customer (Guestman). Desacopla autenticação de gestão de clientes.
@@ -73,7 +73,7 @@ Regras de segurança com códigos:
 | `token_hash` | CharField(64, unique) | HMAC-SHA256 do token |
 | `user_agent` | CharField(512) | Browser/device |
 | `label` | CharField(100) | Label legível (ex: "Chrome / iPhone") |
-| `expires_at` | DateTimeField | Expiração (default: 30 dias) |
+| `expires_at` | DateTimeField | Expiração: 180 dias depois do último uso (renova a cada uso) |
 | `last_used_at` | DateTimeField(null) | Último uso |
 | `is_active` | BooleanField | Ativo |
 
@@ -235,7 +235,7 @@ Chave Django settings: `DOORMAN`
 | `IDENTITY_RESOLVER_CLASS` | `shopman.doorman.resolvers.NoopIdentityResolver` | Porto de identidade (com Guestman: `shopman.guestman.adapters.auth.IdentityResolver`) |
 | `MANYCHAT_IDENTITY_BRIDGE_CLASS` | `""` | Bridge opcional e tipada para enriquecimento ManyChat |
 | `DEVICE_TRUST_ENABLED` | True | Habilitar confiança de dispositivo |
-| `DEVICE_TRUST_TTL_DAYS` | 30 | TTL do cookie |
+| `DEVICE_TRUST_TTL_DAYS` | 180 | Dias sem uso até a confiança vencer (registro e cookie renovam a cada uso) |
 | `ACCESS_LINK_ENABLED` | True | Habilitar Access Link por email |
 | `ACCESS_LINK_API_KEY` | "" | Chave servidor-servidor para criar access links; obrigatória fora de `DEBUG` |
 | `AUTO_CREATE_CUSTOMER` | True | Criar cliente automaticamente no login |

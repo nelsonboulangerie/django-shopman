@@ -6,6 +6,7 @@ import os
 
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models
 
 from shopman.shop.fonts import BODY_FONTS, HEADING_FONTS
@@ -188,6 +189,26 @@ class Shop(models.Model):
     phone = models.CharField("telefone", max_length=20, blank=True)
     email = models.EmailField("e-mail", blank=True)
     default_ddd = models.CharField("DDD padrão", max_length=4, default="11")
+    #: O host onde o cliente abre a loja. Mora aqui, e não no settings, porque é dado
+    #: da loja (ADR-042). Quem lê: a última linha do SMS de código (``@host #código``,
+    #: o formato WebOTP), que o celular só aceita preencher sozinho quando o host da
+    #: mensagem é EXATAMENTE o da página aberta.
+    storefront_host = models.CharField(
+        "endereço da loja na internet",
+        max_length=253,
+        blank=True,
+        validators=[
+            RegexValidator(
+                r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
+                "Só o domínio, em minúsculas, sem https:// e sem barra. Ex.: www.minhaloja.com.br",
+            )
+        ],
+        help_text=(
+            "Só o domínio onde o cliente abre a loja, sem https:// e sem barra. Ex.: "
+            "www.minhaloja.com.br. Vai no fim do SMS de código, para o celular do cliente "
+            "preencher o código sozinho."
+        ),
+    )
 
     # ── Operação ──
     currency = models.CharField("moeda", max_length=3, default="BRL")
