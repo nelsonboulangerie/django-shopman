@@ -1,4 +1,10 @@
-import { OPERATOR_APPS, operatorAppNamed, operatorShortcutIconSrc } from "../../../operator-kit/appIdentity";
+import {
+  OPERATOR_APPS,
+  OPERATOR_ICON_FOREGROUND,
+  operatorAppForTile,
+  operatorAppNamed,
+  operatorShortcutIconSrc,
+} from "../../../operator-kit/appIdentity";
 import {
   crossAppLinkAttrs,
   EXTERNAL_LINK_ATTRS,
@@ -51,6 +57,16 @@ export function tileIcon(icon: string): string {
  * resolve; a tela cai no Lucide (`tileIcon`).
  */
 export const PWA_ICON_PATH = operatorShortcutIconSrc();
+
+/**
+ * O fundo e o desenho do ícone de reserva: os mesmos do PNG (creme sobre a cor do app),
+ * para o app não perder a cor quando o PNG não carrega. A Loja, que não é app de
+ * operador, fica no tom da casa (`null`).
+ */
+export function tileIconStyle(tile: Pick<HubTileProjection, "ref">): { background: string; color: string } | null {
+  const app = operatorAppForTile(tile.ref);
+  return app ? { background: app.color, color: OPERATOR_ICON_FOREGROUND } : null;
+}
 
 export function tileIconUrl(tile: Pick<HubTileProjection, "url" | "kind">): string | null {
   try {

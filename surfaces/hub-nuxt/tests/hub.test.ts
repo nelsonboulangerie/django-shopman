@@ -19,6 +19,7 @@ import {
   staleQueueAlert,
   tileAriaLabel,
   tileIcon,
+  tileIconStyle,
   tileIconUrl,
   tileLinkAttrs,
 } from "../app/presentation/hub";
@@ -54,6 +55,14 @@ describe("presentation/hub", () => {
     expect(tileIconUrl(tile({ kind: "external", url: "https://boulangerie.com.br/" }))).toBe(
       "https://boulangerie.com.br/pwa/pwa-192x192.png?v=3",
     );
+  });
+
+  it("tileIconStyle desenha o ícone de reserva como o PNG: creme sobre a cor do app", () => {
+    expect(tileIconStyle(tile({ ref: "pos" }))).toEqual({ background: OPERATOR_APPS.pos.color, color: "#FCF7EE" });
+    // O tile do Gestor de pedidos se chama `gestor`; a cor é a do app `orders`.
+    expect(tileIconStyle(tile({ ref: "gestor" }))?.background).toBe(OPERATOR_APPS.orders.color);
+    // A Loja não é app de operador: fica no tom da casa.
+    expect(tileIconStyle(tile({ ref: "storefront", kind: "external" }))).toBeNull();
   });
 
   it("tileIconUrl devolve null para URL que não resolve — a tela cai no Lucide", () => {

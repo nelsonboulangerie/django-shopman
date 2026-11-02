@@ -81,6 +81,14 @@ export function operatorAppIdentity(app: string): OperatorAppIdentity {
   return identity;
 }
 
+/** O `ref` do tile da Central chama o Gestor de pedidos de `gestor`; os outros batem com a chave. */
+const TILE_REF_TO_APP: Record<string, OperatorAppRef> = { gestor: "orders" };
+
+/** O app de um tile da Central, ou `undefined` para o que não é app de operador (a Loja). */
+export function operatorAppForTile(ref: string): OperatorAppIdentity | undefined {
+  return OPERATOR_APPS[TILE_REF_TO_APP[ref] ?? (ref as OperatorAppRef)];
+}
+
 /** Os três PNGs que todo app de operador publica, iguais em todos — só o desenho muda. */
 export function operatorAppIcons(version = OPERATOR_ASSET_VERSION) {
   return [
