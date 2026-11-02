@@ -147,7 +147,9 @@
           "symbols": [
             "CODE_MESSAGE_TEMPLATE",
             "CODE_MESSAGE_WITHOUT_BRAND",
+            "WEB_OTP_LINE",
             "_brand",
+            "_host",
             "render_message",
             "to_digits",
             "ttl_minutes"
