@@ -16,16 +16,26 @@ npm run build          # e2e roda sobre o preview de produção
 npm run test:e2e
 ```
 
-## 2. Fluxo crítico com dados (`criticalFlow.spec.ts` — reviewer local)
+## 2. Fluxo crítico com dados: mora no E2E do Django, e roda no CI
 
-menu → PDP → carrinho → checkout → tracking precisa do **Django real** com
-`make seed`. Marcado `skip` por padrão. Para rodar localmente:
+O caminho do Dia 1 (PDP → sacola → OTP → checkout → pedido → acompanhamento)
+precisa do Django real semeado, e por isso não vive aqui. Ele está em
+`shopman/shop/tests/e2e/test_storefront_e2e.py`, dirigido por esta loja Nuxt
+(build de produção) contra o Django semeado, no job **Storefront E2E
+(Playwright)** do `omotenashi-gate.yml`, em todo PR e na fila de merge:
+
+- `test_11`: retirada com Pix, e o pedido aparece na fila do operador.
+- `test_12`: **entrega com cartão**, e o pedido aparece no acompanhamento
+  (`/pedido/<ref>`) já com o pagamento autorizado. O cartão passa pelo adapter
+  `payment_stripe` de produção contra um Stripe falso local
+  (`shopman/shop/tests/e2e/fake_stripe.py`): sem rede e sem credencial.
+
+Para rodar localmente, da raiz do repositório:
 
 ```bash
-# terminal 1: Django semeado
-make run   # (ou o servidor em :8000 com make seed feito)
-
-# terminal 2: preview apontado ao Django real + specs
-NUXT_DJANGO_BASE_URL=http://127.0.0.1:8000 npm run preview
-npx playwright test tests/e2e/criticalFlow.spec.ts
+make storefront-e2e                       # seed + Django + loja + Stripe falso
+make storefront-e2e args="-k test_12"     # só o Dia 1
 ```
+
+O antigo `criticalFlow.spec.ts` (sempre `skip`) foi apagado: o fluxo que ele
+prometia é o `test_12`.
