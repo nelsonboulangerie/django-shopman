@@ -53,8 +53,10 @@ ver [webhook-auth-status-codes](../reference/webhook-auth-status-codes.md)).
   de pedido real do iFood.
 - **WP-4 — Callbacks de status.** Mapear lifecycle interno → `confirm`/`dispatch`/`readyToPickup`/
   `requestCancellation`. Handler que, em transições do Order, chama a API do iFood. Testes.
-- **WP-5 — Webhook assinado (opcional) ✅ CONSTRUÍDO** (não verificado ao vivo — o portal bloqueia
-  bots; revalidar o esquema exato de assinatura na homologação). `IFoodEventsWebhookView` em
+- **WP-5 — Webhook assinado ✅ ATIVO desde 02/11/2026** no app `NB Teste (C)`: o teste de conexão
+  do portal (KEEPALIVE assinado com o `clientSecret`) respondeu 204. O portal corta a barra final da
+  URL cadastrada, por isso a rota aceita os dois formatos (#2089). Com o webhook ligado, o iFood
+  entrega os eventos por push e não mais pelo polling. `IFoodEventsWebhookView` em
   `webhooks/ifood_events.py`, rota `POST /api/webhooks/ifood/events/`: valida `X-IFood-Signature` =
   HMAC-SHA256(raw body, `webhook_hmac_secret` [default=client_secret]) hex via `compare_digest`,
   **401** se inválido/sem secret; reusa `ifood_events.process_events()` (mesmo caminho do polling).
@@ -67,7 +69,7 @@ ver [webhook-auth-status-codes](../reference/webhook-auth-status-codes.md)).
 2. **Merchant** associado ao app (merchant_id / UUID da loja).
 3. **Escopos/módulos** habilitados (Order, Catalog, Merchant).
 4. **Homologação** — passar a certificação do iFood (eles testam o fluxo). É o gate de produção.
-5. (Se webhook) registrar a URL HTTPS — hoje `https://api.boulangerie.com.br/api/webhooks/ifood/events/`.
+5. ✅ Webhook cadastrado e ativo (02/11/2026): `https://api.boulangerie.com.br/api/webhooks/ifood/events/`.
 
 ## ✅ Verificado AO VIVO (2026-06-30) — app de teste + loja "Teste - Nelson Boulangerie"
 
