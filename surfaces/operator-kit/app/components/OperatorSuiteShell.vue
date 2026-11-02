@@ -56,6 +56,13 @@ const props = defineProps<{
    * da gaveta) é só identidade, sem "voltar à Central" apontando para ela mesma.
    */
   home?: boolean;
+  /**
+   * Liga o trocador (modelo de navegação, 31/10/2026): todas as seções do app, com a
+   * forma de cada uma. Sem ele, o shell segue com ☰ e a barra de baixo de sempre.
+   */
+  switcherSections?: readonly OperatorSection[];
+  /** A forma de uma tela que não é seção (o item aberto). Só com o trocador. */
+  defaultForm?: "floor" | "office" | "wall";
 }>();
 
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
@@ -77,6 +84,40 @@ const footSections = computed(() =>
 // seções que não são só da barra lateral.
 const quickSections = computed(() =>
   props.sections.filter((section) => section.where !== "rail"),
+);
+// Com o trocador, a forma da tela decide a barra de baixo. Chão: nenhuma (o posto define o
+// lugar; trocar é pelo selo). Escritório: as seções do escritório, "Mais" abre o trocador.
+// Escrito já no setup (o servidor não roda `watchEffect`): o cabeçalho, filho do shell,
+// tem de desenhar o mesmo selo no servidor e na hidratação.
+const switcherEnabled = useState<boolean>("suite-switcher-enabled", () => false);
+const wantsSwitcher = () => Boolean(props.switcherSections) && !props.home;
+switcherEnabled.value = wantsSwitcher();
+watch(wantsSwitcher, (enabled) => {
+  switcherEnabled.value = enabled;
+});
+const pool = computed(() => props.switcherSections ?? props.sections);
+function exactKey(path: string): string | undefined {
+  const clean = (path || "/").split("?")[0]!.replace(/(.)\/$/, "$1");
+  let best: { key: string; len: number } | undefined;
+  for (const section of pool.value) {
+    for (const cand of [section.to, ...(section.match || [])]) {
+      if (!cand) continue;
+      const c = cand.split("?")[0]!.replace(/(.)\/$/, "$1");
+      const hit = c === "/" ? clean === "/" : clean === c || clean.startsWith(c + "/");
+      if (hit && (!best || c.length > best.len)) best = { key: section.key, len: c.length };
+    }
+  }
+  return best?.key;
+}
+const switcherCurrent = computed(() => props.current ?? exactKey(route.path));
+const form = computed(
+  () => pool.value.find((s) => s.key === switcherCurrent.value)?.form ?? props.defaultForm ?? "office",
+);
+const switcherOpen = useState<boolean>("suite-switcher-open", () => false);
+const officeQuick = computed(() =>
+  (props.switcherSections ?? [])
+    .filter((s) => (s.form ?? "office") === "office")
+    .map((s) => ({ ...s, quick: undefined })),
 );
 // A gaveta (abaixo de lg, o DashboardSidebar abre como slideover): o ☰ da barra do
 // topo e o "Mais" da barra inferior a abrem.
@@ -348,6 +389,15 @@ function menuDotSize(size: string): ChipProps["size"] {
         </div>
 
         <OperatorQuickBar
+          v-if="switcherEnabled && form === 'office'"
+          :sections="officeQuick"
+          :current="switcherCurrent"
+          :label="label"
+          @select="emit('select', $event)"
+          @more="switcherOpen = true"
+        />
+        <OperatorQuickBar
+          v-else-if="!switcherEnabled"
           :sections="quickSections"
           :current="active"
           :label="label"
@@ -359,6 +409,7 @@ function menuDotSize(size: string): ChipProps["size"] {
   </NuxtDashboardGroup>
   <!-- Aviso com prazo correndo: interrompe a tela até alguém ver (dono, 07/10). -->
   <ClientOnly><OperatorUrgentAlert /></ClientOnly>
+  <ClientOnly><OperatorSwitcher v-if="switcherEnabled" :sections="pool" :current="switcherCurrent" :operator-name="operatorName" @lock="emit('lock')" /></ClientOnly>
   <OperatorShortcutsHelp
     :sections="topSections"
     :app-label="label.replace(/^Seções d[oa] /, '')"

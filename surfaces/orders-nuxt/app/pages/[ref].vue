@@ -838,11 +838,50 @@ const outside = useOutsideStore(
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
     <!-- Cabeçalho de UMA linha (G14, prévia v3 `depois-gestor-detalhe`):
          ‹ Pedidos | Pedido S84 · estado · ao vivo | bilhete de volta | ⋯ | a ação primária.
          No celular (v3 `depois-gestor-celular` (c)): ← U68 · iFood · ⋯, e o gesto desce
          para o polegar. -->
+    <OperatorCompactBar :title="`Pedido ${code.code}`" search-button-label="Buscar na suíte">
+      <template #lead>
+        <NuxtButton
+          :to="backLocation"
+          icon="i-lucide-arrow-left"
+          color="neutral"
+          variant="ghost"
+          square
+          class="size-11 shrink-0 justify-center"
+          :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'"
+          data-compact-back
+        />
+      </template>
+      <template #identity>
+        <div class="flex min-w-0 items-center gap-1" data-compact-record>
+          <div class="min-w-0 flex-1">
+            <p class="flex min-w-0 items-center gap-1.5">
+              <span class="truncate text-lg font-semibold leading-tight text-highlighted">{{ code.code }}</span>
+              <NuxtBadge v-if="order?.status_label" :color="statusColor(order.status)" :label="order.status_label" class="shrink-0" />
+            </p>
+            <p v-if="order" class="flex min-w-0 items-center gap-1 text-xs text-muted">
+              <Icon :name="channelIcon" class="size-3.5 shrink-0" /><span class="truncate">{{ order.channel_name || order.channel_ref }}</span>
+            </p>
+          </div>
+          <OperatorRecordNav v-if="!returnTicket" :trail="recordTrailKey" :current="orderRef" :to="recordLocation" previous-label="Pedido anterior" next-label="Próximo pedido" />
+          <NuxtButton
+            icon="i-lucide-ellipsis"
+            color="neutral"
+            variant="ghost"
+            square
+            class="size-11 shrink-0 justify-center"
+            aria-label="Mais ações do pedido"
+            :aria-expanded="menuOpen"
+            data-action="menu-phone"
+            @click="menuOpen = !menuOpen"
+          />
+        </div>
+      </template>
+    </OperatorCompactBar>
     <OperatorPageHeader
       :title="`Pedido ${code.code}`"
       :phone-title="code.code"
@@ -907,20 +946,8 @@ const outside = useOutsideStore(
           next-label="Próximo pedido"
         />
       </template>
-      <!-- O kit mostra `#phone-actions` só abaixo de `md`; o `#actions`, daqui para cima. -->
-      <template #phone-actions>
-        <NuxtButton
-          type="button"
-          icon="i-lucide-ellipsis"
-          color="neutral"
-          variant="ghost"
-          square
-          aria-label="Mais ações do pedido"
-          :aria-expanded="menuOpen"
-          data-action="menu-phone"
-          @click="menuOpen = !menuOpen"
-        />
-      </template>
+      <!-- Abaixo de `md` o cabeçalho é a linha do chão (`OperatorCompactBar`, acima), com
+           o ⋯ do pedido; o `#actions` vale daqui para cima. -->
       <template #actions>
         <!-- bilhete de volta: quem veio de outro app volta para onde estava -->
         <NuxtButton

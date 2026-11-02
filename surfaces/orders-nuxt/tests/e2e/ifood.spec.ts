@@ -4,9 +4,16 @@ test.use({ viewport: { width: 375, height: 812 }, hasTouch: true });
 
 test("agendamento e entrega iFood ficam legíveis no celular", async ({ page }, testInfo) => {
   await page.goto("/");
-  // No celular a busca mora atrás da lupa da barra de 56px e abre a paleta da suíte;
-  // Enter escolhe "Filtrar o quadro" (a primeira opção, "Nesta tela").
-  await page.getByRole("button", { name: "Buscar", exact: true }).click();
+  // No celular, com o som bloqueado pelo navegador, o quadro abre pedindo o toque que o
+  // libera ("Toque para começar"); se o navegador já deixa tocar, a janela não aparece.
+  // A busca mora na lupa da linha do chão e abre a paleta da suíte; a primeira opção é
+  // "Filtrar o quadro" ("Nesta tela").
+  const start = page.getByRole("button", { name: "Começar", exact: true });
+  await start
+    .waitFor({ state: "visible", timeout: 3_000 })
+    .then(() => start.click())
+    .catch(() => {});
+  await page.getByRole("button", { name: "Buscar por código, cliente ou item", exact: true }).click();
   await page.getByRole("textbox", { name: "Buscar pedido, cliente ou item" }).fill("IFOOD-SCHEDULED");
   await page.getByRole("option", { name: "Filtrar o quadro por “IFOOD-SCHEDULED”" }).click();
   // O quadro filtrado mostra só o pedido agendado, com o avanço travado e o motivo.

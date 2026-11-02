@@ -120,14 +120,19 @@ test.describe("primeiro desenho no celular (HTML do servidor, sem JavaScript)", 
       const bar = await page.evaluate(() => {
         const shown = (el: Element) =>
           el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
-        const header = document.querySelector("[data-operator-page-header]");
-        const title = header?.querySelector("[data-slot='title']");
+        // A tela do chão (modelo de navegação, 02/11/2026) troca a barra do kit pela linha
+        // do chão: o título é o lugar no selo, ou o código do registro aberto.
+        const compact = [...document.querySelectorAll("[data-compact-bar]")].find(shown);
+        const header = compact ?? document.querySelector("[data-operator-page-header]");
+        const title = compact
+          ? compact.querySelector("[data-compact-place], [data-compact-record]")
+          : header?.querySelector("[data-slot='title']");
         const titleBox = title?.getBoundingClientRect();
-        // Os controles da barra que se desenham sobre o título.
+        // Os controles da barra que se desenham sobre o título (o selo que o contém não conta).
         const covering = [...(header?.querySelectorAll("button, a, input") ?? [])]
           .filter(shown)
           .filter((el) => {
-            if (!titleBox || title?.contains(el)) return false;
+            if (!titleBox || title?.contains(el) || el.contains(title!)) return false;
             const box = el.getBoundingClientRect();
             return (
               box.left < titleBox.right - 1 &&
@@ -164,16 +169,18 @@ test.describe("primeiro desenho no celular (HTML do servidor, sem JavaScript)", 
     });
   }
 
-  test('a Fila nasce com o ⋯ do celular e a linha "Filtros"', async ({ page }) => {
+  test("a Fila nasce com a linha do chão: o selo com o lugar, a busca e o ⋯", async ({ page }) => {
     await page.goto("/", { waitUntil: "load" });
-    await expect(page.locator("[data-page-header-more]")).toBeVisible();
-    await expect(page.locator("[data-page-header-filter-line]")).toBeVisible();
-    await expect(page.locator("[data-page-header-filters-open]")).toBeVisible();
+    await expect(page.locator("[data-compact-seal] [data-compact-place]")).toHaveText("Pedidos");
+    await expect(page.locator("[data-compact-search]")).toBeVisible();
+    await expect(page.locator("[data-compact-options]")).toBeVisible();
+    // A barra de 56px do kit não aparece por baixo dela.
+    await expect(page.locator("[data-operator-page-header]")).toBeHidden();
   });
 
-  test("o pedido nasce com o título curto, o ⋯ do polegar e a ação na base", async ({ page }) => {
+  test("o pedido nasce com o código, o ⋯ do pedido e a ação na base", async ({ page }) => {
     await page.goto("/IFOOD-261006-W01", { waitUntil: "load" });
-    await expect(page.locator("[data-page-header-phone-title]")).toBeVisible();
+    await expect(page.locator("[data-compact-record]")).toBeVisible();
     await expect(page.locator("[data-action='menu-phone']")).toBeVisible();
     await expect(page.locator("[data-detail-thumb]")).toBeVisible();
   });

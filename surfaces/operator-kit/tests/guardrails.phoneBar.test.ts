@@ -108,9 +108,10 @@ describe("guardrail da barra de cima do celular", () => {
       vueFiles(join(surfacesDir, app, "app")).filter((path) => phoneBarBlocks(readFileSync(path, "utf8")).length),
     );
     const rel = found.map((path) => relative(surfacesDir, path));
-    // A sentinela é um arquivo que monta `#phone-actions` hoje: o pedido do Gestor.
-    // (A página de Campanhas do Marketing, a de antes, mudou de rota no #1586.)
-    expect(rel).toContain("orders-nuxt/app/pages/[ref].vue");
+    // A sentinela é um arquivo que monta `#phone-actions` hoje: o fechamento do PDV.
+    // (A página de Campanhas do Marketing mudou de rota no #1586; o pedido do Gestor
+    // trocou a barra do celular pela linha do chão, `OperatorCompactBar`.)
+    expect(rel).toContain("pos-nuxt/app/pages/session/closing.vue");
   });
 
   it("nenhum app de operador põe Atualizar solto na barra de 56px (mora no ⋯)", () => {
