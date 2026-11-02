@@ -13,7 +13,7 @@
   ],
   "totals": {
     "settings": 312,
-    "env": 22,
+    "env": 24,
     "settings_env": 174
   },
   "files": {
@@ -71,6 +71,9 @@
     },
     "packages/watchman/shopman/watchman/expiry.py": {
       "env": 1
+    },
+    "packages/watchman/shopman/watchman/release.py": {
+      "env": 2
     },
     "shopman/backstage/admin/closing.py": {
       "settings": 1

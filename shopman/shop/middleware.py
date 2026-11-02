@@ -228,15 +228,25 @@ class APIVersionHeaderMiddleware:
     ``surfaces/storefront-nuxt/server/utils/apiVersion.ts``). Applied to the
     whole versioned API (`/api/v1/`, storefront and backstage); OpenAPI
     schema/docs and core-app APIs are unaffected.
+
+    The same responses also carry ``X-Shopman-Release`` (WP-RELEASE-01 R1) when the
+    image has a release identity, so support can name the build that answered a
+    request from the browser's network tab. Read once per process: the value is
+    baked into the image and never changes while it runs.
     """
 
     def __init__(self, get_response):
+        from shopman.watchman.release import current_release
+
         self.get_response = get_response
+        self.release_id = current_release(default_component="web").release_id
 
     def __call__(self, request):
         response = self.get_response(request)
         if request.path.startswith(API_V1_PREFIX):
             response["X-API-Version"] = API_VERSION
+            if self.release_id:
+                response["X-Shopman-Release"] = self.release_id
         return response
 
 

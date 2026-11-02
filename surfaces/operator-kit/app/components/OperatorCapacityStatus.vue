@@ -23,7 +23,6 @@ import {
   capacityThresholdsText,
   capacityUpdatedAgo,
 } from "../presentation/capacity";
-
 const { reading, authorized, stale } = useOperatorCapacity();
 const { showLabels } = useRailState();
 const now = useNow({ interval: 10_000 });
@@ -83,6 +82,7 @@ const sourceText = computed(() => capacitySourceText(reading.value));
           {{ thresholdsText }}
         </p>
         <p v-if="sourceText" class="mt-2 text-xs text-muted-foreground" data-capacity-source>{{ sourceText }}</p>
+        <OperatorReleaseLabel class="mt-2" />
       </PopoverContent>
     </PopoverPortal>
   </PopoverRoot>
