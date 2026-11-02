@@ -195,14 +195,14 @@ make deploy-down      # para containers do deploy local
 | Repo | Descrição |
 |------|-----------|
 | [django-shopman](https://github.com/nelsonboulangerie/django-shopman) | Monorepo (este repo) |
-| [shopman-orderman](https://github.com/nelsonboulangerie/shopman-orderman) | Core: Pedidos |
-| [shopman-stockman](https://github.com/nelsonboulangerie/shopman-stockman) | Core: Estoque |
-| [shopman-craftsman](https://github.com/nelsonboulangerie/shopman-craftsman) | Core: Produção |
-| [shopman-offerman](https://github.com/nelsonboulangerie/shopman-offerman) | Core: Catálogo |
-| [shopman-guestman](https://github.com/nelsonboulangerie/shopman-guestman) | Core: CRM |
-| [shopman-doorman](https://github.com/nelsonboulangerie/shopman-doorman) | Core: Auth |
-| [shopman-payman](https://github.com/nelsonboulangerie/shopman-payman) | Core: Pagamentos |
-| [shopman-utils](https://github.com/nelsonboulangerie/shopman-utils) | Core: Utilitários |
+| [shopman-orderman](https://github.com/pablondrina/shopman-orderman) | Core: Pedidos |
+| [shopman-stockman](https://github.com/pablondrina/shopman-stockman) | Core: Estoque |
+| [shopman-craftsman](https://github.com/pablondrina/shopman-craftsman) | Core: Produção |
+| [shopman-offerman](https://github.com/pablondrina/shopman-offerman) | Core: Catálogo |
+| [shopman-guestman](https://github.com/pablondrina/shopman-guestman) | Core: CRM |
+| [shopman-doorman](https://github.com/pablondrina/shopman-doorman) | Core: Auth |
+| [shopman-payman](https://github.com/pablondrina/shopman-payman) | Core: Pagamentos |
+| [shopman-utils](https://github.com/pablondrina/shopman-utils) | Core: Utilitários |
 
 ## Documentação
 
