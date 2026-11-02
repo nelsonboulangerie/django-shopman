@@ -300,7 +300,7 @@ def test_whatsapp_access_link_discards_unsafe_return_destinations(monkeypatch):
     whatsapp_verify.start_access_link(next_path="//evil.example/phish")
     whatsapp_verify.start_access_link(next_path="/finalizar")
 
-    assert stored == [{}, {}, {}]
+    assert stored == [{"site_return": "phone"}] * 3
 
 
 def test_ifood_cancellation_enqueue_keeps_an_existing_request_pending(monkeypatch):

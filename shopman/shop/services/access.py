@@ -160,14 +160,140 @@ def site_origin_label(request) -> str:
     return describe_user_agent(str(request.META.get("HTTP_USER_AGENT", "") or ""))[:60]
 
 
+# ⚠️ A escada sem fricção do Doorman (decisão do dono, 23/10): a resposta do WhatsApp traz
+# o botão de volta, e ONDE a entrada acontece depende de onde o login começou.
+#
+# - No CELULAR, a entrada acontece no navegador que o botão "Voltar à loja" abrir, e nunca
+#   é liberada para outra aba. Liberar a aba de origem por conta própria era abrir uma
+#   porta que a pessoa não via: quem convence alguém a enviar a mensagem com o código dele
+#   entrava sem ela tocar em nada.
+# - No COMPUTADOR, a mensagem chega no celular e a aba fica do outro lado da mesa. O botão
+#   nomeia o que libera ("Liberar o Chrome no Windows"), e só o toque nele solta a aba.
+#
+# Agente de usuário desconhecido conta como celular: na dúvida, nada é liberado à distância.
+_PHONE_USER_AGENT_MARKERS = ("iphone", "ipod", "mobi", "windows phone")
+_KNOWN_BROWSERS = ("Chrome", "Firefox", "Safari", "Edge")
+_RELEASE_CONFIRM_KEY = "shopman:site-release-offer:{}"
+
+
+def site_origin_is_phone(request) -> bool:
+    """O login começou num celular? Decide se a mensagem libera a aba ou só a loja."""
+    user_agent = str(request.META.get("HTTP_USER_AGENT", "") or "").lower()
+    if not user_agent:
+        return True
+    return any(marker in user_agent for marker in _PHONE_USER_AGENT_MARKERS)
+
+
+def _origin_parts(origin_label: str) -> tuple[str, str]:
+    parts = [part.strip() for part in str(origin_label or "").split("/") if part.strip()]
+    browser = next((part for part in parts if part in _KNOWN_BROWSERS), "")
+    system = next((part for part in parts if part not in _KNOWN_BROWSERS), "")
+    return browser, system
+
+
+def release_target(origin_label: str) -> str:
+    """"o Chrome no Windows": o que o botão da mensagem libera, dito como a pessoa diria."""
+    browser, system = _origin_parts(origin_label)
+    if browser and system:
+        return f"o {browser} no {system}"
+    if browser:
+        return f"o {browser}"
+    if system:
+        return f"o navegador no {system}"
+    return "o navegador do computador"
+
+
+def release_caption(origin_label: str) -> str:
+    """O rótulo do botão, dentro do limite de 20 caracteres do botão do WhatsApp."""
+    from shopman.shop.notification_copy import ACCESS_BUTTON_COPY, ACCESS_BUTTON_MAX_CHARS
+
+    template = ACCESS_BUTTON_COPY["release"]
+    full = template.format(target=release_target(origin_label))
+    if len(full) <= ACCESS_BUTTON_MAX_CHARS:
+        return full
+    browser, _system = _origin_parts(origin_label)
+    if browser:
+        short = template.format(target=f"o {browser}")
+        if len(short) <= ACCESS_BUTTON_MAX_CHARS:
+            return short
+    return ACCESS_BUTTON_COPY["release_fallback"]
+
+
+def offer_site_release(revoke_ref: str) -> str:
+    """A referência do botão "Liberar o Chrome no Windows" (vai no fragmento do link).
+
+    É separada da referência do "Não foi você?": quem tem o link de liberar não ganha,
+    só por isso, o poder de derrubar a conta inteira, e vice-versa.
+    """
+    import secrets
+
+    from django.core.cache import cache
+    from shopman.doorman.conf import get_doorman_settings
+
+    if not revoke_ref:
+        return ""
+    release_ref = secrets.token_urlsafe(24)
+    cache.set(
+        _RELEASE_CONFIRM_KEY.format(release_ref),
+        revoke_ref,
+        timeout=get_doorman_settings().LINK_STATE_TTL_SECONDS,
+    )
+    return release_ref
+
+
+def confirm_site_release(release_ref: str) -> str | None:
+    """O toque no botão: a aba de origem pode entrar. Devolve o rótulo da origem
+    ("Chrome / Windows"), ou None se a oferta venceu ou foi encerrada.
+
+    Repetir o toque não estraga nada: a confirmação já está lá, e a resposta é a mesma.
+    """
+    from django.core.cache import cache
+    from django.utils import timezone
+    from shopman.doorman.services.link_state import get_revocation, store_revocation
+
+    if not release_ref:
+        return None
+    revoke_ref = cache.get(_RELEASE_CONFIRM_KEY.format(release_ref))
+    if not revoke_ref:
+        return None
+    record = get_revocation(str(revoke_ref))
+    if record is None:
+        # O "Não foi você?" chegou antes: não há mais o que liberar.
+        return None
+    if not record.get("confirmed_at"):
+        record["confirmed_at"] = timezone.now().isoformat()
+        store_revocation(str(revoke_ref), record)
+    return str(record.get("origin_label") or "")
+
+
 def pop_site_release(request) -> dict | None:
-    """A liberação pendente para ESTE navegador (uso único), se a mensagem já chegou."""
-    from shopman.doorman.services.link_state import origin_fingerprint, pop_release
+    """A liberação para ESTE navegador (uso único), se o botão da mensagem já foi tocado.
+
+    A mensagem deixa a liberação esperando; sem o toque em "Liberar o Chrome no Windows"
+    ela volta para a espera e a aba continua do lado de fora.
+    """
+    from shopman.doorman.services.link_state import (
+        get_revocation,
+        origin_fingerprint,
+        pop_release,
+        release_to_origin,
+    )
 
     session = getattr(request, "session", None)
     if session is None or not session.session_key:
         return None
-    return pop_release(origin_fingerprint(session.session_key))
+    origin = origin_fingerprint(session.session_key)
+    release = pop_release(origin)
+    if not release:
+        return None
+    revoke_ref = str(release.get("revoke_ref") or "")
+    record = get_revocation(revoke_ref) if revoke_ref else None
+    if record is None:
+        return None
+    if not record.get("confirmed_at"):
+        release_to_origin(origin, token=str(release.get("token") or ""), revoke_ref=revoke_ref)
+        return None
+    return release
 
 
 def record_site_release_login(revoke_ref: str, *, request, response) -> None:

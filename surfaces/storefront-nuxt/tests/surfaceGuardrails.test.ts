@@ -684,7 +684,9 @@ describe('surface UX guardrails', () => {
     expect(waPanel).toContain('size="icon-lg"')
     expect(waPanel).toContain('variant="link"')
     expect(login).not.toContain('Entrar com o rosto ou a digital')
-    expect(login).not.toContain('passkeySignIn')
+    // A entrada pela chave existe, mas só onde a chave mora: nunca um botão para todos.
+    expect(login).toContain('passkeyHere.value = passkeySupported() && passkeyRememberedHere()')
+    expect(login).toContain('v-if="passkeyHere && !waWaiting"')
     expect(read('app/components/WhatsappVerifyPanel.vue')).toContain('Gerando link')
     expect(read('app/components/WhatsappVerifyPanel.vue')).toContain(':aria-busy="isStarting && !canOpenWhatsApp"')
     expect(login).toContain('<UiFieldLabel for="trusted-device" class="w-full">')
@@ -803,11 +805,11 @@ describe('surface UX guardrails', () => {
     expect(surfaceVueFiles).not.toContain('app/components/PasskeyInviteCard.vue')
     expect(checkout).not.toContain('PasskeyInviteCard')
     expect(account).not.toContain('PasskeyInviteCard')
-    // A ENTRADA pela chave ainda não existe (`usePasskey().signIn()` não é chamado em
-    // lugar nenhum, e /entrar só oferece WhatsApp e SMS). Enquanto a porta não nascer, a
-    // tela guarda a chave e não promete entrar com ela.
-    expect(security).toContain('Guardar uma chave deste aparelho')
-    expect(security).not.toContain('Entrar com uma chave deste aparelho')
+    // A entrada pela chave existe (/entrar chama `signIn`), então a Segurança promete
+    // entrar com ela, e o ativar marca o navegador para a porta aparecer.
+    expect(security).toContain('Com a chave deste aparelho, você entra num toque')
+    expect(read('app/pages/entrar.vue')).toContain('Entrar com a chave deste aparelho')
+    expect(passkey).toContain('rememberPasskeyHere()')
     expect(security).toContain('lucide:key-round')
     expect(`${security}\n${passkey}`).not.toMatch(/rosto|digital|scan-face/i)
   })

@@ -527,6 +527,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "LOGIN_WA_WAITING": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
+    "LOGIN_WA_WAITING_PHONE": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
     "LOGIN_WA_WHY": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),

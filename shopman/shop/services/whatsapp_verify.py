@@ -114,6 +114,7 @@ def _access_deep_link(code: str, number: str) -> str:
 
 def start_access_link(
     *, cart_session_key: str = "", next_path: str = "", origin: str = "", origin_label: str = "",
+    from_phone: bool = True,
 ) -> dict:
     """Guarda o contexto do site ({cart_session_key, next}) sob um código NB-XxXx
     (uso único, no cache) e devolve o deep link com o código pré-preenchido.
@@ -132,13 +133,25 @@ def start_access_link(
     if not number:
         raise WhatsAppVerifyUnavailable("WhatsApp da loja sem número configurado")
 
+    from shopman.shop.notification_copy import ACCESS_BUTTON_COPY
+    from shopman.shop.services import access as access_service
+
     state: dict = {}
-    # A sessão que apertou o botão: quando a mensagem chegar, é ELA que entra
-    # (``AccessLinkCreateView._release_origin``). Impressão digital, nunca a chave.
-    if origin:
+    # A sessão que apertou o botão, só quando ela é um COMPUTADOR: a mensagem deixa a
+    # liberação esperando por ela (``AccessLinkCreateView._release_origin``) e o botão
+    # "Liberar o Chrome no Windows" a solta. Impressão digital, nunca a chave. No
+    # celular não há origem a liberar: a entrada acontece no navegador que o botão
+    # "Voltar à loja" abrir (``site_return``), nunca noutra aba.
+    if origin and not from_phone:
         state["origin"] = origin
         if origin_label:
             state["origin_label"] = origin_label
+        return_mode = "release_this_tab"
+        return_button = access_service.release_caption(origin_label)
+    else:
+        state["site_return"] = "phone"
+        return_mode = "message_button"
+        return_button = ACCESS_BUTTON_COPY["return_to_store"]
     if cart_session_key:
         state["cart_session_key"] = str(cart_session_key)
     safe_next = _safe_next(next_path)
@@ -159,4 +172,7 @@ def start_access_link(
         "wa_number": number,
         "has_context": has_cart_context,
         "has_cart_context": has_cart_context,
+        # A tela diz qual botão da resposta tocar, com o mesmo rótulo da mensagem.
+        "return_mode": return_mode,
+        "return_button": return_button,
     }

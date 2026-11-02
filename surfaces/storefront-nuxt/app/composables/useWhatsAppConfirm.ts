@@ -12,10 +12,10 @@
 //
 // Por isso a sacola não se perde: ela viaja no código, e o resgate a adota.
 //
-// E a tela onde ela tocou termina o serviço: a mensagem libera ESTE navegador, e ao
-// voltar do WhatsApp a página se confirma sozinha (useWhatsappReturn) — a mensagem
-// diz "pode voltar ao site", e isso tem de ser verdade aqui também. `onConfirmed`
-// recarrega o que a página mostra; sem ele, a página recarrega inteira.
+// E a tela onde ela tocou termina o serviço (useWhatsappReturn): no computador, o botão
+// "Liberar o Chrome" da resposta solta ESTE navegador; no celular, o botão "Voltar à
+// loja" confirma o navegador que ele abrir, e esta aba percebe quando é o mesmo.
+// `onConfirmed` recarrega o que a página mostra; sem ele, a página recarrega inteira.
 
 export function useWhatsAppConfirm(onConfirmed?: () => void | Promise<void>) {
   const apiPath = useShopmanApiPath()

@@ -97,6 +97,7 @@ from .tracking import (
 )
 from .whatsapp_verify import (
     WhatsAppVerifyClaimView,
+    WhatsAppVerifyReleaseView,
     WhatsAppVerifyRevokeView,
     WhatsAppVerifyStartView,
 )
@@ -156,6 +157,7 @@ urlpatterns = [
     path("auth/passkey/login/", PasskeyLoginView.as_view(), name="api-auth-passkey-login"),
     path("auth/whatsapp/start/", WhatsAppVerifyStartView.as_view(), name="api-auth-whatsapp-start"),
     path("auth/whatsapp/claim/", WhatsAppVerifyClaimView.as_view(), name="api-auth-whatsapp-claim"),
+    path("auth/whatsapp/release/", WhatsAppVerifyReleaseView.as_view(), name="api-auth-whatsapp-release"),
     path("auth/whatsapp/revoke/", WhatsAppVerifyRevokeView.as_view(), name="api-auth-whatsapp-revoke"),
     path("auth/logout/", LogoutView.as_view(), name="api-auth-logout"),
     # Cart
