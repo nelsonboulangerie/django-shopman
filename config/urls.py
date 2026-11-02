@@ -11,6 +11,7 @@ from django.middleware.csrf import get_token
 from django.urls import URLPattern, URLResolver, include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from shopman.doorman.views.access_link import AccessLinkCreateView, AccessLinkExchangeView
+from shopman.watchman.release import ReleaseIdentityView
 
 from shopman.backstage.admin_console.cash_receipt import cash_receipt_verify_view
 from shopman.backstage.admin_console.copy_catalog import copy_catalog_view
@@ -48,6 +49,8 @@ urlpatterns = [
     path("health/live/", HealthCheckView.as_view(), name="health-live"),
     path("health/ready/", ReadyCheckView.as_view(), name="health-ready"),
     path("health/database/", DatabaseReadyView.as_view(), name="health-database"),
+    # Qual build está no ar (WP-RELEASE-01 R1): constante, sem banco, sem segredo.
+    path("health/release/", ReleaseIdentityView.as_view(), name="health-release"),
     # O ingress público divide os dois processos Django por path. Estes aliases
     # caem no web-storefront (`/api/v1`); as rotas acima caem no web-operator.
     # Assim o monitor externo mede cada processo, não duas URLs do mesmo processo.

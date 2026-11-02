@@ -367,6 +367,7 @@ WATCHMAN = {
         "shopman.shop.watchman_infrastructure.DeploymentDriftCheck",
         "shopman.shop.watchman_infrastructure.ExternalMonitoringContractCheck",
         "shopman.watchman.expiry.ExpiryLifecycleCheck",
+        "shopman.watchman.release.ReleaseIdentityCheck",
     ],
     "PROFILES": {
         "liveness": ["process", "pool"],
@@ -377,6 +378,25 @@ WATCHMAN = {
         # O diagnóstico interativo permanece curto. Os contratos de infraestrutura
         # são deliberadamente um perfil CLI separado porque podem levar minutos.
         "diagnostic": ["process", "pool", "database", "cache", "migrations", "queue", "performance_budgets"],
+        # O commit do `main` contra o que cada componente serve (WP-RELEASE-01 R1).
+        # Perfil próprio, de CLI: pergunta a endereços públicos e ao git.
+        "release": ["release_identity"],
+    },
+    # Só NOMES de variável: os endereços e o commit esperado são de quem roda a
+    # sonda (CI, shell do operador), não da aplicação observada. Os ids são os
+    # componentes de deploy (`scripts/deploy_components.py`), e a equivalência usa
+    # a mesma tabela de caminhos para não acusar atraso em componente que o deploy
+    # seletivo, corretamente, não reconstruiu. Contrato:
+    # docs/reference/release-contract.md.
+    "RELEASE_IDENTITY": {
+        "expected_sha_env": "WATCHMAN_EXPECTED_RELEASE_SHA",
+        "equivalence": "shopman.shop.watchman_release.component_unchanged_since",
+        "targets": [
+            {"id": "web", "url_env": "WATCHMAN_RELEASE_URL_WEB"},
+            {"id": "storefront-nuxt", "url_env": "WATCHMAN_RELEASE_URL_STOREFRONT"},
+            {"id": "operator-floor", "url_env": "WATCHMAN_RELEASE_URL_OPERATOR_FLOOR"},
+            {"id": "operator-office", "url_env": "WATCHMAN_RELEASE_URL_OPERATOR_OFFICE"},
+        ],
     },
     # Metadados, nunca os segredos. A CI publica as datas em repository vars;
     # o Watchman transforma o calendário em ação antes de qualquer serviço parar.

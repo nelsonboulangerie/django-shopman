@@ -1,5 +1,6 @@
 from django.urls import path
 
+from shopman.watchman.release import ReleaseIdentityView
 from shopman.watchman.views import LiveView, ReadyView, StatusView
 
 app_name = "watchman"
@@ -7,5 +8,6 @@ app_name = "watchman"
 urlpatterns = [
     path("live/", LiveView.as_view(), name="live"),
     path("ready/", ReadyView.as_view(), name="ready"),
+    path("release/", ReleaseIdentityView.as_view(), name="release"),
     path("status/", StatusView.as_view(), name="status"),
 ]
