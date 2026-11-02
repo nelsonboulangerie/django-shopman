@@ -1,9 +1,12 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
 # A imagem base é ARG só para a CI trocar de REGISTRO (espelho público da mesma
 # imagem oficial, sem o limite de pull anônimo do Docker Hub). O default é o que o
 # deploy usa e não muda: deploy-images.yml e o App Platform não passam o arg.
-ARG PYTHON_IMAGE=python:3.12-slim
+# O digest @sha256 fixa a imagem exata (o tag anda sozinho); a CI passa o MESMO
+# digest pelo espelho (shopman/shop/tests/test_base_image_digests.py confere).
+# Atualizar = trocar o digest aqui e nos build-args dos workflows, no mesmo PR.
+ARG PYTHON_IMAGE=python:3.12-slim@sha256:b18b261e1b4974b4f321451ad5251ded85abb22c2b8b262da527dda1d031ab30
 
 FROM ${PYTHON_IMAGE} AS runtime
 

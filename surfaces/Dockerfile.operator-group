@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 # Imagens dos GRUPOS de apps de operador (ADR-030): um contêiner por grupo, com
 # o `.output/` de cada app construído exatamente como no Dockerfile.surface e um
 # roteador por Host (surfaces/operator-router, zero dependências) na porta 3000.
@@ -24,7 +24,10 @@ ARG OPERATOR_GROUP
 # A imagem base é ARG só para a CI trocar de REGISTRO (espelho público da mesma
 # imagem oficial, sem o limite de pull anônimo do Docker Hub). O default é o que o
 # deploy usa e não muda: deploy-images.yml e o App Platform não passam o arg.
-ARG NODE_IMAGE=node:22-alpine
+# O digest @sha256 fixa a imagem exata (o tag anda sozinho); a CI passa o MESMO
+# digest pelo espelho (shopman/shop/tests/test_base_image_digests.py confere).
+# Atualizar = trocar o digest aqui e nos build-args dos workflows, no mesmo PR.
+ARG NODE_IMAGE=node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914
 
 FROM ${NODE_IMAGE} AS kit
 WORKDIR /repo

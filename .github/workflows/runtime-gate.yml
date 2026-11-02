@@ -579,8 +579,8 @@ jobs:
       - name: Build deploy image
         run: >-
           docker build --tag django-shopman:ci
-          --build-arg PYTHON_IMAGE=ghcr.io/nelsonboulangerie/ci-mirror/python:3.12-slim
-          --build-arg BUILDKIT_SYNTAX=ghcr.io/nelsonboulangerie/ci-mirror/dockerfile:1
+          --build-arg PYTHON_IMAGE=ghcr.io/nelsonboulangerie/ci-mirror/python:3.12-slim@sha256:b18b261e1b4974b4f321451ad5251ded85abb22c2b8b262da527dda1d031ab30
+          --build-arg BUILDKIT_SYNTAX=ghcr.io/nelsonboulangerie/ci-mirror/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
           .
 
       # `docker build` prova que o COPY não falha, NÃO que os artefatos caíram
