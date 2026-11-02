@@ -3,8 +3,9 @@ import { defineConfig, devices } from '@playwright/test'
 // E2E do storefront. Sobe um mock backend leve (respostas vazias rápidas) e o
 // `nuxt preview` apontado a ele, para exercitar comportamentos do app que NÃO
 // dependem de dados de negócio: shell degradado, guard de conta, banner offline,
-// página 404. Fluxos com dados ricos (menu→carrinho→checkout) são specs marcados
-// e rodam contra o Django real (reviewer local) — ver tests/e2e/README.
+// página 404. O fluxo com dados (PDP → sacola → checkout → acompanhamento) roda
+// contra o Django real semeado, no E2E do Django (job Storefront E2E do CI):
+// ver tests/e2e/README.
 export default defineConfig({
   testDir: './tests/e2e',
   testMatch: '**/*.spec.ts',

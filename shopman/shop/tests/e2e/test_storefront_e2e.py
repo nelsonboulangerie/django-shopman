@@ -452,14 +452,14 @@ def _is_checkout_url(url: str) -> bool:
     return urlparse(url).path == storefront_links.path_checkout()
 
 
-def _authenticate_via_otp(page) -> None:
+def _authenticate_via_otp(page, phone: str = LIVE_ORDER_PHONE) -> None:
     """Entra pela UI usando um OTP recebido fora do contrato HTTP."""
     otp_file_value = os.environ.get("SHOPMAN_E2E_OTP_FILE", "").strip()
     assert otp_file_value, "Defina SHOPMAN_E2E_OTP_FILE para o canal do harness E2E."
     otp_file = Path(otp_file_value)
     expect(page.get_by_role("button", name="Prefere receber um código por SMS?")).to_be_visible()
     page.get_by_role("button", name="Prefere receber um código por SMS?").click()
-    page.locator("#login-phone").fill(LIVE_ORDER_PHONE)
+    page.locator("#login-phone").fill(phone)
     page.locator("form:has(#login-phone) button[type='submit']").click()
 
     inputs = page.locator("form input[inputmode='numeric']")
@@ -664,6 +664,246 @@ class TestLiveOrderCrossing:
         item_names = " · ".join(item.get("name", "") for item in order["items"])
         assert product_name in item_names, (
             f"Item da PDP ({product_name!r}) não está no pedido do operador ({item_names!r})"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Dia 1: entrega + cartão até o acompanhamento (T13 do laudo de 23/10)
+# ---------------------------------------------------------------------------
+
+#: Telefone próprio do Dia 1: o cliente nasce neste teste (ou já existe, em
+#: rerun contra o mesmo banco), sem herdar nada do pedido de retirada acima.
+DAY_ONE_PHONE = "43991840002"
+DAY_ONE_QTY = 4
+
+#: Endereço digitado à mão (o CI não fala com Google Maps nem ViaCEP). O bairro
+#: casa com a zona de exceção que o seed já cria ("Bela Suíça", taxa fixa), então
+#: a entrega é aceita sem geocodificação. CEP 860xx fica fora da zona excluída
+#: (862xx) do mesmo seed.
+DAY_ONE_ADDRESS = {
+    "#address-route": "Rua Jorge Velho",
+    "#address-number": "140",
+    "#address-neighborhood": "Bela Suíça",
+    "#address-cep": "86050-480",
+}
+
+
+def _wait_cart_mutation(page, click) -> None:
+    """Clica e espera a gravação da sacola no servidor (estado, não relógio)."""
+    with page.expect_response(
+        lambda r: "/api/v1/cart/" in r.url and r.request.method in {"PUT", "POST"},
+        timeout=15_000,
+    ) as info:
+        click()
+    assert info.value.ok, f"Sacola recusou a inclusão: {info.value.status}"
+
+
+def _fill_manual_delivery_address(page) -> None:
+    """Passo "Endereço" pelo caminho manual do AddressPicker."""
+    step = page.locator("[data-checkout-step='address']")
+    expect(step.locator("[data-address-picker]")).to_be_visible(timeout=15_000)
+    # Rerun contra o mesmo banco: o endereço do pedido anterior volta salvo. O
+    # teste sempre digita um novo, para provar o caminho do cliente de primeira vez.
+    new_address = step.locator("[data-address-new]")
+    if new_address.count() and new_address.first.is_visible():
+        new_address.first.click()
+    step.locator("[data-address-manual]").click()
+    for selector, value in DAY_ONE_ADDRESS.items():
+        field = step.locator(selector)
+        expect(field).to_be_visible(timeout=15_000)
+        field.fill(value)
+    city = step.locator("#address-city")
+    if not (city.input_value() or "").strip():
+        city.fill("Londrina")
+    state = step.locator("#address-state")
+    if not (state.inner_text() or "").strip():
+        state.click()
+        page.get_by_role("option", name="PR", exact=True).click()
+        expect(state).to_have_text(re.compile(r"PR"))
+    step.locator("[data-address-confirm]").click()
+
+
+def _select_future_delivery_window(page) -> None:
+    """Passo "Quando" da entrega, imune ao relógio de parede.
+
+    As datas rápidas são as datas ABERTAS da loja: ``[hoje, próxima]`` quando
+    hoje abre, ou só ``[próxima]`` quando não abre. A ÚLTIMA é sempre um dia
+    futuro, com a grade de janelas inteira; hoje, depois do expediente, não tem
+    janela nenhuma. O teste escolhe a última e a primeira janela habilitada dela,
+    e por isso passa às 8h, às 23h e no domingo.
+    """
+    when = page.locator("[data-checkout-step='when']")
+    dates = when.locator("[role='radio'][id^='checkout-date-']")
+    expect(dates.first).to_be_visible(timeout=15_000)
+    future = dates.last
+    if future.get_attribute("aria-checked") != "true":
+        future.click()
+    expect(future).to_have_attribute("aria-checked", "true")
+    window = when.locator(
+        "[data-checkout-delivery-windows] [role='radio'][id^='checkout-window-']"
+        ":not([data-disabled]):not([disabled])"
+    ).first
+    expect(window).to_be_visible(timeout=15_000)
+    window.click()
+    expect(window).to_have_attribute("aria-checked", "true")
+
+
+def _day_one_order_facts(django_db_blocker, order_ref: str) -> dict:
+    """O que o banco diz do pedido e da cobrança (mesmo banco do servidor vivo)."""
+    with django_db_blocker.unblock():
+        from shopman.orderman.models import Order
+        from shopman.payman import PaymentService
+
+        order = Order.objects.get(ref=order_ref)
+        payment = (order.data or {}).get("payment") or {}
+        intent = PaymentService.get(payment["intent_ref"]) if payment.get("intent_ref") else None
+        return {
+            "channel_ref": order.channel_ref,
+            "status": order.status,
+            "fulfillment_type": (order.data or {}).get("fulfillment_type"),
+            "delivery_address": (order.data or {}).get("delivery_address_structured") or {},
+            "delivery_time_slot": (order.data or {}).get("delivery_time_slot"),
+            "payment_method": payment.get("method"),
+            "intent_gateway": getattr(intent, "gateway", None),
+            "intent_status": getattr(intent, "status", None),
+            "intent_gateway_id": getattr(intent, "gateway_id", "") or "",
+        }
+
+
+class TestDayOneDeliveryCard:
+    """O Dia 1 da loja: um cliente novo pede ENTREGA, paga com CARTÃO e acompanha.
+
+    Cadeia inteira, sem atalho: loja Nuxt → BFF → API Django → commit →
+    ``payment.initiate`` síncrono (cartão é ``at_commit`` no canal web) →
+    ``payment_stripe`` de PRODUÇÃO → Checkout Session → "página do Stripe" →
+    webhook ``checkout.session.completed`` assinado → ``PaymentService.authorize``
+    → acompanhamento em ``/pedido/<ref>``.
+
+    O Stripe do outro lado da rede é o falso local (``fake_stripe.py``): o CI
+    não sai para a rede e não guarda credencial. O que ele NÃO prova está no
+    docstring dele e no PR: 3DS, recusa e a página real do Stripe.
+    """
+
+    def test_12_delivery_card_order_reaches_tracking(
+        self, page, store_base_url, django_db_blocker
+    ):
+        from .conftest import _in_thread
+
+        fake_stripe_base = os.environ.get("SHOPMAN_E2E_STRIPE_API_BASE", "").strip()
+        assert fake_stripe_base, (
+            "Defina SHOPMAN_E2E_STRIPE_API_BASE (o run_storefront_e2e.sh sobe o Stripe falso)."
+        )
+        page.set_viewport_size({"width": 1280, "height": 900})
+
+        # ── Cliente: PDP → sacola ────────────────────────────────────
+        sku = _seeded_sku(page, store_base_url)
+        assert sku, "Seeded menu should expose at least one product SKU"
+        page.goto(
+            f"{store_base_url}{storefront_links.path_product(sku)}", wait_until="networkidle"
+        )
+        add = page.get_by_role("button", name=ADD_TO_CART).first
+        _wait_cart_mutation(page, add.click)
+        # A entrega tem pedido mínimo (o retirar não). Quatro unidades do primeiro
+        # item do cardápio semeado passam dele com folga; cada toque espera a
+        # sacola gravar antes do próximo.
+        increase = page.locator("[data-quantity-increase]").first
+        for _ in range(DAY_ONE_QTY - 1):
+            expect(increase).to_be_enabled(timeout=15_000)
+            _wait_cart_mutation(page, increase.click)
+
+        # ── Identificação pelo OTP ───────────────────────────────────
+        page.goto(f"{store_base_url}{storefront_links.path_checkout()}")
+        page.wait_for_url(re.compile(re.escape(storefront_links.path_login())), timeout=15_000)
+        _authenticate_via_otp(page, phone=DAY_ONE_PHONE)
+
+        # ── Checkout: entrega → endereço → quando → cartão → revisão ─
+        expect(page.locator("[data-checkout-step='fulfillment']")).to_be_visible(
+            timeout=15_000
+        )
+        _ensure_contact_saved(page)
+        delivery = page.locator("label[for='checkout-fulfillment-delivery']")
+        expect(delivery).to_be_visible(timeout=15_000)
+        # Escolher Entrega já avança para o endereço, e confirmar o endereço já
+        # avança para "Quando": nenhum dos dois passos pede "Continuar".
+        delivery.click()
+        _fill_manual_delivery_address(page)
+
+        _select_future_delivery_window(page)
+        when_continue = _checkout_action(page, "Continuar")
+        expect(when_continue).to_be_enabled(timeout=15_000)
+        when_continue.click()
+
+        card = page.locator("label[for='checkout-payment-card']")
+        expect(card).to_be_visible(timeout=15_000)
+        card.click()
+        _checkout_action(page, "Revisar pedido").click()
+
+        sheet = page.get_by_role("dialog").filter(has_text="Revise seu pedido")
+        expect(sheet).to_be_visible(timeout=15_000)
+        sheet.get_by_role(
+            "button", name=re.compile(r"enviar|confirmar", re.IGNORECASE)
+        ).last.click()
+
+        # ── Acompanhamento: o pedido nasce e oferece o cartão ────────
+        page.wait_for_url(re.compile(r"/pedido/"), timeout=30_000)
+        match = re.search(r"/pedido/([^/?#]+)", page.url)
+        assert match, f"URL de acompanhamento sem ref de pedido: {page.url}"
+        order_ref = match.group(1)
+
+        pay_link = page.get_by_role("link", name="Pagar com cartão")
+        expect(pay_link).to_be_visible(timeout=15_000)
+        checkout_url = pay_link.get_attribute("href") or ""
+        assert checkout_url.startswith(f"{fake_stripe_base}/pay/cs_test_"), (
+            f"O link do cartão não é a Checkout Session criada pelo adapter: {checkout_url!r}"
+        )
+
+        born = _in_thread(_day_one_order_facts, django_db_blocker, order_ref)
+        assert born["channel_ref"] == "web"
+        assert born["fulfillment_type"] == "delivery"
+        assert born["delivery_address"].get("neighborhood") == DAY_ONE_ADDRESS[
+            "#address-neighborhood"
+        ]
+        assert born["delivery_time_slot"], "Entrega sem janela escolhida"
+        assert born["payment_method"] == "card"
+        assert born["intent_gateway"] == "stripe"
+        assert born["intent_status"] == "pending"
+        assert born["intent_gateway_id"].startswith("cs_test_")
+
+        # ── "Página do Stripe": o cliente paga e volta ao acompanhamento ─
+        with page.context.expect_page() as stripe_tab_info:
+            pay_link.click()
+        stripe_tab = stripe_tab_info.value
+        expect(stripe_tab.get_by_role("heading", name=re.compile("Checkout de teste"))).to_be_visible(
+            timeout=15_000
+        )
+        stripe_tab.get_by_role("button", name="Pagar").click()
+        # O Stripe falso entrega o webhook ANTES do redirect: quando o
+        # acompanhamento carrega aqui, a autorização já está gravada.
+        stripe_tab.wait_for_url(
+            re.compile(re.escape(storefront_links.path_order_tracking(order_ref)) + r"$"),
+            timeout=30_000,
+        )
+
+        paid = _in_thread(_day_one_order_facts, django_db_blocker, order_ref)
+        assert paid["intent_status"] == "authorized", (
+            f"Webhook do cartão não autorizou a cobrança: {paid['intent_status']}"
+        )
+        assert paid["intent_gateway_id"].startswith("pi_test_"), (
+            "checkout.session.completed deveria promover o gateway_id ao PaymentIntent"
+        )
+        # Sem worker de directives neste gate, o pedido segue no estado do commit.
+        assert paid["status"] in {"new", "accepted"}, paid["status"]
+
+        # O acompanhamento que o cliente vê depois de pagar não pede o cartão
+        # de novo, e a aba original (SSE/poll) chega ao mesmo estado.
+        expect(stripe_tab.get_by_text("Pagamento autorizado").first).to_be_visible(
+            timeout=15_000
+        )
+        expect(stripe_tab.get_by_role("link", name="Pagar com cartão")).to_have_count(
+            0, timeout=15_000
+        )
+        expect(page.get_by_role("link", name="Pagar com cartão")).to_have_count(
+            0, timeout=30_000
         )
 
 

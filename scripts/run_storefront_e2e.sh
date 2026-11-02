@@ -39,10 +39,26 @@ export SHOPMAN_OTP_DELIVERY_CHAIN=""
 # storefront_links.storefront_url() absolute → the store is the customer surface.
 export SHOPMAN_STOREFRONT_BASE_URL="${STOREFRONT_BASE_URL}"
 
+# ── Cartão: Stripe FALSO local (T13, E2E do Dia 1) ──
+# O `payment_mock` recusa cartão de propósito, e o CI não sai para a rede. O
+# adapter `payment_stripe` de produção roda inteiro; só o endereço da API do SDK
+# aponta para `shopman/shop/tests/e2e/fake_stripe.py`, que devolve a Checkout
+# Session, serve a "página do Stripe" e entrega o webhook assinado. As chaves
+# abaixo são FALSAS e só valem contra o servidor falso: nenhuma credencial real.
+# O settings de Django do harness (`settings_e2e`) recusa subir sem
+# DEBUG, sem `sk_test_` ou com a API apontada para fora de 127.0.0.1.
+FAKE_STRIPE_PORT="${SHOPMAN_E2E_FAKE_STRIPE_PORT:-12111}"
+FAKE_STRIPE_LOG="${SHOPMAN_E2E_FAKE_STRIPE_LOG:-/tmp/shopman-storefront-e2e-fake-stripe.log}"
+export SHOPMAN_E2E_STRIPE_API_BASE="http://127.0.0.1:${FAKE_STRIPE_PORT}"
+export STRIPE_SECRET_KEY="sk_test_e2e_fake_local_only"
+export STRIPE_PUBLISHABLE_KEY="pk_test_e2e_fake_local_only"
+export STRIPE_WEBHOOK_SECRET="whsec_e2e_fake_local_only"
+
 DJANGO_PID=""
 NUXT_PID=""
+FAKE_STRIPE_PID=""
 cleanup() {
-  for pid in "${NUXT_PID}" "${DJANGO_PID}"; do
+  for pid in "${NUXT_PID}" "${DJANGO_PID}" "${FAKE_STRIPE_PID}"; do
     if [[ -n "${pid}" ]]; then
       kill "${pid}" >/dev/null 2>&1 || true
       wait "${pid}" >/dev/null 2>&1 || true
@@ -86,8 +102,17 @@ fi
 echo "── Build da loja Nuxt ──"
 (cd "${NUXT_DIR}" && npm run build)
 
+# ── Start the fake Stripe (card checkout + signed webhook back to Django) ──
+"${PYTHON_BIN}" -m shopman.shop.tests.e2e.fake_stripe \
+  --port "${FAKE_STRIPE_PORT}" \
+  --webhook-url "${DJANGO_BASE_URL}/api/webhooks/stripe/" \
+  --webhook-secret "${STRIPE_WEBHOOK_SECRET}" >"${FAKE_STRIPE_LOG}" 2>&1 &
+FAKE_STRIPE_PID=$!
+
 # ── Start Django (API + operator pages) ──
-"${PYTHON_BIN}" manage.py runserver --noreload "127.0.0.1:${DJANGO_PORT}" >"${DJANGO_LOG}" 2>&1 &
+# Só o servidor usa o settings do Stripe falso; seed e pytest seguem no padrão.
+DJANGO_SETTINGS_MODULE=shopman.shop.tests.e2e.settings_e2e \
+  "${PYTHON_BIN}" manage.py runserver --noreload "127.0.0.1:${DJANGO_PORT}" >"${DJANGO_LOG}" 2>&1 &
 DJANGO_PID=$!
 
 # ── Start the built Nuxt store, BFF pointing at the Django API ──
@@ -99,6 +124,7 @@ NUXT_PID=$!
 # na fila e, durante o build Nuxt, ele ultrapassa de propósito o orçamento de
 # readiness. Aqui a pergunta é somente se o processo HTTP abriu para o E2E;
 # dependências/filas continuam cobertas pelos gates de readiness e runtime.
+wait_for "${SHOPMAN_E2E_STRIPE_API_BASE}/health" "${FAKE_STRIPE_PID}" "Stripe falso" "${FAKE_STRIPE_LOG}"
 wait_for "${DJANGO_BASE_URL}/health/live/" "${DJANGO_PID}" "Servidor Django" "${DJANGO_LOG}"
 wait_for "${STOREFRONT_BASE_URL}/" "${NUXT_PID}" "Loja Nuxt" "${NUXT_LOG}"
 

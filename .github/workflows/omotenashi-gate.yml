@@ -251,6 +251,11 @@ jobs:
     # e telas de operador que sumiram no cutover headless. Seis testes davam 404,
     # e um deles PASSAVA no 404 (afirmava a ausência de um texto que a página de
     # erro também não tinha). Um E2E que ninguém roda apodrece calado.
+    #
+    # É aqui que roda o Dia 1 da loja (T13 do laudo de 23/10, `test_12`): entrega
+    # paga com cartão até o acompanhamento, com o `payment_stripe` de produção
+    # falando com um Stripe FALSO local (sem rede, sem credencial). O harness
+    # sobe o falso junto com Django e loja; o log dele vai no artefato abaixo.
     services:
       postgres:
         image: ghcr.io/nelsonboulangerie/ci-mirror/postgres:16-alpine
@@ -318,5 +323,6 @@ jobs:
           path: |
             /tmp/shopman-storefront-e2e-django.log
             /tmp/shopman-storefront-e2e-nuxt.log
+            /tmp/shopman-storefront-e2e-fake-stripe.log
           if-no-files-found: warn
           retention-days: 14
