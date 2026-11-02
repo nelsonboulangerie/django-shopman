@@ -4,21 +4,41 @@
 - **Método:** seis auditorias em paralelo (dinheiro e fiscal; segurança; pedido e estoque;
   operação e virada; superfícies Nuxt; adotabilidade como produto). Cada achado P1 foi
   reproduzido de novo pela coordenação antes de entrar aqui.
-- **Provas executáveis:** [`evidence/glr-2026-10-23/`](../../evidence/glr-2026-10-23/). São
-  testes que **passam no código atual**, e por isso provam o defeito. Quem consertar
-  transforma a prova em teste de regressão (assert invertido) dentro da suíte do app.
+- **Provas executáveis:** apagadas em 02/11/2026. Eram testes que passavam no código
+  da época (e por isso provavam o defeito); medido em 02/11 contra `origin/main`
+  (`caf450360`), 10 das 11 passaram a falhar (o defeito sumiu) e a regra do laudo manda
+  apagá-las no merge. A 11ª (`test_weak_session_passkeys_refused`) era sanidade: a
+  passkey já era recusada para sessão fraca. A de estorno em dinheiro
+  (`test_glr_money_cashrefund.py`) falha por mock desatualizado, não por defeito: o
+  `_Q` do teste não tem `values_list`, que a trava de intents
+  (`select_for_update`, `payment.py` ~l.1288-1293) passou a chamar. Recuperável pelo
+  histórico do `git` (diretório `evidence/glr-2026-10-23/`, até o commit `caf450360`).
 - **Tese desafiada:** a §10 da [coordenação](../plans/COORDENACAO-GO-LIVE.md) diz
   "nenhum bloqueio de código conhecido". O laudo discorda: não há P0 de código provado,
   mas há **19 P1** (falhas prováveis no uso real do Dia 1) e **1 bloqueio a provar em
   homologação** (forma de pagamento cartão na NFC-e).
 
-Como rodar uma prova (na raiz de uma worktree):
+## Estado em 02/11/2026
 
-```bash
-PP=".:$(ls -d packages/*/ | tr '\n' ':')"
-PYTHONPATH="$PP" /Users/pablovalentini/Dev/Claude/django-shopman/.venv/bin/python \
-  -m pytest -c pyproject.toml --rootdir . -p no:cacheprovider -q evidence/glr-2026-10-23/<arquivo>
-```
+Medido contra `origin/main` em `caf450360`. A Onda 1 (T1 a T12) está entregue:
+
+| Tarefa | PR(s) | Observação |
+|---|---|---|
+| T1 Reserva no tempo certo | #2002 | |
+| T2 Retry fiscal honesto | #1996 | |
+| T3 Formas de pagamento da NFC-e | #1997, #2011, #2023 | a forma `99` (iFood) segue **não provada** em homologação; `17` x `20` no Pix de balcão é decisão do contador |
+| T4 Estorno sem fantasma | #2004 | |
+| T5 Escada de identidade do cliente | #2006 | |
+| T6 Superfície HTTP fechada | #2005, #2067 | |
+| T7 PDV que não trava | #2008 | |
+| T8 SSE resiliente nos operadores | #1999 | |
+| T9 Checkout da loja à prova de borda | #2007 | |
+| T10 Travas de migração e alerta | #2001 | |
+| T11 Worker que se cura | #2003 | |
+| T12 Runbooks que agem no vivo | #2000 | |
+
+Em andamento em 02/11: T13 (E2E do Dia 1 na CI), T14 (higiene de segurança do GitHub),
+T15 (checks obrigatórios completos), itens (2) a (5) do Doorman e WP-RELEASE-01.
 
 ## 1. Veredito
 
@@ -100,8 +120,8 @@ produção, purge que recusa com `SHOPMAN_GO_LIVE`.
 
 Regras para todas: as 14 regras comuns da §2 da
 [coordenação](../plans/COORDENACAO-GO-LIVE.md); uma tarefa = um branch = um PR (ou uma
-pilha curta de PRs do mesmo agente); a prova em `evidence/glr-2026-10-23/` vira teste de
-regressão na suíte do app; ao mergear, apagar a prova correspondente.
+pilha curta de PRs do mesmo agente); a prova virava teste de
+regressão na suíte do app e era apagada ao mergear (feito em 02/11/2026).
 
 A coluna **Arquivos** é o perímetro exclusivo da tarefa. Duas tarefas da mesma onda não
 compartilham arquivo; onde há encosto, a ordem está escrita.

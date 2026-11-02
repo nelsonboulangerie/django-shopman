@@ -4,7 +4,7 @@
 ![Django](https://img.shields.io/badge/django-6.1-green)
 ![License](https://img.shields.io/badge/license-FSL--1.1--ALv2-yellow)
 ![Release](https://img.shields.io/github/v/release/nelsonboulangerie/django-shopman?include_prereleases&label=release)
-![Tests](https://img.shields.io/badge/tests-~5.000-brightgreen)
+![Tests](https://img.shields.io/badge/tests-~29.000-brightgreen)
 
 Django Shopman é um framework de commerce operations para pequenos negócios com operação física e remota — padarias, confeitarias, cafés, food service. Não é um e-commerce genérico; é uma base opinativa e modular para casos operacionais densos: catálogo com produção própria, estoque vivo, múltiplos canais (balcão, web, WhatsApp, marketplace), KDS, e gestão integrada.
 
@@ -168,7 +168,7 @@ O framework conecta os core apps para cenários de negócio concretos:
 
 ```bash
 make install          # Instala dependências + packages em modo editável
-make test             # Roda todos os ~5.000 testes (cores + framework)
+make test             # Roda todos os ~29.000 testes coletados (cores + framework)
 make test-offerman    # Testes de um core app específico
 make test-framework   # Testes do framework (shop + storefront + backstage)
 make admin            # Gate canônico Admin/Unfold + testes de integração
@@ -194,7 +194,7 @@ make deploy-down      # para containers do deploy local
 
 | Repo | Descrição |
 |------|-----------|
-| [django-shopman](https://github.com/pablondrina/django-shopman) | Monorepo (este repo) |
+| [django-shopman](https://github.com/nelsonboulangerie/django-shopman) | Monorepo (este repo) |
 | [shopman-orderman](https://github.com/pablondrina/shopman-orderman) | Core: Pedidos |
 | [shopman-stockman](https://github.com/pablondrina/shopman-stockman) | Core: Estoque |
 | [shopman-craftsman](https://github.com/pablondrina/shopman-craftsman) | Core: Produção |
