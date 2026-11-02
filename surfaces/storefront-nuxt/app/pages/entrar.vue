@@ -27,15 +27,18 @@ const phone = ref('')
 const phoneRegion = ref<AuthPhoneRegion>('BR')
 const requestedPhone = ref('')
 // Login por WhatsApp: o start leve vive no PAI para pré-aquecer o deep link e o botão
-// abrir o app num toque. A mensagem enviada libera ESTE navegador no servidor, e a aba
-// entra sozinha quando a pessoa volta (useWhatsappReturn) — o link que a mensagem traz
-// é reserva. Ver useWhatsappVerify e WhatsAppVerifyClaimView.
+// abrir o app num toque. A resposta traz um botão: no celular, "Voltar à loja" entra no
+// navegador que ele abrir (nunca noutra aba); no computador, "Liberar o Chrome no
+// Windows" solta ESTA aba, que percebe a entrada sozinha (useWhatsappReturn). Ver
+// useWhatsappVerify e WhatsAppVerifyClaimView.
 const {
   code: waCode,
   message: waMessage,
   deepLink: waDeepLink,
   waNumber: waNumber,
   status: waStatus,
+  returnMode: waReturnMode,
+  returnButton: waReturnButton,
   start: waStart,
   clear: waClear
 } = useWhatsappVerify()
@@ -47,6 +50,18 @@ const {
   stop: waStop,
   checkNow: waCheckNow
 } = useWhatsappReturn(onWhatsappReturn)
+// Entrada pela chave deste aparelho (passkey). Só aparece onde a chave MORA: o navegador
+// lembra que ativou ou já entrou com ela (passkeyRememberedHere). Oferecer a todo mundo
+// levaria quem nunca ativou a um diálogo do sistema vazio. Decide-se no cliente, depois
+// de montar: no servidor não há navegador a perguntar.
+const {
+  signIn: passkeySignIn,
+  busy: passkeyBusy,
+  error: passkeyError,
+  passkeySupported,
+  passkeyRememberedHere
+} = usePasskey()
+const passkeyHere = ref(false)
 const codeDigits = ref<number[]>([])
 // Nasce VAZIO de propósito. Assumir 'WhatsApp' antes de o servidor dizer por
 // onde mandou já escrevia o canal errado na tela; quando o rótulo não vem, a
@@ -103,6 +118,12 @@ const step = computed(() => authStep({
 // para fora da tela.
 const { reveal } = useNextFocus(step)
 const code = computed(() => codeDigits.value.join('').slice(0, 6))
+// Android: o Chrome entrega o código do SMS (WebOTP) enquanto a etapa do código está na
+// tela; os 6 dígitos completos disparam a confirmação automática, como ao colar.
+const { listen: listenSmsCode } = useWebOtp(
+  computed(() => step.value === 'code'),
+  (smsCode) => { codeDigits.value = smsCode.split('').map(Number) }
+)
 const canVerifyCode = computed(() => code.value.length === 6 && !pending.value)
 const authCopy = computed(() => loginShell.value?.shell.auth_copy || null)
 // DDD padrão da loja (config): assume-se quando o cliente entra sem DDD, para o
@@ -145,12 +166,25 @@ const stepDescription = computed(() => {
 // Admin). Respondem às duas queixas de quem chega pelo site: "pra que eu tenho que
 // fazer isso?" e "o que eu tenho que fazer?".
 const waWhy = computed(() => copyMessage(authCopy.value?.wa_why, 'Sem senha e sem código. A mensagem pronta confirma que o número é seu.'))
-const waSteps = computed(() => copyMessage(
+// A resposta do WhatsApp traz UM botão, e a tela o chama pelo mesmo nome: "Voltar à
+// loja" no celular (a entrada acontece no navegador que ele abrir) ou "Liberar o
+// Chrome" no computador (o toque solta esta aba). `{button}` marca o lugar na copy.
+const waButton = computed(() => waReturnButton.value || 'Voltar à loja')
+const withButton = (text: string) => text.replaceAll('{button}', waButton.value)
+const waSteps = computed(() => withButton(copyMessage(
   authCopy.value?.wa_steps,
-  'Toque em “Abrir o WhatsApp”\nEnvie a mensagem que já está pronta\nVolte para esta tela. A entrada será automática'
-).split('\n').map(step => step.trim()).filter(Boolean))
-const waWaitingTitle = computed(() => copyTitle(authCopy.value?.wa_waiting, 'Mensagem enviada?'))
-const waWaitingMessage = computed(() => copyMessage(authCopy.value?.wa_waiting, 'Volte para esta tela. Estamos conferindo e vamos entrar automaticamente.'))
+  'Toque em “Abrir o WhatsApp”\nEnvie a mensagem que já está pronta\nNa resposta, toque em “{button}”'
+)).split('\n').map(step => step.trim()).filter(Boolean))
+const waWaitingCopy = computed(() => waReturnMode.value === 'release_this_tab'
+  ? authCopy.value?.wa_waiting
+  : authCopy.value?.wa_waiting_phone)
+const waWaitingTitle = computed(() => copyTitle(waWaitingCopy.value, 'Mensagem enviada?'))
+const waWaitingMessage = computed(() => withButton(copyMessage(
+  waWaitingCopy.value,
+  waReturnMode.value === 'release_this_tab'
+    ? 'Na resposta do WhatsApp, toque em “{button}”. Esta tela entra logo depois.'
+    : 'Na resposta do WhatsApp, toque em “{button}”. A loja abre com você dentro.'
+)))
 const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'O WhatsApp não abriu?'))
 const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Mande a mensagem abaixo para {phone} no WhatsApp.'))
 const supportUrl = computed(() => withWhatsAppText(
@@ -188,6 +222,7 @@ const momentSavedNote = computed(() => moment.value === 'confirmed' && trustSave
 onMounted(async () => {
   nowMs.value = Date.now()
   clockTimer = setInterval(() => { nowMs.value = Date.now() }, 1000)
+  passkeyHere.value = passkeySupported() && passkeyRememberedHere()
   // Pré-aquece o deep link (zero-telefone) para o CTA abrir o WhatsApp num toque.
   if (import.meta.client && waReturnState.value === 'idle') void waStart(nextUrl.value)
   // Passo do nome aberto já no setup (access link): não houve troca de passo, e
@@ -315,6 +350,27 @@ async function onWhatsappReturn (response: WhatsappClaimResponse) {
   await celebrateAndGo('confirmed')
 }
 
+// A chave assinou e o servidor abriu a sessão com identidade forte. Mesmo fim das outras
+// portas: nome, se faltar (o passo troca e o próximo foco leva ao campo); senão, a festa
+// do aparelho reconhecido. Cancelar não é erro: a tela fica como estava, WhatsApp abaixo.
+async function enterWithPasskey () {
+  if (passkeyBusy.value || pending.value) return
+  error.value = null
+  const response = await passkeySignIn()
+  if (!response) {
+    if (passkeyError.value) error.value = authErrorView({}, passkeyError.value)
+    return
+  }
+  waStop()
+  waClear()
+  verified.value = true
+  if (response.requires_welcome) {
+    enterWelcomeGate(response)
+    return
+  }
+  await celebrateAndGo('recognized')
+}
+
 function enterWelcomeGate (sessionResponse: AuthSessionResponse) {
   welcomeNeeded.value = true
   welcomeName.value = sessionResponse.welcome_suggested_name?.trim() || ''
@@ -384,6 +440,8 @@ async function resendCode () {
       body: payload
     })
     applyCodeDelivery(response, lastDeliveryMethod.value)
+    // O SMS novo traz outro código: a espera recomeça por ele.
+    void listenSmsCode()
     if (import.meta.client) useSonner.success('Enviamos um novo código.')
   } catch (e) {
     error.value = fetchErrorView(e, 'Não foi possível reenviar o código.')
@@ -508,6 +566,24 @@ useSeoMeta({
         </UiAlert>
 
         <div v-if="step === 'phone'" class="shop-stack-block">
+          <!-- A chave deste aparelho, quando ela mora aqui: um toque e a confirmação do
+               próprio aparelho, sem mensagem nem código. Vem antes do WhatsApp porque é o
+               caminho mais curto; o WhatsApp continua logo abaixo para quem preferir. Some
+               enquanto a tela espera a volta do WhatsApp: ali o foco é a mensagem. -->
+          <UiButton
+            v-if="passkeyHere && !waWaiting"
+            type="button"
+            variant="outline"
+            size="lg"
+            icon="lucide:key-round"
+            class="w-full justify-center"
+            :loading="passkeyBusy"
+            data-login-passkey
+            @click="enterWithPasskey"
+          >
+            Entrar com a chave deste aparelho
+          </UiButton>
+
           <!-- Um caminho na frente: o porquê, três passos e um botão. Depois do toque,
                a mesma área vira a espera, e o plano B (envio manual) mora lá. -->
           <WhatsappVerifyPanel

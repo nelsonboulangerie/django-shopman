@@ -160,20 +160,35 @@ def _message_buttons(template: str, context: dict) -> list[dict[str, str]]:
     next step legible and prevents the recovery link from dominating the copy.
     Other notifications keep their existing plain text contract.
     """
+    from shopman.shop.notification_copy import ACCESS_BUTTON_COPY
+
     if template not in {"access_link", "access_link_site"}:
         return []
+
+    if template == "access_link_site":
+        # Login começado no computador: o botão principal LIBERA a aba de lá e diz qual
+        # é ("Liberar o Chrome no Windows"). Sem o link de liberar não há o que mandar:
+        # o link de entrada abriria a loja no celular, que não é o que a pessoa pediu.
+        release_url = str(context.get("release_url") or "").strip()
+        if not release_url:
+            return []
+        caption = str(context.get("release_caption") or "").strip() or ACCESS_BUTTON_COPY["release_fallback"]
+        buttons = [{"type": "url", "caption": caption, "url": release_url}]
+        revoke_url = str(context.get("revoke_url") or "").strip()
+        if revoke_url:
+            buttons.append({"type": "url", "caption": ACCESS_BUTTON_COPY["revoke"], "url": revoke_url})
+        return buttons
 
     access_url = str(context.get("access_url") or "").strip()
     if not access_url:
         return []
 
-    primary_caption = "Continuar pedido" if context.get("has_cart_context") else "Entrar na loja"
-    buttons = [{"type": "url", "caption": primary_caption, "url": access_url}]
-
-    revoke_url = str(context.get("revoke_url") or "").strip()
-    if template == "access_link_site" and revoke_url:
-        buttons.append({"type": "url", "caption": "Encerrar acesso", "url": revoke_url})
-    return buttons
+    primary_caption = str(context.get("access_caption") or "").strip() or (
+        ACCESS_BUTTON_COPY["continue_order"]
+        if context.get("has_cart_context")
+        else ACCESS_BUTTON_COPY["enter_store"]
+    )
+    return [{"type": "url", "caption": primary_caption, "url": access_url}]
 
 
 def _message_contents(
@@ -189,11 +204,13 @@ def _message_contents(
     dominant bubble. Both are still sent atomically in one SendContent call.
     """
     if template == "access_link_site" and len(buttons) == 2:
+        from shopman.shop.notification_copy import ACCESS_BUTTON_COPY
+
         primary, revoke = buttons
         return [
             {
                 "type": "text",
-                "text": "Não reconhece este acesso?",
+                "text": ACCESS_BUTTON_COPY["revoke_lead"],
                 "buttons": [revoke],
             },
             {

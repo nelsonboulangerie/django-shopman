@@ -67,6 +67,31 @@ liberação mora sob a sessão de origem. O risco que sobra é o golpe da "mensa
 encomendada" (alguém convence a vítima a enviar a mensagem com o código DELE); a defesa
 escolhida pelo dono é avisar e deixar derrubar, sem toque extra para quem é honesto.
 
+### O botão de volta: celular e computador (23/10/2026, escada sem fricção)
+
+Decisão do dono (`docs/plans/COORDENACAO-GO-LIVE.md` §6): a resposta do WhatsApp traz o
+botão de volta, e ONDE a entrada acontece depende de onde o login começou
+(`access.site_origin_is_phone`, pelo agente de usuário; desconhecido conta como celular).
+
+```
+CELULAR  /start não guarda origem (estado `site_return: "phone"`). A mensagem é a
+         `access_link` com o botão "Voltar à loja" (o access link): a entrada acontece
+         no navegador que o botão abrir e NUNCA é liberada para outra aba. Se for o
+         mesmo navegador da aba que esperava, o `claim` dela percebe pelo cookie
+         (sessão autenticada com identidade forte → `done`).
+COMPUTADOR /start guarda a origem e o rótulo ("Chrome / Windows"). O create deixa a
+         liberação esperando como antes, mas o `claim` só a entrega depois do toque no
+         botão da mensagem, que NOMEIA o que libera: "Liberar o Chrome" (o WhatsApp
+         corta rótulo de botão em 20 caracteres; o corpo diz "com o Chrome no
+         Windows"). O botão abre `/liberar-acesso#<ref>` → `POST
+         /api/v1/auth/whatsapp/release/`; a referência de liberar é separada da de
+         encerrar. O "Não foi você?" continua na bolha de cima e derruba tudo.
+```
+
+O `/start` devolve `return_mode` (`message_button` | `release_this_tab`) e `return_button`
+(o rótulo do botão), e a tela de entrada usa o mesmo nome nos passos e na espera
+(`LOGIN_WA_STEPS`, `LOGIN_WA_WAITING`, `LOGIN_WA_WAITING_PHONE`, com `{button}`).
+
 `#menu` digitado direto no WhatsApp não tem aba de origem e segue exatamente como antes.
 O checkout e a tela de Segurança (`useWhatsAppConfirm`) usam a mesma volta: a página
 onde a pessoa tocou se confirma sozinha.
@@ -79,6 +104,7 @@ onde a pessoa tocou se confirma sozinha.
 | POST | `/api/auth/access/create/` | **API key S2S** | ManyChat: gera o access link. Aceita `access_code` (a mensagem inteira; o código é extraído). |
 | POST | `/api/v1/auth/access/` | pública | Exchange do token → sessão logada + adoção de sacola + redirect. |
 | POST | `/api/v1/auth/whatsapp/claim/` | pública (CSRF, 40/min) | A aba de origem entra se a mensagem já chegou (`status: done`) ou segue esperando (`pending`). |
+| POST | `/api/v1/auth/whatsapp/release/` | pública (CSRF, 10/min) | "Liberar o Chrome": `{ref}` deixa a aba do computador entrar. |
 | POST | `/api/v1/auth/whatsapp/revoke/` | pública (CSRF, 10/min) | "Não foi você?": `{ref}` desfaz a entrada liberada pela mensagem. |
 
 O `create` autentica com a `DOORMAN_ACCESS_LINK_API_KEY` (header `Authorization: Bearer

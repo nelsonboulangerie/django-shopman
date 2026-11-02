@@ -42,6 +42,13 @@ describe('storefront security headers', () => {
     expect(headers['Referrer-Policy']).toBe('no-referrer')
   })
 
+  it('never caches or sends a referrer from the login release page', () => {
+    const headers = storefrontResponseHeaders(true, '/liberar-acesso')
+
+    expect(headers['Cache-Control']).toBe('private, no-store, max-age=0')
+    expect(headers['Referrer-Policy']).toBe('no-referrer')
+  })
+
   it('never lets an old service worker become immutable', () => {
     expect(storefrontResponseHeaders(true, '/sw.js')['Cache-Control'])
       .toBe('no-cache, no-store, must-revalidate')

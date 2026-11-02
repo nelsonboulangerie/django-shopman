@@ -243,14 +243,16 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
             "{cart_note}O acesso vale por 5 minutos."
         ),
     },
-    # Login que começou no SITE: a mensagem da pessoa já fez a aba de lá entrar. O link
-    # é reserva (se ela não achar o caminho de volta), e o "Não foi você?" é a defesa
-    # contra quem pede a alguém que envie a mensagem com o código dele.
+    # Login que começou no site de um COMPUTADOR (decisão do dono, 23/10): o botão da
+    # resposta nomeia o que libera ("Liberar o Chrome no Windows") e só o toque nele
+    # deixa a aba de lá entrar. ``{release_target}`` nunca vem vazio ("o Chrome no
+    # Windows", ou "o navegador do computador"). O "Não foi você?" vai na bolha de cima,
+    # a defesa contra quem pede a alguém que envie a mensagem com o código dele.
     "access_link_site": {
-        "subject": "Você entrou na loja",
+        "subject": "Liberar a loja no computador",
         "body": (
-            "Pronto{customer_name_greeting}! Seu acesso foi liberado.\n"
-            "{cart_note}Volte à loja para continuar."
+            "Pronto{customer_name_greeting}! Toque abaixo para entrar na loja com {release_target}.\n"
+            "{cart_note}Depois, é só voltar ao computador."
         ),
     },
     # Dois usos: o "Me avise" (sem reserva, CTA "Garanta o seu:") e a reserva que a
@@ -274,6 +276,24 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
             "Garanta já o seu: {action_url}{management_note}"
         ),
     },
+}
+
+# Os rótulos dos botões nativos das mensagens de acesso. O WhatsApp corta o rótulo de
+# botão em 20 caracteres (limite da Meta para botão de link), então "Liberar o Chrome
+# no Windows" (27) não cabe inteiro: o rótulo encurta para o navegador ("Liberar o
+# Chrome") e o corpo da mensagem diz o resto ("com o Chrome no Windows").
+ACCESS_BUTTON_MAX_CHARS = 20
+ACCESS_BUTTON_COPY: dict[str, str] = {
+    # Login começado no site do CELULAR: o botão entra no navegador que ele abrir.
+    "return_to_store": "Voltar à loja",
+    # Login pedido direto no WhatsApp (sem site antes).
+    "enter_store": "Entrar na loja",
+    "continue_order": "Continuar pedido",
+    # Login começado no site do COMPUTADOR: o botão nomeia o que libera.
+    "release": "Liberar {target}",
+    "release_fallback": "Liberar o computador",
+    "revoke": "Encerrar acesso",
+    "revoke_lead": "Não reconhece este acesso?",
 }
 
 

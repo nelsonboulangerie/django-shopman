@@ -104,10 +104,30 @@ def test_start_stores_cart_and_next_under_code(client: Client):
     assert body["has_context"] is True
     assert body["has_cart_context"] is True
     state = pop_state(body["code"])
-    # A sessão que apertou o botão também fica no estado: é ela que entra quando a
-    # mensagem chega (impressão digital, nunca a chave).
+    # Sem agente de usuário conta como celular: nenhuma aba de origem fica no estado, e a
+    # entrada acontece pelo botão "Voltar à loja" da resposta.
+    assert state == {"cart_session_key": cart_key, "next": "/checkout", "site_return": "phone"}
+    assert body["return_mode"] == "message_button"
+    assert body["return_button"] == "Voltar à loja"
+
+
+WINDOWS_CHROME = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+)
+
+
+@override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
+def test_start_on_a_computer_keeps_the_origin_and_names_the_browser():
+    # No computador, a sessão que apertou o botão fica no estado (impressão digital, nunca a
+    # chave): é ela que o botão "Liberar o Chrome" da resposta solta.
+    client = Client(HTTP_USER_AGENT=WINDOWS_CHROME)
+    body = _post_json(client, "/api/v1/auth/whatsapp/start/", {}).json()
+    state = pop_state(body["code"])
     assert len(state.pop("origin")) == 64
-    assert state == {"cart_session_key": cart_key, "next": "/checkout"}
+    assert state == {"origin_label": "Chrome / Windows"}
+    assert body["return_mode"] == "release_this_tab"
+    assert body["return_button"] == "Liberar o Chrome"
 
 
 @override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
@@ -117,8 +137,8 @@ def test_start_without_context_still_issues_code(client: Client):
     assert body["code"].startswith("NB-")
     assert body["has_context"] is False
     assert body["has_cart_context"] is False
-    # Sem sacola/destino → o create degrada para o link genérico. Só a origem fica.
-    assert set(pop_state(body["code"])) == {"origin"}
+    # Sem sacola/destino → o create degrada para o link genérico. Só o modo de volta fica.
+    assert set(pop_state(body["code"])) == {"site_return"}
 
 
 @override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
@@ -126,7 +146,7 @@ def test_start_does_not_send_empty_checkout_context(client: Client):
     resp = _post_json(client, "/api/v1/auth/whatsapp/start/", {"next": "/finalizar"})
     body = resp.json()
     assert body["has_context"] is False
-    assert set(pop_state(body["code"])) == {"origin"}
+    assert set(pop_state(body["code"])) == {"site_return"}
 
 
 @override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)

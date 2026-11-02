@@ -677,13 +677,10 @@ useSeoMeta({ title: 'Segurança e dados' })
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 class="shop-heading">Acesso rápido</h2>
-            <!-- ⚠️ A entrada pela chave ainda NÃO existe: `usePasskey().signIn()` está
-                 escrito e exportado, e não é chamado em lugar nenhum — `/entrar` só
-                 oferece WhatsApp e SMS. Enquanto a porta não nascer, esta seção guarda a
-                 chave e não promete entrada com ela. Ligar a entrada é outra frente; no
-                 dia em que ela existir, a promessa volta junto com o botão. -->
+            <!-- A promessa é a porta que existe: `/entrar` oferece "Entrar com a chave
+                 deste aparelho" no navegador onde ela foi ativada. -->
             <p class="shop-muted">
-              Guardar uma chave deste aparelho para entrar sem código.
+              Com a chave deste aparelho, você entra num toque, sem mensagem e sem código.
             </p>
           </div>
           <UiButton

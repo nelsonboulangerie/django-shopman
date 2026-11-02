@@ -135,6 +135,7 @@ class AuthCopyProjection:
     wa_why: CopyEntryProjection
     wa_steps: CopyEntryProjection
     wa_waiting: CopyEntryProjection
+    wa_waiting_phone: CopyEntryProjection
     wa_manual_title: CopyEntryProjection
     wa_manual_intro: CopyEntryProjection
     phone_cta_wa: CopyEntryProjection
@@ -661,6 +662,7 @@ def _auth_copy(omotenashi: OmotenashiProjection) -> AuthCopyProjection:
         wa_why=_copy_entry("LOGIN_WA_WHY", omotenashi=omotenashi),
         wa_steps=_copy_entry("LOGIN_WA_STEPS", omotenashi=omotenashi),
         wa_waiting=_copy_entry("LOGIN_WA_WAITING", omotenashi=omotenashi),
+        wa_waiting_phone=_copy_entry("LOGIN_WA_WAITING_PHONE", omotenashi=omotenashi),
         wa_manual_title=_copy_entry("LOGIN_WA_MANUAL_TITLE", omotenashi=omotenashi),
         wa_manual_intro=_copy_entry("LOGIN_WA_MANUAL_INTRO", omotenashi=omotenashi),
         phone_cta_wa=_copy_entry("LOGIN_PHONE_CTA_WA", omotenashi=omotenashi),

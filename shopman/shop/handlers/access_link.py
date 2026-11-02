@@ -56,20 +56,33 @@ def on_access_link_created(sender, token=None, customer=None, url="", **kwargs) 
         )
         return
 
+    from shopman.shop.notification_copy import ACCESS_BUTTON_COPY
     from shopman.shop.notifications import notify
 
     event = EVENT
     context_extra: dict = {}
     revoke_ref = str(metadata.get("revoke_ref") or "")
     if metadata.get("released") and revoke_ref:
-        # O login começou no site e a aba de lá já está liberada: a mensagem manda
-        # voltar, e não tocar no link. Ver `AccessLinkCreateView._release_origin`.
+        # O login começou no site de um COMPUTADOR: a liberação da aba de lá está
+        # esperando, e o botão da mensagem, que nomeia o navegador, é o que a solta.
+        # Ver `AccessLinkCreateView._release_origin` e `access.pop_site_release`.
+        from shopman.shop.services import access as access_service
         from shopman.shop.services import storefront_links
 
+        origin_label = str(metadata.get("origin_label") or "")
         event = EVENT_SITE
         context_extra = {
             "revoke_url": storefront_links.login_revoke_url(revoke_ref),
+            "release_url": storefront_links.login_release_url(
+                access_service.offer_site_release(revoke_ref)
+            ),
+            "release_target": access_service.release_target(origin_label),
+            "release_caption": access_service.release_caption(origin_label),
         }
+    elif metadata.get("site_return") == "phone":
+        # O login começou no site do CELULAR: o botão entra no navegador que ele abrir,
+        # e nada é liberado para outra aba.
+        context_extra = {"access_caption": ACCESS_BUTTON_COPY["return_to_store"]}
 
     context = {
         "access_url": url,

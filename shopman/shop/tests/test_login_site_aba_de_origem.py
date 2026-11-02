@@ -1,14 +1,15 @@
-"""Login pelo WhatsApp que começa no SITE: a aba de origem entra sozinha.
+"""Login pelo WhatsApp que começa no SITE: a resposta traz o botão de volta.
 
-A queixa dos testadores era a volta: "vai pro WhatsApp, envia uma tal mensagem,
-depois sai do WhatsApp de novo por um link". O link abria no navegador embutido do
-WhatsApp, e a aba onde a pessoa estava continuava em "Vamos entrar?".
+Escada sem fricção do Doorman (decisão do dono, 23/10):
 
-Agora a mensagem libera o navegador que apertou o botão, e só ele: a liberação mora
-sob a impressão digital da sessão de origem, não sob o código. A pessoa volta para a
-aba e já está dentro; o link da mensagem vira reserva; e o "Não foi você?" da
-mensagem desfaz a entrada — a defesa contra quem pede a alguém que envie a mensagem
-com o código dele.
+- No COMPUTADOR, a mensagem chega no celular e deixa a liberação esperando pela aba que
+  apertou o botão (e só por ela: a liberação mora sob a impressão digital da sessão de
+  origem, não sob o código). O botão da resposta nomeia o que libera ("Liberar o
+  Chrome"), e só o toque nele deixa a aba entrar.
+- No CELULAR, nada é liberado para outra aba: o botão "Voltar à loja" entra no navegador
+  que ele abrir. Se é o mesmo navegador da aba que esperava, ela percebe pelo cookie.
+- O "Não foi você?" da mensagem desfaz tudo: a defesa contra quem pede a alguém que
+  envie a mensagem com o código dele.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ CREATE = "/api/auth/access/create/"
 START = "/api/v1/auth/whatsapp/start/"
 CLAIM = "/api/v1/auth/whatsapp/claim/"
 REVOKE = "/api/v1/auth/whatsapp/revoke/"
+RELEASE = "/api/v1/auth/whatsapp/release/"
 SESSION = "/api/v1/auth/session/"
 KEY = "aba-de-origem"
 
@@ -75,8 +77,25 @@ IPHONE = (
 )
 
 
+WINDOWS_CHROME = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+)
+
+
 def _navegador() -> Client:
+    """O computador onde o login começou."""
+    return Client(HTTP_USER_AGENT=WINDOWS_CHROME)
+
+
+def _celular() -> Client:
     return Client(HTTP_USER_AGENT=IPHONE)
+
+
+def _toca_liberar(notify) -> int:
+    """O toque em "Liberar o Chrome", no celular de quem recebeu a mensagem."""
+    ref = notify.call_args.kwargs["context"]["release_url"].split("#", 1)[1]
+    return _celular().post(RELEASE, data=json.dumps({"ref": ref}), content_type="application/json").status_code
 
 
 def _aperta_o_botao(browser: Client) -> dict:
@@ -118,7 +137,11 @@ class TestAAbaDeOrigemEntraSozinha:
 
         created = _mensagem_chega(started["code"])
         assert created["released"] is True
+        # A mensagem sozinha não solta a aba: falta o toque no botão que a nomeia.
+        assert browser.post(CLAIM).json() == {"status": "pending"}
+        assert not _logado(browser)
 
+        assert _toca_liberar(notify) == 200
         claimed = browser.post(CLAIM).json()
         assert claimed["status"] == "done"
         assert claimed["is_authenticated"] is True
@@ -129,16 +152,21 @@ class TestAAbaDeOrigemEntraSozinha:
         browser = _navegador()
         started = _aperta_o_botao(browser)
         _mensagem_chega(started["code"])
+        _toca_liberar(notify)
 
-        assert browser.post(CLAIM).json()["status"] == "done"
-        # Segunda pergunta: nada mais pendente (e ela já está dentro).
-        assert browser.post(CLAIM).json() == {"status": "pending"}
+        first = browser.post(CLAIM).json()
+        assert first["status"] == "done"
+        # Segunda pergunta: a liberação já foi usada; a aba só confirma que está dentro.
+        second = browser.post(CLAIM).json()
+        assert second["status"] == "done"
+        assert "device_trusted" not in second
 
     def test_outro_navegador_nao_encontra_a_liberacao(self, joyce, notify):
         """O código não é credencial: quem não gerou, não entra — nem sabendo o código."""
         origem = _navegador()
         started = _aperta_o_botao(origem)
         _mensagem_chega(started["code"])
+        _toca_liberar(notify)
 
         intruso = _navegador()
         intruso.post(START, data="{}", content_type="application/json")
@@ -153,6 +181,7 @@ class TestAAbaDeOrigemEntraSozinha:
         browser = _navegador()
         started = _aperta_o_botao(browser)
         _mensagem_chega(started["code"])
+        _toca_liberar(notify)
         claimed = browser.post(CLAIM).json()
 
         assert claimed.get("device_trusted") is True
@@ -167,16 +196,21 @@ class TestAAbaDeOrigemEntraSozinha:
 
 @pytest.mark.django_db
 class TestAMensagemMandaVoltar:
-    def test_a_mensagem_diz_que_ela_ja_entrou_e_oferece_o_nao_fui_eu(self, joyce, notify):
+    def test_no_computador_o_botao_nomeia_o_que_libera_e_oferece_o_nao_fui_eu(self, joyce, notify):
         browser = _navegador()
         started = _aperta_o_botao(browser)
+        assert started["return_mode"] == "release_this_tab"
+        assert started["return_button"] == "Liberar o Chrome"
         _mensagem_chega(started["code"])
 
         kw = notify.call_args.kwargs
         assert kw["event"] == "access_link_site"
-        assert kw["context"]["access_url"]  # o link segue como reserva
+        assert kw["context"]["release_caption"] == "Liberar o Chrome"
+        assert kw["context"]["release_target"] == "o Chrome no Windows"
+        assert "/liberar-acesso#" in kw["context"]["release_url"]
         assert "/encerrar-acesso#" in kw["context"]["revoke_url"]
-        assert "origin_note" not in kw["context"]
+        # Referências diferentes: quem tem o link de liberar não ganha o de derrubar.
+        assert kw["context"]["release_url"].split("#")[1] != kw["context"]["revoke_url"].split("#")[1]
 
     def test_o_texto_nao_deixa_placeholder_sobrando(self):
         from shopman.shop.notification_copy import CUSTOMER_COPY
@@ -184,10 +218,60 @@ class TestAMensagemMandaVoltar:
         body = CUSTOMER_COPY["access_link_site"]["body"].format(
             customer_name_greeting=", Joyce",
             cart_note="Sua sacola está guardada. ",
+            release_target="o Chrome no Windows",
         )
         assert "{" not in body
-        assert body.startswith("Pronto, Joyce! Seu acesso foi liberado.")
+        assert body.startswith("Pronto, Joyce! Toque abaixo para entrar na loja com o Chrome no Windows.")
         assert "https://" not in body
+
+    def test_liberar_duas_vezes_nao_estraga_e_referencia_inventada_nao_libera(self, joyce, notify):
+        browser = _navegador()
+        started = _aperta_o_botao(browser)
+        _mensagem_chega(started["code"])
+
+        assert _toca_liberar(notify) == 200
+        assert _toca_liberar(notify) == 200
+        inventada = _celular().post(RELEASE, data=json.dumps({"ref": "inventada"}), content_type="application/json")
+        assert inventada.status_code == 404
+        assert browser.post(CLAIM).json()["status"] == "done"
+
+
+@pytest.mark.django_db
+class TestNoCelularNadaELiberadoParaOutraAba:
+    def test_a_mensagem_nao_libera_aba_nenhuma_e_o_botao_e_voltar_a_loja(self, joyce, notify):
+        aba = _celular()
+        started = _aperta_o_botao(aba)
+        assert started["return_mode"] == "message_button"
+        assert started["return_button"] == "Voltar à loja"
+
+        created = _mensagem_chega(started["code"])
+        assert created["released"] is False
+        kw = notify.call_args.kwargs
+        assert kw["event"] == "access_link"
+        assert kw["context"]["access_caption"] == "Voltar à loja"
+        # A aba que esperava continua do lado de fora: ninguém a liberou à distância.
+        assert aba.post(CLAIM).json() == {"status": "pending"}
+        assert not _logado(aba)
+
+    def test_o_botao_entra_no_navegador_que_ele_abre(self, joyce, notify):
+        aba = _celular()
+        started = _aperta_o_botao(aba)
+        created = _mensagem_chega(started["code"])
+
+        # O botão abre o mesmo navegador: o cookie passa a ser de quem entrou, e a aba
+        # que esperava só percebe.
+        exchanged = aba.post(
+            "/api/v1/auth/access/", data=json.dumps({"token": created["token"]}),
+            content_type="application/json",
+        )
+        assert exchanged.status_code == 200, exchanged.content
+        claimed = aba.post(CLAIM).json()
+        assert claimed["status"] == "done"
+        assert claimed["is_authenticated"] is True
+
+    def test_agente_desconhecido_conta_como_celular(self, joyce, notify):
+        started = _aperta_o_botao(Client())
+        assert started["return_mode"] == "message_button"
 
 
 @pytest.mark.django_db
@@ -203,6 +287,8 @@ class TestNaoFuiEu:
         dono = Client()
         assert dono.post(REVOKE, data=json.dumps({"ref": self._ref(notify)}), content_type="application/json").status_code == 200
 
+        # Depois do "Não foi você?", nem o botão de liberar solta mais nada.
+        assert _toca_liberar(notify) == 404
         assert browser.post(CLAIM).json() == {"status": "pending"}
         assert not _logado(browser)
 
@@ -212,6 +298,7 @@ class TestNaoFuiEu:
         browser = _navegador()
         started = _aperta_o_botao(browser)
         _mensagem_chega(started["code"])
+        _toca_liberar(notify)
         assert browser.post(CLAIM).json()["status"] == "done"
         assert _logado(browser)
 
@@ -239,6 +326,7 @@ class TestNaoFuiEu:
         browser = _navegador()
         started = _aperta_o_botao(browser)
         _mensagem_chega(started["code"])
+        _toca_liberar(notify)
         assert browser.post(CLAIM).json()["status"] == "done"
 
         # O que o intruso abriu na janela, por fora da liberação.

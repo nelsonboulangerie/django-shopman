@@ -1149,21 +1149,31 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         )},
     },
     # O QUE FAZER, em três passos (um por linha). A outra queixa: "o que eu tenho que
-    # fazer?". O terceiro passo é a promessa que a tela cumpre: a aba entra sozinha.
+    # fazer?". O terceiro passo nomeia o botão da resposta: ``{button}`` vira o rótulo
+    # que a mensagem traz ("Voltar à loja" no celular, "Liberar o Chrome" no computador).
     "LOGIN_WA_STEPS": {
         WILDCARD: {WILDCARD: CopyEntry(
             message=(
                 "Toque em “Abrir o WhatsApp”\n"
                 "Envie a mensagem que já está pronta\n"
-                "Volte para esta tela. A entrada será automática"
+                "Na resposta, toque em “{button}”"
             ),
         )},
     },
-    # Depois do toque: a tela espera a mensagem chegar e entra sem mais nada.
+    # Depois do toque, no COMPUTADOR: a liberação espera o botão, e esta aba entra assim
+    # que ele for tocado no celular.
     "LOGIN_WA_WAITING": {
         WILDCARD: {WILDCARD: CopyEntry(
             title="Mensagem enviada?",
-            message="Volte para esta tela. Estamos conferindo e vamos entrar automaticamente.",
+            message="Na resposta do WhatsApp, toque em “{button}”. Esta tela entra logo depois.",
+        )},
+    },
+    # Depois do toque, no CELULAR: nada é liberado para esta aba; a loja abre no
+    # navegador do botão, já com a pessoa dentro.
+    "LOGIN_WA_WAITING_PHONE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            title="Mensagem enviada?",
+            message="Na resposta do WhatsApp, toque em “{button}”. A loja abre com você dentro.",
         )},
     },
     # Envio manual (plano B da espera): título + instrução. ``{phone}`` vira o número

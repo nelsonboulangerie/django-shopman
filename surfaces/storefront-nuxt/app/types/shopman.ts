@@ -602,6 +602,7 @@ export interface AuthCopyProjection {
   wa_why: CopyEntryProjection
   wa_steps: CopyEntryProjection
   wa_waiting: CopyEntryProjection
+  wa_waiting_phone: CopyEntryProjection
   wa_manual_title: CopyEntryProjection
   wa_manual_intro: CopyEntryProjection
   phone_cta_wa: CopyEntryProjection

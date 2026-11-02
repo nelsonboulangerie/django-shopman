@@ -82,6 +82,7 @@ def test_copy_migration_updates_known_defaults_and_preserves_operator_edits():
 @override_settings(SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG=True)
 def test_site_login_uses_two_bubbles_with_one_url_button_each():
     access_url = "https://loja.test/a?t=secret"
+    release_url = "https://loja.test/liberar-acesso#oferta"
     revoke_url = "https://loja.test/encerrar-acesso#ref"
 
     sent, api = _send(
@@ -89,6 +90,9 @@ def test_site_login_uses_two_bubbles_with_one_url_button_each():
         {
             "customer_name": "Joyce",
             "access_url": access_url,
+            "release_url": release_url,
+            "release_target": "o Chrome no Windows",
+            "release_caption": "Liberar o Chrome",
             "revoke_url": revoke_url,
             "cart_note": "Sua sacola está guardada. ",
             "has_cart_context": True,
@@ -108,13 +112,18 @@ def test_site_login_uses_two_bubbles_with_one_url_button_each():
         },
         {
             "type": "text",
-            "text": "Pronto, Joyce! Seu acesso foi liberado.\nSua sacola está guardada. Volte à loja para continuar.",
+            "text": (
+                "Pronto, Joyce! Toque abaixo para entrar na loja com o Chrome no Windows.\n"
+                "Sua sacola está guardada. Depois, é só voltar ao computador."
+            ),
             "buttons": [
-                {"type": "url", "caption": "Continuar pedido", "url": access_url},
+                {"type": "url", "caption": "Liberar o Chrome", "url": release_url},
             ],
         },
     ]
     assert all(len(message["buttons"]) == 1 for message in messages)
+    # O link de entrada NÃO vai: ele abriria a loja no celular, e o pedido foi do computador.
+    assert access_url not in json.dumps(messages)
     assert all(button["url"] not in message["text"] for message in messages for button in message["buttons"])
 
 
@@ -140,12 +149,20 @@ def test_explicit_button_rejection_retries_once_as_plain_text():
     from shopman.shop.adapters import notification_manychat as adapter
 
     access_url = "https://loja.test/a?t=secret"
+    release_url = "https://loja.test/liberar-acesso#oferta"
     revoke_url = "https://loja.test/encerrar-acesso#ref"
 
     with patch.object(adapter.logger, "warning") as warning:
         sent, api = _send(
             "access_link_site",
-            {"access_url": access_url, "revoke_url": revoke_url, "cart_note": ""},
+            {
+                "access_url": access_url,
+                "release_url": release_url,
+                "release_caption": "Liberar o Chrome",
+                "release_target": "o Chrome no Windows",
+                "revoke_url": revoke_url,
+                "cart_note": "",
+            },
             provider_results=[
                 {
                     "success": False,
@@ -161,7 +178,7 @@ def test_explicit_button_rejection_retries_once_as_plain_text():
     assert api.call_count == 2
     fallback = api.call_args_list[1].args[1]["data"]["content"]["messages"][0]
     assert "buttons" not in fallback
-    assert f"Entrar na loja: {access_url}" in fallback["text"]
+    assert f"Liberar o Chrome: {release_url}" in fallback["text"]
     assert f"Encerrar acesso: {revoke_url}" in fallback["text"]
     warning.assert_called_once_with(
         "manychat.buttons_rejected template=%s provider_code=%s http_status=%s fallback=plain_text",
@@ -214,3 +231,81 @@ def test_other_notifications_keep_plain_text_payload():
 
     message = api.call_args.args[1]["data"]["content"]["messages"][0]
     assert "buttons" not in message
+
+
+
+@pytest.mark.django_db
+@override_settings(SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG=True)
+def test_login_started_on_the_phone_offers_voltar_a_loja():
+    access_url = "https://loja.test/a?t=secret"
+
+    _sent, api = _send(
+        "access_link",
+        {"access_url": access_url, "access_caption": "Voltar à loja", "has_cart_context": True, "cart_note": ""},
+    )
+
+    message = api.call_args.args[1]["data"]["content"]["messages"][0]
+    assert message["buttons"] == [
+        {"type": "url", "caption": "Voltar à loja", "url": access_url},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("origin_label", "target", "caption"),
+    [
+        ("Chrome / Windows", "o Chrome no Windows", "Liberar o Chrome"),
+        ("Safari / Mac", "o Safari no Mac", "Liberar o Safari"),
+        ("Edge / Windows", "o Edge no Windows", "Liberar o Edge"),
+        ("Firefox", "o Firefox", "Liberar o Firefox"),
+        ("Linux", "o navegador no Linux", "Liberar o computador"),
+        ("", "o navegador do computador", "Liberar o computador"),
+    ],
+)
+def test_release_button_names_what_it_releases_within_whatsapp_limit(origin_label, target, caption):
+    from shopman.shop.notification_copy import ACCESS_BUTTON_MAX_CHARS
+    from shopman.shop.services import access
+
+    assert access.release_target(origin_label) == target
+    assert access.release_caption(origin_label) == caption
+    assert len(caption) <= ACCESS_BUTTON_MAX_CHARS
+
+
+@pytest.mark.django_db
+def test_voltar_a_loja_migration_updates_defaults_and_keeps_house_edits():
+    from django.apps import apps
+
+    from shopman.shop.models import NotificationTemplate, OmotenashiCopy
+
+    migration = import_module("shopman.shop.migrations.0107_access_link_voltar_a_loja")
+    NotificationTemplate.objects.update_or_create(
+        event=migration.SITE_EVENT,
+        defaults={"subject": migration.SITE_OLD_SUBJECT, "body": migration.SITE_OLD_BODY, "is_active": True},
+    )
+    key, old_title, old_message, _new_title, new_message = migration.COPY_UPDATES[0]
+    OmotenashiCopy.objects.update_or_create(
+        key=key, moment="*", audience="*",
+        defaults={"title": old_title, "message": old_message, "active": True},
+    )
+    OmotenashiCopy.objects.update_or_create(
+        key="LOGIN_WA_WAITING", moment="*", audience="*",
+        defaults={"title": "Texto da casa", "message": "A loja escreveu.", "active": True},
+    )
+
+    migration.forwards(apps, None)
+
+    site = NotificationTemplate.objects.get(event=migration.SITE_EVENT)
+    assert (site.subject, site.body) == (migration.SITE_SUBJECT, migration.SITE_BODY)
+    assert OmotenashiCopy.objects.get(key=key).message == new_message
+    assert OmotenashiCopy.objects.get(key="LOGIN_WA_WAITING").message == "A loja escreveu."
+
+
+def test_new_login_copy_has_no_dashes_and_names_the_button():
+    from shopman.shop.notification_copy import ACCESS_BUTTON_COPY, CUSTOMER_COPY
+    from shopman.shop.omotenashi.copy import OMOTENASHI_DEFAULTS
+
+    texts = [CUSTOMER_COPY["access_link_site"]["body"], *ACCESS_BUTTON_COPY.values()]
+    for key in ("LOGIN_WA_STEPS", "LOGIN_WA_WAITING", "LOGIN_WA_WAITING_PHONE"):
+        entry = OMOTENASHI_DEFAULTS[key]["*"]["*"]
+        texts.extend([entry.title or "", entry.message or ""])
+        assert "{button}" in entry.message
+    assert all("—" not in text and "–" not in text for text in texts)

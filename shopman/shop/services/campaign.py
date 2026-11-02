@@ -702,6 +702,8 @@ _TRANSACTIONAL_TEST_VALUES = {
     "purchase_qty_display": "2 kg",
     "purchase_ref": "COMPRA-TESTE-A47",
     "refund_amount_display": "R$ 12,00",
+    "release_target": "o Chrome no Windows",
+    "release_url": "https://shopman.invalid/teste/liberar",
     "reorder_url": "https://shopman.invalid/teste/refazer",
     "reserve_note": "Reserva sintética para validar o modelo.",
     "revoke_url": "https://shopman.invalid/teste/revogar",
