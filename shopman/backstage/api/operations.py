@@ -150,6 +150,7 @@ from shopman.backstage.services.exceptions import (
     ProductionNotFound,
 )
 from shopman.backstage.services.production import ProductionOrderShortError, ProductionStockShortError
+from shopman.shop.api_errors import public_error_detail
 from shopman.shop.observability import ServerTimingMixin
 from shopman.shop.services import cancellation as cancellation_service
 from shopman.shop.services import fiscal as fiscal_service
@@ -1939,7 +1940,7 @@ class DayClosingView(APIView):
             return Response({"detail": str(exc)}, status=400)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("day_closing_perform_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha no fechamento."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha no fechamento.")}, status=400)
 
         return Response({"ok": True, "closing_date": closing_date.isoformat()})
 
@@ -5374,7 +5375,7 @@ class POSCashReceiptView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_receipt_payload_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao montar o comprovante."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao montar o comprovante.")}, status=400)
         return Response(payload)
 
     def post(self, request, entry_id: int):
@@ -5390,7 +5391,7 @@ class POSCashReceiptView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_receipt_result_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao registrar o comprovante."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao registrar o comprovante.")}, status=400)
         return Response({"ok": True, "receipt_status": str((result.payload or {}).get("status") or "")})
 
 
@@ -6049,7 +6050,7 @@ class POSTabCreateView(APIView):
             tab = pos_tabs_service.register_pos_tab(tab_ref=tab_ref, label=label)
         except Exception as exc:
             logger.debug("pos_tab_create_failed tab_ref=%s", tab_ref, exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao criar comanda."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao criar comanda.")}, status=400)
         return Response({"ok": True, "tab": tab})
 
 
@@ -6084,7 +6085,7 @@ class POSTabOpenView(ServerTimingMixin, APIView):
             )
         except Exception as exc:
             logger.debug("pos_tab_open_failed tab_ref=%s", tab_ref, exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao abrir comanda."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao abrir comanda.")}, status=400)
         return Response(build_open_tab(session))
 
 
@@ -6116,7 +6117,7 @@ class POSTabSaveView(ServerTimingMixin, APIView):
             return Response({"detail": str(exc)}, status=400)
         except Exception as exc:
             logger.debug("pos_tab_save_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao salvar comanda."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao salvar comanda.")}, status=400)
         response = Response(
             {
                 "ok": True,
@@ -6178,7 +6179,7 @@ class POSTabClearView(APIView):
             )
         except Exception as exc:
             logger.debug("pos_tab_clear_failed session_key=%s", session_key, exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao liberar comanda."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao liberar comanda.")}, status=400)
         if not cleared:
             return Response({"detail": "Comanda não encontrada."}, status=404)
         return Response({"ok": True})
@@ -6224,7 +6225,7 @@ class POSTabMoveLinesView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_tab_move_lines_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao mover itens entre comandas."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao mover itens entre comandas.")}, status=400)
         return Response(
             {
                 "ok": True,
@@ -6267,7 +6268,7 @@ class POSTabRenameView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_tab_rename_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao renomear comanda."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao renomear comanda.")}, status=400)
         return Response({"ok": True, "tab": build_open_tab(session)})
 
 
@@ -6291,7 +6292,7 @@ class POSTabFireView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_tab_fire_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao enviar à cozinha."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao enviar à cozinha.")}, status=400)
         return Response(
             {
                 "ok": True,
@@ -6323,7 +6324,7 @@ class POSTabUnfireView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_tab_unfire_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao cancelar envio à cozinha."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao cancelar envio à cozinha.")}, status=400)
         return Response(
             {
                 "ok": True,

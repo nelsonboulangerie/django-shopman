@@ -2806,12 +2806,14 @@ def _publish_at(raw, *, timezone_name: str = "") -> tuple[object | None, dict | 
         try:
             marketing_time.require_configured_timezone(timezone_name)
         except ValueError as exc:
-            code = str(exc)
+            # O código volta ao cliente como literal da casa, nunca como texto
+            # da exceção: só os dois desfechos conhecidos têm nome.
+            mismatch = str(exc) == "timezone_mismatch"
             return None, {
-                "code": code,
+                "code": "timezone_mismatch" if mismatch else "unknown_timezone",
                 "detail": (
                     "O timezone não corresponde ao configurado para a loja."
-                    if code == "timezone_mismatch"
+                    if mismatch
                     else "O timezone informado não existe."
                 ),
                 "field": "publish_timezone",

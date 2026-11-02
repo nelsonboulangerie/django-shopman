@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from rest_framework import exceptions, serializers
 
-from shopman.shop.api_errors import exception_handler, validation_error_payload
+from shopman.shop.api_errors import exception_handler, public_error_detail, validation_error_payload
 
 
 class _CheckoutLikeSerializer(serializers.Serializer):
@@ -133,3 +133,17 @@ def test_recusa_nomeada_continua_publicando_o_proprio_codigo():
 
 def test_non_drf_exception_returns_none_for_500_path():
     assert exception_handler(RuntimeError("bug"), context={}) is None
+
+
+def test_public_error_detail_keeps_business_refusal_text():
+    assert public_error_detail(ValueError("Informe uma referência de comanda."), "Falha.") == (
+        "Informe uma referência de comanda."
+    )
+
+
+def test_public_error_detail_hides_unexpected_exception_text():
+    from django.db import IntegrityError
+
+    leaked = IntegrityError('duplicate key value violates unique constraint "orderman_session_pkey"')
+    assert public_error_detail(leaked, "Falha ao salvar comanda.") == "Falha ao salvar comanda."
+    assert public_error_detail(RuntimeError("/srv/app/secret.py"), "Falha.") == "Falha."
