@@ -15,7 +15,7 @@ for app in links['apps']:
         shutil.copytree(src, out / app['dir'], dirs_exist_ok=True, ignore=shutil.ignore_patterns('*.mjs', '*.md', '*.sh', '*.vue', '*.css'))
 def sec(app):
     rows = ''.join(f'<li><a href="{html.escape(u)}">{html.escape(t)}</a></li>' for t, u in app['links'])
-    caps = ''.join(f'<figure><a href="{app["dir"]}/{c}"><img loading="lazy" src="{app["dir"]}/{c}" alt="{html.escape(l)}"></a><figcaption>{html.escape(label)}</figcaption></figure>' for c, label in app.get('captures', []))
+    caps = ''.join(f'<figure><a href="{app["dir"]}/{c}"><img loading="lazy" src="{app["dir"]}/{c}" alt="{html.escape(label)}"></a><figcaption>{html.escape(label)}</figcaption></figure>' for c, label in app.get('captures', []))
     notes = ''.join(f'<li>{html.escape(n)}</li>' for n in app.get('notes', []))
     return f'<section><h2>{html.escape(app["title"])}</h2><p class=muted>{html.escape(app["summary"])}</p><ul class=links>{rows}</ul>{"<ul class=notes>"+notes+"</ul>" if notes else ""}<div class=caps>{caps}</div></section>'
 page = f'''<!doctype html><html lang=pt-BR><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Prévias do modo compacto</title>
