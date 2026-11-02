@@ -787,6 +787,20 @@ def test_events_webhook_valid_signature_processes(db):
 
 
 @override_settings(SHOPMAN_IFOOD=WEBHOOK_CFG)
+def test_events_webhook_accepts_url_without_trailing_slash(db):
+    """O iFood corta a barra final da URL cadastrada; um 301 ali reprova o teste do portal."""
+    from rest_framework.test import APIClient
+
+    raw = json.dumps({"code": "KEEPALIVE", "merchantId": "m1"}).encode()
+    resp = APIClient().post(
+        EVENTS_URL.rstrip("/"), data=raw, content_type="application/json",
+        HTTP_X_IFOOD_SIGNATURE=_sign(raw),
+    )
+
+    assert resp.status_code == 202
+
+
+@override_settings(SHOPMAN_IFOOD=WEBHOOK_CFG)
 def test_events_webhook_invalid_signature_401(db):
     from rest_framework.test import APIClient
 
