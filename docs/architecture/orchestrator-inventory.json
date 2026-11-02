@@ -6123,8 +6123,10 @@
             "_GENERIC_LINK_ICON",
             "_SOCIAL_ICONS",
             "_SOCIAL_PLATFORMS",
+            "_WHATSAPP_HOSTS",
             "_resolve_social_link",
             "cancellation_preset_entries",
+            "is_whatsapp_link",
             "validate_cancellation_presets",
             "validate_logo"
           ]
@@ -11162,7 +11164,8 @@
             "_storefront_origin",
             "_without_query_or_fragment",
             "_without_userinfo_or_nondefault_port",
-            "logger"
+            "logger",
+            "media_fetch_url"
           ]
         }
       ]
@@ -13125,6 +13128,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "REDACTED",
+            "REDACT_INPUT_MAX_CHARS",
             "_BEARER_RE",
             "_DOCUMENT_RE",
             "_EDGE_REFERENCE_RE",
