@@ -671,6 +671,65 @@ export interface TodayFact {
   urgent: boolean;
 }
 
+/** O indicador do fato (o celular resume "Hoje" em ícone e valor; o toque mostra a frase). */
+export interface TodayIndicator {
+  key: TodayFact["key"];
+  icon: string;
+  value: string;
+  urgent: boolean;
+  text: string;
+  /** A legenda curta sob o valor: o indicador se lê sem tocar. */
+  caption: string;
+  /** O recorte que o toque aplica (o que pede gesto vira atalho); `null` = só lê. */
+  filter: Partial<PreorderFilters> | null;
+}
+
+const TODAY_CAPTIONS: Record<TodayFact["key"], string> = {
+  leaving: "Entregar",
+  to_receive: "A Receber",
+  tickets: "Sem Via",
+  check: "Conferir",
+};
+const TODAY_FILTERS: Record<TodayFact["key"], Partial<PreorderFilters> | null> = {
+  leaving: null,
+  to_receive: { pay: "to_receive" },
+  tickets: { print: "pending" },
+  check: { pay: "check" },
+};
+
+const TODAY_ICONS: Record<TodayFact["key"], string> = {
+  leaving: "i-lucide-package",
+  to_receive: "i-lucide-hand-coins",
+  tickets: "i-lucide-printer",
+  check: "i-lucide-circle-help",
+};
+
+/**
+ * "2 para entregar" vira [pacote 2]; "A receber R$ 86,00" vira [moedas R$ 86,00]; o que
+ * está em ordem ("Todas as vias impressas", "Nada a receber") vira um visto: o número
+ * aparece só quando pede gesto. A frase inteira segue no nome acessível e no toque.
+ */
+export function todayIndicators(facts: readonly TodayFact[]): TodayIndicator[] {
+  return facts.map((fact) => {
+    const count = /^(\d+)/.exec(fact.text)?.[1];
+    const money = /R\$\s?[\d.,]+/.exec(fact.text)?.[0];
+    const value = fact.key === "to_receive"
+      ? (fact.urgent && money ? money : "✓")
+      : fact.key === "leaving"
+        ? (count ?? "✓")
+        : (fact.urgent && count ? count : "✓");
+    return {
+      key: fact.key,
+      icon: TODAY_ICONS[fact.key],
+      value,
+      urgent: fact.urgent,
+      text: fact.text,
+      caption: TODAY_CAPTIONS[fact.key],
+      filter: fact.urgent ? TODAY_FILTERS[fact.key] : null,
+    };
+  });
+}
+
 /**
  * Os fatos de hoje, na ordem em que o balcão age: quantas faltam entregar,
  * quanto falta receber, quantas Vias Pedido faltam e, só quando há, quantas
@@ -863,7 +922,7 @@ export interface PhonePill {
 /**
  * As duas pílulas do cartão do celular (v3 `depois-pdv-celular` 3): o preparo
  * (só quando diz algo que o dinheiro não diz) e o pagamento, na voz do balcão
- * ("Paga", "Pagar na retirada", "Pagar na entrega").
+ * ("Pago", "Pagar na retirada", "Pagar na entrega").
  */
 export function phoneCardPills(
   card: Pick<PreorderCard, "situation" | "situation_label" | "balance_q" | "fulfillment_type">,
@@ -874,7 +933,7 @@ export function phoneCardPills(
   else if (card.situation === "on_account") pills.push({ label: "Conta da casa", tone: "neutral" });
   else if (card.balance_q > 0) {
     pills.push({ label: card.fulfillment_type === "delivery" ? "Pagar na entrega" : "Pagar na retirada", tone: "warning" });
-  } else pills.push({ label: "Paga", tone: "success" });
+  } else pills.push({ label: "Pago", tone: "success" });
   return pills;
 }
 
@@ -896,3 +955,53 @@ export function flipDay(flipped: ReadonlySet<string>, date: string): Set<string>
   else next.add(date);
   return next;
 }
+
+// ── Os selos da linha (dono, 03/11/2026) ───────────────────────────────────
+
+const LOWER_WORDS = new Set(["a", "o", "as", "os", "e", "de", "da", "do", "das", "dos", "na", "no", "nas", "nos", "em", "com", "por", "para"]);
+
+/**
+ * Selo leva iniciais maiúsculas, sempre (dono, 03/11/2026): "Loja Online", "Pagar na
+ * Retirada", "A Receber". Artigo e preposição no meio ficam em minúscula; a primeira
+ * palavra, sempre maiúscula.
+ */
+export function badgeCase(label: string): string {
+  return label
+    .trim()
+    .split(/\s+/)
+    .map((word, index) => {
+      if (!word) return word;
+      // Marca e sigla já escritas como são ("iFood", "PDV", "NB-1042") não se mexem.
+      if (/[A-Z]/.test(word.slice(1)) || /\d/.test(word)) return word;
+      const lower = word.toLowerCase();
+      if (index > 0 && LOWER_WORDS.has(lower)) return lower;
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
+}
+
+export type BadgeTone = "neutral" | "primary" | "info" | "success" | "warning" | "error";
+
+export interface MoneyBadge {
+  /** O valor que decide o gesto: o que falta, quando falta; senão, o total. */
+  amount: string;
+  /** "de R$ 60,00" quando já se pagou parte. */
+  of: string;
+  label: string;
+  tone: BadgeTone;
+}
+
+/**
+ * O dinheiro da linha em duas peças: o valor e o selo semântico do estado (dono,
+ * 03/11/2026: "A receber" e "Pago" viram selos). Amarelo só para o que pede gesto.
+ */
+export function moneyBadge(card: Pick<PreorderCard, "balance_q" | "balance_display" | "total_q" | "total_display" | "situation">): MoneyBadge {
+  if (card.balance_q === null) return { amount: card.total_display, of: "", label: "Conferir Pagamento", tone: "warning" };
+  if (card.balance_q > 0) {
+    const partial = card.balance_q < card.total_q;
+    return { amount: partial ? card.balance_display : card.total_display, of: partial ? `de ${card.total_display}` : "", label: "A Receber", tone: "warning" };
+  }
+  if (card.situation === "on_account") return { amount: card.total_display, of: "", label: "Na Conta da Casa", tone: "info" };
+  return { amount: card.total_display, of: "", label: "Pago", tone: "success" };
+}
+

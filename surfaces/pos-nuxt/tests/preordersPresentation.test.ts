@@ -40,6 +40,7 @@ import {
   matchesFilters,
   dayOpen,
   flipDay,
+  todayIndicators,
   moneyLine,
   moneyPieces,
   parsePaymentFilter,
@@ -683,5 +684,44 @@ describe("OBS0310-D: grade ou lista, e mudar de dia", () => {
     expect(moveDescription("")).toBe("O cliente será avisado da nova data.");
     expect(moveConfirmLabel("qui, 09/10")).toBe("Mudar para qui, 09/10");
     expect(moveConfirmLabel("Amanhã")).toBe("Mudar para amanhã");
+  });
+});
+
+describe("Hoje no celular: só indicadores, e o toque mostra a frase (dono, 03/11/2026)", () => {
+  it("o número aparece quando pede gesto; o que está em ordem é um visto; a frase segue inteira", () => {
+    const pending = todayIndicators([
+      { key: "leaving", text: "2 para entregar", urgent: false },
+      { key: "to_receive", text: "A receber R$ 86,00", urgent: true },
+      { key: "tickets", text: "1 sem Via Pedido", urgent: true },
+      { key: "check", text: "1 com pagamento a conferir", urgent: true },
+    ]);
+    expect(pending.map((i) => i.value)).toEqual(["2", "R$ 86,00", "1", "1"]);
+    expect(pending.map((i) => i.text)).toContain("A receber R$ 86,00");
+    const settled = todayIndicators([
+      { key: "leaving", text: "Todas entregues", urgent: false },
+      { key: "to_receive", text: "Nada a receber", urgent: false },
+      { key: "tickets", text: "Todas as vias impressas", urgent: false },
+    ]);
+    expect(settled.map((i) => i.value)).toEqual(["✓", "✓", "✓"]);
+  });
+});
+
+describe("selo com iniciais maiúsculas (dono, 03/11/2026)", () => {
+  it("cada palavra maiúscula, artigo e preposição no meio em minúscula, marca como é", async () => {
+    const { badgeCase } = await import("../app/presentation/preorders");
+    expect(badgeCase("Loja online")).toBe("Loja Online");
+    expect(badgeCase("Pagar na retirada")).toBe("Pagar na Retirada");
+    expect(badgeCase("a receber")).toBe("A Receber");
+    expect(badgeCase("iFood")).toBe("iFood");
+    expect(badgeCase("Saiu para entrega")).toBe("Saiu para Entrega");
+  });
+
+  it("o dinheiro vira valor + selo semântico", async () => {
+    const { moneyBadge } = await import("../app/presentation/preorders");
+    const base = { total_q: 6000, total_display: "R$ 60,00", balance_display: "R$ 0,00", situation: "to_pay" as const };
+    expect(moneyBadge({ ...base, balance_q: 6000, balance_display: "R$ 60,00" })).toEqual({ amount: "R$ 60,00", of: "", label: "A Receber", tone: "warning" });
+    expect(moneyBadge({ ...base, balance_q: 2000, balance_display: "R$ 20,00" })).toEqual({ amount: "R$ 20,00", of: "de R$ 60,00", label: "A Receber", tone: "warning" });
+    expect(moneyBadge({ ...base, balance_q: 0, situation: "paid" as never })).toMatchObject({ label: "Pago", tone: "success" });
+    expect(moneyBadge({ ...base, balance_q: null })).toMatchObject({ label: "Conferir Pagamento", tone: "warning" });
   });
 });

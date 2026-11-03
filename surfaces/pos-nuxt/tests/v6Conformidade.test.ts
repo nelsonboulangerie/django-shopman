@@ -116,7 +116,7 @@ describe("P08/P10/P20/P21/P22: a comanda da v4", () => {
 describe("P26: cartões do celular nas Encomendas", () => {
   it("preparo só quando diz algo e o pagamento na voz do balcão", () => {
     expect(phoneCardPills({ situation: "ready", situation_label: "Pronta", balance_q: 0, fulfillment_type: "pickup" }))
-      .toEqual([{ label: "Pronta", tone: "success" }, { label: "Paga", tone: "success" }]);
+      .toEqual([{ label: "Pronta", tone: "success" }, { label: "Pago", tone: "success" }]);
     expect(phoneCardPills({ situation: "to_pay", situation_label: "A pagar", balance_q: 4100, fulfillment_type: "delivery" }))
       .toEqual([{ label: "Pagar na entrega", tone: "warning" }]);
     expect(phoneCardPills({ situation: "check_payment", situation_label: "Conferir", balance_q: null, fulfillment_type: "pickup" }))
