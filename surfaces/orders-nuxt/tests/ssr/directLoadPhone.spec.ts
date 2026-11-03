@@ -171,7 +171,9 @@ test.describe("primeiro desenho no celular (HTML do servidor, sem JavaScript)", 
 
   test("a Fila nasce com a linha do chão: o selo com o lugar, a busca e o ⋯", async ({ page }) => {
     await page.goto("/", { waitUntil: "load" });
-    await expect(page.locator("[data-compact-seal] [data-compact-place]")).toHaveText("Pedidos");
+    // O selo da linha do chão (o cabeçalho do kit, escondido no celular, também traz o
+    // selo para o tablet em pé: o daqui é o da linha).
+    await expect(page.locator("[data-compact-bar] [data-compact-seal] [data-compact-place]")).toHaveText("Pedidos");
     await expect(page.locator("[data-compact-search]")).toBeVisible();
     await expect(page.locator("[data-compact-options]")).toBeVisible();
     // A barra de 56px do kit não aparece por baixo dela.
