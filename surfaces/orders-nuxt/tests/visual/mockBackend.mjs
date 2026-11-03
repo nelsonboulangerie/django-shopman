@@ -51,6 +51,44 @@ function catalogPayload(url) {
   }
   return body;
 }
+// Tabelão de produtos: as linhas do catálogo gravado com uma classificação fiscal
+// de exemplo (as revisões são fictícias; o mock não grava).
+function productSheetPayload() {
+  const rows = recordedFor(new URL("http://mock/api/v1/backstage/catalog/?collection"))?.matrix?.rows || [];
+  return {
+    rows: rows.map((row, index) => ({
+      sku: row.sku,
+      is_active: row.is_active,
+      name: row.name,
+      short_description: index % 3 ? "" : "Massa de fermentação natural, casca crocante.",
+      base_price_q: row.base_price_q,
+      unit: index === 2 ? "kg" : "un",
+      fiscal: index === 1
+        ? { profile: "", ncm: "", cest: "", origin: "0" }
+        : { profile: "standard", ncm: "19059090", cest: "", origin: "0" },
+      fiscal_warnings: [],
+      revisions: {},
+    })),
+    fiscal_profiles: [
+      { key: "standard", name: "Sem substituição tributária", requires_cest: false },
+      { key: "tax_substitution", name: "Com substituição tributária (ST)", requires_cest: true },
+    ],
+    fiscal_origins: [
+      { key: "0", name: "0 · Nacional" },
+      { key: "1", name: "1 · Estrangeira, importação direta" },
+    ],
+  };
+}
+// Detalhe de produto do Catálogo: o payload real do backend de teste (produto "Pão"),
+// com SKU e nome do produto pedido. A foto "padronizada" volta igual e "guardada"
+// devolve uma URL fixa: o mock não processa imagem.
+const productDetailTemplate = readFixture("catalog-product-detail.json");
+function productDetailPayload(sku) {
+  const row = recordedFor(new URL("http://mock/api/v1/backstage/catalog/?collection"))?.matrix?.rows?.find((item) => item.sku === sku);
+  const body = JSON.parse(JSON.stringify(productDetailTemplate));
+  body.product = { ...body.product, sku, name: row?.name || body.product.name, image_url: row?.image_url || "" };
+  return body;
+}
 const detailTemplate = recorded["/api/v1/backstage/orders/IFOOD-261006-W01/"];
 /** O detalhe de um pedido da galeria: o detalhe real gravado, com os dados do card. */
 function galleryDetail(ref) {
@@ -267,6 +305,27 @@ createServer((req, res) => {
   }
   if (path === "/api/v1/backstage/channels/attention/") { send(res, 200, baseAttention); return; }
   if (path.indexOf("/events/") >= 0 || path.indexOf("/sse/") >= 0) { res.statusCode = 204; res.end(); return; }
+  if (req.method === "GET" && path === "/api/v1/backstage/catalog/products/sheet/") {
+    send(res, 200, productSheetPayload());
+    return;
+  }
+  if (req.method === "POST" && (path === "/api/v1/backstage/catalog/product/photo/" || path === "/api/v1/backstage/catalog/product/photo/upload/")) {
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; });
+    req.on("end", () => {
+      let body;
+      try { body = JSON.parse(raw || "{}"); } catch { body = {}; }
+      send(res, 200, path.endsWith("/upload/")
+        ? { url: "https://media.example.com/produtos/foto-padronizada.jpg", name: "foto-padronizada.jpg" }
+        : { image: body.image || "" });
+    });
+    return;
+  }
+  const productDetail = req.method === "GET" && path.match(/^\/api\/v1\/backstage\/catalog\/product\/([^/]+)\/$/);
+  if (productDetail && !["create", "duplicate", "draft", "import"].includes(productDetail[1])) {
+    send(res, 200, productDetailPayload(decodeURIComponent(productDetail[1])));
+    return;
+  }
   if (req.method === "GET") {
     const detail = path.match(/^\/api\/v1\/backstage\/orders\/([A-Z0-9-]+)\/$/);
     const catalog = path === "/api/v1/backstage/catalog/" ? catalogPayload(url) : null;

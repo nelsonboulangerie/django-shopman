@@ -33,7 +33,7 @@ def parse_money_to_q(raw) -> int:
     Entrada ilegível levanta POSError — devolver 0 silencioso num fechamento
     CEGO transformaria um typo ("12,,30") numa diferença gigante sem aviso.
     """
-    from decimal import InvalidOperation
+    from decimal import Decimal, InvalidOperation
 
     from shopman.utils.monetary import brl_to_q
 
@@ -41,6 +41,11 @@ def parse_money_to_q(raw) -> int:
     if not text:
         return 0
     try:
+        # "NaN" e "Infinity" são Decimal válidos e passam pelo parse; quebravam
+        # adiante, no int(), com ValueError (500 no acerto de conta, mensagem
+        # interna nos outros). Valor que não é número finito é valor inválido.
+        if not Decimal(text).is_finite():
+            raise POSError("Valor inválido.")
         # brl_to_q usa ROUND_HALF_UP (não banker's rounding), consistente com
         # o resto do sistema.
         return brl_to_q(text)
@@ -625,7 +630,6 @@ def request_change(
     )
 
 
-@transaction.atomic
 def serve_change_request(
     *, operator, request_ref: str, manager_approval: dict | None = None, terminal_ref: str = ""
 ):
@@ -636,25 +640,28 @@ def serve_change_request(
     sem a segunda assinatura, "atender um pedido" viraria um jeito de abrir a
     gaveta sem ninguém olhando — o buraco que este fluxo existe para fechar.
     """
-    from shopman.shop.services.pos import validate_manager_override
+    from shopman.shop.services.pos import manager_pin_checked_before_transaction, validate_manager_override
 
-    approved_by = validate_manager_override(
-        manager_approval or {},
-        operator_username=operator.get_username(),
-        action="cash_change_request_serve",
-    )
+    # O PIN se confere antes da transação: dentro dela, a recusa desfazia o
+    # registro do erro e a trava do gerente nunca armava.
+    with manager_pin_checked_before_transaction(manager_approval), transaction.atomic():
+        approved_by = validate_manager_override(
+            manager_approval or {},
+            operator_username=operator.get_username(),
+            action="cash_change_request_serve",
+        )
 
-    shift = _open_shift_or_raise(operator, terminal_ref)
-    request = _pending_request(shift, request_ref)
-    entry = _record(
-        "change_served",
-        shift=shift,
-        operator=operator,
-        approved_by=approved_by,
-        parent=request,
-    )
-    _resolve_change_alert(request, operator)
-    return entry
+        shift = _open_shift_or_raise(operator, terminal_ref)
+        request = _pending_request(shift, request_ref)
+        entry = _record(
+            "change_served",
+            shift=shift,
+            operator=operator,
+            approved_by=approved_by,
+            parent=request,
+        )
+        _resolve_change_alert(request, operator)
+        return entry
 
 
 @transaction.atomic
