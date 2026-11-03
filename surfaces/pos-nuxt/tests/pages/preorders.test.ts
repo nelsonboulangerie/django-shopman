@@ -126,6 +126,9 @@ async function mount(page: unknown) {
 }
 
 beforeEach(() => {
+  // Os dias virados na grade vivem no estado do app (sobrevivem à volta do detalhe):
+  // cada teste começa com só hoje aberto.
+  useState<string[]>("pos-preorders-flipped-days").value = [];
   week = {
     ok: true, date_from: "2026-09-26", date_to: "2026-10-02", today: "2026-09-26", max_batch: 200,
     count: 2, total_q: 6000, total_display: "R$ 60,00", to_receive_q: 3600, to_receive_display: "R$ 36,00",
@@ -699,8 +702,10 @@ describe("Encomendas — a semana no centro", () => {
     expect(columns).toHaveLength(7);
     expect(columns[0]!.find("[data-week-day-total]").text()).toBe("2 encomendas · R$ 60,00");
     expect(columns[0]!.find("[data-week-day-to-receive]").text()).toBe("A receber R$ 36,00");
-    expect(columns[1]!.find("[data-week-day-total]").text()).toBe("Nenhuma encomenda");
-    expect(columns[1]!.find("[data-week-day-to-receive]").exists()).toBe(false);
+    // O dia sem nada é a coluna estreita, e diz por extenso no nome acessível.
+    expect(columns[1]!.attributes("data-week-day-narrow")).toBe("");
+    expect(columns[1]!.find("[data-week-day-toggle]").attributes("aria-label")).toBe("Dom 27/09. Nenhuma encomenda.");
+    expect(columns[1]!.find("[data-week-day-to-receive-sign]").exists()).toBe(false);
     // A mesma árvore responde a qualquer largura: não duplica cards escondidos.
     expect(wrapper.findAll("[data-week-board]")).toHaveLength(1);
     expect(wrapper.find("[data-week-grid]").findAll("[data-preorder]")).toHaveLength(2);
@@ -708,11 +713,13 @@ describe("Encomendas — a semana no centro", () => {
     expect(wrapper.find("[data-preorders-to-receive]").text()).toBe("A receber R$ 36,00");
   });
 
-  it("o card da grade: saldo em destaque ou 'pago', e o sinal da Via Pedido impressa", async () => {
+  it("o card da grade: o valor e o selo semântico do estado (dono, 03/11), e o sinal da Via Pedido impressa", async () => {
     const wrapper = await mount(PreordersPage);
     const grid = wrapper.find("[data-week-grid]");
-    expect(grid.find('[data-preorder="NB-7"] [data-preorder-money]').text()).toBe("A receber R$ 36,00");
-    expect(grid.find('[data-preorder="NB-8"] [data-preorder-money]').text()).toBe("R$ 24,00 pago");
+    expect(grid.find('[data-preorder="NB-7"] [data-preorder-money]').text()).toBe("R$ 36,00");
+    expect(grid.find('[data-preorder="NB-7"] [data-preorder-money-badge]').text()).toBe("A Receber");
+    expect(grid.find('[data-preorder="NB-8"] [data-preorder-money]').text()).toBe("R$ 24,00");
+    expect(grid.find('[data-preorder="NB-8"] [data-preorder-money-badge]').text()).toBe("Pago");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-printed]').exists()).toBe(true);
     expect(grid.find('[data-preorder="NB-7"] [data-preorder-printed]').exists()).toBe(false);
     expect(grid.find('[data-preorder="NB-7"]').attributes("href")).toBe("/preorders/NB-7");
@@ -730,35 +737,62 @@ describe("Encomendas — a semana no centro", () => {
 
   it("hoje tem destaque e diz o dia da semana, com 'Hoje' uma vez só", async () => {
     const wrapper = await mount(PreordersPage);
-    const opens = wrapper.find("[data-week-grid]").findAll("[data-week-day-open]");
+    const opens = wrapper.find("[data-week-grid]").findAll("[data-week-day-toggle]");
     const today = opens[0]!;
     expect(today.attributes("aria-current")).toBe("date");
     expect(today.find("[data-week-day-title]").text()).toMatch(/^Hoje, \S+ 26\/09$/);
     expect(today.text().match(/Hoje/g)).toHaveLength(1);
     expect(opens[1]!.attributes("aria-current")).toBeUndefined();
-    expect(opens[1]!.find("[data-week-day-title]").text()).not.toContain("Hoje");
+    expect(opens[1]!.attributes("aria-label")).not.toContain("Hoje");
   });
 
-  it("tocar no dia da grade abre o modo Dia naquela data", async () => {
+  it("'Ver só este dia' abre o modo Dia naquela data", async () => {
     const wrapper = await mount(PreordersPage);
-    await wrapper.find("[data-week-grid]").findAll("[data-week-day-open]")[0]!.trigger("click");
+    await wrapper.find("[data-week-grid]").findAll("[data-week-day-only]")[0]!.trigger("click");
     expect(route.query).toEqual({ mode: "day", date: "2026-09-26" });
   });
 
-  it("‹ › anda de semana em semana, e a volta para hoje aparece fora da semana de hoje", async () => {
+  it("a semana começa HOJE e só hoje vem aberto; os outros dias abrem e recolhem no toque (dono, 03/11)", async () => {
+    // Um pedido amanhã também: o dia recolhido diz a conta, e o card só aparece ao abrir.
+    week.days[1] = {
+      ...week.days[1]!, orders_count: 1, total_q: 1000, total_display: "R$ 10,00",
+      orders: [card({ ref: "NB-9", commitment_date: "2026-09-27", customer_name: "Caio" })],
+    };
+    const wrapper = await mount(PreordersPage);
+    const days = () => wrapper.find("[data-week-grid]").findAll("[data-week-day]");
+    expect(days()[0]!.attributes("data-week-day")).toBe("2026-09-26");
+    expect(days()[0]!.find("[data-week-day-expanded]").exists()).toBe(true);
+    // Recolhido, o dia é uma coluna estreita (a semana cabe numa linha: dono, 03/11):
+    // a contagem à vista e a conta inteira no nome acessível.
+    expect(days()[1]!.attributes("data-week-day-narrow")).toBe("");
+    expect(days()[1]!.find("[data-week-day-count]").text()).toBe("1");
+    expect(days()[1]!.find("[data-week-day-toggle]").attributes("aria-label"))
+      .toBe("Dom 27/09. 1 encomenda, R$ 10,00. Abrir o dia.");
+    expect(wrapper.find('[data-preorder="NB-9"]').exists()).toBe(false);
+    await days()[1]!.find("[data-week-day-toggle]").trigger("click");
+    expect(wrapper.find('[data-preorder="NB-9"]').exists()).toBe(true);
+    expect(days()[1]!.attributes("data-week-day-narrow")).toBeUndefined();
+    expect(days()[1]!.find("[data-week-day-toggle]").attributes("aria-expanded")).toBe("true");
+    // Recolher hoje também vale: vira coluna estreita.
+    await days()[0]!.find("[data-week-day-toggle]").trigger("click");
+    expect(wrapper.find('[data-preorder="NB-7"]').exists()).toBe(false);
+    expect(days()[0]!.attributes("data-week-day-narrow")).toBe("");
+  });
+
+  it("‹ › anda de 7 em 7 dias, e a volta para hoje aparece fora dos 7 dias de hoje", async () => {
     const wrapper = await mount(PreordersPage);
     expect(wrapper.find("[data-period-today]").exists()).toBe(false);
     await wrapper.find("[data-period-next]").trigger("click");
     await flushPromises();
     expect(route.query.date).toBeTruthy();
     expect(wrapper.find("[data-period-today]").exists()).toBe(true);
-    expect(wrapper.find("[data-period-next]").attributes("aria-label")).toBe("Próxima semana");
+    expect(wrapper.find("[data-period-next]").attributes("aria-label")).toBe("Próximo período");
   });
 
   it("semana sem nada diz por extenso — zero não é código", async () => {
     week = { ...week, count: 0, days: week.days.map((d) => ({ ...d, orders: [], orders_count: 0 })) };
     const wrapper = await mount(PreordersPage);
-    expect(wrapper.find("[data-preorders-empty]").text()).toBe("Nenhuma encomenda nesta semana.");
+    expect(wrapper.find("[data-preorders-empty]").text()).toBe("Nenhuma encomenda nos próximos 7 dias.");
     expect(wrapper.find("[data-preorders-print]").exists()).toBe(false);
   });
 });
@@ -782,23 +816,24 @@ describe("Encomendas — um controle por estado, uma porta por destino", () => {
     expect(bar.find('a[href="/preorders"]').exists()).toBe(false);
   });
 
-  it("R3: o 'A receber' tem a mesma frase e o mesmo peso no período, no dia e na encomenda", async () => {
+  it("R3: o 'A receber' tem a mesma frase e o mesmo peso no período e no dia; na linha da semana é o selo", async () => {
     const wrapper = await mount(PreordersPage);
     const period = wrapper.find("[data-preorders-to-receive]");
     const day = wrapper.find("[data-week-day-to-receive]");
-    const row = wrapper.find('[data-preorder="NB-7"] [data-preorder-money]');
-    for (const node of [period, day, row]) {
+    for (const node of [period, day]) {
       expect(node.text()).toBe("A receber R$ 36,00");
       expect(node.classes().join(" ")).toBe(TO_RECEIVE_CLASS);
     }
+    // Na linha da semana o estado do dinheiro é um selo semântico (dono, 03/11/2026).
+    expect(wrapper.find('[data-preorder="NB-7"] [data-preorder-money-badge]').text()).toBe("A Receber");
   });
 
   it("R4: o selo de situação é a peça do kit, na linha e no detalhe", async () => {
     // Na linha, o selo só aparece quando diz o que o dinheiro não diz ("Pronto").
     week.days[0]!.orders[0] = card({ situation: "ready", situation_label: "Pronto" });
     const list = await mount(PreordersPage);
-    expect(list.find('[data-preorder="NB-7"] [data-preorder-situation]').classes())
-      .toEqual(expect.arrayContaining(toneBadge("success").split(" ")));
+    // Na linha da semana o selo é o NuxtBadge do kit, na cor do tom, com iniciais maiúsculas.
+    expect(list.find('[data-preorder="NB-7"] [data-preorder-situation]').text()).toBe("Pronto");
     detail.counter.card = card({ status: "ready", situation: "ready", situation_label: "Pronto" });
     const page = await mount(DetailPage);
     expect(page.find("[data-preorder-situation]").classes())
@@ -831,7 +866,7 @@ describe("Encomendas — um controle por estado, uma porta por destino", () => {
 describe("Encomendas — o dia", () => {
   it("o modo Dia agrupa pela janela, com a linha inteira", async () => {
     const wrapper = await mount(PreordersPage);
-    await wrapper.find("[data-week-grid]").findAll("[data-week-day-open]")[0]!.trigger("click");
+    await wrapper.find("[data-week-grid]").findAll("[data-week-day-only]")[0]!.trigger("click");
     await flushPromises();
     const windows = wrapper.find("[data-preorders-day]").findAll("[data-preorders-window]");
     expect(windows.map((w) => w.find("h3").text())).toEqual(["9h às 10h", "14h às 15h"]);
@@ -932,7 +967,7 @@ describe("Encomendas — filtros e o lote das vias que faltam", () => {
     route.query.pay = "on_account";
     await flushPromises();
     const empty = wrapper.find("[data-preorders-filter-empty]");
-    expect(empty.text()).toContain("Nenhuma encomenda com estes filtros nesta semana.");
+    expect(empty.text()).toContain("Nenhuma encomenda com estes filtros nos próximos 7 dias.");
     // R5: o vazio não repete o "limpar" do painel (antes: um "Mostrar todas" aqui).
     expect(empty.find("button").exists()).toBe(false);
     expect(activeLabels(wrapper)).toEqual(["Pagamento: Na conta da casa"]);
@@ -1002,9 +1037,9 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
 
   it("o resumo do período diz de que período fala, e some quando o período é só hoje", async () => {
     const wrapper = await mount(PreordersPage);
-    expect(wrapper.find("[data-preorders-summary]").text()).toContain("Na semana");
+    expect(wrapper.find("[data-preorders-summary]").text()).toContain("Nos 7 dias");
     // Um dia que não é hoje (a data do teste é fixa; o relógio, não).
-    await wrapper.find("[data-week-grid]").findAll("[data-week-day-open]")[0]!.trigger("click");
+    await wrapper.find("[data-week-grid]").findAll("[data-week-day-only]")[0]!.trigger("click");
     await flushPromises();
     expect(wrapper.find("[data-preorders-summary]").text()).toContain("No dia");
     // O dia de hoje (sem `date` na URL): a linha "Hoje" já diz, o resumo sai.
@@ -1014,11 +1049,13 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
     expect(wrapper.find("[data-preorders-today]").exists()).toBe(true);
   });
 
-  it("a linha da encomenda: a janela primeiro, o número e os itens, e 'Via impressa' escrita", async () => {
+  it("a linha da semana: a janela, quem com o recebimento e o canal em selos, e embaixo o pedido e o número (dono, 03/11)", async () => {
     const wrapper = await mount(PreordersPage);
     const ana = wrapper.find('[data-week-grid] [data-preorder="NB-7"]');
     expect(ana.find("[data-preorder-window]").text()).toBe("09:00");
-    expect(ana.text()).toContain("NB-7 · Loja online · Retirada · 2 itens");
+    expect(ana.find("[data-preorder-fulfillment]").text()).toBe("Retirada");
+    expect(ana.find("[data-preorder-channel]").text()).toBe("Loja Online");
+    expect(ana.text()).toContain("2x Pão · NB-7");
     // "A pagar" já está no dinheiro: o selo não repete.
     expect(ana.find("[data-preorder-situation]").exists()).toBe(false);
     expect(wrapper.find('[data-week-grid] [data-preorder="NB-8"] [data-preorder-printed]').text()).toBe("Via impressa");
@@ -1027,8 +1064,9 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
   it("R7: o dia vazio diz uma vez só, no cabeçalho", async () => {
     const wrapper = await mount(PreordersPage);
     const empty = wrapper.find("[data-week-grid]").findAll("[data-week-day]")[1]!;
-    expect(empty.text()).toBe(empty.find("[data-week-day-open]").text());
-    expect(empty.text().match(/encomenda/gi)).toHaveLength(1);
+    // Coluna estreita: o vazio é dito uma vez, no nome acessível, sem botão de abrir.
+    expect(empty.find("[data-week-day-toggle]").attributes("aria-label")!.match(/encomenda/gi)).toHaveLength(1);
+    expect(empty.find("button").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("Dia livre");
   });
 

@@ -116,7 +116,9 @@ const items = computed<(readonly OperatorMoreMenuItem[])[]>(() => {
         <ClientOnly><OperatorInbox placement="header" /></ClientOnly>
       </div>
     </div>
-    <div v-if="active" class="flex items-center gap-2 border-b border-default bg-elevated/50 px-3 py-1 text-sm" role="status" data-compact-active>
+    <!-- Branca como a linha (dono, 30/10/2026: a linha compacta e o que é dela usam o
+         fundo da barra do kit, `bg-card`, não o bege da página). -->
+    <div v-if="active" class="flex items-center gap-2 border-b border-default bg-card px-3 py-1 text-sm" role="status" data-compact-active>
       <NuxtIcon :name="query ? 'i-lucide-search' : 'i-lucide-list-filter'" class="size-4 shrink-0 text-primary" />
       <p class="min-w-0 flex-1 break-words">
         <span v-if="query">Busca <strong>{{ query }}</strong>. </span><span v-if="filterActive && filterLabel">{{ filterLabel }}. </span>{{ summary }}

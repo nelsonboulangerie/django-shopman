@@ -34,7 +34,6 @@ import {
   type PeriodSelection,
 } from "../../../operator-kit/app/presentation/dates";
 
-import { addDays } from "./orderTickets";
 import { parseLocalDate } from "./schedule";
 
 /** A frase que diz o corte da seção. */
@@ -47,7 +46,7 @@ export const PREORDERS_SCOPE_NOTE = "Retiradas e entregas de todos os canais, pe
  * balcão olha sobretudo para a frente: o dia, a semana, o mês, os próximos dias;
  * e, para conferir o que passou, os últimos dias e o personalizado.
  */
-export const PREORDERS_PERIOD_PRESETS = ["day", "week", "month", "next7d", "next14d", "next28d", "7d", "28d"] as const;
+export const PREORDERS_PERIOD_PRESETS = ["day", "next7d", "month", "next14d", "next28d", "7d", "28d"] as const;
 
 /** O teto do intervalo que o servidor aceita (`projections.preorders.MAX_SPAN_DAYS`). */
 export const PREORDERS_MAX_SPAN_DAYS = 62;
@@ -81,11 +80,11 @@ export interface PreordersView extends PreorderFilters {
 }
 
 /**
- * A tela abre na SEMANA de hoje: o panorama da semana é o centro da seção
- * (redesenho de 28/09). "O que sai hoje?" é o dia destacado na grade, a um
- * toque do modo Dia.
+ * A tela abre nos 7 DIAS A PARTIR DE HOJE (dono, 03/11/2026: "a semana deve começar
+ * por hoje"; antes era a semana de segunda a domingo, e na quinta metade da grade era
+ * passado). Hoje vem aberto; os outros dias, recolhidos, abrem no toque.
  */
-export const DEFAULT_MODE: PreordersMode = "week";
+export const DEFAULT_MODE: PreordersMode = "next7d";
 
 export const NO_FILTERS: PreorderFilters = { fulfillment: "all", pay: "all", print: "all" };
 
@@ -147,31 +146,6 @@ export function viewPath(view: PreordersView, today: string): string {
   return params ? `/preorders?${params}` : "/preorders";
 }
 
-// ── A semana (de segunda a domingo) ─────────────────────────────────────────
-
-/** A segunda-feira da semana de `iso` (decisão do dono: a semana começa na segunda). */
-export function mondayOf(iso: string): string {
-  const date = parseLocalDate(iso);
-  if (!date) return iso;
-  const back = (date.getDay() + 6) % 7; // domingo = 6 dias depois da segunda
-  return addDays(iso, -back);
-}
-
-/**
- * A semana ISO de `iso`: "2026-W40". É o que o servidor lê (`?week=`), e a
- * semana ISO começa na segunda — o mesmo corte da tela.
- */
-export function isoWeek(iso: string): string {
-  const thursday = parseLocalDate(addDays(mondayOf(iso), 3));
-  if (!thursday) return "";
-  // O ano da semana é o da sua quinta-feira; a semana 1 é a que tem a primeira quinta.
-  const year = thursday.getFullYear();
-  const jan1 = new Date(year, 0, 1);
-  const dayOfYear = Math.round((thursday.getTime() - jan1.getTime()) / 86_400_000);
-  const week = Math.floor(dayOfYear / 7) + 1;
-  return `${year}-W${String(week).padStart(2, "0")}`;
-}
-
 // ── A ponte com o Período do kit ────────────────────────────────────────────
 
 /**
@@ -184,7 +158,7 @@ export function periodSelectionOf(view: Pick<PreordersView, "mode" | "date" | "t
   const anchor = view.date === today ? "" : view.date;
   if (view.mode === "7d" || view.mode === "28d") return { preset: view.mode, from: "", to: anchor };
   if (view.mode === "day" || view.mode.startsWith("next")) return { preset: view.mode, from: anchor, to: "" };
-  // Semana e mês: hoje dentro do período é o período de hoje.
+  // Mês: hoje dentro do período é o período de hoje.
   const range = resolvePeriod({ preset: view.mode, from: view.date, to: "" }, { today });
   const containsToday = range.date_from <= today && today <= range.date_to;
   return { preset: view.mode, from: containsToday ? "" : view.date, to: "" };
@@ -203,7 +177,6 @@ export function viewOfPeriod(selection: PeriodSelection, today: string): Pick<Pr
 /** O que a tela pede ao servidor para o período do estado. */
 export function periodParams(view: Pick<PreordersView, "mode" | "date" | "to">): Record<string, string> {
   if (view.mode === "day") return { date_from: view.date, date_to: view.date };
-  if (view.mode === "week") return { week: isoWeek(view.date) };
   // O resto pelas datas: a seleção com a âncora explícita resolve sem depender de hoje.
   const range = resolvePeriod(periodSelectionOf(view, ""), { today: view.date });
   return { date_from: range.date_from, date_to: range.date_to };
@@ -238,10 +211,10 @@ export function periodEmptyMessage(mode: PreordersMode): string {
   return `Nenhuma encomenda ${periodPhrase(mode)}.`;
 }
 
-/** "neste dia", "nesta semana", "neste mês", "neste período". */
+/** "neste dia", "nos próximos 7 dias", "neste mês", "neste período". */
 function periodPhrase(mode: PreordersMode): string {
   if (mode === "day") return "neste dia";
-  if (mode === "week") return "nesta semana";
+  if (mode === "next7d") return "nos próximos 7 dias";
   if (mode === "month") return "neste mês";
   return "neste período";
 }
@@ -698,6 +671,65 @@ export interface TodayFact {
   urgent: boolean;
 }
 
+/** O indicador do fato (o celular resume "Hoje" em ícone e valor; o toque mostra a frase). */
+export interface TodayIndicator {
+  key: TodayFact["key"];
+  icon: string;
+  value: string;
+  urgent: boolean;
+  text: string;
+  /** A legenda curta sob o valor: o indicador se lê sem tocar. */
+  caption: string;
+  /** O recorte que o toque aplica (o que pede gesto vira atalho); `null` = só lê. */
+  filter: Partial<PreorderFilters> | null;
+}
+
+const TODAY_CAPTIONS: Record<TodayFact["key"], string> = {
+  leaving: "Entregar",
+  to_receive: "A Receber",
+  tickets: "Sem Via",
+  check: "Conferir",
+};
+const TODAY_FILTERS: Record<TodayFact["key"], Partial<PreorderFilters> | null> = {
+  leaving: null,
+  to_receive: { pay: "to_receive" },
+  tickets: { print: "pending" },
+  check: { pay: "check" },
+};
+
+const TODAY_ICONS: Record<TodayFact["key"], string> = {
+  leaving: "i-lucide-package",
+  to_receive: "i-lucide-hand-coins",
+  tickets: "i-lucide-printer",
+  check: "i-lucide-circle-help",
+};
+
+/**
+ * "2 para entregar" vira [pacote 2]; "A receber R$ 86,00" vira [moedas R$ 86,00]; o que
+ * está em ordem ("Todas as vias impressas", "Nada a receber") vira um visto: o número
+ * aparece só quando pede gesto. A frase inteira segue no nome acessível e no toque.
+ */
+export function todayIndicators(facts: readonly TodayFact[]): TodayIndicator[] {
+  return facts.map((fact) => {
+    const count = /^(\d+)/.exec(fact.text)?.[1];
+    const money = /R\$\s?[\d.,]+/.exec(fact.text)?.[0];
+    const value = fact.key === "to_receive"
+      ? (fact.urgent && money ? money : "✓")
+      : fact.key === "leaving"
+        ? (count ?? "✓")
+        : (fact.urgent && count ? count : "✓");
+    return {
+      key: fact.key,
+      icon: TODAY_ICONS[fact.key],
+      value,
+      urgent: fact.urgent,
+      text: fact.text,
+      caption: TODAY_CAPTIONS[fact.key],
+      filter: fact.urgent ? TODAY_FILTERS[fact.key] : null,
+    };
+  });
+}
+
 /**
  * Os fatos de hoje, na ordem em que o balcão age: quantas faltam entregar,
  * quanto falta receber, quantas Vias Pedido faltam e, só quando há, quantas
@@ -737,7 +769,7 @@ export function periodIsToday(view: Pick<PreordersView, "mode" | "date">, today:
 /** O rótulo do resumo do período. */
 export function periodSummaryLabel(mode: PreordersMode): string {
   if (mode === "day") return "No dia";
-  if (mode === "week") return "Na semana";
+  if (mode === "next7d") return "Nos 7 dias";
   if (mode === "month") return "No mês";
   return "No período";
 }
@@ -890,7 +922,7 @@ export interface PhonePill {
 /**
  * As duas pílulas do cartão do celular (v3 `depois-pdv-celular` 3): o preparo
  * (só quando diz algo que o dinheiro não diz) e o pagamento, na voz do balcão
- * ("Paga", "Pagar na retirada", "Pagar na entrega").
+ * ("Pago", "Pagar na retirada", "Pagar na entrega").
  */
 export function phoneCardPills(
   card: Pick<PreorderCard, "situation" | "situation_label" | "balance_q" | "fulfillment_type">,
@@ -901,6 +933,75 @@ export function phoneCardPills(
   else if (card.situation === "on_account") pills.push({ label: "Conta da casa", tone: "neutral" });
   else if (card.balance_q > 0) {
     pills.push({ label: card.fulfillment_type === "delivery" ? "Pagar na entrega" : "Pagar na retirada", tone: "warning" });
-  } else pills.push({ label: "Paga", tone: "success" });
+  } else pills.push({ label: "Pago", tone: "success" });
   return pills;
 }
+
+// ── Os dias recolhidos (dono, 03/11/2026) ──────────────────────────────────
+
+/**
+ * O dia está aberto na grade? Hoje nasce aberto e os outros recolhidos: só abre o que
+ * o operador tocar. `flipped` guarda os dias que ele virou (abriu ou recolheu), então
+ * recolher o de hoje também fica valendo.
+ */
+export function dayOpen(day: Pick<PreorderDay, "date" | "is_today">, flipped: ReadonlySet<string>): boolean {
+  return Boolean(day.is_today) !== flipped.has(day.date);
+}
+
+/** Virar um dia: o conjunto novo (o estado da tela é imutável). */
+export function flipDay(flipped: ReadonlySet<string>, date: string): Set<string> {
+  const next = new Set(flipped);
+  if (next.has(date)) next.delete(date);
+  else next.add(date);
+  return next;
+}
+
+// ── Os selos da linha (dono, 03/11/2026) ───────────────────────────────────
+
+const LOWER_WORDS = new Set(["a", "o", "as", "os", "e", "de", "da", "do", "das", "dos", "na", "no", "nas", "nos", "em", "com", "por", "para"]);
+
+/**
+ * Selo leva iniciais maiúsculas, sempre (dono, 03/11/2026): "Loja Online", "Pagar na
+ * Retirada", "A Receber". Artigo e preposição no meio ficam em minúscula; a primeira
+ * palavra, sempre maiúscula.
+ */
+export function badgeCase(label: string): string {
+  return label
+    .trim()
+    .split(/\s+/)
+    .map((word, index) => {
+      if (!word) return word;
+      // Marca e sigla já escritas como são ("iFood", "PDV", "NB-1042") não se mexem.
+      if (/[A-Z]/.test(word.slice(1)) || /\d/.test(word)) return word;
+      const lower = word.toLowerCase();
+      if (index > 0 && LOWER_WORDS.has(lower)) return lower;
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
+}
+
+export type BadgeTone = "neutral" | "primary" | "info" | "success" | "warning" | "error";
+
+export interface MoneyBadge {
+  /** O valor que decide o gesto: o que falta, quando falta; senão, o total. */
+  amount: string;
+  /** "de R$ 60,00" quando já se pagou parte. */
+  of: string;
+  label: string;
+  tone: BadgeTone;
+}
+
+/**
+ * O dinheiro da linha em duas peças: o valor e o selo semântico do estado (dono,
+ * 03/11/2026: "A receber" e "Pago" viram selos). Amarelo só para o que pede gesto.
+ */
+export function moneyBadge(card: Pick<PreorderCard, "balance_q" | "balance_display" | "total_q" | "total_display" | "situation">): MoneyBadge {
+  if (card.balance_q === null) return { amount: card.total_display, of: "", label: "Conferir Pagamento", tone: "warning" };
+  if (card.balance_q > 0) {
+    const partial = card.balance_q < card.total_q;
+    return { amount: partial ? card.balance_display : card.total_display, of: partial ? `de ${card.total_display}` : "", label: "A Receber", tone: "warning" };
+  }
+  if (card.situation === "on_account") return { amount: card.total_display, of: "", label: "Na Conta da Casa", tone: "info" };
+  return { amount: card.total_display, of: "", label: "Pago", tone: "success" };
+}
+

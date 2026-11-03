@@ -33,7 +33,9 @@ import { preorderDetailPath } from "~/presentation/preorderDetail";
 import {
   PRINTED_LABEL,
   TO_RECEIVE_CLASS,
+  badgeCase,
   balanceStandsOut,
+  moneyBadge,
   customerLine,
   moneyLine,
   moneyPieces,
@@ -53,7 +55,13 @@ const props = withDefaults(defineProps<{
   back?: string;
   /** O card se arrasta para outro dia (só na semana, e só o que pode mudar de data). */
   movable?: boolean;
-}>(), { showDate: false, back: "", movable: false });
+  /**
+   * `lines`: a linha da semana (dono, 03/11/2026), sem caixa, separada por fio, em duas
+   * linhas na largura toda: hora · quem · [recebimento] [canal] ...... dinheiro, e embaixo
+   * o que foi pedido e o número ...... a situação ou a Via impressa.
+   */
+  layout?: "" | "lines";
+}>(), { showDate: false, back: "", movable: false, layout: "" });
 
 const slots = useSlots();
 
@@ -69,19 +77,28 @@ const pills = computed(() => phoneCardPills(props.card));
 // são do servidor; o texto na cor do tom (o neutro, discreto).
 const courierLine = computed(() => courierRowLine(props.card));
 const courierClass = computed(() => COURIER_TEXT[courierLine.value?.tone ?? "neutral"]);
+// A linha da semana: o dinheiro em valor + selo semântico, e os selos de quem.
+const money = computed(() => moneyBadge(props.card));
+const situationColor = computed(() => situationTone(props.card.situation));
 </script>
 
 <template>
   <div
-    class="flex min-w-0 items-stretch rounded-md bg-elevated/50 transition hover:bg-elevated"
+    class="flex min-w-0 items-stretch transition"
+    :class="layout ? 'hover:bg-elevated/60' : 'rounded-md bg-elevated/50 hover:bg-elevated'"
     :draggable="movable ? 'true' : undefined"
     :data-preorder-card="card.ref"
     :data-preorder-movable="movable ? '' : undefined"
   >
     <NuxtLink
       :to="preorderDetailPath(card.ref, back)"
-      class="grid min-h-8 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1 p-3 text-left focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none md:grid-cols-[auto_minmax(5rem,1fr)_auto]"
-      :class="slots.aside ? 'rounded-l-md' : 'rounded-md'"
+      class="grid min-h-8 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1 text-left focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+      :class="[
+        layout === 'lines'
+          ? 'px-3 py-2 md:grid-cols-[3.25rem_minmax(0,1fr)_auto] md:gap-y-1'
+          : 'p-3 md:grid-cols-[auto_minmax(5rem,1fr)_auto]',
+        layout ? '' : (slots.aside ? 'rounded-l-md' : 'rounded-md'),
+      ]"
       :draggable="movable ? 'false' : undefined"
       :data-preorder="card.ref"
     >
@@ -111,14 +128,48 @@ const courierClass = computed(() => COURIER_TEXT[courierLine.value?.tone ?? "neu
           <span class="min-w-0 break-words">{{ courierLine.label }}</span>
         </span>
         <span class="flex flex-wrap gap-1">
-          <span
+          <NuxtBadge
             v-for="pill in pills"
             :key="pill.label"
-            class="inline-flex h-6 items-center gap-1 rounded-full px-2 op-micro font-semibold"
-            :class="toneBadge(pill.tone)"
-          ><span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ pill.label }}</span>
+            :color="pill.tone"
+            :label="badgeCase(pill.label)"
+            size="sm"
+          />
         </span>
       </span>
+      <!-- A LINHA DA SEMANA (`layout="lines"`). Em cima: a hora, quem e os selos de quem
+           (recebimento e canal), o valor com o selo do estado. Os selos são UM bloco: se
+           não cabem todos ao lado do nome, descem todos juntos (dono, 03/11/2026).
+           Embaixo: o que foi pedido e o número; a situação ou a Via impressa. -->
+      <template v-if="layout === 'lines'">
+        <span class="row-span-2 pt-px text-sm font-semibold tabular-nums max-md:hidden" data-preorder-window>{{ rowWindow(card) }}</span>
+        <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 max-md:hidden">
+          <span class="break-words text-sm font-medium" data-preorder-name>{{ customerLine(card) }}</span>
+          <span class="inline-flex shrink-0 items-center gap-1" data-preorder-badges>
+            <NuxtBadge
+              color="neutral"
+              :icon="fulfillmentIcon(card.fulfillment_type).replace('lucide:', 'i-lucide-')"
+              :label="badgeCase(card.fulfillment_label)"
+              size="sm"
+              data-preorder-fulfillment
+            />
+            <NuxtBadge v-if="card.channel_label" color="neutral" :label="badgeCase(card.channel_label)" size="sm" data-preorder-channel />
+          </span>
+        </span>
+        <span class="flex items-center justify-end gap-2 max-md:hidden">
+          <span class="text-sm font-semibold tabular-nums text-highlighted" :data-preorder-money="balanceStandsOut(card) ? 'to-receive' : 'settled'">{{ money.amount }}</span>
+          <NuxtBadge :color="money.tone" :label="money.label" size="sm" data-preorder-money-badge />
+        </span>
+        <span class="min-w-0 break-words text-xs text-muted max-md:hidden">{{ [card.items_summary, card.ref].filter(Boolean).join(" · ") }}</span>
+        <span class="flex items-center justify-end gap-2 text-xs text-muted max-md:hidden">
+          <span v-if="money.of" class="tabular-nums">{{ money.of }}</span>
+          <NuxtBadge v-if="rowShowsSituation(card.situation)" :color="situationColor" :label="badgeCase(card.situation_label)" size="sm" data-preorder-situation />
+          <span v-else-if="card.ticket_printed" class="inline-flex items-center gap-1" data-preorder-printed>
+            <Icon name="lucide:printer-check" class="size-3.5" aria-hidden="true" />{{ PRINTED_LABEL }}
+          </span>
+        </span>
+      </template>
+      <template v-else>
       <!-- A janela, e embaixo dela o recebimento. -->
       <span class="grid shrink-0 justify-items-start gap-1 max-md:hidden">
         <span
@@ -159,6 +210,7 @@ const courierClass = computed(() => COURIER_TEXT[courierLine.value?.tone ?? "neu
           {{ PRINTED_LABEL }}
         </span>
       </span>
+      </template>
       <!-- A corrida do entregador numa linha inteira, sob quem e o dinheiro: a frase
            não se espreme na coluna do nome. -->
       <p
