@@ -36,8 +36,7 @@ test.describe("Produção — gate de operador", () => {
       page.getByRole("heading", { name: "Entre para operar" }),
     ).toHaveCount(0);
     // Tela de operador no shell da suíte (kit, fase 2): barra lateral do `lg` para
-    // cima; abaixo dele, a barra inferior (as quatro primeiras etapas e o "Mais", que
-    // abre a gaveta com o menu completo).
+    // cima; abaixo dele, a barra inferior com as seções da forma da tela.
     const size = page.viewportSize() ?? { width: 1024, height: 768 };
     await expect(page.locator("[data-operator-suite-shell]")).toBeVisible();
     if (size.width >= 1024) {
@@ -47,12 +46,16 @@ test.describe("Produção — gate de operador", () => {
       await expect(rail.locator('[data-section="quality"]')).toBeVisible();
       await expect(page.locator("[data-suite-rail-menu]")).toBeVisible();
     } else {
+      // Com o trocador (modelo de navegação, 31/10/2026): na tela do chão, a barra de
+      // baixo tem as etapas do chão; o Planejamento (escritório) se abre pelo selo.
       const quickBar = page.locator("[data-operator-quick-bar]");
       await expect(quickBar).toBeVisible();
-      await expect(quickBar.locator('[data-section="plan"]')).toBeVisible();
-      await quickBar.locator("[data-quick-bar-more]").click();
+      await expect(quickBar.locator('[data-section="close"]')).toBeVisible();
+      await expect(quickBar.locator('[data-section="timers"]')).toBeVisible();
+      await expect(quickBar.locator('[data-section="plan"]')).toHaveCount(0);
+      await page.locator("[data-page-header-app]:visible").first().click();
       await expect(
-        page.getByRole("dialog").locator('[data-section="quality"]'),
+        page.getByRole("dialog").locator('[data-switcher-section="plan"]'),
       ).toBeVisible();
     }
   });

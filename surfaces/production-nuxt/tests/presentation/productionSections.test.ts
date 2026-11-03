@@ -9,7 +9,8 @@ import { quickBarLayout, quickBarProblems } from "../../../operator-kit/app/pres
 
 // V4-PROD: as etapas do lote moram no rail da suíte (e na barra do polegar no
 // celular). Era a fileira de abas do cabeçalho; o contrato (ordem, rótulo, rota,
-// tecla) continua o mesmo, decidido no #1433.
+// tecla) continua o mesmo, decidido no #1433. O modelo de navegação (31/10/2026) só
+// acrescenta a forma de cada uma.
 describe("seções da Produção no rail", () => {
   it("o ciclo do lote, de Planejamento a Qualidade, com Alt+1 a Alt+5", () => {
     const stages = stageSections().map((section) => [
@@ -26,12 +27,24 @@ describe("seções da Produção no rail", () => {
     ]);
   });
 
-  it("barra inferior do shell: as quatro primeiras etapas e o Mais, que abre a gaveta", () => {
-    const sections = productionSections({ canViewRecipes: true, timersActive: 1 });
-    expect(quickBarProblems(sections)).toEqual([]);
-    const layout = quickBarLayout(sections);
-    expect(layout.items.map((s) => s.key)).toEqual(["plan", "mise-en-place", "open", "close"]);
-    expect(layout.more).toBe(true);
+  it("forma de cada seção: o chão no celular é a barra de baixo, as cinco, sem Mais", () => {
+    const sections = productionSections({ canViewRecipes: true, canViewReports: true });
+    expect(sections.map((s) => [s.key, s.form])).toEqual([
+      ["plan", "office"],
+      ["mise-en-place", "floor"],
+      ["open", "floor"],
+      ["close", "floor"],
+      ["quality", "floor"],
+      ["timers", "floor"],
+      ["recipes", "office"],
+      ["reports", "office"],
+      ["board", "wall"],
+    ]);
+    const floor = sections.filter((s) => s.form === "floor");
+    expect(quickBarProblems(floor)).toEqual([]);
+    const layout = quickBarLayout(floor);
+    expect(layout.items.map((s) => s.key)).toEqual(["mise-en-place", "open", "close", "quality", "timers"]);
+    expect(layout.more).toBe(false);
   });
 
   it("depois do ciclo, um traço, Timers e as ferramentas diretas; nada no pé", () => {

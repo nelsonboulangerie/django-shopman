@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // Casca da Produção (prod.). Duas classes de tela:
-//   · telas de OPERADOR (planejamento, preparação, produção, finalização, qualidade,
-//     timers, ajustes) → o shell da suíte (`OperatorSuiteShell` do kit), como o Gestor
-//     e o B.I.: barra lateral em três estados na mesa, gaveta pelo ☰ e barra inferior
-//     de 3 a 5 vagas no celular;
+//   · telas de OPERADOR (as etapas do lote, timers, receitas, relatórios) → o
+//     shell da suíte (`OperatorSuiteShell` do kit) com o trocador, como o Gestor e o PDV:
+//     barra lateral na mesa; no celular, a barra de baixo tem as seções da forma da tela
+//     (as etapas do chão, ou o escritório), e o selo abre o trocador com tudo;
 //   · o Letreiro (`/board`) → KIOSK de TV em tela cheia, em casca própria SEM
 //     navegação (exceção declarada da fase 2: a TV não tem quem toque numa barra), mas
 //     DENTRO do mesmo gate (a previsão exige backstage.operate_production).
@@ -41,7 +41,8 @@ const isKiosk = computed(() => route.path.startsWith("/board"));
 // parede, só para quem gere operadores, num dispositivo que ainda não é posto.
 const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
-// O ciclo do lote (Alt+1 a Alt+5), Timers e Ajustes (Receitas, Relatórios, Letreiro).
+// O ciclo do lote (Alt+1 a Alt+5), Timers, Receitas, Relatórios e Letreiro, cada um com a
+// forma da tela, que o trocador e a barra de baixo leem (`productionSections`).
 const { sections } = useProductionSections();
 
 // Avisos da operação (OperatorAlert) na caixa do kit, ao lado da caixa pessoal.
@@ -75,6 +76,9 @@ useOperatorWindowTitle();
         v-else-if="surface.showPage"
         storage-key="production"
         :sections="sections"
+        :switcher-sections="sections"
+        default-form="floor"
+        floor-bar
         label="Telas da produção"
         :operator-name="operator?.name"
         @lock="lock"

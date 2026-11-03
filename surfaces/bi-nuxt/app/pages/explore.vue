@@ -258,7 +258,7 @@ const errorActions = computed(() => [
                    nome do cenário a salvar. Esc e clique fora fecham, do componente. -->
               <NuxtPopover v-model:open="menuOpen" :content="{ align: 'end', sideOffset: 8, collisionPadding: 8 }">
                 <NuxtButton
-                  icon="i-lucide-ellipsis"
+                  icon="i-lucide-ellipsis-vertical"
                   color="neutral"
                   variant="outline"
                   square

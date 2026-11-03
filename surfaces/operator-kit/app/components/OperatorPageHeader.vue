@@ -22,7 +22,7 @@
 // (`presentation/pageHeader.ts`, README "Barra do topo no celular" e "Toolbar no
 // celular"): ☰, o título (quebra, nunca corta) e no máximo 2 ícones fixos (Avisos e a
 // Busca, ou a ação da tela de `priority` menor); todo o resto das `actions` vai para UM
-// ⋯ "Mais ações". O `#status` (e o posto do dispositivo) desce para uma segunda linha da
+// ⋮ "Mais ações". O `#status` (e o posto do dispositivo) desce para uma segunda linha da
 // barra, nunca se espreme ao lado do título. No shell, o selo do app sai da barra (a
 // gaveta já o tem). A toolbar é uma linha só: `#filters-primary` e `#filters-end` (até
 // 2 controles somados; o `end` é a leitura, como o frescor, que na mesa fica no fim da
@@ -83,15 +83,15 @@ const props = withDefaults(
     searchPlaceholder?: string;
     /**
      * As ações da tela, declaradas como dados (regra da barra do topo no celular). Do
-     * `sm` para cima, um ⋯ com todas (ao lado do `#actions`, que segue como está).
+     * `sm` para cima, um ⋮ com todas (ao lado do `#actions`, que segue como está).
      * Abaixo do `sm`, as de `priority` disputam a vaga de ícone com a Busca; as outras
-     * vão para o ⋯ "Mais ações", na ordem declarada. A tela que declara `actions` tem o
+     * vão para o ⋮ "Mais ações", na ordem declarada. A tela que declara `actions` tem o
      * `#actions` escondido no celular: o que importa no polegar está aqui.
      */
     actions?: OperatorHeaderAction[];
     /**
-     * As ações só do celular (abaixo de `sm`): a vaga de ícone e o ⋯ "Mais ações", como
-     * `actions`, mas do `sm` para cima não há ⋯ delas (lá o `#actions` e a toolbar já as
+     * As ações só do celular (abaixo de `sm`): a vaga de ícone e o ⋮ "Mais ações", como
+     * `actions`, mas do `sm` para cima não há ⋮ delas (lá o `#actions` e a toolbar já as
      * mostram). É o que o Gestor passava como `isNarrow ? [...] : undefined`: declarado
      * sempre, o servidor já desenha a barra do celular no primeiro desenho.
      */
@@ -103,7 +103,7 @@ const props = withDefaults(
      * celular até o `md` (`#phone-actions`, o painel próprio da fila do Gestor).
      */
     actionsFrom?: "sm" | "md";
-    /** O nome do ⋯ (o que ele guarda). */
+    /** O nome do ⋮ (o que ele guarda). */
     actionsLabel?: string;
     /** Recortes ativos: o número no "Filtros" e os chips removíveis abaixo da linha. */
     activeFilters?: OperatorActiveFilter[];
@@ -222,7 +222,7 @@ function menuItem(action: OperatorHeaderAction & { search?: true }) {
   // `priority` e `search` são do kit: o `OperatorMoreMenu` os tira do item.
   return action.search ? { ...action, onSelect: () => openSearch() } : action;
 }
-// Dois ⋯, um por variante, escolhidos pelo CSS: o do celular com o que não ganhou vaga,
+// Dois ⋮, um por variante, escolhidos pelo CSS: o do celular com o que não ganhou vaga,
 // o da mesa com as `actions` declaradas.
 const phoneMenuItems = computed(() => phoneLayout.value.overflow.map(menuItem));
 const deskMenuItems = computed(() => declaredActions.value.map(menuItem));
@@ -436,8 +436,18 @@ function clearAll() {
           data-page-header-icon-action
           @click="action.onSelect?.($event)"
         />
-        <!-- O ⋯ "Mais ações": no celular, o que não ganhou vaga; do `sm` para cima, as
-             ações declaradas (ao lado do `#actions`). -->
+        <!-- Os avisos antes do ⋮: o ⋮ fica no canto, o último da linha (dono, 03/11/2026). -->
+        <ClientOnly v-if="inbox">
+          <div
+            v-if="!railShown"
+            class="flex shrink-0 items-center"
+            data-page-header-inbox
+          >
+            <OperatorInbox placement="header" />
+          </div>
+        </ClientOnly>
+        <!-- O ⋮ "Mais ações", vertical e no canto: no celular, o que não ganhou vaga; do
+             `sm` para cima, as ações declaradas (ao lado do `#actions`). -->
         <OperatorMoreMenu
           v-if="phoneVariant && phoneLayout.overflow.length"
           :items="phoneMenuItems"
@@ -452,15 +462,6 @@ function clearAll() {
           class="max-sm:hidden"
           data-page-header-more
         />
-        <ClientOnly v-if="inbox">
-          <div
-            v-if="!railShown"
-            class="flex shrink-0 items-center"
-            data-page-header-inbox
-          >
-            <OperatorInbox placement="header" />
-          </div>
-        </ClientOnly>
       </template>
     </NuxtDashboardNavbar>
 
