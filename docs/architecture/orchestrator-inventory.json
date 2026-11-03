@@ -96,14 +96,17 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "SafeFormatMap",
+            "_MARKDOWN_BOLD",
             "_payment_deadline",
             "_with_fiscal_note",
             "_with_stock_alert_management",
             "db_template",
             "derive_context",
             "logger",
+            "markdown_bold_to_html",
             "render_message",
-            "render_template"
+            "render_template",
+            "strip_markdown_bold"
           ]
         }
       ]
@@ -1137,10 +1140,8 @@
           "symbols": [
             "MESSAGE_TEMPLATES",
             "_COMTELE_SEND_URL",
-            "_MARKDOWN_BOLD",
             "_build_message",
             "_get_config",
-            "_strip_markdown_bold",
             "is_available",
             "logger",
             "send"
