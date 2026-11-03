@@ -59,6 +59,8 @@ import {
   checkCount,
   checkPaymentNotice,
   dayColumnTitle,
+  dayOpen,
+  flipDay,
   dayToReceiveLine,
   filterDays,
   filterDimensions,
@@ -225,6 +227,13 @@ const printAction = computed<OperatorHeaderAction | null>(() => {
 const deskActions = computed<OperatorHeaderAction[]>(() => (printAction.value ? [printAction.value] : []));
 function openDay(date: string) {
   update({ mode: "day", date });
+}
+// Os dias recolhidos na grade: hoje nasce aberto, o resto só abre no toque (dono,
+// 03/11/2026). A escolha vive enquanto o PDV está aberto, inclusive na volta do detalhe.
+const flippedDayList = useState<string[]>("pos-preorders-flipped-days", () => []);
+const flippedDays = computed(() => new Set(flippedDayList.value));
+function toggleDay(date: string) {
+  flippedDayList.value = [...flipDay(flippedDays.value, date)];
 }
 
 // ── Cliente veio buscar: a busca da tela ──
@@ -813,20 +822,27 @@ function refreshAll() {
                 @drop.prevent="onDrop(weekDay.date)"
               >
                 <!-- Hoje: o cabeçalho ganha fundo da cor primária e diz "Hoje, ter 29/09";
-                     o dia da semana nunca some. Na lista, o cabeçalho é uma linha só. -->
+                     o dia da semana nunca some. Na lista, o cabeçalho é uma linha só.
+                     O toque no cabeçalho ABRE ou RECOLHE o dia (dono, 03/11/2026: só
+                     hoje nasce aberto); "Ver só este dia" leva ao modo Dia. -->
+                <div class="flex min-w-0 items-start gap-1">
                 <NuxtButton
                   color="neutral"
                   variant="ghost"
                   block
-                  class="grid justify-start gap-1 text-left"
+                  class="grid min-w-0 flex-1 justify-start gap-1 text-left"
                   :class="[
                     weekDay.is_today ? 'bg-primary/10 hover:bg-primary/15' : '',
                     asGrid ? '' : 'sm:flex sm:flex-wrap sm:items-baseline sm:gap-x-4',
                   ]"
-                  :aria-label="`Abrir o dia ${dayColumnTitle(weekDay)}`"
+                  :aria-expanded="weekDay.orders.length ? dayOpen(weekDay, flippedDays) : undefined"
+                  :aria-label="weekDay.orders.length
+                    ? `${dayOpen(weekDay, flippedDays) ? 'Recolher' : 'Abrir'} ${dayColumnTitle(weekDay)}`
+                    : dayColumnTitle(weekDay)"
                   :aria-current="weekDay.is_today ? 'date' : undefined"
-                  data-week-day-open
-                  @click="openDay(weekDay.date)"
+                  data-week-day-toggle
+                  :data-week-day-expanded="dayOpen(weekDay, flippedDays) ? '' : undefined"
+                  @click="toggleDay(weekDay.date)"
                 >
                   <span class="text-sm font-semibold" :class="weekDay.is_today ? 'text-primary' : 'text-highlighted'" data-week-day-title>
                     {{ dayColumnTitle(weekDay) }}
@@ -839,8 +855,33 @@ function refreshAll() {
                     {{ dayToReceiveLine(weekDay) }}
                   </span>
                 </NuxtButton>
+                <NuxtButton
+                  v-if="weekDay.orders.length"
+                  color="neutral"
+                  variant="ghost"
+                  square
+                  :icon="dayOpen(weekDay, flippedDays) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                  class="size-11 shrink-0 justify-center"
+                  :aria-label="`${dayOpen(weekDay, flippedDays) ? 'Recolher' : 'Abrir'} ${dayColumnTitle(weekDay)}`"
+                  tabindex="-1"
+                  aria-hidden="true"
+                  @click="toggleDay(weekDay.date)"
+                />
+                <NuxtButton
+                  v-if="weekDay.orders.length"
+                  color="neutral"
+                  variant="ghost"
+                  square
+                  icon="i-lucide-maximize-2"
+                  class="size-11 shrink-0 justify-center"
+                  :aria-label="`Ver só ${dayColumnTitle(weekDay)}`"
+                  :title="`Ver só ${dayColumnTitle(weekDay)}`"
+                  data-week-day-only
+                  @click="openDay(weekDay.date)"
+                />
+                </div>
                 <!-- R7: o dia vazio diz "Nenhuma encomenda" uma vez só, no cabeçalho. -->
-                <div v-if="weekDay.orders.length" class="grid gap-2 border-t border-default pt-2">
+                <div v-if="weekDay.orders.length && dayOpen(weekDay, flippedDays)" class="grid gap-2 border-t border-default pt-2" data-week-day-orders>
                   <PosPreorderRow
                     v-for="card in weekDay.orders"
                     :key="card.ref"

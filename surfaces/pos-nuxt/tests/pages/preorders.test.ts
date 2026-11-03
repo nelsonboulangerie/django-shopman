@@ -126,6 +126,9 @@ async function mount(page: unknown) {
 }
 
 beforeEach(() => {
+  // Os dias virados na grade vivem no estado do app (sobrevivem à volta do detalhe):
+  // cada teste começa com só hoje aberto.
+  useState<string[]>("pos-preorders-flipped-days").value = [];
   week = {
     ok: true, date_from: "2026-09-26", date_to: "2026-10-02", today: "2026-09-26", max_batch: 200,
     count: 2, total_q: 6000, total_display: "R$ 60,00", to_receive_q: 3600, to_receive_display: "R$ 36,00",
@@ -730,7 +733,7 @@ describe("Encomendas — a semana no centro", () => {
 
   it("hoje tem destaque e diz o dia da semana, com 'Hoje' uma vez só", async () => {
     const wrapper = await mount(PreordersPage);
-    const opens = wrapper.find("[data-week-grid]").findAll("[data-week-day-open]");
+    const opens = wrapper.find("[data-week-grid]").findAll("[data-week-day-toggle]");
     const today = opens[0]!;
     expect(today.attributes("aria-current")).toBe("date");
     expect(today.find("[data-week-day-title]").text()).toMatch(/^Hoje, \S+ 26\/09$/);
@@ -739,26 +742,47 @@ describe("Encomendas — a semana no centro", () => {
     expect(opens[1]!.find("[data-week-day-title]").text()).not.toContain("Hoje");
   });
 
-  it("tocar no dia da grade abre o modo Dia naquela data", async () => {
+  it("'Ver só este dia' abre o modo Dia naquela data", async () => {
     const wrapper = await mount(PreordersPage);
-    await wrapper.find("[data-week-grid]").findAll("[data-week-day-open]")[0]!.trigger("click");
+    await wrapper.find("[data-week-grid]").findAll("[data-week-day-only]")[0]!.trigger("click");
     expect(route.query).toEqual({ mode: "day", date: "2026-09-26" });
   });
 
-  it("‹ › anda de semana em semana, e a volta para hoje aparece fora da semana de hoje", async () => {
+  it("a semana começa HOJE e só hoje vem aberto; os outros dias abrem e recolhem no toque (dono, 03/11)", async () => {
+    // Um pedido amanhã também: o dia recolhido diz a conta, e o card só aparece ao abrir.
+    week.days[1] = {
+      ...week.days[1]!, orders_count: 1, total_q: 1000, total_display: "R$ 10,00",
+      orders: [card({ ref: "NB-9", commitment_date: "2026-09-27", customer_name: "Caio" })],
+    };
+    const wrapper = await mount(PreordersPage);
+    const days = () => wrapper.find("[data-week-grid]").findAll("[data-week-day]");
+    expect(days()[0]!.attributes("data-week-day")).toBe("2026-09-26");
+    expect(days()[0]!.find("[data-week-day-expanded]").exists()).toBe(true);
+    expect(days()[1]!.find("[data-week-day-expanded]").exists()).toBe(false);
+    expect(days()[1]!.find("[data-week-day-total]").text()).toBe("1 encomenda · R$ 10,00");
+    expect(wrapper.find('[data-preorder="NB-9"]').exists()).toBe(false);
+    await days()[1]!.find("[data-week-day-toggle]").trigger("click");
+    expect(wrapper.find('[data-preorder="NB-9"]').exists()).toBe(true);
+    expect(days()[1]!.find("[data-week-day-toggle]").attributes("aria-expanded")).toBe("true");
+    // Recolher hoje também vale.
+    await days()[0]!.find("[data-week-day-toggle]").trigger("click");
+    expect(wrapper.find('[data-preorder="NB-7"]').exists()).toBe(false);
+  });
+
+  it("‹ › anda de 7 em 7 dias, e a volta para hoje aparece fora dos 7 dias de hoje", async () => {
     const wrapper = await mount(PreordersPage);
     expect(wrapper.find("[data-period-today]").exists()).toBe(false);
     await wrapper.find("[data-period-next]").trigger("click");
     await flushPromises();
     expect(route.query.date).toBeTruthy();
     expect(wrapper.find("[data-period-today]").exists()).toBe(true);
-    expect(wrapper.find("[data-period-next]").attributes("aria-label")).toBe("Próxima semana");
+    expect(wrapper.find("[data-period-next]").attributes("aria-label")).toBe("Próximo período");
   });
 
   it("semana sem nada diz por extenso — zero não é código", async () => {
     week = { ...week, count: 0, days: week.days.map((d) => ({ ...d, orders: [], orders_count: 0 })) };
     const wrapper = await mount(PreordersPage);
-    expect(wrapper.find("[data-preorders-empty]").text()).toBe("Nenhuma encomenda nesta semana.");
+    expect(wrapper.find("[data-preorders-empty]").text()).toBe("Nenhuma encomenda nos próximos 7 dias.");
     expect(wrapper.find("[data-preorders-print]").exists()).toBe(false);
   });
 });
@@ -831,7 +855,7 @@ describe("Encomendas — um controle por estado, uma porta por destino", () => {
 describe("Encomendas — o dia", () => {
   it("o modo Dia agrupa pela janela, com a linha inteira", async () => {
     const wrapper = await mount(PreordersPage);
-    await wrapper.find("[data-week-grid]").findAll("[data-week-day-open]")[0]!.trigger("click");
+    await wrapper.find("[data-week-grid]").findAll("[data-week-day-only]")[0]!.trigger("click");
     await flushPromises();
     const windows = wrapper.find("[data-preorders-day]").findAll("[data-preorders-window]");
     expect(windows.map((w) => w.find("h3").text())).toEqual(["9h às 10h", "14h às 15h"]);
@@ -932,7 +956,7 @@ describe("Encomendas — filtros e o lote das vias que faltam", () => {
     route.query.pay = "on_account";
     await flushPromises();
     const empty = wrapper.find("[data-preorders-filter-empty]");
-    expect(empty.text()).toContain("Nenhuma encomenda com estes filtros nesta semana.");
+    expect(empty.text()).toContain("Nenhuma encomenda com estes filtros nos próximos 7 dias.");
     // R5: o vazio não repete o "limpar" do painel (antes: um "Mostrar todas" aqui).
     expect(empty.find("button").exists()).toBe(false);
     expect(activeLabels(wrapper)).toEqual(["Pagamento: Na conta da casa"]);
@@ -1002,9 +1026,9 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
 
   it("o resumo do período diz de que período fala, e some quando o período é só hoje", async () => {
     const wrapper = await mount(PreordersPage);
-    expect(wrapper.find("[data-preorders-summary]").text()).toContain("Na semana");
+    expect(wrapper.find("[data-preorders-summary]").text()).toContain("Nos 7 dias");
     // Um dia que não é hoje (a data do teste é fixa; o relógio, não).
-    await wrapper.find("[data-week-grid]").findAll("[data-week-day-open]")[0]!.trigger("click");
+    await wrapper.find("[data-week-grid]").findAll("[data-week-day-only]")[0]!.trigger("click");
     await flushPromises();
     expect(wrapper.find("[data-preorders-summary]").text()).toContain("No dia");
     // O dia de hoje (sem `date` na URL): a linha "Hoje" já diz, o resumo sai.
@@ -1027,7 +1051,7 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
   it("R7: o dia vazio diz uma vez só, no cabeçalho", async () => {
     const wrapper = await mount(PreordersPage);
     const empty = wrapper.find("[data-week-grid]").findAll("[data-week-day]")[1]!;
-    expect(empty.text()).toBe(empty.find("[data-week-day-open]").text());
+    expect(empty.text()).toBe(empty.find("[data-week-day-toggle]").text());
     expect(empty.text().match(/encomenda/gi)).toHaveLength(1);
     expect(wrapper.text()).not.toContain("Dia livre");
   });

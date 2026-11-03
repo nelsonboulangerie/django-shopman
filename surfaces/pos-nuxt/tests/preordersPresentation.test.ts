@@ -35,11 +35,11 @@ import {
   flattenDays,
   groupByWindow,
   hasFilters,
-  isoWeek,
   itemsCountLabel,
   listSummary,
   matchesFilters,
-  mondayOf,
+  dayOpen,
+  flipDay,
   moneyLine,
   moneyPieces,
   parsePaymentFilter,
@@ -122,14 +122,14 @@ function day(partial: Partial<PreorderDay> = {}): PreorderDay {
 }
 
 function view(partial: Partial<PreordersView> = {}): PreordersView {
-  return { mode: "week", date: HOJE, to: "", ...NO_FILTERS, q: "", completed: false, ...partial };
+  return { mode: "next7d", date: HOJE, to: "", ...NO_FILTERS, q: "", completed: false, ...partial };
 }
 
 // ── O estado na URL ─────────────────────────────────────────────────────────
 
 describe("o estado da tela mora na URL", () => {
-  it("sem query: a semana de hoje, sem filtro e sem busca", () => {
-    expect(DEFAULT_MODE).toBe("week");
+  it("sem query: os 7 dias a partir de hoje, sem filtro e sem busca (dono, 03/11)", () => {
+    expect(DEFAULT_MODE).toBe("next7d");
     expect(parseView({}, HOJE)).toEqual(view());
   });
 
@@ -162,27 +162,27 @@ describe("o estado da tela mora na URL", () => {
   });
 });
 
-// ── A semana ────────────────────────────────────────────────────────────────
+// ── Os 7 dias a partir de hoje (dono, 03/11/2026) ─────────────────────────
 
-describe("a semana começa na SEGUNDA (decisão do dono, 28/09)", () => {
-  it("a segunda de qualquer dia, inclusive do domingo", () => {
-    expect(mondayOf("2026-09-28")).toBe("2026-09-28");
-    expect(mondayOf("2026-10-01")).toBe("2026-09-28");
-    expect(mondayOf("2026-10-04")).toBe("2026-09-28"); // domingo é o FIM da semana
-    expect(mondayOf("2026-10-05")).toBe("2026-10-05");
-  });
-
-  it("a semana ISO que o servidor lê, inclusive na virada do ano", () => {
-    expect(isoWeek("2026-09-28")).toBe("2026-W40");
-    expect(isoWeek("2026-10-04")).toBe("2026-W40");
-    expect(isoWeek("2027-01-01")).toBe("2026-W53"); // sexta: ainda a última de 2026
-    expect(isoWeek("2027-01-04")).toBe("2027-W01");
-    expect(isoWeek("2025-12-29")).toBe("2026-W01");
-  });
-
-  it("o período pedido ao servidor: o dia pelas datas, a semana pela semana ISO", () => {
+describe("a semana começa HOJE, e só hoje vem aberto", () => {
+  it("o período pedido ao servidor: o dia pelas datas; os 7 dias de hoje até hoje + 6", () => {
     expect(periodParams({ mode: "day", date: "2026-10-01", to: "" })).toEqual({ date_from: "2026-10-01", date_to: "2026-10-01" });
-    expect(periodParams({ mode: "week", date: "2026-10-01", to: "" })).toEqual({ week: "2026-W40" });
+    expect(periodParams({ mode: "next7d", date: "2026-10-01", to: "" })).toEqual({ date_from: "2026-10-01", date_to: "2026-10-07" });
+  });
+
+  it("a semana de segunda a domingo saiu do PDV", () => {
+    expect(parseView({ mode: "week" }, HOJE).mode).toBe("next7d");
+  });
+
+  it("hoje nasce aberto, o resto recolhido; virar um dia vale para hoje também", () => {
+    const hoje = { date: HOJE, is_today: true };
+    const amanha = { date: "2026-09-29", is_today: false };
+    expect(dayOpen(hoje, new Set())).toBe(true);
+    expect(dayOpen(amanha, new Set())).toBe(false);
+    const aberto = flipDay(new Set(), amanha.date);
+    expect(dayOpen(amanha, aberto)).toBe(true);
+    expect(dayOpen(amanha, flipDay(aberto, amanha.date))).toBe(false);
+    expect(dayOpen(hoje, flipDay(new Set(), HOJE))).toBe(false);
   });
 });
 
@@ -201,8 +201,8 @@ describe("o Período das Encomendas olha para a frente (e para trás, quando ped
     const custom = view({ mode: "custom", date: "2026-10-01", to: "2026-10-20" });
     expect(viewQuery(custom, HOJE)).toEqual({ mode: "custom", date: "2026-10-01", to: "2026-10-20" });
     expect(parseView(viewQuery(custom, HOJE), HOJE)).toEqual(custom);
-    const ahead = view({ mode: "next7d" });
-    expect(viewQuery(ahead, HOJE)).toEqual({ mode: "next7d" });
+    const ahead = view({ mode: "next14d" });
+    expect(viewQuery(ahead, HOJE)).toEqual({ mode: "next14d" });
     expect(parseView(viewQuery(ahead, HOJE), HOJE)).toEqual(ahead);
     // Personalizado sem o fim não é intervalo.
     expect(parseView({ mode: "custom", date: "2026-10-01" }, HOJE)).toEqual(view({ date: "2026-10-01" }));
@@ -211,14 +211,12 @@ describe("o Período das Encomendas olha para a frente (e para trás, quando ped
   });
 
   it("a ponte com o controle vai e volta, e hoje é âncora vazia", () => {
-    expect(periodSelectionOf(view(), HOJE)).toEqual({ preset: "week", from: "", to: "" });
-    expect(periodSelectionOf(view({ date: "2026-10-01" }), HOJE)).toEqual({ preset: "week", from: "", to: "" });
-    expect(periodSelectionOf(view({ date: "2026-10-07" }), HOJE)).toEqual({ preset: "week", from: "2026-10-07", to: "" });
-    expect(periodSelectionOf(view({ mode: "next7d" }), HOJE)).toEqual({ preset: "next7d", from: "", to: "" });
+    expect(periodSelectionOf(view(), HOJE)).toEqual({ preset: "next7d", from: "", to: "" });
+    expect(periodSelectionOf(view({ date: "2026-10-07" }), HOJE)).toEqual({ preset: "next7d", from: "2026-10-07", to: "" });
     expect(periodSelectionOf(view({ mode: "7d", date: "2026-09-20" }), HOJE)).toEqual({ preset: "7d", from: "", to: "2026-09-20" });
     for (const state of [
       view({ mode: "day", date: "2026-10-02" }),
-      view({ mode: "week", date: "2026-10-07" }),
+      view({ mode: "next7d", date: "2026-10-07" }),
       view({ mode: "month", date: "2026-11-03" }),
       view({ mode: "next14d", date: "2026-10-12" }),
       view({ mode: "28d", date: "2026-09-01" }),
@@ -231,7 +229,7 @@ describe("o Período das Encomendas olha para a frente (e para trás, quando ped
 
   it("as frases dizem o período, qualquer que seja", () => {
     expect(periodEmptyMessage("month")).toBe("Nenhuma encomenda neste mês.");
-    expect(periodEmptyMessage("next7d")).toBe("Nenhuma encomenda neste período.");
+    expect(periodEmptyMessage("next7d")).toBe("Nenhuma encomenda nos próximos 7 dias.");
     expect(filterEmptyMessage("custom")).toBe("Nenhuma encomenda com estes filtros neste período.");
     expect(periodSummaryLabel("month")).toBe("No mês");
     expect(periodSummaryLabel("next28d")).toBe("No período");
@@ -259,7 +257,7 @@ describe("contagens — zero é frase, nunca '0'", () => {
 
   it("período vazio por extenso", () => {
     expect(periodEmptyMessage("day")).toBe("Nenhuma encomenda neste dia.");
-    expect(periodEmptyMessage("week")).toBe("Nenhuma encomenda nesta semana.");
+    expect(periodEmptyMessage("next7d")).toBe("Nenhuma encomenda nos próximos 7 dias.");
   });
 
   it("A receber: a mesma frase no período e no dia, e zero é frase", () => {
@@ -403,7 +401,7 @@ describe("filtros combináveis, com a contagem de cada chip", () => {
 
   it("o filtro que esvazia a lista diz o que não há", () => {
     expect(filterEmptyMessage("day")).toBe("Nenhuma encomenda com estes filtros neste dia.");
-    expect(filterEmptyMessage("week")).toBe("Nenhuma encomenda com estes filtros nesta semana.");
+    expect(filterEmptyMessage("next7d")).toBe("Nenhuma encomenda com estes filtros nos próximos 7 dias.");
   });
 });
 
@@ -596,9 +594,9 @@ describe("a linha 'Hoje': o que falta para o dia, sem leitura nova", () => {
 
   it("o resumo do período sai quando o período é só hoje (repetiria a linha 'Hoje')", () => {
     expect(periodIsToday({ mode: "day", date: HOJE }, HOJE)).toBe(true);
-    expect(periodIsToday({ mode: "week", date: HOJE }, HOJE)).toBe(false);
+    expect(periodIsToday({ mode: "next7d", date: HOJE }, HOJE)).toBe(false);
     expect(periodIsToday({ mode: "day", date: "2026-09-29" }, HOJE)).toBe(false);
-    expect(periodSummaryLabel("week")).toBe("Na semana");
+    expect(periodSummaryLabel("next7d")).toBe("Nos 7 dias");
     expect(periodSummaryLabel("day")).toBe("No dia");
   });
 });
