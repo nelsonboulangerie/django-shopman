@@ -1465,6 +1465,8 @@ onBeforeUnmount(() => {
       <div v-else-if="checkoutMode" class="h-full md:overflow-y-auto">
       <PosPaymentWorkspace
         ref="paymentWorkspaceRef"
+        :can-fire-now="hasOpenTab && fireAction.present && fireAction.enabled"
+        @fire-now="fireTab()"
         :sales-mode="cart.salesMode"
         v-model:discount-type="cart.discountType"
         v-model:discount-value="cart.discountValue"

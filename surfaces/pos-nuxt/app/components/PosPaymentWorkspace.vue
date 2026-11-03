@@ -51,7 +51,7 @@ import {
   splitShareQ,
   tenderLineView,
 } from "~/presentation/payment";
-import { firedKitchenQty, kitchenHandoffNote, kitchenSurplusQty } from "~/presentation/kitchen";
+import { firedKitchenQty, kitchenHandoffNote, kitchenSurplusQty, unfiredCount } from "~/presentation/kitchen";
 import { lineQtyLabel, lineUnits } from "~/presentation/weighed";
 import { deliveryFeeWaiverShort } from "~/presentation/deliveryFeeWaiver";
 import {
@@ -73,6 +73,11 @@ import { resolveWindowLabel, scheduledNeedsCustomer, scheduleLabel, selectedWind
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
+  /**
+   * A comanda pode mandar à cozinha AGORA (a Action `fire_tab` da projeção): a linha
+   * da cozinha abre e oferece "Enviar agora" para o que ainda não foi.
+   */
+  canFireNow?: boolean;
   salesMode?: "counter" | "order";
   tabDisplay: string;
   items: POSCartItem[];
@@ -188,6 +193,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  /** Mandar à cozinha agora o que ainda não foi (o mesmo `fireTab` da comanda). */
+  fireNow: [];
   "update:discountType": ["percent" | "fixed"];
   "update:discountValue": [string];
   "update:discountReason": [string];
@@ -557,6 +564,8 @@ const summaryLines = computed(() =>
     name: item.name,
     /** A ressalva do item (estoque, cardápio, lote), se a review mandou uma. */
     remark: remarkBySku.value.get(item.sku) || "",
+    /** Já está na cozinha (o ícone cheio) ou vai ao finalizar (vazado). */
+    fired: Boolean(item.fired),
     qty: item.qty,
     qtyLabel: lineQtyLabel(item),
     totalDisplay: formatBRL(lineTotalQ(item)),
@@ -1153,9 +1162,21 @@ const notices = computed<CheckoutNotice[]>(() => {
   return notes;
 });
 
+// O que ainda não foi à cozinha e pode ir AGORA, da linha da cozinha (acordeão). Não
+// quando a cozinha espera por regra (encomenda de outro dia, Pix ou link a entrar).
+const pendingKitchen = computed(() =>
+  props.canFireNow && !kitchenDeferred.value && !kitchenWaitsPayment.value
+    ? props.items.filter((item) => !item.fired)
+    : [],
+);
 // Os dois desenhos dos avisos: o que trava (caixa) e o resto (linhas iguais).
 const blockNotices = computed(() => notices.value.filter((note) => note.tone === "block"));
 const lineNotices = computed(() => notices.value.filter((note) => note.tone !== "block"));
+const kitchenLine = computed(() => lineNotices.value.find((note) => note.key === "kitchen") ?? null);
+// A linha da cozinha vira acordeão quando há o que mandar agora; senão é linha comum.
+const plainLineNotices = computed(() =>
+  lineNotices.value.filter((note) => !(note.key === "kitchen" && pendingKitchen.value.length)),
+);
 
 // O botão está travado sempre que HÁ motivo — não há segunda lista de regras.
 // Era assim que o excedente em cartão escapava: ele avisava, e deixava passar.
@@ -1674,8 +1695,42 @@ defineExpose({
             </li>
           </ul>
           <ul v-if="lineNotices.length || remarks.length" class="flex flex-col" data-checkout-lines>
+            <!-- A COZINHA, quando há o que mandar agora: a mesma linha, que abre embaixo
+                 dela (acordeão, na largura da linha) a lista do que falta e "Enviar
+                 agora". Os itens também vão sozinhos ao Validar. -->
+            <li v-if="kitchenLine && pendingKitchen.length">
+              <NuxtCollapsible>
+                <NuxtButton
+                  color="neutral"
+                  variant="ghost"
+                  block
+                  :icon="kitchenLine.icon.replace('lucide:', 'i-lucide-')"
+                  trailing-icon="i-lucide-chevron-down"
+                  :label="kitchenLine.message"
+                  class="group min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
+                  :ui="{ leadingIcon: `size-4 ${kitchenLine.accent || 'text-muted'}`, trailingIcon: 'ms-auto size-4 text-muted transition group-data-[state=open]:rotate-180', label: 'text-left' }"
+                  data-checkout-kitchen
+                />
+                <template #content>
+                  <div class="ms-7 mb-1 grid gap-2 border-s border-default ps-3 py-1" data-checkout-kitchen-pending>
+                    <ul class="grid gap-0.5 text-sm text-muted">
+                      <li v-for="item in pendingKitchen" :key="item.line_id">{{ lineQtyLabel(item) }} {{ item.name }}</li>
+                    </ul>
+                    <NuxtButton
+                      color="neutral"
+                      variant="outline"
+                      icon="i-lucide-chef-hat"
+                      :label="`Enviar agora (${unfiredCount(pendingKitchen)})`"
+                      class="min-h-11 justify-self-start"
+                      data-checkout-fire-now
+                      @click="emit('fireNow')"
+                    />
+                  </div>
+                </template>
+              </NuxtCollapsible>
+            </li>
             <li
-              v-for="note in lineNotices"
+              v-for="note in plainLineNotices"
               :key="note.key"
               class="flex flex-wrap items-start gap-2.5 px-1 py-1.5 text-sm leading-snug text-default"
               :data-checkout-line="note.key"
@@ -1704,7 +1759,7 @@ defineExpose({
             <!-- A ressalva de item: a mesma linha, que abre a frase. O item da conta leva o
                  mesmo ⚠. Não trava nada: a venda vale. -->
             <li v-if="remarks.length">
-              <NuxtPopover :content="{ align: 'start', sideOffset: 4 }">
+              <NuxtCollapsible>
                 <NuxtButton
                   color="neutral"
                   variant="ghost"
@@ -1712,19 +1767,16 @@ defineExpose({
                   icon="i-lucide-triangle-alert"
                   trailing-icon="i-lucide-chevron-down"
                   :label="remarks.length === 1 ? '1 ressalva nos itens' : `${remarks.length} ressalvas nos itens`"
-                  class="min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
-                  :ui="{ leadingIcon: 'size-4 text-warning', trailingIcon: 'ms-auto size-4 text-muted', label: 'text-left' }"
+                  class="group min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
+                  :ui="{ leadingIcon: 'size-4 text-warning', trailingIcon: 'ms-auto size-4 text-muted transition group-data-[state=open]:rotate-180', label: 'text-left' }"
                   data-checkout-remarks
                 />
                 <template #content>
-                  <ul class="grid max-w-sm gap-2 p-3 text-sm" data-checkout-remarks-list>
-                    <li v-for="(remark, index) in remarks" :key="index" class="flex items-start gap-2">
-                      <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-                      <span>{{ remark.message }}</span>
-                    </li>
+                  <ul class="ms-7 mb-1 grid gap-1.5 border-s border-default ps-3 py-1 text-sm text-muted" data-checkout-remarks-list>
+                    <li v-for="(remark, index) in remarks" :key="index">{{ remark.message }}</li>
                   </ul>
                 </template>
-              </NuxtPopover>
+              </NuxtCollapsible>
             </li>
           </ul>
         </div>
@@ -1890,6 +1942,14 @@ defineExpose({
               <li v-for="line in summaryLines" :key="line.lineId" class="px-3 py-2">
                 <div class="flex items-baseline gap-2">
                   <span class="min-w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qtyLabel }}</span>
+                  <!-- A cozinha do item: cheio, já está lá; vazado, vai ao finalizar. -->
+                  <Icon
+                    name="lucide:flame"
+                    class="size-3.5 shrink-0 self-center"
+                    :class="line.fired ? 'text-primary' : 'text-muted opacity-50'"
+                    :aria-label="line.fired ? 'Na cozinha' : 'Vai à cozinha ao finalizar'"
+                    data-summary-kitchen
+                  />
                   <span class="min-w-0 flex-1 truncate text-sm" :title="line.remark || line.name">{{ line.name }}</span>
                   <Icon
                     v-if="line.remark"

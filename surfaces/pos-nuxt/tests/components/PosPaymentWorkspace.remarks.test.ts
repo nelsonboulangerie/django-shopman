@@ -47,3 +47,37 @@ describe("PosPaymentWorkspace: a ressalva de item não é caixa", () => {
     expect(wrapper.find("[data-checkout-remarks]").exists()).toBe(false);
   });
 });
+
+describe("PosPaymentWorkspace: a cozinha acionável no Pagamento (dono, 03/11/2026)", () => {
+  afterEach(() => { document.body.innerHTML = ""; });
+
+  const fired = { sku: "CAFE", name: "Café", line_id: "L1", qty: 1, price_q: 500, fired: true, fired_qty: 1 };
+  const pending = { sku: "PAO", name: "Pão", line_id: "L2", qty: 2, price_q: 300, fired: false };
+
+  it("o Resumo marca a cozinha de cada item: cheio já foi, vazado vai ao finalizar", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: workspaceProps({ items: [fired, pending], canFireNow: true }),
+    });
+    const marks = wrapper.findAll("[data-summary-kitchen]").map((icon) => icon.attributes("aria-label"));
+    expect(marks).toEqual(["Na cozinha", "Vai à cozinha ao finalizar"]);
+  });
+
+  it("com o que mandar agora, a linha da cozinha abre e 'Enviar agora' conta UNIDADES e dispara", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: workspaceProps({ items: [fired, pending], canFireNow: true }),
+    });
+    await wrapper.find("[data-checkout-kitchen]").trigger("click");
+    const fire = wrapper.find("[data-checkout-fire-now]");
+    expect(fire.text()).toBe("Enviar agora (2)");
+    await fire.trigger("click");
+    expect(wrapper.emitted("fireNow")).toHaveLength(1);
+  });
+
+  it("sem a ação de mandar (ou tudo já foi), a cozinha é só a linha", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: workspaceProps({ items: [fired, pending], canFireNow: false }),
+    });
+    expect(wrapper.find("[data-checkout-kitchen]").exists()).toBe(false);
+    expect(wrapper.find('[data-checkout-line="kitchen"]').exists()).toBe(true);
+  });
+});
