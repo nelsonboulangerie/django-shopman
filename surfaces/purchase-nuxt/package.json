@@ -61,6 +61,8 @@
     "@nuxt/kit": "4.6.2",
     "@nuxt/schema": "4.6.2",
     "esbuild": "^0.28.2",
-    "js-yaml": "^4.3.2"
+    "js-yaml": "^4.3.2",
+    "glob": "^14.0.3",
+    "minimatch": "^11.0.4"
   }
 }
