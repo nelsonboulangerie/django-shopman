@@ -8,7 +8,7 @@
     "Conferir contra o vivo: python scripts/check_canonical_docs.py --live-required-checks"
   ],
   "branch": "main",
-  "read_at": "2026-10-29T17:00:00Z",
+  "read_at": "2026-11-03T02:33:31Z",
   "command": "gh api repos/nelsonboulangerie/django-shopman/branches/main/protection/required_status_checks",
   "strict": false,
   "app_id": 15368,
@@ -39,6 +39,7 @@
     "Coverage Gate",
     "Security Gate",
     "Production Contract",
-    "Operator Groups Contract"
+    "Operator Groups Contract",
+    "Versões das superfícies"
   ]
 }

@@ -103,7 +103,8 @@ export function amountInputError(raw: string): string {
  * absent.
  */
 export function formatOpenedAt(raw: string | null | undefined): string {
-  if (!raw) return "—";
+  // Sem hora, nada: a frase que a usa se escreve sem ela (copy sem travessão).
+  if (!raw) return "";
   const date = new Date(raw);
   return Number.isNaN(date.getTime())
     ? raw
