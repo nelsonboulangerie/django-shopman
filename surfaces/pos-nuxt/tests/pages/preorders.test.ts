@@ -1264,3 +1264,19 @@ describe("Encomendas: a arrumação do balcão (OBS0310-D)", () => {
     expect(call).not.toHaveBeenCalled();
   });
 });
+
+describe("Detalhe — a linha do chão no celular (modelo de navegação)", () => {
+  it("o voltar e a encomenda aberta na linha; os gestos de uso médio no ⋮, Cancelar no fim", async () => {
+    const wrapper = await mount(DetailPage);
+    expect(wrapper.find("[data-compact-back]").exists()).toBe(true);
+    expect(wrapper.find("[data-compact-identity-preorder]").text()).toContain("NB-7");
+    const bar = wrapper.findComponent({ name: "OperatorCompactBar" });
+    const flat = (bar.props("options") as unknown[]).flat() as { label: string }[];
+    const labels = flat.map((item) => item.label);
+    expect(labels).toContain("Imprimir Via Pedido");
+    expect(labels.at(-1)).toBe("Atualizar");
+    expect(labels.indexOf("Cancelar encomenda")).toBe(labels.length - 2);
+    // Na mesa e no tablet o painel segue com os gestos à vista; no celular eles saem.
+    expect(wrapper.find("[data-preorder-actions]").classes()).toContain("max-md:hidden");
+  });
+});

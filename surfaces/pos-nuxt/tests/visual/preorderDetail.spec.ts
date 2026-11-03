@@ -43,7 +43,10 @@ for (const size of SIZES) {
       height: el.getBoundingClientRect().height,
       fits: el.scrollWidth <= el.clientWidth,
     })))).filter(({ height }) => height > 0);
-    expect(buttons.length).toBeGreaterThan(0);
+    // No celular os gestos de uso médio moram no ⋮ da linha do chão (modelo de
+    // navegação), e o principal é a ação na base: o painel fica só com quem e quanto.
+    if (size.width >= 768) expect(buttons.length).toBeGreaterThan(0);
+    else await expect(page.locator("[data-compact-options]")).toBeVisible();
     for (const button of buttons) {
       expect(button.height, button.label).toBeGreaterThanOrEqual(size.width < 1024 ? 44 : 40);
       expect(button.fits).toBe(true);

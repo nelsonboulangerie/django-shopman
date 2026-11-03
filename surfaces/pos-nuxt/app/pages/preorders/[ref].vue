@@ -36,6 +36,7 @@ import { customerLine, moneyLine, rowShowsSituation, situationTone } from "~/pre
 import { courierPanelVisible, showsDeliveryExitNotice } from "~/presentation/courier";
 import { canComment, detailAction, toneBadge } from "../../../../operator-kit/app/presentation/orderDetail";
 import type { OperatorActionBarAction } from "../../../../operator-kit/app/presentation/actionBar";
+import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
 
 const route = useRoute();
 const ref_ = computed(() => String(route.params.ref || ""));
@@ -144,6 +145,45 @@ function signWithBadge(badge: string) {
   void confirmCancel(cancelChoice.value, { badge });
 }
 
+// No celular, a encomenda vem primeiro (cliente, recebimento, quando, produtos: a
+// ordem da casa) e os gestos de uso médio moram no ⋮ da linha do chão, com o
+// Cancelar separado no fim. O gesto principal é a ação na base. Na mesa e no tablet
+// o painel do Balcão segue com todos eles à vista.
+const compactOptions = computed<OperatorHeaderAction[]>(() => {
+  const c = counter.value;
+  if (!c) return [];
+  const busy = actions.busy.value;
+  const list: OperatorHeaderAction[] = [];
+  if (c.reschedule.allowed) {
+    list.push({ label: "Reagendar", icon: "i-lucide-calendar-clock", disabled: busy, onSelect: () => { rescheduleOpen.value = true; } });
+  }
+  list.push({
+    label: c.ticket_printed ? "Imprimir 2ª via" : "Imprimir Via Pedido",
+    icon: "i-lucide-printer",
+    disabled: !!tickets.printingRef.value || !tickets.hasPrinter.value,
+    reason: tickets.hasPrinter.value ? undefined : `${tickets.printerUnavailableReason.value} A Via Pedido sai no balcão que tem impressora.`,
+    onSelect: () => void printTicket(),
+  });
+  if (c.edit.allowed) {
+    list.push({ label: "Editar encomenda", icon: "i-lucide-pencil", disabled: busy, onSelect: () => void editOrder() });
+  } else if (c.edit.cancel_and_redo && c.cancel.allowed) {
+    list.push({ label: "Cancelar e refazer", icon: "i-lucide-rotate-ccw", disabled: busy, reason: c.edit.block_reason || undefined, onSelect: () => void cancelAndRedo() });
+  }
+  if (commentAllowed.value) {
+    list.push({ label: "Comentar no histórico", icon: "i-lucide-message-square-plus", onSelect: () => goToComment() });
+  }
+  if (c.cancel.allowed) {
+    list.push({
+      label: "Cancelar encomenda",
+      icon: "i-lucide-x",
+      color: "error",
+      disabled: busy,
+      onSelect: () => { redoAfterCancel.value = false; cancelOpen.value = true; },
+    });
+  }
+  return list;
+});
+
 // A volta respeita de onde o operador veio: o recorte da lista (modo, data,
 // filtros) mora na URL dela — `?back=` ou o histórico —, e só sem nenhum dos
 // dois a volta é a casa da seção.
@@ -156,9 +196,36 @@ function goBack() {
 </script>
 
 <template>
-  <PosPreordersShell :pos="pos" :pending="posPending || pending" :title="`Encomenda ${ref_}`" wide @refresh="refreshPos(); refresh()">
+  <PosPreordersShell
+    :pos="pos"
+    :pending="posPending || pending"
+    :title="`Encomenda ${ref_}`"
+    wide
+    :compact-options="compactOptions"
+    @refresh="refreshPos(); refresh()"
+  >
+    <!-- Celular: o voltar e a encomenda aberta na linha do chão (a identidade do
+         registro nunca some). -->
+    <template #compact-lead>
+      <NuxtButton
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-arrow-left"
+        square
+        class="size-11 shrink-0 justify-center"
+        aria-label="Voltar às encomendas"
+        data-compact-back
+        @click="goBack"
+      />
+    </template>
+    <template #compact-identity>
+      <p class="min-w-0 leading-tight" data-compact-identity-preorder>
+        <span class="block text-xs text-muted">Encomenda</span>
+        <span class="block break-all font-semibold">{{ ref_ }}</span>
+      </p>
+    </template>
     <div class="mx-auto grid w-full max-w-3xl gap-4 lg:max-w-6xl">
-      <div>
+      <div class="max-md:hidden">
         <NuxtButton
           color="neutral"
           variant="ghost"
@@ -274,7 +341,7 @@ function goBack() {
 
             <!-- Os gestos de uso médio, lado a lado e menores que o principal: cada um
                  na largura do próprio rótulo, e o que não cabe desce de linha. -->
-            <div class="flex flex-wrap gap-2" data-preorder-actions>
+            <div class="flex flex-wrap gap-2 max-md:hidden" data-preorder-actions>
               <NuxtButton
                 v-if="counter.reschedule.allowed"
                 color="neutral"
@@ -325,10 +392,10 @@ function goBack() {
             </div>
             <p
               v-if="!counter.edit.allowed && counter.edit.cancel_and_redo && counter.cancel.allowed"
-              class="text-sm text-muted"
+              class="text-sm text-muted max-md:hidden"
               data-preorder-edit-blocked
             >{{ counter.edit.block_reason }}</p>
-            <p v-if="!tickets.hasPrinter.value" class="text-sm text-muted">
+            <p v-if="!tickets.hasPrinter.value" class="text-sm text-muted max-md:hidden">
               {{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.
             </p>
 
@@ -339,7 +406,7 @@ function goBack() {
               color="neutral"
               variant="ghost"
               block
-              class="min-h-11 justify-start"
+              class="min-h-11 justify-start max-md:hidden"
               icon="i-lucide-message-square-plus"
               label="Comentar no histórico"
               data-preorder-comment-shortcut
@@ -347,7 +414,7 @@ function goBack() {
             />
 
             <!-- CANCELAR fica separado, no pé, e sem destaque maior que o gesto seguro. -->
-            <div v-if="counter.cancel.allowed" class="border-t border-default pt-3" data-preorder-cancel-zone>
+            <div v-if="counter.cancel.allowed" class="border-t border-default pt-3 max-md:hidden" data-preorder-cancel-zone>
               <NuxtButton
                 color="error"
                 variant="ghost"
