@@ -1,21 +1,36 @@
 {
-  "captured_at": "2026-11-03T01:08:59.369474+00:00",
+  "captured_at": "2026-11-03T01:18:05.813760+00:00",
   "node_major": 22,
   "npm": "10.9.9 lock generation",
+  "exception": {
+    "consumer": "eslint-plugin-import-x",
+    "minimatch": "10.2.6",
+    "owner": "ti@boulangerie.com.br",
+    "review_by": "2026-11-09",
+    "reason": "makeRe removed in minimatch11; plugin latest4.17.1 still imports it; patterns from repository lint configuration; no audit gate relaxed"
+  },
   "apps": [
     {
       "app": "bi-nuxt",
       "counts": {
         "info": 0,
         "low": 7,
-        "moderate": 0,
+        "moderate": 4,
         "high": 0,
         "critical": 0,
-        "total": 7
+        "total": 11
       },
       "glob_present": false,
-      "minimatch_present": false,
+      "minimatch_present": true,
+      "minimatch_nodes": [
+        {
+          "path": "node_modules/eslint-plugin-import-x/node_modules/minimatch",
+          "version": "10.2.6",
+          "dev": true
+        }
+      ],
       "advisories": [
+        "https://github.com/advisories/GHSA-g3hv-75wg-m249",
         "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
       ]
     },
@@ -24,14 +39,22 @@
       "counts": {
         "info": 0,
         "low": 7,
-        "moderate": 0,
+        "moderate": 4,
         "high": 0,
         "critical": 0,
-        "total": 7
+        "total": 11
       },
       "glob_present": false,
-      "minimatch_present": false,
+      "minimatch_present": true,
+      "minimatch_nodes": [
+        {
+          "path": "node_modules/eslint-plugin-import-x/node_modules/minimatch",
+          "version": "10.2.6",
+          "dev": true
+        }
+      ],
       "advisories": [
+        "https://github.com/advisories/GHSA-g3hv-75wg-m249",
         "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
       ]
     },
@@ -40,14 +63,22 @@
       "counts": {
         "info": 0,
         "low": 7,
-        "moderate": 0,
+        "moderate": 4,
         "high": 0,
         "critical": 0,
-        "total": 7
+        "total": 11
       },
       "glob_present": false,
-      "minimatch_present": false,
+      "minimatch_present": true,
+      "minimatch_nodes": [
+        {
+          "path": "node_modules/eslint-plugin-import-x/node_modules/minimatch",
+          "version": "10.2.6",
+          "dev": true
+        }
+      ],
       "advisories": [
+        "https://github.com/advisories/GHSA-g3hv-75wg-m249",
         "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
       ]
     },
@@ -56,14 +87,22 @@
       "counts": {
         "info": 0,
         "low": 7,
-        "moderate": 0,
+        "moderate": 4,
         "high": 0,
         "critical": 0,
-        "total": 7
+        "total": 11
       },
       "glob_present": false,
-      "minimatch_present": false,
+      "minimatch_present": true,
+      "minimatch_nodes": [
+        {
+          "path": "node_modules/eslint-plugin-import-x/node_modules/minimatch",
+          "version": "10.2.6",
+          "dev": true
+        }
+      ],
       "advisories": [
+        "https://github.com/advisories/GHSA-g3hv-75wg-m249",
         "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
       ]
     },
@@ -72,14 +111,22 @@
       "counts": {
         "info": 0,
         "low": 7,
-        "moderate": 0,
+        "moderate": 4,
         "high": 0,
         "critical": 0,
-        "total": 7
+        "total": 11
       },
       "glob_present": false,
-      "minimatch_present": false,
+      "minimatch_present": true,
+      "minimatch_nodes": [
+        {
+          "path": "node_modules/eslint-plugin-import-x/node_modules/minimatch",
+          "version": "10.2.6",
+          "dev": true
+        }
+      ],
       "advisories": [
+        "https://github.com/advisories/GHSA-g3hv-75wg-m249",
         "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
       ]
     },
@@ -95,6 +142,7 @@
       },
       "glob_present": false,
       "minimatch_present": false,
+      "minimatch_nodes": [],
       "advisories": [
         "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
       ]
@@ -104,14 +152,22 @@
       "counts": {
         "info": 0,
         "low": 7,
-        "moderate": 0,
+        "moderate": 4,
         "high": 0,
         "critical": 0,
-        "total": 7
+        "total": 11
       },
       "glob_present": false,
-      "minimatch_present": false,
+      "minimatch_present": true,
+      "minimatch_nodes": [
+        {
+          "path": "node_modules/eslint-plugin-import-x/node_modules/minimatch",
+          "version": "10.2.6",
+          "dev": true
+        }
+      ],
       "advisories": [
+        "https://github.com/advisories/GHSA-g3hv-75wg-m249",
         "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
       ]
     },
@@ -120,14 +176,22 @@
       "counts": {
         "info": 0,
         "low": 7,
-        "moderate": 0,
+        "moderate": 4,
         "high": 0,
         "critical": 0,
-        "total": 7
+        "total": 11
       },
       "glob_present": false,
-      "minimatch_present": false,
+      "minimatch_present": true,
+      "minimatch_nodes": [
+        {
+          "path": "node_modules/eslint-plugin-import-x/node_modules/minimatch",
+          "version": "10.2.6",
+          "dev": true
+        }
+      ],
       "advisories": [
+        "https://github.com/advisories/GHSA-g3hv-75wg-m249",
         "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
       ]
     },
@@ -136,14 +200,22 @@
       "counts": {
         "info": 0,
         "low": 7,
-        "moderate": 0,
+        "moderate": 4,
         "high": 0,
         "critical": 0,
-        "total": 7
+        "total": 11
       },
       "glob_present": false,
-      "minimatch_present": false,
+      "minimatch_present": true,
+      "minimatch_nodes": [
+        {
+          "path": "node_modules/eslint-plugin-import-x/node_modules/minimatch",
+          "version": "10.2.6",
+          "dev": true
+        }
+      ],
       "advisories": [
+        "https://github.com/advisories/GHSA-g3hv-75wg-m249",
         "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
       ]
     },
@@ -152,14 +224,22 @@
       "counts": {
         "info": 0,
         "low": 7,
-        "moderate": 0,
+        "moderate": 4,
         "high": 0,
         "critical": 0,
-        "total": 7
+        "total": 11
       },
       "glob_present": false,
-      "minimatch_present": false,
+      "minimatch_present": true,
+      "minimatch_nodes": [
+        {
+          "path": "node_modules/eslint-plugin-import-x/node_modules/minimatch",
+          "version": "10.2.6",
+          "dev": true
+        }
+      ],
       "advisories": [
+        "https://github.com/advisories/GHSA-g3hv-75wg-m249",
         "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
       ]
     },
@@ -168,14 +248,22 @@
       "counts": {
         "info": 0,
         "low": 10,
-        "moderate": 0,
+        "moderate": 4,
         "high": 0,
         "critical": 0,
-        "total": 10
+        "total": 14
       },
       "glob_present": false,
-      "minimatch_present": false,
+      "minimatch_present": true,
+      "minimatch_nodes": [
+        {
+          "path": "node_modules/eslint-plugin-import-x/node_modules/minimatch",
+          "version": "10.2.6",
+          "dev": true
+        }
+      ],
       "advisories": [
+        "https://github.com/advisories/GHSA-g3hv-75wg-m249",
         "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
       ]
     },
@@ -184,14 +272,22 @@
       "counts": {
         "info": 0,
         "low": 10,
-        "moderate": 0,
+        "moderate": 4,
         "high": 0,
         "critical": 0,
-        "total": 10
+        "total": 14
       },
       "glob_present": false,
-      "minimatch_present": false,
+      "minimatch_present": true,
+      "minimatch_nodes": [
+        {
+          "path": "node_modules/eslint-plugin-import-x/node_modules/minimatch",
+          "version": "10.2.6",
+          "dev": true
+        }
+      ],
       "advisories": [
+        "https://github.com/advisories/GHSA-g3hv-75wg-m249",
         "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
       ]
     }

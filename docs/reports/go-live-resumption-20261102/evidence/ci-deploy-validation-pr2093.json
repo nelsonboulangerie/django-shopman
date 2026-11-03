@@ -109,6 +109,294 @@
         "config 421ms · modules 451ms · app 729ms · types 715ms · client 5.01s · server 4.43s · nitro 16.3s",
         "◆ ✨ Build complete in 28.1s!"
       ]
+    },
+    {
+      "surface": "bi-nuxt",
+      "command": "npx npm@10.9.9 ci --no-audit --no-fund",
+      "exit_code": 0,
+      "output_tail": [
+        "[nuxt] ℹ Compiled #build/nuxt.config.mjs in 658.31ms",
+        "✔ Nuxt UI detected 70 components in use (including dependencies)",
+        "[nuxt] ℹ Compiled #build/ui.css in 839.89ms",
+        "◆ Types generated in .nuxt.",
+        "",
+        "added 830 packages in 12s"
+      ]
+    },
+    {
+      "surface": "bi-nuxt",
+      "command": "npm run lint",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ]
+    },
+    {
+      "surface": "hub-nuxt",
+      "command": "npx npm@10.9.9 ci --no-audit --no-fund",
+      "exit_code": 0,
+      "output_tail": [
+        "ℹ Nuxt Icon client bundle consist of 146 icons with 41.31KB(uncompressed) in size",
+        "✔ Nuxt UI detected 69 components in use (including dependencies)",
+        "[nuxt] ℹ Compiled #build/ui.css in 572.6ms",
+        "◆ Types generated in .nuxt.",
+        "",
+        "added 831 packages in 19s"
+      ]
+    },
+    {
+      "surface": "hub-nuxt",
+      "command": "npm run lint",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ]
+    },
+    {
+      "surface": "kds-nuxt",
+      "command": "npx npm@10.9.9 ci --no-audit --no-fund",
+      "exit_code": 0,
+      "output_tail": [
+        "[nuxt:icon] ✔ Nuxt Icon discovered local-installed 4 collections: heroicons, line-md, lucide, tabler",
+        "ℹ Nuxt Icon client bundle consist of 159 icons with 45.54KB(uncompressed) in size",
+        "✔ Nuxt UI detected 69 components in use (including dependencies)",
+        "◆ Types generated in .nuxt.",
+        "",
+        "added 828 packages in 24s"
+      ]
+    },
+    {
+      "surface": "kds-nuxt",
+      "command": "npm run lint",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ]
+    },
+    {
+      "surface": "kitchensink-nuxt",
+      "command": "npx npm@10.9.9 ci --no-audit --no-fund",
+      "exit_code": 0,
+      "output_tail": [
+        "[nuxt:icon] ✔ Nuxt Icon discovered local-installed 4 collections: heroicons, line-md, lucide, tabler",
+        "ℹ Nuxt Icon client bundle consist of 164 icons with 47.12KB(uncompressed) in size",
+        "✔ Nuxt UI detected 69 components in use (including dependencies)",
+        "◆ Types generated in .nuxt.",
+        "",
+        "added 833 packages in 31s"
+      ]
+    },
+    {
+      "surface": "kitchensink-nuxt",
+      "command": "npm run lint",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ]
+    },
+    {
+      "surface": "marketing-nuxt",
+      "command": "npx npm@10.9.9 ci --no-audit --no-fund",
+      "exit_code": 0,
+      "output_tail": [
+        "[nuxt] ℹ Compiled #build/nuxt.config.mjs in 606.18ms",
+        "✔ Nuxt UI detected 72 components in use (including dependencies)",
+        "[nuxt] ℹ Compiled #build/ui.css in 756.89ms",
+        "◆ Types generated in .nuxt.",
+        "",
+        "added 824 packages in 18s"
+      ]
+    },
+    {
+      "surface": "marketing-nuxt",
+      "command": "npm run lint",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ]
+    },
+    {
+      "surface": "operator-kit",
+      "command": "npx npm@10.9.9 ci --no-audit --no-fund",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        "added 1228 packages in 13s"
+      ]
+    },
+    {
+      "surface": "operator-kit",
+      "command": "npm run lint",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        "> @shopman/operator-kit@0.1.0 lint",
+        "> eslint .",
+        ""
+      ]
+    },
+    {
+      "surface": "orders-nuxt",
+      "command": "npx npm@10.9.9 ci --no-audit --no-fund",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        " WARN  Duplicated imports \"CancellationReason\", the one from \"/Users/pablovalentini/.codex/worktrees/ci-live-audit-20261102/django-shopman/surfaces/orders-nuxt/app/composables/useOrdersBoard.ts\" has been ignored and \"/Users/pablovalentini/.codex/worktrees/ci-live-audit-20261102/django-shopman/surfaces/orders-nuxt/app/types/orders.ts\" is used",
+        "",
+        "◆ Types generated in .nuxt.",
+        "",
+        "added 855 packages in 10s"
+      ]
+    },
+    {
+      "surface": "orders-nuxt",
+      "command": "npm run lint",
+      "exit_code": 0,
+      "output_tail": [
+        "/Users/pablovalentini/.codex/worktrees/ci-live-audit-20261102/django-shopman/surfaces/orders-nuxt/app/pages/catalog.vue",
+        "  2041:32  warning  Expected a linebreak before this attribute  vue/first-attribute-linebreak",
+        "",
+        "✖ 1 problem (0 errors, 1 warning)",
+        "  0 errors and 1 warning potentially fixable with the `--fix` option.",
+        ""
+      ]
+    },
+    {
+      "surface": "pos-nuxt",
+      "command": "npx npm@10.9.9 ci --no-audit --no-fund",
+      "exit_code": 0,
+      "output_tail": [
+        "[nuxt:icon] ✔ Nuxt Icon discovered local-installed 4 collections: heroicons, line-md, lucide, tabler",
+        "ℹ Nuxt Icon client bundle consist of 207 icons with 60.33KB(uncompressed) in size",
+        "✔ Nuxt UI detected 69 components in use (including dependencies)",
+        "◆ Types generated in .nuxt.",
+        "",
+        "added 832 packages in 24s"
+      ]
+    },
+    {
+      "surface": "pos-nuxt",
+      "command": "npm run lint",
+      "exit_code": 0,
+      "output_tail": [
+        "  1691:7   warning  Attribute \"v-model:delivery-date\" should go before \":sales-mode\"                            vue/attributes-order",
+        "  1692:7   warning  Attribute \"v-model:delivery-time-slot\" should go before \":sales-mode\"                       vue/attributes-order",
+        "",
+        "✖ 56 problems (0 errors, 56 warnings)",
+        "  0 errors and 54 warnings potentially fixable with the `--fix` option.",
+        ""
+      ]
+    },
+    {
+      "surface": "production-nuxt",
+      "command": "npx npm@10.9.9 ci --no-audit --no-fund",
+      "exit_code": 0,
+      "output_tail": [
+        "[nuxt] ℹ Compiled #build/nuxt.config.mjs in 586.82ms",
+        "✔ Nuxt UI detected 71 components in use (including dependencies)",
+        "[nuxt] ℹ Compiled #build/ui.css in 975.16ms",
+        "◆ Types generated in .nuxt.",
+        "",
+        "added 833 packages in 33s"
+      ]
+    },
+    {
+      "surface": "production-nuxt",
+      "command": "npm run lint",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ]
+    },
+    {
+      "surface": "purchase-nuxt",
+      "command": "npx npm@10.9.9 ci --no-audit --no-fund",
+      "exit_code": 0,
+      "output_tail": [
+        "ℹ Nuxt Icon client bundle consist of 176 icons with 51.01KB(uncompressed) in size",
+        "✔ Nuxt UI detected 69 components in use (including dependencies)",
+        "[nuxt] ℹ Compiled #build/ui.css in 633.35ms",
+        "◆ Types generated in .nuxt.",
+        "",
+        "added 834 packages in 20s"
+      ]
+    },
+    {
+      "surface": "purchase-nuxt",
+      "command": "npm run lint",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ]
+    },
+    {
+      "surface": "status-nuxt",
+      "command": "npx npm@10.9.9 ci --no-audit --no-fund",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        "[nuxt:icon] ✔ Nuxt Icon discovered local-installed 1 collections: lucide",
+        "ℹ Nuxt Icon client bundle consist of 2 icons with 0.71KB(uncompressed) in size",
+        "◆ Types generated in .nuxt.",
+        "",
+        "added 1013 packages in 11s"
+      ]
+    },
+    {
+      "surface": "status-nuxt",
+      "command": "npm run lint",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ]
+    },
+    {
+      "surface": "storefront-nuxt",
+      "command": "npx npm@10.9.9 ci --no-audit --no-fund",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        "[nuxt:icon] ✔ Nuxt Icon discovered local-installed 3 collections: heroicons, line-md, lucide",
+        "ℹ Nuxt Icon client bundle consist of 102 icons with 30.14KB(uncompressed) in size",
+        "◆ Types generated in .nuxt.",
+        "",
+        "added 1124 packages in 25s"
+      ]
+    },
+    {
+      "surface": "storefront-nuxt",
+      "command": "npm run lint",
+      "exit_code": 0,
+      "output_tail": [
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ]
     }
   ]
 }
