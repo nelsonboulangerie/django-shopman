@@ -2100,6 +2100,22 @@ def set_pos_tab_seating(
     return session
 
 
+def _refuse_edit_session_move(session: Session, *, field: str) -> None:
+    """A comanda virtual da edição de encomenda não é origem nem destino de
+    transferência: o item dela é de uma encomenda já vendida, e só muda pelo
+    "Salvar alterações" (``order_edit``)."""
+    from shopman.shop.services import pos_edit_session
+
+    if pos_edit_session.is_edit_session(session):
+        raise PosIntentError(
+            code="edit_session_no_move",
+            message="Itens de uma encomenda em edição não se transferem. Termine a edição primeiro.",
+            field=field,
+            focus="cart",
+            status=409,
+        )
+
+
 def move_pos_tab_lines(
     *,
     channel_ref: str,
@@ -2141,6 +2157,7 @@ def move_pos_tab_lines(
             field="from_session_key",
             focus="cart",
         )
+    _refuse_edit_session_move(source, field="from_session_key")
 
     target_created = False
     if to_session_key:
@@ -2152,6 +2169,7 @@ def move_pos_tab_lines(
                 field="to_session_key",
                 focus="cart",
             )
+        _refuse_edit_session_move(target, field="to_session_key")
     elif to_tab_ref:
         try:
             ref = normalize_tab_ref(to_tab_ref)
