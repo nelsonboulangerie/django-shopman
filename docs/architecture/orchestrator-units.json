@@ -14678,6 +14678,7 @@
             "rename_pos_tab",
             "set_pos_tab_seating",
             "move_pos_tab_lines",
+            "_refuse_edit_session_move",
             "fire_pos_tab",
             "cancel_fired_pos_tab_lines"
           ]
