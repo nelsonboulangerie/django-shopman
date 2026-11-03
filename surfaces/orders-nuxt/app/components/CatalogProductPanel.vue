@@ -69,6 +69,9 @@ const props = defineProps<{
   liveAvailability?: ProductDetailProjection["channel_availability"] | null;
   // Endereço do Admin: o "Histórico" do ⋯ abre o histórico de alterações de lá.
   adminBaseUrl?: string;
+  /** Foto por arquivo (padronizar e guardar): o mesmo gesto da criação. */
+  enhance?: (image: string) => Promise<string>;
+  upload?: (image: string) => Promise<string>;
 }>();
 
 const emit = defineEmits<{
@@ -1125,6 +1128,15 @@ const sectionClass =
                   placeholder="padaria, pão artesanal, fermentação natural"
                 />
               </NuxtFormField>
+
+              <!-- A URL guardada entra no rascunho; quem grava é o Salvar do painel. -->
+              <CatalogProductPhoto
+                v-if="props.enhance && props.upload"
+                :enhance="props.enhance"
+                :upload="props.upload"
+                testid="detail-photo"
+                @stored="(url: string) => (draft.image_url = url)"
+              />
 
               <NuxtFormField label="URL da imagem">
                 <NuxtInput
