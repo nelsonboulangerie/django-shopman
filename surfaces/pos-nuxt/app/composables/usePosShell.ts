@@ -8,7 +8,7 @@
 import { toast } from "vue-sonner";
 
 import type { POSProjection } from "~/types/pos";
-import { posCurrentSection, posSections } from "~/presentation/sections";
+import { posCurrentSection, posSections, posSwitcherSections } from "~/presentation/sections";
 import { terminalHealthRows, terminalOverallStatus } from "~/presentation/terminalHealth";
 
 /**
@@ -44,6 +44,7 @@ export function usePosShell(pos: Ref<POSProjection | null>) {
       terminal: terminal.value,
     }),
   );
+  const switcherSections = computed(() => posSwitcherSections(sections.value));
   const current = computed(() => posCurrentSection(route.path));
 
   const boardRequest = usePosBoardRequest();
@@ -62,5 +63,5 @@ export function usePosShell(pos: Ref<POSProjection | null>) {
     }
   }
 
-  return { sections, current, select };
+  return { sections, switcherSections, current, select };
 }

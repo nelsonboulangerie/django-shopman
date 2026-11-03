@@ -18,7 +18,7 @@ const props = defineProps<{
   current?: string;
   operatorName?: string;
 }>();
-const emit = defineEmits<{ lock: [] }>();
+const emit = defineEmits<{ lock: []; select: [key: string] }>();
 
 const open = useState<boolean>("suite-switcher-open", () => false);
 const screen = useScreen();
@@ -86,7 +86,10 @@ const hubIconSrc = computed(() => (brokenIcons.has("hub") ? null : iconUrl(hubUr
 
 function go(section: OperatorSection) {
   open.value = false;
+  // Seção sem rota é gesto do app (as Comandas do PDV voltam ao quadro guardando a
+  // comanda; a Tela do cliente abre outra janela): quem decide é o app, como na barra.
   if (section.to) void navigateTo(section.to);
+  else emit("select", section.key);
 }
 </script>
 

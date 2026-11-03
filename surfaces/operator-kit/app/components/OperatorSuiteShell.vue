@@ -409,7 +409,7 @@ function menuDotSize(size: string): ChipProps["size"] {
   </NuxtDashboardGroup>
   <!-- Aviso com prazo correndo: interrompe a tela até alguém ver (dono, 07/10). -->
   <ClientOnly><OperatorUrgentAlert /></ClientOnly>
-  <ClientOnly><OperatorSwitcher v-if="switcherEnabled" :sections="pool" :current="switcherCurrent" :operator-name="operatorName" @lock="emit('lock')" /></ClientOnly>
+  <ClientOnly><OperatorSwitcher v-if="switcherEnabled" :sections="pool" :current="switcherCurrent" :operator-name="operatorName" @lock="emit('lock')" @select="emit('select', $event)" /></ClientOnly>
   <OperatorShortcutsHelp
     :sections="topSections"
     :app-label="label.replace(/^Seções d[oa] /, '')"
