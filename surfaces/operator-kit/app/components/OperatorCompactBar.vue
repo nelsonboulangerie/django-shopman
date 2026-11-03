@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // A linha do chão no celular (abaixo de `md`), do modelo de navegação (31/10/2026): o
 // cabeçalho inteiro numa linha, no fundo claro da barra do kit (`bg-card`).
-//   [selo: app + lugar ▾, chip de conexão] [Busca] [⋮ Opções] [Avisos]
+//   [selo: app + lugar ▾, chip de conexão] [Busca] [Avisos] [⋮ Opções]
+// O ⋮ fica no canto, o último da linha, e o sino antes dele (dono, 03/11/2026).
 // - O selo diz o app e o lugar e abre o trocador (`OperatorSwitcher`). O nome do lugar
 //   também fica no <h1> acessível. Tela de REGISTRO (detalhe, conferência) usa `#lead`
 //   para o voltar e `#identity` para o que identifica o registro, que nunca some.
@@ -91,7 +92,7 @@ const items = computed<(readonly OperatorMoreMenuItem[])[]>(() => {
     <div class="flex min-h-14 items-center gap-1.5 border-b border-default bg-card px-2 py-1.5" data-compact-bar>
       <slot name="lead"><OperatorCompactSeal :tone="tone" :time="time" :place="title" /></slot>
       <div v-if="$slots.identity" class="min-w-0 flex-1" data-compact-identity><slot name="identity" /></div>
-      <div class="flex shrink-0 items-center" role="group" :aria-label="`Buscar e opções: ${title}`">
+      <div class="flex shrink-0 items-center" role="group" :aria-label="`Buscar, avisos e opções: ${title}`">
         <NuxtButton
           v-if="search"
           icon="i-lucide-search"
@@ -103,6 +104,10 @@ const items = computed<(readonly OperatorMoreMenuItem[])[]>(() => {
           data-compact-search
           @click="onSearch"
         />
+        <!-- O sino do kit desenha alvo de 32px; na linha compacta ele ganha os 44px da casa. -->
+        <div class="shrink-0 [&_button]:size-11 [&_button]:justify-center" data-compact-inbox>
+          <ClientOnly><OperatorInbox placement="header" /></ClientOnly>
+        </div>
         <OperatorMoreMenu
           v-if="items.length"
           :items="items"
@@ -110,10 +115,6 @@ const items = computed<(readonly OperatorMoreMenuItem[])[]>(() => {
           class="size-11 justify-center"
           data-compact-options
         />
-      </div>
-      <!-- O sino do kit desenha alvo de 32px; na linha compacta ele ganha os 44px da casa. -->
-      <div class="shrink-0 [&_button]:size-11 [&_button]:justify-center" data-compact-inbox>
-        <ClientOnly><OperatorInbox placement="header" /></ClientOnly>
       </div>
     </div>
     <!-- Branca como a linha (dono, 30/10/2026: a linha compacta e o que é dela usam o

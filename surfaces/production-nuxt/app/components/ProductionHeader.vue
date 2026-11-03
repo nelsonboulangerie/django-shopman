@@ -2,13 +2,18 @@
 // Cabeçalho das telas da Produção: o `OperatorPageHeader` do kit, com os papéis das
 // barras da fase 2 (WP-FASE2-UX-OPERADOR §5):
 //   · barra primária: título, selo ao vivo com a hora da última leitura, a busca
-//     (nível "Esta tela" declarado: filtra a lista da tela) e o ⋯ "Mais ações" (as
+//     (nível "Esta tela" declarado: filtra a lista da tela) e o ⋮ "Mais ações" (as
 //     ações como DADOS: as da tela e Atualizar, tecla R). Avisos e o ciclo da barra
 //     lateral são do kit;
 //   · toolbar: o dia ou a vista (`#primary`, no começo da linha, também no celular), os recortes
 //     (`#filters`, que no celular vão para o painel "Filtros") e, no fim, o progresso
 //     do dia ("4 de 28 planejados" com a barra);
 //   · aviso da tela: `alerts`, logo abaixo da toolbar.
+// No celular (abaixo de `md`), o cabeçalho inteiro é a linha do chão do kit
+// (`OperatorCompactBar`), como no Gestor: o selo com o ponto de conexão, a busca, o sino e
+// o ⋮ no canto. A hora da leitura vai para o topo do ⋮; os recortes, para o painel
+// "Filtros"; o dia fica numa faixa logo abaixo; o "onde estou" do registro (`#status`)
+// fica ao lado do selo.
 // As etapas do lote (Alt+1 a Alt+5), "/" (busca) e "?" (ajuda) são do shell e da busca
 // da suíte. Este cabeçalho só segura o R, e entrega à ajuda do kit os grupos de teclas
 // da Produção.
@@ -111,6 +116,14 @@ onMounted(() => {
 });
 onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
 
+// A linha do chão: os recortes ativos e a contagem dizem o que a lista mostra.
+const filterActive = computed(() => props.activeFilters.length > 0);
+const filterLabel = computed(() => props.activeFilters.map((filter) => filter.label).join(", "));
+function clearCompact() {
+  query.value = "";
+  for (const filter of props.activeFilters) filter.remove();
+}
+
 const counterText = computed(() => {
   if (props.count == null) return "";
   if (props.total != null) return `de ${props.total} ${props.countLabel}`.trim();
@@ -119,6 +132,36 @@ const counterText = computed(() => {
 </script>
 
 <template>
+  <!-- `data-compact-page`: abaixo de `md` o kit esconde a barra de cima e a linha de
+       filtros do `OperatorPageHeader`; a linha do chão toma o lugar delas. -->
+  <div class="contents" data-compact-page>
+  <OperatorCompactBar
+    :title="title"
+    :tone="stale ? 'late' : 'live'"
+    :time="readClock"
+    :conn-label="stale ? 'Sem atualizar' : 'Ao vivo'"
+    :query="query"
+    :search="searchable"
+    search-button-label="Buscar por código, SKU ou receita"
+    :filter-active="filterActive"
+    :filter-label="filterLabel"
+    :summary="count != null ? `${count} ${counterText}.` : ''"
+    :options="headerActions"
+    @clear="clearCompact"
+  >
+    <template v-if="$slots.lead" #lead><slot name="lead" /></template>
+    <template v-if="$slots.status" #identity><slot name="status" /></template>
+    <template v-if="$slots.filters" #filters><slot name="filters" /></template>
+  </OperatorCompactBar>
+  <!-- O dia (ou a vista) segue à vista no celular, logo abaixo da linha: é o que diz de
+       quando é a lista, e trocar de dia não pode custar ⋮ e Filtros. -->
+  <div
+    v-if="$slots.primary"
+    class="flex min-h-12 items-center gap-2 border-b border-default bg-card px-2 py-1.5 md:hidden"
+    data-compact-primary
+  >
+    <slot name="primary" />
+  </div>
   <OperatorPageHeader
     :title="title"
     :eyebrow="eyebrow"
@@ -171,4 +214,5 @@ const counterText = computed(() => {
     </template>
     <template v-if="$slots.below" #below><slot name="below" /></template>
   </OperatorPageHeader>
+  </div>
 </template>
