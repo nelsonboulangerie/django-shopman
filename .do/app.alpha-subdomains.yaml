@@ -323,24 +323,19 @@ envs:
   scope: RUN_TIME
   value: '${cache.REDIS_URL}'
   type: GENERAL
-# Pix no SIMULADOR, de volta em 22/09/2026 (~17:20 UTC): a troca para a Efí de
-# testes (#951) subiu e a Efí recusou com 403 já no `release` (`efi_webhook`),
-# provavelmente na autenticação — com isso todo Pix novo falharia ao gerar o QR.
-# Voltar para a Efí só depois de o `efi_webhook` responder OK (credenciais,
-# certificado e escopos de webhook da aplicação conferidos com o Pablo).
+# Ensaio do Pix real (D-031), 03/11/2026: Pix na Efí de HOMOLOGAÇÃO (`EFI_SANDBOX`
+# segue `true`), sem o botão "Simular pagamento". Em 22/09 a mesma troca voltou ao
+# simulador porque a Efí respondeu 403 ao `efi_webhook` do release; em 03/11 o 403
+# se repetiu só na consulta do webhook (escopo de webhook da aplicação na Efí).
 - key: SHOPMAN_PIX_ADAPTER
   scope: RUN_TIME
-  value: 'shopman.shop.adapters.payment_mock'
+  value: 'shopman.shop.adapters.payment_efi'
   type: GENERAL
 - key: SHOPMAN_CARD_ADAPTER
   scope: RUN_TIME
   value: 'shopman.shop.adapters.payment_stripe'
   type: GENERAL
 - key: SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS
-  scope: RUN_TIME
-  value: 'true'
-  type: GENERAL
-- key: SHOPMAN_EXPOSE_MOCK_CAPTURE
   scope: RUN_TIME
   value: 'true'
   type: GENERAL
