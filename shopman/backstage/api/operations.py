@@ -6069,8 +6069,14 @@ class POSTabOpenView(ServerTimingMixin, APIView):
     def get(self, request, tab_ref: str):
         from shopman.orderman.models import Session
 
-        session = Session.objects.filter(channel_ref=POS_CHANNEL_REF, state="open",
-            handle_ref=pos_tabs_service.normalize_tab_ref(tab_ref)).first()
+        try:
+            ref = pos_tabs_service.normalize_tab_ref(tab_ref)
+        except ValueError as exc:
+            return Response(
+                {"detail": f"{exc} Use um hífen, por exemplo 77-2.", "error": {"code": "invalid_tab_ref"}},
+                status=422,
+            )
+        session = Session.objects.filter(channel_ref=POS_CHANNEL_REF, state="open", handle_ref=ref).first()
         if session is None:
             return Response({"detail": "Esta comanda já foi encerrada.", "error": {"code": "tab_closed"}}, status=409)
         return Response(build_open_tab(session))
