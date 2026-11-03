@@ -62,7 +62,6 @@ function select() {
       v-if="tile.badge"
       :label="tile.badge"
       :color="badgeColor"
-      variant="solid"
       class="absolute right-3 top-3 tabular-nums"
       data-session-tile-badge
     />
