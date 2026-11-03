@@ -51,7 +51,7 @@ import {
   splitShareQ,
   tenderLineView,
 } from "~/presentation/payment";
-import { firedKitchenQty, kitchenHandoffNote, kitchenSurplusQty } from "~/presentation/kitchen";
+import { firedKitchenQty, kitchenHandoffNote, kitchenSurplusQty, unfiredCount } from "~/presentation/kitchen";
 import { lineQtyLabel, lineUnits } from "~/presentation/weighed";
 import { deliveryFeeWaiverShort } from "~/presentation/deliveryFeeWaiver";
 import {
@@ -73,6 +73,11 @@ import { resolveWindowLabel, scheduledNeedsCustomer, scheduleLabel, selectedWind
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
+  /**
+   * A comanda pode mandar à cozinha AGORA (a Action `fire_tab` da projeção): a linha
+   * da cozinha abre e oferece "Enviar agora" para o que ainda não foi.
+   */
+  canFireNow?: boolean;
   salesMode?: "counter" | "order";
   tabDisplay: string;
   items: POSCartItem[];
@@ -188,6 +193,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  /** Mandar à cozinha agora o que ainda não foi (o mesmo `fireTab` da comanda). */
+  fireNow: [];
   "update:discountType": ["percent" | "fixed"];
   "update:discountValue": [string];
   "update:discountReason": [string];
@@ -557,6 +564,8 @@ const summaryLines = computed(() =>
     name: item.name,
     /** A ressalva do item (estoque, cardápio, lote), se a review mandou uma. */
     remark: remarkBySku.value.get(item.sku) || "",
+    /** Já está na cozinha (o ícone cheio) ou vai ao finalizar (vazado). */
+    fired: Boolean(item.fired),
     qty: item.qty,
     qtyLabel: lineQtyLabel(item),
     totalDisplay: formatBRL(lineTotalQ(item)),
@@ -1153,6 +1162,22 @@ const notices = computed<CheckoutNotice[]>(() => {
   return notes;
 });
 
+// O que ainda não foi à cozinha e pode ir AGORA, da linha da cozinha (acordeão). Não
+// quando a cozinha espera por regra (encomenda de outro dia, Pix ou link a entrar).
+const pendingKitchen = computed(() =>
+  props.canFireNow && !kitchenDeferred.value && !kitchenWaitsPayment.value
+    ? props.items.filter((item) => !item.fired)
+    : [],
+);
+// Os dois desenhos dos avisos: o que trava (caixa) e o resto (linhas iguais).
+const blockNotices = computed(() => notices.value.filter((note) => note.tone === "block"));
+const lineNotices = computed(() => notices.value.filter((note) => note.tone !== "block"));
+const kitchenLine = computed(() => lineNotices.value.find((note) => note.key === "kitchen") ?? null);
+// A linha da cozinha vira acordeão quando há o que mandar agora; senão é linha comum.
+const plainLineNotices = computed(() =>
+  lineNotices.value.filter((note) => !(note.key === "kitchen" && pendingKitchen.value.length)),
+);
+
 // O botão está travado sempre que HÁ motivo — não há segunda lista de regras.
 // Era assim que o excedente em cartão escapava: ele avisava, e deixava passar.
 const ctaDisabled = computed(() => {
@@ -1632,75 +1657,129 @@ defineExpose({
              botão que ele destrava. É esse o corte entre as duas faixas, e não
              a severidade — um aviso com botão longe do botão principal é o
              operador olhando para dois lugares na mesma decisão. -->
-        <ul
-          v-if="notices.length"
-          class="flex shrink-0 flex-col gap-1.5"
+        <!-- OS AVISOS EM DOIS DESENHOS (dono, 03/11/2026). O que TRAVA é a única caixa,
+             em destaque. O resto é uma lista de linhas IGUAIS (mesmo corpo, mesmo
+             espaço, mesma cor de texto): o que muda é só o ícone. A ressalva de item é
+             a última linha, e abre a frase no toque. -->
+        <div
+          v-if="notices.length || remarks.length"
+          class="flex shrink-0 flex-col gap-2"
+          role="group"
           aria-label="Avisos"
           aria-live="polite"
         >
-          <li
-            v-for="note in notices"
-            :key="note.key"
-            class="flex flex-wrap items-center"
-            :class="note.tone === 'block'
-              ? 'gap-3 rounded-md border border-warning bg-warning/10 p-3 text-warning'
-              : note.tone === 'warn'
-                ? 'gap-2 px-1 text-warning'
-                : 'gap-2 px-1 text-muted-foreground'"
-          >
-            <Icon
-              :name="note.icon"
-              class="shrink-0"
-              :class="[note.tone === 'block' ? 'size-6' : 'size-4', note.accent || '']"
-            />
-            <span class="min-w-0 flex-1">
-              <span
-                class="block leading-snug"
-                :class="note.tone === 'block' ? 'text-lg font-semibold' : 'text-sm'"
-              >{{ note.message }}</span>
-              <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug opacity-80">{{ note.hint }}</span>
-            </span>
-            <!-- O toque que resolve vai EMBAIXO da frase, na largura toda do
-                 aviso. Ao lado, ele disputava a linha com a frase: na coluna do
-                 meio de um balcão de 1024px, "Entrega com nota fiscal: falta o
-                 CPF…" virava uma palavra por linha, espremida pelo botão. -->
-            <div
-              v-if="noticeActions(note).length"
-              class="flex w-full flex-wrap gap-2"
+          <ul v-if="blockNotices.length" class="flex flex-col gap-1.5">
+            <li
+              v-for="note in blockNotices"
+              :key="note.key"
+              class="flex flex-wrap items-center gap-3 rounded-md border border-warning bg-warning/10 p-3 text-warning"
             >
-              <NuxtButton
-                v-for="action in noticeActions(note)"
-                :key="action.label"
-                size="xl"
-                color="neutral" variant="outline"
-                class="h-auto min-h-8 max-w-full whitespace-normal py-2 text-left"
-                @click="action.run()"
-              >
-                {{ action.label }}
-              </NuxtButton>
-            </div>
-          </li>
-        </ul>
-        <!-- AS RESSALVAS DE ITEM (o terceiro degrau): um chip só, e a frase no toque. O
-             item da conta leva o mesmo ⚠. Não trava nada: a venda vale. -->
-        <NuxtPopover v-if="remarks.length" :content="{ align: 'start', sideOffset: 4 }">
-          <NuxtButton
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-triangle-alert"
-            :label="remarks.length === 1 ? '1 ressalva nos itens' : `${remarks.length} ressalvas nos itens`"
-            class="min-h-11 shrink-0 self-start text-muted-foreground [&_svg]:text-warning"
-            data-checkout-remarks
-          />
-          <template #content>
-            <ul class="grid max-w-sm gap-2 p-3 text-sm" data-checkout-remarks-list>
-              <li v-for="(remark, index) in remarks" :key="index" class="flex items-start gap-2">
-                <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-                <span>{{ remark.message }}</span>
-              </li>
-            </ul>
-          </template>
-        </NuxtPopover>
+              <Icon :name="note.icon" class="size-6 shrink-0" :class="note.accent || ''" />
+              <span class="min-w-0 flex-1">
+                <span class="block text-lg leading-snug font-semibold">{{ note.message }}</span>
+                <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug opacity-80">{{ note.hint }}</span>
+              </span>
+              <!-- O toque que resolve vai EMBAIXO da frase, na largura toda do aviso. -->
+              <div v-if="noticeActions(note).length" class="flex w-full flex-wrap gap-2">
+                <NuxtButton
+                  v-for="action in noticeActions(note)"
+                  :key="action.label"
+                  size="xl"
+                  color="neutral" variant="outline"
+                  class="h-auto min-h-8 max-w-full whitespace-normal py-2 text-left"
+                  @click="action.run()"
+                >
+                  {{ action.label }}
+                </NuxtButton>
+              </div>
+            </li>
+          </ul>
+          <ul v-if="lineNotices.length || remarks.length" class="flex flex-col" data-checkout-lines>
+            <!-- A COZINHA, quando há o que mandar agora: a mesma linha, que abre embaixo
+                 dela (acordeão, na largura da linha) a lista do que falta e "Enviar
+                 agora". Os itens também vão sozinhos ao Validar. -->
+            <li v-if="kitchenLine && pendingKitchen.length">
+              <NuxtCollapsible>
+                <NuxtButton
+                  color="neutral"
+                  variant="ghost"
+                  block
+                  :icon="kitchenLine.icon.replace('lucide:', 'i-lucide-')"
+                  trailing-icon="i-lucide-chevron-down"
+                  :label="kitchenLine.message"
+                  class="group min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
+                  :ui="{ leadingIcon: `size-4 ${kitchenLine.accent || 'text-muted'}`, trailingIcon: 'ms-auto size-4 text-muted transition group-data-[state=open]:rotate-180', label: 'text-left' }"
+                  data-checkout-kitchen
+                />
+                <template #content>
+                  <div class="ms-7 mb-1 grid gap-2 border-s border-default ps-3 py-1" data-checkout-kitchen-pending>
+                    <ul class="grid gap-0.5 text-sm text-muted">
+                      <li v-for="item in pendingKitchen" :key="item.line_id">{{ lineQtyLabel(item) }} {{ item.name }}</li>
+                    </ul>
+                    <NuxtButton
+                      color="neutral"
+                      variant="outline"
+                      icon="i-lucide-chef-hat"
+                      :label="`Enviar agora (${unfiredCount(pendingKitchen)})`"
+                      class="min-h-11 justify-self-start"
+                      data-checkout-fire-now
+                      @click="emit('fireNow')"
+                    />
+                  </div>
+                </template>
+              </NuxtCollapsible>
+            </li>
+            <li
+              v-for="note in plainLineNotices"
+              :key="note.key"
+              class="flex flex-wrap items-start gap-2.5 px-1 py-1.5 text-sm leading-snug text-default"
+              :data-checkout-line="note.key"
+            >
+              <Icon
+                :name="note.icon"
+                class="mt-0.5 size-4 shrink-0"
+                :class="note.accent || (note.tone === 'warn' ? 'text-warning' : 'text-muted')"
+              />
+              <span class="min-w-0 flex-1">
+                <span class="block">{{ note.message }}</span>
+                <span v-if="note.hint" class="mt-0.5 block text-xs text-muted">{{ note.hint }}</span>
+              </span>
+              <div v-if="noticeActions(note).length" class="flex w-full flex-wrap gap-2 pl-6.5">
+                <NuxtButton
+                  v-for="action in noticeActions(note)"
+                  :key="action.label"
+                  color="neutral" variant="outline"
+                  class="h-auto min-h-11 max-w-full whitespace-normal text-left"
+                  @click="action.run()"
+                >
+                  {{ action.label }}
+                </NuxtButton>
+              </div>
+            </li>
+            <!-- A ressalva de item: a mesma linha, que abre a frase. O item da conta leva o
+                 mesmo ⚠. Não trava nada: a venda vale. -->
+            <li v-if="remarks.length">
+              <NuxtCollapsible>
+                <NuxtButton
+                  color="neutral"
+                  variant="ghost"
+                  block
+                  icon="i-lucide-triangle-alert"
+                  trailing-icon="i-lucide-chevron-down"
+                  :label="remarks.length === 1 ? '1 ressalva nos itens' : `${remarks.length} ressalvas nos itens`"
+                  class="group min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
+                  :ui="{ leadingIcon: 'size-4 text-warning', trailingIcon: 'ms-auto size-4 text-muted transition group-data-[state=open]:rotate-180', label: 'text-left' }"
+                  data-checkout-remarks
+                />
+                <template #content>
+                  <ul class="ms-7 mb-1 grid gap-1.5 border-s border-default ps-3 py-1 text-sm text-muted" data-checkout-remarks-list>
+                    <li v-for="(remark, index) in remarks" :key="index">{{ remark.message }}</li>
+                  </ul>
+                </template>
+              </NuxtCollapsible>
+            </li>
+          </ul>
+        </div>
 
         <!-- O NÚMERO QUE MUDA É O HERÓI. O total é estável — o operador já o leu
              em voz alta na tela de venda, e ele volta nas linhas de pagamento e
@@ -1863,6 +1942,14 @@ defineExpose({
               <li v-for="line in summaryLines" :key="line.lineId" class="px-3 py-2">
                 <div class="flex items-baseline gap-2">
                   <span class="min-w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qtyLabel }}</span>
+                  <!-- A cozinha do item: cheio, já está lá; vazado, vai ao finalizar. -->
+                  <Icon
+                    name="lucide:flame"
+                    class="size-3.5 shrink-0 self-center"
+                    :class="line.fired ? 'text-primary' : 'text-muted opacity-50'"
+                    :aria-label="line.fired ? 'Na cozinha' : 'Vai à cozinha ao finalizar'"
+                    data-summary-kitchen
+                  />
                   <span class="min-w-0 flex-1 truncate text-sm" :title="line.remark || line.name">{{ line.name }}</span>
                   <Icon
                     v-if="line.remark"
