@@ -95,7 +95,7 @@ const situationColor = computed(() => situationTone(props.card.situation));
       class="grid min-h-8 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1 text-left focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
       :class="[
         layout === 'lines'
-          ? 'px-3 py-2 md:grid-cols-[3.25rem_minmax(0,1fr)_auto] md:gap-y-1'
+          ? 'px-3 py-2 md:grid-cols-[minmax(4.5rem,auto)_minmax(0,1fr)_auto] md:gap-y-1'
           : 'p-3 md:grid-cols-[auto_minmax(5rem,1fr)_auto]',
         layout ? '' : (slots.aside ? 'rounded-l-md' : 'rounded-md'),
       ]"
@@ -142,7 +142,12 @@ const situationColor = computed(() => situationTone(props.card.situation));
            não cabem todos ao lado do nome, descem todos juntos (dono, 03/11/2026).
            Embaixo: o que foi pedido e o número; a situação ou a Via impressa. -->
       <template v-if="layout === 'lines'">
-        <span class="row-span-2 pt-px text-sm font-semibold tabular-nums max-md:hidden" data-preorder-window>{{ rowWindow(card) }}</span>
+        <!-- A hora numa linha só: "A combinar" não quebra nem invade a coluna do nome. -->
+        <span
+          class="row-span-2 whitespace-nowrap pt-px tabular-nums max-md:hidden"
+          :class="card.window_start ? 'text-sm font-semibold' : 'text-xs text-muted'"
+          data-preorder-window
+        >{{ rowWindow(card) }}</span>
         <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 max-md:hidden">
           <span class="break-words text-sm font-medium" data-preorder-name>{{ customerLine(card) }}</span>
           <span class="inline-flex shrink-0 items-center gap-1" data-preorder-badges>
