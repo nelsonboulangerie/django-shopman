@@ -133,6 +133,8 @@ def test_aviso_de_falta_sai_para_quem_falta_e_so_para_quem_falta(balcao):
     avisos = [w["message"] for w in review.warnings if w["code"] == "item_low_stock"]
     com_falta = {f"P{i:02d}" for i in range(LINHAS) if i % 3 == 1} | {"FORA"}
     assert {msg.split(":", 1)[0] for msg in avisos} == com_falta
+    # O aviso traz o sku: a tela marca o próprio item da conta (dono, 03/11/2026).
+    assert {w["sku"] for w in review.warnings if w["code"] == "item_low_stock"} == com_falta
 
 
 @pytest.fixture

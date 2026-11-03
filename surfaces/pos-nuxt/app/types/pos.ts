@@ -1017,7 +1017,8 @@ export interface POSSaleReviewProjection {
   receipt_channels: string[];
   /** Vai sair nota com CPF? (o consumidor pediu o documento nesta venda) */
   fiscal_tax_id_requested: boolean;
-  warnings: Array<{ code: string; field: string; message: string }>;
+  /** `sku` nas ressalvas de item (estoque, cardápio, lote): a tela marca o item. */
+  warnings: Array<{ code: string; field: string; message: string; sku?: string }>;
   /** De onde a taxa saiu: "" (endereço em branco) · "zone" · "distance" ·
    * "default" · "manual" (exceção do operador) · "blocked" (fora da área). */
   delivery_fee_source: string;
