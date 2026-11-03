@@ -35,8 +35,16 @@ for (const size of [{ width: 1024, height: 700 }, { width: 1366, height: 768 }] 
     await expect(back).toBeEnabled();
     // A seta leva até o fim, e a última coleção fica à vista.
     for (let i = 0; i < 10 && (await forward.isEnabled()); i += 1) {
+      const { target, end } = await strip.evaluate((el) => {
+        const end = el.scrollWidth - el.clientWidth;
+        return { target: Math.min(end, el.scrollLeft + Math.max(el.clientWidth * 0.8, 120)), end };
+      });
       await forward.click();
-      await page.waitForTimeout(400);
+      // A rolagem suave pode durar mais de 400 ms. Só decidir o próximo clique
+      // depois de chegar ao destino e de o listener refletir o limite da faixa.
+      await expect.poll(() => strip.evaluate((el) => el.scrollLeft)).toBeCloseTo(target, 0);
+      if (target >= end - 1) await expect(forward).toBeDisabled();
+      else await expect(forward).toBeEnabled();
     }
     await expect(forward).toBeDisabled();
     // A faixa não muda de largura no caminho (as setas não somem).
