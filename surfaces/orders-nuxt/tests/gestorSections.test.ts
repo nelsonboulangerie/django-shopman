@@ -8,6 +8,7 @@ import {
 import {
   gestorSections,
   gestorSettingsSections,
+  gestorSwitcherSections,
   SETTINGS_ROUTES,
 } from "../app/presentation/gestorSections";
 
@@ -190,5 +191,51 @@ describe("gestorSettingsSections (andar Ajustes)", () => {
         canManageCustomers: false,
       }).map((s) => s.key),
     ).not.toContain("checklists");
+  });
+});
+
+// O trocador e a barra de baixo do celular (modelo de navegação; dono, 03/11/2026: "seção
+// vai para baixo", aba no topo é só subdivisão). As seções do chão vão para o polegar.
+describe("gestorSwitcherSections (trocador e barra de baixo)", () => {
+  const input = {
+    channelsAttention: "",
+    canManageCustomers: true,
+    canOperateChecklists: true,
+  };
+  const all = () => gestorSwitcherSections(gestorSections(input), gestorSettingsSections(input));
+
+  it("lista tudo na ordem do app, sem o item Ajustes, cada seção com a sua forma", () => {
+    expect(all().map((s) => `${s.key}:${s.form}`)).toEqual([
+      "orders:floor",
+      "exit:floor",
+      "checklists:floor",
+      "history:office",
+      "catalog:office",
+      "customers:office",
+      "feeds:office",
+    ]);
+  });
+
+  it("a barra de baixo do chão: Pedidos, Saída e Rotinas, sem 'Mais' (o selo abre o resto)", () => {
+    const floor = all().filter((s) => s.form === "floor");
+    const layout = quickBarLayout(floor);
+    expect(layout.items.map((s) => s.label)).toEqual(["Pedidos", "Saída", "Rotinas"]);
+    expect(layout.more).toBe(false);
+    expect(quickBarProblems(floor)).toEqual([]);
+    expect(all().filter((s) => s.quick).map((s) => s.key)).toEqual(["orders", "exit", "checklists"]);
+  });
+
+  it("sem a permissão de Rotinas, o chão fica com Pedidos e Saída", () => {
+    const sections = gestorSwitcherSections(
+      gestorSections({ ...input, canOperateChecklists: false }),
+      gestorSettingsSections({ ...input, canOperateChecklists: false }),
+    );
+    expect(sections.filter((s) => s.form === "floor").map((s) => s.key)).toEqual(["orders", "exit"]);
+  });
+
+  it("antes de montar (Ajustes ainda sem resposta) o chão já tem Pedidos e Saída", () => {
+    expect(
+      gestorSwitcherSections(gestorSections(input), []).map((s) => s.key),
+    ).toEqual(["orders", "exit"]);
   });
 });

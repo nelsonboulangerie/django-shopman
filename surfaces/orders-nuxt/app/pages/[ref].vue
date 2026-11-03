@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useAlertDismissals } from "../../../operator-kit/app/composables/useAlertDismissals";
 import OrderIFoodNegotiations from "~/components/OrderIFoodNegotiations.vue";
 import ActionList from "~/components/ActionList.vue";
 import OrderIFoodSummary from "~/components/OrderIFoodSummary.vue";
@@ -794,6 +795,11 @@ const deadlineText = computed(() => {
     : { before: "Confirma sozinho em", left, after: "se ninguém recusar." };
 });
 // Cartão autorizado esperando aceite: o prazo da reserva e os dois gestos (P1-4).
+// Os avisos do topo do pedido fecham (X) e voltam no próximo carregamento, ou antes quando
+// a causa muda (a chave leva a grandeza): a regra do kit (`useAlertDismissals`).
+const notices = useAlertDismissals();
+const contactKey = computed(() => `contact:${order.value?.contact_request?.requested_at_display ?? ""}`);
+const cardAuthKey = computed(() => `card-auth:${cardAuth.value?.title ?? ""}`);
 const cardAuth = computed(() =>
   cardAuthorizationNotice(
     order.value?.card_authorization_expires_iso,
@@ -868,18 +874,21 @@ const outside = useOutsideStore(
             </p>
           </div>
           <OperatorRecordNav v-if="!returnTicket" :trail="recordTrailKey" :current="orderRef" :to="recordLocation" previous-label="Pedido anterior" next-label="Próximo pedido" />
-          <NuxtButton
-            icon="i-lucide-ellipsis-vertical"
-            color="neutral"
-            variant="ghost"
-            square
-            class="size-11 shrink-0 justify-center"
-            aria-label="Mais ações do pedido"
-            :aria-expanded="menuOpen"
-            data-action="menu-phone"
-            @click="menuOpen = !menuOpen"
-          />
         </div>
+      </template>
+      <!-- O ⋮ do pedido no canto, depois do sino, como em toda a suíte. -->
+      <template #more>
+        <NuxtButton
+          icon="i-lucide-ellipsis-vertical"
+          color="neutral"
+          variant="ghost"
+          square
+          class="size-11 shrink-0 justify-center"
+          aria-label="Mais ações do pedido"
+          :aria-expanded="menuOpen"
+          data-action="menu-phone"
+          @click="menuOpen = !menuOpen"
+        />
       </template>
     </OperatorCompactBar>
     <OperatorPageHeader
@@ -1041,7 +1050,8 @@ const outside = useOutsideStore(
       />
       <!-- fora da loja: o detalhe mostra só o que pede decisão (G18) -->
       <NuxtAlert
-        v-if="outside.askConsent.value"
+        v-if="outside.askConsent.value && notices.isOpen('outside-consent')"
+        v-bind="notices.closeProps"
         color="info"
         variant="subtle"
         icon="i-lucide-map-pin"
@@ -1058,9 +1068,11 @@ const outside = useOutsideStore(
           },
         ])"
         data-outside-consent
+        @update:open="notices.onOpen('outside-consent', $event)"
       />
       <NuxtAlert
-        v-if="outside.away.value"
+        v-if="outside.away.value && notices.isOpen('outside-band')"
+        v-bind="notices.closeProps"
         color="info"
         variant="subtle"
         icon="i-lucide-map-pin-off"
@@ -1073,10 +1085,12 @@ const outside = useOutsideStore(
           },
         ])"
         data-outside-band
+        @update:open="notices.onOpen('outside-band', $event)"
       />
       <NuxtAlert
-        v-if="order?.contact_request"
+        v-if="order?.contact_request && notices.isOpen(contactKey)"
         id="customer-contact"
+        v-bind="notices.closeProps"
         color="warning"
         variant="subtle"
         icon="i-lucide-message-circle-heart"
@@ -1097,6 +1111,7 @@ const outside = useOutsideStore(
           },
         ])"
         data-contact-request
+        @update:open="notices.onOpen(contactKey, $event)"
       >
         <!-- As estrelas dizem a nota de relance; o texto continua para o leitor de tela.
              Glifo e não ícone: o modo CSS dos ícones é máscara, e máscara não preenche. -->
@@ -1113,7 +1128,8 @@ const outside = useOutsideStore(
         </template>
       </NuxtAlert>
       <NuxtAlert
-        v-if="order && cardAuth"
+        v-if="order && cardAuth && notices.isOpen(cardAuthKey)"
+        v-bind="notices.closeProps"
         :color="cardAuth.tone"
         variant="subtle"
         icon="i-lucide-credit-card"
@@ -1121,6 +1137,7 @@ const outside = useOutsideStore(
         :description="cardAuth.description"
         :actions="alertActions(cardAuth.tone, cardAuthActions)"
         data-card-authorization
+        @update:open="notices.onOpen(cardAuthKey, $event)"
       />
 
       <div
