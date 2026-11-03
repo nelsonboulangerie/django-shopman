@@ -378,6 +378,7 @@ def _resolve_payment_timeout_directive_if_due(order) -> bool:
 
 
 def _resolve_due_directive_for_order(order, *, topic: str, handler, log_name: str) -> bool:
+    from shopman.orderman.claims import save_if_claimed
     from shopman.orderman.models import Directive
 
     now = timezone.now()
@@ -399,17 +400,15 @@ def _resolve_due_directive_for_order(order, *, topic: str, handler, log_name: st
         directive.attempts += 1
         directive.started_at = now
         directive.save(update_fields=["status", "attempts", "started_at", "updated_at"])
+        attempts = directive.attempts
 
     try:
         handler.handle(message=directive, ctx={"actor": "customer_surface"})
-        directive.refresh_from_db()
-        if directive.status == Directive.Status.RUNNING:
-            directive.status = Directive.Status.DONE
-            directive.error_code = ""
-            directive.last_error = ""
-            directive.save(update_fields=["status", "error_code", "last_error", "updated_at"])
+        wrote = save_if_claimed(directive, attempts, now, {
+            "status": Directive.Status.DONE, "error_code": "", "last_error": "",
+        }, only_if_running=True)
         order.refresh_from_db()
-        return directive.status == Directive.Status.DONE
+        return wrote and directive.status == Directive.Status.DONE
     except DirectiveTerminalError as exc:
         logger.warning(
             "%s_terminal order=%s directive=%s error=%s",
@@ -421,7 +420,9 @@ def _resolve_due_directive_for_order(order, *, topic: str, handler, log_name: st
         directive.status = Directive.Status.FAILED
         directive.error_code = "terminal"
         directive.last_error = str(exc)[:500]
-        directive.save(update_fields=["status", "error_code", "last_error", "updated_at"])
+        save_if_claimed(directive, attempts, now, {
+            "status": directive.status, "error_code": directive.error_code, "last_error": directive.last_error,
+        })
         return False
     except DirectiveTransientError as exc:
         logger.warning(
@@ -435,7 +436,10 @@ def _resolve_due_directive_for_order(order, *, topic: str, handler, log_name: st
         directive.error_code = "transient"
         directive.available_at = timezone.now() + timedelta(seconds=30)
         directive.last_error = str(exc)[:500]
-        directive.save(update_fields=["status", "error_code", "available_at", "last_error", "updated_at"])
+        save_if_claimed(directive, attempts, now, {
+            "status": directive.status, "error_code": directive.error_code,
+            "available_at": directive.available_at, "last_error": directive.last_error,
+        })
         return False
     except Exception as exc:
         logger.exception("%s_failed order=%s directive=%s", log_name, order.ref, directive.pk)
@@ -443,7 +447,10 @@ def _resolve_due_directive_for_order(order, *, topic: str, handler, log_name: st
         directive.error_code = "transient"
         directive.available_at = timezone.now() + timedelta(seconds=30)
         directive.last_error = str(exc)[:500]
-        directive.save(update_fields=["status", "error_code", "available_at", "last_error", "updated_at"])
+        save_if_claimed(directive, attempts, now, {
+            "status": directive.status, "error_code": directive.error_code,
+            "available_at": directive.available_at, "last_error": directive.last_error,
+        })
         return False
 
 

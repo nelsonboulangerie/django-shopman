@@ -28,6 +28,7 @@ if str(ROOT) not in sys.path:
 # varre a árvore atrás do marcador e reprova quando um arquivo novo nasce fora
 # desta lista. Ao criar um teste ``requires_postgres``, acrescente-o AQUI.
 DEFAULT_RUNTIME_TEST_PATHS = (
+    "shopman/shop/tests/test_directive_claims_postgres.py",
     "packages/stockman/shopman/stockman/tests/test_concurrency.py",
     "packages/stockman/shopman/stockman/tests/test_quantity_invariant.py",
     "packages/payman/shopman/payman/tests/test_concurrency.py",
