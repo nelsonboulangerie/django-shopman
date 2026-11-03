@@ -94,6 +94,9 @@ READINESS_END = "<!-- canonical-readiness:end -->"
 ALLOWED_STATES = {"VERIFICADO", "PENDENTE", "BLOQUEADO", "DESCONHECIDO", "N/A"}
 
 REQUIRED_CHECKS_FILE = Path(".github/required-status-checks.json")
+# A #2094 integrou com o guard do tema vermelho porque seu contexto era opcional.
+# Produzir o check não basta: removê-lo da proteção precisa reprovar o gate.
+MANDATORY_GUARD_CONTEXTS = frozenset({"Versões das superfícies"})
 SURFACE_CONTRACT_FILE = Path("surfaces/contracts.json")
 WORKFLOWS_DIR = Path(".github/workflows")
 # Um check obrigatório tem de existir no PR E na fila de merge: faltar em
@@ -480,6 +483,9 @@ def _required_checks() -> list[str]:
 
 def check_required_status_checks(result: Result) -> None:
     contexts = _required_checks()
+    missing_guards = sorted(MANDATORY_GUARD_CONTEXTS - set(contexts))
+    if missing_guards:
+        result.fail(f"{REQUIRED_CHECKS_FILE}: guards críticos não obrigatórios: {missing_guards}")
     duplicated = sorted({c for c in contexts if contexts.count(c) > 1})
     if duplicated:
         result.fail(f"{REQUIRED_CHECKS_FILE}: duplicated contexts {duplicated}")
