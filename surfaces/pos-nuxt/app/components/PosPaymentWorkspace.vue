@@ -1173,6 +1173,9 @@ const pendingKitchen = computed(() =>
 const blockNotices = computed(() => notices.value.filter((note) => note.tone === "block"));
 const lineNotices = computed(() => notices.value.filter((note) => note.tone !== "block"));
 const kitchenLine = computed(() => lineNotices.value.find((note) => note.key === "kitchen") ?? null);
+const firedKitchen = computed(() => props.items.filter((item) => item.fired));
+const kitchenOpen = ref(false);
+const remarksOpen = ref(false);
 // A linha da cozinha vira acordeão quando há o que mandar agora; senão é linha comum.
 const plainLineNotices = computed(() =>
   lineNotices.value.filter((note) => !(note.key === "kitchen" && pendingKitchen.value.length)),
@@ -1695,39 +1698,22 @@ defineExpose({
             </li>
           </ul>
           <ul v-if="lineNotices.length || remarks.length" class="flex flex-col" data-checkout-lines>
-            <!-- A COZINHA, quando há o que mandar agora: a mesma linha, que abre embaixo
-                 dela (acordeão, na largura da linha) a lista do que falta e "Enviar
-                 agora". Os itens também vão sozinhos ao Validar. -->
+            <!-- A COZINHA, quando há o que mandar agora: a mesma linha, que abre o modal
+                 da cozinha (dono, 03/11/2026: modal, no desktop e no celular). Os itens
+                 também vão sozinhos ao Validar. -->
             <li v-if="kitchenLine && pendingKitchen.length">
-              <NuxtCollapsible>
-                <NuxtButton
-                  color="neutral"
-                  variant="ghost"
-                  block
-                  :icon="kitchenLine.icon.replace('lucide:', 'i-lucide-')"
-                  trailing-icon="i-lucide-chevron-down"
-                  :label="kitchenLine.message"
-                  class="group min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
-                  :ui="{ leadingIcon: `size-4 ${kitchenLine.accent || 'text-muted'}`, trailingIcon: 'ms-auto size-4 text-muted transition group-data-[state=open]:rotate-180', label: 'text-left' }"
-                  data-checkout-kitchen
-                />
-                <template #content>
-                  <div class="ms-7 mb-1 grid gap-2 border-s border-default ps-3 py-1" data-checkout-kitchen-pending>
-                    <ul class="grid gap-0.5 text-sm text-muted">
-                      <li v-for="item in pendingKitchen" :key="item.line_id">{{ lineQtyLabel(item) }} {{ item.name }}</li>
-                    </ul>
-                    <NuxtButton
-                      color="neutral"
-                      variant="outline"
-                      icon="i-lucide-chef-hat"
-                      :label="`Enviar agora (${unfiredCount(pendingKitchen)})`"
-                      class="min-h-11 justify-self-start"
-                      data-checkout-fire-now
-                      @click="emit('fireNow')"
-                    />
-                  </div>
-                </template>
-              </NuxtCollapsible>
+              <NuxtButton
+                color="neutral"
+                variant="ghost"
+                block
+                :icon="kitchenLine.icon.replace('lucide:', 'i-lucide-')"
+                trailing-icon="i-lucide-chevron-right"
+                :label="kitchenLine.message"
+                class="min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
+                :ui="{ leadingIcon: `size-4 ${kitchenLine.accent || 'text-muted'}`, trailingIcon: 'ms-auto size-4 text-muted', label: 'text-left' }"
+                data-checkout-kitchen
+                @click="kitchenOpen = true"
+              />
             </li>
             <li
               v-for="note in plainLineNotices"
@@ -1756,27 +1742,21 @@ defineExpose({
                 </NuxtButton>
               </div>
             </li>
-            <!-- A ressalva de item: a mesma linha, que abre a frase. O item da conta leva o
-                 mesmo ⚠. Não trava nada: a venda vale. -->
+            <!-- A ressalva de item: a mesma linha, que abre o modal das ressalvas. O item da
+                 conta leva o mesmo ⚠. Não trava nada: a venda vale. -->
             <li v-if="remarks.length">
-              <NuxtCollapsible>
-                <NuxtButton
-                  color="neutral"
-                  variant="ghost"
-                  block
-                  icon="i-lucide-triangle-alert"
-                  trailing-icon="i-lucide-chevron-down"
-                  :label="remarks.length === 1 ? '1 ressalva nos itens' : `${remarks.length} ressalvas nos itens`"
-                  class="group min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
-                  :ui="{ leadingIcon: 'size-4 text-warning', trailingIcon: 'ms-auto size-4 text-muted transition group-data-[state=open]:rotate-180', label: 'text-left' }"
-                  data-checkout-remarks
-                />
-                <template #content>
-                  <ul class="ms-7 mb-1 grid gap-1.5 border-s border-default ps-3 py-1 text-sm text-muted" data-checkout-remarks-list>
-                    <li v-for="(remark, index) in remarks" :key="index">{{ remark.message }}</li>
-                  </ul>
-                </template>
-              </NuxtCollapsible>
+              <NuxtButton
+                color="neutral"
+                variant="ghost"
+                block
+                icon="i-lucide-triangle-alert"
+                trailing-icon="i-lucide-chevron-right"
+                :label="remarks.length === 1 ? '1 ressalva nos itens' : `${remarks.length} ressalvas nos itens`"
+                class="min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
+                :ui="{ leadingIcon: 'size-4 text-warning', trailingIcon: 'ms-auto size-4 text-muted', label: 'text-left' }"
+                data-checkout-remarks
+                @click="remarksOpen = true"
+              />
             </li>
           </ul>
         </div>
@@ -1942,12 +1922,12 @@ defineExpose({
               <li v-for="line in summaryLines" :key="line.lineId" class="px-3 py-2">
                 <div class="flex items-baseline gap-2">
                   <span class="min-w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qtyLabel }}</span>
-                  <!-- A cozinha do item: cheio, já está lá; vazado, vai ao finalizar. -->
+                  <!-- Foguinho só no que JÁ está na cozinha; sem ícone, vai ao finalizar. -->
                   <Icon
+                    v-if="line.fired"
                     name="lucide:flame"
-                    class="size-3.5 shrink-0 self-center"
-                    :class="line.fired ? 'text-primary' : 'text-muted opacity-50'"
-                    :aria-label="line.fired ? 'Na cozinha' : 'Vai à cozinha ao finalizar'"
+                    class="size-3.5 shrink-0 self-center text-primary"
+                    aria-label="Na cozinha"
                     data-summary-kitchen
                   />
                   <span class="min-w-0 flex-1 truncate text-sm" :title="line.remark || line.name">{{ line.name }}</span>
@@ -2305,6 +2285,70 @@ defineExpose({
        atendendo, e o erro só aparece no fechamento do dia. Não pergunta se deu
        certo — se a maquininha recusar, o operador fecha o diálogo e troca a
        forma; a venda ainda não foi registrada. -->
+  <!-- MODAL: a cozinha da comanda (dono, 03/11/2026). O que já está lá, o que vai ao
+       finalizar, e "Enviar agora" para adiantar enquanto o cliente paga. -->
+  <NuxtModal
+    v-model:open="kitchenOpen"
+    title="Cozinha"
+    :description="kitchenLine?.message"
+    :ui="{ content: 'sm:max-w-md' }"
+    data-checkout-kitchen-modal
+  >
+    <template #body>
+      <div class="grid gap-4 text-sm">
+        <section v-if="firedKitchen.length" class="grid gap-1.5">
+          <h3 class="flex items-center gap-2 font-semibold text-highlighted">
+            <Icon name="lucide:flame" class="size-4 text-primary" aria-hidden="true" />Já na cozinha
+          </h3>
+          <ul class="grid gap-1 ps-6 text-muted">
+            <li v-for="item in firedKitchen" :key="item.line_id">{{ lineQtyLabel(item) }} {{ item.name }}</li>
+          </ul>
+        </section>
+        <section v-if="pendingKitchen.length" class="grid gap-1.5" data-checkout-kitchen-pending>
+          <h3 class="font-semibold text-highlighted">Vai ao finalizar</h3>
+          <ul class="grid gap-1 ps-6 text-muted">
+            <li v-for="item in pendingKitchen" :key="item.line_id">{{ lineQtyLabel(item) }} {{ item.name }}</li>
+          </ul>
+        </section>
+      </div>
+    </template>
+    <template #footer>
+      <div class="flex w-full flex-col gap-2">
+        <NuxtButton
+          size="xl"
+          block
+          color="primary"
+          icon="i-lucide-chef-hat"
+          :label="`Enviar agora (${unfiredCount(pendingKitchen)})`"
+          data-checkout-fire-now
+          @click="emit('fireNow'); kitchenOpen = false"
+        />
+        <NuxtButton block color="neutral" variant="ghost" label="Fechar" @click="kitchenOpen = false" />
+      </div>
+    </template>
+  </NuxtModal>
+
+  <!-- MODAL: as ressalvas de item. A venda vale; é para conferir o cadastro depois. -->
+  <NuxtModal
+    v-model:open="remarksOpen"
+    :title="remarks.length === 1 ? 'Ressalva nos itens' : 'Ressalvas nos itens'"
+    description="A venda vale. Confira o cadastro ou o estoque depois."
+    :ui="{ content: 'sm:max-w-md' }"
+    data-checkout-remarks-modal
+  >
+    <template #body>
+      <ul class="grid gap-3 text-sm" data-checkout-remarks-list>
+        <li v-for="(remark, index) in remarks" :key="index" class="flex items-start gap-2">
+          <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+          <span>{{ remark.message }}</span>
+        </li>
+      </ul>
+    </template>
+    <template #footer>
+      <NuxtButton block color="neutral" variant="outline" label="Fechar" @click="remarksOpen = false" />
+    </template>
+  </NuxtModal>
+
   <NuxtModal
     v-model:open="machineConfirmOpen"
     :title="confirmView.title"
