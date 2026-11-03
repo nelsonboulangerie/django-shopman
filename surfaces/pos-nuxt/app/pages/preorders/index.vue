@@ -99,6 +99,7 @@ import {
   type PreordersView,
 } from "~/presentation/preorders";
 import type { PeriodSelection } from "../../../../operator-kit/app/presentation/dates";
+import { periodLabel, resolvePeriod } from "../../../../operator-kit/app/presentation/dates";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 import type { FilterPanelQuery } from "../../../../operator-kit/app/presentation/filterPanel";
 import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
@@ -388,6 +389,37 @@ watch(result, (value) => {
   }
 });
 
+// ── A linha do chão no celular (modelo de navegação, 31/10/2026) ──
+// O cabeçalho vira uma linha: período, recortes e o painel moram no Filtros dela, e o
+// recorte ativo fica nomeado na faixa logo abaixo, com a contagem e o Limpar. "Hoje"
+// segue à vista numa linha própria: é a leitura do caixa, e esconder no ⋮ esconderia o
+// que falta receber.
+const compactPeriodOff = computed(() => !periodIsToday(view.value, today.value));
+const compactFilterActive = computed(() => !searching.value && (compactPeriodOff.value || activeFilters.value.length > 0));
+const compactFilterLabel = computed(() => [
+  compactPeriodOff.value
+    ? `Período: ${periodLabel(periodSelection.value, resolvePeriod(periodSelection.value, { today: today.value }), today.value)}`
+    : "",
+  ...activeFilters.value.map((filter) => filter.label),
+].filter(Boolean).join(", "));
+const compactSummary = computed(() => {
+  if (searching.value) {
+    if (resultCount.value == null) return "";
+    return resultCount.value === 1 ? "1 encontrada." : `${resultCount.value} encontradas.`;
+  }
+  return shownCount.value === 1 ? "1 encomenda na tela." : `${shownCount.value} encomendas na tela.`;
+});
+const compactOptions = computed<OperatorHeaderAction[]>(() => [
+  { label: "Nova encomenda", icon: "i-lucide-plus", onSelect: () => void navigateTo(NEW_ORDER_ROUTE) },
+  ...deskActions.value,
+]);
+// Limpar volta à chegada da tela: sem busca, sem recortes, no dia de hoje.
+function compactClear() {
+  typed.value = "";
+  update({ ...fromActiveFilters({}), q: "", mode: "day", date: today.value, to: "" });
+}
+const compactPhone = useScreen().belowMd;
+
 function refreshAll() {
   void refreshPos();
   void period.refresh();
@@ -403,8 +435,62 @@ function refreshAll() {
     :actions="deskActions"
     :alerts="alerts"
     :active-filters="searching ? [] : activeFilters"
+    :compact-query="typed"
+    :compact-filter-active="compactFilterActive"
+    :compact-filter-label="compactFilterLabel"
+    :compact-summary="compactSummary"
+    :compact-options="compactOptions"
     @refresh="refreshAll"
+    @compact-clear="compactClear"
   >
+    <!-- O recorte inteiro no Filtros da linha do chão (celular). -->
+    <template #compact-filters>
+      <template v-if="!searching">
+        <OperatorPeriodPicker
+          v-model="periodSelection"
+          :presets="PREORDERS_PERIOD_PRESETS"
+          custom
+          :max-span-days="PREORDERS_MAX_SPAN_DAYS"
+          :today="today"
+          label="Período das encomendas"
+          data-compact-period
+        />
+        <OperatorQuickFilters
+          v-if="list && list.count"
+          v-model="quickModel"
+          :items="quickItems"
+          multiple
+          label="Recortes"
+          surface="pos"
+          screen="preorders"
+          :query="panelQuery"
+          data-compact-quick
+          @apply="applyFavorite"
+        />
+        <OperatorFilterPanel
+          v-if="list && list.count"
+          v-model="activePanel"
+          :dimensions="dimensions"
+          surface="pos"
+          screen="preorders"
+          data-compact-panel
+        />
+      </template>
+      <NuxtSwitch v-else v-model="includeCompleted" label="Incluir concluídas" />
+    </template>
+    <!-- Hoje, à vista no celular (na mesa ele mora no fim da linha dos recortes). -->
+    <template v-if="!searching && todayLine.length" #compact-below>
+      <p class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-default px-3 py-1.5 text-sm md:hidden" data-compact-today>
+        <span class="font-semibold text-primary">Hoje</span>
+        <span
+          v-for="fact in todayLine"
+          :key="fact.key"
+          :class="fact.key === 'to_receive' && fact.urgent
+            ? TO_RECEIVE_CLASS
+            : fact.key === 'check' ? 'tabular-nums text-warning' : 'tabular-nums text-muted'"
+        >{{ fact.text }}</span>
+      </p>
+    </template>
     <!-- A BUSCA DA TELA: "Cliente veio buscar" (o `/` abre; Tab troca para o app e a
          suíte). O que ela acha toma o lugar do período, na própria tela. -->
     <template #search>
@@ -808,7 +894,8 @@ function refreshAll() {
     <!-- CELULAR: a ação do momento no polegar (o QR da mensagem do cliente). -->
     <template #footer>
       <OperatorActionBar
-        :action="{ label: 'Ler código da encomenda', icon: 'i-lucide-scan-qr-code', onSelect: () => { scannerOpen = true; } }"
+        :action="{ label: 'Ler código da encomenda', shortLabel: 'Ler código', icon: 'i-lucide-scan-qr-code', onSelect: () => { scannerOpen = true; } }"
+        :secondary="compactPhone ? { label: 'Nova encomenda', shortLabel: 'Nova', icon: 'i-lucide-plus', onSelect: () => navigateTo(NEW_ORDER_ROUTE) } : undefined"
         label="Ler código da encomenda"
         data-preorders-scan-bar
       />

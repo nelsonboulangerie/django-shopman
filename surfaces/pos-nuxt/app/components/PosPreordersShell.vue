@@ -34,7 +34,21 @@ const props = withDefaults(defineProps<{
   activeFilters?: OperatorActiveFilter[];
   /** O título do cabeçalho; o detalhe diz qual encomenda ("Encomenda PDV-…"). */
   title?: string;
+  /**
+   * A linha do chão no celular (modelo de navegação, 31/10/2026): o termo buscado, o
+   * recorte ativo (nomeado) e a contagem, sempre à vista; e as ações do ⋮ dela.
+   */
+  compactQuery?: string;
+  compactFilterActive?: boolean;
+  compactFilterLabel?: string;
+  compactSummary?: string;
+  compactOptions?: OperatorHeaderAction[];
 }>(), {
+  compactQuery: "",
+  compactFilterActive: false,
+  compactFilterLabel: "",
+  compactSummary: "",
+  compactOptions: undefined,
   title: "Encomendas",
   wide: false,
   actions: () => [],
@@ -43,7 +57,8 @@ const props = withDefaults(defineProps<{
   activeFilters: () => [],
 });
 
-const emit = defineEmits<{ refresh: [] }>();
+const emit = defineEmits<{ refresh: []; "compact-clear": [] }>();
+const screen = useScreen();
 
 const refreshAction: OperatorHeaderAction = {
   label: "Atualizar",
@@ -51,13 +66,34 @@ const refreshAction: OperatorHeaderAction = {
   onSelect: () => emit("refresh"),
 };
 const headerActions = computed<OperatorHeaderAction[]>(() => [...props.actions, refreshAction]);
+// O ⋮ da linha do chão: as ações dela (ou as da mesa) e Atualizar no fim.
+const compactGroups = computed(() =>
+  [...(props.compactOptions ?? props.actions), refreshAction].map(({ priority: _p, ...action }) => action),
+);
 const headerPhoneActions = computed<OperatorHeaderAction[] | undefined>(() =>
   props.phoneActions ? [...props.phoneActions, refreshAction] : undefined,
 );
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col" data-preorders-shell>
+  <main class="flex min-h-0 flex-1 flex-col" data-preorders-shell data-compact-page>
+    <!-- No celular, o cabeçalho inteiro numa linha: o selo troca de seção (ou, no
+         detalhe, o voltar e a encomenda aberta), a busca, o ⋮ e os avisos. -->
+    <PosCompactBar
+      :title="title"
+      :query="compactQuery"
+      search-button-label="Buscar encomenda: nome, telefone, CPF, endereço ou número"
+      :filter-active="compactFilterActive"
+      :filter-label="compactFilterLabel"
+      :summary="compactSummary"
+      :options="compactGroups"
+      @clear="emit('compact-clear')"
+    >
+      <template v-if="$slots['compact-lead']" #lead><slot name="compact-lead" /></template>
+      <template v-if="$slots['compact-identity']" #identity><slot name="compact-identity" /></template>
+      <template v-if="$slots['compact-filters']" #filters="scope"><slot name="compact-filters" v-bind="scope" /></template>
+    </PosCompactBar>
+    <slot name="compact-below" />
     <OperatorPageHeader
       :title="title"
       :actions="headerActions"
@@ -74,7 +110,9 @@ const headerPhoneActions = computed<OperatorHeaderAction[] | undefined>(() =>
           <OperatorSuiteSearch variant="hotkey" placeholder="Buscar pedido, cliente, produto ou tela" />
         </slot>
       </template>
-      <template v-if="$slots.primary" #actions>
+      <!-- No celular a ação primária é a segunda da base ("Nova" | "Ler código") e o
+           primeiro item do ⋮: a faixa dela abaixo da linha do chão seria repetição. -->
+      <template v-if="$slots.primary && !screen.belowMd.value" #actions>
         <div class="flex min-w-0 items-center gap-2" data-preorders-actions>
           <slot name="primary" />
         </div>
