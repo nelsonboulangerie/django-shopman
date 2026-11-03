@@ -353,6 +353,13 @@ def close_sale(
     payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, config = _channel_and_config(channel_ref)
+    # A chave da loja (``Shop.pos_offline_sale_enabled``, desligada por padrão):
+    # desligada, a venda guardada sem conexão não entra, nem a do dispositivo
+    # velho. O reenvio de uma venda que já fechou segue devolvendo o pedido.
+    pos_offline_sale.refuse_when_disabled(
+        payload,
+        already_closed=lambda: _existing_sale_by_client_request_id(channel_ref=channel.ref, payload=payload) is not None,
+    )
     # A venda feita SEM CONEXÃO, dentro das travas e com hora plausível, é a venda
     # que o balcão COBROU (decisões C e D do dono, 10/10/2026): o payload passa a
     # ser o cobrado, linha pesada inclusive (pelo quilo que a tela usou), e o

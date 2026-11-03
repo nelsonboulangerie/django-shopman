@@ -36,7 +36,7 @@ from shopman.shop.projections.types import (
     AddressAutocompleteProjection,
     SavedAddressProjection,
 )
-from shopman.shop.services import weighed_sale
+from shopman.shop.services import pos_offline_sale, weighed_sale
 from shopman.shop.services.channel_policy import resolve_channel_policy
 from shopman.shop.services.pos_intent import (
     POS_SALE_INTENT_PAYLOAD_KEYS,
@@ -566,6 +566,10 @@ class POSProjection:
     # Desligado = só valor, e a tela nem mostra a opção. Ver
     # ``weighed_sale.weight_entry_enabled`` (``Shop.defaults.pos.weighed_weight_entry``).
     weighed_weight_entry: bool = False
+    # A loja deixa o balcão vender SEM CONEXÃO? (``Shop.pos_offline_sale_enabled``,
+    # desligada por padrão até existir NFC-e em contingência.) Desligada, o PDV
+    # sem rede não cobra nem guarda venda: avisa e espera a conexão voltar.
+    offline_sale_enabled: bool = False
     # A janela de desconto por horário (Hora da Xepa), ou ``None`` sem regra
     # ligada para o PDV. Ver ``POSPriceWindowProjection``.
     price_window: POSPriceWindowProjection | None = None
@@ -714,6 +718,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         fiscal_message=fiscal_message,
         danfe_screen_allowed=bool(getattr(operator, "is_staff", False)),
         weighed_weight_entry=weighed_sale.weight_entry_enabled(),
+        offline_sale_enabled=pos_offline_sale.enabled(),
         price_window=_price_window_projection(offer),
         delivery_today=_delivery_today().isoformat(),
         delivery_slots_today=tuple(_delivery_slots_today()),

@@ -40,6 +40,15 @@ def _at(hour: int, minute: int = 0, *, day: int = 0) -> datetime:
     return DIA.replace(hour=hour, minute=minute) + timedelta(days=day)
 
 
+def _venda_sem_conexao_ligada(counter):
+    """A chave da loja ligada: o caminho sem conexão inteiro, como antes dela."""
+    from shopman.shop.models import Shop
+
+    Shop.objects.update(pos_offline_sale_enabled=True)
+    cache.clear()
+    return counter
+
+
 @pytest.fixture
 def balcao():
     """O balcão com o turno aberto às 7h do dia da venda."""
@@ -49,7 +58,7 @@ def balcao():
         counter = _Counter()
     Shift.objects.filter(pk=counter.shift.pk).update(opened_at=_at(7))
     counter.shift.refresh_from_db()
-    cache.clear()
+    _venda_sem_conexao_ligada(counter)
     yield counter
     cache.clear()
 
@@ -116,7 +125,7 @@ def test_hora_sem_fuso_e_recusada():
 
 @pytest.fixture
 def counter():
-    return _Counter()
+    return _venda_sem_conexao_ligada(_Counter())
 
 
 # ── D: o preço da hora da venda; vale o cobrado ─────────────────────────────
@@ -478,3 +487,120 @@ def test_relatorio_do_caixa_mostra_o_ajuste(balcao):
 
     assert len(reading.offline_notes) == 1
     assert "Valeu o cobrado: R$ 3,00 abaixo do preço." in reading.offline_notes[0]
+
+
+# ── A chave da loja: venda sem conexão desligada (dono, 03/11/2026) ──────────
+
+SEM_CHAVE = "A venda sem conexão está desligada nesta loja. Envie a venda com a rede de volta."
+
+
+@pytest.fixture
+def balcao_sem_chave():
+    """O balcão de uma loja com a chave no padrão: venda sem conexão desligada."""
+    from shopman.cashman.models import Shift
+
+    with patch("django.utils.timezone.now", return_value=_at(7)):
+        counter = _Counter()
+    Shift.objects.filter(pk=counter.shift.pk).update(opened_at=_at(7))
+    counter.shift.refresh_from_db()
+    cache.clear()
+    yield counter
+    cache.clear()
+
+
+def test_a_chave_nasce_desligada(balcao_sem_chave):
+    from shopman.shop.models import Shop
+    from shopman.shop.services import pos_offline_sale
+
+    assert Shop.objects.get().pos_offline_sale_enabled is False
+    assert pos_offline_sale.enabled() is False
+
+
+def test_chave_desligada_recusa_a_venda_guardada(balcao_sem_chave):
+    with pytest.raises(PosIntentError) as refused:
+        _send(balcao_sem_chave, at=_at(15), client_request_id="pos:sem-chave", **_offline(_at(14, 30)))
+
+    assert refused.value.code == "offline_sale_disabled"
+    assert refused.value.status == 409
+    assert refused.value.field == "offline_captured_at"
+    assert refused.value.message == SEM_CHAVE
+    assert not Order.objects.filter(data__client_request_id="pos:sem-chave").exists()
+    assert balcao_sem_chave.sale_lines() == []
+
+
+def test_chave_desligada_recusa_tambem_so_a_hora_da_tabela(balcao_sem_chave):
+    with pytest.raises(PosIntentError) as refused:
+        _send(
+            balcao_sem_chave, at=_at(15), client_request_id="pos:sem-chave-tabela",
+            offline_prices_at=_at(14).isoformat(), expected_total_q=1200,
+        )
+
+    assert refused.value.field == "offline_prices_at"
+
+
+def test_chave_desligada_nao_mexe_na_venda_com_conexao(balcao_sem_chave):
+    result = _send(balcao_sem_chave, at=_at(15), client_request_id="pos:com-rede")
+
+    assert Order.objects.filter(ref=result.order_ref).exists()
+
+
+def test_chave_desligada_devolve_a_venda_que_ja_fechou(balcao_sem_chave):
+    """O reenvio de uma venda que fechou com a chave ligada segue devolvendo o pedido."""
+    from shopman.shop.models import Shop
+
+    _venda_sem_conexao_ligada(balcao_sem_chave)
+    first = _send(balcao_sem_chave, at=_at(15), client_request_id="pos:ja-fechou", **_offline(_at(14, 30)))
+    Shop.objects.update(pos_offline_sale_enabled=False)
+    cache.clear()
+
+    again = _send(balcao_sem_chave, at=_at(15, 5), client_request_id="pos:ja-fechou", **_offline(_at(14, 30)))
+
+    assert again.order_ref == first.order_ref
+
+
+def test_chave_ligada_aceita_a_venda_guardada(balcao_sem_chave):
+    _venda_sem_conexao_ligada(balcao_sem_chave)
+
+    result = _send(balcao_sem_chave, at=_at(15), client_request_id="pos:com-chave", **_offline(_at(14, 30)))
+
+    offline = Order.objects.get(ref=result.order_ref).data["pos"]["offline"]
+    assert offline["captured_at"] == _at(14, 30).isoformat()
+
+
+def test_api_recusa_a_venda_guardada_no_dialeto_canonico(client, balcao_sem_chave):
+    import json
+
+    from django.contrib.auth.models import Permission
+    from django.utils import timezone
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+
+    operator = balcao_sem_chave.operator
+    operator.is_staff = True
+    operator.save(update_fields=["is_staff"])
+    operator.user_permissions.add(Permission.objects.get(codename="operate_pos"))
+    client.force_login(operator)
+    bind_station(client, balcao_sem_chave.shift.terminal.ref)
+    body = {
+        "items": [{"sku": "PAO", "name": "Pão", "qty": 1, "unit_price_q": 1200}],
+        "payment_method": "cash",
+        "client_request_id": "pos:api-sem-chave",
+        **_offline(timezone.now() - timedelta(minutes=10)),
+    }
+
+    response = client.post("/api/v1/backstage/pos/sale/close/", data=json.dumps(body), content_type="application/json")
+
+    assert response.status_code == 409, response.content
+    data = response.json()
+    assert data["detail"] == SEM_CHAVE
+    assert data["field"] == "offline_captured_at"
+    assert data["errors"] == {"offline_captured_at": [SEM_CHAVE]}
+    assert data["error"]["code"] == "offline_sale_disabled"
+
+
+def test_projecao_do_pdv_le_a_chave(balcao_sem_chave):
+    from shopman.backstage.projections.pos import build_pos
+
+    assert build_pos(operator=balcao_sem_chave.operator).offline_sale_enabled is False
+    _venda_sem_conexao_ligada(balcao_sem_chave)
+    assert build_pos(operator=balcao_sem_chave.operator).offline_sale_enabled is True

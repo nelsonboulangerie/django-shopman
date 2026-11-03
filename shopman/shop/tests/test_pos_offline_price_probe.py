@@ -47,9 +47,18 @@ def _at(hour: int, minute: int = 0, *, day: int = 0) -> datetime:
     return DIA.replace(hour=hour, minute=minute) + timedelta(days=day)
 
 
+def _venda_sem_conexao_ligada(counter):
+    """A chave da loja ligada: o caminho sem conexão inteiro, como antes dela."""
+    from shopman.shop.models import Shop
+
+    Shop.objects.update(pos_offline_sale_enabled=True)
+    cache.clear()
+    return counter
+
+
 @pytest.fixture
 def counter():
-    return _Counter()
+    return _venda_sem_conexao_ligada(_Counter())
 
 
 @pytest.fixture
@@ -59,7 +68,7 @@ def balcao():
         counter = _Counter()
     Shift.objects.filter(pk=counter.shift.pk).update(opened_at=_at(7))
     counter.shift.refresh_from_db()
-    cache.clear()
+    _venda_sem_conexao_ligada(counter)
     yield counter
     cache.clear()
 

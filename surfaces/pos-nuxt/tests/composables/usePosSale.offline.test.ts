@@ -28,8 +28,10 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function freeCartProjection() {
+// A chave da loja LIGADA: estes testes são o caminho sem conexão inteiro.
+function freeCartProjection(offlineSaleEnabled = true) {
   return makeProjection({
+    offline_sale_enabled: offlineSaleEnabled,
     checkout: {
       intent_version: 1,
       capabilities: { tab_lifecycle: { requires_open_tab_for_cart: false, requires_tab_before_save: false } },
@@ -43,8 +45,8 @@ function closeBodies(actionCall: ReturnType<typeof vi.fn>) {
     .map((call) => (call[1] as { body: Record<string, unknown> }).body);
 }
 
-function readySale(actionCall: ReturnType<typeof vi.fn>) {
-  const h = makeSale({ projection: freeCartProjection(), actionCall });
+function readySale(actionCall: ReturnType<typeof vi.fn>, offlineSaleEnabled = true) {
+  const h = makeSale({ projection: freeCartProjection(offlineSaleEnabled), actionCall });
   const pao = h.handles.posValue.value!.products[0]!;
   h.sale.addProduct(pao);
   h.sale.addProduct(pao);
@@ -145,6 +147,50 @@ describe("usePosSale — venda sem conexão", () => {
     expect(queued.body.tab_session_key).toBeFalsy();
     expect(queued.body.offline_captured_at).toBe(queued.capturedAt);
     expect(queued.body.expected_total_q).toBe(500);
+    h.handles.dispose();
+  });
+});
+
+// A chave da loja DESLIGADA (o padrão, dono 03/11/2026): sem rede o balcão não
+// cobra nem guarda venda. Nada entra na fila.
+describe("usePosSale — venda sem conexão desligada na loja", () => {
+  it("sem conexão: o Pagamento não abre, nada vai para a fila e a razão é dita", async () => {
+    const actionCall = vi.fn().mockRejectedValue({ status: 0 });
+    const h = readySale(actionCall, false);
+    const queuedBefore = usePosOfflineSales().sales.value.length;
+    online = false;
+
+    await h.sale.submitSale();
+
+    expect(h.sale.checkoutMode.value).toBe(false);
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Sem conexão. A venda espera a rede voltar.");
+    expect(usePosOfflineSales().sales.value).toHaveLength(queuedBefore);
+    expect(h.sale.cart.items).toHaveLength(1);
+    expect(closeBodies(actionCall)).toHaveLength(0);
+    h.handles.dispose();
+  });
+
+  it("a rede cai no meio do fechamento: a venda NÃO vai para a fila, fica a trava de resultado incerto", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) {
+        online = false;
+        throw { status: 0 };
+      }
+      return {};
+    });
+    const h = readySale(actionCall, false);
+    const queuedBefore = usePosOfflineSales().sales.value.length;
+
+    await h.sale.submitSale();
+    h.sale.addTender("cash");
+    await h.sale.submitSale();
+
+    expect(closeBodies(actionCall)).toHaveLength(1);
+    expect(h.sale.result.value?.offline).toBeFalsy();
+    expect(usePosOfflineSales().sales.value).toHaveLength(queuedBefore);
+    // Sem fila, a dúvida fica com o marcador de sempre: o balcão confere antes de cobrar de novo.
+    expect(storageValues.size).toBe(1);
     h.handles.dispose();
   });
 });

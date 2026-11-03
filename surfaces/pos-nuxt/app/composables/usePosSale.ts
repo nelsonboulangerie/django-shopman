@@ -98,7 +98,9 @@ import { pendingPixDeadlineMs, pendingPixExpired, readPendingPix, writePendingPi
 import { sourceReleasedMessage } from "~/presentation/moveLines";
 import { tabTitleView } from "~/presentation/tabTitle";
 import {
+  OFFLINE_SALE_OFF_REASON,
   offlineSaleBlockers,
+  offlineSaleOffReason,
   offlinePaymentLabel,
   offlineSaleLabel,
   offlineSaleReview,
@@ -261,7 +263,13 @@ export function usePosSale(deps: PosSaleDeps) {
 
   // A VENDA SEM CONEXÃO (WP-PDV-SEM-CONEXAO): a fila local que guarda a venda de
   // balcão feita sem rede e a reenvia, idempotente, quando a conexão volta.
-  const offlineSales = usePosOfflineSales();
+  /**
+   * A chave da loja (`offline_sale_enabled`, na projeção que a tela já carrega).
+   * Desligada (o padrão, até existir NFC-e em contingência), sem rede o balcão
+   * não cobra nem guarda venda: avisa e espera a conexão voltar.
+   */
+  const offlineSaleEnabled = computed(() => pos.value?.offline_sale_enabled === true);
+  const offlineSales = usePosOfflineSales({ saleEnabled: () => offlineSaleEnabled.value });
   /**
    * Sem conexão AGORA: o navegador fora da rede OU o servidor fora do alcance
    * (wi-fi de pé, link caído). O mesmo sinal da faixa "Sem conexão" do kit.
@@ -277,6 +285,14 @@ export function usePosSale(deps: PosSaleDeps) {
    * caído, toda venda caía em "resultado incerto" e travava o balcão.
    */
   const linkLost = (error: unknown) => import.meta.client && reachability.noteFailure(error);
+  /**
+   * A razão que barra Pagamento, Cobrar e Validar AGORA: sem rede e com a venda
+   * sem conexão desligada na loja. Vazia quando a venda pode seguir.
+   */
+  const saleBlockedReason = computed(() => offlineSaleOffReason({
+    online: connectivity.isOnline.value !== false,
+    saleEnabled: offlineSaleEnabled.value,
+  }));
   /**
    * Quando a tela leu os preços pela última vez: a nota do total sem conexão.
    * `useState`, e não `ref`: nasce na renderização do servidor e viaja no HTML.
@@ -3233,14 +3249,19 @@ export function usePosSale(deps: PosSaleDeps) {
 
   /** O que impede esta venda de seguir sem conexão (vazio = pode). */
   function currentOfflineBlockers(): string[] {
-    return offlineSaleBlockers({
+    return offlineSaleBlockers(offlineBlockerInputs());
+  }
+
+  function offlineBlockerInputs() {
+    return {
+      saleEnabled: offlineSaleEnabled.value,
       salesMode: cart.salesMode,
       fulfillmentType: cart.fulfillmentType,
       items: cart.items,
       orderDiscountValue: cart.discountValue,
       tenderMethods: cart.paymentTenders.map((tender) => tender.method),
       paymentCollection: cart.paymentCollection,
-    });
+    };
   }
 
   async function reviewSale() {
@@ -3283,6 +3304,12 @@ export function usePosSale(deps: PosSaleDeps) {
 
   async function prepareCheckout() {
     if (!cart.items.length || requireCustomerDraftDecision() || orderSetupPending.value) return;
+    // Sem rede e com a venda sem conexão desligada: o Pagamento nem abre. A tela
+    // já diz por quê (aviso do cabeçalho e razão sob o botão); isto é a trava do F4.
+    if (offlineNow() && !offlineSaleEnabled.value) {
+      serverError.value = OFFLINE_SALE_OFF_REASON;
+      return;
+    }
     serverError.value = "";
     dismissResult();
     busy.value = true;
@@ -3322,8 +3349,9 @@ export function usePosSale(deps: PosSaleDeps) {
     } catch (error) {
       if (handleReceiptIdentityFailure(error, "review")) return;
       // O link caiu ao salvar a comanda: o Pagamento abre com o total da última
-      // leitura, como sem rede (a revisão responde local a partir daqui).
-      if (linkLost(error)) {
+      // leitura, como sem rede (a revisão responde local a partir daqui). Com a
+      // venda sem conexão desligada, não: o Pagamento fecha com o motivo.
+      if (linkLost(error) && offlineSaleEnabled.value) {
         await reviewSale();
         return;
       }
@@ -4320,6 +4348,7 @@ export function usePosSale(deps: PosSaleDeps) {
     totalStatus,
     saleReview,
     saleTotal,
+    saleBlockedReason,
     saleTotalPaused,
     customerLookup,
     tabDialogOpen,

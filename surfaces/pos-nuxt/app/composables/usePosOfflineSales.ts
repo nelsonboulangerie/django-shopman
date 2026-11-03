@@ -19,7 +19,15 @@ let wired = false;
  * quando só o link tinha caído), ao abrir a tela e a cada 30 s enquanto houver
  * venda pendente. No servidor (SSR) a fila existe vazia, na memória, e não envia.
  */
-export function usePosOfflineSales() {
+export function usePosOfflineSales(options: {
+  /**
+   * A chave da loja (`offline_sale_enabled`, da projeção do PDV). Desligada, o
+   * aviso sem rede diz que a venda espera a conexão em vez de "o balcão continua
+   * vendendo". A fila segue: a venda guardada antes não some, e o servidor a
+   * recusa com o motivo.
+   */
+  saleEnabled?: () => boolean;
+} = {}) {
   const action = usePosAction();
   const { isOnline, onReconnect } = useConnectivity();
 
@@ -89,6 +97,7 @@ export function usePosOfflineSales() {
     pending: pendingCount.value,
     conflicts: conflictCount.value,
     sending: current.state.sending,
+    saleEnabled: options.saleEnabled ? options.saleEnabled() : false,
   }));
 
   return {

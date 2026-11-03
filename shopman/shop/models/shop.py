@@ -533,6 +533,19 @@ class Shop(models.Model):
         ),
     )
 
+    # ── PDV: venda sem conexão (decisão do dono, 03/11/2026) ──
+    pos_offline_sale_enabled = models.BooleanField(
+        "venda sem conexão",
+        default=False,
+        help_text=(
+            "Deixa o PDV cobrar sem rede (dinheiro e maquininha) e guardar a venda "
+            "no dispositivo, para enviar quando a conexão voltar. Desligada, o PDV "
+            "sem conexão não vende e o servidor recusa a venda guardada. Ligar "
+            "depende da NFC-e em contingência (tpEmis 9), que ainda não existe: "
+            "sem ela, a nota da venda sem conexão sai só no envio, com a hora do envio."
+        ),
+    )
+
     # ── Defaults de negócio (cascata: canal ← AQUI ← hardcoded) ──
     defaults = models.JSONField(
         "configurações padrão",

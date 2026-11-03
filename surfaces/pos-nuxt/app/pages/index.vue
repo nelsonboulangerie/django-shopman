@@ -238,6 +238,7 @@ const {
   reviewFailureReason,
   saleReview,
   saleTotal,
+  saleBlockedReason,
   saleTotalPaused,
   submitSale,
   dismissResult,
@@ -846,7 +847,7 @@ const headerActions = computed<OperatorHeaderAction[]>(() => {
 // A linha do chão no celular: as MESMAS ações do ⋯ do cabeçalho, no ⋮ dela.
 const compactOptions = computed(() => headerActions.value.map(({ priority: _p, ...action }) => action));
 // A VENDA SEM CONEXÃO: a fila de vendas guardadas e a lista que o aviso abre.
-const offlineSales = usePosOfflineSales();
+const offlineSales = usePosOfflineSales({ saleEnabled: () => pos.value?.offline_sale_enabled === true });
 const offlineSalesOpen = ref(false);
 
 // Avisos da tela no lugar da suíte (`alerts` do cabeçalho), cada um com a saída.
@@ -879,7 +880,9 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
       icon: offline.color === "warning" ? "i-lucide-wifi-off" : undefined,
       title: offline.title,
       description: offline.description,
-      action: { label: offline.actionLabel, onSelect: () => { offlineSalesOpen.value = true; } },
+      ...(offline.actionLabel
+        ? { action: { label: offline.actionLabel, onSelect: () => { offlineSalesOpen.value = true; } } }
+        : {}),
     });
   }
   if (inSaleView.value && tabConflict.value) {
@@ -1547,6 +1550,7 @@ onBeforeUnmount(() => {
         :loading="busy"
         :lookup-busy="lookupBusy"
         :review-failed="reviewFailed"
+        :sale-blocked-reason="saleBlockedReason"
         :review-failure-reason="reviewFailureReason"
         @back="checkoutMode = false"
         @submit="submitSale"
@@ -1668,6 +1672,7 @@ onBeforeUnmount(() => {
               :auto-fire-skus="autoFireSkuList"
               :auto-fire-busy="autoFireBusy"
               :offline="offlineSales.isOnline.value === false"
+              :sale-blocked-reason="saleBlockedReason"
               :items="cart.items"
               :total="saleTotal"
               :requires-tab="tabRequiredForCart"
@@ -1886,6 +1891,7 @@ onBeforeUnmount(() => {
       :sales="offlineSales.sales.value"
       :sending="offlineSales.sending.value"
       :durable="offlineSales.durable.value"
+      :sale-enabled="pos?.offline_sale_enabled === true"
       @send-now="offlineSales.flush()"
       @retry="(id: string) => offlineSales.retry(id)"
       @send-with-server-total="(id: string) => offlineSales.sendWithServerTotal(id)"

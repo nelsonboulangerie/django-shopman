@@ -22,8 +22,10 @@ function stubWorkingStorage() {
 }
 beforeEach(stubWorkingStorage);
 
+// A chave da loja LIGADA: a queda do link no fechamento leva a venda para a fila.
 function freeCartProjection() {
   return makeProjection({
+    offline_sale_enabled: true,
     checkout: {
       intent_version: 1,
       capabilities: { tab_lifecycle: { requires_open_tab_for_cart: false, requires_tab_before_save: false } },
