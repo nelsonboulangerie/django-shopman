@@ -102,7 +102,7 @@ function choose(section: OperatorSection) {
       class="shrink-0"
     >
       <NuxtButton
-        icon="i-lucide-ellipsis"
+        icon="i-lucide-ellipsis-vertical"
         label="Mais"
         class="suite-page:min-h-control"
         :color="activeInOverflow ? 'primary' : 'neutral'"

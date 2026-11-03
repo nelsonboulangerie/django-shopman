@@ -869,7 +869,7 @@ const outside = useOutsideStore(
           </div>
           <OperatorRecordNav v-if="!returnTicket" :trail="recordTrailKey" :current="orderRef" :to="recordLocation" previous-label="Pedido anterior" next-label="Próximo pedido" />
           <NuxtButton
-            icon="i-lucide-ellipsis"
+            icon="i-lucide-ellipsis-vertical"
             color="neutral"
             variant="ghost"
             square
@@ -959,7 +959,7 @@ const outside = useOutsideStore(
           data-detail-return
         />
         <NuxtButton
-          icon="i-lucide-ellipsis"
+          icon="i-lucide-ellipsis-vertical"
           label="Mais ações do pedido"
           color="neutral"
           variant="outline"

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // O trocador (modelo de navegação, aprovado 31/10/2026): o que o selo abre.
 // Três blocos, nesta ordem, porque é a ordem da pergunta de quem toca no selo:
-//   1. Neste app: as seções numa lista só, as do chão primeiro. A forma decide a barra
-//      de baixo, não vira título: "no posto" e "escritório" são palavras de quem
-//      desenha, não de quem opera (dono, 02/11/2026);
+//   1. Neste app: as seções numa lista só, na ordem do próprio app (a da barra lateral e
+//      das teclas Alt+N: na Produção, do Planejamento à Qualidade, dono 03/11/2026). A
+//      forma decide a barra de baixo, não reordena nem vira título: "no posto" e
+//      "escritório" são palavras de quem desenha, não de quem opera (dono, 02/11/2026);
 //   2. Outros apps: cada um com a pendência mais urgente (a mesma da Central), e a Central;
 //   3. Quem opera: o nome, e Trocar ou bloquear.
 // Celular e tablet: folha de baixo. Computador: painel da esquerda, ao lado da barra.
@@ -48,10 +49,6 @@ function iconUrl(url: string): string | null {
   }
 }
 
-const FORM_ORDER = ["floor", "office", "wall"] as const;
-const ordered = computed(() =>
-  FORM_ORDER.flatMap((form) => props.sections.filter((section) => (section.form ?? "office") === form)),
-);
 const place = computed(
   () => props.sections.find((section) => section.key === props.current)?.label ?? "",
 );
@@ -106,9 +103,9 @@ function go(section: OperatorSection) {
       <div class="flex flex-col gap-5 pb-2">
         <section :aria-label="`Seções: ${identity?.label || 'este app'}`">
           <!-- Mais de três: duas colunas, para os outros apps caberem na primeira tela. -->
-          <div class="grid gap-1" :class="ordered.length > 3 ? 'grid-cols-2' : 'grid-cols-1'">
+          <div class="grid gap-1" :class="sections.length > 3 ? 'grid-cols-2' : 'grid-cols-1'">
             <NuxtButton
-              v-for="section in ordered"
+              v-for="section in sections"
               :key="section.key"
               :icon="section.icon.replace('lucide:', 'i-lucide-')"
               :color="section.key === current ? 'primary' : 'neutral'"
