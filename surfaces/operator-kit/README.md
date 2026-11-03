@@ -1231,6 +1231,12 @@ cabeçalho, logo abaixo da toolbar.
   ordem é a da tela: o mais importante primeiro.
 - O aviso fica fixo com o cabeçalho (não rola com o conteúdo): o "um inteiro, o resto em
   e mais N" é o que impede que ele coma a tela do celular.
+- **Todo aviso fecha, inclusive o crítico, e volta enquanto a causa durar** (dono; no kit
+  desde 23/10/2026). O X dispensa só nesta montagem da tela: não muda o domínio nem grava
+  no navegador, e o aviso volta no próximo carregamento. Para voltar antes quando a causa
+  mudar, ponha a grandeza no `id` (`vocation:${count}`): id novo é aviso novo.
+- `NuxtAlert` solto no topo de uma página, fora das `alerts`, é defeito: perde o X, o
+  "e mais N" e a fixação. Aviso junto de um controle (erro de campo, diálogo) segue inline.
 
 **Ação dentro de aviso** (dono, 09/10/2026): a ação acompanha a cor do aviso. A
 **principal** é `solid` na cor do aviso; a **secundária**, `outline` na mesma cor. Nunca um
