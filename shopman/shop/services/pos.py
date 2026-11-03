@@ -381,6 +381,10 @@ def close_sale(
     # sem conexão fica de fora: nela vale o cobrado (decisão D, 10/10/2026).
     if open_tab is None and offline_at is None and not _payload_has_tab_identity(payload):
         _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
+    elif open_tab is not None and offline_at is None:
+        _stamp_tab_prices_for_manual_discount(
+            payload, open_tab, channel=channel, config=config, operator_username=operator_username,
+        )
     _ensure_resolved_prices(payload)
     # O desconto manual é o do MOTOR (A3-1): a conferência do total da tela, o
     # portão do gerente e a taxa de entrega leem o mesmo número que o selo do
@@ -918,6 +922,10 @@ def review_sale(
         # Sem comanda, o kernel ainda não precificou nada: a revisão pergunta ao
         # motor, para a tela mostrar o total que o fechamento vai cobrar (P0-1).
         priced = _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
+    else:
+        _stamp_tab_prices_for_manual_discount(
+            payload, session, channel=channel, config=config, operator_username=operator_username,
+        )
     _ensure_resolved_prices(payload)
     # O desconto manual também é o do motor (A3-1): o total da revisão é o que o
     # selo do fechamento confere, sem conta paralela do PDV.
@@ -3704,7 +3712,7 @@ _PRICING_PROBE_LINE = "pricing-probe-"
 
 
 def _stamp_engine_prices(
-    payload: dict, *, channel: Channel, config: ChannelConfig, operator_username: str,
+    payload: dict, *, channel: Channel, config: ChannelConfig, operator_username: str, pricing_policy: str = "",
 ) -> dict[int, dict]:
     """Venda SEM comanda: carimba no payload o preço que o MOTOR dá agora (P0-1).
 
@@ -3740,7 +3748,9 @@ def _stamp_engine_prices(
         if isinstance(item, dict):
             item.pop("discount", None)
             item["line_id"] = f"{_PRICING_PROBE_LINE}{index}"
-    probed = _run_pricing_probe(probe, channel=channel, config=config, operator_username=operator_username)
+    probed = _run_pricing_probe(
+        probe, channel=channel, config=config, operator_username=operator_username, pricing_policy=pricing_policy,
+    )
     if probed is None:
         return stamped
     priced = {str(line.get("line_id") or ""): line for line in probed[0]}
@@ -3757,6 +3767,72 @@ def _stamp_engine_prices(
         item["list_price_q"] = _int_q((line.get("meta") or {}).get("_list_q")) or price_q
         stamped[index] = line
     return stamped
+
+
+def _stamp_tab_prices_for_manual_discount(
+    payload: dict, session, *, channel: Channel, config: ChannelConfig, operator_username: str,
+) -> None:
+    """Comanda com desconto manual: o preço que mede o desconto é o do MOTOR, não o do corpo.
+
+    O portão do gerente mede o desconto de linha como ``subtotal - o que o motor
+    cobra`` (``_stamp_engine_manual_discounts``), e o subtotal sai do
+    ``unit_price_q`` das linhas. Na venda sem comanda esse preço é o do motor
+    (``_stamp_engine_prices``); na comanda ele era o que o navegador declarou, e
+    ``_stamp_list_prices_from_session`` só preenche o que falta. Um corpo com
+    R$ 4,00 num pão de R$ 12,00 em cortesia de 100% media R$ 4,00 de desconto,
+    abaixo do limite, e a venda saía de graça sem gerente: o total do motor
+    (zero) batia com o selo do fechamento (auditoria de 03/11/2026).
+
+    O remédio é a mesma sonda da venda sem comanda, com a política de preço da
+    comanda: cada linha passa a valer o preço do motor ANTES do desconto manual
+    (promoção, Xepa e grupo do cliente já aplicados), e o desconto medido é só o
+    que o operador deu. Quando a comanda gravada já é este carrinho e o manual
+    não venceu nenhuma linha, o preço sai da própria sessão, sem sonda
+    (``_stamp_tab_prices_from_engine_lines``). Sem desconto manual nada muda: o total é o subtotal, e o
+    selo do fechamento confere o subtotal contra o motor. A venda feita sem
+    conexão não passa por aqui: nela vale o cobrado (decisão D, 10/10/2026).
+    """
+    if session is None or not _payload_has_manual_discount(payload):
+        return
+    if _session_prices_payload(session, payload) and _stamp_tab_prices_from_engine_lines(payload, session):
+        return
+    _stamp_engine_prices(
+        payload, channel=channel, config=config, operator_username=operator_username,
+        pricing_policy=getattr(session, "pricing_policy", "") or "",
+    )
+
+
+def _stamp_tab_prices_from_engine_lines(payload: dict, session) -> bool:
+    """O preço antes do desconto manual, lido da comanda que JÁ é este carrinho.
+
+    A última gravação passou pelo motor com estas linhas e estes descontos. Onde o
+    desconto manual não venceu a linha, o preço antes dele é a etiqueta menos o
+    desconto automático vencedor (``meta._disc`` de linha), ou a própria etiqueta.
+    Onde o manual venceu, o automático que perdeu não fica gravado em lugar
+    nenhum: devolve ``False`` e quem responde é a sonda do motor.
+    """
+    lines = {str(line.get("line_id") or ""): line for line in (session.items or []) if isinstance(line, dict)}
+    prices: dict[int, int] = {}
+    for index, item in enumerate(payload.get("items") or []):
+        if not isinstance(item, dict) or _is_delivery_fee_item(item):
+            continue
+        line = lines.get(str(item.get("line_id") or ""))
+        if line is None:
+            return False
+        meta = line.get("meta") or {}
+        list_q = _int_q(meta.get("_list_q"))
+        if list_q <= 0:
+            return False
+        disc = meta.get("_disc") if isinstance(meta.get("_disc"), dict) else {}
+        if disc.get("type") == "manual":
+            return False
+        line_disc_q = 0 if disc.get("scope") == "order" else _int_q(disc.get("amount_q"))
+        prices[index] = max(0, list_q - line_disc_q)
+    items = payload.get("items") or []
+    for index, price_q in prices.items():
+        items[index]["unit_price_q"] = price_q
+        items[index]["list_price_q"] = _int_q((lines[str(items[index].get("line_id"))].get("meta") or {}).get("_list_q"))
+    return True
 
 
 def _run_pricing_probe(
