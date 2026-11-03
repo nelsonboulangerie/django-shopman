@@ -12082,6 +12082,8 @@
             "_stamp_engine_prices",
             "_stamp_list_prices_from_session",
             "_stamp_pricing_channel",
+            "_stamp_tab_prices_for_manual_discount",
+            "_stamp_tab_prices_from_engine_lines",
             "_structured_coordinates",
             "_tab_label_from_input",
             "_terminal_cash_amount_q",
