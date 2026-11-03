@@ -189,14 +189,16 @@ describe("useMarketingNotificationInbox", () => {
     let unmounted: (() => void) | undefined;
     const listeners = new Map<string, () => void>();
     const close = vi.fn();
+    const sources: FakeEventSource[] = [];
     class FakeEventSource {
+      readyState = 1;
       onopen: (() => void) | null = null;
       onerror: (() => void) | null = null;
 
       constructor(
         public url: string,
         public options: { withCredentials: boolean },
-      ) {}
+      ) { sources.push(this); }
 
       addEventListener(name: string, callback: () => void) {
         listeners.set(name, callback);
@@ -244,8 +246,23 @@ describe("useMarketingNotificationInbox", () => {
       expect.any(Function),
     );
 
+    sources[0]!.onopen!();
+    expect(box.realtime.value).toBe("live");
+    sources[0]!.readyState = 2;
+    sources[0]!.onerror!();
+    expect(box.realtime.value).toBe("polling");
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(sources).toHaveLength(2);
+    sources[1]!.onopen!();
+    await Promise.resolve();
+    expect(box.realtime.value).toBe("live");
+    expect(refresh).toHaveBeenCalledTimes(2);
+
     unmounted!();
-    expect(close).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(sources).toHaveLength(2);
+    expect(refresh).toHaveBeenCalledTimes(2);
     expect(removeDocumentListener).toHaveBeenCalledTimes(1);
     expect(removeWindowListener).toHaveBeenCalledTimes(1);
     vi.useRealTimers();

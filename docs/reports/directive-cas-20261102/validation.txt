@@ -1,0 +1,31 @@
+PostgreSQL: CAS + dispatch + worker + customer_orders
+Exit code: 0
+..............................................................           [100%]
+62 passed in 25.43s
+
+Prova negativa: consumidores originais, mesmos 16 casos PostgreSQL
+Exit code: 1
+FAILED shopman/shop/tests/test_directive_claims_postgres.py::test_stale_outcome_preserves_reaper_and_new_claim[True-unexpected-inline]
+FAILED shopman/shop/tests/test_directive_claims_postgres.py::test_stale_outcome_preserves_reaper_and_new_claim[True-unexpected-customer]
+14 failed, 2 passed in 7.78s
+
+Pacote Orderman completo, SQLite
+Exit code: 0
+s....................................................................... [ 83%]
+.......................................................          [100%]
+342 passed, 1 skipped, 8 subtests passed in 8.17s
+
+PostgreSQL: CAS + gate de runtime + payment timeout
+Exit code: 0
+.........................................                                [100%]
+41 passed in 15.37s
+
+PostgreSQL: identidade/inventário R0/R1 + Watchman release
+Exit code: 0
+..............................................                           [100%]
+46 passed in 2.76s
+
+Lint: ruff check dos cinco arquivos Python alterados, exit code 0, All checks passed!
+git diff --check: exit code 0
+scripts/check_orchestrator_units.py: exit code 0, test_gaps={} instance_debt=0
+scripts/release_inventory.py inventory: exit code 0

@@ -10,7 +10,8 @@ import {
   exitGesture,
   nextOutRef,
   primaryVerb,
-  stationProgress,
+  kitchenWaiting,
+  productionLines,
   stripSummary,
   swipeHint,
   waitingStripText,
@@ -232,50 +233,52 @@ describe("swipeHint", () => {
   });
 });
 
-describe("stationProgress", () => {
-  it("um traço por estação e o que falta", () => {
-    const progress = stationProgress({
-      order_pk: 1,
-      missing_label: "Falta Café",
-      stations: [
-        station("Forno", "done"),
-        station("Lanches", "done"),
-        station("Café", "in_progress"),
-      ],
-    });
-    expect(progress?.segments.map((s) => s.state)).toEqual([
-      "done",
-      "done",
-      "working",
+describe("kitchenWaiting", () => {
+  it("diz só quem ainda falta, sem fração", () => {
+    expect(
+      kitchenWaiting({
+        order_pk: 1,
+        missing_label: "Faltam Café e Lanches",
+        stations: [
+          station("Forno", "done"),
+          station("Lanches", "pending"),
+          station("Café", "in_progress"),
+        ],
+      }),
+    ).toBe("Lanches e Café");
+  });
+  it("todas prontas ou sem Cozinha: nada", () => {
+    expect(
+      kitchenWaiting({
+        order_pk: 1,
+        missing_label: "",
+        stations: [station("Forno", "done"), station("Café", "done")],
+      }),
+    ).toBe("");
+    expect(kitchenWaiting(null)).toBe("");
+  });
+});
+
+describe("productionLines", () => {
+  const wo = (status: string, recipe_name = "Croissant") => ({
+    ref: `WO-${status}`,
+    status,
+    status_label: status,
+    output_sku: "CRO",
+    recipe_name,
+    planned_qty: "12",
+    finished_qty: "",
+    progress_pct: 0,
+  });
+  it("uma frase por ordem, com o nome da receita e o estado em palavras", () => {
+    expect(
+      productionLines({
+        awaiting_work_orders: [wo("planned"), wo("started", "Pão de queijo")],
+      }).map((l) => l.text),
+    ).toEqual([
+      "Produção de Croissant: não começou",
+      "Produção de Pão de queijo: em andamento",
     ]);
-    expect(progress?.summary).toBe("2 de 3 prontos");
-    expect(progress?.missing).toBe("falta Café");
-    expect(progress?.missingNames).toBe("Café");
-  });
-  it("todas prontas: quem concluiu", () => {
-    const progress = stationProgress({
-      order_pk: 1,
-      missing_label: "",
-      stations: [station("Forno", "done"), station("Café", "done")],
-    });
-    expect(progress).toMatchObject({
-      done: true,
-      summary: "Forno e Café prontos",
-      missing: "",
-    });
-  });
-  it("papel que não saiu: o traço no tom do bloqueio", () => {
-    const progress = stationProgress({
-      order_pk: 1,
-      missing_label: "Falta Lanches",
-      stations: [
-        station("Lanches", "pending", { prints: true, paper_failed: true }),
-      ],
-    });
-    expect(progress?.segments[0]?.state).toBe("alert");
-  });
-  it("sem Cozinha: nada", () => {
-    expect(stationProgress(null)).toBeNull();
   });
 });
 

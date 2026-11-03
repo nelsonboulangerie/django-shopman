@@ -1229,65 +1229,38 @@ export function primaryVerb(
   return aff.label;
 }
 
-export type SegmentState = "done" | "working" | "waiting" | "alert";
-
-export interface StationProgress {
-  segments: Array<{ ref: string; state: SegmentState; title: string }>;
-  /** "Forno e Café prontos" · "2 de 3 prontos" */
-  summary: string;
-  /** "falta Café" (o que ainda segura o pedido), vazio quando todas terminaram. */
-  missing: string;
-  /** Nomes do que falta, para "Aguardando Café". */
-  missingNames: string;
-  done: boolean;
-}
-
 function joinNames(names: string[]): string {
   return names.length <= 1
     ? (names[0] ?? "")
     : `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
 }
 
-/** A barra de progresso por estação (um traço por estação) e a frase dela. */
-export function stationProgress(
-  kitchen: OrderCardProjection["kitchen"],
-): StationProgress | null {
-  if (!kitchen || !kitchen.stations.length) return null;
-  const segments = kitchen.stations.map((station) => {
-    const state: SegmentState =
-      station.state === "done"
-        ? "done"
-        : station.prints && station.paper_failed
-          ? "alert"
-          : station.state === "in_progress"
-            ? "working"
-            : "waiting";
-    return {
-      ref: station.station_ref,
-      state,
-      title: `${station.station_name}: ${station.state_label}`,
-    };
-  });
-  const doneNames = kitchen.stations
-    .filter((s) => s.state === "done")
-    .map((s) => s.station_name);
-  const missingNames = kitchen.stations
-    .filter((s) => s.state !== "done")
-    .map((s) => s.station_name);
-  const done = missingNames.length === 0;
-  const total = kitchen.stations.length;
-  const summary = done
-    ? `${joinNames(doneNames)} ${total === 1 ? "pronto" : "prontos"}`
-    : `${doneNames.length} de ${total} ${doneNames.length === 1 ? "pronto" : "prontos"}`;
-  const label = kitchen.missing_label || "";
-  const missing = label ? label.charAt(0).toLowerCase() + label.slice(1) : "";
-  return {
-    segments,
-    summary,
-    missing,
-    missingNames: joinNames(missingNames),
-    done,
-  };
+/** As estações que ainda devem este pedido ("Cafés e Lanches"); vazio sem Cozinha ou
+ *  com todas prontas. O cartão diz "Aguardando Cafés e Lanches", sem barra: o que
+ *  importa é quem falta, não a fração. */
+export function kitchenWaiting(kitchen: OrderCardProjection["kitchen"]): string {
+  if (!kitchen) return "";
+  return joinNames(
+    kitchen.stations.filter((s) => s.state !== "done").map((s) => s.station_name),
+  );
+}
+
+const PRODUCTION_STATE: Record<string, string> = {
+  planned: "não começou",
+  started: "em andamento",
+  finished: "concluída",
+  void: "cancelada",
+};
+
+/** A produção que o pedido espera, uma frase por ordem: "Produção de Croissant: não
+ *  começou". Sem porcentagem: 0% de uma ordem planejada não diz nada ao balcão. */
+export function productionLines(
+  card: Pick<OrderCardProjection, "awaiting_work_orders">,
+): Array<{ ref: string; text: string }> {
+  return card.awaiting_work_orders.map((wo) => ({
+    ref: wo.ref,
+    text: `Produção de ${wo.recipe_name}: ${PRODUCTION_STATE[wo.status] ?? wo.status_label.toLowerCase()}`,
+  }));
 }
 
 /** A Saída: o primeiro cartão com o gesto da saída à mão é o "Próximo". */

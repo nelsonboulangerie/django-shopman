@@ -146,6 +146,7 @@ class AwaitingWorkOrderProjection:
     status: str
     status_label: str
     output_sku: str
+    recipe_name: str
     planned_qty: str
     finished_qty: str
     progress_pct: int
@@ -2495,6 +2496,7 @@ def _awaiting_work_orders(order: Order) -> tuple[AwaitingWorkOrderProjection, ..
                 status=wo.status,
                 status_label=WO_STATUS_LABELS.get(wo.status, wo.status),
                 output_sku=wo.output_sku,
+                recipe_name=wo.recipe.name or wo.recipe.ref,
                 planned_qty=_qty(wo.quantity),
                 finished_qty=_qty(wo.finished) if wo.finished is not None else "",
                 progress_pct=_work_order_progress_pct(wo),

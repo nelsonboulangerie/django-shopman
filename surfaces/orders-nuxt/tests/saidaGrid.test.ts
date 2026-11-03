@@ -15,10 +15,11 @@ describe("Saída larga", () => {
     expect(root).not.toMatch(/\bh-full\b/);
   });
 
-  it("o cartão da vez tem o destaque semântico, pelo tema do kit", () => {
+  it("o cartão da vez tem a moldura do KDS (borda grossa e halo dourado), pelo tema do kit", () => {
     const card = readFileSync(new URL("../app/components/OrderCard.vue", import.meta.url), "utf8");
-    expect(card).toContain(`:data-highlight="next ? 'true' : undefined"`);
+    expect(card).toContain(`:data-highlight="next ? 'ready' : undefined"`);
     const theme = readFileSync(new URL("../../operator-kit/app/app.config.ts", import.meta.url), "utf8");
-    expect(theme).toContain('root: "data-[highlight=true]:ring-2 data-[highlight=true]:ring-primary"');
+    expect(theme).toContain("data-[highlight=ready]:ring-2 data-[highlight=ready]:ring-primary");
+    expect(theme).toContain("data-[highlight=ready]:shadow-[0_0_0_6px_");
   });
 });

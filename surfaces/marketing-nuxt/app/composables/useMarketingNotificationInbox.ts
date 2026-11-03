@@ -1,3 +1,7 @@
+import {
+  openResilientEventSource,
+  type ResilientEventSource,
+} from "../../../operator-kit/app/utils/resilientEventSource";
 // Caixa pessoal de Marketing. O SSE só invalida; o fetch owner-scoped é a verdade.
 import { notificationAction } from "~/presentation/notifications";
 import type {
@@ -40,7 +44,7 @@ export function useMarketingNotificationInbox() {
   const unresolvedCount = computed(() => data.value?.counts.unresolved ?? 0);
   const shopTimezone = computed(() => data.value?.shop_timezone ?? "UTC");
   const hasMore = computed(() => data.value?.page.has_more ?? false);
-  let source: EventSource | null = null;
+  let source: ResilientEventSource | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
 
   async function reconcile() {
@@ -50,27 +54,26 @@ export function useMarketingNotificationInbox() {
 
   function connect() {
     if (source) return;
-    const url = ssePath("/sse/notifications", config.app.baseURL);
-    try {
-      realtime.value = "connecting";
-      source = new EventSource(url, { withCredentials: true });
-      ["message", "user-notification"].forEach((name) =>
-        source!.addEventListener(name, () => void reconcile()),
-      );
-      source.onopen = () => {
+    realtime.value = "connecting";
+    source = openResilientEventSource({
+      url: ssePath("/sse/notifications", config.app.baseURL),
+      events: ["user-notification"],
+      onEvent: () => void reconcile(),
+      onOpen: () => {
         const reconnected = realtime.value === "polling";
         realtime.value = "live";
         if (reconnected) void reconcile();
-      };
-      source.onerror = () => { realtime.value = "polling"; };
-    } catch {
-      source = null;
-      realtime.value = "polling";
-    }
+      },
+      onDown: () => {
+        realtime.value = "polling";
+      },
+    });
   }
 
   const onVisible = () => {
-    if (document.visibilityState === "visible") void reconcile();
+    if (document.visibilityState !== "visible") return;
+    void reconcile();
+    source?.reconnectNow();
   };
 
   onMounted(() => {

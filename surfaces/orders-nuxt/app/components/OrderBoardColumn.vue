@@ -91,13 +91,15 @@ const hint = computed(() =>
       :title="zoneEmptyText(zone.key)"
     />
 
-    <!-- p-px: o contorno do Card é um ring 1 px para fora; sem o respiro, a área que
-         rola o cortava no topo e na lateral. items-start: cada cartão com a altura do
+    <!-- Respiro de 8 px (com a margem negativa, os cartões ficam no mesmo alinhamento):
+         o contorno do Card é um ring para fora, e o próximo a sair leva o halo de 6 px
+         do KDS; sem o respiro, a área que rola os cortava no topo e na lateral (dono,
+         02/11/2026). items-start: cada cartão com a altura do
          que tem; esticado até o mais alto da linha, o curto ganhava uma faixa vazia
          acima do rodapé (dono, 08/10/2026). -->
     <template v-else-if="wide">
       <div
-        class="grid min-h-0 flex-1 auto-rows-max items-start gap-3 overflow-y-auto p-px pb-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]"
+        class="grid min-h-0 flex-1 auto-rows-max items-start gap-3 overflow-y-auto -mx-2 -mt-2 px-2 pt-2 pb-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]"
         data-zone-cards
       >
         <OrderCard
@@ -130,7 +132,7 @@ const hint = computed(() =>
 
     <div
       v-else
-      class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-px pb-3"
+      class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto -mx-2 -mt-2 px-2 pt-2 pb-3"
       data-zone-cards
     >
       <OperatorSwipeRow

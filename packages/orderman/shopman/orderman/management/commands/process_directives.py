@@ -12,6 +12,7 @@ from django.core.management import BaseCommand
 from django.db import close_old_connections, transaction
 from django.utils import timezone
 from shopman.orderman import registry, worker_heartbeat
+from shopman.orderman.claims import save_if_claimed
 from shopman.orderman.dispatch import notify_terminal_failure, retry_policy
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 from shopman.orderman.models import Directive
@@ -154,10 +155,6 @@ def _reap_stuck_directives(timeout_minutes: int, max_attempts: int) -> int:
     return reaped
 
 
-def _claim_matches(directive: Directive, attempts: int, started_at: datetime) -> bool:
-    return directive.attempts == attempts and directive.started_at == started_at
-
-
 def _restamp_claim(directive: Directive, attempts: int, started_at: datetime) -> datetime | None:
     """Carimba ``started_at`` desta diretiva no instante em que ela vai rodar.
 
@@ -177,39 +174,6 @@ def _restamp_claim(directive: Directive, attempts: int, started_at: datetime) ->
     return stamp
 
 
-def _save_if_claimed(
-    directive: Directive,
-    attempts: int,
-    started_at: datetime,
-    fields: dict,
-    *,
-    only_if_running: bool = False,
-) -> bool:
-    """Grava o desfecho só se o claim ainda for deste worker (compare-and-set).
-
-    Lê a linha sob ``select_for_update`` e confere a ficha ``(attempts,
-    started_at)``: o reaper zera ``started_at`` e um novo claim incrementa
-    ``attempts``, então qualquer um dos dois faz a ficha divergir. Divergiu, não
-    escreve nada e devolve ``False``. Usa ``save()`` (não ``update()``) para manter
-    os signals do modelo.
-    """
-    with transaction.atomic():
-        current = Directive.objects.select_for_update().filter(pk=directive.pk).first()
-        if current is None or not _claim_matches(current, attempts, started_at):
-            logger.warning(
-                "Directive %s #%s: claim perdido (reaper ou outro worker); "
-                "desfecho deste worker descartado",
-                directive.topic, directive.pk,
-            )
-            return False
-        if only_if_running and current.status != "running":
-            fields = {k: v for k, v in fields.items() if k != "status"}
-        for name, value in fields.items():
-            setattr(current, name, value)
-        current.save(update_fields=[*fields, "updated_at"])
-    for name in ("status", "error_code", "last_error", "available_at", "attempts", "started_at"):
-        setattr(directive, name, getattr(current, name))
-    return True
 
 
 class Command(BaseCommand):
@@ -343,7 +307,7 @@ class Command(BaseCommand):
                     self.stdout.write(
                         self.style.WARNING(f"Ignorando tópico {directive.topic}: nenhum handler registrado.")
                     )
-                    _save_if_claimed(
+                    save_if_claimed(
                         directive, attempts, now, {"status": "queued", "attempts": attempts - 1},
                     )
                     continue
@@ -404,7 +368,7 @@ class Command(BaseCommand):
                     # for deste worker. Recolocada na fila pelo reaper (ou já
                     # reivindicada por outro processo), a diretiva não é marcada
                     # `done` nem devolvida à fila por ele.
-                    wrote = outcome is not None and _save_if_claimed(
+                    wrote = outcome is not None and save_if_claimed(
                         directive, attempts, started_at, outcome, only_if_running=only_if_running,
                     )
                     if wrote and directive.status == "failed":
