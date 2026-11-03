@@ -52,6 +52,8 @@ import type {
 import { refDebounced } from "@vueuse/core";
 
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
+import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 
 import { periodLabel, resolvePeriod, todayIso, STORE_TIME_ZONE, type PeriodSelection } from "../../../operator-kit/app/presentation/dates";
 const DEFAULT_PERIOD: PeriodSelection = { preset: "day", from: "", to: "" };
@@ -815,6 +817,35 @@ const headerMenuItems = computed(() => [
     },
   ],
 ]);
+// A barra do topo no celular (regra da suíte): "Novo produto" disputa a vaga de ícone
+// com a Busca; o resto mora no ⋯. Sem isto, os botões da mesa iam espremidos na barra de
+// 56 px e empurravam o título e o selo para linhas soltas (dono, 02/11/2026).
+const phoneHeaderActions = computed<OperatorHeaderAction[]>(() => [
+  {
+    label: "Novo produto",
+    icon: "i-lucide-plus",
+    priority: 1,
+    disabled: !createAction()?.enabled,
+    onSelect: openCreate,
+  },
+  {
+    label: "Tabelão",
+    icon: "i-lucide-table-2",
+    disabled: !rows.value.length,
+    onSelect: () => {
+      bulkGridOpen.value = true;
+    },
+  },
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+  { label: "Exportar esta página em CSV", icon: "i-lucide-download", onSelect: exportCatalog },
+  {
+    label: "Importar CSV",
+    icon: "i-lucide-upload",
+    onSelect: () => {
+      importOpen.value = true;
+    },
+  },
+]);
 function rowMenuItems(row: CatalogRowProjection) {
   const primary = [
     {
@@ -1101,6 +1132,26 @@ watch(
 // coleções) e abre o primeiro já na aba "Preço e config", onde a vocação mora.
 const vocation = computed(() => vocationNotice(matrix.value?.vocation_pending));
 const skuToClassify = ref("");
+// Os avisos da tela moram no cabeçalho do kit: um inteiro, o resto em "e mais N", e
+// todo aviso se fecha. Fechado, volta no próximo carregamento enquanto a causa durar;
+// a vocação volta antes se o número mudar (o `id` leva a contagem).
+const screenAlerts = computed<OperatorScreenAlert[]>(() => [
+  ...(errorMsg.value
+    ? [{ id: `error:${errorMsg.value}`, title: errorMsg.value, color: "error" as const }]
+    : []),
+  ...(vocation.value
+    ? [
+        {
+          id: `vocation:${vocation.value.count}`,
+          title: vocation.value.headline,
+          description: vocation.value.names,
+          color: "info" as const,
+          icon: "i-lucide-tags",
+          action: { label: "Classificar", onSelect: () => void classifyVocation() },
+        },
+      ]
+    : []),
+]);
 async function classifyVocation() {
   const notice = vocation.value;
   if (!notice) return;
@@ -1510,7 +1561,10 @@ useHead({ title: "Catálogo" });
       title="Catálogo"
       :filters-wrap="false"
       desk-only-filters
+      :phone-actions="phoneHeaderActions"
+      actions-label="Mais ações do catálogo"
       :active-filters="activeFilters"
+      :alerts="screenAlerts"
     >
       <template #status>
         <OperatorLiveStatus
@@ -1680,32 +1734,6 @@ useHead({ title: "Catálogo" });
     </OperatorPageHeader>
 
     <section class="flex min-h-0 flex-1 flex-col gap-4 p-4 sm:p-6">
-      <NuxtAlert
-        v-if="errorMsg"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        :description="errorMsg"
-      />
-      <!-- Vocação: aviso padrão do conjunto mínimo, em `info` (serve só ao B.I.;
-           não pede pressa). A ação repete a cor do aviso (PR #1545). -->
-      <NuxtAlert
-        v-if="vocation"
-        color="info"
-        variant="subtle"
-        icon="i-lucide-tags"
-        :title="vocation.headline"
-        :description="vocation.names"
-        :actions="
-          alertActions('info', [
-            {
-              label: 'Classificar',
-              onClick: classifyVocation,
-            },
-          ])
-        "
-        data-testid="vocation-notice"
-      />
       <NuxtAlert
         v-if="orderDraft"
         color="warning"
