@@ -348,6 +348,7 @@ export interface AwaitingWorkOrderProjection {
   status: string;
   status_label: string;
   output_sku: string;
+  recipe_name: string;
   planned_qty: string;
   finished_qty: string;
   progress_pct: number;

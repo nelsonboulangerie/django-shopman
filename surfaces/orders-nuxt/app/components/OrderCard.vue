@@ -5,7 +5,7 @@
 //   código grande + nome                         selo do estado · tempo
 //   etiquetas cheias (Retirada · 3 itens …)
 //   itens
-//   barra de progresso por estação + a frase dela ("2 de 3 prontos · falta Café")
+//   andamento numa frase, sem barra ("Produção de Croissant: não começou")
 //   "Pronto · automático · desfazer" (o sistema fez)
 //   bloqueio escrito no cartão
 //   pagamento ······························ total
@@ -27,7 +27,8 @@ import {
   packLabel,
   primaryVerb,
   splitRef,
-  stationProgress,
+  kitchenWaiting,
+  productionLines,
   undoLine,
   type AffordanceRef,
   type Tone,
@@ -80,9 +81,9 @@ const nowMs = useNowTick(() => props.card.server_now_iso);
 const clock = computed(() => cardClock(props.card, nowMs.value));
 const seal = computed(() => cardSeal(props.card, { next: props.next }));
 
-// A Cozinha neste pedido: a barra por estação, o "Pronto" da estação sem tela e o
+// A Cozinha neste pedido: quem ainda falta, o "Pronto" da estação sem tela e o
 // "Voltar para…" no menu do pedido.
-const progress = computed(() => stationProgress(props.card.kitchen));
+const kitchenMissing = computed(() => kitchenWaiting(props.card.kitchen));
 const attentionStations = computed(() =>
   kitchenChips(props.card.kitchen).filter(
     (chip) => chip.canMarkReady || chip.tone === "alert" || chip.cancelledNote,
@@ -106,11 +107,20 @@ const primaryLabel = computed(() =>
 );
 // A estação ainda trabalha e o "Marcar pronto" mora no menu: o lugar do botão diz o que
 // se espera ("Aguardando Café"), sem ser botão.
-const waitingFor = computed(() =>
-  !primary.value && progress.value && !progress.value.done
-    ? progress.value.missingNames
-    : "",
-);
+const waitingFor = computed(() => (primary.value ? "" : kitchenMissing.value));
+// O andamento do pedido: uma frase por coisa que ele espera, nunca barra (dono,
+// 02/11/2026: barras de cores e tamanhos diferentes não diziam a que se referiam).
+// A Cozinha só entra aqui quando o botão do pedido não diz o "Aguardando".
+const progressLines = computed(() => [
+  ...productionLines(props.card).map((line) => ({
+    key: line.ref,
+    icon: "lucide:factory",
+    text: line.text,
+  })),
+  ...(primary.value && kitchenMissing.value
+    ? [{ key: "kitchen", icon: "lucide:chef-hat", text: `Aguardando ${kitchenMissing.value}` }]
+    : []),
+]);
 
 // Pagamento: o tom vem da projeção. Dinheiro não é "pago" nem "devendo".
 const paymentColor = computed<"warning" | "error" | "success" | "neutral">(
@@ -159,17 +169,6 @@ function pressEnd() {
 }
 onBeforeUnmount(pressEnd);
 
-function segmentColor(state: string): "success" | "error" | "info" | "neutral" {
-  if (state === "done") return "success";
-  if (state === "alert") return "error";
-  if (state === "working") return "info";
-  return "neutral";
-}
-function segmentValue(state: string): number {
-  if (state === "done") return 100;
-  if (state === "working" || state === "alert") return 50;
-  return 0;
-}
 /** Um aviso do pedido, compacto: a pílula no cartão e o Alert inteiro no Popover. */
 interface CardNotice {
   key: string;
@@ -449,7 +448,7 @@ function nuxtIcon(icon: string): string {
     class="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto]"
     :variant="selected ? 'subtle' : 'outline'"
     :data-card-state="handoff ? 'handoff' : seal.tone"
-    :data-highlight="next ? 'true' : undefined"
+    :data-highlight="next ? 'ready' : undefined"
     :aria-selected="selecting ? selected : undefined"
     @pointerdown="pressStart"
     @pointerup="pressEnd"
@@ -711,41 +710,22 @@ function nuxtIcon(icon: string): string {
           <span class="truncate">{{ onRoad }}</span>
         </p>
 
-        <!-- a Cozinha neste pedido: um traço por estação e a frase -->
-        <div
-          v-if="progress"
+        <!-- andamento: uma frase por coisa que o pedido espera (a estação que pede
+             alguém vira pílula de aviso, em notices) -->
+        <ul
+          v-if="progressLines.length && !handoff"
           class="flex flex-col gap-1"
-          data-kitchen-progress
-          :data-kitchen="progress.done ? undefined : ''"
+          data-card-progress
         >
-          <div
-            class="grid gap-2"
-            role="list"
-            aria-label="Estações deste pedido"
+          <li
+            v-for="line in progressLines"
+            :key="line.key"
+            class="flex items-center gap-1.5 op-label text-muted-foreground"
           >
-            <NuxtProgress
-              v-for="seg in progress.segments"
-              :key="seg.ref"
-              :model-value="segmentValue(seg.state)"
-              :color="segmentColor(seg.state)"
-              size="sm"
-              role="listitem"
-              :title="seg.title"
-              :aria-label="seg.title"
-              data-kitchen-station
-            />
-          </div>
-          <p v-if="progress.done" class="op-micro text-muted-foreground">
-            {{ progress.summary }}
-          </p>
-          <p v-else class="op-label">
-            <span class="text-muted-foreground">{{ progress.summary }} · </span
-            ><b class="font-semibold text-info" data-kitchen-missing>{{
-              progress.missing
-            }}</b>
-          </p>
-          <!-- a estação que pede alguém vira pílula de aviso (notices) -->
-        </div>
+            <Icon :name="line.icon" class="size-3.5 shrink-0" />
+            <span class="min-w-0">{{ line.text }}</span>
+          </li>
+        </ul>
 
         <!-- o sistema fez: "Pronto · automático · desfazer" -->
         <div
@@ -856,36 +836,6 @@ function nuxtIcon(icon: string): string {
         :label="`Código de retirada · ${card.ifood_pickup_code}`"
         data-ifood-pickup-code
       />
-
-      <!-- aguardando produção -->
-      <div
-        v-if="card.awaiting_work_orders.length && !handoff"
-        class="flex flex-col gap-1.5"
-      >
-        <div
-          v-for="wo in card.awaiting_work_orders"
-          :key="wo.ref"
-          class="flex flex-col gap-1"
-          data-work-order-progress
-        >
-          <p class="flex items-center gap-1.5 op-micro text-muted-foreground">
-            <Icon name="lucide:factory" class="size-3 shrink-0" />
-            <span class="min-w-0 flex-1 truncate"
-              >{{ wo.output_sku }} · {{ wo.status_label }}</span
-            >
-            <span class="shrink-0 tnum">{{ wo.progress_pct }}%</span>
-          </p>
-          <NuxtProgress
-            :model-value="wo.progress_pct"
-            :max="100"
-            color="primary"
-            size="sm"
-            :get-value-label="
-              () => `${wo.output_sku}, ${wo.status_label}, ${wo.progress_pct}%`
-            "
-          />
-        </div>
-      </div>
 
       <!-- erro da ação: a razão do servidor, à vista até dispensar -->
       <NuxtAlert

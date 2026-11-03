@@ -1881,10 +1881,14 @@ function compactClear() {
       </template>
     </NuxtDrawer>
 
-    <!-- celular: as colunas viram abas dentro da segunda faixa canônica do header. -->
+    <!-- celular: as colunas viram abas dentro da segunda faixa canônica do header. O
+         traço da aba ativa assenta na borda da faixa, sem vão nem segunda linha (dono,
+         02/11/2026): a faixa não tem respiro embaixo, e a aba dentro da faixa não
+         desenha linha própria (tema do kit, `tabs` link). -->
     <OperatorToolbar
       v-if="boardAsTabs && view === 'board' && zones.length"
-      class="py-2"
+      class="items-end pt-2 pb-0"
+      data-board-zone-bar
     >
       <NuxtTabs
         :model-value="phoneZone"

@@ -217,10 +217,14 @@ export default defineAppConfig({
         {
           // Na aba sublinhada a rolagem recorta o que passa da caixa da lista: o traço
           // da aba ativa sobe para dentro dela (antes ficava 1 px sobre a borda).
+          // Dentro de uma `OperatorToolbar` a linha é a da faixa: a lista não desenha a
+          // dela, senão ficam duas linhas com um vão entre elas (dono, 02/11/2026); e
+          // sem o `-mb-px` oficial, que punha o traço da aba ativa sob a borda da faixa,
+          // onde a rolagem da faixa o recortava.
           variant: "link",
           orientation: "horizontal",
           class: {
-            list: "overflow-x-auto overscroll-x-contain [scrollbar-width:none]",
+            list: "overflow-x-auto overscroll-x-contain [scrollbar-width:none] in-data-operator-toolbar:mb-0 in-data-operator-toolbar:border-b-0",
             trigger: "shrink-0",
             indicator: "bottom-0",
           },
@@ -263,8 +267,11 @@ export default defineAppConfig({
       // Destaque semântico do item da vez num Card (dono, 08/10/2026): o mesmo traço
       // do `PageCard highlight` (anel de 2 px na primária). O Card oficial não tem a prop;
       // quem usa marca `data-highlight` e o tema desenha, uma vez só para os 9 apps.
+      // `data-highlight="ready"` é o próximo a sair, na moldura do KDS (borda de 2 px,
+      // fundo e halo no verde do pronto): o Gestor na Saída usa a mesma do KDS (dono,
+      // 02/11/2026: o anel fino deixava dúvida sobre qual era o da vez).
       slots: {
-        root: "data-[highlight=true]:ring-2 data-[highlight=true]:ring-primary",
+        root: "data-[highlight=true]:ring-2 data-[highlight=true]:ring-primary data-[highlight=ready]:ring-2 data-[highlight=ready]:ring-success data-[highlight=ready]:bg-success/8 data-[highlight=ready]:shadow-[0_0_0_6px_color-mix(in_oklab,var(--success)_15%,transparent)]",
         header: "p-4 sm:p-4",
         body: "p-4 sm:p-4 has-[>[data-slot=root]:only-child>table]:p-0 has-[>[data-slot=root]:only-child>[data-slot=item][data-state]]:py-0",
         footer: "p-4 sm:p-4",
