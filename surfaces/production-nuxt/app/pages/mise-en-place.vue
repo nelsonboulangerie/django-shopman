@@ -178,6 +178,7 @@ function refreshAll() {
       <ProductionHeader
         v-model:query="query"
         title="Preparação"
+        bench="mise-en-place"
         :count="mode === 'insumos' ? lines.length : visibleTickets.length"
         :count-label="mode === 'insumos' ? 'insumos' : 'preparos'"
         :pending="isPending"

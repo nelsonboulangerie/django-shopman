@@ -9,11 +9,12 @@
 //     (`#filters`, que no celular vão para o painel "Filtros") e, no fim, o progresso
 //     do dia ("4 de 28 planejados" com a barra);
 //   · aviso da tela: `alerts`, logo abaixo da toolbar.
-// As etapas do lote (Alt+1 a Alt+5), "/" (busca) e "?" (ajuda) são do shell e da busca
-// da suíte. Este cabeçalho só segura o R, e entrega à ajuda do kit os grupos de teclas
-// da Produção.
+// As teclas das seções (Alt+1 em diante), "/" (busca) e "?" (ajuda) são do shell e da busca
+// da suíte. Nas três telas da Bancada (`bench`), as etapas ficam logo abaixo da linha de cima.
+// Este cabeçalho só segura o R, e entrega à ajuda do kit os grupos de teclas da Produção.
 import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
+import type { BenchCut } from "~/presentation/productionSections";
 import {
   isEditableKeyboardTarget,
   PRODUCTION_SHORTCUT_GROUPS,
@@ -48,6 +49,8 @@ const props = withDefaults(
     /** Recortes ativos (viram número no "Filtros" e chips no celular). */
     activeFilters?: { key: string; label: string; remove: () => void }[];
     alerts?: OperatorScreenAlert[];
+    /** A etapa da Bancada que esta tela é: liga as abas Preparo · Produção · Finalização. */
+    bench?: BenchCut;
   }>(),
   {
     count: undefined,
@@ -64,6 +67,7 @@ const props = withDefaults(
     actions: () => [],
     activeFilters: () => [],
     alerts: () => [],
+    bench: undefined,
   },
 );
 const emit = defineEmits<{ refresh: [] }>();
@@ -169,6 +173,7 @@ const counterText = computed(() => {
         />
       </div>
     </template>
+    <template v-if="bench" #cuts><ProductionBenchCuts :current="bench" /></template>
     <template v-if="$slots.below" #below><slot name="below" /></template>
   </OperatorPageHeader>
 </template>
