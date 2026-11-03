@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useAlertDismissals } from "../../../operator-kit/app/composables/useAlertDismissals";
 // Order board — the operator hub. Reads the two-zone queue projection + realtime
 // (SSE + 30s poll) via useOrdersBoard; renders Entrada / Preparo / Saída columns of
 // OrderCards; the gestures POST through the django proxy (CSRF handled there) and
@@ -1461,6 +1462,10 @@ function seeAttention() {
   if (phoneExitMode.value && zone !== "expedition" && zone !== "prep") phoneExitMode.value = false;
   pickPhoneZone(zone);
 }
+// O X da pílula dispensa o aviso só nesta montagem (a regra do kit, `useAlertDismissals`):
+// o próximo pedido que pedir atenção traz a pílula de volta. Visto continua sendo o "eu vi,
+// pode parar de avisar".
+const notices = useAlertDismissals();
 const compactOptions = computed(() => phoneHeaderActions.value.map(({ priority: _p, ...item }) => item));
 const compactTotal = computed(() => zones.value.reduce((n, z) => n + z.cards.length, 0));
 const compactFilterLabel = computed(() => activeFilters.value.map((f) => f.label).join(', '));
@@ -1521,12 +1526,13 @@ function compactClear() {
          e Visto. Na Saída fica acima do "Entregar", a ação do momento ali. Preso à página
          (`absolute`), não à janela: a barra de baixo do shell fica fora dela, e o aviso
          nunca a cobre. -->
-    <div v-if="attentionPending && !exitPostView" :class="phoneExitMode ? 'bottom-24' : 'bottom-4'" class="absolute inset-x-3 z-40 md:hidden" role="status" data-attention-pill>
+    <div v-if="attentionPending && !exitPostView && notices.isOpen(`attention:${attentionRef}`)" :class="phoneExitMode ? 'bottom-24' : 'bottom-4'" class="absolute inset-x-3 z-40 md:hidden" role="status" data-attention-pill>
       <div class="flex items-center gap-2 rounded-2xl bg-inverted py-1.5 pl-4 pr-1.5 text-inverted shadow-lg">
         <NuxtIcon name="i-lucide-bell-ring" class="size-5 shrink-0" />
         <p class="min-w-0 flex-1 leading-tight"><strong class="block truncate">{{ attention.code || attention.what }}</strong><span v-if="attention.code" class="block truncate text-xs opacity-80">{{ attention.what }}</span></p>
         <NuxtButton label="Ver" color="neutral" variant="ghost" class="min-h-11 text-inverted" data-attention-see @click="seeAttention" />
         <NuxtButton icon="i-lucide-check" label="Visto" color="neutral" variant="outline" class="min-h-11" data-attention-seen @click="acknowledgeAttention" />
+        <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square class="size-11 justify-center text-inverted" aria-label="Fechar o aviso" data-attention-close @click="notices.close(`attention:${attentionRef}`)" />
       </div>
     </div>
     <!-- O som pede um toque do navegador uma vez; a tela pede, ao abrir (celular). Qualquer

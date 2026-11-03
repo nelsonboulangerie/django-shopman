@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useAlertDismissals } from "../../../operator-kit/app/composables/useAlertDismissals";
 import type {
   OperationChecklistRun,
   OperationChecklistTask,
@@ -18,6 +19,8 @@ const {
 } = useOperationChecklists();
 
 useHead({ title: "Rotinas" });
+// O erro de uma ação fecha (X) e volta se a mesma ação falhar com outra mensagem.
+const notices = useAlertDismissals();
 
 const shifts = reactive<Record<string, string>>({});
 const evidence = reactive<
@@ -111,11 +114,13 @@ const phoneHeaderActions = computed(() => [
           :description="httpErrorMessage(error, 'Tente novamente.')"
         />
         <NuxtAlert
-          v-if="message"
+          v-if="message && notices.isOpen(`message:${message}`)"
+          v-bind="notices.closeProps"
           color="error"
           variant="subtle"
           icon="i-lucide-circle-alert"
           :description="message"
+          @update:open="notices.onOpen(`message:${message}`, $event)"
         />
 
         <div v-if="pending && !board" class="grid gap-3">
