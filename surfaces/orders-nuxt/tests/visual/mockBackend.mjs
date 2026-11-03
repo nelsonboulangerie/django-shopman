@@ -79,6 +79,16 @@ function productSheetPayload() {
     ],
   };
 }
+// Detalhe de produto do Catálogo: o payload real do backend de teste (produto "Pão"),
+// com SKU e nome do produto pedido. A foto "padronizada" volta igual e "guardada"
+// devolve uma URL fixa: o mock não processa imagem.
+const productDetailTemplate = readFixture("catalog-product-detail.json");
+function productDetailPayload(sku) {
+  const row = recordedFor(new URL("http://mock/api/v1/backstage/catalog/?collection"))?.matrix?.rows?.find((item) => item.sku === sku);
+  const body = JSON.parse(JSON.stringify(productDetailTemplate));
+  body.product = { ...body.product, sku, name: row?.name || body.product.name, image_url: row?.image_url || "" };
+  return body;
+}
 const detailTemplate = recorded["/api/v1/backstage/orders/IFOOD-261006-W01/"];
 /** O detalhe de um pedido da galeria: o detalhe real gravado, com os dados do card. */
 function galleryDetail(ref) {
@@ -297,6 +307,23 @@ createServer((req, res) => {
   if (path.indexOf("/events/") >= 0 || path.indexOf("/sse/") >= 0) { res.statusCode = 204; res.end(); return; }
   if (req.method === "GET" && path === "/api/v1/backstage/catalog/products/sheet/") {
     send(res, 200, productSheetPayload());
+    return;
+  }
+  if (req.method === "POST" && (path === "/api/v1/backstage/catalog/product/photo/" || path === "/api/v1/backstage/catalog/product/photo/upload/")) {
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; });
+    req.on("end", () => {
+      let body;
+      try { body = JSON.parse(raw || "{}"); } catch { body = {}; }
+      send(res, 200, path.endsWith("/upload/")
+        ? { url: "https://media.example.com/produtos/foto-padronizada.jpg", name: "foto-padronizada.jpg" }
+        : { image: body.image || "" });
+    });
+    return;
+  }
+  const productDetail = req.method === "GET" && path.match(/^\/api\/v1\/backstage\/catalog\/product\/([^/]+)\/$/);
+  if (productDetail && !["create", "duplicate", "draft", "import"].includes(productDetail[1])) {
+    send(res, 200, productDetailPayload(decodeURIComponent(productDetail[1])));
     return;
   }
   if (req.method === "GET") {
