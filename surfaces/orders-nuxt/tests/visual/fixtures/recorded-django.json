@@ -50044,6 +50044,7 @@
      "status": "planned",
      "status_label": "Planejada",
      "output_sku": "CRO",
+     "recipe_name": "Croissant",
      "planned_qty": "42",
      "finished_qty": "",
      "progress_pct": 0

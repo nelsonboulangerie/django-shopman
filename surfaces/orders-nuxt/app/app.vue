@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { operatorAlertToInbox } from "../../operator-kit/app/presentation/suiteChrome";
+import { gestorSwitcherSections } from "~/presentation/gestorSections";
 
 // Gestor de Pedidos surface shell. Thin shell — the order hub is a board + detail,
 // each at its own URL, so it uses pages/ routing (like the KDS, unlike the POS
@@ -85,9 +86,6 @@ async function restoreAuthenticatedWorkspace() {
 }
 
 const { sections, settings, current } = useGestorSections();
-// O trocador (modelo de navegação, 31/10/2026) lista tudo, pela forma. Chão: Pedidos,
-// Saída e Rotinas (andando pela loja, dono 31/10). Escritório: o que mora em Ajustes.
-const FLOOR = new Set(["orders", "exit", "checklists"]);
 // As seções de Ajustes dependem de permissão lida por uma chave que leva o id de quem
 // opera, e no servidor a sessão ainda não chegou quando a chave nasce: lá a resposta
 // vem de uma chave, aqui de outra. Elas entram depois de montar, para o servidor e a
@@ -96,12 +94,11 @@ const mounted = ref(false);
 onMounted(() => {
   mounted.value = true;
 });
-const switcherSections = computed(() => {
-  const seen = new Set<string>();
-  return [...sections.value.filter((s) => s.key !== "settings"), ...(mounted.value ? settings.value : [])]
-    .filter((s) => (seen.has(s.key) ? false : (seen.add(s.key), true)))
-    .map((s) => ({ ...s, form: FLOOR.has(s.key) ? ("floor" as const) : ("office" as const) }));
-});
+// O trocador lista tudo, pela forma; as do chão são as da barra de baixo no celular
+// (`gestorSwitcherSections`).
+const switcherSections = computed(() =>
+  gestorSwitcherSections(sections.value, mounted.value ? settings.value : []),
+);
 const { alerts, activeCount, ack, accept, isAccepting } = useAlerts();
 provideOperatorInboxAlerts(() => ({
   title: "Gerais",
@@ -138,6 +135,7 @@ useOperatorWindowTitle();
         :current="current"
         :switcher-sections="switcherSections"
         default-form="floor"
+        floor-bar
         label="Seções do Gestor"
         :operator-name="operator?.name"
         @lock="lock"

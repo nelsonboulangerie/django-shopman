@@ -15,7 +15,11 @@
 //
 // O sinal de cada seção é o MESMO da barra lateral: o chip do item (ponto, ou número
 // `4xl` com `inset: false`), e a descrição "Seção · N pendências" / "Seção · estado".
-import { computed } from "vue";
+//
+// A altura da barra vai para `--operator-quick-bar-inset` no `<html>` (0 sem barra), como
+// o `OfflineBanner` faz com o topo: o que flutua `fixed` na base (a pílula de aviso do
+// Gestor) sobe por ela sem adivinhar altura.
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 
 import type { OperatorSection } from "../presentation/appBar";
 import { quickBarLayout, railSignalChip, sectionDescription, sectionRailSignal } from "../presentation/suiteChrome";
@@ -32,6 +36,28 @@ const emit = defineEmits<{ select: [key: string]; more: [] }>();
 
 
 const layout = computed(() => quickBarLayout(props.sections));
+
+const root = ref<HTMLElement | null>(null);
+let observer: ResizeObserver | null = null;
+function publishInset(height: number) {
+  if (typeof document === "undefined") return;
+  document.documentElement.style.setProperty("--operator-quick-bar-inset", `${height}px`);
+}
+watch(root, (element) => {
+  observer?.disconnect();
+  observer = null;
+  if (!element || typeof ResizeObserver === "undefined") {
+    publishInset(0);
+    return;
+  }
+  observer = new ResizeObserver(() => publishInset(element.offsetHeight));
+  observer.observe(element);
+  publishInset(element.offsetHeight);
+});
+onBeforeUnmount(() => {
+  observer?.disconnect();
+  publishInset(0);
+});
 
 const items = computed(() => [
   ...layout.value.items.map((section) => {
@@ -66,6 +92,7 @@ const items = computed(() => [
        área segura e some do `lg` para cima, onde a barra lateral está na tela. -->
   <div
     v-if="layout.shown"
+    ref="root"
     class="shrink-0 bg-default pb-[env(safe-area-inset-bottom)] lg:hidden print:hidden"
     data-operator-suite-tabs
     data-focus-obstruction

@@ -216,3 +216,27 @@ export function gestorSettingsSections({
       : []),
   ];
 }
+
+/** As seções do chão: andando pela loja (dono, 31/10/2026). */
+export const GESTOR_FLOOR_SECTIONS: readonly string[] = ["orders", "exit", "checklists"];
+
+/**
+ * O trocador (modelo de navegação, 31/10/2026): a operação e o que mora em Ajustes, cada
+ * seção com a sua forma, sem o item Ajustes (o trocador já mostra o que mora nele).
+ * Chão: Pedidos, Saída e Rotinas, e são elas que vão para a barra de baixo no celular,
+ * ao alcance do polegar (`quick`; dono, 03/11/2026: "seção vai para baixo"). No topo da
+ * tela fica só a subdivisão da seção (as colunas do quadro). Escritório: o resto.
+ */
+export function gestorSwitcherSections(
+  sections: readonly OperatorSection[],
+  settings: readonly OperatorSection[],
+): OperatorSection[] {
+  const seen = new Set<string>();
+  return [...sections.filter((s) => s.key !== "settings"), ...settings]
+    .filter((s) => (seen.has(s.key) ? false : (seen.add(s.key), true)))
+    .map((s) =>
+      GESTOR_FLOOR_SECTIONS.includes(s.key)
+        ? { ...s, form: "floor" as const, quick: true }
+        : { ...s, form: "office" as const, quick: undefined },
+    );
+}

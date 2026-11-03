@@ -1237,6 +1237,10 @@ cabeçalho, logo abaixo da toolbar.
   mudar, ponha a grandeza no `id` (`vocation:${count}`): id novo é aviso novo.
 - `NuxtAlert` solto no topo de uma página, fora das `alerts`, é defeito: perde o X, o
   "e mais N" e a fixação. Aviso junto de um controle (erro de campo, diálogo) segue inline.
+- Aviso que não cabe nas `alerts` (convite com duas saídas, título rico, a pílula
+  flutuante do Gestor) também tem X: `useAlertDismissals()` dá o mesmo X do cabeçalho
+  (`closeProps`) e a dispensa por montagem (`isOpen(chave)`, `onOpen(chave, aberto)`), com
+  a grandeza na chave para voltar quando a causa mudar.
 
 **Ação dentro de aviso** (dono, 09/10/2026): a ação acompanha a cor do aviso. A
 **principal** é `solid` na cor do aviso; a **secundária**, `outline` na mesma cor. Nunca um
