@@ -1192,7 +1192,6 @@ const startedDescription = computed(() => {
     <ProductionHeader
       v-model:query="query"
       :title="title"
-      :bench="props.stage === 'open' ? 'open' : undefined"
       :active-filters="activeFilters"
       search-label="filtrando os produtos"
       :count="headerCount.count"

@@ -15,7 +15,7 @@ import ProductionHeader from "../../app/components/ProductionHeader.vue";
 import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 
 // Fase 2: o cabeçalho é o `OperatorPageHeader` do kit, dentro do shell da suíte. As
-// seções (Alt+1 em diante), a busca "/" e a ajuda "?" são do shell e da busca da suíte;
+// etapas (Alt+1 a Alt+5), a busca "/" e a ajuda "?" são do shell e da busca da suíte;
 // aqui ficam o R (Atualizar), o ⋯ como DADOS (as ações da tela e Atualizar), o dia na
 // toolbar (`#primary`) e o progresso no fim dela.
 

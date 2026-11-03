@@ -35,24 +35,28 @@ test.describe("Produção — gate de operador", () => {
     await expect(
       page.getByRole("heading", { name: "Entre para operar" }),
     ).toHaveCount(0);
-    // Tela de operador no shell da suíte, com o trocador (modelo de navegação, 31/10/2026):
-    // barra lateral do `lg` para cima; abaixo dele, a Bancada é tela de chão, sem barra
-    // de baixo, e o selo abre o trocador com todos os lugares.
+    // Tela de operador no shell da suíte (kit, fase 2): barra lateral do `lg` para
+    // cima; abaixo dele, a barra inferior com as seções da forma da tela.
     const size = page.viewportSize() ?? { width: 1024, height: 768 };
     await expect(page.locator("[data-operator-suite-shell]")).toBeVisible();
-    await expect(page.locator("[data-bench-cuts]")).toBeVisible();
     if (size.width >= 1024) {
       const rail = page.locator("[data-suite-rail-navigation]").first();
       await expect(rail).toBeVisible();
-      await expect(rail.locator('[data-section="bench"]')).toBeVisible();
       await expect(rail.locator('[data-section="plan"]')).toBeVisible();
+      await expect(rail.locator('[data-section="quality"]')).toBeVisible();
       await expect(page.locator("[data-suite-rail-menu]")).toBeVisible();
     } else {
-      await expect(page.locator("[data-operator-quick-bar]")).toHaveCount(0);
+      // Com o trocador (modelo de navegação, 31/10/2026): na tela do chão, a barra de
+      // baixo tem as etapas do chão; o Planejamento (escritório) se abre pelo selo.
+      const quickBar = page.locator("[data-operator-quick-bar]");
+      await expect(quickBar).toBeVisible();
+      await expect(quickBar.locator('[data-section="close"]')).toBeVisible();
+      await expect(quickBar.locator('[data-section="timers"]')).toBeVisible();
+      await expect(quickBar.locator('[data-section="plan"]')).toHaveCount(0);
       await page.locator("[data-page-header-app]:visible").first().click();
-      const switcher = page.getByRole("dialog");
-      await expect(switcher.locator('[data-switcher-section="quality"]')).toBeVisible();
-      await expect(switcher.locator('[data-switcher-section="plan"]')).toBeVisible();
+      await expect(
+        page.getByRole("dialog").locator('[data-switcher-section="plan"]'),
+      ).toBeVisible();
     }
   });
 
@@ -111,7 +115,7 @@ test.describe("Produção — gate de operador", () => {
     await expect(page.getByLabel("Usuário")).toBeFocused();
   });
 
-  test("atalhos levam aos lugares sem mouse, e as abas da Bancada às etapas", async ({
+  test("atalhos percorrem as cinco etapas sem mouse", async ({
     page,
     context,
   }, testInfo) => {
@@ -119,19 +123,15 @@ test.describe("Produção — gate de operador", () => {
     await context.addCookies([authed]);
     await page.goto("/");
     for (const [shortcut, path] of [
-      ["Alt+4", "/plan"],
-      ["Alt+3", "/quality"],
-      ["Alt+2", "/timers"],
-      ["Alt+1", "/"],
+      ["Alt+1", "/plan"],
+      ["Alt+2", "/mise-en-place"],
+      ["Alt+4", "/close"],
+      ["Alt+5", "/quality"],
+      ["Alt+3", "/"],
     ] as const) {
       await page.keyboard.press(shortcut);
       await expect(page).toHaveURL(new RegExp(`${path === "/" ? "\\/$" : `${path}$`}`));
     }
-    const cuts = page.locator("[data-bench-cuts]");
-    await cuts.getByRole("tab", { name: "Preparo" }).click();
-    await expect(page).toHaveURL(/\/mise-en-place$/);
-    await cuts.getByRole("tab", { name: "Finalização" }).click();
-    await expect(page).toHaveURL(/\/close$/);
   });
 });
 

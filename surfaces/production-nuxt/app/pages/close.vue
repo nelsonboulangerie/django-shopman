@@ -572,7 +572,6 @@ function onTimerKeydown(event: KeyboardEvent) {
     <ProductionHeader
       v-model:query="query"
       title="Finalização"
-      bench="close"
       :count="openOrders.length"
       count-label="para finalizar"
       :progress="

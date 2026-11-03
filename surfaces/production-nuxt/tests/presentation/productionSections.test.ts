@@ -1,59 +1,59 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  BENCH_CUTS,
   productionSections,
+  stageSections,
 } from "../../app/presentation/productionSections";
 import { activeSectionKey } from "../../../operator-kit/app/presentation/appBar";
-import { withSectionShortcuts } from "../../../operator-kit/app/presentation/suiteChrome";
+import { quickBarLayout, quickBarProblems } from "../../../operator-kit/app/presentation/suiteChrome";
 
-// Modelo de navegação (dono, 31/10/2026): os lugares agrupados pela forma da tela, e as
-// etapas do mesmo trabalho viram recorte na Bancada.
-describe("seções da Produção", () => {
-  it("a bancada primeiro, depois o escritório e o Letreiro, cada um com a forma", () => {
+// V4-PROD: as etapas do lote moram no rail da suíte (e na barra do polegar no
+// celular). Era a fileira de abas do cabeçalho; o contrato (ordem, rótulo, rota,
+// tecla) continua o mesmo, decidido no #1433. O modelo de navegação (31/10/2026) só
+// acrescenta a forma de cada uma.
+describe("seções da Produção no rail", () => {
+  it("o ciclo do lote, de Planejamento a Qualidade, com Alt+1 a Alt+5", () => {
+    const stages = stageSections().map((section) => [
+      section.to,
+      section.label,
+      section.shortcut,
+    ]);
+    expect(stages).toEqual([
+      ["/plan", "Planejamento", "Alt+1"],
+      ["/mise-en-place", "Preparação", "Alt+2"],
+      ["/", "Produção", "Alt+3"],
+      ["/close", "Finalização", "Alt+4"],
+      ["/quality", "Qualidade", "Alt+5"],
+    ]);
+  });
+
+  it("forma de cada seção: o chão no celular é a barra de baixo, as cinco, sem Mais", () => {
     const sections = productionSections({ canViewRecipes: true, canViewReports: true });
     expect(sections.map((s) => [s.key, s.form])).toEqual([
-      ["bench", "floor"],
-      ["timers", "floor"],
-      ["quality", "floor"],
       ["plan", "office"],
+      ["mise-en-place", "floor"],
+      ["open", "floor"],
+      ["close", "floor"],
+      ["quality", "floor"],
+      ["timers", "floor"],
       ["recipes", "office"],
       ["reports", "office"],
       ["board", "wall"],
     ]);
+    const floor = sections.filter((s) => s.form === "floor");
+    expect(quickBarProblems(floor)).toEqual([]);
+    const layout = quickBarLayout(floor);
+    expect(layout.items.map((s) => s.key)).toEqual(["mise-en-place", "open", "close", "quality", "timers"]);
+    expect(layout.more).toBe(false);
+  });
+
+  it("depois do ciclo, um traço, Timers e as ferramentas diretas; nada no pé", () => {
+    const sections = productionSections({ canViewRecipes: true, canViewReports: true });
+    expect(sections.map((section) => section.key)).toEqual(["plan", "mise-en-place", "open", "close", "quality", "timers", "recipes", "reports", "board"]);
     expect(sections.some((section) => section.foot)).toBe(false);
-    expect(sections.find((s) => s.key === "plan")?.divider).toBe(true);
-  });
-
-  it("Alt+1 a Alt+7 seguem a ordem da lista", () => {
-    const shortcuts = withSectionShortcuts(
-      productionSections({ canViewRecipes: true, canViewReports: true }),
-    ).map((s) => [s.key, s.shortcut]);
-    expect(shortcuts.slice(0, 4)).toEqual([
-      ["bench", "Alt+1"],
-      ["timers", "Alt+2"],
-      ["quality", "Alt+3"],
-      ["plan", "Alt+4"],
-    ]);
-  });
-
-  it("Preparo, Produção e Finalização são recortes da Bancada, cada um com o seu endereço", () => {
-    expect(BENCH_CUTS.map((cut) => [cut.label, cut.to])).toEqual([
-      ["Preparo", "/mise-en-place"],
-      ["Produção", "/"],
-      ["Finalização", "/close"],
-    ]);
-    const sections = productionSections({});
-    for (const path of ["/", "/mise-en-place", "/close/"]) {
-      expect(activeSectionKey(path, sections)).toBe("bench");
-    }
-  });
-
-  it("Receitas e Relatórios só para quem tem acesso", () => {
-    const keys = productionSections({}).map((s) => s.key);
-    expect(keys).not.toContain("recipes");
-    expect(keys).not.toContain("reports");
-    expect(keys).toContain("plan");
+    expect(sections.find((s) => s.key === "timers")?.divider).toBe(true);
+    expect(activeSectionKey("/recipes/abc", sections)).toBe("recipes");
+    expect(activeSectionKey("/board", sections)).toBe("board");
   });
 
   it("o selo de Timers conta os ativos e o ponto avisa quando um toca", () => {
@@ -81,9 +81,9 @@ describe("seções da Produção", () => {
 
   it("a rota acende a seção direta correspondente", () => {
     const sections = productionSections({ canViewRecipes: true });
-    expect(activeSectionKey("/plan", sections)).toBe("plan");
+    expect(activeSectionKey("/", sections)).toBe("open");
+    expect(activeSectionKey("/close", sections)).toBe("close");
     expect(activeSectionKey("/recipes/PAO/edit", sections)).toBe("recipes");
     expect(activeSectionKey("/timers/", sections)).toBe("timers");
-    expect(activeSectionKey("/board", sections)).toBe("board");
   });
 });

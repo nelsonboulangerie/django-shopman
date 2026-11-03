@@ -464,11 +464,6 @@ function clearAll() {
       </template>
     </NuxtDashboardNavbar>
 
-    <!-- As etapas do mesmo trabalho (modelo de navegação, 31/10/2026: Preparo · Produção ·
-         Finalização na bancada): logo abaixo da linha de cima, antes do dia e dos filtros,
-         porque dizem em que trabalho a tela está. -->
-    <slot name="cuts" />
-
     <NuxtDashboardToolbar v-if="$slots.actions && actionsBelow" class="py-2">
       <div
         class="flex w-full items-center gap-2 flex-nowrap overflow-x-auto no-scrollbar [&>*]:shrink-0"

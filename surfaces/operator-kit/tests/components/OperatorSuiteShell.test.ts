@@ -398,6 +398,13 @@ describe("OperatorSuiteShell: o trocador (opt-in por app)", () => {
     ).toEqual(["history", "feeds", "catalog", "settings"]);
   });
 
+  it("com floorBar, a tela do chão leva a barra de baixo só com o chão", async () => {
+    const wrapper = await mountShell({ switcherSections: FORMS, current: "orders", floorBar: true });
+    expect(
+      wrapper.findAll("[data-operator-quick-bar] [data-section]").map((link) => link.attributes("data-section")),
+    ).toEqual(["orders", "exit"]);
+  });
+
   it("escritório com mais seções do que cabem: 'Mais' abre o trocador, não a gaveta", async () => {
     useState("suite-switcher-open").value = false;
     const extra: OperatorSection[] = [

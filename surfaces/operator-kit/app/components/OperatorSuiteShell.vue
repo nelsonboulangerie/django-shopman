@@ -63,6 +63,12 @@ const props = defineProps<{
   switcherSections?: readonly OperatorSection[];
   /** A forma de uma tela que não é seção (o item aberto). Só com o trocador. */
   defaultForm?: "floor" | "office" | "wall";
+  /**
+   * As telas de chão também levam a barra de baixo, com as seções do chão. Para o app em
+   * que o chão troca de lugar o dia todo (as etapas do lote na Produção: dono, 03/11/2026,
+   * "as tabs no topo são subdivisões da seção; seção vai para baixo").
+   */
+  floorBar?: boolean;
 }>();
 
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
@@ -119,6 +125,15 @@ const officeQuick = computed(() =>
     .filter((s) => (s.form ?? "office") === "office")
     .map((s) => ({ ...s, quick: undefined })),
 );
+const floorQuick = computed(() =>
+  (props.switcherSections ?? []).filter((s) => s.form === "floor"),
+);
+// A barra de baixo com o trocador: a da forma da tela. Chão só com `floorBar`.
+const formQuick = computed(() => {
+  if (form.value === "office") return officeQuick.value;
+  if (form.value === "floor" && props.floorBar) return floorQuick.value;
+  return null;
+});
 // A gaveta (abaixo de lg, o DashboardSidebar abre como slideover): o ☰ da barra do
 // topo e o "Mais" da barra inferior a abrem.
 const drawerOpen = ref(false);
@@ -389,8 +404,8 @@ function menuDotSize(size: string): ChipProps["size"] {
         </div>
 
         <OperatorQuickBar
-          v-if="switcherEnabled && form === 'office'"
-          :sections="officeQuick"
+          v-if="switcherEnabled && formQuick"
+          :sections="formQuick"
           :current="switcherCurrent"
           :label="label"
           @select="emit('select', $event)"

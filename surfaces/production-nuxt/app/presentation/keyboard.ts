@@ -6,7 +6,7 @@ import type { ShortcutGroup } from "../../../operator-kit/app/presentation/suite
 
 /**
  * O que a ajuda de atalhos da suíte lista para a Produção, além de "Em todo o app" (as
- * seções, Alt+1 em diante, a busca "/" e o "?", que o kit monta com as seções do shell).
+ * etapas, Alt+1 a Alt+5, a busca "/" e o "?", que o kit monta com as seções do shell).
  */
 export const PRODUCTION_SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
@@ -39,7 +39,7 @@ export const PRODUCTION_SHORTCUT_GROUPS: ShortcutGroup[] = [
 export const PRODUCTION_SHORTCUTS_DESCRIPTION =
   "Toque e teclado executam os mesmos comandos. Os atalhos pausam sob bloqueio, confirmação ou edição de texto.";
 
-/** O único atalho global da tela: R relê. Seções (Alt+1 em diante), "/" e "?" são do shell. */
+/** O único atalho global da tela: R relê. Etapas (Alt+1 a Alt+5), "/" e "?" são do shell. */
 export type ProductionGlobalShortcut = "refresh";
 
 export type QuantityKeyboardShortcut =
