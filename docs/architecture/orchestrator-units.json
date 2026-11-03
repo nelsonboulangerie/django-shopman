@@ -14410,7 +14410,10 @@
           "symbols": [
             "build_session_ops",
             "validate_manager_approval",
-            "validate_manager_override"
+            "validate_manager_override",
+            "_MANAGER_PIN_VERDICTS",
+            "manager_pin_checked_before_transaction",
+            "_check_manager_pin"
           ]
         }
       ],
