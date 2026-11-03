@@ -326,9 +326,23 @@ const reviewWarnings = computed(() => {
       // bloqueio do Validar.
       && w.code !== "delivery_address_incomplete"
       && w.code !== "below_delivery_minimum"
-      && w.code !== "delivery_out_of_area",
+      && w.code !== "delivery_out_of_area"
+      // RESSALVA DE ITEM (estoque, cardápio, lote) é terciária: não vira caixa, vira
+      // sinal no item e o chip "N ressalvas" (dono, 03/11/2026: "vai virar ruído").
+      && !REMARK_CODES.has(w.code),
   );
   return fromServer;
+});
+// As ressalvas de item: a venda vale, é para conferir depois. Um chip só, com a frase
+// no toque, e o ⚠ no item da conta (pelo `sku` que a review manda).
+const REMARK_CODES = new Set(["item_low_stock", "item_not_ready"]);
+const remarks = computed(() =>
+  (props.review?.warnings ?? []).filter((w) => REMARK_CODES.has(w.code)),
+);
+const remarkBySku = computed(() => {
+  const map = new Map<string, string>();
+  for (const remark of remarks.value) if (remark.sku) map.set(remark.sku, remark.message);
+  return map;
 });
 
 // On-demand sale-data drawers (Odoo-style: customer/fulfillment/discount are
@@ -541,6 +555,8 @@ const summaryLines = computed(() =>
     // reaproveitar o nó errado ao reordenar o resumo.
     lineId: item.line_id,
     name: item.name,
+    /** A ressalva do item (estoque, cardápio, lote), se a review mandou uma. */
+    remark: remarkBySku.value.get(item.sku) || "",
     qty: item.qty,
     qtyLabel: lineQtyLabel(item),
     totalDisplay: formatBRL(lineTotalQ(item)),
@@ -1625,12 +1641,12 @@ defineExpose({
           <li
             v-for="note in notices"
             :key="note.key"
-            class="flex flex-wrap items-center gap-3 rounded-md border p-3"
+            class="flex flex-wrap items-center"
             :class="note.tone === 'block'
-              ? 'border-warning bg-warning/10 text-warning'
+              ? 'gap-3 rounded-md border border-warning bg-warning/10 p-3 text-warning'
               : note.tone === 'warn'
-                ? 'border-warning/60 bg-warning/10 text-warning'
-                : 'border-border bg-muted text-muted-foreground'"
+                ? 'gap-2 px-1 text-warning'
+                : 'gap-2 px-1 text-muted-foreground'"
           >
             <Icon
               :name="note.icon"
@@ -1640,7 +1656,7 @@ defineExpose({
             <span class="min-w-0 flex-1">
               <span
                 class="block leading-snug"
-                :class="note.tone === 'block' ? 'text-lg font-semibold' : 'text-sm font-medium'"
+                :class="note.tone === 'block' ? 'text-lg font-semibold' : 'text-sm'"
               >{{ note.message }}</span>
               <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug opacity-80">{{ note.hint }}</span>
             </span>
@@ -1665,6 +1681,26 @@ defineExpose({
             </div>
           </li>
         </ul>
+        <!-- AS RESSALVAS DE ITEM (o terceiro degrau): um chip só, e a frase no toque. O
+             item da conta leva o mesmo ⚠. Não trava nada: a venda vale. -->
+        <NuxtPopover v-if="remarks.length" :content="{ align: 'start', sideOffset: 4 }">
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-triangle-alert"
+            :label="remarks.length === 1 ? '1 ressalva nos itens' : `${remarks.length} ressalvas nos itens`"
+            class="min-h-11 shrink-0 self-start text-muted-foreground [&_svg]:text-warning"
+            data-checkout-remarks
+          />
+          <template #content>
+            <ul class="grid max-w-sm gap-2 p-3 text-sm" data-checkout-remarks-list>
+              <li v-for="(remark, index) in remarks" :key="index" class="flex items-start gap-2">
+                <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+                <span>{{ remark.message }}</span>
+              </li>
+            </ul>
+          </template>
+        </NuxtPopover>
 
         <!-- O NÚMERO QUE MUDA É O HERÓI. O total é estável — o operador já o leu
              em voz alta na tela de venda, e ele volta nas linhas de pagamento e
@@ -1827,7 +1863,14 @@ defineExpose({
               <li v-for="line in summaryLines" :key="line.lineId" class="px-3 py-2">
                 <div class="flex items-baseline gap-2">
                   <span class="min-w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qtyLabel }}</span>
-                  <span class="min-w-0 flex-1 truncate text-sm" :title="line.name">{{ line.name }}</span>
+                  <span class="min-w-0 flex-1 truncate text-sm" :title="line.remark || line.name">{{ line.name }}</span>
+                  <Icon
+                    v-if="line.remark"
+                    name="lucide:triangle-alert"
+                    class="size-3.5 shrink-0 self-center text-warning"
+                    :aria-label="line.remark"
+                    data-summary-remark
+                  />
                   <span
                     v-if="line.listDisplay"
                     class="shrink-0 text-xs tabular-nums text-muted-foreground line-through"

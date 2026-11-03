@@ -181,6 +181,9 @@ const pos = {
 // folha de baixo no celular) sem backend. Sem a variável, o mock é o de sempre e as
 // fotos das Encomendas não mudam.
 const SALE = process.env.MOCK_SCENARIO === "sale";
+// A ressalva de cadastro na revisão (`MOCK_REVIEW_REMARK=1`): o primeiro item "pausado no
+// cardápio do balcão", como a review real manda (`item_low_stock`, com o sku).
+const REVIEW_REMARK = process.env.MOCK_REVIEW_REMARK === "1";
 const COLUMN_STATES = SALE && process.env.MOCK_COLUMN_STATES === "1";
 // Prévia da mesa como destino do Transferir (MOCK_SEATING=1): o Salão com quatro mesas, a
 // comanda 12 na Mesa 4. Fora da flag, nada muda (retratos e trava de geometria).
@@ -634,6 +637,9 @@ function review(body) {
     tender_total_q: 0, tender_total_display: brl(0), tender_count: 0, tendered_q: 0, tendered_amount_display: brl(0),
     change_q: 0, change_display: brl(0), requires_manager_approval: false, manager_approval_threshold_q: 0,
     approval_reasons: [], lines: [],
+    ...(REVIEW_REMARK && items.length
+      ? { warnings: [{ code: "item_low_stock", field: "items", sku: items[0].sku, message: `${items[0].name || items[0].sku}: pausado no cardápio do balcão. A venda vale; confira o cadastro.` }] }
+      : {}),
     ...(ACCOUNT_LIMIT && subtotal > 0
       ? {
           requires_manager_approval: true,

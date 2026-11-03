@@ -1123,9 +1123,12 @@ def review_sale(
             if decision.get("orderable_ceiling") is not None and ready is not None and qty > ready:
                 not_ready.append((name, sku, qty - ready))
             continue
+        # O `sku` deixa a tela marcar o item na conta (a ressalva é terciária: um
+        # sinal no item, não uma caixa a mais no Pagamento; dono, 03/11/2026).
         warnings.append({
             "code": "item_low_stock",
             "field": "items",
+            "sku": sku,
             "message": f"{name}: {_availability_shortfall(decision)}",
         })
     if not_ready:
@@ -1134,6 +1137,7 @@ def review_sale(
             warnings.append({
                 "code": "item_not_ready",
                 "field": "items",
+                "sku": sku,
                 "message": f"{name}: {_lot_stage(started.get(sku, Decimal('0')), missing)}, não pronto",
             })
 
