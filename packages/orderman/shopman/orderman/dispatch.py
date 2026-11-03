@@ -73,6 +73,7 @@ def _process_directive(directive) -> None:
     handler itself are not auto-dispatched (avoids cascading side-effects).
     """
     from shopman.orderman import registry
+    from shopman.orderman.claims import save_if_claimed
 
     handler = registry.get_directive_handler(directive.topic)
     if not handler:
@@ -86,32 +87,32 @@ def _process_directive(directive) -> None:
     from django.db.models import F
     from shopman.orderman.models import Directive
 
-    claimed = Directive.objects.filter(pk=directive.pk, status="queued").update(
-        status="running",
-        attempts=F("attempts") + 1,
-        started_at=now,
-        updated_at=now,
-    )
-    if not claimed:
-        logger.debug(
-            "Directive #%s already claimed elsewhere (status changed), skipping.",
-            directive.pk,
+    with transaction.atomic():
+        claimed = Directive.objects.filter(pk=directive.pk, status="queued").update(
+            status="running",
+            attempts=F("attempts") + 1,
+            started_at=now,
+            updated_at=now,
         )
-        return
-    directive.refresh_from_db()
+        if not claimed:
+            logger.debug(
+                "Directive #%s already claimed elsewhere (status changed), skipping.",
+                directive.pk,
+            )
+            return
+        directive.refresh_from_db()
+        attempts = directive.attempts
 
     from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 
-    max_attempts, retry_delay = retry_policy(handler, directive.attempts)
+    max_attempts, retry_delay = retry_policy(handler, attempts)
 
     _local.dispatching = True
+    wrote = False
     try:
         handler.handle(message=directive, ctx={"actor": "signal_dispatch"})
         # Auto-complete: only if handler didn't change status (e.g. deferral)
-        directive.refresh_from_db()
-        if directive.status == "running":
-            directive.status = "done"
-            directive.save(update_fields=["status", "updated_at"])
+        wrote = save_if_claimed(directive, attempts, now, {"status": "done"}, only_if_running=True)
     except DirectiveTerminalError as exc:
         logger.error(
             "Directive %s #%s terminal failure (attempt %d): %s",
@@ -120,13 +121,15 @@ def _process_directive(directive) -> None:
         directive.status = "failed"
         directive.error_code = "terminal"
         directive.last_error = str(exc)[:500]
-        directive.save(update_fields=["status", "error_code", "last_error", "updated_at"])
+        wrote = save_if_claimed(directive, attempts, now, {
+            "status": directive.status, "error_code": directive.error_code, "last_error": directive.last_error,
+        })
     except DirectiveTransientError as exc:
         logger.warning(
             "Directive %s #%s transient failure (attempt %d/%d): %s",
             directive.topic, directive.pk, directive.attempts, max_attempts, exc,
         )
-        if directive.attempts >= max_attempts:
+        if attempts >= max_attempts:
             directive.status = "failed"
             directive.error_code = "terminal"
         else:
@@ -134,13 +137,16 @@ def _process_directive(directive) -> None:
             directive.error_code = "transient"
             directive.available_at = now + timedelta(seconds=retry_delay)
         directive.last_error = str(exc)[:500]
-        directive.save(update_fields=["status", "error_code", "available_at", "last_error", "updated_at"])
+        wrote = save_if_claimed(directive, attempts, now, {
+            "status": directive.status, "error_code": directive.error_code,
+            "available_at": directive.available_at, "last_error": directive.last_error,
+        })
     except Exception as exc:
         logger.exception(
             "Directive %s #%s failed (attempt %d/%d)",
             directive.topic, directive.pk, directive.attempts, max_attempts,
         )
-        if directive.attempts >= max_attempts:
+        if attempts >= max_attempts:
             directive.status = "failed"
             directive.error_code = "terminal"
         else:
@@ -148,9 +154,12 @@ def _process_directive(directive) -> None:
             directive.error_code = "transient"
             directive.available_at = now + timedelta(seconds=retry_delay)
         directive.last_error = str(exc)[:500]
-        directive.save(update_fields=["status", "error_code", "available_at", "last_error", "updated_at"])
+        wrote = save_if_claimed(directive, attempts, now, {
+            "status": directive.status, "error_code": directive.error_code,
+            "available_at": directive.available_at, "last_error": directive.last_error,
+        })
     finally:
-        if directive.status == "failed":
+        if wrote and directive.status == "failed":
             notify_terminal_failure(handler, directive)
         _local.dispatching = False
 
