@@ -45,10 +45,27 @@ const emit = defineEmits<{
 // Toque (tablet, celular): sem teclas impressas, chips de 48 px com "Favoritos"
 // primeiro, tile sem SKU, grade pela largura do dedo e "Ler código" pela câmera.
 const coarsePointer = useMediaQuery("(pointer: coarse)");
+// A faixa das coleções: setas, roda do mouse e a escolhida sempre à vista.
+const collectionsStrip = useTemplateRef<HTMLElement>("collectionsStrip");
+const strip = useScrollStrip(collectionsStrip);
+const stripScrolls = computed(() => strip.canBack.value || strip.canForward.value);
+// O esmaecer na borda diz que há mais daquele lado (os dois, no meio da faixa).
+const stripMask = computed(() => {
+  if (strip.canBack.value && strip.canForward.value) {
+    return "[mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%-1.5rem),transparent)]";
+  }
+  if (strip.canForward.value) return "[mask-image:linear-gradient(to_right,#000_calc(100%-1.5rem),transparent)]";
+  if (strip.canBack.value) return "[mask-image:linear-gradient(to_right,transparent,#000_1.5rem)]";
+  return "";
+});
 const scannerOpen = ref(false);
 
 const search = ref("");
 const activeCollection = ref("");
+// A coleção escolhida (por toque, atalho ou leitura) nunca fica fora da faixa.
+watch(activeCollection, () => {
+  void nextTick(() => strip.reveal(collectionsStrip.value?.querySelector('[aria-pressed="true"]')));
+});
 
 // Grid density is a grid-local presentation preference (not data, not policy).
 // Persisted per terminal in localStorage; defaults to "cozy" on the server so
@@ -105,6 +122,8 @@ function setDensity(value: Density) {
 }
 
 const orderedCollections = computed(() => orderCollections(props.collections, props.favoriteRefs));
+// Coleção nova (ou que sumiu) muda a largura da faixa: as setas se medem de novo.
+watch(orderedCollections, () => { void nextTick(strip.measure); });
 const matchedProducts = computed(() => {
   // A busca procura em TUDO: o chip ligado é filtro de navegação, não de busca.
   if (activeCollection.value === FAVORITES_COLLECTION && !search.value.trim()) {
@@ -275,8 +294,29 @@ function onSearchEscape() {
     <!-- As coleções rolam na faixa (com o esmaecer na borda dizendo que há mais); o
          "Ocultar indisponíveis" fica FORA dela, sempre à vista, e vira só o olho
          quando a área de produtos estreita. -->
+    <!-- As setas ‹ › existem enquanto a faixa rola, e cada uma se desliga no seu extremo
+         (nunca some: sumir mudaria a largura da faixa debaixo do dedo). A roda do mouse
+         também rola (dono, 03/11/2026: no mouse as últimas eram inalcançáveis). -->
     <div class="flex shrink-0 items-start" :class="coarsePointer ? 'gap-2' : 'gap-1'">
-    <div class="-mx-1 flex min-w-0 flex-1 overflow-x-auto px-1 pb-1 no-scrollbar [mask-image:linear-gradient(to_right,#000_calc(100%-1.5rem),transparent)]" :class="coarsePointer ? 'gap-2' : 'gap-1'" data-pos-collections>
+    <NuxtButton
+      v-if="stripScrolls"
+      :disabled="!strip.canBack.value"
+      :size="coarsePointer ? 'xl' : 'md'"
+      color="neutral"
+      variant="ghost"
+      square
+      icon="i-lucide-chevron-left"
+      class="shrink-0 rounded-full"
+      aria-label="Coleções anteriores"
+      data-pos-collections-back
+      @click="strip.step(-1)"
+    />
+    <div
+      ref="collectionsStrip"
+      class="-mx-1 flex min-w-0 flex-1 overflow-x-auto px-1 pb-1 no-scrollbar"
+      :class="[coarsePointer ? 'gap-2' : 'gap-1', stripMask]"
+      data-pos-collections
+    >
       <NuxtButton
         v-if="coarsePointer && favoriteRefs.length"
         size="xl"
@@ -331,6 +371,19 @@ function onSearchEscape() {
       </NuxtButton>
       <span class="w-4 shrink-0" aria-hidden="true" />
     </div>
+    <NuxtButton
+      v-if="stripScrolls"
+      :disabled="!strip.canForward.value"
+      :size="coarsePointer ? 'xl' : 'md'"
+      color="neutral"
+      variant="ghost"
+      square
+      icon="i-lucide-chevron-right"
+      class="shrink-0 rounded-full"
+      aria-label="Mais coleções"
+      data-pos-collections-forward
+      @click="strip.step(1)"
+    />
       <NuxtButton
         :size="coarsePointer ? 'xl' : 'md'"
         color="neutral"
