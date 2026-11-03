@@ -38,7 +38,7 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
   <main class="flex min-h-0 flex-1 flex-col" data-pos-settings-shell data-compact-page>
     <!-- No celular, a linha do chão: o selo diz "Ajustes, <aba>" e troca de seção; as
          abas descem logo abaixo, porque a faixa de filtros do cabeçalho some ali. -->
-    <PosCompactBar :title="`Ajustes, ${title}`" :search="false" :options="headerActions" />
+    <PosCompactBar :title="`Ajustes, ${title}`" :options="headerActions" />
     <!-- A ação da aba (Gravar atalhos, Nova maquininha) mora no cabeçalho, que some no
          celular: ela desce para a linha das abas, à vista. -->
     <div class="flex flex-wrap items-center justify-between gap-2 border-b border-default px-3 py-2 md:hidden" data-compact-settings-tabs>

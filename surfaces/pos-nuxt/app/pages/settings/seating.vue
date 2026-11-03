@@ -286,8 +286,36 @@ const barContext = computed(() =>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col" data-seating-screen data-compact-page>
-    <PosCompactBar title="Ajustes, Salão" :search="false" :options="compactOptions" />
-    <div class="border-b border-default px-3 py-2 md:hidden" data-compact-settings-tabs><PosSettingsTabs /></div>
+    <PosCompactBar title="Ajustes, Salão" :options="compactOptions" />
+    <!-- No celular, Desfazer e Refazer moram ao lado da escolha da aba: numa linha só
+         deles, abaixo, gastavam uma faixa inteira da tela para dois botões. -->
+    <div class="flex items-center gap-2 border-b border-default px-3 py-2 md:hidden" data-compact-settings-tabs>
+      <div class="min-w-0 flex-1"><PosSettingsTabs /></div>
+      <NuxtFieldGroup v-if="isPhone" class="shrink-0" aria-label="Desfazer e refazer">
+        <NuxtButton
+          icon="i-lucide-undo-2"
+          color="neutral"
+          variant="outline"
+          square
+          :disabled="!seating.canUndo.value"
+          aria-label="Desfazer (Ctrl Z)"
+          title="Desfazer (Ctrl Z)"
+          data-seating-undo-phone
+          @click="seating.undo()"
+        />
+        <NuxtButton
+          icon="i-lucide-redo-2"
+          color="neutral"
+          variant="outline"
+          square
+          :disabled="!seating.canRedo.value"
+          aria-label="Refazer (Ctrl Shift Z)"
+          title="Refazer (Ctrl Shift Z)"
+          data-seating-redo-phone
+          @click="seating.redo()"
+        />
+      </NuxtFieldGroup>
+    </div>
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <OperatorPageHeader
         title="Salão"
@@ -302,7 +330,7 @@ const barContext = computed(() =>
         <template #status>
           <span class="hidden op-micro text-muted-foreground lg:inline">mesas e lugares da casa</span>
         </template>
-        <template #actions>
+        <template v-if="!isPhone" #actions>
           <NuxtFieldGroup aria-label="Desfazer e refazer">
             <NuxtButton
               icon="i-lucide-undo-2"

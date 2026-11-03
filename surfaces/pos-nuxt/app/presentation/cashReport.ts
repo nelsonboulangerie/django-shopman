@@ -74,7 +74,7 @@ export function cashReportStationRefusal(status: number | undefined, code: strin
     return {
       title: "Este relatório é de outro balcão",
       message:
-        "Este dispositivo está ligado a um balcão diferente do que a tela pediu. A leitura X mostra só a gaveta do balcão onde você está. Volte à sessão de caixa e abra o relatório de novo.",
+        "Este dispositivo está ligado a um balcão diferente do que a tela pediu. A leitura X mostra só a gaveta do balcão onde você está. Volte ao Caixa e abra o relatório de novo.",
     };
   }
   if (code === "pos_station_required") {

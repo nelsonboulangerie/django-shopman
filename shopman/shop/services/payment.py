@@ -1205,7 +1205,7 @@ def card_machine_refund_message(pending: PendingCardMachineRefund) -> str:
     return (
         f"Estorne R$ {format_money(pending.amount_q)} no {method}, na maquininha ({', '.join(clues)}). "
         "O cliente só recebe de volta depois desse estorno. Feito o estorno, toque em "
-        "Estornei na maquininha, na Sessão de caixa do PDV."
+        "Estornei na maquininha, no Caixa do PDV."
     )
 
 
@@ -1524,7 +1524,7 @@ _REFUND_ELSEWHERE = {
     ),
     "card_machine": (
         "Esta cobrança foi na maquininha: o estorno se faz na própria maquininha, e depois se "
-        "registra em Estornei na maquininha, na Sessão de caixa do PDV. Nada foi estornado aqui."
+        "registra em Estornei na maquininha, no Caixa do PDV. Nada foi estornado aqui."
     ),
     "account": (
         "Esta cobrança é de venda em conta e não passou por gateway. Nada foi estornado aqui."

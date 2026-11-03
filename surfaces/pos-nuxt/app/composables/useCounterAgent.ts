@@ -93,7 +93,7 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
    * sobra o caso de o terminal não ter mandado nada.
    */
   const unavailableReason = computed(
-    () => config.value?.reason || "Gaveta não configurada neste terminal. Configure em Terminais do PDV, no gestor.",
+    () => config.value?.reason || "Gaveta não configurada neste terminal. Configure em Terminais do PDV, no Admin.",
   );
   /**
    * A frase da IMPRESSORA. Nunca a da gaveta: quem tem bobina e abre a gaveta
@@ -101,7 +101,7 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
    * errado — o defeito nem existia.
    */
   const printUnavailableReason = computed(
-    () => printer.value?.reason || "Impressora não configurada neste terminal. Configure em Terminais do PDV, no gestor.",
+    () => printer.value?.reason || "Impressora não configurada neste terminal. Configure em Terminais do PDV, no Admin.",
   );
   /** O dono quer que a gaveta abra sozinha ao fechar venda em dinheiro? */
   const opensOnCashSale = computed(() => canKick.value && Boolean(config.value?.open_on_cash_sale));

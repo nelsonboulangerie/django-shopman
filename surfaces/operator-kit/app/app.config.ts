@@ -31,7 +31,10 @@ export default defineAppConfig({
       slots: {
         root: "bg-card h-auto min-h-(--ui-header-height) py-1",
         left: "max-sm:flex-1 max-sm:flex-wrap max-sm:gap-y-0.5",
-        title: "text-clip whitespace-normal text-pretty min-w-0 max-sm:flex-1 max-sm:basis-0",
+        // `min-w-min`: o título quebra entre palavras, mas nunca fica mais estreito que a
+        // maior delas. Com `min-w-0` a barra cheia da mesa do Gestor espremia "Pedidos"
+        // em 47 px, e o "s" ficava por baixo do selo de atualização (03/11/2026).
+        title: "text-clip whitespace-normal text-pretty min-w-min max-sm:flex-1 max-sm:basis-0",
       },
     },
     dashboardToolbar: { slots: { root: "bg-card" } },

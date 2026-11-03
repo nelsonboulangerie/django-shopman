@@ -22,7 +22,7 @@ const emit = defineEmits<{
 }>();
 
 const description = computed(() =>
-  "O que já foi pago volta no mesmo meio. Devolução em dinheiro aparece na Sessão de caixa, em Precisa de você."
+  "O que já foi pago volta no mesmo meio. Devolução em dinheiro aparece no Caixa, em Precisa de você."
   + (props.requiresApproval ? " Encomenda paga: um gerente precisa autorizar." : ""),
 );
 </script>

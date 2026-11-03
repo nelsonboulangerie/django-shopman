@@ -1691,8 +1691,10 @@ function compactClear() {
           <!-- Exibir (linhas e colunas) só existe com a Lista na tela. -->
           <OperatorTableView v-if="view === 'table'" table-key="orders-queue" />
         </template>
-
-        <!-- ⋯ da fila (do tablet para cima; no celular ele mora no fim dos recortes). O posto
+      </template>
+      <template #more>
+        <!-- ⋮ da fila (do tablet para cima; no celular ele mora no fim dos recortes), no
+             canto do cabeçalho, depois do sino (`#more` do kit). O posto
              Saída (v4 `gestor-colunas`) não tem ⋯: a leitura se atualiza sozinha e o Visto
              é tocar a faixa da Entrada que pulsa. -->
         <BoardMenu

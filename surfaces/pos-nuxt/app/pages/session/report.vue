@@ -36,7 +36,7 @@ function reprint(entryId: number) {
   void reprintMovementReceipt(entryId);
 }
 
-// A volta à Sessão de caixa é um link (`to`), não um clique que navega: sem espera
+// A volta ao Caixa é um link (`to`), não um clique que navega: sem espera
 // para declarar, e o endereço aparece no toque longo.
 
 const NUM = { class: { th: "text-right", td: "text-right tabular-nums whitespace-nowrap" } };
@@ -70,8 +70,8 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
           icon="i-lucide-arrow-left"
           square
           to="/session"
-          aria-label="Voltar à sessão de caixa"
-          title="Sessão de caixa"
+          aria-label="Voltar ao Caixa"
+          title="Caixa"
           data-report-back
         />
       </template>
@@ -90,7 +90,7 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
         description="Esta tela mostra o faturamento do dia. Sua conta opera o caixa, mas não audita: quem vê a apuração é a gestão."
       >
         <template #actions>
-          <NuxtButton color="neutral" variant="outline" icon="i-lucide-arrow-left" label="Voltar à sessão de caixa" to="/session" />
+          <NuxtButton color="neutral" variant="outline" icon="i-lucide-arrow-left" label="Voltar ao Caixa" to="/session" />
         </template>
       </OperatorScreenState>
 
@@ -104,7 +104,7 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
         data-station-refusal
       >
         <template #actions>
-          <NuxtButton color="neutral" variant="outline" icon="i-lucide-arrow-left" label="Voltar à sessão de caixa" to="/session" />
+          <NuxtButton color="neutral" variant="outline" icon="i-lucide-arrow-left" label="Voltar ao Caixa" to="/session" />
         </template>
       </OperatorScreenState>
 

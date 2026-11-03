@@ -4156,11 +4156,11 @@ export function usePosSale(deps: PosSaleDeps) {
       // expirava e ficava na tela até a próxima venda.
       // Venda paga na maquininha: cancelar não devolve o dinheiro ao cartão. A
       // tela diz o estorno a fazer AGORA, com o cliente na frente; a pendência
-      // fica na Sessão de caixa até o "Estornei na maquininha".
+      // fica no Caixa até o "Estornei na maquininha".
       const machine = response?.card_machine_refund;
       if (machine) {
         toast.warning("Venda cancelada. Falta estornar na maquininha", {
-          description: `Estorne ${machine.amount_display} no ${machine.method_label}, na maquininha. Depois toque em Estornei na maquininha, na Sessão de caixa.`,
+          description: `Estorne ${machine.amount_display} no ${machine.method_label}, na maquininha. Depois toque em Estornei na maquininha, no Caixa.`,
           duration: 15000,
         });
       } else {
