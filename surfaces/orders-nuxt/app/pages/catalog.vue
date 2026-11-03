@@ -34,6 +34,9 @@ import { filterBarActiveFilters } from "../../../operator-kit/app/presentation/f
 import type {
   AssistableField,
   BulkCellsResponse,
+  ProductSheet,
+  ProductSheetReceipt,
+  ProductSheetRowPatch,
   CatalogRowProjection,
   BulkCell,
   CatalogOrder,
@@ -116,6 +119,9 @@ const {
   enhancePhoto,
   uploadPhoto,
   saveCells,
+  loadProductSheet,
+  saveProductRows,
+  duplicateProducts,
   setProductsActive,
   previewImport,
   applyImport,
@@ -1393,6 +1399,43 @@ async function applyImportCsv() {
 }
 // Tabelão: o lote inteiro numa ida. O recibo linha a linha volta no toast/erro.
 const bulkGridOpen = ref(false);
+// Dois tabelões: por canal (preço e publicação em cada canal) e de produtos (o
+// produto em si: nome, descrição, preço, peso e fiscal). O botão abre o menu.
+const bulkMenuItems = computed(() => [
+  {
+    label: "Por canal: preço e publicação",
+    icon: "i-lucide-table-2",
+    onSelect: () => {
+      bulkGridOpen.value = true;
+    },
+  },
+  {
+    label: "Produtos: nome, preço, peso e fiscal",
+    icon: "i-lucide-sheet",
+    onSelect: () => void openProductSheet(),
+  },
+]);
+const productSheetOpen = ref(false);
+const productSheet = ref<ProductSheet | null>(null);
+const productSheetReceipt = ref<ProductSheetReceipt | null>(null);
+async function openProductSheet() {
+  productSheetReceipt.value = null;
+  productSheet.value = null;
+  productSheetOpen.value = true;
+  productSheet.value = await loadProductSheet();
+}
+async function saveProductSheet(patches: ProductSheetRowPatch[]) {
+  productSheetReceipt.value = null;
+  const receipt = await saveProductRows(patches);
+  if (!receipt) return;
+  productSheetReceipt.value = receipt;
+  // A revisão de cada campo salvo mudou: relê a planilha para o próximo lote.
+  productSheet.value = (await loadProductSheet()) ?? productSheet.value;
+}
+async function duplicateFromSheet(skus: string[]) {
+  const receipt = await duplicateProducts(skus);
+  if (receipt) productSheet.value = (await loadProductSheet()) ?? productSheet.value;
+}
 const bulkCellsReceipt = ref<BulkCellsResponse | null>(null);
 const bulkArchiveReceipt = ref<ProductArchiveReceipt | null>(null);
 // (c) "Só compro (insumo)": não cria Product; conduz ao cadastro de compra.
@@ -1594,15 +1637,21 @@ useHead({ title: "Catálogo" });
         />
       </template>
       <template #actions>
-        <NuxtButton
-          icon="i-lucide-table-2"
-          label="Tabelão"
-          color="neutral"
-          variant="outline"
+        <NuxtDropdownMenu
+          :items="bulkMenuItems"
+          :content="{ align: 'end' }"
           :disabled="!rows.length"
-          data-testid="catalog-bulk-grid"
-          @click="bulkGridOpen = true"
-        />
+        >
+          <NuxtButton
+            icon="i-lucide-table-2"
+            label="Tabelão"
+            trailing-icon="i-lucide-chevron-down"
+            color="neutral"
+            variant="outline"
+            :disabled="!rows.length"
+            data-testid="catalog-bulk-grid"
+          />
+        </NuxtDropdownMenu>
         <NuxtButton
           icon="i-lucide-plus"
           label="Novo produto"
@@ -2442,6 +2491,27 @@ useHead({ title: "Catálogo" });
       "
       @save="saveBulkCells"
       @archive="setBulkActive"
+    />
+
+    <!-- tabelão de produtos: o produto linha a linha, e duplicar vários. -->
+    <CatalogProductSheet
+      :open="productSheetOpen"
+      :rows="rows"
+      :sheet="productSheet"
+      :busy="isBusy('catalog:product-sheet')"
+      :duplicate-busy="isBusy('catalog:products-duplicate')"
+      :error="errorMsg"
+      :receipt="productSheetReceipt"
+      @update:open="
+        (value) => {
+          if (!value) {
+            productSheetOpen = false;
+            productSheetReceipt = null;
+          }
+        }
+      "
+      @save="saveProductSheet"
+      @duplicate="duplicateFromSheet"
     />
 
     <!-- import CSV pt-BR: prévia sem gravar, erro por linha, apply numa ida. -->

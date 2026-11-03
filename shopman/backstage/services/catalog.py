@@ -1799,6 +1799,7 @@ _SHEET_FISCAL_FIELDS = ("profile", "ncm", "cest", "origin")
 
 def _sheet_row(product) -> dict:
     from shopman.fiscalman.classification import from_metadata
+
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
     fiscal = asdict(from_metadata(product.metadata))
