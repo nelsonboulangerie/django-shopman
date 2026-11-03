@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // Tabelão de produtos (nome, descrição, preço, peso e fiscal), aberto pelo menu do
-// botão Tabelão. Capturas para auditoria, sem baseline.
+// botão Tabelão (no celular, pelo ⋯). Capturas para auditoria, sem baseline.
 const CASES = [
   { id: "xl", width: 1440, height: 900 },
   { id: "phone", width: 390, height: 844 },
@@ -21,11 +21,16 @@ for (const viewport of CASES) {
     const failures = trackHttpFailures(page);
     await page.setViewportSize(viewport);
     await page.goto("/catalog");
-    const bulk = page.getByTestId("catalog-bulk-grid");
-    await expect(bulk).toBeEnabled({ timeout: 45_000 });
-    await bulk.click();
+    // Na mesa o botão Tabelão abre o menu dos dois tabelões; no celular os dois moram
+    // no ⋯ "Mais ações" da barra do topo.
+    const opener =
+      viewport.id === "phone"
+        ? page.getByRole("button", { name: "Mais ações do catálogo" })
+        : page.getByTestId("catalog-bulk-grid");
+    await expect(opener).toBeEnabled({ timeout: 45_000 });
+    await opener.click();
     await page.screenshot({ path: testInfo.outputPath(`menu-${viewport.id}.png`) });
-    await page.getByRole("menuitem", { name: /Produtos: nome, preço/ }).click();
+    await page.getByRole("menuitem", { name: /produtos: nome, preço/i }).click();
     const sheet = page.locator("[data-product-sheet]");
     await expect(sheet).toBeVisible();
     // Edita uma célula com erro (NCM curto) e uma válida, para a captura mostrar os dois.

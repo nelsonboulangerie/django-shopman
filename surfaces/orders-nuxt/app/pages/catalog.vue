@@ -835,12 +835,18 @@ const phoneHeaderActions = computed<OperatorHeaderAction[]>(() => [
     onSelect: openCreate,
   },
   {
-    label: "Tabelão",
+    label: "Tabelão por canal: preço e publicação",
     icon: "i-lucide-table-2",
     disabled: !rows.value.length,
     onSelect: () => {
       bulkGridOpen.value = true;
     },
+  },
+  {
+    label: "Tabelão de produtos: nome, preço, peso e fiscal",
+    icon: "i-lucide-sheet",
+    disabled: !rows.value.length,
+    onSelect: () => void openProductSheet(),
   },
   { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
   { label: "Exportar esta página em CSV", icon: "i-lucide-download", onSelect: exportCatalog },
