@@ -330,7 +330,7 @@ for (const { route, endpoint, offset } of [
         request.url().includes(endpoint) && request.url().includes(`date=${target}`),
     );
     const direction = offset > 0 ? "[data-period-next]" : "[data-period-prev]";
-    const step = page.locator(direction).first();
+    const step = page.locator(`${direction}:visible`).first();
     for (let i = 0; i < Math.abs(offset); i += 1) {
       await step.click();
     }
@@ -388,7 +388,7 @@ test("foco permanece distinguível em contraste forçado", async ({ context, pag
   await context.addCookies([authed]);
   for (const route of ["/", "/board", "/close"]) {
     await page.goto(route);
-    const periodButton = page.locator("[data-period-button]").first();
+    const periodButton = page.locator("[data-period-button]:visible").first();
     await periodButton.focus();
     await expect(periodButton).toBeFocused();
     const outline = await periodButton.evaluate((node) => {
