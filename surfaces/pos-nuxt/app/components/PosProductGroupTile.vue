@@ -11,6 +11,8 @@ const props = defineProps<{
   cartItems: POSCartItem[];
   /** Toque: a faixa mais alta, igual ao tile do produto. */
   touch?: boolean;
+  /** A vista Lista: uma linha, como a do produto. A escolha abre igual. */
+  row?: boolean;
 }>();
 
 const emit = defineEmits<{ add: [POSProductProjection] }>();
@@ -31,9 +33,39 @@ function choose(product: POSProductProjection) {
 </script>
 
 <template>
+  <!-- LISTA: a linha do produto, com "N opções" no lugar de Escolhas. -->
+  <NuxtButton
+    v-if="row"
+    color="neutral"
+    variant="ghost"
+    class="flex w-full items-center gap-3 rounded-lg border bg-card px-2 text-left font-normal text-card-foreground transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0"
+    :class="[touch ? 'min-h-16 py-2' : 'min-h-12 py-1.5', qty > 0 ? 'border-primary' : 'border-border']"
+    :disabled="group.allBlocked"
+    :aria-label="`${group.name}: escolher entre ${group.options.length} opções`"
+    data-pos-choice-group
+    data-pos-product-row
+    @click="open = true"
+  >
+    <span class="relative grid shrink-0 place-items-center overflow-hidden rounded-md" :class="[touch ? 'size-12' : 'size-9', group.allBlocked ? 'opacity-55' : '']">
+      <img v-if="showImage" :src="cover.image_url" alt="" loading="lazy" class="size-full object-cover" @error="imageBroken = true" />
+      <span v-else class="pos-tile-fallback grid size-full place-items-center" :style="fallbackStyle" aria-hidden="true">
+        <Icon :name="fallbackIcon" :class="touch ? 'size-6' : 'size-5'" />
+      </span>
+    </span>
+    <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+      <span class="line-clamp-2 op-label leading-tight font-semibold" :class="group.allBlocked ? 'text-muted-foreground' : ''" :title="group.name">{{ group.name }}</span>
+      <span class="flex items-center gap-1.5">
+        <span class="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold"><Icon name="lucide:layers" class="size-3" />{{ group.options.length }} opções</span>
+        <span v-if="group.allBlocked" class="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold text-muted-foreground"><span class="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />Esgotado</span>
+      </span>
+    </span>
+    <strong class="shrink-0 op-title tnum whitespace-nowrap" :class="group.allBlocked ? 'text-muted-foreground' : ''">{{ group.priceLabel }}</strong>
+    <span v-if="qty > 0" class="grid h-7 min-w-7 shrink-0 place-items-center rounded-full bg-primary px-1.5 op-label font-bold tabular-nums text-primary-foreground" :aria-label="`${qty} no pedido`">{{ qty }}</span>
+  </NuxtButton>
   <!-- Cartão de escolha no desenho do tile da v4: a mesma faixa de 92 px, a pílula
        "N opções" e a sombra de pilha que diz "tem mais de um aqui". -->
   <NuxtButton
+    v-else
     color="neutral"
     variant="ghost"
     class="justify-start group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left text-card-foreground shadow-[4px_4px_0_-1px_var(--card),4px_4px_0_0_var(--border)] transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0 items-stretch gap-0 p-0 font-normal"
