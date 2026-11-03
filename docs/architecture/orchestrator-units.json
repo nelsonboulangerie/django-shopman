@@ -14410,7 +14410,10 @@
           "symbols": [
             "build_session_ops",
             "validate_manager_approval",
-            "validate_manager_override"
+            "validate_manager_override",
+            "_MANAGER_PIN_VERDICTS",
+            "manager_pin_checked_before_transaction",
+            "_check_manager_pin"
           ]
         }
       ],
@@ -14678,6 +14681,7 @@
             "rename_pos_tab",
             "set_pos_tab_seating",
             "move_pos_tab_lines",
+            "_refuse_edit_session_move",
             "fire_pos_tab",
             "cancel_fired_pos_tab_lines"
           ]

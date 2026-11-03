@@ -274,6 +274,24 @@ describe("antesala — turno aberto, organização da tela", () => {
     expect(tile(wrapper, "day_closing").text()).toContain("16/09/2026");
   });
 
+  it("vários dispositivos no balcão: o aviso mora no cabeçalho (alerts do kit), com X", async () => {
+    projection = openShiftProjection({ station_devices: 2 } as Partial<POSProjection["cash_runtime"]>);
+    const wrapper = await openLobby();
+    const alerts = wrapper.find("[data-page-header-alerts]");
+    expect(alerts.exists()).toBe(true);
+    expect(alerts.text()).toContain("Há 2 dispositivos neste balcão, na mesma gaveta.");
+    // Aviso solto no meio da tela era a versão antiga, sem fechar.
+    expect(wrapper.find("[data-shared-station]").exists()).toBe(false);
+  });
+
+  it("no polegar (abaixo de lg), a ação do caixa é a barra da base, com a linha do card", async () => {
+    const wrapper = await openLobby();
+    const bar = wrapper.find("[data-session-shift-bar]");
+    expect(bar.exists()).toBe(true);
+    expect(bar.text()).toContain("Continuar vendendo");
+    expect(bar.text()).toContain("7 vendas hoje na loja");
+  });
+
   it("'Continuar vendendo' é o card cheio do topo, e diz quando o turno abriu", async () => {
     const wrapper = await openLobby();
     const card = tile(wrapper, "continue_selling");

@@ -51,6 +51,34 @@ function catalogPayload(url) {
   }
   return body;
 }
+// Tabelão de produtos: as linhas do catálogo gravado com uma classificação fiscal
+// de exemplo (as revisões são fictícias; o mock não grava).
+function productSheetPayload() {
+  const rows = recordedFor(new URL("http://mock/api/v1/backstage/catalog/?collection"))?.matrix?.rows || [];
+  return {
+    rows: rows.map((row, index) => ({
+      sku: row.sku,
+      is_active: row.is_active,
+      name: row.name,
+      short_description: index % 3 ? "" : "Massa de fermentação natural, casca crocante.",
+      base_price_q: row.base_price_q,
+      unit: index === 2 ? "kg" : "un",
+      fiscal: index === 1
+        ? { profile: "", ncm: "", cest: "", origin: "0" }
+        : { profile: "standard", ncm: "19059090", cest: "", origin: "0" },
+      fiscal_warnings: [],
+      revisions: {},
+    })),
+    fiscal_profiles: [
+      { key: "standard", name: "Sem substituição tributária", requires_cest: false },
+      { key: "tax_substitution", name: "Com substituição tributária (ST)", requires_cest: true },
+    ],
+    fiscal_origins: [
+      { key: "0", name: "0 · Nacional" },
+      { key: "1", name: "1 · Estrangeira, importação direta" },
+    ],
+  };
+}
 const detailTemplate = recorded["/api/v1/backstage/orders/IFOOD-261006-W01/"];
 /** O detalhe de um pedido da galeria: o detalhe real gravado, com os dados do card. */
 function galleryDetail(ref) {
@@ -267,6 +295,10 @@ createServer((req, res) => {
   }
   if (path === "/api/v1/backstage/channels/attention/") { send(res, 200, baseAttention); return; }
   if (path.indexOf("/events/") >= 0 || path.indexOf("/sse/") >= 0) { res.statusCode = 204; res.end(); return; }
+  if (req.method === "GET" && path === "/api/v1/backstage/catalog/products/sheet/") {
+    send(res, 200, productSheetPayload());
+    return;
+  }
   if (req.method === "GET") {
     const detail = path.match(/^\/api\/v1\/backstage\/orders\/([A-Z0-9-]+)\/$/);
     const catalog = path === "/api/v1/backstage/catalog/" ? catalogPayload(url) : null;

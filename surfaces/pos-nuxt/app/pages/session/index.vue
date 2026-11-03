@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { ManagerAction } from "../../../../operator-kit/app/presentation/managerAuth";
 import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
+import type { OperatorScreenAlert } from "../../../../operator-kit/app/presentation/screenState";
+import type { OperatorActionBarAction } from "../../../../operator-kit/app/presentation/actionBar";
 // ANTESALA do PDV (benchmark Odoo POS): a tela de SESSÃO antes da venda. O
 // operador abre o caixa (fundo de troco), registra sangria/suprimento e
 // fecha o turno (contagem cega) aqui — não mais num diálogo espremido dentro da
@@ -162,7 +164,7 @@ const shiftTile = computed<SessionTile>(() => (screen.value === "closed"
     // de duas gavetas o operador nunca fechava com ela. O par honesto seria
     // "vendas neste turno" pelo `sales_count` da leitura X; enquanto ele não
     // sobe até aqui, a linha diz de quem é o número.
-    description: `Turno aberto em ${openedAtDisplay.value} · ${salesCount.value} ${salesCount.value === 1 ? "venda" : "vendas"} hoje na loja`,
+    description: `${openedAtDisplay.value ? `Turno aberto em ${openedAtDisplay.value}` : "Turno aberto"} · ${salesCount.value} ${salesCount.value === 1 ? "venda" : "vendas"} hoje na loja`,
     disabled: false,
     tone: "primary",
   }));
@@ -286,6 +288,49 @@ async function goToDayClosing() {
 const headerActions = computed<OperatorHeaderAction[]>(() => [
   { label: "Atualizar", icon: "i-lucide-refresh-cw", disabled: pending.value, onSelect: () => void refresh() },
 ]);
+const screenSize = useScreen();
+// Quem opera este caixa: na mesa, à direita do cabeçalho; no celular, o topo do ⋮.
+const terminalLine = computed(() => {
+  if (!pos.value) return "";
+  const who = screen.value === "open" ? activeOperator.value?.name || cashRuntime.value?.operator_username || "" : "";
+  return who ? `${pos.value.terminal_label || "Terminal"}, ${who}` : pos.value.terminal_label || "Terminal";
+});
+// Um grupo só: no ⋮ do kit, grupo feito só de rótulos não aparece.
+const compactOptions = computed(() => [
+  { label: terminalLine.value, icon: "i-lucide-monitor", type: "label" as const },
+  ...headerActions.value.map(({ priority: _p, ...action }) => action),
+]);
+
+// Os avisos da tela moram no cabeçalho (`alerts` do kit): fecham no X e voltam enquanto
+// a causa durar. O id leva a causa, para o aviso voltar quando ela muda.
+const sessionAlerts = computed<OperatorScreenAlert[]>(() => {
+  const alerts: OperatorScreenAlert[] = [];
+  if (screen.value === "closed" && justClosedShift.value) {
+    alerts.push({
+      id: "shift-closed",
+      color: "success",
+      icon: "i-lucide-circle-check",
+      title: "Caixa fechado. A contagem ficou registrada no turno; a conferência é da retaguarda.",
+    });
+  }
+  if (sharedStationNotice.value) {
+    alerts.push({
+      id: `shared-station:${sharedStationNotice.value}`,
+      color: "warning",
+      icon: "i-lucide-monitor-smartphone",
+      title: sharedStationNotice.value,
+    });
+  }
+  return alerts;
+});
+
+// A ação do momento na base do celular e do tablet (`OperatorActionBar`): o mesmo
+// card do topo (abrir o caixa ou continuar vendendo), com a linha que ele escreve.
+const shiftBar = computed<OperatorActionBarAction>(() => ({
+  label: shiftTile.value.label,
+  icon: shiftTile.value.icon.replace(/^lucide:/, "i-lucide-"),
+  onSelect: () => selectTile(shiftTile.value),
+}));
 
 // Movimentos de gaveta: sangria (sai) / suprimento (entra).
 //
@@ -597,11 +642,19 @@ async function confirmClose() {
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col" data-session-screen>
+  <main class="flex min-h-0 flex-1 flex-col" data-session-screen data-compact-page>
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <!-- Cabeçalho de uma linha da suíte (kit): título, ao vivo, e o terminal e quem
            opera à direita. -->
-      <OperatorPageHeader title="Sessão de caixa" :actions="headerActions" actions-label="Mais ações do caixa">
+      <!-- No celular, a linha do chão (modelo de navegação): o selo troca de seção, e
+           quem opera este caixa encabeça o ⋮. -->
+      <PosCompactBar title="Sessão de caixa" :search="false" :options="compactOptions" />
+      <OperatorPageHeader
+        title="Sessão de caixa"
+        :actions="headerActions"
+        actions-label="Mais ações do caixa"
+        :alerts="sessionAlerts"
+      >
         <template #status>
           <OperatorLiveStatus
             v-if="liveStatus.view.value"
@@ -612,11 +665,9 @@ async function confirmClose() {
             :detail="liveStatus.view.value.detail"
           />
         </template>
-        <template v-if="pos" #actions>
-          <span class="min-w-0 op-label text-muted-foreground" data-session-terminal>
-            {{ pos.terminal_label || "Terminal" }}
-            <template v-if="screen === 'open'"> · {{ activeOperator?.name || cashRuntime?.operator_username }}</template>
-          </span>
+        <!-- No celular quem opera encabeça o ⋮ da linha do chão; aqui seria uma faixa a mais. -->
+        <template v-if="pos && !screenSize.belowMd.value" #actions>
+          <span class="min-w-0 op-label text-muted-foreground" data-session-terminal>{{ terminalLine }}</span>
         </template>
       </OperatorPageHeader>
 
@@ -627,32 +678,16 @@ async function confirmClose() {
              caixa, dia por fechar) sobe para o topo: `order-first`. As
              Encomendas não moram aqui: a porta delas é a barra lateral. -->
         <div class="mx-auto grid w-full max-w-2xl gap-6 p-4 md:py-8">
-          <p
-            v-if="screen === 'closed' && justClosedShift"
-            class="order-first flex items-start gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm"
-            data-shift-closed
-          >
-            <Icon name="lucide:circle-check" class="mt-0.5 size-4 shrink-0 text-success" />
-            <span>Caixa fechado. A contagem ficou registrada no turno; a conferência é da retaguarda.</span>
-          </p>
 
           <!-- CAIXA: fechado, abrir; aberto, continuar vendendo. O card É o
                gesto óbvio da tela, e por isso é o cheio. -->
-          <section class="grid gap-3" aria-labelledby="shift-title">
+          <section class="grid gap-3 max-lg:hidden" aria-labelledby="shift-title">
             <h2 id="shift-title" class="text-base font-semibold">Caixa</h2>
             <ul class="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <li class="col-span-2 sm:col-span-3">
                 <PosSessionTile :tile="shiftTile" @select="selectTile" />
               </li>
             </ul>
-            <p
-              v-if="sharedStationNotice"
-              class="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm"
-              data-shared-station
-            >
-              <Icon name="lucide:monitor-smartphone" class="mt-0.5 size-4 shrink-0 text-warning" />
-              <span>{{ sharedStationNotice }}</span>
-            </p>
           </section>
 
           <!-- PRECISA DE VOCÊ: só existe com pendência, um card por natureza,
@@ -709,8 +744,18 @@ async function confirmClose() {
               </li>
             </ul>
           </section>
+          <MoreBelow />
         </div>
       </div>
+      <!-- A ação do momento no polegar (abaixo de lg): abrir o caixa ou continuar
+           vendendo. Na mesa ela é o card cheio do topo. -->
+      <OperatorActionBar
+        v-if="pos"
+        :action="shiftBar"
+        :context-label="shiftTile.description"
+        label="Ação do caixa"
+        data-session-shift-bar
+      />
     </div>
 
     <!-- ── Diálogos, um por card ───────────────────────────────────────────

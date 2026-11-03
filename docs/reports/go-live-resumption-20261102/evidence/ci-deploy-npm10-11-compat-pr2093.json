@@ -1,0 +1,386 @@
+{
+  "observed_at_utc": "2026-11-03T09:26:44.888934+00:00",
+  "node": "22 (Homebrew node@22)",
+  "cloudflare_failure": {
+    "deployment_id": "9560e3fa-ab5d-4041-a0e4-46e5c3fceec8",
+    "head": "3688b40aed43be4021b3ae138201227f5d4c3fa5",
+    "npm": "11.12.1",
+    "node": "24.15.0",
+    "error": "EUSAGE: Missing minimatch@10.2.6 from lock file (three consumers)",
+    "settings_changed": false
+  },
+  "validation": [
+    {
+      "surface": "bi-nuxt",
+      "exit_code": 0,
+      "commands": [
+        "npm@11.12.1 install --package-lock-only --ignore-scripts --no-audit",
+        "npm@11.12.1 ci --ignore-scripts --no-audit",
+        "npm@10.9.9 ci --ignore-scripts --no-audit",
+        "npm run lint"
+      ],
+      "output_tail": [
+        "",
+        "added 829 packages in 13s",
+        "",
+        "229 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "added 829 packages in 13s",
+        "",
+        "229 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ],
+      "residual_minimatch_10_paths": [
+        "node_modules/eslint-plugin-import-x/node_modules/minimatch"
+      ],
+      "existing_package_versions_changed": false
+    },
+    {
+      "surface": "hub-nuxt",
+      "exit_code": 0,
+      "commands": [
+        "npm@11.12.1 install --package-lock-only --ignore-scripts --no-audit",
+        "npm@11.12.1 ci --ignore-scripts --no-audit",
+        "npm@10.9.9 ci --ignore-scripts --no-audit",
+        "npm run lint"
+      ],
+      "output_tail": [
+        "",
+        "added 830 packages in 16s",
+        "",
+        "231 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "added 830 packages in 7s",
+        "",
+        "231 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ],
+      "residual_minimatch_10_paths": [
+        "node_modules/eslint-plugin-import-x/node_modules/minimatch"
+      ],
+      "existing_package_versions_changed": false
+    },
+    {
+      "surface": "kds-nuxt",
+      "exit_code": 0,
+      "commands": [
+        "npm@11.12.1 install --package-lock-only --ignore-scripts --no-audit",
+        "npm@11.12.1 ci --ignore-scripts --no-audit",
+        "npm@10.9.9 ci --ignore-scripts --no-audit",
+        "npm run lint"
+      ],
+      "output_tail": [
+        "",
+        "added 827 packages in 19s",
+        "",
+        "231 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "added 827 packages in 19s",
+        "",
+        "231 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ],
+      "residual_minimatch_10_paths": [
+        "node_modules/eslint-plugin-import-x/node_modules/minimatch"
+      ],
+      "existing_package_versions_changed": false
+    },
+    {
+      "surface": "kitchensink-nuxt",
+      "exit_code": 0,
+      "commands": [
+        "npm@11.12.1 install --package-lock-only --ignore-scripts --no-audit",
+        "npm@11.12.1 ci --ignore-scripts --no-audit",
+        "npm@10.9.9 ci --ignore-scripts --no-audit",
+        "npm run lint"
+      ],
+      "output_tail": [
+        "",
+        "added 832 packages in 15s",
+        "",
+        "231 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "added 832 packages in 8s",
+        "",
+        "231 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ],
+      "residual_minimatch_10_paths": [
+        "node_modules/eslint-plugin-import-x/node_modules/minimatch"
+      ],
+      "existing_package_versions_changed": false
+    },
+    {
+      "surface": "marketing-nuxt",
+      "exit_code": 0,
+      "commands": [
+        "npm@11.12.1 install --package-lock-only --ignore-scripts --no-audit",
+        "npm@11.12.1 ci --ignore-scripts --no-audit",
+        "npm@10.9.9 ci --ignore-scripts --no-audit",
+        "npm run lint"
+      ],
+      "output_tail": [
+        "",
+        "added 823 packages in 14s",
+        "",
+        "231 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "added 823 packages in 11s",
+        "",
+        "231 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ],
+      "residual_minimatch_10_paths": [
+        "node_modules/eslint-plugin-import-x/node_modules/minimatch"
+      ],
+      "existing_package_versions_changed": false
+    },
+    {
+      "surface": "operator-kit",
+      "exit_code": 0,
+      "commands": [
+        "npm@11.12.1 install --package-lock-only --ignore-scripts --no-audit",
+        "npm@11.12.1 ci --ignore-scripts --no-audit",
+        "npm@10.9.9 ci --ignore-scripts --no-audit",
+        "npm run lint"
+      ],
+      "output_tail": [
+        "",
+        "added 1228 packages in 21s",
+        "",
+        "316 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "added 1228 packages in 13s",
+        "",
+        "316 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "> @shopman/operator-kit@0.1.0 lint",
+        "> eslint .",
+        ""
+      ],
+      "residual_minimatch_10_paths": [],
+      "existing_package_versions_changed": false
+    },
+    {
+      "surface": "orders-nuxt",
+      "exit_code": 0,
+      "commands": [
+        "npm@11.12.1 install --package-lock-only --ignore-scripts --no-audit",
+        "npm@11.12.1 ci --ignore-scripts --no-audit",
+        "npm@10.9.9 ci --ignore-scripts --no-audit",
+        "npm run lint"
+      ],
+      "output_tail": [
+        "",
+        "233 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "> lint",
+        "> eslint .",
+        "",
+        "",
+        "/Users/pablovalentini/.codex/worktrees/ci-live-audit-20261102/django-shopman/surfaces/orders-nuxt/app/pages/catalog.vue",
+        "  2041:32  warning  Expected a linebreak before this attribute  vue/first-attribute-linebreak",
+        "",
+        "✖ 1 problem (0 errors, 1 warning)",
+        "  0 errors and 1 warning potentially fixable with the `--fix` option.",
+        ""
+      ],
+      "residual_minimatch_10_paths": [
+        "node_modules/eslint-plugin-import-x/node_modules/minimatch"
+      ],
+      "existing_package_versions_changed": false
+    },
+    {
+      "surface": "pos-nuxt",
+      "exit_code": 0,
+      "commands": [
+        "npm@11.12.1 install --package-lock-only --ignore-scripts --no-audit",
+        "npm@11.12.1 ci --ignore-scripts --no-audit",
+        "npm@10.9.9 ci --ignore-scripts --no-audit",
+        "npm run lint"
+      ],
+      "output_tail": [
+        "  1444:9   warning  Attribute \"v-model:order-notes\" should go before \":delivery-date-effective\"                 vue/attributes-order",
+        "  1445:9   warning  Attribute \"v-model:receipt-channels\" should go before \":delivery-date-effective\"            vue/attributes-order",
+        "  1446:9   warning  Attribute \"v-model:receipt-email\" should go before \":delivery-date-effective\"               vue/attributes-order",
+        "  1447:9   warning  Attribute \"v-model:save-receipt-contact\" should go before \":delivery-date-effective\"        vue/attributes-order",
+        "  1448:9   warning  Attribute \"v-model:save-receipt-tax-id\" should go before \":delivery-date-effective\"         vue/attributes-order",
+        "  1449:9   warning  Attribute \"v-model:confirm-receipt-tax-id\" should go before \":delivery-date-effective\"      vue/attributes-order",
+        "  1564:11  warning  Attribute \"v-else-if\" should go before \"ref\"                                                vue/attributes-order",
+        "  1690:7   warning  Attribute \"v-model:open\" should go before \":sales-mode\"                                     vue/attributes-order",
+        "  1691:7   warning  Attribute \"v-model:delivery-date\" should go before \":sales-mode\"                            vue/attributes-order",
+        "  1692:7   warning  Attribute \"v-model:delivery-time-slot\" should go before \":sales-mode\"                       vue/attributes-order",
+        "",
+        "✖ 56 problems (0 errors, 56 warnings)",
+        "  0 errors and 54 warnings potentially fixable with the `--fix` option.",
+        ""
+      ],
+      "residual_minimatch_10_paths": [
+        "node_modules/eslint-plugin-import-x/node_modules/minimatch"
+      ],
+      "existing_package_versions_changed": false
+    },
+    {
+      "surface": "production-nuxt",
+      "exit_code": 0,
+      "commands": [
+        "npm@11.12.1 install --package-lock-only --ignore-scripts --no-audit",
+        "npm@11.12.1 ci --ignore-scripts --no-audit",
+        "npm@10.9.9 ci --ignore-scripts --no-audit",
+        "npm run lint"
+      ],
+      "output_tail": [
+        "",
+        "added 832 packages in 12s",
+        "",
+        "231 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "added 832 packages in 14s",
+        "",
+        "231 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ],
+      "residual_minimatch_10_paths": [
+        "node_modules/eslint-plugin-import-x/node_modules/minimatch"
+      ],
+      "existing_package_versions_changed": false
+    },
+    {
+      "surface": "purchase-nuxt",
+      "exit_code": 0,
+      "commands": [
+        "npm@11.12.1 install --package-lock-only --ignore-scripts --no-audit",
+        "npm@11.12.1 ci --ignore-scripts --no-audit",
+        "npm@10.9.9 ci --ignore-scripts --no-audit",
+        "npm run lint"
+      ],
+      "output_tail": [
+        "",
+        "added 833 packages in 14s",
+        "",
+        "229 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "added 833 packages in 12s",
+        "",
+        "229 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ],
+      "residual_minimatch_10_paths": [
+        "node_modules/eslint-plugin-import-x/node_modules/minimatch"
+      ],
+      "existing_package_versions_changed": false
+    },
+    {
+      "surface": "status-nuxt",
+      "exit_code": 0,
+      "commands": [
+        "npm@11.12.1 install --package-lock-only --ignore-scripts --no-audit",
+        "npm@11.12.1 ci --ignore-scripts --no-audit",
+        "npm@10.9.9 ci --ignore-scripts --no-audit",
+        "npm run lint"
+      ],
+      "output_tail": [
+        "",
+        "added 1012 packages in 12s",
+        "",
+        "304 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "added 1012 packages in 12s",
+        "",
+        "304 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ],
+      "residual_minimatch_10_paths": [
+        "node_modules/eslint-plugin-import-x/node_modules/minimatch"
+      ],
+      "existing_package_versions_changed": false
+    },
+    {
+      "surface": "storefront-nuxt",
+      "exit_code": 0,
+      "commands": [
+        "npm@11.12.1 install --package-lock-only --ignore-scripts --no-audit",
+        "npm@11.12.1 ci --ignore-scripts --no-audit",
+        "npm@10.9.9 ci --ignore-scripts --no-audit",
+        "npm run lint"
+      ],
+      "output_tail": [
+        "",
+        "added 1123 packages in 20s",
+        "",
+        "323 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "added 1123 packages in 19s",
+        "",
+        "323 packages are looking for funding",
+        "  run `npm fund` for details",
+        "",
+        "> lint",
+        "> eslint .",
+        ""
+      ],
+      "residual_minimatch_10_paths": [
+        "node_modules/eslint-plugin-import-x/node_modules/minimatch"
+      ],
+      "existing_package_versions_changed": false
+    }
+  ],
+  "status_build": {
+    "command": "CF_PAGES=1 npm run generate",
+    "exit_code": 0,
+    "output_tail": [
+      "  ../dist/workbox-df4dec1a.js",
+      "[info] [nitro] Adding Nitro fallback to `_headers` to handle all unmatched routes.",
+      "[info] Generated dist/_headers",
+      "[info] Generated dist/_redirects",
+      "[success] [nitro] You can preview this build using `npx wrangler pages dev dist`",
+      "[success] [nitro] You can deploy this build using `npx wrangler pages deploy dist`",
+      "config 1.84s · modules 324ms · app 974ms · types 486ms · client 2.53s · server 533ms · nitro 4.26s",
+      "◆ ✨ You can now deploy dist to any static hosting! (10.9s)"
+    ]
+  }
+}
