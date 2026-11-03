@@ -106,6 +106,11 @@ const props = defineProps<{
    */
   offline?: boolean;
   /**
+   * A venda não segue AGORA (sem rede, com a venda sem conexão desligada na loja):
+   * o Pagamento e o pagar direto ficam apagados, com esta razão escrita abaixo.
+   */
+  saleBlockedReason?: string;
+  /**
    * Os meios eletrônicos que a folha oferece direto (v4 tablet, `pos-tablet.jpg`
    * b): PIX e Maquininha. Vazio, a folha mostra só o Pagamento de sempre.
    */
@@ -664,8 +669,8 @@ const sheetAction = computed<OperatorActionBarAction>(() => {
     label: primaryText.value,
     icon: primaryIconName.value,
     loading: props.loading,
-    disabled: !props.items.length || props.loading || props.saving,
-    reason: props.items.length ? undefined : "Escolha um produto para começar.",
+    disabled: !props.items.length || props.loading || props.saving || Boolean(props.saleBlockedReason),
+    reason: props.items.length ? props.saleBlockedReason || undefined : "Escolha um produto para começar.",
     onSelect: () => emit("prepare"),
   };
 });
@@ -2316,7 +2321,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             size="xl"
             color="primary"
             variant="ghost"
-            :disabled="!items.length || loading || saving"
+            :disabled="!items.length || loading || saving || Boolean(saleBlockedReason)"
             label="Outras formas"
             data-pos-sheet-other-payment
             @click="$emit('prepare')"
@@ -2329,7 +2334,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             size="xl"
             color="primary"
             class="h-14 justify-center gap-2.5 text-lg font-semibold"
-            :disabled="!items.length || loading || saving"
+            :disabled="!items.length || loading || saving || Boolean(saleBlockedReason)"
             :data-pos-sheet-pay-method="method.ref"
             @click="$emit('pay', method.ref)"
           >
@@ -2345,7 +2350,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             color="neutral"
             variant="outline"
             class="col-span-full h-12 justify-center gap-2.5 font-semibold"
-            :disabled="!items.length || loading || saving"
+            :disabled="!items.length || loading || saving || Boolean(saleBlockedReason)"
             :data-pos-sheet-pay-method="method.ref"
             @click="$emit('pay', method.ref)"
           >
@@ -2354,6 +2359,10 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             <span v-if="method.hint" class="font-normal text-muted-foreground">· {{ method.hint }}</span>
           </NuxtButton>
         </div>
+        <p v-if="saleBlockedReason" class="mt-2 flex items-start gap-1.5 op-micro text-muted-foreground" data-pos-sale-blocked-reason>
+          <Icon name="lucide:wifi-off" class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          <span>{{ saleBlockedReason }}</span>
+        </p>
       </div>
       <div
         v-else
@@ -2382,8 +2391,9 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
           color="primary"
           block
           class="h-14 justify-between gap-3 px-4"
-          :disabled="!items.length || loading || saving"
+          :disabled="!items.length || loading || saving || Boolean(saleBlockedReason)"
           :aria-busy="loading || undefined"
+          :aria-describedby="saleBlockedReason ? 'pos-sale-blocked-reason' : undefined"
           aria-keyshortcuts="F4"
           :title="`${primaryText} (F4)`"
           data-pos-primary
@@ -2414,6 +2424,15 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             <span v-else class="op-body font-medium whitespace-nowrap opacity-90">{{ totalText }}</span>
           </span>
         </NuxtButton>
+        <p
+          v-if="saleBlockedReason"
+          id="pos-sale-blocked-reason"
+          class="-mt-1 flex items-start gap-1.5 op-micro text-muted-foreground"
+          data-pos-sale-blocked-reason
+        >
+          <Icon name="lucide:wifi-off" class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          <span>{{ saleBlockedReason }}</span>
+        </p>
       </div>
   </DefineTicketBody>
 

@@ -190,6 +190,11 @@ const props = defineProps<{
   reviewFailed?: boolean;
   /** Por que a revisão falhou, dito pelo servidor ou pela rede. */
   reviewFailureReason?: string;
+  /**
+   * A venda não segue AGORA: sem rede, com a venda sem conexão desligada na
+   * loja. Validar fica travado com esta razão escrita abaixo.
+   */
+  saleBlockedReason?: string;
 }>();
 
 const emit = defineEmits<{
@@ -843,6 +848,12 @@ const ctaBlock = computed<{
       action: { label: "Voltar à comanda", run: () => { emit("back"); } },
     };
   }
+  if (props.saleBlockedReason) {
+    return {
+      message: props.saleBlockedReason,
+      hint: "Esta loja não vende sem conexão. Os itens ficam na comanda até a rede voltar.",
+    };
+  }
   if (props.reviewFailed) {
     return {
       message: "O total não foi calculado.",
@@ -1187,6 +1198,7 @@ const ctaDisabled = computed(() => {
   // Salvar/editar cliente é parte do fechamento: enquanto o resolve está em
   // voo, nem o clique nem o atalho Enter podem concluir com o cadastro antigo.
   if (!props.items.length || props.loading || props.lookupBusy) return true;
+  if (props.saleBlockedReason) return true;
   // Com a revisão falhada o botão VOLTA a clicar: ele é o retry.
   if (props.reviewFailed) return false;
   if (needsReview.value) return true;

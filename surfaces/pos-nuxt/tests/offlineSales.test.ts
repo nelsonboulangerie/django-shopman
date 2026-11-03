@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   cashCloseBlockedByQueue,
   classifyOfflineSend,
+  OFFLINE_SALE_OFF_REASON,
   offlineQueueAlert,
   offlineSaleBlockers,
+  offlineSaleOffReason,
   offlineSaleLabel,
   offlineSaleReview,
 } from "~/presentation/offlineSales";
@@ -24,6 +26,7 @@ const item = (over: Partial<POSCartItem> = {}): POSCartItem => ({
 } as POSCartItem);
 
 const counterSale = {
+  saleEnabled: true,
   salesMode: "counter",
   fulfillmentType: "pickup",
   items: [item()],
@@ -99,31 +102,84 @@ describe("classifyOfflineSend", () => {
 
 describe("offlineQueueAlert", () => {
   it("sem conexão e sem fila: diz que o balcão continua e o que espera", () => {
-    const alert = offlineQueueAlert({ online: false, pending: 0, conflicts: 0, sending: false });
+    const alert = offlineQueueAlert({ saleEnabled: true, online: false, pending: 0, conflicts: 0, sending: false });
     expect(alert?.title).toBe("O balcão continua vendendo.");
     expect(alert?.actionLabel).toBe("O que funciona agora");
   });
 
   it("sem conexão com fila: conta as pendentes", () => {
-    expect(offlineQueueAlert({ online: false, pending: 2, conflicts: 0, sending: false })?.title)
+    expect(offlineQueueAlert({ saleEnabled: true, online: false, pending: 2, conflicts: 0, sending: false })?.title)
       .toBe("2 vendas esperando envio.");
   });
 
   it("com conexão: some quando a fila esvazia; recusa tem precedência", () => {
-    expect(offlineQueueAlert({ online: true, pending: 0, conflicts: 0, sending: false })).toBeNull();
-    expect(offlineQueueAlert({ online: true, pending: 1, conflicts: 0, sending: true })?.title).toBe("Enviando 1 venda guardada…");
-    expect(offlineQueueAlert({ online: true, pending: 3, conflicts: 1, sending: false })?.color).toBe("error");
+    expect(offlineQueueAlert({ saleEnabled: true, online: true, pending: 0, conflicts: 0, sending: false })).toBeNull();
+    expect(offlineQueueAlert({ saleEnabled: true, online: true, pending: 1, conflicts: 0, sending: true })?.title).toBe("Enviando 1 venda guardada…");
+    expect(offlineQueueAlert({ saleEnabled: true, online: true, pending: 3, conflicts: 1, sending: false })?.color).toBe("error");
   });
 
   it("nenhuma frase usa travessão", () => {
     const all = [
-      offlineQueueAlert({ online: false, pending: 0, conflicts: 0, sending: false }),
-      offlineQueueAlert({ online: false, pending: 1, conflicts: 0, sending: false }),
-      offlineQueueAlert({ online: true, pending: 2, conflicts: 0, sending: false }),
-      offlineQueueAlert({ online: true, pending: 0, conflicts: 2, sending: false }),
+      offlineQueueAlert({ saleEnabled: true, online: false, pending: 0, conflicts: 0, sending: false }),
+      offlineQueueAlert({ saleEnabled: true, online: false, pending: 1, conflicts: 0, sending: false }),
+      offlineQueueAlert({ saleEnabled: true, online: true, pending: 2, conflicts: 0, sending: false }),
+      offlineQueueAlert({ saleEnabled: true, online: true, pending: 0, conflicts: 2, sending: false }),
     ];
     for (const alert of all) expect(`${alert?.title} ${alert?.description}`).not.toMatch(/[—–]/);
     expect(cashCloseBlockedByQueue(1)).not.toMatch(/[—–]/);
+  });
+});
+
+describe("venda sem conexão desligada na loja", () => {
+  it("nenhuma venda segue sem conexão: a razão é uma só", () => {
+    expect(offlineSaleBlockers({ ...counterSale, saleEnabled: false })).toEqual([OFFLINE_SALE_OFF_REASON]);
+    expect(OFFLINE_SALE_OFF_REASON).toBe("Sem conexão. A venda espera a rede voltar.");
+  });
+
+  it("a razão sob o Pagamento só aparece sem rede e com a chave desligada", () => {
+    expect(offlineSaleOffReason({ online: false, saleEnabled: false })).toBe(OFFLINE_SALE_OFF_REASON);
+    expect(offlineSaleOffReason({ online: true, saleEnabled: false })).toBe("");
+    expect(offlineSaleOffReason({ online: false, saleEnabled: true })).toBe("");
+  });
+
+  it("o aviso sem rede diz que a venda espera, sem prometer que o balcão continua", () => {
+    const alert = offlineQueueAlert({ saleEnabled: false, online: false, pending: 0, conflicts: 0, sending: false });
+    expect(alert?.title).toBe("Sem conexão: a venda espera a rede voltar.");
+    expect(alert?.description).toBe("Esta loja não vende sem conexão. Os itens ficam na comanda até a rede voltar.");
+    expect(alert?.actionLabel).toBe("");
+  });
+
+  it("a venda guardada antes de desligar não some da lista", () => {
+    const alert = offlineQueueAlert({ saleEnabled: false, online: false, pending: 1, conflicts: 0, sending: false });
+    expect(alert?.description).toMatch(/1 venda guardada antes segue na lista/);
+    expect(alert?.actionLabel).toBe("Ver vendas guardadas");
+    // Recusada pelo servidor ao voltar a rede: vira recusa com o motivo, como toda outra.
+    expect(offlineQueueAlert({ saleEnabled: false, online: true, pending: 0, conflicts: 1, sending: false })?.color).toBe("error");
+  });
+
+  it("a recusa do servidor chega à lista com a frase dele", () => {
+    const outcome = classifyOfflineSend({
+      failure: {
+        status: 409,
+        data: {
+          detail: "A venda sem conexão está desligada nesta loja. Envie a venda com a rede de volta.",
+          field: "offline_captured_at",
+          error: { code: "offline_sale_disabled", message: "A venda sem conexão está desligada nesta loja. Envie a venda com a rede de volta." },
+        },
+      },
+    });
+    expect(outcome).toEqual({
+      kind: "conflict",
+      error: { code: "offline_sale_disabled", message: "A venda sem conexão está desligada nesta loja. Envie a venda com a rede de volta." },
+    });
+  });
+
+  it("nenhuma frase usa travessão", () => {
+    for (const pending of [0, 1, 2]) {
+      const alert = offlineQueueAlert({ saleEnabled: false, online: false, pending, conflicts: 0, sending: false });
+      expect(`${alert?.title} ${alert?.description}`).not.toMatch(/[—–]/);
+    }
+    expect(OFFLINE_SALE_OFF_REASON).not.toMatch(/[—–]/);
   });
 });
 

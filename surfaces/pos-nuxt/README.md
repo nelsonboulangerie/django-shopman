@@ -70,6 +70,13 @@ O PDV opta explicitamente pela capability PWA do `operator-kit`: abre em modo
 standalone, mantém a tela acordada quando o navegador permite e oferece atalhos
 para Venda e Caixa. A atualização só é aplicada após confirmação do operador.
 
+**Chave da loja "Venda sem conexão"** (`Shop.pos_offline_sale_enabled`, Admin em
+Ponto de venda): existe e nasce **desligada** (dono, 03/11/2026). Ligar depende da
+NFC-e em contingência (tpEmis 9), que ainda não existe. Desligada, o PDV sem rede não
+cobra nem guarda venda (aviso no cabeçalho e Pagamento apagado com a razão), e o
+servidor recusa com 409 `offline_sale_disabled` a venda guardada que um dispositivo
+antigo ainda tenha na fila; ela segue listada, com o motivo. Ligada, vale o que segue.
+
 Sem conexão, o balcão continua vendendo em dinheiro e maquininha: ao tocar em
 **Validar**, a venda fica guardada neste dispositivo (fila local em IndexedDB) e é
 enviada sozinha quando a rede volta; a nota fiscal sai depois do envio. O caixa só

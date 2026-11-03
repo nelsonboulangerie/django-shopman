@@ -636,6 +636,10 @@ export interface POSProjection {
   /** Venda por peso: a loja deixa digitar o PESO além do valor da etiqueta
    *  (balança no balcão). Desligado = só valor, e a opção nem aparece. */
   weighed_weight_entry?: boolean;
+  /** A loja deixa o balcão vender SEM CONEXÃO (`Shop.pos_offline_sale_enabled`)?
+   *  Desligada por padrão até existir NFC-e em contingência: sem rede, o PDV não
+   *  cobra nem guarda venda, avisa e espera a conexão voltar. */
+  offline_sale_enabled?: boolean;
   /** A janela de desconto por horário (Hora da Xepa); null sem regra para o PDV. */
   price_window?: POSPriceWindowProjection | null;
 }

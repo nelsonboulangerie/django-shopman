@@ -941,7 +941,17 @@ createServer((req, res) => {
     return;
   }
   if (path === "/api/v1/backstage/pos/") {
-    send(res, 200, { pos: XEPA ? xepaView() : pos, shift: null, tabs: TABS, operator: { id: 7, name: "Ana" } });
+    // A chave da loja "Venda sem conexão" (`Shop.pos_offline_sale_enabled`): LIGADA no
+    // mock, para o caminho sem conexão inteiro seguir exercitado (offline-*.spec.ts,
+    // link-down-sale.spec.ts, retratos). O cookie `pos_offline_sale=off` liga o padrão
+    // da loja de verdade, desligada (offline-sale-off.spec.ts).
+    const offlineSaleEnabled = !/(^|;\s*)pos_offline_sale=off(;|$)/.test(req.headers.cookie || "");
+    send(res, 200, {
+      pos: { ...(XEPA ? xepaView() : pos), offline_sale_enabled: offlineSaleEnabled },
+      shift: null,
+      tabs: TABS,
+      operator: { id: 7, name: "Ana" },
+    });
     return;
   }
   if (SALE && path === "/api/v1/backstage/closing/") {

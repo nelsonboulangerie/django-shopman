@@ -2738,6 +2738,17 @@ _POS_FIELDSETS = (
         },
     ),
     (
+        "Venda sem conexão",
+        {
+            "fields": ("pos_offline_sale_enabled",),
+            "description": (
+                "Desligada por padrão. Desligada, o PDV sem rede não cobra nem guarda venda, "
+                "e o servidor recusa a venda guardada de um dispositivo antigo. Ligar depende "
+                "da NFC-e em contingência (tpEmis 9), que ainda não existe."
+            ),
+        },
+    ),
+    (
         "Alertas de estoque",
         {
             "fields": ("defaults_stock_alert_cooldown_minutes",),

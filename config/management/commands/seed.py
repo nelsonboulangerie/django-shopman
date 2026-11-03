@@ -1631,6 +1631,9 @@ class Command(BaseCommand):
                 "Embalar para presente",
                 "Cortar ao meio"],
             "opening_hours": opening_hours,
+            # Venda sem conexão desligada (dono, 03/11/2026): ligar depende da
+            # NFC-e em contingência (tpEmis 9), que ainda não existe.
+            "pos_offline_sale_enabled": False,
             "defaults": {
                 "menu": {
                     "dynamic_collections": ["featured", "fresh_from_oven", "new_arrivals"],

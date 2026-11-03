@@ -6,6 +6,17 @@ conexão e sincroniza na volta. Quedas são comuns em dia chuvoso de movimento. 
 é o desenho da terceira camada. A implementação do que não depende de decisão está na PR da
 fila (ver §8).
 
+> **Chave da loja (dono, 03/11/2026):** "Não teremos contingência offline ainda." A venda
+> sem conexão existe atrás de uma chave por loja, **Venda sem conexão**
+> (`Shop.pos_offline_sale_enabled`, Admin em Ponto de venda), que nasce **desligada**.
+> Ligar depende da NFC-e em contingência (tpEmis 9), que ainda não existe: sem ela, a
+> nota da venda sem conexão sai só no envio, com a hora do envio. Desligada, o PDV sem rede
+> não cobra nem guarda venda, e `close_sale` recusa com 409 `offline_sale_disabled`
+> (`{detail, field, errors}`) qualquer corpo com `offline_captured_at`/`offline_prices_at`;
+> a venda já guardada num dispositivo segue listada na fila, recusada com o motivo, e o
+> reenvio de uma venda que já fechou segue devolvendo o pedido. Ligada, tudo o que este
+> documento descreve vale sem mudança.
+
 > **ADR-013 §1** ("POS não faz commit offline") fica superado por esta decisão. Os
 > pré-requisitos que o próprio ADR exigia para o dia em que houvesse venda offline (fila com
 > `client_request_id`, reenvio idempotente, fechamento de caixa barrado com fila pendente,

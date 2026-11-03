@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import copy
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -62,6 +63,50 @@ CLOCK_SKEW = timedelta(minutes=5)
 MAX_AGE = timedelta(hours=24)
 
 ALERT_TYPE = "pos_offline_sale_adjusted"
+
+
+#: A recusa da venda guardada quando a chave da loja está desligada.
+DISABLED_MESSAGE = "A venda sem conexão está desligada nesta loja. Envie a venda com a rede de volta."
+
+
+# ── A chave da loja ───────────────────────────────────────────────────
+
+
+def enabled() -> bool:
+    """A loja deixa o PDV vender sem conexão? (``Shop.pos_offline_sale_enabled``)
+
+    Desligada por padrão (dono, 03/11/2026): sem NFC-e em contingência
+    (``tpEmis`` 9), a nota da venda sem conexão sairia só no envio, com a hora do
+    envio. O caminho inteiro continua aqui, pronto para ligar quando a
+    contingência existir.
+    """
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    return bool(shop is not None and shop.pos_offline_sale_enabled)
+
+
+def refuse_when_disabled(payload: dict, *, already_closed: Callable[[], bool] | None = None) -> None:
+    """Recusa (409) a venda guardada sem conexão quando a chave da loja está desligada.
+
+    Vale para o dispositivo velho que ainda guarda a venda na fila: ela não some
+    da lista dele, fica recusada com o motivo. ``already_closed`` é o reenvio de
+    uma venda que JÁ fechou (mesma ``client_request_id``), perguntado só quando
+    a recusa está para sair: a resposta segue sendo o mesmo pedido, porque
+    recusar agora esconderia uma venda que existe.
+    """
+    keys = [key for key in ("offline_captured_at", "offline_prices_at") if payload.get(key)]
+    if not keys or enabled() or (already_closed is not None and already_closed()):
+        return
+    from shopman.shop.services.pos_intent import PosIntentError
+
+    raise PosIntentError(
+        code="offline_sale_disabled",
+        message=DISABLED_MESSAGE,
+        field=keys[0],
+        status=409,
+        recovery="Com a rede de volta, refaça a venda no PDV.",
+    )
 
 
 # ── Elegibilidade ─────────────────────────────────────────────────────
