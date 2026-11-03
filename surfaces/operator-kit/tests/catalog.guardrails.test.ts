@@ -154,7 +154,7 @@ describe("catálogo vivo", () => {
     // do PageCard highlight, ligado por `data-highlight`; e o próximo a sair na moldura
     // do KDS (`data-highlight="ready"`, dono 02/11/2026). Nenhum outro ring.
     const highlight =
-      'root: "data-[highlight=true]:ring-2 data-[highlight=true]:ring-primary data-[highlight=ready]:ring-2 data-[highlight=ready]:ring-success data-[highlight=ready]:bg-success/8 data-[highlight=ready]:shadow-[0_0_0_6px_color-mix(in_oklab,var(--success)_15%,transparent)]"';
+      'root: "data-[highlight=true]:ring-2 data-[highlight=true]:ring-primary data-[highlight=ready]:ring-2 data-[highlight=ready]:ring-primary data-[highlight=ready]:bg-primary/8 data-[highlight=ready]:shadow-[0_0_0_6px_color-mix(in_oklab,var(--primary)_15%,transparent)]"';
     expect(cardConfig).toContain(highlight);
     expect(cardConfig.replace(highlight, "")).not.toMatch(/shadow-|rounded-|ring-/);
   });
