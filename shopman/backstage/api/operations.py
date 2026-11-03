@@ -675,6 +675,8 @@ class POSView(ServerTimingMixin, APIView):
                 "tabs": projection_data(tabs),
                 "operator": operator_card(request.user),
                 "pin_must_change": pin_must_change(request.user),
+                # Este dispositivo pode calcular e cobrar? (a régua das mutações)
+                "station": station_trust.pos_station_readiness(request),
             }
         )
 

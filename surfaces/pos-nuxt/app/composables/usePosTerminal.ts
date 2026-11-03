@@ -84,6 +84,7 @@ export async function usePosTerminal() {
     scope?.run(() => watchPriceWindow(() => pos.value?.price_window?.next_change_at, refresh));
   }
   const operators = computed<POSOperatorProjection[]>(() => pos.value?.operators ?? []);
+  const station = computed(() => data.value?.station ?? null);
   const actions = computed<Action[]>(() => pos.value?.actions ?? []);
 
   /**
@@ -107,7 +108,7 @@ export async function usePosTerminal() {
     }
   }
 
-  return { data, pos, shift, tabs, operators, actions, pending, error, refresh, refreshTabs };
+  return { data, pos, shift, tabs, operators, actions, station, pending, error, refresh, refreshTabs };
 }
 
 const PRICE_WINDOW_RETRY_MS = 30_000;

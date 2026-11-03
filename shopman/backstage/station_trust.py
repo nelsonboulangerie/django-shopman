@@ -126,6 +126,36 @@ def station_ref(request) -> str:
     return next(iter(refs)) if len(refs) == 1 else ""
 
 
+def pos_station_readiness(request) -> dict:
+    """Este dispositivo pode cobrar? A MESMA régua das mutações de dinheiro do PDV.
+
+    A leitura do quadro escolhe uma gaveta mesmo sem estação (``strict=False``), para
+    o balcão não ficar em branco; quem recusa é a mutação (`_terminal_do_pedido`).
+    Sem esta resposta a tela mostrava o caixa aberto, deixava montar a comanda inteira
+    e só recusava no Pagamento ("Não calculado", depois o aviso vermelho). Com ela, a
+    tela diz na chegada o que falta e oferece vincular.
+
+    ``reason``: ``""`` (pronto), ``"none"`` (nenhum vínculo de estação), ``"ambiguous"``
+    (mais de um) ou ``"inactive"`` (o vínculo aponta para um caixa desligado ou que
+    não é caixa do PDV).
+    """
+    from shopman.cashman.models import Terminal
+
+    refs = {
+        device.subject_id
+        for nome, device in _present_station_bindings(request)
+        if nome == station_cookie_name(device.subject_id)
+    }
+    if not refs:
+        return {"ready": False, "reason": "none"}
+    if len(refs) > 1:
+        return {"ready": False, "reason": "ambiguous"}
+    ref = next(iter(refs))
+    if not Terminal.objects.filter(ref=ref, is_active=True).exists():
+        return {"ready": False, "reason": "inactive"}
+    return {"ready": True, "reason": ""}
+
+
 def station_device_id(request) -> str:
     """O ``TrustedDevice.pk`` da estação desta requisição, ou ``""``.
 

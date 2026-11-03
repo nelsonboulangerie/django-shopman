@@ -674,6 +674,8 @@ export interface POSResponse {
   // O operador ativo recebeu um PIN temporário (reset do gerente) e precisa
   // trocá-lo antes de operar — a lock screen força a troca quando true.
   pin_must_change: boolean;
+  /** Este dispositivo pode calcular e cobrar (a régua das mutações de dinheiro). */
+  station?: { ready: boolean; reason: "" | "none" | "ambiguous" | "inactive" };
 }
 
 export interface POSLineAuthorship {
