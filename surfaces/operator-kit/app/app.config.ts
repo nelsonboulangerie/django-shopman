@@ -157,6 +157,16 @@ export default defineAppConfig({
       },
       compoundVariants: [
         {
+          // No aviso vertical a ação mora sob o texto (o `actions` dentro do wrapper, que
+          // segue largo no celular), e o `actions` filho direto da raiz só guarda o
+          // fechar: ele fica no canto superior direito também no celular, sem descer
+          // para uma linha própria que gasta altura (dono, 02/11/2026).
+          orientation: "vertical",
+          class: {
+            root: "max-sm:*:data-[slot=actions]:basis-auto max-sm:*:data-[slot=actions]:flex-row",
+          },
+        },
+        {
           color: "primary",
           variant: "subtle",
           class: {
@@ -267,11 +277,11 @@ export default defineAppConfig({
       // Destaque semântico do item da vez num Card (dono, 08/10/2026): o mesmo traço
       // do `PageCard highlight` (anel de 2 px na primária). O Card oficial não tem a prop;
       // quem usa marca `data-highlight` e o tema desenha, uma vez só para os 9 apps.
-      // `data-highlight="ready"` é o próximo a sair, na moldura do KDS (borda de 2 px,
-      // fundo e halo no verde do pronto): o Gestor na Saída usa a mesma do KDS (dono,
-      // 02/11/2026: o anel fino deixava dúvida sobre qual era o da vez).
+      // `data-highlight="ready"` é o próximo a sair, na anatomia da moldura do KDS (borda
+      // de 2 px, fundo e halo), no dourado da primária (dono, 02/11/2026: o anel fino
+      // deixava dúvida sobre qual era o da vez; a cor é a da casa, não o verde).
       slots: {
-        root: "data-[highlight=true]:ring-2 data-[highlight=true]:ring-primary data-[highlight=ready]:ring-2 data-[highlight=ready]:ring-success data-[highlight=ready]:bg-success/8 data-[highlight=ready]:shadow-[0_0_0_6px_color-mix(in_oklab,var(--success)_15%,transparent)]",
+        root: "data-[highlight=true]:ring-2 data-[highlight=true]:ring-primary data-[highlight=ready]:ring-2 data-[highlight=ready]:ring-primary data-[highlight=ready]:bg-primary/8 data-[highlight=ready]:shadow-[0_0_0_6px_color-mix(in_oklab,var(--primary)_15%,transparent)]",
         header: "p-4 sm:p-4",
         body: "p-4 sm:p-4 has-[>[data-slot=root]:only-child>table]:p-0 has-[>[data-slot=root]:only-child>[data-slot=item][data-state]]:py-0",
         footer: "p-4 sm:p-4",
