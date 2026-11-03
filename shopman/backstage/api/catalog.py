@@ -157,13 +157,17 @@ class CatalogCellView(_CatalogBase):
             return Response({"outcome": "in_progress"}, status=202)
 
 
-class CatalogCellsView(_CatalogBase):
-    """Lote de células numa ida, com recibo linha a linha e recibo local."""
+class _CatalogBatchView(_CatalogBase):
+    """Lote numa ida, com recibo linha a linha e recibo local."""
+
+    operation = ""
+    list_key = ""
+    command = None
 
     def _scope(self, request):
         from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": "catalog.cells"})
+        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": self.operation})
 
     def get(self, request):
         from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
@@ -189,19 +193,19 @@ class CatalogCellsView(_CatalogBase):
 
         data = request.data
         key = request.headers.get("Idempotency-Key") or (data.get("idempotency_key") if isinstance(data, dict) else None)
-        cells = data.get("cells") if isinstance(data, dict) else None
-        if (not isinstance(data, dict) or not isinstance(cells, list) or not cells
+        entries = data.get(self.list_key) if isinstance(data, dict) else None
+        if (not isinstance(data, dict) or not isinstance(entries, list) or not entries
                 or not isinstance(key, str) or not key or len(key) > 128 or not data.get("base_revision")):
             return Response({"detail": "Atualize o catálogo: o lote exige intenção e revisão.", "error": {"code": "intention_required"}}, status=400)
         if data.get("expected_actor_id") != request.user.pk:
             return Response({"detail": "A identificação mudou. Confira o lote.", "error": {"code": "actor_changed"}}, status=409)
-        payload = {"cells": cells}
+        payload = {self.list_key: entries}
         scope = self._scope(request)
         fingerprint = mutation_fingerprint({"scope": scope, "payload": payload})
 
         def execute():
             try:
-                result = catalog_service.set_cells(cells, actor=_actor(request))
+                result = type(self).command(entries, actor=_actor(request))
             except (CatalogError, ValidationError) as exc:
                 return {"outcome": "not_applied", "detail": str(exc)}, 400
             return {"ok": True, "outcome": "applied", "intention": key, **result}, 200
@@ -213,6 +217,35 @@ class CatalogCellsView(_CatalogBase):
             return Response({"detail": "Esta intenção já representa outro lote.", "error": {"code": "intention_conflict"}}, status=409)
         except RemoteMutationInProgress:
             return Response({"outcome": "unknown", "detail": "Lote em processamento; consulte esta intenção."}, status=202)
+
+
+class CatalogCellsView(_CatalogBatchView):
+    """Tabelão por canal: preço e flags de várias células numa ida."""
+
+    operation = "catalog.cells"
+    list_key = "cells"
+    command = staticmethod(catalog_service.set_cells)
+
+
+class CatalogProductSheetView(_CatalogBatchView):
+    """Tabelão de produtos: GET sem intenção lê a planilha; POST grava as linhas."""
+
+    operation = "catalog.product-sheet"
+    list_key = "rows"
+    command = staticmethod(catalog_service.set_product_rows)
+
+    def get(self, request):
+        if request.query_params.get("idempotency_key"):
+            return super().get(request)
+        return Response(catalog_service.product_sheet())
+
+
+class CatalogProductsDuplicateView(_CatalogBatchView):
+    """Duplicar vários: uma cópia oculta e fora de venda por produto selecionado."""
+
+    operation = "catalog.products-duplicate"
+    list_key = "products"
+    command = staticmethod(catalog_service.duplicate_products)
 
 
 class CatalogProductArchiveView(_CatalogBase):

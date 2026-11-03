@@ -34,6 +34,9 @@ import { filterBarActiveFilters } from "../../../operator-kit/app/presentation/f
 import type {
   AssistableField,
   BulkCellsResponse,
+  ProductSheet,
+  ProductSheetReceipt,
+  ProductSheetRowPatch,
   CatalogRowProjection,
   BulkCell,
   CatalogOrder,
@@ -52,6 +55,8 @@ import type {
 import { refDebounced } from "@vueuse/core";
 
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
+import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 
 import { periodLabel, resolvePeriod, todayIso, STORE_TIME_ZONE, type PeriodSelection } from "../../../operator-kit/app/presentation/dates";
 const DEFAULT_PERIOD: PeriodSelection = { preset: "day", from: "", to: "" };
@@ -114,6 +119,9 @@ const {
   enhancePhoto,
   uploadPhoto,
   saveCells,
+  loadProductSheet,
+  saveProductRows,
+  duplicateProducts,
   setProductsActive,
   previewImport,
   applyImport,
@@ -815,6 +823,41 @@ const headerMenuItems = computed(() => [
     },
   ],
 ]);
+// A barra do topo no celular (regra da suíte): "Novo produto" disputa a vaga de ícone
+// com a Busca; o resto mora no ⋯. Sem isto, os botões da mesa iam espremidos na barra de
+// 56 px e empurravam o título e o selo para linhas soltas (dono, 02/11/2026).
+const phoneHeaderActions = computed<OperatorHeaderAction[]>(() => [
+  {
+    label: "Novo produto",
+    icon: "i-lucide-plus",
+    priority: 1,
+    disabled: !createAction()?.enabled,
+    onSelect: openCreate,
+  },
+  {
+    label: "Tabelão por canal: preço e publicação",
+    icon: "i-lucide-table-2",
+    disabled: !rows.value.length,
+    onSelect: () => {
+      bulkGridOpen.value = true;
+    },
+  },
+  {
+    label: "Tabelão de produtos: nome, preço, peso e fiscal",
+    icon: "i-lucide-sheet",
+    disabled: !rows.value.length,
+    onSelect: () => void openProductSheet(),
+  },
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+  { label: "Exportar esta página em CSV", icon: "i-lucide-download", onSelect: exportCatalog },
+  {
+    label: "Importar CSV",
+    icon: "i-lucide-upload",
+    onSelect: () => {
+      importOpen.value = true;
+    },
+  },
+]);
 function rowMenuItems(row: CatalogRowProjection) {
   const primary = [
     {
@@ -1101,6 +1144,26 @@ watch(
 // coleções) e abre o primeiro já na aba "Preço e config", onde a vocação mora.
 const vocation = computed(() => vocationNotice(matrix.value?.vocation_pending));
 const skuToClassify = ref("");
+// Os avisos da tela moram no cabeçalho do kit: um inteiro, o resto em "e mais N", e
+// todo aviso se fecha. Fechado, volta no próximo carregamento enquanto a causa durar;
+// a vocação volta antes se o número mudar (o `id` leva a contagem).
+const screenAlerts = computed<OperatorScreenAlert[]>(() => [
+  ...(errorMsg.value
+    ? [{ id: `error:${errorMsg.value}`, title: errorMsg.value, color: "error" as const }]
+    : []),
+  ...(vocation.value
+    ? [
+        {
+          id: `vocation:${vocation.value.count}`,
+          title: vocation.value.headline,
+          description: vocation.value.names,
+          color: "info" as const,
+          icon: "i-lucide-tags",
+          action: { label: "Classificar", onSelect: () => void classifyVocation() },
+        },
+      ]
+    : []),
+]);
 async function classifyVocation() {
   const notice = vocation.value;
   if (!notice) return;
@@ -1342,6 +1405,43 @@ async function applyImportCsv() {
 }
 // Tabelão: o lote inteiro numa ida. O recibo linha a linha volta no toast/erro.
 const bulkGridOpen = ref(false);
+// Dois tabelões: por canal (preço e publicação em cada canal) e de produtos (o
+// produto em si: nome, descrição, preço, peso e fiscal). O botão abre o menu.
+const bulkMenuItems = computed(() => [
+  {
+    label: "Por canal: preço e publicação",
+    icon: "i-lucide-table-2",
+    onSelect: () => {
+      bulkGridOpen.value = true;
+    },
+  },
+  {
+    label: "Produtos: nome, preço, peso e fiscal",
+    icon: "i-lucide-sheet",
+    onSelect: () => void openProductSheet(),
+  },
+]);
+const productSheetOpen = ref(false);
+const productSheet = ref<ProductSheet | null>(null);
+const productSheetReceipt = ref<ProductSheetReceipt | null>(null);
+async function openProductSheet() {
+  productSheetReceipt.value = null;
+  productSheet.value = null;
+  productSheetOpen.value = true;
+  productSheet.value = await loadProductSheet();
+}
+async function saveProductSheet(patches: ProductSheetRowPatch[]) {
+  productSheetReceipt.value = null;
+  const receipt = await saveProductRows(patches);
+  if (!receipt) return;
+  productSheetReceipt.value = receipt;
+  // A revisão de cada campo salvo mudou: relê a planilha para o próximo lote.
+  productSheet.value = (await loadProductSheet()) ?? productSheet.value;
+}
+async function duplicateFromSheet(skus: string[]) {
+  const receipt = await duplicateProducts(skus);
+  if (receipt) productSheet.value = (await loadProductSheet()) ?? productSheet.value;
+}
 const bulkCellsReceipt = ref<BulkCellsResponse | null>(null);
 const bulkArchiveReceipt = ref<ProductArchiveReceipt | null>(null);
 // (c) "Só compro (insumo)": não cria Product; conduz ao cadastro de compra.
@@ -1510,7 +1610,10 @@ useHead({ title: "Catálogo" });
       title="Catálogo"
       :filters-wrap="false"
       desk-only-filters
+      :phone-actions="phoneHeaderActions"
+      actions-label="Mais ações do catálogo"
       :active-filters="activeFilters"
+      :alerts="screenAlerts"
     >
       <template #status>
         <OperatorLiveStatus
@@ -1540,15 +1643,21 @@ useHead({ title: "Catálogo" });
         />
       </template>
       <template #actions>
-        <NuxtButton
-          icon="i-lucide-table-2"
-          label="Tabelão"
-          color="neutral"
-          variant="outline"
+        <NuxtDropdownMenu
+          :items="bulkMenuItems"
+          :content="{ align: 'end' }"
           :disabled="!rows.length"
-          data-testid="catalog-bulk-grid"
-          @click="bulkGridOpen = true"
-        />
+        >
+          <NuxtButton
+            icon="i-lucide-table-2"
+            label="Tabelão"
+            trailing-icon="i-lucide-chevron-down"
+            color="neutral"
+            variant="outline"
+            :disabled="!rows.length"
+            data-testid="catalog-bulk-grid"
+          />
+        </NuxtDropdownMenu>
         <NuxtButton
           icon="i-lucide-plus"
           label="Novo produto"
@@ -1680,32 +1789,6 @@ useHead({ title: "Catálogo" });
     </OperatorPageHeader>
 
     <section class="flex min-h-0 flex-1 flex-col gap-4 p-4 sm:p-6">
-      <NuxtAlert
-        v-if="errorMsg"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        :description="errorMsg"
-      />
-      <!-- Vocação: aviso padrão do conjunto mínimo, em `info` (serve só ao B.I.;
-           não pede pressa). A ação repete a cor do aviso (PR #1545). -->
-      <NuxtAlert
-        v-if="vocation"
-        color="info"
-        variant="subtle"
-        icon="i-lucide-tags"
-        :title="vocation.headline"
-        :description="vocation.names"
-        :actions="
-          alertActions('info', [
-            {
-              label: 'Classificar',
-              onClick: classifyVocation,
-            },
-          ])
-        "
-        data-testid="vocation-notice"
-      />
       <NuxtAlert
         v-if="orderDraft"
         color="warning"
@@ -2414,6 +2497,27 @@ useHead({ title: "Catálogo" });
       "
       @save="saveBulkCells"
       @archive="setBulkActive"
+    />
+
+    <!-- tabelão de produtos: o produto linha a linha, e duplicar vários. -->
+    <CatalogProductSheet
+      :open="productSheetOpen"
+      :rows="rows"
+      :sheet="productSheet"
+      :busy="isBusy('catalog:product-sheet')"
+      :duplicate-busy="isBusy('catalog:products-duplicate')"
+      :error="errorMsg"
+      :receipt="productSheetReceipt"
+      @update:open="
+        (value) => {
+          if (!value) {
+            productSheetOpen = false;
+            productSheetReceipt = null;
+          }
+        }
+      "
+      @save="saveProductSheet"
+      @duplicate="duplicateFromSheet"
     />
 
     <!-- import CSV pt-BR: prévia sem gravar, erro por linha, apply numa ida. -->

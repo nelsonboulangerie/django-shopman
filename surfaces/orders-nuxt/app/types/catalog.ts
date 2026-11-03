@@ -608,3 +608,74 @@ export interface PhotoEnhanceResponse {
   image: string;
   steps: string[];
 }
+
+// ── tabelão de produtos (GET/POST catalog/products/sheet/) ───────────────────
+export interface ProductSheetFiscal {
+  profile: string;
+  ncm: string;
+  cest: string;
+  origin: string;
+}
+
+export interface ProductSheetRow {
+  sku: string;
+  is_active: boolean;
+  name: string;
+  short_description: string;
+  base_price_q: number;
+  unit: string;
+  fiscal: ProductSheetFiscal;
+  fiscal_warnings: string[];
+  /** Revisão por folha ("name", "fiscal.ncm"…): a mesma que o painel assina. */
+  revisions: Record<string, string>;
+}
+
+export interface ProductSheetProfile {
+  key: string;
+  name: string;
+  requires_cest: boolean;
+}
+
+export interface ProductSheetChoice {
+  key: string;
+  name: string;
+}
+
+export interface ProductSheet {
+  rows: ProductSheetRow[];
+  fiscal_profiles: ProductSheetProfile[];
+  fiscal_origins: ProductSheetChoice[];
+}
+
+export interface ProductSheetRowPatch {
+  sku: string;
+  patch: {
+    name?: string;
+    short_description?: string;
+    base_price_q?: number;
+    unit?: string;
+    fiscal?: Partial<ProductSheetFiscal>;
+  };
+  base_revisions: Record<string, string>;
+}
+
+export interface ProductSheetReceipt {
+  ok: boolean;
+  outcome: string;
+  applied: { index: number; sku: string; row: ProductSheetRow }[];
+  conflicts: {
+    index: number;
+    sku: string;
+    detail: string;
+    conflicting_fields?: string[];
+  }[];
+  errors: { index: number; sku: string; detail: string }[];
+}
+
+export interface ProductsDuplicateReceipt {
+  ok: boolean;
+  outcome: string;
+  applied: { index: number; sku: string; copy_sku: string; name: string }[];
+  conflicts: never[];
+  errors: { index: number; sku: string; detail: string }[];
+}

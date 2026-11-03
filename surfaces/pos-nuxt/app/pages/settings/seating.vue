@@ -253,6 +253,15 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
   { label: "Histórico do salão", icon: "i-lucide-history", onSelect: () => { historyOpen.value = true; } },
   { label: "Recarregar o salão", icon: "i-lucide-refresh-cw", onSelect: () => void seating.refresh() },
 ]);
+// A linha do chão no celular esconde o cabeçalho inteiro, e com ele o Desfazer e o
+// Refazer: no ⋮ dela eles vêm primeiro, com o mesmo estado dos botões da mesa.
+const compactOptions = computed(() => [
+  [
+    { label: "Desfazer", icon: "i-lucide-undo-2", disabled: !seating.canUndo.value, onSelect: () => seating.undo() },
+    { label: "Refazer", icon: "i-lucide-redo-2", disabled: !seating.canRedo.value, onSelect: () => seating.redo() },
+  ],
+  headerActions.value,
+]);
 // A ação do momento no celular e no tablet (abaixo de `lg`): Salvar, com Descartar ao
 // lado. A linha de contexto diz o que muda; sem mudança, a capacidade de hoje.
 const saveAction = computed<OperatorActionBarAction>(() => ({
@@ -276,7 +285,9 @@ const barContext = computed(() =>
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col" data-seating-screen>
+  <main class="flex min-h-0 flex-1 flex-col" data-seating-screen data-compact-page>
+    <PosCompactBar title="Ajustes, Salão" :search="false" :options="compactOptions" />
+    <div class="border-b border-default px-3 py-2 md:hidden" data-compact-settings-tabs><PosSettingsTabs /></div>
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <OperatorPageHeader
         title="Salão"

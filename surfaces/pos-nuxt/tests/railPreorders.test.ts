@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 // cliente; Ajustes depois de um traço; Terminal no pé. A antesala (Sessão de caixa) é
 // sobre o caixa e não carrega mais a seção.
 import { quickBarLayout, quickBarProblems } from "../../operator-kit/app/presentation/suiteChrome";
-import { posCorridorRoute, posCurrentSection, posSections } from "../app/presentation/sections";
+import { posCorridorRoute, posCurrentSection, posSections, posSwitcherSections } from "../app/presentation/sections";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const app = (...parts: string[]) => resolve(here, "..", "app", ...parts);
@@ -120,5 +120,28 @@ describe("Encomendas sem redundância (varredura do fonte)", () => {
       expect(source).toContain("toneBadge(situationTone(");
       expect(source).not.toContain("TONE_CLASS");
     }
+  });
+});
+
+describe("O trocador do PDV (modelo de navegação, 31/10/2026)", () => {
+  it("o balcão é chão, Ajustes e Terminal são escritório, a Tela do cliente é parede", () => {
+    const forms = Object.fromEntries(
+      posSwitcherSections(posSections({ ...base, preorders: { allowed: true } })).map((s) => [s.key, s.form]),
+    );
+    expect(forms).toEqual({
+      board: "floor",
+      preorders: "floor",
+      cash: "floor",
+      closing: "floor",
+      display: "wall",
+      settings: "office",
+      terminal: "office",
+    });
+  });
+
+  it("o shell liga o trocador, e o que não é tela de seção nasce chão", () => {
+    const shell = readFileSync(app("components", "PosOperatorShell.vue"), "utf8");
+    expect(shell).toContain(':switcher-sections="switcherSections"');
+    expect(shell).toContain('default-form="floor"');
   });
 });

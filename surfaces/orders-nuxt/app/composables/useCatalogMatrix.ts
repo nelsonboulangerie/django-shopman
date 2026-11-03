@@ -18,6 +18,10 @@ import type {
   AssistableField,
   BulkCell,
   BulkCellsResponse,
+  ProductSheet,
+  ProductSheetReceipt,
+  ProductSheetRowPatch,
+  ProductsDuplicateReceipt,
   CatalogMatrixProjection,
   CatalogMatrixResponse,
   CreateProductPayload,
@@ -992,6 +996,116 @@ export function useCatalogMatrix(
     }
   }
 
+  // ── tabelão de produtos: leitura própria, lote linha a linha e duplicar vários
+  function batchAction(ref: string, label: string) {
+    return {
+      ref,
+      kind: "mutation",
+      label,
+      enabled: true,
+      reason: "",
+      method: "POST",
+      idempotency: "required",
+      payload_schema: {
+        base_revision: `catalog-batch-${Date.now()}`,
+        expected_actor_id: operatorSession.value?.operator?.id ?? null,
+      },
+    } as unknown as Action;
+  }
+
+  async function loadProductSheet(): Promise<ProductSheet | null> {
+    try {
+      return await $fetch<ProductSheet>(
+        "/api/v1/backstage/catalog/products/sheet/",
+      );
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível abrir o tabelão de produtos.",
+      );
+      return null;
+    }
+  }
+
+  async function saveProductRows(
+    rows: ProductSheetRowPatch[],
+  ): Promise<ProductSheetReceipt | null> {
+    const key = "catalog:product-sheet";
+    if (!rows.length || busy.value.has(key) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    try {
+      const result = await intentions.executePath(
+        key,
+        "/api/v1/backstage/catalog/products/sheet/",
+        batchAction("edit-product-rows", "Salvar produtos"),
+        { rows } as unknown as Record<string, unknown>,
+      );
+      await refreshAfterCommit();
+      const body = result as unknown as ProductSheetReceipt;
+      const changed = body.applied?.length ?? 0;
+      const failed = (body.conflicts?.length ?? 0) + (body.errors?.length ?? 0);
+      if (failed) {
+        errorMsg.value = `${changed} ${changed === 1 ? "produto foi salvo" : "produtos foram salvos"}. ${failed} ${failed === 1 ? "produto não foi salvo" : "produtos não foram salvos"}; corrija as linhas marcadas e salve novamente.`;
+      } else {
+        useSonner.success(
+          `${changed} ${changed === 1 ? "produto atualizado" : "produtos atualizados"}.`,
+        );
+      }
+      return body;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível salvar os produtos. Tente de novo.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
+  async function duplicateProducts(
+    skus: string[],
+  ): Promise<ProductsDuplicateReceipt | null> {
+    const key = "catalog:products-duplicate";
+    if (!skus.length || busy.value.has(key) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    try {
+      const result = await intentions.executePath(
+        key,
+        "/api/v1/backstage/catalog/products/duplicate/",
+        batchAction("duplicate-products", "Duplicar"),
+        { products: skus.map((sku) => ({ sku })) },
+      );
+      await refreshAfterCommit();
+      const body = result as unknown as ProductsDuplicateReceipt;
+      const made = body.applied?.length ?? 0;
+      if (body.errors?.length) {
+        errorMsg.value = `${made} ${made === 1 ? "cópia criada" : "cópias criadas"}. Não foi possível duplicar: ${body.errors.map((row) => `${row.sku} (${row.detail})`).join("; ")}.`;
+      } else {
+        useSonner.success(
+          `${made} ${made === 1 ? "cópia criada" : "cópias criadas"}. Elas nascem ocultas e fora de venda.`,
+        );
+      }
+      return body;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível duplicar os produtos.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
   async function setProductsActive(
     products: { sku: string; base_is_active: boolean }[],
     isActive: boolean,
@@ -1183,6 +1297,9 @@ export function useCatalogMatrix(
     enhancePhoto,
     uploadPhoto,
     saveCells,
+    loadProductSheet,
+    saveProductRows,
+    duplicateProducts,
     setProductsActive,
     previewImport,
     applyImport,

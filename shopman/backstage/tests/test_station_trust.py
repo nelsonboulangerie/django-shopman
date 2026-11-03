@@ -207,3 +207,35 @@ def _confia_sem_reparar(cliente: Client, ref: str) -> str:
     nome = station_trust.station_cookie_name(ref)
     cliente.cookies[nome] = token
     return nome
+
+
+# ── O PDV pergunta, na chegada, se este dispositivo pode cobrar ──────────────
+# A leitura do quadro escolhe uma gaveta mesmo sem estação; a revisão e o fechamento
+# recusam (`_terminal_do_pedido`). Sem esta resposta o operador montava a comanda
+# inteira e só no Pagamento lia "Vincule este dispositivo a um único terminal ativo".
+
+
+def test_prontidao_sem_vinculo_diz_none(client):
+    assert station_trust.pos_station_readiness(_req(client)) == {"ready": False, "reason": "none"}
+
+
+def test_prontidao_com_dois_vinculos_diz_ambiguous(client):
+    _confia_sem_reparar(client, "balcao")
+    _confia_sem_reparar(client, "totem")
+    assert station_trust.pos_station_readiness(_req(client)) == {"ready": False, "reason": "ambiguous"}
+
+
+def test_prontidao_com_posto_que_nao_e_caixa_ativo_diz_inactive(client):
+    from shopman.cashman.models import Terminal
+
+    Terminal.objects.create(ref="balcao", label="Balcão", is_active=False)
+    _provisiona(client, "balcao")
+    assert station_trust.pos_station_readiness(_req(client)) == {"ready": False, "reason": "inactive"}
+
+
+def test_prontidao_com_caixa_ativo_esta_pronta(client):
+    from shopman.cashman.models import Terminal
+
+    Terminal.objects.create(ref="balcao", label="Balcão")
+    _provisiona(client, "balcao")
+    assert station_trust.pos_station_readiness(_req(client)) == {"ready": True, "reason": ""}

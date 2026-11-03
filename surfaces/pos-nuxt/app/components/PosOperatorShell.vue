@@ -101,7 +101,7 @@ const needsLogin = computed(
   () => (!canIdentify.value && !sessionUnavailable.value) || sessionExpired.value,
 );
 
-const { sections, current, select } = usePosShell(pos);
+const { sections, switcherSections, current, select } = usePosShell(pos);
 const route = useRoute();
 const corridor = computed(() => posCorridorRoute(route.path));
 
@@ -158,6 +158,8 @@ const corridor = computed(() => posCorridorRoute(route.path));
       storage-key="pos"
       :sections="sections"
       :current="current"
+      :switcher-sections="switcherSections"
+      default-form="floor"
       label="Seções do PDV"
       :operator-name="operator?.name"
       @select="select"

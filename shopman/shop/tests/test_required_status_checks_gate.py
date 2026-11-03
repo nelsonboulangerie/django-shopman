@@ -165,3 +165,34 @@ def test_job_outside_merge_group_does_not_count(gate, tmp_path, monkeypatch):
     result = gate.Result(errors=[], passed=[])
     gate.check_required_status_checks(result)
     assert any("Gate da meia-correção" in error for error in result.errors)
+
+
+@pytest.mark.parametrize("require_theme", [False, True])
+def test_produced_theme_guard_must_also_be_required(gate, tmp_path, monkeypatch, require_theme):
+    """Check vermelho opcional não bloqueia merge, mesmo quando o job existe."""
+    contexts = ["Gate da meia-correção"]
+    if require_theme:
+        contexts.append("Versões das superfícies")
+    root = _fake_repo(
+        tmp_path,
+        """
+        on:
+          pull_request:
+          merge_group:
+        jobs:
+          quality:
+            name: Gate da meia-correção
+            runs-on: ubuntu-latest
+          surface-versions:
+            name: Versões das superfícies
+            runs-on: ubuntu-latest
+        """,
+        contexts,
+    )
+    monkeypatch.setattr(gate, "ROOT", root)
+    result = gate.Result(errors=[], passed=[])
+    gate.check_required_status_checks(result)
+    if require_theme:
+        assert result.errors == []
+    else:
+        assert any("guards críticos não obrigatórios" in error and "Versões das superfícies" in error for error in result.errors)

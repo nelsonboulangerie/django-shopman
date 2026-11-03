@@ -119,6 +119,21 @@ function terminalSignal(status?: PosTerminalStatus): Pick<OperatorSection, "atte
 }
 
 /**
+ * O trocador (modelo de navegação, 31/10/2026): as mesmas seções, cada uma com a forma
+ * dela. Chão é o balcão (Comandas, Encomendas, Caixa e Fim do dia): no celular e no
+ * tablet não há barra de seções, o selo troca. Escritório é o que se ajusta fora do
+ * atendimento (Ajustes, Terminal). A Tela do cliente é a parede: abre no outro monitor.
+ * A forma decide só o desenho; nenhuma tela diz o nome dela ao operador.
+ */
+const POS_FLOOR = new Set(["board", "preorders", "cash", "closing"]);
+export function posSwitcherSections(sections: readonly OperatorSection[]): OperatorSection[] {
+  return sections.map((section) => ({
+    ...section,
+    form: POS_FLOOR.has(section.key) ? "floor" : section.key === "display" ? "wall" : "office",
+  }));
+}
+
+/**
  * A seção acesa para a rota. Pela rota, e não pelo `to` de cada seção: Comandas não
  * tem `to` (é gesto da tela da venda), e o Terminal mora dentro dos Ajustes.
  */

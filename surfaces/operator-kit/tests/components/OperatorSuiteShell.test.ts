@@ -38,8 +38,9 @@ const stubs = {
   OperatorSuiteSearch: true,
   OperatorSwitcher: {
     props: ["sections", "current"],
+    emits: ["select", "lock"],
     template:
-      '<div data-switcher-stub :data-current="current" :data-sections="sections.map((s) => s.key).join(\',\')" />',
+      '<div data-switcher-stub :data-current="current" :data-sections="sections.map((s) => s.key).join(\',\')"><button data-switcher-pick-board @click="$emit(\'select\', \'board\')" /></div>',
   },
 };
 
@@ -409,6 +410,12 @@ describe("OperatorSuiteShell: o trocador (opt-in por app)", () => {
     await settle();
     expect(switcherOpen()).toBe(true);
     expect(wrapper.findComponent(DashboardSidebar).props("open")).toBe(false);
+  });
+
+  it("seção sem rota escolhida no trocador chega ao app como select (gesto do app)", async () => {
+    const wrapper = await mountShell({ switcherSections: FORMS, current: "orders" });
+    await wrapper.get("[data-switcher-pick-board]").trigger("click");
+    expect(wrapper.findComponent(OperatorSuiteShell).emitted("select")?.at(-1)).toEqual(["board"]);
   });
 
   it("tela fora das seções (o item aberto) usa a forma declarada pelo app", async () => {
