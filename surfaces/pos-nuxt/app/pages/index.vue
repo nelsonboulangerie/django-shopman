@@ -839,6 +839,8 @@ const headerActions = computed<OperatorHeaderAction[]>(() => {
   // "Liberar comanda" mora no "Comanda ⋯" do cabeçalho da coluna (uma porta por gesto).
   return list;
 });
+// A linha do chão no celular: as MESMAS ações do ⋯ do cabeçalho, no ⋮ dela.
+const compactOptions = computed(() => headerActions.value.map(({ priority: _p, ...action }) => action));
 // A VENDA SEM CONEXÃO: a fila de vendas guardadas e a lista que o aviso abre.
 const offlineSales = usePosOfflineSales();
 const offlineSalesOpen = ref(false);
@@ -1200,7 +1202,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col" data-pos-sale-screen>
+  <main class="flex min-h-0 flex-1 flex-col" data-pos-sale-screen data-compact-page>
     <!-- A COMANDA OCUPA A ALTURA INTEIRA (dono, 10/10, exceção do PDV): na mesa, a
          coluna da direita vai de cima a baixo como a barra lateral, e o cabeçalho, a
          barra da venda e os filtros moram só na largura entre as duas. Abaixo do `lg`
@@ -1220,6 +1222,55 @@ onBeforeUnmount(() => {
       data-pos-sale-layout
     >
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-pos-work-column>
+      <!-- No celular, a linha do chão (modelo de navegação): o selo troca de seção, e na
+           venda o voltar toma o lugar dele. "Não salvo" e o Pix seguem à vista na linha,
+           nunca dentro do ⋮. A barra da venda e os avisos são os do cabeçalho abaixo. -->
+      <PosCompactBar
+        v-if="pos"
+        :title="saleHeaderTitle"
+        search-button-label="Buscar pedido, cliente, produto ou tela"
+        :options="compactOptions"
+      >
+        <template v-if="inSaleView && !editing && !result" #lead>
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-left"
+            square
+            class="size-11 shrink-0 justify-center"
+            :aria-label="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
+            data-compact-back
+            @click="checkoutMode ? (checkoutMode = false) : goToTabs()"
+          />
+        </template>
+        <template v-if="inSaleView || editing || result || pixBadge" #identity>
+          <div class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 leading-tight" data-compact-identity-sale>
+            <span
+              v-if="inSaleView || editing || result"
+              class="min-w-0 truncate font-semibold"
+              :class="(inSaleView && !checkoutMode && unsaved) || pixBadge ? 'sr-only' : ''"
+            >{{ checkoutMode ? "Pagamento" : saleHeaderTitle }}</span>
+            <NuxtBadge
+              v-if="inSaleView && !checkoutMode && unsaved"
+              color="warning"
+              icon="i-lucide-cloud-off"
+              label="Não salvo"
+              role="status"
+              :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não foi salva. Tentando de novo.'"
+              data-compact-unsaved
+            />
+            <NuxtBadge
+              v-if="pixBadge"
+              color="info"
+              icon="i-lucide-loader-circle"
+              role="status"
+              :title="pixBadge.title"
+              class="whitespace-normal"
+              data-compact-pix
+            >{{ pixBadge.label }}</NuxtBadge>
+          </div>
+        </template>
+      </PosCompactBar>
       <OperatorPageHeader
         v-if="pos"
         :title="saleHeaderTitle"
