@@ -630,8 +630,8 @@ describe("presentation/cash — blind drawer shaping", () => {
   });
 
   it("formats the opening timestamp, falling back gracefully", () => {
-    expect(formatOpenedAt(null)).toBe("—");
-    expect(formatOpenedAt("")).toBe("—");
+    expect(formatOpenedAt(null)).toBe("");
+    expect(formatOpenedAt("")).toBe("");
     expect(formatOpenedAt("not-a-date")).toBe("not-a-date");
     expect(formatOpenedAt("2026-06-06T13:05:00")).toMatch(/06\/06/);
   });
