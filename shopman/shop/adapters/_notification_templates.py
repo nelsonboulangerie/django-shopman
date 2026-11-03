@@ -17,9 +17,39 @@ defeito com data marcada. Chave nova de conveniência entra AQUI.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 
+from django.utils.html import escape, urlize
+
 logger = logging.getLogger(__name__)
+
+
+# O template do Admin é escrito pensando no WhatsApp e usa `*negrito*` de markdown.
+# Fora do WhatsApp o asterisco chega literal ("pedido *L32*"). Cada canal traduz na
+# SAÍDA, e não no texto: o lojista escreve uma versão só e o negrito vale onde existe.
+# Limite de 80 e sem quebra de linha: `*` solto no meio de uma frase não vira par.
+_MARKDOWN_BOLD = re.compile(r"\*([^*\n]{1,80})\*")
+
+
+def strip_markdown_bold(text: str) -> str:
+    """Texto sem formatação (SMS, parte texto do e-mail): `*L32*` vira `L32`."""
+    return _MARKDOWN_BOLD.sub(r"\1", text)
+
+
+def markdown_bold_to_html(text: str) -> str:
+    """O corpo do aviso em HTML de e-mail: `*L32*` vira `<strong>`, link vira link.
+
+    Escapa antes de marcar (o texto vem do Admin), um parágrafo por linha.
+    """
+    paragraphs = []
+    for line in text.split("\n"):
+        if not line.strip():
+            continue
+        html = urlize(escape(line), autoescape=False)
+        html = _MARKDOWN_BOLD.sub(r"<strong>\1</strong>", html)
+        paragraphs.append(f'<p style="margin:0 0 12px;line-height:1.5;">{html}</p>')
+    return "\n".join(paragraphs)
 
 
 class SafeFormatMap(dict):

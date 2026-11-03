@@ -129,8 +129,10 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     from shopman.shop.adapters._notification_templates import (
         db_template,
         derive_context,
+        markdown_bold_to_html,
         render_message,
         render_template,
+        strip_markdown_bold,
     )
 
     # As chaves auxiliares (`customer_name_greeting`, `total`, sufixos) vêm do ponto
@@ -150,13 +152,18 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     if subject_prefix:
         subject = f"{subject_prefix} {subject}"
 
-    body = render_message(template, ctx, BODY_TEMPLATES)
+    # O texto do Admin é escrito para o WhatsApp (`*negrito*`): a parte texto sai
+    # sem o asterisco e a parte HTML o traduz em negrito, com o link clicável.
+    message = render_message(template, ctx, BODY_TEMPLATES)
+    body = strip_markdown_bold(message)
 
     try:
         html_body = _render_html(template, context or {})
     except Exception:
-        logger.debug("email: HTML render failed for template=%s, sending plain text", template, exc_info=True)
+        logger.debug("email: HTML render failed for template=%s, using the message as HTML", template, exc_info=True)
         html_body = None
+    if html_body is None:
+        html_body = markdown_bold_to_html(message)
 
     from_email = config.get("from_email") or getattr(
         settings, "DEFAULT_FROM_EMAIL", "noreply@example.com"
