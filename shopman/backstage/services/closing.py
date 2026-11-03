@@ -535,6 +535,8 @@ def _cash_shift_summary(closing_date: date) -> dict:
     from shopman.cashman import services as cash
     from shopman.cashman.models import Entry, Shift
 
+    from shopman.shop.services import pos_offline_sale
+
     closed = (
         Shift.objects.filter(status=Shift.Status.CLOSED, closed_at__date=closing_date)
         .select_related("terminal", "opened_by")
@@ -561,6 +563,9 @@ def _cash_shift_summary(closing_date: date) -> dict:
             "blind_closing_amount_q": cash.counted(shift) or 0,
             "expected_amount_q": cash.expected_before_count(shift),
             "difference_q": cash.difference(shift) or 0,
+            # Venda sem conexão cobrada por um preço que o catálogo não explica:
+            # SKU, preço do catálogo, cobrado, operador e o gerente que conferiu.
+            "offline_review_sales": pos_offline_sale.review_sales(shift, include_acknowledged=True),
         }
         shift_rows.append(row)
         for key in totals:

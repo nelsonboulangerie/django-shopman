@@ -12043,6 +12043,7 @@
             "_pos_customer_conflict",
             "_pos_owner_conflict",
             "_pos_payment_response",
+            "_price_at_catalog",
             "_qty_display",
             "_recent_sale_status_allows_cancel",
             "_reconcile_order_payment_to_total",

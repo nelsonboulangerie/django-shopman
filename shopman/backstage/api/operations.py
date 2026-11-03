@@ -5288,7 +5288,12 @@ class POSCashCloseView(APIView):
                     closing_amount_raw=str(amount),
                     notes=notes,
                     terminal_ref=_terminal_do_pedido(request),
+                    manager_approval=request.data.get("manager_approval"),
                 )
+            # Venda sem conexão "a conferir": o desafio do gerente chega à tela COM
+            # o código, para o PDV abrir "Quem autoriza?" em vez de um toast.
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except POSPermissionError as exc:
                 # Fechar o caixa é da gerência (decisão de 21/08). O balcão precisa
                 # distinguir "sem permissão" de "falhou" para pedir a gerente em vez

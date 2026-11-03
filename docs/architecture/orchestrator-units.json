@@ -2594,7 +2594,8 @@
           "path": "shopman/shop/handlers/pricing.py",
           "symbols": [
             "ItemPricingModifier",
-            "_products_with_line_options"
+            "_products_with_line_options",
+            "CATALOG_AS_OF_CTX_KEY"
           ]
         }
       ],
@@ -14153,6 +14154,15 @@
             "charged_total_q",
             "pricing_record",
             "session_total_q",
+            "prices_instant",
+            "catalog_instants",
+            "explain_charge",
+            "_aligned",
+            "_charged_line_total_q",
+            "_final_q",
+            "_list_total_q",
+            "review_sales",
+            "acknowledge_review_sales",
             "TabPlan",
             "plan_open_tab",
             "plan_closed_tab",

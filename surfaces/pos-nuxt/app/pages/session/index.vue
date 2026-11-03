@@ -35,6 +35,8 @@ import {
   formatRequestedAt,
   movementLabel,
   movementReasons,
+  offlineReviewClosingNotice,
+  offlineReviewLine,
   openShiftTile,
   sessionActionTiles,
   sessionScreenState,
@@ -60,6 +62,7 @@ const {
   managerChallenge,
   openCashShift,
   closeCashShift,
+  offlineReviewSales,
   registerCashMovement,
   canOpenDrawer,
   drawerUnavailableReason,
@@ -399,7 +402,8 @@ type ManagerIntent =
   | { action: "movement" }
   | { action: "serve_change"; ref: string }
   | { action: "refund_cash"; orderRef: string }
-  | { action: "card_machine_refund"; orderRef: string };
+  | { action: "card_machine_refund"; orderRef: string }
+  | { action: "close_shift" };
 const managerIntent = ref<ManagerIntent>({ action: "movement" });
 const managerAuthOpen = ref(false);
 watch(managerChallenge, (challenge) => { if (challenge) managerAuthOpen.value = true; });
@@ -409,6 +413,7 @@ const managerAuthAction = computed<ManagerAction>(() => {
   if (managerIntent.value.action === "serve_change") return "serve_change";
   if (managerIntent.value.action === "refund_cash") return "refund_cash";
   if (managerIntent.value.action === "card_machine_refund") return "card_machine_refund";
+  if (managerIntent.value.action === "close_shift") return "close_shift_review";
   return "cash_out";
 });
 
@@ -430,6 +435,7 @@ function autorizar(aprovacao: { username?: string; pin?: string; badge?: string 
   if (intent.action === "serve_change") serveChange(intent.ref, aprovacao);
   else if (intent.action === "refund_cash") refundPending(intent.orderRef, aprovacao);
   else if (intent.action === "card_machine_refund") recordMachineRefund(intent.orderRef, aprovacao);
+  else if (intent.action === "close_shift") confirmClose(aprovacao);
   else submitMovement(aprovacao);
 }
 
@@ -626,11 +632,18 @@ watch(closingDialogOpen, (open) => { if (!open) confirmingClose.value = false; }
 // passo (fechamento do dia, se pendente e permitido) em vez de deixar o
 // operador adivinhar que existem mais duas telas.
 const justClosedShift = ref(false);
-async function confirmClose() {
+// Venda sem conexão "a conferir" (preço que o catálogo não explica): o fechamento
+// lista cada item, e o servidor só fecha com o gerente. A recusa abre "Quem
+// autoriza?" e a MESMA contagem é reenviada com a assinatura.
+const offlineReviewNotice = computed(() => offlineReviewClosingNotice(offlineReviewSales.value));
+async function confirmClose(managerApproval: ManagerApproval | null = null) {
   if (!canClose.value) return;
-  const ok = await closeCashShift({ amount: closingAmount.value, notes: closingNotes.value });
+  managerIntent.value = { action: "close_shift" };
+  const ok = await closeCashShift({ amount: closingAmount.value, notes: closingNotes.value, managerApproval });
   confirmingClose.value = false;
   if (ok) {
+    managerChallenge.value = null;
+    managerAuthOpen.value = false;
     closingAmount.value = "";
     closingNotes.value = "";
     closingDialogOpen.value = false;
@@ -1346,6 +1359,32 @@ async function confirmClose() {
             :actions="alertActions('warning', [{ label: 'Ver estornos', onClick: openCardMachineFromClosing }])"
             data-close-shift-card-machine
           />
+          <!-- Venda sem conexão a conferir: SEGURA o fechamento até o gerente
+               autorizar. A lista é o que ele confere: item, cobrado, catálogo
+               daquela hora e quem cobrou. -->
+          <NuxtAlert
+            v-if="offlineReviewSales.length"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-scale"
+            :title="offlineReviewNotice"
+            orientation="vertical"
+            data-close-shift-offline-review
+          >
+            <template #description>
+              <p>O preço cobrado não bate com o catálogo daquela hora. O caixa fecha com a autorização do gerente.</p>
+              <ul class="mt-2 grid gap-1">
+                <li
+                  v-for="(sale, index) in offlineReviewSales"
+                  :key="`${sale.order_ref}-${index}`"
+                  class="tabular-nums"
+                  data-close-shift-offline-review-line
+                >
+                  {{ offlineReviewLine(sale) }}
+                </li>
+              </ul>
+            </template>
+          </NuxtAlert>
           <!-- Nasce focado: abrir o diálogo já foi a decisão, contar é o próximo gesto. -->
           <NuxtFormField label="Valor contado" :error="closingError || undefined">
             <NuxtInput
@@ -1403,7 +1442,7 @@ async function confirmClose() {
           <div class="grid grid-cols-2 gap-2">
             <NuxtButton block color="neutral" variant="outline" label="Cancelar" :disabled="busy" @click="confirmingClose = false" />
             <!-- O degrau que PRATICA o ato é o único que o diz. -->
-            <NuxtButton block color="error" label="Fechar o caixa" :disabled="busy" :loading="busy" @click="confirmClose" />
+            <NuxtButton block color="error" label="Fechar o caixa" :disabled="busy" :loading="busy" @click="confirmClose()" />
           </div>
         </div>
       </template>

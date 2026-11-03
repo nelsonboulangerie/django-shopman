@@ -857,11 +857,18 @@ def _commit_sale_session(
         charged_q = pos_offline_sale.charged_total_q(payload)
         server_q = pos_offline_sale.session_total_q(session)
         if server_q != charged_q:
+            # O cobrado se explica pelo catálogo da tabela da tela ou da hora da
+            # cobrança (histórico de preços)? Sem explicação, vale o cobrado do
+            # mesmo jeito (o dinheiro entrou), e a venda fica "a conferir".
+            references = [copy.deepcopy(session.items or [])]
+            for as_of in pos_offline_sale.catalog_instants(payload, priced_at=priced_at):
+                session = _price_at_catalog(session, channel=channel, config=config, ops=replay_ops, ctx=ctx, as_of=as_of)
+                references.append(copy.deepcopy(session.items or []))
+            pricing = pos_offline_sale.pricing_record(charged_q=charged_q, server_q=server_q, priced_at=priced_at)
+            pricing.update(pos_offline_sale.explain_charge(payload, references, operator_username=operator_username))
             session = _reprice_as_charged(
                 session, channel=channel, config=config, ops=replay_ops, ctx=ctx,
-                record={**offline, "pricing": pos_offline_sale.pricing_record(
-                    charged_q=charged_q, server_q=server_q, priced_at=priced_at,
-                )},
+                record={**offline, "pricing": pricing},
             )
             logger.info(
                 "pos_offline_charged_wins session=%s charged=%s server=%s",
@@ -2885,6 +2892,28 @@ def reopen_recent_order_for_correction(
     data["pos_correction_reason"] = reason
     order.data = data
     order.save(update_fields=["data", "updated_at"])
+
+
+def _price_at_catalog(
+    session: Session, *, channel: Channel, config: ChannelConfig, ops: list[dict], ctx: dict, as_of
+) -> Session:
+    """Reprecifica a sessão pelo catálogo de ``as_of`` (histórico), na hora da cobrança.
+
+    Só a conferência da venda sem conexão usa: é a referência que diz se o
+    cobrado se explica pela tabela que a tela tinha. A sessão volta a ser
+    regravada pelo cobrado logo depois (``_reprice_as_charged``).
+    """
+    from shopman.shop.handlers.pricing import CATALOG_AS_OF_CTX_KEY
+
+    replay = [{"op": "remove_line", "line_id": item["line_id"]} for item in (session.items or []) if item.get("line_id")]
+    replay.extend(op for op in ops if op.get("op") != "remove_line")
+    return session_service.modify_session(
+        session_key=session.session_key,
+        channel_ref=channel.ref,
+        ops=copy.deepcopy(replay),
+        ctx={**ctx, CATALOG_AS_OF_CTX_KEY: as_of},
+        channel_config=config.to_dict(),
+    )
 
 
 def _reprice_as_charged(

@@ -9,6 +9,12 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
+#: A chave do ``ctx`` que diz de QUANDO é o catálogo que precifica a linha (preço
+#: de lista e faixas, ``CatalogService.unit_prices(as_of=...)``). Ausente, é o
+#: catálogo de agora. Só a conferência da venda sem conexão usa: ela reconstrói
+#: o preço que a tela tinha (``pos_offline_sale.explain_charge``).
+CATALOG_AS_OF_CTX_KEY = "catalog_as_of"
+
 
 class OffermanPricingBackend:
     """Resolve preço pela cascata: grupo do cliente → listing do canal → preço base."""
@@ -26,18 +32,21 @@ class OffermanPricingBackend:
         resolved = self.get_line_prices([(sku, qty) for sku in unique], channel)
         return dict(zip(unique, resolved, strict=True))
 
-    def get_line_prices(self, lines: list[tuple[str, Any]], channel: Any, customer=None) -> list[int | None]:
+    def get_line_prices(
+        self, lines: list[tuple[str, Any]], channel: Any, customer=None, as_of=None,
+    ) -> list[int | None]:
         """Resolva ``(sku, qty)`` em lote pela cascata declarada pelo orquestrador.
 
         O orquestrador fornece a precedência das vitrines; o Offerman decide a
         faixa por quantidade e o preço base, preservando a ordem das linhas.
+        ``as_of``: o catálogo daquele instante (o histórico de preços do Offerman).
         """
         from shopman.offerman.service import CatalogService
 
         customer_listing = getattr(customer, "listing_ref", None) if customer else None
         channel_listing = getattr(channel, "ref", None) if channel else None
         listings = tuple(ref for ref in (customer_listing, channel_listing) if ref)
-        return CatalogService.unit_prices(lines, listings=listings)
+        return CatalogService.unit_prices(lines, listings=listings, as_of=as_of)
 
 
 class ItemPricingModifier:
@@ -70,10 +79,14 @@ class ItemPricingModifier:
         # mesma do ``get_price``; ver ``get_line_prices``).
         line_prices = None
         if session.pricing_policy == "internal" and hasattr(self.backend, "get_line_prices"):
+            # O catálogo de outro instante só quando quem precifica pede
+            # (a conferência da venda sem conexão); senão, o de agora.
+            as_of = ctx.get(CATALOG_AS_OF_CTX_KEY)
             line_prices = self.backend.get_line_prices(
                 [(item["sku"], Decimal(str(item.get("qty", 1)))) for item in items],
                 channel,
                 customer=customer,
+                **({"as_of": as_of} if as_of is not None else {}),
             )
         for index, item in enumerate(items):
             sku = item["sku"]
