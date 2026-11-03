@@ -14623,8 +14623,6 @@
             "_require_open_shift",
             "_require_order_mode_if_payment_link",
             "_total_changed",
-            "_stamp_tab_prices_for_manual_discount",
-            "_stamp_tab_prices_from_engine_lines",
             "close_sale"
           ]
         }
