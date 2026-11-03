@@ -42,6 +42,8 @@ from .catalog import (
     CatalogProductPhotoUploadView,
     CatalogProductPhotoView,
     CatalogProductPurchaseView,
+    CatalogProductSheetView,
+    CatalogProductsDuplicateView,
     CatalogProductView,
     CatalogReorderCollectionsView,
     CatalogReorderItemsView,
@@ -809,6 +811,8 @@ urlpatterns = [
     path("catalog/cells/", CatalogCellsView.as_view(), name="api-backstage-catalog-cells"),
     path("catalog/products/archive/", CatalogProductArchiveView.as_view(), name="api-backstage-catalog-products-archive"),
     path("catalog/products/options/", CatalogProductOptionsView.as_view(), name="api-backstage-catalog-products-options"),
+    path("catalog/products/sheet/", CatalogProductSheetView.as_view(), name="api-backstage-catalog-products-sheet"),
+    path("catalog/products/duplicate/", CatalogProductsDuplicateView.as_view(), name="api-backstage-catalog-products-duplicate"),
     path("catalog/product/", CatalogProductView.as_view(), name="api-backstage-catalog-product"),
     # ⚠️ ANTES de `catalog/product/<str:sku>/`: `create` e `duplicate` casariam com `<str:sku>`.
     path("catalog/product/create/", CatalogProductCreateView.as_view(), name="api-backstage-catalog-product-create"),

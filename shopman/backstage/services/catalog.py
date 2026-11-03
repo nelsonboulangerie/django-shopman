@@ -1139,7 +1139,7 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
         if path == "components":
             # O rótulo vem do componente; a unidade faz parte da quantidade.
             value = sorted(({"sku": row["sku"], "qty": row["qty"], "unit": row["unit"]} for row in value), key=lambda row: row["sku"])
-        state = {"version": 1, "sku": detail["sku"], "field": path, "value": value}
+        state = _field_state(detail["sku"], path, value)
         if path == "components":
             state["parent_unit"] = detail["unit"]
         root = path.split(".", 1)[0]
@@ -1147,6 +1147,11 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
             state["source"] = (detail.get("field_sources") or {}).get(root, "")
         revisions[path] = mutation_fingerprint(state)
     return revisions
+
+
+def _field_state(sku: str, path: str, value) -> dict:
+    """A base da revisão de um campo: o tabelão e o painel assinam igual."""
+    return {"version": 1, "sku": sku, "field": path, "value": value}
 
 
 def _patch_leaves(data: dict, prefix: str = "") -> dict:
@@ -1778,6 +1783,121 @@ def duplicate_product(sku: str, data: dict, *, actor: str = "", expected_revisio
     except ValidationError as exc:
         raise CatalogError(_first_validation_message(exc)) from exc
     return _detail_payload(copy)
+
+# ── tabelão de produtos ──────────────────────────────────────────────────────
+# O tabelão por canal edita listing (preço e flags por canal); este edita o
+# PRODUTO, linha a linha, com os campos que se preenchem em série: nome, descrição
+# curta, preço base, vendido por peso e a classificação fiscal. Cada linha passa
+# pelo MESMO ``update_product_detail`` do painel (validação, ``full_clean`` e o
+# ``save()`` que re-projeta), dentro de um savepoint próprio: a linha que falha não
+# derruba as outras e volta no recibo com o motivo. CFOP e CSOSN não são colunas:
+# saem do perfil fiscal, que é a parametrização do contador.
+
+_SHEET_TEXT_FIELDS = ("name", "short_description", "base_price_q", "unit")
+_SHEET_FISCAL_FIELDS = ("profile", "ncm", "cest", "origin")
+
+
+def _sheet_row(product) -> dict:
+    from shopman.fiscalman.classification import from_metadata
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    fiscal = asdict(from_metadata(product.metadata))
+    row = {field: getattr(product, field) for field in _SHEET_TEXT_FIELDS}
+    row["fiscal"] = {field: fiscal.get(field, "") for field in _SHEET_FISCAL_FIELDS}
+    leaves = _patch_leaves(row)
+    return {
+        "sku": product.sku,
+        "is_active": product.is_active,
+        **row,
+        "fiscal_warnings": from_metadata(product.metadata).warnings(),
+        "revisions": {path: mutation_fingerprint(_field_state(product.sku, path, value)) for path, value in leaves.items()},
+    }
+
+
+def product_sheet() -> dict:
+    """Leitura do tabelão de produtos: os valores editáveis e a revisão de cada um."""
+    from shopman.offerman.models import Product
+
+    return {
+        "rows": [_sheet_row(product) for product in Product.objects.order_by("name", "sku")],
+        "fiscal_profiles": _fiscal_profile_choices(),
+        "fiscal_origins": _fiscal_origin_choices(),
+    }
+
+
+def _sheet_patch_problem(patch) -> str:
+    if not isinstance(patch, dict) or not patch:
+        return "Linha sem alteração."
+    if set(patch) - {*_SHEET_TEXT_FIELDS, "fiscal"}:
+        return "A linha tem campos que o tabelão não edita."
+    fiscal = patch.get("fiscal")
+    if "fiscal" in patch and (not isinstance(fiscal, dict) or not fiscal or set(fiscal) - set(_SHEET_FISCAL_FIELDS)):
+        return "A classificação fiscal da linha está incompleta."
+    return ""
+
+
+def set_product_rows(rows: list[dict], *, actor: str = "") -> dict:
+    """Aplica várias linhas do tabelão de produtos, com recibo POR LINHA."""
+    from django.core.exceptions import ValidationError
+    from shopman.offerman.models import Product
+
+    from shopman.backstage.services.exceptions import CatalogConflict
+
+    if not isinstance(rows, list) or not rows:
+        raise CatalogError("Informe as linhas do lote.")
+    if len(rows) > MAX_CATALOG_BATCH:
+        raise CatalogError(f"Envie no máximo {MAX_CATALOG_BATCH} linhas por lote.")
+    applied, conflicts, errors = [], [], []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            errors.append({"index": index, "sku": "", "detail": "Linha inválida."})
+            continue
+        sku = str(row.get("sku") or "")
+        patch = row.get("patch")
+        revisions = row.get("base_revisions")
+        problem = _sheet_patch_problem(patch) or ("" if isinstance(revisions, dict) else "A linha chegou sem revisão. Atualize o tabelão.")
+        if problem:
+            errors.append({"index": index, "sku": sku, "detail": problem})
+            continue
+        try:
+            update_product_detail(sku, patch, actor=actor, expected_revisions=revisions)
+        except CatalogConflict as exc:
+            conflicts.append({"index": index, "sku": sku, "detail": str(exc), "conflicting_fields": getattr(exc, "fields", [])})
+        except (CatalogError, ValidationError) as exc:
+            errors.append({"index": index, "sku": sku, "detail": _first_validation_message(exc) if isinstance(exc, ValidationError) else str(exc)})
+        else:
+            applied.append({"index": index, "sku": sku, "row": _sheet_row(Product.objects.get(sku=sku))})
+    if not applied and not conflicts:
+        raise CatalogError(errors[0]["detail"] if errors else "Nenhuma linha foi aplicada.")
+    return {"applied": applied, "conflicts": conflicts, "errors": errors}
+
+
+def duplicate_products(products: list[dict], *, actor: str = "") -> dict:
+    """Duplica vários produtos de uma vez, com o SKU e o nome sugeridos.
+
+    Cada cópia passa pelo MESMO ``duplicate_product`` (oculta, fora de venda, sem
+    GTIN, listing nem coleção), num savepoint próprio. A seleção é a intenção:
+    não há formulário por linha, então não há revisão de formulário a conferir.
+    """
+    from django.core.exceptions import ValidationError
+
+    if not isinstance(products, list) or not products:
+        raise CatalogError("Selecione os produtos que vão ser duplicados.")
+    if len(products) > MAX_CATALOG_BATCH:
+        raise CatalogError(f"Duplique no máximo {MAX_CATALOG_BATCH} produtos por vez.")
+    applied, errors = [], []
+    for index, entry in enumerate(products):
+        sku = str(entry.get("sku") or "") if isinstance(entry, dict) else ""
+        try:
+            detail = duplicate_product(sku, {"sku": suggested_duplicate_sku(sku)}, actor=actor)
+        except (CatalogError, ValidationError) as exc:
+            errors.append({"index": index, "sku": sku, "detail": str(exc)})
+        else:
+            applied.append({"index": index, "sku": sku, "copy_sku": detail["sku"], "name": detail["name"]})
+    if not applied:
+        raise CatalogError(errors[0]["detail"] if errors else "Nenhum produto foi duplicado.")
+    return {"applied": applied, "conflicts": [], "errors": errors}
+
 
 # ── GTIN: rascunho, correlação e foto ────────────────────────────────────────
 # O rascunho NÃO escreve: consulta as fontes que já existem
