@@ -263,6 +263,25 @@ class POSPendingCashRefundProjection:
 
 
 @dataclass(frozen=True)
+class POSOfflineReviewSaleProjection:
+    """Um item de venda sem conexão "a conferir": o catálogo não explica o preço cobrado.
+
+    A venda entrou (o dinheiro já estava na gaveta), e o turno só fecha com o
+    gerente (``close_cash_shift``). Uma linha por item: SKU, preço do catálogo
+    na hora da cobrança, preço cobrado e quem operava.
+    """
+
+    order_ref: str
+    sku: str
+    name: str
+    qty_display: str
+    catalog_price_display: str  # "R$ 12,00", ou "" quando o catálogo não tinha o item
+    charged_price_display: str
+    operator: str
+    captured_at_display: str = ""  # "14:32"
+
+
+@dataclass(frozen=True)
 class POSPendingCardMachineRefundProjection:
     """Venda paga na maquininha que precisa de estorno NA maquininha.
 
@@ -317,6 +336,9 @@ class POSCashRuntimeProjection:
     # Estornos a fazer na maquininha (encomenda paga no cartão do balcão que
     # ficou mais barata). Como o dinheiro: do caixa, não deste turno.
     pending_card_machine_refunds: tuple[POSPendingCardMachineRefundProjection, ...] = ()
+    # Vendas sem conexão deste turno cobradas por um preço que o catálogo não
+    # explica: o fechamento as lista e só fecha com o gerente.
+    offline_review_sales: tuple[POSOfflineReviewSaleProjection, ...] = ()
     # Contas na casa com saldo em aberto: quem está com a gaveta aberta é quem
     # recebe o acerto (em dinheiro entra no livro dele; pix/cartão é atestado).
     account_balances: tuple[POSAccountBalanceProjection, ...] = ()
@@ -2256,6 +2278,7 @@ def _cash_runtime_projection(cash_shift, runtime, operator, terminal=None) -> PO
         pending_change_requests=_pending_change_requests(cash_shift),
         pending_cash_refunds=_pending_cash_refunds(cash_shift),
         pending_card_machine_refunds=_pending_card_machine_refunds(cash_shift),
+        offline_review_sales=_offline_review_sales(cash_shift),
         account_balances=account_balances(),
         default_float_q=default_float_q,
         default_float_display=f"R$ {format_money(default_float_q)}" if default_float_q else "",
@@ -2361,6 +2384,31 @@ def _pending_card_machine_refunds(cash_shift) -> tuple[POSPendingCardMachineRefu
         )
         for item in payment_service.pending_card_machine_refunds()
     )
+
+
+def _offline_review_sales(cash_shift) -> tuple[POSOfflineReviewSaleProjection, ...]:
+    from django.utils.dateparse import parse_datetime
+
+    from shopman.shop.services import pos_offline_sale
+    from shopman.shop.services.weighed_sale import qty_number
+
+    def money(value) -> str:
+        return f"R$ {format_money(int(value))}" if value is not None else ""
+
+    rows = []
+    for row in pos_offline_sale.review_sales(cash_shift):
+        captured = parse_datetime(row.get("captured_at") or "")
+        rows.append(POSOfflineReviewSaleProjection(
+            order_ref=row["order_ref"],
+            sku=row.get("sku") or "",
+            name=row.get("name") or row.get("sku") or "",
+            qty_display=str(qty_number(row.get("qty"))).replace(".", ","),
+            catalog_price_display=money(row.get("catalog_line_total_q")),
+            charged_price_display=money(row.get("charged_line_total_q")),
+            operator=row.get("operator") or "",
+            captured_at_display=timezone.localtime(captured).strftime("%H:%M") if captured else "",
+        ))
+    return tuple(rows)
 
 
 def _pending_change_requests(cash_shift) -> tuple[POSChangeRequestProjection, ...]:

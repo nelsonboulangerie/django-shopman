@@ -731,7 +731,9 @@ def change_request_state(shift, entry_id: int) -> dict:
     return {"entry_id": entry_id}
 
 
-def close_cash_shift(*, actor_user, closing_amount_raw="0", notes: str = "", terminal_ref: str = ""):
+def close_cash_shift(
+    *, actor_user, closing_amount_raw="0", notes: str = "", terminal_ref: str = "", manager_approval: dict | None = None,
+):
     """Fechamento cego da GAVETA no fim do expediente. Um caminho, um dono.
 
     Existiam dois: este e um ``close_blocking_shift`` "supervisório", que servia
@@ -748,6 +750,12 @@ def close_cash_shift(*, actor_user, closing_amount_raw="0", notes: str = "", ter
     aberta e as vendas do dia seguinte caem no turno de ontem. É o mesmo risco
     que já existe (há turno aberto no staging desde 19/08), agora com uma porta a
     menos. Afrouxar é uma linha: somar ``can_operate_pos`` ao teste abaixo.
+
+    **Venda sem conexão "a conferir"** (dono, 03/11/2026): a venda cobrada por
+    um preço que o catálogo não explica entrou (o dinheiro já estava na gaveta),
+    mas o turno só fecha com o gerente: escolhido da lista, uma autorização, PIN
+    conferido no servidor (``validate_manager_override``). A assinatura fica em
+    cada pedido (``pos.offline.pricing.acknowledged_by``).
     """
     from shopman.backstage.permissions import can_close_day
 
@@ -757,7 +765,28 @@ def close_cash_shift(*, actor_user, closing_amount_raw="0", notes: str = "", ter
     shift = current_shift(terminal_ref, strict=True)
     if not shift:
         raise POSError("Caixa não aberto.")
-    _close(shift, actor=actor_user, counted_raw=closing_amount_raw, notes=notes)
+    from shopman.shop.services import pos_offline_sale
+    from shopman.shop.services.pos import manager_pin_checked_before_transaction, validate_manager_override
+
+    # O PIN se confere antes da transação: dentro dela, a recusa desfazia o
+    # registro do erro e a trava do gerente nunca armava.
+    with manager_pin_checked_before_transaction(manager_approval), transaction.atomic():
+        review = pos_offline_sale.review_sales(shift)
+        if review:
+            count = len({row["order_ref"] for row in review})
+            approver = validate_manager_override(
+                manager_approval or {},
+                operator_username=actor_user.get_username(),
+                action="cash_close_offline_review",
+                message=(
+                    "1 venda sem conexão está a conferir: o caixa só fecha com o gerente."
+                    if count == 1
+                    else f"{count} vendas sem conexão estão a conferir: o caixa só fecha com o gerente."
+                ),
+                recovery_required="Peça a um gerente para conferir as vendas e autorizar com o PIN ou o crachá.",
+            )
+            pos_offline_sale.acknowledge_review_sales(shift, approved_by=approver.get_username())
+        _close(shift, actor=actor_user, counted_raw=closing_amount_raw, notes=notes)
     return shift
 
 

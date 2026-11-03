@@ -1193,3 +1193,46 @@ class TestSuggestions:
         from shopman.offerman.contrib.substitutes.substitutes import find_substitutes
 
         assert find_substitutes("GHOST") == []
+
+
+# ── O catálogo de um instante (histórico de preços) ──────────────────────────
+
+
+def _saved_at(instant, obj, **changes):
+    from unittest.mock import patch
+
+    with patch("django.utils.timezone.now", return_value=instant):
+        for field, value in changes.items():
+            setattr(obj, field, value)
+        obj.save()
+    return obj
+
+
+def test_unit_prices_as_of_reads_the_price_history():
+    from datetime import UTC, datetime, timedelta
+    from unittest.mock import patch
+
+    t0 = datetime(2026, 10, 10, 9, tzinfo=UTC)
+    with patch("django.utils.timezone.now", return_value=t0):
+        product = Product.objects.create(sku="ASOF", name="Bolo", base_price_q=3000)
+        listing = Listing.objects.create(ref="asof", name="Loja")
+        item = ListingItem.objects.create(listing=listing, product=product, price_q=2800)
+        bulk = ListingItem.objects.create(listing=listing, product=product, price_q=2500, min_qty=Decimal("10"))
+    later = t0 + timedelta(hours=3)
+    _saved_at(later, item, price_q=3200)
+    _saved_at(later, product, base_price_q=3500)
+    # Escrita sem histórico (``update``): o histórico guarda o que sabia.
+    ListingItem.objects.filter(pk=bulk.pk).update(price_q=2400)
+
+    one, ten = [("ASOF", Decimal("1"))], [("ASOF", Decimal("10"))]
+    before, after = t0 + timedelta(hours=1), later + timedelta(hours=1)
+    assert CatalogService.unit_prices(one, listings=("asof",), as_of=before) == [2800]
+    assert CatalogService.unit_prices(one, listings=("asof",), as_of=after) == [3200]
+    assert CatalogService.unit_prices(one, listings=("asof",)) == [3200]
+    assert CatalogService.unit_prices(ten, listings=("asof",), as_of=before) == [2500]
+    assert CatalogService.unit_prices(ten, listings=("asof",)) == [2400]
+    assert CatalogService.unit_prices(one, as_of=before) == [3000]
+    assert CatalogService.unit_prices(one, as_of=after) == [3500]
+    # Antes de existir no histórico: a linha de agora (a régua de sempre).
+    assert CatalogService.unit_prices(one, listings=("asof",), as_of=t0 - timedelta(days=1)) == [3200]
+    assert CatalogService.unit_prices(ten, listings=("asof",), as_of=t0 - timedelta(days=1)) == [2400]

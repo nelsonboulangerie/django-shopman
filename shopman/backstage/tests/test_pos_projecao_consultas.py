@@ -97,5 +97,6 @@ def test_leitura_do_terminal_nao_cresce_com_catalogo_comandas_e_estacoes(balcao)
 
 
 #: Medido em 10/10/2026 depois da correção (o número impresso acima), com folga
-#: pequena. Subir só sabendo o que entrou no caminho.
-TETO_LEITURA_DO_TERMINAL = 45
+#: pequena. Subir só sabendo o que entrou no caminho. +1 em 03/11/2026: as vendas
+#: sem conexão "a conferir" do turno (``offline_review_sales``), uma consulta só.
+TETO_LEITURA_DO_TERMINAL = 46

@@ -17,6 +17,7 @@ LISTING / CHANNEL (per-channel availability):
 """
 
 from collections.abc import Sequence
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
 
@@ -114,6 +115,7 @@ class CatalogService:
         sellable_only: bool = True,
         published_only: bool = False,
         require_listing_match: bool = False,
+        as_of: datetime | None = None,
     ) -> list[int | None]:
         """Resolve list/tier unit prices in bulk, preserving input order.
 
@@ -129,6 +131,13 @@ class CatalogService:
         This preserves the distinction between "not in this catalog" and
         "listed, with no applicable tier" without moving tier selection to a
         consumer.
+
+        ``as_of``: the catalog as it was at that instant, read from the price
+        history (``Product.history`` / ``ListingItem.history``). Each row that
+        the history knows at ``as_of`` is read from it; a row without a
+        record up to then (created later, or written without history) is read
+        as it is now. Listings themselves have no history and are read as they
+        are now. Same tier selection, same fallback to the base price.
         """
         if not lines:
             return []
@@ -152,7 +161,12 @@ class CatalogService:
         # lido de novo para o SKU que nenhuma listing trouxe: uma consulta no
         # caso comum, não duas.
         base_prices: dict[str, int] = {}
-        if listing_refs:
+        if as_of is not None:
+            tiers, listed_skus, base_prices = cls._catalog_as_of(
+                as_of, skus, listing_refs, sellable_only=sellable_only, published_only=published_only,
+                require_listing_match=require_listing_match,
+            )
+        elif listing_refs:
             items = ListingItem.objects.filter(
                 listing__ref__in=listing_refs,
                 listing__is_active=True,
@@ -170,7 +184,7 @@ class CatalogService:
                 base_prices[sku] = base_price_q
                 tiers.setdefault((listing_ref, sku), []).append((min_qty, price_q))
         unlisted = [sku for sku in skus if sku not in base_prices]
-        if unlisted and not require_listing_match:
+        if unlisted and not require_listing_match and as_of is None:
             base_prices.update(
                 Product.objects.active().filter(sku__in=unlisted).order_by().values_list("sku", "base_price_q")
             )
@@ -202,6 +216,57 @@ class CatalogService:
                     break
             result.append(price_q if price_q is not None else base_prices[sku])
         return result
+
+    @classmethod
+    def _catalog_as_of(
+        cls,
+        as_of,
+        skus: list[str],
+        listing_refs: tuple[str, ...],
+        *,
+        sellable_only: bool,
+        published_only: bool,
+        require_listing_match: bool,
+    ) -> tuple[dict[tuple[str, str], list[tuple[Decimal, int]]], set[str], dict[str, int]]:
+        """Tiers, listed SKUs and base prices as the history knew them at ``as_of``.
+
+        Row by row: the historical version when there is one up to ``as_of``,
+        the current row otherwise (see ``unit_prices``).
+        """
+        from shopman.offerman.models import ListingItem, Product
+
+        # ``id``, não ``pk``: no histórico o ``pk`` é o do registro histórico.
+        product_fields = ("id", "sku", "base_price_q", "is_active")
+        current_products = Product.objects.filter(sku__in=skus).order_by().values_list(*product_fields)
+        past_products = Product.history.as_of(as_of).filter(sku__in=skus).order_by().values_list(*product_fields)
+        products = {pk: (sku, base_q, active) for pk, sku, base_q, active in current_products}
+        products.update({pk: (sku, base_q, active) for pk, sku, base_q, active in past_products})
+        base_prices = {sku: base_q for sku, base_q, active in products.values() if active}
+
+        tiers: dict[tuple[str, str], list[tuple[Decimal, int]]] = {}
+        listed_skus: set[str] = set()
+        if not listing_refs:
+            return tiers, listed_skus, base_prices
+        sku_by_product = {pk: sku for pk, (sku, _base_q, active) in products.items() if active}
+        item_fields = ("id", "listing__ref", "product_id", "min_qty", "price_q", "is_sellable", "is_published")
+        scope = {"listing__ref__in": listing_refs, "listing__is_active": True, "product_id__in": list(sku_by_product)}
+        validity = cls._listing_validity_q(prefix="listing__")
+        current_items = ListingItem.objects.filter(**scope).filter(validity).order_by().values_list(*item_fields)
+        past_items = (
+            ListingItem.history.as_of(as_of).filter(**scope).filter(validity).order_by().values_list(*item_fields)
+        )
+        items = {row[0]: row[1:] for row in current_items}
+        items.update({row[0]: row[1:] for row in past_items})
+        rows = sorted(items.values(), key=lambda row: row[2], reverse=True)
+        for listing_ref, product_id, min_qty, price_q, is_sellable, is_published in rows:
+            if (sellable_only and not is_sellable) or (published_only and not is_published):
+                continue
+            sku = sku_by_product[product_id]
+            listed_skus.add(sku)
+            tiers.setdefault((listing_ref, sku), []).append((min_qty, price_q))
+        if require_listing_match:
+            base_prices = {sku: base_q for sku, base_q in base_prices.items() if sku in listed_skus}
+        return tiers, listed_skus, base_prices
 
     @classmethod
     def price(
