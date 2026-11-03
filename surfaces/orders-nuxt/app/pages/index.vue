@@ -1483,7 +1483,7 @@ function compactClear() {
 </script>
 
 <template>
-  <main class="relative flex min-h-0 flex-1 flex-col" data-compact-page>
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
     <!-- Cabeçalho de UMA linha (UX-KIT-V2, prévia v4 `gestor-fila4.html`): título, ao vivo,
          busca e poucos controles (som, ordenar, visão, ⋯). Atualizar, exportar, imprimir,
          a seleção em lote e a última leitura útil moram no ⋯; Visto aparece aqui só
@@ -1529,10 +1529,9 @@ function compactClear() {
       <NuxtIcon name="i-lucide-wifi-off" class="size-4 shrink-0" /><span>Sem conexão.<template v-if="readClock"> Última leitura às {{ readClock }}.</template></span>
     </p>
     <!-- O aviso no polegar, sem empurrar a fila: qual pedido, o status do cartão dele, Ver
-         e Visto. Na Saída fica acima do "Entregar", a ação do momento ali. Preso à página
-         (`absolute`), não à janela: a barra de baixo do shell fica fora dela, e o aviso
-         nunca a cobre. -->
-    <div v-if="attentionPending && !exitPostView && notices.isOpen(`attention:${attentionRef}`)" :class="phoneExitMode ? 'bottom-24' : 'bottom-4'" class="absolute inset-x-3 z-40 md:hidden" role="status" data-attention-pill>
+         e Visto. Na Saída fica acima do "Entregar", a ação do momento ali. Sobe pela altura da
+         barra de baixo do shell (`--operator-quick-bar-inset`, do kit): nunca a cobre. -->
+    <div v-if="attentionPending && !exitPostView && notices.isOpen(`attention:${attentionRef}`)" :class="phoneExitMode ? 'bottom-[calc(var(--operator-quick-bar-inset,0px)+6rem)]' : 'bottom-[calc(var(--operator-quick-bar-inset,0px)+1rem)]'" class="fixed inset-x-3 z-40 md:hidden" role="status" data-attention-pill>
       <div class="flex items-center gap-2 rounded-2xl bg-inverted py-1.5 pl-4 pr-1.5 text-inverted shadow-lg">
         <NuxtIcon name="i-lucide-bell-ring" class="size-5 shrink-0" />
         <p class="min-w-0 flex-1 leading-tight"><strong class="block truncate">{{ attention.code || attention.what }}</strong><span v-if="attention.code" class="block truncate text-xs opacity-80">{{ attention.what }}</span></p>
