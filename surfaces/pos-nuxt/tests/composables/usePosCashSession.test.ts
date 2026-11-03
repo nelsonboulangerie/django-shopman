@@ -95,6 +95,46 @@ describe("usePosCashSession — sessão de caixa (antesala)", () => {
   // turno de outra pessoa segurando o terminal, então não há o que destravar.
   // Fechar o caixa é um caminho só (`closeCashShift`), e é da gerência.
 
+  it("venda sem conexão a conferir: o fechamento pede o gerente e reenvia com a assinatura", async () => {
+    const actionCall = vi.fn()
+      .mockRejectedValueOnce({
+        status: 422,
+        data: {
+          detail: "1 venda sem conexão está a conferir: o caixa só fecha com o gerente.",
+          error: { code: "manager_approval_required" },
+        },
+      })
+      .mockResolvedValueOnce({});
+    const { session } = makeCashSession({ actionCall });
+
+    const refused = await session.closeCashShift({ amount: "100,01", notes: "" });
+    expect(refused).toBe(false);
+    expect(session.managerChallenge.value?.code).toBe("manager_approval_required");
+    expect(toast.error).not.toHaveBeenCalled();
+
+    const ok = await session.closeCashShift({
+      amount: "100,01",
+      notes: "",
+      managerApproval: { username: "joyce", pin: "4321" },
+    });
+    expect(ok).toBe(true);
+    expect(actionCall).toHaveBeenLastCalledWith(
+      "/api/v1/backstage/pos/cash/close/",
+      { body: expect.objectContaining({ closing_amount: "100,01", manager_approval: { username: "joyce", pin: "4321" } }) },
+    );
+  });
+
+  it("as vendas a conferir vêm do turno da projeção", () => {
+    const sale = {
+      order_ref: "ORD-1", sku: "PAO", name: "Pão", qty_display: "1",
+      catalog_price_display: "R$ 12,00", charged_price_display: "R$ 0,01", operator: "marina",
+    };
+    const projection = makeProjection();
+    projection.cash_runtime = { ...(projection.cash_runtime as object), offline_review_sales: [sale] } as POSProjection["cash_runtime"];
+    const { session } = makeCashSession({ projection });
+    expect(session.offlineReviewSales.value).toEqual([sale]);
+  });
+
   it("movimento envia kind/valor/motivo", async () => {
     const { session, actionCall } = makeCashSession();
     await session.registerCashMovement({ kind: "suprimento", amount: "20,00", reason: "troco" });

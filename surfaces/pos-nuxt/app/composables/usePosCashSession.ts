@@ -150,7 +150,18 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   // ao servidor deixaria essa venda sem turno onde entrar.
   const offlineSales = usePosOfflineSales();
 
-  function closeCashShift(payload: { amount: string; notes: string }): Promise<boolean> {
+  // Vendas sem conexão cobradas por um preço que o catálogo não explica: o
+  // fechamento as lista, e o servidor só fecha o turno com o gerente
+  // (`manager_approval_required`, o mesmo desafio da sangria).
+  const offlineReviewSales = computed(
+    () => pos.value?.cash_runtime?.offline_review_sales ?? [],
+  );
+
+  function closeCashShift(payload: {
+    amount: string;
+    notes: string;
+    managerApproval?: ManagerApproval | null;
+  }): Promise<boolean> {
     const blocked = cashManagement.value?.blocks_close_when_offline_queue_pending === false
       ? ""
       : cashCloseBlockedByQueue(offlineSales.unsentCount.value);
@@ -158,9 +169,11 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       toast.error(blocked);
       return Promise.resolve(false);
     }
+    const body: Record<string, unknown> = { closing_amount: payload.amount || "0", notes: payload.notes };
+    if (payload.managerApproval) body.manager_approval = payload.managerApproval;
     return run(
       actionHref(actions.value, "close_cash_shift", "/api/v1/backstage/pos/cash/close/"),
-      { closing_amount: payload.amount || "0", notes: payload.notes },
+      body,
       "O caixa não fechou.",
       "O turno segue aberto e a contagem continua na tela. Tente de novo: repetir não fecha duas vezes.",
     );
@@ -453,6 +466,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     managerChallenge,
     openCashShift,
     closeCashShift,
+    offlineReviewSales,
     registerCashMovement,
     // Segunda via do comprovante de movimento — a porta que a promessa
     // "pode ser reimpresso depois" não tinha.

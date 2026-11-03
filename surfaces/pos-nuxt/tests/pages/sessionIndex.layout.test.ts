@@ -8,6 +8,7 @@ import type { DayClosingProjection } from "~/types/closing";
 import type {
   POSAccountBalanceProjection,
   POSChangeRequestProjection,
+  POSOfflineReviewSaleProjection,
   POSPendingCardMachineRefundProjection,
   POSPendingCashRefundProjection,
   POSProjection,
@@ -32,6 +33,7 @@ function makeCashSession() {
     managerChallenge: ref<{ code: string; message: string } | null>(null),
     openCashShift: vi.fn().mockResolvedValue(true),
     closeCashShift: vi.fn().mockResolvedValue(true),
+    offlineReviewSales: ref<POSOfflineReviewSaleProjection[]>([]),
     registerCashMovement: vi.fn().mockResolvedValue(true),
     canOpenDrawer: ref(true),
     drawerUnavailableReason: ref(""),
@@ -298,6 +300,43 @@ describe("antesala — turno aberto, organização da tela", () => {
     expect(card.attributes("data-tone")).toBe("primary");
     expect(card.text()).toContain("Continuar vendendo");
     expect(card.text()).toContain("7 vendas hoje na loja");
+  });
+
+  it("venda sem conexão a conferir: o fechamento lista o item e pede o gerente", async () => {
+    cash.offlineReviewSales.value = [{
+      order_ref: "ORD-1", sku: "PAO", name: "Pão", qty_display: "1",
+      catalog_price_display: "R$ 12,00", charged_price_display: "R$ 0,01", operator: "marina",
+      captured_at_display: "14:32",
+    }];
+    const wrapper = await openLobby();
+    await tile(wrapper, "close_shift").trigger("click");
+    await flushPromises();
+
+    const closing = dialog("close_shift")!;
+    const notice = closing.querySelector<HTMLElement>("[data-close-shift-offline-review]")!;
+    expect(notice.textContent).toContain("1 venda sem conexão a conferir");
+    expect(closing.querySelector("[data-close-shift-offline-review-line]")!.textContent!.trim()).toBe(
+      "Pão (PAO): cobrado R$ 0,01, catálogo R$ 12,00. marina, 14:32.",
+    );
+
+    const amountInput = closing.querySelector<HTMLInputElement>('input[inputmode="decimal"]')!;
+    amountInput.value = "100,01";
+    amountInput.dispatchEvent(new Event("input", { bubbles: true }));
+    await nextTick();
+    const button = (label: string) =>
+      [...dialog("close_shift")!.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === label)!;
+    button("Conferir e fechar").click();
+    await flushPromises();
+    button("Fechar o caixa").click();
+    await flushPromises();
+    expect(cash.closeCashShift).toHaveBeenCalledWith({ amount: "100,01", notes: "", managerApproval: null });
+
+    // O servidor recusou com `manager_approval_required`: o gerente sabe o que assina.
+    cash.managerChallenge.value = { code: "manager_approval_required", message: "Precisa do gerente." };
+    await nextTick();
+    await flushPromises();
+    const pinDialog = document.body.querySelector<HTMLElement>("[data-drawer-manager-auth]");
+    expect(pinDialog?.textContent).toContain("Autorizar o fechamento");
   });
 
   it("o PIN do gerente sobe POR CIMA do diálogo aberto, e o formulário digitado fica", async () => {

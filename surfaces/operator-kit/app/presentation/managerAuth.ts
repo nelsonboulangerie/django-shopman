@@ -25,6 +25,7 @@ export type ManagerAction =
   | "cancel_sale"
   | "order_edit_refund"
   | "card_machine_refund"
+  | "close_shift_review"
   | "sale_approval"
   | "emit_fiscal"
   | "channel_off"
@@ -71,6 +72,12 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
   card_machine_refund: {
     title: "Autorizar o estorno",
     reason: "Volta dinheiro para o cartão do cliente.",
+  },
+  // Venda sem conexão cobrada por um preço que o catálogo não explica: a venda
+  // entrou, e o caixa só fecha com o gerente que conferiu.
+  close_shift_review: {
+    title: "Autorizar o fechamento",
+    reason: "Há venda sem conexão a conferir.",
   },
   sale_approval: {
     title: "Autorizar a venda",

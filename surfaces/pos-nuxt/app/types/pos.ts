@@ -301,6 +301,23 @@ export interface POSPendingCashRefundProjection {
  * devolvida (toda ou em parte) ou encomenda que ficou mais barata. Estornar na
  * maquininha e registrar; só o "Estornei" grava o estorno.
  */
+/**
+ * Um item de venda sem conexão "a conferir": o catálogo não explica o preço
+ * cobrado. A venda entrou; o turno só fecha com o gerente.
+ */
+export interface POSOfflineReviewSaleProjection {
+  order_ref: string;
+  sku: string;
+  name: string;
+  qty_display: string;
+  /** "R$ 12,00"; "" quando o catálogo não tinha o item. */
+  catalog_price_display: string;
+  charged_price_display: string;
+  operator: string;
+  /** "14:32". */
+  captured_at_display?: string;
+}
+
 export interface POSPendingCardMachineRefundProjection {
   order_ref: string;
   amount_q: number;
@@ -348,6 +365,8 @@ export interface POSCashRuntimeProjection {
   /** Devoluções em dinheiro de vendas canceladas, à espera de uma gaveta aberta. */
   pending_cash_refunds?: POSPendingCashRefundProjection[];
   pending_card_machine_refunds?: POSPendingCardMachineRefundProjection[];
+  /** Vendas sem conexão deste turno a conferir: o fechamento só sai com o gerente. */
+  offline_review_sales?: POSOfflineReviewSaleProjection[];
   /** Contas na casa com saldo em aberto: quem está com a gaveta aberta recebe o acerto. */
   account_balances?: POSAccountBalanceProjection[];
   /**

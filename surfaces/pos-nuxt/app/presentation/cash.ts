@@ -11,6 +11,7 @@ import type {
   POSCashRuntimeProjection,
   POSChangeDenomination,
   POSChangeRequestProjection,
+  POSOfflineReviewSaleProjection,
 } from "~/types/pos";
 
 /**
@@ -600,3 +601,31 @@ export const DRAWER_DENOMINATIONS: readonly POSChangeDenomination[] = [
   { q: 10, label: "0,10", shape: "coin" },
   { q: 5, label: "0,05", shape: "coin" },
 ];
+
+/**
+ * O aviso do fechamento quando há venda sem conexão "a conferir": cobrada por um
+ * preço que o catálogo não explica. A venda entrou (o dinheiro está na gaveta);
+ * o caixa só fecha com o gerente. Conta as VENDAS, não os itens.
+ */
+export function offlineReviewClosingNotice(sales: readonly POSOfflineReviewSaleProjection[]): string {
+  const count = new Set(sales.map((sale) => sale.order_ref)).size;
+  if (!count) return "";
+  return count === 1
+    ? "1 venda sem conexão a conferir"
+    : `${count} vendas sem conexão a conferir`;
+}
+
+/**
+ * Uma linha por item: o que foi cobrado, o que o catálogo pedia naquela hora e
+ * quem cobrou. "Pão (PAO): cobrado R$ 0,01, catálogo R$ 12,00. Marina, 14:32."
+ */
+export function offlineReviewLine(sale: POSOfflineReviewSaleProjection): string {
+  const item = sale.qty_display && sale.qty_display !== "1"
+    ? `${sale.qty_display} × ${sale.name} (${sale.sku})`
+    : `${sale.name} (${sale.sku})`;
+  const catalog = sale.catalog_price_display
+    ? `catálogo ${sale.catalog_price_display}`
+    : "fora do catálogo";
+  const who = [sale.operator, sale.captured_at_display].filter(Boolean).join(", ");
+  return `${item}: cobrado ${sale.charged_price_display}, ${catalog}.${who ? ` ${who}.` : ""}`;
+}
