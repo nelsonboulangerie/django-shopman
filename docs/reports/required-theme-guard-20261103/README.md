@@ -21,9 +21,11 @@ Não basta ligar `needs` nos apps: isso pode produzir consumidores skipped sem t
 - `pytest shopman/shop/tests/test_required_status_checks_gate.py --no-cov -q`: 9 passaram.
 - Os mesmos testes com o script original: 1 falhou e 8 passaram, confirmando que a regressão detecta o guard produzido mas opcional.
 
-## Pendência visual preservada
+## Regularização visual integrada
 
-A base desta PR é o main `6886e6d7`, cujo guard de tema já falha pelo fingerprint acima. Nenhum arquivo de UI, baseline ou aceite foi alterado. Resolver essa pendência cabe ao autor da frente visual (sessão Claude das #2094/#2095), com o aceite de Pablo conforme `docs/reference/operator-visual-baselines.md`. Esta PR permanece draft enquanto faltar essa regularização; não se forja aceite para liberar a fila.
+A #2095 integrou em 03/11/2026 às 11:46:49 UTC pelo commit `433c27c026b0c83f692be164004cb4165c96a6e5`. O aceite publicado pelo autor registra Pablo Valentini, a data e o escopo das abas, moldura dourada e X do aviso no celular. O fingerprint recomputado corresponde exatamente ao contrato (`sha256:e4413006a65766677ed42b1669faf0de31fcaaa2cd7784ec3b992ffe08092290`). O guard de tema passou no head e no merge group.
+
+Esta PR incorporou esse main sem editar UI, baseline ou aceite. Após a atualização, o guard de tema e o gate canônico com comparação viva passaram; os nove testes isolados do leitor de checks também passaram. O espelho mantém os 28 pares contexto/app ID exigidos na proteção remota, com strict preservado. A pendência que exigia draft foi resolvida pela frente autora.
 
 ## Conferência dos demais gates
 
