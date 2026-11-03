@@ -53,7 +53,7 @@ test.describe("Produção — gate de operador", () => {
       await expect(quickBar.locator('[data-section="close"]')).toBeVisible();
       await expect(quickBar.locator('[data-section="timers"]')).toBeVisible();
       await expect(quickBar.locator('[data-section="plan"]')).toHaveCount(0);
-      await page.locator("[data-page-header-app]:visible").first().click();
+      await page.locator("[data-compact-seal]:visible, [data-page-header-app]:visible").first().click();
       await expect(
         page.getByRole("dialog").locator('[data-switcher-section="plan"]'),
       ).toBeVisible();
