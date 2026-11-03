@@ -8,6 +8,7 @@ import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { resolveAffordance } from "~/presentation/actions";
 import { openShiftGate, requiresOpenShiftForSale } from "~/presentation/cash";
+import { stationReadinessAlert } from "~/presentation/stationReadiness";
 import { ORDER_EDIT_CUSTOMER_LOCKED, ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED, orderEditTitle } from "~/presentation/orderEdit";
 import { wantsNewOrder } from "~/presentation/orderSetup";
 import { redoTabLabel } from "~/presentation/preorderActions";
@@ -52,7 +53,10 @@ const ordersUrl = computed(() => String(runtimeConfig.public.ordersUrl || ""));
 const { attrsFor: crossAppAttrs } = useOperatorAppLink();
 const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
 
-const { pos, tabs, actions, pending, refresh, refreshTabs } = await usePosTerminal();
+const { pos, tabs, actions, station, pending, refresh, refreshTabs } = await usePosTerminal();
+// Sem caixa vinculado a este dispositivo, o total e a cobrança param no servidor: a
+// tela diz na chegada, com a porta para vincular (o mesmo assistente do primeiro uso).
+const stationSetupRequest = useStationSetupRequest();
 
 // MODO EDIÇÃO (WP-E6): `/?edit=<ref>` abre esta mesma tela como o editor da
 // encomenda — carrinho, grade, F7 e F8 —, com "Salvar alterações" no lugar do
@@ -861,6 +865,9 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
           : { label: "Conferir últimas vendas", onSelect: () => { recentSalesOpen.value = true; } },
     });
   }
+  // `station?`: as telas de teste que simulam o terminal não trazem a leitura nova.
+  const stationAlert = stationReadinessAlert(station?.value, stationSetupRequest.request);
+  if (stationAlert) list.push(stationAlert);
   // Depois da trava contra cobrança dupla, que é a mais grave.
   const offline = offlineSales.alert.value;
   if (offline) {
