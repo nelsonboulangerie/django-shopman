@@ -105,8 +105,10 @@ export function galleryQueue(base) {
       status: "accepted", status_label: "Aceito", customer_name: "Elisa",
       waitlist_label: "Esperando o lote das 16:00", waitlist_state: "confirming",
       awaiting_work_orders: [
-        { ref: "WO-101", output_sku: "BAGUETE", status_label: "no forno", progress_pct: 60 },
-        { ref: "WO-102", output_sku: "CROISSANT-MANTEIGA-TRADICIONAL", status_label: "fermentando", progress_pct: 20 },
+        { ref: "WO-101", status: "started", status_label: "Iniciada", output_sku: "BAGUETE", recipe_name: "Baguete",
+          planned_qty: "20", finished_qty: "", progress_pct: 60 },
+        { ref: "WO-102", status: "planned", status_label: "Planejada", output_sku: "CRO", recipe_name: "Croissant",
+          planned_qty: "42", finished_qty: "", progress_pct: 0 },
       ],
       fiscal_status: "failed", fiscal_status_label: "NFC-e rejeitada",
       actions: [action("advance", "Iniciar preparo"), ...menu],

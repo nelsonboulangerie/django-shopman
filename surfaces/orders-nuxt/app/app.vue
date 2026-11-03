@@ -87,6 +87,8 @@ async function restoreAuthenticatedWorkspace() {
 const { sections, settings, current } = useGestorSections();
 // O trocador (modelo de navegação, 31/10/2026) lista tudo, pela forma. Chão: Pedidos,
 // Saída e Rotinas (andando pela loja, dono 31/10). Escritório: o que mora em Ajustes.
+// As do chão são as da barra de baixo no celular, ao alcance do polegar (dono, 03/11:
+// "seção vai para baixo"); no topo fica só a subdivisão da seção (as colunas do quadro).
 const FLOOR = new Set(["orders", "exit", "checklists"]);
 // As seções de Ajustes dependem de permissão lida por uma chave que leva o id de quem
 // opera, e no servidor a sessão ainda não chegou quando a chave nasce: lá a resposta
@@ -100,7 +102,11 @@ const switcherSections = computed(() => {
   const seen = new Set<string>();
   return [...sections.value.filter((s) => s.key !== "settings"), ...(mounted.value ? settings.value : [])]
     .filter((s) => (seen.has(s.key) ? false : (seen.add(s.key), true)))
-    .map((s) => ({ ...s, form: FLOOR.has(s.key) ? ("floor" as const) : ("office" as const) }));
+    .map((s) =>
+      FLOOR.has(s.key)
+        ? { ...s, form: "floor" as const, quick: true }
+        : { ...s, form: "office" as const },
+    );
 });
 const { alerts, activeCount, ack, accept, isAccepting } = useAlerts();
 provideOperatorInboxAlerts(() => ({
@@ -138,6 +144,7 @@ useOperatorWindowTitle();
         :current="current"
         :switcher-sections="switcherSections"
         default-form="floor"
+        floor-bar
         label="Seções do Gestor"
         :operator-name="operator?.name"
         @lock="lock"

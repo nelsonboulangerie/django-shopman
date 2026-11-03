@@ -139,6 +139,7 @@
             "status": "planned",
             "status_label": "Planejada",
             "output_sku": "CRO",
+            "recipe_name": "Croissant",
             "planned_qty": "42",
             "finished_qty": "",
             "progress_pct": 0
@@ -700,6 +701,7 @@
             "status": "planned",
             "status_label": "Planejada",
             "output_sku": "CRO",
+            "recipe_name": "Croissant",
             "planned_qty": "42",
             "finished_qty": "",
             "progress_pct": 0
@@ -1273,6 +1275,7 @@
             "status": "planned",
             "status_label": "Planejada",
             "output_sku": "FOA",
+            "recipe_name": "Focaccia Alecrim",
             "planned_qty": "10",
             "finished_qty": "",
             "progress_pct": 0
@@ -1461,6 +1464,7 @@
             "status": "planned",
             "status_label": "Planejada",
             "output_sku": "CRO",
+            "recipe_name": "Croissant",
             "planned_qty": "42",
             "finished_qty": "",
             "progress_pct": 0
@@ -1651,6 +1655,7 @@
             "status": "planned",
             "status_label": "Planejada",
             "output_sku": "PCHOC",
+            "recipe_name": "Pain au Chocolat",
             "planned_qty": "36",
             "finished_qty": "",
             "progress_pct": 0
