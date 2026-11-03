@@ -1318,3 +1318,14 @@ describe("Detalhe — a linha do chão no celular (modelo de navegação)", () =
     expect(wrapper.find("[data-preorder-actions]").classes()).toContain("max-md:hidden");
   });
 });
+
+describe("Semana: a hora 'A combinar' não invade o nome (dono, 03/11/2026)", () => {
+  it("sem janela, a hora fica numa linha só e a coluna se ajusta a ela", async () => {
+    week.days[0]!.orders[0] = card({ window_start: "", window_label: "" });
+    const wrapper = await mount(PreordersPage);
+    const time = wrapper.find('[data-week-grid] [data-preorder="NB-7"] [data-preorder-window]');
+    expect(time.text()).toBe("A combinar");
+    expect(time.classes()).toContain("whitespace-nowrap");
+    expect(wrapper.find('[data-week-grid] [data-preorder="NB-7"]').classes().join(" ")).toContain("minmax(4.5rem,auto)");
+  });
+});
