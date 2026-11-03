@@ -144,4 +144,17 @@ describe("O trocador do PDV (modelo de navegação, 31/10/2026)", () => {
     expect(shell).toContain(':switcher-sections="switcherSections"');
     expect(shell).toContain('default-form="floor"');
   });
+
+  // Dono, 03/11/2026: "seção vai para baixo". No celular e no tablet em pé, as seções do
+  // balcão ficam na barra de baixo, na ordem do app; o selo abre o resto.
+  it("a barra de baixo do chão: Comandas, Encomendas, Caixa e Fim do dia, sem 'Mais'", () => {
+    const shell = readFileSync(app("components", "PosOperatorShell.vue"), "utf8");
+    expect(shell).toMatch(/\bfloor-bar\b/);
+    const floor = posSwitcherSections(posSections({ ...base, preorders: { allowed: true } }))
+      .filter((s) => s.form === "floor");
+    const layout = quickBarLayout(floor);
+    expect(layout.items.map((s) => s.label)).toEqual(["Comandas", "Encomendas", "Caixa", "Fim do dia"]);
+    expect(layout.more).toBe(false);
+    expect(quickBarProblems(floor)).toEqual([]);
+  });
 });
