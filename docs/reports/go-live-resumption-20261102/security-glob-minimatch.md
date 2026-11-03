@@ -103,3 +103,24 @@ continua obrigatória antes do merge.
 - guard de versões, governança documental/ADR e canonical docs passaram; nenhum binding de plataforma foi removido dos locks.
 
 Esses resultados não substituem a CI da PR nem a confirmação humana das rotinas físicas.
+
+## Falha de preview Cloudflare em 03/11/2026
+
+Os logs autenticados do preview `9560e3fa-ab5d-4041-a0e4-46e5c3fceec8`
+confirmaram falha antes do build: npm 11.12.1 recusou o lock com três
+`Missing: minimatch@10.2.6`. A configuração remota selecionou Node 24.15.0,
+embora o contrato do projeto seja Node 22.x. O comando e diretórios remotos
+estavam corretos (`npm run generate`, raiz `surfaces/status-nuxt`, saída `dist`).
+
+O erro foi reproduzido com npm 11.12.1 localmente; não foi atribuído apenas à
+versão de Node. Seu resolvedor aplicava a exceção aninhada do plugin também
+a três consumidores distintos. Overrides explícitos de minimatch 11.0.4 para
+`@eslint/config-array`, `@typescript-eslint/typescript-estree` e `eslint`
+preservam a exceção estritamente no plugin e tornam os locks instaláveis
+com npm 10 e 11. As versões compartilhadas foram mantidas iguais nos 12 apps.
+Nenhuma configuração viva, credencial, termo ou UI foi alterado.
+
+[Prova sanitizada npm 10/11](evidence/ci-deploy-npm10-11-compat-pr2093.json):
+12 instalações reais com cada npm (`--ignore-scripts`, sem dry-run), lint dos
+12 apps e geração do Status passaram em Node 22. As versões já travadas não
+mudaram, e o único minimatch 10 continua sob o plugin de lint.
