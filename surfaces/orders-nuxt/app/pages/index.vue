@@ -1466,6 +1466,12 @@ function seeAttention() {
 // o próximo pedido que pedir atenção traz a pílula de volta. Visto continua sendo o "eu vi,
 // pode parar de avisar".
 const notices = useAlertDismissals();
+// "Falha ao atualizar a fila" fecha e volta na próxima leitura que falhar: cada falha nova
+// (outro erro) é outra chave.
+const queueFailures = ref(0);
+watch(error, (now, before) => {
+  if (now && now !== before) queueFailures.value += 1;
+});
 const compactOptions = computed(() => phoneHeaderActions.value.map(({ priority: _p, ...item }) => item));
 const compactTotal = computed(() => zones.value.reduce((n, z) => n + z.cards.length, 0));
 const compactFilterLabel = computed(() => activeFilters.value.map((f) => f.label).join(', '));
@@ -1951,13 +1957,15 @@ function compactClear() {
       <!-- `!stationLocked`: antes do PIN toda leitura volta 403 `station_locked`; quem
            fala nesse estado é a identificação que sobe por cima (app.vue). -->
       <NuxtAlert
-        v-else-if="error && !stationLocked"
+        v-else-if="error && !stationLocked && notices.isOpen(`queue-error:${queueFailures}`)"
+        v-bind="notices.closeProps"
         color="error"
         variant="subtle"
         icon="i-lucide-triangle-alert"
         title="Falha ao atualizar a fila"
         description="Mantivemos a última leitura; atualize antes de confirmar ações."
         data-queue-error
+        @update:open="notices.onOpen(`queue-error:${queueFailures}`, $event)"
       />
 
       <template v-if="queue">
