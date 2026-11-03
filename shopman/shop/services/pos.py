@@ -9,6 +9,8 @@ from __future__ import annotations
 import copy
 import logging
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -3190,7 +3192,54 @@ def _bare_username(value: str) -> str:
     return raw.split(":", 1)[1] if ":" in raw else raw
 
 
+#: O veredito do PIN de gerente já conferido FORA da transação, por
+#: (username, PIN). Ver ``manager_pin_checked_before_transaction``.
+_MANAGER_PIN_VERDICTS: ContextVar[dict | None] = ContextVar("manager_pin_verdicts", default=None)
+
+
+@contextmanager
+def manager_pin_checked_before_transaction(approval):
+    """Confere o PIN de gerente ANTES da transação, para a falha ficar gravada.
+
+    O ``PinCredential`` grava cada erro (e arma a trava) na mesma conexão de quem
+    pergunta. Quem pergunta de dentro de um ``atomic`` e recusa a operação
+    levantando, ou marcando rollback, desfaz junto o registro do erro: a sangria,
+    a devolução, o estorno na maquininha, o atendimento do troco e o cancelamento
+    de venda pediam o PIN dentro da mutação idempotente, e o contador do gerente
+    nunca passava de zero. Força bruta sem trava.
+
+    Esta porta confere o PIN uma vez, fora da transação, e guarda o veredito
+    para o ``validate_manager_override`` de dentro usar sem conferir de novo.
+    Uma tentativa conta uma vez, aprovada ou não. O crachá não tem contador
+    (ele não se adivinha), e passa direto.
+
+    ⚠️ Só cumpre o papel se entrar FORA de qualquer ``atomic`` que a recusa
+    desfaça. Escopos aninhados herdam o veredito do de fora e não conferem de
+    novo: o de dentro, sim, estaria na transação.
+    """
+    approval = approval if isinstance(approval, dict) else {}
+    username = str(approval.get("username") or "").strip()
+    pin = str(approval.get("pin") or "")
+    badge = str(approval.get("badge") or "").strip()
+    verdicts = dict(_MANAGER_PIN_VERDICTS.get() or {})
+    if username and pin and not badge and (username, pin) not in verdicts:
+        verdicts[(username, pin)] = _check_manager_pin(username, pin)
+    token = _MANAGER_PIN_VERDICTS.set(verdicts)
+    try:
+        yield
+    finally:
+        _MANAGER_PIN_VERDICTS.reset(token)
+
+
 def _verify_manager_pin(username: str, pin: str):
+    """O veredito já conferido fora da transação, ou a conferência agora."""
+    verdicts = _MANAGER_PIN_VERDICTS.get() or {}
+    if (username, pin) in verdicts:
+        return verdicts[(username, pin)]
+    return _check_manager_pin(username, pin)
+
+
+def _check_manager_pin(username: str, pin: str):
     """Resolve a manager by username and verify their override PIN.
 
     A short, rate-limited PIN challenge replaces account passwords in the sale

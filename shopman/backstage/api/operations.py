@@ -5129,12 +5129,16 @@ def _local_idempotent(request, *, scope: str, executar, terminal_ref: str = ""):
         return ({"status": resposta.status_code, "data": resposta.data}, resposta.status_code)
 
     try:
-        resultado = run_idempotent_mutation(
-            scope=scope,
-            key=chave,
-            fingerprint=fingerprint,
-            execute=_executar_para_o_claim,
-        )
+        # O PIN de gerente se confere aqui, FORA da transação da mutação: a recusa
+        # desfaz tudo o que a mutação gravou, e o erro do PIN ia junto (a trava
+        # nunca armava). Ver `manager_pin_checked_before_transaction`.
+        with pos_tabs_service.manager_pin_checked_before_transaction(request.data.get("manager_approval")):
+            resultado = run_idempotent_mutation(
+                scope=scope,
+                key=chave,
+                fingerprint=fingerprint,
+                execute=_executar_para_o_claim,
+            )
     except CashMutationRejected as exc:
         return exc.response
     except RemoteMutationConflict:
@@ -5364,12 +5368,17 @@ class POSCashReceiptView(APIView):
 
     def get(self, request, entry_id: int):
         reprint = str(request.query_params.get("reprint") or "").lower() in {"1", "true", "on"}
+        # A gaveta do comprovante é a da ESTAÇÃO, como na leitura X: o query param
+        # só confere. Ele escolhia a gaveta, e o balcão 1 reimprimia a sangria do 2.
+        terminal_ref, refusal = _terminal_da_leitura(request)
+        if refusal is not None:
+            return refusal
         try:
             payload = pos_service.cash_movement_receipt_payload(
                 operator=request.user,
                 entry_id=entry_id,
                 reprint=reprint,
-                terminal_ref=str(request.query_params.get("terminal_ref") or ""),
+                terminal_ref=terminal_ref,
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
