@@ -2438,6 +2438,8 @@ useHead({ title: "Catálogo" });
       :channel-cells="detailChannelCells"
       :live-availability="detailAvailability"
       :admin-base-url="adminBaseUrl"
+      :enhance="enhancePhoto"
+      :upload="uploadPhoto"
       @review-conflict="reviewProductConflict"
       @dirty-change="detailDirty = $event"
       @update:open="
