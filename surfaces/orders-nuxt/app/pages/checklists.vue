@@ -69,10 +69,10 @@ const phoneHeaderActions = computed(() => [
 </script>
 
 <template>
-  <!-- `data-compact-page`: no celular, a linha do chão do kit (selo com o lugar, busca,
-       sino e ⋮) toma o lugar da barra de cima, como em Pedidos e Saída. Rotinas é seção
-       do chão: mora na barra de baixo junto com elas. -->
   <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- `data-compact-page`: no celular, a linha do chão do kit (selo com o lugar, busca,
+         sino e ⋮) toma o lugar da barra de cima, como em Pedidos e Saída. Rotinas é seção
+         do chão: mora na barra de baixo junto com elas. -->
     <OperatorCompactBar title="Rotinas" :options="phoneHeaderActions" />
     <OperatorPageHeader
       title="Rotinas"

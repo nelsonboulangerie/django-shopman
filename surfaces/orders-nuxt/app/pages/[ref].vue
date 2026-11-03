@@ -868,18 +868,21 @@ const outside = useOutsideStore(
             </p>
           </div>
           <OperatorRecordNav v-if="!returnTicket" :trail="recordTrailKey" :current="orderRef" :to="recordLocation" previous-label="Pedido anterior" next-label="Próximo pedido" />
-          <NuxtButton
-            icon="i-lucide-ellipsis-vertical"
-            color="neutral"
-            variant="ghost"
-            square
-            class="size-11 shrink-0 justify-center"
-            aria-label="Mais ações do pedido"
-            :aria-expanded="menuOpen"
-            data-action="menu-phone"
-            @click="menuOpen = !menuOpen"
-          />
         </div>
+      </template>
+      <!-- O ⋮ do pedido no canto, depois do sino, como em toda a suíte. -->
+      <template #more>
+        <NuxtButton
+          icon="i-lucide-ellipsis-vertical"
+          color="neutral"
+          variant="ghost"
+          square
+          class="size-11 shrink-0 justify-center"
+          aria-label="Mais ações do pedido"
+          :aria-expanded="menuOpen"
+          data-action="menu-phone"
+          @click="menuOpen = !menuOpen"
+        />
       </template>
     </OperatorCompactBar>
     <OperatorPageHeader

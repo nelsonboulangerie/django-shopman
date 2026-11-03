@@ -8,6 +8,8 @@
 //   para o voltar e `#identity` para o que identifica o registro, que nunca some.
 // - A cadência e a hora da última leitura moram no topo das Opções.
 // - Filtros: `#filters` vira o painel de baixo, aberto por "Filtros" dentro do ⋮.
+// - `#more`: a tela que tem o seu próprio ⋮ (o painel de ações do detail do pedido) o
+//   põe aqui, no canto, depois do sino. Nunca no `#identity`: o ⋮ é sempre o último.
 // - Busca: ícone; abre a busca da suíte (mesmo contrato do app). O termo ativo aparece na
 //   faixa logo abaixo, com contagem e Limpar, sempre visível (o cabeçalho não rola).
 import { computed, getCurrentInstance, ref, useSlots } from "vue";
@@ -108,8 +110,9 @@ const items = computed<(readonly OperatorMoreMenuItem[])[]>(() => {
         <div class="shrink-0 [&_button]:size-11 [&_button]:justify-center" data-compact-inbox>
           <ClientOnly><OperatorInbox placement="header" /></ClientOnly>
         </div>
+        <slot name="more" />
         <OperatorMoreMenu
-          v-if="items.length"
+          v-if="!$slots.more && items.length"
           :items="items"
           :label="`Mais ações: ${title}`"
           class="size-11 justify-center"
