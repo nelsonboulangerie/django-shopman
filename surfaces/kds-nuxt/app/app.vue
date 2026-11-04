@@ -3,7 +3,9 @@
 // de cada estação, o Painel de retirada), por isso usa pages/. As telas de operador
 // moram no shell da suíte (`OperatorSuiteShell`, fase 2): barra lateral em três estados
 // na mesa, gaveta pelo ☰ e barra inferior abaixo de `lg`, com as estações da casa pelo
-// nome (`kdsShellSections`), a Saída levando ao Gestor e Ajustes no pé.
+// nome (`kdsShellSections`), a Saída levando ao Gestor e Ajustes no pé. O selo abre o
+// trocador (modelo de navegação, 31/10/2026): no celular, a barra de baixo leva as
+// estações e a Saída (`kdsSwitcherSections`), e o ponto de conexão mora no selo.
 //
 // Exceção declarada: o Painel de retirada (`/pickup`) é a TV do salão, para o cliente.
 // Fica fora do shell, em tela cheia, sem navegação e sem login; a trava de operador
@@ -18,7 +20,7 @@ const isCustomerBoard = computed(() => route.path.startsWith("/pickup"));
 // parede, só para quem gere operadores, num dispositivo que ainda não é posto.
 const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
-const { sections, current } = useKdsSections();
+const { sections, switcherSections, current } = useKdsSections();
 const settingsOpen = useKdsSettingsOpen();
 // Ajustes não é rota: abre o painel de Ajustes da estação.
 function onSelect(key: string) {
@@ -44,6 +46,9 @@ useOperatorWindowTitle();
         storage-key="kds"
         :sections="sections"
         :current="current"
+        :switcher-sections="switcherSections"
+        default-form="floor"
+        floor-bar
         label="Seções da Cozinha"
         :operator-name="operator?.name"
         @select="onSelect"

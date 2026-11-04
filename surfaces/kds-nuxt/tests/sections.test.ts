@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { KDS_BAR_SECTIONS, kdsSections, kdsShellSections } from "../app/presentation/sections";
+import { KDS_BAR_SECTIONS, kdsSections, kdsShellSections, kdsSwitcherSections } from "../app/presentation/sections";
 import { quickBarLayout, quickBarProblems } from "../../operator-kit/app/presentation/suiteChrome";
 
 // As seções da Cozinha (dono, 09/10/2026): cada estação da casa pelo NOME, levando à sua
@@ -86,5 +86,36 @@ describe("seções da Cozinha no shell da suíte", () => {
     const quick = kdsShellSections({ ...base, priorityRef: "" }).filter((s) => s.where !== "rail");
     expect(quickBarProblems(quick)).toEqual([]);
     expect(quickBarLayout(quick).more).toBe(true);
+  });
+});
+
+describe("seções da Cozinha no trocador (modelo de navegação, 31/10/2026)", () => {
+  it("na ordem da barra lateral (a das teclas Alt+N), com Ajustes no fim", () => {
+    const sections = kdsSwitcherSections({ ...base, priorityRef: "encomendas" });
+    expect(sections.map((s) => s.label)).toEqual(["Cafés", "Lanches", "Encomendas", "Saída", "Painel de retirada", "Ajustes"]);
+  });
+
+  it("estações e Saída são do chão e vão para a barra de baixo; o Painel é da parede", () => {
+    const sections = kdsSwitcherSections(base);
+    const floor = sections.filter((s) => s.form === "floor");
+    expect(floor.map((s) => s.label)).toEqual(["Cafés", "Lanches", "Encomendas", "Saída"]);
+    expect(floor.every((s) => s.quick)).toBe(true);
+    expect(sections.find((s) => s.key === "pickup")?.form).toBe("wall");
+    expect(sections.find((s) => s.key === "settings")?.form).toBe("office");
+    expect(quickBarProblems(floor)).toEqual([]);
+  });
+
+  it("com mais estações do que cabem, a aberta e a Saída ficam na barra; o resto vai para o Mais", () => {
+    const many = [
+      ...stations,
+      { ref: "forno", name: "Forno", type: "prep", count: 0 },
+      { ref: "bar", name: "Bar", type: "prep", count: 0 },
+    ];
+    const floor = kdsSwitcherSections({ ...base, stations: many, priorityRef: "bar" }).filter((s) => s.form === "floor");
+    const layout = quickBarLayout(floor);
+    // Na ordem da barra lateral, para a tecla e o lugar de cada uma não mudarem.
+    expect(layout.items.map((s) => s.label)).toEqual(["Cafés", "Lanches", "Bar", "Saída"]);
+    expect(layout.more).toBe(true);
+    expect(quickBarProblems(floor)).toEqual([]);
   });
 });

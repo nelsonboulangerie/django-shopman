@@ -267,6 +267,13 @@ describe("OperatorSuiteShell: o que o shell já fazia", () => {
     useOperatorShortcuts().open.value = false;
   });
 
+  it("seção com endereço de fora (a Saída da Cozinha, no Gestor) vai como link de fora", async () => {
+    const outside = { key: "exit", label: "Saída", icon: "lucide:package-check", to: "https://gestor.example/?columns=expedition" };
+    await mountShell({ sections: [SECTIONS[0], outside] });
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "2", code: "Digit2", altKey: true, cancelable: true }));
+    expect(navigate).toHaveBeenCalledWith(outside.to, { external: true });
+  });
+
 });
 
 describe("OperatorSuiteShell: a variante início (a Central)", () => {
