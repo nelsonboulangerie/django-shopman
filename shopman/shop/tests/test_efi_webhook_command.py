@@ -188,3 +188,29 @@ def test_canonical_url_survives_efi_appending_pix_suffix():
         format="json",
     )
     assert broken.status_code == 401
+
+
+@override_settings(**EFI_ON)
+def test_every_call_to_efi_carries_our_own_user_agent():
+    """A borda da Efí recusa ``Python-urllib`` com 403 ("error code: 1010").
+
+    Medido em 04/11/2026: o token de homologação só saiu com outro User-Agent.
+    O teste cobre as duas portas: o token e a API.
+    """
+    sent: list[str] = []
+
+    def capture(request, context=None, timeout=None):
+        sent.append(dict(request.header_items()).get("User-agent", ""))
+        if request.full_url.endswith("/oauth/token"):
+            return _response({"access_token": "tok"})
+        return _response({"webhookUrl": CANONICAL, "chave": PIX_KEY})
+
+    with (
+        patch.object(payment_efi.ssl, "create_default_context"),
+        patch.object(payment_efi, "urlopen", side_effect=capture),
+    ):
+        payment_efi.cache.clear()
+        payment_efi.get_pix_webhook(PIX_KEY)
+
+    assert len(sent) == 2
+    assert all(ua and not ua.startswith("Python-urllib") for ua in sent)
