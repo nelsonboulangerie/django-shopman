@@ -71,6 +71,9 @@ class HubTileProjection:
     #: ``status_attention`` é o que pede alguém ("1 para aceitar"); ``status_summary`` é o
     #: resto, calmo ("11 ativos"). Vazios quando o app não tem fonte de estado.
     status_attention: str = ""
+    #: Quantas coisas a ``status_attention`` conta: o número no canto do ícone do app na
+    #: Central (dono, 04/11/2026). Zero quando nada pede alguém, e aí nada aparece.
+    attention_count: int = 0
     status_summary: str = ""
     #: O estado bom e sabido ("Caixa aberto", "Aberta"): o ponto do bloco fica verde
     #: quando nada pede alguém. Vazio quando o app não tem estado positivo a dizer.
@@ -233,6 +236,7 @@ def build_operator_hub(user) -> OperatorHubProjection:
             url=urls[spec.ref],
             kind=spec.kind,
             status_attention=statuses[spec.ref].attention if spec.ref in statuses else "",
+            attention_count=statuses[spec.ref].attention_count if spec.ref in statuses else 0,
             status_summary=statuses[spec.ref].summary if spec.ref in statuses else "",
             status_positive=statuses[spec.ref].positive if spec.ref in statuses else "",
             next_item=most_urgent.get(spec.ref),

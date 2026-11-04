@@ -50,15 +50,15 @@ const HUB = {
   hub: {
     operator_name: "Ana",
     tiles: [
-      { ref: "pos", label: "PDV", description: "Vender no balcão", icon: "shopping-basket", url: "http://127.0.0.1:3002/", kind: "launch", status_attention: "", status_summary: "2 encomendas para retirar hoje", status_positive: "Caixa aberto", next_item: null },
-      { ref: "gestor", label: "Gestor de Pedidos", description: "Fila e acompanhamento", icon: "square-kanban", url: "http://127.0.0.1:3004/", kind: "launch", status_attention: "1 para aceitar", status_summary: "11 ativos", next_item: ORDER_ITEM },
+      { ref: "pos", label: "PDV", description: "Vender no balcão", icon: "shopping-basket", url: "http://127.0.0.1:3002/", kind: "launch", status_attention: "", attention_count: 0, status_summary: "2 encomendas para retirar hoje", status_positive: "Caixa aberto", next_item: null },
+      { ref: "gestor", label: "Gestor de Pedidos", description: "Fila e acompanhamento", icon: "square-kanban", url: "http://127.0.0.1:3004/", kind: "launch", status_attention: "1 para aceitar", attention_count: 1, status_summary: "11 ativos", next_item: ORDER_ITEM },
       // Os dois tiles com o texto MAIS LONGO do registro real
       // (`shopman/backstage/projections/hub.py`): é neles que a grade de duas colunas do
       // celular quebrava em alturas diferentes. Trocar o registro sem trocar estes dois
       // deixa a medida do `mobileTiles.spec.ts` medindo um caso fácil.
-      { ref: "purchase", label: "Compras", description: "Comprar e receber insumos", icon: "package", url: "http://127.0.0.1:3008/", kind: "launch", status_attention: "", status_summary: "", next_item: null },
-      { ref: "production", label: "Produção", description: "Produção e lotes", icon: "croissant", url: "http://127.0.0.1:3005/", kind: "launch", status_attention: "", status_summary: "5 de 15 lotes finalizados hoje", next_item: PRODUCTION_ITEM },
-      { ref: "loja", label: "Loja online", description: "Abrir a loja do cliente", icon: "store", url: "/admin/shop/shop/", kind: "external", status_attention: "", status_summary: "", next_item: null },
+      { ref: "purchase", label: "Compras", description: "Comprar e receber insumos", icon: "package", url: "http://127.0.0.1:3008/", kind: "launch", status_attention: "", attention_count: 0, status_summary: "", next_item: null },
+      { ref: "production", label: "Produção", description: "Produção e lotes", icon: "croissant", url: "http://127.0.0.1:3005/", kind: "launch", status_attention: "1 aviso", attention_count: 1, status_summary: "5 de 15 lotes finalizados hoje", next_item: PRODUCTION_ITEM },
+      { ref: "loja", label: "Loja online", description: "Abrir a loja do cliente", icon: "store", url: "/admin/shop/shop/", kind: "external", status_attention: "", attention_count: 0, status_summary: "", next_item: null },
     ],
     queue: {
       total_count: 4,
@@ -66,6 +66,13 @@ const HUB = {
     },
   },
 };
+
+// `MOCK_HUB_CALM=1`: o mesmo hub com nada pedindo ninguém (a Central em dia, sem número
+// em ícone nenhum), para a captura e o teste do estado calmo.
+if (process.env.MOCK_HUB_CALM === "1") {
+  HUB.hub.tiles = HUB.hub.tiles.map((tile) => ({ ...tile, status_attention: "", attention_count: 0, next_item: null }));
+  HUB.hub.queue.total_count = 0;
+}
 
 const server = createServer((req, res) => {
   res.setHeader("content-type", "application/json");

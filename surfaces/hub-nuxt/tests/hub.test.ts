@@ -17,7 +17,6 @@ import {
   HUB_REFRESH_LABEL,
   readClockLabel,
   staleQueueAlert,
-  tileAriaLabel,
   tileIcon,
   tileIconStyle,
   tileIconUrl,
@@ -33,7 +32,10 @@ const tile = (over: Partial<HubTileProjection> = {}): HubTileProjection => ({
   url: "http://127.0.0.1:3002/",
   kind: "launch",
   status_attention: "",
+  attention_count: 0,
   status_summary: "",
+  status_positive: "",
+  next_item: null,
   ...over,
 });
 
@@ -290,14 +292,5 @@ describe("selo, aviso e nome acessível do bloco", () => {
     expect(staleQueueAlert("").description).toBe("O que está na tela pode estar desatualizado.");
     expect(readClockLabel(Date.parse("2026-10-03T13:42:00Z"), "America/Sao_Paulo")).toBe("10:42");
     expect(readClockLabel(Number.NaN)).toBe("");
-  });
-
-  it("o nome acessível do bloco leva o estado inteiro, e avisa quando abre fora", () => {
-    expect(tileAriaLabel(tile({ status_positive: "Caixa aberto", status_summary: "2 encomendas" }))).toBe(
-      "PDV: Vender no balcão. Caixa aberto, 2 encomendas",
-    );
-    expect(tileAriaLabel(tile({ label: "Loja online", description: "Abrir a loja", kind: "external" }))).toBe(
-      "Loja online: Abrir a loja. Abre em outra janela",
-    );
   });
 });

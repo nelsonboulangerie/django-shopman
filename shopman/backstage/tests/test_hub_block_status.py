@@ -142,6 +142,8 @@ def test_marketing_diz_as_decisoes_da_fila_e_as_campanhas_ligadas(client):
 
     assert marketing["status_attention"] == "1 decisão"
     assert marketing["status_summary"] == "1 campanha ligada"
+    # O número no canto do ícone na Central conta o mesmo que a frase.
+    assert marketing["attention_count"] == 1
 
 
 # ── B.I. ──────────────────────────────────────────────────────────────────────
@@ -245,6 +247,8 @@ def test_cada_bloco_so_aparece_com_estado_para_quem_abre_o_app(client):
 
     assert list(tiles) == ["purchase"]
     assert tiles["purchase"]["status_summary"] == "1 pedido a caminho"
+    # Pedido a caminho é estado calmo: não pede ninguém, e o ícone fica sem número.
+    assert tiles["purchase"]["attention_count"] == 0
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)

@@ -205,6 +205,32 @@ def test_superuser_ve_o_item_exato_de_cada_fila_com_o_gesto_do_lugar_certo(clien
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_o_numero_do_icone_conta_so_o_que_espera_um_gesto_de_quem_opera(client):
+    """O critério do número da Central (dono, 04/11/2026): o que está parado esperando um
+    gesto de quem opera. A encomenda de retirada espera o cliente e fica fora, mesmo com a
+    frase "para retirar na próxima hora" no bloco do PDV."""
+    _order_to_accept()
+    _late_ticket()
+    _late_work_order()
+    _pending_announcement()
+    _preorder_due_now()
+    admin = User.objects.create_superuser("hub-q-numero", "a@b.c", "pw")
+
+    tiles = {tile["ref"]: tile for tile in _hub(client, admin)["tiles"]}
+
+    assert tiles["pos"]["status_attention"] == "1 para retirar na próxima hora"
+    assert tiles["pos"]["attention_count"] == 0
+    assert tiles["gestor"]["attention_count"] == 1
+    assert tiles["kds"]["attention_count"] == 1
+    assert tiles["production"]["attention_count"] == 1
+    assert tiles["marketing"]["attention_count"] == 1
+    # Movimento e informação nunca viram número.
+    for ref in ("purchase", "bi", "loja"):
+        if ref in tiles:
+            assert tiles[ref]["attention_count"] == 0
+
+
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_a_ordem_e_por_urgencia_entre_apps(client):
     """O pedido 15 minutos além da meta da estação vem antes do pedido novo de 1 minuto."""
     _order_to_accept(minutes_ago=1)
@@ -321,6 +347,10 @@ def test_aviso_nao_visto_de_pedido_leva_ao_pedido_no_gestor(client):
     assert alerts[0]["title"] == "Cliente solicitou cancelamento"
     gestor_tile = next(tile for tile in hub["tiles"] if tile["ref"] == "gestor")
     assert "1 aviso" in gestor_tile["status_attention"]
+    # O aviso soma no número do ícone com o que mais o bloco pede (as partes da frase).
+    assert gestor_tile["attention_count"] == sum(
+        int(part.split()[0]) for part in gestor_tile["status_attention"].split(" · ")
+    )
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
@@ -422,6 +452,13 @@ def test_a_linha_de_estado_do_bloco_concorda_com_a_fila(client):
     # Sem pedido de compra: o estado calmo, nunca um número inventado (todo bloco tem estado).
     assert tiles["purchase"]["status_attention"] == ""
     assert tiles["purchase"]["status_summary"] == "Nenhum pedido em andamento"
+    # O número no canto do ícone (Central) conta o mesmo que a frase de cada bloco.
+    assert {ref: tiles[ref]["attention_count"] for ref in ("gestor", "kds", "production", "purchase")} == {
+        "gestor": 1,
+        "kds": 1,
+        "production": 1,
+        "purchase": 0,
+    }
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)

@@ -13,6 +13,8 @@ export interface HubTileProjection {
   kind: "launch" | "external";
   /** A parte da linha de estado que pede alguém ("1 para aceitar"); vazia quando nada pede. */
   status_attention: string;
+  /** Quantas coisas a `status_attention` conta: o número no canto do ícone. Zero: nada pede alguém. */
+  attention_count: number;
   /** O resto da linha de estado, calmo ("11 ativos"); vazio quando o app não tem fonte. */
   status_summary: string;
   /** O estado bom e sabido ("Caixa aberto", "Aberta"): ponto verde quando nada pede alguém. */
