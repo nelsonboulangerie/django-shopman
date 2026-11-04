@@ -45,6 +45,36 @@ erro estável. Projection v2 não transporta copy de UX, PII ou membership; aç�
 resolvidas pelo backend. Rotas e ownership:
 [`marketing-surface-contract.md`](marketing-surface-contract.md).
 
+### Central (hub): o número no canto do ícone
+
+A Central (`shopman/backstage/projections/hub.py`, `GET /api/v1/backstage/hub/`) é uma
+grade de ícones: cada app é o ícone e o nome, e no máximo um indicador, o número no
+canto superior direito do ícone (`attention_count` do tile; dono, 04/11/2026).
+
+**Para que serve o número:** quantas coisas estão paradas esperando um gesto de quem
+está operando, agora, que esta pessoa pode resolver. Movimento e informação não contam
+e não aparecem na Central; nem o que espera outra pessoa. Zero: o ícone fica limpo.
+
+| App | Conta | Não conta | Fonte (`projections/hub_queue.py`) |
+|---|---|---|---|
+| Gestor de Pedidos | pedido novo para aceitar; aviso de erro ou crítico não visto que se resolve no pedido | pedidos ativos do dia | `_orders`, `_alerts` |
+| Cozinha | pedido de estação que passou da meta | pedidos nas estações | `_kds` |
+| PDV | nada | encomenda para retirar na próxima hora (espera o cliente chegar), encomendas do dia, caixa aberto ou fechado | `_preorders`, `_pos_cash` |
+| Produção | lote iniciado que passou do tempo da receita; aviso de erro ou crítico não visto (insumo insuficiente, por exemplo) | lotes finalizados hoje | `_production`, `_alerts` |
+| Marketing | anúncio esperando decisão | campanhas ligadas | `_marketing_status` |
+| Compras | nada | pedido a caminho (espera o fornecedor) | `_purchase_status` |
+| B.I. | nada | vendas do período | `_bi_status` |
+| Loja online | nada | aberta, pedidos online | `_store_status` |
+
+Permissão: cada fonte só roda para quem passa no predicado da porta do app
+(`_SOURCES`), e os avisos só entram para quem opera o app onde eles se resolvem; o
+número é sempre do que esta pessoa pode resolver. O nome falado do ícone é o app e o
+que o número conta, por extenso ("Gestor de Pedidos, 1 para aceitar"). A frase
+`status_attention` continua no contrato (o trocador de apps do kit a mostra); a do PDV
+existe sem número. Travas: `shopman/backstage/tests/test_hub_queue.py`
+(`test_o_numero_do_icone_conta_so_o_que_espera_um_gesto_de_quem_opera`) e
+`surfaces/hub-nuxt/tests/hubAppIndicator.test.ts`.
+
 ## Mudou o contrato de propósito?
 
 ```bash

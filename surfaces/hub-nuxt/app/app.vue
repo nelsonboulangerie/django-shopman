@@ -9,8 +9,9 @@
 // o selo abre a gaveta (a Central não tem
 // trocador: trocar de app não passa por ela, é ela). A página é o `OperatorPageHeader`
 // (saudação, selo de cadência, busca da suíte, avisos da tela e o ⋯ único) e o conteúdo:
-// os apps, cada um com a linha de estado e, quando há, a pendência mais urgente dele como
-// ação direta (leva ao item exato); os apps com pendência vêm primeiro. Tudo já vem filtrado por permissão.
+// os apps como uma grade de ícones, na ordem de sempre, cada um só com o ícone, o nome e,
+// quando algo pede alguém, o número no canto do ícone (dono, 04/11/2026: "simplifique").
+// O detalhe mora dentro do app. Tudo já vem filtrado por permissão.
 // Sem CRUD: cada bloco abre a superfície dedicada (ou deep-linka pro Unfold, no caso da
 // Loja). Herda do kit o OfflineBanner, o re-gate de 401 (useOperatorSession) e
 // httpErrorMessage.
@@ -21,11 +22,11 @@
 import type { OperatorScreenAlert } from "../../operator-kit/app/presentation/screenState";
 import type { OperatorHeaderAction } from "../../operator-kit/app/presentation/pageHeader";
 import type { HubFailure } from "~/presentation/hub";
-import type { HubQueueItemProjection, HubTileProjection } from "~/types/hub";
+import type { HubTileProjection } from "~/types/hub";
 import type { OperatorSession } from "../../operator-kit/app/types/operator";
 import { useNow } from "@vueuse/core";
+import { countChipProps } from "../../operator-kit/app/presentation/countChip";
 import {
-  APPS_HINT_COPY,
   HUB_NAMED_OF,
   HUB_REFRESH_LABEL,
   HUB_REFRESH_SHORT_LABEL,
@@ -36,18 +37,15 @@ import {
   hubDateLine,
   hubGreeting,
   hubIsEmpty,
-  nextItemMeta,
-  queueActionAriaLabel,
   readClockLabel,
   serverClockOffset,
   staleQueueAlert,
   tileAriaLabel,
+  tileAttentionCount,
   tileIcon,
   tileIconStyle,
   tileIconUrl,
   tileLinkAttrs,
-  tilesByPendency,
-  tileStatus,
 } from "~/presentation/hub";
 
 // O que só o navegador sabe (a origem da janela, o fuso, se a Central está instalada)
@@ -109,10 +107,7 @@ const stationSetup = useStationSetupOffer({
   stationRef: computed(() => stationSession.value?.station ?? ""),
 });
 
-// Os apps com pendência primeiro, na ordem de sempre entre si (a lista não pula quando
-// a urgência muda). O relógio anda a cada segundo (a contagem "aceita sozinho em 2:40"
-// não congela entre uma leitura e outra) e conta pela hora do servidor.
-const sortedTiles = computed(() => tilesByPendency(tiles.value));
+// O relógio da linha do dia conta pela hora do servidor.
 const clockOffset = ref(0);
 watch(
   () => queue.value?.server_now,
@@ -121,7 +116,7 @@ watch(
   },
   { immediate: true },
 );
-const deviceNow = useNow({ interval: 1000 });
+const deviceNow = useNow({ interval: 60_000 });
 const nowMs = computed(() => deviceNow.value.getTime() + clockOffset.value);
 // "Sexta-feira, 9 de outubro": só depois de montar (o fuso é o do dispositivo, o da loja;
 // no servidor seria o da máquina, e a hidratação divergiria).
@@ -210,17 +205,6 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
   },
 ]);
 
-// A pendência abre do mesmo jeito que o app abriria: na janela própria do app quando a
-// Central está instalada.
-function nextItemLinkAttrs(item: HubQueueItemProjection) {
-  return tileLinkAttrs({ kind: "launch", url: item.url }, linkContext.value);
-}
-
-/** O ponto de estado do bloco: a cor nunca fala sozinha (a frase está ao lado). */
-function toneDot(tile: HubTileProjection): string {
-  const tone = tileStatus(tile).tone;
-  return tone === "attention" ? "bg-warning" : tone === "positive" ? "bg-success" : "bg-(--ui-text-dimmed)";
-}
 </script>
 
 <template>
@@ -327,37 +311,41 @@ function toneDot(tile: HubTileProjection): string {
               />
 
               <template v-else>
-                <!-- Os apps: o bloco inteiro é o link para o app, com a linha de estado.
-                     A pendência mais urgente de cada app (`next_item`) é a ação direta da
-                     linha, que leva ao item exato; os apps com pendência vêm primeiro, na
-                     ordem de sempre entre si (dono, 09/10/2026: "Precisa de você" saiu, porque
-                     empurrava os apps para baixo e repetia o que cada app já diz). -->
                 <!-- No celular, a saudação é o título da página (dono, 04/11/2026): o selo da
                      linha do chão diz só "Central". Na mesa ela já é o título do cabeçalho. -->
                 <h1 class="-mb-2 text-xl font-semibold text-highlighted md:hidden" data-hub-phone-greeting>
                   {{ hubGreeting(operatorName) }}
                 </h1>
+                <!-- Os apps: grade de ícones, duas colunas no celular e mais na mesa, ícone
+                     grande na cor do app e o nome embaixo (dono, 04/11/2026: "Simplifique",
+                     "ícones em grade, como o Odoo faz"). No máximo um indicador: o número no
+                     canto superior direito do ícone (o chip de contagem da suíte, o do sino),
+                     que conta o que está parado esperando um gesto de quem opera
+                     (`attention_count`, critério na projection). Em dia, nada. O detalhe
+                     mora dentro do app. A ordem é a do registro: o ícone não troca de lugar. -->
                 <section aria-labelledby="hub-apps-title">
-                  <div class="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <h2 id="hub-apps-title" class="text-base font-semibold">Apps</h2>
-                    <OperatorCountChip :count="tiles.length" />
-                    <p class="ms-auto text-xs text-muted max-md:hidden">{{ APPS_HINT_COPY }}</p>
-                  </div>
-
-                  <!-- Celular: os apps como linhas de 62 px, com chevron; nome e estado
-                       quebram, nunca cortam. -->
-                  <NuxtCard class="md:hidden" :ui="{ body: 'p-0 sm:p-0' }">
-                    <ul class="divide-y divide-default" data-hub-apps-phone>
-                      <li v-for="tile in sortedTiles" :key="tile.ref" data-hub-app-item>
-                        <a
-                          :href="tile.url"
-                          :target="tileLinkAttrs(tile, linkContext).target"
-                          :rel="tileLinkAttrs(tile, linkContext).rel"
-                          class="flex min-h-[62px] items-center gap-3 px-4 py-2 transition-colors active:bg-elevated"
-                          data-hub-app-row
+                  <h2 id="hub-apps-title" class="sr-only">Apps</h2>
+                  <ul
+                    class="mx-auto grid w-full max-w-4xl grid-cols-2 gap-x-3 gap-y-4 pt-2 sm:grid-cols-3 md:grid-cols-4 md:gap-y-6 md:pt-6 lg:grid-cols-6"
+                    data-hub-apps
+                  >
+                    <li v-for="tile in tiles" :key="tile.ref" data-hub-app-item>
+                      <a
+                        :href="tile.url"
+                        :target="tileLinkAttrs(tile, linkContext).target"
+                        :rel="tileLinkAttrs(tile, linkContext).rel"
+                        :aria-label="tileAriaLabel(tile)"
+                        class="group flex flex-col items-center gap-2.5 rounded-xl px-2 py-3 text-center transition-colors hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:bg-elevated"
+                        data-hub-app-link
+                        :data-attention="tileAttentionCount(tile) || undefined"
+                      >
+                        <NuxtChip
+                          v-bind="countChipProps(tileAttentionCount(tile) || 1)"
+                          :show="tileAttentionCount(tile) > 0"
+                          position="top-right"
                         >
                           <span
-                            class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg text-primary"
+                            class="grid size-20 place-items-center overflow-hidden rounded-2xl text-primary shadow-sm"
                             :class="tileImageSrc(tile) || tileIconStyle(tile) ? '' : 'bg-primary/10'"
                             :style="tileImageSrc(tile) ? undefined : tileIconStyle(tile) ?? undefined"
                           >
@@ -365,150 +353,19 @@ function toneDot(tile: HubTileProjection): string {
                               v-if="tileImageSrc(tile)"
                               :src="tileImageSrc(tile)!"
                               :data-app-icon="tile.ref"
-                              class="size-10 rounded-lg"
+                              class="size-20 rounded-2xl"
                               alt=""
                               loading="lazy"
                               decoding="async"
                               @error="brokenTileIcons.add(tile.ref)"
                             >
-                            <NuxtIcon v-else :name="tileIcon(tile.icon)" class="size-5" />
+                            <NuxtIcon v-else :name="tileIcon(tile.icon)" class="size-9" />
                           </span>
-                          <span class="min-w-0 flex-1">
-                            <span class="block text-base font-semibold leading-tight" data-tile-title>{{ tile.label }}</span>
-                            <span v-if="tileStatus(tile).hasStatus" class="flex min-w-0 items-start gap-1.5 text-xs" data-tile-status>
-                              <span class="mt-1 size-[7px] shrink-0 rounded-full" :class="toneDot(tile)" aria-hidden="true" />
-                              <span class="min-w-0">
-                                <template v-for="(part, index) in tileStatus(tile).parts" :key="part.role">
-                                  <span v-if="index" class="text-muted"> · </span>
-                                  <span :class="part.role === 'attention' ? 'font-semibold text-warning' : 'text-muted'">{{ part.text }}</span>
-                                </template>
-                              </span>
-                            </span>
-                          </span>
-                          <NuxtIcon
-                            :name="tile.kind === 'external' ? 'i-lucide-external-link' : 'i-lucide-chevron-right'"
-                            class="size-5 shrink-0 text-muted"
-                            aria-hidden="true"
-                          />
-                        </a>
-                        <div v-if="tile.next_item" class="px-4 pb-3 ps-[68px]" data-hub-app-next>
-                          <NuxtButton
-                            :to="tile.next_item.url"
-                            :target="nextItemLinkAttrs(tile.next_item).target"
-                            :rel="nextItemLinkAttrs(tile.next_item).rel"
-                            :aria-label="queueActionAriaLabel(tile.next_item)"
-                            color="neutral"
-                            variant="outline"
-                            block
-                            trailing-icon="i-lucide-arrow-right"
-                            class="justify-between text-start"
-                            data-hub-app-next-action
-                          >
-                            <span class="min-w-0 whitespace-normal">
-                              <span class="block font-semibold">{{ tile.next_item.title }}</span>
-                              <span
-                                v-if="nextItemMeta(tile.next_item, nowMs)"
-                                class="block text-xs font-normal"
-                                :class="tile.next_item.attention ? 'text-warning' : 'text-muted'"
-                              >{{ nextItemMeta(tile.next_item, nowMs) }}</span>
-                            </span>
-                          </NuxtButton>
-                        </div>
-                      </li>
-                    </ul>
-                  </NuxtCard>
-
-                  <!-- Tablet e mesa: o destaque navegável canônico (`NuxtPageCard`). A
-                       grade tem linhas de mesma altura; o texto quebra, nunca corta. -->
-                  <NuxtPageGrid class="hidden auto-rows-fr gap-3 md:grid md:grid-cols-2 lg:grid-cols-4 lg:gap-3">
-                    <NuxtPageCard
-                      v-for="tile in sortedTiles"
-                      :key="tile.ref"
-                      :to="tile.url"
-                      :target="tileLinkAttrs(tile, linkContext).target"
-                      :rel="tileLinkAttrs(tile, linkContext).rel"
-                      :aria-label="tileAriaLabel(tile)"
-                      :title="tile.label"
-                      :description="tile.description"
-                      data-hub-app-card
-                    >
-                      <template #leading>
-                        <span
-                          class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg text-primary"
-                          :class="tileImageSrc(tile) || tileIconStyle(tile) ? '' : 'bg-primary/10'"
-                            :style="tileImageSrc(tile) ? undefined : tileIconStyle(tile) ?? undefined"
-                        >
-                          <img
-                            v-if="tileImageSrc(tile)"
-                            :src="tileImageSrc(tile)!"
-                            :data-app-icon="tile.ref"
-                            class="size-10 rounded-lg"
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                            @error="brokenTileIcons.add(tile.ref)"
-                          >
-                          <NuxtIcon v-else :name="tileIcon(tile.icon)" class="size-5" />
-                        </span>
-                      </template>
-                      <template #title>
-                        <span class="inline-flex items-center gap-1.5" data-tile-title>
-                          {{ tile.label }}
-                          <NuxtIcon
-                            v-if="tile.kind === 'external'"
-                            name="i-lucide-external-link"
-                            class="size-4 text-muted"
-                            aria-hidden="true"
-                          />
-                        </span>
-                      </template>
-                      <template v-if="tileStatus(tile).hasStatus || tile.next_item" #footer>
-                        <span v-if="tileStatus(tile).hasStatus" class="flex min-w-0 items-start gap-2 text-sm" data-tile-status>
-                          <span
-                            class="mt-1.5 size-[7px] shrink-0 rounded-full"
-                            :class="toneDot(tile)"
-                            :data-tile-tone="tileStatus(tile).tone"
-                            aria-hidden="true"
-                          />
-                          <span class="min-w-0">
-                            <template v-for="(part, index) in tileStatus(tile).parts" :key="part.role">
-                              <span v-if="index" class="text-muted"> · </span>
-                              <span
-                                :class="{
-                                  'font-semibold text-warning': part.role === 'attention',
-                                  'text-muted': part.role === 'neutral' && tileStatus(tile).tone === 'attention',
-                                }"
-                              >{{ part.text }}</span>
-                            </template>
-                          </span>
-                        </span>
-                        <!-- `relative z-[1]`: acima do link do cartão (a camada que cobre o
-                             cartão inteiro), para a pendência levar ao item e não ao app. -->
-                        <NuxtButton
-                          v-if="tile.next_item"
-                          :to="tile.next_item.url"
-                          :target="nextItemLinkAttrs(tile.next_item).target"
-                          :rel="nextItemLinkAttrs(tile.next_item).rel"
-                          :aria-label="queueActionAriaLabel(tile.next_item)"
-                          color="neutral"
-                          variant="outline"
-                          block
-                          trailing-icon="i-lucide-arrow-right"
-                          class="relative z-[1] mt-2 justify-between text-start"
-                          data-hub-app-next-action
-                        >
-                          <span class="min-w-0 whitespace-normal">
-                            <span class="block font-semibold">{{ tile.next_item.title }}</span>
-                            <span
-                              v-if="nextItemMeta(tile.next_item, nowMs)"
-                              class="block text-xs font-normal"
-                              :class="tile.next_item.attention ? 'text-warning' : 'text-muted'"
-                            >{{ nextItemMeta(tile.next_item, nowMs) }}</span>
-                          </span>
-                        </NuxtButton>
-                      </template>
-                    </NuxtPageCard>
-                  </NuxtPageGrid>
+                        </NuxtChip>
+                        <span class="text-sm leading-tight font-semibold text-highlighted" data-tile-title>{{ tile.label }}</span>
+                      </a>
+                    </li>
+                  </ul>
                 </section>
               </template>
 

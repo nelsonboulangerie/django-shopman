@@ -98,6 +98,14 @@ class HubAppStatusProjection:
     """A linha de estado do bloco de um app, que concorda com a fila."""
 
     attention: str = ""  # o que pede alguém ("1 para aceitar"), pintado de âmbar
+    #: O número no canto do ícone do app na Central (dono, 04/11/2026). Critério, numa
+    #: frase: **quantas coisas estão paradas esperando um gesto de quem está operando,
+    #: agora, que esta pessoa pode resolver.** Movimento e informação não contam (ativos,
+    #: lotes finalizados, caixa aberto, pedido a caminho), e nem o que espera outra pessoa
+    #: (a encomenda de retirada espera o cliente; a compra espera o fornecedor). Conta:
+    #: pedido para aceitar e aviso do Gestor; pedido atrasado na estação; lote que passou
+    #: do tempo e aviso da Produção; decisão do Marketing. A soma das partes que contam.
+    attention_count: int = 0
     summary: str = ""  # o resto, calmo ("11 ativos")
     #: O estado bom e sabido ("Caixa aberto", "Aberta"): ponto verde quando nada pede alguém.
     positive: str = ""
@@ -253,6 +261,7 @@ def _orders(user, base: str, label: str, now: datetime, out: _Collected) -> None
         out.statuses.get("gestor"),
         HubAppStatusProjection(
             attention=f"{len(to_accept)} para aceitar" if to_accept else "",
+            attention_count=len(to_accept),
             summary=_plural(len(today_work), "ativo", "ativos"),
         ),
     )
@@ -316,6 +325,7 @@ def _kds(user, base: str, label: str, now: datetime, out: _Collected) -> None:
 
     out.statuses["kds"] = HubAppStatusProjection(
         attention=_plural(late, "pedido atrasado", "pedidos atrasados") if late else "",
+        attention_count=late,
         summary=_plural(len(on_today), "pedido nas estações", "pedidos nas estações"),
     )
 
@@ -370,6 +380,8 @@ def _preorders(user, base: str, label: str, now: datetime, out: _Collected) -> N
     out.statuses["pos"] = _merge_status(
         out.statuses.get("pos"),
         HubAppStatusProjection(
+            # Fora do número da Central: a encomenda de retirada espera o CLIENTE chegar,
+            # não um gesto de quem opera (o critério está em `HubAppStatusProjection`).
             attention=f"{due_now} para retirar na próxima hora" if due_now else "",
             summary=_plural(len(open_pickups), "encomenda para retirar hoje", "encomendas para retirar hoje"),
         ),
@@ -425,6 +437,7 @@ def _production(user, base: str, label: str, now: datetime, out: _Collected) -> 
         out.statuses.get("production"),
         HubAppStatusProjection(
             attention=_plural(late, "lote passou do tempo", "lotes passaram do tempo") if late else "",
+            attention_count=late,
             # Todo bloco tem estado (prévia v4): dia sem lote também é um fato.
             summary=f"{finished} de {_plural(total, 'lote finalizado hoje', 'lotes finalizados hoje')}"
             if total
@@ -558,7 +571,7 @@ def _alerts(user, urls: dict[str, str], labels: dict[str, str], now: datetime, o
     for app, count in counts.items():
         out.statuses[app] = _merge_status(
             out.statuses.get(app),
-            HubAppStatusProjection(attention=_plural(count, "aviso", "avisos")),
+            HubAppStatusProjection(attention=_plural(count, "aviso", "avisos"), attention_count=count),
         )
 
 
@@ -593,6 +606,7 @@ def _marketing_status(user, base: str, label: str, now: datetime, out: _Collecte
         out.statuses.get("marketing"),
         HubAppStatusProjection(
             attention=_plural(pending, "decisão", "decisões") if pending else "",
+            attention_count=pending,
             summary=_plural(decisions.active_campaign_count, "campanha ligada", "campanhas ligadas")
             if decisions.active_campaign_count
             else "Nenhuma campanha ligada",
@@ -715,6 +729,7 @@ def _merge_status(current: HubAppStatusProjection | None, extra: HubAppStatusPro
         return extra
     return HubAppStatusProjection(
         attention=" · ".join(part for part in (current.attention, extra.attention) if part),
+        attention_count=current.attention_count + extra.attention_count,
         summary=" · ".join(part for part in (current.summary, extra.summary) if part),
         positive=" · ".join(part for part in (current.positive, extra.positive) if part),
     )

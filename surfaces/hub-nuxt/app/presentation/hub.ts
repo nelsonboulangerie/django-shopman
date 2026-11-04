@@ -10,7 +10,7 @@ import {
   EXTERNAL_LINK_ATTRS,
   type CrossAppLinkAttrs,
 } from "../../../operator-kit/app/presentation/appLaunch";
-import type { HubQueueItemProjection, HubTileProjection } from "~/types/hub";
+import type { HubTileProjection } from "~/types/hub";
 
 // Presentation pura da Central — sem estado, sem Nuxt; testável isolada.
 
@@ -176,14 +176,10 @@ export function hubFailureCopy(failure: HubFailure): { title: string; hint: stri
   }
 }
 
-// ── A pendência de cada app (UX-H1; dono, 09/10/2026) ────────────────────────
+// ── O relógio do servidor ─────────────────────────────────────────────────
 //
-// A seção "Precisa de você" saiu: cada linha de app traz a pendência mais urgente dele
-// (`next_item`), como ação direta que leva ao item exato. O Django manda os instantes (ISO)
-// e a Central conta o tempo aqui, com um relógio que anda
-// a cada segundo: "aceita sozinho em 2:40" não pode congelar entre uma leitura e outra. A
-// conta usa a hora do SERVIDOR (`server_now`) como referência, para um dispositivo com o
-// relógio errado não dizer "há 3 horas" de um pedido que chegou agora.
+// A linha do dia ("Quarta-feira, 4 de novembro") conta pela hora do SERVIDOR
+// (`server_now`), para um dispositivo com o relógio errado não dizer outro dia.
 
 /** Diferença entre o relógio do servidor e o do dispositivo, em ms (somar ao `Date.now()`). */
 export function serverClockOffset(serverNowIso: string, deviceNowMs: number): number {
@@ -191,110 +187,18 @@ export function serverClockOffset(serverNowIso: string, deviceNowMs: number): nu
   return Number.isFinite(server) ? server - deviceNowMs : 0;
 }
 
-/** "5 min", "1h 05": a duração como o operador lê, sem segundos. */
-export function durationLabel(seconds: number): string {
-  const minutes = Math.floor(Math.max(0, seconds) / 60);
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest ? `${hours}h ${String(rest).padStart(2, "0")}` : `${hours}h`;
-}
+// ── O indicador do app (dono, 04/11/2026: "simplifique") ─────────────────────
+//
+// Cada app é o ícone e o nome, e no máximo UM indicador: o número no canto superior
+// direito do ícone, como o do sino, só quando algo pede alguém (`attention_count`).
+// Em dia, nada. O detalhe (qual pedido, há quanto tempo, o resto do estado) mora
+// dentro do app. A ordem é a do registro, sempre: o ícone não troca de lugar quando a
+// pendência muda, e a mão acha o app onde ele sempre esteve.
 
-/** "2:40": a contagem regressiva até o prazo; "0:00" quando já venceu. */
-export function countdownLabel(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
-}
-
-function secondsBetween(fromIso: string, nowMs: number): number | null {
-  const from = Date.parse(fromIso || "");
-  return Number.isFinite(from) ? (nowMs - from) / 1000 : null;
-}
-
-/**
- * O tempo da linha, à direita: há quanto o item espera ("há 14 min") ou quanto falta para
- * o prazo ("em 27 min"). Prazo vencido diz que passou ("passou há 3 min"), nunca um
- * número negativo.
- */
-export function queueTimeLabel(item: HubQueueItemProjection, nowMs: number): string {
-  if (item.time_mode === "until") {
-    const elapsed = secondsBetween(item.due_at, nowMs);
-    if (elapsed === null) return "";
-    if (elapsed >= 60) return `passou há ${durationLabel(elapsed)}`;
-    if (elapsed > -60) return "agora";
-    return `em ${durationLabel(-elapsed)}`;
-  }
-  const waited = secondsBetween(item.waiting_since, nowMs);
-  if (waited === null) return "";
-  return waited < 60 ? "agora" : `há ${durationLabel(waited)}`;
-}
-
-/**
- * O prazo dentro da frase do item: "aceita sozinho em 2:40", "retira às 10:30",
- * "decide até 10:15". Contagem vencida some: o que ela anunciava já aconteceu, e a
- * próxima leitura traz o item no estado novo.
- */
-export function queueDueText(item: HubQueueItemProjection, nowMs: number): string {
-  if (!item.due_label) return "";
-  if (item.due_style === "clock") return item.due_clock ? `${item.due_label} ${item.due_clock}` : "";
-  if (item.due_style === "countdown") {
-    const elapsed = secondsBetween(item.due_at, nowMs);
-    if (elapsed === null || elapsed >= 0) return "";
-    return `${item.due_label} ${countdownLabel(-elapsed)}`;
-  }
-  return "";
-}
-
-/** O nome acessível do gesto: o verbo sozinho ("Revisar") não diz o quê. */
-export function queueActionAriaLabel(item: HubQueueItemProjection): string {
-  return `${item.action_label}: ${item.title}`;
-}
-
-/**
- * A linha miúda da pendência, sob o título dela: o prazo, quando ele corre ("aceita
- * sozinho em 2:40", "retira às 10:30"); senão há quanto espera ("há 14 min").
- */
-export function nextItemMeta(item: HubQueueItemProjection, nowMs: number): string {
-  return queueDueText(item, nowMs) || queueTimeLabel(item, nowMs);
-}
-
-/**
- * Os apps com pendência primeiro, cada grupo na ordem do registro (a de sempre): a lista
- * não pula quando a urgência entre apps muda, só quando um app passa a ter (ou deixa de
- * ter) algo para alguém.
- */
-export function tilesByPendency(tiles: readonly HubTileProjection[]): HubTileProjection[] {
-  return [...tiles.filter((tile) => tile.next_item), ...tiles.filter((tile) => !tile.next_item)];
-}
-
-/**
- * A linha de estado do bloco do app: a parte que pede alguém vem primeiro, em âmbar; depois
- * o estado bom e sabido ("Caixa aberto"); depois o resto, calmo. O ponto diz o tom da linha:
- * âmbar quando algo pede alguém, verde quando o app está bem e diz isso, neutro no resto.
- * A cor nunca fala sozinha: a frase está sempre escrita ao lado.
- */
-export type TileStatusTone = "attention" | "positive" | "neutral";
-
-export function tileStatus(
-  tile: Pick<HubTileProjection, "status_attention" | "status_summary"> & Partial<Pick<HubTileProjection, "status_positive">>,
-): {
-  attention: string;
-  positive: string;
-  summary: string;
-  parts: { text: string; role: TileStatusTone }[];
-  tone: TileStatusTone;
-  hasStatus: boolean;
-} {
-  const attention = (tile.status_attention || "").trim();
-  const positive = (tile.status_positive || "").trim();
-  const summary = (tile.status_summary || "").trim();
-  const parts = [
-    { text: attention, role: "attention" as const },
-    { text: positive, role: "positive" as const },
-    { text: summary, role: "neutral" as const },
-  ].filter((part) => part.text);
-  const tone: TileStatusTone = attention ? "attention" : positive ? "positive" : "neutral";
-  return { attention, positive, summary, parts, tone, hasStatus: parts.length > 0 };
+/** Quantas coisas o app pede: o número do canto do ícone (0 = nada aparece). */
+export function tileAttentionCount(tile: Pick<HubTileProjection, "attention_count">): number {
+  const count = Number(tile.attention_count);
+  return Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
 }
 
 /** A cada quantos ms a Central relê a fila. Sem canal SSE próprio, o poll é calmo (ADR-016). */
@@ -324,16 +228,15 @@ export function staleQueueAlert(readClock: string): { title: string; description
 }
 
 /**
- * O nome acessível do bloco do app: o nome, para que serve e a linha de estado inteira.
- * O link do cartão cobre o cartão todo; sem isto o leitor de tela ouviria só "PDV".
+ * O nome acessível do app: o nome e, quando há, o que o número do canto conta, por
+ * extenso ("Gestor de Pedidos, 1 para aceitar"). O número sozinho não diz o quê.
  */
 export function tileAriaLabel(
-  tile: Pick<HubTileProjection, "label" | "description" | "kind" | "status_attention" | "status_summary"> &
-    Partial<Pick<HubTileProjection, "status_positive">>,
+  tile: Pick<HubTileProjection, "label" | "kind" | "status_attention" | "attention_count">,
 ): string {
-  const status = tileStatus(tile).parts.map((part) => part.text).join(", ");
-  const opens = tile.kind === "external" ? "Abre em outra janela" : "";
-  return [`${tile.label}: ${tile.description}`, status, opens].filter(Boolean).join(". ");
+  const attention = tileAttentionCount(tile) ? (tile.status_attention || "").trim().split(" · ").join(", ") : "";
+  const name = attention ? `${tile.label}, ${attention}` : tile.label;
+  return tile.kind === "external" ? `${name}. Abre em outra janela` : name;
 }
 
 // ── Camada visual da suíte (prévia v4, `hub4.html`) ─────────────────────────
@@ -343,9 +246,6 @@ export function tileAriaLabel(
  * do operador moram no pé dela (no celular, na gaveta do ☰).
  */
 export const HUB_SECTIONS = [{ key: "home", label: "Início", icon: "lucide:house", to: "/" }];
-
-/** A frase ao lado do título de Apps: quem tem um app só entra direto nele. */
-export const APPS_HINT_COPY = "Quem tem um app só não passa por aqui: entra direto na fila do app.";
 
 /**
  * A linha fina sob a saudação: "10:03 · Sábado, 3 de outubro". A hora é a do servidor
