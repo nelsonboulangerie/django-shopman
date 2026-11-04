@@ -37,8 +37,9 @@ Medido contra `origin/main` em `caf450360`. A Onda 1 (T1 a T12) está entregue:
 | T11 Worker que se cura | #2003 | |
 | T12 Runbooks que agem no vivo | #2000 | |
 
-Em andamento em 02/11: T13 (E2E do Dia 1 na CI), T14 (higiene de segurança do GitHub),
-T15 (checks obrigatórios completos), itens (2) a (5) do Doorman e WP-RELEASE-01.
+Fechados até 04/11: T13 (E2E do Dia 1 na CI, #2088), T14 (higiene de segurança do GitHub,
+#2077/#2078/#2079), T15 (28 checks obrigatórios), itens (2) a (5) do Doorman (#2082, #2084) e
+WP-RELEASE-01 R0/R1 (#2076, #2080). Segue aberto o WP-RELEASE-01 de R2 em diante.
 
 ## 1. Veredito
 
