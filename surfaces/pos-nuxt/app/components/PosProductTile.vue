@@ -10,6 +10,8 @@ const props = defineProps<{
   disabled?: boolean;
   /** Toque (v4 tablet): tile sem SKU e faixa mais alta, o alvo é o dedo. */
   touch?: boolean;
+  /** A vista Lista (dono, 03/11/2026): uma linha por produto, a miniatura, o nome e o preço. */
+  row?: boolean;
 }>();
 
 defineEmits<{
@@ -39,10 +41,51 @@ const strikePrice = computed(() => productStrikePrice(props.product));
 </script>
 
 <template>
+  <!-- LISTA: a mesma ação do tile, numa linha. Miniatura (foto ou o desenho da coleção),
+       o nome em até duas linhas, o preço e a quantidade já lançada; Escolhas e Esgotado
+       com a mesma pílula do tile. -->
+  <NuxtButton
+    v-if="row"
+    color="neutral"
+    variant="ghost"
+    class="flex w-full items-center gap-3 rounded-lg border bg-card px-2 text-left font-normal text-card-foreground transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0"
+    :class="[touch ? 'min-h-16 py-2' : 'min-h-12 py-1.5', qty > 0 ? 'border-primary' : 'border-border']"
+    :disabled="inert"
+    :aria-label="opensChoice ? `${product.name}: abre as escolhas` : undefined"
+    :data-pos-product-options="opensChoice ? '' : undefined"
+    data-pos-product
+    data-pos-product-row
+    @click="$emit('add', product)"
+  >
+    <span class="relative grid shrink-0 place-items-center overflow-hidden rounded-md" :class="[touch ? 'size-12' : 'size-9', inert ? 'opacity-55' : '']">
+      <img v-if="showImage" :src="product.image_url" alt="" loading="lazy" class="size-full object-cover" @error="imageBroken = true" />
+      <span v-else class="pos-tile-fallback grid size-full place-items-center" :style="fallbackStyle" aria-hidden="true">
+        <Icon :name="fallbackIcon" :class="touch ? 'size-6' : 'size-5'" />
+      </span>
+    </span>
+    <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+      <span class="line-clamp-2 op-label leading-tight font-semibold" :class="inert ? 'text-muted-foreground' : ''" :title="product.name" data-pos-product-name>{{ product.name }}</span>
+      <span v-if="opensChoice || blockedLabel === 'Esgotado'" class="flex items-center gap-1.5">
+        <span v-if="opensChoice" class="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold"><Icon name="lucide:layers" class="size-3" />Escolhas</span>
+        <span v-if="blockedLabel === 'Esgotado'" class="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold text-muted-foreground"><span class="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />Esgotado</span>
+      </span>
+    </span>
+    <span class="flex shrink-0 flex-col items-end gap-0.5" data-pos-product-price>
+      <strong class="op-title tnum whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
+      <s v-if="strikePrice" class="op-micro tnum text-muted-foreground" aria-hidden="true" data-pos-product-list-price>{{ strikePrice }}</s>
+      <span v-if="strikePrice" class="sr-only">, {{ product.discount_label ? `${product.discount_label}, ` : "" }}antes {{ strikePrice }}</span>
+    </span>
+    <span
+      v-if="qty > 0"
+      class="grid h-7 min-w-7 shrink-0 place-items-center rounded-full bg-primary px-1.5 op-label font-bold tabular-nums text-primary-foreground"
+      :aria-label="`${qty} no pedido`"
+    >{{ qty }}</span>
+  </NuxtButton>
   <!-- Tile da v4 (`pos-sale4.html`): faixa de 92 px na cor da coleção com o ícone e o
        SKU, nome e preço embaixo. Com foto, a foto ocupa a faixa; se ela não carregar,
        volta o desenho da coleção (antes ficava o texto alternativo quebrado). -->
   <NuxtButton
+    v-else
     color="neutral"
     variant="ghost"
     class="group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left text-card-foreground transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0 items-stretch gap-0 p-0 font-normal"

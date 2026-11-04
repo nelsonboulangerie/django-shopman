@@ -160,6 +160,7 @@ const corridor = computed(() => posCorridorRoute(route.path));
       :current="current"
       :switcher-sections="switcherSections"
       default-form="floor"
+      floor-bar
       label="Seções do PDV"
       :operator-name="operator?.name"
       @select="select"

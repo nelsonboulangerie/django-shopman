@@ -46,7 +46,7 @@ import type { SessionTile } from "~/presentation/cash";
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import type { DayClosingResponse } from "~/types/closing";
 
-useHead({ title: "Sessão de caixa" });
+useHead({ title: "Caixa" });
 // O ao vivo discreto do cabeçalho: estado do push e hora da última leitura.
 const liveStatus = usePosLiveStatus();
 
@@ -661,9 +661,9 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
            opera à direita. -->
       <!-- No celular, a linha do chão (modelo de navegação): o selo troca de seção, e
            quem opera este caixa encabeça o ⋮. -->
-      <PosCompactBar title="Sessão de caixa" :search="false" :options="compactOptions" />
+      <PosCompactBar title="Caixa" :options="compactOptions" />
       <OperatorPageHeader
-        title="Sessão de caixa"
+        title="Caixa"
         :actions="headerActions"
         actions-label="Mais ações do caixa"
         :alerts="sessionAlerts"
@@ -1327,7 +1327,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
     <NuxtModal
       v-model:open="closingDialogOpen"
       title="Fechar caixa"
-      description="Contagem cega: conte o dinheiro do caixa e informe o valor. A conferência fica no gestor."
+      description="Contagem cega: conte o dinheiro do caixa e informe o valor. A conferência fica na retaguarda."
       :content="dialogContent('close_shift', 'closing')"
     >
       <template #body>

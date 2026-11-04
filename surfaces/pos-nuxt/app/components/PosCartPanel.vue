@@ -674,8 +674,12 @@ const sheetAction = computed<OperatorActionBarAction>(() => {
     onSelect: () => emit("prepare"),
   };
 });
+// O curto "Comanda" deixa a ação principal com o rótulo no celular: as duas trocam de
+// degrau juntas (o rótulo que cabe, kit), e sem curto o par pulava de "Ver a comanda ·
+// Enviar à cozinha" direto para dois ícones, com o gesto do momento sem nome.
 const sheetSecondary: OperatorActionBarAction = {
   label: "Ver a comanda",
+  shortLabel: "Comanda",
   icon: "i-lucide-receipt-text",
   onSelect: () => {
     sheetOpen.value = true;

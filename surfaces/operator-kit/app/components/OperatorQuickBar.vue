@@ -18,7 +18,9 @@
 //
 // A altura da barra vai para `--operator-quick-bar-inset` no `<html>` (0 sem barra), como
 // o `OfflineBanner` faz com o topo: o que flutua `fixed` na base (a pílula de aviso do
-// Gestor) sobe por ela sem adivinhar altura.
+// Gestor) sobe por ela sem adivinhar altura. Com o teclado aberto ela some
+// (`data-keyboard="open"` no `<html>`, do `plugins/visualViewport.client.ts`), como a
+// barra de ação: quem digita precisa da tela, e a altura publicada vira 0.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 
 import type { OperatorSection } from "../presentation/appBar";
@@ -93,7 +95,7 @@ const items = computed(() => [
   <div
     v-if="layout.shown"
     ref="root"
-    class="shrink-0 bg-default pb-[env(safe-area-inset-bottom)] lg:hidden print:hidden"
+    class="shrink-0 bg-default pb-[env(safe-area-inset-bottom)] lg:hidden print:hidden in-data-[keyboard=open]:hidden"
     data-operator-suite-tabs
     data-focus-obstruction
   >

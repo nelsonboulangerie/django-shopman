@@ -520,7 +520,7 @@ describe("OperatorPageHeader", () => {
     const title = wrapper.get("h1").classes();
     expect(title).not.toContain("truncate");
     expect(title).not.toEqual(expect.arrayContaining([expect.stringMatching(/^line-clamp/)]));
-    expect(title).toEqual(expect.arrayContaining(["whitespace-normal", "min-w-0"]));
+    expect(title).toEqual(expect.arrayContaining(["whitespace-normal", "min-w-min"]));
     const root = wrapper.get("[data-operator-page-header]").classes();
     expect(root).toEqual(expect.arrayContaining(["h-auto", "min-h-(--ui-header-height)"]));
     expect(root).not.toContain("h-(--ui-header-height)");
@@ -652,6 +652,34 @@ describe("OperatorPageHeader", () => {
     const show = wrapper.get("[data-page-header-show-rail]");
     await show.trigger("click");
     expect(useRailState().state.value).toBe("compact");
+  });
+
+  // O ⋮ fica no canto, o último da barra, com o sino antes dele (dono, 03/11/2026). O ⋮
+  // próprio da tela (`#more`, o menu da fila do Gestor) mora depois do sino; no `#actions`
+  // ele ficava antes.
+  it("#more fica depois do sino; #actions, antes", async () => {
+    railShown.value = false;
+    const wrapper = await mountHeader({
+      actions: '<button data-own-action>Som</button>',
+      more: '<button data-own-more>⋮</button>',
+    });
+    const html = wrapper.html();
+    const at = ["data-own-action", "data-inbox-stub", "data-own-more"].map((m) => html.indexOf(m));
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    railShown.value = true;
+  });
+
+  // Com o trocador, sem barra lateral (o tablet em pé), o selo é o da linha do chão: o
+  // app, o lugar e o ⌄. O título solto some abaixo do lg para não dizer o lugar duas vezes.
+  it("com o trocador, o selo diz o app e o lugar e o título solto some abaixo do lg", async () => {
+    useState("suite-switcher-enabled").value = true;
+    const wrapper = await mountHeader();
+    const seal = wrapper.get("[data-page-header-switcher-seal]");
+    expect(seal.classes()).toContain("lg:hidden");
+    expect(seal.attributes("aria-haspopup")).toBe("dialog");
+    expect(wrapper.get("h1").html()).toContain("max-lg:hidden");
+    useState("suite-switcher-enabled").value = false;
   });
 });
 

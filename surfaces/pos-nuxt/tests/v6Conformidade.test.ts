@@ -125,7 +125,7 @@ describe("P26: cartões do celular nas Encomendas", () => {
 });
 
 describe("P31: o passo 1 do Fim do dia é a contagem cega dentro do corredor", () => {
-  it("o passo 1 fica corrente e a tela não manda para a Sessão de caixa", () => {
+  it("o passo 1 fica corrente e a tela não manda para o Caixa", () => {
     const steps = closingSteps({ cashOpen: true, counted: 0, total: 3, step: "cash", dayClosed: false });
     expect(steps[0]).toMatchObject({ key: "cash", state: "current" });
     const page = read("../app/pages/session/closing.vue");

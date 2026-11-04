@@ -121,7 +121,8 @@ function terminalSignal(status?: PosTerminalStatus): Pick<OperatorSection, "atte
 /**
  * O trocador (modelo de navegação, 31/10/2026): as mesmas seções, cada uma com a forma
  * dela. Chão é o balcão (Comandas, Encomendas, Caixa e Fim do dia): no celular e no
- * tablet não há barra de seções, o selo troca. Escritório é o que se ajusta fora do
+ * tablet em pé são as da barra de baixo, ao alcance do polegar (dono, 03/11/2026: "seção
+ * vai para baixo"; aba no topo é só subdivisão), e o selo abre o resto. Escritório é o que se ajusta fora do
  * atendimento (Ajustes, Terminal). A Tela do cliente é a parede: abre no outro monitor.
  * A forma decide só o desenho; nenhuma tela diz o nome dela ao operador.
  */

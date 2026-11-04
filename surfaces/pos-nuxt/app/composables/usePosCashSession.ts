@@ -264,7 +264,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       // comprovante na bobina. Não tem "Tentar de novo" porque repetir não
       // resolve configuração ausente; tem o que FALTA e onde se resolve.
       toast.warning(`O comprovante não saiu: ${outcome.detail}`, {
-        description: "O movimento está registrado no livro-caixa. Configure a impressora em Terminais do PDV, no gestor.",
+        description: "O movimento está registrado no livro-caixa. Configure a impressora em Terminais do PDV, no Admin.",
       });
     } else if (opts.reprint) {
       toast.success("Segunda via enviada para a impressora.");

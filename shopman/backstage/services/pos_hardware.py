@@ -113,7 +113,7 @@ class DeviceAgentConfig:
         no lugar errado.
         """
         if not self.declared:
-            return "Impressora não configurada neste terminal. Configure em Terminais do PDV, no gestor."
+            return "Impressora não configurada neste terminal. Configure em Terminais do PDV, no Admin."
         if not self.enabled:
             return "O agente deste terminal está desligado na configuração."
         if not self.token:
@@ -243,7 +243,7 @@ class CashDrawerConfig:
     def _unavailable_reason(self) -> str:
         """Por que este balcão não abre a gaveta por software, em uma frase."""
         if not self.declared:
-            return "Gaveta não configurada neste terminal. Configure em Terminais do PDV, no gestor."
+            return "Gaveta não configurada neste terminal. Configure em Terminais do PDV, no Admin."
         if not self.enabled:
             return "A gaveta deste terminal está desligada na configuração."
         if self.adapter != ADAPTER_AGENT:

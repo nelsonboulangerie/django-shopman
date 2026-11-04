@@ -182,7 +182,7 @@ def resolve_destination(*, station_ref: str = "") -> PrintDestination:
             # JSON: `print_target_ref` era o nome da chave, e mandava o padeiro
             # procurar um campo que, até agora, não existia em tela nenhuma.
             "Há mais de uma impressora de preparação e esta estação não tem destino "
-            "escolhido. Escolha em Terminais do PDV, no gestor.",
+            "escolhido. Escolha em Terminais do PDV, no Admin.",
         )
     if invalid:
         terminal, problem = invalid[0]

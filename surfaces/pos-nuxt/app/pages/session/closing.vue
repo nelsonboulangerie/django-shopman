@@ -75,7 +75,7 @@ function workOrderHref(row: ClosingPendingProduction): string {
 const { pos, actions, refresh: refreshPos } = await usePosTerminal();
 const canAuditCash = computed(() => pos.value?.cash_runtime?.can_audit_cash === true);
 
-const { closing, pending, accessDenied, submitting, submit, answering, answerEpisode } = await useDayClosing({ action });
+const { closing, pending, accessDenied, refresh, submitting, submit, answering, answerEpisode } = await useDayClosing({ action });
 
 const dayProduction = computed(() => productionRows(closing.value?.production_summary));
 
@@ -381,7 +381,7 @@ const discrepancyColumns = [
           icon="i-lucide-x"
           label="Sair"
           to="/session"
-          aria-label="Sair do fim do dia e voltar à sessão de caixa"
+          aria-label="Sair do fim do dia e voltar ao Caixa"
           title="Sair: o que já foi contado fica na tela até você voltar"
           data-closing-exit
         />
@@ -402,7 +402,7 @@ const discrepancyColumns = [
           icon="i-lucide-x"
           label="Sair"
           to="/session"
-          aria-label="Sair do fim do dia e voltar à sessão de caixa"
+          aria-label="Sair do fim do dia e voltar ao Caixa"
           title="Sair: o que já foi contado fica na tela até você voltar"
           data-closing-exit
         />
@@ -471,7 +471,7 @@ const discrepancyColumns = [
           description="Sua conta não tem permissão para realizar o fechamento do dia. Chame quem cuida do encerramento."
         >
           <template #actions>
-            <NuxtButton color="neutral" variant="outline" icon="i-lucide-arrow-left" label="Voltar à sessão de caixa" to="/session" />
+            <NuxtButton color="neutral" variant="outline" icon="i-lucide-arrow-left" label="Voltar ao Caixa" to="/session" />
           </template>
         </OperatorScreenState>
 
@@ -508,7 +508,7 @@ const discrepancyColumns = [
                   variant="outline"
                   block
                   icon="i-lucide-arrow-left"
-                  label="Voltar à sessão de caixa"
+                  label="Voltar ao Caixa"
                   to="/session"
                 />
               </div>
@@ -901,6 +901,9 @@ const discrepancyColumns = [
         </template>
 
         <OperatorScreenState v-else-if="pending" state="loading" what="o fechamento do dia" />
+        <!-- Sem fechamento na resposta (erro ou leitura vazia): a tela diz que não veio e
+             oferece tentar de novo. Antes ela ficava em branco, só com o cabeçalho. -->
+        <OperatorScreenState v-else state="error" what="o fechamento do dia" @retry="refresh()" />
       </div>
     </div>
 

@@ -318,7 +318,16 @@ function clearAll() {
       data-operator-page-header
     >
       <template #leading>
-        <OperatorAppSeal v-if="hubUrl && !$slots.lead" :class="sealClass" />
+        <!-- Com o trocador, onde não há barra lateral (o tablet em pé; no celular a linha do
+             chão já é o cabeçalho), o selo é o mesmo da linha do chão: o app, o lugar e o
+             ⌄ que diz que ele abre o trocador. Um selo só para a suíte (dono, 03/11/2026). -->
+        <OperatorCompactSeal
+          v-if="switcherEnabled && !$slots.lead"
+          :place="title"
+          class="flex-none! lg:hidden"
+          data-page-header-switcher-seal
+        />
+        <OperatorAppSeal v-else-if="hubUrl && !$slots.lead" :class="sealClass" />
         <NuxtButton
           v-if="suiteRail"
           class="hidden lg:inline-flex"
@@ -347,8 +356,8 @@ function clearAll() {
       </template>
 
       <template #title>
-        <span :class="phoneTitle ? 'max-sm:hidden' : ''">{{ title }}</span>
-        <span v-if="phoneTitle" class="sm:hidden" data-page-header-phone-title>{{
+        <span :class="[phoneTitle ? 'max-sm:hidden' : '', switcherEnabled && !$slots.lead ? 'max-lg:hidden' : '']">{{ title }}</span>
+        <span v-if="phoneTitle && !(switcherEnabled && !$slots.lead)" class="sm:hidden" data-page-header-phone-title>{{
           phoneTitle
         }}</span>
         <NuxtBadge
@@ -462,6 +471,9 @@ function clearAll() {
           class="max-sm:hidden"
           data-page-header-more
         />
+        <!-- O ⋮ próprio da tela (um menu com estado, como o da fila do Gestor) mora aqui,
+             no canto, depois do sino. No `#actions` ele ficava antes do sino. -->
+        <slot name="more" />
       </template>
     </NuxtDashboardNavbar>
 

@@ -88,6 +88,25 @@ const density = ref<Density>("cozy");
 const densityCols = computed(() => coarsePointer.value
   ? TOUCH_COLS
   : DENSITIES.find((d) => d.key === density.value)?.cols ?? DENSITIES[1]!.cols);
+// Grade ou Lista (dono, 03/11/2026: "caso o operador prefira"): os mesmos nomes da
+// visão do Gestor (dono, 07/10/2026). Preferência do dispositivo, como a densidade e o
+// olho; vale no toque também. A densidade é só da grade.
+type ProductLayout = "grid" | "list";
+const LAYOUT_STORAGE_KEY = "pos.productLayout";
+const LAYOUTS: { key: ProductLayout; label: string; icon: string }[] = [
+  { key: "grid", label: "Grade", icon: "lucide:layout-grid" },
+  { key: "list", label: "Lista", icon: "lucide:list" },
+];
+const layout = ref<ProductLayout>("grid");
+const itemsCols = computed(() => (layout.value === "list" ? "grid-cols-1 gap-1.5 @3xl:grid-cols-2" : `gap-2.5 ${densityCols.value}`));
+function setLayout(value: ProductLayout) {
+  layout.value = value;
+  try {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, value);
+  } catch {
+    // Sem storage, a escolha vale até recarregar.
+  }
+}
 // O ponto colorido do chip de cada coleção (v4): a cor que os produtos dela já trazem.
 const collectionColors = computed(() => collectionColorMap(props.products));
 
@@ -99,6 +118,12 @@ onMounted(() => {
   if (coarsePointer.value && props.favoriteRefs.length) activeCollection.value = FAVORITES_COLLECTION;
   const stored = localStorage.getItem(DENSITY_STORAGE_KEY);
   if (stored === "compact" || stored === "cozy" || stored === "roomy") density.value = stored;
+  try {
+    const storedLayout = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    if (storedLayout === "grid" || storedLayout === "list") layout.value = storedLayout;
+  } catch {
+    layout.value = "grid";
+  }
   try {
     hideUnavailable.value = parseHideUnavailable(localStorage.getItem(HIDE_UNAVAILABLE_STORAGE_KEY));
   } catch {
@@ -239,7 +264,7 @@ function onSearchEscape() {
         <Icon name="lucide:scan-barcode" class="size-6" aria-hidden="true" />
         <span class="max-sm:sr-only">Ler código</span>
       </NuxtButton>
-      <NuxtFieldGroup v-else class="shrink-0" role="group" aria-label="Densidade da grade" title="Densidade da grade">
+      <NuxtFieldGroup v-else-if="layout === 'grid'" class="shrink-0" role="group" aria-label="Densidade da grade" title="Densidade da grade">
         <NuxtButton
           v-for="opt in DENSITIES"
           :key="opt.key"
@@ -384,6 +409,42 @@ function onSearchEscape() {
       data-pos-collections-forward
       @click="strip.step(1)"
     />
+      <!-- No toque a faixa das coleções é estreita: um botão só alterna a vista (o ícone e o
+           nome dizem a vista que ele abre). Na mesa, o par Grade | Lista. -->
+      <NuxtButton
+        v-if="coarsePointer"
+        size="xl"
+        color="neutral"
+        variant="outline"
+        class="shrink-0 whitespace-nowrap rounded-full"
+        :aria-label="layout === 'grid' ? 'Ver em lista' : 'Ver em grade'"
+        :title="layout === 'grid' ? 'Ver em lista' : 'Ver em grade'"
+        :data-pos-product-layout-option="layout === 'grid' ? 'list' : 'grid'"
+        data-pos-product-layout-toggle
+        @click="setLayout(layout === 'grid' ? 'list' : 'grid')"
+      >
+        <!-- O mesmo desenho do olho ao lado: pílula do mesmo tamanho, ícone pequeno. -->
+        <Icon :name="layout === 'grid' ? 'lucide:list' : 'lucide:layout-grid'" class="size-3.5" aria-hidden="true" />
+      </NuxtButton>
+      <NuxtFieldGroup v-else class="shrink-0" role="group" aria-label="Ver os produtos em grade ou em lista" data-pos-product-layout>
+        <NuxtButton
+          v-for="opt in LAYOUTS"
+          :key="opt.key"
+          color="neutral"
+          variant="outline"
+          active-color="primary"
+          active-variant="solid"
+          square
+          :active="layout === opt.key"
+          :aria-label="opt.label"
+          :aria-pressed="layout === opt.key"
+          :title="opt.label"
+          :data-pos-product-layout-option="opt.key"
+          @click="setLayout(opt.key)"
+        >
+          <Icon :name="opt.icon" class="size-4" aria-hidden="true" />
+        </NuxtButton>
+      </NuxtFieldGroup>
       <NuxtButton
         :size="coarsePointer ? 'xl' : 'md'"
         color="neutral"
@@ -429,10 +490,11 @@ function onSearchEscape() {
       <div v-else-if="!filteredProducts.length" class="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
         Nenhum produto encontrado.
       </div>
-      <div v-else class="grid content-start gap-2.5 pb-2" :class="densityCols">
+      <div v-else class="grid content-start pb-2" :class="itemsCols" :data-pos-product-layout-view="layout">
         <template v-for="entry in entries" :key="entry.key">
           <PosProductGroupTile
             v-if="entry.kind === 'group'"
+            :row="layout === 'list'"
             :touch="coarsePointer"
             :group="entry.group"
             :cart-items="cartItems"
@@ -440,6 +502,7 @@ function onSearchEscape() {
           />
           <PosProductTile
             v-else
+            :row="layout === 'list'"
             :touch="coarsePointer"
             :product="entry.product"
             :qty="productQty(entry.product.sku)"

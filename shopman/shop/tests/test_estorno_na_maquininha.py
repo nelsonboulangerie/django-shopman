@@ -11,7 +11,7 @@ O que esta suíte prende:
   estorna no livro; vira a pendência "Estornar na maquininha", com valor,
   forma, motivo, caixa e hora da venda;
 - a pendência aparece no PDV (de qualquer canal: a maquininha não é a gaveta)
-  e no sino do Gestor (aviso que leva à Sessão de caixa do PDV);
+  e no sino do Gestor (aviso que leva ao Caixa do PDV);
 - só o gesto "Estornei na maquininha" (quem, quando, quem autorizou) grava o
   estorno no Payman, fecha a pendência e resolve o aviso;
 - na venda mista, o dinheiro segue na pendência da gaveta e só a parte da
@@ -121,7 +121,7 @@ def test_cancelar_venda_no_credito_nao_marca_estornado_e_manda_estornar(balcao, 
     assert "R$ 12,00" in alerta.message and "crédito" in alerta.message
     assert "Estornei na maquininha" in alerta.message
     assert not alerta.resolved_at
-    # No sino do Gestor, o aviso leva aonde o gesto mora: a Sessão de caixa do PDV.
+    # No sino do Gestor, o aviso leva aonde o gesto mora: o Caixa do PDV.
     from shopman.backstage.projections.alerts import alert_context_href
 
     assert alert_context_href(alerta, surface="") == ("/session", "Registrar o estorno no PDV")

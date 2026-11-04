@@ -84,7 +84,7 @@ const situationColor = computed(() => situationTone(props.card.situation));
 
 <template>
   <div
-    class="flex min-w-0 items-stretch transition"
+    class="@container flex min-w-0 items-stretch transition"
     :class="layout ? 'hover:bg-elevated/60' : 'rounded-md bg-elevated/50 hover:bg-elevated'"
     :draggable="movable ? 'true' : undefined"
     :data-preorder-card="card.ref"
@@ -95,7 +95,7 @@ const situationColor = computed(() => situationTone(props.card.situation));
       class="grid min-h-8 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1 text-left focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
       :class="[
         layout === 'lines'
-          ? 'px-3 py-2 md:grid-cols-[minmax(4.5rem,auto)_minmax(0,1fr)_auto] md:gap-y-1'
+          ? 'px-3 py-2 @md:grid-cols-[minmax(4.5rem,auto)_minmax(0,1fr)_auto] md:gap-y-1'
           : 'p-3 md:grid-cols-[auto_minmax(5rem,1fr)_auto]',
         layout ? '' : (slots.aside ? 'rounded-l-md' : 'rounded-md'),
       ]"
@@ -140,11 +140,15 @@ const situationColor = computed(() => situationTone(props.card.situation));
       <!-- A LINHA DA SEMANA (`layout="lines"`). Em cima: a hora, quem e os selos de quem
            (recebimento e canal), o valor com o selo do estado. Os selos são UM bloco: se
            não cabem todos ao lado do nome, descem todos juntos (dono, 03/11/2026).
-           Embaixo: o que foi pedido e o número; a situação ou a Via impressa. -->
+           Embaixo: o que foi pedido e o número; a situação ou a Via impressa.
+           As três colunas valem pela largura da LINHA, não da janela (`@container`): na
+           coluna do dia aberta no tablet em pé (uns 270 px) o valor e o selo tiravam toda
+           a largura do nome, que quebrava letra a letra. Estreita, a linha tem duas
+           colunas: a hora, e ao lado dela quem, o valor, o pedido e a situação. -->
       <template v-if="layout === 'lines'">
         <!-- A hora numa linha só: "A combinar" não quebra nem invade a coluna do nome. -->
         <span
-          class="row-span-2 whitespace-nowrap pt-px tabular-nums max-md:hidden"
+          class="row-span-2 whitespace-nowrap pt-px tabular-nums max-md:hidden @max-md:row-span-4"
           :class="card.window_start ? 'text-sm font-semibold' : 'text-xs text-muted'"
           data-preorder-window
         >{{ rowWindow(card) }}</span>
@@ -161,12 +165,12 @@ const situationColor = computed(() => situationTone(props.card.situation));
             <NuxtBadge v-if="card.channel_label" color="neutral" :label="badgeCase(card.channel_label)" size="sm" data-preorder-channel />
           </span>
         </span>
-        <span class="flex items-center justify-end gap-2 max-md:hidden">
+        <span class="flex items-center justify-end gap-2 max-md:hidden @max-md:justify-start">
           <span class="text-sm font-semibold tabular-nums text-highlighted" :data-preorder-money="balanceStandsOut(card) ? 'to-receive' : 'settled'">{{ money.amount }}</span>
           <NuxtBadge :color="money.tone" :label="money.label" size="sm" data-preorder-money-badge />
         </span>
         <span class="min-w-0 break-words text-xs text-muted max-md:hidden">{{ [card.items_summary, card.ref].filter(Boolean).join(" · ") }}</span>
-        <span class="flex items-center justify-end gap-2 text-xs text-muted max-md:hidden">
+        <span class="flex items-center justify-end gap-2 text-xs text-muted max-md:hidden @max-md:justify-start">
           <span v-if="money.of" class="tabular-nums">{{ money.of }}</span>
           <NuxtBadge v-if="rowShowsSituation(card.situation)" :color="situationColor" :label="badgeCase(card.situation_label)" size="sm" data-preorder-situation />
           <span v-else-if="card.ticket_printed" class="inline-flex items-center gap-1" data-preorder-printed>
@@ -217,11 +221,12 @@ const situationColor = computed(() => situationTone(props.card.situation));
       </span>
       </template>
       <!-- A corrida do entregador numa linha inteira, sob quem e o dinheiro: a frase
-           não se espreme na coluna do nome. -->
+           não se espreme na coluna do nome. Na linha da semana estreita (duas colunas)
+           ela ocupa só a coluna do texto: `col-span-2` ali criava uma terceira coluna. -->
       <p
         v-if="courierLine"
-        class="col-span-2 col-start-2 flex items-center gap-1 text-xs font-medium max-md:hidden"
-        :class="courierClass"
+        class="col-start-2 flex items-center gap-1 text-xs font-medium max-md:hidden"
+        :class="[layout === 'lines' ? '@md:col-span-2' : 'col-span-2', courierClass]"
         data-preorder-courier
       >
         <Icon name="lucide:bike" class="size-3.5 shrink-0" aria-hidden="true" />

@@ -2210,7 +2210,7 @@
   },
   "device_agent": {
     "can_print": false,
-    "reason": "Impressora não configurada neste terminal. Configure em Terminais do PDV, no gestor."
+    "reason": "Impressora não configurada neste terminal. Configure em Terminais do PDV, no Admin."
   },
   "generated_at": "2026-10-06T18:56:57.899045+00:00",
   "contract_version": 1
