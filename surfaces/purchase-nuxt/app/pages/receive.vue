@@ -763,7 +763,7 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
         <p class="truncate text-xs text-muted tabular-nums" data-receipt-subtitle>{{ documentLine }}</p>
       </template>
     </OperatorCompactBar>
-    <OperatorPageHeader title="Receber" :actions="headerActions" actions-label="Mais ações do Receber">
+    <OperatorPageHeader :seal-tone="sealTone" :seal-time="sealTime" title="Receber" :actions="headerActions" actions-label="Mais ações do Receber">
       <template #status>
         <PurchaseReadStatus />
         <NuxtBadge v-if="volumesBadge" color="success" icon="i-lucide-package-check" :label="volumesBadge" data-receipt-volumes-badge />

@@ -63,7 +63,7 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
       :options="headerActions"
       @clear="query = ''"
     />
-    <OperatorPageHeader title="Contar estoque" :actions="headerActions" actions-label="Mais ações da contagem">
+    <OperatorPageHeader :seal-tone="sealTone" :seal-time="sealTime" title="Contar estoque" :actions="headerActions" actions-label="Mais ações da contagem">
       <template #status>
         <PurchaseReadStatus />
       </template>

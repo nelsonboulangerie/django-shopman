@@ -120,7 +120,7 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
     <!-- `data-compact-page`: no celular, a linha do chão do kit (selo com o lugar e o ponto
          da leitura, sino e ⋮) toma o lugar da barra de cima, como no Gestor. -->
     <OperatorCompactBar title="Painel" :tone="sealTone" :time="sealTime" :conn-label="sealConn" :search="false" :options="headerActions" />
-    <OperatorPageHeader title="Painel" :actions="headerActions" actions-label="Mais ações do Painel" :alerts="blockerAlerts">
+    <OperatorPageHeader :seal-tone="sealTone" :seal-time="sealTime" title="Painel" :actions="headerActions" actions-label="Mais ações do Painel" :alerts="blockerAlerts">
       <template #status>
         <PurchaseReadStatus />
       </template>

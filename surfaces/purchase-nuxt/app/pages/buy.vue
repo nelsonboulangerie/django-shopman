@@ -67,7 +67,7 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
 <template>
   <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
     <OperatorCompactBar title="Comprar" :tone="sealTone" :time="sealTime" :conn-label="sealConn" :search="false" :options="headerActions" />
-    <OperatorPageHeader title="Comprar" :actions="headerActions" actions-label="Mais ações de Comprar" :alerts="blockerAlerts">
+    <OperatorPageHeader :seal-tone="sealTone" :seal-time="sealTime" title="Comprar" :actions="headerActions" actions-label="Mais ações de Comprar" :alerts="blockerAlerts">
       <template #status>
         <PurchaseReadStatus />
       </template>

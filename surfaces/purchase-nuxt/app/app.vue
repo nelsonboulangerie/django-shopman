@@ -4,9 +4,10 @@ import type { PurchaseView } from "~/types/purchase";
 
 // Compras no shell da suíte (WP-FASE2-UX-OPERADOR, onda do Compras), como o Gestor:
 // barra lateral em três estados na mesa e, com o trocador (modelo de navegação,
-// 31/10/2026), a barra de baixo do celular com as seções da forma da tela: as do chão
-// (Painel, Comprar, Receber, Contar estoque) ou o escritório (a Base). O selo abre o
-// trocador com todas. Cada seção é uma rota (Painel `/`, Comprar `/buy`, Receber
+// 31/10/2026), a barra de baixo do celular com as seções do chão (Painel, Comprar,
+// Receber, Contar estoque) em toda tela, inclusive na Base, a única do escritório, onde
+// nenhuma fica acesa (`office-uses-floor-bar`, dono, 04/11/2026). O selo abre o trocador
+// com todas. Cada seção é uma rota (Painel `/`, Comprar `/buy`, Receber
 // `/receive`, Base `/base/…`, Contar estoque `/count`), e todas dividem o mesmo
 // carregamento (`usePurchaseDesk`, em `useState`).
 const OPERATOR_PERM = "backstage.operate_purchase";
@@ -89,6 +90,7 @@ useOperatorWindowTitle();
         :switcher-sections="sections"
         default-form="floor"
         floor-bar
+        office-uses-floor-bar
         label="Seções do Compras"
         :operator-name="operator?.name"
         @lock="lock"
