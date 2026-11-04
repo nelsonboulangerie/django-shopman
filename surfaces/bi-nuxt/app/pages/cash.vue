@@ -102,7 +102,24 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- `data-compact-page`: no celular, a linha do chão (`BiCompactBar`) toma o lugar da
+         barra de cima e da linha de recortes; o tempo da leitura fica na faixa logo abaixo. -->
+    <BiCompactBar title="Caixa" :options="readingActions">
+      <template #primary>
+        <OperatorPeriodPicker
+          v-model="selection"
+          :presets="presets"
+          custom
+          compact
+          :today="bounds.today"
+          :max="bounds.max"
+          :epoch="bounds.epoch"
+          align="start"
+          label="Período de análise"
+        />
+      </template>
+    </BiCompactBar>
     <OperatorPageHeader title="O caixa fechou certo?" eyebrow="Auditoria do Dono" :actions="readingActions" :actions-label="readingLabel">
       <!-- Celular: período e frescor são os dois primários; não há painel de filtros. -->
       <template #filters-primary>

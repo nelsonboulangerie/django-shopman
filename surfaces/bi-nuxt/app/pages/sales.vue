@@ -196,7 +196,31 @@ const activeFilters = computed(() => {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- `data-compact-page`: no celular, a linha do chão (`BiCompactBar`) toma o lugar da
+         barra de cima e da linha de recortes. O período e o canal ficam na faixa logo
+         abaixo; comparar vai para "Filtros", no ⋮. -->
+    <BiCompactBar title="Vendas" :options="readingActions" :active-filters="activeFilters">
+      <template #primary>
+        <OperatorPeriodPicker
+          v-model="selection"
+          :presets="presets"
+          custom
+          compact
+          :today="bounds.today"
+          :max="bounds.max"
+          :epoch="bounds.epoch"
+          align="start"
+          label="Período de análise"
+        />
+        <OperatorQuickFilters v-if="report" v-model="channelPick" :items="channelTabs" label="Recorte por canal" />
+      </template>
+      <template v-if="report" #filters>
+        <NuxtFormField label="Comparar com" :help="compareCaption">
+          <NuxtSelect :model-value="compare" :items="compareItems" class="w-full" @update:model-value="pickCompare" />
+        </NuxtFormField>
+      </template>
+    </BiCompactBar>
     <OperatorPageHeader title="Quanto vendemos?" :actions="readingActions" :actions-label="readingLabel" :active-filters="activeFilters">
       <!-- Período e o recorte por canal (filtro rápido) na linha; comparar no painel
            "Filtros". O canal escolhido também vira chip removível. -->
