@@ -160,8 +160,9 @@ useHead({ title: "Enviados" });
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col" data-marketing-history data-compact-page>
-    <!-- No celular, a linha do chão do kit: a conexão vira o ponto do selo, e os recortes
-         ativos aparecem logo abaixo dela, com Limpar. -->
+    <!-- No celular, a linha do chão do kit: a conexão vira o ponto do selo, o filtro
+         único fica na linha (ícone antes da busca, o número no canto, como o sino), e os
+         recortes ativos aparecem logo abaixo dela, com Limpar. -->
     <OperatorCompactBar
       title="Enviados"
       :tone="live.tone"
@@ -172,21 +173,19 @@ useHead({ title: "Enviados" });
       :summary="announcements.length ? `${loadedLabel}.` : ''"
       :options="headerActions"
       @clear="void clearFilters()"
-    />
-    <!-- O painel de filtros segue à vista no celular, numa faixa logo abaixo da linha
-         (como o dia na Produção): filtrar Enviados não pode custar ⋮ e mais um toque. -->
-    <div
-      class="flex min-h-12 items-center gap-2 border-b border-default bg-card px-2 py-1.5 md:hidden"
-      data-compact-primary
     >
-      <OperatorFilterPanel
-        v-model="panelFilters"
-        :dimensions="dimensions"
-        :chips="false"
-        surface="marketing"
-        screen="history"
-      />
-    </div>
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="dimensions"
+          trigger="icon"
+          :chips="false"
+          surface="marketing"
+          screen="history"
+          data-history-filters-compact
+        />
+      </template>
+    </OperatorCompactBar>
     <OperatorPageHeader
       title="Enviados"
       :actions="headerActions"
