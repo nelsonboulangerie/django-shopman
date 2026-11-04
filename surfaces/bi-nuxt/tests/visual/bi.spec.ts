@@ -19,7 +19,9 @@ for (const route of ROUTES) {
     page.on("pageerror", (error) => pageErrors.push(error.message));
     const response = await page.goto(route);
     expect(response?.status()).toBeLessThan(500);
-    await expect(page.locator("h1").first()).toBeVisible();
+    // O primeiro <h1> pode ser o da linha do chão (só leitor de tela, `sr-only`): vale o
+    // título que aparece na largura em que a tela abre.
+    await expect(page.locator("h1").filter({ visible: true }).first()).toBeVisible();
     await page.waitForLoadState("networkidle");
     expect(pageErrors).toEqual([]);
   });
