@@ -223,7 +223,12 @@ desconto vence e não soma" já valendo contra a Xepa.
   `DiscountModifier` (`shop/modifiers.py`, maior desconto vence) e gravado por linha em
   `pricing.discount.items[]` (`type: "promotion"`, nome, original, desconto). Na NFC-e o
   desconto de linha sai embutido no preço do item (`adapters/fiscal_focusnfe.py`).
-- **Defeito latente:** a cascata "faixa do cliente → listing" de
+- **Resolvido no `main` (conferido em 04/11/2026):** a cascata recebe o cliente
+  (`shop/modifiers.py`, `ctx["customer"]` com o melhor `listing_ref` dos grupos), a
+  `EmployeeRule` saiu, há arredondamento e `discount_kind` (`shop/services/customer_groups.py`),
+  o B.I. lê o desconto por tipo (`backstage/projections/bi_sales.py`) e a mensagem de
+  economia por grupo existe (`shop/modifiers.py`). O diagnóstico abaixo é histórico.
+- **Defeito latente (histórico):** a cascata "faixa do cliente → listing" de
   `shop/handlers/pricing.py` depende de `ctx["customer"]`, que nenhum chamador preenche.
   Hoje `PriceTier.listing_ref` não muda preço nenhum. Consertar ou remover, com teste.
 - **Duas regras para a mesma Equipe:** `EmployeeRule` (`shop/rules/pricing.py`, faixa
@@ -361,8 +366,9 @@ para banco restaurado · dados reais do Dia 1 · GO/NO-GO.
 > T3 #1997/#2011/#2023 (forma `99` não provada em homologação; `17` x `20` do Pix de
 > balcão é do contador), T4 #2004, T5 #2006, T6 #2005/#2067, T7 #2008, T8 #1999,
 > T9 #2007, T10 #2001, T11 #2003, T12 #2000. As provas de `evidence/glr-2026-10-23/`
-> foram apagadas (10 de 11 já falhavam no `main`). **Em andamento em 02/11:** T13 a
-> T15, itens (2) a (5) do Doorman e WP-RELEASE-01.
+> foram apagadas (10 de 11 já falhavam no `main`). **Fechados até 04/11:** T13 #2088,
+> T14 #2077/#2078/#2079, T15 (28 checks obrigatórios), Doorman (2) a (5) #2082/#2084 e
+> WP-RELEASE-01 R0/R1 (#2076, #2080). Segue aberto só o WP-RELEASE-01 de R2 em diante.
 
 **Nenhum bloqueio de código conhecido nesta reauditoria.** A lista de 19/10 foi
 fechada por entregas já no `main`: drift Watchman e fallbacks (#1894, #1898, #1906,

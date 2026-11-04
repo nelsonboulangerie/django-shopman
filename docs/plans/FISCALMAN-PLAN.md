@@ -126,6 +126,6 @@ Protocol do fiscalman estruturalmente. Removida a classe-base `FiscalBackend` mo
 Resolvidos pelo doc "PROCEDIMENTO E PARAMETRIZAÇÃO" (2026-06-29): ✅ PIS/COFINS CST `99`;
 ✅ CSOSN `102` (não-ST) / `500` (ST); ✅ CFOP `5102` (não-ST) / `5405` (ST). Resta validar:
 - [ ] NCMs da tabela (esp. salgados/tartines `19059090` vs `21069090`; café `2101.x`)?
-- [ ] CFOP `5102` confirma, ou o estabelecimento é **indústria** (→ `5101` p/ produção própria)?
+- [x] CFOP `5102` (decidido pelo contador: `docs/reference/fiscal-parametrizacao-nfce.md`).
 - [ ] Imposto aproximado (IBPT) habilitado na conta Focus NFe? CSC gerado na SEFA-PR?
 - [ ] Itens de revenda (ST) previstos? Quais NCM/CEST?
