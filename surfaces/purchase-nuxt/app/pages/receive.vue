@@ -759,11 +759,12 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
         />
       </template>
       <template v-if="conferenceOpen" #identity>
-        <p class="truncate text-sm font-semibold">{{ phoneTitle }}</p>
-        <p class="truncate text-xs text-muted tabular-nums" data-receipt-subtitle>{{ documentLine }}</p>
+        <!-- Quebra, nunca corta: o nome do fornecedor é comprido no celular de 320 px. -->
+        <p class="text-sm font-semibold break-words">{{ phoneTitle }}</p>
+        <p class="text-xs text-muted tabular-nums break-words" data-receipt-subtitle>{{ documentLine }}</p>
       </template>
     </OperatorCompactBar>
-    <OperatorPageHeader :seal-tone="sealTone" :seal-time="sealTime" title="Receber" :actions="headerActions" actions-label="Mais ações do Receber">
+    <OperatorPageHeader title="Receber" :actions="headerActions" actions-label="Mais ações do Receber">
       <template #status>
         <PurchaseReadStatus />
         <NuxtBadge v-if="volumesBadge" color="success" icon="i-lucide-package-check" :label="volumesBadge" data-receipt-volumes-badge />

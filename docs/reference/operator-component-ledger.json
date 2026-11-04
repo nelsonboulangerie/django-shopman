@@ -2402,12 +2402,12 @@
           }
         },
         {
-          "id": "purchase-base-count",
+          "id": "purchase-count",
           "source_files": [
-            "app/pages/base/count.vue"
+            "app/pages/count.vue"
           ],
           "routes": [
-            "/base/count"
+            "/count"
           ],
           "variants": [
             "count-table",
@@ -2428,7 +2428,7 @@
           "runner": {
             "config": "playwright.visual.config.ts",
             "spec": "tests/visual/purchase.spec.ts",
-            "grep": "purchase-base-count"
+            "grep": "purchase-count"
           }
         }
       ]
