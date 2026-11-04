@@ -156,9 +156,15 @@ faixa esquerda da toolbar (`MarketingSettingsNav`: abas na mesa, lista de escolh
 celular) leva às outras três sem voltar. Desde a fase 2 (WP-FASE2-UX-OPERADOR) o Marketing
 mora no shell da suíte, o mesmo do Gestor (`OperatorSuiteShell`): na mesa, a barra
 lateral em três estados (aberta, compacta, oculta) com Decisões, Agendados e Enviados em
-cima e Ajustes no pé; abaixo de `lg`, a gaveta pelo ☰ (o menu completo) e a barra
-inferior com as quatro seções. Cada tela abre com o `OperatorPageHeader` do kit: título,
-busca, a ação primária da tela e o ⋯ "Mais ações" (as ações como dados; "Atualizar" com a
+cima e Ajustes no pé (Alt+1 a Alt+3 nas três de cima). Desde o modelo de navegação
+(dono, 31/10/2026) o selo do app abre o trocador: Decisões, Agendados e Enviados, depois
+as quatro sub-seções de Ajustes, numa lista só e na ordem do app. As três da operação
+são telas do chão: abaixo de `lg` levam a barra de baixo com elas três, e abaixo de `md`
+o cabeçalho inteiro é a linha do chão do kit (`OperatorCompactBar`): o selo com o ponto
+de conexão, a busca, o sino e o ⋮ no canto, com a hora da leitura e a cadência no topo
+do ⋮ (sem selo "Ao vivo" numa segunda linha). Ajustes é escritório: a barra de baixo traz
+as quatro sub-seções. Na mesa, cada tela abre com o `OperatorPageHeader` do kit: título,
+busca, a ação primária da tela e o ⋮ "Mais ações" (as ações como dados; "Atualizar" com a
 tecla R mora ali), o "ao vivo" no estado da barra, os recortes na toolbar e o aviso da
 tela no lugar declarado (`alerts`).
 

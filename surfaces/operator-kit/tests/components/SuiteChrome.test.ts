@@ -671,14 +671,18 @@ describe("OperatorPageHeader", () => {
   });
 
   // Com o trocador, sem barra lateral (o tablet em pé), o selo é o da linha do chão: o
-  // app, o lugar e o ⌄. O título solto some abaixo do lg para não dizer o lugar duas vezes.
-  it("com o trocador, o selo diz o app e o lugar e o título solto some abaixo do lg", async () => {
+  // app, o lugar e o ⌄. O título solto sai da vista abaixo do lg para não dizer o lugar duas
+  // vezes, e fica no <h1> para o leitor de tela; no celular estreito o selo encolhe (o lugar
+  // trunca) em vez de passar por cima das ações.
+  it("com o trocador, o selo diz o app e o lugar e o título solto sai da vista abaixo do lg", async () => {
     useState("suite-switcher-enabled").value = true;
     const wrapper = await mountHeader();
     const seal = wrapper.get("[data-page-header-switcher-seal]");
     expect(seal.classes()).toContain("lg:hidden");
     expect(seal.attributes("aria-haspopup")).toBe("dialog");
-    expect(wrapper.get("h1").html()).toContain("max-lg:hidden");
+    expect(seal.classes()).toContain("max-sm:flex-initial!");
+    expect(wrapper.get("h1").html()).toContain("max-lg:sr-only");
+    expect(wrapper.get("h1").text()).toContain("Pedidos");
     useState("suite-switcher-enabled").value = false;
   });
 });

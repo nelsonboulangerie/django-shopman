@@ -313,9 +313,11 @@ test.describe("painel", () => {
   ] as const) {
     test(`${state} em ${viewport.label}`, async ({ page }) => {
       await openScenario(page, scenario, "/__visual_board", viewport);
+      // Com o trocador, abaixo do lg o lugar está no selo e o <h1> fica só para o
+      // leitor de tela: confere-se a presença dele, não a vista.
       await expect(
         page.getByRole("heading", { level: 1, name: "Painel" }),
-      ).toBeVisible();
+      ).toBeAttached();
       if (scenario === "board-pending") {
         await expect(
           page.getByRole("group", { name: "Disparado via" }),
@@ -394,7 +396,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
     await openScenario(page, "board-normal", "/settings/campaigns", V390);
     await expect(
       page.getByRole("heading", { level: 1, name: "Campanhas" }),
-    ).toBeVisible();
+    ).toBeAttached();
     const prepareButton = page
       .getByRole("button", {
         name: /Campanha Fornada artesanal 01/,
@@ -422,7 +424,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
     await openScenario(page, "board-normal", "/settings/platforms", V1280);
     await expect(
       page.getByRole("heading", { level: 1, name: "Plataformas" }),
-    ).toBeVisible();
+    ).toBeAttached();
     await expectStableScreenshot(page, "settings__platforms", V1280);
   });
 
@@ -430,7 +432,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
     await openScenario(page, "board-normal", "/settings/offers", V1280);
     await expect(
       page.getByRole("heading", { level: 1, name: "Ofertas e cupons" }),
-    ).toBeVisible();
+    ).toBeAttached();
     await expect(page.getByText("Hibisco Primavera")).toBeVisible();
     await expectStableScreenshot(page, "settings__offers", V1280);
   });
@@ -1363,7 +1365,8 @@ test.describe("modos transversais", () => {
   });
 
   test("foco visível com cores forçadas", async ({ page }) => {
-    await openScenario(page, "board-normal", "/__visual_board", V390);
+    // A barra de baixo de uma tela do chão (Decisões): Decisões, Agendados e Enviados.
+    await openScenario(page, "board-normal", "/", V390);
     await page.emulateMedia({
       forcedColors: "active",
       reducedMotion: "reduce",

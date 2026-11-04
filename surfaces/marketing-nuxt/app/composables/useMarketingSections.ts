@@ -13,6 +13,10 @@
 //
 // Barra inferior (regra única do kit, `quickBarLayout`): as quatro seções declaram
 // `quick`; sem seção de fora, não há "Mais" (o ☰ abre a gaveta com o menu completo).
+//
+// Modelo de navegação (dono, 31/10/2026; implementação autorizada em 02/11): o selo abre
+// o trocador, com a operação e o que mora em Ajustes, cada seção com a sua forma, que
+// nunca vira palavra na tela (`marketingSwitcherSections`).
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
 export type MarketingSectionKey = "decisions" | "scheduled" | "sent" | "settings";
@@ -73,6 +77,36 @@ export function marketingSettingsFor(path: string): MarketingSettingsKey | null 
   return entry?.key ?? null;
 }
 
+/**
+ * As seções da operação: quem aprova o anúncio está de pé, no celular, entre uma coisa e
+ * outra. São elas que vão para a barra de baixo no celular (dono, 03/11/2026: "seção vai
+ * para baixo").
+ */
+export const MARKETING_FLOOR_SECTIONS: readonly MarketingSectionKey[] = [
+  "decisions",
+  "scheduled",
+  "sent",
+];
+
+/**
+ * O trocador (modelo de navegação, 31/10/2026): a operação e as sub-seções de Ajustes,
+ * na ordem do app (a da barra lateral e das teclas Alt+N), sem o item Ajustes (o
+ * trocador já mostra o que mora nele). Chão: Decisões, Agendados e Enviados, na barra de
+ * baixo do celular. Escritório: Campanhas, Modelos, Ofertas e cupons e Plataformas.
+ */
+export function marketingSwitcherSections(
+  sections: readonly OperatorSection[],
+): OperatorSection[] {
+  const settings: OperatorSection[] = MARKETING_SETTINGS_SECTIONS.map(
+    ({ key, label, icon, to }) => ({ key, label, icon, to }),
+  );
+  return [...sections.filter((s) => s.key !== "settings"), ...settings].map((s) =>
+    (MARKETING_FLOOR_SECTIONS as readonly string[]).includes(s.key)
+      ? { ...s, form: "floor" as const, quick: true }
+      : { ...s, form: "office" as const, quick: undefined },
+  );
+}
+
 export function useMarketingSections() {
   const route = useRoute();
   const { decisionCount } = useMarketingDecisions();
@@ -122,8 +156,11 @@ export function useMarketingSections() {
     },
   ]);
 
+  const switcherSections = computed(() => marketingSwitcherSections(sections.value));
+
   return {
     activeSection,
+    switcherSections,
     activeSettings,
     sections,
     settingsSections: MARKETING_SETTINGS_SECTIONS,

@@ -41,15 +41,22 @@ useHead({ title: "Agendados" });
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col" data-marketing-scheduled>
+  <main class="flex min-h-0 flex-1 flex-col" data-marketing-scheduled data-compact-page>
+    <!-- No celular, a linha do chão do kit: a conexão vira o ponto do selo. -->
+    <OperatorCompactBar
+      title="Agendados"
+      :tone="live.tone"
+      :time="live.time"
+      :conn-label="live.label"
+      :options="headerActions"
+    />
     <OperatorPageHeader
       title="Agendados"
       :actions="headerActions"
       actions-label="Mais ações de Agendados"
     >
       <template #status>
-        <!-- No celular o kit desce o estado para a segunda linha da barra (README "Barra
-             do topo no celular"): ele não disputa a largura com o título. -->
+        <!-- Na mesa: o ponto, a hora e, fora do ao vivo, o estado por extenso. -->
         <span class="flex min-w-0" data-marketing-live>
           <OperatorLiveStatus
             :tone="live.tone"
