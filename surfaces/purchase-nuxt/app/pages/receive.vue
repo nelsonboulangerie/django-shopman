@@ -728,28 +728,42 @@ const thumbAction = computed(() => {
     contextValue: formatMoney(receiptTotalCostQ.value),
   };
 });
+
+const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadSeal();
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Receber" :phone-title="phoneTitle" :actions="headerActions" actions-label="Mais ações do Receber">
-      <!-- Celular com a entrada aberta: "‹" volta ao começo, com a conferência guardada
-           em "Em conferência · Continuar". -->
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- `data-compact-page`: no celular, a linha do chão do kit toma o lugar da barra de
+         cima. Com a entrada aberta, o "‹" ocupa o lugar do selo, e o fornecedor com o
+         documento ficam ao lado, como o item aberto do Gestor. -->
+    <OperatorCompactBar
+      :title="phoneTitle || 'Receber'"
+      :tone="sealTone" :time="sealTime" :conn-label="sealConn"
+      :search="!receiveStart"
+      :query="receiveQuery"
+      search-button-label="Buscar item da entrada"
+      :options="headerActions"
+      @clear="receiveQuery = ''"
+    >
       <template v-if="conferenceOpen" #lead>
         <NuxtButton
           icon="i-lucide-chevron-left"
           color="neutral"
           variant="ghost"
           square
-          class="md:hidden"
+          class="size-11 shrink-0 justify-center"
           aria-label="Voltar ao começo do Receber"
           data-receipt-back
           @click="receiptParked = true"
         />
       </template>
-      <template v-if="conferenceOpen" #subtitle>
-        <p class="text-xs text-muted tabular-nums md:hidden" data-receipt-subtitle>{{ documentLine }}</p>
+      <template v-if="conferenceOpen" #identity>
+        <p class="truncate text-sm font-semibold">{{ phoneTitle }}</p>
+        <p class="truncate text-xs text-muted tabular-nums" data-receipt-subtitle>{{ documentLine }}</p>
       </template>
+    </OperatorCompactBar>
+    <OperatorPageHeader title="Receber" :actions="headerActions" actions-label="Mais ações do Receber">
       <template #status>
         <PurchaseReadStatus />
         <NuxtBadge v-if="volumesBadge" color="success" icon="i-lucide-package-check" :label="volumesBadge" data-receipt-volumes-badge />

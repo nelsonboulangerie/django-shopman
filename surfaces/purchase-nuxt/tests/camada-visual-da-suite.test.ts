@@ -47,7 +47,7 @@ describe("Compras no shell da suíte (fase 2)", () => {
   });
 
   it("cada seção é uma rota; a Base separa cadastros das tarefas, sempre em rota inglesa", () => {
-    for (const page of ["pages/index.vue", "pages/buy.vue", "pages/receive.vue", "pages/base/materials.vue", "pages/base/suppliers.vue", "pages/base/costs.vue", "pages/base/count.vue"]) {
+    for (const page of ["pages/index.vue", "pages/buy.vue", "pages/receive.vue", "pages/base/materials.vue", "pages/base/suppliers.vue", "pages/base/costs.vue", "pages/count.vue"]) {
       const source = app(page);
       expect(source, page).toContain("<OperatorPageHeader");
       expect(source, page).toContain("<PurchaseReadStatus");
@@ -93,12 +93,12 @@ describe("CRUD humano da Base", () => {
     }
   });
 
-  it("custos e contagem têm nome de tarefa e volta explícita aos insumos", () => {
+  it("custos e contagem têm nome de tarefa; custos volta aos insumos, a contagem é seção", () => {
     const costs = app("pages/base/costs.vue");
-    const count = app("pages/base/count.vue");
+    const count = app("pages/count.vue");
     expect(costs).toContain('title="Lançar custos"');
     expect(count).toContain('title="Contar estoque"');
     expect(costs).toContain('label="Voltar aos insumos"');
-    expect(count).toContain('label="Voltar aos insumos"');
+    expect(count).not.toContain('label="Voltar aos insumos"');
   });
 });

@@ -215,11 +215,6 @@ const headerActions = [
     kbds: ["R"],
     onSelect: () => void refresh(),
   },
-  {
-    label: "Contagem de estoque",
-    icon: "i-lucide-clipboard-check",
-    to: baseSectionPath("count"),
-  },
 ];
 
 async function onSubmitMaterial(payload: Record<string, unknown>) {

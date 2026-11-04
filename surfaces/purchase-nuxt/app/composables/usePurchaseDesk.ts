@@ -1145,9 +1145,9 @@ export function usePurchaseDesk() {
   }
 
   watch(
-    [view, baseView, backendReady],
-    ([currentView, currentBase, ready]) => {
-      if (currentView === "base" && currentBase === "count" && ready && !countLoaded.value) {
+    [view, backendReady],
+    ([currentView, ready]) => {
+      if (currentView === "count" && ready && !countLoaded.value) {
         void loadCount();
       }
     },

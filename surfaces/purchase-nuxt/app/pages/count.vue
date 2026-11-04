@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Base · Contagem: o que se contou no físico contra o que o sistema diz. Divergência
+// Contar estoque (seção do chão, modelo de navegação de 31/10/2026): o que se contou no físico contra o que o sistema diz. Divergência
 // pede motivo e vira ajuste no estoque, registrado com o operador. Só para quem tem a
 // permissão de auditoria.
 import { formatQty, formatQtyDiff } from "~/presentation/purchase";
@@ -48,10 +48,21 @@ const summary = computed(() => {
 const blockedReason = computed(() =>
   !countTotals.value.filled ? "Informe o que contou em pelo menos um insumo." : countTotals.value.missingReason ? `Falta o motivo de ${plural(countTotals.value.missingReason, "divergência", "divergências")}.` : "",
 );
+
+const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadSeal();
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <OperatorCompactBar
+      title="Contar estoque"
+      :tone="sealTone" :time="sealTime" :conn-label="sealConn"
+      :query="query"
+      search-button-label="Buscar insumo ou SKU"
+      :summary="summary"
+      :options="headerActions"
+      @clear="query = ''"
+    />
     <OperatorPageHeader title="Contar estoque" :actions="headerActions" actions-label="Mais ações da contagem">
       <template #status>
         <PurchaseReadStatus />
@@ -64,9 +75,6 @@ const blockedReason = computed(() =>
           <NuxtButton label="Limpar" color="neutral" variant="outline" :disabled="actionPending || !countTotals.filled" @click="resetCount()" />
           <NuxtButton icon="i-lucide-clipboard-check" label="Lançar contagem" :disabled="actionPending || countPending || !countReady" data-count-submit @click="openConfirm()" />
         </div>
-      </template>
-      <template #filters-primary>
-        <NuxtButton to="/base/materials" label="Voltar aos insumos" icon="i-lucide-arrow-left" color="neutral" variant="outline" />
       </template>
       <template #filters-end>
         <span v-if="!countForbidden" class="text-xs text-muted tabular-nums">{{ summary }}</span>
