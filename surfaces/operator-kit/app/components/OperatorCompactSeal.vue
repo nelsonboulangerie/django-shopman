@@ -11,7 +11,14 @@ import { computed } from "vue";
 
 import { OPERATOR_APPS } from "../../appIdentity";
 
-const props = defineProps<{ tone?: "live" | "calm" | "late" | "off"; time?: string; place?: string }>();
+const props = defineProps<{
+  tone?: "live" | "calm" | "late" | "off";
+  time?: string;
+  place?: string;
+  /** O nome do app grande, numa linha, com o ▾, e sem lugar (a tela tem um lugar só, que a
+   *  página diz no próprio título; a Central, dono, 04/11/2026). Ignora `place`. */
+  appAsTitle?: boolean;
+}>();
 const config = useRuntimeConfig().public as {
   operatorPwa?: { identity?: { label: string; icon: string; iconSrc?: string; color: string } };
 };
@@ -36,7 +43,7 @@ const appLabel = computed(() => {
   return app?.shortLabel || identity?.label || "Aplicativo";
 });
 const spoken = computed(() => {
-  const where = props.place ? `${appLabel.value}, ${props.place}` : appLabel.value;
+  const where = props.place && !props.appAsTitle ? `${appLabel.value}, ${props.place}` : appLabel.value;
   const conn = state.value ? ` Conexão: ${state.value.word}${props.time ? `, última leitura ${props.time}` : ""}.` : "";
   const opens = switcherEnabled.value ? "trocar de seção ou de app" : "abrir o menu";
   return `${where}: ${opens}.${conn}`;
@@ -52,7 +59,7 @@ const iconName = computed(() => {
     color="neutral"
     variant="ghost"
     class="relative min-h-11 min-w-0 shrink justify-start gap-2 px-1"
-    :class="place ? 'flex-1' : 'size-11 shrink-0 justify-center p-0'"
+    :class="place || appAsTitle ? 'flex-1' : 'size-11 shrink-0 justify-center p-0'"
     :aria-label="spoken"
     :title="spoken"
     aria-haspopup="dialog"
@@ -79,7 +86,11 @@ const iconName = computed(() => {
         <NuxtIcon :name="state.icon" class="size-2.5" />
       </span>
     </span>
-    <span v-if="place" class="flex min-w-0 flex-col text-left leading-tight">
+    <span v-if="appAsTitle" class="flex min-w-0 items-center gap-0.5 font-semibold text-highlighted" data-compact-app-title>
+      <span class="truncate">{{ appLabel }}</span>
+      <NuxtIcon name="i-lucide-chevron-down" class="size-3.5 shrink-0 text-muted" />
+    </span>
+    <span v-else-if="place" class="flex min-w-0 flex-col text-left leading-tight">
       <span class="truncate text-xs text-muted">{{ appLabel }}</span>
       <span class="flex min-w-0 items-center gap-0.5 font-semibold text-highlighted">
         <span class="truncate" data-compact-place>{{ place }}</span>

@@ -42,4 +42,14 @@ describe("OperatorCompactBar", () => {
     expect(at.every((i) => i >= 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
   });
+
+  it("seal-app-as-title: a linha não tem <h1>, a página traz o dela", async () => {
+    const plain = await mountSuspended(OperatorCompactBar, { props: { title: "Pedidos" }, global: { stubs } });
+    expect(plain.findAll("h1").map((h) => h.text())).toEqual(["Pedidos"]);
+    const app = await mountSuspended(OperatorCompactBar, {
+      props: { title: "Olá, Ana", sealAppAsTitle: true },
+      global: { stubs },
+    });
+    expect(app.find("h1").exists()).toBe(false);
+  });
 });

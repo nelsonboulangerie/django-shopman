@@ -12,6 +12,8 @@
 //   põe aqui, no canto, depois do sino. Nunca no `#identity`: o ⋮ é sempre o último.
 // - Busca: ícone; abre a busca da suíte (mesmo contrato do app). O termo ativo aparece na
 //   faixa logo abaixo, com contagem e Limpar, sempre visível (o cabeçalho não rola).
+// - `seal-app-as-title`: a tela de um lugar só (a Central) põe o app no selo, grande, e diz
+//   o lugar no <h1> visível da página; a linha então não tem <h1> próprio.
 import { computed, getCurrentInstance, ref, useSlots } from "vue";
 
 import type { OperatorMoreMenuItem, OperatorMoreMenuItems } from "../presentation/moreMenu";
@@ -32,6 +34,10 @@ const props = withDefaults(defineProps<{
   summary?: string;
   /** As ações da tela no ⋮ (o formato do `OperatorMoreMenu`: lista ou grupos). */
   options?: OperatorMoreMenuItems;
+  /** O selo diz só o app, grande, numa linha (`appAsTitle` do selo). A página então traz o
+   *  seu próprio <h1> visível com o `title` (só no celular), e a linha não repete o <h1>
+   *  escondido: um <h1> só por tela. */
+  sealAppAsTitle?: boolean;
 }>(), {
   query: "",
   searchButtonLabel: "Buscar",
@@ -90,9 +96,9 @@ const items = computed<(readonly OperatorMoreMenuItem[])[]>(() => {
 <template>
   <div class="md:hidden" data-compact-header>
     <!-- Só para leitor de tela: o `sr-only` corta de propósito (o lugar está no selo). -->
-    <h1 class="sr-only" data-clipping-allowed>{{ title }}</h1>
+    <h1 v-if="!sealAppAsTitle" class="sr-only" data-clipping-allowed>{{ title }}</h1>
     <div class="flex min-h-14 items-center gap-1.5 border-b border-default bg-card px-2 py-1.5" data-compact-bar>
-      <slot name="lead"><OperatorCompactSeal :tone="tone" :time="time" :place="title" /></slot>
+      <slot name="lead"><OperatorCompactSeal :tone="tone" :time="time" :place="title" :app-as-title="sealAppAsTitle" /></slot>
       <div v-if="$slots.identity" class="min-w-0 flex-1" data-compact-identity><slot name="identity" /></div>
       <div class="flex shrink-0 items-center" role="group" :aria-label="`Buscar, avisos e opções: ${title}`">
         <NuxtButton

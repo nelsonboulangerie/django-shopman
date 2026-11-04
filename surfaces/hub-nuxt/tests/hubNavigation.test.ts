@@ -54,6 +54,17 @@ describe("Central no celular: a linha do chão", () => {
     expect(bar).toContain(':options="headerActions"');
   });
 
+  it("o selo diz só Central, e a saudação é o <h1> da página, só no celular (dono, 04/11)", () => {
+    const bar = app.slice(app.indexOf("<OperatorCompactBar"), app.indexOf("<OperatorPageHeader"));
+    expect(bar).toContain("seal-app-as-title");
+    const greeting = app.indexOf("data-hub-phone-greeting");
+    const apps = app.indexOf('id="hub-apps-title"');
+    expect(greeting).toBeGreaterThan(-1);
+    expect(greeting).toBeLessThan(apps);
+    const tag = app.slice(app.lastIndexOf("<h1", greeting), greeting);
+    expect(tag).toContain("md:hidden");
+  });
+
   it("aviso de tela só pela prop `alerts` do cabeçalho, nunca NuxtAlert solto", () => {
     expect(app).not.toContain("<NuxtAlert");
     expect(app).toContain(':alerts="alerts"');

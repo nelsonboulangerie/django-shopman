@@ -33,4 +33,18 @@ describe("OperatorCompactSeal", () => {
     expect(useState<boolean>("suite-switcher-open").value).toBe(false);
     expect(seal.attributes("aria-expanded")).toBe("true");
   });
+
+  it("appAsTitle: o app grande numa linha, sem o lugar", async () => {
+    const wrapper = await mountSuspended(OperatorCompactSeal, { props: { place: "Olá, Ana", appAsTitle: true, tone: "calm" } });
+    const title = wrapper.get("[data-compact-app-title]");
+    expect(title.text()).not.toContain("Olá, Ana");
+    expect(wrapper.find("[data-compact-place]").exists()).toBe(false);
+    expect(wrapper.get("[data-compact-seal]").attributes("aria-label")).not.toContain("Olá, Ana");
+  });
+
+  it("sem appAsTitle, nada muda: app pequeno e lugar grande", async () => {
+    const wrapper = await mountSuspended(OperatorCompactSeal, { props: { place: "Pedidos" } });
+    expect(wrapper.find("[data-compact-app-title]").exists()).toBe(false);
+    expect(wrapper.get("[data-compact-place]").text()).toBe("Pedidos");
+  });
 });

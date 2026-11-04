@@ -4,8 +4,9 @@
 // A casca é a mesma dos apps migrados (`OperatorSuiteShell`): barra lateral em três estados
 // na mesa, gaveta pelo ☰ no tablet, com "Início" como única seção (por isso sem barra
 // inferior: uma vaga só não aparece, `quickBarLayout` do kit). No celular, a linha do chão
-// do modelo de navegação (`OperatorCompactBar`, 31/10/2026): o selo com a saudação e o
-// ponto da leitura, busca, Avisos e o ⋮; o selo abre a gaveta (a Central não tem
+// do modelo de navegação (`OperatorCompactBar`, 31/10/2026): o selo "Central" com o ponto
+// da leitura, busca, Avisos e o ⋮, e a saudação como título da página (dono, 04/11/2026);
+// o selo abre a gaveta (a Central não tem
 // trocador: trocar de app não passa por ela, é ela). A página é o `OperatorPageHeader`
 // (saudação, selo de cadência, busca da suíte, avisos da tela e o ⋯ único) e o conteúdo:
 // os apps, cada um com a linha de estado e, quando há, a pendência mais urgente dele como
@@ -286,6 +287,7 @@ function toneDot(tile: HubTileProjection): string {
             :conn-label="HUB_REFRESH_LABEL"
             search-button-label="Buscar pedido, cliente, produto, insumo ou tela"
             :options="headerActions"
+            seal-app-as-title
           />
           <OperatorPageHeader
             :title="hubGreeting(operatorName)"
@@ -330,6 +332,11 @@ function toneDot(tile: HubTileProjection): string {
                      linha, que leva ao item exato; os apps com pendência vêm primeiro, na
                      ordem de sempre entre si (dono, 09/10/2026: "Precisa de você" saiu, porque
                      empurrava os apps para baixo e repetia o que cada app já diz). -->
+                <!-- No celular, a saudação é o título da página (dono, 04/11/2026): o selo da
+                     linha do chão diz só "Central". Na mesa ela já é o título do cabeçalho. -->
+                <h1 class="-mb-2 text-xl font-semibold text-highlighted md:hidden" data-hub-phone-greeting>
+                  {{ hubGreeting(operatorName) }}
+                </h1>
                 <section aria-labelledby="hub-apps-title">
                   <div class="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                     <h2 id="hub-apps-title" class="text-base font-semibold">Apps</h2>
