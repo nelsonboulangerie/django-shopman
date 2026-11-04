@@ -32,7 +32,7 @@ import {
   strikeMatrix,
   csvMoney,
 } from "~/presentation/bi";
-import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 
 const { filters, report, freshness, pending, error, refresh, apply } = useBiProfiles();
 const { selection, bounds, presets } = useBiWindow();
@@ -41,8 +41,24 @@ const shareItems = useBiShareMenuItems();
 const djangoBase = String((useRuntimeConfig().public as { djangoBaseUrl?: string }).djangoBaseUrl || "").replace(/\/$/, "");
 const { attrsFor } = useOperatorAppLink();
 const tagsUrl = `${djangoBase}/admin/backstage/productconsumptiontag/`;
-const vocationActions = computed(() => [
-  { label: "Abrir as etiquetas de consumo", icon: "i-lucide-tag", to: tagsUrl, ...attrsFor(tagsUrl) },
+// Instalado, o Admin abre em janela própria (a regra do kit para link entre apps).
+function openTags() {
+  const { target } = attrsFor(tagsUrl);
+  if (target === "_blank") window.open(tagsUrl, "_blank", "noopener");
+  else void navigateTo(tagsUrl, { external: true });
+}
+// O lugar do aviso é o `alerts` do cabeçalho (fecha no X e volta ao reabrir a tela),
+// não um `NuxtAlert` solto no topo do conteúdo.
+const alerts = computed<OperatorScreenAlert[]>(() => [
+  {
+    id: "vocation",
+    color: "info",
+    icon: "i-lucide-info",
+    title: "Perfil presumido pela cesta",
+    description:
+      "Cada produto tem uma vocação (consome aqui, leva ou híbrido), editável em Configurações › Como vendemos › Etiquetas de consumo. Entrega e iFood ficam fora da pergunta e dentro da conta. A hora é a do registro da venda.",
+    action: { label: "Abrir as etiquetas de consumo", onSelect: openTags },
+  },
 ]);
 const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 
@@ -328,8 +344,40 @@ const revpashCsv = computed<ReadingCsv>(() => ({
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Quem compra no balcão?" :actions="readingActions" :actions-label="readingLabel" :active-filters="activeFilters">
+  <div class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- `data-compact-page`: no celular, a linha do chão (`BiCompactBar`) toma o lugar da
+         barra de cima e da linha de recortes. O período fica na faixa logo abaixo; dia da
+         semana e faixa de hora vão para "Filtros", no ⋮. -->
+    <BiCompactBar title="Perfis" :options="readingActions" :active-filters="activeFilters">
+      <template #primary>
+        <OperatorPeriodPicker
+          v-model="selection"
+          :presets="presets"
+          custom
+          compact
+          :today="bounds.today"
+          :max="bounds.max"
+          :epoch="bounds.epoch"
+          align="start"
+          label="Período de análise"
+        />
+      </template>
+      <template #filters>
+        <NuxtFormField label="Dia da semana">
+          <NuxtSelect v-model="weekday" :items="weekdayItems" class="w-full" />
+        </NuxtFormField>
+        <NuxtFormField label="Faixa de hora">
+          <NuxtSelect v-model="hourBand" :items="bandItems" class="w-full" />
+        </NuxtFormField>
+      </template>
+    </BiCompactBar>
+    <OperatorPageHeader
+      title="Quem compra no balcão?"
+      :actions="readingActions"
+      :actions-label="readingLabel"
+      :active-filters="activeFilters"
+      :alerts="alerts"
+    >
       <!-- Celular (regra da toolbar do kit): período e frescor na linha; dia da semana e
            faixa de hora no painel "Filtros", e o que estiver escolhido vira chip. -->
       <template #filters-primary>
@@ -362,15 +410,6 @@ const revpashCsv = computed<ReadingCsv>(() => ({
 
     <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
       <div class="flex flex-col gap-6">
-      <NuxtAlert
-        color="info"
-        variant="subtle"
-        icon="i-lucide-info"
-        title="Perfil presumido pela cesta"
-        :actions="alertActions('info', vocationActions)"
-        description="Cada produto tem uma vocação (consome aqui, leva ou híbrido), editável em Configurações › Como vendemos › Etiquetas de consumo. Entrega e iFood ficam fora da pergunta e dentro da conta. A hora é a do registro da venda."
-      />
-
       <NuxtEmpty
         v-if="pending && !report"
         loading

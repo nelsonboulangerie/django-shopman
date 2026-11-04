@@ -84,12 +84,25 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 flex-1 flex-col" data-compact-page>
     <!--
       O período mora na linha de recortes, como no Histórico do Gestor, com o frescor
       da leitura no fim da linha. No cabeçalho ele empurrava o título para fora da tela
       no tablet.
     -->
+    <!-- `data-compact-page`: no celular, a linha do chão (`BiCompactBar`) toma o lugar da
+         barra de cima e da linha de recortes; o tempo da leitura fica na faixa logo abaixo. -->
+    <BiCompactBar title="Projeção" :options="readingActions">
+      <template #primary>
+        <OperatorPeriodPicker
+          v-model="period"
+          :presets="presets"
+          compact
+          align="start"
+          label="Período que você está planejando"
+        />
+      </template>
+    </BiCompactBar>
     <OperatorPageHeader title="O que esperar?" :actions="readingActions" :actions-label="readingLabel">
       <!-- Celular: período e frescor são os dois primários; não há painel de filtros. -->
       <template #filters-primary>

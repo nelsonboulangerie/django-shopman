@@ -101,8 +101,6 @@ const readingDay = computed<PeriodSelection>({
 // de cortar. `ssrWidth` (do `isPhone` da dica do "Comparar com"): o servidor e a
 // primeira pintura concordam (sem erro de hidratação).
 const isPhone = useMediaQuery("(max-width: 767.98px)", { ssrWidth: 1280 });
-// A régua do celular da toolbar do kit (abaixo de `sm`).
-const isNarrow = useMediaQuery("(max-width: 639.98px)", { ssrWidth: 1280 });
 const title = computed(() => {
   if (view.value === "lots") return "Como foram os lotes no período?";
   return day.value ? overShortTitle(day.value.day, today) : "Sobrou ou faltou ontem?";
@@ -287,7 +285,53 @@ const csv = computed(() => overShortCsv(filtered.value));
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- `data-compact-page`: no celular (abaixo de `md`), a linha do chão (`BiCompactBar`)
+         toma o lugar da barra de cima e da linha de recortes. O tempo da leitura (o dia,
+         ou o período dos lotes) fica na faixa logo abaixo; a troca de leitura e o
+         veredito descem para a navegação da tela (`#below`); comparar e coleção vão para
+         "Filtros", no ⋮. -->
+    <BiCompactBar
+      title="Produção"
+      :options="readingActions"
+      :active-filters="activeFilters"
+      :query="view === 'day' ? query : ''"
+      @clear="query = ''"
+    >
+      <template #primary>
+        <OperatorPeriodPicker
+          v-if="view === 'lots'"
+          v-model="lotsWindow"
+          :presets="presets"
+          custom
+          compact
+          :today="bounds.today"
+          :max="bounds.max"
+          :epoch="bounds.epoch"
+          align="start"
+          label="Período de análise"
+        />
+        <OperatorPeriodPicker
+          v-else-if="day"
+          v-model="readingDay"
+          compact
+          :today="today"
+          :max="yesterday"
+          :prev-day="day.previous_day || ''"
+          :next-day="day.next_day || ''"
+          align="start"
+          label="Dia da leitura"
+        />
+      </template>
+      <template v-if="view === 'day' && day" #filters>
+        <NuxtFormField label="Comparar com" data-bi-compare-phone>
+          <NuxtSelect :model-value="compare" :items="compareItems" class="w-full" @update:model-value="setCompare(String($event))" />
+        </NuxtFormField>
+        <NuxtFormField v-if="collectionItems.length > 1" label="Coleção">
+          <NuxtSelectMenu v-model="collection" :items="collectionItems" value-key="value" class="w-full" :search-input="{ autofocus: !touch, placeholder: 'Buscar coleção' }" />
+        </NuxtFormField>
+      </template>
+    </BiCompactBar>
     <OperatorPageHeader
       :title="title"
       :actions="readingActions"
@@ -327,19 +371,19 @@ const csv = computed(() => overShortCsv(filtered.value));
           label="Dia da leitura"
           data-bi-reading-day
         />
-        <ProductionViewNav v-if="!isNarrow" />
+        <ProductionViewNav v-if="!isPhone" />
         <!-- O recorte de todo dia, um toque com a contagem (filtro rápido da suíte). -->
         <OperatorQuickFilters
-          v-if="!isNarrow && view === 'day' && day"
+          v-if="!isPhone && view === 'day' && day"
           v-model="verdict"
           :items="verdictItems"
           label="Recorte por veredito"
           data-bi-verdict-tabs
         />
       </template>
-      <!-- Celular: a troca de leitura não cabe ao lado do tempo e do "Filtros" (sumia
-           atrás da rolagem); ela desce para a navegação da tela, logo abaixo. -->
-      <template v-if="isNarrow" #below>
+      <!-- Celular (abaixo de `md`, a régua da linha do chão): a troca de leitura não cabe
+           ao lado do tempo; ela desce para a navegação da tela, logo abaixo. -->
+      <template v-if="isPhone" #below>
         <OperatorToolbar class="py-2" data-bi-production-nav-phone>
           <div class="flex min-w-0 flex-col gap-2">
             <ProductionViewNav />

@@ -50,7 +50,16 @@ async function run() {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- `data-compact-page`: no celular, a linha do chão (`BiCompactBar`) toma o lugar da
+         barra de cima e da linha de recortes; o tempo da leitura fica na faixa logo abaixo. -->
+    <BiCompactBar title="Cenários" :options="readingActions">
+      <template #primary>
+        <ClientOnly>
+          <ReadFreshness inline :metadata="freshness" :failed="Boolean(error)" />
+        </ClientOnly>
+      </template>
+    </BiCompactBar>
     <OperatorPageHeader title="Que cenários a IA propõe?" :actions="readingActions" :actions-label="readingLabel">
       <!-- Sem período (a IA lê os agregados de sempre): a linha de recortes leva só o
            frescor, no mesmo lugar das outras telas. -->
