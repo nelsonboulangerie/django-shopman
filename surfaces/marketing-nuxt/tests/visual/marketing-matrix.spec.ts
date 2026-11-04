@@ -710,15 +710,19 @@ test.describe("listas operacionais", () => {
     );
     // Os recortes da tela primeiro: no celular a lupa abre a busca da suíte em tela
     // cheia (modal), e o que fica atrás dela sai da árvore de acessibilidade.
-    // Abaixo de `sm` os recortes moram no painel de filtros da suíte (o ícone com o
-    // número, na linha) e os chips do cabeçalho dizem quais estão ligados.
+    // Abaixo de `sm` os recortes moram no painel de filtros da suíte (o ícone na linha,
+    // com o número no canto superior direito, como o do sino) e os chips do cabeçalho
+    // dizem quais estão ligados.
     const line = page.locator("[data-page-header-filter-line]");
-    await expect(line.locator("[data-operator-filter-panel-count]")).toContainText("2");
+    const trigger = line.locator("[data-operator-filter-panel-open]");
+    await expect(trigger).toHaveAttribute("aria-label", "Filtros: 2 recortes ativos");
+    await expect(trigger.locator("xpath=..").locator("[data-slot='base']")).toHaveText("2");
+    await expect(line.locator("[data-operator-filter-panel-count]")).toHaveCount(0);
     await expect(page.locator("[data-page-header-active-filter]")).toHaveText([
       "Situação: Desligadas",
       "Plataforma: Facebook",
     ]);
-    await line.locator("[data-operator-filter-panel-open]").click();
+    await trigger.click();
     const filters = page.getByRole("dialog", { name: "Filtros" });
     await expect(filters.getByRole("option", { name: /Plataforma/ })).toContainText("1 escolhido");
     await filters.getByRole("button", { name: "Pronto" }).click();

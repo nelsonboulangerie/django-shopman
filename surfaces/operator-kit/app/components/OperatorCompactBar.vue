@@ -1,13 +1,19 @@
 <script setup lang="ts">
 // A linha do chão no celular (abaixo de `md`), do modelo de navegação (31/10/2026): o
 // cabeçalho inteiro numa linha, no fundo claro da barra do kit (`bg-card`).
-//   [selo: app + lugar ▾, chip de conexão] [Busca] [Avisos] [⋮ Opções]
+//   [selo: app + lugar ▾, chip de conexão] [Filtros] [Busca] [Avisos] [⋮ Opções]
 // O ⋮ fica no canto, o último da linha, e o sino antes dele (dono, 03/11/2026).
 // - O selo diz o app e o lugar e abre o trocador (`OperatorSwitcher`). O nome do lugar
 //   também fica no <h1> acessível. Tela de REGISTRO (detalhe, conferência) usa `#lead`
 //   para o voltar e `#identity` para o que identifica o registro, que nunca some.
 // - A cadência e a hora da última leitura moram no topo das Opções.
-// - Filtros: `#filters` vira o painel de baixo, aberto por "Filtros" dentro do ⋮.
+// - Filtros (filtro único da suíte, dono 04/11/2026): `#filter-panel` recebe o painel de
+//   filtros da tela, `<OperatorFilterPanel trigger="icon" :chips="false">`, e o gatilho
+//   dele fica na linha, antes da busca: ícone de 44px com o número no canto superior
+//   direito, como o sino. Um toque abre o painel (a gaveta de baixo). O recorte ativo
+//   aparece na faixa logo abaixo da linha (`filter-active`/`filter-label`), com Limpar.
+// - `#filters` (a sair): o painel antigo, aberto por "Filtros" dentro do ⋮. Fica só até
+//   o Gestor, a Produção e o B.I. migrarem para `#filter-panel`; tela nova não o usa.
 // - `#more`: a tela que tem o seu próprio ⋮ (o painel de ações do detail do pedido) o
 //   põe aqui, no canto, depois do sino. Nunca no `#identity`: o ⋮ é sempre o último.
 // - Busca: ícone; abre a busca da suíte (mesmo contrato do app). O termo ativo aparece na
@@ -100,7 +106,14 @@ const items = computed<(readonly OperatorMoreMenuItem[])[]>(() => {
     <div class="flex min-h-14 items-center gap-1.5 border-b border-default bg-card px-2 py-1.5" data-compact-bar>
       <slot name="lead"><OperatorCompactSeal :tone="tone" :time="time" :place="title" :app-as-title="sealAppAsTitle" /></slot>
       <div v-if="$slots.identity" class="min-w-0 flex-1" data-compact-identity><slot name="identity" /></div>
-      <div class="flex shrink-0 items-center" role="group" :aria-label="`Buscar, avisos e opções: ${title}`">
+      <div
+        class="flex shrink-0 items-center"
+        role="group"
+        :aria-label="`${$slots['filter-panel'] ? 'Filtros, buscar' : 'Buscar'}, avisos e opções: ${title}`"
+      >
+        <div v-if="$slots['filter-panel']" class="shrink-0" data-compact-filter>
+          <slot name="filter-panel" />
+        </div>
         <NuxtButton
           v-if="search"
           icon="i-lucide-search"

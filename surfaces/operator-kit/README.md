@@ -1403,8 +1403,11 @@ UM painel, igual no celular e na mesa (dono, 09/10/2026, referência: o Odoo), s
    "Cliente contém …" para as dimensões de texto. Intervalos ficam com o `FilterBar`.
 
 No pé, **Limpar** e **Salvar como favorito** (o diálogo pede o nome e "Mostrar nos
-filtros rápidos da tela"). O botão: só o ícone com o número no celular; ícone, "Filtros"
-e o número na mesa. Contêiner: `NuxtDrawer` de baixo no celular, `NuxtPopover` na mesa.
+filtros rápidos da tela"). O botão: no celular, só o ícone, e o número
+no **canto superior direito do ícone**, o mesmo `NuxtChip` do sino (dono, 04/11/2026: em
+toda tela, a toolbar do escritório e a linha do chão; nunca ao lado do ícone). Na mesa,
+ícone, "Filtros" e o número no fluxo do botão (`OperatorCountChip`), como todo botão com
+rótulo da suíte. Contêiner: `NuxtDrawer` de baixo no celular, `NuxtPopover` na mesa.
 Na mesa os recortes ativos viram chips ao lado do botão (`chips`); no celular, os chips
 são os do cabeçalho (`active-filters`).
 
@@ -1431,6 +1434,36 @@ são os do cabeçalho (`active-filters`).
   `BIView` sem perder nenhum). "Publicar para a equipe" (gerente) fica para depois.
 - `#filter-panel` do `OperatorPageHeader`: no celular, fixo na ponta da linha da
   toolbar (o último a sair); na mesa, logo depois dos recortes primários.
+
+#### Filtro único da suíte (dono, 04/11/2026)
+
+Toda lista filtra por UMA coisa, este painel, no MESMO lugar e com o MESMO gesto em
+todos os apps:
+
+- **Mesa:** `#filter-panel` do `OperatorPageHeader`: "Filtros (n)" no começo da linha de
+  baixo, popover, e os chips dos recortes ao lado, cada um com ×.
+- **Celular (a linha do chão):** `#filter-panel` do `OperatorCompactBar`, com
+  `trigger="icon"` e `:chips="false"`. O gatilho fica na linha do selo, antes da busca
+  (selo · Filtros · Busca · Sino · ⋮): ícone fantasma de 44px e o número no **canto
+  superior direito do ícone**, o mesmo `NuxtChip` do sino (nunca no fluxo ao lado). Um
+  toque abre o painel na gaveta de baixo. O recorte ativo aparece na faixa logo abaixo da
+  linha (`filter-active` + `filter-label`), com Limpar.
+- Nada de abas, selects ou gaveta paralela repetindo um recorte do painel. O que não é
+  filtro fica fora: o modo da lista (`#filters-primary`, o dia da Produção), Ordenar e
+  Ver como (no ⋮), e os controles de leitura do B.I. (período ‹ ›, comparar).
+- Nunca gaveta dentro de gaveta: o painel não entra no `#filters` do `OperatorCompactBar`.
+
+```vue
+<OperatorCompactBar title="Enviados" :filter-active="hasFilters" :filter-label="filterSummary" @clear="clearFilters">
+  <template #filter-panel>
+    <OperatorFilterPanel v-model="filters" :dimensions="dimensions" trigger="icon" :chips="false" />
+  </template>
+</OperatorCompactBar>
+```
+
+O `#filters` do `OperatorCompactBar` (o painel antigo, por "Filtros" dentro do ⋮) está **a
+sair**: fica só até o Gestor (Pedidos), a Produção (`ProductionHeader`) e o B.I.
+(`BiCompactBar`) migrarem, um PR por app. Tela nova não o usa.
 - Trava: `guardrails.filterPanel.test.ts` (nenhum `FilterBar` no Gestor; toda tela
   que guarda favorito está no registro do servidor).
 
