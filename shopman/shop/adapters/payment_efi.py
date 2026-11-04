@@ -38,6 +38,12 @@ _EFI_TOKEN_LOCK_TTL = 35
 _EFI_TOKEN_LOCK_WAIT_SECONDS = 31.0
 _EFI_TOKEN_LOCK_POLL_SECONDS = 0.05
 
+# A borda da Efí (Cloudflare) recusa o User-Agent padrão do urllib
+# ("Python-urllib/x.y") com 403 e corpo "error code: 1010", antes de olhar
+# certificado ou credencial. Medido em 04/11/2026: o mesmo certificado e as
+# mesmas credenciais tiram token com qualquer outro nome.
+_EFI_USER_AGENT = "shopman-efi/1.0"
+
 
 def _brl_to_q(amount: str | float) -> int:
     """Converte o decimal da EFI ("4.35") em centavos (canônico em utils)."""
@@ -128,6 +134,7 @@ def _request_access_token(config: dict) -> str:
         headers={
             "Authorization": f"Basic {auth}",
             "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": _EFI_USER_AGENT,
         },
         method="POST",
     )
@@ -207,6 +214,7 @@ def _request(
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
+        "User-Agent": _EFI_USER_AGENT,
     }
     headers.update(extra_headers or {})
     request = Request(
