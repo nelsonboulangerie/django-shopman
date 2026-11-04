@@ -96,12 +96,10 @@ const headerActions = [
   { label: "Enviados", icon: "i-lucide-history", to: "/history" },
   { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
 ];
-const phoneHeaderActions = [
-  { label: "Preparar disparo", icon: "i-lucide-send", to: "/settings/campaigns", priority: 1 },
-  ...headerActions,
-];
+const prepareAction = { label: "Preparar disparo", icon: "i-lucide-send", to: "/settings/campaigns" };
+const phoneHeaderActions = [{ ...prepareAction, priority: 1 }, ...headerActions];
 // A linha do chão no celular: as mesmas ações, no ⋮ do canto.
-const compactOptions = phoneHeaderActions.map(({ priority: _priority, ...item }) => item);
+const compactOptions = [prepareAction, ...headerActions];
 onKeyStroke(["r", "R"], (event) => {
   const target = event.target as HTMLElement | null;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
