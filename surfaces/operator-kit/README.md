@@ -1381,8 +1381,11 @@ UM painel, igual no celular e na mesa (dono, 09/10/2026, referência: o Odoo), s
    "Cliente contém …" para as dimensões de texto. Intervalos ficam com o `FilterBar`.
 
 No pé, **Limpar** e **Salvar como favorito** (o diálogo pede o nome e "Mostrar nos
-filtros rápidos da tela"). O botão: só o ícone com o número no celular; ícone, "Filtros"
-e o número na mesa. Contêiner: `NuxtDrawer` de baixo no celular, `NuxtPopover` na mesa.
+filtros rápidos da tela"). O botão: no celular, só o ícone, e o número
+no **canto superior direito do ícone**, o mesmo `NuxtChip` do sino (dono, 04/11/2026: em
+toda tela, a toolbar do escritório e a linha do chão; nunca ao lado do ícone). Na mesa,
+ícone, "Filtros" e o número no fluxo do botão (`OperatorCountChip`), como todo botão com
+rótulo da suíte. Contêiner: `NuxtDrawer` de baixo no celular, `NuxtPopover` na mesa.
 Na mesa os recortes ativos viram chips ao lado do botão (`chips`); no celular, os chips
 são os do cabeçalho (`active-filters`).
 

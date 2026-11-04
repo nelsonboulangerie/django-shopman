@@ -12,7 +12,11 @@
 //   e no pé: Limpar e "Salvar como favorito".
 // Digitar oferece "Cliente contém …" para as dimensões de texto.
 //
-// O botão: só o ícone com o número no celular; ícone, "Filtros" e o número na mesa.
+// O botão: no celular só o ícone, com o número no canto; na mesa, ícone, "Filtros" e o
+// número no fluxo.
+// No celular (a gaveta), o número de qualquer gatilho fica no canto superior direito do
+// ícone, o NuxtChip do sino; na mesa, o botão com rótulo leva o número no fluxo, como todo
+// botão com rótulo da suíte (o `OperatorCountChip`).
 // `trigger="icon"` é o gatilho da linha do chão (`#filter-panel` do `OperatorCompactBar`,
 // filtro único da suíte, dono 04/11/2026): ícone fantasma de 44px, e o número no canto
 // superior direito do ícone, o mesmo `NuxtChip` do sino da mesma linha.
@@ -115,7 +119,7 @@ const query = computed<FilterPanelQuery>(() => ({
 const defaults = computed(() => ({ period: props.defaultPeriod, group: props.defaultGroup }));
 const activeCount = computed(() => activeRecortes(editable.value, query.value, defaults.value));
 const buttonLabel = computed(() => filterPanelLabel(activeCount.value));
-// O número no canto do ícone (só no gatilho `icon`): o mesmo texto do chip de contagem.
+// O número no canto do ícone (o gatilho do celular e o `icon`): o texto do chip de contagem.
 const cornerCount = computed(() => (activeCount.value > 0 ? countChipText(activeCount.value) : ""));
 
 function apply(next: FilterPanelQuery) {
@@ -413,8 +417,10 @@ const canSave = computed(() => Boolean(saved) && activeCount.value > 0);
       title="Filtros"
       description="Favoritos, filtros rápidos, data e filtros completos"
     >
+      <!-- No celular o gatilho é só o ícone, e o número fica no canto superior direito
+           dele, o mesmo NuxtChip do sino (dono, 04/11/2026): nunca ao lado. `icon` é o da
+           linha do chão (fantasma, 44px); `button`, o da toolbar (com contorno). -->
       <NuxtChip
-        v-if="trigger === 'icon'"
         :show="Boolean(cornerCount)"
         color="warning"
         :text="cornerCount"
@@ -424,33 +430,17 @@ const canSave = computed(() => Boolean(saved) && activeCount.value > 0);
         <NuxtButton
           icon="i-lucide-sliders-horizontal"
           color="neutral"
-          variant="ghost"
+          :variant="trigger === 'icon' ? 'ghost' : 'outline'"
           square
-          class="size-11 justify-center"
+          :class="trigger === 'icon' ? 'size-11 justify-center' : ''"
           :aria-label="buttonLabel"
           :title="buttonLabel"
           aria-haspopup="dialog"
           :aria-expanded="open"
           data-operator-filter-panel-open
-          data-trigger="icon"
+          :data-trigger="trigger"
         />
       </NuxtChip>
-      <NuxtButton
-        v-else
-        icon="i-lucide-sliders-horizontal"
-        color="neutral"
-        variant="outline"
-        :aria-label="buttonLabel"
-        :title="buttonLabel"
-        aria-haspopup="dialog"
-        :aria-expanded="open"
-        data-operator-filter-panel-open
-      >
-        <span class="max-sm:sr-only">Filtros</span>
-        <template v-if="activeCount" #trailing>
-          <OperatorCountChip :count="activeCount" data-operator-filter-panel-count />
-        </template>
-      </NuxtButton>
       <template #body><ReusePalette /></template>
     </NuxtDrawer>
     <NuxtPopover v-else v-model:open="open" :content="{ align: 'start' }">

@@ -137,6 +137,35 @@ describe("OperatorFilterPanel trigger=icon (a linha do chão)", () => {
   });
 });
 
+describe("OperatorFilterPanel no celular (o gatilho da toolbar)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("o número fica no canto superior direito do ícone, como o sino, nunca ao lado", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("max-width"),
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }));
+    const { Host } = host({ status: ["done"] });
+    mounted = await mountSuspended(Host, { attachTo: document.body });
+    await settle();
+    const button = openButton();
+    expect(button.getAttribute("data-trigger")).toBe("button");
+    expect(button.getAttribute("aria-label")).toBe("Filtros: 1 recorte ativo");
+    expect(button.textContent?.trim()).toBe("");
+    expect(document.querySelector("[data-operator-filter-panel-count]")).toBeNull();
+    const corner = button.parentElement?.querySelector<HTMLElement>("[data-slot='base']");
+    expect(corner?.textContent?.trim()).toBe("1");
+    expect(corner?.className).toContain("top-0");
+    expect(corner?.className).toContain("right-0");
+  });
+});
+
 function host(initial: ActiveFilters = {}) {
   const filters = ref<ActiveFilters>(initial);
   const period = ref<PeriodSelection>(DAY);
