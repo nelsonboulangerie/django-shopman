@@ -213,4 +213,5 @@ def test_every_call_to_efi_carries_our_own_user_agent():
         payment_efi.get_pix_webhook(PIX_KEY)
 
     assert len(sent) == 2
-    assert all(ua and not ua.startswith("Python-urllib") for ua in sent)
+    assert sent == [payment_efi._EFI_USER_AGENT] * 2
+    assert not payment_efi._EFI_USER_AGENT.startswith("Python-urllib")
