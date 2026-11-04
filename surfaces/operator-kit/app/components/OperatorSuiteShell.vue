@@ -182,7 +182,7 @@ provideSuiteRail({
 });
 
 function go(section: OperatorSection) {
-  if (section.to) void navigateTo(section.to);
+  if (section.to) void (/^https?:\/\//.test(section.to) ? navigateTo(section.to, { external: true }) : navigateTo(section.to));
   else emit("select", section.key);
 }
 
