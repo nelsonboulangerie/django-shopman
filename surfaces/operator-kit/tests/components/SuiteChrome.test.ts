@@ -714,10 +714,10 @@ describe("OperatorLiveStatus", () => {
 
   it("calmo: neutro, sem ponto, a cadência por extenso", async () => {
     const wrapper = await mountSuspended(OperatorLiveStatus, {
-      props: { tone: "calm", time: "10:30", label: "Atualiza sozinho a cada 60 s" },
+      props: { tone: "calm", time: "10:30", label: "Atualiza Sozinho a Cada 60 s" },
     });
     mounted.push(wrapper as unknown as VueWrapper);
-    expect(wrapper.text().trim()).toBe("Atualiza sozinho a cada 60 s");
+    expect(wrapper.text().trim()).toBe("Atualiza Sozinho a Cada 60 s");
     expect(wrapper.text()).not.toMatch(NO_ENGLISH_SWITCH);
     expect(live(wrapper).attributes("class")).toContain("bg-elevated");
     expect(live(wrapper).attributes("class")).not.toContain("ring-accented");
@@ -727,11 +727,11 @@ describe("OperatorLiveStatus", () => {
 
   it("o rótulo que cabe: o invólucro é o contêiner, pede a largura do completo e leva o curto escrito pelo app", async () => {
     const wrapper = await mountSuspended(OperatorLiveStatus, {
-      props: { tone: "calm", label: "Atualiza sozinho a cada 60 s", shortLabel: "A cada 60 s" },
+      props: { tone: "calm", label: "Atualiza Sozinho a Cada 60 s", shortLabel: "A cada 60 s" },
     });
     mounted.push(wrapper as unknown as VueWrapper);
     // O textContent continua sendo só o completo; o curto é conteúdo gerado.
-    expect(wrapper.text().trim()).toBe("Atualiza sozinho a cada 60 s");
+    expect(wrapper.text().trim()).toBe("Atualiza Sozinho a Cada 60 s");
     expect(live(wrapper).classes()).not.toContain("op-fit-scope");
     const fit = wrapper.get("[data-live-fit]");
     expect(fit.classes()).toContain("op-fit-scope");
@@ -743,13 +743,13 @@ describe("OperatorLiveStatus", () => {
     expect(shortEm).toBeGreaterThan(0);
     expect(style).toContain("width: calc(var(--op-fit-full) + 0.25px)");
     expect(style).toContain("min-width: 2rem");
-    expect(wrapper.find("[data-op-fit-variant='full']").text()).toBe("Atualiza sozinho a cada 60 s");
+    expect(wrapper.find("[data-op-fit-variant='full']").text()).toBe("Atualiza Sozinho a Cada 60 s");
     const short = wrapper.get("[data-op-fit-variant='short']");
     expect(short.attributes("data-op-fit-short")).toBe("A cada 60 s");
     expect(short.attributes("aria-hidden")).toBe("true");
     // Degrau 3: o ícone de atualizar, com o completo no nome acessível e na dica.
     expect(wrapper.find("[data-live-sign]").exists()).toBe(true);
-    expect(live(wrapper).attributes("title")).toContain("Atualiza sozinho a cada 60 s");
+    expect(live(wrapper).attributes("title")).toContain("Atualiza Sozinho a Cada 60 s");
     // Nenhuma classe corta o texto (o `truncate` do label do Badge saía "Atualiza sozinho a cada").
     expect(wrapper.html()).not.toMatch(/\btruncate\b/);
   });
@@ -760,7 +760,7 @@ describe("OperatorLiveStatus", () => {
     });
     mounted.push(wrapper as unknown as VueWrapper);
     expect(wrapper.find("[data-op-fit-variant='short']").exists()).toBe(false);
-    expect(wrapper.find("[data-op-fit-variant='only']").text()).toBe("Última leitura às 10:04");
+    expect(wrapper.find("[data-op-fit-variant='only']").text()).toBe("Última Leitura às 10:04");
     expect(wrapper.find("[data-live-sign]").exists()).toBe(false);
     expect(wrapper.get("[data-live-fit]").attributes("style")).toContain("min-width: 1.625rem");
   });
@@ -770,7 +770,7 @@ describe("OperatorLiveStatus", () => {
       props: { tone: "late", time: "10:04", label: "Sem atualizar" },
     });
     mounted.push(wrapper as unknown as VueWrapper);
-    expect(wrapper.text().trim()).toBe("Última leitura às 10:04");
+    expect(wrapper.text().trim()).toBe("Última Leitura às 10:04");
     expect(live(wrapper).attributes("class")).toContain("bg-warning/10");
     expect(dot(wrapper as unknown as VueWrapper).classes()).toContain(
       "bg-warning",
@@ -783,7 +783,7 @@ describe("OperatorLiveStatus", () => {
       props: { tone: "off", time: "22:03", label: "Atualização falhou" },
     });
     mounted.push(wrapper as unknown as VueWrapper);
-    expect(wrapper.text().trim()).toBe("Sem conexão");
+    expect(wrapper.text().trim()).toBe("Sem Conexão");
     expect(wrapper.text()).not.toMatch(NO_ENGLISH_SWITCH);
     expect(wrapper.text()).not.toContain("22:03");
     expect(live(wrapper).attributes("aria-label")).toContain("Atualização falhou");
