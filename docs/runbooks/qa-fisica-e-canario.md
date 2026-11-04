@@ -32,7 +32,7 @@ com ★ (o mínimo para abrir a porta com segurança).
 - [ ] Impressora térmica do balcão com papel; impressora da estação sem tela (Lanches, TM-T20X) com papel.
 - [ ] Gaveta fechada e com o fundo de troco contado.
 - [ ] Maquininha carregada e com sinal.
-- [ ] Wi-Fi da loja e a rede reserva (4G) identificadas: quem vai desligar a rede no teste sem conexão sabe onde fica o roteador.
+- [ ] Wi-Fi da loja e a rede reserva (4G) identificadas: quem vai desligar a rede no teste sem conexão (B8: o PDV deve **parar** de cobrar) sabe onde fica o roteador.
 - [ ] Loja **aberta** no sistema (a loja mostra o horário de hoje sem aviso de fechada).
 
 ### O que anotar quando falhar
@@ -177,19 +177,20 @@ B2, B5 e B8 (no tablet a gaveta não abre sozinha: ver Folha 5, P2.5).
 
 ### B8. Sem conexão: derrubar a rede e voltar
 
+A chave **Venda sem conexão** (Admin, Ponto de venda) nasce **desligada** e fica assim no
+go-live (decisão do dono, 03/11/2026: sem contingência offline por enquanto). O teste
+prova que, sem rede, o PDV **não cobra nem guarda venda**. Ligar a chave depende da NFC-e
+em contingência, que ainda não existe.
+
 Combine com o gerente. **Desligue a rede do balcão** (tirar o cabo do PC ou desligar o
 Wi-Fi do PC; se o roteador for de toda a loja, avise a cozinha antes). Cronometre.
 
-- [ ] ★ **B8.1** **Confira** em até 5 s: faixa "Sem conexão…" no topo, que **não** cobre nenhum botão; logo abaixo, o aviso "O balcão continua vendendo." ("Sem conexão" aparece **uma** vez, na faixa)
-- [ ] ★ **B8.2** Tocar em **O que funciona agora**. **Confira:** a lista diz dinheiro e maquininha sim; Pix, entrega, encomenda e desconto não.
-- [ ] ★ **B8.3** Fazer uma venda em **dinheiro**. **Confira:** a gaveta abre (PC do balcão), o recibo sai pela impressão do navegador, e a tela diz "Venda guardada neste dispositivo."
-- [ ] ★ **B8.4** Fazer uma venda na **maquininha**. **Confira:** o aviso passa a "2 vendas esperando envio."
-- [ ] **B8.5** Tentar **Pix**. **Confira:** "Pix precisa de conexão. Receba em dinheiro ou na maquininha."
-- [ ] **B8.6** Tentar dar um **desconto**. **Confira:** o PDV recusa e diz que precisa de conexão.
-- [ ] **B8.7** Tentar **Fechar o caixa**. **Confira:** "N vendas feitas sem conexão ainda não foram enviadas. Envie antes de fechar o caixa."
-- [ ] ★ **B8.8** **Religar a rede.** **Confira** em até 30 s: "Enviando 2 vendas guardadas…" e os avisos "Venda guardada enviada: pedido NB-…" (anote: _______ e _______).
-- [ ] ★ **B8.9** **Confira** no Gestor (Folha 4): as duas vendas aparecem como pedidos pagos, e a NFC-e de cada uma sai depois do envio.
-- [ ] **B8.10** **Confira:** a faixa some e o PDV volta a vender Pix.
+- [ ] **B8.0** Antes de derrubar: **Confira** no Admin, Ponto de venda, que **Venda sem conexão** está desligada.
+- [ ] ★ **B8.1** **Confira** em até 5 s: no cabeçalho, "Sem conexão: a venda espera a rede voltar."
+- [ ] ★ **B8.2** Com itens na venda, **Confira:** Pagamento, pagar direto e Validar ficam apagados, com "Sem conexão. A venda espera a rede voltar." logo abaixo; F4 não abre o pagamento.
+- [ ] ★ **B8.3** **Confira:** nenhuma venda foi cobrada nem guardada no dispositivo (a gaveta não abre, nenhum recibo sai).
+- [ ] ★ **B8.4** **Religar a rede.** **Confira** em até 30 s: o aviso some e a mesma venda (os itens continuam lá) se conclui normalmente.
+- [ ] **B8.5** **Confira** no Gestor (Folha 4): só a venda do B8.4 aparece, uma vez.
 
 ### B9. Sangria, suprimento e fechar o caixa
 
