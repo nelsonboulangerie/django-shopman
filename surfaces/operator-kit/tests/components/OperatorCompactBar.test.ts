@@ -43,6 +43,20 @@ describe("OperatorCompactBar", () => {
     expect([...at].sort((a, b) => a - b)).toEqual(at);
   });
 
+  it("#filter-panel: o filtro único fica na linha, antes da busca, do sino e do ⋮", async () => {
+    const wrapper = await mountSuspended(OperatorCompactBar, {
+      props: { title: "Enviados", options: [{ label: "Atualizar", onSelect: () => {} }] },
+      slots: { "filter-panel": () => h("button", { "data-own-filter": "" }, "Filtros") },
+      global: { stubs },
+    });
+    const at = order(wrapper.html(), ["data-own-filter", "data-compact-search", "data-inbox-stub", "data-compact-options"]);
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(wrapper.get("[role=group]").attributes("aria-label")).toBe("Filtros, buscar, avisos e opções: Enviados");
+    // O ⋮ não ganha o item "Filtros" do painel antigo.
+    expect(wrapper.html()).not.toContain("Filtros:");
+  });
+
   it("seal-app-as-title: a linha não tem <h1>, a página traz o dela", async () => {
     const plain = await mountSuspended(OperatorCompactBar, { props: { title: "Pedidos" }, global: { stubs } });
     expect(plain.findAll("h1").map((h) => h.text())).toEqual(["Pedidos"]);

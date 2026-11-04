@@ -101,6 +101,42 @@ describe("as decisões puras do painel", () => {
   });
 });
 
+describe("OperatorFilterPanel trigger=icon (a linha do chão)", () => {
+  it("ícone fantasma de 44px, e o número no canto do ícone, como o sino", async () => {
+    const filters = ref<ActiveFilters>({ status: ["done", "cancelled"] });
+    const Host = defineComponent({
+      setup: () => () =>
+        h(OperatorFilterPanel, {
+          modelValue: filters.value,
+          "onUpdate:modelValue": (next: ActiveFilters) => (filters.value = next),
+          dimensions,
+          chips: false,
+          trigger: "icon",
+        }),
+    });
+    mounted = await mountSuspended(Host, { attachTo: document.body });
+    await settle();
+    const button = openButton();
+    expect(button.getAttribute("data-trigger")).toBe("icon");
+    expect(button.getAttribute("aria-label")).toBe("Filtros: 1 recorte ativo");
+    expect(button.className).toContain("size-11");
+    expect(button.textContent?.trim()).toBe("");
+    // O número no canto: o NuxtChip do sino, não o chip no fluxo do botão.
+    // O número no canto superior direito: o NuxtChip do sino (`top-0 right-0`), irmão do
+    // botão, não o chip no fluxo do botão.
+    const corner = () => openButton().parentElement?.querySelector<HTMLElement>("[data-slot='base']");
+    expect(corner()?.textContent?.trim()).toBe("1");
+    expect(corner()?.className).toContain("top-0");
+    expect(corner()?.className).toContain("right-0");
+    expect(document.querySelector("[data-operator-filter-panel-count]")).toBeNull();
+
+    filters.value = {};
+    await settle();
+    expect(corner()?.textContent?.trim() ?? "").toBe("");
+    expect(openButton().getAttribute("aria-label")).toBe("Filtros");
+  });
+});
+
 function host(initial: ActiveFilters = {}) {
   const filters = ref<ActiveFilters>(initial);
   const period = ref<PeriodSelection>(DAY);

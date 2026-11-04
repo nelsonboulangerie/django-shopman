@@ -13,6 +13,9 @@
 // Digitar oferece "Cliente contém …" para as dimensões de texto.
 //
 // O botão: só o ícone com o número no celular; ícone, "Filtros" e o número na mesa.
+// `trigger="icon"` é o gatilho da linha do chão (`#filter-panel` do `OperatorCompactBar`,
+// filtro único da suíte, dono 04/11/2026): ícone fantasma de 44px, e o número no canto
+// superior direito do ícone, o mesmo `NuxtChip` do sino da mesma linha.
 // O contêiner: `NuxtDrawer` de baixo no celular, `NuxtPopover` na mesa (a régua do
 // kit, lida depois de montar). Na mesa os recortes ativos viram chips ao lado do botão;
 // no celular os chips são os do cabeçalho (`active-filters`). O diálogo de salvar e o
@@ -31,6 +34,7 @@ import {
   withPreset,
   type PeriodSelection,
 } from "../presentation/dates";
+import { countChipText } from "../presentation/countChip";
 import { filterBarActiveFilters, optionsFor, setValues, toggleOption } from "../presentation/filterBar";
 import {
   activeRecortes,
@@ -67,6 +71,11 @@ const props = withDefaults(
     screen?: string;
     /** Chips dos recortes ativos ao lado do botão (na mesa). */
     chips?: boolean;
+    /**
+     * O gatilho. `button`: o botão com contorno ("Filtros" e o número). `icon`: o da linha
+     * do chão, fantasma de 44px, com o número no canto do ícone, como o do sino.
+     */
+    trigger?: "button" | "icon";
   }>(),
   {
     quick: () => [],
@@ -80,6 +89,7 @@ const props = withDefaults(
     surface: "",
     screen: "",
     chips: true,
+    trigger: "button",
   },
 );
 
@@ -105,6 +115,8 @@ const query = computed<FilterPanelQuery>(() => ({
 const defaults = computed(() => ({ period: props.defaultPeriod, group: props.defaultGroup }));
 const activeCount = computed(() => activeRecortes(editable.value, query.value, defaults.value));
 const buttonLabel = computed(() => filterPanelLabel(activeCount.value));
+// O número no canto do ícone (só no gatilho `icon`): o mesmo texto do chip de contagem.
+const cornerCount = computed(() => (activeCount.value > 0 ? countChipText(activeCount.value) : ""));
 
 function apply(next: FilterPanelQuery) {
   filters.value = { ...next.filters };
@@ -401,7 +413,30 @@ const canSave = computed(() => Boolean(saved) && activeCount.value > 0);
       title="Filtros"
       description="Favoritos, filtros rápidos, data e filtros completos"
     >
+      <NuxtChip
+        v-if="trigger === 'icon'"
+        :show="Boolean(cornerCount)"
+        color="warning"
+        :text="cornerCount"
+        size="4xl"
+        inset
+      >
+        <NuxtButton
+          icon="i-lucide-sliders-horizontal"
+          color="neutral"
+          variant="ghost"
+          square
+          class="size-11 justify-center"
+          :aria-label="buttonLabel"
+          :title="buttonLabel"
+          aria-haspopup="dialog"
+          :aria-expanded="open"
+          data-operator-filter-panel-open
+          data-trigger="icon"
+        />
+      </NuxtChip>
       <NuxtButton
+        v-else
         icon="i-lucide-sliders-horizontal"
         color="neutral"
         variant="outline"
@@ -419,7 +454,30 @@ const canSave = computed(() => Boolean(saved) && activeCount.value > 0);
       <template #body><ReusePalette /></template>
     </NuxtDrawer>
     <NuxtPopover v-else v-model:open="open" :content="{ align: 'start' }">
+      <NuxtChip
+        v-if="trigger === 'icon'"
+        :show="Boolean(cornerCount)"
+        color="warning"
+        :text="cornerCount"
+        size="4xl"
+        inset
+      >
+        <NuxtButton
+          icon="i-lucide-sliders-horizontal"
+          color="neutral"
+          variant="ghost"
+          square
+          class="size-11 justify-center"
+          :aria-label="buttonLabel"
+          :title="buttonLabel"
+          aria-haspopup="dialog"
+          :aria-expanded="open"
+          data-operator-filter-panel-open
+          data-trigger="icon"
+        />
+      </NuxtChip>
       <NuxtButton
+        v-else
         icon="i-lucide-sliders-horizontal"
         color="neutral"
         variant="outline"
