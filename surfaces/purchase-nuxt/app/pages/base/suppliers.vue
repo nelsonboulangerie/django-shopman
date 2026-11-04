@@ -226,11 +226,14 @@ const supplierSavedVersion = ref(0);
 async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierContact>[0]) {
   if (await saveSupplierContact(payload)) supplierSavedVersion.value += 1;
 }
+
+// O ponto da leitura no selo do trocador, abaixo de `lg` (o `#status` sai dali).
+const { tone: sealTone, time: sealTime } = usePurchaseReadSeal();
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader :title="openRef ? 'Fornecedor' : 'Base'" :actions="headerActions" actions-label="Mais ações da Base" :active-filters="activeFilters" desk-only-filters>
+    <OperatorPageHeader :seal-tone="sealTone" :seal-time="sealTime" :title="openRef ? 'Fornecedor' : 'Base'" :actions="headerActions" actions-label="Mais ações da Base" :active-filters="activeFilters" desk-only-filters>
       <template v-if="selectedCount || bulkUndo" #selection>
         <PurchaseSupplierBulkBar
           :count="selectedCount"

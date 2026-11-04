@@ -215,11 +215,6 @@ const headerActions = [
     kbds: ["R"],
     onSelect: () => void refresh(),
   },
-  {
-    label: "Contagem de estoque",
-    icon: "i-lucide-clipboard-check",
-    to: baseSectionPath("count"),
-  },
 ];
 
 async function onSubmitMaterial(payload: Record<string, unknown>) {
@@ -245,11 +240,16 @@ async function onSaveMinStock() {
   }
 }
 const saveLabel = computed(() => `Salvar ${plural(minStockFilledCount.value, "mínimo", "mínimos")}`);
+
+// O ponto da leitura no selo do trocador, abaixo de `lg` (o `#status` sai dali).
+const { tone: sealTone, time: sealTime } = usePurchaseReadSeal();
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader
+      :seal-tone="sealTone"
+      :seal-time="sealTime"
       :title="openSku ? 'Insumo' : 'Base'"
       :actions="headerActions"
       actions-label="Mais ações da Base"

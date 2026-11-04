@@ -149,11 +149,14 @@ async function onPrefer(cost: SupplierMaterialCost) {
     preferringId.value = "";
   }
 }
+
+// O ponto da leitura no selo do trocador, abaixo de `lg` (o `#status` sai dali).
+const { tone: sealTone, time: sealTime } = usePurchaseReadSeal();
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Lançar custos" :actions="headerActions" actions-label="Mais ações de custos">
+    <OperatorPageHeader :seal-tone="sealTone" :seal-time="sealTime" title="Lançar custos" :actions="headerActions" actions-label="Mais ações de custos">
       <template #status>
         <PurchaseReadStatus />
       </template>

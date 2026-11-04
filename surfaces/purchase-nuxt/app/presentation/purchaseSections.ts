@@ -1,9 +1,18 @@
 // As seções do Compras no shell da suíte (WP-FASE2-UX-OPERADOR, onda do Compras).
 //
-// Cada seção é uma rota: Painel (`/`), Comprar (`/buy`), Receber (`/receive`) e Base
-// (`/base/<cadastro>`). As quatro vão para a barra inferior do celular (`quick`), sem
-// "Mais": o ☰ abre a gaveta com o menu completo. A Base tem quatro sub-seções com rota
-// própria (Insumos, Fornecedores, Custos, Contagem), escolhidas na toolbar da tela.
+// Cada seção é uma rota: Painel (`/`), Comprar (`/buy`), Receber (`/receive`), Base
+// (`/base/<cadastro>`) e Contar estoque (`/count`). A ordem é a da barra lateral e das
+// teclas: Alt+1 a Alt+4 seguem as de antes, e Contar estoque entra no fim, Alt+5, para
+// nenhuma tecla trocar de lugar (dono, 03/11/2026: memória muscular).
+//
+// O modelo de navegação (dono, 31/10/2026) dá a cada seção a forma da tela, que nunca
+// vira palavra na tela:
+//   · chão (de pé, no estoque ou na porta, com o celular): Painel, Comprar, Receber e
+//     Contar estoque. São elas a barra de baixo do celular (`quick`). A contagem deixou
+//     de ser tarefa escondida no ⋯ da Base: é seção (modelo de 31/10, "Contagem → chão");
+//   · escritório (no computador): a Base, com os cadastros (Insumos, Fornecedores) e o
+//     lançamento de custos.
+// A Base tem sub-seções com rota própria, escolhidas na toolbar da tela.
 //
 // Puro: o número de reposições urgentes e o de pendências da entrada chegam prontos.
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
@@ -44,15 +53,12 @@ export const PURCHASE_BASE_SECTIONS: ReadonlyArray<{
     icon: "i-lucide-calculator",
     to: "/base/costs",
   },
-  {
-    key: "count",
-    label: "Contar estoque",
-    icon: "i-lucide-clipboard-check",
-    to: "/base/count",
-  },
 ];
 
-/** As duas coleções irmãs da Base. Custos e Contagem são tarefas, não abas. */
+/** O endereço da contagem de estoque, seção própria desde o modelo de navegação. */
+export const COUNT_PATH = "/count";
+
+/** As duas coleções irmãs da Base. Custos é tarefa, não aba. */
 export const PURCHASE_BASE_RECORD_SECTIONS = PURCHASE_BASE_SECTIONS.filter((section) => section.record);
 
 /** O endereço de uma sub-seção da Base. */
@@ -87,21 +93,22 @@ export function urgentLabel(count: number): string {
   return `${count} ${count === 1 ? "reposição urgente" : "reposições urgentes"}`;
 }
 
+/** As seções do chão: as da barra de baixo do celular. */
+export const PURCHASE_FLOOR_SECTIONS: readonly string[] = ["panel", "buy", "receive", "count"];
+
 export function purchaseSections({ urgentMaterials, receivePending }: PurchaseSectionsInput): OperatorSection[] {
-  return [
+  const sections: OperatorSection[] = [
     {
       key: "panel",
       label: "Painel",
       icon: "lucide:layout-dashboard",
       to: "/",
-      quick: true,
     },
     {
       key: "buy",
       label: "Comprar",
       icon: "lucide:shopping-cart",
       to: "/buy",
-      quick: true,
       attention: urgentMaterials > 0 ? urgentLabel(urgentMaterials) : undefined,
     },
     {
@@ -109,7 +116,6 @@ export function purchaseSections({ urgentMaterials, receivePending }: PurchaseSe
       label: "Receber",
       icon: "lucide:package-check",
       to: "/receive",
-      quick: true,
       badge: receivePending > 0 ? String(receivePending) : undefined,
     },
     {
@@ -118,7 +124,21 @@ export function purchaseSections({ urgentMaterials, receivePending }: PurchaseSe
       icon: "lucide:database",
       to: "/base/materials",
       match: ["/base"],
-      quick: true,
+    },
+    {
+      key: "count",
+      label: "Contar estoque",
+      // Na barra de baixo, 1/4 de um celular de 320px: o nome curto. O acessível é o cheio.
+      shortLabel: "Contar",
+      icon: "lucide:clipboard-check",
+      to: COUNT_PATH,
     },
   ];
+  return sections.map((section, index) => ({
+    ...section,
+    shortcut: `Alt+${index + 1}`,
+    ...(PURCHASE_FLOOR_SECTIONS.includes(section.key)
+      ? { form: "floor" as const, quick: true }
+      : { form: "office" as const }),
+  }));
 }

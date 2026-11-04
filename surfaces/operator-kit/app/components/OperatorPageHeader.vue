@@ -128,6 +128,15 @@ const props = withDefaults(
      * `#filters-primary` e `#filters-end` seguem na linha do celular.
      */
     deskOnlyFilters?: boolean;
+    /**
+     * Com o trocador, a leitura da tela no selo (o ponto do `OperatorCompactSeal`, como
+     * na linha do chão). Quem passa declara que o `#status` É a leitura: abaixo de `lg`,
+     * onde o selo aparece, o `#status` sai, em vez de descer sozinho para uma segunda
+     * linha (o "● 12:05" solto da Base do Compras, 04/11/2026). Na mesa ele segue.
+     */
+    sealTone?: "live" | "calm" | "late" | "off";
+    /** A hora da última leitura, para o nome acessível do selo. Só com `sealTone`. */
+    sealTime?: string;
   }>(),
   {
     eyebrow: "",
@@ -145,6 +154,8 @@ const props = withDefaults(
     phoneFilters: undefined,
     deskOnlyFilters: false,
     alerts: () => [],
+    sealTone: undefined,
+    sealTime: "",
   },
 );
 
@@ -238,6 +249,10 @@ const actionsClass = computed(() => {
 // Com o trocador (modelo de navegação), não há ☰: o selo é a porta, em toda largura.
 const switcherEnabled = useState<boolean>("suite-switcher-enabled", () => false);
 const sealClass = computed(() => (suiteRail && !switcherEnabled.value ? "max-sm:hidden" : ""));
+// A leitura mora no selo do trocador abaixo de `lg` (`sealTone`). Os slots entram no
+// template (`useSlots()` não é reativo): com `#lead` não há selo, e o `#subtitle` e o
+// rótulo seguem precisando da linha.
+const statusInSeal = computed(() => switcherEnabled.value && Boolean(props.sealTone) && !eyebrowText.value);
 
 // Toolbar no celular.
 const filtersMode = computed(
@@ -324,6 +339,8 @@ function clearAll() {
         <OperatorCompactSeal
           v-if="switcherEnabled && !$slots.lead"
           :place="title"
+          :tone="sealTone"
+          :time="sealTime"
           class="flex-none! lg:hidden"
           data-page-header-switcher-seal
         />
@@ -375,6 +392,7 @@ function clearAll() {
       <template v-if="eyebrowText || $slots.subtitle || $slots.status" #trailing>
         <div
           class="flex min-w-0 items-center gap-1.5 max-sm:basis-full max-sm:flex-wrap"
+          :class="{ 'max-lg:hidden': statusInSeal && !$slots.lead && !$slots.subtitle }"
           data-page-header-status
         >
           <NuxtBadge

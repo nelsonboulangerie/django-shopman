@@ -659,6 +659,28 @@ gaveta) até a onda de cada um.
 Contrato em `tests/suiteChrome.test.ts` (máximo 5, mínimo 3, "Mais" só quando sobra) e
 `tests/components/OperatorSuiteShell.test.ts`.
 
+**Com o trocador** (`switcher-sections`, modelo de navegação de 31/10/2026), a forma da
+tela decide a barra de baixo, e cada desvio é opt-in do app:
+
+| O shell recebe | Tela do chão | Tela do escritório |
+| --- | --- | --- |
+| só `switcher-sections` | nenhuma barra (o selo troca) | as seções do escritório; "Mais" abre o trocador |
+| `floor-bar` | as seções do chão | as seções do escritório |
+| `floor-bar` + `office-uses-floor-bar` | as seções do chão | **as mesmas do chão, nenhuma acesa** |
+
+`office-uses-floor-bar` é para o app cujo escritório é um canto só e cujo celular vive
+no chão: o Compras, em que a Base é a única seção do escritório (dono, 04/11/2026). Sem
+ela, a vaga única do escritório some (`shown: false`) e o caminho de volta fica só no
+selo. Não é regra implícita para todo escritório de uma seção: o app decide.
+
+**A leitura no selo** (`seal-tone` e `seal-time` do `OperatorPageHeader`). Com o
+trocador, abaixo de `lg` o cabeçalho mostra o `OperatorCompactSeal`; a tela que passa
+`seal-tone` põe nele o ponto da leitura, como a linha do chão (`OperatorCompactBar`), e
+declara que o `#status` É a leitura: abaixo de `lg` ele sai, em vez de descer sozinho
+para uma segunda linha (era o "● 12:05" solto da Base do Compras). Na mesa o `#status`
+segue. Com `#lead`, `#subtitle` ou `eyebrow`, o `#status` fica, porque a linha tem mais
+que a leitura.
+
 **O desenho das duas barras de baixo é um só** (`TAB_BAR_UI` em
 `presentation/tabBar.ts`): a barra inferior do shell (`OperatorQuickBar`) e a barra do
 polegar dos apps ainda fora do shell (`OperatorSectionBar`, com o "Mais" como item da

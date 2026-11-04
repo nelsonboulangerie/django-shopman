@@ -224,7 +224,7 @@ def test_daily_catalog_customer_supply_stock_and_closing_work_has_a_product_surf
         "catálogo": "surfaces/orders-nuxt/app/pages/catalog.vue",
         "clientes": "surfaces/orders-nuxt/app/pages/customers/index.vue",
         "fornecedores": "surfaces/purchase-nuxt/app/pages/base/suppliers/index.vue",
-        "estoque": "surfaces/purchase-nuxt/app/pages/base/count.vue",
+        "estoque": "surfaces/purchase-nuxt/app/pages/count.vue",
         "fechamento": "surfaces/pos-nuxt/app/pages/session/closing.vue",
     }
     assert {name for name, rel in expected_routes.items() if not (REPO_ROOT / rel).is_file()} == set()

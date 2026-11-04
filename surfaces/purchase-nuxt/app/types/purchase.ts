@@ -1,5 +1,5 @@
-export const PURCHASE_VIEWS = ["panel", "buy", "receive", "base"] as const;
-export const PURCHASE_BASE_VIEWS = ["materials", "suppliers", "costs", "count"] as const;
+export const PURCHASE_VIEWS = ["panel", "buy", "receive", "base", "count"] as const;
+export const PURCHASE_BASE_VIEWS = ["materials", "suppliers", "costs"] as const;
 
 export type PurchaseView = (typeof PURCHASE_VIEWS)[number];
 export type PurchaseBaseView = (typeof PURCHASE_BASE_VIEWS)[number];
