@@ -37,6 +37,9 @@ import {
   hubDateLine,
   hubGreeting,
   hubIsEmpty,
+  hubPushAlert,
+  hubPushState,
+  hubVersionLabel,
   readClockLabel,
   serverClockOffset,
   staleQueueAlert,
@@ -90,6 +93,31 @@ const { prefix: house } = useOperatorWindowTitle();
 // Versão publicada deste build (`NUXT_PUBLIC_APP_VERSION`/`SOURCE_VERSION`; "local" na
 // máquina de quem desenvolve). É o que o operador lê para o suporte ao relatar algo.
 const appVersion = String(useRuntimeConfig().public.appVersion || "local");
+
+// Avisos neste dispositivo (dono, 04/11/2026: o rodapé saiu). O estado só aparece quando
+// pede um gesto, como aviso da tela; o que chega e os dispositivos ficam a um toque no ⋮
+// ("Avisos neste dispositivo"). A permissão só existe no navegador: lida depois de montar,
+// e com a lista de dispositivos já lida (sem ela, "desligados" piscaria para quem já ligou).
+// (Antes do `await` abaixo: depois dele o `onMounted` não tem instância.)
+const push = useWebPush();
+const pushRead = ref(false);
+onMounted(async () => {
+  if (push.supported.value && push.permission.value === "granted") await push.refresh();
+  pushRead.value = true;
+});
+const pushState = computed(() =>
+  hubPushState({
+    read: pushRead.value,
+    supported: push.supported.value,
+    active: push.active.value,
+    permission: push.permission.value,
+    unavailableReason: push.unavailableReason.value,
+  }),
+);
+const pushSettingsOpen = ref(false);
+function reloadPage(): void {
+  window.location.reload();
+}
 
 const { hub, tiles, queue, operatorName, shopName, error, pending, refresh } = await useOperatorHub();
 const brandLine = computed(() => hubBrandLine(shopName.value || house));
@@ -177,25 +205,37 @@ const hasBlockingFailure = computed(
 );
 const isEmpty = computed(() => hubIsEmpty(tiles.value));
 
-const alerts = computed<OperatorScreenAlert[]>(() =>
-  staleRead.value
-    ? [
-        {
-          id: "stale-read",
-          color: "warning",
-          ...staleQueueAlert(readClock.value),
-          action: { label: "Tentar de novo", onSelect: () => void refresh() },
-        },
-      ]
-    : [],
-);
+const alerts = computed<OperatorScreenAlert[]>(() => {
+  const out: OperatorScreenAlert[] = [];
+  if (staleRead.value) {
+    out.push({
+      id: "stale-read",
+      color: "warning",
+      ...staleQueueAlert(readClock.value),
+      action: { label: "Tentar de novo", onSelect: () => void refresh() },
+    });
+  }
+  const pushAlert = hubPushAlert(pushState.value);
+  if (pushAlert) {
+    const action =
+      pushState.value === "off"
+        ? { label: push.loading.value ? "Ligando…" : "Ligar avisos", onSelect: () => void push.activate() }
+        : pushState.value === "blocked"
+          ? { label: "Recarregar", onSelect: reloadPage }
+          : undefined;
+    out.push(action ? { ...pushAlert, action } : pushAlert);
+  }
+  return out;
+});
 
 // A leitura no ponto do selo da linha do chão (celular): periódica enquanto anda, atrasada
 // quando a releitura falha com a fila na tela, sem conexão quando o dispositivo caiu.
 const compactTone = computed(() => (!isOnline.value ? "off" : staleRead.value ? "late" : "calm"));
 
 // O ⋯ único da tela: o que age sobre a tela inteira (fase 2, seção 11). Na linha do chão
-// do celular é o mesmo ⋮, com a leitura (cadência e hora) no topo.
+// do celular é o mesmo ⋮, com a leitura (cadência e hora) no topo. Por último, a versão
+// publicada deste build (o que o operador lê para o suporte), como rótulo: não é gesto.
+const versionItem = { label: hubVersionLabel(appVersion), icon: "i-lucide-tag", type: "label" as const };
 const headerActions = computed<OperatorHeaderAction[]>(() => [
   {
     label: "Atualizar",
@@ -203,6 +243,14 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
     disabled: pending.value,
     onSelect: () => void refresh(),
   },
+  {
+    label: "Avisos neste dispositivo",
+    icon: "i-lucide-bell",
+    onSelect: () => {
+      pushSettingsOpen.value = true;
+    },
+  },
+  versionItem,
 ]);
 
 </script>
@@ -369,18 +417,6 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
                 </section>
               </template>
 
-              <!-- Avisos neste dispositivo (o gesto que cabe ao estado; o que chega e os
-                   dispositivos a um toque) e a versão publicada deste build, que é o que
-                   o operador lê para o suporte ao relatar algo. -->
-              <footer class="border-t border-default pt-3 text-sm text-muted">
-                <OperatorPushSettings variant="line">
-                  <template #end>
-                    <span class="ms-auto inline-flex min-h-8 items-center tabular-nums" data-hub-version>
-                      Versão {{ HUB_NAMED_OF }}:&nbsp;<span class="font-mono text-default">{{ appVersion }}</span>
-                    </span>
-                  </template>
-                </OperatorPushSettings>
-              </footer>
               <!-- Tem mais abaixo (kit): no celular a lista de apps passa da dobra. -->
               <MoreBelow />
             </div>
@@ -394,6 +430,12 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
         @dismiss="stationSetup.dismiss()"
         @unavailable="stationSetup.dismiss({ remember: false })"
       />
+      <!-- O que chega e os dispositivos (o cartão do kit), a um toque no ⋮. -->
+      <NuxtModal v-model:open="pushSettingsOpen" title="Avisos neste dispositivo" :ui="{ title: 'sr-only' }">
+        <template #body>
+          <OperatorPushSettings class="mt-0! border-0! bg-transparent! p-0!" />
+        </template>
+      </NuxtModal>
       <OperatorSonner />
       <OperatorPwaRuntime />
     </div>

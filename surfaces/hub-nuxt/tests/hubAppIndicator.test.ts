@@ -2,7 +2,14 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { serverClockOffset, tileAriaLabel, tileAttentionCount } from "../app/presentation/hub";
+import {
+  hubPushAlert,
+  hubPushState,
+  hubVersionLabel,
+  serverClockOffset,
+  tileAriaLabel,
+  tileAttentionCount,
+} from "../app/presentation/hub";
 import type { HubTileProjection } from "../app/types/hub";
 
 // A lista de apps simples (dono, 04/11/2026: "Simplifique! Só algum indicador mais
@@ -75,5 +82,45 @@ describe("a grade de apps", () => {
   it("o texto da casa quebra, nunca corta", () => {
     expect(app).not.toMatch(/\btruncate\b|line-clamp-\d|text-ellipsis/);
     expect(app).toContain("<MoreBelow");
+  });
+});
+
+// O rodapé saiu (dono, 04/11/2026: "esse rodapé horroroso"). O estado dos avisos do
+// dispositivo só aparece quando pede um gesto, como aviso da tela; a versão vai no ⋮.
+describe("avisos neste dispositivo", () => {
+  const base = { read: true, supported: true, active: false, permission: "default", unavailableReason: "" };
+
+  it("só pede gesto quando há gesto: desligados, bloqueados, ou o navegador que não entrega", () => {
+    expect(hubPushState(base)).toBe("off");
+    expect(hubPushState({ ...base, active: true, permission: "granted" })).toBe("");
+    expect(hubPushState({ ...base, permission: "denied" })).toBe("blocked");
+    expect(hubPushState({ ...base, supported: false, unavailableReason: "browser" })).toBe("browser");
+    // Instalação sem chave de envio não é gesto do operador.
+    expect(hubPushState({ ...base, supported: false, unavailableReason: "deploy" })).toBe("");
+    // Antes de ler o navegador e a lista de dispositivos, nada (não pisca "desligados").
+    expect(hubPushState({ ...base, read: false })).toBe("");
+  });
+
+  it("cada estado tem a sua frase, curta, sem travessão e sem nota de engenheiro", () => {
+    for (const state of ["off", "blocked", "browser"] as const) {
+      const alert = hubPushAlert(state)!;
+      expect(alert.id).toBe(`push:${state}`);
+      const text = `${alert.title} ${alert.description}`;
+      expect(text).not.toMatch(/—|–|ícone à esquerda|endereço/);
+    }
+    expect(hubPushAlert("blocked")?.color).toBe("warning");
+    expect(hubPushAlert("")).toBeNull();
+  });
+
+  it("a versão vai no ⋮, com o nome do app", () => {
+    expect(hubVersionLabel("20261104-1800-abc1234")).toBe("Versão da Central: 20261104-1800-abc1234");
+    expect(hubVersionLabel("")).toBe("Versão da Central: local");
+  });
+
+  it("a tela é só a saudação e a grade: sem rodapé, e os avisos pelo cabeçalho", () => {
+    expect(template).not.toContain("<footer");
+    expect(template).not.toContain('variant="line"');
+    expect(template).toContain(':alerts="alerts"');
+    expect(app).toContain("hubPushAlert(");
   });
 });

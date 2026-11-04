@@ -10,6 +10,7 @@ import {
   EXTERNAL_LINK_ATTRS,
   type CrossAppLinkAttrs,
 } from "../../../operator-kit/app/presentation/appLaunch";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 import type { HubTileProjection } from "~/types/hub";
 
 // Presentation pura da Central — sem estado, sem Nuxt; testável isolada.
@@ -258,4 +259,65 @@ export function hubDateLine(nowMs: number, timeZone?: string): string {
   const time = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(date);
   const day = new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "numeric", month: "long", timeZone }).format(date);
   return `${time} · ${day.charAt(0).toUpperCase()}${day.slice(1)}`;
+}
+
+// ── Avisos neste dispositivo (dono, 04/11/2026: o rodapé saiu) ───────────────
+//
+// O estado dos avisos do dispositivo só aparece quando pede um gesto de quem opera, e
+// só como aviso da tela (`alerts` do cabeçalho: com X, volta enquanto a causa durar).
+// Ligados: nada. Instalação sem chave de envio não é gesto do operador: nada também
+// (quem cobra é a sonda). O estado vai no `id`: estado novo é aviso novo.
+
+export type HubPushState = "off" | "blocked" | "browser" | "";
+
+/** Em que estado os avisos deste dispositivo pedem um gesto, ou "" quando não pedem. */
+export function hubPushState(push: {
+  read: boolean;
+  supported: boolean;
+  active: boolean;
+  permission: string;
+  unavailableReason: string;
+}): HubPushState {
+  if (!push.read) return "";
+  if (push.permission === "denied") return "blocked";
+  if (push.supported) return push.active ? "" : "off";
+  return push.unavailableReason === "browser" ? "browser" : "";
+}
+
+/** O aviso de cada estado. A saída (ligar, recarregar) quem dá é a tela. */
+export function hubPushAlert(state: HubPushState): Omit<OperatorScreenAlert, "action"> | null {
+  const hub = operatorAppNamed("hub");
+  switch (state) {
+    case "off":
+      return {
+        id: "push:off",
+        color: "info",
+        icon: "i-lucide-bell-off",
+        title: "Os avisos estão desligados neste dispositivo.",
+        description: `Ligue para receber os avisos da operação mesmo com ${hub} fechada.`,
+      };
+    case "blocked":
+      return {
+        id: "push:blocked",
+        color: "warning",
+        icon: "i-lucide-bell-off",
+        title: "Os avisos estão bloqueados neste navegador.",
+        description: "Permita as notificações deste site nos ajustes do navegador e recarregue a página.",
+      };
+    case "browser":
+      return {
+        id: "push:browser",
+        color: "info",
+        icon: "i-lucide-bell-off",
+        title: `Este navegador não entrega avisos com ${hub} fechada.`,
+        description: `No iPhone e no iPad, adicione ${hub} à Tela de Início e ligue os avisos por lá.`,
+      };
+    default:
+      return null;
+  }
+}
+
+/** A versão publicada deste build, no ⋮: o que o operador lê para o suporte. */
+export function hubVersionLabel(version: string): string {
+  return `Versão ${HUB_NAMED_OF}: ${version || "local"}`;
 }
