@@ -1286,6 +1286,7 @@
             "_EFI_TOKEN_LOCK_TTL",
             "_EFI_TOKEN_LOCK_WAIT_SECONDS",
             "_EFI_TOKEN_TTL",
+            "_EFI_USER_AGENT",
             "_base_url",
             "_brl_to_q",
             "_certificate_identity",
