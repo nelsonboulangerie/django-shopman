@@ -2,8 +2,12 @@
 // Central: a home do Shopman e o launcher pós-login, no shell da suíte (fase 2, variante
 // "início", `home`: o selo do topo da barra lateral é identidade, sem "voltar à Central").
 // A casca é a mesma dos apps migrados (`OperatorSuiteShell`): barra lateral em três estados
-// na mesa, gaveta pelo ☰ e barra do topo no celular, com "Início" como única seção (por
-// isso sem barra inferior: uma vaga só não aparece). A página é o `OperatorPageHeader`
+// na mesa, gaveta pelo ☰ no tablet, com "Início" como única seção (por isso sem barra
+// inferior: uma vaga só não aparece, `quickBarLayout` do kit). No celular, a linha do chão
+// do modelo de navegação (`OperatorCompactBar`, 31/10/2026): o selo "Central" com o ponto
+// da leitura, busca, Avisos e o ⋮, e a saudação como título da página (dono, 04/11/2026);
+// o selo abre a gaveta (a Central não tem
+// trocador: trocar de app não passa por ela, é ela). A página é o `OperatorPageHeader`
 // (saudação, selo de cadência, busca da suíte, avisos da tela e o ⋯ único) e o conteúdo:
 // os apps, cada um com a linha de estado e, quando há, a pendência mais urgente dele como
 // ação direta (leva ao item exato); os apps com pendência vêm primeiro. Tudo já vem filtrado por permissão.
@@ -149,7 +153,7 @@ const { run: lockDevice } = usePendingAction(async () => {
 });
 
 // Resiliência de rede (kit): reconciliação ao reconectar/reganhar foco.
-const { onReconnect } = useConnectivity();
+const { isOnline, onReconnect } = useConnectivity();
 onReconnect(() => refresh());
 
 // Re-gate de sessão (kit): sessão expirada → volta pro login.
@@ -191,7 +195,12 @@ const alerts = computed<OperatorScreenAlert[]>(() =>
     : [],
 );
 
-// O ⋯ único da tela: o que age sobre a tela inteira (fase 2, seção 11).
+// A leitura no ponto do selo da linha do chão (celular): periódica enquanto anda, atrasada
+// quando a releitura falha com a fila na tela, sem conexão quando o dispositivo caiu.
+const compactTone = computed(() => (!isOnline.value ? "off" : staleRead.value ? "late" : "calm"));
+
+// O ⋯ único da tela: o que age sobre a tela inteira (fase 2, seção 11). Na linha do chão
+// do celular é o mesmo ⋮, com a leitura (cadência e hora) no topo.
 const headerActions = computed<OperatorHeaderAction[]>(() => [
   {
     label: "Atualizar",
@@ -268,7 +277,18 @@ function toneDot(tile: HubTileProjection): string {
         :operator-name="operatorName || undefined"
         @lock="lockDevice"
       >
-        <div class="flex min-h-0 flex-1 flex-col">
+        <!-- `data-compact-page`: no celular a linha do chão é o cabeçalho inteiro (o kit
+             esconde a barra de 56px abaixo de `md`; os avisos da tela continuam). -->
+        <div class="flex min-h-0 flex-1 flex-col" data-compact-page>
+          <OperatorCompactBar
+            :title="hubGreeting(operatorName)"
+            :tone="compactTone"
+            :time="readClock"
+            :conn-label="HUB_REFRESH_LABEL"
+            search-button-label="Buscar pedido, cliente, produto, insumo ou tela"
+            :options="headerActions"
+            seal-app-as-title
+          />
           <OperatorPageHeader
             :title="hubGreeting(operatorName)"
             search-placeholder="Buscar pedido, cliente, produto, insumo ou tela"
@@ -312,6 +332,11 @@ function toneDot(tile: HubTileProjection): string {
                      linha, que leva ao item exato; os apps com pendência vêm primeiro, na
                      ordem de sempre entre si (dono, 09/10/2026: "Precisa de você" saiu, porque
                      empurrava os apps para baixo e repetia o que cada app já diz). -->
+                <!-- No celular, a saudação é o título da página (dono, 04/11/2026): o selo da
+                     linha do chão diz só "Central". Na mesa ela já é o título do cabeçalho. -->
+                <h1 class="-mb-2 text-xl font-semibold text-highlighted md:hidden" data-hub-phone-greeting>
+                  {{ hubGreeting(operatorName) }}
+                </h1>
                 <section aria-labelledby="hub-apps-title">
                   <div class="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                     <h2 id="hub-apps-title" class="text-base font-semibold">Apps</h2>

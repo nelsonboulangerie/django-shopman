@@ -1,19 +1,36 @@
 <script setup lang="ts">
 // O selo da linha do chão (modelo de navegação, 31/10/2026): o app (pequeno) e o lugar
 // (grande), com o chip da conexão no canto do ícone. Um toque abre o trocador (seções
-// deste app, outros apps, a Central, quem opera).
+// deste app, outros apps, a Central, quem opera). No app sem trocador (a Central, cujo
+// shell é `home`: trocar de app não passa por ela, é ela), o toque abre a gaveta, a mesma
+// que o ☰ abria antes de a linha do chão tomar o cabeçalho do celular: Início, Bloquear,
+// os Avisos e o menu de quem opera.
 // Cada estado da conexão tem forma e glifo próprios; o estado completo vai no nome
 // acessível. `tone` ausente = sem chip (tela sem leitura viva).
 import { computed } from "vue";
 
 import { OPERATOR_APPS } from "../../appIdentity";
 
-const props = defineProps<{ tone?: "live" | "calm" | "late" | "off"; time?: string; place?: string }>();
+const props = defineProps<{
+  tone?: "live" | "calm" | "late" | "off";
+  time?: string;
+  place?: string;
+  /** O nome do app grande, numa linha, com o ▾, e sem lugar (a tela tem um lugar só, que a
+   *  página diz no próprio título; a Central, dono, 04/11/2026). Ignora `place`. */
+  appAsTitle?: boolean;
+}>();
 const config = useRuntimeConfig().public as {
   operatorPwa?: { identity?: { label: string; icon: string; iconSrc?: string; color: string } };
 };
 const identity = config.operatorPwa?.identity;
+const switcherEnabled = useState<boolean>("suite-switcher-enabled", () => false);
 const switcherOpen = useState<boolean>("suite-switcher-open", () => false);
+const drawerOpen = useState<boolean>("suite-drawer-open", () => false);
+const expanded = computed(() => (switcherEnabled.value ? switcherOpen.value : drawerOpen.value));
+function onClick() {
+  if (switcherEnabled.value) switcherOpen.value = true;
+  else drawerOpen.value = true;
+}
 const STATE = {
   live: { icon: "i-lucide-check", cls: "bg-success text-inverted", word: "ao vivo" },
   calm: { icon: "i-lucide-refresh-cw", cls: "bg-elevated text-highlighted ring-1 ring-(--ui-border-accented)", word: "atualização periódica" },
@@ -26,9 +43,10 @@ const appLabel = computed(() => {
   return app?.shortLabel || identity?.label || "Aplicativo";
 });
 const spoken = computed(() => {
-  const where = props.place ? `${appLabel.value}, ${props.place}` : appLabel.value;
+  const where = props.place && !props.appAsTitle ? `${appLabel.value}, ${props.place}` : appLabel.value;
   const conn = state.value ? ` Conexão: ${state.value.word}${props.time ? `, última leitura ${props.time}` : ""}.` : "";
-  return `${where}: trocar de seção ou de app.${conn}`;
+  const opens = switcherEnabled.value ? "trocar de seção ou de app" : "abrir o menu";
+  return `${where}: ${opens}.${conn}`;
 });
 const iconName = computed(() => {
   const icon = identity?.icon || "layout-grid";
@@ -41,14 +59,14 @@ const iconName = computed(() => {
     color="neutral"
     variant="ghost"
     class="relative min-h-11 min-w-0 shrink justify-start gap-2 px-1"
-    :class="place ? 'flex-1' : 'size-11 shrink-0 justify-center p-0'"
+    :class="place || appAsTitle ? 'flex-1' : 'size-11 shrink-0 justify-center p-0'"
     :aria-label="spoken"
     :title="spoken"
     aria-haspopup="dialog"
-    :aria-expanded="switcherOpen"
+    :aria-expanded="expanded"
     data-compact-seal
     :data-conn="tone"
-    @click="switcherOpen = true"
+    @click="onClick"
   >
     <span class="relative shrink-0">
       <NuxtAvatar
@@ -68,7 +86,11 @@ const iconName = computed(() => {
         <NuxtIcon :name="state.icon" class="size-2.5" />
       </span>
     </span>
-    <span v-if="place" class="flex min-w-0 flex-col text-left leading-tight">
+    <span v-if="appAsTitle" class="flex min-w-0 items-center gap-0.5 font-semibold text-highlighted" data-compact-app-title>
+      <span class="truncate">{{ appLabel }}</span>
+      <NuxtIcon name="i-lucide-chevron-down" class="size-3.5 shrink-0 text-muted" />
+    </span>
+    <span v-else-if="place" class="flex min-w-0 flex-col text-left leading-tight">
       <span class="truncate text-xs text-muted">{{ appLabel }}</span>
       <span class="flex min-w-0 items-center gap-0.5 font-semibold text-highlighted">
         <span class="truncate" data-compact-place>{{ place }}</span>

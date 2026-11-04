@@ -135,8 +135,11 @@ const formQuick = computed(() => {
   return null;
 });
 // A gaveta (abaixo de lg, o DashboardSidebar abre como slideover): o ☰ da barra do
-// topo e o "Mais" da barra inferior a abrem.
-const drawerOpen = ref(false);
+// topo e o "Mais" da barra inferior a abrem. No app sem trocador (a Central, `home`), a
+// linha do chão do celular esconde o ☰, e o selo dela (`OperatorCompactSeal`) passa a ser
+// a porta da gaveta: por isso o estado é compartilhado, e não um `ref` local.
+const drawerOpen = useState<boolean>("suite-drawer-open", () => false);
+drawerOpen.value = false; // o shell que monta começa com a gaveta fechada
 const shortcuts = useOperatorShortcuts();
 const appLabel = (
   useRuntimeConfig().public?.operatorPwa as

@@ -761,6 +761,22 @@ Trava: `tests/pageHeader.test.ts` (quem ganha a vaga, nada se perde) e
 `/__operator_kit_catalog/phone-header`: nenhuma caixa se cruza ou sai da largura, título
 inteiro em até 2 linhas, no máximo 3 controles à direita, todas as ações no ⋯).
 
+### Linha do chão: o selo (`OperatorCompactBar` + `OperatorCompactSeal`)
+
+No celular (abaixo de `md`), a página que se declara `data-compact-page` troca a barra do
+topo pela linha do chão: selo, Busca, Avisos e o ⋮ no canto. O selo diz o app (pequeno) e
+o lugar (grande, o `title`), e o `title` também vira o `<h1>` escondido da linha.
+
+- **`seal-app-as-title`** (no `OperatorCompactBar`, repassado ao selo como `app-as-title`):
+  para a tela de um lugar só, cujo nome no selo seria repetição. O selo mostra o ícone e o
+  nome do app grande, numa linha, com o ▾; a página diz o lugar no próprio `<h1>` visível
+  (só no celular, `md:hidden`, porque na mesa o título é o do cabeçalho), e a linha deixa
+  de ter o `<h1>` escondido: um `<h1>` só por tela. Uso: a Central (dono, 04/11/2026), que
+  mostra "Central" no selo e "Olá, Ana" como título da página, acima de "Apps".
+- Sem a prop, nada muda.
+
+Trava: `tests/components/OperatorCompactSeal.test.ts` e `OperatorCompactBar.test.ts`.
+
 ### Toolbar no celular
 
 Abaixo de `sm`, no shell (`phone-filters="drawer"`, o padrão com `OperatorSuiteShell`),
