@@ -133,6 +133,41 @@ describe("RegisterOldDoughDialog", () => {
   });
 });
 
+describe("RegisterOldDoughDialog — recusa no campo (beta 05/11)", () => {
+  it("quantidade absurda e validade no passado ficam marcadas e não seguem", async () => {
+    const wrapper = mount(RegisterOldDoughDialog, {
+      props: { open: true, workOrderLabel: "Pão Francês · lote #42" },
+      global: { stubs },
+    });
+    await nextTick();
+    await wrapper.find('input[aria-label="Quantidade de massa velha"]').setValue("500999999999");
+    await wrapper.find('input[type="date"]').setValue("2020-01-01");
+
+    const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text());
+    expect(alerts).toContain("Até 50.000 g por registro. Confira o número.");
+    expect(alerts).toContain("A validade não pode estar no passado.");
+    await wrapper.get("button[data-icon='i-lucide-package-plus']").trigger("click");
+    expect(wrapper.emitted("submit")).toBeUndefined();
+  });
+
+  it("mostra a recusa do servidor no campo e dentro do modal", () => {
+    const wrapper = mount(RegisterOldDoughDialog, {
+      props: {
+        open: true,
+        workOrderLabel: "Pão Francês · lote #42",
+        fieldErrors: {
+          expiryDate: "A validade da massa velha não pode estar no passado.",
+          form: "Posição desconhecida.",
+        },
+      },
+      global: { stubs },
+    });
+    const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text());
+    expect(alerts).toContain("A validade da massa velha não pode estar no passado.");
+    expect(wrapper.get("[data-old-dough-error]").text()).toContain("Posição desconhecida.");
+  });
+});
+
 describe("AuthorizeFormulaDeviationDialog", () => {
   const levain = {
     ingredient_ref: "levain",

@@ -256,6 +256,11 @@ const selectedStartedPk = ref<number | null>(null);
 const voidReason = ref("");
 const voidConfirming = ref(false);
 const oldDoughOrder = ref<WorkOrderCardProjection | null>(null);
+// Recusa do servidor no registro de massa velha, campo a campo (beta 05/11: o
+// toast genérico ficava atrás do modal e nenhum campo era marcado).
+const oldDoughErrors = ref<
+  Partial<Record<"quantity" | "expiryDate" | "note" | "form", string>>
+>({});
 const deviationCard = ref<ProductionKDSCardProjection | null>(null);
 const deviationResult = ref<AuthorizeFormulaDeviationResponse | null>(null);
 const commitmentsRow = ref<ProductionMatrixRowProjection | null>(null);
@@ -746,7 +751,19 @@ async function registerOldDough(input: {
 }) {
   const workOrder = oldDoughOrder.value;
   if (!workOrder) return;
+  oldDoughErrors.value = {};
   const result = await kds.registerOldDough(workOrder.pk, workOrder.rev, input);
+  if (result.fieldErrors) {
+    const { quantity, expiry_date, note, ...rest } = result.fieldErrors;
+    const other = Object.values(rest)[0];
+    oldDoughErrors.value = {
+      quantity,
+      expiryDate: expiry_date,
+      note,
+      form: other ?? (quantity || expiry_date || note ? undefined : "Corrija os campos e tente de novo."),
+    };
+    return;
+  }
   if (!result.ok) return;
   oldDoughOrder.value = null;
   refresh();
@@ -2563,7 +2580,8 @@ const startedDescription = computed(() => {
       "
       :position-ref="oldDoughOrder?.position_ref"
       :busy="oldDoughOrder ? kds.isBusy(oldDoughOrder.pk) : false"
-      @update:open="(open: boolean) => { if (!open) oldDoughOrder = null }"
+      :field-errors="oldDoughErrors"
+      @update:open="(open: boolean) => { if (!open) { oldDoughOrder = null; oldDoughErrors = {}; } }"
       @submit="registerOldDough"
     />
 

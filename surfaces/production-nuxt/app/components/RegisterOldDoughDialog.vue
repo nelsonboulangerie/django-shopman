@@ -8,8 +8,10 @@ const props = withDefaults(
     workOrderLabel: string;
     positionRef?: string;
     busy?: boolean;
+    /** Recusa do servidor por campo (error.issues), mostrada no próprio campo. */
+    fieldErrors?: Partial<Record<"quantity" | "expiryDate" | "note" | "form", string>>;
   }>(),
-  { positionRef: "", busy: false },
+  { positionRef: "", busy: false, fieldErrors: () => ({}) },
 );
 
 const emit = defineEmits<{
@@ -27,22 +29,49 @@ const unitItems = [
   { label: "g", value: "g" },
   { label: "kg", value: "kg" },
 ];
-const ready = computed(
-  () =>
-    quantity.value != null &&
-    Number.isFinite(quantity.value) &&
-    quantity.value > 0 &&
-    Boolean(expiryDate.value),
+// Teto de bancada: massa velha acima de 50 kg é dígito a mais (beta 05/11
+// registrou 500999999999 g). O servidor tem a mesma régua.
+const OLD_DOUGH_MAX_G = 50_000;
+const maxQuantity = computed(() =>
+  unit.value === "kg" ? OLD_DOUGH_MAX_G / 1000 : OLD_DOUGH_MAX_G,
 );
 
-function tomorrowIso(): string {
+function isoDay(offset: number): string {
   const date = new Date();
-  date.setDate(date.getDate() + 1);
+  date.setDate(date.getDate() + offset);
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+function tomorrowIso(): string {
+  return isoDay(1);
+}
+// A validade não pode estar no passado (hoje vale, como no servidor).
+const minExpiry = computed(() => isoDay(0));
+
+const quantityError = computed(() => {
+  if (quantity.value != null && quantity.value > maxQuantity.value) {
+    return `Até ${unit.value === "kg" ? "50 kg" : "50.000 g"} por registro. Confira o número.`;
+  }
+  return props.fieldErrors.quantity ?? "";
+});
+const expiryError = computed(() => {
+  if (expiryDate.value && expiryDate.value < minExpiry.value) {
+    return "A validade não pode estar no passado.";
+  }
+  return props.fieldErrors.expiryDate ?? "";
+});
+
+const ready = computed(
+  () =>
+    quantity.value != null &&
+    Number.isFinite(quantity.value) &&
+    quantity.value > 0 &&
+    quantity.value <= maxQuantity.value &&
+    Boolean(expiryDate.value) &&
+    expiryDate.value >= minExpiry.value,
+);
 
 watch(
   () => props.open,
@@ -88,11 +117,12 @@ function submit() {
     <template #body>
       <div class="rounded-xl bg-white p-1">
         <div class="grid grid-cols-[minmax(0,1fr)_7rem] gap-3">
-          <NuxtFormField label="Quantidade" required>
+          <NuxtFormField label="Quantidade" required :error="quantityError || undefined">
             <NuxtInputNumber
               ref="quantityInput"
               v-model="quantity"
               :min="quantityRule(unit).min"
+              :max="maxQuantity"
               :step="quantityRule(unit).step"
               :format-options="{
                 maximumFractionDigits: quantityRule(unit).maximumFractionDigits,
@@ -117,15 +147,25 @@ function submit() {
           </NuxtFormField>
         </div>
 
-        <NuxtFormField label="Validade" required class="mt-4">
+        <NuxtFormField
+          label="Validade"
+          required
+          class="mt-4"
+          :error="expiryError || undefined"
+        >
           <UiDateField
             v-model="expiryDate"
+            :min="minExpiry"
             class="w-full"
             label="Validade da massa velha"
           />
         </NuxtFormField>
 
-        <NuxtFormField label="Nota (opcional)" class="mt-4">
+        <NuxtFormField
+          label="Nota (opcional)"
+          class="mt-4"
+          :error="fieldErrors.note || undefined"
+        >
           <NuxtTextarea
             v-model="note"
             :rows="2"
@@ -134,6 +174,16 @@ function submit() {
             placeholder="Ex.: aparas do fim do turno"
           />
         </NuxtFormField>
+        <!-- A recusa fica dentro do modal: o toast ficava atrás do overlay. -->
+        <NuxtAlert
+          v-if="fieldErrors.form"
+          class="mt-4"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          :description="fieldErrors.form"
+          data-old-dough-error
+        />
       </div>
     </template>
 
@@ -153,7 +203,7 @@ function submit() {
           icon="i-lucide-package-plus"
           :disabled="!ready || busy"
           :loading="busy"
-          label="Registrar massa velha"
+          label="Registrar"
           @click="submit"
         />
       </div>

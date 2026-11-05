@@ -1111,6 +1111,45 @@ def test_kds_registers_old_dough_with_projected_proof_and_replays(
 
 
 @pytest.mark.django_db
+def test_old_dough_refuses_absurd_quantity_on_the_field(
+    client,
+    recipe,
+    production_operator,
+):
+    """Beta 05/11: 500999999999 g chegou ao servidor. Acima de 50 kg é dígito a
+    mais, e a recusa vem no campo quantity, para a tela marcar o campo."""
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    production_service.apply_start(
+        work_order_id=work_order.pk,
+        quantity="10",
+        actor="production:setup",
+        expected_rev=work_order.rev,
+        idempotency_key="old-dough-absurd-start",
+    )
+    client.force_login(production_operator)
+    kds = client.get(reverse("api-backstage-production-kds")).json()["kds"]
+    action = next(item for item in kds["actions"] if item["ref"] == f"register_old_dough:{work_order.pk}")
+    body = _projected_body(
+        kds,
+        action,
+        quantity="51",
+        unit="kg",
+        expiry_date=(date.today() + timedelta(days=1)).isoformat(),
+        expected_rev=action["expected_rev"],
+        idempotency_key="old-dough-absurd",
+    )
+
+    response = client.post(
+        reverse("api-backstage-wo-old-dough", args=[work_order.pk]), body, content_type="application/json"
+    )
+
+    assert response.status_code == 400
+    issues = response.json()["error"]["issues"]
+    assert issues[0]["field"] == "quantity"
+    assert "50 kg" in issues[0]["message"]
+
+
+@pytest.mark.django_db
 def test_mutation_requires_complete_fresh_projection_metadata(
     client,
     recipe,

@@ -422,6 +422,17 @@ class ProductionOldDoughMutationSerializer(ExistingWorkOrderMutationSerializer):
             raise serializers.ValidationError("A validade da massa velha não pode estar no passado.")
         return value
 
+    #: Teto de bancada (beta 05/11: 500999999999 g chegou ao servidor). A tela
+    #: tem a mesma régua; acima disso é dígito a mais, não sobra de massa.
+    OLD_DOUGH_MAX_G = Decimal("50000")
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        grams = attrs["quantity"] * (Decimal("1000") if attrs.get("unit") == "kg" else Decimal("1"))
+        if grams > self.OLD_DOUGH_MAX_G:
+            raise serializers.ValidationError({"quantity": "Até 50 kg por registro. Confira o número."})
+        return attrs
+
 
 class ProductionFormulaDeviationMutationSerializer(ExistingWorkOrderMutationSerializer):
     ingredient_ref = serializers.CharField(allow_blank=False, max_length=100)
