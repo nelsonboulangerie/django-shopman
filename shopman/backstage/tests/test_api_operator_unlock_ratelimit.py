@@ -26,6 +26,9 @@ POS_PERM = "cashman.operate_pos"
 def _operator(username: str, pin: str):
     user = User.objects.create_user(username, password="x", is_staff=True, first_name=username.title())
     PinCredential.set_for(user, pin)
+    # O bloqueio do PIN (5 falhas, resposta 423) dispara junto com o freio e
+    # responde por cima dele. Aqui o assunto é o FREIO: o bloqueio sai do caminho.
+    PinCredential.objects.filter(user=user).update(max_attempts=1000)
     user.user_permissions.add(Permission.objects.get(content_type__app_label="cashman", codename="operate_pos"))
     return User.objects.get(pk=user.pk)
 

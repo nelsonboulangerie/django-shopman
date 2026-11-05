@@ -166,6 +166,7 @@ from .operations import (
     OperatorEligibleView,
     OperatorLockView,
     OperatorLoginView,
+    OperatorLogoutView,
     OperatorPinChangeView,
     OperatorPinResetView,
     OperatorSessionView,
@@ -464,6 +465,8 @@ urlpatterns = [
     path("operator/eligible/", OperatorEligibleView.as_view(), name="api-backstage-operator-eligible"),
     path("operator/unlock/", OperatorUnlockView.as_view(), name="api-backstage-operator-unlock"),
     path("operator/lock/", OperatorLockView.as_view(), name="api-backstage-operator-lock"),
+    # Sair deste dispositivo: encerra a sessão (o vínculo de posto fica).
+    path("operator/logout/", OperatorLogoutView.as_view(), name="api-backstage-operator-logout"),
     # "Perdi meu crachá": ativo, pela própria pessoa, sem esperar uso indevido.
     path("operator/badge/lost/", OperatorBadgeLostView.as_view(), name="api-backstage-operator-badge-lost"),
     path("operator/pin/change/", OperatorPinChangeView.as_view(), name="api-backstage-operator-pin-change"),

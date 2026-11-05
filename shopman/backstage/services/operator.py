@@ -99,6 +99,36 @@ def _verify_with_perm(user, raw_pin: str, perm: str | None) -> bool:
     return cred.verify(raw_pin)
 
 
+def is_eligible_operator(user, required_perm: str | None = OPERATE_POS) -> bool:
+    """``user`` pode se identificar nesta superfície (ativo, equipe, com a permissão)?"""
+    return _eligible(user, required_perm)
+
+
+def pin_locked_until(user):
+    """Até quando o PIN de ``user`` está bloqueado por tentativas, ou ``None``."""
+    if user is None:
+        return None
+    try:
+        cred = user.pin_credential
+    except PinCredential.DoesNotExist:
+        return None
+    return cred.locked_until if cred.is_locked else None
+
+
+def pin_locked_message(locked_until) -> str:
+    """A frase do PIN bloqueado: até que horas, e quem resolve antes disso.
+
+    Uma frase só para a trava, a troca de PIN e o "Perdi meu crachá". Antes do
+    beta de 05/11 a trava respondia "Identificação inválida." também para o PIN
+    CERTO de quem estava bloqueado, e a pessoa seguia tentando, o que estende o
+    bloqueio (ele é progressivo).
+    """
+    from django.utils import timezone
+
+    hora = timezone.localtime(locked_until).strftime("%H:%M")
+    return f"PIN bloqueado por tentativas até {hora}. Peça a um gerente para desbloquear."
+
+
 def verify_operator_pin(user, raw_pin: str, *, required_perm: str | None = OPERATE_POS) -> bool:
     """True if ``user`` is an eligible operator (for ``required_perm``) and the PIN matches."""
     return _verify_with_perm(user, raw_pin, required_perm)
@@ -180,11 +210,14 @@ def change_own_pin(user, current_pin: str, new_pin: str) -> None:
             "no_credential", "Você ainda não tem um PIN. Peça ao gerente para provisionar."
         ) from None
     if cred.is_locked:
-        raise PinChangeError(
-            "locked", "PIN bloqueado por tentativas. Aguarde ou peça desbloqueio ao gerente."
-        )
+        raise PinChangeError("locked", pin_locked_message(cred.locked_until))
     if not cred.verify(current_pin):
         raise PinChangeError("invalid_current", "PIN atual incorreto.")
+    # Trocar pelo mesmo PIN não é troca: a tela diria "PIN atualizado" e nada mudou
+    # (beta 05/11, PDV-26). Conferido DEPOIS de provar o atual, para a recusa não
+    # virar um oráculo do PIN de ninguém.
+    if new_pin.strip() == current_pin.strip():
+        raise PinChangeError("same_pin", "Escolha um PIN diferente do atual.")
     # validate_raw (via set_pin) raises PinCredentialError before mutating on policy failure.
     cred.set_pin(new_pin)
 
