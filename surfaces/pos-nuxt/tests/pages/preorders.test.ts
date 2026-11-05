@@ -667,14 +667,25 @@ function printAction(wrapper: Mounted): HeaderAction | undefined {
 }
 
 /** O painel de filtros único da suíte. */
+/** O painel da mesa (o do celular, na linha do chão, leva os filtros rápidos). */
 function panel(wrapper: Mounted) {
-  return wrapper.findComponent({ name: "OperatorFilterPanel" });
+  return wrapper.findAllComponents({ name: "OperatorFilterPanel" }).find((item) => item.props("trigger") !== "icon")!;
+}
+
+/** O painel do celular: o ícone da linha do chão. */
+function compactPanel(wrapper: Mounted) {
+  return wrapper.findAllComponents({ name: "OperatorFilterPanel" }).find((item) => item.props("trigger") === "icon")!;
 }
 
 /** O painel devolve o recorte (o que um toque num filtro rápido ou completo faz). */
 async function setPanel(wrapper: Mounted, filters: Record<string, string[]>) {
   panel(wrapper).vm.$emit("update:modelValue", filters);
   await flushPromises();
+}
+
+/** A faixa de filtros rápidos (os recortes de todo dia, num toque). */
+function quick(wrapper: Mounted) {
+  return wrapper.find("[data-page-header-filters] [data-preorders-quick]");
 }
 
 /** Os recortes ativos que o cabeçalho mostra como chips (no celular) e o painel (na mesa). */
@@ -870,44 +881,50 @@ describe("Encomendas — o dia", () => {
 });
 
 describe("Encomendas — filtros e o lote das vias que faltam", () => {
-  it("os recortes de todo dia são os filtros rápidos DO painel: o filtro único da suíte (dono, 04/11/2026)", async () => {
+  it("os recortes de todo dia: UM toque, com a contagem, na faixa de filtros rápidos (P1 de 02/10)", async () => {
     const wrapper = await mount(PreordersPage);
-    // Nenhuma faixa paralela repetindo o recorte do painel, na mesa nem no celular.
-    expect(wrapper.find("[data-preorders-quick]").exists()).toBe(false);
-    expect(wrapper.find("[data-compact-quick]").exists()).toBe(false);
-    expect((panel(wrapper).props("quick") as { dimension: string; value: string; label: string }[])
-      .map((quick) => [quick.label, quick.dimension, quick.value]))
-      .toEqual([
-        ["A receber", "pay", "to_receive"],
-        ["Sem Via Pedido", "print", "pending"],
-        ["Retiradas", "fulfillment", "pickup"],
-        ["Entregas", "fulfillment", "delivery"],
-      ]);
-    // O recorte vai para a URL, a grade filtra e o chip removível aparece.
-    await setPanel(wrapper, { fulfillment: ["delivery"] });
+    const items = quick(wrapper).findAll("[data-quick-filter-item]");
+    expect(items.map((item) => item.attributes("data-quick-filter-item"))).toEqual(["to_receive", "unprinted", "pickup", "delivery"]);
+    expect(items.map((item) => [item.text().replace(/\d+$/, ""), item.find("[data-count-chip]").exists() ? item.find("[data-count-chip]").text() : ""]))
+      .toEqual([["A receber", "1"], ["Sem Via Pedido", "1"], ["Retiradas", "1"], ["Entregas", "1"]]);
+    // Um toque: o recorte vai para a URL, a grade filtra e o chip removível aparece.
+    await quick(wrapper).find("[data-quick-filter-item=delivery]").trigger("click");
+    await flushPromises();
     expect(route.query).toEqual({ fulfillment: "delivery" });
     expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-8"]);
     expect(activeLabels(wrapper)).toEqual(["Recebimento: Entregas"]);
+    expect(quick(wrapper).find("[data-quick-filter-item=delivery]").attributes("aria-pressed")).toBe("true");
     // O card leva o recorte ao detalhe: a volta cai na semana filtrada, não na casa.
     expect(wrapper.find('[data-week-grid] [data-preorder="NB-8"]').attributes("href"))
       .toBe("/preorders/NB-8?back=%2Fpreorders%3Ffulfillment%3Ddelivery");
+    // Na mesa o recorte não se esconde no painel: ele não declara filtro rápido próprio.
+    expect(panel(wrapper).props("quick")).toEqual([]);
+    // No celular (filtro único da suíte, 04/11/2026) a faixa não existe: os recortes são
+    // os filtros rápidos do painel, aberto pelo ícone da linha do chão.
+    expect(wrapper.find("[data-compact-quick]").exists()).toBe(false);
+    expect((compactPanel(wrapper).props("quick") as { label: string }[]).map((quick) => quick.label))
+      .toEqual(["A receber", "Sem Via Pedido", "Retiradas", "Entregas"]);
   });
 
-  it("os recortes somam; Retiradas e Entregas se excluem (o tocado vence), e desligar volta a Todas", async () => {
+  it("os recortes somam; Retiradas e Entregas se excluem (o tocado vence), e tocar de novo desliga", async () => {
     const wrapper = await mount(PreordersPage);
     // A rota entra depois de montar: a montagem do teste passa por `replace("/")`.
     route.query = { fulfillment: "pickup" };
     await flushPromises();
-    await setPanel(wrapper, { fulfillment: ["pickup"], pay: ["to_receive"] });
+    expect(quick(wrapper).find("[data-quick-filter-item=pickup]").attributes("aria-pressed")).toBe("true");
+    await quick(wrapper).find("[data-quick-filter-item=to_receive]").trigger("click");
+    await flushPromises();
     expect(route.query).toEqual({ fulfillment: "pickup", pay: "to_receive" });
-    // O filtro rápido do painel soma na dimensão: o valor novo vence o que estava.
-    await setPanel(wrapper, { fulfillment: ["pickup", "delivery"], pay: ["to_receive"] });
+    await quick(wrapper).find("[data-quick-filter-item=delivery]").trigger("click");
+    await flushPromises();
     expect(route.query).toEqual({ fulfillment: "delivery", pay: "to_receive" });
-    await setPanel(wrapper, {});
+    await quick(wrapper).find("[data-quick-filter-item=delivery]").trigger("click");
+    await quick(wrapper).find("[data-quick-filter-item=to_receive]").trigger("click");
+    await flushPromises();
     expect(route.query).toEqual({});
   });
 
-  it("o painel guarda os recortes, com a contagem, e os favoritos são do balcão", async () => {
+  it("o painel guarda o resto, com a contagem, e os favoritos são do balcão (fixado no fim da faixa)", async () => {
     const wrapper = await mount(PreordersPage);
     expect(panel(wrapper).props("surface")).toBe("pos");
     expect(panel(wrapper).props("screen")).toBe("preorders");
@@ -917,6 +934,11 @@ describe("Encomendas — filtros e o lote das vias que faltam", () => {
       .toEqual([["A receber", 1], ["Pagas", 1]]);
     await setPanel(wrapper, { print: ["pending"] });
     expect(route.query).toEqual({ print: "pending" });
+    // O favorito fixado entra no fim da faixa e aplica o recorte inteiro dele.
+    await vi.waitFor(() => expect(quick(wrapper).find("[data-quick-filter-favorite]").exists()).toBe(true));
+    await quick(wrapper).find("[data-quick-filter-favorite]").trigger("click");
+    await flushPromises();
+    expect(route.query).toEqual({ fulfillment: "delivery", pay: "to_receive" });
   });
 
   it("P2: o lote imprime só a via que ainda não saiu, mesmo com a impressa na tela", async () => {
@@ -995,7 +1017,7 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
     expect(wrapper.find("[data-compact-primary] [data-period-picker]").exists()).toBe(true);
     await typeSearch(wrapper, "Ana");
     expect(wrapper.find("[data-period-picker]").exists()).toBe(false);
-    expect(panel(wrapper).exists()).toBe(false);
+    expect(wrapper.findAllComponents({ name: "OperatorFilterPanel" })).toHaveLength(0);
   });
 
   it("a linha 'Hoje': para entregar, a receber e as vias que faltam, com o peso do 'A receber'", async () => {
@@ -1163,7 +1185,7 @@ describe("Encomendas: a arrumação do balcão (OBS0310-D)", () => {
     answerConfirm(false);
   });
 
-  it("de cima para baixo: o cabeçalho (busca, Nova encomenda, ⋯), a toolbar (período, filtros, grade/lista, Hoje) e os cards", async () => {
+  it("de cima para baixo: o cabeçalho (busca, Nova encomenda, ⋯), a toolbar (recortes, período, filtros, grade/lista, Hoje) e os cards", async () => {
     const wrapper = await mount(PreordersPage);
     const toolbar = wrapper.find("[data-page-header-filters]");
     expect(toolbar.find("[data-period-picker]").exists()).toBe(true);
@@ -1177,7 +1199,7 @@ describe("Encomendas: a arrumação do balcão (OBS0310-D)", () => {
     // no DOM (o kit a esconde do `md` para cima) e não entra na conta.
     const html = wrapper.html();
     const start = html.indexOf("data-page-header-search");
-    const order = ["data-page-header-search", "data-preorders-new", "data-period-picker", "data-operator-filter-panel-root", "data-preorders-today", "data-week-board"]
+    const order = ["data-page-header-search", "data-preorders-new", "data-preorders-quick", "data-period-picker", "data-operator-filter-panel-root", "data-preorders-today", "data-week-board"]
       .map((marker) => html.indexOf(marker, start));
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
