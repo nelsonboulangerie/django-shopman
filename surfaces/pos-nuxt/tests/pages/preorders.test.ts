@@ -499,6 +499,21 @@ describe("Detalhe — cancelar", () => {
     expect(options.body.idempotency_key).toBeTruthy();
   });
 
+  it("cancelada, a tela volta para a lista em vez de reler um detalhe que não existe mais", async () => {
+    // Beta test de 05/11/2026 (PDV2-12): o toast "Encomenda cancelada." vinha
+    // seguido da página de erro "não é uma encomenda".
+    const wrapper = await mount(DetailPage);
+    route.query = { back: "/preorders?mode=week" };
+    await wrapper.find("[data-preorder-cancel]").trigger("click");
+    await settle();
+    pickCancelReason("O cliente pediu");
+    await settle();
+    body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
+    await settle();
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith("/preorders?mode=week");
+  });
+
   it("encomenda paga: o servidor pede gerente e o PIN sobe; assinado, o gesto se repete com a assinatura", async () => {
     call.mockRejectedValueOnce({ status: 403, data: { detail: "Precisa de gerente.", error: { code: "manager_approval_required" } } });
     const wrapper = await mount(DetailPage);
