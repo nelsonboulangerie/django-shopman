@@ -577,6 +577,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # divergência vira OperatorAlert (dedupe/debounce no serviço).
         call("reconcile_financial_day"),
         call("sweep_stuck_orders"),
+        # Só no alpha: a fornada diária da TRADI (cadência e portão no comando).
+        call("bake_alpha_tradi_daily"),
         # O mesmo resgate do lado da produção: fornada concluída cujo ledger
         # de estoque não fechou volta a ser realizada.
         call("sweep_unrealized_production"),
