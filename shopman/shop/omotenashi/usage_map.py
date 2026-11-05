@@ -344,6 +344,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "HOME_FAQ_HEADING": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
+    "HOME_FEATURED_HEADING": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
     "HOME_FULL_MENU_CTA": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),

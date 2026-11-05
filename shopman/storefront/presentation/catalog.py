@@ -450,19 +450,30 @@ def build_catalog_items_for_products(
     return _build_cards(ordered, channel_ref=channel_ref, request=request)
 
 
+def fresh_from_oven_skus(channel_ref: str) -> tuple[str, ...]:
+    """SKUs da dinâmica "Recém saídos do forno" (fornadas finalizadas há pouco)."""
+    from shopman.shop import dynamic_collections as dyn
+
+    section = dyn.resolve("fresh_from_oven", channel_ref=channel_ref)
+    return section.skus if section is not None else ()
+
+
 def build_featured_items(
     *,
     channel_ref: str,
     request: HttpRequest | None = None,
     limit: int = 3,
+    prefer_skus: tuple[str, ...] = (),
 ) -> tuple[CatalogItemProjection, ...]:
-    """Os ``limit`` primeiros cards de ``build_catalog(...).featured or .items``.
+    """O rail da home: até ``limit`` cards, sem repetir produto.
 
-    O rail da home guarda três cards; montar o cardápio inteiro (preço,
-    disponibilidade, seções, dinâmicas de todos os produtos) para descartar o
-    resto custava o mesmo request do ``menu/``. Aqui a escolha é a mesma, na
-    mesma ordem (coleções ativas, depois sem coleção; destaque = ``popular_skus``,
-    senão os primeiros), e só os escolhidos viram card, pelo mesmo montador.
+    O rail guarda três cards; montar o cardápio inteiro (preço, disponibilidade,
+    seções, dinâmicas de todos os produtos) para descartar o resto custava o
+    mesmo request do ``menu/``. A ordem da escolha: ``prefer_skus`` (o que saiu
+    do forno agora), depois os mais pedidos (``popular_skus``), depois a ordem do
+    cardápio (coleções ativas, depois sem coleção). Era só "mais pedidos ou, sem
+    nenhum, os primeiros": um mais-vendido visível bastava para o rail ficar com
+    um card só, um Frappé sob "Direto do forno" (beta 05/11, LOJA-05).
     """
     all_products = [
         product
@@ -476,7 +487,20 @@ def build_featured_items(
     if not all_products:
         return ()
     popular = popular_skus(limit=5)
-    chosen = [p for p in all_products if p.sku in popular][:limit] or all_products[:limit]
+    by_sku: dict[str, Any] = {}
+    for product in all_products:
+        by_sku.setdefault(product.sku, product)
+    ordered_skus = [
+        *(sku for sku in prefer_skus if sku in by_sku),
+        *(p.sku for p in all_products if p.sku in popular),
+        *(p.sku for p in all_products),
+    ]
+    chosen: list[Any] = []
+    for sku in ordered_skus:
+        if len(chosen) >= limit:
+            break
+        if all(c.sku != sku for c in chosen):
+            chosen.append(by_sku[sku])
     return _build_cards(chosen, channel_ref=channel_ref, request=request, popular=popular)
 
 

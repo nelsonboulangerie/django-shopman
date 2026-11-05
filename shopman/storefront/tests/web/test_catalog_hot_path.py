@@ -3,8 +3,8 @@
 - ``published_products_by_collection`` monta os grupos com uma leitura de
   produtos e uma de vínculos, sem consulta por coleção — e na MESMA ordem.
 - A home guarda três cards e não monta mais o cardápio inteiro para isso:
-  ``build_featured_items`` escolhe os mesmos cards que
-  ``(build_catalog().featured or build_catalog().items)[:3]``.
+  ``build_featured_items`` escolhe o que saiu do forno, depois os mais pedidos,
+  depois a ordem do cardápio, sem repetir produto.
 """
 
 from __future__ import annotations
@@ -121,26 +121,40 @@ class TestFeaturedItems:
         _link(rusticos, Product.objects.get(sku="MELON"), 9)  # em duas coleções
         _product(listing, "SOLTO", "Sem coleção")
 
-    def _same_as_full_catalog(self, rf):
+    def _rail(self, rf, *, prefer=()):
         request = rf.get("/")
-        catalog = build_catalog(channel_ref="web", request=request)
-        expected = [projection_data(i) for i in (catalog.featured or catalog.items)[:3]]
-        got = [projection_data(i) for i in build_featured_items(channel_ref="web", request=request, limit=3)]
-        assert got == expected
-        return [card["sku"] for card in got]
+        got = build_featured_items(channel_ref="web", request=request, limit=3, prefer_skus=prefer)
+        return [item.sku for item in got]
 
-    def test_popular_products_in_menu_order(self, rf, menu, monkeypatch):
+    def test_popular_products_in_menu_order_without_repeating(self, rf, menu, monkeypatch):
         monkeypatch.setattr(catalog_module, "popular_skus", lambda limit=5: {"BRIOCHE", "MELON", "SOLTO"})
-        # MELON está em duas coleções: o cardápio o destaca duas vezes, e a home também.
-        assert self._same_as_full_catalog(rf) == ["MELON", "MELON", "BRIOCHE"]
+        # MELON está em duas coleções: o rail mostra o produto uma vez só.
+        assert self._rail(rf) == ["MELON", "BRIOCHE", "SOLTO"]
 
     def test_without_popular_products_takes_the_first_cards(self, rf, menu, monkeypatch):
         monkeypatch.setattr(catalog_module, "popular_skus", lambda limit=5: set())
-        assert self._same_as_full_catalog(rf) == ["BAGUETE", "CIABATTA", "MELON"]
+        assert self._rail(rf) == ["BAGUETE", "CIABATTA", "MELON"]
 
-    def test_fewer_popular_than_the_rail(self, rf, menu, monkeypatch):
+    def test_fewer_popular_than_the_rail_completes_with_the_menu(self, rf, menu, monkeypatch):
+        """Beta 05/11 (LOJA-05): um mais-vendido só deixava o rail com um card."""
         monkeypatch.setattr(catalog_module, "popular_skus", lambda limit=5: {"SOLTO"})
-        assert self._same_as_full_catalog(rf) == ["SOLTO"]
+        assert self._rail(rf) == ["SOLTO", "BAGUETE", "CIABATTA"]
+
+    def test_fresh_from_the_oven_comes_first(self, rf, menu, monkeypatch):
+        monkeypatch.setattr(catalog_module, "popular_skus", lambda limit=5: {"SOLTO"})
+        assert self._rail(rf, prefer=("CROISSANT", "FANTASMA")) == ["CROISSANT", "SOLTO", "BAGUETE"]
+
+    def test_home_heading_says_what_the_rail_shows(self, rf, menu, monkeypatch):
+        """"Direto do forno" só com fornada recente no rail; sem ela, "Os mais pedidos"."""
+        monkeypatch.setattr(catalog_module, "popular_skus", lambda limit=5: {"SOLTO"})
+        monkeypatch.setattr(home_module, "fresh_from_oven_skus", lambda _channel: ())
+        home = home_module.build_home(rf.get("/"))
+        assert home.sections_copy.availability_heading.title == "Os mais pedidos"
+
+        monkeypatch.setattr(home_module, "fresh_from_oven_skus", lambda _channel: ("BAGUETE",))
+        home = home_module.build_home(rf.get("/"))
+        assert home.sections_copy.availability_heading.title == "Direto do forno"
+        assert home.featured_items[0].sku == "BAGUETE"
 
     def test_empty_catalog(self, rf, listing):
         assert build_featured_items(channel_ref="web", request=rf.get("/")) == ()
