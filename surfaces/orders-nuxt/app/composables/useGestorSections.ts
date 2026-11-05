@@ -86,6 +86,16 @@ export function useGestorSections() {
       watch: [operatorId],
     },
   );
+  // Catálogo e Canais só para quem cuida do catálogo (`shop.manage_catalog`).
+  const { data: catalogAccess } = useFetch<{ authorized?: boolean }>(
+    "/api/v1/backstage/operator/session/",
+    {
+      key: useOperatorResourceKey("catalog-access"),
+      query: { perm: "shop.manage_catalog" },
+      server: true,
+      watch: [operatorId],
+    },
+  );
   const { data: checklistsAccess } = useFetch<{ authorized?: boolean }>(
     "/api/v1/backstage/operator/session/",
     {
@@ -106,6 +116,7 @@ export function useGestorSections() {
     canManageCustomers: customersAccess.value?.authorized === true,
     canManageWorkstations: workstationsAccess.value?.authorized === true,
     canOperateChecklists: checklistsAccess.value?.authorized === true,
+    canManageCatalog: catalogAccess.value?.authorized === true,
     expeditesOnly: expeditesOnly.value,
     catalogOnly: catalogOnly.value,
     intakeCount: rail.value.onBoard ? rail.value.intake : offBoard.value.intake,

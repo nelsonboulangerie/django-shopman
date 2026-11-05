@@ -145,8 +145,12 @@ export function useOperatorLock(perm: string) {
         body: { perm },
       });
       await refresh();
-    } catch {
-      // best-effort: a failed lock leaves the operator active; surfaced on next action.
+    } catch (err) {
+      // Travar que falha calado deixa a pessoa achando que saiu, com a sessão dela
+      // aberta no balcão (beta 05/11, PDV2-02). Ela precisa saber, ali mesmo.
+      useSonner.error(
+        httpErrorMessage(err, "Não foi possível trocar de operador. Sua sessão continua aberta: tente de novo."),
+      );
     }
   }
 

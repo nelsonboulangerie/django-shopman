@@ -233,6 +233,15 @@ describe("useOperatorLock — lock / changePin / eligible", () => {
     expect(env.refresh).toHaveBeenCalled();
   });
 
+  it("travar que falha avisa: a sessão continua aberta (beta 05/11, PDV2-02)", async () => {
+    env.fetchData.value = { station: "balcao" };
+    env.fetchMock.mockRejectedValueOnce({ statusCode: 0 });
+    await useOperatorLock(PERM).lock();
+    expect(env.sonner.error).toHaveBeenCalledWith(
+      expect.stringContaining("Sua sessão continua aberta"),
+    );
+  });
+
   it("changePin succeeds and clears the error", async () => {
     env.fetchData.value = { station: "balcao" };
     const { changePin, changeError } = useOperatorLock(PERM);

@@ -86,6 +86,7 @@ async function restoreAuthenticatedWorkspace() {
 }
 
 const { sections, settings, current } = useGestorSections();
+const routeAccess = useGestorRouteAccess();
 // As seções de Ajustes dependem de permissão lida por uma chave que leva o id de quem
 // opera, e no servidor a sessão ainda não chegou quando a chave nasce: lá a resposta
 // vem de uma chave, aqui de outra. Elas entram depois de montar, para o servidor e a
@@ -149,19 +150,21 @@ useOperatorWindowTitle();
             @dismiss="stationSetup.dismiss()"
             @unavailable="stationSetup.dismiss({ remember: false })"
           />
-          <NuxtPage :key="workspaceOwner ?? 'unidentified'" />
+          <!-- Tela de Ajustes que não é da conta de quem opera: a recusa no lugar da
+               página, sem "Tentar de novo" (beta 05/11, CEN-05 e GES-17). -->
+          <main
+            v-if="routeAccess.denied.value"
+            class="flex min-h-0 flex-1 flex-col"
+            data-gestor-route-forbidden
+          >
+            <section class="grid flex-1 place-items-center p-4 sm:p-6">
+              <OperatorScreenState state="forbidden" :what="routeAccess.what.value" />
+            </section>
+          </main>
+          <NuxtPage v-else :key="workspaceOwner ?? 'unidentified'" />
         </div>
       </OperatorSuiteShell>
-      <main
-        v-else-if="surface.showForbidden"
-        class="grid min-h-dvh flex-1 place-items-center p-4"
-      >
-        <NuxtEmpty
-          icon="i-lucide-shield-x"
-          title="Seu acesso não inclui o Gestor de pedidos"
-          description="Peça a um responsável a permissão de acesso. Entrar novamente não concede essa permissão."
-        />
-      </main>
+      <OperatorSurfaceForbidden v-else-if="surface.showForbidden" :perm="OPERATOR_PERM" />
       <main
         v-else-if="surface.showChecking"
         class="grid min-h-dvh flex-1 place-items-center p-4"

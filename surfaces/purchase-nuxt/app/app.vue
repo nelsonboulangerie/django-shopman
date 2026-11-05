@@ -106,13 +106,7 @@ useOperatorWindowTitle();
           <NuxtPage />
         </div>
       </OperatorSuiteShell>
-      <main v-else-if="surface.showForbidden" class="grid min-h-dvh flex-1 place-items-center p-4">
-        <NuxtEmpty
-          icon="i-lucide-shield-x"
-          title="Seu acesso não inclui o Compras"
-          description="Peça a um responsável a permissão de comprar e receber insumos. Entrar novamente não concede essa permissão."
-        />
-      </main>
+      <OperatorSurfaceForbidden v-else-if="surface.showForbidden" :perm="OPERATOR_PERM" />
       <main
         v-else-if="surface.showChecking"
         class="grid min-h-dvh flex-1 place-items-center p-4"

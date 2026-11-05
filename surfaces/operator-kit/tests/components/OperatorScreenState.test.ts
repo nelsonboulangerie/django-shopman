@@ -31,7 +31,7 @@ describe("a frase de cada estado, uma só na suíte", () => {
   });
 
   it("nenhuma frase usa travessão", () => {
-    for (const kind of ["loading", "empty", "error", "offline"] as const) {
+    for (const kind of ["loading", "empty", "error", "offline", "forbidden"] as const) {
       const copy = screenStateCopy(kind, { what: "a fila", since: "10:42" });
       expect(`${copy.title} ${copy.description}`).not.toMatch(/[—–]/);
     }
@@ -73,6 +73,21 @@ describe("OperatorScreenState", () => {
     });
     expect(state().getAttribute("data-operator-screen-state")).toBe("empty");
     expect(state().textContent).toContain("Nenhum lote fechado no período");
+  });
+
+  it("sem permissão: diz de quem é, e não oferece Tentar de novo (beta 05/11, CEN-05)", async () => {
+    expect(screenStateCopy("forbidden", { what: "o Catálogo" })).toEqual({
+      title: "Sua conta não abre o Catálogo",
+      description: "Peça o acesso a um gerente.",
+    });
+    mounted = await mountSuspended(OperatorScreenState, {
+      attachTo: document.body,
+      props: { state: "forbidden", what: "o Catálogo" },
+    });
+    expect(state().getAttribute("data-operator-screen-state")).toBe("forbidden");
+    expect(state().textContent).toContain("Sua conta não abre o Catálogo");
+    expect(state().textContent).not.toContain("Sem conexão");
+    expect(state().querySelector("button")).toBeNull();
   });
 
   it("sem conexão: aviso warning com a hora do que está na tela", async () => {

@@ -147,28 +147,13 @@ watch(sessionState, async (next, previous) => {
           />
         </main>
 
-        <main
+        <OperatorSurfaceForbidden
+
           v-else-if="sessionState === 'forbidden'"
-          class="grid min-h-dvh flex-1 place-items-center p-4"
-        >
-          <!-- Mesma regra do ícone da Central na barra lateral: instalado, ele abre na
-               janela DELA (ver operator-kit/app/presentation/appLaunch.ts). -->
-          <NuxtEmpty
-            icon="i-lucide-shield-x"
-            title="Seu acesso não inclui o Marketing"
-            description="Entrar de novo não resolve. Peça a um responsável o acesso ao Marketing."
-            :actions="[
-              {
-                label: 'Voltar à Central',
-                color: 'neutral',
-                variant: 'outline',
-                href: hubUrl,
-                target: hubLink.target,
-                rel: hubLink.rel,
-              },
-            ]"
-          />
-        </main>
+
+          :perm="OPERATOR_PERM"
+
+        />
 
         <OperatorLogin
           v-else-if="sessionState === 'expired' || !canIdentify"

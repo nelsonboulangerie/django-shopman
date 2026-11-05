@@ -80,6 +80,8 @@ export interface ComposableEnv {
   runtimeConfig: Record<string, unknown>;
   /** Estado compartilhado do `useState` (por chave), para inspeção e limpeza. */
   states: Map<string, ReturnType<typeof ref>>;
+  /** O `nuxtApp` do teste: o que o kit compartilha por app (`useSharedLive`) mora nele. */
+  nuxtApp: Record<string, unknown>;
   /** Zera histórico dos mocks e o payload (chamar no `beforeEach`). */
   reset(): void;
 }
@@ -99,6 +101,7 @@ export function installNuxtGlobals(): ComposableEnv {
     isOnline: ref(true),
     runtimeConfig: { app: { baseURL: "/" }, public: { djangoBaseUrl: "" } },
     states: new Map(),
+    nuxtApp: {},
     reset() {
       env.fetchData.value = null;
       env.fetchError.value = null;
@@ -115,6 +118,8 @@ export function installNuxtGlobals(): ComposableEnv {
       // Estado compartilhado é por-app em runtime; entre testes ele tem que morrer,
       // senão uma estação travada num teste vaza travada para o seguinte.
       env.states.clear();
+      // Um app novo por teste: a caixa compartilhada de um não atende o seguinte.
+      env.nuxtApp = {};
       // O runtime config é FIXO por app em produção — um teste que o ajusta está
       // simulando OUTRO app, e deixá-lo de pé faria o seguinte medir esse outro
       // sem saber. Vale para o `operatorSessionPath`, que é a antessala do app.
@@ -138,6 +143,7 @@ export function installNuxtGlobals(): ComposableEnv {
   vi.stubGlobal("onScopeDispose", () => {});
   // Fronteira de dados/framework — mockada.
   vi.stubGlobal("useRuntimeConfig", () => env.runtimeConfig);
+  vi.stubGlobal("useNuxtApp", () => env.nuxtApp);
   // `useState`: um ref REAL por chave, compartilhado entre chamadas — é o que o Nuxt
   // dá, e é o que faz dois composables enxergarem o mesmo cadeado.
   vi.stubGlobal("useState", (key: string, init?: () => unknown) => {

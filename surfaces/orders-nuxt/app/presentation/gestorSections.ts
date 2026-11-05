@@ -25,6 +25,10 @@ export interface GestorSectionsInput {
   canManageWorkstations?: boolean;
   // Execução das rotinas operacionais; a permissão é perguntada ao servidor.
   canOperateChecklists?: boolean;
+  // `shop.manage_catalog`: Catálogo e Canais. Quem não tem (a Caixa) via os dois em
+  // Ajustes e caía em "Sem conexão" ao abrir (beta 05/11, CEN-05). Ausente conta como
+  // quem tem; o `useGestorSections` sempre passa a resposta do servidor.
+  canManageCatalog?: boolean;
   // Quem só expede (SUITE-UX §15) entra no Gestor pela coluna Saída e não ganha o
   // resto: o rail fica só com a operação. Ausente conta como quem gerencia.
   expeditesOnly?: boolean;
@@ -133,6 +137,7 @@ export function gestorSettingsSections({
   canManageCustomers,
   canManageWorkstations = false,
   canOperateChecklists = false,
+  canManageCatalog = true,
   catalogOnly = false,
 }: GestorSectionsInput): GestorSettingsEntry[] {
   if (catalogOnly) {
@@ -175,13 +180,17 @@ export function gestorSettingsSections({
       to: "/history",
       description: "Pedidos concluídos, cancelados e devolvidos",
     },
-    {
-      key: "catalog",
-      label: "Catálogo",
-      icon: "lucide:book-open",
-      to: "/catalog",
-      description: "Produtos, preços, coleções e disponibilidade",
-    },
+    ...(canManageCatalog
+      ? [
+          {
+            key: "catalog",
+            label: "Catálogo",
+            icon: "lucide:book-open",
+            to: "/catalog",
+            description: "Produtos, preços, coleções e disponibilidade",
+          },
+        ]
+      : []),
     ...(canManageCustomers
       ? [
           {
@@ -193,15 +202,19 @@ export function gestorSettingsSections({
           },
         ]
       : []),
-    {
-      key: "feeds",
-      label: "Canais",
-      icon: "lucide:monitor-play",
-      to: "/feeds",
-      match: ["/channels"],
-      attention: channelsAttention || undefined,
-      description: "Loja online, iFood, WhatsApp e o catálogo de cada canal",
-    },
+    ...(canManageCatalog
+      ? [
+          {
+            key: "feeds",
+            label: "Canais",
+            icon: "lucide:monitor-play",
+            to: "/feeds",
+            match: ["/channels"],
+            attention: channelsAttention || undefined,
+            description: "Loja online, iFood, WhatsApp e o catálogo de cada canal",
+          },
+        ]
+      : []),
     // Onde cada dispositivo fica (UX-POSTO1).
     ...(canManageWorkstations
       ? [
@@ -239,4 +252,28 @@ export function gestorSwitcherSections(
         ? { ...s, form: "floor" as const, quick: true }
         : { ...s, form: "office" as const, quick: undefined },
     );
+}
+
+/**
+ * A permissão de cada tela de Ajustes, com o nome dela para a recusa ("Sua conta não abre
+ * o Catálogo"). A mesma régua dos endpoints que a tela lê (`required_permission` no
+ * backstage). Quem chega pela barra de endereço sem a permissão vê a recusa no lugar da
+ * página, e não "Sem conexão" com "Tentar de novo" e o servidor recebendo o mesmo 403 a
+ * cada minuto (beta 05/11, CEN-05 e GES-17).
+ */
+const ROUTE_PERMISSIONS: ReadonlyArray<{ prefix: string; perm: string; what: string }> = [
+  { prefix: "/catalog", perm: "shop.manage_catalog", what: "o Catálogo" },
+  { prefix: "/feeds", perm: "shop.manage_catalog", what: "os Canais" },
+  { prefix: "/channels", perm: "shop.manage_catalog", what: "os Canais" },
+  { prefix: "/customers", perm: "shop.manage_customers", what: "os Clientes" },
+  { prefix: "/history", perm: "shop.manage_orders", what: "o Histórico" },
+  { prefix: "/workstations", perm: "cashman.manage_operators", what: "os Postos" },
+  { prefix: "/checklists", perm: "backstage.perform_operation_task", what: "as Rotinas" },
+];
+
+export function gestorRoutePermission(path: string): { perm: string; what: string } | null {
+  const hit = ROUTE_PERMISSIONS.find(
+    (entry) => path === entry.prefix || path.startsWith(`${entry.prefix}/`),
+  );
+  return hit ? { perm: hit.perm, what: hit.what } : null;
 }

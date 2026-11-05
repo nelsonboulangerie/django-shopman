@@ -23,6 +23,9 @@ const publicConfig = useRuntimeConfig().public as {
 const config = (publicConfig.operatorPwa || {}) as OperatorPwaRuntimeConfig;
 const enabled = Boolean(config.app);
 const route = useRoute();
+// A recusa de app (`OperatorSurfaceForbidden`) cala os convites: não se pede para pôr
+// na tela inicial um app que a pessoa não abre (beta 05/11, CEN-04).
+const quiet = useState<boolean>("operator-pwa-quiet", () => false);
 
 // As APIs de dispositivo continuam progressivas: uma surface sem suporte preserva
 // exatamente o comportamento web atual. Só capabilities declaradas no manifesto
@@ -53,7 +56,7 @@ const autoUpdate = usePwaAutoUpdate({
        operador monta: assim nenhum app monta a sua. Fora do `enabled`/`showPrompts`:
        perguntar antes de descartar não depende de o app ser instalável. -->
   <OperatorConfirmDialog />
-  <ClientOnly v-if="enabled && showPrompts">
+  <ClientOnly v-if="enabled && showPrompts && !quiet">
     <!-- Avisos persistentes do app compartilham uma região: instalação, update e push
          podem coexistir e nunca devem ocupar o mesmo canto um por cima do outro. -->
     <aside

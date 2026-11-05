@@ -7,18 +7,22 @@ import {
 // O push só invalida; cada superfície refaz seu fetch canônico. O stream se
 // recria sozinho, com backoff, depois do 502 de deploy, e ao reabrir refaz o
 // fetch: a notificação que nasceu com o push fora não veio por ele.
+//
+// Não registra ciclo de vida: quem decide quando o stream existe é a caixa
+// compartilhada (`useNotifications`, via `useSharedLive`), que o liga quando o
+// primeiro sino monta e o desliga quando o último desmonta. Um stream por app.
 export function useUserNotifications(onPush: () => void) {
   const config = useRuntimeConfig();
   const realtime = ref<"connecting" | "live" | "polling">("polling");
   let source: ResilientEventSource | null = null;
-  let mounted = false;
+  let running = false;
   const { data: session } = useNuxtData<{ operator?: { id: number } }>("operator-session");
   const owner = () => session.value?.operator?.id;
   watch(owner, () => {
     source?.close();
     source = null;
     realtime.value = "polling";
-    if (mounted) connect();
+    if (running) connect();
   }, { flush: "sync" });
 
   function connect() {
@@ -44,19 +48,21 @@ export function useUserNotifications(onPush: () => void) {
     source?.reconnectNow();
   };
 
-  onMounted(() => {
-    mounted = true;
+  /** Abre o stream e devolve como fechá-lo. */
+  function start(): () => void {
+    running = true;
     connect();
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", onVisible);
-  });
-  onBeforeUnmount(() => {
-    mounted = false;
-    source?.close();
-    source = null;
-    document.removeEventListener("visibilitychange", onVisible);
-    window.removeEventListener("online", onVisible);
-  });
+    return () => {
+      running = false;
+      source?.close();
+      source = null;
+      realtime.value = "polling";
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onVisible);
+    };
+  }
 
-  return { realtime };
+  return { realtime, start };
 }

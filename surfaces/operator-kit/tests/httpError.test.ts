@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { httpError, httpErrorCode, httpErrorMessage, isStationLockedError, isTransientError, isUnauthenticatedError } from "../app/utils/httpError";
+import { httpError, httpErrorCode, httpErrorMessage, isForbiddenError, isStationLockedError, isTransientError, isUnauthenticatedError } from "../app/utils/httpError";
 
 describe("httpError", () => {
   it("extracts status/data/message from an ofetch-style error", () => {
@@ -134,5 +134,21 @@ describe("httpErrorCode / isStationLockedError", () => {
     expect(isStationLockedError(locked)).toBe(true);
     expect(isStationLockedError({ status: 403, data: { detail: "Operador sem permissão." } })).toBe(false);
     expect(isStationLockedError({ status: 401, data: { error: { code: "station_locked" } } })).toBe(false);
+  });
+});
+
+describe("isForbiddenError (beta 05/11, CEN-05 e GES-17)", () => {
+  it("403 sem código é falta de permissão: não é rede, não é login", () => {
+    const denied = { statusCode: 403, data: { detail: "Você não tem permissão." } };
+    expect(isForbiddenError(denied)).toBe(true);
+    expect(isTransientError(denied)).toBe(false);
+    expect(isUnauthenticatedError(denied)).toBe(false);
+  });
+
+  it("403 que nomeia a saída (login, PIN, gerente) não é 'sem permissão'", () => {
+    for (const code of ["not_authenticated", "station_locked", "manager_approval_required"]) {
+      expect(isForbiddenError({ statusCode: 403, data: { detail: "x", error: { code } } })).toBe(false);
+    }
+    expect(isForbiddenError({ statusCode: 503 })).toBe(false);
   });
 });
