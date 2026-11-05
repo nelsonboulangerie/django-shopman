@@ -1239,15 +1239,14 @@ const startedDescription = computed(() => {
       </template>
       <!-- O filtro único da suíte (dono, 04/11/2026): a situação e a ficha-base moram só
            no painel. Na mesa, "Filtros (n)" e os chips com ×; no celular, o ícone na
-           linha do chão, com o número no canto, como o sino. -->
+           linha do chão, com o número no canto, como o sino. Sem favoritos por ora: o
+           quadro não está no registro de telas do servidor (`saved_views.SCREENS`). -->
       <template #filter-panel="{ compact }">
         <OperatorFilterPanel
           v-model="panelFilters"
           :dimensions="panelDimensions"
           :trigger="compact ? 'icon' : 'button'"
           :chips="!compact"
-          surface="production"
-          :screen="stage"
           :data-stage-filters="compact ? 'compact' : 'desk'"
         />
       </template>
