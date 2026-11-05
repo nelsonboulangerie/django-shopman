@@ -706,16 +706,7 @@ describe("Hoje no celular: só indicadores, e o toque mostra a frase (dono, 03/1
   });
 });
 
-describe("selo com iniciais maiúsculas (dono, 03/11/2026)", () => {
-  it("cada palavra maiúscula, artigo e preposição no meio em minúscula, marca como é", async () => {
-    const { badgeCase } = await import("../app/presentation/preorders");
-    expect(badgeCase("Loja online")).toBe("Loja Online");
-    expect(badgeCase("Pagar na retirada")).toBe("Pagar na Retirada");
-    expect(badgeCase("a receber")).toBe("A Receber");
-    expect(badgeCase("iFood")).toBe("iFood");
-    expect(badgeCase("Saiu para entrega")).toBe("Saiu para Entrega");
-  });
-
+describe("selos da linha (dono, 03/11/2026)", () => {
   it("o dinheiro vira valor + selo semântico", async () => {
     const { moneyBadge } = await import("../app/presentation/preorders");
     const base = { total_q: 6000, total_display: "R$ 60,00", balance_display: "R$ 0,00", situation: "to_pay" as const };

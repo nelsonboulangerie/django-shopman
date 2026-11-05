@@ -966,30 +966,6 @@ export function flipDay(flipped: ReadonlySet<string>, date: string): Set<string>
   return next;
 }
 
-// ── Os selos da linha (dono, 03/11/2026) ───────────────────────────────────
-
-const LOWER_WORDS = new Set(["a", "o", "as", "os", "e", "de", "da", "do", "das", "dos", "na", "no", "nas", "nos", "em", "com", "por", "para"]);
-
-/**
- * Selo leva iniciais maiúsculas, sempre (dono, 03/11/2026): "Loja Online", "Pagar na
- * Retirada", "A Receber". Artigo e preposição no meio ficam em minúscula; a primeira
- * palavra, sempre maiúscula.
- */
-export function badgeCase(label: string): string {
-  return label
-    .trim()
-    .split(/\s+/)
-    .map((word, index) => {
-      if (!word) return word;
-      // Marca e sigla já escritas como são ("iFood", "PDV", "NB-1042") não se mexem.
-      if (/[A-Z]/.test(word.slice(1)) || /\d/.test(word)) return word;
-      const lower = word.toLowerCase();
-      if (index > 0 && LOWER_WORDS.has(lower)) return lower;
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    })
-    .join(" ");
-}
-
 export type BadgeTone = "neutral" | "primary" | "info" | "success" | "warning" | "error";
 
 export interface MoneyBadge {
