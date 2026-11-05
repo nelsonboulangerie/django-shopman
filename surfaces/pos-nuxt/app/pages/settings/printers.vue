@@ -2,7 +2,7 @@
 // PDV › Ajustes › Impressoras (UX-15): o rolo e a guilhotina de cada terminal
 // (`Terminal.metadata.hardware.printer`), e quais estações sem tela imprimem em
 // cada um. O resto da impressora (colunas aferidas, etiqueta) segue no Admin.
-import { canEditSetup, SETUP_READ_ONLY_NOTE } from "~/presentation/settingsAccess";
+import { canEditSetup, setupReadOnlyAlerts } from "~/presentation/settingsAccess";
 import type { PosPrinterSetting } from "~/types/settings";
 
 useHead({ title: "Impressoras" });
@@ -28,11 +28,10 @@ function save(printer: PosPrinterSetting) {
 </script>
 
 <template>
-  <PosSettingsShell title="Impressoras" subtitle="rolo e corte de cada balcão">
+  <PosSettingsShell title="Impressoras" subtitle="rolo e corte de cada balcão" :alerts="setupReadOnlyAlerts(canEdit)">
     <OperatorScreenState v-if="settings.error.value && !settings.data.value" state="error" what="as impressoras" @retry="settings.refresh()" />
     <OperatorScreenState v-else-if="!settings.data.value" state="loading" what="as impressoras" />
     <template v-else>
-      <NuxtAlert v-if="!canEdit" color="neutral" variant="soft" icon="i-lucide-lock" :title="SETUP_READ_ONLY_NOTE" data-settings-read-only />
       <OperatorScreenState
         v-if="!settings.data.value.printers.length"
         state="empty"

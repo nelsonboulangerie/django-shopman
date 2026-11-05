@@ -2,7 +2,7 @@
 // PDV › Ajustes › Maquininhas (UX-15): as maquininhas de entrega (`DeliveryDevice`),
 // com quem cada uma está agora, ativar/desativar e cadastrar uma nova. A que está
 // numa entrega não se desativa (volta primeiro).
-import { canEditSetup, SETUP_READ_ONLY_NOTE } from "~/presentation/settingsAccess";
+import { canEditSetup, setupReadOnlyAlerts } from "~/presentation/settingsAccess";
 import type { PosCardMachineSetting } from "~/types/settings";
 
 useHead({ title: "Maquininhas" });
@@ -36,14 +36,13 @@ function toggle(machine: PosCardMachineSetting) {
 </script>
 
 <template>
-  <PosSettingsShell title="Maquininhas" subtitle="as que vão com a entrega">
+  <PosSettingsShell title="Maquininhas" subtitle="as que vão com a entrega" :alerts="setupReadOnlyAlerts(canEdit)">
     <template v-if="canEdit" #actions>
       <NuxtButton icon="i-lucide-plus" label="Nova maquininha" data-settings-card-machine-add @click="addNew" />
     </template>
     <OperatorScreenState v-if="settings.error.value && !settings.data.value" state="error" what="as maquininhas" @retry="settings.refresh()" />
     <OperatorScreenState v-else-if="!settings.data.value" state="loading" what="as maquininhas" />
     <template v-else>
-      <NuxtAlert v-if="!canEdit" color="neutral" variant="soft" icon="i-lucide-lock" :title="SETUP_READ_ONLY_NOTE" data-settings-read-only />
       <OperatorScreenState
         v-if="!settings.data.value.card_machines.length"
         state="empty"

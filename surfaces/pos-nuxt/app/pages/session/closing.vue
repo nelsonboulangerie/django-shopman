@@ -1047,7 +1047,7 @@ const discrepancyColumns = [
               class="w-full"
               :rows="2"
               :maxlength="200"
-              placeholder="Ex.: a fornada da noite segue no forno"
+              placeholder="Ex.: o lote da noite segue no forno"
               data-closing-release-reason
             />
           </NuxtFormField>

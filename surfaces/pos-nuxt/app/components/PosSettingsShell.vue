@@ -5,6 +5,7 @@
 // uma vez em `PosOperatorShell`. O Salão tem casca própria (planta em tela cheia),
 // com as mesmas abas.
 import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 
 const props = defineProps<{
   title: string;
@@ -17,6 +18,8 @@ const props = defineProps<{
    * outra leitura (Terminal: a saúde do balcão) passa a dela.
    */
   refresh?: () => unknown;
+  /** Os avisos da aba, no lugar único do cabeçalho (fecham no X). */
+  alerts?: OperatorScreenAlert[];
 }>();
 
 const { pos, refresh: refreshPos } = await usePosTerminal();
@@ -46,7 +49,7 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
     <div class="flex flex-wrap items-center justify-between gap-2 border-b border-default px-3 py-2 md:hidden" data-compact-settings-tabs>
       <PosSettingsTabs />
     </div>
-    <OperatorPageHeader :title="title" :actions="headerActions" actions-label="Mais ações dos Ajustes">
+    <OperatorPageHeader :title="title" :actions="headerActions" :alerts="alerts ?? []" actions-label="Mais ações dos Ajustes">
       <template #lead>
         <span class="hidden items-center gap-1 text-sm text-muted-foreground md:inline-flex">
           Ajustes<Icon name="lucide:chevron-right" class="size-4" aria-hidden="true" />

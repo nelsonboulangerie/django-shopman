@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { repeatedSpotName, spotNameKey } from "../app/presentation/seating";
-import { SETUP_READ_ONLY_NOTE, canEditSetup, terminalDeviceLine } from "../app/presentation/settingsAccess";
+import { SETUP_READ_ONLY_NOTE, canEditSetup, setupReadOnlyAlerts, terminalDeviceLine } from "../app/presentation/settingsAccess";
 
 const app = (...parts: string[]) => fileURLToPath(new URL(`../app/${parts.join("/")}`, import.meta.url));
 
@@ -22,10 +22,20 @@ describe("Ajustes: quem grava maquininha, impressora e Salão", () => {
     for (const page of ["card-machines.vue", "printers.vue"]) {
       const source = readFileSync(app("pages", "settings", page), "utf8");
       expect(source).toContain("canEditSetup(settings.data.value?.can_manage_setup)");
-      expect(source).toContain("data-settings-read-only");
+      expect(source).toContain(":alerts=\"setupReadOnlyAlerts(canEdit)\"");
+      expect(source).not.toContain("<NuxtAlert");
     }
+    const seatingPage = readFileSync(app("pages", "settings", "seating.vue"), "utf8");
+    expect(seatingPage).toContain(":alerts=\"setupReadOnlyAlerts(!readOnly)\"");
     const seating = readFileSync(app("composables", "usePosSeating.ts"), "utf8");
     expect(seating).toContain("data.value?.can_edit === true");
+  });
+
+  it("o aviso de quem confere mora nas alerts do cabeçalho: fecha no X e volta", () => {
+    expect(setupReadOnlyAlerts(true)).toEqual([]);
+    expect(setupReadOnlyAlerts(false)).toEqual([
+      { id: "setup-read-only", title: SETUP_READ_ONLY_NOTE, color: "info", icon: "i-lucide-lock" },
+    ]);
   });
 
   it("'Este dispositivo' só quando o dispositivo está vinculado ao posto", () => {

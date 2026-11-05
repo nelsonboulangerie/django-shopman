@@ -24,7 +24,7 @@ import {
   spotNameKey,
   totals,
 } from "~/presentation/seating";
-import { SETUP_READ_ONLY_NOTE } from "~/presentation/settingsAccess";
+import { setupReadOnlyAlerts } from "~/presentation/settingsAccess";
 import type { SpotShape } from "~/types/seating";
 import type { OperatorActionBarAction } from "../../../../operator-kit/app/presentation/actionBar";
 import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
@@ -333,6 +333,7 @@ const barContext = computed(() =>
       <OperatorPageHeader
         title="Salão"
         :actions="headerActions"
+        :alerts="setupReadOnlyAlerts(!readOnly)"
         actions-label="Mais ações do Salão"
       >
         <template v-if="!isPhone" #lead>
@@ -406,15 +407,6 @@ const barContext = computed(() =>
       </div>
 
       <template v-else>
-        <NuxtAlert
-          v-if="readOnly"
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-lock"
-          :title="SETUP_READ_ONLY_NOTE"
-          class="mx-4 mt-3 w-auto md:mx-6"
-          data-settings-read-only
-        />
         <!-- celular: lista editável -->
         <div v-if="isPhone" class="min-h-0 flex-1 overflow-y-auto">
           <PosSeatingList
@@ -443,8 +435,6 @@ const barContext = computed(() =>
                 :max-seats="seating.data.value.max_seats"
                 :open-tabs="openTabs"
                 :spot-tab="seating.selected.value?.ref ? occupiedSpots[seating.selected.value.ref] : ''"
-              :read-only="readOnly"
-              :name-taken="selectedNameTaken"
                 :read-only="readOnly"
                 :name-taken="selectedNameTaken"
                 @update="(patch) => seating.update(seating.selected.value!.key, patch)"
@@ -540,11 +530,10 @@ const barContext = computed(() =>
           <NuxtBadge
             v-if="seating.repeatedName.value"
             color="error"
-            variant="soft"
             class="min-w-0 shrink"
             data-seating-repeated-name
           >
-            <span class="min-w-0 truncate">Já existe uma mesa {{ seating.repeatedName.value }}</span>
+            <span class="min-w-0">Já existe uma mesa {{ seating.repeatedName.value }}</span>
           </NuxtBadge>
           <NuxtBadge
             v-else-if="seating.summary.value"
