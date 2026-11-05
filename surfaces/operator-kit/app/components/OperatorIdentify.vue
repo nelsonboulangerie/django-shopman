@@ -134,6 +134,25 @@ watch(
   },
 );
 
+// A recusa está à vista no teclado até a pessoa voltar a digitar (o teclado
+// dispensa o aviso no primeiro dígito). Enquanto está, ela ocupa o lugar da dica
+// do crachá: com as duas, a trava passava da tela do celular (pin-erro em
+// 375x548, matriz `operator-lock.spec.ts`), e quem acabou de errar precisa ler o
+// erro. A dica volta com o próximo dígito.
+const errorShowing = ref(Boolean(props.error));
+watch(
+  () => props.error,
+  (e) => {
+    errorShowing.value = Boolean(e);
+  },
+);
+watch(
+  () => pin.value.length,
+  (length) => {
+    if (length > 0) errorShowing.value = false;
+  },
+);
+
 function pick(person: IdentifiablePerson) {
   picked.value = person;
   clear();
@@ -272,8 +291,9 @@ defineExpose({ reset });
       <!-- O crachá segue valendo aqui: a frase existe para o operador saber que
            não precisa terminar de digitar se estiver com ele no pescoço. -->
       <p
-        v-if="badgeEnabled !== false"
+        v-if="badgeEnabled !== false && !errorShowing"
         class="text-center text-xs text-muted-foreground"
+        data-operator-identify-badge-hint
       >
         Ou passe o crachá no leitor.
       </p>

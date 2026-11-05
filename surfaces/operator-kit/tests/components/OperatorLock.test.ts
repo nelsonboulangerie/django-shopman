@@ -707,6 +707,20 @@ describe("OperatorLock — recusa junto do teclado (CEN-01, GES-14)", () => {
     expect(pad.text()).toContain("PIN bloqueado por tentativas até 07:05");
   });
 
+  it("a recusa ocupa o lugar da dica do crachá, que volta no próximo dígito", async () => {
+    const wrapper = await mount();
+    await button(wrapper, "Bia Forno")!.trigger("click");
+    expect(wrapper.find("[data-operator-identify-badge-hint]").exists()).toBe(true);
+
+    unlockError.value = "PIN incorreto. Restam 4 tentativas.";
+    await nextTick();
+    expect(wrapper.find("[data-operator-identify-badge-hint]").exists()).toBe(false);
+
+    await button(wrapper, "1")!.trigger("click");
+    await nextTick();
+    expect(wrapper.find("[data-operator-identify-badge-hint]").exists()).toBe(true);
+  });
+
   it("escolher outra pessoa limpa a recusa da anterior", async () => {
     const wrapper = await mount();
     await button(wrapper, "Bia Forno")!.trigger("click");
