@@ -21,6 +21,7 @@ import {
   orderCollections,
   parseHideUnavailable,
 } from "~/presentation/catalog";
+import { isNumericQuery } from "~/presentation/customerSearch";
 
 const props = defineProps<{
   products: POSProductProjection[];
@@ -212,9 +213,13 @@ defineExpose({ focusSearch });
 function onSearchEnter() {
   const target = enterTargetProduct(filteredProducts.value, search.value);
   if (!target) {
-    // Sem produto: a comanda que casou sozinha abre; senão, a busca vira cliente.
+    // Sem produto: a comanda que casou sozinha abre. A busca só vira cliente
+    // quando o termo tem cara de telefone ou CPF: um código de produto que não
+    // existe ("BAGUETE-3") ou um nome digitado errado abria o cadastro de
+    // cliente com ele (beta test de 05/11/2026, PDV-15). Para o resto, o botão
+    // "Buscar cliente" ao lado está à vista.
     if (matchedTabs.value.length === 1) openMatchedTab(matchedTabs.value[0]!.ref);
-    else if (!matchedTabs.value.length && props.customerSearch) findCustomer();
+    else if (!matchedTabs.value.length && props.customerSearch && isNumericQuery(search.value)) findCustomer();
     return;
   }
   emit("add", target);
@@ -309,7 +314,8 @@ function onSearchEscape() {
         @click="findCustomer"
       >
         <Icon name="lucide:user-round-search" class="size-4 text-muted-foreground" aria-hidden="true" />
-        Buscar cliente “<span class="max-w-40 truncate">{{ search.trim() }}</span>”
+        <!-- Aspas e termo num span só: o gap do botão separava as aspas do termo ("“ croisant ”"). -->
+        <span class="max-w-48 truncate">Buscar cliente “{{ search.trim() }}”</span>
       </NuxtButton>
     </div>
 
