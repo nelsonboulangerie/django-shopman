@@ -48,6 +48,7 @@ import {
   paymentConfirmView,
   paymentIcon,
   SPLIT_PRESETS,
+  splitBaseRemainingQ,
   splitShareQ,
   tenderLineView,
 } from "~/presentation/payment";
@@ -553,7 +554,12 @@ const splitBadge = computed(() => (
 /** Quanto ficaria cada parte se a conta fosse dividida em `n` — preview do modal. */
 function splitShareLabel(n: number): string {
   if (!props.review) return "calculando";
-  return formatBRL(splitShareQ(props.paymentTotalQ, n, props.splitPaidCount, props.paymentRemainingQ));
+  return formatBRL(splitShareQ(
+    props.paymentTotalQ,
+    n,
+    props.splitPaidCount,
+    splitBaseRemainingQ(props.paymentTenders, props.paymentTotalQ, props.paymentRemainingQ),
+  ));
 }
 
 // O RESUMO DO PEDIDO — o que está sendo cobrado. No checkout o operador via só
@@ -717,7 +723,14 @@ function onSplitKeydown(event: KeyboardEvent) {
   const n = splitCountFromKey(event.key);
   if (n === null) return;
   if (n === 0 ? !splitActive.value : hasLinkTender.value || hasPixProviderTestTender.value) return;
+  // A tecla é DESTE diálogo e morre aqui. Fechar o modal desmonta o diálogo
+  // antes de o evento chegar ao `window`, e o atalho global de pagamento
+  // (`globalKeysBlocked` consulta o DOM, que já não tem o diálogo) mandava o
+  // mesmo "2" para o valor da forma selecionada: Débito de R$ 12,00 virava
+  // R$ 2,00 (beta test de 05/11/2026).
   event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
   emit("setSplitCount", n);
   splitSheetOpen.value = false;
 }

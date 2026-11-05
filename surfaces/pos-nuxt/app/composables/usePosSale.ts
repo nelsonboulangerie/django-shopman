@@ -53,6 +53,7 @@ import {
   paymentProofView,
   paymentRemainingQ as computeRemainingQ,
   splitHint,
+  splitDraftTender,
   splitShareQ,
 } from "~/presentation/payment";
 import {
@@ -1312,6 +1313,17 @@ export function usePosSale(deps: PosSaleDeps) {
     // é dito ANTES de alguém pagar, e herdar a contagem antiga faria a próxima
     // parcela sair do lugar errado da fila.
     splitPaidCount.value = 0;
+    // A forma que o sistema lançou com o total inteiro, sem ninguém tocar, é
+    // rascunho: vira a parte da PRIMEIRA pessoa, como as prévias do modal
+    // prometeram (beta test de 05/11/2026: o modal oferecia "R$ 0,00").
+    const draft = totalStatus.value === "confirmed"
+      ? splitDraftTender(cart.paymentTenders, paymentTotalQ.value)
+      : null;
+    if (draft && splitCount.value > 0) {
+      draft.amount_q = splitShareQ(paymentTotalQ.value, splitCount.value, 0, paymentTotalQ.value);
+      splitPaidCount.value = 1;
+      tenderEntry.value = null;
+    }
   }
   /** Uma pessoa a menos na fila — some junto com a linha que ela pagou. */
   function splitUnwind() {

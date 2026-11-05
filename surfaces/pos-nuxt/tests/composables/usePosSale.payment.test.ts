@@ -255,6 +255,29 @@ describe("usePosSale — dividir a conta", () => {
     expect(sale.paymentRemainingQ.value).toBe(0);
   });
 
+  it("a forma lançada com o total inteiro vira a parte da primeira pessoa", () => {
+    // Beta test de 05/11/2026: Débito com o total, depois "Dividir em 2". A
+    // divisão partia do restante zerado; agora o rascunho vira a parte 1 de 2.
+    const { sale } = h;
+    sale.addTender("debit");
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(1000);
+    sale.setSplitCount(2);
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(500);
+    expect(sale.splitPaidCount.value).toBe(1);
+    sale.addTender("cash");
+    expect(sale.cart.paymentTenders[1]!.amount_q).toBe(500);
+    expect(sale.paymentCovered.value).toBe(true);
+  });
+
+  it("forma que o operador já editou não é rascunho: a divisão não mexe nela", () => {
+    const { sale } = h;
+    sale.addTender("debit");
+    sale.tenderDigit("4");           // R$ 4,00, digitado
+    sale.setSplitCount(2);
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(400);
+    expect(sale.splitPaidCount.value).toBe(0);
+  });
+
   it("tocar de novo no mesmo número DESLIGA a divisão", () => {
     // Mudar de ideia sobre dividir é rotina; um botão que só liga obrigaria o
     // operador a caçar um "cancelar".
