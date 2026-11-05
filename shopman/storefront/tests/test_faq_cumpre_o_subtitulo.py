@@ -10,6 +10,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+
 from shopman.storefront.presentation import public_information as faq
 
 

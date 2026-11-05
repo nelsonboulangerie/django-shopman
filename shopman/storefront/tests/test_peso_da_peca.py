@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import pytest
+
 from shopman.storefront.presentation.catalog import unit_weight_label
 
 

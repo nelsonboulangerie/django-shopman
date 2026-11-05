@@ -15,10 +15,9 @@ from django.test.utils import CaptureQueriesContext
 from shopman.offerman.models import Collection, CollectionItem, ListingItem, Product
 
 from shopman.shop.projections import catalog_context
-from shopman.storefront.api.projections import projection_data
 from shopman.storefront.presentation import catalog as catalog_module
 from shopman.storefront.presentation import home as home_module
-from shopman.storefront.presentation.catalog import build_catalog, build_featured_items
+from shopman.storefront.presentation.catalog import build_featured_items
 
 pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 

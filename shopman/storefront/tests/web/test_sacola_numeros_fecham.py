@@ -15,6 +15,7 @@ from datetime import timedelta
 import pytest
 from django.test import RequestFactory
 from django.utils import timezone
+
 from shopman.shop.models import Promotion
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.presentation import build_cart

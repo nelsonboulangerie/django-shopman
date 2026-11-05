@@ -7,6 +7,7 @@ o UA do Node (o que chegava antes) não passa por celular.
 """
 
 from django.test import RequestFactory
+
 from shopman.shop.services.access import site_origin_is_phone
 
 ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36"

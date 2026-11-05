@@ -21,8 +21,9 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from shopman.shop import product_options
 from shopman.utils.monetary import monetary_mult
+
+from shopman.shop import product_options
 
 logger = logging.getLogger(__name__)
 

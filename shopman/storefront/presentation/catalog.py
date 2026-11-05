@@ -13,9 +13,8 @@ Admin-configurable per channel.
 
 from __future__ import annotations
 
-import re
-
 import logging
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
