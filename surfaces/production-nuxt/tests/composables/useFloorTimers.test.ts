@@ -112,6 +112,21 @@ describe("useFloorTimers — avulsos (o mais usado)", () => {
     timers.clear(blank);
   });
 
+  it("nome repetido ganha número, e Encerrar devolve o timer para o Desfazer", () => {
+    // Beta 05/11: três cartões "Freezer 20 min" idênticos.
+    const timers = useFloorTimers();
+    const first = timers.create(20, { label: "Freezer 20 min" });
+    const second = timers.create(20, { label: "Freezer 20 min" });
+    expect(timers.get(second)?.label).toBe("Freezer 20 min 2");
+
+    const removed = timers.clear(second);
+    expect(timers.get(second)).toBeNull();
+    timers.restore(second, removed!);
+    expect(timers.get(second)).toEqual(removed);
+    timers.clear(first);
+    timers.clear(second);
+  });
+
   it("entries lista todos, quem toca primeiro; activeCount e ringingCount seguem", () => {
     const timers = useFloorTimers();
     const later = timers.create(40, { label: "depois" });
