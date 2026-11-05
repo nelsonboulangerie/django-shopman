@@ -262,6 +262,30 @@ def test_ges12_busca_de_cliente_ignora_acento(shop):
     assert [item.ref for item in build_customer_list(query="João").items] == ["CLI-003"]
 
 
+def test_ges12_a_dobra_do_postgres_e_a_mesma_do_python():
+    """O ``TRANSLATE`` do Postgres e a ``shopman_fold`` do SQLite dobram igual.
+
+    Sem isso, a busca passava no teste (SQLite) e falhava no alpha (Postgres).
+    """
+    from django.db import connection
+    from django.db.models import Value
+
+    from shopman.backstage.projections import customers
+
+    assert len(customers._ACCENTED) == len(customers._PLAIN)
+    for accented, plain in zip(customers._ACCENTED, customers._PLAIN, strict=True):
+        assert customers._fold_text(accented) == plain
+        assert customers._fold_text(accented.upper()) == plain
+
+    class _Compiler:
+        def compile(self, node):
+            return node.as_sql(self, connection)
+
+    sql, _ = customers.FoldedText(Value("x")).as_postgresql(_Compiler(), connection)
+    assert sql.startswith("TRANSLATE(LOWER(")
+    assert f"'{customers._ACCENTED}', '{customers._PLAIN}')" in sql
+
+
 # ── GES-13: o telefone repetido diz de quem é ──────────────────────────────
 
 

@@ -26,8 +26,8 @@ from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 
-from django.db.models import Count, Q, Value
-from django.db.models.functions import Concat, Lower, Replace, Trim
+from django.db.models import CharField, Count, Func, Q, Value
+from django.db.models.functions import Concat, Lower, Trim
 from django.utils import timezone
 from shopman.utils.monetary import format_money
 
@@ -464,26 +464,39 @@ def _duplicate_hint(customer, names: set[str], documents: set[str]) -> str:
     return ""
 
 
-# Busca sem acento (GES-12): "joao" acha "João". A dobra é feita no banco por
-# ``Replace`` encadeado, que vale igual no Postgres e no SQLite (o ``LOWER`` do
-# SQLite não conhece letra acentuada, por isso as maiúsculas entram na tabela), e
-# não pede a extensão ``unaccent``.
-_ACCENT_FOLDS = (
-    ("a", "áàâãäÁÀÂÃÄ"),
-    ("e", "éèêëÉÈÊË"),
-    ("i", "íìîïÍÌÎÏ"),
-    ("o", "óòôõöÓÒÔÕÖ"),
-    ("u", "úùûüÚÙÛÜ"),
-    ("c", "çÇ"),
-    ("n", "ñÑ"),
-)
+# Busca sem acento (GES-12): "joao" acha "João". A dobra é feita no banco, numa
+# expressão só (``FoldedText``): ``TRANSLATE(LOWER(...))`` no Postgres, e no
+# SQLite a função ``shopman_fold`` que ``register_sqlite_fold`` instala na
+# conexão (o SQLite não tem ``TRANSLATE``, e o ``REPLACE`` encadeado letra a
+# letra estoura a pilha do parser dele). Não pede a extensão ``unaccent``.
+_ACCENTED = "áàâãäéèêëíìîïóòôõöúùûüçñ"
+_PLAIN = "aaaaaeeeeiiiiooooouuuucn"
+SQLITE_FOLD_FUNCTION = "shopman_fold"
 
 
-def _folded(expression):
-    for plain, accented in _ACCENT_FOLDS:
-        for char in accented:
-            expression = Replace(expression, Value(char), Value(plain))
-    return expression
+class FoldedText(Func):
+    """O texto em minúsculas e sem acento, igual a ``_fold_text`` no Python."""
+
+    output_field = CharField()
+
+    def as_postgresql(self, compiler, connection, **extra_context):
+        return self.as_sql(
+            compiler, connection,
+            template=f"TRANSLATE(LOWER(%(expressions)s), '{_ACCENTED}', '{_PLAIN}')",
+            **extra_context,
+        )
+
+    def as_sqlite(self, compiler, connection, **extra_context):
+        return self.as_sql(compiler, connection, function=SQLITE_FOLD_FUNCTION, **extra_context)
+
+
+def register_sqlite_fold(sender, connection, **kwargs):
+    """Instala ``shopman_fold`` em cada conexão SQLite (sinal ``connection_created``)."""
+    if connection.vendor == "sqlite":
+        connection.connection.create_function(
+            SQLITE_FOLD_FUNCTION, 1, lambda text: _fold_text(text) if text is not None else None,
+            deterministic=True,
+        )
 
 
 def _fold_text(text: str) -> str:
@@ -530,7 +543,7 @@ def build_customer_list(
         names, documents = _duplicate_sets()
         qs = qs.filter(Q(full_name__in=names) | Q(document__in=documents))
     if query:
-        qs = qs.annotate(full_name_folded=_folded(_full_name_expr())).filter(_search_q(query))
+        qs = qs.annotate(full_name_folded=FoldedText(_full_name_expr())).filter(_search_q(query))
     if group_ref:
         # Recorte por grupo: é por aqui que se acha quem tirar de um grupo em lote.
         qs = qs.filter(price_tiers__ref=group_ref)

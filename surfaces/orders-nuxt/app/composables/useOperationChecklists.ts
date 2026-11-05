@@ -35,9 +35,9 @@ export function useOperationChecklists() {
     busy.value = key;
     message.value = "";
     if (taskId !== undefined) {
-      const next = { ...taskErrors.value };
-      delete next[taskId];
-      taskErrors.value = next;
+      taskErrors.value = Object.fromEntries(
+        Object.entries(taskErrors.value).filter(([id]) => Number(id) !== taskId),
+      );
     }
     try {
       data.value = await $fetch<OperationChecklistResponse>(url, {

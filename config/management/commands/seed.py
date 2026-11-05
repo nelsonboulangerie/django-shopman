@@ -6201,8 +6201,11 @@ class Command(BaseCommand):
         # Todo produto publicado num canal onde o cliente compra de longe precisa
         # dos dados de compra remota (alergênicos, porções, fiscal). O WhatsApp
         # entra na lista porque o concierge vende sem o cliente ver a vitrine.
+        # O PDV fica de fora: no balcão o cliente lê a embalagem, e o item que
+        # vende só no balcão (publicado, remotos pausados) é a mercearia que
+        # ainda não teve a embalagem digitada (beta 05/11, GES-10/CMP-08).
         listed_skus = ListingItem.objects.filter(
-            listing__ref__in=("pdv", "ifood", STOREFRONT_REF, "whatsapp"),
+            listing__ref__in=("ifood", STOREFRONT_REF, "whatsapp"),
             listing__is_active=True,
             is_published=True,
         ).values_list("product__sku", flat=True).distinct()

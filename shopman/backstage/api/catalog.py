@@ -565,7 +565,8 @@ class _CatalogPreviewMutationView(_CatalogBase):
             )
             return Response(result.response_body, status=result.response_code)
         except (CatalogError, ValidationError) as exc:
-            return Response({"detail": str(exc)}, status=400)
+            # A prévia recusa no mesmo dialeto da confirmação: o campo vai junto.
+            return Response(_not_applied(exc), status=400)
         except RemoteMutationConflict:
             return Response({"detail": "Esta intenção já representa outra alteração.", "error": {"code": "intention_conflict"}}, status=409)
         except RemoteMutationInProgress:

@@ -2087,6 +2087,7 @@ useHead({ title: "Catálogo" });
                       :label="row.name"
                       :aria-label="`Abrir ${row.name}`"
                       data-catalog-open
+                      :loading="detailLoading && detailSku === row.sku"
                       @click.stop="openDetail(row)"
                     />
                     <NuxtBadge
@@ -2155,12 +2156,12 @@ useHead({ title: "Catálogo" });
                       v-for="chip in phoneChannelChips(row, surfaces)"
                       :key="chip.ref"
                       :color="chip.tone"
-                      variant="soft"
                       :label="chip.label"
                     />
                   </div>
                   <div v-if="rowValidities(row, surfaces).length" class="mt-1 flex flex-wrap gap-1">
-                    <NuxtBadge v-for="validity in rowValidities(row, surfaces)" :key="validity.label"
+                    <NuxtBadge
+v-for="validity in rowValidities(row, surfaces)" :key="validity.label"
                       color="neutral" class="max-w-full whitespace-normal" data-catalog-validity>
                       {{ validity.channels }}: {{ validity.label }}
                     </NuxtBadge>
