@@ -314,8 +314,9 @@ function onSearchEscape() {
         @click="findCustomer"
       >
         <Icon name="lucide:user-round-search" class="size-4 text-muted-foreground" aria-hidden="true" />
-        <!-- Aspas e termo num span só: o gap do botão separava as aspas do termo ("“ croisant ”"). -->
-        <span class="max-w-48 truncate">Buscar cliente “{{ search.trim() }}”</span>
+        <!-- Aspas e termo num span só (o gap do botão separava as aspas do termo,
+             "“ croisant ”"); só o termo digitado corta, o rótulo da casa não. -->
+        <span>Buscar cliente <span class="inline-block max-w-40 truncate align-bottom" :title="search.trim()">“{{ search.trim() }}”</span></span>
       </NuxtButton>
     </div>
 
