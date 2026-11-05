@@ -94,6 +94,7 @@ const startSpy = vi.fn().mockResolvedValue({ ok: true });
 const planSpy = vi.fn().mockResolvedValue({ ok: true });
 const boardRefresh = vi.fn();
 const boardInitialDateSpy = vi.fn();
+const routerReplace = vi.fn();
 const recipeBookCanView = ref(true);
 const kdsCards = ref<Record<string, unknown>[]>([]);
 const kdsActions = new Map<string, Record<string, unknown>>();
@@ -111,6 +112,7 @@ function installGlobals() {
     attrsFor: () => ({ target: "_self" }),
   }));
   vi.stubGlobal("useRoute", () => ({ query: {} }));
+  vi.stubGlobal("useRouter", () => ({ replace: routerReplace }));
   vi.stubGlobal("useRecipeBookAccess", () => ({ canView: recipeBookCanView }));
   vi.stubGlobal("useProductionBoard", (initialDate: string) => {
     boardInitialDateSpy(initialDate);
@@ -326,6 +328,44 @@ describe("ProductionStageGrid — planning authority", () => {
   // V4 (prévia `plano-porque4.html`): a linha decide. O stepper e "Planejar N" moram
   // na linha; a mesma autoridade de antes vale lá (a persona que só segue a sugestão
   // planeja o número exato, com origem "suggested"; quem planeja à mão, "manual").
+  it("a data escolhida vai para a URL, e a troca de dia trava a grade até a resposta", async () => {
+    // Beta 05/11: recarregar o sábado voltava para hoje; e por 1 a 3 s a tela
+    // mostrava o cabeçalho de amanhã sobre a lista de hoje, com os botões ativos.
+    const selectedDate = ref("2026-07-06");
+    const board = ref({
+      access: FULL_ACCESS,
+      base_recipes: [],
+      selected_date: "2026-07-06",
+      selected_position_ref: "",
+      default_position_pk: 7,
+      positions: [{ pk: 7, ref: "forno", name: "Forno", is_default: true }],
+    });
+    vi.stubGlobal("useProductionBoard", () => ({
+      board,
+      rows: boardRows,
+      counts: ref(null),
+      selectedDate,
+      pending: ref(false),
+      error: ref(null),
+      refresh: boardRefresh,
+      isBusy: () => false,
+      plan: planSpy,
+      start: startSpy,
+    }));
+    routerReplace.mockClear();
+    const w = mountGrid("plan");
+    expect(w.find("[data-switching-day]").exists()).toBe(false);
+
+    selectedDate.value = "2026-07-07";
+    await flushPromises();
+    expect(routerReplace).toHaveBeenCalledWith({ query: { date: "2026-07-07" } });
+    expect(w.find("[data-switching-day]").attributes("aria-busy")).toBe("true");
+
+    board.value = { ...board.value, selected_date: "2026-07-07" };
+    await flushPromises();
+    expect(w.find("[data-switching-day]").exists()).toBe(false);
+  });
+
   it("lets a suggestion-only persona submit only the exact suggestion", async () => {
     stubBoardAccess({
       ...FULL_ACCESS,

@@ -109,6 +109,20 @@ watch(
     if (typeof value === "string") selectedDate.value = value;
   },
 );
+// A data mora na URL (beta 05/11): recarregar o Planejamento de sábado não
+// pode voltar para hoje e deixar alguém planejar no dia errado.
+const router = useRouter();
+watch(selectedDate, (date) => {
+  if (route.query.date === date) return;
+  void router.replace({ query: { ...route.query, date } });
+});
+// Trocou o dia e a resposta ainda é do dia anterior: nada de cabeçalho de um
+// dia sobre a lista de outro, nem botão ativo nesse meio-tempo (beta 05/11).
+const switchingDay = computed(
+  () =>
+    !!board.value?.selected_date &&
+    board.value.selected_date !== selectedDate.value,
+);
 
 // ── Data: o "Período" do kit em Dia (Tipo 2), com ‹ › que andam um dia ─────
 const todayISO = isoForOffset(0);
@@ -1174,6 +1188,7 @@ const signalClass = {
 
 // "Sábado comum, sem feriado · previsão 24 °C e sol (como os sábados usados na conta)".
 const dayLine = computed(() => {
+  if (switchingDay.value) return "";
   const sameWeekday = rows.value.some((row) => row.suggestion?.same_weekday);
   const weekday = weekdayPlural(selectedDate.value);
   return dayContextLine(
@@ -1330,7 +1345,12 @@ const startedDescription = computed(() => {
     </ProductionHeader>
 
     <div class="flex min-h-0 flex-1">
-    <section class="min-h-0 min-w-0 flex-1 overflow-auto px-3 pt-3 pb-4 md:px-4">
+    <section
+      class="min-h-0 min-w-0 flex-1 overflow-auto px-3 pt-3 pb-4 md:px-4"
+      :class="switchingDay ? 'pointer-events-none opacity-50' : ''"
+      :aria-busy="switchingDay"
+      :data-switching-day="switchingDay ? '' : undefined"
+    >
       <OperatorScreenState
         v-if="display === 'loading'"
         state="loading"
