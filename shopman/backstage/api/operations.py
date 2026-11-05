@@ -1056,8 +1056,17 @@ class OperatorUnlockView(APIView):
                 request=request,
                 reason="operator_unlock_invalid",
             )
+            # A recusa diz o que houve (beta test de 05/11/2026, PDV-20): o
+            # "Identificação inválida." não dizia se era o PIN, o crachá ou o
+            # acesso. O acesso só se conta de quem a tela já lista.
+            if metodo == SignInMethod.BADGE:
+                detail = "Crachá não reconhecido. Passe de novo ou digite o PIN."
+            elif alvo is not None and not operator_service.is_eligible_operator(alvo, required_perm=perm):
+                detail = "Esta pessoa não tem acesso a este app. Fale com o gerente."
+            else:
+                detail = "PIN não confere. Tente de novo."
             return Response(
-                {"detail": "Identificação inválida.", "error": {"code": "operator_unlock_invalid"}},
+                {"detail": detail, "error": {"code": "operator_unlock_invalid"}},
                 status=403,
             )
         # `login()` de verdade, e não um cartão guardado na sessão: a partir daqui
