@@ -6476,6 +6476,39 @@ def _pos_customer_integrity_response(exc: Exception, *, action: str) -> Response
         responses={200: OpenApiResponse(description="The resolved/created customer lookup.")},
     ),
 )
+class POSManagerApprovalCheckView(APIView):
+    """Confere o PIN (ou o crachá) do gerente NA HORA, no próprio diálogo.
+
+    Beta test de 05/11/2026 (PDV-05). O diálogo "Quem autoriza?" guardava o PIN
+    e fechava; a conferência só acontecia no fechamento, depois de o operador já
+    ter confirmado "Recebi o Pix" com o cliente. PIN errado voltava como recusa
+    da VENDA, com a tela já adiante.
+
+    É o MESMO desafio do fechamento (``validate_manager_override``: permissão
+    ``cashman.adjust_shift``, ``PinCredential`` com trava progressiva), então
+    errar aqui conta na mesma trava. Não grava nada: o fechamento confere de
+    novo, porque é ele que assina a linha.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        approval = (request.data or {}).get("manager_approval")
+        if not isinstance(approval, dict):
+            approval = {}
+        try:
+            approver = pos_tabs_service.validate_manager_override(
+                approval,
+                operator_username=_username(request),
+                action="sale_approval_check",
+                recovery_invalid="Confira o gerente e digite o PIN de novo.",
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=422)
+        return Response({"approved_by": approver.get_username()})
+
+
 class POSCustomerResolveView(APIView):
     """Just-in-time get-or-create: when the operator defines a customer on the
     counter, resolve them (phone/CPF/email) or create the record NOW, returning

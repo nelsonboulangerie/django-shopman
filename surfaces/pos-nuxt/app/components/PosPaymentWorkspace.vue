@@ -110,6 +110,8 @@ const props = defineProps<{
   managerUsername: string;
   managerPin: string;
   managerApprovalError: string;
+  /** O PIN do gerente está sendo conferido no servidor (`checkManager`). */
+  managerCheckBusy?: boolean;
   /** Quem pode assinar a exceção. Vazio = o diálogo cai no campo livre. */
   managers: POSManagerProjection[];
   /** Quem CONTINUA operando depois da assinatura do gerente. Ver OperatorManagerAuth. */
@@ -212,6 +214,13 @@ const emit = defineEmits<{
   addTender: [string];
   removeTender: [number];
   setSplitCount: [number];
+  /**
+   * Confere o PIN do gerente ANTES de seguir (beta test de 05/11/2026): o
+   * diálogo só fecha com `done(true)`. Recusado, ele fica aberto com o erro.
+   */
+  checkManager: [string, string, (ok: boolean) => void];
+  /** O diálogo do gerente fechou sem assinar: o erro velho não volta na próxima abertura. */
+  managerAuthDismissed: [];
   selectTender: [number];
   /** Numpad edits the SELECTED tender; decimal entry (reais first, comma → centavos). */
   tenderDigit: [string];
@@ -1234,11 +1243,19 @@ function proceed() {
   emit("submit");
 }
 function onManagerAuthorize(username: string, pin: string) {
-  emit("update:managerUsername", username);
-  emit("update:managerPin", pin);
-  managerAuthOpen.value = false;
-  proceed();
+  // O PIN é conferido AQUI, com o diálogo aberto: errado, o erro aparece nele
+  // e nada adiante (maquininha, "Recebi o Pix") chegou a acontecer.
+  emit("checkManager", username, pin, (ok) => {
+    if (!ok) return;
+    emit("update:managerUsername", username);
+    emit("update:managerPin", pin);
+    managerAuthOpen.value = false;
+    proceed();
+  });
 }
+watch(managerAuthOpen, (open, wasOpen) => {
+  if (wasOpen && !open && props.managerApprovalError) emit("managerAuthDismissed");
+});
 function onMachineConfirmed() {
   machineConfirmOpen.value = false;
   if (pixTenders.value.length) emit("confirmPix");
@@ -2533,7 +2550,7 @@ defineExpose({
     :house-account-limit="review?.house_account_limit"
     :operator-name="operatorName || ''"
     :managers="managers"
-    :busy="loading"
+    :busy="loading || managerCheckBusy"
     :error="managerApprovalError"
     @authorize="onManagerAuthorize"
   />

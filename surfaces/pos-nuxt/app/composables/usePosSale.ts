@@ -2531,6 +2531,29 @@ export function usePosSale(deps: PosSaleDeps) {
     });
   }
 
+  // O PIN DO GERENTE É CONFERIDO NO DIÁLOGO (beta test de 05/11/2026). Antes o
+  // diálogo guardava o PIN e fechava, e o PIN errado só voltava no fechamento,
+  // depois de o operador já ter confirmado "Recebi o Pix" com o cliente. A
+  // conferência é a mesma do fechamento, com a mesma trava; não grava nada.
+  const managerCheckBusy = ref(false);
+  async function checkManagerApproval(username: string, pin: string): Promise<boolean> {
+    if (managerCheckBusy.value) return false;
+    managerCheckBusy.value = true;
+    managerApprovalError.value = "";
+    try {
+      const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
+      await action.call(path, { body: { manager_approval: { username, pin } } });
+      return true;
+    } catch (error) {
+      const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
+      managerApprovalError.value = failure?.recovery || failure?.message
+        || httpErrorMessage(error, "Não deu para conferir o PIN. Tente de novo.");
+      return false;
+    } finally {
+      managerCheckBusy.value = false;
+    }
+  }
+
   async function resolveCustomer(options: { contactCorrection?: boolean } = {}): Promise<boolean> {
     const customerRef = cart.customerRef.trim();
     const name = cart.customerName.trim();
@@ -4340,6 +4363,8 @@ export function usePosSale(deps: PosSaleDeps) {
     lookupBusy,
     serverError,
     managerApprovalError,
+    managerCheckBusy,
+    checkManagerApproval,
     customerFocusNonce,
     result,
     closeOutcomeUncertain,

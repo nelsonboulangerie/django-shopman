@@ -35,6 +35,7 @@ surface depends on it.
 | Clear tab | DELETE | `/api/v1/backstage/pos/tabs/{session_key}/clear/` | `clear_pos_tab` |
 | Review sale | POST | `/api/v1/backstage/pos/sale/review/` | `review_sale` |
 | Close sale | POST | `/api/v1/backstage/pos/sale/close/` | `close_sale` |
+| Manager approval check | POST | `/api/v1/backstage/pos/manager-approval/check/` | `validate_manager_override` (confere o PIN ou o crachá no próprio diálogo, com a mesma trava; não grava nada) |
 | Cancel recent sale | POST | `/api/v1/backstage/pos/sale/recent/cancel/` | `cancel_recent_order` / `reopen_recent_order_for_correction` |
 | Open cash shift | POST | `/api/v1/backstage/pos/cash/open/` | `open_cash_shift` |
 | Close cash shift | POST | `/api/v1/backstage/pos/cash/close/` | `close_cash_shift` |

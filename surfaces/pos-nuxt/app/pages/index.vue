@@ -118,6 +118,8 @@ const {
   cancelSaleError,
   lookupBusy,
   managerApprovalError,
+  managerCheckBusy,
+  checkManagerApproval,
   customerFocusNonce,
   result,
   closeGuardNotice,
@@ -1477,6 +1479,9 @@ onBeforeUnmount(() => {
         v-model:manager-username="cart.managerUsername"
         v-model:manager-pin="cart.managerPin"
         :manager-approval-error="managerApprovalError"
+        :manager-check-busy="managerCheckBusy"
+        @check-manager="(username, pin, done) => { void checkManagerApproval(username, pin).then(done) }"
+        @manager-auth-dismissed="managerApprovalError = ''"
         v-model:fulfillment-type="cart.fulfillmentType"
         v-model:fulfillment-confirmed="cart.fulfillmentConfirmed"
         v-model:payment-collection="cart.paymentCollection"
