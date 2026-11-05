@@ -338,7 +338,7 @@ def test_photo_enhance_is_deterministic(settings):
     from PIL import Image
 
     settings.SHOPMAN_PRODUCT_IMAGE_ENHANCE_PROVIDER = "deterministic"
-    source = Image.new("RGB", (40, 30), (200, 30, 30))
+    source = Image.new("RGB", (800, 600), (200, 30, 30))
     buffer = BytesIO()
     source.save(buffer, format="PNG")
     raw = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
@@ -355,19 +355,21 @@ def test_photo_endpoint_warns_when_off(client, operator, catalog):
     assert response.status_code in (400, 503)
 
 
-def _png_data_url() -> str:
+def _png_data_url(size: tuple[int, int] = (600, 600)) -> str:
     import base64
     from io import BytesIO
 
     from PIL import Image
 
     buffer = BytesIO()
-    Image.new("RGB", (20, 20), (10, 120, 30)).save(buffer, format="PNG")
+    Image.new("RGB", size, (10, 120, 30)).save(buffer, format="PNG")
     return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
 def test_store_product_photo_uses_the_default_storage(tmp_path):
     from django.test import override_settings
+
+    from shopman.shop.services import product_photo_size
 
     with override_settings(MEDIA_ROOT=str(tmp_path)):
         result = catalog_service.store_product_photo(_png_data_url(), filename="geleia.png")
@@ -376,6 +378,40 @@ def test_store_product_photo_uses_the_default_storage(tmp_path):
     assert result["size"] > 0
     assert result["media_type"] == "image/png"
     assert result["name"] in result["url"]
+    # O tamanho fica gravado para o envio ao Google não baixar a foto de novo.
+    assert product_photo_size.photo_size(result["url"]) == (600, 600)
+
+
+def test_photo_smaller_than_google_minimum_is_refused_on_upload(tmp_path):
+    """Foto com lado < 500 px não entra: o Google reprova o produto a partir de 31/01/2027."""
+    from django.test import override_settings
+
+    with override_settings(MEDIA_ROOT=str(tmp_path)), pytest.raises(CatalogError) as exc:
+        catalog_service.store_product_photo(_png_data_url((800, 323)), filename="deli.png")
+    assert "800 × 323 px" in str(exc.value)
+    assert "500 px" in str(exc.value)
+    assert not list(tmp_path.rglob("*.png"))
+
+
+def test_photo_smaller_than_google_minimum_is_not_stretched_by_enhance(settings):
+    settings.SHOPMAN_PRODUCT_IMAGE_ENHANCE_PROVIDER = "deterministic"
+    with pytest.raises(CatalogError, match="323 × 323 px"):
+        catalog_service.enhance_product_photo(_png_data_url((323, 323)))
+
+
+def test_photo_upload_endpoint_shows_the_size_refusal(client, operator, catalog, tmp_path):
+    from django.test import override_settings
+
+    client.force_login(operator)
+    with override_settings(MEDIA_ROOT=str(tmp_path)):
+        response = client.post(
+            PHOTO_UPLOAD_URL,
+            {"image": _png_data_url((400, 400)), "filename": "deli.png"},
+            content_type="application/json",
+        )
+    assert response.status_code == 400
+    assert response.json()["field"] == "image"
+    assert "400 × 400 px" in response.json()["detail"]
 
 
 def test_photo_upload_endpoint_stores_and_returns_url(client, operator, catalog, tmp_path):

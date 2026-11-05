@@ -185,6 +185,80 @@ class TestProductInput:
         assert base64.urlsafe_b64decode(padded).decode() == "pt~BR~PAO"
 
 
+# ── foto mínima do Google (500 × 500 px a partir de 31/01/2027) ──────────────
+
+
+def _photo(name: str, width: int, height: int) -> str:
+    """Uma URL única com tamanho já medido (o cache é do processo inteiro)."""
+    from uuid import uuid4
+
+    from shopman.shop.services import product_photo_size
+
+    url = f"https://cdn.test/{name}-{uuid4().hex}.webp"
+    product_photo_size.remember(url, width, height)
+    return url
+
+
+class TestPhotoMinimum:
+    def test_large_photos_go_as_they_are(self, stocked):
+        main, extra = _photo("pao", 1200, 1200), _photo("pao-2", 900, 548)
+        stocked_product = Product.objects.get(sku="PAO")
+        stocked_product.image_url = main
+        stocked_product.metadata = {"gallery": [extra]}
+        stocked_product.save()
+        item = display_catalog.display_item("google", "PAO")
+        images = display_catalog.google_images(item)
+        assert images.problems == ()
+        attrs = google.build_product_input(item, _CFG)["productAttributes"]
+        assert attrs["imageLink"] == main
+        assert attrs["additionalImageLinks"] == [extra]
+
+    def test_small_main_photo_still_goes_but_is_flagged(self, stocked):
+        main = _photo("deli", 323, 323)
+        Product.objects.filter(sku="PAO").update(image_url=main)
+        item = display_catalog.display_item("google", "PAO")
+        images = display_catalog.google_images(item)
+        assert google.build_product_input(item, _CFG)["productAttributes"]["imageLink"] == main
+        assert len(images.problems) == 1
+        assert "323 × 323 px" in images.problems[0]
+        assert "31/01/2027" in images.problems[0]
+
+    def test_small_additional_photo_is_left_out_and_flagged(self, stocked):
+        main, small = _photo("pao", 1200, 1200), _photo("pao-miniatura", 600, 499)
+        Product.objects.filter(sku="PAO").update(image_url=main, metadata={"gallery": [small]})
+        item = display_catalog.display_item("google", "PAO")
+        attrs = google.build_product_input(item, _CFG)["productAttributes"]
+        assert "additionalImageLinks" not in attrs
+        problems = display_catalog.google_images(item).problems
+        assert len(problems) == 1 and "600 × 499 px" in problems[0]
+
+    def test_unmeasured_photo_is_not_judged(self, stocked):
+        """Sonda desligada e sem medida gravada: não inventa pendência."""
+        Product.objects.filter(sku="PAO").update(image_url="https://cdn.test/sem-medida.webp")
+        item = display_catalog.display_item("google", "PAO")
+        assert display_catalog.google_images(item).problems == ()
+
+    def test_size_is_probed_once_per_address(self, settings):
+        from shopman.shop.services import marketing_media_probe, product_photo_size
+
+        settings.SHOPMAN_MARKETING_MEDIA_PROBE_ENABLED = True
+        facts = marketing_media_probe.PhotoFacts(format="webp", total_bytes=13662, width=323, height=323)
+        url = f"https://img.test/dl-{id(facts)}.webp"
+        with mock.patch.object(marketing_media_probe, "probe_facts", return_value=facts) as probe:
+            assert product_photo_size.photo_size(url) == (323, 323)
+            assert product_photo_size.photo_size(url) == (323, 323)
+        probe.assert_called_once()
+
+    def test_probe_failure_is_unknown_not_small(self, settings):
+        from shopman.shop.services import marketing_media_probe, product_photo_size
+        from shopman.shop.services.marketing_contracts import MarketingContractError
+
+        settings.SHOPMAN_MARKETING_MEDIA_PROBE_ENABLED = True
+        error = MarketingContractError(code="marketing_media_host_not_allowed", detail="host")
+        with mock.patch.object(marketing_media_probe, "probe_facts", side_effect=error):
+            assert product_photo_size.photo_size("https://fora.test/foto.jpg") is None
+
+
 # ── backend HTTP (mockado) ────────────────────────────────────────────────────
 
 
@@ -251,6 +325,25 @@ class TestBackend:
         assert params == {"dataSource": "accounts/5881119366/dataSources/999"}
         assert body["offerId"] == "PAO"
         assert headers["Authorization"] == "Bearer tok"
+
+    def test_small_photo_is_sent_and_left_pending(self, token, stocked):
+        """O item vai (preço, estoque e texto avançam) e a pendência volta como erro."""
+        Product.objects.filter(sku="PAO").update(image_url=_photo("deli", 323, 323))
+        calls = []
+
+        def fake_post(url, params=None, json=None, headers=None, timeout=None, data=None):
+            if "oauth2" in url:
+                return _Resp(200, {"access_token": "tok", "expires_in": 3600})
+            calls.append(json)
+            return _Resp(200)
+
+        with mock.patch.object(google.requests, "post", fake_post):
+            result = google.GoogleMerchantProjection().project([self._item()], channel="google")
+
+        assert len(calls) == 1
+        assert result.projected == 1
+        assert result.success is False
+        assert result.errors[0].startswith("PAO: foto pendente: a foto principal tem 323 × 323 px")
 
     def _project_with_store(self, settings, item):
         settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, store_code="18102236950405822206")
