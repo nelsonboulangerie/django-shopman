@@ -15,7 +15,7 @@ import { redoTabLabel } from "~/presentation/preorderActions";
 import type { PreorderRedoResponse } from "~/types/preorders";
 import type { PosSettingsResponse } from "~/types/settings";
 import { rollStyle } from "~/presentation/printGeometry";
-import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
+import { firstFittingWindow, scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
 import { enterAdvances, paymentFailed, pendingPixBadge, pixAwaiting } from "~/presentation/saleResult";
 import { POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION } from "~/presentation/shortcuts";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
@@ -898,6 +898,20 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
       title: "A comanda mudou em outro dispositivo.",
       description: "Confira antes de salvar. Atualizar descarta as suas alterações.",
       action: { label: "Descartar minhas alterações e atualizar", onSelect: () => { if (!busy.value) void reloadConflictingTab(); } },
+    });
+  }
+  // O horário escolhido deixou de caber quando um item entrou (PDV2-09): o aviso
+  // diz na hora, com o primeiro horário que cabe a um toque. Antes, só o chip
+  // ficava vermelho e o motivo aparecia no Pagamento.
+  if (inSaleView.value && !checkoutMode.value && scheduleConflictReason.value) {
+    const fit = firstFittingWindow(deliverySlots.value, cart.deliveryTimeSlot);
+    list.push({
+      id: "schedule-conflict",
+      color: "warning",
+      title: scheduleConflictReason.value,
+      action: fit
+        ? { label: `Mudar para ${fit.label}`, onSelect: () => { cart.deliveryTimeSlot = fit.ref; } }
+        : { label: "Escolher outro dia", onSelect: () => openScheduleHere() },
     });
   }
   if (inSaleView.value && editing.value) {

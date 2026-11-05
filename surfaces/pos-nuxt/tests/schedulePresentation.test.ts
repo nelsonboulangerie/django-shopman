@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   dateLabel,
+  firstFittingWindow,
   isScheduled,
   lastBookableDate,
   parseLocalDate,
@@ -232,5 +233,20 @@ describe("lastBookableDate — o limite de dias da casa, lido da mesma resposta"
   });
   it("sem datas, não há teto", () => {
     expect(lastBookableDate([])).toBe("");
+  });
+});
+
+describe("firstFittingWindow (beta test de 05/11/2026, PDV2-09)", () => {
+  const grid = [
+    { ref: "09:00", label: "A partir das 09h", enabled: false, reason: "Baguete Gergelim sai às 15:00." },
+    { ref: "12:00", label: "A partir das 12h", enabled: false },
+    { ref: "15:00", label: "A partir das 15h", enabled: true },
+    { ref: "18:00", label: "A partir das 18h", enabled: true },
+  ];
+  it("oferece o primeiro horário que cabe depois do escolhido", () => {
+    expect(firstFittingWindow(grid, "09:00")?.ref).toBe("15:00");
+  });
+  it("sem horário que caiba no dia, não oferece nenhum", () => {
+    expect(firstFittingWindow(grid.slice(0, 2), "09:00")).toBeNull();
   });
 });
