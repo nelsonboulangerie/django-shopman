@@ -173,7 +173,7 @@ describe("MarketingOfferForm", () => {
   });
 });
 
-describe("MarketingOfferForm — campos numéricos (beta 05/11)", () => {
+describe("MarketingOfferForm: campos numéricos (beta 05/11)", () => {
   it("percentual aceita inteiros: a base do step nativo é 1, não 0,01 (ge:MKT-01)", async () => {
     const wrapper = form();
     const input = wrapper.get("#marketing-offer-value");

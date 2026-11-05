@@ -37,7 +37,7 @@ function action(
   };
 }
 
-describe("ge:MKT-03 — quem não aprova não recebe o gesto de aprovar", () => {
+describe("ge:MKT-03: quem não aprova não recebe o gesto de aprovar", () => {
   it("sem capacidade, Recusar e Continuar vêm travados com uma frase com saída", () => {
     const block = reviewCapabilityBlock([
       action("publish_announcement_now", "missing_capability"),
@@ -71,7 +71,7 @@ describe("ge:MKT-03 — quem não aprova não recebe o gesto de aprovar", () => 
   });
 });
 
-describe("ge:MKT-07 — silêncio do WhatsApp contra o prazo do anúncio", () => {
+describe("ge:MKT-07: silêncio do WhatsApp contra o prazo do anúncio", () => {
   const zone = "America/Sao_Paulo";
 
   it("às 07:21 com prazo às 07:45, as 08:00 já vencem: devolve a hora do prazo", () => {
@@ -109,7 +109,7 @@ function source(path: string): string {
   return readFileSync(new URL(`../app/${path}`, import.meta.url), "utf8");
 }
 
-describe("ge:MKT-25 — o cartão da oferta diz por que não vai numa campanha", () => {
+describe("ge:MKT-25: o cartão da oferta diz por que não vai numa campanha", () => {
   const base = {
     available_for_campaign: false,
     status: "live" as const,
@@ -140,7 +140,7 @@ describe("ge:MKT-25 — o cartão da oferta diz por que não vai numa campanha",
   });
 });
 
-describe("ge:MKT-28 — restos visuais do assistente e dos diálogos", () => {
+describe("ge:MKT-28: restos visuais do assistente e dos diálogos", () => {
   it("a etapa Revisar não fala em criar quando é edição", () => {
     expect(source("components/CampaignForm.vue")).toContain(
       '{ label: "Revisar", hint: "Confira o que será salvo." }',
@@ -157,13 +157,13 @@ describe("ge:MKT-28 — restos visuais do assistente e dos diálogos", () => {
   });
 });
 
-describe("ge:MKT-29 — Agendados vazio fala uma vez", () => {
+describe("ge:MKT-29: Agendados vazio fala uma vez", () => {
   it("o cabeçalho só aparece quando há agendado; vazio é do estado vazio", () => {
     expect(source("pages/scheduled.vue")).toContain('v-if="queue && scheduled.length"');
   });
 });
 
-describe("ge:MKT-04 — nome com limite no campo", () => {
+describe("ge:MKT-04: nome com limite no campo", () => {
   it("campanha e modelo limitam o nome a 100, como o banco", () => {
     expect(source("components/CampaignForm.vue")).toMatch(/id="rule-name"[\s\S]{0,80}:maxlength="100"/);
     expect(source("components/AnnouncementTemplateForm.vue")).toMatch(
