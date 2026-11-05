@@ -4642,12 +4642,17 @@ class WorkOrderFinishView(_ProductionActionBase):
                 WorkOrder.Status.VOID,
             ):
                 yield_anchor = work_order.started_qty or work_order.quantity
-                if body["quantity"] < yield_anchor:
+                # Rendeu menos (beta 05/11): vale com a confirmação e o motivo
+                # do operador; sem eles, a diferença não pode sumir calada.
+                shortfall_explained = body["yield_deviation_confirmed"] and bool(
+                    str(body.get("yield_deviation_reason") or "").strip()
+                )
+                if body["quantity"] < yield_anchor and not shortfall_explained:
                     raise ProductionMutationValidationError(
                         {
                             "quantity": (
-                                "A quantidade total deve incluir toda perda do lote. "
-                                "Classifique o déficit em partition com um motivo de qualidade."
+                                "O total ficou abaixo do previsto. Lance a perda com o motivo, "
+                                "ou confirme que rendeu menos e diga por quê."
                             )
                         }
                     )

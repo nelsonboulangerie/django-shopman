@@ -1923,6 +1923,38 @@ def test_finish_rejects_unclassified_yield_deficit(
 
 
 @pytest.mark.django_db
+def test_finish_accepts_confirmed_shortfall_with_reason(
+    client,
+    recipe,
+    production_operator,
+):
+    """Beta 05/11: "produzi menos" fecha com o motivo do operador, sem perda."""
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    craft.start(work_order, quantity=10, position_ref="forno", expected_rev=work_order.rev)
+    work_order.refresh_from_db()
+    client.force_login(production_operator)
+
+    response = production_mutation_post(
+        client,
+        reverse("api-backstage-wo-finish", args=[work_order.pk]),
+        data={
+            "quantity": "9",
+            "partition": [{"quantity": "9", "quality_grade_ref": "standard"}],
+            "yield_deviation_confirmed": True,
+            "yield_deviation_reason": "Rendeu menos peças",
+            "expected_rev": work_order.rev,
+            "idempotency_key": "confirmed-shortfall",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200, response.json()
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.FINISHED
+    assert work_order.finished == Decimal("9")
+
+
+@pytest.mark.django_db
 def test_forged_finish_overshoot_requires_audited_confirmation(
     client,
     recipe,

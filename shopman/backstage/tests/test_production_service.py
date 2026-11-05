@@ -1676,6 +1676,48 @@ def test_finish_overshoot_requires_confirmation_and_reason_under_lock(recipe, mo
 
 
 @pytest.mark.django_db
+def test_finish_shortfall_requires_reason_and_stays_out_of_loss(recipe, monkeypatch):
+    """Beta 05/11: rendeu 42 de um previsto maior. A diferença é "rendeu menos",
+    com motivo e nome, e nunca vira perda de qualidade nem estoque."""
+    monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
+    work_order = craft.plan(recipe, 10, date=date.today())
+    craft.start(work_order, quantity=10, expected_rev=work_order.rev)
+    request = {
+        "work_order_id": work_order.pk,
+        "quantity": "7",
+        "actor": "production:op",
+        "expected_rev": work_order.rev,
+        "idempotency_key": "shortfall-confirmation",
+        "partition": [{"quantity": "7", "quality_grade_ref": "standard"}],
+    }
+
+    with pytest.raises(production.ProductionError, match="abaixo do previsto"):
+        _apply_finish(**request)
+    with pytest.raises(production.ProductionError, match="abaixo do previsto"):
+        _apply_finish(**request, yield_deviation_confirmed=True)
+
+    result = _apply_finish(
+        **request,
+        yield_deviation_confirmed=True,
+        yield_deviation_reason="A massa rendeu menos peças",
+    )
+
+    assert result == (work_order.ref, Decimal("7"))
+    assert not WorkOrderItem.objects.filter(work_order=work_order, kind=WorkOrderItem.Kind.WASTE).exists()
+    event = WorkOrderEvent.objects.get(work_order=work_order, kind=WorkOrderEvent.Kind.FINISHED)
+    assert event.payload["context"]["yield_deviation"] == {
+        "kind": "yield_shortfall",
+        "anchor_qty": "10",
+        "reported_qty": "7",
+        "saleable_qty": "7",
+        "deviation_qty": "3",
+        "confirmed": True,
+        "reason": "A massa rendeu menos peças",
+        "actor": "production:op",
+    }
+
+
+@pytest.mark.django_db
 def test_partition_with_only_loss_records_auditable_total_loss(recipe, monkeypatch):
     """Perda total conclui a produção sem fabricar estoque vendável."""
     monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
