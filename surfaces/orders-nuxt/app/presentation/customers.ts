@@ -135,3 +135,14 @@ export function undoMergeDescription(row: {
     : "";
   return `${customerLabel(row.source_name, row.source_ref)} volta a ser um cadastro separado, com ${moved}.${loyalty}`;
 }
+
+/**
+ * Descartar a EDIÇÃO de um cadastro que já existe (GES-24): "o cadastro ainda não
+ * foi salvo" dizia que o cliente não existia. O que se perde são as alterações.
+ */
+export const CUSTOMER_EDIT_DISCARD_COPY = {
+  title: "Descartar as alterações?",
+  description: "As alterações ainda não foram salvas. O cadastro continua como estava.",
+  confirmLabel: "Descartar e sair",
+  cancelLabel: "Continuar editando",
+} as const;

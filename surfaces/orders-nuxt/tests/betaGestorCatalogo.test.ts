@@ -77,30 +77,27 @@ const row = (over: Partial<CatalogRowProjection> = {}): CatalogRowProjection =>
     ...over,
   }) as CatalogRowProjection;
 
-describe("CMP-08: fora da loja online, vendendo no balcão", () => {
-  const resale = row({
-    is_published: false,
-    cells: [cell({ surface_ref: "pdv", available: false })],
+describe("CMP-08 e GES-10: só no balcão é pausar os remotos; oculto sai de todos", () => {
+  const counterOnly = row({
+    cells: [
+      cell({ surface_ref: "pdv" }),
+      cell({ surface_ref: "web", is_published: false, is_sellable: false, available: false }),
+    ],
   });
 
-  it("o selo é 'Só no balcão', sem esmaecer", () => {
-    expect(rowStatus(resale)).toMatchObject({ off: false, label: "Só no balcão" });
+  it("PDV vendendo e remotos pausados: selo 'Só no balcão', sem esmaecer", () => {
+    expect(rowStatus(counterOnly)).toMatchObject({ off: false, label: "Só no balcão" });
   });
 
-  it("a célula do PDV diz Disponível, não Oculto", () => {
-    expect(cellState(resale, resale.cells[0]!)).toBe("available");
+  it("um remoto vendendo: sem selo", () => {
+    const everywhere = row({ cells: [cell({ surface_ref: "pdv" }), cell({ surface_ref: "web" })] });
+    expect(rowStatus(everywhere).label).toBe("");
   });
 
-  it("a loja online continua oculta", () => {
-    expect(cellState(resale, cell({ surface_ref: "web" }))).toBe("unpublished");
-  });
-
-  it("sem venda no balcão, continua 'Oculto'", () => {
-    const hidden = row({
-      is_published: false,
-      cells: [cell({ surface_ref: "pdv", is_sellable: false, available: false })],
-    });
-    expect(rowStatus(hidden).label).toBe("Oculto");
+  it("oculto no catálogo: o PDV também diz Oculto (GES-10)", () => {
+    const hidden = row({ is_published: false, cells: [cell({ surface_ref: "pdv", available: false })] });
+    expect(cellState(hidden, hidden.cells[0]!)).toBe("unpublished");
+    expect(rowStatus(hidden)).toMatchObject({ off: true, label: "Oculto" });
   });
 });
 
@@ -265,5 +262,41 @@ describe("GES-14: unificação contada com nomes", () => {
         loyalty_merged: false,
       }),
     ).toBe("Ana Silva (CUST-1) volta a ser um cadastro separado, com nada além do próprio cadastro.");
+  });
+});
+
+describe("GES-25: o nome do produto no Tabelão abre o produto", () => {
+  const page = readFileSync(new URL("../app/pages/catalog.vue", import.meta.url), "utf8");
+
+  it("o nome é botão do conjunto mínimo que chama openDetail(row)", () => {
+    const button = page.slice(page.lastIndexOf("<NuxtButton", page.indexOf("data-catalog-open")), page.indexOf("/>", page.indexOf("data-catalog-open")));
+    expect(button).toContain(':label="row.name"');
+    expect(button).toContain('@click.stop="openDetail(row)"');
+    expect(button).toMatch(/variant="(solid|outline|ghost)"/);
+  });
+});
+
+describe("GES-21: o dispositivo do posto ganha nome", () => {
+  const page = readFileSync(new URL("../app/pages/workstations.vue", import.meta.url), "utf8");
+  const composable = readFileSync(new URL("../app/composables/useWorkstations.ts", import.meta.url), "utf8");
+
+  it("cada dispositivo tem Renomear ao lado de Desvincular", () => {
+    expect(page).toMatch(/data-device-rename-start="device\.id"[\s\S]{0,80}@click="startDeviceRename\(device\)"/);
+  });
+
+  it("renomear é inline, com Salvar e Cancelar, e vai ao PATCH do dispositivo", () => {
+    const form = page.slice(page.indexOf("data-device-rename\n"), page.indexOf("</NuxtForm>", page.indexOf("data-device-rename\n")));
+    expect(form).toContain('@submit="saveDeviceRename(row.ref)"');
+    expect(form).toContain('label="Cancelar"');
+    expect(composable).toMatch(/function renameDevice[\s\S]*method: "PATCH", body: \{ label \}/);
+  });
+});
+
+describe("GES-24: o preço mostrado tem um formato só", () => {
+  const panel = readFileSync(new URL("../app/components/CatalogProductPanel.vue", import.meta.url), "utf8");
+
+  it("o painel do produto mostra preço pelo formatBRL, como o Tabelão", () => {
+    expect(panel).not.toContain("R$ ${centsToText");
+    expect(panel).toContain("formatBRL(detail.base_price_q)");
   });
 });

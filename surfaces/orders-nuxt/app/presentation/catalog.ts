@@ -42,7 +42,7 @@ export function filterRows(
 
 // ── cell semantics ─────────────────────────────────────────────────────────────
 
-/** O balcão (PDV): vende pelo vínculo do canal, não pela publicação da loja. */
+/** O balcão (PDV): o canal que fica de pé quando se pausam os remotos. */
 export const COUNTER_SURFACES: ReadonlySet<string> = new Set(["pdv", "pos", "balcao"]);
 
 export function cellState(
@@ -52,12 +52,9 @@ export function cellState(
   if (!cell.in_listing) return "absent";
   if (!row.is_active) return "archived";
   // Product-level switches gate every surface; listing-level gates this one.
-  // A publicação do produto é a vitrine da LOJA: o PDV só olha o vínculo dele, e
-  // o item que nasceu do "Permitir revenda" vende ali sem estar publicado
-  // (beta 05/11, CMP-08). Dizer "Oculto" no PDV era mentir.
-  const published =
-    (COUNTER_SURFACES.has(cell.surface_ref) || row.is_published) &&
-    cell.is_published;
+  // "Ocultar no catálogo" vale para TODOS os canais, PDV incluído (decisão do
+  // dono, beta 05/11, GES-10): a grade do PDV também exige o produto publicado.
+  const published = row.is_published && cell.is_published;
   const sellable = row.is_sellable && cell.is_sellable;
   if (published && sellable) return "available";
   if (!published) return "unpublished";
@@ -116,24 +113,30 @@ export function sellsAtCounter(row: CatalogRowProjection): boolean {
   );
 }
 
+/**
+ * Vende só no balcão: o PDV vende e os canais remotos onde o produto está
+ * ficaram todos pausados. É assim que se vende só no balcão desde a decisão do
+ * dono de 05/11 ("Ocultar" tira de TODOS os canais), e é como nasce o item do
+ * "Permitir revenda" (beta 05/11, CMP-08).
+ */
+export function sellsOnlyAtCounter(row: CatalogRowProjection): boolean {
+  const remote = row.cells.filter(
+    (cell) => !COUNTER_SURFACES.has(cell.surface_ref) && cell.in_listing,
+  );
+  return (
+    sellsAtCounter(row) &&
+    remote.length > 0 &&
+    remote.every((cell) => !(cell.is_published && cell.is_sellable))
+  );
+}
+
 // Escala de estados "fora", do mais deliberado ao mais urgente:
 // Oculto (cinza) · Pausado (âmbar) · Esgotado (vermelho/danger).
 export function rowStatus(row: CatalogRowProjection): RowStatus {
   if (!row.is_active)
     return { off: true, label: "Arquivado", tone: "muted", hint: "" };
-  if (!row.is_published) {
-    // Fora da loja online, mas vendendo no balcão (o item do "Permitir revenda"
-    // nasce assim de propósito): não é "Oculto" nem esmaece (CMP-08).
-    if (row.is_sellable && sellsAtCounter(row)) {
-      return {
-        off: false,
-        label: "Só no balcão",
-        tone: "muted",
-        hint: "Só no balcão: vende no PDV. Na loja online fica oculto até você publicar.",
-      };
-    }
+  if (!row.is_published)
     return { off: true, label: "Oculto", tone: "muted", hint: "" };
-  }
   if (!row.is_sellable)
     return { off: true, label: "Pausado", tone: "amber", hint: "" };
   // Depois das duas chaves DELIBERADAS e antes de Esgotado, de propósito: aqui
@@ -158,6 +161,15 @@ export function rowStatus(row: CatalogRowProjection): RowStatus {
   const listed = row.cells.some((c) => c.in_listing);
   if (listed && !availableAnywhere(row)) {
     return { off: true, label: "Indisponível", tone: "amber", hint: "" };
+  }
+  // Vendendo, mas só no PDV: não esmaece, só conta (CMP-08).
+  if (sellsOnlyAtCounter(row)) {
+    return {
+      off: false,
+      label: "Só no balcão",
+      tone: "muted",
+      hint: "Só no balcão: vende no PDV. Os outros canais estão pausados até você ligar.",
+    };
   }
   return { off: false, label: "", tone: "", hint: "" };
 }

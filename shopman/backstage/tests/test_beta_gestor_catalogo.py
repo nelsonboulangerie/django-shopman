@@ -309,15 +309,70 @@ def test_ges23_evidencia_textual_vazia_nomeia_o_campo():
 # ── CMP-08: "Permitir revenda" conta a mesma história que o Catálogo ───────
 
 
-def test_cmp08_revenda_avisa_que_a_loja_online_fica_oculta(channels):
+def test_cmp08_revenda_vende_no_balcao_com_os_remotos_pausados(channels):
     from shopman.buyman.models import Material
 
+    from shopman.backstage.projections.pos import _load_products
     from shopman.backstage.services.purchase import set_sale
 
-    Material.objects.create(sku="TONICA-ANTARCTICA", name="Água tônica", unit="un")
+    Material.objects.create(
+        sku="TONICA-ANTARCTICA", name="Água tônica", unit="un",
+        metadata={"image_url": "https://cdn.example.com/tonica.jpg"},
+    )
 
     _board, message = set_sale("TONICA-ANTARCTICA", {"enabled": True, "priceInput": "6,00"})
 
     assert message == (
-        "Água tônica está à venda no PDV. Na loja online fica oculto até você publicar no Catálogo."
+        "Água tônica está à venda no PDV. Loja online, iFood e WhatsApp ficam pausados até você ligar no Catálogo."
     )
+    # A mesma história nas duas telas: publicado, vendendo no PDV, remotos pausados.
+    assert [entry.sku for entry in _load_products()] == ["TONICA-ANTARCTICA"]
+    remote = ListingItem.objects.filter(product__sku="TONICA-ANTARCTICA").exclude(listing__ref="pdv")
+    assert remote.exists() and not remote.filter(is_published=True).exists()
+
+
+# ── GES-10: "Ocultar no catálogo" tira o item do PDV também ────────────────
+
+
+def test_ges10_produto_oculto_ou_pausado_nao_entra_na_grade_do_pdv(channels):
+    from shopman.backstage.projections.pos import _load_products
+
+    def produto(sku, **flags):
+        product = Product.objects.create(sku=sku, name=sku.title(), base_price_q=500, **flags)
+        ListingItem.objects.create(listing=channels["pdv"], product=product, price_q=500)
+        return product
+
+    produto("VISIVEL", is_published=True, is_sellable=True)
+    produto("OCULTO", is_published=False, is_sellable=True)
+    produto("PAUSADO", is_published=True, is_sellable=False)
+
+    assert [entry.sku for entry in _load_products()] == ["VISIVEL"]
+
+
+# ── GES-21: o dispositivo do posto ganha nome ──────────────────────────────
+
+
+def test_ges21_dar_nome_ao_dispositivo_do_posto(client, shop):
+    from shopman.doorman.models import SubjectType, TrustedDevice
+
+    from shopman.backstage import station_trust
+    from shopman.backstage.models import Workstation
+
+    app_label, codename = station_trust.PROVISION_PERM.split(".")
+    gestor = User.objects.create_user("gestor-postos", password="pw", is_staff=True)
+    gestor.user_permissions.add(Permission.objects.get(content_type__app_label=app_label, codename=codename))
+    Workstation.objects.create(ref="pdv-principal", label="PDV principal", kind="service")
+    device, _token = TrustedDevice.create_for(SubjectType.STATION, "pdv-principal", user_agent="", ip_address="127.0.0.1")
+    client.force_login(gestor)
+    url = f"/api/v1/backstage/workstations/pdv-principal/devices/{device.pk}/"
+
+    vazio = client.patch(url, json.dumps({"label": "  "}), content_type="application/json")
+    assert vazio.status_code == 400
+    assert vazio.json()["errors"] == {"label": ["Dê um nome ao dispositivo."]}
+
+    ok = client.patch(url, json.dumps({"label": "Tablet do  balcão"}), content_type="application/json")
+    assert ok.status_code == 200, ok.json()
+    device.refresh_from_db()
+    assert device.label == "Tablet do balcão"
+    row = next(w for w in ok.json()["workstations"] if w["ref"] == "pdv-principal")
+    assert row["devices"][0]["label"] == "Tablet do balcão"

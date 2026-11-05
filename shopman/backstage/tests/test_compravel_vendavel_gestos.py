@@ -74,7 +74,8 @@ class TestVenderTambem:
         product = Product.objects.get(sku=geleia.sku)
         assert (product.name, product.unit, product.shelf_life_days) == (geleia.name, "un", 365)
         assert product.base_price_q == 4200
-        assert product.is_sellable and not product.is_published
+        # Publicado: oculto sairia também do PDV (decisão do dono, 05/11, GES-10).
+        assert product.is_sellable and product.is_published
         social = get_social_attributes(product)
         assert (social.brand, social.gtin) == ("St. Dalfour", "084380959042")
         assert product.metadata["fiscal"]["ncm"] == "20079910"
@@ -90,7 +91,14 @@ class TestVenderTambem:
 
         purchase_service.set_sale(geleia.sku, {"enabled": True, "priceInput": "42"})
 
-        assert _listed(Product.objects.get(sku=geleia.sku)) == {"pdv", "web", "ifood"}
+        # Os remotos entram PAUSADOS, com o preço já posto: só no balcão até a
+        # gerente ligar no Catálogo (decisão do dono, 05/11, CMP-08).
+        product = Product.objects.get(sku=geleia.sku)
+        assert _listed(product) == {"pdv"}
+        remote = ListingItem.objects.filter(product=product).exclude(listing__ref="pdv")
+        assert sorted(remote.values_list("listing__ref", "is_published", "is_sellable", "price_q")) == [
+            ("ifood", False, False, 4200), ("web", False, False, 4200),
+        ]
 
     def test_ligar_sem_preco_e_recusado(self, listings, geleia):
         with pytest.raises(purchase_service.PurchaseError) as erro:
@@ -246,7 +254,11 @@ class TestVendidoPorPeso:
         response = _patch_detail(client, queijo.sku, {"unit": "kg", "base_price_q": 16000})
 
         assert response.status_code == 200, response.json()
-        assert set(ListingItem.objects.filter(product=queijo).values_list("listing__ref", flat=True)) == {"pdv"}
+        # Pausa, não apaga (beta 05/11, GES-02): desmarcar traz os canais de volta.
+        assert _listed(queijo) == {"pdv"}
+        assert set(ListingItem.objects.filter(product=queijo).values_list("listing__ref", flat=True)) == {
+            "pdv", "web", "ifood",
+        }
 
     def test_unidade_que_desmente_o_cadastro_de_compra_volta_com_a_mensagem_do_porteiro(self, client, gestor):
         manteiga = Product.objects.create(sku="MANTEIGA-200", name="Manteiga 200g", unit="un", base_price_q=1500)

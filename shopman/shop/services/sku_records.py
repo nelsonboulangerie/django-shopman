@@ -238,12 +238,20 @@ def restore_remote_channels(product) -> list[str]:
     return refs
 
 
-def sync_sale_listings(product, price_q: int, *, reactivate: bool = False) -> tuple[list[str], list[str]]:
+def sync_sale_listings(
+    product, price_q: int, *, reactivate: bool = False, remote_paused: bool = False,
+) -> tuple[list[str], list[str]]:
     """PDV sempre; canal remoto só com foto e nunca por peso. Devolve ``(listados, deslistados)``.
 
     Fora da regra (``sells_remotely``), o item sai do canal remoto em que
     estiver. Com ``reactivate``, o item que já estava listado mas pausado volta
     a vender, com o preço dado — é o gesto de quem ligou a venda.
+
+    Com ``remote_paused``, o vínculo remoto nasce PAUSADO (com o preço já
+    posto) e o ``reactivate`` não o religa: o item vende só no balcão até a
+    gerente ligar o canal no Catálogo. É como se vende só no balcão desde a
+    decisão do dono de 05/11/2026 ("Ocultar no catálogo" tira de TODOS os
+    canais, PDV incluído; para vender só no balcão, pausam-se os remotos).
     """
     from shopman.offerman.models import Listing, ListingItem
 
@@ -254,13 +262,15 @@ def sync_sale_listings(product, price_q: int, *, reactivate: bool = False) -> tu
     wanted = [POS_LISTING] + ([ref for ref in remote if ref in listings] if sells_remotely(product) else [])
     listed: list[str] = []
     for ref in wanted:
+        live = not (remote_paused and ref != POS_LISTING)
         item, created = ListingItem.objects.get_or_create(
             listing=listings[ref], product=product,
-            defaults={"price_q": price_q, "is_published": True, "is_sellable": True},
+            defaults={"price_q": price_q, "is_published": live, "is_sellable": live},
         )
         if created:
-            listed.append(ref)
-        elif reactivate and (not item.is_published or not item.is_sellable or item.price_q != price_q):
+            if live:
+                listed.append(ref)
+        elif reactivate and live and (not item.is_published or not item.is_sellable or item.price_q != price_q):
             item.is_published = True
             item.is_sellable = True
             item.price_q = price_q
@@ -295,9 +305,11 @@ def start_selling(material, *, price_q: int | None):
     Cria o cadastro de venda com o mesmo SKU, copiando nome, unidade, validade,
     marca, GTIN, NCM e foto de referência do cadastro de compra — ou religa o
     que existia com a venda pausada. Entra no PDV; nos canais remotos só com
-    foto. Nasce fora do catálogo publicado da loja (``is_published=False``):
-    alérgenos, ingredientes e tabela nutricional são dado da embalagem, e
-    publicar é passo do gestor depois dela.
+    foto, e PAUSADO: alérgenos, ingredientes e tabela nutricional são dado da
+    embalagem, e ligar a loja online, o iFood e o WhatsApp é passo do gestor
+    depois dela. O produto nasce publicado: "Ocultar no catálogo" tira o item
+    de TODOS os canais, PDV incluído (decisão do dono, beta 05/11/2026, GES-10
+    e CMP-08), e vender só no balcão é pausar os remotos.
 
     Recusa o SKU com ficha ativa: o que é produzido aqui se vende pelo
     catálogo, não nasce do Compras.
@@ -320,7 +332,7 @@ def start_selling(material, *, price_q: int | None):
             unit=material.unit,
             shelf_life_days=material.shelf_life_days,
             base_price_q=price_q,
-            is_published=False,
+            is_published=True,
             is_sellable=True,
             availability_policy=AvailabilityPolicy.PLANNED_OK,
             image_url=str(source.get("image_url") or "").strip(),
@@ -335,11 +347,13 @@ def start_selling(material, *, price_q: int | None):
                 collection=collection, product=product, is_primary=True,
                 sort_order=(last.sort_order + 1) if last else 0,
             )
+        created = True
     else:
+        created = False
         product.is_sellable = True
         product.base_price_q = price_q
         product.save()
-    sync_sale_listings(product, price_q, reactivate=True)
+    sync_sale_listings(product, price_q, reactivate=True, remote_paused=created)
     return product
 
 

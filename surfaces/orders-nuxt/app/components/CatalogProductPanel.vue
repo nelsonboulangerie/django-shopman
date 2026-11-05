@@ -30,6 +30,9 @@ import {
 } from "~/presentation/catalog";
 import { useIntersectionObserver } from "@vueuse/core";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+// Preço MOSTRADO no formato do Tabelão ("R$ 99.999.999,00"); o campo editável
+// segue sem milhar, para digitar (GES-24).
+import { formatBRL } from "../../../operator-kit/app/utils/money";
 import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
 import OperatorFormShell from "../../../operator-kit/app/components/OperatorFormShell.vue";
 
@@ -788,7 +791,7 @@ function currentValue(path: string): string {
     return "Não informado";
   if (typeof value === "boolean") return value ? "Sim" : "Não";
   if (path === "base_price_q" && typeof value === "number")
-    return `R$ ${centsToText(value)}`;
+    return formatBRL(value);
   return Array.isArray(value) ? value.join(", ") : String(value);
 }
 
@@ -800,7 +803,7 @@ const sectionClass =
   <OperatorFormShell
     :open="open"
     :title="detail?.name || 'Produto'"
-    :description="`${sku}${detail ? ` · R$ ${centsToText(detail.base_price_q)}${detail.unit === 'kg' ? '/kg' : ''}` : ''}${detail?.primary_collection_name ? ` · ${detail.primary_collection_name}` : ''}${roleBadges.length ? ` · ${roleBadges.join(' · ')}` : ''}`"
+    :description="`${sku}${detail ? ` · ${formatBRL(detail.base_price_q)}${detail.unit === 'kg' ? '/kg' : ''}` : ''}${detail?.primary_collection_name ? ` · ${detail.primary_collection_name}` : ''}${roleBadges.length ? ` · ${roleBadges.join(' · ')}` : ''}`"
     size="wide"
     :dirty="panelDirty"
     :dirty-count="patchSize"

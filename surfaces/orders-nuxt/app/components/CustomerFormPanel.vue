@@ -7,6 +7,7 @@ import { useDirtyForm } from "../../../operator-kit/app/composables/useDirtyForm
 import type { CustomerDetailProjection, CustomerFormOptionsProjection } from "~/generated/ordersContract";
 import type { CustomerMutationPayload } from "~/types/customers";
 import type { ContactOwner } from "~/utils/mutationFieldErrors";
+import { CUSTOMER_EDIT_DISCARD_COPY } from "~/presentation/customers";
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -94,7 +95,9 @@ function reset() {
     customerType: customer?.customer_type ?? "individual",
     document: customer?.document ?? "",
     birthday: customer?.birthday ?? "",
-    phone: customer?.phone ?? "",
+    // O telefone como a ficha o mostra, "(43) 99333-3333", nunca o "+5543…"
+    // gravado (GES-24): o servidor normaliza os dois do mesmo jeito.
+    phone: customer ? customer.phone_display || customer.phone : "",
     email: customer?.email ?? "",
     // Cadastro novo nasce só no grupo que a casa marcou como padrão. Sem padrão,
     // nasce sem grupo: o primeiro da lista é ordem alfabética, e já deu 15% de
@@ -201,6 +204,7 @@ function submit() {
     :save-disabled-reason="disabledReason"
     :save-attrs="{ 'data-testid': 'customer-submit' }"
     :discard-attrs="{ 'data-testid': 'customer-discard' }"
+    :confirm-discard="customer ? CUSTOMER_EDIT_DISCARD_COPY : undefined"
     @update:open="emit('update:open', $event)"
     @save="submit"
   >

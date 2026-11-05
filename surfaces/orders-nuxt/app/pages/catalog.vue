@@ -2081,9 +2081,9 @@ useHead({ title: "Catálogo" });
                     <!-- O nome abre o produto (GES-25): o ⋯ > Editar detalhes eram dois toques. -->
                     <NuxtButton
                       type="button"
-                      variant="link"
+                      variant="ghost"
                       color="neutral"
-                      class="p-0 text-start font-medium"
+                      class="p-0 text-start font-medium hover:bg-transparent"
                       :label="row.name"
                       :aria-label="`Abrir ${row.name}`"
                       data-catalog-open

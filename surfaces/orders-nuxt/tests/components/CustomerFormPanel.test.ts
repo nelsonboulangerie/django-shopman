@@ -191,4 +191,13 @@ describe("CustomerFormPanel", () => {
     const wrapper = panel({ fieldErrors: { document: "O CPF ou CNPJ não confere." } });
     expect(wrapper.text()).toContain("O CPF ou CNPJ não confere.");
   });
+
+  it("na edição, o telefone vem como a ficha mostra, e descartar fala das alterações (GES-24)", () => {
+    const wrapper = panel({ customer });
+    const vm = wrapper.vm as unknown as { form: { phone: string } };
+    expect(vm.form.phone).toBe("(43) 99999-1111");
+    const shell = wrapper.findComponent({ name: "OperatorFormShell" });
+    expect(shell.props("confirmDiscard")).toMatchObject({ title: "Descartar as alterações?" });
+    expect(panel().findComponent({ name: "OperatorFormShell" }).props("confirmDiscard")).toBeUndefined();
+  });
 });
