@@ -376,10 +376,11 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
               />
               <!-- Acesso destacado: "Não fui eu" é a ação principal (cheia); no de rotina,
                    contorno. Dois botões porque a variante de ação de Alert é literal
-                   (trava `canonicalPilot.guardrails` do Gestor). -->
+                   (trava `canonicalPilot.guardrails` do Gestor) e a cor repete a do
+                   aviso (trava `guardrails.alertActions` do kit). -->
               <NuxtButton
                 v-if="canReportNotMe(item) && isHighlighted(item)"
-                color="warning"
+                :color="isHighlighted(item) ? 'warning' : 'neutral'"
                 variant="solid"
                 label="Não fui eu"
                 :loading="notMePending"
@@ -389,7 +390,7 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
               />
               <NuxtButton
                 v-else-if="canReportNotMe(item)"
-                color="neutral"
+                :color="isHighlighted(item) ? 'warning' : 'neutral'"
                 variant="outline"
                 label="Não fui eu"
                 :loading="notMePending"
