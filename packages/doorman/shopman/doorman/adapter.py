@@ -179,6 +179,12 @@ class DefaultAuthAdapter:
                         "Code sent via %s", method,
                         extra={"handle_kind": self.login_handle(target).kind, "method": method},
                     )
+                    # O dublê de desenvolvimento (console/log) não é um transporte:
+                    # ele simula o canal pedido. A prova gravada no código é a do
+                    # canal simulado, senão o vínculo do contato recusa a prova
+                    # "console" e nenhum cliente entra em DEBUG.
+                    if getattr(sender, "reveals_code", False):
+                        return True, preferred_method
                     return True, method
                 logger.warning(
                     "Sender %s returned False, trying next", method,
