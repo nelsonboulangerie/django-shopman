@@ -86,3 +86,11 @@ describe("Atalhos de venda não perdem a mudança calados (PDV-22)", () => {
     expect(page).toContain('title: "Sair sem gravar os atalhos?"');
   });
 });
+
+describe("Pedir troco: o rótulo da moeda não corta (PDV-15)", () => {
+  it("a moeda cresce com o rótulo em vez de ter largura fixa", () => {
+    const page = source("pages", "session", "index.vue");
+    expect(page).toContain("'h-12 min-w-12 justify-center rounded-full px-2'");
+    expect(page).not.toContain("'size-12 justify-center rounded-full'");
+  });
+});
