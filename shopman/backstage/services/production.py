@@ -112,6 +112,8 @@ class MissingMaterial:
     sku: str
     needed: Decimal
     available: Decimal
+    #: Unidade da ficha em que ``needed`` e ``available`` foram comparados.
+    unit: str = ""
 
     @property
     def shortage(self) -> Decimal:
@@ -4037,11 +4039,13 @@ def check_finish_materials(work_order) -> list[MissingMaterial]:
         # evidence of sufficient stock and must fail closed in every mode.
         raise ProductionError(f"Falha ao consultar estoque de insumos: {exc}") from exc
 
+    units_by_sku = {need.sku: need.unit for need in material_needs}
     return [
         MissingMaterial(
             sku=status.sku,
             needed=status.needed,
             available=status.available,
+            unit=units_by_sku.get(status.sku, ""),
         )
         for status in result.materials
         if not status.sufficient

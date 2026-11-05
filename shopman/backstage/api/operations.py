@@ -308,6 +308,25 @@ def _shortage_override_proof(body: dict, exc: ProductionError) -> str:
     )
 
 
+def _material_display_names(skus: set[str]) -> dict[str, str]:
+    """Nome legível de cada insumo em falta: catálogo, compras ou ficha."""
+    from shopman.craftsman.models import Recipe
+
+    from shopman.backstage.projections.production import _product_names
+
+    names = _product_names(skus)
+    missing = skus - names.keys()
+    if missing:
+        names.update(
+            (sku, name)
+            for sku, name in Recipe.objects.filter(output_sku__in=missing, is_active=True).values_list(
+                "output_sku", "name"
+            )
+            if str(name or "").strip()
+        )
+    return names
+
+
 def _production_error_response(
     exc: ProductionError,
     *,
@@ -381,6 +400,7 @@ def _production_error_response(
             status=404,
         )
     if isinstance(exc, ProductionStockShortError):
+        material_names = _material_display_names({item.sku for item in exc.missing})
         possibilities = [
             {
                 "kind": "retry",
@@ -406,9 +426,13 @@ def _production_error_response(
                     "work_order_ref": exc.work_order_ref,
                     "idempotency_key": idempotency_key,
                     "possibilities": possibilities,
+                    # Nome e unidade para a tela escrever "Massa de croissant:
+                    # precisa 336 kg", nunca o SKU cru com três casas (beta 05/11).
                     "missing": [
                         {
                             "sku": item.sku,
+                            "name": material_names.get(item.sku, item.sku),
+                            "unit": item.unit,
                             "needed": str(item.needed),
                             "available": str(item.available),
                             "shortage": str(item.shortage),

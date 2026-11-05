@@ -219,6 +219,8 @@ class ProductionShortagePossibility:
 @dataclass(frozen=True)
 class ProductionMaterialShortageItem:
     sku: str
+    name: str
+    unit: str
     needed: str
     available: str
     shortage: str

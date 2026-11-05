@@ -2195,7 +2195,7 @@ def test_finish_material_shortage_returns_structured_envelope(client, recipe, pr
     def block_finish(**kwargs):
         raise ProductionStockShortError(
             work_order_ref=wo.ref,
-            missing=[MissingMaterial(sku="FARINHA", needed=Decimal("5"), available=Decimal("2"))],
+            missing=[MissingMaterial(sku="FARINHA", needed=Decimal("5"), available=Decimal("2"), unit="kg")],
         )
 
     monkeypatch.setattr(
@@ -2218,6 +2218,9 @@ def test_finish_material_shortage_returns_structured_envelope(client, recipe, pr
     assert error["code"] == "material_shortage"
     assert error["missing"][0]["sku"] == "FARINHA"
     assert error["missing"][0]["shortage"] == "3"
+    # Beta 05/11: a tela escrevia o SKU cru e o número sem unidade.
+    assert error["missing"][0]["unit"] == "kg"
+    assert error["missing"][0]["name"] == "FARINHA"
 
 
 @pytest.mark.django_db

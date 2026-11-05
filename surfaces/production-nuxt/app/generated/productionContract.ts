@@ -922,9 +922,11 @@ export interface ProductionShortagePossibility {
   proof: string;
 }
 
-/** ProductionMaterialShortageItem(sku: 'str', needed: 'str', available: 'str', shortage: 'str') */
+/** ProductionMaterialShortageItem(sku: 'str', name: 'str', unit: 'str', needed: 'str', available: 'str', shortage: 'str') */
 export interface ProductionMaterialShortageItem {
   sku: string;
+  name: string;
+  unit: string;
   needed: string;
   available: string;
   shortage: string;
