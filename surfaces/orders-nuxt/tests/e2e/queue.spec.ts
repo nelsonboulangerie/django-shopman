@@ -17,6 +17,8 @@ test("o desktop abre na Fila, por urgência, com a coluna de consciência", asyn
   await expect(items.nth(1).locator("[data-queue-goal]")).toHaveText("meta 5");
   // O resto vira contagem com nome (sem "+N" somando grandezas); o agregado, o que o
   // sistema fez e o cardápio ao lado.
+  // Só o que está em preparo conta: o iFood agendado, aceito e esperando o horário,
+  // não foi para a cozinha (beta 05/11, GES-13).
   await expect(queue.locator("[data-queue-rest]")).toContainText("Seguem sozinhos: 1 na cozinha");
   await expect(queue.locator("[data-queue-rest]")).not.toContainText("+");
   await expect(queue.locator("[data-queue-progress]")).toContainText("Na Cozinha");
