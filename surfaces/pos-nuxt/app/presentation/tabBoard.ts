@@ -113,6 +113,17 @@ export function tabCardBadge(view: TabCardView): TabCardBadge {
 }
 
 /**
+ * O nome acessível do cartão de comanda: número, estado e o que ela tem. Sem
+ * ele o leitor de tela e a automação liam o cartão como um botão sem nome,
+ * porque o selo vira só ícone no cartão estreito (beta test de 05/11/2026,
+ * PDV2-22).
+ */
+export function tabCardAccessibleName(view: TabCardView, badge: TabCardBadge, title: string): string {
+  const name = /^#?\d+$/.test(title) ? `Comanda ${title.startsWith("#") ? title : `#${title}`}` : `Comanda ${title}`;
+  return [name, badge.label, view.identity, view.summary].filter(Boolean).join(", ");
+}
+
+/**
  * Shape a free-text tab reference for input: strip control chars and the
  * channel's disallowed characters, collapse whitespace, and clamp to the
  * channel's max length. The allowed set comes from the tab-lifecycle capability
@@ -150,7 +161,10 @@ export function tabCardView(tab: POSTabProjection, selectedRef = ""): TabCardVie
     statusLabel: tab.status_label,
     // O cartão sem item não repete o selo (dono, 13/10/2026): "Livre" mora SÓ no selo,
     // e o corpo fica vazio em vez de dizer "Livre" de novo e "Comanda livre".
-    identity: tab.customer_name || tab.items_preview || "",
+    // A comanda "Em uso" sem item e sem cliente dizia nada: o balcão não sabia se
+    // era de agora ou esquecida (beta test de 05/11/2026, PDV-19). Diz a hora.
+    identity: tab.customer_name || tab.items_preview
+      || (isInUse && !hasItems && tab.opened_at_display ? `Aberta às ${tab.opened_at_display}` : ""),
     summary: hasItems
       ? `${tab.item_count} ${tab.item_count === 1 ? "item" : "itens"} · ${tab.total_display}`
       : "",

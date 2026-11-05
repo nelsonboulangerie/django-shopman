@@ -7,7 +7,7 @@ import OperatorFitGroup from "../../../operator-kit/app/components/OperatorFitGr
 // and emits intent; it owns no orchestration. `move_lines` is Arc 4 — here the
 // board only lists, selects and opens.
 import type { POSTabProjection } from "~/types/pos";
-import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardBadge, tabCardView, type TabCardView, type TabFilter } from "~/presentation/tabBoard";
+import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardAccessibleName, tabCardBadge, tabCardView, type TabCardView, type TabFilter } from "~/presentation/tabBoard";
 import { nextFreeNumericTabRef } from "~/utils/posTabLifecycle";
 
 const props = defineProps<{
@@ -233,6 +233,8 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         variant="ghost"
         class="@container flex h-[5.5rem] flex-col gap-0.5 overflow-hidden rounded-md border px-3 py-2 text-left transition hover:border-primary/50 hover:bg-accent items-stretch justify-start font-normal"
         :class="cardTone(view)"
+        :aria-label="tabCardAccessibleName(view, badge, tabTitleView(view.displayRef, '').title)"
+        data-pos-tab-card
         @click="activateTab(tab)"
       >
         <div class="flex items-center justify-between gap-2">
