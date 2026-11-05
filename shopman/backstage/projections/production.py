@@ -4664,7 +4664,9 @@ def _format_datetime(dt) -> str:
 #   PLANEJADO  — só planejado; quantidade e horário são estimativa histórica;
 #   PREVISTO   — entrou em produção (start trava a quantidade; horário =
 #                started_at + duração mediana);
-#   CONFIRMADO — expedido (estoque físico): quantidade e horário REAIS.
+#   FECHADO    — lote finalizado (estoque físico): quantidade e horário REAIS.
+#                "Confirmado" era a palavra da Qualidade ("Para confirmar"), e o
+#                Letreiro dizia o contrário da tela de Qualidade (beta 05/11);
 #                Permanece no painel por um TTL (config) e sai — pão
 #                materializado é assunto da gôndola, não do quadro;
 #   ATRASADO   — horário previsto estourou a margem (config) na data corrente.
@@ -4677,7 +4679,7 @@ _FORECAST_STATUS_LABELS = {
     "scheduled": "Planejado",
     "in_progress": "Previsto",
     "delayed": "Atrasado",
-    "arrived": "Confirmado",
+    "arrived": "Fechado",
 }
 
 

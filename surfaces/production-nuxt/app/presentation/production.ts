@@ -27,7 +27,7 @@ export function timerTone(status: ProductionTimerStatusCode): TimerTone {
   return timeTone("on_time");
 }
 
-/** O painel mantém Planejado, Previsto e Confirmado neutros; só Atrasado é tempo vermelho. */
+/** O painel mantém Planejado, Previsto e Fechado neutros; só Atrasado é tempo vermelho. */
 export function forecastTimeTone(status: ForecastStatus): TimerTone {
   return timeTone(status === "delayed" ? "late" : "on_time");
 }
@@ -467,4 +467,19 @@ export function outsizedQuantityWarning(
   if (amount <= base * OUTSIZED_FACTOR) return null;
   const times = Math.round(amount / base);
   return `${QTY_FORMAT.format(amount)} é ${QTY_FORMAT.format(times)} vezes ${referenceLabel} (${QTY_FORMAT.format(base)}). Confira o número antes de seguir.`;
+}
+
+// ── Letreiro (painel Solari) ─────────────────────────────────────────────────
+
+/** "12 UN": a quantidade com a unidade, como a palheta escreve. */
+export function boardQtyLabel(qty: string): string {
+  return `${qty} UN`;
+}
+
+/**
+ * Largura da coluna de quantidade, em palhetas: a maior quantidade do dia
+ * cabe inteira (beta 05/11: "4200 U" perdia o N). Nunca menos que "999 UN".
+ */
+export function boardQtyChars(rows: readonly { qty: string }[]): number {
+  return Math.max(6, ...rows.map((row) => boardQtyLabel(row.qty).length));
 }

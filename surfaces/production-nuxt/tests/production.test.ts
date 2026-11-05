@@ -81,7 +81,7 @@ describe("timerTone / chips", () => {
     expect(timerTone("warning")).toBe("warning");
     expect(timerTone("late")).toBe("late");
   });
-  it("reserva vermelho ao atraso do painel e não pinta Confirmado de verde", () => {
+  it("reserva vermelho ao atraso do painel e não pinta Fechado de verde", () => {
     expect(forecastTimeTone("delayed")).toBe("late");
     expect(forecastTimeTone("scheduled")).toBe("neutral");
     expect(forecastTimeTone("in_progress")).toBe("neutral");
