@@ -1629,9 +1629,11 @@ def _pos_actions() -> tuple[Action, ...]:
             kind="query",
             label="Buscar cliente",
             priority="quiet",
-            method="GET",
-            href="/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}",
-            payload_schema={"query": {"phone": "string", "ref": "string"}},
+            # POST com o telefone no CORPO: na query string ele ia para o log de
+            # acesso e para o cache (beta test de 05/11/2026, PDV2-07).
+            method="POST",
+            href="/api/v1/backstage/pos/customer/lookup/",
+            payload_schema={"optional": ["phone", "ref"]},
             idempotency="none",
         ),
         Action(

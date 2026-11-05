@@ -59,7 +59,9 @@ describe("usePosSale — cliente por ref e o flag de cadastro novo", () => {
     expect(dollarFetch).toHaveBeenCalledTimes(1);
     const url = String(dollarFetch.mock.calls[0]?.[0]);
     expect(url).toContain("/pos/customer/lookup/");
-    expect(url).toContain("ref=CUST-9");
+    // PDV2-07: nada de dado do cliente na URL; vai no corpo do POST.
+    expect(url).not.toContain("?");
+    expect(dollarFetch.mock.calls[0]?.[1]).toMatchObject({ method: "POST", body: { ref: "CUST-9" } });
     expect(sale.customerLookup.value?.ref).toBe("CUST-9");
     expect(sale.customerResolvedNew.value).toBe(false);
   });

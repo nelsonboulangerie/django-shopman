@@ -6359,7 +6359,7 @@ class POSTabUnfireView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Look up customer by ref or phone",
         responses={200: OpenApiResponse(description="Customer projection or null.")},
@@ -6369,9 +6369,13 @@ class POSCustomerLookupView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
-    def get(self, request):
-        ref = (request.query_params.get("ref") or "").strip()
-        phone = (request.query_params.get("phone") or "").strip()
+    def post(self, request):
+        # O telefone viaja no CORPO: na query string ele ficava no log de acesso
+        # e no cache (beta test de 05/11/2026, PDV2-07). Leitura pura, POST só
+        # para o dado pessoal não aparecer na URL.
+        body = request.data if isinstance(request.data, dict) else {}
+        ref = str(body.get("ref") or "").strip()
+        phone = str(body.get("phone") or "").strip()
         # `ref` vence: é a chave exata do cadastro (cliente sem telefone existe).
         if ref:
             customer = build_pos_customer_lookup_by_ref(ref)

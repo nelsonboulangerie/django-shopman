@@ -2366,14 +2366,12 @@ export function usePosSale(deps: PosSaleDeps) {
     lookupBusy.value = true;
     serverError.value = "";
     try {
-      const path = concreteActionHref(
-        actions.value,
-        "customer_lookup",
-        "/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}",
-        { phone, ref: customerRef },
-      );
+      // POST com o telefone no corpo: na URL ele ia para o log de acesso
+      // (beta test de 05/11/2026, PDV2-07).
+      const path = concreteActionHref(actions.value, "customer_lookup", "/api/v1/backstage/pos/customer/lookup/", {});
       const response = await $fetch<POSCustomerLookupResponse>(apiPath(path), {
-        method: "GET",
+        method: "POST",
+        body: { phone, ref: customerRef },
         credentials: "include",
         headers: requestHeaders,
         signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
@@ -2740,10 +2738,9 @@ export function usePosSale(deps: PosSaleDeps) {
         lookupBusy.value = true;
         let response: POSCustomerLookupResponse;
         if (targetRef) {
-          const path = concreteActionHref(actions.value, "customer_lookup",
-            "/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}", { phone: "", ref: targetRef });
+          const path = concreteActionHref(actions.value, "customer_lookup", "/api/v1/backstage/pos/customer/lookup/", {});
           response = await $fetch<POSCustomerLookupResponse>(apiPath(path), {
-            method: "GET", credentials: "include", headers: requestHeaders, signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
+            method: "POST", body: { phone: "", ref: targetRef }, credentials: "include", headers: requestHeaders, signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
           });
           if (customerDecision.value !== decision || pendingReceiptDecision.value !== pending || !receiptDecisionMatches()
             || session !== cart.tabSessionKey || !response.customer || response.customer.ref !== targetRef) return;

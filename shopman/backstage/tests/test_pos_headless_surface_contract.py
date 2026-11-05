@@ -1269,7 +1269,9 @@ class POSHeadlessSurfaceContractTests(TestCase):
             total_q=2600,
         )
 
-        response = self.client.get("/api/v1/backstage/pos/customer/lookup/?phone=(43)%2099999-3333")
+        response = self.client.post(
+            "/api/v1/backstage/pos/customer/lookup/", {"phone": "(43) 99999-3333"}, content_type="application/json",
+        )
 
         self.assertEqual(response.status_code, 200)
         lookup = response.json()["customer"]
@@ -1579,18 +1581,24 @@ class POSHeadlessSurfaceContractTests(TestCase):
             last_name="Sem Telefone",
             document="52998224725",
         )
-        response = self.client.get(
-            "/api/v1/backstage/pos/customer/lookup/", {"ref": customer.ref},
+        response = self.client.post(
+            "/api/v1/backstage/pos/customer/lookup/", {"ref": customer.ref}, content_type="application/json",
         )
         self.assertEqual(response.status_code, 200)
         lookup = response.json()["customer"]
         self.assertEqual(lookup["ref"], customer.ref)
         self.assertEqual(lookup["tax_id"], "52998224725")
         # Ref desconhecido → null, nunca 500.
-        missing = self.client.get(
-            "/api/v1/backstage/pos/customer/lookup/", {"ref": "CUST-NAO-EXISTE"},
+        missing = self.client.post(
+            "/api/v1/backstage/pos/customer/lookup/", {"ref": "CUST-NAO-EXISTE"}, content_type="application/json",
         )
         self.assertIsNone(missing.json()["customer"])
+
+    def test_api_customer_lookup_nao_aceita_telefone_na_url(self) -> None:
+        """Beta test de 05/11/2026 (PDV2-07): o telefone ia na query string e
+        ficava no log de acesso. A busca é POST, com o telefone no corpo."""
+        response = self.client.get("/api/v1/backstage/pos/customer/lookup/?phone=5543988776655")
+        self.assertEqual(response.status_code, 405)
 
     def _create_manager(self, pin: str = "4321"):
         from shopman.doorman.models import PinCredential
