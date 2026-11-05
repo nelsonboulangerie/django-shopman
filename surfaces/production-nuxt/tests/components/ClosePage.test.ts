@@ -272,6 +272,15 @@ describe("Finalização", () => {
   });
 });
 
+describe("Finalização — a quantidade do cartão em pt-BR", () => {
+  // Beta 05/11: "4200 un." aqui e "4.200" na Produção.
+  it("escreve o milhar e a unidade como as outras telas", () => {
+    orders.value = [order(1, "Croissant", { planned_qty: "4200", output_unit: "un" })];
+    const wrapper = mountPage();
+    expect(wrapper.find("[data-close-finish]").text()).toContain("4.200 un.");
+  });
+});
+
 describe("Finalização — o lote mora na URL", () => {
   it("o painel grava a trilha dos lotes que se fecham daqui, na ordem dele", () => {
     mountPage();
