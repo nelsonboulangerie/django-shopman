@@ -296,6 +296,33 @@ def code_resend_cooldown_seconds() -> int:
     return max(0, int(doorman_settings.ACCESS_CODE_COOLDOWN_SECONDS))
 
 
+def auth_error_code(auth_result) -> str | None:
+    """O código público do erro, quando a tela precisa de mais que o texto.
+
+    Hoje só o conflito de identidade: o código digitado estava CERTO, e o título
+    "Código não confere" mentia sobre ele (beta 05/11, LOJA-03).
+    """
+    from shopman.doorman.error_codes import ErrorCode
+
+    if getattr(auth_result, "error_code", None) == ErrorCode.IDENTITY_CONFLICT:
+        return "identity_conflict"
+    if (auth_result.error or "") in {
+        "Identity ownership is conflicting.",
+        "This handle belongs to another account.",
+    }:
+        return "identity_conflict"
+    return None
+
+
+def auth_error_body(detail: str, auth_result, *, field: str | None = None) -> dict:
+    """Corpo de erro do auth no dialeto da casa ``{detail, field, errors}``."""
+    error_code = auth_error_code(auth_result)
+    body: dict = {"detail": detail, "field": None if error_code else field, "errors": {}}
+    if error_code:
+        body["error_code"] = error_code
+    return body
+
+
 def request_code_error_message(auth_result) -> str:
     from shopman.doorman.error_codes import ErrorCode
 

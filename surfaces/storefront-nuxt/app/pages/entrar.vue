@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, resendWindowMs, welcomeNameFields, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
-import { authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
+import { LOCAL_PHONE_ERROR, LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorBelongsToPhoneField, authErrorOffersSupport, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, resendWindowMs, welcomeNameFields, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
+import { authPhoneIsComplete, authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
 import type { AuthSessionResponse, CopyEntryProjection, ShellResponse } from '~/types/shopman'
 import type { WhatsappClaimResponse } from '~/composables/useWhatsappReturn'
 
@@ -146,6 +146,8 @@ const cartHasItems = computed(() => {
 const hasCartToKeep = computed(() => cartHasItems.value)
 
 const codeSentLine = computed(() => codeSentPrefix(deliveryLabel.value))
+// Telefone inválido aparece sob o campo, enquanto o formulário do SMS está aberto.
+const phoneErrorInline = computed(() => authErrorBelongsToPhoneField(error.value) && step.value === 'phone' && revealPhone.value)
 const stepTitle = computed(() => {
   if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Entre pelo WhatsApp')
   if (step.value === 'code') return copyTitle(authCopy.value?.code_heading, 'Informe o código')
@@ -270,6 +272,8 @@ function syncPhoneFromInput (event: Event) {
   const masked = maskPhoneInput(input.value, phoneRegion.value)
   phone.value = masked
   if (input.value !== masked) input.value = masked
+  // Corrigiu o número: o aviso de telefone inválido sai junto (beta 05/11, LOJA-04).
+  if (authErrorBelongsToPhoneField(error.value)) error.value = null
 }
 
 function phoneValueFromEvent (event?: Event) {
@@ -298,7 +302,8 @@ function fetchErrorView (e: unknown, fallback: string, fallbackField?: string): 
   return authErrorView({
     status,
     detail: typeof data?.detail === 'string' ? data.detail : null,
-    field: (typeof data?.field === 'string' && data.field) || fallbackField || null
+    field: (typeof data?.field === 'string' && data.field) || fallbackField || null,
+    errorCode: typeof data?.error_code === 'string' ? data.error_code : null
   }, fallback)
 }
 
@@ -387,6 +392,10 @@ function enterWelcomeGateFromSession () {
 
 async function requestCode (method: AuthDeliveryMethod = 'whatsapp', event?: Event) {
   syncPhoneFromEvent(event)
+  if (!authPhoneIsComplete(phone.value, phoneRegion.value, defaultDdd.value)) {
+    error.value = authErrorView({ field: 'phone' }, LOCAL_PHONE_ERROR)
+    return
+  }
   pending.value = true
   error.value = null
   codeDigits.value = []
@@ -560,9 +569,23 @@ useSeoMeta({
           <UiAlertTitle>{{ error.title }}</UiAlertTitle>
           <UiAlertDescription>{{ error.message }}</UiAlertDescription>
         </UiAlert>
-        <UiAlert v-else-if="error" id="login-error" role="alert" variant="destructive">
+        <UiAlert v-else-if="error && !phoneErrorInline" id="login-error" role="alert" variant="destructive">
           <UiAlertTitle>{{ error.title }}</UiAlertTitle>
           <UiAlertDescription>{{ error.message }}</UiAlertDescription>
+          <!-- O código estava certo e a saída é falar com a loja: o botão mora no
+               próprio aviso, não no rodapé da página (beta 05/11, LOJA-03). -->
+          <UiButton
+            v-if="authErrorOffersSupport(error) && supportUrl"
+            :href="supportUrl"
+            target="_blank"
+            rel="noopener"
+            variant="outline"
+            icon="lucide:message-circle"
+            class="mt-3"
+            data-login-error-support
+          >
+            Falar com a loja
+          </UiButton>
         </UiAlert>
 
         <div v-if="step === 'phone'" class="shop-stack-block">
@@ -651,11 +674,14 @@ useSeoMeta({
                   :autocomplete="phoneAutocomplete"
                   :placeholder="phonePlaceholder"
                   :maxlength="phoneRegion === 'INTL' ? 24 : 16"
+                  :aria-invalid="phoneErrorInline || undefined"
+                  :aria-describedby="phoneErrorInline ? 'login-phone-error' : undefined"
                   data-focus-control
                   @input="syncPhoneFromInput"
                 />
               </UiInputGroup>
-              <UiFieldDescription>Enviamos um código por SMS para este número.</UiFieldDescription>
+              <UiFieldError v-if="phoneErrorInline && error" id="login-phone-error" data-login-phone-error :errors="[error.message]" />
+              <UiFieldDescription v-else>Enviamos um código por SMS para este número.</UiFieldDescription>
             </UiField>
 
             <div class="grid gap-3">

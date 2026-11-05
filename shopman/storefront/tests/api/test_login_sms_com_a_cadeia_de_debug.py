@@ -61,3 +61,46 @@ def test_codigo_entregue_pelo_console_entra_como_sms(client: Client, capsys):
     assert found, out
     resp = _post(client, "/api/v1/auth/verify-code/", {"phone": PHONE, "code": found[-1]})
     assert resp.status_code == 200, resp.content
+
+
+def _verify_fails_with(monkeypatch, *, error: str, error_code, attempts_remaining=None) -> None:
+    from types import SimpleNamespace
+
+    from shopman.shop.services import auth as auth_service
+
+    monkeypatch.setattr(
+        auth_service,
+        "verify_for_login",
+        lambda **_: SimpleNamespace(
+            success=False, error=error, error_code=error_code, attempts_remaining=attempts_remaining,
+        ),
+    )
+
+
+def test_conflito_de_identidade_tem_codigo_proprio_e_nao_aponta_o_campo_do_codigo(client: Client, monkeypatch):
+    """LOJA-03: o código estava certo; a tela precisa saber que o problema é o número."""
+    from shopman.doorman.error_codes import ErrorCode
+
+    _verify_fails_with(
+        monkeypatch, error="This handle belongs to another account.", error_code=ErrorCode.IDENTITY_CONFLICT,
+    )
+    resp = _post(client, "/api/v1/auth/verify-code/", {"phone": PHONE, "code": "123456"})
+
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["error_code"] == "identity_conflict"
+    assert body["field"] is None
+    assert body["errors"] == {}
+    assert "mais de um cadastro" in body["detail"]
+
+
+def test_codigo_errado_segue_apontando_o_campo_do_codigo(client: Client, monkeypatch):
+    from shopman.doorman.error_codes import ErrorCode
+
+    _verify_fails_with(monkeypatch, error="Incorrect code.", error_code=ErrorCode.CODE_INVALID, attempts_remaining=2)
+    resp = _post(client, "/api/v1/auth/verify-code/", {"phone": PHONE, "code": "123456"})
+
+    body = resp.json()
+    assert body["field"] == "code"
+    assert "error_code" not in body
+

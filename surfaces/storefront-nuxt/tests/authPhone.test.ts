@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { authPhonePayload, displayBrazilianPhone, displayE164Phone, maskPhoneInput, normalizeAuthPhone, phoneDisplay } from '../app/utils/authPhone'
+import { authPhoneIsComplete, authPhonePayload, displayBrazilianPhone, displayE164Phone, maskPhoneInput, normalizeAuthPhone, phoneDisplay } from '../app/utils/authPhone'
 
 describe('auth phone payload', () => {
   it('normalizes Brazilian phone variants before auth calls', () => {
@@ -88,3 +88,23 @@ describe('default DDD (Shop.default_ddd) — S2/S4', () => {
     expect(displayBrazilianPhone('', '43')).toBe('')
   })
 })
+
+describe('beta 05/11 (LOJA-04): o número incompleto não vai ao servidor', () => {
+  it('recusa DDD sem número', () => {
+    expect(authPhoneIsComplete('4399', 'BR', '43')).toBe(false)
+    expect(authPhoneIsComplete('(43) 9913', 'BR', '43')).toBe(false)
+    expect(authPhoneIsComplete('', 'BR', '43')).toBe(false)
+  })
+
+  it('aceita celular e fixo com DDD, e o número local com o DDD da loja', () => {
+    expect(authPhoneIsComplete('(43) 99137-4682', 'BR', '43')).toBe(true)
+    expect(authPhoneIsComplete('(43) 3323-1997', 'BR', '43')).toBe(true)
+    expect(authPhoneIsComplete('99137-4682', 'BR', '43')).toBe(true)
+  })
+
+  it('internacional pede ao menos 8 dígitos', () => {
+    expect(authPhoneIsComplete('+1 415', 'INTL')).toBe(false)
+    expect(authPhoneIsComplete('+1 415 555 0101', 'INTL')).toBe(true)
+  })
+})
+
