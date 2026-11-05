@@ -13,6 +13,8 @@ Admin-configurable per channel.
 
 from __future__ import annotations
 
+import re
+
 import logging
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -653,7 +655,7 @@ def _build_items(
                     dietary=tuple(str(d) for d in dietary),
                 ),
                 quote=price,
-                unit_weight_label=_unit_weight_label(p),
+                unit_weight_label=unit_weight_label(p),
                 availability=availability,
                 availability_label=avail_label,
                 can_add_to_cart=can_add,
@@ -942,11 +944,25 @@ def _product_tags(product: Any) -> tuple[str, ...]:
     return catalog_context.product_tags(product)
 
 
-def _unit_weight_label(product: Any) -> str | None:
-    # Ao lado do preço, dois números sem conector admitem "R$ 18,00 POR 500 g".
-    # O rótulo diz de quem é o peso; o "~" fica, porque pão não pesa exato — e
-    # peso anunciado nunca mente para menos.
-    return f"peça de ~{product.unit_weight_g} g" if getattr(product, "unit_weight_g", None) else None
+#: Medida já escrita no nome ("Água Mineral 310ml", "Camembert 125g").
+_MEASURE_IN_NAME = re.compile(r"\d+(?:[.,]\d+)?\s*(?:g|kg|ml|l)\b", re.IGNORECASE)
+
+
+def unit_weight_label(product: Any) -> str | None:
+    """O peso aproximado da peça, quando ele acrescenta algo ao nome.
+
+    Ao lado do preço, dois números sem conector admitem "R$ 18,00 POR 500 g".
+    O rótulo diz de quem é o peso; o "~" fica, porque pão não pesa exato, e
+    peso anunciado nunca mente para menos. Quando o nome já traz a medida, o
+    peso aproximado repetia o número com um "~" que o rótulo não tem: "Camembert
+    125g ~125 g/un." (beta 05/11, LOJA-11).
+    """
+    weight = getattr(product, "unit_weight_g", None)
+    if not weight:
+        return None
+    if _MEASURE_IN_NAME.search(str(getattr(product, "name", "") or "")):
+        return None
+    return f"peça de ~{weight} g"
 
 
 def _search_terms(
