@@ -128,8 +128,8 @@ class PaymentTransactionCreationTests(TestCase):
         txn = PaymentTransaction.objects.create(
             intent=self.intent, type="capture", amount_q=10000,
         )
-        self.assertIn("capture", str(txn))
-        self.assertIn("10000", str(txn))
+        self.assertIn("R$ 100,00", str(txn))
+        self.assertNotIn("10000q", str(txn))
 
     def test_protect_delete(self) -> None:
         PaymentTransaction.objects.create(
