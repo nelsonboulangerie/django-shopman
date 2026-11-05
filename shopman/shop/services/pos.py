@@ -391,7 +391,7 @@ def close_sale(
     if open_tab is None and offline_at is None and not _payload_has_tab_identity(payload):
         _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
     elif open_tab is not None and offline_at is None:
-        _stamp_tab_prices_for_manual_discount(
+        _stamp_tab_engine_prices(
             payload, open_tab, channel=channel, config=config, operator_username=operator_username,
         )
     _ensure_resolved_prices(payload)
@@ -939,7 +939,7 @@ def review_sale(
         # motor, para a tela mostrar o total que o fechamento vai cobrar (P0-1).
         priced = _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
     else:
-        _stamp_tab_prices_for_manual_discount(
+        _stamp_tab_engine_prices(
             payload, session, channel=channel, config=config, operator_username=operator_username,
         )
     _ensure_resolved_prices(payload)
@@ -3876,30 +3876,33 @@ def _stamp_engine_prices(
     return stamped
 
 
-def _stamp_tab_prices_for_manual_discount(
+def _stamp_tab_engine_prices(
     payload: dict, session, *, channel: Channel, config: ChannelConfig, operator_username: str,
 ) -> None:
-    """Comanda com desconto manual: o preço que mede o desconto é o do MOTOR, não o do corpo.
+    """Comanda: o preço de cada linha é o do MOTOR, nunca o que o corpo declarou.
 
-    O portão do gerente mede o desconto de linha como ``subtotal - o que o motor
-    cobra`` (``_stamp_engine_manual_discounts``), e o subtotal sai do
-    ``unit_price_q`` das linhas. Na venda sem comanda esse preço é o do motor
-    (``_stamp_engine_prices``); na comanda ele era o que o navegador declarou, e
-    ``_stamp_list_prices_from_session`` só preenche o que falta. Um corpo com
-    R$ 4,00 num pão de R$ 12,00 em cortesia de 100% media R$ 4,00 de desconto,
-    abaixo do limite, e a venda saía de graça sem gerente: o total do motor
-    (zero) batia com o selo do fechamento (auditoria de 03/11/2026).
+    Duas contas dependem disso, e as duas erravam quando o preço vinha do navegador.
 
-    O remédio é a mesma sonda da venda sem comanda, com a política de preço da
-    comanda: cada linha passa a valer o preço do motor ANTES do desconto manual
-    (promoção, Xepa e grupo do cliente já aplicados), e o desconto medido é só o
-    que o operador deu. Quando a comanda gravada já é este carrinho e o manual
-    não venceu nenhuma linha, o preço sai da própria sessão, sem sonda
-    (``_stamp_tab_prices_from_engine_lines``). Sem desconto manual nada muda: o total é o subtotal, e o
-    selo do fechamento confere o subtotal contra o motor. A venda feita sem
-    conexão não passa por aqui: nela vale o cobrado (decisão D, 10/10/2026).
+    - O total da comanda (beta test de 05/11/2026, P0). O PDV manda a etiqueta
+      em ``unit_price_q``, e ``_stamp_list_prices_from_session`` só preenche o
+      que falta. Com promoção automática no ar (Semana do Pão −15%), a revisão
+      somava a etiqueta (R$ 18,00), o selo do fechamento conferia contra o motor
+      (R$ 15,30) e recusava com "O total mudou" em toda tentativa: a comanda não
+      fechava nunca.
+    - O portão do gerente. Ele mede o desconto de linha como ``subtotal - o que o
+      motor cobra`` (``_stamp_engine_manual_discounts``). Um corpo com R$ 4,00
+      num pão de R$ 12,00 em cortesia de 100% media R$ 4,00 de desconto, abaixo
+      do limite, e a venda saía de graça sem gerente (auditoria de 03/11/2026).
+
+    O remédio é o mesmo da venda sem comanda (``_stamp_engine_prices``), com a
+    política de preço da comanda: cada linha vale o preço do motor ANTES do
+    desconto manual (promoção, Xepa e grupo do cliente já aplicados). Quando a
+    comanda gravada já é este carrinho e nenhum manual venceu linha, o preço sai
+    da própria sessão, sem sonda (``_stamp_tab_prices_from_engine_lines``). A
+    venda feita sem conexão não passa por aqui: nela vale o cobrado (decisão D,
+    10/10/2026).
     """
-    if session is None or not _payload_has_manual_discount(payload):
+    if session is None:
         return
     if _session_prices_payload(session, payload) and _stamp_tab_prices_from_engine_lines(payload, session):
         return
