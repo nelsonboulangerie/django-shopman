@@ -136,14 +136,38 @@ const fieldLabels: Record<string, string> = {
   is_active: "Ativar ao salvar",
   ref: "Referência",
 };
+// O erro de um campo que tem lugar no formulário mora SOB o campo. O aviso do topo só
+// lista o que não tem onde aparecer; antes o código duplicado do cupom saía três vezes
+// (título, lista e campo) (beta 05/11, ge:MKT-27).
+const INLINE_FIELDS = new Set([
+  "name",
+  "coupon_code",
+  "type",
+  "value",
+  "valid_from",
+  "valid_until",
+]);
 const visibleErrors = computed(() =>
-  Object.entries(props.fieldErrors ?? {}).flatMap(([field, messages]) =>
-    messages.map((message) => ({
-      field,
-      label: fieldLabels[field] ?? field,
-      message,
-    })),
-  ),
+  Object.entries(props.fieldErrors ?? {})
+    .filter(([field]) => !INLINE_FIELDS.has(field))
+    .flatMap(([field, messages]) =>
+      messages.map((message) => ({
+        field,
+        label: fieldLabels[field] ?? field,
+        message,
+      })),
+    ),
+);
+const inlineMessages = computed(() =>
+  Object.entries(props.fieldErrors ?? {})
+    .filter(([field]) => INLINE_FIELDS.has(field))
+    .flatMap(([, messages]) => messages),
+);
+/** O título do aviso não repete a frase que já está sob o campo. */
+const alertTitle = computed(() =>
+  props.globalError && !inlineMessages.value.includes(props.globalError)
+    ? props.globalError
+    : "Revise os campos destacados.",
 );
 
 function fieldError(field: string): string {
@@ -197,7 +221,7 @@ function submit() {
       color="error"
       variant="subtle"
       icon="i-lucide-circle-alert"
-      :title="globalError || 'Revise os campos destacados.'"
+      :title="alertTitle"
       tabindex="-1"
     >
       <template v-if="visibleErrors.length" #description>

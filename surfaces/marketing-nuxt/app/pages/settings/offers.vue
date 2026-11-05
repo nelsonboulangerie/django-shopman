@@ -2,6 +2,8 @@
 // Ajustes › Ofertas e cupons: um lugar, um nome (`depois-navegacao.jpg`). Oferta dá o
 // benefício sozinha; cupom pede o código na sacola e nasce com a regra dele, sem mexer
 // em oferta que já está no ar.
+import { offerCampaignNote } from "~/presentation/offers";
+
 const {
   offers,
   options: offerOptions,
@@ -212,13 +214,7 @@ useHead({ title: "Ofertas e cupons" });
                       {{ offer.coupons.map((coupon) => coupon.code).join(", ") }}
                       · {{ couponUses(offer) }} usos
                     </template>
-                    <template v-else-if="offer.available_for_campaign"
-                      >Pode ir numa campanha.</template
-                    >
-                    <template v-else
-                      >Regra comercial cadastrada; não pode ir numa campanha
-                      nova agora.</template
-                    >
+                    <template v-else>{{ offerCampaignNote(offer) }}</template>
                   </span>
                   <NuxtButton
                     v-if="offer.available_for_campaign"

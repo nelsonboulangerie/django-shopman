@@ -217,9 +217,8 @@ describe("CampaignForm — composer V2", () => {
     expect(rows[0]!.text()).toContain("Publicação pública");
     expect(rows[0]!.text()).toContain("Feed");
     expect(rows[0]!.text()).not.toContain("WhatsApp");
-    expect(wrapper.text()).toContain(
-      "Recursos apenas catalogados para o futuro não entram nesta campanha",
-    );
+    // Beta 05/11 (ge:MKT-10): a mesma regra, na voz do operador.
+    expect(wrapper.text()).toContain("Aqui aparecem só os formatos que já podem ser enviados.");
   });
 
   it("mantém o salto para uma etapa pronta mesmo usando o primitive canônico", async () => {

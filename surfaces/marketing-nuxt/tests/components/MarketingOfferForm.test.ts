@@ -82,9 +82,9 @@ describe("MarketingOfferForm", () => {
       fieldErrors: { coupon_code: ["Já existe um cupom com este código."] },
     });
 
-    expect(wrapper.get('[role="alert"]').text()).toContain(
-      "Já existe um cupom com este código.",
-    );
+    // ge:MKT-27: a frase mora sob o campo, uma vez só; o topo só chama a atenção.
+    expect(wrapper.get('[role="alert"]').text()).toContain("Revise os campos destacados.");
+    expect(wrapper.text().split("Já existe um cupom com este código.").length - 1).toBe(1);
     expect(wrapper.get("#marketing-offer-coupon-code").attributes("aria-invalid")).toBe(
       "true",
     );
@@ -229,6 +229,19 @@ describe("MarketingOfferForm — campos numéricos (beta 05/11)", () => {
       value: 500,
       min_order_q: 1250,
     });
+  });
+
+  it("erro do servidor igual ao do campo aparece uma vez (ge:MKT-27)", async () => {
+    const wrapper = form("coupon");
+    const message = "Já existe um cupom com este código.";
+    await wrapper.setProps({
+      globalError: message,
+      fieldErrors: { coupon_code: [message], channels: ["Há canais que não existem."] },
+    });
+    const text = wrapper.text();
+    expect(text.split(message).length - 1).toBe(1);
+    // O que não tem campo visível continua listado no topo.
+    expect(wrapper.get('[role="alert"]').text()).toContain("Há canais que não existem.");
   });
 
   it("o nome diz que é público, porque a loja o mostra ao cliente (ge:MKT-06)", () => {
