@@ -152,6 +152,10 @@ class SupplierProjection:
     sendDirectly: bool
     #: Versão otimista do cadastro. Editar/duplicar recusa rascunho antigo.
     revision: str = ""
+    #: O pedido de compra tem por onde sair (e-mail ou telefone, pela mesma regra
+    #: do envio). Sem isto a tela só descobria a falta depois de confirmar o
+    #: pedido, num aviso que sumia (beta 05/11, CMP-09).
+    canReceiveOrder: bool = True
 
 
 @dataclass(frozen=True)
@@ -295,6 +299,14 @@ class PurchaseProjection:
     activeReceipt: ActiveReceiptProjection
     #: Os últimos recebimentos, do mais novo para o mais velho.
     receiptHistory: tuple[ReceiptHistoryProjection, ...]
+    #: Na leitura paginada, TODOS os insumos ativos, fora da página e do filtro.
+    #: A página serve à tabela da Base; receber, custear, comprar e o Painel
+    #: trabalham sobre a base inteira. Sem isto a farinha (página 2) não podia
+    #: ser recebida (beta 05/11, CMP-01). ``None`` quando a lista já é inteira.
+    activeMaterials: tuple[MaterialProjection, ...] | None = None
+    #: O mesmo para os fornecedores ativos (a página dos fornecedores andava
+    #: junto com a dos insumos e sumia na página 2).
+    activeSuppliers: tuple[SupplierProjection, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -389,8 +401,19 @@ def build_purchase(
     offset = (page - 1) * page_size
     material_rows = list(material_qs[offset : offset + page_size] if paginate else material_qs)
     supplier_rows = list(supplier_qs[offset : offset + page_size] if paginate else supplier_qs)
-    skus = [material.sku for material in material_rows]
-    supplier_refs = [supplier.ref for supplier in supplier_rows]
+    # A base inteira de trabalho: na leitura paginada, todos os ativos entram junto
+    # da página (a projeção de cada um é calculada uma vez só).
+    active_material_rows: list[Any] = []
+    active_supplier_rows: list[Any] = []
+    if paginate:
+        active_material_rows = list(Material.objects.filter(is_active=True).order_by("name", "sku"))
+        active_supplier_rows = list(
+            Supplier.objects.filter(is_active=True).prefetch_related("contacts").order_by("name", "ref")
+        )
+    all_material_rows = _unique_by(active_material_rows + material_rows, "sku")
+    all_supplier_rows = _unique_by(active_supplier_rows + supplier_rows, "ref")
+    skus = [material.sku for material in all_material_rows]
+    supplier_refs = [supplier.ref for supplier in all_supplier_rows]
 
     policy = _purchase_policy()
     stock_on_hand = _stock_on_hand_map(skus)
@@ -403,21 +426,24 @@ def build_purchase(
     recipes = _recipes_map(skus)
     last_delivery = _last_delivery_map(supplier_refs)
     lead_times = _lead_time_map(skus, policy=policy)
-    approximate_stock = _approximate_stock_skus(material_rows, policy=policy)
+    approximate_stock = _approximate_stock_skus(all_material_rows, policy=policy)
     roles = sku_roles_map(skus)
     sale_prices = _sale_price_map(skus)
-    material_by_sku = {material.sku: material for material in material_rows}
-    net_contents = _net_contents_kg([material.sku for material in material_rows if material.unit == "un"])
+    material_by_sku = {material.sku: material for material in all_material_rows}
+    net_contents = _net_contents_kg([material.sku for material in all_material_rows if material.unit == "un"])
     last_delivery_expiry = _last_delivery_expiry_map(
-        [material.sku for material in material_rows if material.shelf_life_days is not None]
+        [material.sku for material in all_material_rows if material.shelf_life_days is not None]
     )
     sale_suggestions = _sale_suggestions(
         [sku for sku in skus if not (roles.get(sku) and (roles[sku].sellable or roles[sku].produced))]
     )
 
-    suppliers = tuple(_supplier_projection(supplier, last_delivery.get(supplier.ref, "")) for supplier in supplier_rows)
-    materials = tuple(
-        _material_projection(
+    supplier_by_ref = {
+        supplier.ref: _supplier_projection(supplier, last_delivery.get(supplier.ref, ""))
+        for supplier in all_supplier_rows
+    }
+    projected_by_sku = {
+        material.sku: _material_projection(
             material,
             stock_on_hand=stock_on_hand.get(material.sku, Decimal("0")),
             daily_use=daily_use.get(material.sku, Decimal("0")),
@@ -433,8 +459,10 @@ def build_purchase(
             net_content_kg=net_contents.get(material.sku, ""),
             last_delivery_expiry=last_delivery_expiry.get(material.sku, ""),
         )
-        for material in material_rows
-    )
+        for material in all_material_rows
+    }
+    suppliers = tuple(supplier_by_ref[supplier.ref] for supplier in supplier_rows)
+    materials = tuple(projected_by_sku[material.sku] for material in material_rows)
     conversions = tuple(
         MaterialConversionProjection(
             id=str(row.pk),
@@ -465,11 +493,10 @@ def build_purchase(
     )
     statuses = {
         material.sku: status
-        for material in material_rows
+        for material in all_material_rows
         if (status := _purchase_request_status(material)) in REQUEST_STATUSES
     }
 
-    default_supplier_ref = supplier_rows[0].ref if supplier_rows else ""
     return PurchaseProjection(
         materials=(
             PurchaseListProjection(
@@ -500,9 +527,26 @@ def build_purchase(
         conversions=conversions,
         costs=costs,
         purchaseRequestStatuses=statuses,
-        activeReceipt=_active_receipt(active_receipt, default_supplier_ref=default_supplier_ref),
+        activeReceipt=_active_receipt(active_receipt),
         receiptHistory=_receipt_history(),
+        activeMaterials=(
+            tuple(projected_by_sku[material.sku] for material in active_material_rows) if paginate else None
+        ),
+        activeSuppliers=(
+            tuple(supplier_by_ref[supplier.ref] for supplier in active_supplier_rows) if paginate else None
+        ),
     )
+
+
+def _unique_by(rows: list[Any], attr: str) -> list[Any]:
+    seen: set[str] = set()
+    unique = []
+    for row in rows:
+        key = getattr(row, attr)
+        if key not in seen:
+            seen.add(key)
+            unique.append(row)
+    return unique
 
 
 #: Quantos recebimentos a tela mostra. O suficiente para responder "essa nota já
@@ -801,17 +845,28 @@ def _supplier_projection(supplier, last_delivery_at: str) -> SupplierProjection:
         paymentTerm=_meta_str(meta, "payment_term", "paymentTerm") or "A combinar",
         sendDirectly=meta.get("send_directly") is True,
         revision=supplier.updated_at.isoformat() if supplier.updated_at else "",
+        canReceiveOrder=_supplier_can_receive_order(supplier),
     )
 
 
-def _active_receipt(active_receipt: dict[str, Any] | None, *, default_supplier_ref: str) -> ActiveReceiptProjection:
+def _supplier_can_receive_order(supplier) -> bool:
+    # A mesma regra que escolhe o canal no envio: a tela não pode prometer um
+    # envio que o servidor vai recusar. Import tardio: o service importa esta projeção.
+    from shopman.backstage.services.purchase import PurchaseError, _supplier_dispatch_route
+
+    try:
+        _supplier_dispatch_route(supplier)
+    except PurchaseError:
+        return False
+    return True
+
+
+def _active_receipt(active_receipt: dict[str, Any] | None) -> ActiveReceiptProjection:
+    # O rascunho nasce SEM fornecedor: quem diz o fornecedor é a NF lida ou o
+    # operador. O primeiro da ordem alfabética entrava sozinho e aparecia no
+    # cabeçalho de Receber como se alguém o tivesse escolhido (beta 05/11, CMP-06/CMP-10).
     data = dict(active_receipt or {})
-    if active_receipt is None:
-        supplier_ref = default_supplier_ref
-    elif "supplierRef" in data or "supplier_ref" in data:
-        supplier_ref = str(data.get("supplierRef", data.get("supplier_ref", "")) or "")
-    else:
-        supplier_ref = default_supplier_ref
+    supplier_ref = str(data.get("supplierRef", data.get("supplier_ref", "")) or "")
     return ActiveReceiptProjection(
         mode=str(data.get("mode") or "invoice"),
         supplierRef=supplier_ref,
@@ -993,7 +1048,7 @@ def _daily_use_map(skus: list[str], *, days: int = 14) -> dict[str, Decimal]:
             for row in rows
         }
     except Exception:
-        logger.debug("purchase.daily_use_failed", exc_info=True)
+        logger.warning("purchase.daily_use_failed", exc_info=True)
         return {}
 
 
