@@ -74,6 +74,48 @@ class DisplayItem:
     additional_image_links: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class GoogleImages:
+    """As fotos que vão ao Google, e o que ficou pendente nelas."""
+
+    image_link: str
+    additional_image_links: tuple[str, ...]
+    #: Uma frase por foto pequena, para o operador trocar no Catálogo.
+    problems: tuple[str, ...] = ()
+
+
+def google_images(item: DisplayItem) -> GoogleImages:
+    """Confere o tamanho das fotos contra o mínimo do Google (500 × 500 px).
+
+    A partir de 31/01/2027 o Google reprova o produto com foto principal menor que
+    isso. A principal pequena SEGUE no envio (sem ela o produto sai do Google hoje,
+    e com ela sai só em 31/01), mas volta como pendência, que o Catálogo mostra na
+    célula do Google até a foto ser trocada. A adicional pequena fica fora do envio,
+    também como pendência. Nunca se amplia: foto esticada também reprova.
+    """
+    from shopman.shop.services import product_photo_size as sizes
+
+    problems: list[str] = []
+    size = sizes.photo_size(item.image_link)
+    if sizes.too_small_for_google(size):
+        problems.append(
+            f"a foto principal tem {size[0]} × {size[1]} px, e o Google reprova o produto "
+            f"com foto menor que {sizes.GOOGLE_MIN_SIDE_PX} × {sizes.GOOGLE_MIN_SIDE_PX} px "
+            "a partir de 31/01/2027. Troque a foto no Catálogo."
+        )
+    kept: list[str] = []
+    for url in item.additional_image_links:
+        extra = sizes.photo_size(url)
+        if sizes.too_small_for_google(extra):
+            problems.append(
+                f"a foto adicional {url} tem {extra[0]} × {extra[1]} px e ficou fora do Google "
+                f"(mínimo {sizes.GOOGLE_MIN_SIDE_PX} × {sizes.GOOGLE_MIN_SIDE_PX} px)."
+            )
+            continue
+        kept.append(url)
+    return GoogleImages(image_link=item.image_link, additional_image_links=tuple(kept), problems=tuple(problems))
+
+
 def resolve_channel(ref: str):
     """Canal de exibição COM formato declarado. Sem formato é menuboard, não feed."""
     from shopman.shop.models import Channel

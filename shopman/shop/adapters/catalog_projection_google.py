@@ -24,6 +24,11 @@ Contrato (Merchant API, ``products_v1``)
   continuam na conta, cada um com o seu estado, vindo de ``services/display_catalog``
   (oculto = todos os destinos em ``excludedDestinations``).
 
+- **foto mínima** → 500 × 500 px a partir de 31/01/2027. A principal pequena vai e
+  volta como "foto pendente" na célula do Google; a adicional pequena fica fora
+  (``display_catalog.google_images``). O tamanho é medido uma vez por endereço
+  (``services/product_photo_size``), e o upload do Catálogo já recusa a pequena.
+
 A decisão de cada item (entra, preço, disponível, oculto) NÃO mora aqui: o handler
 entrega ``ProjectedItem.metadata["display"]``, a mesma decisão que o envio à Meta lê.
 Este módulo só traduz para a grafia da API (camelCase, enums em maiúsculas, preço em
@@ -195,13 +200,19 @@ def build_local_inventory(item: display_catalog.DisplayItem, cfg: dict) -> dict:
     }
 
 
-def build_product_input(item: display_catalog.DisplayItem, cfg: dict) -> dict:
+def build_product_input(
+    item: display_catalog.DisplayItem,
+    cfg: dict,
+    images: display_catalog.GoogleImages | None = None,
+) -> dict:
     """O ``ProductInput`` de um item, traduzido da decisão de ``display_catalog``."""
+    if images is None:
+        images = display_catalog.google_images(item)
     attributes: dict = {
         "title": item.title,
         "description": item.description,
         "link": item.link,
-        "imageLink": item.image_link,
+        "imageLink": images.image_link,
         "availability": "IN_STOCK" if item.available else "OUT_OF_STOCK",
         "price": {
             "amountMicros": str(int(item.price_q) * 10_000),
@@ -211,8 +222,8 @@ def build_product_input(item: display_catalog.DisplayItem, cfg: dict) -> dict:
         "productTypes": [item.product_type] if item.product_type else [],
         "customLabel0": item.custom_label_0,
     }
-    if item.additional_image_links:
-        attributes["additionalImageLinks"] = list(item.additional_image_links)
+    if images.additional_image_links:
+        attributes["additionalImageLinks"] = list(images.additional_image_links)
     if item.brand:
         attributes["brand"] = item.brand
     if item.gtin:
@@ -325,11 +336,12 @@ class GoogleMerchantProjection:
             if not isinstance(decided, display_catalog.DisplayItem):
                 errors.append(f"{item.sku}: item sem a decisão do canal (display_catalog)")
                 continue
+            images = display_catalog.google_images(decided)
             try:
                 resp = requests.post(
                     url,
                     params={"dataSource": _data_source(cfg)},
-                    json=build_product_input(decided, cfg),
+                    json=build_product_input(decided, cfg, images),
                     headers=headers,
                     timeout=_timeout(cfg),
                 )
@@ -344,6 +356,11 @@ class GoogleMerchantProjection:
                     )
                     _check(resp)
                 projected += 1
+                # Foto pequena não segura preço, estoque e texto: o item vai, e a
+                # pendência fica na célula do Google até a foto ser trocada.
+                for problem in images.problems:
+                    logger.warning("catalog_projection_google: %s: %s", decided.sku, problem)
+                    errors.append(f"{decided.sku}: foto pendente: {problem}")
             except GoogleMerchantRateLimitError:
                 raise
             except Exception as exc:

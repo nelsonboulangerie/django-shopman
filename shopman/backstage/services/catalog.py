@@ -2062,6 +2062,17 @@ def _decode_photo(raw) -> tuple[object, bytes]:
         image.load()
     except (UnidentifiedImageError, OSError) as exc:
         raise CatalogError("Não consegui ler esta foto. Envie JPEG, PNG ou WebP.") from exc
+    # O Google reprova produto com foto menor que 500 × 500 px (a partir de
+    # 31/01/2027), e foto ampliada também: a pequena se recusa aqui, antes de
+    # padronizar (o quadrado de 1200 px esticaria a foto) e antes de guardar.
+    from shopman.shop.services.product_photo_size import GOOGLE_MIN_SIDE_PX
+
+    width, height = image.size
+    if min(width, height) < GOOGLE_MIN_SIDE_PX:
+        raise CatalogError(
+            f"Esta foto tem {width} × {height} px, e o Google recusa foto de produto com "
+            f"menos de {GOOGLE_MIN_SIDE_PX} px de lado. Envie uma foto maior."
+        )
     return image, payload
 
 
@@ -2095,6 +2106,10 @@ def store_product_photo(raw, *, filename: str = "") -> dict:
         raise AiAssistNotConfigured(
             "O storage de fotos não está disponível neste ambiente. Avise o responsável."
         ) from exc
+    # O arquivo é imutável: o tamanho lido aqui serve ao envio ao Google sem rede.
+    from shopman.shop.services import product_photo_size
+
+    product_photo_size.remember(url, *image.size)
     return {"name": saved, "url": url, "size": len(payload), "media_type": f"image/{fmt or 'jpeg'}"}
 
 

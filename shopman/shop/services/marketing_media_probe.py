@@ -51,10 +51,22 @@ class PhotoFacts:
     height: int
 
 
+def probe_enabled() -> bool:
+    """A sonda lê a rede? Desligada onde não há rede (testes e simulador local)."""
+
+    return bool(getattr(settings, "SHOPMAN_MARKETING_MEDIA_PROBE_ENABLED", True))
+
+
+def probe_facts(url: str, *, field: str = "content.image_url") -> PhotoFacts:
+    """Os fatos da foto, sem cache e sem julgar: a foto de produto mede por aqui."""
+
+    return _probe(_absolute(url, field=field), field=field)
+
+
 def check_google_photo(url: str, *, field: str = "content.image_url") -> PhotoFacts | None:
     """Recusa, com mensagem no campo, a foto que o Google não aceitaria."""
 
-    if not getattr(settings, "SHOPMAN_MARKETING_MEDIA_PROBE_ENABLED", True):
+    if not probe_enabled():
         return None
     absolute = _absolute(url, field=field)
     facts = _cached_probe(absolute, field=field)

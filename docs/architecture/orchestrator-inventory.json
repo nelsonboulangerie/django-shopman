@@ -9139,11 +9139,13 @@
             "DisplayItem",
             "FEED_FORMATS",
             "GOOGLE_DESTINATIONS",
+            "GoogleImages",
             "_composition",
             "channels_priced_from",
             "composition_skus",
             "display_item",
             "display_items",
+            "google_images",
             "is_platform_channel",
             "resolve_channel",
             "storefront_base"
@@ -10883,7 +10885,9 @@
             "_reject",
             "_total_bytes",
             "_unreachable",
-            "check_google_photo"
+            "check_google_photo",
+            "probe_enabled",
+            "probe_facts"
           ]
         }
       ]
@@ -12384,6 +12388,31 @@
             "pending_fields",
             "suggest_from_invoice",
             "suggestion_from_invoice"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/product_photo_size.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "GOOGLE_MIN_SIDE_PX",
+            "_CACHE_PREFIX",
+            "_key",
+            "logger",
+            "photo_size",
+            "remember",
+            "too_small_for_google"
           ]
         }
       ]
