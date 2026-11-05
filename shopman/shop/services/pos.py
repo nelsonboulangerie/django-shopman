@@ -391,7 +391,7 @@ def close_sale(
     if open_tab is None and offline_at is None and not _payload_has_tab_identity(payload):
         _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
     elif open_tab is not None and offline_at is None:
-        _stamp_tab_prices_for_manual_discount(
+        _stamp_tab_engine_prices(
             payload, open_tab, channel=channel, config=config, operator_username=operator_username,
         )
     _ensure_resolved_prices(payload)
@@ -939,7 +939,7 @@ def review_sale(
         # motor, para a tela mostrar o total que o fechamento vai cobrar (P0-1).
         priced = _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
     else:
-        _stamp_tab_prices_for_manual_discount(
+        _stamp_tab_engine_prices(
             payload, session, channel=channel, config=config, operator_username=operator_username,
         )
     _ensure_resolved_prices(payload)
@@ -3876,10 +3876,16 @@ def _stamp_engine_prices(
     return stamped
 
 
-def _stamp_tab_prices_for_manual_discount(
+def _stamp_tab_engine_prices(
     payload: dict, session, *, channel: Channel, config: ChannelConfig, operator_username: str,
 ) -> None:
-    """Comanda com desconto manual: o preço que mede o desconto é o do MOTOR, não o do corpo.
+    """Comanda: o preço da linha é o do MOTOR, não o do corpo, com ou sem desconto manual.
+
+    Sem desconto manual, a revisão preenchia a linha sem preço com a ETIQUETA da
+    sessão e o fechamento aceitava o preço que a tela declarava: com uma promoção
+    automática na comanda, a revisão cobrava R$ 43,00, o fechamento R$ 33,00, e a
+    venda recusava ``total_changed`` a cada Enter (beta 05/11/2026, ge:PDV-02).
+    Revisão e fechamento passam pelo mesmo motor e leem o mesmo número.
 
     O portão do gerente mede o desconto de linha como ``subtotal - o que o motor
     cobra`` (``_stamp_engine_manual_discounts``), e o subtotal sai do
@@ -3895,11 +3901,10 @@ def _stamp_tab_prices_for_manual_discount(
     (promoção, Xepa e grupo do cliente já aplicados), e o desconto medido é só o
     que o operador deu. Quando a comanda gravada já é este carrinho e o manual
     não venceu nenhuma linha, o preço sai da própria sessão, sem sonda
-    (``_stamp_tab_prices_from_engine_lines``). Sem desconto manual nada muda: o total é o subtotal, e o
-    selo do fechamento confere o subtotal contra o motor. A venda feita sem
-    conexão não passa por aqui: nela vale o cobrado (decisão D, 10/10/2026).
+    (``_stamp_tab_prices_from_engine_lines``). A venda feita sem conexão não passa
+    por aqui: nela vale o cobrado (decisão D, 10/10/2026).
     """
-    if session is None or not _payload_has_manual_discount(payload):
+    if session is None:
         return
     if _session_prices_payload(session, payload) and _stamp_tab_prices_from_engine_lines(payload, session):
         return
