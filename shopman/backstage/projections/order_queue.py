@@ -13,6 +13,7 @@ import logging
 from collections import defaultdict
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, NamedTuple
 
 from django.db.models import Q
@@ -531,6 +532,10 @@ class OrderCardProjection:
     # entrega da casa em preparo sem corrida pedida. A tela mostra o aviso quando o
     # relógio passa de ``due_at_iso``. ``None`` quando não cabe.
     courier_reminder: CourierReminderProjection | None = None
+    # A cobrança digital venceu sem pagamento ("Pix expirado"): o avanço nunca vai
+    # destravar sozinho, e a tela oferece o próximo passo pronto (cancelar com o
+    # motivo "Pagamento não confirmado" já marcado), em vez de um botão morto.
+    payment_lapsed: bool = False
 
 
 @dataclass(frozen=True)
@@ -785,6 +790,8 @@ class OperatorOrderProjection:
     # O RASTRO da comanda do PDV (dono, T1=1, 13/10/2026): "Transferida da comanda #13"
     # quando o pedido nasceu de uma comanda separada de outra. Vazio no resto.
     transferred_from_label: str = ""
+    # Igual ao do cartão: a cobrança venceu e o avanço não destrava mais sozinho.
+    payment_lapsed: bool = False
 
 
 #: Os contextos que leem o detalhe do pedido (:func:`build_operator_order`).
@@ -1136,6 +1143,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         undo=_undo_projection(order),
         advance_block_label=block_label,
         advance_block_reason=block_reason,
+        payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         cancellation_presets=_cancellation_presets(),
         cancel_reasons=_cancel_reasons(),
@@ -2006,6 +2014,20 @@ def items_summary(items) -> str:
     return summary
 
 
+def unit_count(items) -> int:
+    """Quantos itens o pedido tem, em UNIDADES (docs/reference/suite-vocabulary.md).
+
+    "Item = unidade, nunca linha": três croissants e um café são 4 itens. A linha
+    vendida por peso (qtd fracionária, ex.: 0,350 kg) conta 1, porque peso não se
+    soma com peça num número só.
+    """
+    total = 0
+    for item in items:
+        qty = Decimal(str(getattr(item, "qty", 0) or 0))
+        total += int(qty) if qty > 0 and qty == qty.to_integral_value() else 1
+    return total
+
+
 def _build_card(
     order: Order,
     deadline: tuple[str, str] | None = None,
@@ -2033,7 +2055,7 @@ def _build_card(
     if queue_items is None:
         queue_items = order_composition.effective_items(order)
     summary = items_summary(queue_items)
-    items_count = len(queue_items)
+    items_count = unit_count(queue_items)
 
     is_delivery = _is_delivery(order)
     fulfillment_icon = "local_shipping" if is_delivery else "storefront"
@@ -2132,6 +2154,7 @@ def _build_card(
         payment_tone=_payment_tone(order, method, payment_status, payment_data),
         advance_block_label=block_label,
         advance_block_reason=block_reason,
+        payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status_label=fiscal_status_label,
         fiscal_status=fiscal_status,
@@ -2589,12 +2612,18 @@ def _payment_tone(order: Order, method: str, payment_status: str, payment_data: 
 _ADVANCE_BLOCK_LABELS: dict[operator_orders.AdvanceBlock, str] = {
     operator_orders.AdvanceBlock.IFOOD_SCHEDULE_BLOCKED: "Aguardando horário do iFood…",
     operator_orders.AdvanceBlock.IFOOD_WAITING_PICKUP: "Aguardando entregador iFood…",
-    operator_orders.AdvanceBlock.IFOOD_DELIVERY_UNKNOWN: "Confira o responsável pela entrega",
+    operator_orders.AdvanceBlock.IFOOD_DELIVERY_UNKNOWN: "Quem leva ainda não definido",
     operator_orders.AdvanceBlock.IFOOD_CANCELLATION_PENDING: "Aguardando cancelamento pelo iFood…",
     operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED: "Aguardando pagamento…",
     operator_orders.AdvanceBlock.PREORDER_NOT_DUE: "Encomenda do dia…",
     operator_orders.AdvanceBlock.WAITLIST_FERMATA: "Esperando o lote…",
 }
+
+
+PIX_LAPSED_LABEL = "Pix expirado"
+PAYMENT_LAPSED_LABEL = "Pagamento vencido"
+#: Os rótulos do bloqueio de pagamento VENCIDO (nunca destrava sozinho).
+LAPSED_PAYMENT_LABELS = frozenset({PIX_LAPSED_LABEL, PAYMENT_LAPSED_LABEL})
 
 
 def _payment_wait_copy(order: Order, method: str) -> tuple[str, str]:
@@ -2630,7 +2659,7 @@ def _payment_wait_copy(order: Order, method: str) -> tuple[str, str]:
         parts.append(f"{verb} às {timezone.localtime(expires):%H:%M}")
     if lapsed:
         # Cobrança vencida não "cai" mais: prometer o avanço sozinho seria mentir.
-        return ("Pix expirado" if is_pix else "Pagamento vencido"), " · ".join(parts)
+        return (PIX_LAPSED_LABEL if is_pix else PAYMENT_LAPSED_LABEL), " · ".join(parts)
     parts.append("avança sozinho quando cair" if is_pix else "avança sozinho quando o pagamento entrar")
     return ("Aguardando Pix" if is_pix else "Aguardando pagamento"), " · ".join(parts)
 
@@ -3169,8 +3198,108 @@ _EDIT_SOURCE_LABELS = {
 _STATUS_EVENT_TYPES = {"status_changed", "status_change"}
 
 
+# Quem fez, na língua de quem lê. O ``event.actor`` é um código de máquina
+# ("pos:fran", "auto_confirm", "system:counter_handoff") e chegava cru ao
+# histórico do Gestor e do PDV. Gente vira o nome da pessoa; processo vira o nome
+# do ato. O que não está aqui e não é ninguém da equipe sai sem autor (melhor
+# vazio que jargão).
+_SYSTEM_ACTOR_LABELS = {
+    "auto_confirm": "Confirmação automática",
+    "system:counter_handoff": "Entrega no balcão",
+    "system:counter_kds_handoff": "Entrega no balcão",
+    "system:handoff": "Entrega no balcão",
+    "system:post_handoff": "Entrega no balcão",
+    "system:kds_dispatch": "Cozinha",
+    "system:payment": "Pagamento confirmado",
+    "system:pix-confirmation": "Pagamento confirmado",
+    "payment.gateway_reconcile": "Pagamento confirmado",
+    "payment.card_authorization": "Pagamento confirmado",
+    "payment.timeout": "Prazo do pagamento",
+    "payment.timeout_gateway_check": "Prazo do pagamento",
+    "confirmation.timeout": "Prazo de aceite",
+    "delivery.auto_complete": "Conclusão automática",
+    "customer.self_confirm": "Cliente",
+    "customer:self-service": "Cliente",
+    "customer": "Cliente",
+    "concierge": "Concierge",
+    "auto_reject_unavailable": "Recusa automática",
+    "auto_reject_oos": "Recusa automática",
+    "DANFE impressa": "DANFE impressa",
+    "Via Cozinha impressa": "Via Cozinha impressa",
+}
+_SYSTEM_ACTOR_PREFIXES = (
+    ("system:ifood", "iFood"),
+    ("ifood", "iFood"),
+    ("courier", "TaOn"),
+)
+# Prefixos que só dizem DE ONDE a pessoa agiu; o nome vem depois dos dois-pontos.
+_PERSON_ACTOR_PREFIXES = frozenset({
+    "pos", "gestor", "operator", "kds", "production", "admin", "manager",
+    "order-status", "fiscal-requeue", "equipment-back", "card-machine-refund",
+})
+
+
+def _actor_username(actor: str) -> str:
+    """O username por trás de ``"pos:fran"``/``"equipment-back:gestor:ana"``, ou ``actor``."""
+    current = str(actor or "").strip()
+    while ":" in current and current.split(":", 1)[0] in _PERSON_ACTOR_PREFIXES:
+        current = current.split(":", 1)[1]
+    return current
+
+
+def _actor_names(actors) -> dict[str, str]:
+    from django.contrib.auth import get_user_model
+
+    usernames = {_actor_username(actor) for actor in actors if actor}
+    usernames.discard("")
+    if not usernames:
+        return {}
+    names: dict[str, str] = {}
+    for user in get_user_model().objects.filter(username__in=usernames):
+        names[user.username] = (user.get_full_name() or "").strip() or user.username
+    return names
+
+
+def _timeline_actor(actor: str, names: dict[str, str]) -> str:
+    actor = str(actor or "").strip()
+    if not actor:
+        return ""
+    if actor in _SYSTEM_ACTOR_LABELS:
+        return _SYSTEM_ACTOR_LABELS[actor]
+    for prefix, label in _SYSTEM_ACTOR_PREFIXES:
+        if actor == prefix or actor.startswith((f"{prefix}:", f"{prefix}.", f"{prefix}_")):
+            return label
+    username = _actor_username(actor)
+    if username in names:
+        return names[username]
+    # Código de processo que ninguém nomeou ("system:oven-sweep", "lifecycle.on_ready"):
+    # sem autor, em vez de jargão. Pessoa da casa sem cadastro sai pelo próprio nome.
+    if actor.startswith("system") or "." in actor or "_" in username or ":" in username:
+        return ""
+    return username
+
+
+def _cancellation_detail(order: Order) -> str:
+    """O motivo e a observação interna do cancelamento, para a linha "Cancelado".
+
+    O cancelamento grava os dois em ``order.data`` (``cancellation_reason_key`` e
+    ``cancellation_internal_note``) e não no evento: sem esta leitura, quem chega
+    no turno seguinte lia só "Cancelado" e não sabia por quê.
+    """
+    from shopman.shop.services import cancel_reasons
+
+    data = order.data or {}
+    reason = cancel_reasons.cancel_reason(data.get("cancellation_reason_key"))
+    label = reason.label if reason else ""
+    note = str(data.get("cancellation_internal_note") or "").strip()
+    if label and note:
+        return f"{label}: {note}"
+    return label or note
+
+
 def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
-    events = order.events.order_by("seq")
+    events = list(order.events.order_by("seq"))
+    names = _actor_names(event.actor for event in events)
     result: list[TimelineEventProjection] = []
     for event in events:
         payload = event.payload or {}
@@ -3186,13 +3315,17 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             # feio, mas é o caso raro; o que era comum agora tem nome.
             label = event.type.replace("_", " ").capitalize()
 
+        detail = _event_detail(payload)
+        if not detail and event.type in _STATUS_EVENT_TYPES and new_status == Order.Status.CANCELLED:
+            detail = _cancellation_detail(order)
+
         result.append(
             TimelineEventProjection(
                 label=label,
                 event_type=event.type,
                 timestamp_display=_format_datetime(event.created_at),
-                actor=event.actor,
-                detail=_event_detail(payload),
+                actor=_timeline_actor(event.actor, names),
+                detail=detail,
             )
         )
     return tuple(result)

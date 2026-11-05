@@ -1198,7 +1198,9 @@ async function openReject(ref_: string) {
   rejectReason.value = "";
   rejectCode.value = "";
   rejectReasons.value = [];
-  await loadRejectReasons();
+  // Só o iFood tem códigos a buscar; nos outros canais o carregando falava do iFood
+  // num pedido da Loja online.
+  if (isMarketplaceReject.value) await loadRejectReasons();
 }
 let rejectReasonsRequest = 0;
 async function loadRejectReasons() {
@@ -2414,7 +2416,11 @@ function compactClear() {
             v-if="rejectReasonsLoading"
             loading
             size="sm"
-            title="Carregando motivos do iFood…"
+            :title="
+              isMarketplaceReject
+                ? 'Carregando motivos do iFood…'
+                : 'Carregando motivos…'
+            "
           />
           <NuxtAlert
             v-else-if="rejectReasonsError"

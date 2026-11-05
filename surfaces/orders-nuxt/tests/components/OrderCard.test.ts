@@ -453,9 +453,46 @@ describe("OrderCard: por que o botão está travado", () => {
       }),
     });
     await openNotice(w, "block");
-    expect(w.get("[data-advance-block]").text()).toBe(
+    expect(w.get("[data-advance-block]").text()).toContain(
       "Encomenda para uma data futura. O preparo abre no dia combinado.",
     );
+  });
+  // Beta 05/11 (GES-09): o balão dizia só "gerado às 05:51 · expirou às 05:57",
+  // sem o nome do bloqueio. Agora o nome vem primeiro, e o porquê embaixo.
+  it("o nome do bloqueio vem antes dos horários", async () => {
+    const w = mountCard({
+      card: card({
+        advance_block_label: "Pix expirado",
+        advance_block_reason: "gerado às 05:51 · expirou às 05:57",
+      }),
+    });
+    await openNotice(w, "block");
+    const text = w.get("[data-advance-block]").text();
+    expect(text.indexOf("Pix expirado")).toBe(0);
+    expect(text).toContain("gerado às 05:51 · expirou às 05:57");
+  });
+  // Beta 05/11 (GES-05, GES-16): Pix vencido não destrava sozinho; o cartão leva
+  // ao cancelar com o motivo já marcado, em vez de deixar o botão morto.
+  it("Pix vencido traz o Cancelar pedido pronto", async () => {
+    const lapsed = mountCard({
+      card: card({
+        ref: "WEB-261105-Z68",
+        advance_block_label: "Pix expirado",
+        advance_block_reason: "gerado às 05:51 · expirou às 05:57",
+        payment_lapsed: true,
+      }),
+    });
+    await openNotice(lapsed, "block");
+    const cancel = lapsed.get("[data-cancel-unpaid]");
+    expect(cancel.text()).toContain("Cancelar pedido");
+    expect(cancel.attributes("href") ?? cancel.attributes("to")).toBe(
+      "/WEB-261105-Z68#cancel-unpaid",
+    );
+    const waiting = mountCard({
+      card: card({ advance_block_label: "Aguardando Pix…", advance_block_reason: "expira às 22:25" }),
+    });
+    await openNotice(waiting, "block");
+    expect(waiting.find("[data-cancel-unpaid]").exists()).toBe(false);
   });
   it("sem bloqueio, nada", () => {
     expect(
