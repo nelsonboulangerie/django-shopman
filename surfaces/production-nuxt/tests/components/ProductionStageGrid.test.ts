@@ -340,12 +340,13 @@ describe("ProductionStageGrid — planning authority", () => {
       default_position_pk: 7,
       positions: [{ pk: 7, ref: "forno", name: "Forno", is_default: true }],
     });
+    const pending = ref(false);
     vi.stubGlobal("useProductionBoard", () => ({
       board,
       rows: boardRows,
       counts: ref(null),
       selectedDate,
-      pending: ref(false),
+      pending,
       error: ref(null),
       refresh: boardRefresh,
       isBusy: () => false,
@@ -357,11 +358,13 @@ describe("ProductionStageGrid — planning authority", () => {
     expect(w.find("[data-switching-day]").exists()).toBe(false);
 
     selectedDate.value = "2026-07-07";
+    pending.value = true;
     await flushPromises();
     expect(routerReplace).toHaveBeenCalledWith({ query: { date: "2026-07-07" } });
     expect(w.find("[data-switching-day]").attributes("aria-busy")).toBe("true");
 
     board.value = { ...board.value, selected_date: "2026-07-07" };
+    pending.value = false;
     await flushPromises();
     expect(w.find("[data-switching-day]").exists()).toBe(false);
   });

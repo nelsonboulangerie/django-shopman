@@ -1766,7 +1766,7 @@ def test_total_loss_must_account_for_the_whole_started_batch(recipe, monkeypatch
     work_order = craft.plan(recipe, 4, date=date.today())
     craft.start(work_order, quantity=4, expected_rev=work_order.rev)
 
-    with pytest.raises(production.ProductionError, match="incluir toda perda"):
+    with pytest.raises(production.ProductionError, match="abaixo do previsto"):
         _apply_finish(
             work_order_id=work_order.pk,
             quantity="3",

@@ -65,6 +65,7 @@ import type {
   AuthorizeFormulaDeviationResponse,
 } from "~/composables/useProductionKds";
 import { defaultPlanningDate } from "~/composables/useProductionBoard";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
   stage: "plan" | "open";
@@ -120,6 +121,7 @@ watch(selectedDate, (date) => {
 // dia sobre a lista de outro, nem botão ativo nesse meio-tempo (beta 05/11).
 const switchingDay = computed(
   () =>
+    pending.value &&
     !!board.value?.selected_date &&
     board.value.selected_date !== selectedDate.value,
 );
@@ -2103,16 +2105,9 @@ const startedDescription = computed(() => {
             :description="startOutsized"
             data-start-outsized
             :actions="
-              startNeedsDoubleCheck
-                ? [
-                    {
-                      label: 'O número está certo',
-                      color: 'warning',
-                      variant: 'outline',
-                      onClick: acknowledgeStartOutsized,
-                    },
-                  ]
-                : []
+              alertActions('warning', [
+                startNeedsDoubleCheck && { label: 'O número está certo', onClick: acknowledgeStartOutsized },
+              ])
             "
           />
           <p v-else-if="startDiverges" class="op-label text-muted-foreground">
@@ -2265,16 +2260,9 @@ const startedDescription = computed(() => {
             :description="planOutsized"
             data-plan-outsized
             :actions="
-              planNeedsDoubleCheck
-                ? [
-                    {
-                      label: 'O número está certo',
-                      color: 'warning',
-                      variant: 'outline',
-                      onClick: acknowledgePlanOutsized,
-                    },
-                  ]
-                : []
+              alertActions('warning', [
+                planNeedsDoubleCheck && { label: 'O número está certo', onClick: acknowledgePlanOutsized },
+              ])
             "
           />
         </div>
@@ -2404,16 +2392,9 @@ const startedDescription = computed(() => {
             :description="startOutsized"
             data-start-outsized
             :actions="
-              startNeedsDoubleCheck
-                ? [
-                    {
-                      label: 'O número está certo',
-                      color: 'warning',
-                      variant: 'outline',
-                      onClick: acknowledgeStartOutsized,
-                    },
-                  ]
-                : []
+              alertActions('warning', [
+                startNeedsDoubleCheck && { label: 'O número está certo', onClick: acknowledgeStartOutsized },
+              ])
             "
           />
           <p
