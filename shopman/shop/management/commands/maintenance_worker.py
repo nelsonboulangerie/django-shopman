@@ -15,6 +15,7 @@ manutenção num loop (default: a cada 5 minutos):
   arm_scheduled_campaigns    — ARMA (não dispara) as ocasiões agendadas do próximo horizonte
   reconcile_payments        — PIX pago com webhook perdido é resgatado
   sweep_stuck_orders        — fase de lifecycle perdida (crash pós-commit) é re-despachada
+  bake_alpha_tradi_daily    — só no alpha: a fornada diária da TRADI (decisão de 29/10)
   sweep_unrealized_production — fornada concluída sem o ledger de estoque fechado é re-realizada
   sweep_dead_production_stock — resíduo de processo de WO morta é zerado pelo ledger
   sweep_waitlist_windows    — janela de confirmação da fila vencida libera a vaga p/ o próximo
@@ -159,6 +160,11 @@ MAINTENANCE_COMMANDS = (
     # alerta aberto (ver `DIVERGENCIA_GRITA_NO_PROPRIO_COMANDO`).
     "reconcile_financial_day",
     "sweep_stuck_orders",
+    # Só no alpha (SHOPMAN_ENVIRONMENT=staging) e só a TRADI: a fornada do dia
+    # para o Google ler a baguete disponível (decisão do dono, 29/10). Uma por
+    # dia a partir das 7h; quem segura a cadência é o próprio comando. ANTES do
+    # resgate abaixo, de propósito: fornada cujo ledger não fechou sara no mesmo ciclo.
+    "bake_alpha_tradi_daily",
     # O mesmo resgate, do lado da produção: fornada concluída cujo ledger de
     # estoque não fechou (queda no meio do handler) volta a ser realizada.
     "sweep_unrealized_production",
