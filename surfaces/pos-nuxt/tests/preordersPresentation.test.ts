@@ -725,3 +725,23 @@ describe("selo com iniciais maiúsculas (dono, 03/11/2026)", () => {
     expect(moneyBadge({ ...base, balance_q: null })).toMatchObject({ label: "Conferir Pagamento", tone: "warning" });
   });
 });
+
+describe("Via Pedido que falta: uma régua só", () => {
+  // Beta test de 05/11/2026 (PDV2-14): o chip contava "Sem Via Pedido 12" e o
+  // resumo de hoje "9 sem Via Pedido". O chip contava as 3 já entregues.
+  const cards = [
+    card({ ref: "NB-1" }),
+    card({ ref: "NB-2" }),
+    card({ ref: "NB-3", situation: "delivered", situation_label: "Entregue" }),
+  ];
+
+  it("o chip, o filtro, o lote e o resumo contam o mesmo número", () => {
+    const quick = quickFilterItems(cards, NO_FILTERS).find((item) => item.key === "unprinted");
+    expect(quick?.count).toBe(2);
+    const facts = todayFacts(day({ orders: cards, orders_count: 3 }));
+    expect(facts.find((fact) => fact.key === "tickets")?.text).toBe("2 sem Via Pedido");
+    const filtered = filterDays([day({ orders: cards })], { ...NO_FILTERS, print: "pending" });
+    expect(filtered[0]!.orders.map((c) => c.ref)).toEqual(["NB-1", "NB-2"]);
+    expect(printPlan({ date_from: HOJE, date_to: HOJE }, [day({ orders: cards })]).refs).toEqual(["NB-1", "NB-2"]);
+  });
+});
