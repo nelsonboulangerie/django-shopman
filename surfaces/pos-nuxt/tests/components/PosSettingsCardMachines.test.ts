@@ -3,6 +3,7 @@ import { flushPromises } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
 import { computed, ref } from "vue";
 
+import { SETUP_READ_ONLY_NOTE } from "~/presentation/settingsAccess";
 import CardMachinesPage from "~/pages/settings/card-machines.vue";
 import type { PosSettingsResponse } from "~/types/settings";
 
@@ -49,7 +50,8 @@ describe("Ajustes › Maquininhas", () => {
     data.value = settings(false);
     const wrapper = await mountSuspended(CardMachinesPage);
     await flushPromises();
-    expect(wrapper.find("[data-settings-read-only]").exists()).toBe(true);
+    // O aviso mora nas alerts do cabeçalho (fecha no X), não num NuxtAlert solto.
+    expect(wrapper.text()).toContain(SETUP_READ_ONLY_NOTE);
     expect(wrapper.find("[data-settings-card-machine-add]").exists()).toBe(false);
     expect(wrapper.find("[data-settings-card-machine-edit='m1']").attributes("disabled")).toBeDefined();
     expect(wrapper.find("[role='switch']").attributes("disabled")).toBeDefined();
@@ -60,7 +62,7 @@ describe("Ajustes › Maquininhas", () => {
     data.value = settings(true);
     const wrapper = await mountSuspended(CardMachinesPage);
     await flushPromises();
-    expect(wrapper.find("[data-settings-read-only]").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain(SETUP_READ_ONLY_NOTE);
     expect(wrapper.findAll("[data-settings-card-machine-add]")).toHaveLength(1);
     // O rótulo longo encolhe dentro do botão (reticências), não empurra o interruptor.
     expect(wrapper.find("[data-settings-card-machine-edit='m1']").classes()).toEqual(
