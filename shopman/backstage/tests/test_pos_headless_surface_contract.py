@@ -95,6 +95,18 @@ class POSHeadlessSurfaceContractTests(TestCase):
         bind_station(self.client, self.terminal.ref)
         self.shift = cash.open_shift(operator=self.operator, terminal=self.terminal, float_q=0)
 
+    def test_day_closing_section_only_for_who_closes(self) -> None:
+        """Beta 05/11 (CEN-16): a Caixa via "Fim do dia" e caía em "Fechamento é do
+        gerente". A projeção diz se quem está no PDV fecha o dia."""
+        self.assertFalse(build_pos(operator=self.operator).day_closing_allowed)
+        perm = Permission.objects.get(
+            content_type__app_label="backstage", codename="perform_closing"
+        )
+        self.operator.user_permissions.add(perm)
+        operator = get_user_model().objects.get(pk=self.operator.pk)
+        self.assertTrue(build_pos(operator=operator).day_closing_allowed)
+        self.assertFalse(build_pos(operator=None).day_closing_allowed)
+
     def test_projection_publishes_the_canonical_slots_of_the_house(self) -> None:
         """A grade de encomenda sai inteira, ``{ref, label, starts_at}``, para a
         tela resolver um ``slot-09`` gravado num pedido cuja data virou hoje."""

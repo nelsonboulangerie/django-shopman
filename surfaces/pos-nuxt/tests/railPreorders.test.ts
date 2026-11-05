@@ -18,7 +18,7 @@ const SHELL_SECTIONS = readFileSync(app("composables", "usePosShell.ts"), "utf8"
 const SESSION = readFileSync(app("pages", "session", "index.vue"), "utf8");
 const CASH = readFileSync(app("presentation", "cash.ts"), "utf8");
 
-const base = { tabs: [], hasOpenCashSession: true };
+const base = { tabs: [], hasOpenCashSession: true, closingAllowed: true };
 
 describe("Encomendas na barra lateral do PDV", () => {
   it("a seção mora entre Comandas e Caixa, e leva à casa da seção", () => {
@@ -120,6 +120,21 @@ describe("Encomendas sem redundância (varredura do fonte)", () => {
       expect(source).toContain("toneBadge(situationTone(");
       expect(source).not.toContain("TONE_CLASS");
     }
+  });
+});
+
+// Beta 05/11 (CEN-16): a Caixa via "Fim do dia" no celular e caía em "Fechamento é do
+// gerente"; na mesa a seção nem existia para ela. Agora as duas larguras concordam.
+describe("Fim do dia só para quem fecha", () => {
+  it("sem a permissão, a seção não existe em largura nenhuma", () => {
+    const keys = posSections({ ...base, closingAllowed: false, preorders: { allowed: true } }).map((s) => s.key);
+    expect(keys).not.toContain("closing");
+    const comPermissao = posSections({ ...base, preorders: { allowed: true } }).map((s) => s.key);
+    expect(comPermissao).toContain("closing");
+  });
+
+  it("o shell lê a permissão da projeção, sem supor", () => {
+    expect(SHELL_SECTIONS).toContain("closingAllowed: pos.value?.day_closing_allowed === true");
   });
 });
 

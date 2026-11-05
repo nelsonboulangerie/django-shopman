@@ -518,6 +518,10 @@ class POSProjection:
     # renderiza a porta quando ela abre para QUEM está logado. É consulta: a via
     # do cliente sai na bobina, e essa não depende deste gate.
     danfe_screen_allowed: bool = False
+    # Fim do dia é do gerente (`backstage.perform_closing`). A barra de baixo mostrava a
+    # seção a quem não fecha, e o toque dava em "Fechamento é do gerente" (beta 05/11,
+    # CEN-16): a seção só existe para quem abre a tela.
+    day_closing_allowed: bool = False
     # ENTREGA, estado inicial. A review responde pela data ESCOLHIDA, mas ela só
     # existe depois que há endereço — e a tela precisa abrir o formulário já
     # dizendo "hoje" e já mostrando as janelas de hoje. Sem isto o operador
@@ -717,6 +721,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         fiscal_label=fiscal_label,
         fiscal_message=fiscal_message,
         danfe_screen_allowed=bool(getattr(operator, "is_staff", False)),
+        day_closing_allowed=_can_close_day(operator),
         weighed_weight_entry=weighed_sale.weight_entry_enabled(),
         offline_sale_enabled=pos_offline_sale.enabled(),
         price_window=_price_window_projection(offer),
@@ -2236,6 +2241,12 @@ def _active_cash_shift_for_terminal(terminal):
     except Exception:
         logger.debug("pos_terminal_cash_shift_lookup_failed", exc_info=True)
         return None
+
+
+def _can_close_day(operator) -> bool:
+    from shopman.backstage.permissions import can_close_day
+
+    return bool(operator is not None and can_close_day(operator))
 
 
 def _cash_runtime_projection(cash_shift, runtime, operator, terminal=None) -> POSCashRuntimeProjection:

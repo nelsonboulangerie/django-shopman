@@ -613,6 +613,9 @@ export interface POSProjection {
    * decide; a tela não renderiza porta que devolve 404. É consulta — a via do
    * cliente sai na bobina, e essa não depende deste gate. */
   danfe_screen_allowed: boolean;
+  /** Quem está no PDV fecha o dia (`backstage.perform_closing`)? Sem isso, a seção
+   *  Fim do dia não aparece na barra de baixo. */
+  day_closing_allowed: boolean;
   /** Hoje pelo relógio da LOJA — o padrão da data de entrega. */
   delivery_today: string;
   /** As janelas de hoje, para o formulário abrir já respondendo. A review
