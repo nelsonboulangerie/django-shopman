@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { tabCardAccessibleName, tabCardBadge, tabCardView } from "~/presentation/tabBoard";
+import { renameRefusal, tabCardAccessibleName, tabCardBadge, tabCardView } from "~/presentation/tabBoard";
 import type { POSTabProjection } from "~/types/pos";
 
 function tab(overrides: Partial<POSTabProjection> & { ref: string }): POSTabProjection {
@@ -57,5 +57,13 @@ describe("presentation/tabBoard — o cartão diz o que é (beta test de 05/11/2
     expect(view.identity).toBe("Aberta às 14:32");
     const withCustomer = tabCardView(tab({ ref: "1008", state: "in_use", customer_name: "Ana", opened_at_display: "14:32" }));
     expect(withCustomer.identity).toBe("Ana");
+  });
+});
+
+describe("presentation/tabBoard — renameRefusal (PDV2-21)", () => {
+  it("diz o caractere tirado, o limite cortado, e nada quando está limpo", () => {
+    expect(renameRefusal("Mesa 7/8", "Mesa 78", ["/", "#"])).toBe("O nome da comanda não leva /.");
+    expect(renameRefusal("abcdef", "abcd", ["/"])).toBe("O nome da comanda vai até 4 letras.");
+    expect(renameRefusal("Mesa 7", "Mesa 7", ["/"])).toBe("");
   });
 });

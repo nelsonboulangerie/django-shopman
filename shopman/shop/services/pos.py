@@ -226,9 +226,9 @@ def _clean_tab_ref(value: str) -> str:
     if not raw:
         raise ValueError("Informe uma referência de comanda.")
     if len(raw) > _TAB_REF_MAX_LENGTH:
-        raise ValueError(f"Informe uma comanda com até {_TAB_REF_MAX_LENGTH} caracteres.")
+        raise ValueError(f"O nome da comanda vai até {_TAB_REF_MAX_LENGTH} letras.")
     if any(ch in _TAB_REF_DISALLOWED or ord(ch) < 32 for ch in raw):
-        raise ValueError("A referência da comanda não pode conter barras ou caracteres de URL.")
+        raise ValueError("O nome da comanda não leva / \\ ? # nem %.")
     return raw
 
 

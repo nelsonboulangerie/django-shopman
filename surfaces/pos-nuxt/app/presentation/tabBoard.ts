@@ -143,6 +143,17 @@ export function sanitizeTabRef(
     .slice(0, options.maxLength);
 }
 
+/**
+ * O que o campo do nome da comanda diz quando tirou algo do que foi digitado:
+ * o caractere proibido some na hora, e o porquê aparece ali mesmo (PDV2-21).
+ */
+export function renameRefusal(typed: string, clean: string, disallowedChars: string[]): string {
+  const blocked = [...new Set(typed.split("").filter((char) => disallowedChars.includes(char)))];
+  if (blocked.length) return `O nome da comanda não leva ${blocked.join(" ")}.`;
+  if (typed.replace(/\s+/g, " ").length > clean.length) return `O nome da comanda vai até ${clean.length} letras.`;
+  return "";
+}
+
 export function tabCardView(tab: POSTabProjection, selectedRef = ""): TabCardView {
   const isInUse = tab.state === "in_use";
   const hasItems = tab.item_count > 0;
