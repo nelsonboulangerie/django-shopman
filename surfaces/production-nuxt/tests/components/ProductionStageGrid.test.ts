@@ -484,6 +484,55 @@ describe("ProductionStageGrid — planning authority", () => {
     );
   });
 
+  it("um zero a mais na linha não planeja direto: abre o diálogo e pede conferência", async () => {
+    // Beta 05/11: "Planejar 99.999" passou sem ressalva nenhuma.
+    boardRows.value = [row({ suggestion })];
+    const w = mountGrid("plan");
+
+    const input = w.find('input[aria-label="Quantidade de Pão"]');
+    await input.setValue("99999");
+    await input.trigger("keydown", { key: "Enter" });
+    expect(planSpy).not.toHaveBeenCalled();
+    expect(w.get("[data-plan-outsized]").text()).toContain(
+      "99.999 é 12.500 vezes a sugestão (8)",
+    );
+    const dialogInput = w.find('input[aria-label="Quantidade planejada"]');
+    await dialogInput.trigger("keydown", { key: "Enter" });
+    expect(planSpy).not.toHaveBeenCalled();
+
+    await byText(w, "[data-plan-outsized] button", "O número está certo")!.trigger("click");
+    await dialogInput.trigger("keydown", { key: "Enter" });
+    expect(planSpy).toHaveBeenCalledWith(
+      "PAO-001",
+      expect.objectContaining({ quantity: "99999", source: "manual" }),
+    );
+  });
+
+  it("zero no ajuste diz Remover do plano, e o aviso diz que saiu", async () => {
+    // Beta 05/11: "Zero remove." com um Confirmar genérico, e o toast dizia
+    // "Planejado: Bâtard × 0".
+    boardRows.value = [
+      row({
+        suggestion,
+        planned_qty: "20",
+        planned_orders: [wo({ pk: 9, ref: "WO-009", rev: 4, status: "planned", planned_qty: "20" })],
+      }),
+    ];
+    const w = mountGrid("plan");
+    await plannedAction(w, "Corrigir quantidade")!.trigger("click");
+    expect(w.text()).not.toContain("Zero remove");
+    const input = w.find('input[aria-label="Quantidade planejada"]');
+    await input.setValue("0");
+    const remove = byText(w, "button", "Remover do plano");
+    expect(remove).toBeDefined();
+    await remove!.trigger("click");
+    await flushPromises();
+    expect(planSpy).toHaveBeenCalledWith("PAO-001", expect.objectContaining({ quantity: "0", work_order_id: 9 }));
+    expect((globalThis as unknown as { useSonner: { success: ReturnType<typeof vi.fn> } }).useSonner.success).toHaveBeenCalledWith(
+      "Pão saiu do plano.",
+    );
+  });
+
   it("com a produção já assumida, o menu soma um lote novo, nunca em silêncio", async () => {
     boardRows.value = [
       row({
@@ -804,6 +853,36 @@ describe("ProductionStageGrid — Produção", () => {
     expect(startSpy).toHaveBeenCalledWith("PAO-001", 1, 2, "27");
   });
 
+  it("um zero a mais se confere: 3x o planejado só abre depois de 'O número está certo'", async () => {
+    // Beta 05/11: 42 virou 4.200 e o lote abriu sem pergunta nenhuma.
+    boardRows.value = [
+      row({
+        planned_qty: "42",
+        planned_orders: [wo({ status: "planned", planned_qty: "42" })],
+      }),
+    ];
+    const w = mountGrid();
+
+    await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
+    const input = w.find('input[aria-label="Quantidade prevista"]');
+    await input.setValue("4200");
+    const alert = w.get("[data-start-outsized]");
+    expect(alert.text()).toContain("4.200 é 100 vezes o planejado (42)");
+    const submit = () =>
+      w
+        .findAll("button")
+        .filter((button) => button.text().trim() === "Confirmar")
+        .at(-1)!;
+    expect(submit().attributes("disabled")).toBeDefined();
+    await input.trigger("keydown", { key: "Enter" });
+    expect(startSpy).not.toHaveBeenCalled();
+
+    await byText(w, "[data-start-outsized] button", "O número está certo")!.trigger("click");
+    expect(submit().attributes("disabled")).toBeUndefined();
+    await input.trigger("keydown", { key: "Enter" });
+    expect(startSpy).toHaveBeenCalledWith("PAO-001", 1, 2, "4200");
+  });
+
   it("zero não segue: não há o que confirmar", async () => {
     boardRows.value = [
       row({
@@ -869,7 +948,7 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
     boardRows.value = [
       row({
         started_qty: "30",
-        started_orders: [wo({ pk: 7, ref: "WO-007", started_qty: "30", started_at_display: "29/10 às 09:17" })],
+        started_orders: [wo({ pk: 7, ref: "WO-007", started_qty: "30", started_at_display: "29/10 às 09:17", can_void: true })],
       }),
     ];
     const w = mountGrid();
@@ -888,6 +967,21 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
       .setValue("queimou");
     await byText(w, "button", "Confirmar cancelamento")!.trigger("click");
     expect(voidSpy).toHaveBeenCalledWith(7, 2, "queimou");
+  });
+
+  it("sem can_void, o detalhe não oferece Cancelar lote e diz quem cancela", async () => {
+    // Beta 05/11: o diálogo mostrava "Cancelar lote…" a quem não podia, e a
+    // recusa vinha num toast "Sem capacidade" com "Atualizar os números".
+    boardRows.value = [
+      row({
+        started_qty: "30",
+        started_orders: [wo({ pk: 7, ref: "WO-007", started_qty: "30", can_void: false })],
+      }),
+    ];
+    const w = mountGrid();
+    await byText(w, '[role="menuitem"]', "Detalhes do lote")!.trigger("click");
+    expect(byText(w, "button", "Cancelar lote")).toBeUndefined();
+    expect(w.get("[data-void-hint]").text()).toBe("Cancelar lote é com o gerente.");
   });
 
   it("oferece Autorizar desvio só à gestão e somente com limites projetados", async () => {

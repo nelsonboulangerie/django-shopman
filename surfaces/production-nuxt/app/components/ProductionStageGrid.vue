@@ -31,6 +31,7 @@ import {
   isoForOffset,
   isStale,
   matchesRowQuery,
+  outsizedQuantityWarning,
   rowCommitments,
   rowCommittedUnits,
   rowLabel,
@@ -333,6 +334,48 @@ const startDiverges = computed(() => {
 const startReady = computed(
   () => !!selectedStartOrder.value && qtyNumber(startQty.value) > 0,
 );
+// Rendimento diferente só se avisa; um zero a mais se confere. Passou de 3x o
+// planejado, o aviso diz o número e Confirmar só libera depois de "O número
+// está certo" (botão no aviso, longe do Confirmar: toque duplo não passa).
+// Mexeu no número, a conferência volta a valer.
+function acknowledgeStartOutsized() {
+  startOutsizedAcknowledged.value = startQty.value.trim();
+}
+const startOutsized = computed(() => {
+  const wo = selectedStartOrder.value;
+  return wo ? outsizedQuantityWarning(startQty.value, wo.planned_qty) : null;
+});
+const startOutsizedAcknowledged = ref<string | null>(null);
+const startNeedsDoubleCheck = computed(
+  () =>
+    !!startOutsized.value &&
+    startOutsizedAcknowledged.value !== startQty.value.trim(),
+);
+watch(startRow, () => {
+  startOutsizedAcknowledged.value = null;
+});
+// O mesmo cuidado no planejar: a referência é a sugestão do dia.
+const planOutsized = computed(() =>
+  planRow.value
+    ? outsizedQuantityWarning(planQty.value, planRow.value.suggestion?.quantity, "a sugestão")
+    : null,
+);
+const planOutsizedAcknowledged = ref<string | null>(null);
+const planNeedsDoubleCheck = computed(
+  () =>
+    !!planOutsized.value &&
+    planOutsizedAcknowledged.value !== planQty.value.trim(),
+);
+watch(planRow, () => {
+  planOutsizedAcknowledged.value = null;
+});
+function acknowledgePlanOutsized() {
+  planOutsizedAcknowledged.value = planQty.value.trim();
+}
+// Zero no ajuste tira o lote do plano: o botão diz isso, sem código secreto.
+const planRemoves = computed(
+  () => planMode.value === "adjust" && !!planQty.value.trim() && qtyNumber(planQty.value) === 0,
+);
 
 // Stepper touch: quantidade sempre editável com +/− generosos.
 // (Recebe o NOME do campo — no template o Vue desembrulha refs, então passar
@@ -436,6 +479,7 @@ async function confirmPlan() {
   if (!row || row.recipe_pk == null || !board.value || !planQty.value.trim())
     return;
   if (row.planned_orders.length > 0 && !selectedPlannedOrder.value) return;
+  if (planNeedsDoubleCheck.value) return;
   planSubmitting.value = true;
   try {
     const res = await submitPlan(row, {
@@ -491,7 +535,10 @@ async function submitPlan(
     source: opts.source,
   };
   const label = opts.newBatch ? "Novo lote planejado" : "Planejado";
-  const successMessage = `${label}: ${rowLabel(row)} × ${opts.quantity}`;
+  const successMessage =
+    qtyNumber(opts.quantity) === 0
+      ? `${rowLabel(row)} saiu do plano.`
+      : `${label}: ${rowLabel(row)} × ${opts.quantity}`;
   lastPlanAttempt.value = { key: row.output_sku, payload, successMessage };
   const res = await plan(row.output_sku, payload);
   if (res.ok) {
@@ -575,6 +622,7 @@ async function confirmStart() {
   const row = startRow.value;
   const wo = selectedStartOrder.value;
   if (!row || !wo || !startReady.value) return;
+  if (startNeedsDoubleCheck.value) return;
   startSubmitting.value = true;
   try {
     const res = await start(
@@ -996,6 +1044,14 @@ function inlineBlock(row: ProductionMatrixRowProjection): string {
 
 async function planInline(row: ProductionMatrixRowProjection) {
   if (inlineSubmitting.value || !inlineAllowed(row)) return;
+  // Um zero a mais na linha não planeja direto: abre o diálogo, que mostra o
+  // número contra a sugestão e pede a conferência (beta 05/11: 99.999 passou).
+  const draft = draftOf(row).trim();
+  if (outsizedQuantityWarning(draft, row.suggestion?.quantity, "a sugestão")) {
+    openPlan(row, "manual");
+    if (planRow.value === row) planQty.value = draft;
+    return;
+  }
   inlineSubmitting.value = row.output_sku;
   try {
     await submitPlan(row, {
@@ -1989,7 +2045,27 @@ const startedDescription = computed(() => {
               @click="bump('start', 1)"
             />
           </div>
-          <p v-if="startDiverges" class="op-label text-muted-foreground">
+          <NuxtAlert
+            v-if="startOutsized"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-triangle-alert"
+            :description="startOutsized"
+            data-start-outsized
+            :actions="
+              startNeedsDoubleCheck
+                ? [
+                    {
+                      label: 'O número está certo',
+                      color: 'warning',
+                      variant: 'outline',
+                      onClick: acknowledgeStartOutsized,
+                    },
+                  ]
+                : []
+            "
+          />
+          <p v-else-if="startDiverges" class="op-label text-muted-foreground">
             Diferente do planejado ({{ selectedStartOrder.planned_qty }}). É rendimento, não perda.
           </p>
           <OperatorNumpad
@@ -2019,7 +2095,7 @@ const startedDescription = computed(() => {
           block
           class="flex-[1.6]"
           icon="i-lucide-check"
-          :disabled="startSubmitting || !startReady"
+          :disabled="startSubmitting || !startReady || startNeedsDoubleCheck"
           :label="
             startSubmitting
               ? 'Confirmando…'
@@ -2083,7 +2159,7 @@ const startedDescription = computed(() => {
           >
             Substitui #{{ selectedPlannedOrder.ref }} ({{
               selectedPlannedOrder.planned_qty
-            }}). Zero remove.
+            }}). Com 0, o lote sai do plano.
           </p>
           <p
             v-else-if="planMode === 'new-batch'"
@@ -2131,6 +2207,26 @@ const startedDescription = computed(() => {
               @click="bump('plan', 1)"
             />
           </div>
+          <NuxtAlert
+            v-if="planOutsized"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-triangle-alert"
+            :description="planOutsized"
+            data-plan-outsized
+            :actions="
+              planNeedsDoubleCheck
+                ? [
+                    {
+                      label: 'O número está certo',
+                      color: 'warning',
+                      variant: 'outline',
+                      onClick: acknowledgePlanOutsized,
+                    },
+                  ]
+                : []
+            "
+          />
         </div>
       </template>
       <template #footer>
@@ -2149,15 +2245,19 @@ const startedDescription = computed(() => {
               !planQtyValid ||
               !planActionAllowed ||
               planSubmitting ||
+              planNeedsDoubleCheck ||
               (!!planRow?.planned_orders.length && !selectedPlannedOrder)
             "
             aria-keyshortcuts="Enter"
+            :color="planRemoves ? 'error' : undefined"
             :label="
               planSubmitting
                 ? 'Confirmando…'
-                : planMode === 'new-batch'
-                  ? 'Confirmar novo lote'
-                  : 'Confirmar'
+                : planRemoves
+                  ? 'Remover do plano'
+                  : planMode === 'new-batch'
+                    ? 'Confirmar novo lote'
+                    : 'Confirmar'
             "
             @click="confirmPlan()"
           />
@@ -2244,9 +2344,30 @@ const startedDescription = computed(() => {
               @click="bump('start', 1)"
             />
           </div>
-          <!-- Divergiu do planejado? A tela avisa e segue: é rendimento, não perda. -->
+          <!-- Divergiu do planejado? A tela avisa e segue: é rendimento, não perda.
+               Um zero a mais (3x) se confere antes de abrir. -->
+          <NuxtAlert
+            v-if="startOutsized"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-triangle-alert"
+            :description="startOutsized"
+            data-start-outsized
+            :actions="
+              startNeedsDoubleCheck
+                ? [
+                    {
+                      label: 'O número está certo',
+                      color: 'warning',
+                      variant: 'outline',
+                      onClick: acknowledgeStartOutsized,
+                    },
+                  ]
+                : []
+            "
+          />
           <p
-            v-if="selectedStartOrder && startDiverges"
+            v-else-if="selectedStartOrder && startDiverges"
             class="text-sm text-muted-foreground"
           >
             Diferente do planejado ({{ selectedStartOrder.planned_qty }}).
@@ -2264,7 +2385,7 @@ const startedDescription = computed(() => {
           />
           <NuxtButton
             size="xl"
-            :disabled="startSubmitting || !startReady"
+            :disabled="startSubmitting || !startReady || startNeedsDoubleCheck"
             aria-keyshortcuts="Enter"
             :label="startSubmitting ? 'Confirmando…' : 'Confirmar'"
             @click="confirmStart()"
@@ -2396,19 +2517,28 @@ const startedDescription = computed(() => {
             label="Autorizar desvio"
             @click="openFormulaDeviation"
           />
+          <!-- O botão só existe para quem pode cancelar (o mesmo can_void do
+               menu da linha); para os outros, a tela diz quem cancela. -->
           <NuxtButton
-            v-if="selectedStartedOrder && !voidConfirming"
+            v-if="selectedStartedOrder?.can_void && !voidConfirming"
             color="error"
             variant="outline"
             label="Cancelar lote…"
             @click="voidConfirming = true"
           />
           <NuxtButton
-            v-else-if="selectedStartedOrder"
+            v-else-if="selectedStartedOrder?.can_void"
             color="error"
             label="Confirmar cancelamento"
             @click="confirmVoid()"
           />
+          <p
+            v-else-if="selectedStartedOrder"
+            class="op-label self-center text-muted-foreground"
+            data-void-hint
+          >
+            Cancelar lote é com o gerente.
+          </p>
           <NuxtButton
             color="neutral"
             variant="outline"
