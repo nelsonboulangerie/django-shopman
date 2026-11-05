@@ -897,6 +897,15 @@ describe("AnnouncementCard — decisão montada pela página", () => {
     expect(edits.platforms).toEqual(["instagram"]);
   });
 
+  it("o nome da plataforma é rótulo da chave: a linha inteira é alvo de toque (ge:MKT-26)", () => {
+    const wrapper = mountCard(makeAnnouncement({ platforms: ["instagram"] }));
+    const row = wrapper.get('[data-review-platform="whatsapp"]');
+    const label = row.get("[data-review-platform-label]");
+    const control = row.get('[role="switch"]');
+    expect(label.attributes("for")).toBe("review-platform-7-whatsapp");
+    expect(control.attributes("id")).toBe("review-platform-7-whatsapp");
+  });
+
   it("sem a capacidade de aprovar, Recusar e Continuar ficam travados com o motivo (ge:MKT-03)", async () => {
     const reason = "Seu perfil não aprova anúncios. Peça a quem aprova.";
     const wrapper = mountCard(makeAnnouncement(), "", "America/Sao_Paulo", false, false, {

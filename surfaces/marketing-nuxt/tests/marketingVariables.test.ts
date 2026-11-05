@@ -13,9 +13,9 @@ describe("marketing variable presentation", () => {
     ).toBe("Olá da [Nome da loja]: [Nome do produto] custa [Preço].");
   });
 
-  it("does not expose an unknown technical identifier as operator copy", () => {
+  it("names an unknown variable as unknown, without exposing the identifier (ge:MKT-13)", () => {
     expect(marketingVariableLabel("future_internal_ref")).toBe(
-      "Dado disponível",
+      "Variável desconhecida",
     );
   });
 });

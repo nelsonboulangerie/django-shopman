@@ -227,6 +227,16 @@ onBeforeUnmount(() => {
 });
 
 const panelOpen = computed(() => creating.value || editing.value !== null);
+// O título é o do momento em que o diálogo abriu: ao fechar uma edição, a animação de
+// saída mostrava "Nova campanha" (beta 05/11, ge:MKT-28).
+const dialogTitle = ref("Nova campanha");
+watch(
+  panelOpen,
+  (open) => {
+    if (open) dialogTitle.value = editing.value ? "Editar campanha" : "Nova campanha";
+  },
+  { immediate: true },
+);
 
 function fireAction(rule: Campaign) {
   return fireActionFor(rule, actions.value);
@@ -656,6 +666,23 @@ useHead({ title: "Campanhas" });
     <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
       <!-- A tabela da suíte: o estado (carregando, erro, vazio) é dela. A chave liga ou
            desliga sem abrir; tocar a linha abre a edição quando a Action deixa. -->
+      <!-- No celular, a lista em cartões: a chave e o ⋯ sempre à vista (ge:MKT-14). A
+           tabela continua dona do carregando, do erro e do vazio. -->
+      <CampaignMobileList
+        v-if="pageRules.length"
+        class="md:hidden"
+        :rules="pageRules"
+        :platform-labels="platformLabels"
+        :created-pk="createdPk"
+        :mutating-campaign-pk="mutatingCampaignPk"
+        :edit-state="editState"
+        :fire-state="fireState"
+        :row-menu="rowMenu"
+        :trigger-when="triggerWhen"
+        @toggle="toggle"
+        @fire="openFire"
+      />
+      <div :class="pageRules.length ? 'max-md:hidden' : ''" data-campaigns-desk>
       <OperatorTable
         :data="pageRules"
         :columns="campaignColumns"
@@ -870,11 +897,12 @@ useHead({ title: "Campanhas" });
           </nav>
         </template>
       </OperatorTable>
+      </div>
     </section>
 
     <MarketingWorkspaceDialog
       :open="panelOpen"
-      :title="editing ? 'Editar campanha' : 'Nova campanha'"
+      :title="dialogTitle"
       description="Um evento da padaria vira um anúncio para as pessoas certas. Configure cada destino e confira as composições antes de salvar."
       @update:open="
         (v) => {

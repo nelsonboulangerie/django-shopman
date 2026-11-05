@@ -14,7 +14,9 @@ const VARIABLE_LABELS: Record<string, string> = {
 };
 
 export function marketingVariableLabel(variable: string): string {
-  return VARIABLE_LABELS[variable] ?? "Dado disponível";
+  // Variável fora da lista não é "dado disponível": é erro no texto, e a lista
+  // diz isso em vez de esconder (beta 05/11, ge:MKT-13).
+  return VARIABLE_LABELS[variable] ?? "Variável desconhecida";
 }
 
 export function marketingTemplateSummary(body: string): string {

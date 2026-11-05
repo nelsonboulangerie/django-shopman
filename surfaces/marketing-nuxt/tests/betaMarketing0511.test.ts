@@ -1,4 +1,5 @@
 // Achados do beta test de 05/11/2026 na frente do Marketing, travados na camada pura.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { reviewCapabilityBlock } from "~/presentation/marketingResult";
 import { quietHoursOutlastDeadline } from "~/utils/marketingSchedule";

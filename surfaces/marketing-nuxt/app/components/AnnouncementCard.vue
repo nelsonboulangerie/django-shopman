@@ -857,7 +857,13 @@ defineExpose({
             :data-review-platform="option.value"
           >
             <Icon :name="platformIcon(option.value)" class="size-5 shrink-0" aria-hidden="true" />
-            <span class="min-w-0 flex-1 leading-tight">
+            <!-- A linha inteira liga e desliga: a chave sozinha tinha 36x20 no celular,
+                 abaixo do alvo de toque (beta 05/11, ge:MKT-26). -->
+            <label
+              :for="`review-platform-${announcement.pk}-${option.value}`"
+              class="min-w-0 flex-1 cursor-pointer py-1 leading-tight"
+              data-review-platform-label
+            >
               <span class="text-base">{{ rowLabel(option) }}</span>
               <span v-if="rowKind(option)" class="ml-1.5 text-sm text-muted-foreground">{{ rowKind(option) }}</span>
               <span
@@ -865,8 +871,9 @@ defineExpose({
                 class="block text-xs font-medium"
                 :class="readinessNote(option).tone === 'blocked' ? 'text-error' : 'text-warning'"
               >{{ readinessNote(option).badge }}</span>
-            </span>
+            </label>
             <NuxtSwitch
+              :id="`review-platform-${announcement.pk}-${option.value}`"
               :model-value="platforms.includes(option.value)"
               :aria-label="`${platforms.includes(option.value) ? 'Tirar' : 'Pôr'} ${rowLabel(option)}`"
               @update:model-value="togglePlatform(option.value)"
