@@ -383,7 +383,19 @@ function menuDotSize(size: string): ChipProps["size"] {
             :class="isCollapsed ? 'flex-col items-center' : 'flex-row items-center'"
           >
             <ClientOnly><OperatorInbox placement="rail" /></ClientOnly>
-            <NuxtPopover v-if="operatorName" :content="{ side: 'right', align: 'end' }">
+            <!-- Na mesa o menu abre ao lado do rail; na gaveta do celular (abaixo de lg)
+                 abre para cima, dentro da tela, com a largura dela no máximo. Era
+                 `side: right` nos dois, e no celular o menu ia até x=584 numa tela de 375
+                 (beta 05/11, CEN-08 e CEN-03 da rodada gestor). -->
+            <NuxtPopover
+              v-if="operatorName"
+              :content="{
+                side: isDesktop ? 'right' : 'top',
+                align: isDesktop ? 'end' : 'start',
+                collisionPadding: 16,
+              }"
+              :ui="{ content: 'w-72 max-w-[calc(100vw-2rem)]' }"
+            >
               <NuxtButton
                 color="neutral"
                 variant="soft"
@@ -396,6 +408,7 @@ function menuDotSize(size: string): ChipProps["size"] {
               <template #content>
                 <OperatorMenuItems
                   mode="rail"
+                  :rail-hidable="isDesktop"
                   :operator-name="operatorName"
                   @lock="emit('lock')"
                   @hide="setRail('hidden')"

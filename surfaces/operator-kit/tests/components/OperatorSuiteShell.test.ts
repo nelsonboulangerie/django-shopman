@@ -14,6 +14,7 @@ import { defineComponent, h, nextTick, type VueWrapper } from "vue";
 
 import DashboardSidebar from "@nuxt/ui/components/DashboardSidebar.vue";
 import NavigationMenu from "@nuxt/ui/components/NavigationMenu.vue";
+import Popover from "@nuxt/ui/components/Popover.vue";
 import OperatorPageHeader from "../../app/components/OperatorPageHeader.vue";
 import OperatorSuiteShell from "../../app/components/OperatorSuiteShell.vue";
 import type { OperatorSection } from "../../app/presentation/appBar";
@@ -249,6 +250,34 @@ describe("OperatorSuiteShell: o que o shell já fazia", () => {
     await footer.get("[data-rail-lock]").trigger("click");
     expect(wrapper.findComponent(OperatorSuiteShell).emitted("lock")).toHaveLength(1);
     expect(footer.find("[data-suite-rail-menu]").exists()).toBe(true);
+  });
+
+  it("o menu do operador cabe na tela do celular (beta 05/11, CEN-08)", async () => {
+    // Na mesa: ao lado do rail.
+    const desk = await mountShell();
+    const deskMenu = desk
+      .findAllComponents(Popover)
+      .find((popover) => popover.find("[data-suite-rail-menu]").exists())!;
+    expect(deskMenu.props("content")).toMatchObject({ side: "right", collisionPadding: 16 });
+
+    // No celular (gaveta): para cima, dentro da tela, nunca mais largo que ela.
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: /max-width/.test(query),
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }));
+    const phone = await mountShell();
+    await settle();
+    const phoneMenu = phone
+      .findAllComponents(Popover)
+      .find((popover) => popover.find("[data-suite-rail-menu]").exists())!;
+    expect(phoneMenu.props("content")).toMatchObject({ side: "top", collisionPadding: 16 });
+    expect(phoneMenu.props("ui")).toMatchObject({ content: expect.stringContaining("max-w-[calc(100vw-2rem)]") });
   });
 
   it("sem operador, sem Bloquear e sem menu do operador", async () => {

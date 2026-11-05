@@ -127,6 +127,36 @@ describe("OperatorPageHeader: o lugar do aviso da tela", () => {
     expect(document.querySelector("[data-page-header-alerts-more]")).toBeNull();
   });
 
+  it("o selo do posto vira ícone abaixo de xl e não quebra em duas linhas (beta 05/11, PDV2-17)", async () => {
+    useNuxtData("operator-session").data.value = {
+      workstation: { context_label: "Posto PDV principal" },
+    };
+    try {
+      mounted = await mountSuspended(OperatorPageHeader, {
+        attachTo: document.body,
+        props: { title: "Encomendas", search: false, inbox: false },
+      });
+      const full = document.querySelector<HTMLElement>("[data-page-header-eyebrow]")!;
+      expect(full.textContent).toContain("Posto PDV principal · este dispositivo");
+      expect(full.className).toContain("max-xl:hidden");
+      expect(full.className).toContain("whitespace-nowrap");
+      const icon = document.querySelector<HTMLElement>("[data-page-header-eyebrow-icon]")!;
+      expect(icon.className).toContain("xl:hidden");
+      expect(icon.getAttribute("aria-label")).toBe("Posto PDV principal · este dispositivo");
+    } finally {
+      useNuxtData("operator-session").data.value = undefined;
+    }
+  });
+
+  it("o eyebrow que a tela declara fica escrito (é o assunto dela)", async () => {
+    mounted = await mountSuspended(OperatorPageHeader, {
+      attachTo: document.body,
+      props: { title: "Croissant", eyebrow: "Rascunho · Versão 3", search: false, inbox: false },
+    });
+    expect(document.querySelector("[data-page-header-eyebrow]")?.className).toContain("max-sm:hidden");
+    expect(document.querySelector("[data-page-header-eyebrow-icon]")).toBeNull();
+  });
+
   it("sem avisos, nenhuma faixa", async () => {
     mounted = await mountSuspended(OperatorPageHeader, {
       attachTo: document.body,

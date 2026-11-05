@@ -24,7 +24,13 @@ const props = withDefaults(defineProps<{
   operatorName?: string;
   /** `rail`: com "Ocultar a barra lateral". `phone`: com Bloquear. */
   mode: "rail" | "phone";
-}>(), { operatorName: undefined });
+  /**
+   * Há barra lateral para ocultar? Na gaveta do celular o menu é o mesmo do rail, mas
+   * não há barra lateral nenhuma, e o item oferecia esconder o que não existe
+   * (beta 05/11, CEN-08).
+   */
+  railHidable?: boolean;
+}>(), { operatorName: undefined, railHidable: true });
 
 const emit = defineEmits<{ lock: []; hide: [] }>();
 
@@ -96,7 +102,7 @@ const { run: toggleOrientation, pending: orientationPending } = usePendingAction
     </ClientOnly>
 
     <NuxtButton
-      v-if="props.mode === 'rail'"
+      v-if="props.mode === 'rail' && props.railHidable"
       block
       class="justify-start"
       color="neutral"
@@ -108,10 +114,12 @@ const { run: toggleOrientation, pending: orientationPending } = usePendingAction
     />
 
     <!-- Capacidade do serviço: o estado escrito, sempre com o número. Quando passa do
-         limite, ela também entra na caixa de Avisos. -->
+         limite, ela também entra na caixa de Avisos. Sem leitura, nada: "Este ambiente
+         não informa a capacidade" é nota de engenheiro, não informação para quem opera
+         (beta 05/11, CEN-08 da rodada gestor). -->
     <ClientOnly>
       <div
-        v-if="authorized && reading"
+        v-if="authorized && reading?.available"
         class="mt-1 px-2.5 pt-2 pb-1"
         data-operator-menu-capacity
         :data-capacity-level="level"

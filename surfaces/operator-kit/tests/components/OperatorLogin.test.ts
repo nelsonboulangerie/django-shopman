@@ -39,6 +39,14 @@ afterEach(() => {
 });
 
 describe("OperatorLogin", () => {
+  it("a página de login ocupa a largura do pai flex e centraliza o cartão (beta 05/11, CEN-09)", async () => {
+    const wrapper = await mountLogin({ mode: "page" });
+    const page = wrapper.get("[data-operator-login-page]");
+    expect(page.classes()).toEqual(
+      expect.arrayContaining(["w-full", "flex-1", "place-items-center"]),
+    );
+  });
+
   it("abre com foco em Usuário, campos acessíveis e submit bloqueado", async () => {
     const wrapper = await mountLogin();
     const form = wrapper.getComponent(OperatorLoginForm);
