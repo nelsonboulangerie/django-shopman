@@ -43,7 +43,6 @@ function optimisticLine (meta: ProductMutationMeta, qty: number): CartItemProjec
     price_display: meta.price_display,
     total_display: formatCentavos(meta.price_q * qty),
     image_url: meta.image_url,
-    original_price_display: null,
     discount_label: null,
     is_available: true,
     availability_warning: null,
