@@ -93,6 +93,8 @@ describe("OperatorReasonDialog", () => {
     const w = await mount({ keyedReasons, presets: groups });
     expect(document.querySelector("[data-reason-preset]")).toBeNull();
     expect(document.querySelector("[data-reason-preview]")).toBeNull();
+    // O lugar da frase já está reservado e diz o que falta (PDV2-19/PDV2-21).
+    expect(dom("[data-reason-preview-pending]").text()).toContain("Escolha o motivo acima para ver a frase.");
     expect(document.body.textContent).toContain("Observação interna (opcional)");
     expect(document.body.textContent).toContain("O cliente não vê.");
     // Sem motivo escolhido, nem com observação digitada o Cancelar acende.
@@ -102,6 +104,7 @@ describe("OperatorReasonDialog", () => {
     radio.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(dom("[data-reason-preview]").text()).toContain("Um dos itens acabou.");
+    expect(document.querySelector("[data-reason-preview-pending]")).toBeNull();
     expect(dom("[data-reason-confirm]").attributes("disabled")).toBeUndefined();
     await dom("[data-reason-confirm]").trigger("click");
     expect(w.emitted("confirm")).toEqual([[{ reason: "Faltou farinha", code: "", key: "out_of_stock" }]]);

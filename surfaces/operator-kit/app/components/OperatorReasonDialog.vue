@@ -251,14 +251,17 @@ function submit() {
             :legend="reasonLabel"
             data-reason-keyed
           />
+          <!-- O lugar da frase existe desde o início (beta test de 05/11/2026, PDV2-19 e
+               PDV2-21): ao escolher o motivo ela não empurra o botão para baixo do dedo,
+               e antes da escolha diz o que falta em vez de o botão apagado ficar mudo. -->
           <NuxtAlert
-            v-if="pickedKeyed"
-            color="info"
+            :color="pickedKeyed ? 'info' : 'neutral'"
             variant="subtle"
             icon="i-lucide-message-circle"
             title="O cliente vai ler"
-            :description="pickedKeyed.customer_text"
-            data-reason-preview
+            :description="pickedKeyed ? pickedKeyed.customer_text : 'Escolha o motivo acima para ver a frase.'"
+            :data-reason-preview="pickedKeyed ? '' : undefined"
+            :data-reason-preview-pending="pickedKeyed ? undefined : ''"
           />
           <NuxtFormField
             label="Observação interna (opcional)"
