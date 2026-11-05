@@ -2,10 +2,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  anomalyLabels,
   badgeCount,
+  canReportNotMe,
+  inboxLayout,
   isHighlighted,
   isSignIn,
+  routineSignInsLabel,
   signInSummary,
   unreadOf,
 } from "../app/presentation/notifications";
@@ -35,20 +37,6 @@ describe("isHighlighted", () => {
   it("o acesso de rotina não se destaca — senão nada se destaca", () => {
     expect(isHighlighted({ action_data: { highlight: false } })).toBe(false);
     expect(isHighlighted({ action_data: {} })).toBe(false);
-  });
-});
-
-describe("anomalyLabels", () => {
-  it("lê os códigos que o backend mandou", () => {
-    expect(anomalyLabels({ action_data: { anomalies: ["badge", "burst"] } })).toEqual([
-      "badge",
-      "burst",
-    ]);
-  });
-
-  it("payload torto não quebra a lista", () => {
-    expect(anomalyLabels({ action_data: { anomalies: "badge" } })).toEqual([]);
-    expect(anomalyLabels({ action_data: {} })).toEqual([]);
   });
 });
 
@@ -99,5 +87,33 @@ describe("unreadOf", () => {
     expect(unreadOf({})).toBe(0);
     expect(unreadOf({ unread_count: -2 })).toBe(0);
     expect(unreadOf({ unread_count: 4 })).toBe(4);
+  });
+});
+
+// Beta 05/11 (CEN-01): 28 "Sua conta foi usada" antes dos 2 lotes da Qualidade.
+describe("inboxLayout", () => {
+  const access = (pk: number, highlight = false) =>
+    ({ pk, category: "sign_in", action_data: { highlight }, is_actionable: true }) as never;
+  const lote = { pk: 99, category: "production", action_data: {}, is_actionable: false } as never;
+
+  it("a operação vem antes dos acessos", () => {
+    const layout = inboxLayout([access(1), access(2), lote]);
+    expect(layout.operation.map((n: { pk: number }) => n.pk)).toEqual([99]);
+    expect(layout.signIns.map((n: { pk: number }) => n.pk)).toEqual([1, 2]);
+    expect(layout.routine).toEqual([]);
+  });
+
+  it("acessos de rotina em quantidade viram uma linha; o suspeito continua inteiro", () => {
+    const layout = inboxLayout([access(1), access(2, true), access(3), access(4), lote]);
+    expect(layout.signIns.map((n: { pk: number }) => n.pk)).toEqual([2]);
+    expect(layout.routine.map((n: { pk: number }) => n.pk)).toEqual([1, 3, 4]);
+    expect(routineSignInsLabel(3)).toBe("3 acessos seus sem nada fora do comum");
+    expect(routineSignInsLabel(1)).toBe("1 acesso seu sem nada fora do comum");
+  });
+
+  it("'Não fui eu' só sobre acesso que aconteceu", () => {
+    expect(canReportNotMe({ category: "sign_in", is_actionable: true })).toBe(true);
+    expect(canReportNotMe({ category: "sign_in", is_actionable: false })).toBe(false);
+    expect(canReportNotMe({ category: "production", is_actionable: true })).toBe(false);
   });
 });

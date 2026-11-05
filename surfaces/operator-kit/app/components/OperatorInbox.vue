@@ -16,8 +16,10 @@ import {
   capacitySummary,
 } from "../presentation/capacity";
 import {
-  anomalyLabels,
+  canReportNotMe,
+  inboxLayout,
   isHighlighted,
+  routineSignInsLabel,
   signInSummary,
 } from "../presentation/notifications";
 import {
@@ -50,7 +52,10 @@ const {
   error,
   signInError,
   refresh,
+  markAllRead,
+  notMe,
 } = useNotifications();
+const confirm = useConfirm();
 const { reading, authorized, stale } = useOperatorCapacity();
 const sharedCapacity = useSharedCapacity();
 sharedCapacity.value = { reading, authorized, stale };
@@ -90,6 +95,34 @@ function openNotification(item: UserNotification) {
   if (!item.is_read) void markRead(item.pk);
 }
 
+// A caixa pessoal na ordem de quem lê: operação primeiro, acessos de rotina numa linha
+// só quando são muitos (beta 05/11, CEN-01).
+const layout = computed(() => inboxLayout(items.value));
+const routineOpen = ref(false);
+const visibleItems = computed(() => [
+  ...layout.value.operation,
+  ...layout.value.signIns,
+  ...(routineOpen.value ? layout.value.routine : []),
+]);
+const { run: readAll, pending: readAllPending } = usePendingAction(() => markAllRead());
+
+// "Não fui eu": o servidor descreve o que vai acontecer, a pessoa confirma, e só então
+// as sessões da conta caem (a ação mora no backend desde sempre; faltava o botão).
+const { run: reportNotMe, pending: notMePending } = usePendingAction(async (item: UserNotification) => {
+  const first = await notMe(item.pk, false);
+  if (first === "done" || first === "failed") return;
+  const ok = await confirm({
+    title: "Encerrar os acessos da sua conta?",
+    description: first.needsConfirmation,
+    confirmLabel: "Encerrar os acessos",
+    cancelLabel: "Manter os acessos",
+  });
+  if (!ok) return;
+  if ((await notMe(item.pk, true)) === "done") {
+    useSonner.success("Acessos encerrados. Nos outros dispositivos, entre de novo.");
+  }
+});
+
 const open = ref(false);
 const tab = ref<"operation" | "personal">("operation");
 const personalView = ref<"inbox" | "signIns">("inbox");
@@ -97,6 +130,7 @@ function onOpen(next: boolean) {
   open.value = next;
   if (!next) return;
   personalView.value = "inbox";
+  routineOpen.value = false;
   tab.value =
     hasOperation.value && (operationCount.value > 0 || unread.value === 0)
       ? "operation"
@@ -299,8 +333,19 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
             icon="i-lucide-bell-off"
             title="Nada por aqui"
           />
+          <NuxtButton
+            v-if="unread > 0"
+            class="justify-self-end"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-check-check"
+            label="Marcar todas como lidas"
+            :loading="readAllPending"
+            data-notifications-read-all
+            @click="readAll()"
+          />
           <NuxtAlert
-            v-for="item in items"
+            v-for="item in visibleItems"
             :key="item.pk"
             :color="isHighlighted(item) ? 'warning' : 'neutral'"
             variant="subtle"
@@ -309,6 +354,7 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
             "
             :title="item.title"
             :description="`${item.message} · ${item.created_at_display}`"
+            :ui="{ description: 'whitespace-pre-line' }"
             data-notification-item
             :data-highlight="isHighlighted(item) ? 'true' : undefined"
           >
@@ -326,6 +372,16 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
                 @click="openNotification(item)"
               />
               <NuxtButton
+                v-if="canReportNotMe(item)"
+                :color="isHighlighted(item) ? 'warning' : 'neutral'"
+                :variant="isHighlighted(item) ? 'solid' : 'outline'"
+                label="Não fui eu"
+                :loading="notMePending"
+                :disabled="notMePending"
+                data-notification-not-me
+                @click="reportNotMe(item)"
+              />
+              <NuxtButton
                 v-if="!item.is_read"
                 :color="isHighlighted(item) ? 'warning' : 'neutral'"
                 variant="outline"
@@ -334,12 +390,18 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
               />
             </template>
           </NuxtAlert>
-          <span
-            v-for="item in items"
-            :key="`a11y-${item.pk}`"
-            class="sr-only"
-            >{{ anomalyLabels(item).join("; ") }}</span
-          >
+          <NuxtButton
+            v-if="layout.routine.length"
+            block
+            class="justify-start"
+            color="neutral"
+            variant="soft"
+            :icon="routineOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+            :label="routineSignInsLabel(layout.routine.length)"
+            :aria-expanded="routineOpen"
+            data-notifications-routine
+            @click="routineOpen = !routineOpen"
+          />
           <NuxtButton
             color="neutral"
             variant="ghost"
@@ -373,8 +435,14 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
                 @click="loadSignIns"
             /></template>
           </NuxtAlert>
+          <!-- Lendo, a lista não está vazia: está chegando (beta 05/11, CEN-13). -->
           <NuxtEmpty
-            v-if="!signIns.length && !signInError"
+            v-if="signInsPending && !signIns.length"
+            loading
+            title="Carregando seus acessos"
+          />
+          <NuxtEmpty
+            v-else-if="!signIns.length && !signInError"
             icon="i-lucide-history"
             title="Nenhum acesso registrado"
           />
