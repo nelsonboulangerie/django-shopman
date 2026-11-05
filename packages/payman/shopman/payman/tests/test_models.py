@@ -27,7 +27,7 @@ class PaymentIntentCreationTests(TestCase):
         intent = PaymentIntent.objects.create(
             ref="PAY-002", order_ref="ORD-002", method="card", amount_q=1500,
         )
-        self.assertEqual(str(intent), "PAY-002 (card/pending)")
+        self.assertEqual(str(intent), "PAY-002 (Cartão)")
 
     def test_ref_unique(self) -> None:
         PaymentIntent.objects.create(

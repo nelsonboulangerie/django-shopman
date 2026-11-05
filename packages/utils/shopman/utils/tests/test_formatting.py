@@ -1,5 +1,6 @@
 """Tests for shopman.utils.formatting."""
 
+from datetime import UTC
 from decimal import Decimal
 
 from shopman.utils.formatting import format_quantity
@@ -37,3 +38,23 @@ class TestFormatQuantity:
 
     def test_three_decimal_places(self):
         assert format_quantity(Decimal("1.955"), decimal_places=3) == "1.955"
+
+
+class TestFormatLocal:
+    """format_local() converte UTC para a hora da loja antes de formatar (ADM-04)."""
+
+    def test_utc_13h_vira_10h_em_sao_paulo(self, settings):
+        from datetime import datetime
+
+        from shopman.utils.formatting import format_local
+
+        settings.USE_TZ = True
+        settings.TIME_ZONE = "America/Sao_Paulo"
+        instant = datetime(2026, 11, 5, 13, 0, tzinfo=UTC)
+        assert format_local(instant, "%d/%m %H:%M") == "05/11 10:00"
+
+    def test_none_devolve_o_vazio(self):
+        from shopman.utils.formatting import format_local
+
+        assert format_local(None) == "-"
+        assert format_local(None, empty="—") == "—"

@@ -47,6 +47,19 @@ class OperatorAlertAdmin(ModelAdmin):
     list_fullwidth = True
     compressed_fields = True
 
+    def get_queryset(self, request):
+        """Só os alertas do público que a pessoa lê.
+
+        A diferença do caixa (público ``finance``) é do dono: mostrar o esperado
+        ao gerente quebra a contagem cega (dono, 08/10/2026). A régua é a mesma
+        do sino do Gestor, ``visible_alert_audiences``.
+        """
+        from shopman.backstage.services.alerts import visible_alert_audiences
+
+        return super().get_queryset(request).filter(
+            audience__in=visible_alert_audiences(request.user)
+        )
+
     @display(description="severidade")
     def severity_badge(self, obj):
         colors = {"warning": "yellow", "error": "red", "critical": "red"}

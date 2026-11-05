@@ -16,6 +16,9 @@ regra de preço. Ver ADR-019.
 
 from __future__ import annotations
 
+import re
+
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -51,8 +54,8 @@ class Promotion(models.Model):
     value = models.IntegerField(
         "valor",
         help_text=(
-            "Percentual (0-100), valor fixo em centavos, ou — para entrega grátis — "
-            "o teto da renúncia em centavos (0 = frete todo)."
+            "Percentual: de 1 a 100. Valor fixo: o desconto em centavos (1500 = R$ 15,00). "
+            "Entrega grátis: o teto do frete em centavos, ou 0 para o frete inteiro."
         ),
     )
     valid_from = models.DateTimeField("válido de")
@@ -67,7 +70,7 @@ class Promotion(models.Model):
         "coleções",
         default=list,
         blank=True,
-        help_text='Collection refs afetados (vazio = todos). Ex: ["paes-artesanais", "confeitaria"]',
+        help_text='Coleções afetadas (vazio = todas). Ex: ["paes-artesanais", "confeitaria"]',
     )
     min_order_q = models.IntegerField(
         "pedido mínimo (centavos)",
@@ -84,7 +87,7 @@ class Promotion(models.Model):
         "segmentos de cliente",
         default=list,
         blank=True,
-        help_text='Segmentos RFM para targeting (vazio = todos). Ex: ["champions", "loyal"]',
+        help_text='Perfis de compra do cliente que recebem a promoção (vazio = todos). Ex: ["champions", "loyal"]',
     )
     birthday_only = models.BooleanField(
         "apenas aniversariantes",
@@ -121,9 +124,26 @@ class Promotion(models.Model):
         entrega em retirada, então a promoção nunca faria efeito e ninguém saberia por
         quê. Validar na borda é mais barato que investigar depois.
         """
-        from django.core.exceptions import ValidationError
-
         super().clean()
+        errors: dict[str, str] = {}
+        value = self.value
+        if value is not None:
+            if self.type == self.PERCENT and not 1 <= value <= 100:
+                errors["value"] = "Percentual entre 1 e 100."
+            elif self.type == self.FIXED and value < 1:
+                errors["value"] = "Informe um desconto maior que zero."
+            elif self.type == self.FREE_DELIVERY and value < 0:
+                errors["value"] = "O teto do frete não pode ser negativo."
+        if (
+            self.valid_from is not None
+            and self.valid_until is not None
+            and self.valid_until <= self.valid_from
+        ):
+            errors["valid_until"] = "O término precisa ser posterior ao início."
+        if self.min_order_q is not None and self.min_order_q < 0:
+            errors["min_order_q"] = "O pedido mínimo não pode ser negativo."
+        if errors:
+            raise ValidationError(errors)
         if self.type != self.FREE_DELIVERY:
             return
         types = [str(t).strip() for t in (self.fulfillment_types or []) if str(t).strip()]
@@ -144,10 +164,31 @@ class Promotion(models.Model):
         return not refs or channel_ref in refs
 
 
-class Coupon(models.Model):
-    """Cupom — código que ativa uma promoção."""
+#: Mesma régua do cadastro de cupom do Marketing (``backstage/api/marketing.py``).
+COUPON_CODE_PATTERN = re.compile(r"[A-Z0-9][A-Z0-9_-]*")
+COUPON_CODE_ERROR = "Use até 50 letras sem acento, números, hífen ou sublinhado, sem espaços."
 
-    code = models.CharField("código", max_length=50, unique=True, db_index=True)
+
+def normalize_coupon_code(code: str | None) -> str:
+    """O código como a loja o procura: sem espaço nas pontas e em maiúsculas."""
+    return (code or "").strip().upper()
+
+
+class Coupon(models.Model):
+    """Cupom — código que ativa uma promoção.
+
+    O código é guardado em maiúsculas: a loja passa o que o cliente digitou para
+    maiúsculas antes de procurar (``validate_and_apply_coupon``), então um cupom
+    gravado como "natal10" nunca seria encontrado.
+    """
+
+    code = models.CharField(
+        "código",
+        max_length=50,
+        unique=True,
+        db_index=True,
+        help_text="Letras sem acento, números, hífen ou sublinhado. Fica em maiúsculas.",
+    )
     promotion = models.ForeignKey(
         Promotion,
         on_delete=models.CASCADE,
@@ -157,7 +198,7 @@ class Coupon(models.Model):
     max_uses = models.PositiveIntegerField(
         "usos máximos",
         default=0,
-        help_text="0 = ilimitado",
+        help_text="Quantas vezes o cupom pode ser usado. Deixe 0 para não ter limite.",
     )
     uses_count = models.PositiveIntegerField("usos realizados", default=0)
     is_active = models.BooleanField("ativo", default=True)
@@ -168,6 +209,16 @@ class Coupon(models.Model):
 
     def __str__(self):
         return self.code
+
+    def clean(self):
+        super().clean()
+        self.code = normalize_coupon_code(self.code)
+        if not COUPON_CODE_PATTERN.fullmatch(self.code):
+            raise ValidationError({"code": COUPON_CODE_ERROR})
+
+    def save(self, *args, **kwargs):
+        self.code = normalize_coupon_code(self.code)
+        super().save(*args, **kwargs)
 
     @property
     def is_available(self) -> bool:

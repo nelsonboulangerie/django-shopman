@@ -3,8 +3,8 @@
 
 {% block title %}Textos da interface | {{ site_title|default:_('Django site admin') }}{% endblock %}
 
-{# Sem este bloco a página custom perde a marca e o ícone do topo. O
-   `admin/base.html` não os desenha sozinho: cada tela declara, como o dashboard. #}
+{% comment %} Sem este bloco a página custom perde a marca e o ícone do topo. O
+   `admin/base.html` não os desenha sozinho: cada tela declara, como o dashboard. {% endcomment %}
 {% block branding %}
     {% include "unfold/helpers/site_branding.html" %}
 {% endblock %}

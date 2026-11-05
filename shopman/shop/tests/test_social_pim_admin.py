@@ -69,7 +69,7 @@ class TestSocialFormPersistence:
         form = Form(
             data={
                 "sku": product.sku, "name": product.name, "unit": product.unit,
-                "base_price_q": product.base_price_q,
+                "base_price_q": f"{product.base_price_q / 100:.2f}",
                 "availability_policy": product.availability_policy,
                 "is_published": "on", "is_sellable": "on",
                 "social_brand": "Nelson",
@@ -96,7 +96,7 @@ class TestSocialFormPersistence:
         form = Form(
             data={
                 "sku": product.sku, "name": product.name, "unit": product.unit,
-                "base_price_q": product.base_price_q,
+                "base_price_q": f"{product.base_price_q / 100:.2f}",
                 "availability_policy": product.availability_policy,
                 "is_published": "on", "is_sellable": "on",
                 "social_gtin": "123",  # invalid length/checksum

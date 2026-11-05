@@ -24,6 +24,7 @@ from shopman.cashman.models import Entry, Shift, Terminal
 from shopman.cashman.services import ledger
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge, unfold_badge_numeric
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
+from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 from unfold.decorators import display
 
@@ -57,6 +58,28 @@ _PULSE_RESULT_LABELS = {
     "uncertain": "pulso sem confirmação do agente",
 }
 
+#: O meio da venda, como o gestor fala. O payload guarda o código (``cash``,
+#: ``mixed``…); a tela mostrava o código cru (beta test 05/11/2026, ADM-11).
+_SALE_METHOD_LABELS = {
+    "cash": "dinheiro",
+    "credit": "crédito",
+    "debit": "débito",
+    "card": "cartão",
+    "pix": "Pix",
+    "mixed": "pagamento misto",
+    "account": "na conta do cliente",
+    "external": "pago fora do caixa",
+}
+
+#: O resultado da impressão do comprovante (mesmo vocabulário do comprovante do
+#: caixa, ``backstage/projections/cash_receipt.py``).
+_RECEIPT_STATUS_LABELS = {
+    "pending": "comprovante sem confirmação",
+    "printed": "comprovante impresso",
+    "failed": "comprovante falhou",
+    "skipped": "sem impressora",
+}
+
 #: As notas que o backstage escreve no livro com evento conhecido. A chave
 #: ``event`` é o schema (docs/reference/data-schemas.md); o pacote só lê.
 TOLERANCE_EVENT = "cash_tolerance"
@@ -76,7 +99,8 @@ def entry_detail(entry: Entry) -> str:
     if kind == Entry.Kind.SALE:
         received, change = payload.get("received_q"), payload.get("change_q")
         if payload.get("method"):
-            parts.append(str(payload["method"]))
+            method = str(payload["method"])
+            parts.append(_SALE_METHOD_LABELS.get(method, method))
         if received:
             parts.append(f"recebido R$ {format_money(int(received))}")
         if change:
@@ -118,7 +142,8 @@ def entry_detail(entry: Entry) -> str:
     elif kind == Entry.Kind.DRAWER_UNLOCK and payload.get("drawer_raw"):
         parts.append(f"sensor {payload['drawer_raw']}")
     elif kind == Entry.Kind.RECEIPT_RESULT:
-        parts.append(str(payload.get("status") or ""))
+        status = str(payload.get("status") or "")
+        parts.append(_RECEIPT_STATUS_LABELS.get(status, status))
         if payload.get("detail"):
             parts.append(str(payload["detail"]))
     elif kind == Entry.Kind.NOTE and payload.get("text"):
@@ -172,7 +197,7 @@ class EntryInline(BaseTabularInline):
 
     @display(description=_("Quando"))
     def at_display(self, obj):
-        return obj.at.strftime("%d/%m %H:%M")
+        return format_local(obj.at, "%d/%m %H:%M")
 
     @display(description=_("Tipo"))
     def kind_badge(self, obj):

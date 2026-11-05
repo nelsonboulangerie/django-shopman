@@ -25,10 +25,10 @@
     {% endif %}
 
     {% if liberados %}
-      {# O buraco que o desfazer teria em SILÊNCIO. O `undo` devolve o que
+      {% comment %} O buraco que o desfazer teria em SILÊNCIO. O `undo` devolve o que
          migrou pelos PKs do snapshot, e um contato liberado pelo balcão teve o
          PK apagado: ele não volta. Aqui ele volta pelo menos como frase, com o
-         bastante para refazer à mão. #}
+         bastante para refazer à mão. {% endcomment %}
       {% component "unfold/components/text.html" %}
         {{ liberados|length }} contato(s) desta unificação foram LIBERADOS no balcão e não voltam pelo desfazer: {{ liberados|join:"; " }}. Recadastre à mão em {{ source_ref }} se ainda for dele.
       {% endcomponent %}

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from django.db.models import Sum
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +78,15 @@ class DashboardProjection:
 # ── Builder ────────────────────────────────────────────────────────────
 
 
-def build_dashboard() -> DashboardProjection:
-    """Build the admin dashboard projection."""
+def build_dashboard(user=None) -> DashboardProjection:
+    """Build the admin dashboard projection.
+
+    ``user`` recorta os alertas pelo público que ele lê
+    (``visible_alert_audiences``): o financeiro panorâmico, como a diferença do
+    caixa, é só de quem audita o caixa. ``None`` é o sistema (vê tudo).
+    """
     stock_alerts = _stock_alerts()
-    operator_alerts = _operator_alerts()
+    operator_alerts = _operator_alerts(user)
     rating_average, rating_count, rating_low_count, recent_ratings = _customer_ratings()
 
     return DashboardProjection(
@@ -194,15 +200,22 @@ def _customer_ratings() -> tuple[str, int, int, list[RatingRowProjection]]:
     return f"{average:.1f}", len(scores), low_count, rows[:8]
 
 
-def _operator_alerts() -> list[OperatorAlertProjection]:
+def _operator_alerts(user=None) -> list[OperatorAlertProjection]:
     try:
         from django.utils.formats import date_format
 
         from shopman.backstage.models import OperatorAlert
+        from shopman.backstage.services.alerts import visible_alert_audiences
 
         # "Visto" silencia o toque, não cura a causa. O painel só retira o
         # alerta quando o lifecycle grava ``resolved_at``.
-        qs = OperatorAlert.objects.filter(resolved_at__isnull=True).order_by("-created_at")[:20]
+        qs = (
+            OperatorAlert.objects.filter(
+                resolved_at__isnull=True,
+                audience__in=visible_alert_audiences(user),
+            )
+            .order_by("-created_at")[:20]
+        )
         return [
             OperatorAlertProjection(
                 pk=a.id,
@@ -210,7 +223,7 @@ def _operator_alerts() -> list[OperatorAlertProjection]:
                 severity=a.severity,
                 message=a.message,
                 order_ref=a.order_ref or "",
-                created_at_display=date_format(a.created_at, "d/m H:i") if a.created_at else "—",
+                created_at_display=date_format(timezone.localtime(a.created_at), "d/m H:i") if a.created_at else "—",
             )
             for a in qs
         ]

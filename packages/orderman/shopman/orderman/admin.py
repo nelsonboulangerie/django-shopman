@@ -645,7 +645,9 @@ class OrderAdmin(ModelAdmin):
     @display(description=_("total"))
     def total_display(self, obj: Order) -> str:
         if obj.total_q:
-            return f"{obj.currency} {obj.total_q / 100:.2f}"
+            # "BRL 156.00" era o formato do código; a casa lê "R$ 156,00".
+            prefix = "R$" if obj.currency == "BRL" else obj.currency
+            return f"{prefix} {format_money(obj.total_q)}"
         return "-"
 
     @display(description=_("avaliação"))

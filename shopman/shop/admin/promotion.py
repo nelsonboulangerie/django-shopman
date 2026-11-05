@@ -2,13 +2,68 @@
 
 from __future__ import annotations
 
+from django import forms
 from django.contrib import admin, messages
 from django.db import transaction
 from django.utils import timezone
+from shopman.utils.contrib.admin_unfold.money import MoneyReaisField, parse_reais
+from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
+from unfold.widgets import UnfoldAdminTextInputWidget
 
 from shopman.shop.models import Coupon, Promotion
+
+
+class PromotionAdminForm(forms.ModelForm):
+    """Dinheiro em reais na tela; o modelo continua em centavos.
+
+    ``value`` muda de grandeza com o tipo: percentual é número de 1 a 100; valor
+    fixo e teto do frete são dinheiro. Com o inteiro cru, o gestor digitava
+    centavos de cabeça (beta test 05/11/2026, ADM-09).
+    """
+
+    value = forms.CharField(
+        label="valor",
+        widget=UnfoldAdminTextInputWidget(attrs={"inputmode": "decimal"}),
+        help_text=(
+            "Percentual: de 1 a 100. Valor fixo: o desconto em reais, como 15,00. "
+            "Entrega grátis: o teto do frete em reais, ou 0 para o frete inteiro."
+        ),
+    )
+    min_order_q = MoneyReaisField(
+        label="pedido mínimo",
+        required=False,
+        help_text="Em reais. Em branco ou 0,00: sem mínimo.",
+    )
+
+    class Meta:
+        model = Promotion
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        instance = self.instance
+        if instance.pk and instance.value is not None and instance.type != Promotion.PERCENT:
+            self.initial["value"] = format_money(instance.value)
+
+    def clean(self):
+        cleaned = super().clean()
+        raw = str(cleaned.get("value") or "").strip()
+        if raw:
+            if cleaned.get("type") == Promotion.PERCENT:
+                if not raw.isdigit():
+                    self.add_error("value", "Percentual é um número inteiro de 1 a 100.")
+                else:
+                    cleaned["value"] = int(raw)
+            else:
+                try:
+                    cleaned["value"] = parse_reais(raw)
+                except ValueError:
+                    self.add_error("value", "Informe o valor em reais, como 15,00.")
+        if cleaned.get("min_order_q") is None:
+            cleaned["min_order_q"] = 0
+        return cleaned
 
 
 class CouponInline(TabularInline):
@@ -65,6 +120,7 @@ class PromotionStatusFilter(admin.SimpleListFilter):
 
 @admin.register(Promotion)
 class PromotionAdmin(ModelAdmin):
+    form = PromotionAdminForm
     list_display = (
         "name", "value_display", "valid_from", "valid_until",
         "birthday_only", "status_badge",
@@ -126,7 +182,7 @@ class PromotionAdmin(ModelAdmin):
     def value_display(self, obj):
         if obj.type == Promotion.PERCENT:
             return f"{obj.value}%"
-        return f"R$ {obj.value / 100:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"R$ {format_money(obj.value)}"
 
     @display(
         description="situação",

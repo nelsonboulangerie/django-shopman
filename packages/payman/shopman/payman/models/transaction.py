@@ -96,4 +96,6 @@ class PaymentTransaction(models.Model):
         )
 
     def __str__(self) -> str:
-        return f"{self.type} {self.amount_q}q → {self.intent.ref}"
+        from shopman.utils.monetary import format_money
+
+        return f"{self.get_type_display()} R$ {format_money(self.amount_q)} · {self.intent.ref}"

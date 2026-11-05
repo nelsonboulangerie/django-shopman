@@ -22,7 +22,8 @@ from __future__ import annotations
 import unicodedata
 from dataclasses import dataclass, field
 
-from django.urls import NoReverseMatch, reverse
+from django.urls import NoReverseMatch, Resolver404, resolve, reverse
+from django.utils.module_loading import import_string
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,10 @@ class SettingsEntry:
     description: str
     icon: str
     is_custom_page: bool = False
+    #: Tela custom: caminho da view cujo ``permission_required`` é a porta.
+    #: Vazio numa tela custom = qualquer pessoa da equipe abre (a inscrição no
+    #: autenticador é de cada um).
+    view: str = ""
 
     @property
     def url(self) -> str:
@@ -118,6 +123,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
                 description="Toda frase da loja, organizada pela tela onde ela aparece.",
                 icon="format_quote",
                 is_custom_page=True,
+                view="shopman.backstage.admin_console.copy_catalog.CopyCatalogView",
             ),
             _model(
                 "Perguntas frequentes",
@@ -195,12 +201,41 @@ def _matches(entry: SettingsEntry, group: SettingsGroup, needle: str) -> bool:
     return needle in haystack
 
 
-def build_settings_hub(*, q: str = "", slug: str = "") -> dict:
+def _can_open(entry: SettingsEntry, url: str, request) -> bool:
+    """A pessoa deste request abriria esta tela? A porta é quem responde.
+
+    Para changelist, o ``ModelAdmin`` registrado na URL; para tela custom, o
+    ``permission_required`` da view. Mesma régua do menu e do dashboard
+    (``admin.gates``): um cartão que leva a um 403 é porta trancada com placa de
+    aberto (beta test 05/11/2026, ADM-06).
+    """
+    if request is None:
+        return True
+    from shopman.backstage.admin.gates import can_open_view
+
+    if entry.is_custom_page:
+        if not entry.view:
+            return True
+        return can_open_view(request, import_string(entry.view))
+    try:
+        match = resolve(url)
+    except Resolver404:
+        return False
+    model_admin = getattr(match.func, "model_admin", None)
+    if model_admin is None:
+        return True
+    return model_admin.has_view_or_change_permission(request)
+
+
+def build_settings_hub(*, q: str = "", slug: str = "", request=None) -> dict:
     """Monta a tela de Configuração, opcionalmente filtrada por um termo.
 
     Uma entrada que não resolve é omitida com o motivo — o app pode não estar
     instalado neste deployment, e uma grade com link morto seria pior do que uma
     grade menor (foi assim que cinco telas ficaram inalcançáveis por meses).
+
+    Com ``request``, só entra o que a pessoa consegue abrir: a contagem e os
+    cartões são os dela, não os do superusuário.
     """
     needle = _normalize(q.strip())
     groups: list[dict] = []
@@ -218,6 +253,8 @@ def build_settings_hub(*, q: str = "", slug: str = "") -> dict:
                 unavailable.append(entry.label)
                 continue
             if needle and not _matches(entry, group, needle):
+                continue
+            if not _can_open(entry, url, request):
                 continue
             cards.append(
                 {

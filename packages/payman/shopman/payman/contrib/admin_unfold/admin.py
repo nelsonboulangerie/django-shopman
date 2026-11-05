@@ -26,6 +26,7 @@ from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.payman.service import PaymentService
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge, unfold_badge_numeric
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
+from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 from unfold.contrib.filters.admin.choice_filters import ChoicesRadioFilter
 from unfold.decorators import action, display
@@ -100,7 +101,7 @@ _TRANSACTION_COLORS = {
 
 def _format_datetime(dt):
     """Format datetime as DD/MM/AA · HH:MM."""
-    return dt.strftime("%d/%m/%y · %H:%M") if dt else "—"
+    return format_local(dt, "%d/%m/%y · %H:%M", empty="—")
 
 
 # =============================================================================
@@ -212,6 +213,25 @@ class RefundAmountForm(RefundConfirmForm):
         return amount_q
 
 
+def status_label(intent: PaymentIntent) -> str:
+    """O status como o gestor precisa ler.
+
+    No Core, ``refunded`` quer dizer "existe pelo menos um estorno", não "estornado
+    por inteiro" (``PaymentIntent``). O rótulo cru "Reembolsado" num estorno de
+    R$ 1,00 de uma cobrança de R$ 32,00 mentia: aqui o parcial diz quanto voltou.
+    """
+    if intent.status != PaymentIntent.Status.REFUNDED:
+        return str(intent.get_status_display())
+    refunded_q = PaymentService.refunded_total(intent.ref)
+    captured_q = PaymentService.captured_total(intent.ref)
+    if 0 < refunded_q < captured_q:
+        return _("Estornado em parte: R$ %(refunded)s de R$ %(captured)s") % {
+            "refunded": format_money(refunded_q),
+            "captured": format_money(captured_q),
+        }
+    return str(_("Estornado"))
+
+
 def _available_q(object_id) -> int:
     """Capturado menos o já devolvido (estorno e chargeback); zero se a cobrança não existe."""
     intent = PaymentIntent.objects.filter(pk=object_id).first() if object_id else None
@@ -241,8 +261,8 @@ class PaymentIntentAdmin(BaseModelAdmin):
         "ref",
         "order_ref",
         "method",
-        "status",
-        "amount_q",
+        "status_badge",
+        "amount_display",
         "currency",
         "gateway",
         "gateway_id",
@@ -257,7 +277,7 @@ class PaymentIntentAdmin(BaseModelAdmin):
     )
     fieldsets = (
         (_("Identificação"), {"fields": ("ref", "order_ref", "idempotency_key")}),
-        (_("Pagamento"), {"fields": ("method", "status", "amount_q", "currency")}),
+        (_("Pagamento"), {"fields": ("method", "status_badge", "amount_display", "currency")}),
         (_("Gateway"), {"fields": ("gateway", "gateway_id", "gateway_data_display")}),
         (
             _("Datas"),
@@ -433,7 +453,7 @@ class PaymentIntentAdmin(BaseModelAdmin):
     @display(description=_("Status"))
     def status_badge(self, obj):
         color = _STATUS_COLORS.get(obj.status, "base")
-        return unfold_badge(obj.get_status_display().upper(), color)
+        return unfold_badge(status_label(obj).upper(), color)
 
     @display(description=_("Valor"))
     def amount_display(self, obj):
