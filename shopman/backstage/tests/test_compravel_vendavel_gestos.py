@@ -128,6 +128,23 @@ class TestVenderTambem:
         assert _listed(product) == {"pdv"}
         assert ListingItem.objects.get(product=product).price_q == 4500
 
+    def test_religar_com_foto_nao_publica_os_remotos(self, listings, geleia):
+        # Desligar pausa tudo; religar liga o balcão e deixa os remotos para o
+        # Catálogo, como no item novo (CMP-08). Antes o religar publicava a Loja
+        # e o iFood sem a gerente passar pelo Catálogo.
+        geleia.metadata = {**geleia.metadata, "image_url": "https://img.example.com/geleia.jpg"}
+        geleia.save()
+        purchase_service.set_sale(geleia.sku, {"enabled": True, "priceInput": "42"})
+        purchase_service.set_sale(geleia.sku, {"enabled": False})
+        _purchase, message = purchase_service.set_sale(geleia.sku, {"enabled": True, "priceInput": "45"})
+
+        product = Product.objects.get(sku=geleia.sku)
+        assert _listed(product) == {"pdv"}
+        assert not ListingItem.objects.filter(
+            product=product, listing__ref__in=("web", "ifood"), is_published=True,
+        ).exists()
+        assert "pausados até você ligar no Catálogo" in message
+
     def test_produzido_aqui_nao_nasce_do_compras(self, listings):
         levain = Material.objects.create(sku="LEVAIN-LIQUIDO", name="Levain", unit="kg")
         Recipe.objects.create(ref="REC-LEVAIN", name="Levain", output_sku=levain.sku, is_active=True)

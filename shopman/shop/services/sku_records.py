@@ -347,13 +347,14 @@ def start_selling(material, *, price_q: int | None):
                 collection=collection, product=product, is_primary=True,
                 sort_order=(last.sort_order + 1) if last else 0,
             )
-        created = True
     else:
-        created = False
         product.is_sellable = True
         product.base_price_q = price_q
         product.save()
-    sync_sale_listings(product, price_q, reactivate=True, remote_paused=created)
+    # O gesto liga o BALCÃO, nunca o remoto: nem no item novo, nem no religar
+    # (desligar pausou tudo; religar não pode publicar na Loja, no iFood e no
+    # WhatsApp sem a gerente passar pelo Catálogo). O remoto que já vendia segue.
+    sync_sale_listings(product, price_q, reactivate=True, remote_paused=True)
     return product
 
 
