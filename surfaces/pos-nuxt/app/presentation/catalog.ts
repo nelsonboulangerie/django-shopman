@@ -107,6 +107,37 @@ export function isUnavailableProduct(
   return Boolean(productBlockedLabel(product));
 }
 
+/**
+ * A grade da ENCOMENDA PARA OUTRO DIA: o esgotado é o daquele dia, não o de hoje.
+ *
+ * Beta test de 05/11/2026 (PDV2-04). O selo do catálogo é o saldo de AGORA: o
+ * pão que acabou hoje não entrava numa encomenda para amanhã, e o que a grade
+ * deixava entrar o salvamento recusava por falta de saldo na data. O
+ * agendamento traz, para a data escolhida, o que não tem saldo
+ * (`sold_out_skus`), pela régua da reserva; aqui só se aplica.
+ *
+ * Bloqueio com motivo próprio do catálogo (ex.: "Sem caixa") continua valendo:
+ * ele não é saldo do dia. Sem a resposta da data escolhida, a grade fica como
+ * está (o salvamento confere de qualquer jeito).
+ */
+export function productsForOrderDate(
+  products: POSProductProjection[],
+  schedule: { date: string; is_today: boolean; sold_out_skus?: string[] } | null | undefined,
+  deliveryDate: string,
+): POSProductProjection[] {
+  if (!schedule || !deliveryDate || schedule.is_today || schedule.date !== deliveryDate) return products;
+  if (!Array.isArray(schedule.sold_out_skus)) return products;
+  const soldOut = new Set(schedule.sold_out_skus);
+  const [, month = "", day = ""] = deliveryDate.split("-");
+  const reason = `Sem saldo para ${day}/${month}`;
+  return products.map((product) => {
+    if (product.sold_out && product.sold_out_reason) return product;
+    const sold = soldOut.has(product.sku);
+    if (sold === Boolean(product.sold_out) && !sold) return product;
+    return { ...product, sold_out: sold, sold_out_reason: sold ? reason : "" };
+  });
+}
+
 /** Tira os indisponíveis quando `hide` está ligado, e diz quantos saíram. */
 export function hideUnavailableProducts(
   products: POSProductProjection[],

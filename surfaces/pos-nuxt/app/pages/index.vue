@@ -120,6 +120,7 @@ const {
   managerApprovalError,
   managerCheckBusy,
   checkManagerApproval,
+  gridProducts,
   customerFocusNonce,
   result,
   closeGuardNotice,
@@ -1647,7 +1648,7 @@ onBeforeUnmount(() => {
         <PosProductGrid
           v-else
           ref="productGridRef"
-          :products="pos?.products || []"
+          :products="gridProducts"
           :collections="pos?.collections || []"
           :favorite-refs="pos?.favorite_collection_refs || []"
           :cart-items="cart.items"

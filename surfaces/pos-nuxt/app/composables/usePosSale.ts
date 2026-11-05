@@ -41,7 +41,7 @@ import {
   resolvePayment,
   withExpectedTotal,
 } from "~/utils/posIntent";
-import { cartQtyForSku } from "~/presentation/catalog";
+import { cartQtyForSku, productsForOrderDate } from "~/presentation/catalog";
 import { fireRefusalView } from "~/presentation/kitchen";
 import { lineUnits, productBlockedLabel } from "~/presentation/weighed";
 import { hasOptionGroups, lineUnitPriceQ, optionLineName, optionsSignature } from "~/presentation/productOptions";
@@ -1168,6 +1168,9 @@ export function usePosSale(deps: PosSaleDeps) {
     },
   );
 
+  // A grade que o operador vê: na encomenda para outro dia, o esgotado é o
+  // daquele dia (`productsForOrderDate`).
+  const gridProducts = computed(() => productsForOrderDate(pos.value?.products || [], schedule.value, cart.deliveryDate));
   const scheduleToday = computed(() => schedule.value?.today || pos.value?.delivery_today || "");
   const scheduleAvailableDates = computed(() => schedule.value?.available_dates ?? []);
   const scheduleBottleneckName = computed(() => schedule.value?.bottleneck_name || "");
@@ -4365,6 +4368,7 @@ export function usePosSale(deps: PosSaleDeps) {
     managerApprovalError,
     managerCheckBusy,
     checkManagerApproval,
+    gridProducts,
     customerFocusNonce,
     result,
     closeOutcomeUncertain,
