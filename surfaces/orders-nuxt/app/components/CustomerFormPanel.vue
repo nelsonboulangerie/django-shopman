@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
 import OperatorFormShell from "../../../operator-kit/app/components/OperatorFormShell.vue";
 import UiDateField from "../../../operator-kit/app/components/UiDateField.vue";
 import { useDirtyForm } from "../../../operator-kit/app/composables/useDirtyForm";
 import type { CustomerDetailProjection, CustomerFormOptionsProjection } from "~/generated/ordersContract";
 import type { CustomerMutationPayload } from "~/types/customers";
+import type { ContactOwner } from "~/utils/mutationFieldErrors";
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -14,11 +15,15 @@ const props = withDefaults(defineProps<{
   busy?: boolean;
   error?: string;
   fieldErrors?: Record<string, string>;
+  // O dono do telefone ou e-mail recusado ("É de João Oliveira"), para abrir a
+  // ficha dele daqui em vez de procurar à mão (GES-13).
+  contactOwner?: ContactOwner | null;
 }>(), {
   customer: null,
   busy: false,
   error: "",
   fieldErrors: () => ({}),
+  contactOwner: null,
 });
 
 const emit = defineEmits<{
@@ -91,10 +96,12 @@ function reset() {
     birthday: customer?.birthday ?? "",
     phone: customer?.phone ?? "",
     email: customer?.email ?? "",
-    // Cadastro novo nasce no grupo padrão, que a lista de opções traz primeiro.
+    // Cadastro novo nasce só no grupo que a casa marcou como padrão. Sem padrão,
+    // nasce sem grupo: o primeiro da lista é ordem alfabética, e já deu 15% de
+    // desconto calado a todo cadastro feito à mão (beta 05/11, GES-01).
     priceTierRefs: customer
       ? customer.price_tiers.map((tier) => tier.ref)
-      : props.options.price_tiers.slice(0, 1).map((tier) => tier.value),
+      : [...(props.options.default_price_tier_refs ?? [])],
     tagsText: customer?.tags.join(", ") ?? "",
     notes: customer?.notes ?? "",
     houseAccount: customer?.house_account ?? false,
@@ -120,6 +127,28 @@ const primaryGroupRef = computed(() =>
 const primaryGroupName = computed(() =>
   props.options.price_tiers.find((tier) => tier.value === primaryGroupRef.value)?.label ?? ""
 );
+
+// A recusa do servidor vale para o valor que foi enviado: editar o campo apaga a
+// mensagem dele na hora, sem esperar o próximo envio (GES-13).
+const editedSinceRefusal = ref(new Set<string>());
+watch(() => props.fieldErrors, () => { editedSinceRefusal.value = new Set(); });
+// O nome do campo no payload: só as etiquetas mudam de nome entre a tela e o envio.
+const PAYLOAD_KEY: Partial<Record<keyof FormState, string>> = { tagsText: "tags" };
+for (const key of Object.keys(form) as (keyof FormState)[]) {
+  const sent = PAYLOAD_KEY[key] ?? key;
+  watch(() => form[key], () => {
+    if (props.fieldErrors[sent] && !editedSinceRefusal.value.has(sent))
+      editedSinceRefusal.value = new Set([...editedSinceRefusal.value, sent]);
+  }, { deep: true });
+}
+function fieldError(key: string): string | undefined {
+  return editedSinceRefusal.value.has(key) ? undefined : props.fieldErrors[key];
+}
+function ownerFor(key: "phone" | "email"): ContactOwner | null {
+  return props.contactOwner && props.contactOwner.field === key && fieldError(key) ? props.contactOwner : null;
+}
+
+const contactOwnerShown = computed(() => ownerFor("phone") ?? ownerFor("email"));
 
 function togglePriceTier(ref: string, checked: boolean) {
   form.priceTierRefs = checked
@@ -185,19 +214,19 @@ function submit() {
 
     <OperatorFormSection section-key="identity" title="Identidade" description="O CPF/CNPJ é opcional, mas precisa conferir quando informado.">
       <div class="grid gap-3 sm:grid-cols-2">
-        <NuxtFormField label="Nome" required :error="fieldErrors.firstName">
+        <NuxtFormField label="Nome" required :error="fieldError('firstName')">
           <NuxtInput v-model="form.firstName" class="w-full" autofocus data-testid="customer-first-name" />
         </NuxtFormField>
-        <NuxtFormField label="Sobrenome" :error="fieldErrors.lastName">
+        <NuxtFormField label="Sobrenome" :error="fieldError('lastName')">
           <NuxtInput v-model="form.lastName" class="w-full" />
         </NuxtFormField>
-        <NuxtFormField label="Tipo" :error="fieldErrors.customerType">
+        <NuxtFormField label="Tipo" :error="fieldError('customerType')">
           <NuxtSelect v-model="form.customerType" :items="options.customer_types" value-key="value" label-key="label" class="w-full" />
         </NuxtFormField>
-        <NuxtFormField label="CPF ou CNPJ" :error="fieldErrors.document">
+        <NuxtFormField label="CPF ou CNPJ" :error="fieldError('document')">
           <NuxtInput v-model="form.document" inputmode="numeric" class="w-full" />
         </NuxtFormField>
-        <NuxtFormField label="Data de nascimento" :error="fieldErrors.birthday">
+        <NuxtFormField label="Data de nascimento" :error="fieldError('birthday')">
           <UiDateField v-model="form.birthday" label="Data de nascimento" class="w-full" />
         </NuxtFormField>
       </div>
@@ -205,12 +234,21 @@ function submit() {
 
     <OperatorFormSection section-key="contact" title="Contato" description="Telefone e e-mail são normalizados; um contato não pode pertencer a dois cadastros.">
       <div class="grid gap-3 sm:grid-cols-2">
-        <NuxtFormField label="Telefone" :error="fieldErrors.phone">
+        <NuxtFormField label="Telefone" :error="fieldError('phone')">
           <NuxtInput v-model="form.phone" type="tel" inputmode="tel" class="w-full" />
         </NuxtFormField>
-        <NuxtFormField label="E-mail" :error="fieldErrors.email">
+        <NuxtFormField label="E-mail" :error="fieldError('email')">
           <NuxtInput v-model="form.email" type="email" inputmode="email" class="w-full" data-testid="customer-email" />
         </NuxtFormField>
+        <div v-if="contactOwnerShown" class="sm:col-span-2" data-contact-owner>
+          <NuxtButton
+            :to="`/customers/${encodeURIComponent(contactOwnerShown.ref)}`"
+            icon="i-lucide-user-round"
+            :label="`Abrir cadastro de ${contactOwnerShown.name}`"
+            color="neutral"
+            variant="outline"
+          />
+        </div>
       </div>
       <NuxtAlert
         color="info"
@@ -225,8 +263,12 @@ function submit() {
       <div class="grid gap-3 sm:grid-cols-2">
         <NuxtFormField
           label="Grupos comerciais"
-          description="Pode marcar mais de um. Sem nenhum, o cadastro fica com o grupo padrão."
-          :error="fieldErrors.priceTierRefs"
+          :description="
+            options.default_price_tier_refs?.length
+              ? 'Pode marcar mais de um. Sem nenhum, o cadastro fica com o grupo padrão.'
+              : 'Pode marcar mais de um. Sem nenhum, o cadastro fica sem grupo comercial.'
+          "
+          :error="fieldError('priceTierRefs')"
           class="sm:col-span-2"
         >
           <div v-if="options.price_tiers.length" class="grid gap-2 sm:grid-cols-2">
@@ -249,11 +291,11 @@ function submit() {
             Com mais de um grupo, {{ primaryGroupName }} decide o preço.
           </p>
         </NuxtFormField>
-        <NuxtFormField label="Etiquetas" description="Separe por vírgula. Ex.: vizinho, sem glúten." :error="fieldErrors.tags" class="sm:col-span-2">
+        <NuxtFormField label="Etiquetas" description="Separe por vírgula. Ex.: vizinho, sem glúten." :error="fieldError('tags')" class="sm:col-span-2">
           <NuxtInput v-model="form.tagsText" class="w-full" />
         </NuxtFormField>
         <NuxtCheckbox v-model="form.houseAccount" label="Pode comprar em conta" />
-        <NuxtFormField label="Limite da conta (R$)" description="Em branco, sem limite." :error="fieldErrors.houseAccountLimit">
+        <NuxtFormField label="Limite da conta (R$)" description="Em branco, sem limite." :error="fieldError('houseAccountLimit')">
           <NuxtInput v-model="form.houseAccountLimit" inputmode="decimal" :disabled="!form.houseAccount" class="w-full" data-testid="customer-house-limit" />
         </NuxtFormField>
       </div>
@@ -267,7 +309,7 @@ function submit() {
     </OperatorFormSection>
 
     <OperatorFormSection section-key="notes" title="Observações internas" description="Aparecem só para a equipe.">
-      <NuxtFormField :error="fieldErrors.notes">
+      <NuxtFormField :error="fieldError('notes')">
         <NuxtTextarea v-model="form.notes" :rows="4" class="w-full" />
       </NuxtFormField>
     </OperatorFormSection>

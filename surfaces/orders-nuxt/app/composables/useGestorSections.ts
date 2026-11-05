@@ -1,5 +1,6 @@
 import { getCurrentInstance, onBeforeUnmount, onMounted, watch } from "vue";
 import {
+  accessResolved,
   gestorSections,
   gestorSettingsSections,
 } from "~/presentation/gestorSections";
@@ -67,7 +68,7 @@ export function useGestorSections() {
   );
   const operatorId = computed(() => session.value?.operator?.id ?? null);
   // Clientes só para quem pode usar a seção (`shop.manage_customers`, 24/09/2026).
-  const { data: customersAccess } = useFetch<{ authorized?: boolean }>(
+  const { data: customersAccess, status: customersStatus } = useFetch<{ authorized?: boolean }>(
     "/api/v1/backstage/operator/session/",
     {
       key: useOperatorResourceKey("customers-access"),
@@ -77,7 +78,7 @@ export function useGestorSections() {
     },
   );
   // Postos só para quem gere operadores (vincula dispositivos e cadastra postos).
-  const { data: workstationsAccess } = useFetch<{ authorized?: boolean }>(
+  const { data: workstationsAccess, status: workstationsStatus } = useFetch<{ authorized?: boolean }>(
     "/api/v1/backstage/operator/session/",
     {
       key: useOperatorResourceKey("workstations-access"),
@@ -86,7 +87,7 @@ export function useGestorSections() {
       watch: [operatorId],
     },
   );
-  const { data: checklistsAccess } = useFetch<{ authorized?: boolean }>(
+  const { data: checklistsAccess, status: checklistsStatus } = useFetch<{ authorized?: boolean }>(
     "/api/v1/backstage/operator/session/",
     {
       key: useOperatorResourceKey("operation-checklists-access"),
@@ -123,5 +124,13 @@ export function useGestorSections() {
     }
     return route.path === "/" ? (rail.value.exitPost ? "exit" : "orders") : undefined;
   });
-  return { sections, settings, current };
+  // As três perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.
+  const ready = computed(() =>
+    accessResolved([
+      customersStatus.value,
+      workstationsStatus.value,
+      checklistsStatus.value,
+    ]),
+  );
+  return { sections, settings, current, ready };
 }

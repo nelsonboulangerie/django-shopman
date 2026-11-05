@@ -6291,9 +6291,11 @@ class Command(BaseCommand):
         self.stdout.write("  👥 Clientes...")
 
         # Faixas de preço: qual tabela cada cliente enxerga (`PriceTier.listing_ref`).
+        # Varejo é o grupo PADRÃO: é nele que nasce o cadastro sem grupo escolhido
+        # (o formulário do Gestor marca só o padrão, nunca o primeiro da lista).
         varejo, _ = PriceTier.objects.update_or_create(
             ref="varejo",
-            defaults={"name": "Varejo"},
+            defaults={"name": "Varejo", "is_default": True},
         )
         atacado, _ = PriceTier.objects.update_or_create(
             ref="atacado",

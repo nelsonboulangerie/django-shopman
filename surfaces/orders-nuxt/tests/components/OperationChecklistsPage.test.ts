@@ -79,6 +79,8 @@ const board = ref<OperationChecklistBoard>({
   ],
 });
 
+const taskErrors = ref<Record<number, { field: string; message: string }>>({});
+
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("reactive", reactive);
 vi.stubGlobal("useHead", vi.fn());
@@ -90,6 +92,7 @@ vi.stubGlobal("useOperationChecklists", () => ({
   refresh: vi.fn(),
   busy: ref(""),
   message: ref(""),
+  taskErrors,
   start,
   completeTask,
   superviseTask,
@@ -133,5 +136,22 @@ describe("OperationChecklistsPage", () => {
       .findAll("button")
       .find((button) => button.text().includes("Concluir rotina"));
     expect(close?.attributes("disabled")).toBeDefined();
+  });
+
+  it("a recusa da evidência aparece embaixo do campo da tarefa (GES-23)", async () => {
+    taskErrors.value = {
+      9: {
+        field: "evidence_data",
+        message: "Cole o link ou o código da foto para concluir esta tarefa.",
+      },
+    };
+    const wrapper = mount(OperationChecklistsPage, {
+      global: { components: { OperatorPageHeader } },
+    });
+    const photo = wrapper.get('[data-checklist-task="showcase-photo"]');
+    expect(photo.text()).toContain(
+      "Cole o link ou o código da foto para concluir esta tarefa.",
+    );
+    taskErrors.value = {};
   });
 });

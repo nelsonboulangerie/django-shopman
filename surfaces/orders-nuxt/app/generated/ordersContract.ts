@@ -826,10 +826,11 @@ export interface CustomerFormOptionProjection {
   label: string;
 }
 
-/** CustomerFormOptionsProjection(customer_types: 'tuple[CustomerFormOptionProjection, ...]', price_tiers: 'tuple[CustomerFormOptionProjection, ...]') */
+/** CustomerFormOptionsProjection(customer_types: 'tuple[CustomerFormOptionProjection, ...]', price_tiers: 'tuple[CustomerFormOptionProjection, ...]', default_price_tier_refs: 'tuple[str, ...]' = ()) */
 export interface CustomerFormOptionsProjection {
   customer_types: CustomerFormOptionProjection[];
   price_tiers: CustomerFormOptionProjection[];
+  default_price_tier_refs: string[];
 }
 
 /** Um grupo comercial do cliente. O cliente tem MUITOS, e todos precificam. */
@@ -1059,12 +1060,13 @@ export interface MergePreviewProjection {
   actions: Action[];
 }
 
-/** MergeAuditRowProjection(id: 'str', source_ref: 'str', target_ref: 'str', target_name: 'str', actor: 'str', merged_at_display: 'str', status: 'str', status_label: 'str', moved_label: 'str', loyalty_merged: 'bool', can_undo: 'bool', undo_label: 'str') */
+/** MergeAuditRowProjection(id: 'str', source_ref: 'str', target_ref: 'str', target_name: 'str', source_name: 'str', actor: 'str', merged_at_display: 'str', status: 'str', status_label: 'str', moved_label: 'str', loyalty_merged: 'bool', can_undo: 'bool', undo_label: 'str') */
 export interface MergeAuditRowProjection {
   id: string;
   source_ref: string;
   target_ref: string;
   target_name: string;
+  source_name: string;
   actor: string;
   merged_at_display: string;
   status: string;

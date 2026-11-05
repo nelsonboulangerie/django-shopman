@@ -178,13 +178,63 @@ def sells_remotely(product) -> bool:
     return bool(product.image_url) and not is_sold_by_weight(product.unit)
 
 
+#: Os canais remotos que a regra (peso ou falta de foto) pausou, e que voltam
+#: quando a regra deixa de valer. Chave de ``Product.metadata``.
+REMOTE_PAUSE_KEY = "remote_paused_by_rule"
+
+
 def withdraw_from_remote_channels(product) -> list[str]:
-    """Tira o item dos canais remotos. Devolve de quais saiu."""
+    """Pausa o item nos canais remotos. Devolve de quais saiu.
+
+    PAUSA, não apaga (beta 05/11, GES-02): o preço de cada canal e a decisão de
+    publicar são da gerente, e apagar a listagem tirava o item da Loja, do iFood
+    e do WhatsApp para sempre: desmarcar "Vendido por peso" não trazia nada de
+    volta. Os canais que estavam vendendo ficam anotados em
+    ``Product.metadata[REMOTE_PAUSE_KEY]``, e ``restore_remote_channels`` os
+    religa quando a regra deixa de valer. O que já estava pausado à mão não entra
+    na nota: continua pausado.
+    """
     from shopman.offerman.models import ListingItem
 
-    removed = ListingItem.objects.filter(product=product, listing__ref__in=remote_listing_refs())
-    refs = list(removed.values_list("listing__ref", flat=True))
-    removed.delete()
+    live = ListingItem.objects.filter(
+        product=product, listing__ref__in=remote_listing_refs(), is_published=True, is_sellable=True,
+    )
+    items = list(live.select_related("listing"))
+    refs = sorted({item.listing.ref for item in items})
+    if not refs:
+        return []
+    # Um ``save()`` por item: é ele que dispara ``availability_changed`` e o
+    # iFood/Meta ficam sabendo que o item saiu.
+    for item in items:
+        item.is_published = False
+        item.is_sellable = False
+        item.save()
+    metadata = dict(product.metadata or {})
+    metadata[REMOTE_PAUSE_KEY] = sorted(set(metadata.get(REMOTE_PAUSE_KEY) or []) | set(refs))
+    type(product).objects.filter(pk=product.pk).update(metadata=metadata)
+    product.metadata = metadata
+    return refs
+
+
+def restore_remote_channels(product) -> list[str]:
+    """Religa os canais remotos que a regra pausou. Devolve quais voltaram.
+
+    Só volta o que ``withdraw_from_remote_channels`` anotou, e só quando o item
+    vende de longe de novo (``sells_remotely``). Sem a regra, nada muda.
+    """
+    from shopman.offerman.models import ListingItem
+
+    metadata = dict(product.metadata or {})
+    refs = list(metadata.get(REMOTE_PAUSE_KEY) or [])
+    if not refs or not sells_remotely(product):
+        return []
+    for item in ListingItem.objects.filter(product=product, listing__ref__in=refs):
+        item.is_published = True
+        item.is_sellable = True
+        item.save()
+    metadata.pop(REMOTE_PAUSE_KEY, None)
+    type(product).objects.filter(pk=product.pk).update(metadata=metadata)
+    product.metadata = metadata
     return refs
 
 

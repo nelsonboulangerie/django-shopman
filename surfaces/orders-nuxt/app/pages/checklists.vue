@@ -12,6 +12,7 @@ const {
   refresh,
   busy,
   message,
+  taskErrors,
   start,
   completeTask,
   superviseTask,
@@ -51,6 +52,18 @@ function execute(run: OperationChecklistRun, task: OperationChecklistTask) {
         ? { photo_ref: value.evidence_photo.trim() }
         : {},
   });
+}
+
+// "05/11", nunca "2026-11-05" (a data do operador, GES-24).
+const businessDay = computed(() => {
+  const iso = board.value?.business_date ?? "";
+  const [, month, day] = iso.split("-");
+  return month && day ? `${day}/${month}` : "hoje";
+});
+
+/** A recusa da tarefa, embaixo do campo dela (GES-23). */
+function taskError(task: OperationChecklistTask): string | undefined {
+  return taskErrors.value[task.id]?.message;
 }
 
 function canClose(run: OperationChecklistRun) {
@@ -101,7 +114,7 @@ const phoneHeaderActions = computed(() => [
     >
       <div class="mx-auto grid max-w-3xl gap-4">
         <p class="text-sm text-muted-foreground">
-          Abertura, rotina e fechamento de {{ board?.business_date ?? "hoje" }}.
+          Abertura, rotina e fechamento de {{ businessDay }}.
           A configuração e a auditoria permanecem no Admin.
         </p>
 
@@ -243,6 +256,8 @@ const phoneHeaderActions = computed(() => [
                       <NuxtFormField
                         v-if="task.evidence_required === 'text'"
                         label="Evidência"
+                        :error="taskError(task)"
+                        :data-task-error="taskError(task) ? task.id : undefined"
                       >
                         <NuxtInput
                           v-model="draft(task).evidence_text"
@@ -253,6 +268,8 @@ const phoneHeaderActions = computed(() => [
                       <NuxtFormField
                         v-else-if="task.evidence_required === 'number'"
                         label="Valor conferido"
+                        :error="taskError(task)"
+                        :data-task-error="taskError(task) ? task.id : undefined"
                       >
                         <NuxtInput
                           v-model="draft(task).evidence_number"
@@ -265,6 +282,8 @@ const phoneHeaderActions = computed(() => [
                       <NuxtFormField
                         v-else-if="task.evidence_required === 'photo'"
                         label="Foto (link ou referência)"
+                        :error="taskError(task)"
+                        :data-task-error="taskError(task) ? task.id : undefined"
                       >
                         <NuxtInput
                           v-model="draft(task).evidence_photo"
@@ -296,7 +315,7 @@ const phoneHeaderActions = computed(() => [
                           · {{ task.evidence_text }}</template
                         >
                         <template v-if="task.evidence_number">
-                          · {{ task.evidence_number }}</template
+                          · Valor conferido: {{ task.evidence_number }}</template
                         >
                         <template v-if="task.evidence_data.photo_ref">
                           · Foto: {{ task.evidence_data.photo_ref }}</template

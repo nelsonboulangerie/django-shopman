@@ -869,7 +869,7 @@ function switchHint(row: {
           <NuxtBadge
             v-if="awareness?.menu_outages_more"
             color="warning"
-            :label="`+${awareness.menu_outages_more} fora do ar`"
+            :label="`+${awareness.menu_outages_more} ${awareness.menu_outages_more === 1 ? 'produto' : 'produtos'} fora do ar`"
           />
         </div>
         <div

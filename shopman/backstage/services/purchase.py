@@ -1058,6 +1058,13 @@ def set_sale(material_sku: str, payload: dict[str, Any], *, user=None) -> tuple[
         raise PurchaseError(text, code="sale_refused", field=field) from exc
     if is_sold_by_weight(product.unit):
         return build_purchase(), f"{material.name} está à venda por peso, só no balcão."
+    if not product.is_published:
+        # O produto nasce fora da loja online de propósito (``start_selling``):
+        # o aviso conta a mesma história que o Catálogo mostra, "Só no balcão"
+        # (beta 05/11, CMP-08).
+        return build_purchase(), (
+            f"{material.name} está à venda no PDV. Na loja online fica oculto até você publicar no Catálogo."
+        )
     return build_purchase(), f"{material.name} está à venda no PDV."
 
 

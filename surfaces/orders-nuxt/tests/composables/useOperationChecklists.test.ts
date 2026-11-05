@@ -76,4 +76,25 @@ describe("useOperationChecklists", () => {
     expect(await state.completeRun(3)).toBe(false);
     expect(state.message.value).toBe("Tarefas obrigatórias pendentes: Caixa.");
   });
+
+  it("a evidência que faltou fica com a tarefa, não no topo da página (GES-23)", async () => {
+    env.fetchMock.mockRejectedValueOnce({
+      status: 400,
+      data: {
+        detail: "Escreva a evidência para concluir esta tarefa.",
+        field: "evidence_text",
+        errors: { evidence_text: ["Escreva a evidência para concluir esta tarefa."] },
+      },
+    });
+    const state = useOperationChecklists();
+    expect(await state.completeTask(2, 5, { evidence_text: "" })).toBe(false);
+    expect(state.message.value).toBe("");
+    expect(state.taskErrors.value[5]).toEqual({
+      field: "evidence_text",
+      message: "Escreva a evidência para concluir esta tarefa.",
+    });
+    // A nova tentativa limpa a recusa daquela tarefa.
+    await state.completeTask(2, 5, { evidence_text: "Feito" });
+    expect(state.taskErrors.value[5]).toBeUndefined();
+  });
 });

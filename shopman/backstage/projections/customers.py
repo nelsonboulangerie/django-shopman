@@ -21,12 +21,13 @@ Três regras moldam o formato:
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 
 from django.db.models import Count, Q, Value
-from django.db.models.functions import Concat, Lower, Trim
+from django.db.models.functions import Concat, Lower, Replace, Trim
 from django.utils import timezone
 from shopman.utils.monetary import format_money
 
@@ -142,6 +143,10 @@ class CustomerPriceTierProjection:
 class CustomerFormOptionsProjection:
     customer_types: tuple[CustomerFormOptionProjection, ...]
     price_tiers: tuple[CustomerFormOptionProjection, ...]
+    # Os grupos marcados como padrão (``PriceTier.is_default``): é com eles que o
+    # cadastro novo nasce. Vazio quando a casa não marcou nenhum, e aí o formulário
+    # nasce sem grupo; nunca "o primeiro da lista", que é ordem alfabética.
+    default_price_tier_refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -302,6 +307,9 @@ class MergeAuditRowProjection:
     source_ref: str
     target_ref: str
     target_name: str
+    # O nome de quem deixou de existir, para a confirmação e o aviso falarem de
+    # gente e não de código (GES-14).
+    source_name: str
     actor: str
     merged_at_display: str
     status: str
@@ -333,14 +341,13 @@ def _customer_model():
 def build_customer_form_options() -> CustomerFormOptionsProjection:
     from shopman.guestman.models import CustomerType, PriceTier
 
+    tiers = list(PriceTier.objects.order_by("-is_default", "-priority", "name", "ref"))
     return CustomerFormOptionsProjection(
         customer_types=tuple(
             CustomerFormOptionProjection(value=str(value), label=str(label)) for value, label in CustomerType.choices
         ),
-        price_tiers=tuple(
-            CustomerFormOptionProjection(value=tier.ref, label=tier.name)
-            for tier in PriceTier.objects.order_by("-is_default", "-priority", "name", "ref")
-        ),
+        price_tiers=tuple(CustomerFormOptionProjection(value=tier.ref, label=tier.name) for tier in tiers),
+        default_price_tier_refs=tuple(tier.ref for tier in tiers if tier.is_default),
     )
 
 
@@ -457,10 +464,38 @@ def _duplicate_hint(customer, names: set[str], documents: set[str]) -> str:
     return ""
 
 
+# Busca sem acento (GES-12): "joao" acha "João". A dobra é feita no banco por
+# ``Replace`` encadeado, que vale igual no Postgres e no SQLite (o ``LOWER`` do
+# SQLite não conhece letra acentuada, por isso as maiúsculas entram na tabela), e
+# não pede a extensão ``unaccent``.
+_ACCENT_FOLDS = (
+    ("a", "áàâãäÁÀÂÃÄ"),
+    ("e", "éèêëÉÈÊË"),
+    ("i", "íìîïÍÌÎÏ"),
+    ("o", "óòôõöÓÒÔÕÖ"),
+    ("u", "úùûüÚÙÛÜ"),
+    ("c", "çÇ"),
+    ("n", "ñÑ"),
+)
+
+
+def _folded(expression):
+    for plain, accented in _ACCENT_FOLDS:
+        for char in accented:
+            expression = Replace(expression, Value(char), Value(plain))
+    return expression
+
+
+def _fold_text(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
+
+
 def _search_q(query: str) -> Q:
     q = (
         Q(ref__icontains=query)
         | Q(full_name__icontains=query.lower())
+        | Q(full_name_folded__icontains=_fold_text(query))
         | Q(document__icontains=query)
         | Q(phone__icontains=query)
         | Q(email__icontains=query)
@@ -495,7 +530,7 @@ def build_customer_list(
         names, documents = _duplicate_sets()
         qs = qs.filter(Q(full_name__in=names) | Q(document__in=documents))
     if query:
-        qs = qs.filter(_search_q(query))
+        qs = qs.annotate(full_name_folded=_folded(_full_name_expr())).filter(_search_q(query))
     if group_ref:
         # Recorte por grupo: é por aqui que se acha quem tirar de um grupo em lote.
         qs = qs.filter(price_tiers__ref=group_ref)
@@ -783,7 +818,7 @@ def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
         source_label=_source_label(customer),
         is_ifood=_is_ifood(customer),
         created_display=_local(customer.created_at),
-        notes=str(customer.notes or "").strip(),
+        notes=_operator_notes(customer.notes),
         orders_label=_orders_label(stats_count),
         total_spent_display=f"R$ {format_money(int(stats_spent))}" if stats_spent else "",
         last_order_display=_elapsed_label(stats_last),
@@ -898,6 +933,17 @@ def build_merge_preview(source, target, preview) -> MergePreviewProjection:
     )
 
 
+# A marca que a unificação do Core deixa nas observações do doador
+# (``[MERGED] → CUST-X by joyce``). É rastro técnico: quem unificou, quando e para
+# onde já mora na Unificação (``MergeAudit``) e em ``merged_into_ref``, e a ficha
+# mostra isso em português. Nas observações do operador ela não aparece (GES-14).
+_MERGE_MARK = re.compile(r"^\[MERGED\] → \S+ by .*$", re.MULTILINE)
+
+
+def _operator_notes(notes) -> str:
+    return _MERGE_MARK.sub("", str(notes or "")).strip()
+
+
 def _remaining(deadline) -> str:
     seconds = int((deadline - timezone.now()).total_seconds())
     if seconds <= 0:
@@ -912,7 +958,9 @@ def build_merge_audit_list(limit: int = 50) -> MergeAuditListProjection:
     audits = list(MergeAudit.objects.order_by("-merged_at")[:limit])
     full_names = {
         customer.ref: _customer_name(customer)
-        for customer in _customer_model().objects.filter(ref__in={audit.target_ref for audit in audits})
+        for customer in _customer_model().objects.filter(
+            ref__in={audit.target_ref for audit in audits} | {audit.source_ref for audit in audits}
+        )
     }
     status_labels = dict(MergeStatus.choices)
     items = []
@@ -943,6 +991,7 @@ def build_merge_audit_list(limit: int = 50) -> MergeAuditListProjection:
                 source_ref=audit.source_ref,
                 target_ref=audit.target_ref,
                 target_name=full_names.get(audit.target_ref, ""),
+                source_name=full_names.get(audit.source_ref, ""),
                 actor=audit.actor or "",
                 merged_at_display=_local(audit.merged_at),
                 status=str(audit.status),

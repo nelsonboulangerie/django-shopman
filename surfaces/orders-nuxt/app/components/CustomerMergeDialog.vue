@@ -28,7 +28,14 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
-  merged: [payload: { targetRef: string; sourceRef: string }];
+  merged: [
+    payload: {
+      targetRef: string;
+      sourceRef: string;
+      targetName: string;
+      sourceName: string;
+    },
+  ];
 }>();
 
 type Side = MergeCandidateSide & {
@@ -173,9 +180,15 @@ async function confirm() {
       pair.value.source_ref,
       pair.value.target_ref,
     );
+    // O aviso fala de gente, não de código (GES-14): o nome de cada lado vem do
+    // que a tela já mostra (a ficha aberta e o candidato escolhido).
+    const nameOf = (ref: string) =>
+      ref === props.current.ref ? props.current.name : (other.value?.name ?? "");
     emit("merged", {
       targetRef: result.target_ref,
       sourceRef: result.source_ref,
+      targetName: nameOf(result.target_ref),
+      sourceName: nameOf(result.source_ref),
     });
     emit("update:open", false);
   } catch (failure) {

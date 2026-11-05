@@ -22,6 +22,12 @@ import type {
   SkuRoles,
 } from "~/types/catalog";
 import { vocationLabel, vocationOptions } from "~/presentation/vocation";
+import {
+  availabilityRowLabel,
+  availabilitySummary,
+  COUNTER_SURFACES,
+  weighedChannelsNotice,
+} from "~/presentation/catalog";
 import { useIntersectionObserver } from "@vueuse/core";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
@@ -126,7 +132,7 @@ function toggleHidden() {
 }
 function togglePurchaseFromMenu() {
   headerMenuOpen.value = false;
-  emit("set-purchasable", !props.roles?.purchasable);
+  void onPurchaseChange(!props.roles?.purchasable);
 }
 // "Descrição e foto seguem abaixo ⌄": o rodapé aponta o que a Geral ainda guarda
 // abaixo da dobra e leva até lá; some quando o bloco aparece.
@@ -142,6 +148,21 @@ function showBelow() {
 // Vendido por peso = unidade de venda kg (contrato do PDV). Desligar volta a
 // vender por unidade; outra unidade (lt, dz) se escreve no campo Unidade.
 const soldByWeight = computed(() => draft.unit.trim().toLowerCase() === "kg");
+// O aviso ANTES de salvar: de quais canais o item sai, e que volta (GES-02).
+const weighedNotice = computed(() =>
+  weighedChannelsNotice({
+    savedUnit: props.detail?.unit ?? "",
+    draftUnit: draft.unit,
+    remoteChannels: (props.liveAvailability ?? props.detail?.channel_availability ?? [])
+      .filter(
+        (row) =>
+          row.kind === "sale" &&
+          row.state !== "not_listed" &&
+          !COUNTER_SURFACES.has(row.ref),
+      )
+      .map((row) => row.name),
+  }),
+);
 function setSoldByWeight(on: boolean) {
   draft.unit = on ? "kg" : "un";
 }
@@ -149,7 +170,20 @@ function setSoldByWeight(on: boolean) {
 // O interruptor mostra o que o SERVIDOR diz: devolve a marca ao estado atual e
 // deixa o selo novo (ou a recusa) redesenhar. Sem isso a recusa "é produzido
 // aqui" deixaria o quadrado marcado, mentindo.
-function onPurchaseChange(wanted: boolean) {
+async function onPurchaseChange(wanted: boolean) {
+  // Desligar tira o item do Compras: confirma antes (D9), e diz o que fica.
+  if (
+    !wanted &&
+    !(await confirmArchive({
+      tone: "danger" as const,
+      title: `Desligar a compra de ${props.detail?.name ?? "este produto"}?`,
+      description:
+        "O item sai do Compras. Custo e histórico ficam guardados, e Permitir compra traz de volta.",
+      confirmLabel: "Desligar compra",
+      cancelLabel: "Manter compra",
+    }))
+  )
+    return;
   emit("set-purchasable", wanted);
 }
 
@@ -157,24 +191,16 @@ function onPurchaseChange(wanted: boolean) {
 const availability = computed(
   () => props.liveAvailability ?? props.detail?.channel_availability ?? [],
 );
+// Esgotado ou pausado; o canal onde o produto não está não é falta (GES-03).
 const unavailableCount = computed(
-  () => availability.value.filter((row) => row.state !== "available").length,
+  () =>
+    availability.value.filter(
+      (row) => row.state === "sold_out" || row.state === "paused",
+    ).length,
 );
-const availabilityHeadline = computed(() => {
-  const off = availability.value.filter((row) => row.state !== "available");
-  const paused = off.some((row) => row.state === "paused");
-  const since =
-    off
-      .map((row) => row.since)
-      .filter(Boolean)
-      .sort()[0] ?? "";
-  const word = paused ? "Pausado" : "Esgotado";
-  const where =
-    off.length === availability.value.length
-      ? ""
-      : ` em ${off.length} de ${availability.value.length}`;
-  return `${word}${where}${since ? ` desde ${since}` : ""}`;
-});
+const availabilityBadge = computed(() =>
+  availabilitySummary(availability.value),
+);
 function channelIcon(row: { ref: string; kind: string }): string {
   if (row.ref === "ifood") return "lucide:bike";
   if (row.ref === "pdv" || row.ref === "pos" || row.ref === "balcao")
@@ -949,14 +975,9 @@ const sectionClass =
                         Disponibilidade nos canais
                       </h3>
                       <NuxtBadge
-                        v-if="unavailableCount"
-                        color="error"
-                        :label="availabilityHeadline"
-                      />
-                      <NuxtBadge
-                        v-else
-                        color="success"
-                        label="À venda em todos"
+                        :color="availabilityBadge.color"
+                        :label="availabilityBadge.label"
+                        data-panel-availability-badge
                       />
                       <span class="ms-auto op-micro text-muted-foreground"
                         >vale na hora</span
@@ -987,18 +1008,17 @@ const sectionClass =
                       <span class="min-w-0 flex-1 op-micro">
                         <span class="block">
                           <b
-                            v-if="row.state !== 'available'"
+                            v-if="
+                              row.state === 'paused' || row.state === 'sold_out'
+                            "
                             class="font-semibold text-error"
-                            >{{
-                              row.state === "paused"
-                                ? "Pausado"
-                                : row.kind === "display"
-                                  ? "Fora de estoque"
-                                  : "Esgotado"
-                            }}</b
+                            >{{ availabilityRowLabel(row) }}</b
                           >
-                          <span v-else class="text-muted-foreground"
-                            >À venda</span
+                          <span
+                            v-else
+                            class="text-muted-foreground"
+                            :data-panel-channel-state="row.state"
+                            >{{ availabilityRowLabel(row) }}</span
                           >
                           <span
                             v-if="row.back_at"
@@ -1019,13 +1039,18 @@ const sectionClass =
                         <span
                           v-if="
                             row.note ||
-                            (row.automatic && row.state !== 'available')
+                            (row.automatic &&
+                              (row.state === 'paused' ||
+                                row.state === 'sold_out'))
                           "
                           class="mt-0.5 flex flex-wrap items-center gap-1.5 text-muted-foreground"
                           data-panel-channel-note
                         >
                           <NuxtBadge
-                            v-if="row.automatic && row.state !== 'available'"
+                            v-if="
+                              row.automatic &&
+                              (row.state === 'paused' || row.state === 'sold_out')
+                            "
                             color="neutral"
                             icon="i-lucide-sparkles"
                             label="automático"
@@ -1166,16 +1191,17 @@ const sectionClass =
                 @update:model-value="(value) => setSoldByWeight(value === true)"
               />
               <p
-                v-if="soldByWeight"
+                v-if="weighedNotice"
                 class="-mt-2 text-xs text-muted-foreground"
+                data-weighed-notice
               >
-                Vendido só no balcão: o preço final sai da balança.
+                {{ weighedNotice }}
               </p>
 
               <div class="grid grid-cols-2 gap-3">
                 <NuxtFormField
                   :label="soldByWeight ? 'Preço por kg' : 'Preço'"
-                  :error="priceInvalid ? 'Informe um valor válido.' : undefined"
+                  :error="priceInvalid ? 'Informe o preço em reais, como 12,50.' : undefined"
                 >
                   <NuxtInput
                     v-model="draft.priceText"
@@ -1271,21 +1297,39 @@ const sectionClass =
                     É produzido aqui: o estoque entra pela Produção, não pela
                     compra.
                   </p>
-                  <NuxtCheckbox
-                    v-else
-                    :model-value="Boolean(roles?.purchasable)"
-                    :disabled="purchaseBusy || !roles"
-                    label="Permitir compra"
-                    @update:model-value="
-                      (value) => onPurchaseChange(value === true)
-                    "
-                  />
-                  <p
-                    v-if="roles?.purchasable"
-                    class="text-xs text-muted-foreground"
-                  >
-                    Aparece no Compras: recebe nota, tem custo, mínimo e pedido.
-                  </p>
+                  <!-- Gesto na hora, com cara de gesto na hora (GES-20): um quadrado
+                     dentro do rascunho prometia "Descartar" e gravava sem Salvar.
+                     Ligar é botão; desligar é botão com confirmação. -->
+                  <template v-else>
+                    <p
+                      v-if="roles?.purchasable"
+                      class="text-xs text-muted-foreground"
+                    >
+                      Aparece no Compras: recebe nota, tem custo, mínimo e pedido.
+                    </p>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <NuxtButton
+                        type="button"
+                        :icon="
+                          roles?.purchasable
+                            ? 'i-lucide-shopping-cart'
+                            : 'i-lucide-shopping-basket'
+                        "
+                        :label="
+                          roles?.purchasable ? 'Desligar compra' : 'Permitir compra'
+                        "
+                        color="neutral"
+                        variant="outline"
+                        :loading="purchaseBusy"
+                        :disabled="purchaseBusy || !roles"
+                        data-purchase-action
+                        @click="onPurchaseChange(!roles?.purchasable)"
+                      />
+                      <span class="text-xs text-muted-foreground"
+                        >Vale na hora, sem o Salvar.</span
+                      >
+                    </div>
+                  </template>
                 </div>
               </NuxtCard>
 

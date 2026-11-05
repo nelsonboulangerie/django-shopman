@@ -10,7 +10,9 @@ import {
   rowValidities,
   cellSyncView,
   cellView,
+  channelPriceError,
   letterTile,
+  phoneChannelChips,
   rowStatus,
   surfaceDisplayIcon,
   syncBadge,
@@ -199,6 +201,9 @@ const catalogColumns = computed(() => [
     header: surface.short_name,
     meta: {
       label: surface.name,
+      // No celular o canal desce para a linha do produto (pílulas): a tabela de
+      // 1008 px não cabe em 343 px (GES-19).
+      supporting: true,
       class: {
         th: [
           "align-top",
@@ -472,7 +477,8 @@ const collectionTabs = computed(() => [
   {
     label: "Todas",
     value: "",
-    count: matrix.value?.rows?.length ?? rows.value.length,
+    // O catálogo inteiro (a régua das coleções), nunca o tamanho da página (GES-08).
+    count: matrix.value?.all_product_count ?? matrix.value?.total ?? 0,
   },
   ...orderedCollections.value.map((collection) => ({
     label: collection.name,
@@ -1000,6 +1006,11 @@ function keepPrice(cell: SurfaceCellProjection) {
 }
 const isEditing = (sku: string, surface: string) =>
   editing.value?.sku === sku && editing.value?.surface === surface;
+// A recusa do campo de preço do popover, dita no campo (GES-05).
+const priceError = ref("");
+watch(priceInput, () => {
+  priceError.value = "";
+});
 function parseBrl(text: string): number | null {
   const cleaned = text
     .replace(/[^0-9,.-]/g, "")
@@ -1013,6 +1024,8 @@ async function commitPrice(
   cell: SurfaceCellProjection,
 ) {
   if (priceConflict(cell)) return;
+  priceError.value = channelPriceError(priceInput.value);
+  if (priceError.value) return;
   const price_q = parseBrl(priceInput.value);
   if (price_q === null) return;
   if (price_q === cell.price_q) {
@@ -1099,7 +1112,7 @@ async function selectCollection(next: string) {
 }
 let detailRequest = 0;
 const detailRoles = ref<SkuRoles | null>(null);
-async function openDetail(row: CatalogRowProjection, tab = "geral") {
+async function openDetail(row: Pick<CatalogRowProjection, "sku">, tab = "geral") {
   const request = ++detailRequest;
   menuOpen.value = null;
   detailTab.value = tab;
@@ -1132,10 +1145,10 @@ watch(
   [skuFromLink, () => matrix.value?.rows],
   ([sku, rows]) => {
     if (import.meta.server || !sku || !rows) return;
-    const row = rows.find((candidate) => candidate.sku === sku);
-    if (!row) return;
+    // O produto pode não estar NESTA página (ou no recorte): o painel abre pelo
+    // SKU mesmo assim, como a busca global da suíte promete (GES-04).
     skuFromLink.value = "";
-    void openDetail(row, queryText(route.query.tab) || "geral");
+    void openDetail({ sku }, queryText(route.query.tab) || "geral");
   },
   { immediate: true },
 );
@@ -1502,6 +1515,9 @@ async function saveNewProduct(payload: CreateProductPayload) {
         "Produto criado. " + Object.values(enrichment.refused).join(" ");
     }
     createOpen.value = false;
+    // A cópia (ou o produto novo) nasce fora de venda e o painel manda conferir
+    // e publicar: abre direto, sem caçar no Tabelão (GES-04).
+    if (result.product?.sku) void openDetail({ sku: result.product.sku });
   } finally {
     createBusy.value = false;
   }
@@ -2062,7 +2078,17 @@ useHead({ title: "Catálogo" });
                         : 'text-foreground'
                     "
                   >
-                    <span>{{ row.name }}</span>
+                    <!-- O nome abre o produto (GES-25): o ⋯ > Editar detalhes eram dois toques. -->
+                    <NuxtButton
+                      type="button"
+                      variant="link"
+                      color="neutral"
+                      class="p-0 text-start font-medium"
+                      :label="row.name"
+                      :aria-label="`Abrir ${row.name}`"
+                      data-catalog-open
+                      @click.stop="openDetail(row)"
+                    />
                     <NuxtBadge
                       v-if="rowStatuses[row.sku]?.label"
                       :color="
@@ -2120,6 +2146,19 @@ useHead({ title: "Catálogo" });
                       }}</span></template
                     >
                   </span>
+                  <div
+                    v-if="phoneChannelChips(row, surfaces).length"
+                    class="mt-1 flex flex-wrap gap-1 sm:hidden"
+                    data-catalog-phone-channels
+                  >
+                    <NuxtBadge
+                      v-for="chip in phoneChannelChips(row, surfaces)"
+                      :key="chip.ref"
+                      :color="chip.tone"
+                      variant="soft"
+                      :label="chip.label"
+                    />
+                  </div>
                   <div v-if="rowValidities(row, surfaces).length" class="mt-1 flex flex-wrap gap-1">
                     <NuxtBadge v-for="validity in rowValidities(row, surfaces)" :key="validity.label"
                       color="neutral" class="max-w-full whitespace-normal" data-catalog-validity>
@@ -2263,6 +2302,7 @@ useHead({ title: "Catálogo" });
                         <NuxtFormField
                           :label="`Preço · ${surfaceName(cell.surface_ref)}`"
                           :description="`Base do produto: ${row.base_price_display}`"
+                          :error="priceError || undefined"
                         >
                           <NuxtInput
                             v-model="priceInput"
