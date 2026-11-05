@@ -364,7 +364,7 @@ watch(
                 :label="entry.production_mode_label"
               />
               <NuxtBadge v-if="!entry.is_active" color="neutral" label="Arquivada" />
-              <NuxtBadge v-if="!entry.has_ficha && entry.output_sku" color="neutral" label="Ainda não publicada" />
+              <NuxtBadge v-if="entry.ficha_status_label" color="neutral" :label="entry.ficha_status_label" />
               <NuxtBadge
                 v-if="needsReview(entry.review_status)"
                 :color="entry.review_status === 'changed' ? 'warning' : 'neutral'"
