@@ -47,6 +47,7 @@ export const CASH_DIFFERENCE_SIDES: ReadingDivergingLabels = {
   positive: "Sobrou",
   negative: "Faltou",
   zero: "Fechou certo",
+  missing: "Sem turno fechado",
 };
 
 /** O nome do eixo diz o grão: série longa agrega por semana ou por mês. */
@@ -59,11 +60,14 @@ export function cashDifferenceAxis(days: readonly BICashDay[]): string {
 export function cashDifferencePoints(days: readonly BICashDay[]): ReadingChartPoint[] {
   return bucketRows(days).map((bucket) => {
     const sum = (pick: (day: BICashDay) => number) => bucket.rows.reduce((total, day) => total + pick(day), 0);
+    const shifts = sum((day) => day.shifts);
     return {
       label: [bucketLabel(bucket.date, bucket.span), BUCKET_SPAN_LABELS[bucket.span]].filter(Boolean).join(" "),
       values: {
-        difference: reais(sum((day) => day.difference_q)),
-        shifts: sum((day) => day.shifts),
+        // Sem turno fechado no balde não há quebra a dizer: `null` é "sem dado", e só
+        // o turno conferido com diferença zero vira "Fechou certo".
+        difference: shifts > 0 ? reais(sum((day) => day.difference_q)) : null,
+        shifts,
         sangria: reais(sum((day) => day.sangria_q)),
         suprimento: reais(sum((day) => day.suprimento_q)),
       },

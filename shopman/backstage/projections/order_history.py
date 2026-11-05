@@ -120,7 +120,16 @@ class HistoryFilters:
     #: Só os pedidos com este produto. Inclui o balcão: o B.I. conta toda venda do
     #: produto no dia, e o link "Abrir os N pedidos" tem de abrir os mesmos N.
     sku: str = ""
+    #: O eixo do período. ``closed`` (padrão do Histórico) conta pelo dia em que o
+    #: pedido fechou; ``ordered`` pelo dia em que foi feito, o mesmo eixo do B.I.,
+    #: que conta a venda pela hora do pedido. Sem ele, a encomenda feita num dia e
+    #: retirada no outro some do "Abrir os N pedidos".
+    date_basis: str = "closed"
     page: int = 1
+
+
+#: Os eixos aceitos pelo período do Histórico.
+HISTORY_DATE_BASES = ("closed", "ordered")
 
 
 # ── Leitura ───────────────────────────────────────────────────────────
@@ -143,10 +152,13 @@ def _base_queryset(filters: HistoryFilters):
             payment_method=Coalesce(KT("data__payment__method"), Value(""), output_field=TextField()),
             fulfillment=Coalesce(KT("data__fulfillment_type"), KT("data__delivery_method"), Value(""), output_field=TextField()),
         )
-        .filter(
-            closed_at__gte=_day_start(filters.date_from),
-            closed_at__lt=_day_start(filters.date_to + timedelta(days=1)),
-        )
+    )
+    axis = "created_at" if filters.date_basis == "ordered" else "closed_at"
+    qs = qs.filter(
+        **{
+            f"{axis}__gte": _day_start(filters.date_from),
+            f"{axis}__lt": _day_start(filters.date_to + timedelta(days=1)),
+        }
     )
     if filters.sku:
         # Subconsulta, não join: as contagens dos recortes não podem dobrar o

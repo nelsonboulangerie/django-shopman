@@ -64,7 +64,8 @@ const headerActions = [
 const DEFAULT_PERIOD: PeriodSelection = { preset: "day", from: "", to: "" };
 function clearSku() {
   router.replace({
-    query: routeQueryFromHistory({ ...historyQuery.value, sku: "", page: 1 }),
+    // O eixo da data de venda chega junto com o produto (o link do B.I.) e sai com ele.
+    query: routeQueryFromHistory({ ...historyQuery.value, sku: "", basis: "", page: 1 }),
   });
 }
 const activeFilters = computed(() => [

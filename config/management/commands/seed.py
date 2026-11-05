@@ -38,7 +38,7 @@ from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 from shopman.craftsman import STOCK_CONSUMED_KEY, STOCK_REALIZED_KEY
 from shopman.craftsman.models import ProductionMode, Recipe, RecipeItem, WorkOrder, WorkOrderItem
@@ -1184,6 +1184,11 @@ class Command(BaseCommand):
             self._seed_qa_dynamic(products, customers, channels, positions)
         else:
             self._seed_demo_dynamic(products, customers, channels, positions)
+
+        # Pedido que nasce fechado leva o carimbo do fechamento. Sem ele o Histórico
+        # do Gestor (que conta pelo fechamento) cai no `updated_at` e joga a venda
+        # de ontem para hoje (beta 05/11, ge:BI-03).
+        self._stamp_closed_orders()
 
         # DEPOIS da fase dinâmica, de propósito: é `_seed_cash_register` quem recria o
         # `pdv-main` (via `Terminal.default()`) e declara o hardware da casa. A loja
@@ -7591,6 +7596,21 @@ class Command(BaseCommand):
         fire_lines(session_key=session.session_key, lines=lines)
 
         self.stdout.write("  ✅ Comanda qa 00002001 com item disparado à cozinha")
+
+    #: Quanto depois de feito o pedido do seed fecha (o mesmo do evento "completed").
+    SEED_CLOSE_AFTER = timedelta(minutes=15)
+
+    def _stamp_closed_orders(self) -> int:
+        """Carimba ``completed_at``/``cancelled_at`` do pedido fechado que nasceu sem."""
+        stamped = 0
+        for status, field in (
+            (Order.Status.COMPLETED, "completed_at"),
+            (Order.Status.CANCELLED, "cancelled_at"),
+        ):
+            stamped += Order.objects.filter(status=status, **{f"{field}__isnull": True}).update(
+                **{field: F("created_at") + self.SEED_CLOSE_AFTER}
+            )
+        return stamped
 
     def _stamp_order(self, order: Order, created_at: datetime):
         Order.objects.filter(pk=order.pk).update(created_at=created_at, updated_at=created_at)

@@ -84,7 +84,7 @@ const hasHistory = computed(() => (report.value?.historical_days ?? 0) > 0);
 const sourcesNote = computed(() => sourcesCaption(report.value?.sources ?? []));
 const conflicts = computed(() => (report.value?.source_conflicts ?? []).map(sourceConflictLabel));
 const compareCaption = computed(() =>
-  report.value ? rangeCaption(report.value.previous.date_from, report.value.previous.date_to) : "",
+  report.value ? rangeCaption(report.value.previous.date_from, report.value.previous.date_to, bounds.value.today) : "",
 );
 
 // Faturamento por balde, com o traço tracejado do período de comparação.

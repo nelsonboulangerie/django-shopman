@@ -111,6 +111,7 @@ def build_bi_production(
             ).select_related("recipe")
         )
     )
+    work_orders = _counted_in_units(work_orders)
 
     days = _daily_series(work_orders, date_from=date_from, date_to=date_to)
 
@@ -140,7 +141,7 @@ def build_bi_production(
         date_to=date_to.isoformat(),
         days=days,
         oven_time_by_recipe=_oven_rows(runs, wo_by_ref, group="recipe"),
-        oven_time_by_oven=_oven_rows(runs, wo_by_ref, group="oven"),
+        oven_time_by_oven=_oven_rows(runs, wo_by_ref, group="oven", names=_position_names(runs)),
         batches_finished=batches_finished,
         batches_started_assumed=sum(1 for wo in work_orders if _wo_started_assumed(wo)),
         batches_measured=batches_measured,
@@ -149,6 +150,29 @@ def build_bi_production(
         ),
         previous=_production_previous(date_from, date_to),
     )
+
+
+def _counted_in_units(work_orders: list) -> list:
+    """Só os lotes cuja saída se conta em peça: a leitura de produção é em unidades.
+
+    Preparo (massa, levain, autolisada) e produto vendido por peso declaram a saída
+    em massa (``Recipe._declared_output_unit``: o catálogo, ou ``meta.output_unit``
+    do pré-preparo). Somá-los com a peça que vai à vitrine dava "159.758 un." num
+    dia de ~300 (grandezas somadas, beta 05/11, ge:BI-12). Saída sem unidade
+    declarada conta como peça, como sempre contou.
+    """
+    from shopman.utils import units
+
+    by_recipe: dict[int, bool] = {}
+    kept = []
+    for wo in work_orders:
+        counted = by_recipe.get(wo.recipe_id)
+        if counted is None:
+            counted = units.dimension(wo.recipe._declared_output_unit()) in ("", units.COUNT)
+            by_recipe[wo.recipe_id] = counted
+        if counted:
+            kept.append(wo)
+    return kept
 
 
 def _production_previous(date_from: date, date_to: date) -> BIProductionPrevious:
@@ -160,9 +184,10 @@ def _production_previous(date_from: date, date_to: date) -> BIProductionPrevious
             WorkOrder.objects.filter(
                 target_date__range=(prev_from, prev_to),
                 status=WorkOrder.Status.FINISHED,
-            )
+            ).select_related("recipe")
         )
     )
+    work_orders = _counted_in_units(work_orders)
     finished_by_day: dict[date, Decimal] = defaultdict(Decimal)
     started_total = Decimal(0)
     finished_total = Decimal(0)
@@ -206,6 +231,11 @@ def _normalize_window(date_from: date | None, date_to: date | None) -> tuple[dat
     date_from = date_from or date_to - timedelta(days=DEFAULT_WINDOW_DAYS - 1)
     if date_from > date_to:
         date_from, date_to = date_to, date_from
+    # O B.I. lê o que aconteceu; o futuro é da Projeção. Um período depois de hoje
+    # (colado na URL) cai no último dia lido, em vez de responder "nenhuma venda"
+    # como se o dia tivesse passado vazio (ge:BI-14).
+    date_to = min(date_to, today)
+    date_from = min(date_from, date_to)
     if (date_to - date_from).days >= MAX_WINDOW_DAYS:
         date_from = date_to - timedelta(days=MAX_WINDOW_DAYS - 1)
     return date_from, date_to
@@ -298,7 +328,15 @@ def _measured_runs(*, date_from: date, date_to: date, oven_run_model):
     )
 
 
-def _oven_rows(runs, wo_by_ref, *, group: str) -> tuple[BIOvenTimeRow, ...]:
+def _position_names(runs) -> dict[str, str]:
+    """O nome da posição de cada forno: o gestor lê "Forno", não o ref "producao"."""
+    from shopman.stockman.models import Position
+
+    refs = {run.oven_ref for run in runs if run.oven_ref}
+    return dict(Position.objects.filter(ref__in=refs).values_list("ref", "name")) if refs else {}
+
+
+def _oven_rows(runs, wo_by_ref, *, group: str, names: dict[str, str] | None = None) -> tuple[BIOvenTimeRow, ...]:
     grouped: dict[tuple[str, str], list] = defaultdict(list)
     for run in runs:
         wo = wo_by_ref.get(run.work_order_ref)
@@ -310,7 +348,7 @@ def _oven_rows(runs, wo_by_ref, *, group: str) -> tuple[BIOvenTimeRow, ...]:
             oven = run.oven_ref or ""
             if not oven:
                 continue  # sem forno atribuído: a cobertura já declara o buraco
-            key = (oven, oven)
+            key = (oven, (names or {}).get(oven) or oven)
         grouped[key].append(run)
 
     rows = []

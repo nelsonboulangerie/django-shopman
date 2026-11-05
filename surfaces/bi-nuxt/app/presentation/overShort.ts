@@ -381,6 +381,16 @@ export function clientCount(count: number): string {
   return `${formatInt(count)} ${plural(count, "cliente", "clientes")}`;
 }
 
+/**
+ * O link do "Abrir os N pedidos": o Histórico do Gestor naquele dia, só com o produto,
+ * pelo eixo que o B.I. contou (a hora da venda, `basis=ordered`). Sem o eixo o
+ * Histórico conta pelo fechamento e a encomenda retirada no outro dia some.
+ */
+export function overShortOrdersHref(ordersUrl: string, day: string, sku: string): string {
+  const query = new URLSearchParams({ period: "custom", from: day, to: day, sku, basis: "ordered" });
+  return `${ordersUrl}history?${query.toString()}`;
+}
+
 /** "Abrir os 44 pedidos" / "Abrir o pedido". */
 export function ordersLinkLabel(count: number): string {
   return count === 1 ? "Abrir o pedido" : `Abrir os ${formatInt(count)} pedidos`;

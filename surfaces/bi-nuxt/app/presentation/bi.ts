@@ -1,6 +1,7 @@
 // Presentation pura do B.I. — copy pt-BR e formatação; a projection manda os
 // dados crus (centavos `_q`, quantidades string, datas ISO) e AQUI eles viram
 // texto. Números em gráfico usam tokens de texto, nunca a cor da série.
+import { dayMonthIn } from "../../../operator-kit/app/presentation/dates";
 import { readingCsvMoney } from "../../../operator-kit/app/presentation/readingChart";
 
 const moneyFmt = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -117,8 +118,10 @@ export const SALES_COMPARE_LABELS: Record<string, string> = {
 };
 
 /** "08/08 a 04/09". */
-export function rangeCaption(dateFrom: string, dateTo: string): string {
-  return dateFrom === dateTo ? shortDate(dateFrom) : `${shortDate(dateFrom)} a ${shortDate(dateTo)}`;
+export function rangeCaption(dateFrom: string, dateTo: string, today = ""): string {
+  // Com `today`, a ponta de outro ano leva o ano: "05/11/2025" não se lê como hoje.
+  const day = (iso: string) => (today ? dayMonthIn(iso, today) : shortDate(iso));
+  return dateFrom === dateTo ? day(dateFrom) : `${day(dateFrom)} a ${day(dateTo)}`;
 }
 
 /** 0 = segunda (convenção da projection). */
@@ -729,12 +732,15 @@ export function scenarioStatusLabel(report: ScenarioReportLike): string {
 // O título da tela é a pergunta; a primeira coisa abaixo dele é a resposta em uma
 // frase, montada com os números da leitura e a comparação com o período anterior.
 
-/** "8% acima do período anterior", "estável", "" sem base. */
-function comparedToPrevious(current: number, previous: number): string {
+/**
+ * "8% acima do período anterior", "estável contra o mesmo período do ano passado",
+ * "" sem base. A base tem o nome que o seletor "Comparar com" mostrou.
+ */
+function comparedTo(current: number, previous: number, against: string): string {
   if (!previous) return "";
   const pct = Math.round(((current - previous) / Math.abs(previous)) * 100);
-  if (pct === 0) return "estável contra o período anterior";
-  return `${Math.abs(pct)}% ${pct > 0 ? "acima" : "abaixo"} do período anterior`;
+  if (pct === 0) return `estável contra o ${against}`;
+  return `${Math.abs(pct)}% ${pct > 0 ? "acima" : "abaixo"} do ${against}`;
 }
 
 const countOf = (count: number, one: string, many: string) => `${formatInt(count)} ${count === 1 ? one : many}`;
@@ -742,11 +748,15 @@ const countOf = (count: number, one: string, many: string) => `${formatInt(count
 export function salesAnswer(report: {
   orders_total: number;
   revenue_total_q: number;
-  previous: { revenue_total_q: number };
+  compare?: string;
+  previous: { revenue_total_q: number; partial_until?: string };
 }): string {
   if (!report.orders_total) return "Nenhuma venda no período.";
   const base = `${formatMoneyCompact(report.revenue_total_q)} em ${countOf(report.orders_total, "pedido", "pedidos")}`;
-  const versus = comparedToPrevious(report.revenue_total_q, report.previous.revenue_total_q);
+  const against = SALES_COMPARE_LABELS[report.compare ?? "previous"] ?? SALES_COMPARE_LABELS.previous!;
+  // Dia em curso: a base foi cortada na mesma hora, e a frase diz até quando.
+  const until = report.previous.partial_until ? ` até ${report.previous.partial_until}` : "";
+  const versus = comparedTo(report.revenue_total_q, report.previous.revenue_total_q, `${against}${until}`);
   return versus ? `${base}, ${versus}.` : `${base}.`;
 }
 
