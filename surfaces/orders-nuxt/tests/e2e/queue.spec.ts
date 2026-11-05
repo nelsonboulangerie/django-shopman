@@ -43,7 +43,7 @@ test("tablet em pé segue com o quadro em abas (a Fila é do desktop)", async ({
   // as abas do celular, uma etapa por vez (74932fb8f, 07/10/2026).
   await page.setViewportSize({ width: 820, height: 1180 });
   await page.goto("/");
-  await expect(page.getByRole("tab", { name: "Preparo 3" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Preparo 4" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("Ana · Loja online", { exact: true })).toBeVisible();
   await expect(page.locator("[data-board-columns]")).toHaveCount(0);
   await expect(page.locator("[data-queue-view]")).toHaveCount(0);
