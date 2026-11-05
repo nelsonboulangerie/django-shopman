@@ -394,7 +394,6 @@ function menuDotSize(size: string): ChipProps["size"] {
                 align: isDesktop ? 'end' : 'start',
                 collisionPadding: 16,
               }"
-              :ui="{ content: 'w-72 max-w-[calc(100vw-2rem)]' }"
             >
               <NuxtButton
                 color="neutral"
@@ -406,13 +405,17 @@ function menuDotSize(size: string): ChipProps["size"] {
                 data-suite-rail-menu
               />
               <template #content>
-                <OperatorMenuItems
-                  mode="rail"
-                  :rail-hidable="isDesktop"
-                  :operator-name="operatorName"
-                  @lock="emit('lock')"
-                  @hide="setRail('hidden')"
-                />
+                <!-- A largura mora no conteúdo, não num `:ui` por instância (o shell
+                     não leva `:ui`: trava `canonicalPilot.guardrails` do Gestor). -->
+                <div class="w-72 max-w-[calc(100vw-2rem)]" data-suite-rail-menu-content>
+                  <OperatorMenuItems
+                    mode="rail"
+                    :rail-hidable="isDesktop"
+                    :operator-name="operatorName"
+                    @lock="emit('lock')"
+                    @hide="setRail('hidden')"
+                  />
+                </div>
               </template>
             </NuxtPopover>
           </div>

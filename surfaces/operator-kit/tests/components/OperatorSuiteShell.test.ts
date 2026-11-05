@@ -277,7 +277,11 @@ describe("OperatorSuiteShell: o que o shell já fazia", () => {
       .findAllComponents(Popover)
       .find((popover) => popover.find("[data-suite-rail-menu]").exists())!;
     expect(phoneMenu.props("content")).toMatchObject({ side: "top", collisionPadding: 16 });
-    expect(phoneMenu.props("ui")).toMatchObject({ content: expect.stringContaining("max-w-[calc(100vw-2rem)]") });
+    await phone.get("[data-suite-rail-menu]").trigger("click");
+    await settle();
+    const content = document.querySelector<HTMLElement>("[data-suite-rail-menu-content]");
+    expect(content, "o menu do operador abriu").not.toBeNull();
+    expect(content!.className).toContain("max-w-[calc(100vw-2rem)]");
   });
 
   it("sem operador, sem Bloquear e sem menu do operador", async () => {
