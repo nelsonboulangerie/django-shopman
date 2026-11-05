@@ -38,7 +38,7 @@ it("comanda que a cozinha terminou: selo soft \"Tudo pronto\", com o nome inteir
   expect(badges).toHaveLength(1);
   expect(w.find('[data-tab-badge="unpaid"]').attributes("aria-label")).toBe("Não pago");
   const badge = badges[0]!;
-  expect(badge.find("[data-tab-badge-label]").text()).toBe("Tudo pronto");
+  expect(badge.find("[data-tab-badge-label]").text()).toBe("Tudo Pronto");
   expect(badge.attributes("aria-label")).toBe("Tudo pronto");
   expect(badge.attributes("title")).toBe("Tudo pronto: a cozinha terminou tudo desta comanda");
   // Selo é soft (D1, o default do tema do kit), nunca o verde cheio.
@@ -70,8 +70,9 @@ it("todo estado do cartão sai no MESMO selo: NuxtBadge soft, um tamanho, só co
     expect(b.classes()).not.toContain("bg-success");
     expect(b.classes()).not.toContain("bg-warning");
     expect(b.classes()).toContain("text-xs");
-    // Não se corta: o texto é o mesmo do aria, e o ícone fica quando o texto sai.
-    expect(b.find("[data-tab-badge-label]").text()).toBe(b.attributes("aria-label"));
+    // Não se corta: o texto é o mesmo do aria (o selo só põe as iniciais em maiúscula,
+    // regra do kit), e o ícone fica quando o texto sai.
+    expect(b.find("[data-tab-badge-label]").text().toLowerCase()).toBe(b.attributes("aria-label")?.toLowerCase());
     expect(b.attributes("title")?.startsWith(`${b.attributes("aria-label")}: `)).toBe(true);
     expect(b.find("[data-tab-badge-label]").classes()).toEqual(["hidden", "@[9rem]:inline"]);
   }
