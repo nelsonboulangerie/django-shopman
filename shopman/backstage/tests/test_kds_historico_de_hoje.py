@@ -98,7 +98,7 @@ def test_history_line_tells_who_did_what_and_how_long(station, people):
         f"Pronto {hhmm(done)} Rafael (tela)",
     )
     assert entry.prep_display == "9 min"
-    assert entry.items_summary == "2x Croque, 1x Café"
+    assert entry.items_summary == "2× Croque, 1× Café"
     assert entry.state == "done"
     assert entry.can_reopen is True
     assert entry.reopen_block_reason == ""

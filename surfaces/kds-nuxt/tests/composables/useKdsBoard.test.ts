@@ -255,6 +255,33 @@ describe("useKdsBoard — finish com janela de desfazer", () => {
     expect(view.value?.total).toBe(0);
   });
 
+  it("saindo da página, o Pronto sai NA HORA, por fetch keepalive, sem esperar a fila (beta 05/11, KDS-02)", async () => {
+    env.fetchData.value = board({ tickets: [ticket({ pk: 1, status: "pending" }), ticket({ pk: 5 })] });
+    const original = globalThis.fetch;
+    const nativeFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    globalThis.fetch = nativeFetch as unknown as typeof fetch;
+    try {
+      // Um POST anterior ainda em voo na fila serial (o "Iniciar" tocado antes).
+      env.fetchMock.mockReturnValueOnce(new Promise(() => {}));
+      const { start, finish, flushFinishes } = useKdsBoard("bancada");
+      start(1);
+      finish(5);
+      flushFinishes({ unloading: true });
+      // Síncrono: dentro do handler, antes de qualquer microtask.
+      expect(nativeFetch).toHaveBeenCalledWith(
+        "/api/v1/backstage/kds/tickets/5/done/",
+        expect.objectContaining({ method: "POST", keepalive: true, credentials: "same-origin" }),
+      );
+      // A janela fechou: o temporizador não manda de novo.
+      vi.advanceTimersByTime(5000);
+      await flushPromises();
+      expect(nativeFetch).toHaveBeenCalledTimes(1);
+      expect(env.fetchMock).not.toHaveBeenCalledWith("/api/v1/backstage/kds/tickets/5/done/", expect.anything());
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it("recusa do servidor devolve o card ao trabalho e avisa", async () => {
     env.fetchData.value = board();
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "Há item cancelado" } });

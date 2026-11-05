@@ -15,7 +15,7 @@ function entry(over: Partial<KDSHistoryEntryProjection> = {}, ticket: Partial<KD
       ...ticket,
     } as KDSTicketProjection,
     state: "done",
-    items_summary: "2x Croque, 1x Café",
+    items_summary: "2× Croque, 1× Café",
     steps: ["recebido 21:40", "iniciado 21:42 Rafael", "Pronto 21:51 Rafael (tela)"],
     undone: [],
     prep_display: "9 min",
@@ -29,7 +29,7 @@ describe("Histórico de hoje: a linha de cada pedido", () => {
   it("diz o código, os itens, a trilha e o preparo", () => {
     const row = historyRow(entry());
     expect(row.code).toBe("0131");
-    expect(row.items).toBe("2x Croque, 1x Café");
+    expect(row.items).toBe("2× Croque, 1× Café");
     expect(row.trail).toBe("recebido 21:40 · iniciado 21:42 Rafael · Pronto 21:51 Rafael (tela)");
     expect(row.prep).toBe("preparo 9 min");
     expect(row.overline).toBe("");

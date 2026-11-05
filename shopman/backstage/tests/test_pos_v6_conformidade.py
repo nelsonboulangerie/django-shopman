@@ -160,7 +160,7 @@ def test_roteamento_diz_a_estacao_e_o_envio_automatico_comeca_desligado(loja):
     station = KDSInstance.objects.create(ref="bar", name="Bar", type="picking")
     station.collections.add(bebidas)
 
-    assert kitchen_routes_for_skus(["CAFE"]) == {"CAFE": {"station": "Bar", "auto_fire": False}}
+    assert kitchen_routes_for_skus(["CAFE"]) == {"CAFE": {"station": "Bar", "auto_fire": False, "prep": False}}
 
     station.config = {"auto_fire": True}
     station.save()

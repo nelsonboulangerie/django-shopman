@@ -350,6 +350,12 @@ def kitchen_routes_for_skus(skus: list[str]) -> dict[str, dict]:
                 "station": str(found[0].name),
                 # Combo: vai sozinho só se TODAS as estações dele forem automáticas.
                 "auto_fire": all(bool((inst.config or {}).get("auto_fire")) for inst in found),
+                # Feito na hora (estação de preparo)? Na venda de balcão em que o
+                # cliente leva a mercadoria, SÓ isto vai à cozinha ao finalizar
+                # (``dispatch`` com ``prep_only``); o de separação já está na mão
+                # dele. O PDV lê para não prometer cozinha ao pão de vitrine (beta
+                # 05/11, PDV-09).
+                "prep": any(inst.type == "prep" for inst in found),
             }
     return out
 
@@ -481,9 +487,9 @@ def _build_routable_items(lines: list[dict]) -> list[dict]:
             for comp_sku, comp_name, comp_qty in components:
                 routable_items.append({
                     "sku": comp_sku,
-                    "name": f"{comp_name} ({name})",
+                    "name": _component_line_name(comp_name, name, single=len(components) == 1),
                     "qty": json_quantity(qty * comp_qty),
-                    "notes": notes,
+                    "notes": _join_notes(_package_note(qty, comp_qty, single=len(components) == 1), notes),
                     "parent_sku": ln["sku"],
                     "line_id": line_id,
                 })
@@ -498,6 +504,44 @@ def _build_routable_items(lines: list[dict]) -> list[dict]:
             "line_id": line_id,
         })
     return routable_items
+
+
+def _component_line_name(comp_name: str, package_name: str, *, single: bool) -> str:
+    """O nome que a cozinha lê para um componente de pacote ou combo.
+
+    Pacote de um componente só (``Brioche Burger Bun (pc. 2un.)`` = 2× Brioche
+    Burger Bun): o nome do componente basta, e o pacote vai para a nota. Com
+    ``Componente (Pacote)`` o card dizia ``2× Brioche Burger Bun (Brioche Burger
+    Bun (pc. 2un.))``, e o cozinheiro podia ler "2 pacotes de 2" e fazer 4 (beta
+    05/11, KDS-03). Combo de vários componentes: ``Componente · Combo``, sem
+    parênteses aninhados.
+    """
+    comp_name = str(comp_name or "").strip()
+    package_name = str(package_name or "").strip()
+    if single or not package_name or package_name.startswith(comp_name):
+        return comp_name or package_name
+    return f"{comp_name} · {package_name}"
+
+
+def _package_note(qty: Decimal, comp_qty, *, single: bool) -> str:
+    """``1 pacote de 2``: quantos pacotes saíram e quantas unidades cada um leva.
+
+    Só no pacote de um componente, onde o nome do pacote saiu da linha; o total já
+    está na quantidade do item.
+    """
+    if not single:
+        return ""
+    packages = json_quantity(qty)
+    per_package = json_quantity(Decimal(str(comp_qty)))
+    # Fração (a granel, por kg) não é pacote: a quantidade do item já diz tudo.
+    if not isinstance(packages, int) or not isinstance(per_package, int) or per_package <= 1:
+        return ""
+    word = "pacote" if packages == 1 else "pacotes"
+    return f"{packages} {word} de {per_package}"
+
+
+def _join_notes(*parts: str) -> str:
+    return " · ".join(part for part in parts if part)
 
 
 def cancel_tickets(order) -> int:

@@ -99,6 +99,10 @@ class POSProductProjection:
     # A estação dele tem o envio automático ligado (opcional por estação,
     # desligado por padrão): o PDV envia a linha nova sozinho ao sair da comanda.
     kitchen_auto_fire: bool = False
+    # A estação dele é de PREPARO (feito na hora). Na venda de balcão em que o
+    # cliente leva a mercadoria, só o de preparo vai à cozinha ao finalizar; o de
+    # separação (pão de vitrine) já está na mão dele (beta 05/11, PDV-09).
+    kitchen_prep: bool = False
     # Janela de desconto por horário aberta (Hora da Xepa): ``price_q`` já é o
     # preço que o motor cobra AGORA, e a etiqueta cheia vem aqui para o tile
     # mostrá-la riscada. Zero/vazio = sem desconto, ``price_q`` é a etiqueta.
@@ -1289,6 +1293,7 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
             sold_out_reason="Sem caixa" if p.sku in without_box else "",
             kitchen_station=(routes.get(p.sku) or {}).get("station", ""),
             kitchen_auto_fire=bool((routes.get(p.sku) or {}).get("auto_fire")),
+            kitchen_prep=bool((routes.get(p.sku) or {}).get("prep")),
             offer=offer,
         )
         for p, price_q in entries
@@ -2524,6 +2529,7 @@ def _product_projection(
     product: Product, price_q: int, *, sold_out: bool = False, sold_out_reason: str = "",
     kitchen_station: str = "",
     kitchen_auto_fire: bool = False,
+    kitchen_prep: bool = False,
     offer=None,
 ) -> POSProductProjection:
     prefetched = getattr(product, "primary_collection_items", None)
@@ -2573,6 +2579,7 @@ def _product_projection(
         option_groups=tuple(product_option_groups(product)),
         kitchen_station=kitchen_station,
         kitchen_auto_fire=kitchen_auto_fire,
+        kitchen_prep=kitchen_prep,
         list_price_q=list_price_q,
         list_price_display=list_price_display,
         discount_label=discount_label,

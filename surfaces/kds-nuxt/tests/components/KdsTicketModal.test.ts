@@ -73,6 +73,21 @@ describe("KdsTicketModal: quem embalou declara os volumes na estação", () => {
     expect(w.emitted("volumes")?.[0]).toEqual([0]);
   });
 
+  it("o refresh do quadro (objeto novo, mesmo pk) não fecha o rascunho (beta 05/11, KDS-01)", async () => {
+    const w = mountModal({ ticket: ticket() });
+    await w.get("[data-kds-volumes-open]").trigger("click");
+    for (let i = 0; i < 3; i++) await w.get("[aria-label='Um volume a menos']").trigger("click");
+    expect(w.get("[data-kds-volumes-draft]").text()).toBe("0");
+    // poll/SSE: chega um objeto novo do mesmo ticket
+    await w.setProps({ ticket: ticket({ elapsed_seconds: 120 }) });
+    await w.setProps({ ticket: ticket({ elapsed_seconds: 135 }) });
+    expect(w.find("[data-kds-volumes-editor]").exists()).toBe(true);
+    expect(w.get("[data-kds-volumes-draft]").text()).toBe("0");
+    // outro ticket, aí sim fecha
+    await w.setProps({ ticket: ticket({ pk: 2 }) });
+    expect(w.find("[data-kds-volumes-editor]").exists()).toBe(false);
+  });
+
   it("ticket de comanda (sem pedido) não oferece o gesto", () => {
     expect(mountModal({ ticket: ticket({ volumes_order_ref: "" }) }).find("[data-kds-volumes]").exists()).toBe(false);
   });
@@ -93,7 +108,7 @@ describe("KdsTicketModal: aberto pelo Histórico de hoje, só leitura", () => {
   const history = (over: Record<string, unknown> = {}) => ({
     ticket: ticket({ status: "done" }),
     state: "done",
-    items_summary: "2x Pão na Chapa, 1x Café",
+    items_summary: "2× Pão na Chapa, 1× Café",
     steps: ["recebido 21:40", "iniciado 21:42 Rafael", "Pronto 21:51 Rafael (tela)"],
     undone: ["Pronto 21:45 Rafael (tela) → desfeito 21:47 Ana"],
     prep_display: "9 min",

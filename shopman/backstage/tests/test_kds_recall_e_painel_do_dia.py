@@ -83,11 +83,13 @@ def test_recall_block_reason_speaks_the_order_status():
 # ── O painel de retirada é do dia ────────────────────────────────────────
 
 
-def _pickup(ref: str, status: str, *, created_days_ago: int = 0, delivery_date=None) -> Order:
+def _pickup(ref: str, status: str, *, created_days_ago: int = 0, delivery_date=None, session_key: str = "") -> Order:
     data = {"fulfillment_type": "pickup"}
     if delivery_date is not None:
         data["delivery_date"] = delivery_date.isoformat()
-    order = Order.objects.create(ref=ref, channel_ref="pos", status=status, total_q=1000, data=data)
+    order = Order.objects.create(
+        ref=ref, channel_ref="pos", status=status, total_q=1000, data=data, session_key=session_key,
+    )
     if created_days_ago:
         past = timezone.now() - timedelta(days=created_days_ago)
         Order.objects.filter(pk=order.pk).update(created_at=past, updated_at=past, ready_at=past)
@@ -102,8 +104,17 @@ def test_pickup_board_shows_only_the_day(db):
     _pickup("WEB-TOMORROW", Order.Status.ACCEPTED, delivery_date=today + timedelta(days=1))
     _pickup("PDV-TODAY-READY", Order.Status.READY)
     _pickup("PDV-TODAY-PREP", Order.Status.PREPARING)
-    # Encomenda feita dias atrás PARA hoje: é do dia.
-    _pickup("WEB-PREORDER-TODAY", Order.Status.ACCEPTED, created_days_ago=3, delivery_date=today)
+    # Encomenda feita dias atrás PARA hoje: é do dia (já na tela da cozinha; aceito
+    # sem ticket nenhum não é "Em preparo", ver test_kds_beta_1105).
+    preorder = _pickup(
+        "WEB-PREORDER-TODAY", Order.Status.ACCEPTED, created_days_ago=3, delivery_date=today,
+        session_key="sk-preorder-today",
+    )
+    KDSTicket.objects.create(
+        session_key=preorder.session_key,
+        kds_instance=KDSInstance.objects.create(ref="painel-dia", name="Cafés", type="prep"),
+        items=[{"sku": "SKU", "name": "Produto", "qty": 1}],
+    )
     # Comanda aberta esquecida desde ontem com linhas na cozinha.
     stale = Session.objects.create(
         session_key="sk-stale-tab", state="open", handle_ref="2001",

@@ -159,6 +159,13 @@ class KDSTicketProjection:
     # (``kds/tickets/<pk>/changes/seen/``) e só então o Pronto destrava.
     changes: tuple[KDSChangeProjection, ...] = ()
     change_ticket_pks: tuple[int, ...] = ()
+    # Quando o PEDIDO entrou ("05:43") e há quantos segundos, que não é o mesmo que
+    # o ticket: o pedido sem estação espera no Gestor até alguém tocar "Iniciar
+    # preparo", e o card dizia "1m · Novo" a um cliente que já esperava 33 min
+    # (beta 05/11, KDS-04). O relógio e a régua do alvo seguem no tempo de cozinha;
+    # isto é o contexto. Vazio/``None`` sem origem.
+    order_created_at_display: str = ""
+    order_elapsed_seconds: int | None = None
 
 
 @dataclass(frozen=True)
@@ -564,7 +571,9 @@ def _history_entry(ticket, instance, *, source, names, today) -> KDSHistoryEntry
     return KDSHistoryEntryProjection(
         ticket=card,
         state=ticket.status,
-        items_summary=", ".join(_station_items([ticket])),
+        # O histórico é da Cozinha e fala como o card dela ("2× Croque"), não como o
+        # resumo do Gestor ("2x"): duas grafias na mesma tela (beta 05/11, KDS-18).
+        items_summary=", ".join(_station_items([ticket], times="×")),
         steps=tuple(steps),
         undone=undone,
         prep_display=prep_display,
@@ -791,6 +800,7 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
     """
     from shopman.orderman.models import Session
 
+    from shopman.backstage.models import KDSTicket
     from shopman.shop.services.kds import kitchen_done_session_keys
 
     # O painel é do DIA: pedido de outro dia que ficou aberto (esquecido em
@@ -817,12 +827,32 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
     ready: list[KDSCustomerOrderProjection] = []
     committed_session_keys: set[str] = set()
 
-    for order in orders_qs:
+    orders = list(orders_qs)
+    # Pedido aceito que NENHUMA estação recebeu ("Sem estação" no Gestor, até alguém
+    # tocar "Iniciar preparo") não é "Em preparo" para o cliente: o painel prometia
+    # preparo que não tinha começado (beta 05/11, KDS-05). Aceito entra quando a
+    # cozinha tem o ticket dele na tela.
+    accepted_keys = {
+        order.session_key for order in orders if order.status == Order.Status.ACCEPTED and order.session_key
+    }
+    in_kitchen_keys = (
+        set(
+            KDSTicket.objects.filter(session_key__in=accepted_keys)
+            .exclude(status="cancelled")
+            .values_list("session_key", flat=True)
+        )
+        if accepted_keys
+        else set()
+    )
+
+    for order in orders:
         if order.session_key:
             committed_session_keys.add(order.session_key)
         if (get_commitment_date(order) or timezone.localdate(order.created_at)) != today:
             continue
         if get_fulfillment_type(order) == "delivery":
+            continue
+        if order.status == Order.Status.ACCEPTED and order.session_key not in in_kitchen_keys:
             continue
         projection = KDSCustomerOrderProjection(
             ref=order.ref,
@@ -917,12 +947,12 @@ def _public_comanda_code(session) -> str:
 _EXIT_STATE_LABELS = {"pending": "na fila", "in_progress": "em preparo", "done": "pronto"}
 
 
-def _station_items(tickets) -> tuple[str, ...]:
+def _station_items(tickets, *, times: str = "x") -> tuple[str, ...]:
     """Os itens dos tickets de uma estação, na régua do resumo do card ("2x Croissant")."""
     from shopman.shop.services.order_helpers import json_quantity
 
     return tuple(
-        f"{json_quantity(item.get('qty', 1))}x {item.get('name') or item.get('sku') or ''}".strip()
+        f"{json_quantity(item.get('qty', 1))}{times} {item.get('name') or item.get('sku') or ''}".strip()
         for ticket in tickets
         for item in (ticket.items or [])
         if isinstance(item, dict)
@@ -1204,11 +1234,14 @@ def _build_ticket(
         source, source_data, handle_ref, ticket.session_key
     )
     channel_ref = getattr(source, "channel_ref", "") if source is not None else ""
+    # O telefone não é nome: sem nome, o card fica com o código do pedido (beta
+    # 05/11, KDS-07: o detalhe mostrava "+5543993333333" a quem só prepara).
     customer_name = (
         source_data.get("customer", {}).get("name", "")
-        or handle_ref
+        or ("" if _looks_like_phone(handle_ref) else handle_ref)
         or ""
     )
+    source_created_at = getattr(source, "created_at", None) if source is not None else None
     fulfillment_type = source_data.get("fulfillment_type") or source_data.get("delivery_method", "")
     is_delivery = fulfillment_type == "delivery"
     fulfillment_icon = "local_shipping" if is_delivery else "storefront"
@@ -1267,7 +1300,17 @@ def _build_ticket(
         **_finish_block(ticket, source),
         **_volumes_fields(source),
         **_start_fields(ticket, source_data, names or {}),
+        order_created_at_display=_format_time(source_created_at),
+        order_elapsed_seconds=(
+            int((elapsed_until - source_created_at).total_seconds()) if source_created_at else None
+        ),
     )
+
+
+def _looks_like_phone(value) -> bool:
+    """``+5543993333333`` / ``(43) 99333-3333``: só dígitos e pontuação de telefone."""
+    text = str(value or "").strip()
+    return len([ch for ch in text if ch.isdigit()]) >= 8 and all(ch.isdigit() or ch in "+()-. " for ch in text)
 
 
 def ticket_seen(ticket) -> bool:
