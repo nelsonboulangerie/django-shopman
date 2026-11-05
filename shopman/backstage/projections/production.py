@@ -1053,6 +1053,12 @@ class ProductionDashboardProjection:
     capacity_percent: int | None
     late_orders: tuple[ProductionLateWorkOrderProjection, ...]
     access: ProductionSurfaceAccess
+    # Grandezas separadas por unidade e escritas em pt-BR ("312 un. · 159,6 kg"):
+    # peça, quilo e litro nunca somam num número só (suite-vocabulary).
+    planned_display: str = "0"
+    loss_display: str = "0"
+    # A frase sob a Perda fala só dos lotes fechados, como a própria perda.
+    loss_hint: str = ""
     actions: tuple[ProductionActionProjection, ...] = ()
     generated_at: str = ""
     source_revision: str = ""
@@ -1919,16 +1925,48 @@ def build_production_dashboard(
     else:
         average_yield_rate = ""
 
-    capacity_total = Decimal("0")
-    planned_total = Decimal("0")
-    seen_recipes: set[int] = set()
-    for wo in wos:
-        planned_total += wo.quantity
-        if wo.recipe_id in seen_recipes:
-            continue
-        seen_recipes.add(wo.recipe_id)
-        capacity_total += _decimal_meta(wo.recipe.meta, "capacity_per_day")
-    capacity_percent = int((planned_total / capacity_total) * 100) if capacity_total else None
+    # Beta 05/11: "Planejado 159966.487" somava gramas de massa com peças de
+    # pão. Cada total sai por unidade da ficha, e a capacidade é a média da
+    # carga de cada ficha (planejado ÷ capacidade da MESMA ficha), nunca a soma.
+    live = [wo for wo in wos if wo.status != WorkOrder.Status.VOID]
+    output_units = _recipe_output_units({wo.recipe for wo in live})
+    planned_by_recipe: dict[int, Decimal] = {}
+    planned_amounts: list[tuple[str, Decimal]] = []
+    for wo in live:
+        planned_by_recipe[wo.recipe_id] = planned_by_recipe.get(wo.recipe_id, Decimal("0")) + wo.quantity
+        planned_amounts.append((output_units.get(wo.recipe_id, ""), wo.quantity))
+    loads: list[Decimal] = []
+    recipes_by_pk = {wo.recipe_id: wo.recipe for wo in live}
+    for recipe_pk, planned in planned_by_recipe.items():
+        capacity = _decimal_meta(recipes_by_pk[recipe_pk].meta, "capacity_per_day")
+        if capacity:
+            loads.append(planned / capacity)
+    capacity_percent = int(sum(loads, Decimal("0")) / len(loads) * 100) if loads else None
+
+    closed = [wo for wo in live if wo.status == WorkOrder.Status.FINISHED and wo.finished is not None]
+    declared_loss = _declared_loss_by_work_order([wo.pk for wo in closed])
+    closed_base: list[tuple[str, Decimal]] = []
+    closed_finished: list[tuple[str, Decimal]] = []
+    closed_loss: list[tuple[str, Decimal]] = []
+    closed_shortfall: list[tuple[str, Decimal]] = []
+    for wo in closed:
+        unit = output_units.get(wo.recipe_id, "")
+        base = wo.started_qty if wo.started_qty is not None else wo.quantity
+        loss = declared_loss.get(wo.pk, Decimal("0"))
+        closed_base.append((unit, base))
+        closed_finished.append((unit, wo.finished))
+        closed_loss.append((unit, loss))
+        closed_shortfall.append((unit, max(base - wo.finished - loss, Decimal("0"))))
+    if closed:
+        loss_hint = (
+            f"Realizado {_amounts_display(closed_finished)} de "
+            f"{_amounts_display(closed_base)} previstos nos lotes fechados"
+        )
+        shortfall_text = _amounts_display(closed_shortfall)
+        if shortfall_text != "0":
+            loss_hint += f" · rendeu menos {shortfall_text}"
+    else:
+        loss_hint = "Nenhum lote fechado no dia"
 
     late = tuple(_late_projection(wo) for wo in wos if _is_late_started(wo))
 
@@ -1947,7 +1985,77 @@ def build_production_dashboard(
         capacity_percent=capacity_percent,
         late_orders=late,
         access=access,
+        planned_display=_amounts_display(planned_amounts),
+        loss_display=_amounts_display(closed_loss),
+        loss_hint=loss_hint,
     )
+
+
+def _declared_loss_by_work_order(work_order_ids: list[int]) -> dict[int, Decimal]:
+    """Perda declarada (linhas WASTE) por lote; "rendeu menos" não entra."""
+    if not work_order_ids:
+        return {}
+    from django.db.models import Sum
+    from shopman.craftsman.models import WorkOrderItem
+
+    rows = (
+        WorkOrderItem.objects.filter(work_order_id__in=work_order_ids, kind=WorkOrderItem.Kind.WASTE)
+        .values("work_order_id")
+        .annotate(total=Sum("quantity"))
+    )
+    return {row["work_order_id"]: row["total"] or Decimal("0") for row in rows}
+
+
+def _ptbr_number(value: Decimal, max_decimals: int = 2) -> str:
+    """1234.5 → "1.234,5"; inteiro sem casas."""
+    quantized = value.quantize(Decimal(1).scaleb(-max_decimals)).normalize()
+    if quantized == quantized.to_integral_value():
+        quantized = quantized.quantize(Decimal(1))
+    text = format(quantized, ",f")
+    return text.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+
+
+def _amounts_display(amounts) -> str:
+    """Soma por grandeza e escreve cada uma com a sua unidade, em pt-BR.
+
+    ``amounts`` é um iterável de ``(unidade, quantidade)``. Peça vira "un.",
+    massa vira g (ou kg a partir de 1.000 g), volume vira ml (ou l a partir de
+    1.000 ml). Grandezas diferentes ficam lado a lado, nunca somadas.
+    """
+    totals: dict[str, Decimal] = {}
+    order: list[str] = []
+    for unit, quantity in amounts:
+        if quantity is None:
+            continue
+        dim = units.dimension(unit) if unit else units.COUNT
+        if dim == units.MASS:
+            key, value = units.MASS, units.convert(quantity, unit, "g")
+        elif dim == units.VOLUME:
+            key, value = units.VOLUME, units.convert(quantity, unit, "ml")
+        elif dim == units.COUNT:
+            key, value = units.COUNT, units.convert(quantity, unit or "un", "un")
+        else:
+            key, value = f"raw:{unit}", Decimal(quantity)
+        if key not in totals:
+            order.append(key)
+            totals[key] = Decimal("0")
+        totals[key] += value
+    # Ordem fixa: peça, massa, volume (a mesma frase todo dia, em qualquer tela).
+    rank = {units.COUNT: 0, units.MASS: 1, units.VOLUME: 2}
+    parts: list[str] = []
+    for key in sorted(order, key=lambda item: rank.get(item, 3)):
+        value = totals[key]
+        if not value:
+            continue
+        if key == units.COUNT:
+            parts.append(f"{_ptbr_number(value)} un.")
+        elif key == units.MASS:
+            parts.append(f"{_ptbr_number(value / 1000)} kg" if value >= 1000 else f"{_ptbr_number(value)} g")
+        elif key == units.VOLUME:
+            parts.append(f"{_ptbr_number(value / 1000)} l" if value >= 1000 else f"{_ptbr_number(value)} ml")
+        else:
+            parts.append(f"{_ptbr_number(value)} {key.removeprefix('raw:')}".strip())
+    return " · ".join(parts) if parts else "0"
 
 
 def build_production_kds(

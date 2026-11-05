@@ -570,6 +570,9 @@ export interface ProductionDashboardProjection {
   capacity_percent: number | null;
   late_orders: ProductionLateWorkOrderProjection[];
   access: ProductionSurfaceAccess;
+  planned_display: string;
+  loss_display: string;
+  loss_hint: string;
   actions: ProductionActionProjection[];
   generated_at: string;
   source_revision: string;

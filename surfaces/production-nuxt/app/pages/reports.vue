@@ -313,13 +313,15 @@ function refreshAll() {
         />
         <OperatorMetric
           title="Planejado"
-          :value="management?.planned_qty || '0'"
+          :value="management?.planned_display || '0'"
           :hint="`${management?.planned_orders ?? 0} lotes planejados`"
         />
+        <!-- Grandezas por unidade, em pt-BR, e a frase só dos lotes fechados:
+             o servidor escreve (beta 05/11: 159966.487 somava g com peças). -->
         <OperatorMetric
           title="Perda"
-          :value="management?.loss_qty || '0'"
-          :hint="`Realizado ${management?.finished_qty || '0'} de ${management?.started_qty || '0'} previstos`"
+          :value="management?.loss_display || '0'"
+          :hint="management?.loss_hint || ''"
         />
       </div>
 
