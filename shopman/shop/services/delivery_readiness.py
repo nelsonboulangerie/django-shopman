@@ -89,6 +89,18 @@ def readiness_for(
     return result
 
 
+_PLATFORM_LABELS = {
+    "instagram": "Instagram",
+    "facebook": "Facebook",
+    "google_business": "Google",
+    "whatsapp": "WhatsApp",
+}
+
+
+def _platform_label(platform: str) -> str:
+    return _PLATFORM_LABELS.get(platform, platform)
+
+
 def _switched_off_readiness(
     platform: str,
     *,
@@ -126,7 +138,9 @@ def _switched_off_readiness(
         facts_as_of=now,
         source_status="fresh",
         reason=reason,
-        action=f"Para enviar por aqui, pedir à operação para ligar {lane.switch}",
+        # O nome da chave fica no `diagnose_marketing`; ao operador, o que pedir e a
+        # quem (beta 05/11, ge:MKT-10).
+        action=f"Peça ao suporte técnico para ligar o envio pelo {_platform_label(platform)} neste ambiente.",
         limitation=limitation,
     )
 

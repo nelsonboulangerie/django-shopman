@@ -521,6 +521,15 @@ def _link(sku: str, promotion_ref: str, *, required: bool) -> dict[str, Any]:
         return {}
     from shopman.shop.services import storefront_links
 
+    # Conteúdo público com caminho relativo ("/produto/KUP") não é clicável no
+    # Instagram nem no WhatsApp. Sem o endereço público da loja, falha gritando em vez
+    # de publicar um link morto (beta 05/11, ge:MKT-20).
+    if required and not storefront_links.storefront_base_url().startswith(("https://", "http://")):
+        raise MarketingContractError(
+            code="marketing_storefront_base_missing",
+            detail="Configure o endereço público da loja para gerar o link do anúncio.",
+            field_errors={"content.link": ("Falta o endereço público da loja.",)},
+        )
     if promotion_ref:
         return {
             "kind": "offer",

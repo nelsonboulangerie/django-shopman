@@ -1244,7 +1244,7 @@ def preview_platforms(
             field_errors={"platform_content": ("Use um objeto por plataforma.",)},
         )
 
-    sample = (sku or "").strip() or _sample_sku()
+    sample = (sku or "").strip() or _sample_sku(promotion_ref)
     variables = resolve_variables({"sku": sample}, promotion_ref=promotion_ref)
     from shopman.shop.services import marketing_facts
     from shopman.shop.services.marketing_artifacts import (
@@ -1410,11 +1410,24 @@ def preview_announcement(
             timezone_name=marketing_time.configured_timezone_name(),
             now=timezone.now(),
         )
-    flow_binding = (
-        verified_whatsapp_flow_binding()
-        if "whatsapp" in normalized_platforms
-        else None
-    )
+    # A prévia é por plataforma: o WhatsApp sem fluxo aprovado não derruba a prévia do
+    # Instagram. Ele sai desta prévia com o motivo, e a aprovação continua recusando
+    # do mesmo jeito (beta 05/11, ge:MKT-08). Sozinho, o erro dele é o da prévia.
+    platform_problems: dict[str, dict[str, str]] = {}
+    flow_binding = None
+    if "whatsapp" in normalized_platforms:
+        try:
+            flow_binding = verified_whatsapp_flow_binding()
+        except MarketingContractError as exc:
+            if normalized_platforms == ("whatsapp",):
+                raise
+            platform_problems["whatsapp"] = {"code": exc.code, "detail": exc.detail}
+            normalized_platforms = tuple(
+                platform for platform in normalized_platforms if platform != "whatsapp"
+            )
+            platform_content = {
+                key: value for key, value in platform_content.items() if key != "whatsapp"
+            }
     artifacts = resolve_all_dispatch_artifacts(
         platforms=normalized_platforms,
         content=content,
@@ -1437,6 +1450,7 @@ def preview_announcement(
         "fields": {},
         "ai_writes": False,
         "facts": facts.as_payload() if facts is not None else None,
+        "platform_problems": platform_problems,
         "previews": {
             artifact.platform: {
                 "artifact": artifact.as_payload(),
@@ -1452,17 +1466,31 @@ def preview_announcement(
     }
 
 
-def _sample_sku() -> str:
-    """Um produto real para a prévia, ou vazio numa loja sem catálogo."""
+def _sample_sku(promotion_ref: str = "") -> str:
+    """Um produto real para a prévia, ou vazio numa loja sem catálogo.
+
+    Com oferta, o exemplo sai de dentro dela: um produto fora do alcance da oferta fazia
+    a prévia da campanha recusar "a oferta não alcança o produto do anúncio" por causa
+    de uma escolha nossa, não do gestor (beta 05/11, ge:MKT-12).
+    """
     try:
         from shopman.offerman.models import Product
 
-        product = (
-            Product.objects.filter(is_published=True, is_sellable=True)
-            .order_by("name")
-            .only("sku")
-            .first()
-        )
+        products = Product.objects.filter(is_published=True, is_sellable=True)
+        if promotion_ref:
+            from shopman.shop.models import Promotion
+
+            promotion = Promotion.objects.filter(ref=promotion_ref).only("skus", "collections").first()
+            scoped = products.none()
+            if promotion is not None and promotion.skus:
+                scoped = products.filter(sku__in=list(promotion.skus))
+            elif promotion is not None and promotion.collections:
+                scoped = products.filter(
+                    collection_items__collection__ref__in=list(promotion.collections)
+                ).distinct()
+            if scoped.exists():
+                products = scoped
+        product = products.order_by("name").only("sku").first()
         return product.sku if product else ""
     except Exception:
         logger.warning("campaign.preview_sample_failed", exc_info=True)

@@ -107,6 +107,50 @@ def test_facts_replace_stale_event_values_with_canonical_owner_reads(product, mo
     assert facts.as_of != later.as_of
 
 
+def test_campaign_preview_sample_comes_from_inside_the_offer(product, promotion):
+    """ge:MKT-12: o produto de exemplo da prévia sai do alcance da oferta escolhida."""
+    Product.objects.create(
+        sku="aaa-fora-da-oferta",
+        name="Abacaxi",  # vem antes na ordem alfabética: sem o recorte, seria ele
+        base_price_q=500,
+        is_published=True,
+        is_sellable=True,
+    )
+
+    assert campaign._sample_sku() == "aaa-fora-da-oferta"
+    assert campaign._sample_sku(promotion.ref) == product.sku
+
+
+def test_link_without_public_storefront_address_fails_loudly(product, settings, monkeypatch):
+    """ge:MKT-20: sem a base pública, o texto publicava '/produto/KUP', link morto."""
+    from shopman.shop.projections import catalog_context
+
+    monkeypatch.setattr(
+        catalog_context,
+        "availability_for_sku",
+        lambda *args, **kwargs: {"availability_policy": "stock_only", "total_promisable": 3},
+    )
+    settings.SHOPMAN_STOREFRONT_BASE_URL = ""
+
+    with pytest.raises(MarketingContractError) as caught:
+        marketing_facts.resolve_facts(
+            sku=product.sku,
+            referenced=("link", "product_name"),
+            seed_variables={},
+            now=timezone.now(),
+        )
+    assert caught.value.code == "marketing_storefront_base_missing"
+
+    # Texto sem {{link}} não depende do endereço público.
+    facts = marketing_facts.resolve_facts(
+        sku=product.sku,
+        referenced=("product_name",),
+        seed_variables={},
+        now=timezone.now(),
+    )
+    assert facts.variable_values()["product_name"]
+
+
 def test_operator_override_resolves_new_fact_placeholder_canonically(product):
     template = AnnouncementTemplate.objects.create(
         name="Texto sem preço",
