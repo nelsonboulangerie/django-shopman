@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import os
 from urllib.parse import urlsplit
 
@@ -240,6 +241,21 @@ class Shop(models.Model):
             '"tuesday": {"open": "06:00", "close": "20:00"}, ...}. '
             'Dias: monday, tuesday, wednesday, thursday, friday, saturday, sunday.'
         ),
+    )
+
+    #: O expediente da equipe, que não é o horário de venda: a produção começa de
+    #: madrugada. Acesso de operador fora desta janela vira aviso destacado
+    #: (decisão do dono, 05/11/2026: 5h às 19h). O dia em que a casa não abre
+    #: continua destacado inteiro, pelo calendário de funcionamento.
+    staff_hours_start = models.TimeField(
+        "início do expediente da equipe",
+        default=datetime.time(5, 0),
+        help_text="A partir desta hora, o acesso da equipe é de rotina.",
+    )
+    staff_hours_end = models.TimeField(
+        "fim do expediente da equipe",
+        default=datetime.time(19, 0),
+        help_text="Depois desta hora, o acesso da equipe aparece destacado no aviso.",
     )
 
     # ── Branding ──
