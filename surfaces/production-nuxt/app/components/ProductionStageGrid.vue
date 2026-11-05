@@ -1383,8 +1383,8 @@ const startedDescription = computed(() => {
               />
             </div>
 
-            <!-- Sugestão: o número e, no máximo, um sinal. A conta mora no "Por quê",
-                 que abre ancorado na linha (UX-P2, L3). -->
+            <!-- Sugestão: o número, o "?" colado nele e, no máximo, um sinal. A conta
+                 mora no "?", que abre ancorado na linha (UX-P2, L3). -->
             <div
               class="flex min-w-0 flex-1 items-center gap-2.5 max-sm:w-full max-sm:flex-none lg:flex-none"
             >
@@ -1421,6 +1421,23 @@ const startedDescription = computed(() => {
                         "
                         >{{ formatQty(row.suggestion.quantity, row.output_unit) }}</span
                       >
+                      <NuxtButton
+                        :ref="(el) => rememberReasonTrigger(row.output_sku, el)"
+                        color="neutral"
+                        variant="ghost"
+                        icon="i-lucide-circle-help"
+                        square
+                        class="-ml-1.5 shrink-0"
+                        :ui="{ leadingIcon: reasonSku === row.output_sku ? '' : 'text-muted-foreground' }"
+                        :active="reasonSku === row.output_sku"
+                        active-color="primary"
+                        active-variant="outline"
+                        data-plan-reason-trigger
+                        aria-haspopup="dialog"
+                        :aria-expanded="reasonSku === row.output_sku"
+                        :aria-label="`Por que ${row.suggestion.quantity} de ${rowLabel(row)}?`"
+                        @click="toggleReason(row)"
+                      />
                       <span
                         v-if="draftChanged(row)"
                         class="op-label leading-tight text-muted-foreground"
@@ -1449,22 +1466,6 @@ const startedDescription = computed(() => {
                         />
                         {{ suggestionSignal(row.suggestion)!.label }}
                       </span>
-                      <NuxtButton
-                        :ref="(el) => rememberReasonTrigger(row.output_sku, el)"
-                        color="neutral"
-                        variant="ghost"
-                        icon="i-lucide-circle-help"
-                        square
-                        class="ml-auto shrink-0"
-                        :active="reasonSku === row.output_sku"
-                        active-color="primary"
-                        active-variant="outline"
-                        data-plan-reason-trigger
-                        aria-haspopup="dialog"
-                        :aria-expanded="reasonSku === row.output_sku"
-                        :aria-label="`Por que ${row.suggestion.quantity} de ${rowLabel(row)}?`"
-                        @click="toggleReason(row)"
-                      />
                     </span>
                   </template>
                   <template #content>
