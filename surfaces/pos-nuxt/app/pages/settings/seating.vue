@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // PDV › Ajustes › Salão (V5-SALAO, prévia v4 `salao-mesas4.html`): o salão desenhado
-// uma vez e mudado quando muda o mobiliário. Decisão do dono (04/10/2026): quem opera
-// o PDV pode editar, e toda mudança fica registrada (quem, quando, o quê).
+// uma vez e mudado quando muda o mobiliário. Decisão do dono (05/11/2026, que substitui
+// a de 04/10): só o Gerente e o Dono editam; a Caixa confere a planta, sem gravar.
+// Toda mudança fica registrada (quem, quando, o quê).
 //
 // Do tablet para cima, a planta: paleta (formas e áreas) à esquerda, a planta com as
 // áreas no meio, o painel da mesa escolhida à direita e, no pé, o total que o B.I. usa
@@ -20,8 +21,10 @@ import {
   ZOOM_STEPS,
   areaSummaries,
   snap,
+  spotNameKey,
   totals,
 } from "~/presentation/seating";
+import { SETUP_READ_ONLY_NOTE } from "~/presentation/settingsAccess";
 import type { SpotShape } from "~/types/seating";
 import type { OperatorActionBarAction } from "../../../../operator-kit/app/presentation/actionBar";
 import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
@@ -57,6 +60,14 @@ watch(() => seating.selected.value?.area, (area) => {
 });
 
 const sums = computed(() => totals(seating.spots.value));
+const readOnly = computed(() => !seating.canEdit.value);
+/** A mesa escolhida tem o nome de outra (a mesma sigla duas vezes; beta 05/11, PDV-18). */
+const selectedNameTaken = computed(() => {
+  const spot = seating.selected.value;
+  if (!spot) return false;
+  const key = spotNameKey(spot);
+  return seating.spots.value.filter((item) => spotNameKey(item) === key).length > 1;
+});
 const openTabs = computed(() => tabs.value.filter((tab) => tab.state === "in_use").length);
 const changedKeys = computed(() => new Set(seating.changes.value.map((change) => change.key)));
 const zoomLabel = computed(() => `${Math.round(zoom.value * 100)}%`);
@@ -268,8 +279,10 @@ const saveAction = computed<OperatorActionBarAction>(() => ({
   label: "Salvar salão",
   icon: "i-lucide-check",
   loading: seating.saving.value,
-  disabled: !seating.dirty.value || seating.saving.value,
-  reason: seating.dirty.value ? "" : "Nada mudou no salão.",
+  disabled: !seating.dirty.value || seating.saving.value || Boolean(seating.repeatedName.value),
+  reason: seating.repeatedName.value
+    ? `Já existe uma mesa ${seating.repeatedName.value}.`
+    : seating.dirty.value ? "" : "Nada mudou no salão.",
   onSelect: () => void seating.save(),
 }));
 const discardAction = computed<OperatorActionBarAction>(() => ({
@@ -328,7 +341,9 @@ const barContext = computed(() =>
           </span>
         </template>
         <template #status>
-          <span class="hidden op-micro text-muted-foreground lg:inline">mesas e lugares da casa</span>
+          <!-- Só do xl para cima: no tablet deitado (1024) o subtítulo e o selo do posto
+               disputavam a linha com o zoom e quebravam por trás da busca (beta 05/11, PDV-17). -->
+          <span class="hidden op-micro text-muted-foreground xl:inline">mesas e lugares da casa</span>
         </template>
         <template v-if="!isPhone" #actions>
           <NuxtFieldGroup aria-label="Desfazer e refazer">
@@ -391,12 +406,22 @@ const barContext = computed(() =>
       </div>
 
       <template v-else>
+        <NuxtAlert
+          v-if="readOnly"
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-lock"
+          :title="SETUP_READ_ONLY_NOTE"
+          class="mx-4 mt-3 w-auto md:mx-6"
+          data-settings-read-only
+        />
         <!-- celular: lista editável -->
         <div v-if="isPhone" class="min-h-0 flex-1 overflow-y-auto">
           <PosSeatingList
             :spots="seating.spots.value"
             :areas="summaries"
             :changed-keys="changedKeys"
+            :read-only="readOnly"
             @select="selectFromList"
             @add="addFromList"
           />
@@ -418,6 +443,10 @@ const barContext = computed(() =>
                 :max-seats="seating.data.value.max_seats"
                 :open-tabs="openTabs"
                 :spot-tab="seating.selected.value?.ref ? occupiedSpots[seating.selected.value.ref] : ''"
+              :read-only="readOnly"
+              :name-taken="selectedNameTaken"
+                :read-only="readOnly"
+                :name-taken="selectedNameTaken"
                 @update="(patch) => seating.update(seating.selected.value!.key, patch)"
                 @rotate="seating.rotate(seating.selected.value!.key)"
                 @duplicate="seating.duplicate(seating.selected.value!.key)"
@@ -430,7 +459,7 @@ const barContext = computed(() =>
         <!-- tablet e computador: a planta -->
         <div v-else class="flex min-h-0 flex-1 flex-col lg:flex-row">
           <PosSeatingPalette
-            v-if="isWide"
+            v-if="isWide && !readOnly"
             :areas="summaries"
             :active-area="activeArea"
             @grab="onGrab"
@@ -439,7 +468,7 @@ const barContext = computed(() =>
           />
           <div class="flex min-h-0 min-w-0 flex-1 flex-col">
             <PosSeatingPalette
-              v-if="!isWide"
+              v-if="!isWide && !readOnly"
               layout="strip"
               :areas="summaries"
               :active-area="activeArea"
@@ -499,6 +528,7 @@ const barContext = computed(() =>
         <!-- Do computador (lg): o total que o B.I. usa, o que mudou e um Salvar só, em
              fluxo no pé da tela. Abaixo de lg, a mesma ação mora no OperatorActionBar. -->
         <footer
+          v-if="!readOnly"
           class="flex h-[68px] shrink-0 items-center gap-x-4 border-t border-border bg-card px-4 max-lg:hidden"
           data-seating-footer
         >
@@ -508,7 +538,16 @@ const barContext = computed(() =>
             <span class="op-label text-muted-foreground">· <b class="text-foreground tabular-nums">{{ sums.extraSeats }}</b> extras de dia cheio</span>
           </div>
           <NuxtBadge
-            v-if="seating.summary.value"
+            v-if="seating.repeatedName.value"
+            color="error"
+            variant="soft"
+            class="min-w-0 shrink"
+            data-seating-repeated-name
+          >
+            <span class="min-w-0 truncate">Já existe uma mesa {{ seating.repeatedName.value }}</span>
+          </NuxtBadge>
+          <NuxtBadge
+            v-else-if="seating.summary.value"
             color="primary"
             class="min-w-0 shrink"
             :title="seating.summary.value"
@@ -529,7 +568,7 @@ const barContext = computed(() =>
             <NuxtButton
               icon="i-lucide-check"
               :loading="seating.saving.value"
-              :disabled="!seating.dirty.value || seating.saving.value"
+              :disabled="!seating.dirty.value || seating.saving.value || Boolean(seating.repeatedName.value)"
               data-seating-save
               @click="seating.save()"
             >
@@ -541,6 +580,7 @@ const barContext = computed(() =>
           </div>
         </footer>
         <OperatorActionBar
+          v-if="!readOnly"
           :action="saveAction"
           :secondary="discardAction"
           :context-label="barContext"

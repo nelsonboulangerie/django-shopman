@@ -2,11 +2,14 @@
 // PDV › Ajustes › Impressoras (UX-15): o rolo e a guilhotina de cada terminal
 // (`Terminal.metadata.hardware.printer`), e quais estações sem tela imprimem em
 // cada um. O resto da impressora (colunas aferidas, etiqueta) segue no Admin.
+import { canEditSetup, SETUP_READ_ONLY_NOTE } from "~/presentation/settingsAccess";
 import type { PosPrinterSetting } from "~/types/settings";
 
 useHead({ title: "Impressoras" });
 
 const settings = usePosSettings();
+// Só o Gerente e o Dono gravam impressora (decisão do dono, 05/11/2026).
+const canEdit = computed(() => canEditSetup(settings.data.value?.can_manage_setup));
 const drafts = reactive<Record<string, { roll: number | null; cut: string }>>({});
 watch(() => settings.data.value?.printers, (printers) => {
   for (const printer of printers || []) {
@@ -29,6 +32,7 @@ function save(printer: PosPrinterSetting) {
     <OperatorScreenState v-if="settings.error.value && !settings.data.value" state="error" what="as impressoras" @retry="settings.refresh()" />
     <OperatorScreenState v-else-if="!settings.data.value" state="loading" what="as impressoras" />
     <template v-else>
+      <NuxtAlert v-if="!canEdit" color="neutral" variant="soft" icon="i-lucide-lock" :title="SETUP_READ_ONLY_NOTE" data-settings-read-only />
       <OperatorScreenState
         v-if="!settings.data.value.printers.length"
         state="empty"
@@ -62,6 +66,7 @@ function save(printer: PosPrinterSetting) {
                 variant="outline"
                 active-color="primary"
                 active-variant="solid"
+                :disabled="!canEdit"
                 :active="drafts[printer.terminal_ref]?.roll === width"
                 :aria-pressed="drafts[printer.terminal_ref]?.roll === width"
                 class="flex-1 justify-center"
@@ -80,6 +85,7 @@ function save(printer: PosPrinterSetting) {
                 variant="outline"
                 active-color="primary"
                 active-variant="solid"
+                :disabled="!canEdit"
                 :active="drafts[printer.terminal_ref]?.cut === mode.value"
                 :aria-pressed="drafts[printer.terminal_ref]?.cut === mode.value"
                 class="flex-1 justify-center"
@@ -89,7 +95,7 @@ function save(printer: PosPrinterSetting) {
             </NuxtFieldGroup>
           </fieldset>
         </div>
-        <div class="flex justify-end">
+        <div v-if="canEdit" class="flex justify-end">
           <NuxtButton
             label="Gravar impressora"
             :loading="settings.saving.value === 'printer'"

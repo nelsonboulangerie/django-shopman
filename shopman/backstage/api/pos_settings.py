@@ -10,12 +10,14 @@ Seções do POST:
 - ``kitchen_station``: ``{station_ref, auto_fire}``
 - ``shortcuts``: ``{terminal_ref, favorite_collection_refs: [...]}``
 
-A régua é a do balcão (``cashman.operate_pos``), como o Salão (decisão do dono,
-04/10/2026: quem opera o PDV ajusta o PDV). Erro no dialeto da casa.
+A régua de leitura é a do balcão (``cashman.operate_pos``). Impressora e
+maquininha gravam só com ``pos_settings.SETUP_PERMISSION`` (Gerente e Dono;
+decisão do dono, 05/11/2026, que substitui a de 04/10). Erro no dialeto da casa.
 """
 
 from __future__ import annotations
 
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -46,13 +48,21 @@ class POSSettingsView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    def _read(self, request):
+        return pos_settings.build_settings(
+            terminal=_terminal(request),
+            can_manage_setup=pos_settings.can_manage_setup(request.user),
+        )
+
     def get(self, request):
-        return Response(pos_settings.build_settings(terminal=_terminal(request)))
+        return Response(self._read(request))
 
     def post(self, request):
         body = request.data if isinstance(request.data, dict) else {}
         actor = request.user.get_username() if request.user and request.user.is_authenticated else ""
         section = body.get("section")
+        if section in pos_settings.SETUP_SECTIONS and not pos_settings.can_manage_setup(request.user):
+            raise PermissionDenied(pos_settings.SETUP_REFUSAL)
         try:
             if section == "printer":
                 pos_settings.update_printer(
@@ -66,6 +76,7 @@ class POSSettingsView(APIView):
                     ref=str(body.get("ref") or ""),
                     label=str(body.get("label") or ""),
                     identification=str(body.get("identification") or ""),
+                    identification_sent="identification" in body,
                     active=as_bool(body, "active", default=True),
                     actor=actor,
                 )
@@ -85,4 +96,4 @@ class POSSettingsView(APIView):
                 raise pos_settings.PosSettingsError("Escolha o que ajustar.", field="section")
         except pos_settings.PosSettingsError as exc:
             return _error(exc)
-        return Response(pos_settings.build_settings(terminal=_terminal(request)))
+        return Response(self._read(request))
