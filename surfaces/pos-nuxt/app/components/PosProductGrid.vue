@@ -20,6 +20,7 @@ import {
   hideUnavailableProducts,
   orderCollections,
   parseHideUnavailable,
+  productSearchPlaceholder,
 } from "~/presentation/catalog";
 import { isNumericQuery } from "~/presentation/customerSearch";
 
@@ -46,6 +47,13 @@ const emit = defineEmits<{
 // Toque (tablet, celular): sem teclas impressas, chips de 48 px com "Favoritos"
 // primeiro, tile sem SKU, grade pela largura do dedo e "Ler código" pela câmera.
 const coarsePointer = useMediaQuery("(pointer: coarse)");
+const searchBarRef = ref<HTMLElement | null>(null);
+const { width: searchBarWidth } = useElementSize(searchBarRef);
+const searchPlaceholder = computed(() => productSearchPlaceholder({
+  coarse: coarsePointer.value,
+  customerSearch: Boolean(props.customerSearch),
+  width: searchBarWidth.value,
+}));
 // A faixa das coleções: setas, roda do mouse e a escolhida sempre à vista.
 const collectionsStrip = useTemplateRef<HTMLElement>("collectionsStrip");
 const strip = useScrollStrip(collectionsStrip);
@@ -244,13 +252,13 @@ function onSearchEscape() {
   <section class="@container flex h-full min-h-0 flex-col gap-2.5">
     <!-- Busca + densidade (v4): a busca é o instrumento do balcão (44 px, Enter
          adiciona, F3 ou / focam); a densidade é um seletor segmentado à vista. -->
-    <div class="flex shrink-0 items-center gap-2">
+    <div ref="searchBarRef" class="flex shrink-0 items-center gap-2">
       <PosSearchField
         ref="searchInputRef"
         v-model="search"
         :kbd="coarsePointer ? undefined : ['F3', '/']"
         :hint="coarsePointer ? undefined : 'Enter adiciona'"
-        :placeholder="coarsePointer ? 'Buscar produto ou comanda' : (customerSearch ? 'Buscar produto, código, comanda ou cliente' : 'Buscar produto, código ou comanda')"
+        :placeholder="searchPlaceholder"
         :class="coarsePointer ? 'h-14' : ''"
         :autofocus="!coarsePointer"
         @keydown.enter.prevent="onSearchEnter"

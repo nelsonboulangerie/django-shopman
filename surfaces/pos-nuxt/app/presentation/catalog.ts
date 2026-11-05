@@ -363,3 +363,15 @@ export function priceWindowRefreshDelayMs(nextChangeAt: string | null | undefine
   if (!Number.isFinite(at)) return null;
   return Math.min(MAX_TIMER_MS, Math.max(0, at - nowMs) + PRICE_WINDOW_REFRESH_GRACE_MS);
 }
+
+/**
+ * O convite da busca de produtos, pelo espaço que ela tem. Em 1024 px a frase
+ * longa saía cortada ("Buscar produto, có"; beta test de 05/11/2026, PDV-16):
+ * abaixo de 560 px de campo vale a curta, a mesma do toque. Largura 0 é "ainda
+ * não medido", e fica a longa.
+ */
+export const SEARCH_PLACEHOLDER_SHORT_BELOW_PX = 560;
+export function productSearchPlaceholder(input: { coarse: boolean; customerSearch: boolean; width: number }): string {
+  if (input.coarse || (input.width > 0 && input.width < SEARCH_PLACEHOLDER_SHORT_BELOW_PX)) return "Buscar produto ou comanda";
+  return input.customerSearch ? "Buscar produto, código, comanda ou cliente" : "Buscar produto, código ou comanda";
+}

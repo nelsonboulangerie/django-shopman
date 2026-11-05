@@ -75,6 +75,19 @@ describe("PosPaymentWorkspace: a cozinha acionável no Pagamento (dono, 03/11/20
     expect(wrapper.emitted("fireNow")).toHaveLength(1);
   });
 
+  it("PDV-16: a frase da cozinha quebra a linha em vez de cortar com reticências", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: workspaceProps({ items: [fired, pending], canFireNow: true }),
+    });
+    const message = wrapper.find("[data-checkout-kitchen-message]");
+    expect(message.text()).toContain("ao finalizar");
+    let el: Element | null = message.element;
+    while (el && !el.hasAttribute("data-checkout-kitchen")) {
+      expect(el.className).not.toMatch(/(^|\s)truncate(\s|$)/);
+      el = el.parentElement;
+    }
+  });
+
   it("sem a ação de mandar (ou tudo já foi), a cozinha é só a linha", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: workspaceProps({ items: [fired, pending], canFireNow: false }),

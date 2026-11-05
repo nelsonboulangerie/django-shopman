@@ -1765,12 +1765,15 @@ defineExpose({
                 block
                 :icon="kitchenLine.icon.replace('lucide:', 'i-lucide-')"
                 trailing-icon="i-lucide-chevron-right"
-                :label="kitchenLine.message"
-                class="min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
-                :ui="{ leadingIcon: `size-4 ${kitchenLine.accent || 'text-muted'}`, trailingIcon: 'ms-auto size-4 text-muted', label: 'text-left' }"
+                class="h-auto min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
+                :ui="{ leadingIcon: `size-4 ${kitchenLine.accent || 'text-muted'}`, trailingIcon: 'ms-auto size-4 text-muted' }"
                 data-checkout-kitchen
                 @click="kitchenOpen = true"
-              />
+              >
+                <!-- No slot, e não no `label`: o rótulo do botão corta numa linha, e
+                     "Ao finalizar, o item vai…" saía cortado em 1024 px (PDV-16). -->
+                <span class="min-w-0 flex-1 text-left whitespace-normal" data-checkout-kitchen-message>{{ kitchenLine.message }}</span>
+              </NuxtButton>
             </li>
             <li
               v-for="note in plainLineNotices"
