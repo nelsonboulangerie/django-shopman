@@ -46,6 +46,7 @@ const source = useOperatorInboxAlerts();
 const {
   items,
   unread,
+  settled,
   markRead,
   signIns,
   loadSignIns,
@@ -78,8 +79,10 @@ const total = computed(() =>
     capacityCritical: capacityCritical.value,
   }),
 );
-const badge = computed(() => inboxBadge(total.value));
-const label = computed(() => inboxAriaLabel(total.value));
+// Sem a primeira leitura da caixa pessoal, o número seria só o da operação e pularia
+// logo depois (beta 05/11, MKT-22): espera a soma inteira.
+const badge = computed(() => (settled.value ? inboxBadge(total.value) : ""));
+const label = computed(() => inboxAriaLabel(settled.value ? total.value : 0));
 const hasOperation = computed(
   () => Boolean(source.value) || capacityAlert.value,
 );

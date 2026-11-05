@@ -234,7 +234,7 @@ function androidPlan(env: InstallEnvironment, browser: InstallBrowser): InstallP
     return {
       ...base,
       steps: [
-        { glyph: "menu-vertical", text: "Toque em **⋮** (três pontinhos), no canto do Firefox." },
+        { glyph: "menu-vertical", text: "Toque em **⋮** (três pontinhos), no canto da barra do Firefox, fora do app." },
         { glyph: "add-home", text: "Escolha **Instalar**." },
         { glyph: "confirm", text: "Confirme em **Adicionar**." },
       ],
@@ -255,7 +255,7 @@ function androidPlan(env: InstallEnvironment, browser: InstallBrowser): InstallP
   return {
     ...base,
     steps: [
-      { glyph: "menu-vertical", text: "Toque em **⋮** (três pontinhos), no canto do navegador." },
+      { glyph: "menu-vertical", text: "Toque em **⋮** (três pontinhos), no canto da barra do navegador, fora do app." },
       { glyph: "add-home", text: "Escolha **Instalar aplicativo**." },
       { glyph: "confirm", text: "Confirme em **Instalar**." },
     ],
@@ -390,8 +390,14 @@ export function installTextParts(text: string, glyph?: InstallGlyph): InstallTex
   if (!glyph || parts.length === 0) return parts;
   const alvo = parts.find((part) => part.strong) || parts[0]!;
   alvo.glyph = glyph;
+  // O símbolo escrito ("**⋮**") é o próprio desenho: com os dois, a tela mostrava o
+  // ⋮ duas vezes, lado a lado (beta 05/11, CEN-07). O desenho fica; o texto sai.
+  if (alvo.strong && INSTALL_SYMBOL_TEXT.test(alvo.text)) alvo.text = "";
   return parts;
 }
+
+/** O texto em negrito que é só o símbolo que o desenho já mostra. */
+const INSTALL_SYMBOL_TEXT = /^[⋮⋯≡]$/;
 
 /**
  * O desenho de cada símbolo, em traço, numa caixa de 24×24.

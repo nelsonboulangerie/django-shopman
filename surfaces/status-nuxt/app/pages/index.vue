@@ -104,7 +104,7 @@ useHead({
       </section>
 
       <div class="mt-10 border-t border-border pt-6 text-base leading-7 text-muted-foreground">
-        <p>Esta página opera de forma independente do Shopman.</p>
+        <p>Esta página continua no ar mesmo quando a loja online está fora.</p>
         <a class="mt-2 inline-flex min-h-11 items-center font-medium text-primary underline underline-offset-4" href="mailto:ti@boulangerie.com.br">Falar com a equipe</a>
       </div>
     </main>

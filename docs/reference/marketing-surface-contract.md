@@ -139,8 +139,12 @@ alimentam `/scheduled`), `scheduled_today_count` e `active_campaign_count`, que 
 a linha "+N agendados hoje · M campanhas ligadas". A fila não decide nada: a revisão
 do anúncio revalida as Actions do operador.
 
-O sino deixou de ter lista própria: é um link para `/` que diz quantas decisões
-esperam. Ele mora na barra do topo onde a barra lateral não está (celular e tablet); na
+O sino é a caixa de **Avisos** do kit, a mesma dos outros apps (V6-KIT): as decisões
+entram nela como UM resumo que leva a `/` (a fila), sem repetir a lista (decisão do
+dono, 03/10/2026), e ao lado mora a aba **Para você** (a caixa pessoal: acessos da
+conta, avisos da operação). O número do sino soma as duas e só aparece depois da
+primeira leitura da caixa pessoal, para não pintar "1" e pular para "9+" (beta 05/11,
+MKT-22). Ele mora na barra do topo onde a barra lateral não está (celular e tablet); na
 mesa o selo de Decisões na barra lateral faz o papel dele. A caixa pessoal (SSE `/sse/notifications` e poll de 60 s, que
 só invalidam; a fila refaz o fetch) tem um dono só, o `MarketingInboxLive`, montado
 uma vez no shell em qualquer largura, que também registra os avisos como vistos quando

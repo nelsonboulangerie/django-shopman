@@ -36,6 +36,7 @@ const SUSPEITO = {
 
 const items = ref<unknown[]>([]);
 const unread = ref(0);
+const settled = ref(true);
 const signIns = ref<unknown[]>([]);
 const markRead = vi.fn();
 const loadSignIns = vi.fn();
@@ -53,6 +54,7 @@ vi.mock("../../app/composables/useNotifications", () => ({
   useNotifications: () => ({
     items,
     unread,
+    settled,
     loading: ref(false),
     error: ref(""),
     signInError: ref(""),
@@ -112,6 +114,7 @@ describe("OperatorInbox", () => {
   beforeEach(() => {
     items.value = [];
     unread.value = 0;
+    settled.value = true;
     signIns.value = [];
     reading.value = null;
     authorized.value = false;
@@ -142,6 +145,19 @@ describe("OperatorInbox", () => {
     await mount("rail");
     const trigger = mounted!.get("[data-operator-inbox-trigger]");
     expect(trigger.attributes("aria-label")).toBe("Avisos (5 pedem sua atenção)");
+  });
+
+  // Beta 05/11 (MKT-22): o selo pintava "1" (a operação) e logo "9+" (com a caixa pessoal).
+  it("antes da primeira leitura da caixa pessoal, o selo não pinta número", async () => {
+    settled.value = false;
+    unread.value = 28;
+    useOperatorInboxAlerts().value = { items: [], count: 1 };
+    await mount("rail");
+    const trigger = () => mounted!.get("[data-operator-inbox-trigger]");
+    expect(trigger().attributes("aria-label")).toBe("Avisos");
+    settled.value = true;
+    await nextTick();
+    expect(trigger().attributes("aria-label")).toBe("Avisos (29 pedem sua atenção)");
   });
 
   it("o contador some quando não há nada", async () => {

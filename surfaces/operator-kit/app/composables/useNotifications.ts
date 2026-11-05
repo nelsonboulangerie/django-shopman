@@ -33,6 +33,9 @@ function createInbox() {
   const items = ref<UserNotification[]>([]);
   const unread = ref(0);
   const loading = ref(false);
+  // A primeira leitura voltou (com ou sem sucesso)? Antes dela o sino não pinta número:
+  // pintava só a operação ("1") e, um instante depois, a soma ("9+") (beta 05/11, MKT-22).
+  const settled = ref(false);
   const error = ref("");
   const signInError = ref("");
   const signIns = ref<SignInListResponse["sign_ins"]>([]);
@@ -44,6 +47,7 @@ function createInbox() {
     generation++;
     items.value = [];
     unread.value = 0;
+    settled.value = false;
     signIns.value = [];
     error.value = "";
     signInError.value = "";
@@ -78,6 +82,7 @@ function createInbox() {
       }
     } finally {
       loading.value = false;
+      if (current(version)) settled.value = true;
     }
   });
 
@@ -177,6 +182,7 @@ function createInbox() {
     items,
     unread,
     loading,
+    settled,
     error,
     signInError,
     refresh,

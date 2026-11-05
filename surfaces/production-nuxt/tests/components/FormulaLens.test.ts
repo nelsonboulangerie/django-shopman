@@ -137,6 +137,19 @@ describe("FormulaLens", () => {
     expect(text).toContain("O levain ainda não tem fórmula publicada.");
   });
 
+  // Beta 05/11 (CEN-14): fórmula sem ingredientes mostrava "—" em cada métrica.
+  it("metric without value says so in words, never with a dash", () => {
+    const w = mountLens({
+      lens: lens({
+        metrics: [
+          { code: "hydration", label: "Hidratação", value_display: "", low_display: "", high_display: "", max_display: "", tone: "ok", note: "" },
+        ],
+      }),
+    });
+    expect(w.text()).toContain("Não informado");
+    expect(w.text()).not.toContain("—");
+  });
+
   it("hides the bakery metrics for a non-flour anchor (a cream gets the same screen, another anchor)", () => {
     const w = mountLens({ lens: lens({ is_bakery: false, anchor_kind: "total", anchor_label: "Massa total", metrics: [], standardized: false }) });
     expect(w.text()).not.toContain("Hidratação");
