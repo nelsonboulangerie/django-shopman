@@ -185,6 +185,7 @@ defineExpose({ reset });
         >
           <NuxtKbd
             v-if="index < numberedCount"
+            class="pointer-coarse:hidden"
             :value="String(index + 1)"
             aria-hidden="true"
           />
@@ -193,7 +194,9 @@ defineExpose({ reset });
           </span>
         </NuxtButton>
       </div>
-      <p v-if="numberedCount" class="text-center text-xs text-muted-foreground">
+      <!-- Só com teclado e ponteiro fino: no celular o número não é um gesto, e a
+           frase pedia um teclado que não está lá (beta 05/11, PDV-24). -->
+      <p v-if="numberedCount" class="hidden text-center text-xs text-muted-foreground pointer-fine:block" data-identify-number-hint>
         Digite o número para escolher{{
           badgeEnabled !== false ? ", ou passe o crachá" : ""
         }}.

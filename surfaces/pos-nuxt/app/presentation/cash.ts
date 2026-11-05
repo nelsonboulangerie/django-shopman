@@ -37,6 +37,17 @@ export function movementLabel(kind: string): string {
 }
 
 /**
+ * A confirmação do movimento aceito, com o valor: o registro passava calado, e a
+ * única frase que o operador lia era o aviso do comprovante (beta 05/11, op:PDV-11
+ * e PDV-10). O valor vem primeiro; o aviso do papel, se houver, vem depois.
+ */
+export function cashMovementDoneMessage(kind: string, amount: string): string {
+  const q = amountToQ(amount);
+  const value = q === null ? "O valor" : formatBRL(q);
+  return kind === "sangria" ? `${value} saiu da gaveta.` : `${value} entrou na gaveta.`;
+}
+
+/**
  * Os motivos que viram botão, por tipo de movimento — vindos do SERVIDOR.
  *
  * O motivo é obrigatório na saída e quem cobra é o servidor. Exigir DIGITAÇÃO
@@ -293,9 +304,29 @@ export function changeRequestSummary(
   cashManagement?: POSCashManagementCapability | null,
 ): string {
   const valor = request.amount_display || "";
-  const partes = (request.denominations || []).map((q) => denominationLabel(cashManagement, q));
-  if (!partes.length) return valor;
-  return valor ? `${valor} · em ${partes.join(", ")}` : `em ${partes.join(", ")}`;
+  // "em 2" não dizia 2 o quê (beta 05/11, PDV-24): a frase diz notas e moedas,
+  // com o símbolo, como se pede no balcão.
+  const known = changeDenominations(cashManagement);
+  const notes: string[] = [];
+  const coins: string[] = [];
+  for (const q of request.denominations || []) {
+    const denom = known.find((d) => d.q === q);
+    const label = denom ? `R$ ${denom.label}` : formatBRL(q);
+    (denom?.shape === "coin" ? coins : notes).push(label);
+  }
+  const groups = [
+    notes.length ? `${notes.length > 1 ? "notas" : "nota"} de ${joinPt(notes)}` : "",
+    coins.length ? `${coins.length > 1 ? "moedas" : "moeda"} de ${joinPt(coins)}` : "",
+  ].filter(Boolean);
+  if (!groups.length) return valor;
+  const em = `em ${groups.join(" e ")}`;
+  return valor ? `${valor} ${em}` : em;
+}
+
+/** "a", "a e b", "a, b e c". */
+function joinPt(list: string[]): string {
+  if (list.length <= 1) return list[0] || "";
+  return `${list.slice(0, -1).join(", ")} e ${list[list.length - 1]}`;
 }
 
 /** Format the request timestamp for the pending list (pt-BR, hour and minute). */

@@ -71,7 +71,7 @@ const strikePrice = computed(() => productStrikePrice(props.product));
       </span>
     </span>
     <span class="flex shrink-0 flex-col items-end gap-0.5" data-pos-product-price>
-      <strong class="op-title tnum whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
+      <strong class="op-title tnum shrink-0 whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
       <s v-if="strikePrice" class="op-micro tnum text-muted-foreground" aria-hidden="true" data-pos-product-list-price>{{ strikePrice }}</s>
       <span v-if="strikePrice" class="sr-only">, {{ product.discount_label ? `${product.discount_label}, ` : "" }}antes {{ strikePrice }}</span>
     </span>
@@ -126,6 +126,18 @@ const strikePrice = computed(() => productStrikePrice(props.product));
         <Icon name="lucide:layers" class="size-3.5" />
         Escolhas
       </span>
+      <!-- Esgotado: a pílula sobre a foto; o tile fica visível porém inerte (sumir da
+           grade faria o operador procurar um botão que "sumiu"). Ao lado do preço ela
+           cortava o preço: "R$ 14" para R$ 143,00 (beta 05/11, PDV-14). Sem preço,
+           quem diz é a linha do preço ("Sem preço"). -->
+      <span
+        v-if="blockedLabel === 'Esgotado'"
+        class="absolute bottom-2 right-2 inline-flex h-6 items-center gap-1 rounded-full bg-card/90 px-2 op-micro font-semibold text-muted-foreground"
+        data-pos-product-sold-out
+      >
+        <span class="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />
+        Esgotado
+      </span>
       <span
         v-if="qty > 0"
         class="absolute right-2 top-2 grid h-7 min-w-7 place-items-center rounded-full bg-primary px-1.5 op-label font-bold tabular-nums text-primary-foreground shadow-sm"
@@ -152,7 +164,8 @@ const strikePrice = computed(() => productStrikePrice(props.product));
              (nunca embaixo): a altura do cartão não muda com o desconto, e o
              riscado corta com reticências antes de empurrar o preço. -->
         <span class="flex min-w-0 items-baseline gap-1.5" data-pos-product-price>
-          <strong class="op-title tnum whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
+          <!-- O preço nunca corta: ele é o que o operador lê do cartão. -->
+          <strong class="op-title tnum shrink-0 whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
           <s
             v-if="strikePrice"
             class="min-w-0 truncate op-micro tnum text-muted-foreground"
@@ -161,16 +174,6 @@ const strikePrice = computed(() => productStrikePrice(props.product));
             data-pos-product-list-price
           >{{ strikePrice }}</s>
           <span v-if="strikePrice" class="sr-only">, {{ product.discount_label ? `${product.discount_label}, ` : "" }}antes {{ strikePrice }}</span>
-        </span>
-        <!-- Esgotado: a pílula ao lado do preço; o tile fica visível porém inerte
-             (sumir da grade faria o operador procurar um botão que "sumiu"). Sem
-             preço, quem diz é a linha do preço ("Sem preço"). -->
-        <span
-          v-if="blockedLabel === 'Esgotado'"
-          class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold text-muted-foreground"
-        >
-          <span class="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />
-          Esgotado
         </span>
       </span>
     </div>

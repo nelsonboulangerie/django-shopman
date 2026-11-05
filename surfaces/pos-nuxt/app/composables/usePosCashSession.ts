@@ -3,7 +3,7 @@ import { toast } from "vue-sonner";
 
 import type { PrintOutcome } from "~/composables/useCounterAgent";
 import type { Action, POSCashManagementCapability, POSProjection } from "~/types/pos";
-import { requiresOpenShiftForSale } from "~/presentation/cash";
+import { cashMovementDoneMessage, requiresOpenShiftForSale } from "~/presentation/cash";
 import { actionHref } from "~/utils/posIntent";
 import { cashCloseBlockedByQueue } from "~/presentation/offlineSales";
 
@@ -204,6 +204,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       // Só abre depois do servidor aceitar: gaveta aberta por um movimento que
       // foi recusado (PIN errado, caixa fechado) é dinheiro exposto sem lastro.
       if (ok) {
+        toast.success(cashMovementDoneMessage(payload.kind, payload.amount));
         void drawer.kick(payload.kind);
         void printMovementReceipt(lastEntryId.value);
       }
@@ -379,7 +380,10 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     ).then((ok) => {
       // Só depois do `ok`: gaveta aberta por um atendimento recusado (PIN
       // errado, pedido já resolvido) é dinheiro exposto sem lastro.
-      if (ok) void drawer.kick("change_request");
+      if (ok) {
+        toast.success("Pedido de troco atendido.");
+        void drawer.kick("change_request");
+      }
       return ok;
     });
   }

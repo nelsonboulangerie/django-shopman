@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
-import { closeShiftDevicesWarning, formatOpenedAt, shiftOpenedLine } from "../app/presentation/cash";
+import { cashMovementDoneMessage, closeShiftDevicesWarning, formatOpenedAt, shiftOpenedLine } from "../app/presentation/cash";
 import { closingSteps } from "../app/presentation/closing";
 import type { POSCashRuntimeProjection } from "../app/types/pos";
 
@@ -48,5 +51,38 @@ describe("o relatório de caixa só onde ele abre (PDV-21)", () => {
     expect(keys(true)).toContain("cash_report");
     expect(keys(undefined)).toContain("cash_report");
     expect(keys(false)).not.toContain("cash_report");
+  });
+});
+
+const source = (...parts: string[]) =>
+  readFileSync(fileURLToPath(new URL(`../app/${parts.join("/")}`, import.meta.url)), "utf8");
+
+describe("o movimento aceito diz o valor (op:PDV-11, PDV-10)", () => {
+  it("entrada e saída com o valor por extenso", () => {
+    // O formatBRL usa espaço inquebrável depois do R$.
+    const plain = (text: string) => text.replace(/\s/g, " ");
+    expect(plain(cashMovementDoneMessage("suprimento", "50"))).toBe("R$ 50,00 entrou na gaveta.");
+    expect(plain(cashMovementDoneMessage("sangria", "5.000,00"))).toBe("R$ 5.000,00 saiu da gaveta.");
+  });
+
+  it("o caixa confirma o movimento e o troco atendido antes do aviso do comprovante", () => {
+    const cash = source("composables", "usePosCashSession.ts");
+    expect(cash).toContain("toast.success(cashMovementDoneMessage(payload.kind, payload.amount));");
+    expect(cash).toContain('toast.success("Pedido de troco atendido.");');
+  });
+
+  it("gaveta e impressora sem configuração falam com o balcão, sem Admin", () => {
+    const agent = source("composables", "useCounterAgent.ts");
+    expect(agent).not.toContain("no Admin");
+    expect(agent).toContain("Gaveta não configurada neste balcão. Chame o gerente.");
+  });
+});
+
+describe("Atalhos de venda não perdem a mudança calados (PDV-22)", () => {
+  it("sair com mudança não gravada pede confirmação, como o Salão", () => {
+    const page = source("pages", "settings", "shortcuts.vue");
+    expect(page).toContain("onBeforeRouteLeave(async () => {");
+    expect(page).toContain("if (!changed.value) return true;");
+    expect(page).toContain('title: "Sair sem gravar os atalhos?"');
   });
 });

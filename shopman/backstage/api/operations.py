@@ -1057,7 +1057,10 @@ class OperatorUnlockView(APIView):
                 reason="operator_unlock_invalid",
             )
             return Response(
-                {"detail": "Identificação inválida.", "error": {"code": "operator_unlock_invalid"}},
+                {
+                    "detail": operator_service.unlock_refusal_detail(alvo, badge=metodo == SignInMethod.BADGE),
+                    "error": {"code": "operator_unlock_invalid"},
+                },
                 status=403,
             )
         # `login()` de verdade, e não um cartão guardado na sessão: a partir daqui

@@ -828,7 +828,10 @@ describe("presentation/cash — pedido de troco (o dinheiro não anda)", () => {
       ref: "a1", amount_q: 10000, amount_display: "R$ 100,00",
       denominations: [500, 50], note: "", requested_by: "marina", requested_at: "",
     };
-    expect(changeRequestSummary(base, denominacoes)).toBe("R$ 100,00 · em 5, 0,50");
+    expect(changeRequestSummary(base, denominacoes)).toBe("R$ 100,00 em nota de R$ 5 e moeda de R$ 0,50");
+    // Beta 05/11 (PDV-24): "em 2" não dizia 2 o quê.
+    expect(changeRequestSummary({ ...base, denominations: [2000, 500] }, denominacoes))
+      .toBe("R$ 100,00 em notas de R$ 20 e R$ 5");
   });
 
   // Sem denominação é um pedido INTEIRO, não um pedido pela metade: o gerente
