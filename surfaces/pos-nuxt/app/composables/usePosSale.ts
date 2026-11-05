@@ -1473,6 +1473,40 @@ export function usePosSale(deps: PosSaleDeps) {
     tenderEntry.value = null;
   }
 
+  // O valor que o SISTEMA preencheu acompanha o total (beta 05/11, PDV-13). "Exato"
+  // e a linha recém-lançada nascem virgens com o restante; o desconto aplicado
+  // depois baixava o total e a linha ficava no número velho: "Total R$ 23,00 ·
+  // Dinheiro R$ 43,00 · TROCO R$ 20,00", e a gaveta pagava troco que o cliente
+  // nunca deu. Só a linha virgem se move (a digitada é o que o cliente entregou),
+  // e só uma: a selecionada, ou a única virgem. Com mais de uma virgem (divisão
+  // por pessoas), cada parcela é de alguém e ninguém é remexido em silêncio.
+  // Entre dois totais confirmados há o "calculando" (sem total): a comparação é
+  // com o último CONFIRMADO, não com o valor de um instante antes.
+  let lastConfirmedTotalQ: number | null = null;
+  watch(
+    // Total confirmado = há review (é o que ``totalStatus`` chama de "confirmed").
+    () => review.value?.total_q ?? null,
+    (totalQ) => {
+      if (totalQ === null) return;
+      const previousQ = lastConfirmedTotalQ;
+      lastConfirmedTotalQ = totalQ;
+      if (previousQ === null || totalQ === previousQ) return;
+      const virgins = cart.paymentTenders
+        .map((line, idx) => ({ line, idx }))
+        .filter(({ line }) => line._virgin);
+      const selected = cart.paymentTenders[selectedTenderIndex.value];
+      const target = selected?._virgin
+        ? { line: selected, idx: selectedTenderIndex.value }
+        : virgins.length === 1 ? virgins[0] : null;
+      if (!target) return;
+      const others = cart.paymentTenders.reduce(
+        (sum, line, idx) => (idx === target.idx ? sum : sum + line.amount_q),
+        0,
+      );
+      target.line.amount_q = Math.max(0, totalQ - others);
+    },
+  );
+
   // The method of the line the instrument (numpad/cédulas) is editing, or "" when
   // none is selected — drives whether the cash cédulas are offered.
   const selectedTenderMethod = computed(
