@@ -143,7 +143,11 @@ export function installNuxtGlobals(): ComposableEnv {
   vi.stubGlobal("onScopeDispose", () => {});
   // Fronteira de dados/framework — mockada.
   vi.stubGlobal("useRuntimeConfig", () => env.runtimeConfig);
-  vi.stubGlobal("useNuxtApp", () => env.nuxtApp);
+  // No ambiente Nuxt de verdade (`@nuxt/test-utils`) o `useNuxtApp` é o do runtime,
+  // que o próprio test-utils usa para montar o app: trocá-lo derruba a suíte.
+  const nuxtRuntime = typeof window !== "undefined"
+    && Boolean((window as unknown as { __NUXT_VITEST_ENVIRONMENT__?: boolean }).__NUXT_VITEST_ENVIRONMENT__);
+  if (!nuxtRuntime) vi.stubGlobal("useNuxtApp", () => env.nuxtApp);
   // `useState`: um ref REAL por chave, compartilhado entre chamadas — é o que o Nuxt
   // dá, e é o que faz dois composables enxergarem o mesmo cadeado.
   vi.stubGlobal("useState", (key: string, init?: () => unknown) => {

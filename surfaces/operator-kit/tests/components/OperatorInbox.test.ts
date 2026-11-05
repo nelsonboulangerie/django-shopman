@@ -368,16 +368,16 @@ describe("OperatorInbox", () => {
     unread.value = 5;
     await mount();
     await openPanel();
-    let linhas = [...document.querySelectorAll<HTMLElement>("[data-notification-item]")];
-    expect(linhas[0]!.textContent).toContain("Lote aguardando revisão de qualidade");
-    expect(linhas).toHaveLength(2);
-    expect(linhas[1]!.dataset.highlight).toBe("true");
-    const grupo = document.querySelector<HTMLButtonElement>("[data-notifications-routine]")!;
-    expect(grupo.textContent).toContain("3 acessos seus sem nada fora do comum");
-    grupo.click();
+    let rows = [...document.querySelectorAll<HTMLElement>("[data-notification-item]")];
+    expect(rows[0]!.textContent).toContain("Lote aguardando revisão de qualidade");
+    expect(rows).toHaveLength(2);
+    expect(rows[1]!.dataset.highlight).toBe("true");
+    const routineGroup = document.querySelector<HTMLButtonElement>("[data-notifications-routine]")!;
+    expect(routineGroup.textContent).toContain("3 acessos seus sem nada fora do comum");
+    routineGroup.click();
     await nextTick();
-    linhas = [...document.querySelectorAll<HTMLElement>("[data-notification-item]")];
-    expect(linhas).toHaveLength(5);
+    rows = [...document.querySelectorAll<HTMLElement>("[data-notification-item]")];
+    expect(rows).toHaveLength(5);
   });
 
   it("marcar todas como lidas, num toque", async () => {

@@ -398,7 +398,7 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
             block
             class="justify-start"
             color="neutral"
-            variant="soft"
+            variant="outline"
             :icon="routineOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
             :label="routineSignInsLabel(layout.routine.length)"
             :aria-expanded="routineOpen"
