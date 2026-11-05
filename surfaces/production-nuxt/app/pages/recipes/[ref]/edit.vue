@@ -446,10 +446,8 @@ function stepMinutes(step: RecipeStepInput): string {
 // guarda o que foi digitado, diz o que está errado e o Salvar espera a correção.
 const stepErrors = ref<Record<string, string>>({});
 function setStepError(key: string, message: string) {
-  const next = { ...stepErrors.value };
-  if (message) next[key] = message;
-  else delete next[key];
-  stepErrors.value = next;
+  const others = Object.fromEntries(Object.entries(stepErrors.value).filter(([current]) => current !== key));
+  stepErrors.value = message ? { ...others, [key]: message } : others;
 }
 function onStepMinutes(index: number, event: Event) {
   const read = readStepMinutes((event.target as HTMLInputElement).value);

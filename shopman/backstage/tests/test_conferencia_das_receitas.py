@@ -76,7 +76,7 @@ def test_cadastro_inicial_nao_se_passa_por_receita_da_casa():
     _, version = _publicar("massa-agente", "Massa Agente", "MASSA-AG", source={"kind": "ficha", "recipe_ref": "x"})
     provenance = recipe_review.provenance_of(version)
     assert provenance.label == "Do cadastro inicial"
-    assert "agente" in provenance.detail
+    assert provenance.detail == "Ficha do cadastro inicial, ainda não conferida por ninguém da casa."
 
 
 # ── Conferência ──────────────────────────────────────────────────────────────
