@@ -786,6 +786,17 @@ describe("OperatorLock — entrar com senha (BI-09)", () => {
     expect(wrapper.find("[data-operator-lock-password]").exists()).toBe(true);
   });
 
+  it("com um nome escolhido a porta sai (o teclado cabe sem rolar) e volta com a lista", async () => {
+    const wrapper = await mount();
+    await button(wrapper, "Bia Forno")!.trigger("click");
+    await flushPromises();
+    expect(wrapper.find("[data-operator-lock-password]").exists()).toBe(false);
+
+    await button(wrapper, "Trocar operador")!.trigger("click");
+    await flushPromises();
+    expect(wrapper.find("[data-operator-lock-password]").exists()).toBe(true);
+  });
+
   it("abre usuário e senha sem sair da trava, e volta", async () => {
     const wrapper = await mount();
     await wrapper.find("[data-operator-lock-password]").trigger("click");

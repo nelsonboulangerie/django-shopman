@@ -381,9 +381,11 @@ async function submitForcedChange(payload: {
           </template>
         </OperatorIdentify>
 
-        <!-- Sempre à vista, inclusive com a lista vazia: é a porta de quem não
-             está nela. -->
-        <div class="flex justify-center">
+        <!-- À vista na lista, inclusive vazia: é a porta de quem não está nela.
+             Com um nome escolhido a pessoa ESTÁ na lista, e a linha sai para o
+             teclado e a recusa caberem no celular sem rolar (dono, 10/10; matriz
+             de geometria `operator-lock.spec.ts`). "Trocar operador" volta a ela. -->
+        <div v-if="!picked" class="flex justify-center">
           <NuxtButton
             color="neutral"
             variant="ghost"
