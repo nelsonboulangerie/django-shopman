@@ -3,7 +3,7 @@
 // cobre e a pontualidade. O fornecedor aberto é a rota filha (`/base/suppliers/<ref>`).
 import { navigateTo } from "#imports";
 import { SUPPLIERS_TRAIL, baseSectionPath, supplierPath } from "~/presentation/purchaseSections";
-import { plural, supplierDimensions } from "~/presentation/purchaseUi";
+import { SUPPLIER_PANEL_QUICK, plural, supplierDimensions } from "~/presentation/purchaseUi";
 import type { Supplier } from "~/types/purchase";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 
@@ -111,26 +111,10 @@ function goToPage(page: number) {
   void navigateTo({ query: { ...route.query, page: String(page) } }, { replace: true });
 }
 
-// O painel de filtros da suíte: Situação e "tem contato comercial?" — a pergunta
-// que o comprador faz antes de apertar enviar.
+// O filtro único da suíte (dono, 04/11/2026): Situação e "tem contato comercial?", a
+// pergunta que o comprador faz antes de apertar enviar; "Sem contato comercial" é o
+// filtro rápido do próprio painel.
 const dimensions = computed(() => supplierDimensions(suppliers.value));
-const quickItems = computed(() => [
-  {
-    key: "without-contact",
-    label: "Sem contato comercial",
-    icon: "i-lucide-user-x",
-    count: suppliers.value.filter((supplier) => !supplier.orderContactName).length,
-  },
-]);
-const quickModel = computed<string[]>({
-  get: () => (supplierFilters.value.contact?.includes("without") ? ["without-contact"] : []),
-  set: (keys) => {
-    const next = { ...supplierFilters.value };
-    delete next.contact;
-    if (keys.includes("without-contact")) next.contact = ["without"];
-    supplierFilters.value = next;
-  },
-});
 const activeFilters = computed(() =>
   filterBarActiveFilters(dimensions.value, supplierFilters.value, (next) => {
     supplierFilters.value = next;
@@ -263,10 +247,9 @@ const { tone: sealTone, time: sealTime } = usePurchaseReadSeal();
         />
       </template>
       <template v-if="!openRef" #filter-panel>
-        <OperatorFilterPanel v-model="supplierFilters" :dimensions="dimensions" surface="purchase" screen="suppliers" data-base-supplier-filters />
+        <OperatorFilterPanel v-model="supplierFilters" :dimensions="dimensions" :quick="SUPPLIER_PANEL_QUICK" surface="purchase" screen="suppliers" data-base-supplier-filters />
       </template>
       <template v-if="!openRef" #filters>
-        <OperatorQuickFilters v-model="quickModel" :items="quickItems" multiple label="Fornecedores sem contato comercial" data-base-supplier-no-contact />
         <OperatorTableView table-key="purchase-suppliers" />
       </template>
       <template v-if="!openRef" #filters-end>

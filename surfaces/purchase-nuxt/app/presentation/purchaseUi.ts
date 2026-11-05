@@ -2,6 +2,7 @@
 // dá `soft`). Uma cor e uma palavra por estado, em toda tela do Compras.
 import type { MaterialTone, PurchaseRequestStatus, Supplier } from "~/types/purchase";
 import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
+import type { FilterPanelQuick } from "../../../operator-kit/app/presentation/filterPanel";
 
 type BadgeColor = "neutral" | "primary" | "info" | "success" | "warning" | "error";
 
@@ -75,14 +76,20 @@ export function materialDimensions(
   ];
 }
 
-/** O que pede atenção: o filtro rápido "Pedem atenção" liga estas duas situações. */
-export const MATERIAL_ATTENTION_TONES: readonly MaterialTone[] = ["urgent", "watch"];
+/**
+ * Os filtros rápidos DO painel em Base · Insumos (filtro único da suíte, dono
+ * 04/11/2026): as situações que pedem atenção, cada uma num toque; ligar as duas mostra
+ * tudo o que pede atenção. Não há faixa paralela repetindo a Situação.
+ */
+export const MATERIAL_PANEL_QUICK: FilterPanelQuick[] = [
+  { dimension: "tone", value: "urgent", label: TONE_LABEL.urgent },
+  { dimension: "tone", value: "watch", label: TONE_LABEL.watch },
+];
 
-/** O recorte é exatamente "Pedem atenção"? (as duas situações, e só elas) */
-export function isAttentionRecorte(filters: ActiveFilters): boolean {
-  const tones = filters.tone ?? [];
-  return tones.length === MATERIAL_ATTENTION_TONES.length && MATERIAL_ATTENTION_TONES.every((tone) => tones.includes(tone));
-}
+/** O filtro rápido DO painel em Base · Fornecedores: quem não tem contato comercial. */
+export const SUPPLIER_PANEL_QUICK: FilterPanelQuick[] = [
+  { dimension: "contact", value: "without", label: "Sem contato comercial" },
+];
 
 /** O insumo casa o recorte? Dentro de uma dimensão, OU; entre dimensões, E. */
 export function matchesMaterialFilters(

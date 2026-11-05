@@ -6,7 +6,7 @@
 import type { EnrichedMaterial } from "~/types/purchase";
 import { coverageLabel, formatMoney, formatQty, formatStockOnHand, skuRoleBadges } from "~/presentation/purchase";
 import { MATERIALS_TRAIL, baseSectionPath, materialPath, urgentLabel } from "~/presentation/purchaseSections";
-import { MATERIAL_ATTENTION_TONES, TONE_BADGE, TONE_LABEL, TONE_RANK, isAttentionRecorte, materialDimensions, plural } from "~/presentation/purchaseUi";
+import { MATERIAL_PANEL_QUICK, TONE_BADGE, TONE_LABEL, TONE_RANK, materialDimensions, plural } from "~/presentation/purchaseUi";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 
 const csvTools = ref<{ openImport: () => void; openExport: () => void } | null>(null);
@@ -127,26 +127,10 @@ watch(
   { immediate: true },
 );
 
-// O painel de filtros único da suíte (Situação e Categoria, com os favoritos da pessoa)
-// e, na mesa, o filtro rápido "Pedem atenção" (a Situação em Comprar ou Revisar).
+// O filtro único da suíte (dono, 04/11/2026): Situação e Categoria, com os favoritos da
+// pessoa, e os filtros rápidos do próprio painel (Comprar, Revisar). Não há faixa
+// paralela repetindo a Situação.
 const dimensions = computed(() => materialDimensions(enrichedMaterials.value));
-const quickItems = computed(() => [
-  {
-    key: "attention",
-    label: "Pedem atenção",
-    icon: "i-lucide-triangle-alert",
-    count: enrichedMaterials.value.filter((material) => material.tone !== "ok").length,
-  },
-]);
-const quickModel = computed<string[]>({
-  get: () => (isAttentionRecorte(materialFilters.value) ? ["attention"] : []),
-  set: (keys) => {
-    const next = { ...materialFilters.value };
-    delete next.tone;
-    if (keys.includes("attention")) next.tone = [...MATERIAL_ATTENTION_TONES];
-    materialFilters.value = next;
-  },
-});
 // Os chips do cabeçalho no celular (na mesa, os do painel, ao lado do botão).
 const activeFilters = computed(() =>
   filterBarActiveFilters(dimensions.value, materialFilters.value, (next) => {
@@ -278,12 +262,10 @@ const { tone: sealTone, time: sealTime } = usePurchaseReadSeal();
         />
       </template>
       <template v-if="!openSku" #filter-panel>
-        <OperatorFilterPanel v-model="materialFilters" :dimensions="dimensions" surface="purchase" screen="materials" data-base-filters />
+        <OperatorFilterPanel v-model="materialFilters" :dimensions="dimensions" :quick="MATERIAL_PANEL_QUICK" surface="purchase" screen="materials" data-base-filters />
       </template>
-      <!-- Na mesa: os filtros rápidos e a forma da tabela. No celular, os rápidos moram no
-           painel (Situação) e a forma sai (as colunas de apoio já somem). -->
+      <!-- Na mesa, a forma da tabela. No celular ela sai (as colunas de apoio já somem). -->
       <template v-if="!openSku" #filters>
-        <OperatorQuickFilters v-model="quickModel" :items="quickItems" multiple label="Insumos que pedem atenção" data-base-attention />
         <OperatorTableView table-key="purchase-materials" />
       </template>
       <template v-if="!openSku" #filters-end>

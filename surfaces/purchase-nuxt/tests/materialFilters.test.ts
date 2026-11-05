@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  MATERIAL_ATTENTION_TONES,
-  isAttentionRecorte,
+  MATERIAL_PANEL_QUICK,
+  SUPPLIER_PANEL_QUICK,
   materialDimensions,
   matchesMaterialFilters,
 } from "../app/presentation/purchaseUi";
 
 // Base · Insumos no painel de filtros da suíte (fase 2): Situação e Categoria, com a
-// contagem; o filtro rápido "Pedem atenção" é a Situação em Comprar ou Revisar.
+// contagem; os filtros rápidos do próprio painel são a Situação em Comprar e em Revisar.
 const MATERIALS = [
   { tone: "urgent" as const, category: "Farinhas" },
   { tone: "watch" as const, category: "Laticínios" },
@@ -34,14 +34,14 @@ describe("recortes de Base · Insumos", () => {
       { value: "Farinhas", label: "Farinhas", count: 2 },
       { value: "Laticínios", label: "Laticínios", count: 1 },
     ]);
-    expect(MATERIAL_ATTENTION_TONES).toEqual(["urgent", "watch"]);
   });
 
-  it("reconhecem o \"Pedem atenção\" só quando são as duas situações, e só elas", () => {
-    expect(isAttentionRecorte({ tone: ["watch", "urgent"] })).toBe(true);
-    expect(isAttentionRecorte({ tone: ["urgent"] })).toBe(false);
-    expect(isAttentionRecorte({ tone: ["urgent", "watch", "ok"] })).toBe(false);
-    expect(isAttentionRecorte({})).toBe(false);
+  it("os filtros rápidos moram no painel (filtro único da suíte): Comprar, Revisar e Sem contato comercial", () => {
+    expect(MATERIAL_PANEL_QUICK).toEqual([
+      { dimension: "tone", value: "urgent", label: "Comprar" },
+      { dimension: "tone", value: "watch", label: "Revisar" },
+    ]);
+    expect(SUPPLIER_PANEL_QUICK).toEqual([{ dimension: "contact", value: "without", label: "Sem contato comercial" }]);
   });
 
   it("somam dentro da dimensão e cruzam entre dimensões", () => {
