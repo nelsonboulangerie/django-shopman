@@ -1349,7 +1349,7 @@ def _fulfillment_options(fulfillment_types: tuple[str, ...]) -> tuple[POSFulfill
             options.append(POSFulfillmentOptionProjection(
                 ref="pickup",
                 label="Retirada",
-                description="Retirada no balcão ou consumo local.",
+                description="O cliente retira no balcão.",
                 requires_address=False,
             ))
     return tuple(options)
