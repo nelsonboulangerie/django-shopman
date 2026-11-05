@@ -7,15 +7,16 @@
 //     lateral são do kit;
 //   · toolbar: o dia ou a vista (`#primary`, no começo da linha, também no celular), o
 //     filtro único da suíte (`#filter-panel`, dono 04/11/2026: o `OperatorFilterPanel`
-//     da tela, "Filtros (n)" e os chips com × na mesa), o contexto da linha (`#context`,
-//     texto que não filtra) e, no fim, o progresso do dia ("4 de 28 planejados" com a
-//     barra);
+//     da tela, "Filtros (n)" e os chips com × na mesa), a faixa da mesa (`#filters`: os
+//     recortes de todo dia num toque, com a contagem, e o texto que não filtra) e, no
+//     fim, o progresso do dia ("4 de 28 planejados" com a barra);
 //   · aviso da tela: `alerts`, logo abaixo da toolbar.
 // No celular (abaixo de `md`), o cabeçalho inteiro é a linha do chão do kit
 // (`OperatorCompactBar`), como no Gestor: o selo com o ponto de conexão, a busca, o sino e
 // o ⋮ no canto. A hora da leitura vai para o topo do ⋮; o filtro único, para o ícone na
 // linha, antes da busca, com o número no canto como o sino (o mesmo `#filter-panel`, com
-// `compact` verdadeiro: a tela desenha o gatilho `icon` sem chips); o dia fica numa
+// `compact` verdadeiro: a tela desenha o gatilho `icon` sem chips, e põe nele os
+// recortes de todo dia, que no celular não têm faixa); o dia fica numa
 // faixa logo abaixo; o "onde estou" do registro (`#status`) fica ao lado do selo.
 // As etapas do lote (Alt+1 a Alt+5), "/" (busca) e "?" (ajuda) são do shell e da busca
 // da suíte. Este cabeçalho só segura o R, e entrega à ajuda do kit os grupos de teclas
@@ -199,7 +200,7 @@ const counterText = computed(() => {
     </template>
     <template v-if="$slots.primary" #filters-primary><slot name="primary" /></template>
     <template v-if="$slots['filter-panel']" #filter-panel><slot name="filter-panel" :compact="false" /></template>
-    <template v-if="$slots.context" #filters><slot name="context" /></template>
+    <template v-if="$slots.filters" #filters><slot name="filters" /></template>
     <template v-if="count != null" #filters-end>
       <!-- O percentual mora COM o número que ele resume, nunca longe dele. -->
       <div class="flex items-center gap-3" data-header-progress>

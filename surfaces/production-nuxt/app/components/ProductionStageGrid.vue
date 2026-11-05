@@ -914,8 +914,9 @@ const OPEN_FILTERS: Array<{ key: OpenFilter; label: string }> = [
   { key: "opened", label: "Abertos" },
 ];
 // O filtro único da suíte (dono, 04/11/2026): a situação da linha e a ficha-base são
-// as dimensões do painel, cada uma de escolha única, com a contagem ao lado. É o único
-// lugar desses recortes: não há abas nem seletor paralelos.
+// as dimensões do painel, cada uma de escolha única, com a contagem ao lado. Some o
+// seletor de ficha-base paralelo; a Situação mora na faixa da mesa e no painel do
+// celular, nunca nos dois na mesma forma de tela.
 const panelDimensions = computed<FilterDimension[]>(() => [
   {
     id: "state",
@@ -949,6 +950,26 @@ const panelDimensions = computed<FilterDimension[]>(() => [
       ]
     : []),
 ]);
+// Na mesa a Situação é a faixa (abaixo): o painel não a repete.
+const deskPanelDimensions = computed(() =>
+  panelDimensions.value.filter((dimension) => dimension.id !== "state"),
+);
+// Os recortes de todo dia na mesa: os filtros rápidos do kit, um de cada vez, com a
+// contagem ao lado.
+const planFilterTabs = computed(() =>
+  PLAN_FILTERS.map((filter) => ({
+    key: filter.key,
+    label: filter.label,
+    count: planGroups.value.counts[filter.key],
+  })),
+);
+const openFilterTabs = computed(() =>
+  OPEN_FILTERS.map((filter) => ({
+    key: filter.key,
+    label: filter.label,
+    count: openGroups.value.counts[filter.key],
+  })),
+);
 const panelFilters = computed<ActiveFilters>({
   get: () => {
     const state = props.stage === "plan" ? planFilter.value : openFilter.value;
@@ -1237,22 +1258,42 @@ const startedDescription = computed(() => {
           align="end"
         />
       </template>
-      <!-- O filtro único da suíte (dono, 04/11/2026): a situação e a ficha-base moram só
-           no painel. Na mesa, "Filtros (n)" e os chips com ×; no celular, o ícone na
-           linha do chão, com o número no canto, como o sino. Sem favoritos por ora: o
-           quadro não está no registro de telas do servidor (`saved_views.SCREENS`). -->
+      <!-- O filtro único da suíte (dono, 04/11/2026), um lugar por recorte em cada forma
+           de tela. Na mesa, a Situação é a faixa de um toque com a contagem (P1 de 02/10)
+           e o painel leva a Base, com "Filtros (n)" e os chips com ×. No celular, o ícone
+           na linha do chão, com o número no canto, e a Situação entra no painel. Sem
+           favoritos por ora: o quadro não está no registro de telas do servidor
+           (`saved_views.SCREENS`). -->
       <template #filter-panel="{ compact }">
         <OperatorFilterPanel
           v-model="panelFilters"
-          :dimensions="panelDimensions"
+          :dimensions="compact ? panelDimensions : deskPanelDimensions"
           :trigger="compact ? 'icon' : 'button'"
           :chips="!compact"
           :data-stage-filters="compact ? 'compact' : 'desk'"
         />
       </template>
-      <!-- A ocasião e o clima do dia planejado, à direita da linha (v4 pino 8). -->
-      <template v-if="stage === 'plan' && dayLine" #context>
+      <template #filters>
+        <!-- Os recortes de todo dia, na mesa: abas em pílula com a contagem. -->
+        <OperatorQuickFilters
+          v-if="stage === 'plan'"
+          :model-value="planFilter"
+          :items="planFilterTabs"
+          label="Recorte do Planejamento"
+          data-plan-filters
+          @update:model-value="(value) => (planFilter = (Array.isArray(value) ? value[0] : value) as PlanFilter)"
+        />
+        <OperatorQuickFilters
+          v-else
+          :model-value="openFilter"
+          :items="openFilterTabs"
+          label="Recorte da Produção"
+          data-open-filters
+          @update:model-value="(value) => (openFilter = (Array.isArray(value) ? value[0] : value) as OpenFilter)"
+        />
+        <!-- A ocasião e o clima do dia planejado, à direita dos recortes (v4 pino 8). -->
         <p
+          v-if="stage === 'plan' && dayLine"
           class="ml-auto inline-flex min-w-0 items-center gap-1.5 op-label text-muted-foreground max-md:hidden"
           data-plan-day-context
         >
