@@ -196,10 +196,10 @@ const OperatorMoreMenuStub = defineComponent({
 
 const stubs = {
   ...nuxtUiStubs,
-  // O cabeçalho é dele mesmo (testado à parte); aqui ele só repassa os recortes
-  // e os controles que a grade põe nele.
+  // O cabeçalho é dele mesmo (testado à parte); aqui ele só repassa o painel de
+  // filtros (o da mesa) e os controles que a grade põe nele.
   ProductionHeader: {
-    template: '<div><slot name="actions" /><slot name="filters" /></div>',
+    template: '<div><slot name="actions" /><slot name="filter-panel" :compact="false" /><slot name="context" /></div>',
   },
   OperatorPeriodPicker: true,
   OperatorMoreMenu: OperatorMoreMenuStub,
@@ -214,12 +214,13 @@ const stubs = {
     template:
       '<div data-select :data-value="modelValue"><span v-for="item in items" :key="item.value">{{ item.label }}</span></div>',
   },
-  // Os filtros rápidos do kit (um recorte de cada vez): abas com a contagem.
-  OperatorQuickFilters: {
-    props: ["modelValue", "items", "label"],
+  // O filtro único do kit: cada opção de cada dimensão vira um botão com a contagem;
+  // tocar escolhe (ou tira, se já escolhida) a opção, como a escolha única do painel.
+  OperatorFilterPanel: {
+    props: ["modelValue", "dimensions", "trigger", "chips"],
     emits: ["update:modelValue"],
     template:
-      '<div role="tablist" :aria-label="label"><button v-for="item in items" :key="item.key" role="tab" :aria-selected="String(item.key === modelValue)" @click="$emit(\'update:modelValue\', item.key)">{{ item.label }} {{ item.count }}</button></div>',
+      '<div data-filter-panel-stub :data-trigger="trigger"><template v-for="d in dimensions" :key="d.id"><button v-for="o in d.options" :key="o.value" :data-dimension="d.id" :aria-pressed="String((modelValue[d.id] || []).includes(o.value))" @click="$emit(\'update:modelValue\', { ...modelValue, [d.id]: (modelValue[d.id] || []).includes(o.value) ? [] : [o.value] })">{{ o.label }} {{ o.count }}</button></template></div>',
   },
   ShortageDialog: true,
   Icon: true,
@@ -614,7 +615,7 @@ describe("ProductionStageGrid — Planejamento: conjunto sem ressalva e recortes
     expect(skus(w, "[data-plan-row]")).toEqual(["CRO", "MOLHO", "RECHEIO", "CREME", "BASE"]);
   });
 
-  it("os recortes contam e filtram: A planejar, Com ressalva, Planejados", async () => {
+  it("a Situação conta e filtra no painel: A planejar, Com ressalva, Planejados", async () => {
     const planned = row({
       output_sku: "BRI",
       recipe_name: "Brioche",
@@ -624,19 +625,20 @@ describe("ProductionStageGrid — Planejamento: conjunto sem ressalva e recortes
     boardRows.value = [flagged, ...cleanRows, planned];
     const w = mountGrid("plan");
 
-    // Os recortes são os filtros rápidos do kit, com a contagem (como no Gestor).
+    // Os recortes moram só no filtro único da suíte (dono, 04/11/2026): a Situação é
+    // uma dimensão do painel, com a contagem, e não há abas paralelas.
+    expect(w.find('[role="tablist"]').exists()).toBe(false);
     const chip = (label: string) =>
       w
-        .findAll('[data-plan-filters] [role="tab"]')
-        .find((tab) => tab.text().startsWith(label))!;
-    expect(chip("Todos").text()).toBe("Todos 7");
+        .findAll('[data-filter-panel-stub] [data-dimension="state"]')
+        .find((option) => option.text().startsWith(label))!;
     expect(chip("A planejar").text()).toBe("A planejar 6");
     expect(chip("Com ressalva").text()).toBe("Com ressalva 1");
     expect(chip("Planejados").text()).toBe("Planejados 1");
-    expect(chip("Todos").attributes("aria-selected")).toBe("true");
+    expect(chip("Com ressalva").attributes("aria-pressed")).toBe("false");
 
     await chip("Com ressalva").trigger("click");
-    expect(chip("Com ressalva").attributes("aria-selected")).toBe("true");
+    expect(chip("Com ressalva").attributes("aria-pressed")).toBe("true");
     expect(skus(w, "[data-plan-row]")).toEqual(["CRO"]);
     expect(w.find("[data-planned-row]").exists()).toBe(false);
 

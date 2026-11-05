@@ -53,6 +53,7 @@ import {
   moreMenuGroups,
   type OperatorMoreMenuItem,
 } from "../../../operator-kit/app/presentation/moreMenu";
+import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
 import type {
   ProductionKDSCardProjection,
   ProductionMatrixRowProjection,
@@ -120,21 +121,6 @@ const period = computed<PeriodSelection>({
 // ── Filtro por ficha-base (higiene visual por grupo de massa) ───────────────
 const baseFilter = ref("");
 const baseOptions = computed(() => board.value?.base_recipes ?? []);
-// O `NuxtSelect` não aceita valor vazio num item: "todas" tem valor próprio.
-const ALL_BASES = "__all__";
-const baseItems = computed(() => [
-  { value: ALL_BASES, label: "Todas as bases" },
-  ...baseOptions.value.map((base) => ({
-    value: base.output_sku,
-    label: `${base.name} (${base.count})`,
-  })),
-]);
-const baseModel = computed({
-  get: () => baseFilter.value || ALL_BASES,
-  set: (value: string) => {
-    baseFilter.value = value === ALL_BASES ? "" : value;
-  },
-});
 
 // ── Papéis de coluna por lente (cruzados com a permissão) ───────────────────
 const lens = computed(() => {
@@ -927,22 +913,57 @@ const OPEN_FILTERS: Array<{ key: OpenFilter; label: string }> = [
   { key: "pending", label: "A confirmar" },
   { key: "opened", label: "Abertos" },
 ];
-// Os recortes rápidos são os filtros rápidos do kit (um recorte de cada vez, com a
-// contagem ao lado), como no Gestor.
-const planFilterTabs = computed(() =>
-  PLAN_FILTERS.map((filter) => ({
-    key: filter.key,
-    label: filter.label,
-    count: planGroups.value.counts[filter.key],
-  })),
-);
-const openFilterTabs = computed(() =>
-  OPEN_FILTERS.map((filter) => ({
-    key: filter.key,
-    label: filter.label,
-    count: openGroups.value.counts[filter.key],
-  })),
-);
+// O filtro único da suíte (dono, 04/11/2026): a situação da linha e a ficha-base são
+// as dimensões do painel, cada uma de escolha única, com a contagem ao lado. É o único
+// lugar desses recortes: não há abas nem seletor paralelos.
+const panelDimensions = computed<FilterDimension[]>(() => [
+  {
+    id: "state",
+    label: "Situação",
+    type: "single-select",
+    options:
+      props.stage === "plan"
+        ? PLAN_FILTERS.filter((filter) => filter.key !== "all").map((filter) => ({
+            value: filter.key,
+            label: filter.label,
+            count: planGroups.value.counts[filter.key],
+          }))
+        : OPEN_FILTERS.filter((filter) => filter.key !== "all").map((filter) => ({
+            value: filter.key,
+            label: filter.label,
+            count: openGroups.value.counts[filter.key],
+          })),
+  },
+  ...(baseOptions.value.length
+    ? [
+        {
+          id: "base",
+          label: "Base",
+          type: "single-select" as const,
+          options: baseOptions.value.map((base) => ({
+            value: base.output_sku,
+            label: base.name,
+            count: base.count,
+          })),
+        },
+      ]
+    : []),
+]);
+const panelFilters = computed<ActiveFilters>({
+  get: () => {
+    const state = props.stage === "plan" ? planFilter.value : openFilter.value;
+    return {
+      ...(state !== "all" ? { state: [state] } : {}),
+      ...(baseFilter.value ? { base: [baseFilter.value] } : {}),
+    };
+  },
+  set: (next) => {
+    const state = next.state?.[0] ?? "all";
+    if (props.stage === "plan") planFilter.value = state as PlanFilter;
+    else openFilter.value = state as OpenFilter;
+    baseFilter.value = next.base?.[0] ?? "";
+  },
+});
 
 /** A persona que só pode seguir a sugestão planeja o número exato dela. */
 const inlineSource = computed<"manual" | "suggested">(() =>
@@ -1073,7 +1094,7 @@ const activeFilters = computed(() => {
   if (quick)
     list.push({
       key: "state",
-      label: quick.label,
+      label: `Situação: ${quick.label}`,
       remove: () => {
         planFilter.value = "all";
         openFilter.value = "all";
@@ -1216,37 +1237,23 @@ const startedDescription = computed(() => {
           align="end"
         />
       </template>
-      <template #filters>
-        <!-- Os recortes rápidos: abas em pílula com a contagem, como no Gestor. -->
-        <OperatorQuickFilters
-          v-if="stage === 'plan'"
-          :model-value="planFilter"
-          :items="planFilterTabs"
-          label="Recorte do Planejamento"
-          data-plan-filters
-          @update:model-value="(value) => (planFilter = (Array.isArray(value) ? value[0] : value) as PlanFilter)"
+      <!-- O filtro único da suíte (dono, 04/11/2026): a situação e a ficha-base moram só
+           no painel. Na mesa, "Filtros (n)" e os chips com ×; no celular, o ícone na
+           linha do chão, com o número no canto, como o sino. -->
+      <template #filter-panel="{ compact }">
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="panelDimensions"
+          :trigger="compact ? 'icon' : 'button'"
+          :chips="!compact"
+          surface="production"
+          :screen="stage"
+          :data-stage-filters="compact ? 'compact' : 'desk'"
         />
-        <OperatorQuickFilters
-          v-else
-          :model-value="openFilter"
-          :items="openFilterTabs"
-          label="Recorte da Produção"
-          data-open-filters
-          @update:model-value="(value) => (openFilter = (Array.isArray(value) ? value[0] : value) as OpenFilter)"
-        />
-        <NuxtSelect
-          v-if="baseOptions.length"
-          v-model="baseModel"
-          :items="baseItems"
-          value-key="value"
-          icon="i-lucide-layers"
-          class="w-52"
-          aria-label="Filtrar por ficha-base"
-          data-base-filter
-        />
-        <!-- A ocasião e o clima do dia planejado, à direita dos recortes (v4 pino 8). -->
+      </template>
+      <!-- A ocasião e o clima do dia planejado, à direita da linha (v4 pino 8). -->
+      <template v-if="stage === 'plan' && dayLine" #context>
         <p
-          v-if="stage === 'plan' && dayLine"
           class="ml-auto inline-flex min-w-0 items-center gap-1.5 op-label text-muted-foreground max-md:hidden"
           data-plan-day-context
         >
