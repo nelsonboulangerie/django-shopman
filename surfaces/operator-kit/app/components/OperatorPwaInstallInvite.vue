@@ -11,6 +11,8 @@
 // prompt nativo, ou o convite não dizia nada. Agora o caminho sai de `installPlan()`
 // (`utils/installGuide.ts`), que responde por sistema + navegador e devolve `none`
 // quando não existe caminho honesto — a regra do dono é informação correta, ou nada.
+import type { OperatorSession } from "../types/operator";
+
 interface OperatorInstallIdentity {
   label: string;
   article: string;
@@ -33,7 +35,15 @@ const identity = computed<OperatorInstallIdentity | null>(
 
 const pwa = usePwaInstall({ app: props.app });
 const plan = computed(() => pwa.plan.value);
-const visible = computed(() => pwa.canInvite.value);
+// Só para quem já está DENTRO do app: identificado, destravado e com acesso a
+// ele. O convite subia por cima do login antes de alguém entrar, e na tela de
+// acesso negado, onde instalar não serve para nada (beta 05/11, CEN-15).
+const { data: operatorSession } = useNuxtData<OperatorSession>("operator-session");
+const insideTheApp = computed(() => {
+  const session = operatorSession.value;
+  return Boolean(session?.operator && !session.locked && session.authorized);
+});
+const visible = computed(() => pwa.canInvite.value && insideTheApp.value);
 
 // Um toque resolve, ou a pessoa vai seguir passos — o título diz qual dos dois é, antes
 // de ela decidir se tem tempo agora.

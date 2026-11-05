@@ -14,18 +14,30 @@ import { isUnauthenticatedError } from "../utils/httpError";
  */
 export function useOperatorSession() {
   const expired = useState("operator-session-expired", () => false);
+  // "Terminou" só existe para o que COMEÇOU. Num dispositivo cru (primeira visita,
+  // sem cookie), o primeiro fetch protegido também volta 401, e a tela dizia "Sua
+  // sessão terminou. Seu rascunho... foram preservados." para quem nunca entrou e
+  // não tinha rascunho nenhum (beta 05/11, CMP-11). A antessala marca aqui quando
+  // viu alguém identificado nesta carga do app; antes disso, 401 é só "entre".
+  const hadSession = useState("operator-session-had-session", () => false);
 
   /**
-   * Se o erro for autenticação perdida (401), marca a sessão como expirada e devolve
-   * true (o chamador ainda pode re-lançar para o tratamento de erro existente). 403 e
-   * demais status não disparam re-gate — devolve false.
+   * Se o erro for autenticação perdida (401), devolve true (o chamador ainda pode
+   * re-lançar para o tratamento de erro existente) e, se havia sessão nesta carga do
+   * app, marca a sessão como expirada. 403 e demais status não disparam re-gate:
+   * devolve false.
    */
   function flagIfUnauthenticated(error: unknown): boolean {
     if (isUnauthenticatedError(error)) {
-      expired.value = true;
+      if (hadSession.value) expired.value = true;
       return true;
     }
     return false;
+  }
+
+  /** A antessala viu alguém identificado: daqui em diante, 401 é sessão que terminou. */
+  function markAuthenticated() {
+    hadSession.value = true;
   }
 
   /** Limpa o sinal após re-autenticar (login/desbloqueio bem-sucedido). */
@@ -33,5 +45,11 @@ export function useOperatorSession() {
     expired.value = false;
   }
 
-  return { expired: readonly(expired), flagIfUnauthenticated, reset };
+  return {
+    expired: readonly(expired),
+    hadSession: readonly(hadSession),
+    flagIfUnauthenticated,
+    markAuthenticated,
+    reset,
+  };
 }

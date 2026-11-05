@@ -53,6 +53,15 @@ export function useOperatorLock(perm: string) {
   const operatorSession = useOperatorSession();
 
   const session = computed<OperatorSession | null>(() => data.value ?? null);
+  // Alguém identificado nesta carga do app: a partir daqui um 401 é sessão que
+  // TERMINOU (e o login diz isso). Antes, é só a primeira visita.
+  watch(
+    () => Boolean(session.value?.operator),
+    (identified) => {
+      if (identified) operatorSession.markAuthenticated();
+    },
+    { immediate: true },
+  );
   const sessionState = computed(() =>
     operatorSessionState({
       expired: operatorSession.expired.value,
@@ -96,7 +105,16 @@ export function useOperatorLock(perm: string) {
   // meio-tempo caía no chão. Agora a segunda trava em diante abre com a lista
   // de antes, já ouvindo, e a busca só a atualiza.
   const eligible = useState<OperatorCard[]>(`operator-eligible:${perm}`, () => []);
+  // Em que pé está a lista. Sem isto, a lista VAZIA de quem ainda está lendo e a
+  // lista vazia de verdade eram a mesma tela, e a trava dizia "Nenhum operador
+  // habilitado" por alguns segundos antes de mostrar a Fran e a Joyce (beta 05/11,
+  // PDV2-16). E falha de rede não é lista vazia: ela diz que não leu.
+  const eligibleStatus = useState<"idle" | "pending" | "ready" | "error">(
+    `operator-eligible-status:${perm}`,
+    () => "idle",
+  );
   async function loadEligible(): Promise<void> {
+    eligibleStatus.value = "pending";
     try {
       const res = await $fetch<OperatorEligibleResponse>(
         "/api/v1/backstage/operator/eligible/",
@@ -106,16 +124,22 @@ export function useOperatorLock(perm: string) {
         },
       );
       eligible.value = res.operators ?? [];
+      eligibleStatus.value = "ready";
     } catch {
-      eligible.value = [];
+      eligibleStatus.value = "error";
     }
   }
 
   const busy = ref(false);
+  // A recusa do destrave mora JUNTO do teclado, e não num aviso no canto da tela
+  // que some sozinho (beta 05/11, CEN-01 e GES-14): é ali que a pessoa olha. O
+  // PIN bloqueado chega com a frase do servidor ("até 07:05, peça a um gerente").
+  const unlockError = ref("");
 
   async function unlock(input: Omit<UnlockInput, "perm">): Promise<boolean> {
     if (busy.value) return false;
     busy.value = true;
+    unlockError.value = "";
     try {
       await $fetch("/api/v1/backstage/operator/unlock/", {
         method: "POST",
@@ -130,7 +154,7 @@ export function useOperatorLock(perm: string) {
       await refreshNuxtData();
       return true;
     } catch (err) {
-      useSonner.error(httpErrorMessage(err, "Identificação inválida. Tente de novo."));
+      unlockError.value = httpErrorMessage(err, "Identificação inválida. Tente de novo.");
       return false;
     } finally {
       busy.value = false;
@@ -221,8 +245,10 @@ export function useOperatorLock(perm: string) {
     operator,
     mustChange,
     eligible,
+    eligibleStatus,
     loadEligible,
     unlock,
+    unlockError,
     lock,
     changePin,
     changeError,

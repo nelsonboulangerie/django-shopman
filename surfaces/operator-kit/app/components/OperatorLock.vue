@@ -15,15 +15,26 @@
 // Import explícito (não auto-import): o POS mantém um lock próprio (usePosOperatorLock)
 // e este overlay é construído SOBRE o composable do kit, independente do app hospedeiro.
 import { useOperatorLock } from "../composables/useOperatorLock";
+import { alertActions } from "../utils/alertActions";
 import type { OperatorCard } from "../types/operator";
 import type { IdentifiablePerson } from "./OperatorIdentify.vue";
 
-const props = defineProps<{ perm: string }>();
+const props = withDefaults(
+  defineProps<{
+    perm: string;
+    /** A linha abaixo do título. Neutra por padrão (vale em qualquer app); o app
+     *  que tiver frase melhor para o seu momento passa a dele (beta 05/11). */
+    subtitle?: string;
+  }>(),
+  { subtitle: "Você assume este dispositivo." },
+);
 
 const {
   eligible,
+  eligibleStatus,
   loadEligible,
   unlock,
+  unlockError,
   changePin,
   changeError,
   reportBadgeLost,
@@ -33,14 +44,37 @@ const {
   busy,
 } = useOperatorLock(props.perm);
 
-// Quem foi escolhido no `OperatorIdentify`. Guardado aqui porque a troca
-// voluntária de PIN precisa saber de QUEM é o PIN que está sendo trocado.
+// Quem está escolhido no `OperatorIdentify`, AGORA (o evento `pick`). Guardado
+// aqui porque a troca voluntária de PIN precisa saber de QUEM é o PIN que está
+// sendo trocado. Era preenchido só no PIN digitado: "Trocar meu PIN" logo depois
+// de escolher o nome não fazia nada, deixava a troca ligada, e o próximo PIN
+// errado abria a troca do PIN de quem tinha sido escolhido ANTES (beta 05/11,
+// CEN-02 e PDV-03).
 const picked = ref<OperatorCard | null>(null);
 const changing = ref(false); // voluntary "Trocar PIN" mode (an operator is picked)
 const lostBadge = ref(false); // "Perdi meu crachá" mode
+const withPassword = ref(false); // "Entrar com senha" (quem não tem PIN aqui)
 const identify = ref<{ reset: (keepPicked?: boolean) => void } | null>(null);
 
 onMounted(loadEligible);
+
+// A lista ainda chegando não é lista vazia (beta 05/11, PDV2-16). A segunda trava
+// em diante já abre com a lista de antes, e aí não há o que esperar.
+const eligibleLoading = computed(
+  () => !eligible.value.length && ["idle", "pending"].includes(eligibleStatus.value),
+);
+const eligibleFailed = computed(
+  () => !eligible.value.length && eligibleStatus.value === "error",
+);
+
+function onPick(person: IdentifiablePerson | null) {
+  picked.value = person
+    ? (eligible.value.find((op) => op.username === person.username) ?? null)
+    : null;
+  // Trocou de pessoa (ou voltou à lista): a troca de PIN e a recusa eram da outra.
+  changing.value = false;
+  unlockError.value = "";
+}
 
 // ── O teclado é da trava desde o primeiro instante ──
 // A trava sobe por cima de uma tela viva: no PDV, por ociosidade, com a busca de
@@ -88,7 +122,6 @@ async function onPin(payload: {
   const card =
     eligible.value.find((op) => op.username === payload.username) ?? null;
   if (!card) return;
-  picked.value = card;
   const ok = await unlock({ operatorId: card.id, pin: payload.pin });
   // Recusa apaga o PIN e mantém a pessoa: ela erra o dedo, não a identidade.
   if (!ok) identify.value?.reset(true);
@@ -103,7 +136,19 @@ const footerActions = [
 ] as const;
 
 function startChange() {
+  // O botão só existe com alguém escolhido (mora no rodapé do teclado). A guarda
+  // fica para a troca nunca ligar sem dono.
+  if (!picked.value) return;
+  changeError.value = "";
   changing.value = true;
+}
+
+// Sair da troca remonta a identificação do zero (lista de nomes): a escolha de
+// antes não pode ficar guardada aqui como se ainda valesse.
+function cancelChange() {
+  changing.value = false;
+  changeError.value = "";
+  picked.value = null;
 }
 
 // ── Voluntary change (an operator picked themselves and taps "Trocar PIN") ──
@@ -115,7 +160,7 @@ async function submitVoluntaryChange(payload: {
   const ok = await changePin({ operatorId: picked.value.id, ...payload });
   if (ok) {
     changing.value = false;
-    identify.value?.reset(true);
+    picked.value = null;
     useSonner.success("PIN atualizado. Entre com o novo PIN.");
   }
 }
@@ -181,8 +226,30 @@ async function submitForcedChange(payload: {
         :busy="busy"
         :error="changeError"
         @submit="submitVoluntaryChange"
-        @cancel="changing = false"
+        @cancel="cancelChange"
       />
+
+      <!-- "Entrar com senha": quem não tem PIN nesta tela (o dono, alguém de
+           outra equipe) entra pelo usuário e senha, sem sair da trava. Antes a
+           única saída era abrir o app em outro endereço (beta 05/11, BI-09). -->
+      <template v-else-if="withPassword">
+        <OperatorLoginForm
+          heading
+          title="Entrar com senha"
+          description="Para quem não tem PIN nesta tela."
+          icon="i-lucide-key-round"
+          login-url="/api/v1/backstage/operator/login/"
+        />
+        <div class="flex justify-center">
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-chevron-left"
+            label="Voltar"
+            @click="withPassword = false"
+          />
+        </div>
+      </template>
 
       <!-- "Perdi meu crachá": o crachá morre agora. A tela É a confirmação —
            diz o que acontece e só age depois do PIN. -->
@@ -224,8 +291,13 @@ async function submitForcedChange(payload: {
              abaixo é metade de um par — a outra metade, no diálogo de
              autorização, diz "Você continua como <fulano>".
 
-               aqui         → você ASSUME o balcão (a sessão troca)
-               autorização  → você CONTINUA quem era (o gerente só assina) -->
+               aqui         → você ASSUME este dispositivo (a sessão troca)
+               autorização  → você CONTINUA quem era (o gerente só assina)
+
+             Era "Você assume o balcão." em todos os apps, inclusive na Central,
+             no B.I. e no Marketing, que não têm balcão (beta 05/11). O que troca
+             é a sessão do dispositivo inteiro (o destrave é login de verdade), e
+             a frase diz isso em qualquer app. -->
         <!-- O título é o cabeçalho da tela de bloqueio (h2): o leitor de tela
              navega por ele. O mesmo desenho do cabeçalho do login do operador
              (`OperatorLoginForm`): o cadeado no centro, título e uma linha. -->
@@ -233,13 +305,38 @@ async function submitForcedChange(payload: {
           <NuxtAvatar size="3xl" icon="i-lucide-lock" alt="" class="[@media(max-height:43.75rem)]:hidden" />
           <div class="grid gap-1">
             <h2 class="text-lg font-semibold">Identifique-se para operar</h2>
-            <p class="text-sm text-muted-foreground">Você assume o balcão.</p>
+            <p class="text-sm text-muted-foreground" data-operator-lock-subtitle>{{ subtitle }}</p>
           </div>
         </header>
 
+        <!-- A lista chegando: o lugar dos nomes, e não "ninguém habilitado". -->
+        <div
+          v-if="eligibleLoading"
+          class="grid gap-2"
+          role="status"
+          aria-busy="true"
+          data-operator-lock-loading
+        >
+          <p class="text-center text-sm text-muted-foreground">Carregando operadores…</p>
+          <div class="grid grid-cols-2 gap-2" aria-hidden="true">
+            <NuxtSkeleton v-for="n in 4" :key="n" class="h-14" />
+          </div>
+        </div>
+
+        <!-- Falha de rede não é lista vazia: diz que não leu e oferece ler de novo. -->
+        <NuxtAlert
+          v-else-if="eligibleFailed"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-wifi-off"
+          title="Não foi possível carregar os operadores."
+          :actions="alertActions('error', [{ label: 'Tentar de novo', onClick: loadEligible }])"
+          data-operator-lock-eligible-error
+        />
+
         <!-- Dentro do cartão, `soft`: sem borda (cartão dentro de cartão, dono 08/10). -->
         <NuxtEmpty
-          v-if="!eligible.length"
+          v-else-if="!eligible.length"
           variant="soft"
           icon="i-lucide-user-x"
           title="Nenhum operador habilitado para esta tela"
@@ -255,8 +352,10 @@ async function submitForcedChange(payload: {
           :people="eligible"
           :busy="busy"
           :badge-enabled="!changing && !mustChange && !lostBadge"
+          :error="unlockError"
           prompt="Quem está operando?"
           change-label="Trocar operador"
+          @pick="onPick"
           @pin="onPin"
           @badge="(token: string) => unlock({ badge: token })"
         >
@@ -281,6 +380,19 @@ async function submitForcedChange(payload: {
             </OperatorFitGroup>
           </template>
         </OperatorIdentify>
+
+        <!-- Sempre à vista, inclusive com a lista vazia: é a porta de quem não
+             está nela. -->
+        <div class="flex justify-center">
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-key-round"
+            label="Entrar com senha"
+            data-operator-lock-password
+            @click="withPassword = true"
+          />
+        </div>
       </template>
       </div>
     </NuxtCard>

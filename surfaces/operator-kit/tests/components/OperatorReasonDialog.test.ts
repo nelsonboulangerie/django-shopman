@@ -56,6 +56,18 @@ describe("OperatorReasonDialog", () => {
     expect(dom("[data-reason-confirm]").attributes("disabled")).toBeUndefined();
   });
 
+  // Beta 05/11 (GES-14): o Cancelar apagado não dizia o que faltava.
+  it("botão apagado diz o que falta, ao lado dele, e some quando há motivo", async () => {
+    await mount({
+      keyedReasons: [{ key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou." }],
+    });
+    expect(dom("[data-reason-missing]").text()).toBe("Escolha um motivo para confirmar.");
+    expect(dom("[data-reason-confirm]").attributes("disabled")).toBeDefined();
+    document.querySelector<HTMLElement>('[data-reason-keyed] [role="radio"][aria-label="Acabou um item"]')!.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(document.querySelector("[data-reason-missing]")).toBeNull();
+  });
+
   it("motivos prontos: um toque escolhe; Outros exige texto e nunca vira o motivo", async () => {
     const w = await mount({ presets: groups });
     const chips = domAll("[data-reason-preset]");

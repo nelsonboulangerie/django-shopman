@@ -61,9 +61,15 @@ const props = withDefaults(
 const emit = defineEmits<{
   pin: [{ person: IdentifiablePerson | null; username: string; pin: string }];
   badge: [string];
+  /** Quem está escolhido agora (`null` ao voltar à lista). A trava precisa saber
+   *  ANTES do PIN: o "Trocar meu PIN" é da pessoa escolhida, e sem este aviso a
+   *  trava só descobria quem era no primeiro PIN digitado (beta 05/11, CEN-02 e
+   *  PDV-03: o botão não fazia nada, e depois trocava o PIN de outra pessoa). */
+  pick: [IdentifiablePerson | null];
 }>();
 
 const picked = ref<IdentifiablePerson | null>(null);
+watch(picked, (person) => emit("pick", person));
 
 const hasList = computed(() => props.people.length > 0);
 const username = computed(() => picked.value?.username ?? "");
@@ -193,10 +199,22 @@ defineExpose({ reset });
           </span>
         </NuxtButton>
       </div>
-      <p v-if="numberedCount" class="text-center text-xs text-muted-foreground">
+      <!-- O número é atalho de TECLADO: só aparece onde há um (ponteiro fino).
+           No toque, a instrução é o toque (beta 05/11, CEN-12). -->
+      <p
+        v-if="numberedCount"
+        class="hidden text-center text-xs text-muted-foreground pointer-fine:block"
+        data-operator-identify-hint="keyboard"
+      >
         Digite o número para escolher{{
           badgeEnabled !== false ? ", ou passe o crachá" : ""
         }}.
+      </p>
+      <p
+        class="text-center text-xs text-muted-foreground pointer-fine:hidden"
+        data-operator-identify-hint="touch"
+      >
+        Toque no seu nome{{ badgeEnabled !== false ? ", ou passe o crachá" : "" }}.
       </p>
       <NuxtAlert
         v-if="error && !showPad"

@@ -121,6 +121,16 @@ onMounted(() => {
   if (!props.keyboard || !root.value) return;
   frame = root.value.closest<HTMLElement>("[data-operator-lock], [role='dialog']") ?? root.value;
   frame.addEventListener("keydown", onKeydown);
+  // Cada passo da troca de PIN remonta esta peça, e o botão que levou até ele
+  // ("Continuar", "Trocar meu PIN") sai do DOM com o foco junto: o foco caía no
+  // `body`, fora da moldura, e o teclado físico não chegava aqui até alguém
+  // tocar num dígito (beta 05/11, PDV-25). Foco perdido volta para a moldura;
+  // foco que o operador pôs DENTRO dela é dele.
+  const active = document.activeElement as HTMLElement | null;
+  if (!active || active === document.body || !frame.contains(active)) {
+    if (!frame.hasAttribute("tabindex")) frame.setAttribute("tabindex", "-1");
+    frame.focus({ preventScroll: true });
+  }
 });
 onBeforeUnmount(() => {
   frame?.removeEventListener("keydown", onKeydown);
