@@ -332,7 +332,14 @@ class MarketingDecisionQueueView(_CampaignBase):
             "decisions",
             marketing_decisions_projection.build_decision_queue,
         )
-        response = Response({"queue": projection_data(queue)})
+        # Quem olha a fila: "pede você" só é verdade para quem pode decidir, e
+        # "Preparar disparo" só é convite para quem pode disparar (beta 05/11).
+        user = request.user
+        viewer = {
+            "can_decide": bool(user.has_perm("shop.approve_marketing_announcements")),
+            "can_fire": bool(user.has_perm("shop.fire_marketing_campaigns")),
+        }
+        response = Response({"queue": projection_data(queue), "viewer": viewer})
         response["Cache-Control"] = "private, no-store"
         return response
 

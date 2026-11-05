@@ -28,7 +28,15 @@ export function useMarketingDecisions(options: { live?: boolean } = {}) {
   const items = computed(() => queue.value?.items ?? []);
   const automaticChecks = computed(() => queue.value?.automatic_checks ?? []);
   const scheduled = computed(() => queue.value?.scheduled ?? []);
-  const decisionCount = computed(() => items.value.length);
+  // Quem olha a fila: a Gerente vê o que espera aprovação, mas não decide (beta 05/11,
+  // ge:MKT-03). O que ela não decide não "pede você" nem conta no selo.
+  const viewer = computed(() => data.value?.viewer ?? null);
+  const canDecide = computed(() => viewer.value?.can_decide === true);
+  const canFire = computed(() => viewer.value?.can_fire === true);
+  const awaitingApprover = computed(() =>
+    canDecide.value ? 0 : items.value.filter((item) => item.kind === "review").length,
+  );
+  const decisionCount = computed(() => items.value.length - awaitingApprover.value);
   const shopTimezone = computed(() => queue.value?.shop_timezone ?? "UTC");
 
   // O relógio da tela anda sozinho: "faltam 12 min" vira "faltam 11 min" sem
@@ -60,6 +68,9 @@ export function useMarketingDecisions(options: { live?: boolean } = {}) {
     automaticChecks,
     scheduled,
     decisionCount,
+    awaitingApprover,
+    canDecide,
+    canFire,
     shopTimezone,
     nowMs,
     loading: pending,

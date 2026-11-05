@@ -490,6 +490,10 @@ const countLabel = computed(() => {
     : `${formatCount(shown)} ${noun(shown)}`;
 });
 
+const createdCanFire = computed(() => {
+  const created = rules.value.find((rule) => rule.pk === createdPk.value);
+  return created ? fireActionFor(created, actions.value)?.reason !== "missing_capability" : false;
+});
 // O aviso da campanha recém-criada mora nas `alerts` do cabeçalho, com a saída "Visto".
 const screenAlerts = computed(() =>
   createdPk.value
@@ -498,8 +502,10 @@ const screenAlerts = computed(() =>
           id: "created",
           color: "success" as const,
           title: "Campanha criada e salva.",
-          description:
-            "Ela está destacada na lista. Abra para conferir ou prepare o primeiro disparo.",
+          // Só convida a disparar quem pode disparar (beta 05/11, ge:MKT-17).
+          description: createdCanFire.value
+            ? "Ela está destacada na lista. Abra para conferir ou prepare o primeiro disparo."
+            : "Ela está destacada na lista. Abra para conferir.",
           action: { label: "Visto", onSelect: dismissCreated },
         },
       ]
