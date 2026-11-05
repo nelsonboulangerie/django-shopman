@@ -5,7 +5,7 @@
 import type { ShortcutGroup } from "../../../operator-kit/app/presentation/suiteChrome";
 
 /**
- * O que a ajuda de atalhos da suíte lista para a Produção, além de "Em todo o app" (as
+ * O que a ajuda de atalhos da suíte lista para a Produção, além de "em qualquer tela" (as
  * etapas, Alt+1 a Alt+5, a busca "/" e o "?", que o kit monta com as seções do shell).
  */
 export const PRODUCTION_SHORTCUT_GROUPS: ShortcutGroup[] = [
