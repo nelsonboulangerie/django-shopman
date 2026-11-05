@@ -766,6 +766,20 @@ describe("ProductionStageGrid — Produção", () => {
     expect(lines[1]!.text()).toContain("PAO-001");
   });
 
+  it("o nome quebra em duas linhas em vez de cortar no tablet (beta 05/11)", () => {
+    boardRows.value = [
+      row({
+        recipe_name: "Kuro Pan Burger",
+        planned_qty: "20",
+        planned_orders: [wo({ status: "planned", planned_qty: "20" })],
+      }),
+    ];
+    const name = mountGrid().get("[data-open-row] [data-row-name]");
+    expect(name.classes()).toContain("line-clamp-2");
+    expect(name.classes()).not.toContain("truncate");
+    expect(name.attributes("title")).toBe("Kuro Pan Burger");
+  });
+
   it("cai no SKU quando a ficha não tem nome — a linha não some", () => {
     boardRows.value = [
       row({

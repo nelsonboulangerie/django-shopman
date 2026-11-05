@@ -1456,7 +1456,13 @@ const startedDescription = computed(() => {
               class="flex w-full min-w-0 items-center gap-2.5 lg:w-auto"
               data-row-product
             >
-              <p class="min-w-0 truncate op-title">
+              <!-- O nome é o que o padeiro lê: quebra em 2 linhas antes de
+                   cortar (beta 05/11: "Kuro Pan…" e "Kuro Pan Burger" iguais). -->
+              <p
+                class="min-w-0 line-clamp-2 break-words op-title"
+                :title="rowLabel(row)"
+                data-row-name
+              >
                 {{ rowLabel(row) }}
                 <span class="font-mono op-micro font-normal text-muted-foreground">{{
                   row.output_sku
@@ -1873,7 +1879,14 @@ const startedDescription = computed(() => {
               :data-sku="row.output_sku"
             >
               <div class="min-w-0" data-row-product>
-                <p class="truncate op-title">{{ rowLabel(row) }}</p>
+                <!-- Nome em até 2 linhas, nunca "Croissa…" no tablet deitado. -->
+                <p
+                  class="line-clamp-2 break-words op-title"
+                  :title="rowLabel(row)"
+                  data-row-name
+                >
+                  {{ rowLabel(row) }}
+                </p>
                 <p class="flex items-center gap-1.5 op-micro text-muted-foreground">
                   <span class="truncate font-mono">{{ row.output_sku }}</span>
                   <!-- Celular e tablet em pé: sem a coluna Planejado, o número vem aqui. -->
