@@ -2480,7 +2480,9 @@ def _merge_public_audience_rules(current, incoming: dict) -> dict:
 
 
 _NAME_MAX_LENGTH = 100
-_TEMPLATE_VARIABLE = re.compile(r"\{\{\s*([^{}\s]*)\s*\}\}")
+# Sem `\s*` dos dois lados de um grupo que pode ser vazio (backtracking quadrático): o
+# miolo inteiro é capturado e aparado em Python.
+_TEMPLATE_VARIABLE = re.compile(r"\{\{([^{}]*)\}\}")
 
 
 def _unknown_template_variable(value) -> str:
@@ -2507,7 +2509,7 @@ def _unknown_template_variable(value) -> str:
         return ""
     known = set(available_variables())
     for match in _TEMPLATE_VARIABLE.finditer(value):
-        name = match.group(1)
+        name = match.group(1).strip()
         if name not in known:
             return name or "vazia"
     return ""

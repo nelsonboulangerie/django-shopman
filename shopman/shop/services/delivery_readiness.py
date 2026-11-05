@@ -89,18 +89,6 @@ def readiness_for(
     return result
 
 
-_PLATFORM_LABELS = {
-    "instagram": "Instagram",
-    "facebook": "Facebook",
-    "google_business": "Google",
-    "whatsapp": "WhatsApp",
-}
-
-
-def _platform_label(platform: str) -> str:
-    return _PLATFORM_LABELS.get(platform, platform)
-
-
 def _switched_off_readiness(
     platform: str,
     *,
@@ -124,6 +112,12 @@ def _switched_off_readiness(
         reason = "A publicação nesta plataforma está desligada neste ambiente."
     else:
         reason = "O envio de campanhas por esta plataforma está desligado neste ambiente."
+    label = {
+        "instagram": "Instagram",
+        "facebook": "Facebook",
+        "google_business": "Google",
+        "whatsapp": "WhatsApp",
+    }.get(platform, platform)
     # Só o que a fila garante: o worker não reserva destino de plataforma desligada.
     limitation = (
         "Destinos aprovados para esta plataforma ficam na fila, sem envio, enquanto "
@@ -140,7 +134,7 @@ def _switched_off_readiness(
         reason=reason,
         # O nome da chave fica no `diagnose_marketing`; ao operador, o que pedir e a
         # quem (beta 05/11, ge:MKT-10).
-        action=f"Peça ao suporte técnico para ligar o envio pelo {_platform_label(platform)} neste ambiente.",
+        action=f"Peça ao suporte técnico para ligar o envio pelo {label} neste ambiente.",
         limitation=limitation,
     )
 

@@ -1479,16 +1479,14 @@ def _sample_sku(promotion_ref: str = "") -> str:
         products = Product.objects.filter(is_published=True, is_sellable=True)
         if promotion_ref:
             from shopman.shop.models import Promotion
+            from shopman.shop.services.offers import offer_skus
 
-            promotion = Promotion.objects.filter(ref=promotion_ref).only("skus", "collections").first()
-            scoped = products.none()
-            if promotion is not None and promotion.skus:
-                scoped = products.filter(sku__in=list(promotion.skus))
-            elif promotion is not None and promotion.collections:
-                scoped = products.filter(
-                    collection_items__collection__ref__in=list(promotion.collections)
-                ).distinct()
-            if scoped.exists():
+            promotion = Promotion.objects.filter(ref=promotion_ref).first()
+            # O alcance é o da oferta (SKUs diretos ou pelas coleções): o mesmo
+            # `offer_skus` que decide se ela pode ir numa campanha.
+            reach = offer_skus(promotion) if promotion is not None else ()
+            scoped = products.filter(sku__in=list(reach))
+            if reach and scoped.exists():
                 products = scoped
         product = products.order_by("name").only("sku").first()
         return product.sku if product else ""

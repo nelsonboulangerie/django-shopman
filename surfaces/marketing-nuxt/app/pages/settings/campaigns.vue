@@ -666,23 +666,6 @@ useHead({ title: "Campanhas" });
     <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
       <!-- A tabela da suíte: o estado (carregando, erro, vazio) é dela. A chave liga ou
            desliga sem abrir; tocar a linha abre a edição quando a Action deixa. -->
-      <!-- No celular, a lista em cartões: a chave e o ⋯ sempre à vista (ge:MKT-14). A
-           tabela continua dona do carregando, do erro e do vazio. -->
-      <CampaignMobileList
-        v-if="pageRules.length"
-        class="md:hidden"
-        :rules="pageRules"
-        :platform-labels="platformLabels"
-        :created-pk="createdPk"
-        :mutating-campaign-pk="mutatingCampaignPk"
-        :edit-state="editState"
-        :fire-state="fireState"
-        :row-menu="rowMenu"
-        :trigger-when="triggerWhen"
-        @toggle="toggle"
-        @fire="openFire"
-      />
-      <div :class="pageRules.length ? 'max-md:hidden' : ''" data-campaigns-desk>
       <OperatorTable
         :data="pageRules"
         :columns="campaignColumns"
@@ -897,7 +880,6 @@ useHead({ title: "Campanhas" });
           </nav>
         </template>
       </OperatorTable>
-      </div>
     </section>
 
     <MarketingWorkspaceDialog

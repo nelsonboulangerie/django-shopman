@@ -678,7 +678,6 @@ defineExpose({
     <p class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm" data-review-origin>
       <NuxtBadge
         color="warning"
-        variant="soft"
         icon="i-lucide-clock"
         data-review-badge
       >{{ rejectBlockedReason && proceedBlockedReason ? "Aguarda quem aprova" : "Pede sua aprovação" }}</NuxtBadge>

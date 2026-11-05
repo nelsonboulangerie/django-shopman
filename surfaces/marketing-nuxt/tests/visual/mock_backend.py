@@ -190,7 +190,9 @@ def decision_queue(scenario: str) -> dict:
             "scheduled": scheduled,
             "scheduled_today_count": len(scheduled),
             "active_campaign_count": 3,
-        }
+        },
+        # Quem olha a fila (beta 05/11, ge:MKT-03/MKT-17): o operador sintético decide e dispara.
+        "viewer": {"can_decide": True, "can_fire": True},
     }
 
 

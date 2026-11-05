@@ -77,12 +77,4 @@ describe("a lista de campanhas mostra o porquê por extenso", () => {
     expect(page).not.toMatch(/:title="[^"]*fireState\(row\.original\)\.reason/);
   });
 
-  it("no celular a lista é de cartões, e a tabela fica para a mesa (ge:MKT-14)", () => {
-    const page = readFileSync(
-      new URL("../app/pages/settings/campaigns.vue", import.meta.url),
-      "utf8",
-    );
-    expect(page).toMatch(/<CampaignMobileList[\s\S]*?class="md:hidden"/);
-    expect(page).toContain(`:class="pageRules.length ? 'max-md:hidden' : ''"`);
-  });
 });
