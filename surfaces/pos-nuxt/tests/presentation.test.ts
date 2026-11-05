@@ -49,6 +49,7 @@ import {
   tenderSumQ,
 } from "../app/presentation/payment";
 import {
+  amountEcho,
   amountInputError,
   amountToQ,
   canRegisterMovement,
@@ -718,6 +719,24 @@ describe("presentation/cash — valores explícitos (abrir/fechar caixa)", () =>
     expect(amountToQ("1,2,3")).toBeNull();
     expect(amountToQ("abc")).toBeNull();
     expect(amountToQ("10,555")).toBeNull();
+  });
+
+  // Beta 05/11 (PDV-01): "5.000,00", que é como a tela escreve o valor de volta,
+  // era "Valor ilegível", enquanto "5000" passava calado como R$ 5.000,00.
+  it("amountToQ aceita milhar com vírgula decimal, como o servidor", () => {
+    expect(amountToQ("5.000,00")).toBe(500000);
+    expect(amountToQ("R$ 1.234,56")).toBe(123456);
+    expect(amountToQ("12,")).toBe(1200);
+    expect(amountToQ("1.2,00")).toBeNull();
+    expect(amountToQ("12,,30")).toBeNull();
+  });
+
+  it("amountEcho diz o valor por extenso antes de registrar", () => {
+    expect(amountEcho("5000")).toBe(formatBRL(500000));
+    expect(amountEcho("50,00")).toBe(formatBRL(5000));
+    expect(amountEcho("")).toBe("");
+    expect(amountEcho("abc")).toBe("");
+    expect(amountEcho("0")).toBe("");
   });
 
   it("parseAmountToQ continua esmagando ilegível em 0 (contrato do troco)", () => {

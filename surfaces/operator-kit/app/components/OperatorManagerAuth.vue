@@ -49,6 +49,10 @@ const props = defineProps<{
   /** O ato que está sendo autorizado. A copy inteira sai daqui — ver `managerAuth`. */
   action?: ManagerAction;
   thresholdQ?: number;
+  /** O valor que o gerente assina, em centavos (sangria, troco, devolução, estorno). */
+  amountQ?: number | null;
+  /** O complemento do ato (o motivo da sangria, as ordens abertas). */
+  detail?: string;
   /** Códigos vindos da review (`approval_reasons`) — dizem POR QUE o gerente foi chamado. */
   reasons?: string[];
   /** Conta na casa acima do limite (`review.house_account_limit`): o diálogo diz saldo, limite e quanto passa. */
@@ -72,6 +76,8 @@ const managers = computed(() => props.managers ?? []);
 const reason = computed(() =>
   managerAuthReason({
     action: props.action,
+    amountQ: props.amountQ,
+    detail: props.detail,
     reasons: props.reasons,
     thresholdQ: props.thresholdQ,
     houseAccountLimit: props.houseAccountLimit,

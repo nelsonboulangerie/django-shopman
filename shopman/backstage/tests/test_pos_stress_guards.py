@@ -205,6 +205,26 @@ class CashRemovalNeedsAManagerTests(PosGuardsBase):
         self.assertEqual(movement.approved_by, self.manager)
         self.assertEqual(movement.amount_q, -5000)
 
+    def test_sangria_maior_que_a_gaveta_e_recusada_sem_dizer_o_esperado(self) -> None:
+        # Beta 05/11 (PDV-01): "5000" virou R$ 5.000,00 numa gaveta de R$ 474,20,
+        # passou pelo PIN e o livro ficou negativo. A gaveta tem R$ 100,00 aqui.
+        with self.assertRaises(POSError) as ctx:
+            register_cash_movement(
+                operator=self.operator, movement_type="sangria",
+                amount_raw="5000", reason="depósito",
+                manager_approval={"username": self.manager.username, "pin": "4321"},
+            )
+
+        self.assertNotIn("100", str(ctx.exception))
+        self.assertFalse(Entry.objects.filter(kind=Entry.Kind.CASH_OUT).exists())
+
+        movement = register_cash_movement(
+            operator=self.operator, movement_type="sangria",
+            amount_raw="100,00", reason="depósito",
+            manager_approval={"username": self.manager.username, "pin": "4321"},
+        )
+        self.assertEqual(movement.amount_q, -10000)
+
     def test_sangria_with_a_wrong_pin_is_refused(self) -> None:
         with self.assertRaises(PosIntentError) as ctx:
             register_cash_movement(

@@ -314,6 +314,10 @@ class POSCashRuntimeProjection:
     terminal_label: str
     operator_username: str
     opened_at: str
+    # Quem ABRIU a gaveta (``Shift.opened_by``). Não é quem opera agora: "turno
+    # aberto às 08:45 por joyce" atribuía a abertura do admin a quem estava no
+    # balcão (beta 05/11, PDV-19). Vazio sem turno aberto.
+    opened_by_username: str = ""
     # Dois valores: "open" e "closed". Houve um terceiro, `terminal_occupied`,
     # com quatro campos de bloqueio ao lado — de quando a custódia era da pessoa
     # e a gaveta podia estar "ocupada por outra". Saíram inteiros: com a custódia
@@ -2278,6 +2282,7 @@ def _cash_runtime_projection(cash_shift, runtime, operator, terminal=None) -> PO
         # quem abriu vive em `cash_shift.opened_by` e aparece na auditoria.
         operator_username=getattr(operator, "username", "") if operator is not None else "",
         opened_at=cash_shift.opened_at.isoformat() if cash_shift.opened_at else "",
+        opened_by_username=cash_shift.opened_by.get_username() if cash_shift.opened_by_id else "",
         status="open",
         can_audit_cash=audita,
         pending_change_requests=_pending_change_requests(cash_shift),

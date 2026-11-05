@@ -1932,12 +1932,33 @@ class DayClosingView(APIView):
         if closing.already_closed:
             return Response({"detail": "Fechamento de hoje já foi realizado."}, status=409)
 
+        release = request.data.get("production_release") if hasattr(request, "data") else None
+        if release is not None and not isinstance(release, dict):
+            return Response(
+                {"detail": "Envie a liberação como um objeto (motivo e autorização).", "field": "production_release"},
+                status=400,
+            )
         try:
             closing_date = closing_service.perform_day_closing(
                 user=request.user,
                 items=list(closing.items),
                 quantities_by_sku={str(k): str(v) for k, v in quantities.items()},
+                production_release=release,
             )
+        except closing_service.PendingProductionBlocksClosing as exc:
+            # Produção aberta impede selar (decisão do dono, 05/11/2026). 409: o
+            # pedido está certo, o estado do dia é que não deixa.
+            return Response(
+                {
+                    "detail": str(exc),
+                    "field": exc.field,
+                    "error": {"code": exc.code, "message": str(exc), "field": exc.field},
+                },
+                status=409,
+            )
+        except PosIntentError as exc:
+            # A assinatura do gerente que libera: o mesmo desafio da sangria.
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
         except Exception as exc:  # pragma: no cover - defensive

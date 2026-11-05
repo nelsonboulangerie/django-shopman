@@ -25,6 +25,12 @@ const props = defineProps<{
   layout?: "list" | "corridor";
   /** Só no corredor: "denominations" (Por cédula) ou "total" (Só o total). */
   mode?: "denominations" | "total";
+  /**
+   * Chave do estado do app (`useState`) onde a contagem mora. Com ela, a contagem
+   * sobrevive a sair da tela e voltar (o Fim do dia promete isso no "Sair"; beta
+   * 05/11, PDV-04). Sem ela, o estado é local, como sempre foi.
+   */
+  stateKey?: string;
 }>();
 
 const emit = defineEmits<{
@@ -37,9 +43,11 @@ const emit = defineEmits<{
 
 // A quantidade digitada, por denominação (`q` em centavos). Começa vazia:
 // contar de verdade, não confirmar um default.
-const counts = reactive<Record<number, string>>({});
-const totalOnlyQ = ref(0);
-const totalOnlyTouched = ref(false);
+const counts = props.stateKey
+  ? useState<Record<number, string>>(`${props.stateKey}:counts`, () => ({})).value
+  : reactive<Record<number, string>>({});
+const totalOnlyQ = props.stateKey ? useState(`${props.stateKey}:total`, () => 0) : ref(0);
+const totalOnlyTouched = props.stateKey ? useState(`${props.stateKey}:touched`, () => false) : ref(false);
 const countedQ = computed(() => denominationCountTotalQ(counts));
 const totalQ = computed(() => (props.layout === "corridor" && props.mode === "total" ? totalOnlyQ.value : countedQ.value));
 const totalDisplay = computed(() => formatAmountInput(totalQ.value));
@@ -48,8 +56,9 @@ const filled = computed(() => props.denominations.filter((d) => /^\d+$/.test(Str
 // Emite só quando a soma MUDA — nunca no mount. Quem abriu o contador pode já
 // ter digitado um valor no campo; sobrescrevê-lo com 0 antes do primeiro toque
 // apagaria uma resposta dada.
-watch(totalQ, (value) => emit("total-q", value));
-watch(filled, (value) => emit("progress", value, props.denominations.length));
+// `immediate`: a contagem que voltou do estado do app chega ao pai já no início.
+watch(totalQ, (value) => emit("total-q", value), { immediate: true });
+watch(filled, (value) => emit("progress", value, props.denominations.length), { immediate: true });
 
 // ── Corredor ──────────────────────────────────────────────────────────────────
 const notes = computed(() => props.denominations.filter((d) => d.shape === "note"));

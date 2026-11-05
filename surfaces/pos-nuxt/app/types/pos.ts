@@ -352,6 +352,8 @@ export interface POSCashRuntimeProjection {
   terminal_label: string;
   operator_username: string;
   opened_at: string;
+  /** Quem ABRIU a gaveta; `operator_username` é quem opera agora (PDV-19). */
+  opened_by_username?: string;
   status?: "open" | "closed" | string;
   /**
    * Pode ver a APURAÇÃO (esperado, contado, diferença, faturamento)?

@@ -63,6 +63,7 @@ registerEndpoint("/api/v1/backstage/closing/", () => ({ closing: servido }));
 async function abrirTela(closing: DayClosingProjection, options: { attachTo?: HTMLElement } = {}) {
   servido = closing;
   clearNuxtData("day-closing");
+  clearNuxtState((key) => key.startsWith("pos-closing:"));
   return mountSuspended(ClosingPage, options);
 }
 

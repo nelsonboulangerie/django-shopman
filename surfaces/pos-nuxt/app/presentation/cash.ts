@@ -13,6 +13,7 @@ import type {
   POSChangeRequestProjection,
   POSOfflineReviewSaleProjection,
 } from "~/types/pos";
+import { formatBRL } from "~/utils/posIntent";
 
 /**
  * O rótulo que o operador lê. O REF continua `sangria`/`suprimento` — é o
@@ -222,9 +223,28 @@ export function parseAmountToQ(raw: string): number {
  * que só aceita valor positivo, e não serve à contagem.
  */
 export function amountToQ(raw: string): number | null {
-  const limpo = String(raw ?? "").trim().replace(/\s/g, "").replace(",", ".");
+  let limpo = String(raw ?? "").trim().replace(/\s/g, "").replace(/^R\$/i, "");
+  // Com vírgula, ela é o decimal e o ponto é milhar ("5.000,00", como a própria
+  // tela escreve o valor de volta). Sem vírgula, o ponto segue sendo o decimal.
+  // Mesma regra do servidor (`parse_money_to_q`).
+  if (limpo.includes(",")) {
+    if (!/^\d{1,3}(\.\d{3})*,\d{0,2}$|^\d+,\d{0,2}$/.test(limpo)) return null;
+    limpo = limpo.replace(/\./g, "").replace(",", ".").replace(/\.$/, "");
+  }
   if (!/^\d+(\.\d{1,2})?$/.test(limpo)) return null;
   return Math.round(Number(limpo) * 100);
+}
+
+/**
+ * O valor digitado, por extenso em reais, para o operador conferir ANTES de
+ * registrar: "5000" vira "R$ 5.000,00". O campo é texto livre (5000 é cinco mil,
+ * a mesma leitura do teclado do pagamento), e sem o eco um R$ 50,00 digitado sem
+ * vírgula passava como R$ 5.000,00 até o comprovante (beta 05/11, PDV-01).
+ * "" quando não há valor legível: o erro do campo já fala nesse caso.
+ */
+export function amountEcho(raw: string): string {
+  const q = amountToQ(raw);
+  return q === null || q <= 0 ? "" : formatBRL(q);
 }
 
 /** Centavos → o texto que um campo de valor aceita de volta: 12050 → "120,50". */
@@ -578,6 +598,40 @@ export function stationDevicesNotice(runtime: POSCashRuntimeProjection | null | 
   return runtime?.has_open_shift
     ? `${shared} Caixa já aberto: o que for vendido aqui entra no mesmo turno.`
     : shared;
+}
+
+/**
+ * Fechar o caixa encerra o turno da GAVETA, e a gaveta é de todos os
+ * dispositivos do balcão: os outros param de vender até alguém abrir o caixa de
+ * novo. O diálogo dizia só "O turno encerra aqui" (beta 05/11, PDV-20).
+ * "" com um dispositivo só.
+ */
+export function closeShiftDevicesWarning(runtime: POSCashRuntimeProjection | null | undefined): string {
+  const others = (runtime?.station_devices ?? 0) - 1;
+  if (others < 1) return "";
+  return others === 1
+    ? "O outro dispositivo desta gaveta para de vender até alguém abrir o caixa de novo."
+    : `Os outros ${others} dispositivos desta gaveta param de vender até alguém abrir o caixa de novo.`;
+}
+
+/**
+ * A linha do turno no Fim do dia: o balcão, a hora em que ABRIU e quem abriu.
+ *
+ * Quem abriu é `opened_by_username`, não quem opera agora: "turno aberto às
+ * 08:45 · por joyce" atribuía à joyce a abertura do admin (beta 05/11, PDV-19).
+ */
+export function shiftOpenedLine(input: {
+  terminalLabel: string;
+  openedAt: string | null | undefined;
+  openedBy?: string | null;
+}): string {
+  if (!input.openedAt) return "";
+  const at = new Date(input.openedAt);
+  const time = Number.isNaN(at.getTime())
+    ? ""
+    : at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const opened = time ? `turno aberto às ${time}${input.openedBy ? ` por ${input.openedBy}` : ""}` : "";
+  return [input.terminalLabel, opened].filter(Boolean).join(" · ");
 }
 
 /**

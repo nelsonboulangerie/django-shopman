@@ -62,6 +62,9 @@ def test_parse_money_to_q_accepts_common_operator_inputs():
     assert pos.parse_money_to_q("12.34") == 1234
     assert pos.parse_money_to_q("-10") == -1000
     assert pos.parse_money_to_q("") == 0
+    # Milhar com vírgula decimal: é como o próprio sistema escreve o valor.
+    assert pos.parse_money_to_q("5.000,00") == 500000
+    assert pos.parse_money_to_q("R$ 1.234,56") == 123456
 
 
 def test_parse_money_to_q_rejects_garbage_loudly():
@@ -123,7 +126,8 @@ def test_register_cash_movement_requires_open_session(operator):
 
 @pytest.mark.django_db
 def test_register_cash_movement_validates_amount_and_normalizes_type(operator, manager, manager_approval):
-    shift = cash.open_shift(operator=operator, float_q=0)
+    # Fundo que cobre a retirada: a gaveta não entrega o que não tem (PDV-01).
+    shift = cash.open_shift(operator=operator, float_q=10000)
 
     with pytest.raises(POSError):
         pos.register_cash_movement(operator=operator, amount_raw="0", manager_approval=manager_approval)
