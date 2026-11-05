@@ -126,6 +126,13 @@ class RecipeEntryCardProjection:
     output_sku: str
     output_name: str
     has_ficha: bool
+    #: A receita diante da produção, dito por extenso (beta 05/11/2026, PROD-06):
+    #: ``in_use`` (a ficha dela é a que a produção usa), ``unpublished`` (nunca
+    #: publicada), ``replaced`` (publicada, mas outra receita usa o mesmo SKU),
+    #: ``off`` (publicada e sem ficha ativa) ou vazio (sem SKU e sem ficha).
+    ficha_status: str
+    #: O selo da lista; vazio em ``in_use``.
+    ficha_status_label: str
     #: Modo de produção da ficha vigente (``batch`` | ``made_to_order``); vazio sem ficha.
     production_mode: str
     production_mode_label: str
@@ -1114,7 +1121,17 @@ def build_recipe_book(
         [entry.ref for entry in entries],
         {entry.ref: entry.current_version.number for entry in entries if entry.current_version is not None},
     )
-    cards = tuple(_card(entry, names, ficha_modes, favorites, ratings) for entry in entries)
+    # Só a receita publicada e sem ficha ativa pergunta quem usa o SKU dela: nas
+    # outras a resposta já está na mão, e a lista não paga a consulta.
+    in_use_by_sku = _active_sheet_names_by_sku({
+        entry.output_sku
+        for entry in entries
+        if entry.output_sku
+        and entry.ref not in ficha_modes
+        and entry.current_version is not None
+        and entry.current_version.status == RecipeVersion.Status.PUBLISHED
+    })
+    cards = tuple(_card(entry, names, ficha_modes, favorites, ratings, in_use_by_sku) for entry in entries)
     return RecipeBookListProjection(
         entries=cards,
         kinds=_kind_options(),
@@ -1127,12 +1144,41 @@ def build_recipe_book(
     )
 
 
+def _active_sheet_names_by_sku(skus: set[str]) -> dict[str, str]:
+    """``SKU`` (em maiúsculas) → nome da ficha ativa que o produz, para os SKUs pedidos."""
+    if not skus:
+        return {}
+    query = Q()
+    for sku in skus:
+        query |= Q(output_sku__iexact=sku)
+    return {
+        str(sku).upper(): name
+        for sku, name in Recipe.objects.filter(query, is_active=True).order_by("-pk").values_list("output_sku", "name")
+    }
+
+
+def ficha_status_of(
+    entry: RecipeEntry, *, has_ficha: bool, in_use_by_sku: dict[str, str]
+) -> tuple[str, str]:
+    """``(status, selo)`` da receita diante da produção. Ver ``RecipeEntryCardProjection.ficha_status``."""
+    if has_ficha:
+        return "in_use", ""
+    current = entry.current_version
+    if current is None or current.status != RecipeVersion.Status.PUBLISHED:
+        return ("unpublished", "Ainda não publicada") if entry.output_sku else ("", "")
+    other = in_use_by_sku.get(str(entry.output_sku or "").upper())
+    if other:
+        return "replaced", f"Fora da produção: {other} usa este SKU"
+    return "off", "Fora da produção"
+
+
 def _card(
     entry: RecipeEntry,
     names: dict[str, str],
     ficha_modes: dict[str, str],
     favorites: set[str],
     ratings: dict[str, tuple[Decimal | None, int]],
+    in_use_by_sku: dict[str, str] | None = None,
 ) -> RecipeEntryCardProjection:
     current = entry.current_version
     formula = dict(current.formula or {}) if current is not None else {}
@@ -1141,6 +1187,9 @@ def _card(
     hydration = ""
     if anchor_kind == "flour":
         hydration = _pct_display(analyze(formula, ingredient_formulas_for(formula)).hydration_pct)
+    status, status_label = ficha_status_of(
+        entry, has_ficha=entry.ref in ficha_modes, in_use_by_sku=in_use_by_sku or {}
+    )
     return RecipeEntryCardProjection(
         ref=entry.ref,
         name=entry.name,
@@ -1149,6 +1198,8 @@ def _card(
         output_sku=entry.output_sku,
         output_name=names.get(entry.output_sku, "") if entry.output_sku else "",
         has_ficha=entry.ref in ficha_modes,
+        ficha_status=status,
+        ficha_status_label=status_label,
         production_mode=ficha_modes.get(entry.ref, ""),
         production_mode_label=_production_mode_label(ficha_modes.get(entry.ref, "")),
         current_version_number=current.number if current is not None else None,
@@ -1999,9 +2050,15 @@ def build_capture_draft(captured: CapturedRecipe) -> RecipeCaptureDraftProjectio
 
 
 def resolve_recipe_book_access(user) -> RecipeBookAccessProjection:
-    """Ler = o gate do app de Produção (ou ver a ficha); escrever = gerir a produção (ou mudar a ficha)."""
+    """Ler = o gate do app de Produção (ou ver a ficha); escrever = mudar a ficha (``craftsman.change_recipe``).
+
+    Criar, editar, conferir e publicar ficha técnica é da gestão da produção
+    (Gerente e Dono), decisão do dono de 05/11/2026. A Cozinha opera lotes
+    (``shop.manage_production``) e só LÊ a ficha: gerir a produção não abre a
+    escrita da receita, que mexe em custo, insumo e no que o chão produz.
+    """
     is_superuser = bool(getattr(user, "is_superuser", False))
-    can_edit = is_superuser or user.has_perm("shop.manage_production") or user.has_perm("craftsman.change_recipe")
+    can_edit = is_superuser or user.has_perm("craftsman.change_recipe")
     can_view = can_edit or user.has_perm("backstage.operate_production") or user.has_perm("craftsman.view_recipe")
     return RecipeBookAccessProjection(
         can_view=bool(can_view),

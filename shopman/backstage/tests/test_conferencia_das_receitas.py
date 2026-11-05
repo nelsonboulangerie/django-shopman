@@ -13,7 +13,6 @@ from decimal import Decimal
 
 import pytest
 from django.contrib.auth.models import Permission, User
-from django.contrib.contenttypes.models import ContentType
 from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion
 from shopman.craftsman.services import recipe_book as craftsman
 
@@ -198,7 +197,7 @@ def editor(db):
     user = User.objects.create_user("padeiro", password="pw", is_staff=True, first_name="Maysa")
     user = grant_production_operator(user)
     user.user_permissions.add(
-        Permission.objects.get(content_type=ContentType.objects.get_for_model(Shop), codename="manage_production")
+        Permission.objects.get(content_type__app_label="craftsman", codename="change_recipe")
     )
     return User.objects.get(pk=user.pk)
 
