@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { mount, type VueWrapper } from "@vue/test-utils";
 
+import FloorTimerCreateDialog from "../../app/components/FloorTimerCreateDialog.vue";
 import TimersPage from "../../app/pages/timers.vue";
 // O card entra DE VERDADE: é a integração página↔card que importa aqui (o
 // gesto em si tem teste próprio em FloorTimerCard.test.ts). Componente
@@ -143,6 +144,18 @@ describe("Página /timers — disparo de um toque", () => {
     await novo!.trigger("click");
 
     expect(page.find("[data-create-dialog]").exists()).toBe(true);
+  });
+
+  it("o nome do timer para em 40 letras, o teto da etiqueta (beta 05/11)", async () => {
+    const dialog = mount(FloorTimerCreateDialog, {
+      props: { open: true, tags: [], lastMinutes: 20, savingTag: false },
+      global: { stubs: { ...nuxtUiStubs, Icon: true } },
+    });
+    await nextTick();
+    const nameInput = dialog.find('[aria-label="Nome do timer"]');
+    expect(nameInput.attributes("maxlength")).toBe("40");
+    expect(dialog.html()).not.toContain("Não trava lote");
+    dialog.unmount();
   });
 });
 
