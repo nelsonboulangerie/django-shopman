@@ -24,8 +24,8 @@ import {
   discountReachText,
   draftDiscountOutcome,
   lineDiscountBadge,
+  lineDiscountCompact,
   lineDiscountDetail,
-  lineDiscountFact,
   lineListTotalDisplay,
   lineTotalQ,
   manualDiscountLabel,
@@ -406,7 +406,7 @@ function discountBadge(item: POSCartItem) {
  *  −R$ 3,00 na linha" quando a linha tem mais de uma unidade (o desconto em R$ é
  *  por unidade, regra do kernel); em %, o percentual e o valor na linha. */
 function compactDiscount(item: POSCartItem) {
-  return lineDiscountFact(item) || discountBadge(item);
+  return lineDiscountCompact(item, reasonOptions.value) || discountBadge(item);
 }
 /** O detalhe da linha aberta: o motivo e o alcance. */
 function discountDetail(item: POSCartItem) {
