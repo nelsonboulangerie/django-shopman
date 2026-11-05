@@ -947,7 +947,9 @@ describe("ProductionStageGrid — Planejamento: o número na linha, o porquê po
 
     expect(w.find('[data-testid="suggestion-signal"]').exists()).toBe(false);
     const trigger = w.find("[data-plan-reason-trigger]");
-    expect(trigger.text()).toContain("Por quê");
+    // Só o ícone de "?": o nome do gesto mora no aria-label, sem texto ao lado.
+    expect(trigger.text()).toBe("");
+    expect(trigger.attributes("aria-label")).toContain("Por que");
     expect(trigger.attributes("aria-expanded")).toBe("false");
     expect(w.find('[data-testid="plan-reason"]').exists()).toBe(false);
     expect(w.text()).not.toContain("margem");
