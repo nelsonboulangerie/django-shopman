@@ -536,6 +536,10 @@ class OrderCardProjection:
     # destravar sozinho, e a tela oferece o próximo passo pronto (cancelar com o
     # motivo "Pagamento não confirmado" já marcado), em vez de um botão morto.
     payment_lapsed: bool = False
+    # Pedido sem NENHUM rastro de cobrança (o pill "Pagamento não informado"). O
+    # gate de pagamento não o barra (payment_gate.requires_captured_payment), então
+    # a tela pergunta "já recebeu?" antes do degrau que entrega a mercadoria.
+    payment_unrecorded: bool = False
 
 
 @dataclass(frozen=True)
@@ -792,6 +796,8 @@ class OperatorOrderProjection:
     transferred_from_label: str = ""
     # Igual ao do cartão: a cobrança venceu e o avanço não destrava mais sozinho.
     payment_lapsed: bool = False
+    # Igual ao do cartão: nenhum rastro de cobrança; a tela pergunta antes de entregar.
+    payment_unrecorded: bool = False
 
 
 #: Os contextos que leem o detalhe do pedido (:func:`build_operator_order`).
@@ -1009,7 +1015,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         customer_data.get("name", "")
         or customer_data.get("phone", "")
         or order.data.get("customer_phone", "")
-        or order.handle_ref
+        or _customer_handle(order)
         or ""
     )
     payment_data = order.data.get("payment", {})
@@ -1144,6 +1150,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
+        payment_unrecorded=_payment_unrecorded(order, payment_data),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         cancellation_presets=_cancellation_presets(),
         cancel_reasons=_cancel_reasons(),
@@ -2067,7 +2074,7 @@ def _build_card(
         customer_data.get("name", "")
         or customer_data.get("phone", "")
         or order.data.get("customer_phone", "")
-        or order.handle_ref
+        or _customer_handle(order)
         or ""
     )
 
@@ -2155,6 +2162,7 @@ def _build_card(
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
+        payment_unrecorded=_payment_unrecorded(order, payment_data),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status_label=fiscal_status_label,
         fiscal_status=fiscal_status,
@@ -2539,6 +2547,11 @@ def _is_payment_pending(order: Order, method: str, payment_status: str) -> bool:
     return payment_status not in _PAYMENT_COMPLETE
 
 
+def _payment_unrecorded(order: Order, payment_data: dict) -> bool:
+    """Nenhum rastro de cobrança fora do iFood (o iFood traz o pagamento no payload)."""
+    return order.channel_ref != "ifood" and _has_no_payment_info(payment_data or {})
+
+
 def _has_no_payment_info(payment_data: dict) -> bool:
     """True quando o pedido não traz nenhum rastro de cobrança: sem meio, sem
     intent de Pix/cartão e sem tender de balcão/entrega.
@@ -2615,7 +2628,7 @@ _ADVANCE_BLOCK_LABELS: dict[operator_orders.AdvanceBlock, str] = {
     operator_orders.AdvanceBlock.IFOOD_DELIVERY_UNKNOWN: "Quem leva ainda não definido",
     operator_orders.AdvanceBlock.IFOOD_CANCELLATION_PENDING: "Aguardando cancelamento pelo iFood…",
     operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED: "Aguardando pagamento…",
-    operator_orders.AdvanceBlock.PREORDER_NOT_DUE: "Encomenda do dia…",
+    operator_orders.AdvanceBlock.PREORDER_NOT_DUE: "Aguardando o dia da encomenda…",
     operator_orders.AdvanceBlock.WAITLIST_FERMATA: "Esperando o lote…",
 }
 
@@ -3031,6 +3044,16 @@ _MASKED_NAME_LABEL = "Nome oculto pelo iFood"
 def _is_masked_name(label: str) -> bool:
     """Um rótulo feito só de caracteres de máscara não identifica ninguém."""
     return bool(label) and set(label) <= _MASKED_NAME_CHARS and any(ch in "*·•…" for ch in label)
+
+
+def _customer_handle(order: Order) -> str:
+    """O handle do pedido só quando ele É o cliente (telefone, WhatsApp).
+
+    No PDV o handle é a comanda (``pos_tab``, "00001008"): mostrá-la no lugar do
+    cliente punha um número de comanda como nome de gente (beta 05/11, PDV-10).
+    Mesma régua de ``customer_orders`` para o telefone do pedido.
+    """
+    return order.handle_ref if order.handle_type in {"phone", "whatsapp"} else ""
 
 
 def _format_customer_display(value: str) -> str:

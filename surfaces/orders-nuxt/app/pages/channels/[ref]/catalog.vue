@@ -160,10 +160,14 @@ const phoneHeaderActions = computed(() => [
       </template>
     </OperatorPageHeader>
     <div class="min-h-0 min-w-0 flex-1 space-y-4 overflow-auto p-4 sm:p-6">
-      <p class="max-w-4xl text-sm text-muted-foreground">
-        Organize as categorias e confira a identidade dos anúncios. Alterações
-        de categoria exigem confirmação do iFood; os vínculos de produto abaixo
-        continuam locais.
+      <!-- A confirmação remota é do iFood: na Loja online a frase falava de um
+           canal que não é este (beta 05/11, GES-16). -->
+      <p class="max-w-4xl text-sm text-muted-foreground" data-channel-catalog-intro>
+        Organize as categorias e confira a identidade dos anúncios.
+        <template v-if="channel === 'ifood'">
+          Alterações de categoria exigem confirmação do iFood; os vínculos de
+          produto abaixo continuam locais.
+        </template>
       </p>
       <NuxtAlert
         v-if="message"

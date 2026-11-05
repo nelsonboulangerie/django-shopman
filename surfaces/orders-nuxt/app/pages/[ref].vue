@@ -15,6 +15,7 @@ import {
   cardAuthorizationNotice,
   changeBackSuggestionQ,
   confirmationRemainingLabel,
+  handOverPaymentQuestion,
   ifoodAcceptNotice,
   lucideIcon,
   onRoadLine,
@@ -25,6 +26,7 @@ import {
 } from "~/presentation/board";
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import { onMounted, onBeforeUnmount } from "vue";
+import { settledRefresh } from "~/utils/settledRefresh";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { COURIER_CALL_HASH } from "~/presentation/courier";
 import { orderTicketMenuItem } from "~/presentation/orderTicket";
@@ -108,7 +110,10 @@ const ticketPrinter = provideOrderTicketPrinter(deviceAgent);
 
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
 // Mantém o painel da corrida (entregador/status) vivo sem F5.
-const { realtime } = useOrderEvents(orderRef.value, () => refresh());
+// O push espera a rajada assentar: uma leitura por rajada, não uma por evento (GES-17).
+const pushRefresh = settledRefresh(() => refresh());
+onBeforeUnmount(() => pushRefresh.cancel());
+const { realtime } = useOrderEvents(orderRef.value, pushRefresh);
 
 // Próximo foco (F4 do laudo do Gestor): o aviso com prazo ("Responder") e o link da
 // Fila chegam com `#ifood-negotiations`. Abrir o pedido não basta: a página vai até a
@@ -527,7 +532,13 @@ function onCourierBackDifferent() {
   if (order.value?.can_settle_delivery_cash) void openDialog("settle");
 }
 
-function onAdvance() {
+// Pedido sem pagamento registrado: a mesma pergunta da Fila (GES-03).
+const confirmHandOver = useConfirm();
+async function onAdvance() {
+  const o = order.value;
+  const target = String(projectedAction("advance")?.payload_schema?.target_status ?? "");
+  const question = o ? handOverPaymentQuestion({ ...o, target }) : null;
+  if (question && !(await confirmHandOver(question))) return;
   if (dispatchAsks.value) openDialog("dispatch");
   else advance();
 }

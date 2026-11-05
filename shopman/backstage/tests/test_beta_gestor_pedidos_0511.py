@@ -178,3 +178,42 @@ def test_skipped_notice_says_why_instead_of_omitted():
     unknown = receipts._detail(receipts.STATE_SKIPPED, {"reason": "algo_novo"})
     assert "omitido" not in unknown and "outro meio" in unknown
     assert "outro meio" in receipts._detail(receipts.STATE_FAILED, {})
+
+
+# ── GES-03 ──────────────────────────────────────────────────────────────────
+
+
+def test_order_without_any_payment_trace_is_flagged_for_the_handover_question(gestor):
+    """Sem meio, sem intent e sem tender: a tela pergunta "Já recebeu?" antes de entregar."""
+    unrecorded = _order("B-C02", status="ready", payment={"amount_q": 5000})
+    assert build_order_card(unrecorded).payment_unrecorded is True
+    assert build_operator_order(unrecorded, user=gestor).payment_unrecorded is True
+    cash = _order("B-C03", status="ready", payment={"method": "cash"})
+    assert build_order_card(cash).payment_unrecorded is False
+    assert build_operator_order(cash, user=gestor).payment_unrecorded is False
+
+
+# ── PDV-10 (cliente) ────────────────────────────────────────────────────────
+
+
+def test_pos_tab_handle_is_never_shown_as_the_customer(gestor):
+    """O handle da comanda ("00001008") não é nome de cliente; o telefone é."""
+    order = _order("B-L15")
+    order.data = {**order.data, "customer": {}}
+    order.handle_type, order.handle_ref = "pos_tab", "00001008"
+    order.save(update_fields=["data", "handle_type", "handle_ref"])
+    assert build_order_card(order).customer_name == ""
+    assert build_operator_order(order, user=gestor).customer_name == ""
+    order.handle_type, order.handle_ref = "phone", "+5543999990000"
+    order.save(update_fields=["handle_type", "handle_ref"])
+    assert build_order_card(order).customer_name != ""
+
+
+# ── PDV2-03 ─────────────────────────────────────────────────────────────────
+
+
+def test_preorder_not_due_block_says_what_it_waits_for():
+    from shopman.backstage.projections.order_queue import advance_block_label
+
+    label = advance_block_label(operator_orders.AdvanceBlock.PREORDER_NOT_DUE)
+    assert label == "Aguardando o dia da encomenda…"
