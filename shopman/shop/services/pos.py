@@ -5554,6 +5554,7 @@ def resolve_or_create_customer(
         from shopman.shop.services.pos_receipt_identity import resolve_receipt_identity
 
         return resolve_receipt_identity(receipt_identity_action, operator_username=operator_username)
+    _refuse_invalid_customer_phone(phone)
     return _persist_customer_from_payload(
         {
             "customer_ref": ref,
@@ -5567,6 +5568,47 @@ def resolve_or_create_customer(
         },
         operator_username=operator_username,
     )
+
+
+def _refuse_invalid_customer_tax_id(tax_id: str) -> None:
+    """CPF/CNPJ com dígito errado não vira cadastro (beta test de 05/11/2026).
+
+    A venda já recusava (``parse_pos_sale_intent``), mas o "Cadastrar cliente"
+    gravava antes: o cadastro nascia com ``11111111111`` e a venda recusava
+    depois, com o lixo já no CRM. A recusa vem antes de qualquer escrita e antes
+    da conferência de duplicado.
+    """
+    if not tax_id:
+        return
+    from shopman.utils.documents import is_valid_tax_id
+
+    if not is_valid_tax_id(tax_id):
+        raise PosIntentError(
+            code="invalid_customer_tax_id",
+            message="CPF/CNPJ inválido: confira os dígitos.",
+            field="customer_tax_id",
+            focus="customer_tax_id",
+            recovery="Corrija o documento ou deixe o campo vazio.",
+        )
+
+
+def _refuse_invalid_customer_phone(raw_phone: str) -> None:
+    """WhatsApp que não é telefone não some calado do cadastro.
+
+    ``_normalize_phone("123")`` devolve vazio, e o cadastro nascia sem contato
+    nenhum, com o operador achando que tinha salvo o WhatsApp.
+    """
+    raw = str(raw_phone or "").strip()
+    if not raw or "@" in raw or not _digits(raw):
+        return
+    if not _normalize_phone(raw):
+        raise PosIntentError(
+            code="invalid_customer_phone",
+            message="WhatsApp inválido: digite o DDD e o número.",
+            field="customer_phone",
+            focus="customer_phone",
+            recovery="Corrija o número ou deixe o campo vazio.",
+        )
 
 
 def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> dict:
@@ -5636,6 +5678,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
 
     if not any((raw_ref, name, phone, fill_tax_id, fill_email, address)):
         return {}
+    _refuse_invalid_customer_tax_id(tax_id)
 
     try:
         from shopman.guestman.models import ContactPoint, Customer
