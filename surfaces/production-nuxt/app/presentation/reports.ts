@@ -144,3 +144,29 @@ export function reportRecortesFromPanel(active: ActiveFilters): ReportRecortes {
     operator_ref: active.operator?.[0] ?? "",
   };
 }
+
+// ── Colunas do Histórico ────────────────────────────────────────────────────
+
+// As de apoio somem no celular por CSS; a chave fica (fixada).
+export const REPORT_NUM = {
+  class: { th: "text-right", td: "text-right tabular-nums whitespace-nowrap" },
+};
+export const REPORT_SUPPORT_NUM = { ...REPORT_NUM, supporting: true };
+
+/**
+ * O Histórico cobre vários dias: a Data é chave e fica também no celular
+ * (beta 05/11: lotes de 30/10 a 05/11 apareciam misturados, sem dia).
+ */
+export const REPORT_HISTORY_COLUMNS = [
+  { id: "ref", header: "OP", enableHiding: false },
+  { accessorKey: "date", header: "Data" },
+  { accessorKey: "recipe_name", header: "Ficha técnica" },
+  { id: "position", header: "Posto", meta: { supporting: true } },
+  { accessorKey: "qty_planned", header: "Planejado", meta: REPORT_SUPPORT_NUM },
+  { id: "started", header: "Previsto", meta: REPORT_SUPPORT_NUM },
+  { id: "finished", header: "Realizado", meta: REPORT_NUM },
+  { accessorKey: "qty_loss", header: "Perda", meta: REPORT_NUM },
+  { id: "yield", header: "Aproveitamento", meta: REPORT_SUPPORT_NUM },
+  { id: "operator", header: "Operador", meta: { supporting: true } },
+  { id: "duration", header: "Tempo (min)", meta: REPORT_SUPPORT_NUM },
+];

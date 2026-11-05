@@ -21,8 +21,11 @@ import {
   type PeriodSelection,
 } from "../../../operator-kit/app/presentation/dates";
 import {
+  REPORT_HISTORY_COLUMNS,
   REPORT_KINDS,
+  REPORT_NUM,
   REPORT_PERIOD_PRESETS,
+  REPORT_SUPPORT_NUM,
   reportDimensions,
   reportPanelFilters,
   reportRecortesFromPanel,
@@ -173,8 +176,8 @@ const sortItems = computed(() => [
 ]);
 
 // Colunas: a chave fica (fixada); as de apoio somem no celular por CSS.
-const NUM = { class: { th: "text-right", td: "text-right tabular-nums whitespace-nowrap" } };
-const SUPPORT_NUM = { ...NUM, supporting: true };
+const NUM = REPORT_NUM;
+const SUPPORT_NUM = REPORT_SUPPORT_NUM;
 const lateColumns = [
   { id: "ref", header: "OP", enableHiding: false },
   { id: "product", header: "Produto" },
@@ -182,19 +185,7 @@ const lateColumns = [
   { accessorKey: "target_minutes", header: "Meta (min)", meta: SUPPORT_NUM },
   { id: "operator", header: "Operador", meta: { supporting: true } },
 ];
-const historyColumns = [
-  { id: "ref", header: "OP", enableHiding: false },
-  { accessorKey: "date", header: "Data", meta: { supporting: true } },
-  { accessorKey: "recipe_name", header: "Ficha técnica" },
-  { id: "position", header: "Posto", meta: { supporting: true } },
-  { accessorKey: "qty_planned", header: "Planejado", meta: SUPPORT_NUM },
-  { id: "started", header: "Previsto", meta: SUPPORT_NUM },
-  { id: "finished", header: "Realizado", meta: NUM },
-  { accessorKey: "qty_loss", header: "Perda", meta: NUM },
-  { id: "yield", header: "Aproveitamento", meta: SUPPORT_NUM },
-  { id: "operator", header: "Operador", meta: { supporting: true } },
-  { id: "duration", header: "Tempo (min)", meta: SUPPORT_NUM },
-];
+const historyColumns = REPORT_HISTORY_COLUMNS;
 const operatorColumns = [
   { accessorKey: "operator_name", header: "Operador", enableHiding: false },
   { accessorKey: "wo_count", header: "Ordens", meta: NUM },
