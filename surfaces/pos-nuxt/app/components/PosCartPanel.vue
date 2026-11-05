@@ -828,6 +828,15 @@ function kitchenFact(item: POSCartItem): string {
 function setMode(mode: "qty" | "disc" | "disc_brl") {
   numpadMode.value = mode;
 }
+/** O botão da quantidade TOMA o teclado: com a busca de produto ainda focada
+ *  (o Enter que lançou o item mantém o foco nela), o "5" digitado depois caía na
+ *  busca e a quantidade não mudava (beta test de 05/11/2026, PDV2-10). Sem campo
+ *  focado, os dígitos chegam ao numpad da linha (`onWindowKeydown`). */
+function takeKeyboardForQty() {
+  if (!import.meta.client) return;
+  const active = document.activeElement;
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) active.blur();
+}
 
 // Observação da linha (Odoo Note): o texto da linha ativa, escrito NO EDITOR (o mesmo
 // lugar do desconto), com Cancelar ou Aplicar. Enter aplica; Shift Enter quebra a linha.
@@ -1631,6 +1640,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                 @click="
                   selectLine(activeItem.line_id);
                   setMode('qty');
+                  takeKeyboardForQty();
                 "
               />
               <NuxtButton

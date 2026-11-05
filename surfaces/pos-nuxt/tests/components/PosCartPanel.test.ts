@@ -600,6 +600,26 @@ describe("PosCartPanel — quantidade acessível sem expandir", () => {
   });
 });
 
+describe("PosCartPanel — o botão da quantidade toma o teclado", () => {
+  // Beta test de 05/11/2026 (PDV2-10): com a busca focada, o "5" digitado depois
+  // de tocar na quantidade caía na busca de produtos.
+  it("tira o foco da busca e o dígito vai para a quantidade", async () => {
+    const search = document.createElement("input");
+    search.type = "search";
+    document.body.appendChild(search);
+    const wrapper = await mountSuspended(PosCartPanel, { props: props(), attachTo: document.body });
+    await open(wrapper, "Pão");
+    search.focus();
+    expect(document.activeElement).toBe(search);
+    await wrapper.find('[aria-label="Editar quantidade de Pão"]').trigger("click");
+    expect(document.activeElement).not.toBe(search);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "5" }));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("setQty")?.at(-1)).toEqual(["L-PAO", 5]);
+    search.remove();
+  });
+});
+
 describe("PosCartPanel — navegação e seleção da linha inteira", () => {
   it("Enter/←/→ controlam detalhes; +/- afetam apenas a linha focada", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
