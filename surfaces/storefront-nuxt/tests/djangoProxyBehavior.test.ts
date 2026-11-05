@@ -362,6 +362,21 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     expect(options.headers['x-shopman-proxy-secret']).toBe('s3cr3t')
   })
 
+  it('repassa o navegador do cliente (user-agent e accept-language) ao Django', async () => {
+    const ua = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36'
+    const { event } = makeEvent({
+      method: 'GET',
+      path: '/api/v1/auth/access-link/status/',
+      headers: { 'user-agent': ua, 'accept-language': 'pt-BR,pt;q=0.9' }
+    })
+
+    await proxyDjangoPath(event, '/api/v1/auth/access-link/status')
+
+    const { options } = calls[0]!
+    expect(options.headers['user-agent']).toBe(ua)
+    expect(options.headers['accept-language']).toBe('pt-BR,pt;q=0.9')
+  })
+
   it('não repassa segredo que o navegador escreveu, nem inventa um sem config', async () => {
     const { event } = makeEvent({
       method: 'GET',
