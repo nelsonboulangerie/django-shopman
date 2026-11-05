@@ -685,6 +685,34 @@ describe("OperatorPageHeader", () => {
     expect(wrapper.get("h1").text()).toContain("Pedidos");
     useState("suite-switcher-enabled").value = false;
   });
+
+  // A leitura no selo (`sealTone`, dono 04/11/2026): o ponto vai para o selo e o
+  // `#status` sai abaixo do lg, em vez de descer sozinho para uma segunda linha.
+  it("com sealTone, a leitura vai para o selo e o #status sai abaixo do lg", async () => {
+    useState("suite-switcher-enabled").value = true;
+    const wrapper = await mountSuspended(OperatorPageHeader, {
+      props: { title: "Base", sealTone: "calm", sealTime: "12:05" },
+      slots: { status: "<span data-own-read>Lido às 12:05</span>" },
+      global: { stubs },
+    });
+    mounted.push(wrapper as unknown as VueWrapper);
+    const seal = wrapper.get("[data-page-header-switcher-seal]");
+    expect(seal.attributes("data-conn")).toBe("calm");
+    expect(seal.attributes("aria-label")).toContain("última leitura 12:05");
+    const status = wrapper.get("[data-page-header-status]");
+    expect(status.find("[data-own-read]").exists()).toBe(true);
+    expect(status.classes()).toContain("max-lg:hidden");
+    useState("suite-switcher-enabled").value = false;
+  });
+
+  it("sem sealTone, o #status segue na segunda linha do celular", async () => {
+    useState("suite-switcher-enabled").value = true;
+    const wrapper = await mountHeader({ status: "<span data-own-read>Lido</span>" });
+    const status = wrapper.get("[data-page-header-status]");
+    expect(status.classes()).not.toContain("max-lg:hidden");
+    expect(wrapper.get("[data-page-header-switcher-seal]").attributes("data-conn")).toBeUndefined();
+    useState("suite-switcher-enabled").value = false;
+  });
 });
 
 describe("OperatorLiveStatus", () => {

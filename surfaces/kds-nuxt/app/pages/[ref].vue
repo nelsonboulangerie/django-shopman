@@ -538,7 +538,20 @@ function clearSearchAndFilter() {
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- No celular (abaixo de `md`), a linha do chão do kit, como no Gestor: o selo com o
+         ponto de conexão (a cadência e a hora da leitura no topo do ⋮), a busca, o sino e
+         o ⋮ no canto. Ela toma o lugar da barra de cima e do "Ao vivo" da mesa. -->
+    <OperatorCompactBar
+      :title="stationTitle"
+      :tone="liveTone"
+      :time="lastRead"
+      :conn-label="liveLabel"
+      :query="query"
+      search-button-label="Buscar por código, cliente ou item"
+      :options="headerActions"
+      @clear="clearSearchAndFilter"
+    />
     <OperatorPageHeader
       :title="stationTitle"
       :alerts="screenAlerts"

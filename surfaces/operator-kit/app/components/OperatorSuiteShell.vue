@@ -69,6 +69,14 @@ const props = defineProps<{
    * "as tabs no topo são subdivisões da seção; seção vai para baixo").
    */
   floorBar?: boolean;
+  /**
+   * As telas do escritório levam a MESMA barra de baixo do chão (nenhuma acesa, porque a
+   * seção do escritório não está nela). Para o app em que o escritório é um canto só e o
+   * celular vive no chão: o Compras, cuja Base é a única seção do escritório (dono,
+   * 04/11/2026). Sem ela, uma vaga só no escritório some (`quickBarLayout`) e o caminho
+   * de volta fica só no selo. Pede `floorBar`.
+   */
+  officeUsesFloorBar?: boolean;
 }>();
 
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
@@ -128,9 +136,12 @@ const officeQuick = computed(() =>
 const floorQuick = computed(() =>
   (props.switcherSections ?? []).filter((s) => s.form === "floor"),
 );
-// A barra de baixo com o trocador: a da forma da tela. Chão só com `floorBar`.
+// A barra de baixo com o trocador: a da forma da tela. Chão só com `floorBar`; o
+// escritório leva a do chão só com `officeUsesFloorBar`.
 const formQuick = computed(() => {
-  if (form.value === "office") return officeQuick.value;
+  if (form.value === "office") {
+    return props.floorBar && props.officeUsesFloorBar ? floorQuick.value : officeQuick.value;
+  }
   if (form.value === "floor" && props.floorBar) return floorQuick.value;
   return null;
 });
@@ -185,7 +196,7 @@ provideSuiteRail({
 });
 
 function go(section: OperatorSection) {
-  if (section.to) void navigateTo(section.to);
+  if (section.to) void (/^https?:\/\//.test(section.to) ? navigateTo(section.to, { external: true }) : navigateTo(section.to));
   else emit("select", section.key);
 }
 

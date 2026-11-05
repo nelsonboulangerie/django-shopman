@@ -85,7 +85,8 @@ function go(section: OperatorSection) {
   open.value = false;
   // Seção sem rota é gesto do app (as Comandas do PDV voltam ao quadro guardando a
   // comanda; a Tela do cliente abre outra janela): quem decide é o app, como na barra.
-  if (section.to) void navigateTo(section.to);
+  // A Saída da Cozinha mora no Gestor, noutro endereço: rota de fora vai como link de fora.
+  if (section.to) void (/^https?:\/\//.test(section.to) ? navigateTo(section.to, { external: true }) : navigateTo(section.to));
   else emit("select", section.key);
 }
 </script>

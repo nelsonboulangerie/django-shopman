@@ -267,6 +267,13 @@ describe("OperatorSuiteShell: o que o shell já fazia", () => {
     useOperatorShortcuts().open.value = false;
   });
 
+  it("seção com endereço de fora (a Saída da Cozinha, no Gestor) vai como link de fora", async () => {
+    const outside = { key: "exit", label: "Saída", icon: "lucide:package-check", to: "https://gestor.example/?columns=expedition" };
+    await mountShell({ sections: [SECTIONS[0], outside] });
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "2", code: "Digit2", altKey: true, cancelable: true }));
+    expect(navigate).toHaveBeenCalledWith(outside.to, { external: true });
+  });
+
 });
 
 describe("OperatorSuiteShell: a variante início (a Central)", () => {
@@ -400,9 +407,30 @@ describe("OperatorSuiteShell: o trocador (opt-in por app)", () => {
 
   it("com floorBar, a tela do chão leva a barra de baixo só com o chão", async () => {
     const wrapper = await mountShell({ switcherSections: FORMS, current: "orders", floorBar: true });
+    const links = wrapper.findAll("[data-operator-quick-bar] [data-section]");
+    expect(links.map((link) => link.attributes("data-section"))).toEqual(["orders", "exit"]);
+    expect(links[0]!.attributes("aria-current")).toBe("page");
+  });
+
+  it("tela do escritório com floorBar, sem officeUsesFloorBar: segue a do escritório", async () => {
+    const wrapper = await mountShell({ switcherSections: FORMS, current: "history", floorBar: true });
     expect(
       wrapper.findAll("[data-operator-quick-bar] [data-section]").map((link) => link.attributes("data-section")),
-    ).toEqual(["orders", "exit"]);
+    ).toEqual(["history", "feeds", "catalog", "settings"]);
+  });
+
+  // O Compras (dono, 04/11/2026): a Base é o escritório inteiro, uma seção só. Com a
+  // opção, ela leva a barra do chão, sem nenhuma acesa.
+  it("com officeUsesFloorBar, a tela do escritório leva a barra do chão, nenhuma acesa", async () => {
+    const wrapper = await mountShell({
+      switcherSections: FORMS,
+      current: "history",
+      floorBar: true,
+      officeUsesFloorBar: true,
+    });
+    const links = wrapper.findAll("[data-operator-quick-bar] [data-section]");
+    expect(links.map((link) => link.attributes("data-section"))).toEqual(["orders", "exit"]);
+    expect(links.some((link) => link.attributes("aria-current") === "page")).toBe(false);
   });
 
   it("escritório com mais seções do que cabem: 'Mais' abre o trocador, não a gaveta", async () => {

@@ -60,11 +60,14 @@ async function send(sku: string) {
     sendingSku.value = "";
   }
 }
+
+const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadSeal();
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Comprar" :actions="headerActions" actions-label="Mais ações de Comprar" :alerts="blockerAlerts">
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <OperatorCompactBar title="Comprar" :tone="sealTone" :time="sealTime" :conn-label="sealConn" :search="false" :options="headerActions" />
+    <OperatorPageHeader :seal-tone="sealTone" :seal-time="sealTime" title="Comprar" :actions="headerActions" actions-label="Mais ações de Comprar" :alerts="blockerAlerts">
       <template #status>
         <PurchaseReadStatus />
       </template>
