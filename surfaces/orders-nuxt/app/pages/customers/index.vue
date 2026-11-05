@@ -50,15 +50,6 @@ watchDebounced(
   { debounce: 300 },
 );
 
-function setFilter(filter: string) {
-  router.replace({
-    query: routeQueryFromList({
-      ...listQuery.value,
-      filter: filter as CustomerFilter,
-      page: 1,
-    }),
-  });
-}
 function goToPage(page: number) {
   router.replace({ query: routeQueryFromList({ ...listQuery.value, page }) });
 }
@@ -108,9 +99,9 @@ async function saveCustomer(payload: CustomerMutationPayload) {
 
 const items = computed(() => list.value?.items ?? []);
 type CustomerRow = (typeof items.value)[number];
-// O painel de filtros único (fase 2, K4): os recortes da lista como um campo de
-// escolha única, e os favoritos da pessoa. As abas continuam como os filtros rápidos à
-// vista; o painel e as abas mexem no mesmo `?filter=`.
+// O filtro único da suíte (dono, 04/11/2026): os recortes da lista como um campo de
+// escolha única, e os favoritos da pessoa. É o único lugar do `?filter=`: não há abas
+// repetindo o mesmo recorte. Na mesa, "Filtros (n)" e os chips ao lado, cada um com ×.
 // O grupo comercial é a segunda dimensão: é por ele que se acha quem tirar de um grupo.
 const groupOptions = computed(() => formOptions.value.price_tiers);
 const panelDimensions = computed<FilterDimension[]>(() => [
@@ -149,12 +140,6 @@ const activeFilters = computed(() =>
   filterBarActiveFilters(panelDimensions.value, panelFilters.value, (next) => {
     panelFilters.value = next;
   }),
-);
-const filterItems = computed(() =>
-  (list.value?.filters ?? []).map((option) => ({
-    key: option.ref,
-    label: option.label,
-  })),
 );
 // Cliente é a chave (fixada); Grupos e Pedidos são de apoio (somem no celular).
 const customerColumns = [
@@ -365,21 +350,12 @@ const phoneHeaderActions = computed(() => [
           aria-label="Buscar cliente"
         />
       </template>
-      <template #filters-primary>
-        <OperatorQuickFilters
-          :model-value="listQuery.filter"
-          :items="filterItems"
-          label="Filtrar clientes"
-          @update:model-value="setFilter(String($event))"
-        />
-      </template>
       <template #filter-panel>
         <OperatorFilterPanel
           v-model="panelFilters"
           :dimensions="panelDimensions"
           surface="orders"
           screen="customers"
-          :chips="false"
         />
       </template>
       <template v-if="selected.size" #selection>
