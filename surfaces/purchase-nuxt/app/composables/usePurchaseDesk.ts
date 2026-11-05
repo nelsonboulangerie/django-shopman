@@ -763,7 +763,7 @@ export function usePurchaseDesk() {
     let raw: string | null;
     try {
       raw = window.localStorage.getItem(RECEIPT_DRAFT_STORAGE_KEY);
-    } catch {
+    } catch {  // silêncio-deliberado: armazenamento bloqueado, não há rascunho a restaurar
       return;
     }
     const draft = receiptDraftFromStore(raw, Date.now());
@@ -797,8 +797,7 @@ export function usePurchaseDesk() {
         try {
           if (stored) window.localStorage.setItem(RECEIPT_DRAFT_STORAGE_KEY, stored);
           else window.localStorage.removeItem(RECEIPT_DRAFT_STORAGE_KEY);
-        } catch {
-          // Armazenamento cheio ou bloqueado: o rascunho segue só na memória.
+        } catch {  // silêncio-deliberado: armazenamento cheio ou bloqueado, o rascunho segue só na memória
         }
       },
       { deep: true },

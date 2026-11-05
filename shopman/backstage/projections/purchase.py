@@ -1048,7 +1048,7 @@ def _daily_use_map(skus: list[str], *, days: int = 14) -> dict[str, Decimal]:
             for row in rows
         }
     except Exception:
-        logger.warning("purchase.daily_use_failed", exc_info=True)
+        logger.debug("purchase.daily_use_failed", exc_info=True)
         return {}
 
 

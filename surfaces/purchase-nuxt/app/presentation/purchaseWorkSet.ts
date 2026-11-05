@@ -74,7 +74,7 @@ export function receiptDraftFromStore(raw: string | null | undefined, now: numbe
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
-  } catch {
+  } catch {  // silêncio-deliberado: conteúdo estranho no armazenamento não é rascunho
     return null;
   }
   if (!parsed || typeof parsed !== "object") return null;
