@@ -158,6 +158,7 @@ const stepDescription = computed(() => {
     // Vindo do checkout com sacola real: a sacola é o que importa dizer. Sem itens,
     // a copy fica neutra; origem/rota não pode virar contexto inventado.
     if (hasCartToKeep.value) return copyMessage(authCopy.value?.wa_cart_kept, 'Sua sacola está guardada.')
+    if (route.query.motivo === 'favorito') return 'Entre para guardar seus favoritos.'
     if (isCheckoutReturn.value) return copyMessage(authCopy.value?.phone_subtitle, 'Sem senha, rápido e seguro.')
     return ''
   }

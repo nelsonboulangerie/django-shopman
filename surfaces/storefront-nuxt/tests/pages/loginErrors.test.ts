@@ -106,4 +106,13 @@ describe('login: erros com o título certo e no lugar certo', () => {
     expect(alert.find('[data-login-error-support]').exists()).toBe(true)
     useNuxtData('shopman-shell').data.value = null
   }, 30_000)
+
+  it('LOJA-13: vindo do coração, a entrada diz por que pediu o login', async () => {
+    useShopSession().reset()
+    const page = await mountSuspended(LoginPage, { route: '/entrar?motivo=favorito&next=/produto/TRADI', attachTo: document.body })
+    mounted.push(page)
+    await flushPromises()
+
+    expect(page.text()).toContain('Entre para guardar seus favoritos.')
+  }, 30_000)
 })
