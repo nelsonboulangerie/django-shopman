@@ -3916,7 +3916,8 @@ export function usePosSale(deps: PosSaleDeps) {
     try {
       await action.call(path, { method: "DELETE", body: { expected_revision: cart.expectedRevision } });
     } catch {
-      // Silencioso de propósito: quem saiu da tela não está mais aqui para ler.
+      // silêncio-deliberado: quem saiu da tela não está mais aqui para ler, e a
+      // comanda vazia segue no quadro como estava (nada se perde).
     }
   }
 
