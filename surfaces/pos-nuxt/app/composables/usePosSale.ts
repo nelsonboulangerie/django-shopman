@@ -1218,6 +1218,25 @@ export function usePosSale(deps: PosSaleDeps) {
   watch(review, (value) => {
     if (value) lastReviewTotalQ.value = value.total_q;
   });
+  // AS FORMAS ACOMPANHAM O TOTAL QUE MUDOU (beta test de 05/11/2026). A linha
+  // lançada com R$ 36,00 continuava em R$ 36,00 depois de o operador voltar e
+  // tirar a baguete (total R$ 13,00), e a tela mostrava "TROCO R$ 23,00" numa
+  // encomenda que só se paga na retirada. A linha que o sistema lançou sozinha
+  // (intocada), ou a única de uma venda que não recebe nada agora, passa a valer
+  // o total novo. Linha que o operador contou fica como está: o restante ou o
+  // troco que aparecem são verdade.
+  let tendersTotalQ = 0;
+  watch(() => review.value?.total_q, (total) => {
+    if (typeof total !== "number") return;
+    const before = tendersTotalQ;
+    tendersTotalQ = total;
+    if (!before || before === total || cart.paymentTenders.length !== 1) return;
+    const only = cart.paymentTenders[0]!;
+    if (only._virgin || cart.paymentCollection === "on_delivery") {
+      only.amount_q = total;
+      only._virgin = true;
+    }
+  });
   watch(checkoutMode, (open) => {
     // Fora do checkout o carrinho volta a mudar (itens novos): o total retido
     // ficaria mentindo — zera e a próxima entrada recomeça do zero.

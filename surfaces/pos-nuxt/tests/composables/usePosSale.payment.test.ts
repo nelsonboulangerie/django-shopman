@@ -191,6 +191,44 @@ describe("usePosSale — total interino do pagamento (nunca o bruto)", () => {
   });
 });
 
+describe("usePosSale — as formas acompanham o total que mudou", () => {
+  // Beta test de 05/11/2026 (PDV2-05): Dinheiro de R$ 36,00 continuava em
+  // R$ 36,00 depois de o carrinho cair para R$ 13,00.
+  it("a forma intocada passa a valer o total novo", async () => {
+    const h = saleWithTotal1000();
+    await nextTick();
+    h.sale.addTender("cash");
+    h.sale.review.value = { ...h.sale.review.value!, total_q: 700, total_display: "R$ 7,00" };
+    await nextTick();
+    expect(h.sale.cart.paymentTenders[0]!.amount_q).toBe(700);
+    h.handles.dispose();
+  });
+
+  it("dinheiro que o operador contou no balcão fica como está", async () => {
+    const h = saleWithTotal1000();
+    await nextTick();
+    h.sale.addTender("cash");
+    h.sale.tenderDigit("5");
+    h.sale.tenderDigit("0");
+    h.sale.review.value = { ...h.sale.review.value!, total_q: 700, total_display: "R$ 7,00" };
+    await nextTick();
+    expect(h.sale.cart.paymentTenders[0]!.amount_q).toBe(5000);
+    h.handles.dispose();
+  });
+
+  it("na retirada a forma é previsão: acompanha o total mesmo editada", async () => {
+    const h = saleWithTotal1000();
+    await nextTick();
+    h.sale.cart.paymentCollection = "on_delivery";
+    h.sale.addTender("cash");
+    h.sale.tenderDigit("5");
+    h.sale.review.value = { ...h.sale.review.value!, total_q: 700, total_display: "R$ 7,00" };
+    await nextTick();
+    expect(h.sale.cart.paymentTenders[0]!.amount_q).toBe(700);
+    h.handles.dispose();
+  });
+});
+
 describe("usePosSale — dividir a conta", () => {
   let h: ReturnType<typeof saleWithTotal1000>;
 
