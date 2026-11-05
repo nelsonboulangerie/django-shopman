@@ -40,7 +40,6 @@ import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import type { OperatorBulkItem } from "../../../operator-kit/app/presentation/bulkBar";
-import type { QuickFilterItem } from "../../../operator-kit/app/presentation/quickFilters";
 import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
 import type { OperatorSwipeAction } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
@@ -415,10 +414,10 @@ function toggleSelectAll() {
 const bulkScope = computed(() =>
   [
     fulfillment.value !== "all"
-      ? String(fulfillmentFilterTabs.value.find((tab) => tab.key === fulfillment.value)?.label ?? "")
+      ? FULFILLMENT_LABELS[fulfillment.value] ?? ""
       : "",
     channel.value !== "all"
-      ? String(channelItems.value.find((item) => item.value === channel.value)?.label ?? "")
+      ? channelLabel(channel.value)
       : "",
   ]
     .filter(Boolean)
@@ -482,30 +481,18 @@ const { run: bulkAdvance, pending: bulkAdvancing } = usePendingAction(
   },
 );
 
-// ⋯ da fila: atualizar, Visto, seleção, exportar e imprimir (e, no posto Saída e no
-// celular, também ordenar, a visão e o som).
-const moreOpen = ref(false);
-function menuDo(fn: () => void, close = true) {
-  if (close) moreOpen.value = false;
-  fn();
-}
 // A régua da suíte (`useScreen` do kit): mesa no servidor e na hidratação, a largura
 // real depois. Decidir a árvore com `useMediaQuery` cru fazia o celular hidratar outra
 // árvore na carga direta: a Fila ficava no esqueleto para sempre.
 // Ela responde "mesa" até montar, então a barra do topo e a toolbar NÃO decidem por ela
 // (o celular desenhava a barra da mesa encavalada até hidratar): `phone-actions`,
 // `actions-from="md"` e as classes `max-lg:`/`md:` fazem isso pelo CSS. Daqui só o que
-// muda a árvore depois de montar: as colunas que viram abas, a Fila só do `lg`, o
-// conteúdo do painel "Filtros" (aberto depois de montar) e o puxar para atualizar.
+// muda a árvore depois de montar: as colunas que viram abas, a Fila só do `lg` e o
+// puxar para atualizar.
 const screen = useScreen();
 // Celular (abaixo de md): as colunas viram abas.
 const isPhone = screen.belowMd;
 const hydrated = screen.ready;
-// A régua do kit para a barra do topo e a toolbar (abaixo de `sm`, README "Barra do
-// topo no celular" e "Toolbar no celular"): ali as ações da fila vão para o ⋯ da barra
-// e os recortes, a ordem e a visão para o painel "Filtros" do kit. Entre `sm` e `md`
-// segue o painel próprio da fila ("Filtros e ações da fila").
-const kitPhone = screen.belowSm;
 // Tablet em pé: três colunas de ~240 px cortavam selo e prazo do cartão. Abaixo do
 // lg, com mais de uma coluna aberta, o quadro usa as abas do celular.
 const isNarrowTablet = computed(
@@ -735,25 +722,9 @@ onBeforeUnmount(() => {
   rail.value = { ...rail.value, onBoard: false, exitPost: false };
 });
 
-const EXIT_FILTERS = [
-  { key: "all", label: "Todos", icon: "lucide:check" },
-  { key: "pickup", label: "Retirada", icon: "lucide:store" },
-  { key: "delivery", label: "Entrega", icon: "lucide:bike" },
-] as const;
-const exitFilterTabs: QuickFilterItem[] = EXIT_FILTERS.map((option) => ({
-  key: option.key,
-  label: option.label,
-  icon: option.icon.replace("lucide:", "i-lucide-"),
-}));
-// A faixa de recortes do fluxo: na Saída, os três da expedição; no celular, a versão
-// curta; no resto, com as contagens.
-const fulfillmentFilterTabs = computed<QuickFilterItem[]>(() =>
-  exitPostView.value
-    ? exitFilterTabs
-    : isPhone.value
-      ? fulfillmentCompactTabs.value
-      : fulfillmentTabs.value,
-);
+// O nome do recebimento no recorte ativo ("Recebimento: Entrega") e no escopo da seleção.
+const FULFILLMENT_LABELS: Record<string, string> = { delivery: "Entrega", pickup: "Retirada" };
+const channelLabel = (ref: string) => channels.value.find((option) => option.ref === ref)?.label ?? ref;
 const nowMs = useNowTick(() => queue.value?.intake[0]?.server_now_iso ?? "");
 function zoneNext(zone: ZoneView): string {
   return zone.key === "expedition" ? nextOutRef(triaged(zone)) : "";
@@ -855,37 +826,6 @@ const queueScopeTabs = computed(() =>
     count: scopeCounts.value[option.key],
   })),
 );
-const fulfillmentTabs = computed<QuickFilterItem[]>(() => [
-  {
-    key: "all",
-    label: "Todos",
-    icon: "i-lucide-layers-3",
-    count: allCards.value.length,
-  },
-  {
-    key: "delivery",
-    label: "Entrega",
-    icon: "i-lucide-bike",
-    count: fulfillment_.value.delivery,
-  },
-  {
-    key: "pickup",
-    label: "Retirada",
-    icon: "i-lucide-store",
-    count: fulfillment_.value.pickup,
-  },
-]);
-const fulfillmentCompactTabs = computed(() =>
-  fulfillmentTabs.value.map(({ icon: _icon, ...item }) => item),
-);
-const channelItems = computed(() => [
-  { value: "all", label: "Todos os canais", icon: "i-lucide-layers" },
-  ...channels.value.map((option) => ({
-    value: option.ref,
-    label: `${option.label} (${option.count})`,
-    icon: `i-lucide-${lucideIcon(allCards.value.find((card) => card.channel_ref === option.ref)?.channel_icon || "")}`,
-  })),
-]);
 function pickScope(value: string | number) {
   if (value === "attention" || value === "all" || value === "late")
     scope.value = value;
@@ -894,17 +834,17 @@ function pickFulfillment(value: string | number) {
   if (value === "all" || value === "delivery" || value === "pickup")
     fulfillment.value = value;
 }
-// O painel de filtros único (fase 2, K4), na mesa: o recebimento e o canal como campos
-// de escolha única, e os favoritos da pessoa. As abas e o seletor de canal continuam à
-// vista como os recortes rápidos; o painel e eles mexem no mesmo estado.
+// O filtro único da suíte (dono, 04/11/2026): o recebimento e o canal como campos de
+// escolha única, e os favoritos da pessoa. É o ÚNICO lugar desses recortes, na mesa e no
+// celular: não há abas nem seletor de canal paralelos.
 const panelDimensions = computed<FilterDimension[]>(() => [
   {
     id: "fulfillment",
     label: "Recebimento",
     type: "single-select",
     options: [
-      { value: "delivery", label: "Entrega" },
-      { value: "pickup", label: "Retirada" },
+      { value: "delivery", label: "Entrega", count: fulfillment_.value.delivery },
+      { value: "pickup", label: "Retirada", count: fulfillment_.value.pickup },
     ],
   },
   {
@@ -959,14 +899,14 @@ const activeFilters = computed(() => [
   ...(fulfillment.value !== "all"
     ? [{
         key: "fulfillment",
-        label: String(fulfillmentFilterTabs.value.find((tab) => tab.key === fulfillment.value)?.label ?? fulfillment.value),
+        label: `Recebimento: ${FULFILLMENT_LABELS[fulfillment.value] ?? fulfillment.value}`,
         remove: () => pickFulfillment("all"),
       }]
     : []),
   ...(channel.value !== "all"
     ? [{
         key: "channel",
-        label: `Canal: ${channelItems.value.find((item) => item.value === channel.value)?.label ?? channel.value}`,
+        label: `Canal: ${channelLabel(channel.value)}`,
         remove: () => (channel.value = "all"),
       }]
     : []),
@@ -1060,11 +1000,6 @@ function queueKey(e: KeyboardEvent): boolean {
 const searchInput = ref<{ focus: () => void } | null>(null);
 function onKeydown(e: KeyboardEvent) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  // Esc fecha primeiro o drawer móvel; menus canônicos cuidam do próprio Escape.
-  if (e.key === "Escape" && moreOpen.value) {
-    moreOpen.value = false;
-    return;
-  }
   const el = e.target as HTMLElement | null;
   const typing =
     !!el &&
@@ -1472,7 +1407,32 @@ const queueFailures = ref(0);
 watch(error, (now, before) => {
   if (now && now !== before) queueFailures.value += 1;
 });
-const compactOptions = computed(() => phoneHeaderActions.value.map(({ priority: _p, ...item }) => item));
+// O ⋮ da linha do chão: as ações da fila e, em grupos próprios, Ordenar e Ver como (não
+// são filtro: ficam fora do painel). No celular a Grade não existe: Colunas ou Lista.
+const compactOptions = computed(() => [
+  phoneHeaderActions.value.map(({ priority: _p, ...item }) => item),
+  ...(phoneExitMode.value
+    ? []
+    : [
+        [
+          { type: "label" as const, label: "Ordenar" },
+          ...sortMenuItems.value,
+        ],
+        [
+          { type: "label" as const, label: "Ver como" },
+          ...(
+            [
+              { key: "board", label: "Colunas", icon: "i-lucide-columns-3" },
+              { key: "table", label: "Lista", icon: "i-lucide-list" },
+            ] as const
+          ).map((option) => ({
+            label: option.label,
+            icon: view.value === option.key ? "i-lucide-check" : option.icon,
+            onSelect: () => (viewMode.value = option.key),
+          })),
+        ],
+      ]),
+]);
 const compactTotal = computed(() => zones.value.reduce((n, z) => n + z.cards.length, 0));
 const compactFilterLabel = computed(() => activeFilters.value.map((f) => f.label).join(', '));
 function compactClear() {
@@ -1502,25 +1462,18 @@ function compactClear() {
       :options="compactOptions"
       @clear="compactClear"
     >
-      <template v-if="!phoneExitMode" #filters>
-        <OperatorQuickFilters
-          :model-value="fulfillment"
-          :items="fulfillmentFilterTabs"
-          label="Tipo de entrega"
-          data-fulfillment-filters
-          @update:model-value="pickFulfillment(String($event))"
+      <!-- O filtro único da suíte (dono, 04/11/2026): o ícone na linha, antes da busca, com
+           o número no canto, como o sino. Ordenar e Ver como moram no ⋮. -->
+      <template v-if="!phoneExitMode" #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="panelDimensions"
+          trigger="icon"
+          :chips="false"
+          surface="orders"
+          screen="queue"
+          data-queue-filters-compact
         />
-        <NuxtFormField v-if="channels.length" label="Canal">
-          <NuxtSelect v-model="channel" :items="channelItems" class="w-full" aria-label="Canal" data-channel-picker />
-        </NuxtFormField>
-        <NuxtFormField label="Ordenar">
-          <NuxtDropdownMenu :items="sortMenuItems" :content="{ align: 'start' }">
-            <NuxtButton icon="i-lucide-arrow-up-down" trailing-icon="i-lucide-chevron-down" :label="sortLabel" color="neutral" variant="outline" class="min-h-11" data-board-sort />
-          </NuxtDropdownMenu>
-        </NuxtFormField>
-        <NuxtFormField label="Ver como">
-          <NuxtTabs :model-value="view" :items="viewTabs" :content="false" variant="pill" aria-label="Visão do Gestor" data-view-switch @update:model-value="pickView" />
-        </NuxtFormField>
       </template>
     </OperatorCompactBar>
     <!-- Sem conexão segue EXPLÍCITO (cor + texto), não só o chip do selo. Com a
@@ -1722,107 +1675,19 @@ function compactClear() {
         />
       </template>
 
-      <!-- recortes (v4): Todos, o eixo do fluxo (Entrega, Retirada) e o canal num
-           seletor só. O posto Saída usa a mesma faixa: o título já diz a visão. -->
-      <!-- A Saída no celular (v4 `cozinha-celular` (a)) não tem a linha de recortes: a
-           barra de cima, as duas abas e a lista. -->
-      <!-- Antes de montar (e enquanto a fila chega) a faixa existe: no celular o kit
-           desenha "Filtros" já no primeiro desenho, e na mesa a faixa não some e volta
-           quando os cartões chegam. -->
-      <template
-        v-if="
-          ((exitPostView && desktopZones.length) ||
-            ((allCards.length || pending || !hydrated) && !exitPostView) ||
-            isPhone) &&
-          !(isPhone && phoneExitMode)
-        "
-        #filters
-      >
-        <OperatorQuickFilters
-          :model-value="fulfillment"
-          :items="fulfillmentFilterTabs"
-          label="Tipo de entrega"
-          data-fulfillment-filters
-          @update:model-value="pickFulfillment(String($event))"
+      <!-- O filtro único da suíte (dono, 04/11/2026): na mesa, "Filtros (n)" no começo da
+           linha de baixo e os recortes ativos ao lado, cada um com ×. O recebimento e o
+           canal só existem aqui (nada de abas ou seletor repetindo o mesmo recorte); o
+           posto Saída usa o mesmo painel. Abaixo do `md` a linha do chão (acima) leva o
+           mesmo painel pelo ícone. -->
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="panelDimensions"
+          surface="orders"
+          screen="queue"
+          data-queue-filters
         />
-        <!-- Na Fila entre o `lg` e o `xl` a linha leva os recortes da fila, os de
-             entrega e o "Filtros": o canal fica só no painel (que tem a dimensão
-             "Canal" do `md` para cima), em vez de sair da tela na rolagem da faixa. -->
-        <NuxtSelect
-          v-if="channels.length"
-          v-model="channel"
-          :items="channelItems"
-          :class="view === 'queue' ? 'lg:max-xl:hidden' : ''"
-          aria-label="Canal"
-          data-channel-picker
-        />
-        <!-- celular do kit (abaixo de `sm`): no painel "Filtros", a ordem, a visão e o
-             frescor; as ações (atualizar, selecionar, exportar, imprimir, som) estão no
-             ⋯ da barra do topo. -->
-        <template v-if="kitPhone">
-          <NuxtFormField label="Ordenar">
-            <NuxtDropdownMenu :items="sortMenuItems" :content="{ align: 'start' }">
-              <NuxtButton
-                icon="i-lucide-arrow-up-down"
-                trailing-icon="i-lucide-chevron-down"
-                :label="view === 'queue' ? queueSortLabel : sortLabel"
-                color="neutral"
-                variant="outline"
-                data-board-sort
-              />
-            </NuxtDropdownMenu>
-          </NuxtFormField>
-          <NuxtFormField label="Ver como">
-            <NuxtTabs
-              :model-value="view"
-              :items="viewTabs"
-              :content="false"
-              variant="pill"
-              aria-label="Visão do Gestor"
-              data-view-switch
-              @update:model-value="pickView"
-            />
-          </NuxtFormField>
-          <ReadFreshness
-            inline
-            :metadata="readMetadata"
-            :failed="Boolean(error)"
-          />
-        </template>
-        <!-- celular entre `sm` e `md`: os controles do quadro num painel só ("Filtros"
-             da prévia v3), no começo da linha para nunca ficar fora da tela -->
-        <NuxtChip
-          v-if="isPhone && !kitPhone"
-          :show="attentionPending || (soundOn && soundBlocked)"
-          color="warning"
-          size="2xl"
-          inset
-        >
-          <NuxtButton
-            icon="i-lucide-sliders-horizontal"
-            label="Filtros"
-            color="neutral"
-            variant="outline"
-            aria-haspopup="dialog"
-            :aria-expanded="moreOpen"
-            data-board-more
-            @click="moreOpen = true"
-          />
-        </NuxtChip>
-      </template>
-      <!-- O painel de filtros único, do `md` para cima (abaixo, a fila segue com o
-           painel próprio dela, que também leva a ordem e a visão). -->
-      <template v-if="!exitPostView" #filter-panel>
-        <!-- Pelo CSS (o servidor desenha o celular e a mesa juntos até hidratar). -->
-        <div class="max-md:hidden">
-          <OperatorFilterPanel
-            v-model="panelFilters"
-            :dimensions="panelDimensions"
-            surface="orders"
-            screen="queue"
-            :chips="false"
-          />
-        </div>
       </template>
       <!-- na Fila (v4): "Precisa de você N · Todos N · ● Atrasados N", o recorte do que
            muda o trabalho; no quadro e na tabela, "Todos" tira os recortes. É o primário
@@ -1860,41 +1725,6 @@ function compactClear() {
         />
       </template>
     </OperatorPageHeader>
-
-    <!-- celular: o painel dos controles sobe do pé, ao alcance do polegar -->
-    <NuxtDrawer
-      v-if="isPhone && !kitPhone"
-      :open="moreOpen"
-      title="Filtros e ações da fila"
-      description="Ordenação, visão, atualização e ações auxiliares."
-      @update:open="(value) => (moreOpen = value)"
-    >
-      <template #body>
-        <BoardMenu
-          :metadata="readMetadata"
-          :failed="Boolean(error)"
-          :pending="pending"
-          :sort="sort"
-          :view-mode="view"
-          :queue-available="queueAvailable"
-          :sound-on="soundOn"
-          :sound-blocked="soundBlocked"
-          :attention-pending="attentionPending"
-          :selecting="selecting"
-          full
-          @refresh="refresh()"
-          @acknowledge="menuDo(acknowledgeAttention)"
-          @select="
-            menuDo(() => (selecting ? stopSelection() : startSelection()))
-          "
-          @sort="(key) => menuDo(() => pickSort(key))"
-          @view="(mode) => menuDo(() => (viewMode = mode))"
-          @sound="menuDo(handleSoundAction)"
-          @export="menuDo(exportCsv)"
-          @print="menuDo(printQueue)"
-        />
-      </template>
-    </NuxtDrawer>
 
     <!-- celular: as colunas viram abas dentro da segunda faixa canônica do header. O
          traço da aba ativa assenta na borda da faixa, sem vão nem segunda linha (dono,
