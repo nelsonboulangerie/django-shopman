@@ -1453,8 +1453,8 @@ const startedDescription = computed(() => {
                         :ref="(el) => rememberReasonTrigger(row.output_sku, el)"
                         color="neutral"
                         variant="ghost"
-                        icon="i-lucide-info"
-                        label="Por quê"
+                        icon="i-lucide-circle-help"
+                        square
                         class="ml-auto shrink-0"
                         :active="reasonSku === row.output_sku"
                         active-color="primary"
