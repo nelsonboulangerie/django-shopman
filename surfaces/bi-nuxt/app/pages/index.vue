@@ -317,6 +317,8 @@ const csv = computed(() => overShortCsv(filtered.value));
           compact
           :today="today"
           :max="yesterday"
+          :latest="yesterday"
+          back-label="Ir ao último dia"
           :prev-day="day.previous_day || ''"
           :next-day="day.next_day || ''"
           align="start"

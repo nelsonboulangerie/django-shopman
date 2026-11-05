@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { divergingText, pointValue } from "../../operator-kit/app/presentation/readingChart";
 import {
+  cashDenied,
   CASH_DIFFERENCE_SIDES,
   cashDifferenceAxis,
   cashDifferenceCsv,
@@ -111,5 +112,14 @@ describe("caixa: gaveta e meios", () => {
       ]).header,
     ).toHaveLength(9);
     expect(openAccountsCsv([{ customer_name: "Café Parisiense", balance_q: 15600 }]).rows).toEqual([["Café Parisiense", "156,00"]]);
+  });
+});
+
+describe("caixa: quem não audita (ge:BI-07)", () => {
+  it("403 de permissão é recusa sem retry; sessão caída e trava não são", () => {
+    expect(cashDenied({ status: 403, data: { detail: "Operador sem permissão para esta ação." } })).toBe(true);
+    expect(cashDenied({ status: 403, data: { error: { code: "not_authenticated" } } })).toBe(false);
+    expect(cashDenied({ status: 403, data: { error: { code: "station_locked" } } })).toBe(false);
+    expect(cashDenied({ status: 500 })).toBe(false);
   });
 });

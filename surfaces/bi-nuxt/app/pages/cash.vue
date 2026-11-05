@@ -16,12 +16,14 @@
 import type { BICashReport } from "~/types/bi";
 import { cashAnswer, delta, formatInt, formatMoney } from "~/presentation/bi";
 import {
+  CASH_DENIED_COPY,
   CASH_DIFFERENCE_SERIES,
   CASH_DIFFERENCE_SIDES,
   DRAWER_HOUR_CSV_SERIES,
   DRAWER_HOUR_SERIES,
   cashDifferenceAxis,
   cashDifferenceCsv,
+  cashDenied,
   cashDifferencePoints,
   cashMethodRows,
   drawerCsv,
@@ -150,6 +152,14 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
         description="Turnos, quebra, gaveta e meios de pagamento."
         data-bi-loading
       />
+      <OperatorScreenState
+        v-else-if="error && cashDenied(error)"
+        state="empty"
+        icon="i-lucide-lock"
+        :title="CASH_DENIED_COPY.title"
+        :description="CASH_DENIED_COPY.description"
+        data-bi-cash-denied
+      />
       <OperatorScreenState v-else-if="error" state="error" what="o caixa" @retry="refresh()" />
 
       <template v-if="report">
@@ -173,10 +183,10 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
             :hint="`Contado menos esperado; negativo = faltou. Período anterior: ${formatMoney(report.previous.difference_total_q)}`"
           />
           <OperatorMetric
-            title="Dias sem fechamento"
+            title="Dias sem fechamento do dia"
             :value="formatInt(report.closings_missing)"
             :tone="report.closings_missing ? 'warning' : undefined"
-            hint="Na janela; o mix de pagamento só cobre dias fechados"
+            hint="Na janela. Os meios de pagamento só cobrem dias com fechamento do dia."
           />
           <OperatorMetric title="Sangrias" :value="formatMoney(sangriaTotal)" hint="Retiradas do caixa no período" />
         </div>
@@ -195,7 +205,7 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
             :diverging="CASH_DIFFERENCE_SIDES"
             :format="readingMoneyFormat"
             empty-title="Nenhum turno fechado no período"
-            empty-description="Sem fechamento não há quebra para medir."
+            empty-description="Sem turno fechado não há quebra para medir."
           />
         </OperatorReadingCard>
 
@@ -324,7 +334,7 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
 
           <OperatorReadingCard
             title="Meios de pagamento"
-            description="Consolidado dos fechamentos do período"
+            description="Consolidado dos fechamentos do dia no período"
             :csv="methodRows.length ? methodsCsv(methodRows) : undefined"
           >
             <OperatorTable
@@ -334,8 +344,8 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
               :row-key="(row) => row.method"
               caption="Meios de pagamento no período"
               empty-icon="i-lucide-credit-card"
-              empty-title="Nenhum fechamento na janela ainda"
-              empty-description="O mix de pagamento sai do fechamento do caixa."
+              empty-title="Nenhum fechamento do dia na janela ainda"
+              empty-description="Os meios de pagamento saem do fechamento do dia."
               data-bi-payment-methods
             >
               <template #amount-cell="{ row }">{{ formatMoney(row.original.amount_q) }}</template>

@@ -5,6 +5,7 @@ import type { BIOverShortReport, BIOverShortRow } from "~/types/bi";
 import { BI_SECTIONS, biSections } from "~/presentation/biSections";
 import { cashAnswer, customersAnswer, salesAnswer } from "~/presentation/bi";
 import {
+  overShortOrdersHref,
   MADE_SOLD_SERIES,
   madeSoldPoints,
   carryContext,
@@ -248,9 +249,18 @@ describe("as outras respostas", () => {
     );
   });
 
+  it("vendas: a base tem o nome do Comparar com, e o dia em curso diz até quando (ge:BI-05, ge:BI-06)", () => {
+    const report = { orders_total: 15, revenue_total_q: 110000, previous: { revenue_total_q: 550000 } };
+    expect(salesAnswer({ ...report, compare: "year" })).toContain("80% abaixo do mesmo período do ano passado.");
+    expect(salesAnswer({ ...report, previous: { revenue_total_q: 550000, partial_until: "07:25" } })).toContain(
+      "80% abaixo do período anterior até 07:25.",
+    );
+  });
+
   it("caixa (auditoria do Dono)", () => {
     expect(cashAnswer({ shifts_total: 12, closings_missing: 2, difference_total_q: -3500 }).replace(/\u00a0/g, " ")).toBe(
-      "12 turnos fechados; 2 dias sem fechamento; no acumulado, faltou R$ 35,00.",
+      // Turno (a gaveta) e fechamento do dia (DayClosing) são dois fatos (ge:BI-15).
+      "12 turnos fechados; 2 dias sem fechamento do dia; no acumulado, faltou R$ 35,00.",
     );
     expect(cashAnswer({ shifts_total: 1, closings_missing: 0, difference_total_q: 0 })).toBe(
       "1 turno fechado; no acumulado, a contagem bateu.",
@@ -339,11 +349,25 @@ describe("V6: a resposta agrupada, a comparação escolhida e o que aconteceu de
     expect(lotsLine(row({ lots, planned_lots: 2 }))).toBe("2 lotes · 44 un. feitas");
   });
 
+  it("o link dos pedidos abre o Histórico pelo eixo da venda (ge:BI-03)", () => {
+    expect(overShortOrdersHref("https://gestor.x/", "2026-11-04", "MDLN")).toBe(
+      "https://gestor.x/history?period=custom&from=2026-11-04&to=2026-11-04&sku=MDLN&basis=ordered",
+    );
+  });
+
   it("os caminhos ao registro dizem quantos e o que abrem", () => {
     expect(ordersLinkLabel(44)).toBe("Abrir os 44 pedidos");
     expect(ordersLinkLabel(1)).toBe("Abrir o pedido");
     expect(historyDaysLabel("2026-10-03", 4)).toBe("Os 4 sábados");
     expect(historyDaysLabel("2026-10-03", 1)).toBe("O sábado");
+    // Segunda a sexta são femininas (ge:BI-10).
+    expect(historyDaysLabel("2026-11-04", 4)).toBe("As 4 quartas");
+    expect(historyDaysLabel("2026-11-04", 1)).toBe("A quarta");
+    expect(historyHeading("2026-11-04", ["2026-10-28", "2026-10-21"])).toBe("Nas 2 quartas");
+    expect(historyHeading("2026-11-04", [])).toBe("Nas quartas anteriores");
+    expect(historyHeading("2026-11-08", [])).toBe("Nos domingos anteriores");
+    expect(compareOptions("2026-11-04")[1]!.reach).toBe("uma só");
+    expect(compareOptions("2026-11-08")[1]!.reach).toBe("um só");
     expect(carryLabel("2026-10-10")).toBe("Levar ao plano do próximo sábado");
     expect(carryLabel("2026-10-05")).toBe("Levar ao plano da próxima segunda");
   });

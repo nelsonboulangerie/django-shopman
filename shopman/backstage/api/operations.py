@@ -813,6 +813,13 @@ class OperatorSessionView(APIView):
         )
         is_gestor = surface_perm_codes(required_perm) == GESTOR_SURFACE_PERMISSIONS
         surface_role = gestor_surface_role(operador) if is_gestor and operador and not locked else None
+        if required_perm == "backstage.view_bi" and operador and not locked:
+            # O B.I. tem duas personas: quem audita o caixa (o Dono) e quem lê o
+            # resto (o Gerente). O rail esconde o Caixa de quem não audita, em vez
+            # de abrir uma tela que só sabe dizer "tentar de novo" (beta 05/11, ge:BI-07).
+            from shopman.backstage.permissions import can_audit_cash
+
+            surface_role = "cash_auditor" if can_audit_cash(operador) else "reader"
         return Response({
             # `station` substituiu `device_user`: o que a tela precisa saber é de
             # QUE BALCÃO ela é, não com que conta a máquina entrou — porque não

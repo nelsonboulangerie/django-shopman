@@ -13,7 +13,9 @@ import {
   occasionYearRows,
   occasionYearsCsv,
   ordinaryWeekdayLabel,
+  readingFor,
 } from "~/presentation/forecast";
+import { betweenLabel } from "~/presentation/bi";
 import type { DayForecast } from "~/types/bi";
 
 function day(overrides: Partial<DayForecast> = {}): DayForecast {
@@ -141,5 +143,19 @@ describe("o planejamento na URL", () => {
       horizon: "month",
       target: "2026-11-01",
     });
+  });
+});
+
+describe("a leitura da chave pedida (ge:BI-04) e a faixa com 'entre' (ge:BI-16)", () => {
+  it("a resposta de outro dia ou horizonte não aparece sob a data nova", () => {
+    const thursday = { target: "2026-11-05", horizon: "day" };
+    expect(readingFor(thursday, "2026-11-05", "day")).toBe(thursday);
+    expect(readingFor(thursday, "2026-11-04", "day")).toBeNull();
+    expect(readingFor(thursday, "2026-11-05", "week")).toBeNull();
+    expect(readingFor(null, "2026-11-05", "day")).toBeNull();
+  });
+
+  it("entre X e Y, nunca entre X a Y", () => {
+    expect(betweenLabel(940000, 1250000).replace(/\u00a0/g, " ")).toBe("R$ 9,4 mil e R$ 12,5 mil");
   });
 });

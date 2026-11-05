@@ -302,7 +302,7 @@ const activeFilters = computed(() => {
             title="Cancelados"
             icon="i-lucide-circle-x"
             :value="formatInt(report.cancelled_total)"
-            hint="Fora do faturamento ao lado"
+            hint="Não entram no faturamento."
           />
         </div>
 

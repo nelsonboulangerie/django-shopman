@@ -209,6 +209,18 @@ def test_selling_well_beyond_made_is_not_a_sellout(shop, day):
     assert row.lost_estimate == ""
 
 
+def test_sold_the_made_before_the_last_lot_came_out_is_not_a_sellout(shop, day):
+    """ge:BI-17: "acabou às 12:35" com o lote saindo às 12:47 é estoque de antes."""
+    madeleine = _recipe("MDLN", "Madeleine")
+    _lot(madeleine, day, 68, time(12, 47))
+    _sale(day, time(10, 0), "MDLN", 40)
+    _sale(day, time(12, 35), "MDLN", 28)
+
+    row = _row(build_bi_over_short(day=day), "MDLN")
+    assert row.soldout_at == ""
+    assert row.lost_estimate == ""
+
+
 def test_lot_with_nothing_made_stays_out(shop, day):
     wo = _lot(_recipe("CRO", "Croissant"), day, 10)
     WorkOrder.objects.filter(pk=wo.pk).update(finished=Decimal(0))  # lote fechado sem nada pronto

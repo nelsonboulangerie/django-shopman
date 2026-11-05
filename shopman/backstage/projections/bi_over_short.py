@@ -415,6 +415,13 @@ def _read_day(day: date, window: tuple[time, time] | None) -> _DayRead:
             # Vendeu bem mais do que o dia fez: havia estoque de antes (sobra de
             # ontem, compra). O produto não acabou quando o feito acabou.
             reached = None
+        last_out = max((wo.finished_at for wo in work_orders.get(sku, []) if wo.finished_at), default=None)
+        if reached is not None and last_out is not None and reached < timezone.localtime(last_out).time():
+            # A venda alcançou o feito antes de o último lote sair do forno: o que
+            # se vendeu antes era estoque de antes, não o lote. Dizer "acabou às
+            # 12:35" com o lote saindo às 12:47 contradiz a linha de cima
+            # (beta 05/11, ge:BI-17).
+            reached = None
         sold[sku] = total
         sales_by_hour[sku] = dict(hours)
         leftover[sku] = max(Decimal(0), made_qty - total)

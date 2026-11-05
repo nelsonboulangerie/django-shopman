@@ -42,8 +42,12 @@ export function formatInt(value: number): string {
 
 /** Quantidade string da projection ("38.5") → "38,5". */
 export function formatQty(value: string): string {
-  return value.replace(".", ",");
+  // Com o separador de milhar: "2178" ao lado de "2.727" lia como outra grandeza (ge:BI-22).
+  const number = Number(value);
+  return Number.isFinite(number) && value.trim() !== "" ? qtyFmt.format(number) : value.replace(".", ",");
 }
+
+const qtyFmt = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 });
 
 /** Minutos string ("23.5") → "23,5 min". */
 export function formatMinutes(value: string): string {
@@ -540,6 +544,14 @@ export function missingLabel(reason: string): string {
   return MISSING_LABELS[reason] ?? "Não temos base para projetar este dia.";
 }
 
+/**
+ * "R$ 1,2 mil e R$ 1,7 mil": a faixa dentro de uma frase com "entre" (ge:BI-16).
+ * "entre X a Y" mistura duas regências; com "entre", é "e".
+ */
+export function betweenLabel(low: number, high: number): string {
+  return `${formatMoneyCompact(low)} e ${formatMoneyCompact(high)}`;
+}
+
 /** "R$ 1.240 a R$ 1.680" — a faixa onde caiu metade dos dias parecidos. */
 export function rangeLabel(low: number, high: number): string {
   return `${formatMoneyCompact(low)} a ${formatMoneyCompact(high)}`;
@@ -773,7 +785,7 @@ export function cashAnswer(report: {
   if (!report.shifts_total) return "Nenhum turno fechado no período.";
   const shifts = countOf(report.shifts_total, "turno fechado", "turnos fechados");
   const missing = report.closings_missing
-    ? `; ${countOf(report.closings_missing, "dia sem fechamento", "dias sem fechamento")}`
+    ? `; ${countOf(report.closings_missing, "dia sem fechamento do dia", "dias sem fechamento do dia")}`
     : "";
   const diff = report.difference_total_q;
   const verdict = diff === 0 ? "a contagem bateu" : diff < 0 ? `faltou ${formatMoney(-diff)}` : `sobrou ${formatMoney(diff)}`;

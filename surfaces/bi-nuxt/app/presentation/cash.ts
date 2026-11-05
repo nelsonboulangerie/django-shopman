@@ -18,6 +18,7 @@ import {
   type ReadingCsv,
   type ReadingDivergingLabels,
 } from "../../../operator-kit/app/presentation/readingChart";
+import { httpError, httpErrorCode } from "../../../operator-kit/app/utils/httpError";
 import { BUCKET_SPAN_LABELS, bucketLabel, bucketRows, csvMoney, reais } from "./bi";
 
 /** Segundos em linguagem de balcão: ninguém lê "184 s". */
@@ -42,6 +43,23 @@ export const CASH_DIFFERENCE_SERIES: ReadingChartSeries[] = [
   { key: "sangria", label: "Sangrias (R$)" },
   { key: "suprimento", label: "Suprimentos (R$)" },
 ];
+
+/**
+ * A recusa do Caixa a quem não audita (403 de permissão, não de sessão nem de trava):
+ * diz de quem é a apuração e não oferece "tentar de novo", que nunca passaria
+ * (beta 05/11, ge:BI-07). O fechamento às cegas continua: o número é só do Dono.
+ */
+export function cashDenied(error: unknown): boolean {
+  const { status } = httpError(error);
+  if (status !== 403) return false;
+  const code = httpErrorCode(error);
+  return code !== "not_authenticated" && code !== "station_locked";
+}
+
+export const CASH_DENIED_COPY = {
+  title: "A apuração do caixa é do Dono",
+  description: "Quem fecha o turno conta às cegas. A quebra por dia e por operador aparece só para quem audita.",
+} as const;
 
 export const CASH_DIFFERENCE_SIDES: ReadingDivergingLabels = {
   positive: "Sobrou",

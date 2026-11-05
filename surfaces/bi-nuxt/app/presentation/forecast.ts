@@ -180,3 +180,18 @@ export function forecastToQuery(
   if (value.target !== fallbackTarget) query.target = value.target;
   return query;
 }
+
+/**
+ * A leitura só vale para o dia e o horizonte pedidos. O `useFetch` guarda a resposta
+ * anterior enquanto a nova chega, e por 5 a 11 s a tela dizia o faturamento de
+ * quinta sob a data de quarta (beta 05/11, ge:BI-04). Leitura de outra chave vira
+ * `null`: a página mostra o carregando até a resposta certa chegar.
+ */
+export function readingFor<T extends { target: string; horizon: string }>(
+  report: T | null | undefined,
+  target: string,
+  horizon: string,
+): T | null {
+  if (!report) return null;
+  return report.target === target && report.horizon === horizon ? report : null;
+}
