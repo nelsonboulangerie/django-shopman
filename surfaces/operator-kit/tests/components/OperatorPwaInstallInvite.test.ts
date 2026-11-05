@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import type { VueWrapper } from "@vue/test-utils";
+import { nextTick } from "vue";
 import OperatorPwaInstallInvite from "../../app/components/OperatorPwaInstallInvite.vue";
 import { OPERATOR_APPS } from "../../appIdentity";
 import { installPlan, type InstallPlan } from "../../app/utils/installGuide";
@@ -83,6 +84,19 @@ describe("OperatorPwaInstallInvite", () => {
   afterEach(() => {
     for (const wrapper of mounted.splice(0)) wrapper.unmount();
     document.body.innerHTML = "";
+  });
+
+  it("espera a oferta de vincular o dispositivo sair da tela (PDV2-25)", async () => {
+    state.plan.value = PROMPT;
+    state.canInvite.value = true;
+    const offerOpen = useState<boolean>("station-setup-offer-open", () => false);
+    offerOpen.value = true;
+    await mountInvite();
+    expect(document.body.querySelector("[data-operator-pwa-install]")).toBeNull();
+    offerOpen.value = false;
+    await nextTick();
+    await nextTick();
+    expect(document.body.querySelector("[data-operator-pwa-install]")).not.toBeNull();
   });
 
   it("fica ausente quando não há caminho acionável aqui", async () => {
