@@ -1,4 +1,4 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { computed, ref } from "vue";
 import { beforeAll, describe, expect, it } from "vitest";
 import MarketingOfferForm from "~/components/MarketingOfferForm.vue";
@@ -170,5 +170,70 @@ describe("MarketingOfferForm", () => {
       min_order_q: 2500,
       is_active: true,
     });
+  });
+});
+
+describe("MarketingOfferForm — campos numéricos (beta 05/11)", () => {
+  it("percentual aceita inteiros: a base do step nativo é 1, não 0,01 (ge:MKT-01)", async () => {
+    const wrapper = form();
+    const input = wrapper.get("#marketing-offer-value");
+    expect(input.attributes("min")).toBe("1");
+    expect(input.attributes("step")).toBe("1");
+    expect(input.attributes("max")).toBe("100");
+    expect((input.element as HTMLInputElement).validity.stepMismatch).toBe(false);
+
+    await input.setValue("15");
+    expect((input.element as HTMLInputElement).validity.stepMismatch).toBe(false);
+    await wrapper.get("#marketing-offer-name").setValue("Semana do pão");
+    await wrapper.get("form").trigger("submit");
+    expect(wrapper.emitted("submit")?.[0]?.[0]).toMatchObject({ type: "percent", value: 15 });
+  });
+
+  it("percentual fracionado não habilita o envio (o servidor só aceita inteiro) (ge:MKT-01)", async () => {
+    const wrapper = form();
+    await wrapper.get("#marketing-offer-name").setValue("Semana do pão");
+    await wrapper.get("#marketing-offer-value").setValue("15.5");
+    expect(wrapper.get('button[type="submit"]').attributes("disabled")).toBeDefined();
+  });
+
+  it("valor em reais e pedido mínimo editados chegam como número sem quebrar o envio (ge:MKT-02)", async () => {
+    const wrapper = form("offer", {
+      ref: "mgmkt",
+      name: "MGMKT",
+      type: "fixed",
+      type_label: "Valor fixo",
+      value: 1000,
+      valid_from: "2026-10-17T12:00:00Z",
+      valid_until: "2026-10-24T12:00:00Z",
+      skus: ["CRO-1"],
+      collections: [],
+      min_order_q: 0,
+      fulfillment_types: [],
+      customer_segments: [],
+      birthday_only: false,
+      channels: [],
+      is_active: true,
+      status: "live",
+      available_for_campaign: true,
+      coupons: [],
+    });
+    const valueInput = wrapper.get("#marketing-offer-value");
+    expect(valueInput.attributes("step")).toBe("0.01");
+    await valueInput.setValue("5");
+    await wrapper.get("[data-offer-advanced-toggle]").trigger("click");
+    await flushPromises();
+    await wrapper.get("#marketing-offer-min-order").setValue("12.5");
+    await wrapper.get("form").trigger("submit");
+    expect(wrapper.emitted("submit")?.[0]?.[0]).toMatchObject({
+      type: "fixed",
+      value: 500,
+      min_order_q: 1250,
+    });
+  });
+
+  it("o nome diz que é público, porque a loja o mostra ao cliente (ge:MKT-06)", () => {
+    const wrapper = form();
+    expect(wrapper.text()).toContain("Nome que o cliente vê");
+    expect(wrapper.text()).not.toContain("Nome para a equipe");
   });
 });

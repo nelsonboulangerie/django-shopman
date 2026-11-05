@@ -84,6 +84,13 @@ const valueLabel = computed(() => {
   if (type.value === "fixed") return "Desconto em reais";
   return "Teto do frete em reais";
 });
+// A base do `step` nativo é o `min`: percentual com min 0,01 e step 1 só aceitaria
+// 0,01, 1,01, 2,01… e recusaria o 10 que já vem preenchido. Cada tipo tem os seus.
+const valueBounds = computed(() => {
+  if (type.value === "percent") return { min: 1, max: 100, step: 1 };
+  if (type.value === "fixed") return { min: 0.01, max: undefined, step: 0.01 };
+  return { min: 0, max: undefined, step: 0.01 };
+});
 const valueHint = computed(() =>
   type.value === "free_delivery"
     ? "Use 0 para cobrir todo o frete."
@@ -91,7 +98,7 @@ const valueHint = computed(() =>
 );
 const canSubmit = computed(
   () => {
-    const amount = Number(value.value);
+    const amount = decimal(value.value);
     const startsAt = Date.parse(validFrom.value);
     const endsAt = Date.parse(validUntil.value);
     const code = couponCode.value.trim();
@@ -99,7 +106,8 @@ const canSubmit = computed(
       name.value.trim().length > 0 &&
       Number.isFinite(amount) &&
       (type.value === "free_delivery" ? amount >= 0 : amount > 0) &&
-      (type.value !== "percent" || amount <= 100) &&
+      (type.value !== "percent" ||
+        (Number.isInteger(amount) && amount >= 1 && amount <= 100)) &&
       Number.isFinite(startsAt) &&
       Number.isFinite(endsAt) &&
       endsAt > startsAt &&
@@ -111,7 +119,7 @@ const canSubmit = computed(
 const fieldLabels: Record<string, string> = {
   payload: "Cadastro",
   kind: "Tipo de cadastro",
-  name: "Nome para a equipe",
+  name: "Nome que o cliente vê",
   coupon_code: "Código do cupom",
   type: "Tipo de benefício",
   value: "Valor do benefício",
@@ -142,9 +150,15 @@ function fieldError(field: string): string {
   return props.fieldErrors?.[field]?.[0] ?? "";
 }
 
-function cents(raw: string): number {
-  const normalized = raw.trim().replace(",", ".");
-  const parsed = Number(normalized || 0);
+// O `NuxtInput type="number"` devolve número depois que o campo é editado; antes
+// disso o valor ainda é o texto inicial. Os dois caminhos chegam aqui.
+function decimal(raw: string | number | null | undefined): number {
+  const normalized = String(raw ?? "").trim().replace(",", ".");
+  return Number(normalized || 0);
+}
+
+function cents(raw: string | number | null | undefined): number {
+  const parsed = decimal(raw);
   return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
 }
 
@@ -156,11 +170,11 @@ function submit() {
     coupon_code:
       props.kind === "coupon" ? couponCode.value.trim().toUpperCase() : "",
     type: type.value,
-    value: type.value === "percent" ? Number(value.value) : cents(value.value),
+    value: type.value === "percent" ? decimal(value.value) : cents(value.value),
     valid_from: validFrom.value,
     valid_until: validUntil.value,
     min_order_q: cents(minOrder.value),
-    max_uses: props.kind === "coupon" ? Number(maxUses.value || 0) : 0,
+    max_uses: props.kind === "coupon" ? decimal(maxUses.value) : 0,
     skus: skus.value,
     collections: collections.value,
     channels: channels.value,
@@ -238,7 +252,8 @@ function submit() {
           </NuxtFormField>
 
           <NuxtFormField
-            label="Nome para a equipe"
+            label="Nome que o cliente vê"
+            help="Aparece na loja, na página da oferta e no resumo da sacola."
             :error="fieldError('name') || undefined"
             required
           >
@@ -278,9 +293,9 @@ function submit() {
                 id="marketing-offer-value"
                 v-model="value"
                 type="number"
-                :min="type === 'free_delivery' ? 0 : 0.01"
-                :max="type === 'percent' ? 100 : undefined"
-                :step="type === 'percent' ? 1 : 0.01"
+                :min="valueBounds.min"
+                :max="valueBounds.max"
+                :step="valueBounds.step"
                 class="w-full"
                 required
                 :aria-invalid="Boolean(fieldError('value'))"
