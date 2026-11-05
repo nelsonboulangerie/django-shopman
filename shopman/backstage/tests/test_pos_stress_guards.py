@@ -382,3 +382,22 @@ class PrinterHealthFollowsTheDeviceAgentTests(PosGuardsBase):
         self._set({"printer": {"enabled": True}, "device_agent": self._AGENT})
 
         self.assertEqual(self._printer().status, "ready")
+
+
+class FimDoDiaSoParaQuemFechaTest(PosGuardsBase):
+    """Beta 05/11 (op:PDV-13): o "Fim do dia" da barra levava a Caixa a um beco.
+
+    A projection diz se quem está logado fecha o dia; a barra só oferece a quem fecha.
+    """
+
+    def test_a_caixa_nao_fecha_o_dia(self) -> None:
+        self.assertFalse(build_pos(operator=self.operator).can_close_day)
+
+    def test_quem_tem_perform_closing_fecha(self) -> None:
+        from shopman.backstage.models import DayClosing
+
+        ct = ContentType.objects.get_for_model(DayClosing)
+        self.manager.user_permissions.add(Permission.objects.get(content_type=ct, codename="perform_closing"))
+        manager = get_user_model().objects.get(pk=self.manager.pk)
+
+        self.assertTrue(build_pos(operator=manager).can_close_day)

@@ -26,6 +26,12 @@ export interface PosSectionsInput {
   preorders: { allowed: boolean; badge?: string };
   /** A saúde da estação; sem leitura ainda, sem sinal. */
   terminal?: PosTerminalStatus;
+  /**
+   * O operador fecha o dia? Sem a permissão, o "Fim do dia" não entra na barra: ele
+   * levava a Caixa a "Fechamento é do gerente" (beta 05/11, op:PDV-13). Ausente =
+   * não fecha.
+   */
+  canCloseDay?: boolean;
 }
 
 /** Comandas em uso: o número que o selo das Comandas conta. */
@@ -78,14 +84,16 @@ export function posSections(input: PosSectionsInput): OperatorSection[] {
     // Fim do dia (a contagem da vitrine e o fechamento, `pos-tablet4.html`): na barra de
     // baixo do tablet em pé e do celular; na barra lateral ele mora dentro do Caixa. A
     // tela é um corredor sem navegação (fora do shell), com "Sair" de volta ao Caixa.
-    {
-      key: "closing",
-      label: "Fim do dia",
-      icon: "lucide:clipboard-check",
-      to: "/session/closing",
-      where: "bar",
-      quick: true,
-    },
+    ...(input.canCloseDay
+      ? [{
+          key: "closing",
+          label: "Fim do dia",
+          icon: "lucide:clipboard-check",
+          to: "/session/closing",
+          where: "bar" as const,
+          quick: true,
+        }]
+      : []),
     // Ajustes no grupo de cima, depois de um traço, abaixo do Caixa (v4
     // `salao-mesas4.html`); na barra de baixo, no "Mais" (a gaveta).
     {

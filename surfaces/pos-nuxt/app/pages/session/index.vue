@@ -53,7 +53,7 @@ useHead({ title: "Caixa" });
 const liveStatus = usePosLiveStatus();
 
 const action = usePosAction();
-const { pos, shift, actions, pending, refresh } = await usePosTerminal();
+const { pos, shift, actions, station, pending, refresh } = await usePosTerminal();
 
 const OPERATOR_PERM = "cashman.operate_pos";
 const { operator: activeOperator } = useOperatorLock(OPERATOR_PERM);
@@ -149,6 +149,7 @@ const endOfDay = computed(() => endOfDayTiles({
   shiftOpen: screen.value === "open",
   justClosedShift: justClosedShift.value,
   canAuditCash: canAuditCash.value,
+  atCounter: station?.value?.ready !== false,
   dayClosing: dayClosing.value,
 }));
 // Fim de dia EM CURSO: acabou de fechar o caixa e o dia está por fechar. Aí o

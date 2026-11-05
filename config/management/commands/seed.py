@@ -8729,7 +8729,13 @@ class Command(BaseCommand):
         # Hoje: turno aberto com fundo de troco.
         today_shift = cash.open_shift_for_terminal(terminal)
         if today_shift is None:
-            today_open = timezone.make_aware(datetime.combine(timezone.localdate(), time(8, 45)))
+            # 08:45, ou agora se o seed roda antes disso: um turno aberto no futuro
+            # mostrava "Turno aberto em 05/11, 08:45" com o relógio da loja em
+            # 06:51 (beta 05/11, PDV2-24).
+            today_open = min(
+                timezone.make_aware(datetime.combine(timezone.localdate(), time(8, 45))),
+                timezone.now(),
+            )
             today_shift = cash.open_shift(operator=admin, terminal=terminal, float_q=20000, at=today_open)
 
         self.stdout.write("  ✅ 2 turnos de caixa (ontem fechado + hoje aberto)")

@@ -522,6 +522,10 @@ class POSProjection:
     # renderiza a porta quando ela abre para QUEM está logado. É consulta: a via
     # do cliente sai na bobina, e essa não depende deste gate.
     danfe_screen_allowed: bool = False
+    # O operador fecha o dia (``backstage.perform_closing``, o Gerente)? O "Fim do
+    # dia" da barra de baixo só aparece para ele: para a Caixa era um beco, "Sua
+    # conta não tem permissão" (beta 05/11, op:PDV-13).
+    can_close_day: bool = False
     # ENTREGA, estado inicial. A review responde pela data ESCOLHIDA, mas ela só
     # existe depois que há endereço — e a tela precisa abrir o formulário já
     # dizendo "hoje" e já mostrando as janelas de hoje. Sem isto o operador
@@ -721,6 +725,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         fiscal_label=fiscal_label,
         fiscal_message=fiscal_message,
         danfe_screen_allowed=bool(getattr(operator, "is_staff", False)),
+        can_close_day=bool(operator is not None and operator.has_perm("backstage.perform_closing")),
         weighed_weight_entry=weighed_sale.weight_entry_enabled(),
         offline_sale_enabled=pos_offline_sale.enabled(),
         price_window=_price_window_projection(offer),

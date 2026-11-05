@@ -15,6 +15,10 @@ import type {
 } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 
+// A hora do turno é a do BALCÃO, não a do dispositivo: um celular em outro fuso
+// lia outra abertura (beta 05/11, PDV2-24). A mesma régua da leitura X/Z.
+const STORE_TIME_ZONE = "America/Sao_Paulo";
+
 /**
  * O rótulo que o operador lê. O REF continua `sangria`/`suprimento` — é o
  * identificador do domínio, viaja na API e está no banco.
@@ -110,7 +114,9 @@ export function formatOpenedAt(raw: string | null | undefined): string {
   const date = new Date(raw);
   return Number.isNaN(date.getTime())
     ? raw
-    : date.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    : date.toLocaleString("pt-BR", {
+        day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: STORE_TIME_ZONE,
+      });
 }
 
 /**
@@ -536,6 +542,12 @@ export function endOfDayTiles(input: {
   shiftOpen?: boolean;
   justClosedShift?: boolean;
   canAuditCash: boolean;
+  /**
+   * Este dispositivo é um balcão (posto vinculado)? A leitura X/Z é da gaveta de
+   * um balcão, e o relatório recusa fora dele: o card levava o Dono a "Este
+   * dispositivo não é um balcão" (beta 05/11, PDV-21). Ausente = balcão.
+   */
+  atCounter?: boolean;
   dayClosing: { already_closed: boolean; today_display: string; existing_closing_display: string } | null;
 }): SessionTile[] {
   const tiles: SessionTile[] = [];
@@ -567,7 +579,7 @@ export function endOfDayTiles(input: {
       badge: nextStep ? "Próximo passo" : done ? "Feito" : undefined,
     });
   }
-  if (input.canAuditCash) {
+  if (input.canAuditCash && input.atCounter !== false) {
     tiles.push({
       key: "cash_report",
       icon: "lucide:receipt-text",
@@ -629,7 +641,7 @@ export function shiftOpenedLine(input: {
   const at = new Date(input.openedAt);
   const time = Number.isNaN(at.getTime())
     ? ""
-    : at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    : at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: STORE_TIME_ZONE });
   const opened = time ? `turno aberto às ${time}${input.openedBy ? ` por ${input.openedBy}` : ""}` : "";
   return [input.terminalLabel, opened].filter(Boolean).join(" · ");
 }
