@@ -42,10 +42,14 @@ async function gotoHydrated(page: Page, path: string) {
   );
 }
 
-// No celular as quatro seções moram na barra do pé da tela (a barra da suíte, a mesma
-// navegação que vira trilho do `sm` para cima).
-function mobileSections(page: Page) {
-  return page.getByRole("navigation", { name: "Seções do Marketing" });
+// Modelo de navegação (31/10/2026): no celular o selo do app abre o trocador, com a
+// operação e as quatro sub-seções de Ajustes; a barra de baixo traz as seções da forma
+// da tela (Decisões, Agendados e Enviados; em Ajustes, as quatro sub-seções).
+async function switchTo(page: Page, section: string) {
+  await page.locator("[data-compact-seal]").filter({ visible: true }).first().click();
+  const switcher = page.getByRole("dialog", { name: "Marketing" });
+  await expect(switcher).toBeVisible();
+  await switcher.locator(`[data-switcher-section="${section}"]`).click();
 }
 
 test("operador entra e alcança os três postos de trabalho sem redigitação", async ({
@@ -53,16 +57,14 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
 }) => {
   await enterAsSyntheticOperator(page);
 
-  await mobileSections(page)
-    .getByRole("link", { name: "Ajustes", exact: true })
-    .click();
-  // Ajustes abre o índice das sub-seções; cada cartão leva à sua rota.
-  await expect(page).toHaveURL(/\/settings$/);
-  await page.locator('[data-settings-section="campaigns"]').click();
+  // O trocador leva direto a cada sub-seção de Ajustes.
+  await switchTo(page, "campaigns");
   await expect(page).toHaveURL(/\/settings\/campaigns$/);
+  // Com o trocador, abaixo do lg o lugar está no selo e o <h1> fica só para o
+  // leitor de tela: confere-se a presença dele, não a vista.
   await expect(
     page.getByRole("heading", { level: 1, name: "Campanhas" }),
-  ).toBeVisible();
+  ).toBeAttached();
   // A lista é a OperatorTable em toda largura (no celular, as linhas que abrem):
   // a campanha aparece uma vez na tela.
   const campaignName = page.getByText("Fornada artesanal 01");
@@ -96,14 +98,12 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
   await expect(page).toHaveURL(/\/settings\/platforms$/);
   await expect(
     page.getByRole("heading", { level: 1, name: "Plataformas" }),
-  ).toBeVisible();
+  ).toBeAttached();
   await expect(
     page.getByText("Instagram", { exact: true }).first(),
   ).toBeVisible();
 
-  await mobileSections(page)
-    .getByRole("link", { name: /^Decisões/ })
-    .click();
+  await switchTo(page, "decisions");
   await expect(
     page.getByRole("heading", { level: 1, name: "Decisões" }),
   ).toBeVisible();
@@ -165,7 +165,7 @@ test("Ajustes tem as próprias seções, uma rota por lugar", async ({
   await gotoHydrated(page, "/settings/offers");
   await expect(
     page.getByRole("heading", { level: 1, name: "Ofertas e cupons" }),
-  ).toBeVisible();
+  ).toBeAttached();
   // No celular (mais de 3 opções) as sub-seções são uma lista com a atual escolhida.
   const settings = page.getByRole("navigation", { name: "Seções de Ajustes" });
   await expect(
@@ -212,7 +212,7 @@ test("Plataformas usa detalhe modal e volta para a própria lista", async ({
   await expect(google).toBeFocused();
   await expect(
     page.getByRole("heading", { level: 1, name: "Plataformas" }),
-  ).toBeVisible();
+  ).toBeAttached();
 });
 
 test("composer usa modal amplo no desktop", async ({ page }) => {
@@ -303,9 +303,11 @@ test("Campanhas prepara disparo idempotente e leva o receipt à revisão", async
   await expect(page).toHaveURL(
     /\/announcements\/77\?dispatch=new#review/,
   );
-  // Fase 2: a barra inferior da suíte fica (o kit a mantém sempre visível) e a
-  // decisão vem na ação na base, colada em cima dela.
-  await expect(mobileSections(page)).toBeVisible();
+  // A revisão é de Decisões (chão): a barra de baixo da suíte fica, e a decisão vem
+  // na ação na base, colada em cima dela.
+  await expect(
+    page.getByRole("navigation", { name: "Seções do Marketing" }),
+  ).toBeVisible();
   await expect(page.locator("[data-review-actions]")).toBeVisible();
   await expect(
     page.getByText("Este anúncio acabou de ser criado pelo seu disparo"),

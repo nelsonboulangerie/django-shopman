@@ -4,8 +4,7 @@
 //
 // Fase 2 (WP-FASE2-UX-OPERADOR, onda do Marketing): o app mora no shell da suíte, o
 // mesmo do Gestor (`OperatorSuiteShell`): barra lateral em três estados na mesa,
-// gaveta pelo ☰ e barra inferior de 3 a 5 vagas abaixo de `lg`. As seções vêm de
-// `useMarketingSections`, uma fonte só.
+// barra inferior abaixo de `lg`. As seções vêm de `useMarketingSections`, uma fonte só.
 //
 // O destrave só pede a capability de entrar. A autorização de cada Action é
 // revalidada no backend; abrir o app nunca concede publicação por herança.
@@ -36,7 +35,11 @@ if (appColor) useHead({ htmlAttrs: { style: `--app-color: ${appColor}` } });
 const { attrsFor: appLinkAttrsFor } = useOperatorAppLink();
 const hubLink = computed(() => appLinkAttrsFor(hubUrl));
 
-const { sections, activeSection } = useMarketingSections();
+// O selo abre o trocador (modelo de navegação, 31/10/2026): a operação no chão, com a
+// barra de baixo no celular; Ajustes no escritório. A tela que não é seção (a página de
+// Ajustes que lista as quatro) é de escritório. Sem `current`: o shell acha a seção pelo
+// caminho, a de Ajustes inclusive, e o trocador acende a sub-seção certa.
+const { sections, switcherSections } = useMarketingSections();
 
 // Avisos (MKT-01/T-13): a caixa do kit, a mesma em todo app. As decisões entram nela
 // como UM resumo que leva à fila, não como uma segunda lista (decisão do dono de
@@ -97,7 +100,9 @@ watch(sessionState, async (next, previous) => {
           v-if="sessionState === 'authenticated'"
           storage-key="marketing"
           :sections="sections"
-          :current="activeSection"
+          :switcher-sections="switcherSections"
+          default-form="office"
+          floor-bar
           label="Seções do Marketing"
           :operator-name="operator?.name"
           @lock="lock"

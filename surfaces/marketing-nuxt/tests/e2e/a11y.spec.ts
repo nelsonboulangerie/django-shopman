@@ -188,19 +188,18 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   ).toBeVisible();
   await page.keyboard.press("Escape");
 
-  // Ajustes abre o índice das sub-seções (um cartão por lugar).
-  await page
-    .getByRole("navigation", { name: "Seções do Marketing" })
-    .getByRole("link", { name: "Ajustes", exact: true })
-    .click();
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Ajustes" }),
-  ).toBeVisible();
-  await expectNoAxeViolations(page, "ajustes 320×568");
-  await page.locator('[data-settings-section="campaigns"]').click();
+  // O selo abre o trocador (modelo de navegação, 31/10/2026): a operação e as quatro
+  // sub-seções de Ajustes, numa lista só.
+  await page.locator("[data-compact-seal]").filter({ visible: true }).first().click();
+  const switcher = page.getByRole("dialog", { name: "Marketing" });
+  await expect(switcher).toBeVisible();
+  await expectNoAxeViolations(page, "trocador 320×568");
+  await switcher.locator('[data-switcher-section="campaigns"]').click();
+  // Com o trocador, abaixo do lg o lugar está no selo e o <h1> fica só para o
+  // leitor de tela: confere-se a presença dele, não a vista.
   await expect(
     page.getByRole("heading", { level: 1, name: "Campanhas" }),
-  ).toBeVisible();
+  ).toBeAttached();
   await expectNoAxeViolations(page, "campanhas 320×568");
   await expectNoHorizontalOverflow(page, "campanhas 320×568");
   await expectTouchTargets(page, "campanhas 320×568");
@@ -225,7 +224,7 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
     .click();
   await expect(
     page.getByRole("heading", { level: 1, name: "Plataformas" }),
-  ).toBeVisible();
+  ).toBeAttached();
   await expectNoAxeViolations(page, "plataformas em equivalente a zoom 200%");
   await expectNoHorizontalOverflow(
     page,
@@ -234,22 +233,19 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   await expectTouchTargets(page, "plataformas em equivalente a zoom 200%");
 
   await page.setViewportSize({ width: 320, height: 568 });
-  // Shell da suíte (fase 2): no celular a barra lateral vira gaveta pelo ☰, e tema,
-  // giro e Bloquear moram no menu do operador, no pé dela.
+  // Modelo de navegação (31/10/2026): no celular o selo do app abre o trocador no lugar
+  // do ☰, e o tema escuro chega pela preferência gravada no dispositivo.
   const lightBackground = await page.evaluate(
     () => getComputedStyle(document.body).backgroundColor,
   );
-  await page.getByRole("button", { name: "Abrir barra lateral" }).click();
-  await page.getByRole("button", { name: "Menu do operador" }).click();
-  await page.getByRole("button", { name: "Tema escuro" }).click();
-  // O menu fecha com o toque; a gaveta, pelo X dela.
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^Fechar/ })
-    .click();
-  // A gaveta fecha de verdade (o véu escuro não pode ficar por cima da página
-  // quando o axe mede o contraste).
-  await expect(page.getByRole("button", { name: "Menu do operador" })).toBeHidden();
+  await expect(page.locator("[data-page-header-switcher-seal]")).toBeVisible();
+  await page.evaluate(() =>
+    localStorage.setItem("marketing-nuxt-color-mode", "dark"),
+  );
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Plataformas" }),
+  ).toBeAttached();
   await expect(page.locator("html")).toHaveClass(/dark/);
   // A classe troca antes de o navegador terminar de recalcular as cores herdadas. O
   // axe não pode medir o primeiro frame escuro ainda com o token claro.
@@ -266,12 +262,12 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   expect(
     await page.evaluate(() => matchMedia("(forced-colors: active)").matches),
   ).toBe(true);
-  // A barra de baixo da suíte: do Decisões, o Tab vai ao Agendados.
+  // A barra de baixo de Ajustes (escritório): das Campanhas, o Tab vai aos Modelos.
   const sections = page.getByRole("navigation", { name: "Seções do Marketing" });
-  await sections.getByRole("link", { name: /^Decisões/ }).focus();
+  await sections.getByRole("link", { name: /^Campanhas/ }).focus();
   await page.keyboard.press("Tab");
   const forcedColorsFocus = sections.getByRole("link", {
-    name: "Agendados",
+    name: "Modelos",
     exact: true,
   });
   await expect(forcedColorsFocus).toBeFocused();
@@ -289,7 +285,7 @@ test("Ofertas e cupons preserva reflow, toque e semântica no mobile", async ({
   await page.goto("/settings/offers");
   await expect(
     page.getByRole("heading", { level: 1, name: "Ofertas e cupons" }),
-  ).toBeVisible();
+  ).toBeAttached();
   await expectNoAxeViolations(page, "ofertas 320×568");
   await expectNoHorizontalOverflow(page, "ofertas 320×568");
   await expectTouchTargets(page, "ofertas 320×568");

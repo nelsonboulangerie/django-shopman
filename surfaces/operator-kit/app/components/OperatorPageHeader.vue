@@ -341,7 +341,7 @@ function clearAll() {
           :place="title"
           :tone="sealTone"
           :time="sealTime"
-          class="flex-none! lg:hidden"
+          class="flex-none! max-sm:flex-initial! lg:hidden"
           data-page-header-switcher-seal
         />
         <OperatorAppSeal v-else-if="hubUrl && !$slots.lead" :class="sealClass" />
@@ -373,7 +373,12 @@ function clearAll() {
       </template>
 
       <template #title>
-        <span :class="[phoneTitle ? 'max-sm:hidden' : '', switcherEnabled && !$slots.lead ? 'max-lg:hidden' : '']">{{ title }}</span>
+        <!-- Com o trocador, abaixo do lg o lugar está no selo: o título sai da vista, mas
+             fica no <h1> para o leitor de tela (um <h1> vazio não diz onde se está). -->
+        <span
+          :class="[phoneTitle ? 'max-sm:hidden' : '', switcherEnabled && !$slots.lead ? 'max-lg:sr-only' : '']"
+          :data-clipping-allowed="switcherEnabled && !$slots.lead ? '' : undefined"
+        >{{ title }}</span>
         <span v-if="phoneTitle && !(switcherEnabled && !$slots.lead)" class="sm:hidden" data-page-header-phone-title>{{
           phoneTitle
         }}</span>

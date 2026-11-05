@@ -135,6 +135,10 @@ const alerts = computed(() =>
     : [],
 );
 
+const compactFilterLabel = computed(() =>
+  activeFilters.value.map((filter) => filter.label).join(", "),
+);
+
 const loadedLabel = computed(() =>
   announcements.value.length === 1
     ? "1 resultado carregado"
@@ -155,7 +159,33 @@ useHead({ title: "Enviados" });
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col" data-marketing-history>
+  <main class="flex min-h-0 flex-1 flex-col" data-marketing-history data-compact-page>
+    <!-- No celular, a linha do chão do kit: a conexão vira o ponto do selo, o filtro
+         único fica na linha (ícone antes da busca, o número no canto, como o sino), e os
+         recortes ativos aparecem logo abaixo dela, com Limpar. -->
+    <OperatorCompactBar
+      title="Enviados"
+      :tone="live.tone"
+      :time="live.time"
+      :conn-label="live.label"
+      :filter-active="hasActiveFilters"
+      :filter-label="compactFilterLabel"
+      :summary="announcements.length ? `${loadedLabel}.` : ''"
+      :options="headerActions"
+      @clear="void clearFilters()"
+    >
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="dimensions"
+          trigger="icon"
+          :chips="false"
+          surface="marketing"
+          screen="history"
+          data-history-filters-compact
+        />
+      </template>
+    </OperatorCompactBar>
     <OperatorPageHeader
       title="Enviados"
       :actions="headerActions"
@@ -165,7 +195,7 @@ useHead({ title: "Enviados" });
       :alerts="alerts"
     >
       <template #status>
-        <!-- No celular o kit desce o estado para a segunda linha da barra. -->
+        <!-- Na mesa: o ponto, a hora e, fora do ao vivo, o estado por extenso. -->
         <span class="flex min-w-0" data-marketing-live>
           <OperatorLiveStatus :tone="live.tone" :time="live.time" :label="live.label" :short-label="live.shortLabel" :detail="live.detail" />
         </span>

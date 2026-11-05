@@ -96,10 +96,10 @@ const headerActions = [
   { label: "Enviados", icon: "i-lucide-history", to: "/history" },
   { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
 ];
-const phoneHeaderActions = [
-  { label: "Preparar disparo", icon: "i-lucide-send", to: "/settings/campaigns", priority: 1 },
-  ...headerActions,
-];
+const prepareAction = { label: "Preparar disparo", icon: "i-lucide-send", to: "/settings/campaigns" };
+const phoneHeaderActions = [{ ...prepareAction, priority: 1 }, ...headerActions];
+// A linha do chão no celular: as mesmas ações, no ⋮ do canto.
+const compactOptions = [prepareAction, ...headerActions];
 onKeyStroke(["r", "R"], (event) => {
   const target = event.target as HTMLElement | null;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -129,7 +129,17 @@ const scheduledLine = computed(() =>
 
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col" data-marketing-decisions>
+  <main class="flex min-h-0 flex-1 flex-col" data-marketing-decisions data-compact-page>
+    <!-- No celular (abaixo de `md`), a linha do chão do kit toma o lugar da barra de cima:
+         o selo com o ponto de conexão (abre o trocador), a busca, o sino e o ⋮. A hora da
+         leitura e a cadência vão para o topo do ⋮; não há selo "Ao vivo" numa 2ª linha. -->
+    <OperatorCompactBar
+      title="Decisões"
+      :tone="live.tone"
+      :time="live.time"
+      :conn-label="live.label"
+      :options="compactOptions"
+    />
     <OperatorPageHeader
       title="Decisões"
       :actions="headerActions"
@@ -137,8 +147,7 @@ const scheduledLine = computed(() =>
       actions-label="Mais ações de Decisões"
     >
       <template #status>
-        <!-- No celular o kit desce o estado para a segunda linha da barra (README "Barra
-             do topo no celular"), e o rótulo por extenso aparece inteiro. -->
+        <!-- Na mesa: o ponto, a hora e, fora do ao vivo, o estado por extenso. -->
         <span class="flex min-w-0" data-marketing-live>
           <OperatorLiveStatus
             :tone="live.tone"
