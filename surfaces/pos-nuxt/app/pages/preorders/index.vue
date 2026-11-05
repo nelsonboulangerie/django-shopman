@@ -467,7 +467,7 @@ function refreshAll() {
       <OperatorFilterPanel
         v-model="activePanel"
         :dimensions="dimensions"
-        :quick="QUICK_FILTERS"
+        :quick="[...QUICK_FILTERS]"
         trigger="icon"
         :chips="false"
         surface="pos"
@@ -591,7 +591,7 @@ function refreshAll() {
       <OperatorFilterPanel
         v-model="activePanel"
         :dimensions="dimensions"
-        :quick="QUICK_FILTERS"
+        :quick="[...QUICK_FILTERS]"
         surface="pos"
         screen="preorders"
         data-preorders-filters
