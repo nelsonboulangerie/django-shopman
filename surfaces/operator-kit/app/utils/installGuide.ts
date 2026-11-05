@@ -363,6 +363,9 @@ export interface InstallTextPart {
   glyph?: InstallGlyph;
 }
 
+/** Rótulos que são só o símbolo do menu: o desenho substitui o caractere. */
+const SYMBOL_ONLY_LABELS = new Set(["⋮", "⋯", "☰"]);
+
 /**
  * Quebra `**assim**` em pedaços para a tela destacar o rótulo do menu — e diz onde o
  * símbolo entra.
@@ -390,6 +393,9 @@ export function installTextParts(text: string, glyph?: InstallGlyph): InstallTex
   if (!glyph || parts.length === 0) return parts;
   const alvo = parts.find((part) => part.strong) || parts[0]!;
   alvo.glyph = glyph;
+  // Quando o rótulo É o próprio símbolo ("**⋮**"), o desenho já o diz: repetir o
+  // caractere ao lado mostrava o símbolo duas vezes, "[⋮] ⋮ (três pontinhos)".
+  if (alvo.strong && SYMBOL_ONLY_LABELS.has(alvo.text.trim())) alvo.text = "";
   return parts;
 }
 
