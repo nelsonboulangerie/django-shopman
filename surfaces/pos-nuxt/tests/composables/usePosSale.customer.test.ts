@@ -241,3 +241,23 @@ describe("usePosSale — cadastro de comanda reaberta", () => {
     expect(offers.taxId.kind).toBe("none");
   });
 });
+
+describe("usePosSale — a busca de cliente só aceita a resposta do termo atual", () => {
+  it("resposta atrasada de um termo velho não pinta a lista", async () => {
+    // Beta test de 05/11/2026: "maria" mostrou "Café Parisiense" (do termo
+    // anterior) com o Enter pronto.
+    const { sale, handles } = makeSale();
+    let slow: (value: unknown) => void = () => {};
+    dollarFetch
+      .mockReset()
+      .mockImplementationOnce(() => new Promise((resolve) => { slow = resolve; }))
+      .mockResolvedValueOnce({ results: [{ ref: "CUST-M", name: "Maria Santos", phone: "", document: "", email: "" }] });
+    const old = sale.searchCustomers("99444");
+    await sale.searchCustomers("maria");
+    slow({ results: [{ ref: "CUST-C", name: "Café Parisiense", phone: "", document: "", email: "" }] });
+    await old;
+    expect(sale.customerSearchResults.value.map((r) => r.ref)).toEqual(["CUST-M"]);
+    expect(sale.customerSearchBusy.value).toBe(false);
+    handles.dispose();
+  });
+});

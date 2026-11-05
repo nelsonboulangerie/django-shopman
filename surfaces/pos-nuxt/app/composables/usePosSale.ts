@@ -2973,9 +2973,17 @@ export function usePosSale(deps: PosSaleDeps) {
   // `fiscal_prefs` do resolve. Zera quando o cadastro nasce, ao remover o
   // cliente e ao trocar de comanda.
   const pendingCustomerPrefs = ref<{ cpf_na_nota?: boolean; email_receipt?: boolean }>({});
+  // Só a resposta da ÚLTIMA busca vale: uma resposta lenta de "ma" chegando
+  // depois da de "maria" pintava a lista do termo velho (beta test 05/11/2026).
+  let customerSearchSeq = 0;
   async function searchCustomers(query: string) {
     const q = (query || "").trim();
-    if (q.length < 2) { customerSearchResults.value = []; return; }
+    const seq = ++customerSearchSeq;
+    if (q.length < 2) {
+      customerSearchResults.value = [];
+      customerSearchBusy.value = false;
+      return;
+    }
     customerSearchBusy.value = true;
     try {
       const path = concreteActionHref(
@@ -2990,11 +2998,13 @@ export function usePosSale(deps: PosSaleDeps) {
         headers: requestHeaders,
         signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
       });
+      if (seq !== customerSearchSeq) return;
       customerSearchResults.value = response.results || [];
     } catch {
+      if (seq !== customerSearchSeq) return;
       customerSearchResults.value = [];
     } finally {
-      customerSearchBusy.value = false;
+      if (seq === customerSearchSeq) customerSearchBusy.value = false;
     }
   }
   async function selectCustomerResult(result: POSCustomerSearchResult) {
