@@ -104,6 +104,7 @@ const {
   completeOrderSetup,
   setSalesMode,
   openNewOrder,
+  releaseAbandonedOrderTab,
   itemCount,
   tabInput,
   busy,
@@ -427,6 +428,8 @@ watchEffect(() => {
 });
 onBeforeUnmount(() => {
   paymentHold.value = false;
+  // A encomenda nova que ficou sem item libera a comanda ao sair (PDV2-13).
+  void releaseAbandonedOrderTab();
 });
 
 // RECARREGAR SOZINHO para entrar na versão nova é uma pergunta mais larga do que

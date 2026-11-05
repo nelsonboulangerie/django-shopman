@@ -2217,6 +2217,10 @@ export function usePosSale(deps: PosSaleDeps) {
    * vale, como em qualquer venda que começa (`openTab`).
    */
   async function openNewOrder() {
+    // A encomenda que o assistente abriu e ninguém usou ainda É a nova: abrir
+    // outra deixava esta "Em uso" com 0 itens no quadro (beta test de
+    // 05/11/2026, PDV2-13).
+    if (isAbandonedOrderTab()) return;
     const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
     if (!tabRef) return;
     await openTab(tabRef, { salesMode: "order" });
@@ -3889,6 +3893,33 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
+  /** A comanda que o assistente da encomenda abriu e que segue sem item nenhum. */
+  function isAbandonedOrderTab(): boolean {
+    return Boolean(cart.tabSessionKey) && !cart.localTab && cart.salesMode === "order" && !cart.items.length;
+  }
+
+  /**
+   * Sair da venda com a encomenda ainda vazia LIBERA a comanda. Antes ela ficava
+   * "Em uso" com 0 itens, a próxima "Nova encomenda" pegava outra e o quadro
+   * enchia de comandas vazias (beta test de 05/11/2026, PDV2-13). Sem item não
+   * há nada a perder; se o servidor recusar, a comanda segue no quadro como
+   * estava.
+   */
+  async function releaseAbandonedOrderTab() {
+    if (!isAbandonedOrderTab()) return;
+    const path = concreteActionHref(
+      actions.value,
+      "clear_tab",
+      "/api/v1/backstage/pos/tabs/{session_key}/clear/",
+      { session_key: cart.tabSessionKey },
+    );
+    try {
+      await action.call(path, { method: "DELETE", body: { expected_revision: cart.expectedRevision } });
+    } catch {
+      // Silencioso de propósito: quem saiu da tela não está mais aqui para ler.
+    }
+  }
+
   async function clearCurrentTab() {
     if (!cart.tabSessionKey) {
       resetCart();
@@ -4362,6 +4393,7 @@ export function usePosSale(deps: PosSaleDeps) {
     completeOrderSetup,
     setSalesMode,
     openNewOrder,
+    releaseAbandonedOrderTab,
     // draft + flags
     cart,
     tabInput,
