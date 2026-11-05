@@ -1585,6 +1585,21 @@ def build_production_weighing(
             batch_size=batch_size,
         )
 
+    # Beta 05/11: "Por preparo" pesava a necessidade sem margem e "Por insumo"
+    # mostrava a necessidade com margem, dois números para o mesmo preparo. A
+    # margem é calculada UMA vez (a mesma de ``build_mise_en_place``) e entra no
+    # ticket do pré-preparo; os dois lados arredondam para cima à balança.
+    margins = {
+        (need.item_ref, need.unit): need.margin.total
+        for need in _work_order_needs(work_orders, expand=False, yield_margin=True)[0]
+        if need.margin is not None
+    }
+    for entry in tickets.values():
+        margin_key = (entry["recipe"].output_sku, entry["unit"])
+        margin_total = margins.pop(margin_key, None)
+        if margin_total:
+            entry["quantity"] += margin_total
+
     ingredient_skus = {item.input_sku for entry in tickets.values() for item in entry["items"]}
     product_names = _product_names(ingredient_skus)
     counting_conversions = _counting_conversions(ingredient_skus)
@@ -1767,11 +1782,17 @@ def build_production_mise_en_place(
         # Saldo só para matéria-prima: pré-preparo é produzido na hora — "falta"
         # de estoque de massa seria ruído, não informação.
         available = None if need.has_recipe else availability.get(need.item_ref)
+        # O pré-preparo se pesa na balança: o alvo é o mesmo do ticket "Por
+        # preparo" (necessidade + margem, arredondada para cima à divisão).
+        target = _scale_rounded(need.quantity, need.unit) if need.has_recipe else need.quantity
+        margin_total = (
+            target - (need.quantity - need.margin.total) if need.margin is not None else None
+        )
         lines.append(
             MiseEnPlaceLineProjection(
                 sku=need.item_ref,
                 name=_ingredient_name(need.item_ref, active_recipes=active_recipes, product_names=product_names),
-                quantity_display=_preparation_measure(need.quantity, need.unit),
+                quantity_display=_preparation_measure(target, need.unit),
                 unit="g" if units.dimension(need.unit) == units.MASS else need.unit,
                 is_subrecipe=need.has_recipe,
                 available_display=_preparation_measure(available, need.unit) if available is not None else "",
@@ -1779,8 +1800,8 @@ def build_production_mise_en_place(
                 breakdown=tuple(breakdown_by_sku.get(need.item_ref, ())),
                 annotation=_preparation_annotation(need.quantity, need.unit, conversions.get(need.item_ref)),
                 margin_display=(
-                    f"+ {_preparation_measure(need.margin.total, need.unit)} de margem"
-                    if need.margin is not None
+                    f"+ {_preparation_measure(margin_total, need.unit)} de margem"
+                    if margin_total is not None
                     else ""
                 ),
                 margin_reason=need.margin.reason() if need.margin is not None else "",
@@ -4086,7 +4107,7 @@ def _build_weighing_ticket(
         recipe_ref=recipe.ref,
         output_sku=recipe.output_sku,
         name=recipe.name,
-        output_quantity_display=_preparation_measure(output_quantity, output_unit),
+        output_quantity_display=_preparation_measure(_scale_rounded(output_quantity, output_unit), output_unit),
         dough_weight_display=dough_weight_display,
         total_weight_display=total_weight_display,
         theoretical_total_g=(_decimal_fact_string(theoretical_total_g) if theoretical_total_g is not None else None),
@@ -4500,6 +4521,19 @@ def _preparation_measure(value: Decimal, unit: str, *, mass_unit: str = "g") -> 
             text = format(converted.quantize(Decimal("0.001")).normalize(), "f")
         return f"{text.replace('.', ',')} {mass_unit}"
     return _measure(value, unit)
+
+
+def _scale_rounded(value: Decimal, unit: str) -> Decimal:
+    """Massa arredondada para cima à divisão da balança, na unidade de origem.
+
+    Volume e contagem voltam como vieram: não há balança para eles.
+    """
+    if units.dimension(unit) != units.MASS:
+        return value
+    from shopman.craftsman.services.yield_margin import compute_scale_target
+
+    grams = Decimal(format(units.convert(value, unit, "g"), "f"))
+    return units.convert(compute_scale_target(grams).target_g, "g", unit)
 
 
 def _plain_decimal(value: Decimal) -> str:
