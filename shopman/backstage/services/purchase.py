@@ -352,9 +352,19 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user
                 **_converted_via(line),
                 **_attested_by(line, attestation),
             )
-            # "Manter" deixa o custo preferencial como estava: o preço pago fica
-            # no movimento de estoque, não no custo que alimenta o custeio.
-            if line.total_cost_q > 0 and line.preferred_cost != "keep":
+            # O custo preferencial deste fornecedor só muda por escolha: "Manter"
+            # deixa como estava (o preço pago fica no movimento de estoque) e
+            # "Atualizar" grava o valor que a pergunta mostrou, na embalagem do
+            # próprio custo preferencial. Receber em outra embalagem não troca a
+            # unidade em que o pedido de compra é feito.
+            preferred = _supplier_preferred_cost(line, supplier=supplier)
+            if preferred is not None:
+                cost, incoming_q = preferred
+                if line.preferred_cost == "update" and incoming_q != cost.cost_q:
+                    cost.cost_q = incoming_q
+                if line.preferred_cost != "keep":
+                    cost.save()
+            elif line.total_cost_q > 0:
                 _upsert_supplier_cost(
                     material=line.material,
                     supplier=supplier,
@@ -1670,14 +1680,12 @@ def _preferred_cost_decision(raw: dict[str, Any], *, index: int) -> str:
     return decision
 
 
-def _preferred_cost_at_stake(line: ResolvedReceiptLine, *, supplier):
-    """O custo preferencial que esta entrada trocaria, ou ``None``.
+def _supplier_preferred_cost(line: ResolvedReceiptLine, *, supplier):
+    """O custo preferencial do insumo neste fornecedor e o preço desta entrada
+    dito na unidade de compra dele, ou ``None``.
 
-    Receber grava o preço pago no custo do fornecedor. Quando esse custo é o
-    preferencial do insumo e o preço mudou, gravar em silêncio troca o custo
-    que alimenta o custeio, a sugestão de preço e o pedido de compra (beta
-    05/11, CMP-06). A comparação é na unidade de compra do custo preferencial:
-    a mesma conta que a tela mostra.
+    A comparação é na unidade de compra do custo preferencial: a mesma conta
+    que a tela mostra.
     """
     if line.total_cost_q <= 0:
         return None
@@ -1695,6 +1703,21 @@ def _preferred_cost_at_stake(line: ResolvedReceiptLine, *, supplier):
             Decimal("1"), rounding=ROUND_HALF_UP
         )
     )
+    return cost, incoming_q
+
+
+def _preferred_cost_at_stake(line: ResolvedReceiptLine, *, supplier):
+    """O custo preferencial que esta entrada trocaria, ou ``None``.
+
+    Receber grava o preço pago no custo do fornecedor. Quando esse custo é o
+    preferencial do insumo e o preço mudou, gravar em silêncio troca o custo
+    que alimenta o custeio, a sugestão de preço e o pedido de compra (beta
+    05/11, CMP-06).
+    """
+    preferred = _supplier_preferred_cost(line, supplier=supplier)
+    if preferred is None:
+        return None
+    cost, incoming_q = preferred
     return cost if incoming_q != cost.cost_q else None
 
 

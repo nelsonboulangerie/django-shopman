@@ -122,10 +122,44 @@ def test_mesmo_preco_em_outra_embalagem_nao_pergunta(cenario, operador):
     # 25 pacotes de 1 kg por R$ 180,00 é o saco de 25 kg pelo mesmo preço.
     _recebe(cenario, operador, custo="180,00", sacos=25, conversion=quilo)
 
-    # O custo por quilo é o mesmo: R$ 7,20, agora dito na embalagem que chegou.
+    # Nada muda no custo preferencial: nem o valor, nem a embalagem em que o
+    # pedido de compra é feito.
     custo.refresh_from_db()
-    assert custo.cost_per_base_unit_q == 720
+    assert custo.cost_q == 18000
+    assert custo.conversion_id == _s.pk
     assert custo.is_preferred is True
+
+
+@pytest.mark.django_db
+def test_atualizar_em_outra_embalagem_grava_o_valor_que_a_pergunta_mostrou(cenario, operador):
+    material, fornecedor, saco, custo = cenario
+    quilo = MaterialConversion.objects.create(
+        material=material, supplier=fornecedor, label="pacote 1 kg", to_base_factor=Decimal("1")
+    )
+
+    # 25 pacotes de 1 kg por R$ 198,00: a pergunta diz "Atualizar para R$ 198,00"
+    # no saco de 25 kg, e é isso que fica gravado.
+    _recebe(cenario, operador, custo="198,00", sacos=25, conversion=quilo, preferredCost="update")
+
+    custo.refresh_from_db()
+    assert custo.cost_q == 19800
+    assert custo.conversion_id == saco.pk
+    assert custo.is_preferred is True
+
+
+@pytest.mark.django_db
+def test_outra_embalagem_com_preco_diferente_sem_resposta_e_recusada(cenario, operador):
+    material, fornecedor, _s, custo = cenario
+    quilo = MaterialConversion.objects.create(
+        material=material, supplier=fornecedor, label="pacote 1 kg", to_base_factor=Decimal("1")
+    )
+
+    with pytest.raises(PurchaseError) as exc:
+        _recebe(cenario, operador, custo="198,00", sacos=25, conversion=quilo)
+
+    assert exc.value.code == "preferred_cost_decision_required"
+    custo.refresh_from_db()
+    assert (custo.cost_q, custo.conversion_id) == (18000, _s.pk)
 
 
 @pytest.mark.django_db
