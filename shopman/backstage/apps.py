@@ -12,6 +12,14 @@ class BackstageConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self) -> None:
+        # Busca sem acento no SQLite (GES-12): o Postgres dobra com TRANSLATE.
+        from django.db.backends.signals import connection_created
+
+        from shopman.backstage.projections.customers import register_sqlite_fold
+
+        connection_created.connect(register_sqlite_fold, weak=False,
+                                   dispatch_uid="backstage.customers.sqlite_fold")
+
         from django.db.models.signals import pre_delete, pre_save
         from shopman.craftsman.models import RecipeVersion
         from shopman.orderman.models import Fulfillment, Order

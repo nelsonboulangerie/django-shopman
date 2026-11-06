@@ -122,6 +122,8 @@ export interface CatalogMatrixProjection {
   query: string;
   date_from?: string;
   date_to?: string;
+  /** O catálogo inteiro (a régua da contagem das coleções): o número do "Todas". */
+  all_product_count?: number;
 }
 
 export type CatalogOrder =
@@ -289,12 +291,13 @@ export interface ProductDetailProjection {
   readonly admin_history_path?: string;
 }
 
-/** Um canal no painel do produto: vende agora, esgotado ou pausado, e desde quando. */
+/** Um canal no painel do produto: vende agora, esgotado, pausado ou fora dele, e desde quando. */
 export interface ChannelAvailability {
   readonly ref: string;
   readonly name: string;
   readonly kind: "sale" | "display";
-  readonly state: "available" | "sold_out" | "paused";
+  /** `not_listed`: o produto não está neste canal (sem vínculo ou fora do feed). */
+  readonly state: "available" | "sold_out" | "paused" | "not_listed";
   /** "09:52" quando indisponível. */
   readonly since: string;
   /** O canal recebe a indisponibilidade sozinho (iFood, Meta, Google). */

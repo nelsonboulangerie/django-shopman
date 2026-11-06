@@ -150,7 +150,12 @@ def test_start_and_complete_number_task_from_surface(client, checklist, performe
         content_type="application/json",
     )
     assert missing.status_code == 400
-    assert "evidência numérica" in missing.json()["detail"]
+    # A recusa nomeia o campo: a tela a mostra embaixo dele, não no topo (GES-23).
+    assert missing.json() == {
+        "detail": "Informe o valor conferido para concluir esta tarefa.",
+        "field": "evidence_number",
+        "errors": {"evidence_number": ["Informe o valor conferido para concluir esta tarefa."]},
+    }
 
     completed = client.post(
         f"{BASE}{run['id']}/tasks/{number_task['id']}/complete/",

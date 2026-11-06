@@ -204,10 +204,16 @@ def test_board_endpoint_carries_the_awareness_block(client, operator):
 
 
 def test_product_detail_says_where_it_can_be_bought_now(shop):
+    from shopman.offerman.models import Listing, ListingItem
+
     from shopman.backstage.services.catalog import get_product_detail
 
-    Product.objects.create(sku="CROISSANT", name="Croissant Manteiga", base_price_q=1300)
+    croissant = Product.objects.create(sku="CROISSANT", name="Croissant Manteiga", base_price_q=1300)
     Channel.objects.update_or_create(ref='ifood', defaults={'name': 'iFood', 'config': {}})[0]
+    # Só está à venda onde está listado (beta 05/11, GES-03): sem vínculo é ``not_listed``.
+    for ref in ("web", "ifood"):
+        listing, _ = Listing.objects.get_or_create(ref=ref, defaults={"name": ref, "is_active": True})
+        ListingItem.objects.create(listing=listing, product=croissant, price_q=1300)
     ShelfOutage.objects.create(sku="CROISSANT", channel_ref="ifood", reason=OutageReason.SOLD_OUT, started_at=timezone.now())
 
     rows = {row["ref"]: row for row in get_product_detail("CROISSANT")["channel_availability"]}

@@ -103,7 +103,7 @@ async function mockGroups(page: Page) {
         customerRow("CLI-CARLA", "Carla Nogueira", [varejo]),
       ],
       page: 1, page_size: 30, total: 3, has_next: false, total_label: "3 clientes", sort: "recent",
-      form: { customer_types: [], price_tiers: [] },
+      form: { customer_types: [], price_tiers: [], default_price_tier_refs: [] },
     } } });
   });
 }

@@ -290,3 +290,15 @@ export function gestorSwitcherSections(
         : { ...s, form: "office" as const, quick: undefined },
     );
 }
+
+/**
+ * As respostas de permissão já chegaram (sucesso OU erro)? A grade de Ajustes só
+ * desenha depois disso: antes, 3 cartões apareciam, os outros 3 entravam logo em
+ * seguida, a grade deslocava e o toque caía no cartão errado (beta 05/11, GES-22).
+ */
+export function accessResolved(statuses: readonly string[]): boolean {
+  return statuses.every((status) => status === "success" || status === "error");
+}
+
+/** Quantos cartões a grade de Ajustes reserva enquanto as permissões chegam. */
+export const SETTINGS_SKELETON_CARDS = 6;

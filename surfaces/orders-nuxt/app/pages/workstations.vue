@@ -35,6 +35,7 @@ const {
   create,
   update,
   releaseDevice,
+  renameDevice,
 } = useWorkstations();
 
 useHead({ title: computed(() => copy.value?.manage_title ?? "") });
@@ -81,6 +82,19 @@ function startRename(row: WorkstationManageRow) {
 }
 async function saveRename(row: WorkstationManageRow) {
   if (await update(row.ref, { label: renameDraft.value })) renaming.value = "";
+}
+
+// Dar nome ao dispositivo (GES-21): o rótulo do navegador não distingue cinco
+// tablets iguais. Ajuste do que está na tela = inline com Salvar/Cancelar (D9).
+const renamingDevice = ref("");
+const deviceDraft = ref("");
+function startDeviceRename(device: { id: string; label: string }) {
+  renamingDevice.value = device.id;
+  deviceDraft.value = device.label;
+}
+async function saveDeviceRename(ref_: string) {
+  if (await renameDevice(ref_, renamingDevice.value, deviceDraft.value))
+    renamingDevice.value = "";
 }
 
 const confirm = useConfirm();
@@ -294,20 +308,64 @@ const phoneHeaderActions = computed(() => [
                     class="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-1 last:pb-0"
                     :data-workstation-device="device.id"
                   >
-                    <div class="min-w-0 text-sm">
+                    <NuxtForm
+                      v-if="renamingDevice === device.id"
+                      :state="{ label: deviceDraft }"
+                      class="flex min-w-0 flex-wrap items-center gap-2"
+                      data-device-rename
+                      @submit="saveDeviceRename(row.ref)"
+                    >
+                      <NuxtInput
+                        v-model="deviceDraft"
+                        type="text"
+                        maxlength="100"
+                        :aria-label="c.manage_device_name_label"
+                        :placeholder="c.manage_device_name_hint"
+                      />
+                      <NuxtButton
+                        type="submit"
+                        color="neutral"
+                        variant="outline"
+                        :label="c.manage_save"
+                        :disabled="Boolean(busy) || !deviceDraft.trim()"
+                      />
+                      <NuxtButton
+                        type="button"
+                        color="neutral"
+                        variant="ghost"
+                        label="Cancelar"
+                        @click="renamingDevice = ''"
+                      />
+                    </NuxtForm>
+                    <div v-else class="min-w-0 text-sm">
                       <p>{{ deviceName(device) }}</p>
                       <p class="text-xs text-muted-foreground">
                         {{ deviceUsageLine(device, c) }}
                       </p>
                     </div>
-                    <NuxtButton
-                      type="button"
-                      color="error"
-                      variant="outline"
-                      :label="c.release"
-                      :disabled="Boolean(busy)"
-                      @click="releaseDevice(row.ref, device.id)"
-                    />
+                    <div
+                      v-if="renamingDevice !== device.id"
+                      class="flex flex-wrap items-center gap-2"
+                    >
+                      <NuxtButton
+                        type="button"
+                        color="neutral"
+                        variant="outline"
+                        :label="c.manage_rename"
+                        :aria-label="`${c.manage_rename}: ${deviceName(device)}`"
+                        :disabled="Boolean(busy)"
+                        :data-device-rename-start="device.id"
+                        @click="startDeviceRename(device)"
+                      />
+                      <NuxtButton
+                        type="button"
+                        color="error"
+                        variant="outline"
+                        :label="c.release"
+                        :disabled="Boolean(busy)"
+                        @click="releaseDevice(row.ref, device.id)"
+                      />
+                    </div>
                   </li>
                 </ul>
               </div>

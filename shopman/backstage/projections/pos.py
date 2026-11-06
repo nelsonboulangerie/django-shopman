@@ -1254,6 +1254,12 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
                 listing__ref=POS_CHANNEL_REF,
                 is_published=True,
                 is_sellable=True,
+                # Visibilidade e vendabilidade são o AND do produto com o vínculo
+                # (system-spec, Offerman). "Ocultar no catálogo" tira o item de
+                # TODOS os canais, PDV incluído (decisão do dono, beta 05/11,
+                # GES-10): para vender só no balcão, pausam-se os canais remotos.
+                product__is_published=True,
+                product__is_sellable=True,
             )
             .select_related("listing", "product")
             .prefetch_related(

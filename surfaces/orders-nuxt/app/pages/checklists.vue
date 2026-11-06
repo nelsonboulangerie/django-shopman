@@ -13,6 +13,7 @@ const {
   refresh,
   busy,
   message,
+  taskErrors,
   start,
   completeTask,
   superviseTask,
@@ -56,6 +57,11 @@ function execute(run: OperationChecklistRun, task: OperationChecklistTask) {
         ? { photo_ref: value.evidence_photo.trim() }
         : {},
   });
+}
+
+/** A recusa da tarefa, embaixo do campo dela (GES-23). */
+function taskError(task: OperationChecklistTask): string | undefined {
+  return taskErrors.value[task.id]?.message;
 }
 
 function canClose(run: OperationChecklistRun) {
@@ -248,6 +254,8 @@ const phoneHeaderActions = computed(() => [
                       <NuxtFormField
                         v-if="task.evidence_required === 'text'"
                         label="Evidência"
+                        :error="taskError(task)"
+                        :data-task-error="taskError(task) ? task.id : undefined"
                       >
                         <NuxtInput
                           v-model="draft(task).evidence_text"
@@ -258,6 +266,8 @@ const phoneHeaderActions = computed(() => [
                       <NuxtFormField
                         v-else-if="task.evidence_required === 'number'"
                         label="Valor conferido"
+                        :error="taskError(task)"
+                        :data-task-error="taskError(task) ? task.id : undefined"
                       >
                         <NuxtInput
                           v-model="draft(task).evidence_number"
@@ -270,6 +280,8 @@ const phoneHeaderActions = computed(() => [
                       <NuxtFormField
                         v-else-if="task.evidence_required === 'photo'"
                         label="Foto (link ou referência)"
+                        :error="taskError(task)"
+                        :data-task-error="taskError(task) ? task.id : undefined"
                       >
                         <NuxtInput
                           v-model="draft(task).evidence_photo"
@@ -301,7 +313,7 @@ const phoneHeaderActions = computed(() => [
                           · {{ task.evidence_text }}</template
                         >
                         <template v-if="task.evidence_number">
-                          · {{ task.evidence_number }}</template
+                          · Valor conferido: {{ task.evidence_number }}</template
                         >
                         <template v-if="task.evidence_data.photo_ref">
                           · Foto: {{ task.evidence_data.photo_ref }}</template

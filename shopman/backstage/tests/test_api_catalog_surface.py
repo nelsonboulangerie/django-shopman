@@ -386,16 +386,19 @@ def test_bulk_price_pct_rounds(client, operator, catalog):
     assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == 660
 
 
-def test_bulk_price_delta_clamps_at_zero(client, operator, catalog):
+def test_bulk_price_delta_that_reaches_zero_is_refused(client, operator, catalog):
     client.force_login(operator)
-    # PAO web = 600; delta -1000 → clamp 0 (nunca negativo)
+    # PAO web = 600; delta -1000 levaria a zero. Preço zero no canal ligado
+    # vira "Sem preço" no PDV (beta 05/11, GES-05): recusa no dialeto da casa.
     resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO"], "op": "delta", "value": -1000},
         content_type="application/json",
     )
-    assert resp.status_code == 200
-    assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == 0
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["detail"] and body["field"] in body["errors"]
+    assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == 600
 
 
 def test_bulk_price_by_collection(client, operator, catalog):
@@ -887,6 +890,8 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
         "total", "page", "page_size", "has_next", "order", "query", "date_from", "date_to",
         # Contagens por opção das facetas de multi-escolha (onda 1, fatia B).
         "facets",
+        # "Todas" conta o catálogo inteiro, não a página (beta 05/11, GES-08).
+        "all_product_count",
     }
 
     # Contrato das contagens: chaves dos valores de cada faceta de lista.

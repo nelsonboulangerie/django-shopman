@@ -54,7 +54,11 @@ def _board_response(*, business_date, user, status_code=status.HTTP_200_OK):
 
 
 def _domain_error(exc: OperationChecklistError) -> Response:
-    return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    """Recusa no dialeto da casa: ``{detail, field, errors}`` quando há campo."""
+    detail = str(exc)
+    field = getattr(exc, "field", "")
+    body = {"detail": detail, "field": field, "errors": {field: [detail]} if field else {}}
+    return Response(body, status=status.HTTP_400_BAD_REQUEST)
 
 
 def _require_open(run: OperationChecklistRun) -> Response | None:

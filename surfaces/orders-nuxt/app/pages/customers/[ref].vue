@@ -6,7 +6,8 @@
 // prévia lado a lado (`CustomerMergeDialog`).
 import type { CustomerAddressProjection, CustomerCandidateProjection } from "~/generated/ordersContract";
 import type { CustomerAddressMutationPayload, CustomerDuplicatePayload, CustomerMutationPayload } from "~/types/customers";
-import { mutationFieldErrors } from "~/utils/mutationFieldErrors";
+import { contactOwner, mutationFieldErrors, type ContactOwner } from "~/utils/mutationFieldErrors";
+import { mergedNotice } from "~/presentation/customers";
 import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 
 const route = useRoute();
@@ -24,16 +25,14 @@ function compare(candidate: CustomerCandidateProjection | null) {
   mergeOpen.value = true;
 }
 
-async function onMerged({
-  targetRef,
-  sourceRef,
-}: {
+async function onMerged(side: {
   targetRef: string;
   sourceRef: string;
+  targetName?: string;
+  sourceName?: string;
 }) {
-  useSonner.success(
-    `${sourceRef} foi unificado a ${targetRef}. Dá para desfazer em Unificações por 24 horas.`,
-  );
+  const { targetRef } = side;
+  useSonner.success(mergedNotice(side));
   if (targetRef !== customerRef.value)
     await router.push(`/customers/${encodeURIComponent(targetRef)}`);
   else await refresh();
@@ -53,17 +52,20 @@ const editOpen = ref(false);
 const editBusy = ref(false);
 const editError = ref("");
 const editFieldErrors = ref<Record<string, string>>({});
+const editContactOwner = ref<ContactOwner | null>(null);
 let editKey = crypto.randomUUID();
 watch(editOpen, (open) => {
   if (!open) return;
   editError.value = "";
   editFieldErrors.value = {};
+  editContactOwner.value = null;
 });
 async function saveCustomer(payload: CustomerMutationPayload) {
   if (editBusy.value || !customer.value) return;
   editBusy.value = true;
   editError.value = "";
   editFieldErrors.value = {};
+  editContactOwner.value = null;
   try {
     const response = await updateCustomer(customer.value.ref, payload, editKey);
     if (response.outcome !== "applied") {
@@ -77,6 +79,7 @@ async function saveCustomer(payload: CustomerMutationPayload) {
   } catch (failure) {
     editError.value = httpErrorMessage(failure, "Não foi possível salvar o cliente.");
     editFieldErrors.value = mutationFieldErrors(failure);
+    editContactOwner.value = contactOwner(failure);
     if (httpError(failure).status) editKey = crypto.randomUUID();
   } finally {
     editBusy.value = false;
@@ -575,6 +578,7 @@ const phoneHeaderActions = computed(() => [
       :busy="editBusy"
       :error="editError"
       :field-errors="editFieldErrors"
+      :contact-owner="editContactOwner"
       @save="saveCustomer"
     />
     <CustomerDuplicatePanel

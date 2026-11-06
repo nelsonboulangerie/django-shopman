@@ -10,6 +10,7 @@ const options: CustomerFormOptionsProjection = {
     { value: "business", label: "Pessoa Jurídica" },
   ],
   price_tiers: [{ value: "varejo", label: "Varejo" }],
+  default_price_tier_refs: ["varejo"],
 };
 
 const source = {

@@ -12,7 +12,7 @@ from shopman.backstage.api.telemetry import OperationalObservationMixin
 from shopman.backstage.projections.catalog_bindings import build_catalog_binding_review
 from shopman.backstage.services import catalog_bindings as service
 from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogWriteBlocked, IFoodRateLimitError
-from shopman.shop.models import CatalogSnapshot
+from shopman.shop.models import CatalogSnapshot, Channel
 from shopman.shop.observability import ServerTimingMixin
 from shopman.shop.services import ifood_catalog_categories as category_service
 from shopman.shop.services.remote_mutations import (
@@ -108,7 +108,9 @@ class CatalogBindingReviewView(_Base):
                 category_reader=category_service.list_categories,
             )
         except service.CatalogBindingError as exc:
-            return Response(_error(str(exc)), status=400)
+            # Canal que não existe é 404, não "não foi possível atualizar" (GES-09).
+            status = 404 if not Channel.objects.filter(ref=ref).exists() else 400
+            return Response(_error(str(exc)), status=status)
         return Response(read_data(board=projection_data(board)))
 
 

@@ -13,6 +13,7 @@ Dataclasses imutáveis convertidas por ``backstage.api.projections``.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import quote
 
 from django.db.models import Count, Q
 
@@ -355,6 +356,8 @@ def build_feed_board(*, user=None, now=None) -> FeedBoardProjection:
             errors=count.get("errors", 0), retracted=count.get("retracted", 0),
             skipped=count.get("skipped", 0), observed=count.get("observed", 0),
             is_active=effective_active(channel, now=now),
+            # "Ver produtos no Catálogo" abre o Catálogo já recortado neste canal (GES-09).
+            catalog_path=f"/catalog?surface={quote(channel.ref, safe='')}",
             # PDV sem toggle (o balcão fecha pelo caixa, não pelo canal): card informativo.
             switch=_build_switch(channel, user=user, authorized=authorized, is_manager=is_manager,
                                  state=state, now=now) if switches.is_switchable(channel) else None,

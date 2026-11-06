@@ -268,6 +268,33 @@ def release_device(ref: str, device_id: str) -> bool:
     return True
 
 
+def rename_device(ref: str, device_id: str, label) -> bool:
+    """Dá nome a UM dispositivo do posto (beta 05/11, GES-21).
+
+    O rótulo nasce do navegador ("Chrome no Android"), e cinco tablets iguais
+    atrás do mesmo roteador ficavam idênticos na lista: não havia como saber
+    qual desvincular. O nome dado aqui substitui o rótulo derivado.
+    """
+    import uuid
+
+    from shopman.doorman.models import SubjectType, TrustedDevice
+
+    label = " ".join(str(label or "").split())
+    if not label:
+        raise WorkstationError("Dê um nome ao dispositivo.", field="label")
+    if len(label) > 100:
+        raise WorkstationError("Nome longo demais (até 100 letras).", field="label")
+    try:
+        uuid.UUID(str(device_id))
+    except ValueError:
+        return False
+    return bool(
+        TrustedDevice.objects.filter(
+            pk=device_id, subject_type=SubjectType.STATION, subject_id=ref, is_active=True
+        ).update(label=label)
+    )
+
+
 def release_all(ref: str) -> int:
     from shopman.doorman.models import SubjectType, TrustedDevice
 

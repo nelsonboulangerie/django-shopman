@@ -321,6 +321,11 @@ class CatalogMatrixProjection:
     query: str = ""
     date_from: str = ""
     date_to: str = ""
+    # Quantos produtos o catálogo tem, com a mesma régua da contagem de cada
+    # coleção (ativos, ou arquivados no filtro de arquivados). É o número do chip
+    # "Todas": antes era o tamanho da página, e "Todas 50" convivia com "127
+    # produtos" no rodapé (beta 05/11, GES-08).
+    all_product_count: int = 0
 
 
 # ── builders ────────────────────────────────────────────────────────────────
@@ -732,7 +737,18 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
         selected_feed_skus = set().union(*(
             display_index[ref]["members"] for ref in surface_refs if ref in display_index
         ))
-        products = products.filter(Q(pk__in=validity_items.values("product_id")) | Q(sku__in=selected_feed_skus))
+        # Produto sem vínculo em canal de venda nenhum não TEM vigência que o
+        # exclua: é o recém-criado ou duplicado, que nasce fora de venda e que a
+        # gerente precisa achar para conferir e publicar (beta 05/11, GES-04).
+        # Com recorte de canal, o filtro de superfície acima já decide.
+        unlisted = Q()
+        if not surface_refs:
+            unlisted = ~Q(pk__in=ListingItem.objects.filter(listing__ref__in=[
+                surface.ref for surface in surfaces if surface.transactional
+            ]).values("product_id"))
+        products = products.filter(
+            Q(pk__in=validity_items.values("product_id")) | Q(sku__in=selected_feed_skus) | unlisted
+        )
     if order == "validity":
         products = products.annotate(_valid_from=Min("listing_items__listing__valid_from",
             filter=Q(listing_items__pk__in=validity_items.values("pk"))))
@@ -986,4 +1002,5 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
         order=order_key, query=term,
         date_from=date_from.isoformat() if date_from else "",
         date_to=date_to.isoformat() if date_to else "",
+        all_product_count=Product.objects.filter(is_active=not archived).count(),
     )

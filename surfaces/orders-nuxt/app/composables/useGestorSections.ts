@@ -1,5 +1,6 @@
 import { getCurrentInstance, onBeforeUnmount, onMounted, watch } from "vue";
 import {
+  accessResolved,
   deniedSettingsSection,
   gestorSections,
   gestorSettingsSections,
@@ -136,8 +137,17 @@ export function useGestorSections() {
     }
     return route.path === "/" ? (rail.value.exitPost ? "exit" : "orders") : undefined;
   });
+  // As quatro perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.
+  const ready = computed(() =>
+    accessResolved([
+      customersStatus.value,
+      workstationsStatus.value,
+      checklistsStatus.value,
+      catalogStatus.value,
+    ]),
+  );
   // A URL direta numa seção que o acesso não inclui: só depois de as quatro
-  // perguntas responderem (enquanto carrega, a página monta como antes).
+  // perguntas responderem com sucesso (enquanto carrega, a página monta como antes).
   const accessReady = computed(() =>
     [customersStatus, workstationsStatus, checklistsStatus, catalogStatus].every(
       (s) => s.value === "success",
@@ -146,5 +156,5 @@ export function useGestorSections() {
   const denied = computed(() =>
     accessReady.value ? deniedSettingsSection(route.path, settings.value) : "",
   );
-  return { sections, settings, current, denied };
+  return { sections, settings, current, ready, denied };
 }

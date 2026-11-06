@@ -113,7 +113,9 @@ describe("CustomerMergeDialog", () => {
     await flushPromises();
 
     expect(postMerge).toHaveBeenCalledWith("IF-AAAA0001", "CLI-MARIA");
-    expect(wrapper.emitted("merged")?.[0]).toEqual([{ targetRef: "CLI-MARIA", sourceRef: "IF-AAAA0001" }]);
+    expect(wrapper.emitted("merged")?.[0]).toEqual([
+      { targetRef: "CLI-MARIA", sourceRef: "IF-AAAA0001", targetName: "Maria Souza", sourceName: "Maria Souza" },
+    ]);
     expect(wrapper.emitted("update:open")?.at(-1)).toEqual([false]);
   });
 
