@@ -17,6 +17,7 @@ from django.utils import timezone
 from shopman.doorman.error_codes import ErrorCode
 from shopman.doorman.models import VerificationCode
 
+from shopman.shop.policies import login_code_ceiling as ceiling
 from shopman.shop.services import auth as auth_service
 
 pytestmark = pytest.mark.django_db
@@ -55,7 +56,7 @@ def doorman_calls(monkeypatch):
 
 
 def test_ip_abaixo_do_teto_da_hora_segue_para_o_doorman(doorman_calls):
-    _codes_from(IP, auth_service.LOGIN_CODES_PER_IP_PER_HOUR - 1)
+    _codes_from(IP, ceiling.LOGIN_CODES_PER_IP_PER_HOUR - 1)
 
     result = auth_service.request_code(phone="+5543999990001", delivery_method="sms", ip_address=IP)
 
@@ -64,7 +65,7 @@ def test_ip_abaixo_do_teto_da_hora_segue_para_o_doorman(doorman_calls):
 
 
 def test_ip_no_teto_da_hora_e_recusado_sem_enviar(doorman_calls):
-    _codes_from(IP, auth_service.LOGIN_CODES_PER_IP_PER_HOUR)
+    _codes_from(IP, ceiling.LOGIN_CODES_PER_IP_PER_HOUR)
 
     result = auth_service.request_code(phone="+5543999990001", delivery_method="sms", ip_address=IP)
 
@@ -74,7 +75,7 @@ def test_ip_no_teto_da_hora_e_recusado_sem_enviar(doorman_calls):
 
 
 def test_teto_da_hora_e_por_ip(doorman_calls):
-    _codes_from("198.51.100.9", auth_service.LOGIN_CODES_PER_IP_PER_HOUR)
+    _codes_from("198.51.100.9", ceiling.LOGIN_CODES_PER_IP_PER_HOUR)
 
     result = auth_service.request_code(phone="+5543999990001", delivery_method="sms", ip_address=IP)
 
@@ -83,7 +84,7 @@ def test_teto_da_hora_e_por_ip(doorman_calls):
 
 def test_ip_paciente_esbarra_no_teto_do_dia(doorman_calls):
     # Fora da janela da hora, dentro do dia: o robô que respeita o teto da hora.
-    _codes_from(IP, auth_service.LOGIN_CODES_PER_IP_PER_DAY, age=timedelta(hours=3))
+    _codes_from(IP, ceiling.LOGIN_CODES_PER_IP_PER_DAY, age=timedelta(hours=3))
 
     result = auth_service.request_code(phone="+5543999990001", delivery_method="sms", ip_address=IP)
 
@@ -93,7 +94,7 @@ def test_ip_paciente_esbarra_no_teto_do_dia(doorman_calls):
 
 
 def test_codigo_de_ontem_nao_conta_no_teto_do_dia(doorman_calls):
-    _codes_from(IP, auth_service.LOGIN_CODES_PER_IP_PER_DAY, age=timedelta(hours=25))
+    _codes_from(IP, ceiling.LOGIN_CODES_PER_IP_PER_DAY, age=timedelta(hours=25))
 
     result = auth_service.request_code(phone="+5543999990001", delivery_method="sms", ip_address=IP)
 
@@ -101,7 +102,7 @@ def test_codigo_de_ontem_nao_conta_no_teto_do_dia(doorman_calls):
 
 
 def test_troca_de_numero_tambem_respeita_o_teto(doorman_calls):
-    _codes_from(IP, auth_service.LOGIN_CODES_PER_IP_PER_HOUR)
+    _codes_from(IP, ceiling.LOGIN_CODES_PER_IP_PER_HOUR)
 
     result = auth_service.request_contact_verification_code(
         phone="+5543999990001", delivery_method="whatsapp", ip_address=IP, customer_uuid=None,
@@ -116,7 +117,7 @@ def test_tela_entrar_recebe_muitas_tentativas_com_ip_real(monkeypatch, doorman_c
     from shopman.storefront.api import auth as auth_api
 
     monkeypatch.setattr(auth_api, "HAS_AUTH", True)
-    _codes_from(IP, auth_service.LOGIN_CODES_PER_IP_PER_HOUR)
+    _codes_from(IP, ceiling.LOGIN_CODES_PER_IP_PER_HOUR)
 
     response = Client().post(
         "/api/v1/auth/request-code/",
