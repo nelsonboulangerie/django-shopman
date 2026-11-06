@@ -9,8 +9,9 @@
 // A regra de TEMPO (janela entre teclas) é pura e mora em `tests/operatorLock.test.ts`,
 // sem relógio falso — aqui o assunto é foco e o Enter.
 import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { flushPromises } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ref } from "vue";
+import { nextTick, ref } from "vue";
 
 import OperatorLock from "../../app/components/OperatorLock.vue";
 import { PICK_QUIET_MS } from "../../app/composables/useIdentityCapture";
@@ -22,15 +23,22 @@ const changePin = vi.fn();
 const reportBadgeLost = vi.fn();
 const mustChange = ref(false);
 const lostBadgeError = ref("");
+const unlockError = ref("");
+const PEOPLE = [
+  { id: 1, username: "bia", name: "Bia Forno" },
+  { id: 2, username: "davi", name: "Davi Sousa" },
+];
+const eligibleList = ref([...PEOPLE]);
+const eligibleStatus = ref<"idle" | "pending" | "ready" | "error">("ready");
+const loadEligible = vi.fn();
 
 vi.mock("../../app/composables/useOperatorLock", () => ({
   useOperatorLock: () => ({
-    eligible: ref([
-      { id: 1, username: "bia", name: "Bia Forno" },
-      { id: 2, username: "davi", name: "Davi Sousa" },
-    ]),
-    loadEligible: vi.fn(),
+    eligible: eligibleList,
+    eligibleStatus,
+    loadEligible,
     unlock,
+    unlockError,
     changePin,
     changeError: ref(""),
     reportBadgeLost,
@@ -65,9 +73,9 @@ function scan(token: string): { enterDefaultPrevented: boolean } {
 // mantém cada caso honesto — e prova, de quebra, que o listener sai no unmount.
 let mounted: Awaited<ReturnType<typeof mountSuspended>> | null = null;
 
-const mount = async () => {
+const mount = async (extra: Record<string, unknown> = {}) => {
   mounted = await mountSuspended(OperatorLock, {
-    props: { perm: "backstage.operate_pos" },
+    props: { perm: "backstage.operate_pos", ...extra },
     attachTo: document.body, // foco real: sem anexar ao documento não há activeElement
     global: { stubs: { Icon: true, OperatorPinChange: true } },
   });
@@ -502,10 +510,21 @@ describe("OperatorLock — diz que a sessão TROCA", () => {
     mounted = null;
   });
 
-  it("anuncia que quem entra ASSUME o balcão", async () => {
+  it("anuncia que quem entra ASSUME o dispositivo, em qualquer app", async () => {
     const wrapper = await mount();
 
-    expect(wrapper.text()).toContain("Você assume o balcão.");
+    // Era "Você assume o balcão." também na Central, no B.I. e no Marketing
+    // (beta 05/11: PROD-12, CEN-12, CEN-05, MKT-23, PROD-21, BI-09).
+    expect(wrapper.text()).toContain("Você assume este dispositivo.");
+    expect(wrapper.text()).not.toContain("balcão");
+  });
+
+  it("o app passa a própria linha quando tem uma melhor", async () => {
+    const wrapper = await mount({ subtitle: "Você abre os números da loja." });
+
+    expect(wrapper.find("[data-operator-lock-subtitle]").text()).toBe(
+      "Você abre os números da loja.",
+    );
   });
 
   it("pergunta quem está OPERANDO, não quem autoriza", async () => {
@@ -597,5 +616,209 @@ describe("OperatorLock — perdi meu crachá", () => {
 
     expect(reportBadgeLost).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain("Identifique-se para operar");
+  });
+});
+
+// ── Beta 05/11/2026 ──────────────────────────────────────────────────────────
+
+/** Encontra um botão pelo texto visível. */
+function button(wrapper: Awaited<ReturnType<typeof mountSuspended>>, text: string) {
+  return wrapper.findAll("button").find((b) => b.text().includes(text));
+}
+
+describe("OperatorLock — Trocar meu PIN é de quem está escolhido (CEN-02, PDV-03)", () => {
+  beforeEach(() => {
+    unlock.mockReset().mockResolvedValue(false);
+    changePin.mockReset();
+    mustChange.value = false;
+    unlockError.value = "";
+    eligibleList.value = [...PEOPLE];
+    eligibleStatus.value = "ready";
+    vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
+  });
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = null;
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
+  });
+
+  it("abre a troca da pessoa escolhida no primeiro toque, sem PIN antes", async () => {
+    const wrapper = await mount();
+    await button(wrapper, "Bia Forno")!.trigger("click");
+
+    await button(wrapper, "Trocar meu PIN")!.trigger("click");
+
+    const troca = wrapper.findComponent({ name: "OperatorPinChange" });
+    expect(troca.exists()).toBe(true);
+    expect(troca.props("operatorName")).toBe("Bia Forno");
+  });
+
+  it("depois de trocar de operador, a troca é da pessoa nova, nunca da anterior", async () => {
+    const wrapper = await mount();
+    await button(wrapper, "Bia Forno")!.trigger("click");
+    // Um PIN errado da Bia (antes, era isso que fixava a pessoa da troca).
+    for (const d of "9999") await button(wrapper, d)!.trigger("click");
+    await wrapper.find('button[aria-label="Confirmar"]').trigger("click");
+    await flushPromises();
+    await button(wrapper, "Trocar operador")!.trigger("click");
+    await button(wrapper, "Davi Sousa")!.trigger("click");
+
+    await button(wrapper, "Trocar meu PIN")!.trigger("click");
+
+    expect(wrapper.findComponent({ name: "OperatorPinChange" }).props("operatorName")).toBe("Davi Sousa");
+  });
+
+  it("um PIN errado não abre a troca sozinho", async () => {
+    const wrapper = await mount();
+    await button(wrapper, "Bia Forno")!.trigger("click");
+    for (const d of "9999") await button(wrapper, d)!.trigger("click");
+    await wrapper.find('button[aria-label="Confirmar"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.findComponent({ name: "OperatorPinChange" }).exists()).toBe(false);
+  });
+});
+
+describe("OperatorLock — recusa junto do teclado (CEN-01, GES-14)", () => {
+  beforeEach(() => {
+    unlock.mockReset().mockResolvedValue(false);
+    mustChange.value = false;
+    unlockError.value = "";
+    eligibleList.value = [...PEOPLE];
+    eligibleStatus.value = "ready";
+    vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
+  });
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = null;
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
+  });
+
+  it("PIN bloqueado aparece embaixo do PIN, com a hora", async () => {
+    const wrapper = await mount();
+    await button(wrapper, "Bia Forno")!.trigger("click");
+
+    unlockError.value = "PIN bloqueado por tentativas até 07:05. Peça a um gerente para desbloquear.";
+    await nextTick();
+
+    const pad = wrapper.find("[data-operator-pin-pad]");
+    expect(pad.text()).toContain("PIN bloqueado por tentativas até 07:05");
+  });
+
+  it("a recusa ocupa o lugar da dica do crachá, que volta no próximo dígito", async () => {
+    const wrapper = await mount();
+    await button(wrapper, "Bia Forno")!.trigger("click");
+    expect(wrapper.find("[data-operator-identify-badge-hint]").exists()).toBe(true);
+
+    unlockError.value = "PIN incorreto. Restam 4 tentativas.";
+    await nextTick();
+    expect(wrapper.find("[data-operator-identify-badge-hint]").exists()).toBe(false);
+
+    await button(wrapper, "1")!.trigger("click");
+    await nextTick();
+    expect(wrapper.find("[data-operator-identify-badge-hint]").exists()).toBe(true);
+  });
+
+  it("escolher outra pessoa limpa a recusa da anterior", async () => {
+    const wrapper = await mount();
+    await button(wrapper, "Bia Forno")!.trigger("click");
+    unlockError.value = "Identificação inválida.";
+    await nextTick();
+
+    await button(wrapper, "Trocar operador")!.trigger("click");
+
+    expect(unlockError.value).toBe("");
+  });
+});
+
+describe("OperatorLock — a lista chegando não é lista vazia (PDV2-16)", () => {
+  beforeEach(() => {
+    mustChange.value = false;
+    unlockError.value = "";
+    loadEligible.mockReset();
+    vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
+  });
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = null;
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
+    eligibleList.value = [...PEOPLE];
+    eligibleStatus.value = "ready";
+  });
+
+  it("lendo: diz que está carregando, e não 'Nenhum operador habilitado'", async () => {
+    eligibleList.value = [];
+    eligibleStatus.value = "pending";
+    const wrapper = await mount();
+
+    expect(wrapper.find("[data-operator-lock-loading]").text()).toContain("Carregando operadores");
+    expect(wrapper.text()).not.toContain("Nenhum operador habilitado");
+  });
+
+  it("lida e vazia: aí sim, ninguém habilitado", async () => {
+    eligibleList.value = [];
+    eligibleStatus.value = "ready";
+    const wrapper = await mount();
+
+    expect(wrapper.text()).toContain("Nenhum operador habilitado para esta tela");
+  });
+
+  it("falha de rede diz que não leu e oferece ler de novo", async () => {
+    eligibleList.value = [];
+    eligibleStatus.value = "error";
+    const wrapper = await mount();
+    loadEligible.mockClear();
+
+    expect(wrapper.text()).toContain("Não foi possível carregar os operadores.");
+    expect(wrapper.text()).not.toContain("Nenhum operador habilitado");
+    await button(wrapper, "Tentar de novo")!.trigger("click");
+    expect(loadEligible).toHaveBeenCalled();
+  });
+});
+
+describe("OperatorLock — entrar com senha (BI-09)", () => {
+  beforeEach(() => {
+    mustChange.value = false;
+    unlockError.value = "";
+    eligibleList.value = [...PEOPLE];
+    eligibleStatus.value = "ready";
+    vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
+  });
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = null;
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
+  });
+
+  it("a porta de quem não tem PIN fica à vista, inclusive com a lista vazia", async () => {
+    eligibleList.value = [];
+    const wrapper = await mount();
+    expect(wrapper.find("[data-operator-lock-password]").exists()).toBe(true);
+  });
+
+  it("com um nome escolhido a porta sai (o teclado cabe sem rolar) e volta com a lista", async () => {
+    const wrapper = await mount();
+    await button(wrapper, "Bia Forno")!.trigger("click");
+    await flushPromises();
+    expect(wrapper.find("[data-operator-lock-password]").exists()).toBe(false);
+
+    await button(wrapper, "Trocar operador")!.trigger("click");
+    await flushPromises();
+    expect(wrapper.find("[data-operator-lock-password]").exists()).toBe(true);
+  });
+
+  it("abre usuário e senha sem sair da trava, e volta", async () => {
+    const wrapper = await mount();
+    await wrapper.find("[data-operator-lock-password]").trigger("click");
+
+    expect(wrapper.find("#operator-login-username").exists()).toBe(true);
+    expect(wrapper.text()).toContain("Entrar com senha");
+
+    await button(wrapper, "Voltar")!.trigger("click");
+    expect(wrapper.text()).toContain("Quem está operando?");
   });
 });

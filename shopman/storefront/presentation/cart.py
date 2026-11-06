@@ -62,12 +62,11 @@ class CartItemProjection:
     qty: int
     unit_price_q: int
     total_price_q: int
-    price_display: str           # unit price, e.g. "R$ 0,90"
-    total_display: str           # line total, e.g. "R$ 2,70"
+    price_display: str           # preço CHEIO por unidade, e.g. "R$ 0,90"
+    total_display: str           # total CHEIO da linha (desconto só no resumo), e.g. "R$ 2,70"
     image_url: str | None
 
     # Pricing transparency — populated when a promo/coupon reduced the line.
-    original_price_display: str | None
     discount_label: str | None
 
     # Availability snapshot at render-time.
@@ -357,12 +356,13 @@ def _present_line(
         qty=line.qty,
         unit_price_q=line.unit_price_q,
         total_price_q=line.line_total_q,
-        price_display=_money(line.unit_price_q),
-        total_display=_money(line.line_total_q),
+        # A linha fala o preço CHEIO e o desconto mora só no resumo: a soma das
+        # linhas é o Subtotal e o Subtotal menos os descontos é o Total. Mostrar o
+        # unitário já rateado ("2 × R$ 8,00" num croissant de R$ 13) fazia as
+        # linhas somarem 16 sob um Subtotal de 26 (beta 05/11, MKT-05).
+        price_display=_money(line.list_price_q),
+        total_display=_money(line.list_total_q),
         image_url=image_by_sku.get(line.sku),
-        original_price_display=(
-            _money(line.original_price_q) if line.original_price_q is not None else None
-        ),
         discount_label=discount_label,
         is_available=line.is_available,
         availability_warning=warning,

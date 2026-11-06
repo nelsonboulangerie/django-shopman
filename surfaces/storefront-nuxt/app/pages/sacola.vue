@@ -220,7 +220,6 @@ useSeoMeta({
                     />
                   </div>
                   <p class="mt-0.5 shop-meta">
-                    <span v-if="line.original_price_display" class="line-through">{{ line.original_price_display }}</span>
                     {{ line.qty }} × {{ line.price_display }} cada
                   </p>
                   <p v-if="line.discount_label" class="mt-0.5 text-xs font-semibold text-primary">{{ line.discount_label }}</p>

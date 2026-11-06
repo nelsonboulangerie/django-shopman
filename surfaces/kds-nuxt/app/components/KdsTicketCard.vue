@@ -310,18 +310,25 @@ const d = computed(() => ({
         </div>
 
         <!-- Quem iniciou e a hora combinada (v4: "iniciado por Rafael às 21:56 · retira às 22:30"). -->
+        <!-- A linha tem o lugar reservado mesmo vazia: ao iniciar, "iniciado por" não
+             empurra o botão para baixo no meio do toque (beta 05/11, KDS-15). -->
         <p
-          v-if="startLine"
-          class="flex min-w-0 items-start gap-1.5 op-micro text-muted-foreground"
+          v-if="!cancelled"
+          class="flex min-h-[1lh] min-w-0 items-start gap-1.5 op-micro text-muted-foreground"
+          :class="startLine ? '' : 'invisible'"
+          :aria-hidden="startLine ? undefined : 'true'"
           data-kds-started
         >
-          <!-- Sem ninguém ter iniciado, a linha é só a hora combinada: o ícone é o da agenda. -->
-          <Icon
-            :name="ticket.started_by ? 'lucide:user-round' : 'lucide:calendar-clock'"
-            class="mt-px size-3.5 shrink-0"
-            aria-hidden="true"
-          />
-          <span class="min-w-0 break-words">{{ startLine }}</span>
+          <!-- Quem iniciou: a pessoa; sem ninguém, a hora combinada (a agenda) ou há
+               quanto o pedido espera (o relógio). -->
+          <template v-if="startLine">
+            <Icon
+              :name="ticket.started_by ? 'lucide:user-round' : ticket.due_time_display ? 'lucide:calendar-clock' : 'lucide:clock'"
+              class="mt-px size-3.5 shrink-0"
+              aria-hidden="true"
+            />
+            <span class="min-w-0 break-words">{{ startLine }}</span>
+          </template>
         </p>
 
         <!-- MUDANÇA: o que mudou depois de chegar à cozinha, uma linha por mudança, até

@@ -45,7 +45,7 @@ const sound = computed({
   <NuxtModal
     v-model:open="open"
     title="Ajustes da Cozinha"
-    description="Tamanho do ticket e som da estação, gravados para todas as telas dela."
+    description="Tamanho do ticket e som da estação."
     data-kds-settings
   >
     <template #body>

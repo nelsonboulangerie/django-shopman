@@ -1,7 +1,7 @@
 // A linha do Histórico de hoje (dono, 13/10/2026), pura: o que cada pedido diz na lista.
 //
 //   0131  Encomenda · Ana                                   preparo 9 min   [Reabrir]
-//   2x Croque, 1x Café
+//   2× Croque, 1× Café
 //   recebido 21:40 · iniciado 21:42 Rafael · Pronto 21:51 Rafael (tela)
 //   Pronto 21:51 Rafael (tela) → desfeito 21:58 Ana
 //

@@ -9,7 +9,7 @@ const source = readFileSync(fileURLToPath(new URL("../app/components/OperatorIde
 
 describe("OperatorIdentify: a escolha pelo número só onde há teclado", () => {
   it("a frase e a tecla somem com ponteiro grosso (toque)", () => {
-    expect(source).toMatch(/class="hidden [^"]*pointer-fine:block" data-identify-number-hint/);
+    expect(source).toMatch(/class="hidden [^"]*pointer-fine:block"\s+data-operator-identify-hint="keyboard"/);
     expect(source).toContain('class="pointer-coarse:hidden"');
   });
 });

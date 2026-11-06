@@ -332,7 +332,14 @@ class MarketingDecisionQueueView(_CampaignBase):
             "decisions",
             marketing_decisions_projection.build_decision_queue,
         )
-        response = Response({"queue": projection_data(queue)})
+        # Quem olha a fila: "pede você" só é verdade para quem pode decidir, e
+        # "Preparar disparo" só é convite para quem pode disparar (beta 05/11).
+        user = request.user
+        viewer = {
+            "can_decide": bool(user.has_perm("shop.approve_marketing_announcements")),
+            "can_fire": bool(user.has_perm("shop.fire_marketing_campaigns")),
+        }
+        response = Response({"queue": projection_data(queue), "viewer": viewer})
         response["Cache-Control"] = "private, no-store"
         return response
 
@@ -2368,6 +2375,9 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         name = str(data.get("name") or "").strip()
         if not name:
             return {}, {"detail": "A regra precisa de um nome.", "field": "name"}
+        # O banco guarda até 100: passar disso virava DataError e 500 (beta 05/11, ge:MKT-04).
+        if len(name) > _NAME_MAX_LENGTH:
+            return {}, {"detail": f"Use no máximo {_NAME_MAX_LENGTH} caracteres.", "field": "name"}
         fields["name"] = name
 
     if not partial or "trigger" in data:
@@ -2469,6 +2479,49 @@ def _merge_public_audience_rules(current, incoming: dict) -> dict:
     return {**private_or_legacy, **incoming}
 
 
+_NAME_MAX_LENGTH = 100
+# Sem `\s*` dos dois lados de um grupo que pode ser vazio (backtracking quadrático): o
+# miolo inteiro é capturado e aparado em Python.
+_TEMPLATE_VARIABLE = re.compile(r"\{\{([^{}]*)\}\}")
+
+
+def _unknown_template_variable(value) -> str:
+    """A primeira `{{variável}}` fora da lista suportada, ou vazio.
+
+    Sem isto o modelo salvava `{{inexistente}}`, a lista o mostrava como dado
+    disponível e o erro só aparecia na aprovação do anúncio (beta 05/11, ge:MKT-13).
+    """
+    from shopman.shop.services.campaign import available_variables
+
+    if isinstance(value, dict):
+        for item in value.values():
+            found = _unknown_template_variable(item)
+            if found:
+                return found
+        return ""
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            found = _unknown_template_variable(item)
+            if found:
+                return found
+        return ""
+    if not isinstance(value, str):
+        return ""
+    known = set(available_variables())
+    for match in _TEMPLATE_VARIABLE.finditer(value):
+        name = match.group(1).strip()
+        if name not in known:
+            return name or "vazia"
+    return ""
+
+
+def _unknown_variable_error(variable: str, field: str) -> dict:
+    return {
+        "detail": f"A variável {{{{{variable}}}}} não existe. Use uma das variáveis da lista.",
+        "field": field,
+    }
+
+
 def _template_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
     fields: dict = {}
 
@@ -2498,12 +2551,17 @@ def _template_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         name = str(data.get("name") or "").strip()
         if not name:
             return {}, {"detail": "O modelo precisa de um nome.", "field": "name"}
+        if len(name) > _NAME_MAX_LENGTH:
+            return {}, {"detail": f"Use no máximo {_NAME_MAX_LENGTH} caracteres.", "field": "name"}
         fields["name"] = name
 
     if not partial or "body" in data:
         body = str(data.get("body") or "").strip()
         if not body:
             return {}, {"detail": "O modelo precisa de um texto.", "field": "body"}
+        unknown = _unknown_template_variable(body)
+        if unknown:
+            return {}, _unknown_variable_error(unknown, "body")
         fields["body"] = body
 
     if "image_source" in data:
@@ -2516,6 +2574,9 @@ def _template_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         variants = data.get("platform_variants")
         if not isinstance(variants, dict):
             return {}, {"detail": "Variações inválidas.", "field": "platform_variants"}
+        unknown = _unknown_template_variable(variants)
+        if unknown:
+            return {}, _unknown_variable_error(unknown, "platform_variants")
         fields["platform_variants"] = variants
 
     if "variables" in data:

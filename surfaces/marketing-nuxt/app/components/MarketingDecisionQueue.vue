@@ -31,6 +31,8 @@ const {
   queue,
   items,
   automaticChecks,
+  awaitingApprover,
+  canFire,
   shopTimezone,
   nowMs,
   loading,
@@ -38,7 +40,9 @@ const {
   refresh,
 } = useMarketingDecisions();
 
-const headline = computed(() => queueHeadline(items.value.length));
+const headline = computed(() =>
+  queueHeadline(items.value.length - awaitingApprover.value, awaitingApprover.value),
+);
 const live = useMarketingLiveStatus({
   generatedAt: computed(() => queue.value?.generated_at),
   failed: computed(() => Boolean(error.value)),
@@ -96,10 +100,15 @@ const headerActions = [
   { label: "Enviados", icon: "i-lucide-history", to: "/history" },
   { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
 ];
+// Quem não pode disparar não recebe o convite de disparar (beta 05/11, ge:MKT-17).
 const prepareAction = { label: "Preparar disparo", icon: "i-lucide-send", to: "/settings/campaigns" };
-const phoneHeaderActions = [{ ...prepareAction, priority: 1 }, ...headerActions];
+const phoneHeaderActions = computed(() =>
+  canFire.value ? [{ ...prepareAction, priority: 1 }, ...headerActions] : headerActions,
+);
 // A linha do chão no celular: as mesmas ações, no ⋮ do canto.
-const compactOptions = [prepareAction, ...headerActions];
+const compactOptions = computed(() =>
+  canFire.value ? [prepareAction, ...headerActions] : headerActions,
+);
 onKeyStroke(["r", "R"], (event) => {
   const target = event.target as HTMLElement | null;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -158,7 +167,7 @@ const scheduledLine = computed(() =>
           />
         </span>
       </template>
-      <template #actions>
+      <template v-if="canFire" #actions>
         <NuxtButton
           to="/settings/campaigns"
           icon="i-lucide-send"

@@ -53,6 +53,8 @@ export interface KDSTicketProjection {
   seen: boolean;
   changes: KDSChangeProjection[];
   change_ticket_pks: number[];
+  order_created_at_display: string;
+  order_elapsed_seconds: number | null;
 }
 
 /** A KDS instance in the index (station selector). */

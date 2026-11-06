@@ -79,6 +79,8 @@ const props = defineProps<{
    * da cozinha abre e oferece "Enviar agora" para o que ainda não foi.
    */
   canFireNow?: boolean;
+  /** Para onde vai à cozinha cada SKU ao finalizar (`kitchenBoundSkus`). Ausente = todos. */
+  kitchenStations?: Record<string, string>;
   salesMode?: "counter" | "order";
   tabDisplay: string;
   items: POSCartItem[];
@@ -633,7 +635,11 @@ const kitchenWaitsPayment = computed(() =>
   && chargeWaitsForProvider({ collection: props.paymentCollection, methods: tenderMethods.value }),
 );
 const kitchenNote = computed(() =>
-  kitchenHandoffNote(props.items, { deferred: kitchenDeferred.value, waitsPayment: kitchenWaitsPayment.value }),
+  kitchenHandoffNote(props.items, {
+    deferred: kitchenDeferred.value,
+    waitsPayment: kitchenWaitsPayment.value,
+    goesToKitchen: props.kitchenStations ? (item) => Boolean(props.kitchenStations?.[item.sku]) : undefined,
+  }),
 );
 
 // Payment by injection: methods become "add a tender" buttons; the operator

@@ -59,6 +59,13 @@ function advance() {
     return;
   }
   if (step.value === "new") {
+    // Trocar pelo mesmo PIN não é troca (beta 05/11, PDV-26). O servidor também
+    // recusa; aqui a pessoa sabe antes de repetir o PIN à toa.
+    if (newPin.value.trim() === currentPin.value.trim()) {
+      localError.value = "Escolha um PIN diferente do atual.";
+      newPin.value = "";
+      return;
+    }
     step.value = "confirm";
     return;
   }

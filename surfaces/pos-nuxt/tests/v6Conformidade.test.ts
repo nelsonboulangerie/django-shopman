@@ -204,3 +204,12 @@ describe("Fase 2, limpeza do PDV", () => {
     expect(board.match(/active-variant="solid"/g)).toHaveLength(4);
   });
 });
+
+describe("PDV-09 (revisão #2152): o filtro do balcão vale só para o FINALIZAR", () => {
+  it("a comanda e o Envio Auto/Manual leem o roteamento inteiro; a tela de pagamento, o do balcão", () => {
+    const page = read("../app/pages/index.vue");
+    expect(page).toContain("const kitchenStations = computed<Record<string, string>>(() => kitchenRoutedSkus(");
+    expect(page).toMatch(/<PosPaymentWorkspace[\s\S]*?:kitchen-stations="checkoutKitchenStations"/);
+    expect(page).toMatch(/<PosCartPanel[\s\S]*?:kitchen-stations="kitchenStations"/);
+  });
+});

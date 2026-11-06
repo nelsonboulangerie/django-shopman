@@ -45,6 +45,8 @@ describe("usePosAction", () => {
 
   it("re-gate: 401 (auth perdida) marca a sessão expirada e re-lança", async () => {
     useOperatorSession().reset();
+    // Só termina o que começou: a antessala já viu alguém identificado nesta carga.
+    useOperatorSession().markAuthenticated();
     fetchMock.mockRejectedValue({ status: 401, data: { detail: "expired" } });
     const { call } = usePosAction();
     await expect(call("/api/v1/backstage/pos/sale/close/")).rejects.toBeTruthy();

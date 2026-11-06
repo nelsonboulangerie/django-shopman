@@ -39,6 +39,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger("shopman.doorman.adapter")
 
 
+def _proof_methods() -> frozenset[str]:
+    """Os canais que provam posse do contato (os ``DeliveryMethod`` do código)."""
+    from shopman.doorman.models.verification_code import VerificationCode
+
+    return frozenset(VerificationCode.DeliveryMethod.values)
+
+
+def _simulation_allowed() -> bool:
+    """Elo de simulação só vale como prova do canal pedido em DEBUG."""
+    from django.conf import settings
+
+    return bool(getattr(settings, "DEBUG", False))
+
+
 class DefaultAuthAdapter:
     """
     Default auth adapter.
@@ -179,6 +193,17 @@ class DefaultAuthAdapter:
                         "Code sent via %s", method,
                         extra={"handle_kind": self.login_handle(target).kind, "method": method},
                     )
+                    # Elo da cadeia que não é transporte ("console" em DEBUG) não
+                    # prova canal nenhum: ele simula o canal pedido. A prova gravada
+                    # é a do canal simulado, senão o vínculo do contato recusa a
+                    # prova "console" e nenhum cliente entra em DEBUG (beta 05/11,
+                    # LOJA-01). Elo que É transporte ("sms", mesmo com um dublê no
+                    # lugar) prova o próprio canal. Fora de DEBUG o console NÃO vira
+                    # prova: o código só existe no log, e quem lê o log não é o dono
+                    # do telefone. Ali a prova fica "console" e o vínculo recusa
+                    # (falha fechada, como antes).
+                    if method not in _proof_methods() and _simulation_allowed():
+                        return True, preferred_method
                     return True, method
                 logger.warning(
                     "Sender %s returned False, trying next", method,

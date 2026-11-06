@@ -11,6 +11,8 @@ const queue = ref<DecisionQueue | null>(null);
 const error = ref<unknown>(null);
 const loading = ref(false);
 const refresh = vi.fn();
+const canDecide = ref(true);
+const canFire = ref(true);
 
 function item(over: Partial<DecisionItem>): DecisionItem {
   return {
@@ -42,6 +44,12 @@ beforeAll(() => {
       queue,
       items: computed(() => queue.value?.items ?? []),
       automaticChecks: computed(() => queue.value?.automatic_checks ?? []),
+      awaitingApprover: computed(() =>
+        canDecide.value
+          ? 0
+          : (queue.value?.items ?? []).filter((entry) => entry.kind === "review").length,
+      ),
+      canFire,
       shopTimezone: ref("America/Sao_Paulo"),
       nowMs: ref(NOW),
       loading,
@@ -54,6 +62,8 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  canDecide.value = true;
+  canFire.value = true;
   error.value = null;
   loading.value = false;
   refresh.mockReset();
@@ -232,5 +242,23 @@ describe("MarketingDecisionQueue", () => {
     expect(alert.text()).toContain("Isso não quer dizer que nada pede você.");
     await alert.get("button").trigger("click");
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("para quem não aprova, a revisão aguarda quem aprova e não pede você (ge:MKT-03)", () => {
+    canDecide.value = false;
+    const wrapper = render();
+    const headline = wrapper.get("[data-decisions-headline]").text();
+    // Um cartão é revisão (aguarda quem aprova); o outro é falha a repetir (pede você).
+    expect(headline).toContain("1 pede você");
+    expect(headline).toContain("1 aguarda quem aprova");
+  });
+
+  it("quem não pode disparar não recebe o convite 'Preparar disparo' (ge:MKT-17)", () => {
+    canFire.value = false;
+    const wrapper = render();
+    const header = wrapper.getComponent(HeaderStub);
+    expect(wrapper.find("[data-decisions-primary]").exists()).toBe(false);
+    const phone = header.props("phoneActions") as Array<Record<string, unknown>>;
+    expect(phone.map((action) => action.label)).not.toContain("Preparar disparo");
   });
 });

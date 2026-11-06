@@ -5461,7 +5461,9 @@
             "verify_contact_code",
             "contact_verify_error_message",
             "verify_for_login",
-            "verify_error_message"
+            "verify_error_message",
+            "auth_error_code",
+            "auth_error_body"
           ]
         }
       ],
@@ -6448,6 +6450,7 @@
             "preview",
             "preview_platforms",
             "preview_announcement",
+            "_preview_whatsapp_binding",
             "_TEST_IDEMPOTENCY_KEY"
           ]
         }
@@ -10422,7 +10425,10 @@
             "order_lines",
             "_made_to_order_skus",
             "_match_instances",
-            "_build_routable_items"
+            "_build_routable_items",
+            "_component_line_name",
+            "_package_note",
+            "_join_notes"
           ]
         }
       ],

@@ -479,7 +479,9 @@ class RequestCodeView(APIView):
         )
         if not auth_result.success:
             return Response(
-                {"detail": auth_service.request_code_error_message(auth_result)},
+                auth_service.auth_error_body(
+                    auth_service.request_code_error_message(auth_result), auth_result,
+                ),
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -583,7 +585,9 @@ class VerifyCodeView(APIView):
         )
         if not auth_result.success:
             return Response(
-                {"detail": auth_service.verify_error_message(auth_result)},
+                auth_service.auth_error_body(
+                    auth_service.verify_error_message(auth_result), auth_result, field="code",
+                ),
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

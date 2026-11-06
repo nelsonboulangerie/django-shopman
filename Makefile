@@ -18,7 +18,7 @@ PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
 SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils:$(CURDIR)/packages/watchman
 
-.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift adr-governance docs-governance orchestrator-governance canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-backstage-seed test-backstage-heavy test-backstage-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift adr-governance docs-governance orchestrator-governance canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -289,8 +289,9 @@ test-backstage: ## Operador (POS, KDS, produção, caixa, B.I.)
 # `test_nelson_seed_operational.py` no mesmo worker.
 #
 # O `test-backstage` acima continua rodando TUDO numa invocação só — é o que
-# `make test` e o desenvolvedor local querem. Os dois alvos abaixo existem para
-# a matriz do CI, onde os jobs correm em paralelo de verdade.
+# `make test` e o desenvolvedor local querem. Os alvos abaixo (hoje três:
+# seed, heavy e rest) existem para a matriz do CI, onde os jobs correm em
+# paralelo de verdade.
 BACKSTAGE_SEED_TESTS := \
 	shopman/backstage/tests/test_apply_product_measurements_matches_seed.py \
 	shopman/backstage/tests/test_manual_labels_match_piece_weight.py \
@@ -300,13 +301,62 @@ BACKSTAGE_SEED_TESTS := \
 	shopman/backstage/tests/test_seed_flush_keeps_terminal_config.py \
 	shopman/backstage/tests/test_seed_forecast_history.py
 
-test-backstage-seed: ## Backstage — só os testes que semeiam o banco (shard 1/2 do CI)
+test-backstage-seed: ## Backstage — só os testes que semeiam o banco (shard 1/3 do CI)
 	@echo "── Backstage (semeia o banco) ──"
 	$(PYTHON) -m pytest $(BACKSTAGE_SEED_TESTS) -q -n auto
 
-test-backstage-rest: ## Backstage — todo o resto (shard 2/2 do CI)
+# ── Terceiro shard do backstage: os pesados do `rest` ─────────────────────
+# Em 06/11/2026 o `rest` estourou o teto de 30 min do step: o job 127686511444
+# (PR #2143) terminou "10225 passed ... in 1792.68s (0:29:52)" e morreu no
+# timeout, e o 127687615016 (fila do #2154) morreu antes de terminar. Tirou o
+# #2154 da fila e derrubaria todo PR que entrasse nela.
+#
+# Critério: TEMPO por arquivo, medido (o mesmo do shop). Uma rodada local do
+# `rest` inteiro com `--junitxml` (06/11, 426 arquivos fora os 7 do seed) somou
+# ~1.832s de teste. Os 24 arquivos abaixo, os mais pesados em ordem, somam
+# ~919s (50,2%); os outros 402 somam ~913s. Não há penhasco: o mais pesado
+# (`test_admin_smoke`, 218 testes) vale 109s, 6%.
+#
+# ⚠️ Arquivo novo cai no `rest` por construção, que é o shard que cresce. Se
+# ele voltar a encostar no teto, meça de novo (a mesma rodada com
+# `--junitxml`) e mova os pesados para cá; olhe o CI para o relógio.
+#
+# ⚠️ União e disjunção continuam por construção: o `heavy` é `<lista>`, o
+# `rest` é `<tudo> --ignore=<seed> --ignore=<heavy>`. Arquivo renomeado ou
+# apagado sem sair da lista reprova ALTO no `heavy`.
+BACKSTAGE_HEAVY_TESTS := \
+	shopman/backstage/tests/test_a11y_keyboard.py \
+	shopman/backstage/tests/test_admin_merge_undo.py \
+	shopman/backstage/tests/test_admin_renders_with_rows.py \
+	shopman/backstage/tests/test_admin_smoke.py \
+	shopman/backstage/tests/test_api_catalog_surface.py \
+	shopman/backstage/tests/test_api_client_pwa_update.py \
+	shopman/backstage/tests/test_api_customers.py \
+	shopman/backstage/tests/test_api_marketing_surface.py \
+	shopman/backstage/tests/test_api_notifications.py \
+	shopman/backstage/tests/test_api_production_surface.py \
+	shopman/backstage/tests/test_api_purchase_count.py \
+	shopman/backstage/tests/test_bi_forecast.py \
+	shopman/backstage/tests/test_catalog_product_components.py \
+	shopman/backstage/tests/test_cenarios_de_bi_aproveitamento.py \
+	shopman/backstage/tests/test_certificate_expiry.py \
+	shopman/backstage/tests/test_ficha_feita_na_hora.py \
+	shopman/backstage/tests/test_import_batch_migration.py \
+	shopman/backstage/tests/test_massa_de_cada_peca.py \
+	shopman/backstage/tests/test_pos_headless_surface_contract.py \
+	shopman/backstage/tests/test_saved_views.py \
+	shopman/backstage/tests/test_seed_bootstrap_recipe_book.py \
+	shopman/backstage/tests/test_seed_liquid_base_unit.py \
+	shopman/backstage/tests/test_seed_preparation_shelf_life.py \
+	shopman/backstage/tests/test_seed_sem_futuro.py
+
+test-backstage-heavy: ## Backstage — os 24 arquivos mais pesados fora do seed (shard 2/3 do CI)
+	@echo "── Backstage (arquivos pesados) ──"
+	$(PYTHON) -m pytest $(BACKSTAGE_HEAVY_TESTS) -q -n auto
+
+test-backstage-rest: ## Backstage — todo o resto (shard 3/3 do CI)
 	@echo "── Backstage (resto) ──"
-	$(PYTHON) -m pytest shopman/backstage/tests -q -n auto $(addprefix --ignore=,$(BACKSTAGE_SEED_TESTS))
+	$(PYTHON) -m pytest shopman/backstage/tests -q -n auto $(addprefix --ignore=,$(BACKSTAGE_SEED_TESTS) $(BACKSTAGE_HEAVY_TESTS))
 
 # O agente do balcão vive fora de `shopman/` (é programa de OUTRA máquina), então
 # ficava de fora da suíte — justo o processo que roda sozinho no balcão, sem

@@ -82,7 +82,7 @@ const COMPOSER_STEPS = [
   { label: "Destinos", hint: "Escolha onde cada consequência acontecerá." },
   { label: "Conteúdo", hint: "Confira o modelo, a oferta e as composições." },
   { label: "Público e momento", hint: "Defina público, horário e revisão." },
-  { label: "Revisar", hint: "Confira o que será salvo antes de criar." },
+  { label: "Revisar", hint: "Confira o que será salvo." },
 ] as const;
 
 // Audiência: toggles simples em cima do JSON que o serviço lê.
@@ -935,6 +935,7 @@ function submit() {
         id="rule-name"
         v-model="name"
         type="text"
+        :maxlength="100"
         placeholder="Lote de pães → redes"
         class="w-full"
       />
@@ -1435,7 +1436,12 @@ function submit() {
           </p>
         </div>
 
-        <dl class="grid gap-3 text-sm sm:grid-cols-2">
+        <!-- `min-w-0` e quebra em qualquer ponto: um nome de 100 letras sem espaço
+             vazava da coluna e invadia "Quando começa" (beta 05/11, ge:MKT-28). -->
+        <dl
+          class="grid gap-3 text-sm sm:grid-cols-2 [&>div]:min-w-0 [&_dd]:[overflow-wrap:anywhere]"
+          data-campaign-review-summary
+        >
           <div>
             <dt class="text-xs text-muted-foreground">Objetivo interno</dt>
             <dd class="font-medium">{{ name || "Sem nome" }}</dd>
@@ -1488,8 +1494,7 @@ function submit() {
         </div>
 
         <p class="text-xs text-muted-foreground">
-          Aqui aparecem somente formatos que o Shopman já consegue despachar.
-          Recursos apenas catalogados para o futuro não entram nesta campanha.
+          Aqui aparecem só os formatos que já podem ser enviados.
         </p>
       </div>
     </NuxtCard>

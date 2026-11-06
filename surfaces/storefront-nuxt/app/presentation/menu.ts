@@ -98,8 +98,26 @@ function allSearchTokensMatchText (tokens: string[], text: string): boolean {
     if (text.includes(candidate)) return true
     if (candidate.length < 5) return false
     const maxDistance = candidate.length >= 9 ? 2 : 1
-    return haystackTokens.some(haystackToken => editDistanceWithin(candidate, haystackToken, maxDistance))
+    return haystackTokens.some(haystackToken =>
+      editDistanceWithin(candidate, haystackToken, maxDistance) || missingLettersOnly(candidate, haystackToken)
+    )
   }))
+}
+
+// Letra que faltou é o erro mais comum de quem digita no celular: "crosant" é
+// "croissant" sem o "i" e um "s". Até duas letras a menos, na ordem certa, acham o
+// produto; trocar letra continua no limite da distância de edição, que é o que
+// segura "crocante" longe de "crosant" (beta 05/11, LOJA-12).
+function missingLettersOnly (typed: string, word: string): boolean {
+  if (typed.length < 6) return false
+  const missing = word.length - typed.length
+  if (missing < 1 || missing > 2) return false
+  let cursor = 0
+  for (const letter of word) {
+    if (letter === typed[cursor]) cursor += 1
+    if (cursor === typed.length) return true
+  }
+  return false
 }
 
 export function searchTextMatches (search: string, text: string): boolean {

@@ -21,7 +21,61 @@ _OPERATIONAL_SEARCH_TERMS = {
     "hours": ("horário", "horarios", "abre", "aberto", "fecha", "funcionamento"),
     "location": ("endereço", "localização", "onde fica", "como chegar"),
     "contact": ("contato", "telefone", "e-mail", "email", "falar", "atendimento"),
+    "payment": ("pagamento", "pagar", "pix", "cartão", "cartao", "crédito", "credito"),
+    "preorder": ("encomenda", "encomendar", "agendar", "reservar", "data"),
+    "allergens": ("alérgeno", "alergenos", "alergia", "glúten", "gluten", "lactose", "restrição"),
 }
+
+#: Como o cliente chama cada forma de pagamento do canal (``ChannelConfig.payment``).
+_PAYMENT_LABELS = {
+    "pix": "Pix",
+    "card": "cartão",
+    "credit": "cartão de crédito",
+    "debit": "cartão de débito",
+    "cash": "dinheiro (na retirada ou na entrega)",
+}
+
+
+def _join_pt(parts: list[str]) -> str:
+    if len(parts) <= 1:
+        return "".join(parts)
+    return ", ".join(parts[:-1]) + " ou " + parts[-1]
+
+
+def _payment_faq(channel_ref: str) -> FAQItemProjection | None:
+    from shopman.shop.config import ChannelConfig
+
+    method = ChannelConfig.for_channel(channel_ref).payment.method
+    methods = [method] if isinstance(method, str) else list(method or [])
+    labels: list[str] = []
+    for item in methods:
+        label = _PAYMENT_LABELS.get(str(item))
+        if label and label not in labels:
+            labels.append(label)
+    if not labels:
+        return None
+    return FAQItemProjection(
+        ref="payment",
+        question="Como posso pagar?",
+        answer=f"Você paga com {_join_pt(labels)}.",
+    )
+
+
+def _preorder_faq(channel_ref: str) -> FAQItemProjection | None:
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.projections.checkout_context import preorder_config
+
+    if not ChannelConfig.for_channel(channel_ref).stock.preorder:
+        return None
+    days = preorder_config()[0]
+    if days <= 0:
+        return None
+    window = "1 dia" if days == 1 else f"{days} dias"
+    return FAQItemProjection(
+        ref="preorder",
+        question="Posso encomendar para outro dia?",
+        answer=f"Sim. Ao finalizar o pedido, você escolhe o dia, com até {window} de antecedência.",
+    )
 
 
 def _fold(value: str) -> str:
@@ -78,6 +132,21 @@ def _operational_faq(
                 ref="location",
                 question="Onde vocês ficam?",
                 answer=f"Ficamos em {address}.",
+            )
+        )
+
+    # O subtítulo da página promete pagamento, encomendas e alérgenos; as respostas
+    # saem da configuração da loja, nunca de texto inventado (beta 05/11, LOJA-07).
+    for extra in (_payment_faq(channel_ref), _preorder_faq(channel_ref)):
+        if extra is not None:
+            items.append(extra)
+    notice = food_safety_notice(shop)
+    if notice:
+        items.append(
+            FAQItemProjection(
+                ref="allergens",
+                question="Os produtos têm alérgenos?",
+                answer=f"{notice} Os ingredientes de cada produto estão na página dele.",
             )
         )
 

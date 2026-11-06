@@ -14,6 +14,7 @@
 import type { KDSBoardProjection, KDSBoardResponse, KDSTicketProjection } from "~/types/kds";
 import { boardView, hasChanges, KDS_UNDO_WINDOW_MS, type KDSBoardView } from "~/presentation/board";
 import { openResilientEventSource, type ResilientEventSource } from "../../../operator-kit/app/utils/resilientEventSource";
+import { ssePath } from "../../../operator-kit/app/utils/ssePath";
 
 /**
  * O aviso de ticket novo do KDS — a FANFARRA.
@@ -293,13 +294,15 @@ export function useKdsBoard(stationRef: string) {
     // aba oculta), em vez de esperar até 15s por dados possivelmente muito velhos.
     // Tablet que dorme ou fecha com um "Desfazer" aberto: o Pronto vale na hora
     // (keepalive), em vez de sumir com a aba.
+    // O envio aqui é SÍNCRONO (`flushFinishes({ unloading: true })`): recarregar ou
+    // digitar outra URL mata a página antes de a fila serial soltar o POST (beta 05/11).
     const onVisible = () => {
       if (document.visibilityState === "visible") {
         refresh();
         source?.reconnectNow();
-      } else flushFinishes();
+      } else flushFinishes({ unloading: true });
     };
-    const onPageHide = () => flushFinishes();
+    const onPageHide = () => flushFinishes({ unloading: true });
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", onVisible);
     window.addEventListener("pagehide", onPageHide);
@@ -394,12 +397,33 @@ export function useKdsBoard(stationRef: string) {
     finishUntil.value = deadlines;
   }
 
-  function commitFinish(pk: number) {
+  // Caminho de saída da página (pagehide, aba oculta): o fetch nativo com `keepalive`
+  // sai DENTRO do handler, sem esperar a fila serial nem os awaits do `$fetch`. O
+  // navegador garante a entrega de um keepalive disparado antes do unload; um POST
+  // que só sairia numa microtask depois do `chain.then` morre com a página. O CSRF e o
+  // cookie de operador o BFF resolve, como em toda escrita do app.
+  function postNow(path: string): Promise<unknown> {
+    const url = ssePath(path, config.app.baseURL);
+    return fetch(url, {
+      method: "POST",
+      keepalive: true,
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: "{}",
+    }).then(async (res) => {
+      if (res.ok) return null;
+      const data = await res.json().catch(() => null);
+      throw { status: res.status, data };
+    });
+  }
+
+  function commitFinish(pk: number, opts: { unloading?: boolean } = {}) {
     const timer = finishTimers.get(pk);
     if (timer === undefined) return;
     clearTimeout(timer);
     finishTimers.delete(pk);
-    enqueue(`/api/v1/backstage/kds/tickets/${pk}/done/`)
+    const path = `/api/v1/backstage/kds/tickets/${pk}/done/`;
+    (opts.unloading ? postNow(path) : enqueue(path))
       .then(async () => {
         await refresh();
         releaseFinish(pk);
@@ -419,8 +443,8 @@ export function useKdsBoard(stationRef: string) {
     releaseFinish(pk);
   }
 
-  function flushFinishes() {
-    for (const pk of [...finishTimers.keys()]) commitFinish(pk);
+  function flushFinishes(opts: { unloading?: boolean } = {}) {
+    for (const pk of [...finishTimers.keys()]) commitFinish(pk, opts);
   }
 
   const finish = (pk: number) => {
@@ -524,6 +548,7 @@ export function useKdsBoard(stationRef: string) {
     start,
     finish,
     finishUntil,
+    flushFinishes,
     undoFinish,
     recall,
     acknowledge,

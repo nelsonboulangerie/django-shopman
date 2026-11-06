@@ -137,9 +137,9 @@ def verified_whatsapp_flow_binding(
                 "Ajustes › Plataformas antes de revisar este envio."
             ),
             field_errors={
-                "platforms.whatsapp": (
-                    "Escolha um fluxo aprovado e ativo em Ajustes › Plataformas.",
-                )
+                # A instrução já está no `detail`; repeti-la aqui fazia a prévia dizer
+                # a mesma coisa duas vezes (beta 05/11, ge:MKT-08).
+                "platforms.whatsapp": ("Sem fluxo aprovado.",)
             },
         )
     if not template.is_active:

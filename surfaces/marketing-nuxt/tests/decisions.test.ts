@@ -168,6 +168,12 @@ describe("fila de decisões: a casa", () => {
     });
     expect(queueHeadline(1)).toEqual({ strong: "1 pede você", rest: "" });
     expect(queueHeadline(0).strong).toBe("Nada pede você agora");
+    // ge:MKT-03: o que espera outro perfil não pede você.
+    expect(queueHeadline(0, 1)).toEqual({ strong: "1 aguarda quem aprova", rest: "" });
+    expect(queueHeadline(2, 3)).toEqual({
+      strong: "2 pedem você",
+      rest: "3 aguardam quem aprova",
+    });
   });
 
   it("resume agendados e campanhas numa linha só", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { KDS_BAR_SECTIONS, kdsSections, kdsShellSections, kdsSwitcherSections } from "../app/presentation/sections";
+import { KDS_BAR_SECTIONS, kdsSections, kdsShellSections, kdsSwitcherSections, stationTitleFor } from "../app/presentation/sections";
 import { quickBarLayout, quickBarProblems } from "../../operator-kit/app/presentation/suiteChrome";
 
 // As seções da Cozinha (dono, 09/10/2026): cada estação da casa pelo NOME, levando à sua
@@ -117,5 +117,13 @@ describe("seções da Cozinha no trocador (modelo de navegação, 31/10/2026)", 
     expect(layout.items.map((s) => s.label)).toEqual(["Cafés", "Lanches", "Bar", "Saída"]);
     expect(layout.more).toBe(true);
     expect(quickBarProblems(floor)).toEqual([]);
+  });
+});
+
+describe("o título do quadro na troca de estação (beta 05/11, KDS-14)", () => {
+  it("enquanto o quadro carrega, o nome vem do índice, nunca o ref cru", () => {
+    expect(stationTitleFor("cafes", undefined, stations)).toBe("Cafés");
+    expect(stationTitleFor("cafes", "Cafés", [])).toBe("Cafés");
+    expect(stationTitleFor("cafes", undefined, undefined)).toBe("cafes");
   });
 });

@@ -74,7 +74,7 @@ function typeIcon(type: string): string {
                   {{ isExit(inst) && exitUrl ? "Saída · no Gestor" : inst.type_display }}
                 </span>
                 <span class="block text-xl font-bold leading-tight break-words">{{ inst.name }}</span>
-                <span v-if="inst.ref === station.ref" class="block op-micro text-muted-foreground">a deste dispositivo</span>
+                <span v-if="inst.ref === station.ref" class="block op-micro text-muted-foreground">Estação deste dispositivo</span>
               </span>
               <NuxtBadge
                 v-if="inst.active_count"
