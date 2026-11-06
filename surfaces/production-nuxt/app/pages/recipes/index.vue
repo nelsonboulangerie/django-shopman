@@ -364,7 +364,9 @@ watch(
                 :label="entry.production_mode_label"
               />
               <NuxtBadge v-if="!entry.is_active" color="neutral" label="Arquivada" />
-              <NuxtBadge v-if="!entry.has_ficha && entry.output_sku" color="neutral" label="Ainda não publicada" />
+              <!-- O selo é curto (sai em iniciais maiúsculas); quem tomou o SKU vai na frase ao lado. -->
+              <NuxtBadge v-if="entry.ficha_status_label" color="neutral" :label="entry.ficha_status_label" />
+              <span v-if="entry.ficha_status_detail" data-recipe-ficha-detail>{{ entry.ficha_status_detail }}</span>
               <NuxtBadge
                 v-if="needsReview(entry.review_status)"
                 :color="entry.review_status === 'changed' ? 'warning' : 'neutral'"

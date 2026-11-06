@@ -15,8 +15,10 @@ import {
   cardAuthorizationNotice,
   changeBackSuggestionQ,
   confirmationRemainingLabel,
+  handOverPaymentQuestion,
   ifoodAcceptNotice,
   lucideIcon,
+  onRoadLine,
   realtimeIndicator,
   splitRef,
   statusTone,
@@ -24,6 +26,7 @@ import {
 } from "~/presentation/board";
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import { onMounted, onBeforeUnmount } from "vue";
+import { settledRefresh } from "~/utils/settledRefresh";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { COURIER_CALL_HASH } from "~/presentation/courier";
 import { orderTicketMenuItem } from "~/presentation/orderTicket";
@@ -75,6 +78,7 @@ const {
   fetchCancellationReasons,
   settleCash,
   equipmentBack,
+  courierBack,
   undoHandoff,
   undoReady,
   requeueFiscal,
@@ -106,7 +110,10 @@ const ticketPrinter = provideOrderTicketPrinter(deviceAgent);
 
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
 // Mantém o painel da corrida (entregador/status) vivo sem F5.
-const { realtime } = useOrderEvents(orderRef.value, () => refresh());
+// O push espera a rajada assentar: uma leitura por rajada, não uma por evento (GES-17).
+const pushRefresh = settledRefresh(() => refresh());
+onBeforeUnmount(() => pushRefresh.cancel());
+const { realtime } = useOrderEvents(orderRef.value, pushRefresh);
 
 // Próximo foco (F4 do laudo do Gestor): o aviso com prazo ("Responder") e o link da
 // Fila chegam com `#ifood-negotiations`. Abrir o pedido não basta: a página vai até a
@@ -189,6 +196,10 @@ const handoffUndo = computed(() =>
   undo.value?.kind === "handoff" && undo.value.canUndo ? undo.value : null,
 );
 
+// Pedido encerrado (ou quem não pode gerenciar): a nota da cozinha fica só de
+// leitura. O servidor desliga a ação `notes`; o editor sai junto, para a tela não
+// prometer "Aparece no ticket da cozinha" num ticket que já não existe.
+const notesEditable = computed(() => projectedAction("notes")?.enabled === true);
 const notes = ref("");
 const notesBase = ref("");
 const notesRevision = ref("");
@@ -301,7 +312,13 @@ function applyNoteTag(tag: string) {
 // marketplace-aware: for an iFood order it shows the provider's required coded reasons
 // (fetched live per order); other channels cancel from the canonical reason list
 // (`cancel_reasons`) and reject from the store presets + free text.
-const dialog = ref<"" | "reject" | "cancel" | "settle" | "dispatch">("");
+const dialog = ref<
+  "" | "reject" | "cancel" | "settle" | "dispatch" | "courier-back"
+>("");
+// O motivo já marcado quando a tela sabe o porquê: cancelar o Pix vencido abre com
+// "Pagamento não confirmado" (o operador ainda pode trocar).
+const PAYMENT_NOT_CONFIRMED = "payment_not_confirmed";
+const cancelInitialKey = ref("");
 const cashDrafts = useOrderCashDrafts();
 const settlementDraft = computed(
   () =>
@@ -430,16 +447,22 @@ const presets = computed(() => order.value?.cancellation_presets ?? []);
 // The canonical cancel reasons (one list, in the backend).
 const cancelReasons = computed(() => order.value?.cancel_reasons ?? []);
 
-async function openDialog(kind: "reject" | "cancel" | "settle" | "dispatch") {
+async function openDialog(
+  kind: "reject" | "cancel" | "settle" | "dispatch",
+  options: { reasonKey?: string } = {},
+) {
+  cancelInitialKey.value = kind === "cancel" ? (options.reasonKey ?? "") : "";
   if (kind === "settle")
     cashDrafts.settlement(orderRef.value, settlementDraft.value);
   if (kind === "dispatch")
     cashDrafts.dispatch(orderRef.value, dispatchDraft.value);
   dialog.value = kind;
   if (kind === "reject" || kind === "cancel") {
-    // Pull the order's valid cancellation reasons — a coded list for iFood, [] else.
+    // Só o iFood tem lista viva de códigos a buscar; os outros canais usam a lista
+    // única que já veio na projeção. Buscar à toa mostrava "Carregando motivos do
+    // iFood…" num pedido da Loja online.
     reasons.value = [];
-    await loadReasons();
+    if (order.value?.channel_ref === "ifood") await loadReasons();
   }
 }
 
@@ -500,7 +523,22 @@ async function submitSettle() {
   }
 }
 
-function onAdvance() {
+async function onCourierBack() {
+  if (await courierBack()) dialog.value = "";
+}
+// Voltou diferente: o acerto à mão, quando há dinheiro a acertar.
+function onCourierBackDifferent() {
+  dialog.value = "";
+  if (order.value?.can_settle_delivery_cash) void openDialog("settle");
+}
+
+// Pedido sem pagamento registrado: a mesma pergunta da Fila (GES-03).
+const confirmHandOver = useConfirm();
+async function onAdvance() {
+  const o = order.value;
+  const target = String(projectedAction("advance")?.payload_schema?.target_status ?? "");
+  const question = o ? handOverPaymentQuestion({ ...o, target }) : null;
+  if (question && !(await confirmHandOver(question))) return;
   if (dispatchAsks.value) openDialog("dispatch");
   else advance();
 }
@@ -567,6 +605,21 @@ const detailMenuItems = computed(() => [
           }),
           "data-action": "order-ticket",
           onSelect: () => menuDo(() => ticketPrinter.print(orderRef.value)),
+        },
+      ]
+    : []),
+  ...(primary.value?.key === "courier-back" && advanceAction.value
+    ? [
+        {
+          label: advanceAction.value.label,
+          // O que saiu pode ser só o troco, só a maquininha ou o dinheiro a
+          // receber: a frase vale para qualquer combinação.
+          description: "O que saiu com o entregador continua em aberto.",
+          icon: "i-lucide-check",
+          "data-action": "advance",
+          disabled: busy.value || !advanceAction.value.enabled,
+          title: advanceAction.value.reason || undefined,
+          onSelect: () => menuDo(onAdvance),
         },
       ]
     : []),
@@ -650,6 +703,18 @@ const primary = computed(() => {
       enabled: confirmAction.enabled,
       reason: confirmAction.reason,
     };
+  // Na rua com troco ou maquininha: o gesto do momento é o MESMO do cartão,
+  // "Entregador voltou", que fecha a saída inteira. "Marcar como entregue" fecha só a
+  // metade e fica no menu, com o aviso do que continua em aberto.
+  const back = projectedAction("courier-back");
+  if (back)
+    return {
+      key: "courier-back" as const,
+      label: back.label,
+      icon: "lucide:undo-2",
+      enabled: back.enabled,
+      reason: back.reason,
+    };
   const advance = advanceAction.value;
   if (advance) {
     return advance.enabled
@@ -720,8 +785,40 @@ const thumbAction = computed(() => {
 const acceptNotice = computed(() =>
   order.value ? ifoodAcceptNotice(order.value, nowMs.value) : null,
 );
+// O que saiu com o entregador, a mesma linha do cartão (troco e maquininha): sem
+// ela, o detalhe oferecia fechar a entrega sem mostrar o que ainda está na rua.
+const custodyLines = computed(() => {
+  const o = order.value;
+  if (!o || !["dispatched", "delivered"].includes(o.status)) return [];
+  return [
+    { key: "change", icon: "lucide:coins", text: o.change_label },
+    {
+      key: "equipment",
+      icon: o.equipment_label ? "lucide:smartphone-nfc" : "lucide:bike",
+      text: onRoadLine(o),
+    },
+  ].filter((line) => line.text);
+});
+// Pix ou link vencido: o avanço não destrava mais sozinho. O próximo passo vem
+// pronto no aviso do bloqueio: cancelar com o motivo já marcado.
+const cancelUnpaid = computed(() =>
+  Boolean(order.value?.payment_lapsed && order.value?.can_cancel),
+);
+function openCancelUnpaid() {
+  void openDialog("cancel", { reasonKey: PAYMENT_NOT_CONFIRMED });
+}
+// O cartão da Fila chega com `#cancel-unpaid`: o diálogo abre com o motivo marcado.
+const CANCEL_UNPAID_HASH = "#cancel-unpaid";
+watch(
+  () => route.hash === CANCEL_UNPAID_HASH && cancelUnpaid.value,
+  (arrive) => {
+    if (arrive && !dialog.value) openCancelUnpaid();
+  },
+  { immediate: true },
+);
 const stateInEveryWidth = computed(() =>
   Boolean(
+    custodyLines.value.length ||
     acceptNotice.value ||
     deadlineText.value ||
       undo.value ||
@@ -740,6 +837,7 @@ function runPrimary() {
   if (!p?.enabled || busy.value) return;
   if (p.key === "confirm") confirm();
   else if (p.key === "advance") onAdvance();
+  else if (p.key === "courier-back") dialog.value = "courier-back";
   else openDialog("settle");
 }
 // O ao vivo do cabeçalho: a hora da última leitura útil e o estado do empurrão (SSE).
@@ -1298,8 +1396,40 @@ const outside = useOutsideStore(
                 order.advance_block_label.replace(/…$/, '') || 'Bloqueado'
               "
               :description="order.advance_block_reason"
+              :actions="
+                alertActions('error', cancelUnpaid
+                  ? [
+                      Object.assign(
+                        {
+                          icon: 'i-lucide-ban',
+                          label: order.cancel_requires_approval
+                            ? 'Cancelar pedido (pede gerente)'
+                            : 'Cancelar pedido',
+                          disabled: busy,
+                          onClick: () => openCancelUnpaid(),
+                        },
+                        { 'data-cancel-unpaid': '' },
+                      ),
+                    ]
+                  : [])
+              "
               data-detail-block
             />
+            <ul
+              v-if="custodyLines.length"
+              class="flex flex-col gap-1 text-sm"
+              data-detail-custody
+            >
+              <li
+                v-for="line in custodyLines"
+                :key="line.key"
+                class="flex items-center gap-1.5"
+                :data-detail-custody-line="line.key"
+              >
+                <Icon :name="line.icon" class="size-4 shrink-0" />
+                <span>{{ line.text }}</span>
+              </li>
+            </ul>
           </section>
         </template>
 
@@ -1341,7 +1471,7 @@ const outside = useOutsideStore(
         </template>
 
         <!-- A nota da cozinha se EDITA no Gestor: o editor entra no lugar da leitura. -->
-        <template v-if="!outside.away.value" #kitchen-note>
+        <template v-if="!outside.away.value && notesEditable" #kitchen-note>
           <NuxtCard as="section">
             <div class="flex flex-col gap-2">
               <!-- one-tap tags (configuráveis no Admin) — anexam ao texto, sem duplicar -->
@@ -1441,6 +1571,7 @@ const outside = useOutsideStore(
       :reasons="reasons"
       :presets="presets"
       :cancel-reasons="cancelReasons"
+      :initial-key="cancelInitialKey"
       :busy="busy"
       @dirty-change="reasonDirty = $event"
       @retry="loadReasons"
@@ -1450,6 +1581,15 @@ const outside = useOutsideStore(
         }
       "
       @confirm="submitReason"
+    />
+
+    <!-- entregador voltou: o MESMO diálogo da Fila (confere e fecha a saída inteira) -->
+    <CourierBackDialog
+      :card="dialog === 'courier-back' ? order : null"
+      :busy="busy"
+      @confirm="onCourierBack"
+      @different="onCourierBackDifferent"
+      @close="dialog = ''"
     />
 
     <!-- settle delivery cash dialog -->

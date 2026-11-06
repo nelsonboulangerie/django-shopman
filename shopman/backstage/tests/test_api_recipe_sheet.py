@@ -17,7 +17,6 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import Permission, User
-from django.contrib.contenttypes.models import ContentType
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from shopman.buyman.models import Material
@@ -31,12 +30,9 @@ pytestmark = pytest.mark.django_db
 SHEETS_URL = "/api/v1/backstage/recipes/sheets/"
 
 
-def _manage_production_perm() -> Permission:
-    from shopman.shop.models import Shop
-
-    return Permission.objects.get(
-        content_type=ContentType.objects.get_for_model(Shop), codename="manage_production",
-    )
+def _change_recipe_perm() -> Permission:
+    """Mudar a ficha: a régua da escrita (Gerente e Dono; a Cozinha só lê)."""
+    return Permission.objects.get(content_type__app_label="craftsman", codename="change_recipe")
 
 
 @pytest.fixture
@@ -56,7 +52,7 @@ def viewer(shop):
 def editor(shop):
     user = User.objects.create_user("sheets-editor", password="pw", is_staff=True)
     user = grant_production_operator(user)
-    user.user_permissions.add(_manage_production_perm())
+    user.user_permissions.add(_change_recipe_perm())
     return User.objects.get(pk=user.pk)
 
 
@@ -128,7 +124,7 @@ def test_viewer_reads_but_does_not_write(client, viewer, materials):
     ]
     for response in forbidden:
         assert response.status_code == 403, response.content
-        assert "shop.manage_production" in response.json()["detail"]
+        assert response.json()["detail"] == "Só a gestão da produção cria, edita e publica ficha técnica."
 
 
 # ── Lista ────────────────────────────────────────────────────────────────────

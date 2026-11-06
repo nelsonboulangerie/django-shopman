@@ -53,6 +53,9 @@ const props = withDefaults(
     codedEmptyText?: string;
     /** Motivos da lista única do backend: escolher um é obrigatório; o texto é interno. */
     keyedReasons?: KeyedReason[];
+    /** Motivo da lista já marcado ao abrir, quando a tela sabe o porquê (Pix
+     *  vencido abre com "Pagamento não confirmado"). O operador pode trocar. */
+    initialKey?: string;
     loading?: boolean;
     loadingText?: string;
     /** Falha ao ler os motivos: bloqueia confirmar e oferece consultar de novo. */
@@ -70,6 +73,7 @@ const props = withDefaults(
     codedLabel: "Motivo exigido",
     codedEmptyText: "Não há motivos disponíveis neste momento.",
     keyedReasons: () => [],
+    initialKey: "",
     loading: false,
     loadingText: "Carregando motivos…",
     error: "",
@@ -101,7 +105,7 @@ watch(
     if (!open) return;
     reason.value = "";
     code.value = "";
-    key.value = "";
+    key.value = props.initialKey;
     other.value = false;
     discarding.value = false;
   },
@@ -124,7 +128,9 @@ const presetGroups = computed(() =>
 );
 
 const dirty = computed(
-  () => props.open && Boolean(reason.value.trim() || code.value || key.value),
+  () =>
+    props.open &&
+    Boolean(reason.value.trim() || code.value || key.value !== props.initialKey),
 );
 watch(dirty, (value) => emit("dirty-change", value), { immediate: true });
 

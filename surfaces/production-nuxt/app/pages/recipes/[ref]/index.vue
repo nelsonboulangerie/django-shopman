@@ -73,13 +73,9 @@ function selectVersion(version: RecipeVersionProjection) {
   router.replace({ query: { ...route.query, v: String(version.number) } });
 }
 
-const subtitle = computed(() => {
-  if (!entry.value) return "";
-  const details = [entry.value.kind_label];
-  details.push(entry.value.output_sku ? entry.value.output_name || entry.value.output_sku : "Sem SKU");
-  if (selected.value) details.push(`Versão ${selected.value.number}`);
-  return details.join(" · ");
-});
+// O selo do cabeçalho diz só a versão: o tipo e o SKU já estão no topo da página, e
+// repetidos ali eles empilhavam ao lado da busca no tablet (beta 05/11/2026, PROD-14).
+const subtitle = computed(() => (entry.value && selected.value ? `Versão ${selected.value.number}` : ""));
 const stale = computed(() => isStale({ error: !!error.value, hasData: !!entry.value }));
 const isCurrent = computed(() => !!selected.value && selected.value.number === entry.value?.current_version_number);
 const editAction = computed(() =>
@@ -119,7 +115,9 @@ const publishCompare = useRecipeCompare(compareA, compareB);
 const changedRows = computed(() => publishCompare.rows.value.filter((row) => row.delta_display));
 const changedMetrics = computed(() => publishCompare.metrics.value.filter((metric) => metric.delta_display));
 const unmatched = computed(() => (selected.value ? unmatchedItems(selected.value.lens.ingredients) : []));
-const publishBlocked = computed(() => !entry.value?.output_sku || unmatched.value.length > 0);
+// Fórmula sem ingrediente não vira ficha de produção (beta 05/11/2026, PROD-02).
+const formulaEmpty = computed(() => !!selected.value && !selected.value.lens.ingredients.length);
+const publishBlocked = computed(() => !entry.value?.output_sku || unmatched.value.length > 0 || formulaEmpty.value);
 
 function openPublish() {
   if (!selected.value) return;
@@ -522,6 +520,14 @@ const publishDiff = computed(() => [
             icon="i-lucide-tag"
             title="Associe um SKU antes de publicar."
             :actions="alertActions('warning', [{ label: 'Associar SKU', onClick: skuFromPublish }])"
+          />
+          <NuxtAlert
+            v-if="formulaEmpty"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-list-plus"
+            title="Adicione ao menos um ingrediente antes de publicar."
+            :actions="alertActions('warning', [{ label: 'Abrir o editor', onClick: editorFromPublish }])"
           />
           <NuxtAlert
             v-if="unmatched.length"

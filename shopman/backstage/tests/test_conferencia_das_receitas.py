@@ -13,7 +13,6 @@ from decimal import Decimal
 
 import pytest
 from django.contrib.auth.models import Permission, User
-from django.contrib.contenttypes.models import ContentType
 from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion
 from shopman.craftsman.services import recipe_book as craftsman
 
@@ -77,7 +76,7 @@ def test_cadastro_inicial_nao_se_passa_por_receita_da_casa():
     _, version = _publicar("massa-agente", "Massa Agente", "MASSA-AG", source={"kind": "ficha", "recipe_ref": "x"})
     provenance = recipe_review.provenance_of(version)
     assert provenance.label == "Do cadastro inicial"
-    assert "agente" in provenance.detail
+    assert provenance.detail == "Ficha do cadastro inicial, ainda não conferida por ninguém da casa."
 
 
 # ── Conferência ──────────────────────────────────────────────────────────────
@@ -198,7 +197,7 @@ def editor(db):
     user = User.objects.create_user("padeiro", password="pw", is_staff=True, first_name="Maysa")
     user = grant_production_operator(user)
     user.user_permissions.add(
-        Permission.objects.get(content_type=ContentType.objects.get_for_model(Shop), codename="manage_production")
+        Permission.objects.get(content_type__app_label="craftsman", codename="change_recipe")
     )
     return User.objects.get(pk=user.pk)
 
