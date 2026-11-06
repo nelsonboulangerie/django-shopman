@@ -718,16 +718,18 @@ def _capture_once(order) -> None:
         cancel_stale_intents(order, keep_intent_ref=intent_ref)
         # A cobrança no aceite é um fato do histórico: sem esta linha, o Gestor
         # mostrava a autorização e nada mais, como se o cartão nunca tivesse
-        # sido cobrado (beta 06/11, F4).
-        order.emit_event(
-            event_type="payment.captured",
-            actor="payment.capture",
-            payload={
-                "method": method,
-                "amount_q": int(getattr(result, "amount_q", None) or order.total_q or 0),
-                "intent_ref": intent_ref,
-            },
-        )
+        # sido cobrado (beta 06/11, F4). O protocolo leve dos adapters (sem
+        # histórico) fica de fora.
+        if hasattr(order, "emit_event"):
+            order.emit_event(
+                event_type="payment.captured",
+                actor="payment.capture",
+                payload={
+                    "method": method,
+                    "amount_q": int(getattr(result, "amount_q", None) or order.total_q or 0),
+                    "intent_ref": intent_ref,
+                },
+            )
 
         logger.info("payment.capture: captured %s for order %s", intent_ref, order.ref)
         return
