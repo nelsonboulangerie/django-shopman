@@ -312,7 +312,7 @@ const { tone: sealTone, time: sealTime } = usePurchaseReadSeal();
                   <NuxtSelect v-model="noteConversionModel" :items="noteConversionItems" value-key="value" class="w-full" />
                 </NuxtFormField>
                 <NuxtFormField label="Valor da unidade de compra">
-                  <NuxtInput v-model="noteCostInput" inputmode="decimal" placeholder="180,00" class="w-full [&_input]:tabular-nums" />
+                  <NuxtInput v-model="noteCostInput" inputmode="decimal" placeholder="ex.: 180,00" class="w-full [&_input]:tabular-nums" />
                 </NuxtFormField>
                 <NuxtCard variant="soft">
                   <p class="text-xs text-muted">Custo por unidade-base</p>

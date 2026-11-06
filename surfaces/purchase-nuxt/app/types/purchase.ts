@@ -148,6 +148,8 @@ export interface Supplier {
   /** Fornecedor de confiança pode pular a revisão humana do pedido. */
   sendDirectly: boolean;
   revision?: string;
+  /** O pedido tem por onde sair (e-mail ou telefone). Ausente = sim. */
+  canReceiveOrder?: boolean;
 }
 
 export interface MaterialConversion {
@@ -202,6 +204,10 @@ export interface PurchaseProjection {
   };
   /** Entradas já registradas, a mais recente primeiro ("essa nota já entrou?"). */
   receiptHistory?: ReceiptHistoryEntry[];
+  /** Na leitura paginada: TODOS os insumos ativos (a base de trabalho, fora da página). */
+  activeMaterials?: Material[] | null;
+  /** Na leitura paginada: TODOS os fornecedores ativos. */
+  activeSuppliers?: Supplier[] | null;
 }
 
 export interface PurchaseList<T> {

@@ -477,7 +477,7 @@ watch(
               <NuxtSelect v-model="cost.conversionId" :items="costConversions" class="w-full" placeholder="Unidade-base" />
             </NuxtFormField>
             <NuxtFormField label="Valor pago (R$)" required>
-              <NuxtInput v-model="cost.costInput" class="w-full" inputmode="decimal" placeholder="180,00" data-testid="cost-input" />
+              <NuxtInput v-model="cost.costInput" class="w-full" inputmode="decimal" placeholder="ex.: 180,00" data-testid="cost-input" />
             </NuxtFormField>
             <div class="flex items-end">
               <NuxtCheckbox v-model="cost.makePreferred" label="Custo preferencial" description="Alimenta o custeio e a sugestão de preço." />
