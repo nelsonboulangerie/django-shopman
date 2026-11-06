@@ -983,9 +983,7 @@ defineExpose({
           variant="subtle"
           role="status"
           :title="quietOutlastsDeadlineText"
-          :actions="othersBesideDirectMessage
-            ? alertActions('warning', [{ label: 'Tirar o WhatsApp', onClick: removeDirectMessage }])
-            : undefined"
+          :actions="alertActions('warning', [othersBesideDirectMessage && { label: 'Tirar o WhatsApp', onClick: removeDirectMessage }])"
           data-quiet-outlasts-deadline
         />
         <NuxtAlert
