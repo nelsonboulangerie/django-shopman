@@ -297,3 +297,70 @@ def test_validate_settings_invalid_access_link_ttl():
 def test_validate_settings_invalid_device_trust_ttl():
     errors = validate_settings()
     assert any("DEVICE_TRUST_TTL_DAYS" in e for e in errors)
+
+
+# ===========================================
+# Code killed by wrong guesses (beta 06/11, SMS-07)
+# ===========================================
+
+
+def _wrong_guesses(target_value: str, count: int) -> list:
+    return [
+        AuthService.verify_for_login(target_value=target_value, code_input="000000")
+        for _ in range(count)
+    ]
+
+
+@pytest.mark.django_db
+def test_last_wrong_guess_says_the_code_died(customer, verification_code):
+    """The guess that spends the last attempt answers CODE_MAX_ATTEMPTS, not CODE_INVALID."""
+    results = _wrong_guesses(verification_code.target_value, verification_code.max_attempts)
+
+    assert [r.error_code for r in results[:-1]] == [ErrorCode.CODE_INVALID] * (verification_code.max_attempts - 1)
+    assert results[-1].error_code == ErrorCode.CODE_MAX_ATTEMPTS
+    assert results[-1].attempts_remaining == 0
+
+
+@pytest.mark.django_db
+def test_right_code_after_exhaustion_is_not_called_expired(customer, verification_code):
+    """The right code after the attempts ran out says why it failed: attempts, not expiry."""
+    _wrong_guesses(verification_code.target_value, verification_code.max_attempts)
+
+    result = AuthService.verify_for_login(
+        target_value=verification_code.target_value,
+        code_input=verification_code._raw_code,
+    )
+
+    assert not result.success
+    assert result.error_code == ErrorCode.CODE_MAX_ATTEMPTS
+
+
+@pytest.mark.django_db
+def test_exhausted_code_does_not_hold_the_resend(customer, verification_code):
+    """G11 does not make the person wait for a code that no longer works."""
+    from shopman.doorman.gates import Gates
+
+    _wrong_guesses(verification_code.target_value, verification_code.max_attempts)
+
+    result = Gates.code_cooldown(target_value=verification_code.target_value, cooldown_seconds=60)
+    assert result.passed
+
+
+# ===========================================
+# Cooldown says how long (beta 06/11, SMS-08)
+# ===========================================
+
+
+@pytest.mark.django_db
+def test_cooldown_carries_seconds_and_the_code_still_valid(customer):
+    """A second request inside G11 says how long to wait and which code still works."""
+    sender = type("S", (), {"send_code": lambda *a: True})()
+    first = AuthService.request_code(target_value=customer.phone, sender=sender)
+    assert first.success
+
+    second = AuthService.request_code(target_value=customer.phone, sender=sender)
+
+    assert second.error_code == ErrorCode.COOLDOWN
+    assert 0 < second.retry_after_seconds <= 60
+    assert second.expires_at == first.expires_at
+    assert second.delivery_method == first.delivery_method

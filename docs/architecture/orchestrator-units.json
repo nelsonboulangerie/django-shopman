@@ -5342,6 +5342,7 @@
           "symbols": [
             "device_is_trusted",
             "trust_device",
+            "device_trust_period_display",
             "revoke_current_device"
           ]
         }
@@ -5461,6 +5462,8 @@
             "request_contact_verification_code",
             "ContactVerifyResult",
             "code_resend_cooldown_seconds",
+            "code_cooldown_body",
+            "_seconds_phrase",
             "request_code_error_message",
             "CONTACT_VERIFICATION_PURPOSE"
           ]
