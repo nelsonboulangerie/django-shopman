@@ -74,7 +74,7 @@ useOperatorWindowTitle();
         @unavailable="stationSetup.dismiss({ remember: false })"
       />
       <OperatorSonner />
-      <OperatorPwaRuntime />
+      <OperatorPwaRuntime :show-prompts="!isCustomerBoard" />
     </div>
   </OperatorAppRoot>
 </template>
