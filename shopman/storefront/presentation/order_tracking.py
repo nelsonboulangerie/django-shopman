@@ -436,7 +436,10 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
                 requested_at_display=_fmt_timestamp(data.cancellation_request.requested_at),
                 title="Solicitação recebida",
                 message=(
-                    "A equipe vai analisar o cancelamento e um possível estorno. "
+                    "Ainda não começamos a preparar: se a equipe confirmar o cancelamento, "
+                    "o valor volta inteiro. Acompanhe a resposta por aqui."
+                    if data.cancellation_request.before_preparation
+                    else "A equipe vai analisar o cancelamento e um possível estorno. "
                     "Acompanhe a resposta por aqui."
                 ),
             )

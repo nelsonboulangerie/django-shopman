@@ -60,6 +60,7 @@ class CancellationRequest:
     protocol: str
     reason: str
     requested_at: datetime
+    before_preparation: bool = False
 
 
 def current(order: Order) -> CancellationRequest | None:
@@ -71,6 +72,7 @@ def current(order: Order) -> CancellationRequest | None:
         protocol=str(payload.get("protocol") or ""),
         reason=str(payload.get("reason") or ""),
         requested_at=event.created_at,
+        before_preparation=bool(payload.get("before_preparation")),
     )
 
 
@@ -118,4 +120,5 @@ def request_cancellation(order: Order, *, reason: str = "") -> CancellationReque
         protocol=protocol,
         reason=clean_reason,
         requested_at=event.created_at,
+        before_preparation=before_preparation,
     )
