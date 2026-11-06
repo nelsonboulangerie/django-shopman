@@ -82,7 +82,7 @@ const TONE_COLOR = {
 } as const;
 
 function state(announcement: AnnouncementProjectionV2) {
-  return deliveryStatePresentation(announcement.delivery.state, announcement.state);
+  return deliveryStatePresentation(announcement.delivery.state, announcement.state, announcement.delivery.counts);
 }
 
 // O painel de filtros lê e grava o mesmo recorte da URL; aplicar um favorito troca os

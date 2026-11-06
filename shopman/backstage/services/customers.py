@@ -145,6 +145,8 @@ def _tags(value) -> list[str]:
         if not isinstance(raw, str):
             raise _mutation_error("Cada etiqueta precisa ser texto.", field="tags")
         tag = re.sub(r"\s+", " ", raw).strip()
+        if tag and not any(char.isalnum() for char in tag):
+            raise _mutation_error("Cada etiqueta precisa conter pelo menos uma letra ou número.", field="tags")
         if tag and tag.casefold() not in {item.casefold() for item in normalized}:
             normalized.append(tag[:100])
     if len(normalized) > 30:

@@ -118,3 +118,17 @@ class TestTemplateVariables:
             content_type="application/json",
         )
         assert response.status_code in {200, 201}
+
+
+def test_audience_choices_exclude_empty_serialized_tags_without_deleting_them():
+    from shopman.guestman.models import CustomerTag
+
+    from shopman.backstage.projections.marketing import _tag_choices
+
+    for name, slug in [("[]", "empty-list"), ("{}", "empty-object"), (" ", "blank"), ("Sem glúten", "sem-gluten")]:
+        CustomerTag.objects.create(name=name, slug=slug)
+
+    assert [(choice.value, choice.label) for choice in _tag_choices()] == [
+        ("sem-gluten", "Sem glúten (ninguém)"),
+    ]
+    assert CustomerTag.objects.filter(slug="empty-list").exists()

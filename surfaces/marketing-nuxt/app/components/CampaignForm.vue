@@ -716,6 +716,11 @@ const draft = useMarketingDraft({
   apply: applyCampaignDraft,
 });
 
+async function discardCampaignDraft() {
+  await draft.discard();
+  currentStep.value = 0;
+}
+
 /** O texto do modelo escolhido — é ele que a prévia resolve. */
 const chosenBody = computed(
   () => props.templates.find((t) => t.pk === templateId.value)?.body ?? "",
@@ -896,7 +901,7 @@ function submit() {
       :describe="describeDraftValue"
       @keep-local="draft.keepLocal()"
       @keep-server="draft.keepServer()"
-      @discard="draft.discard()"
+      @discard="discardCampaignDraft()"
     />
 
     <!-- As cinco etapas. O título carrega o número para o leitor de tela ("2. Destinos")

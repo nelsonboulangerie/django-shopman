@@ -1045,6 +1045,7 @@ def _tag_choices() -> tuple[ChoiceProjection, ...]:
                 label=f"{tag.name} ({tag.people})" if tag.people else f"{tag.name} (ninguém)",
             )
             for tag in CustomerTag.objects.annotate(people=Count("tagged_items")).order_by("name")
+            if any(char.isalnum() for char in tag.name)
         )
     except Exception:
         logger.warning("marketing.tags_failed", exc_info=True)
