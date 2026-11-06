@@ -102,9 +102,8 @@ function matrix(kind) {
       security: Boolean(surface.capabilities?.security),
       ssr: Boolean(surface.capabilities?.ssr),
       pwa_browser: Boolean(surface.capabilities?.pwaBrowser),
-      browser_install: surface.browserEngines
-        ? `npx playwright install${surface.browserWithDeps ? " --with-deps" : ""} ${surface.browserEngines}`
-        : "npx playwright install chromium",
+      browser_engines: surface.browserEngines ?? "chromium",
+      browser_with_deps: Boolean(surface.browserWithDeps),
     }));
   process.stdout.write(JSON.stringify({ include }));
 }
