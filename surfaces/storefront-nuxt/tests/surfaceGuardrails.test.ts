@@ -675,7 +675,7 @@ describe('surface UX guardrails', () => {
     expect(waPanel).not.toContain('bg-bottomnav')
     expect(waPanel).toMatch(/class="shop-surface-faubourg[^"]*"\s+data-login-whatsapp-manual/)
     expect(login).toMatch(/class="shop-surface-faubourg[^"]*"\s+data-login-sms-form/)
-    expect(login).toContain('v-if="supportUrl && (step === \'code\' || waWaiting)" class="rounded-lg border bg-transparent p-4 text-center" data-login-support')
+    expect(login).toContain('v-if="supportUrl && (step === \'code\' || waWaiting) && !authErrorOffersSupport(error)" class="rounded-lg border bg-transparent p-4 text-center" data-login-support')
     // AA do texto secundário sobre o Faubourg não pode depender do tema: a
     // superfície remapeia o muted a partir do próprio texto.
     expect(read('app/assets/css/tailwind.css')).toContain('--muted-foreground: color-mix(in srgb, var(--foreground) 78%, var(--shop-bottomnav));')

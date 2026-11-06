@@ -78,7 +78,10 @@ describe("Alt 1…9 em todo app", () => {
 describe("a ajuda de atalhos", () => {
   it("o grupo comum sai das seções e não repete o que o app já disse", () => {
     const base = suiteShortcutGroup(SECTIONS.slice(0, 2), { appLabel: "Gestor" });
-    expect(base.title).toBe("Em todo o Gestor");
+    expect(base.title).toBe("Gestor: em qualquer tela");
+    // Sem artigo: vale para app feminino e masculino (beta 05/11, KDS-12).
+    expect(suiteShortcutGroup([], { appLabel: "Cozinha" }).title).toBe("Cozinha: em qualquer tela");
+    expect(suiteShortcutGroup([]).title).toBe("Em qualquer tela");
     expect(base.items.map((i) => i.keys.join(" "))).toEqual(["Alt+1", "Alt+2", "?"]);
     const merged = mergeShortcutGroups(base, [{ title: "Na venda", items: [{ keys: ["?"], label: "Esta ajuda" }, { keys: ["F9"], label: "Enviar à cozinha" }] }]);
     expect(merged[1]!.items.map((i) => i.keys[0])).toEqual(["F9"]);

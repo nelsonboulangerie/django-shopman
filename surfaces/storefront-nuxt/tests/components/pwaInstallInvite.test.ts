@@ -110,11 +110,11 @@ describe('PwaInstallInvite', () => {
     const wrapper = await mountInvite()
 
     const passos = wrapper.get('[data-testid="pwa-install-steps"]').text()
-    // O ⋯ é desenhado (svg), não escrito: os dois juntos mostravam o símbolo duas
-    // vezes (beta 05/11, CEN-07). O texto diz o nome dele.
+    // O símbolo vem desenhado, uma vez só: o caractere "⋯" ao lado do desenho era
+    // o símbolo repetido (beta 05/11, CEN-07 e LOJA-09).
     expect(passos).toContain('três pontinhos')
     expect(passos).not.toContain('⋯')
-    expect(wrapper.get('[data-testid="pwa-install-steps"]').find('svg').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="pwa-install-steps"] svg').length).toBeGreaterThan(0)
     expect(passos).toContain('Chrome')
     expect(passos).not.toContain('barra do Safari')
   })

@@ -30,7 +30,7 @@ from shopman.shop.projections.types import (
     CategoryProjection,
 )
 from shopman.storefront.identity import customer_pricing_hints
-from shopman.storefront.presentation.catalog import viewer_collection_access
+from shopman.storefront.presentation.catalog import unit_weight_label, viewer_collection_access
 from shopman.storefront.presentation.status import availability_label as resolve_availability_label
 from shopman.storefront.presentation.types import ComponentProjection
 
@@ -375,7 +375,7 @@ def build_product_detail(
         qty_in_cart=qty_in_cart,
         is_bundle=product.is_bundle,
         components=components,
-        unit_weight_label=_unit_weight_label(product),
+        unit_weight_label=unit_weight_label(product),
         approx_dimensions_label=_approx_dimensions_label(product),
         is_made_to_order=is_made_to_order,
         made_to_order_label=_made_to_order_label() if is_made_to_order else "",
@@ -570,10 +570,6 @@ def _food_safety_notice() -> str:
         return ""
 
 
-def _unit_weight_label(product: Any) -> str | None:
-    # Ver `catalog._unit_weight_label`: o rótulo diz de quem é o peso, porque ao lado
-    # do preço dois números sem conector admitem "R$ 18,00 POR 500 g".
-    return f"peça de ~{product.unit_weight_g} g" if product.unit_weight_g else None
 
 
 def _is_made_to_order(product: Any) -> bool:

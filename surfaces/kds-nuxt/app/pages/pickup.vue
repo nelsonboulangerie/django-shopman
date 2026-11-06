@@ -3,11 +3,17 @@
 // (sempre DARK, leitura à distância): código GRANDE, "pronto" em verde (vá retirar)
 // com chegada animada, "em preparo" neutro. Relógio ao vivo. Marca fica no storefront
 // / futuro customer display do PDV — aqui é chrome neutro, copy acolhedor. Read público.
-import { realtimeIndicator, splitRef } from "~/presentation/board";
+import { realtimeIndicator } from "~/presentation/board";
+import { PICKUP_DENSITY_CLASSES, pickupCode, pickupColumn } from "~/presentation/pickup";
 
 const { status, realtime } = useKdsCustomerBoard();
 const preparing = computed(() => status.value?.preparing ?? []);
 const ready = computed(() => status.value?.ready ?? []);
+// A TV não rola: cada coluna se adensa com a contagem, e o que não couber vira "+N".
+const readyColumn = computed(() => pickupColumn(ready.value));
+const preparingColumn = computed(() => pickupColumn(preparing.value));
+const readyLook = computed(() => PICKUP_DENSITY_CLASSES[readyColumn.value.density]);
+const preparingLook = computed(() => PICKUP_DENSITY_CLASSES[preparingColumn.value.density]);
 // Cue de tempo-real HONESTO: "ao vivo" (verde, pulsando) só quando o SSE conectou;
 // senão neutro "atualiza sozinho" (o poll de reserva carrega). Nunca mente pro cliente.
 const liveCue = computed(() => realtimeIndicator(realtime.value));
@@ -19,7 +25,7 @@ const readyRefs = computed(() => ready.value.map((order) => order.ref));
 const { isCalling, calling, soundOn, soundBlocked, activateSound } =
   usePickupCall(readyRefs);
 const callingCodes = computed(() =>
-  [...calling.value].map((ref) => splitRef(ref).code).join(", "),
+  [...calling.value].map((ref) => pickupCode(ref)).join(", "),
 );
 
 // Relógio ao vivo (client-only — new Date() no SSR causaria mismatch).
@@ -44,13 +50,28 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    class="dark grid min-h-screen grid-rows-[auto_1fr] bg-background text-foreground"
+    class="dark grid h-dvh grid-rows-[auto_1fr] overflow-hidden bg-background text-foreground"
+    data-kds-pickup
   >
+    <!-- h-dvh + overflow-hidden: a TV não rola, então a página nunca passa da tela. -->
     <!-- header -->
     <header
       class="flex items-center justify-between gap-4 border-b px-6 py-5 md:px-10"
     >
-      <div class="min-w-0">
+      <!-- A volta discreta às estações: o painel abre em tela cheia, e no app
+           instalado (sem barra do navegador) quem tocou "Painel de retirada" ficava
+           preso (beta 05/11, KDS-10). -->
+      <NuxtButton
+        to="/"
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-arrow-left"
+        aria-label="Voltar às estações"
+        title="Voltar às estações"
+        class="-ml-3 shrink-0 opacity-40 hover:opacity-100 focus-visible:opacity-100"
+        data-kds-pickup-back
+      />
+      <div class="min-w-0 flex-1">
         <p
           class="text-sm font-medium uppercase tracking-wider text-muted-foreground"
         >
@@ -118,30 +139,39 @@ onBeforeUnmount(() => {
         <TransitionGroup
           tag="div"
           name="kds-cust"
-          class="grid min-h-0 flex-1 content-start gap-3 overflow-auto px-6 pb-6 md:px-10"
+          class="grid min-h-0 flex-1 content-start gap-3 overflow-hidden px-6 pb-6 md:px-10"
+          :class="readyLook.grid"
+          :data-density="readyColumn.density"
+          data-kds-pickup-ready
         >
           <article
-            v-for="order in ready"
+            v-for="order in readyColumn.shown"
             :key="order.ref"
             :data-calling="isCalling(order.ref) || undefined"
-            class="rounded-lg border-2 px-6 py-5 shadow-sm"
-            :class="
+            class="rounded-lg border-2 shadow-sm"
+            :class="[
+              readyLook.card,
               isCalling(order.ref)
                 ? 'pickup-calling border-success bg-success/25'
-                : 'border-success/50 bg-success/10'
-            "
+                : 'border-success/50 bg-success/10',
+            ]"
           >
             <p
-              class="text-xs font-bold uppercase tracking-wider text-success dark:text-lime-300"
+              class="break-words font-extrabold tabular-nums leading-none"
+              :class="readyLook.code"
             >
-              {{ splitRef(order.ref).prefix || "Pedido" }}
-            </p>
-            <p
-              class="break-words text-5xl font-extrabold tabular-nums leading-none md:text-7xl"
-            >
-              {{ splitRef(order.ref).code }}
+              {{ pickupCode(order.ref) }}
             </p>
           </article>
+          <p
+            v-if="readyColumn.more"
+            :key="'more-ready'"
+            class="flex items-center justify-center rounded-lg border border-dashed text-3xl font-bold tabular-nums text-success"
+            :class="readyLook.card"
+            data-kds-pickup-more
+          >
+            +{{ readyColumn.more }}
+          </p>
           <p
             v-if="!ready.length"
             :key="'empty-ready'"
@@ -168,24 +198,33 @@ onBeforeUnmount(() => {
         <TransitionGroup
           tag="div"
           name="kds-cust"
-          class="grid min-h-0 flex-1 content-start gap-3 overflow-auto px-6 pb-6 md:px-10"
+          class="grid min-h-0 flex-1 content-start gap-3 overflow-hidden px-6 pb-6 md:px-10"
+          :class="preparingLook.grid"
+          :data-density="preparingColumn.density"
+          data-kds-pickup-preparing
         >
           <article
-            v-for="order in preparing"
+            v-for="order in preparingColumn.shown"
             :key="order.ref"
-            class="rounded-lg border bg-card px-6 py-4"
+            class="rounded-lg border bg-card"
+            :class="preparingLook.card"
           >
             <p
-              class="text-xs font-bold uppercase tracking-wider text-muted-foreground"
+              class="break-words font-bold tabular-nums leading-none text-muted-foreground"
+              :class="preparingLook.code"
             >
-              {{ splitRef(order.ref).prefix || "Pedido" }}
-            </p>
-            <p
-              class="break-words text-4xl font-bold tabular-nums leading-none text-muted-foreground md:text-6xl"
-            >
-              {{ splitRef(order.ref).code }}
+              {{ pickupCode(order.ref) }}
             </p>
           </article>
+          <p
+            v-if="preparingColumn.more"
+            :key="'more-prep'"
+            class="flex items-center justify-center rounded-lg border border-dashed text-3xl font-bold tabular-nums text-muted-foreground"
+            :class="preparingLook.card"
+            data-kds-pickup-more
+          >
+            +{{ preparingColumn.more }}
+          </p>
           <p
             v-if="!preparing.length"
             :key="'empty-prep'"

@@ -23,7 +23,8 @@
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
-import type { KDSHistoryEntryProjection, KDSTicketProjection } from "~/types/kds";
+import type { KDSHistoryEntryProjection, KDSIndexResponse, KDSTicketProjection } from "~/types/kds";
+import { stationTitleFor } from "~/presentation/sections";
 import {
   barNeedsArmDelay,
   boardFilterCounts,
@@ -109,7 +110,10 @@ onBeforeUnmount(() => {
 // O título é o NOME da estação (Cafés, Lanches): estação é um posto específico, e não
 // existe estação chamada "Preparo" (dono, 09/10/2026). É o mesmo nome do item aceso na
 // navegação.
-const stationTitle = computed(() => view.value?.instanceName || stationRef.value);
+const { data: stationIndex } = useNuxtData<KDSIndexResponse>("kds-index");
+const stationTitle = computed(() =>
+  stationTitleFor(stationRef.value, view.value?.instanceName, stationIndex.value?.instances),
+);
 
 // O som é da estação. O navegador que bloqueia o áudio vira aviso da tela, com "Ativar
 // o som"; ligar e desligar é do botão Som na barra da estação (dono, 13/10/2026), que

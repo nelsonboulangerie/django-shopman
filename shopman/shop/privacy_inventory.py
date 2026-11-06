@@ -86,7 +86,13 @@ PROCESSORS: tuple[Processor, ...] = (
             "o seu telefone e o contexto do pedido, que ficam guardados na sua ficha "
             "de contato lá dentro"
         ),
-        wired_by=("setting:SHOPMAN_NOTIFICATION_ADAPTERS[whatsapp]",),
+        # O login pelo WhatsApp também passa pelo ManyChat (o Flow chama o webhook de
+        # entrada), com ou sem notificação ligada: sem este sinal, um deployment que
+        # oferece "Entre pelo WhatsApp" omitia a Meta/ManyChat da lista (beta 05/11, LOJA-08).
+        wired_by=(
+            "setting:SHOPMAN_NOTIFICATION_ADAPTERS[whatsapp]",
+            "setting:MANYCHAT_WEBHOOK_SECRET",
+        ),
         adapters=("notification_manychat", "notification_whatsapp", "otp_manychat", "marketing_delivery_whatsapp"),
     ),
     Processor(

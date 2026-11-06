@@ -86,7 +86,9 @@ import {
 } from "../app/presentation/moveLines";
 import {
   allLinesFired,
+  kitchenBoundSkus,
   kitchenHandoffNote,
+  kitchenRoutedSkus,
   kitchenSurplusQty,
   fireBarView,
   firedCount,
@@ -1647,6 +1649,33 @@ describe("a frase da cozinha no checkout conta unidades", () => {
 
   it("carrinho vazio não fala", () => {
     expect(kitchenHandoffNote([])).toBe("");
+  });
+
+  it("no balcão, só promete cozinha ao que vai mesmo; pão de vitrine não (beta 05/11, PDV-09)", () => {
+    const products = [
+      { sku: "CAPU", kitchen_station: "Cafés", kitchen_prep: true },
+      { sku: "CROI", kitchen_station: "Encomendas", kitchen_prep: false },
+      { sku: "BAG", kitchen_station: "Encomendas", kitchen_prep: false },
+      { sku: "AGUA" },
+    ];
+    const counter = kitchenBoundSkus(products, { counter: true });
+    expect(counter).toEqual({ CAPU: "Cafés" });
+    expect(kitchenBoundSkus(products, { counter: false })).toEqual({ CAPU: "Cafés", CROI: "Encomendas", BAG: "Encomendas" });
+
+    const goes = (item: POSCartItem) => Boolean(counter[item.sku]);
+    expect(kitchenHandoffNote([linha({ sku: "CROI", qty: 4 }), linha({ sku: "BAG", qty: 2 })], { goesToKitchen: goes }))
+      .toBe("");
+    expect(kitchenHandoffNote([linha({ sku: "CROI", qty: 4 }), linha({ sku: "CAPU", qty: 1 })], { goesToKitchen: goes }))
+      .toBe("Ao finalizar, o item vai para a cozinha.");
+  });
+
+  it("a comanda continua vendo a separação: o Enviar dela manda tudo que tem estação (revisão #2152)", () => {
+    const products = [
+      { sku: "CAPU", kitchen_station: "Cafés", kitchen_prep: true },
+      { sku: "SUCO", kitchen_station: "Bar", kitchen_prep: false },
+      { sku: "AGUA" },
+    ];
+    expect(kitchenRoutedSkus(products)).toEqual({ CAPU: "Cafés", SUCO: "Bar" });
   });
 });
 

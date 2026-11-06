@@ -1,4 +1,5 @@
 import type { FAQItemProjection, ShopProjection, SiteBusinessProjection } from '~/types/shopman'
+import { phoneDisplay } from '~/utils/authPhone'
 
 // Lógica pura da página /faq: de onde vêm as perguntas e como falar com a casa
 // quando a resposta não está lá. Sem Vue/Nuxt — testável em vitest.
@@ -47,9 +48,11 @@ export function faqContactLinks (params: {
     links.push({ kind: 'whatsapp', label: 'WhatsApp', value: 'Falar no WhatsApp', href: whatsappUrl, icon: 'lucide:message-circle' })
   }
 
+  // O E.164 do cadastro do site é para o schema.org e para o `tel:`; quem lê vê
+  // o número como a casa escreve, "(43) 3323-1997" (beta 05/11, LOJA-07).
   const businessPhone = clean(business?.telephone)
   const phone = businessPhone
-    ? { value: businessPhone, href: telHref(businessPhone) }
+    ? { value: clean(shop?.phone_display) || phoneDisplay(telHref(businessPhone).slice(4)), href: telHref(businessPhone) }
     : { value: clean(shop?.phone_display) || clean(shop?.phone), href: clean(shop?.phone_url) || telHref(clean(shop?.phone)) }
   if (phone.value && phone.href) {
     links.push({ kind: 'phone', label: 'Telefone', value: phone.value, href: phone.href, icon: 'lucide:phone' })

@@ -145,6 +145,50 @@ class TestSendCodeWithFallback:
         assert success is True
         assert method == "sms"
 
+    def test_console_double_records_the_simulated_channel(self):
+        """Beta 05/11 (LOJA-01): em DEBUG a cadeia é ``sms,console``.
+
+        O console não é transporte: simula o SMS pedido. Se a prova gravada
+        fosse "console", o vínculo do telefone recusaria o código certo.
+        """
+        adapter = DefaultAuthAdapter()
+        adapter._chain_sender_sms = FakeSender(succeed=False)
+
+        with override_settings(DEBUG=True, DOORMAN={
+            "DELIVERY_CHAIN": ["sms", "console"],
+            "DELIVERY_SENDERS": {
+                "sms": "shopman.doorman.senders.ConsoleSender",
+                "console": "shopman.doorman.senders.ConsoleSender",
+            },
+        }):
+            success, method = adapter.send_code_with_fallback(
+                "+5543999990001", "123456", preferred_method="sms",
+            )
+        assert success is True
+        assert method == "sms"
+
+    def test_console_outside_debug_proves_nothing(self):
+        """Fora de DEBUG o código entregue pelo console só existe no log.
+
+        Quem lê o log não é o dono do telefone: a prova fica "console" e o
+        vínculo do contato recusa (falha fechada).
+        """
+        adapter = DefaultAuthAdapter()
+        adapter._chain_sender_sms = FakeSender(succeed=False)
+
+        with override_settings(DEBUG=False, DOORMAN={
+            "DELIVERY_CHAIN": ["sms", "console"],
+            "DELIVERY_SENDERS": {
+                "sms": "shopman.doorman.senders.ConsoleSender",
+                "console": "shopman.doorman.senders.ConsoleSender",
+            },
+        }):
+            success, method = adapter.send_code_with_fallback(
+                "+5543999990001", "123456", preferred_method="sms",
+            )
+        assert success is True
+        assert method == "console"
+
     @override_settings(DOORMAN={
         "DELIVERY_CHAIN": ["whatsapp", "sms", "email"],
     })

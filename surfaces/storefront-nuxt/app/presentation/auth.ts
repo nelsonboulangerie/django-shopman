@@ -15,7 +15,7 @@ export function authStep (state: AuthFlowState): AuthStep {
   return state.requestedPhone ? 'code' : 'phone'
 }
 
-export type AuthErrorKind = 'rate_limit' | 'invalid_phone' | 'invalid_code' | 'generic'
+export type AuthErrorKind = 'rate_limit' | 'invalid_phone' | 'invalid_code' | 'identity_conflict' | 'generic'
 
 export interface AuthErrorView {
   kind: AuthErrorKind
@@ -27,6 +27,9 @@ const ERROR_TITLES: Record<AuthErrorKind, string> = {
   rate_limit: 'Aguarde um instante',
   invalid_phone: 'Revise o telefone',
   invalid_code: 'Código não confere',
+  // O código estava CERTO: o número é que tem mais de um cadastro. "Código não
+  // confere" mentia sobre o que a pessoa digitou (beta 05/11, LOJA-03).
+  identity_conflict: 'Não conseguimos entrar com este número',
   generic: 'Algo não deu certo'
 }
 
@@ -34,16 +37,30 @@ export interface AuthErrorInput {
   status?: number | null
   detail?: string | null
   field?: string | null
+  errorCode?: string | null
 }
 
 export function authErrorView (input: AuthErrorInput, fallback: string): AuthErrorView {
   const message = (input.detail || '').trim() || fallback
   let kind: AuthErrorKind = 'generic'
   if (input.status === 429) kind = 'rate_limit'
+  else if (input.errorCode === 'identity_conflict') kind = 'identity_conflict'
   else if (input.field === 'phone') kind = 'invalid_phone'
   else if (input.field === 'code') kind = 'invalid_code'
   return { kind, title: ERROR_TITLES[kind], message }
 }
+
+/** O erro de telefone mora junto do campo, não no topo da página (beta 05/11, LOJA-04). */
+export function authErrorBelongsToPhoneField (error: AuthErrorView | null | undefined): boolean {
+  return error?.kind === 'invalid_phone'
+}
+
+/** Conflito de identidade: a saída é falar com a loja, e o botão mora no próprio aviso. */
+export function authErrorOffersSupport (error: AuthErrorView | null | undefined): boolean {
+  return error?.kind === 'identity_conflict'
+}
+
+export const LOCAL_PHONE_ERROR = 'Informe o DDD e o número, como (43) 99999-9999.'
 
 // A espera do "Reenviar" é a do SERVIDOR (`resend_after_seconds`, o gate G11 do
 // doorman). Eram 30 s cravados aqui contra 60 s cobrados lá: o botão liberava e

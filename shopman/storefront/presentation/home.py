@@ -18,7 +18,11 @@ from shopman.shop.address_location_config import (
 )
 from shopman.shop.projections.types import Action
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF, get_default_ddd
-from shopman.storefront.presentation.catalog import CatalogItemProjection, build_featured_items
+from shopman.storefront.presentation.catalog import (
+    CatalogItemProjection,
+    build_featured_items,
+    fresh_from_oven_skus,
+)
 from shopman.storefront.presentation.public_information import FAQItemProjection, build_public_faq
 from shopman.storefront.presentation.shop import ShopProjection, build_shop_projection
 from shopman.storefront.presentation.shop_status import _format_opening_hours, _shop_status
@@ -395,7 +399,19 @@ def build_shell(
 def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> HomeProjection:
     shell = build_shell(request, cart_has_items=cart_has_items)
     last_ref, last_items = _reorder_context(request)
-    featured = build_featured_items(channel_ref=STOREFRONT_CHANNEL_REF, request=request, limit=3)
+    fresh = fresh_from_oven_skus(STOREFRONT_CHANNEL_REF)
+    featured = build_featured_items(
+        channel_ref=STOREFRONT_CHANNEL_REF, request=request, limit=3, prefer_skus=fresh,
+    )
+    # O título diz o que o rail mostra: "Direto do forno" só com fornada recente nele;
+    # "Os mais pedidos" só com um mais pedido nele; sem nenhum dos dois, o rail é a
+    # ordem do cardápio e o título diz isso (nem forno nem "mais pedidos" mentindo).
+    if any(item.sku in fresh for item in featured):
+        rail_heading_key = "HOME_AVAILABILITY_HEADING"
+    elif any(item.is_featured for item in featured):
+        rail_heading_key = "HOME_FEATURED_HEADING"
+    else:
+        rail_heading_key = "HOME_MENU_RAIL_HEADING"
 
     return HomeProjection(
         omotenashi=shell.omotenashi,
@@ -403,6 +419,7 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         sections_copy=_home_sections_copy(
             shell.omotenashi,
             default_city=shell.shop.default_city,
+            rail_heading_key=rail_heading_key,
         ),
         auth_copy=shell.auth_copy,
         pwa_copy=shell.pwa_copy,
@@ -593,10 +610,13 @@ def _pwa_copy(omotenashi: OmotenashiProjection) -> PwaCopyProjection:
 
 
 def _home_sections_copy(
-    omotenashi: OmotenashiProjection, *, default_city: str = ""
+    omotenashi: OmotenashiProjection,
+    *,
+    default_city: str = "",
+    rail_heading_key: str = "HOME_AVAILABILITY_HEADING",
 ) -> HomeSectionsCopyProjection:
     return HomeSectionsCopyProjection(
-        availability_heading=_copy_entry("HOME_AVAILABILITY_HEADING", omotenashi=omotenashi),
+        availability_heading=_copy_entry(rail_heading_key, omotenashi=omotenashi),
         full_menu_cta=_copy_entry("HOME_FULL_MENU_CTA", omotenashi=omotenashi),
         how_it_works_heading=_copy_entry("HOME_HOW_IT_WORKS_HEADING", omotenashi=omotenashi),
         how_it_works_intro=_copy_entry("HOW_IT_WORKS_INTRO", omotenashi=omotenashi),

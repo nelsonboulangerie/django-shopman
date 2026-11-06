@@ -16,6 +16,14 @@ const items = computed(() => [
   { ...accountNavEntry(isAuthenticated.value, route.fullPath), showsCartBadge: false }
 ])
 
+// Nome acessível explícito: o rótulo visível com o contador da sacola junto, para o
+// leitor de tela ouvir "Sacola, 2 itens" em vez de um link sem nome (beta 05/11, LOJA-15).
+function accessibleName (item: { label: string, showsCartBadge: boolean }) {
+  if (!item.showsCartBadge || cart.value.is_empty) return item.label
+  const count = cart.value.items_count
+  return `${item.label}, ${count} ${count === 1 ? 'item' : 'itens'}`
+}
+
 function active (to: string) {
   if (to === '/') return route.path === '/'
   // O destino de "Entrar" carrega `?next=`; o estado ativo é do CAMINHO.
@@ -38,6 +46,8 @@ function active (to: string) {
         class="relative flex min-w-0 flex-col items-center gap-1 rounded-md px-1 py-2 text-xs"
         :class="[active(item.to) ? 'font-semibold text-primary dark:text-foreground' : 'text-muted-foreground', item.showsCartBadge && cartPulse ? 'scale-105 text-primary dark:text-foreground' : '']"
         :aria-current="active(item.to) ? 'page' : undefined"
+        :aria-label="accessibleName(item)"
+        data-bottom-nav-link
       >
         <Icon
           :name="item.icon"
@@ -47,6 +57,7 @@ function active (to: string) {
         <span class="truncate">{{ item.label }}</span>
         <UiBadge
           v-if="item.showsCartBadge && !cart.is_empty"
+          aria-hidden="true"
           variant="default"
           size="sm"
           class="absolute right-2 top-1 size-5 min-w-5 rounded-full p-0 text-xs font-semibold tabular-nums transition-transform"

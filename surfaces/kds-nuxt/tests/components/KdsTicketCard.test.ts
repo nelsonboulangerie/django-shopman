@@ -407,8 +407,18 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
     const w = mountCard({
       ticket: ticket({ started_by: "Rafael", started_at_display: "21:56", due_time_display: "retira às 22:30" }),
     });
-    expect(w.get("[data-kds-started]").text()).toBe("iniciado por Rafael às 21:56 · retira às 22:30");
-    expect(mountCard({ ticket: ticket() }).find("[data-kds-started]").exists()).toBe(false);
+    expect(w.get("[data-kds-started]").text()).toBe("Iniciado por Rafael às 21:56 · retira às 22:30");
+    // Vazia, a linha guarda o lugar (invisível): iniciar não empurra o botão (beta 05/11, KDS-15).
+    const empty = mountCard({ ticket: ticket() }).get("[data-kds-started]");
+    expect(empty.text()).toBe("");
+    expect(empty.classes()).toContain("invisible");
+    expect(empty.attributes("aria-hidden")).toBe("true");
+  });
+
+  it("pedido que esperou antes de chegar à cozinha diz há quanto o cliente espera (beta 05/11, KDS-04)", () => {
+    const w = mountCard({ ticket: ticket({ elapsed_seconds: 60, order_elapsed_seconds: 33 * 60 }) });
+    expect(w.get("[data-kds-clock]").text()).toBe("1m");
+    expect(w.get("[data-kds-started]").text()).toBe("Pedido há 33m");
   });
 
   it("P2-16: a encomenda das 17h mostra no relógio para quando é, não o tempo desde as 00:05", () => {
@@ -422,7 +432,7 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
       }),
     });
     expect(w.get("[data-kds-clock]").text()).toBe("para 17h");
-    expect(w.get("[data-kds-started]").text()).toBe("retira a partir das 17h");
+    expect(w.get("[data-kds-started]").text()).toBe("Retira a partir das 17h");
     expect(mountCard({ ticket: ticket({ elapsed_seconds: 1440 }) }).get("[data-kds-clock]").text()).toBe("24m");
   });
 

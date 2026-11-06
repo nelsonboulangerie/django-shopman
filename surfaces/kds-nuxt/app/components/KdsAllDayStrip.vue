@@ -2,8 +2,9 @@
 // "A FAZER" (prévia v4, nota 5): o que falta somando a fila INTEIRA, inclusive o "+N".
 // Uma linha só, e nenhum chip cortado na borda (auditoria D10): cabem os que cabem,
 // inteiros, e o resto vira "+N itens" no fim. Uma fila invisível mede a largura de
-// cada chip; a linha de verdade mostra só os que cabem.
-import type { KDSAllDayCount } from "~/presentation/board";
+// cada chip; a linha de verdade mostra só os que cabem. O "+N itens" é BOTÃO: abre a
+// lista do que ficou de fora ao toque (um `title` não abre no tablet).
+import { fitAllDayChips, type KDSAllDayCount } from "~/presentation/board";
 
 const props = defineProps<{ entries: KDSAllDayCount[] }>();
 
@@ -15,40 +16,34 @@ const MORE = 96 + GAP;
 const box = ref<HTMLElement | null>(null);
 const measure = ref<HTMLElement | null>(null);
 const { width } = useElementSize(box);
-const visibleCount = ref(props.entries.length);
+const visibleIndexes = ref<number[]>(props.entries.map((_, index) => index));
 
 function recount() {
   const row = measure.value;
-  if (!row || !width.value) {
-    visibleCount.value = props.entries.length;
+  if (!row) {
+    visibleIndexes.value = props.entries.map((_, index) => index);
     return;
   }
   const widths = [...row.querySelectorAll<HTMLElement>("[data-measure-chip]")].map((chip) => chip.offsetWidth);
-  const total = widths.reduce((sum, value) => sum + value + GAP, 0);
-  if (LABEL + total <= width.value) {
-    visibleCount.value = widths.length;
-    return;
-  }
-  let used = LABEL + MORE;
-  let count = 0;
-  for (const value of widths) {
-    if (used + value + GAP > width.value) break;
-    used += value + GAP;
-    count += 1;
-  }
-  visibleCount.value = count;
+  visibleIndexes.value = fitAllDayChips(widths, width.value, { reserve: LABEL, more: MORE, gap: GAP });
 }
 
 watch([width, () => props.entries], () => nextTick(recount), { deep: true });
 onMounted(() => nextTick(recount));
 
-const visible = computed(() => props.entries.slice(0, visibleCount.value));
-const hidden = computed(() => props.entries.slice(visibleCount.value));
+const visible = computed(() => {
+  const shown = new Set(visibleIndexes.value);
+  return props.entries.filter((_, index) => shown.has(index));
+});
+const hidden = computed(() => {
+  const shown = new Set(visibleIndexes.value);
+  return props.entries.filter((_, index) => !shown.has(index));
+});
 const hiddenLabel = computed(() => {
   const count = hidden.value.length;
   return count === 1 ? "+1 item" : `+${count} itens`;
 });
-const hiddenTitle = computed(() => hidden.value.map((entry) => `${entry.qty}× ${entry.name}`).join(", "));
+const hiddenList = computed(() => hidden.value.map((entry) => `${entry.qty}× ${entry.name}`).join(", "));
 </script>
 
 <template>
@@ -65,14 +60,24 @@ const hiddenTitle = computed(() => hidden.value.map((entry) => `${entry.qty}× $
       <b class="text-lg tabular-nums">{{ entry.qty }}×</b>
       <span class="op-body font-medium whitespace-nowrap">{{ entry.name }}</span>
     </span>
-    <span
-      v-if="hidden.length"
-      class="inline-flex h-8 shrink-0 items-center rounded-md px-2 op-label font-semibold text-muted-foreground"
-      :title="hiddenTitle"
-      data-kds-all-day-more
-    >
-      {{ hiddenLabel }}
-    </span>
+    <NuxtPopover v-if="hidden.length" :content="{ side: 'bottom', align: 'start' }">
+      <NuxtButton
+        color="neutral"
+        variant="ghost"
+        class="shrink-0 font-semibold"
+        :label="hiddenLabel"
+        :aria-label="`A fazer, ${hiddenLabel.slice(1)} fora da linha: ${hiddenList}`"
+        data-kds-all-day-more
+      />
+      <template #content>
+        <ul class="flex max-h-[60vh] flex-col gap-1 overflow-y-auto p-3" data-kds-all-day-hidden>
+          <li v-for="entry in hidden" :key="entry.name" class="flex items-baseline gap-2">
+            <b class="text-lg tabular-nums">{{ entry.qty }}×</b>
+            <span class="op-body font-medium">{{ entry.name }}</span>
+          </li>
+        </ul>
+      </template>
+    </NuxtPopover>
     <!-- Régua invisível: todos os chips, só para medir. -->
     <div
       ref="measure"
