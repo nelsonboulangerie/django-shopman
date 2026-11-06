@@ -172,6 +172,17 @@ export interface SupplierMaterialCost {
   updatedAt: string;
 }
 
+/** Um item cuja entrada trocaria o custo preferencial do insumo (CMP-06). */
+export interface ReceiptPreferredCostChange {
+  lineId: string;
+  materialName: string;
+  /** A unidade de compra do custo preferencial: os dois valores falam nela. */
+  unitLabel: string;
+  currentQ: number;
+  incomingQ: number;
+  decision: "update" | "keep" | "";
+}
+
 export interface ReceiptHistoryEntry {
   sourceRef: string;
   mode: string;
@@ -327,6 +338,12 @@ export interface ReceiptLine {
   // A OCORRENCIA do operador (avaria, falta, ressalva). Nasce vazia: o que a
   // nota diz mora nos campos `invoice*` abaixo.
   lineNote: string;
+  /**
+   * O que o operador decidiu quando o preço desta entrada difere do custo
+   * preferencial do insumo neste fornecedor: "update" troca, "keep" mantém.
+   * Sem diferença, fica vazio. Sem resposta, o servidor recusa a entrada.
+   */
+  preferredCost?: "update" | "keep" | "";
   invoiceDescription?: string;
   invoiceQty?: number;
   invoiceUnit?: string;
