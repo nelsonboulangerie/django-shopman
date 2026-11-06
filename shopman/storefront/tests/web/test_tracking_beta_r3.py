@@ -273,6 +273,30 @@ class TestF3CardDeclined:
         assert order.data["payment"]["last_decline"]["code"] == "declined"
         assert build_order_tracking(order).promise.state == "payment_card_declined"
 
+    def test_payment_failed_webhook_records_the_decline(self, order_with_payment):
+        """A outra porta da recusa: o webhook ``payment_intent.payment_failed``."""
+        from types import SimpleNamespace
+
+        from shopman.shop.adapters import payment_stripe
+
+        order = self._card_order(order_with_payment)
+        event = SimpleNamespace(
+            type="payment_intent.payment_failed",
+            data=SimpleNamespace(
+                object=SimpleNamespace(
+                    id="pi_decl_1",
+                    metadata={"shopman_ref": order.data["payment"]["intent_ref"]},
+                    last_payment_error=SimpleNamespace(code="card_declined", message="Your card was declined."),
+                )
+            ),
+        )
+
+        payment_stripe.handle_webhook_event(event)
+
+        order.refresh_from_db()
+        assert order.data["payment"]["last_decline"]["code"] == "card_declined"
+        assert build_order_tracking(order).promise.state == "payment_card_declined"
+
     def test_stripe_reads_requires_payment_method_with_error_as_declined(self, order_with_payment):
         from types import SimpleNamespace
 
