@@ -170,6 +170,20 @@ class TrackingFiscalNoteData:
 
 
 @dataclass(frozen=True)
+class TrackingMoneyOutcomeData:
+    """O destino do dinheiro de um pedido cancelado (``payment.cancelled_money``).
+
+    ``outcome``: refunded | refund_requested | card_hold_released | nothing_charged.
+    ``late_pix`` marca o Pix que chegou depois do prazo e foi devolvido.
+    """
+
+    outcome: str
+    amount_q: int = 0
+    method: str = ""
+    late_pix: bool = False
+
+
+@dataclass(frozen=True)
 class TrackingPromiseData:
     """The active operational promise as data.
 
@@ -199,6 +213,10 @@ class TrackingPromiseData:
     # cliente, resolvido aqui pelo mesmo motivo do `next_opening_phrase` (o
     # calendário é lado de escrita; a presentation só lê projections).
     payment_deadline_phrase: str = ""
+    # ready_pickup: "hoje às 15h" quando a retirada ainda não pode acontecer
+    # agora (a janela combinada não começou ou a loja está fechada). Vazio
+    # quando o cliente pode vir já.
+    pickup_from_phrase: str = ""
     # ── Payment block (só nos degraus em que há o que pagar) ──────────
     payment_method: str = ""  # pix | card | link | "" — o resto do bloco só faz sentido com um método
     pix_qr_code: str | None = None  # data: URI já normalizada
@@ -256,11 +274,11 @@ class TrackingData:
     shop_name: str
     is_debug: bool
     last_updated_iso: str
-    # Cancelamento pelo estabelecimento: motivo escolhido no Gestor e estado
-    # do estorno (Pix/cartão) visíveis ao cliente — a página não depende da
-    # notificação para contar a história.
+    # Cancelamento: motivo escolhido no Gestor e o destino do dinheiro (nada
+    # cobrado, reserva desfeita, devolvido, devolvendo) visíveis ao cliente. A
+    # página não depende da notificação para contar a história.
     cancellation_note: str = ""
-    refund_status_key: str | None = None
+    money_outcome: TrackingMoneyOutcomeData | None = None
     cancellation_request: TrackingCancellationRequestData | None = None
     rating_followup: TrackingRatingFollowupData | None = None
     # Fila de espera (WP-P2E): o acompanhamento é a superfície que SEMPRE
@@ -330,7 +348,9 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         is_delivery=is_delivery,
         is_pickup=is_pickup,
     )
-    pickup = _pickup_data() if is_pickup else None
+    # Pedido cancelado ou devolvido não tem retirada: "Como chegar" ali é
+    # convite para uma viagem perdida (beta 06/11, PIXEXP-10).
+    pickup = _pickup_data() if is_pickup and order.status not in {"cancelled", "returned"} else None
 
     delivery_fee_q = order_data.get("delivery_fee_q")
     delivery_distance_km = order_data.get("delivery_distance_km")
@@ -344,7 +364,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     # interna do operador nunca. Sem chave ou com "Outro motivo", a tela não
     # inventa motivo; no Pix vencido quem explica é a promessa da tela.
     cancellation_note = "" if _is_payment_timeout_cancelled(order) else _cancellation_customer_text(order_data)
-    refund_status_key = _refund_status_key(order)
+    money_outcome = _money_outcome(order)
     cancellation_request = _cancellation_request(order)
     rating_followup = _rating_followup(order)
     progress_steps = _build_progress_steps(
@@ -393,7 +413,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         can_mock_confirm_payment=can_mock_confirm_payment,
         stale_after_seconds=_stale_after_seconds(),
         cancellation_note=cancellation_note,
-        refund_status_key=refund_status_key,
+        money_outcome=money_outcome,
         cancellation_request=cancellation_request,
         rating_followup=rating_followup,
         order_ref=interaction.order_ref,
@@ -560,21 +580,22 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
     return True, False, "payment_pending", payment.get("expires_at") or None
 
 
-def _refund_status_key(order) -> str | None:
-    """Estorno visível ao cliente: refunded | processing | None.
+def _money_outcome(order) -> TrackingMoneyOutcomeData | None:
+    """O que aconteceu com o dinheiro do pedido cancelado, para o cliente ler.
 
-    Só faz sentido para pedido cancelado com pagamento capturado: o dinheiro
-    precisa voltar, e o cliente precisa saber. payment_status é a fonte viva
-    (captured/refunded/…); o estorno do cartão/Pix passa por aqui.
+    Lê TODOS os intents do pedido (``payment_service.cancelled_money``): o Pix
+    que chega depois do prazo mora num intent próprio, e ler só o canônico
+    calava justamente o caso de quem pagou.
     """
-    if order.status != "cancelled":
+    money = payment_service.cancelled_money(order)
+    if money is None:
         return None
-    live = (payment_status.get_payment_status(order) or "").lower()
-    if live in {"refunded", "refund"}:
-        return "refunded"
-    if payment_status.has_sufficient_captured_payment(order) or live in {"captured", "paid"}:
-        return "processing"
-    return None
+    return TrackingMoneyOutcomeData(
+        outcome=money.outcome,
+        amount_q=money.amount_q,
+        method=money.method,
+        late_pix=money.late_pix,
+    )
 
 
 def _cancellation_request(order) -> TrackingCancellationRequestData | None:
@@ -698,6 +719,11 @@ def _reorder_action(order, *, priority: str = "secondary") -> Action:
     )
 
 
+#: Onde o cliente ainda pode PEDIR cancelamento (o pedido avançou além do
+#: autocancelamento, mas ainda não chegou a ele).
+_CANCELLATION_REQUEST_STATUSES = frozenset({"new", "accepted", "preparing", "ready", "dispatched"})
+
+
 def _build_order_actions(
     order,
     *,
@@ -725,31 +751,16 @@ def _build_order_actions(
                     },
                 },
                 idempotency="required",
-                confirmation={
-                    "title": _copy_title("TRACKING_CANCEL_CONFIRM_TITLE", "Cancelar pedido"),
-                    "warning_title": _copy_title(
-                        "TRACKING_CANCEL_WARNING_TITLE",
-                        "Essa ação altera o pedido em andamento",
-                    ),
-                    "warning_message": _copy_message(
-                        "TRACKING_CANCEL_WARNING_MESSAGE",
-                        "O cancelamento só é permitido enquanto o pagamento não foi capturado e a loja ainda permite reversão.",
-                    ),
-                    "message": _copy_message(
-                        "TRACKING_CANCEL_CONFIRM_MESSAGE",
-                        "Confirme apenas se não quiser mais seguir com este pedido.",
-                    ),
-                    "ack_label": _copy_title(
-                        "TRACKING_CANCEL_ACK_LABEL",
-                        "Entendo que o pedido será cancelado e deixará de ser preparado.",
-                    ),
-                    "cancel_label": _copy_title("TRACKING_CANCEL_KEEP_CTA", "Manter pedido"),
-                    "confirm_label": _copy_title("TRACKING_CANCEL_CONFIRM_CTA", "Confirmar cancelamento"),
-                    "severity": "danger",
-                },
+                # Sem ``confirmation``: o diálogo do cancelamento é da tela, com a
+                # copy de ``tracking.copy.cancel_dialog_*`` e a frase do dinheiro
+                # (``cancel_dialog_money_line``). O bloco que vivia aqui ninguém
+                # desenhava, e carregava jargão de gateway (beta 06/11, F6).
             )
         )
-    elif order.status not in {"cancelled", "returned"} and not cancellation_requested:
+    elif order.status in _CANCELLATION_REQUEST_STATUSES and not cancellation_requested:
+        # Pedir cancelamento só faz sentido ANTES de o pedido chegar ao cliente.
+        # Depois da entrega o assunto é outro (problema com o pedido), e um botão
+        # vermelho de cancelar num pedido concluído lia como ameaça (SMS-14).
         actions.append(
             _action(
                 ref="request_cancellation",
@@ -867,6 +878,7 @@ def _promise(
     eta_at: str | None = None,
     next_opening_phrase: str = "",
     payment_deadline_phrase: str = "",
+    pickup_from_phrase: str = "",
     payment_method: str = "",
     pix_qr_code: str | None = None,
     pix_copy_paste: str | None = None,
@@ -888,6 +900,7 @@ def _promise(
         eta_at=eta_at,
         next_opening_phrase=next_opening_phrase,
         payment_deadline_phrase=payment_deadline_phrase,
+        pickup_from_phrase=pickup_from_phrase,
         payment_method=payment_method,
         pix_qr_code=pix_qr_code,
         pix_copy_paste=pix_copy_paste,
@@ -1098,9 +1111,15 @@ def _build_promise(
             # Sem contagem regressiva: o relógio do link é de horas, e o mm:ss
             # da tela é instrumento de dez minutos.
             has_deadline = bool(payment_expires_at)
+            # A última tentativa foi RECUSADA (webhook ou conferência com o
+            # gateway gravaram ``payment.last_decline``): a tela diz que o cartão
+            # não passou, em vez de repetir o convite como se nada tivesse
+            # acontecido (beta 06/11, F3). A ação é a mesma: a sessão do gateway
+            # continua aberta para outro cartão.
+            declined = bool(payment.get("last_decline"))
             return promise(
-                state="payment_card_ready",
-                tone="info",
+                state="payment_card_declined" if declined else "payment_card_ready",
+                tone="warning" if declined else "info",
                 deadline_at=payment_expires_at,
                 deadline_kind="payment" if has_deadline else None,
                 deadline_action="cancel_order_on_timeout" if has_deadline else "none",
@@ -1177,7 +1196,11 @@ def _build_promise(
             return promise(state="ready_delivery", tone="success", requires_active_notification=False)
         # Sem ação no painel: "Retirar pedido" era rótulo decorativo com cara de
         # botão. O que resolve de verdade ("Como chegar") vive na aba de retirada.
-        return promise(state="ready_pickup", tone="success")
+        return promise(
+            state="ready_pickup",
+            tone="success",
+            pickup_from_phrase=_pickup_from_phrase(order, business_state=business_state),
+        )
 
     if order.status == "dispatched":
         # Produto saiu, courier terceirizado, sem rastreio nem detecção de
@@ -1230,6 +1253,29 @@ def _build_promise(
 #: Letras da corrida (Machine) em que ela já acabou: finalizada, não atendida,
 #: cancelada. O link da parada deixa de mostrar o entregador.
 _COURIER_ENDED_STATUSES = frozenset({"F", "N", "C"})
+
+
+def _pickup_from_phrase(order, *, business_state: BusinessCalendarState) -> str:
+    """"hoje às 15h" quando o pedido pronto ainda não pode ser retirado agora.
+
+    Duas coisas seguram a retirada: a janela que o cliente escolheu ainda não
+    começou, ou a loja está fechada. Vale a mais tarde das duas. Vazio quando o
+    cliente pode vir já. Sem isto a tela dizia "Está esperando por você no
+    balcão" às 5h59, com a loja fechada até as 9h e a retirada marcada para as
+    15h (beta 06/11, SMS-02).
+    """
+    from shopman.shop.services import fulfillment_window
+
+    now = timezone.now()
+    candidates: list[datetime] = []
+    promised = fulfillment_window.promised_at(order)
+    if promised is not None and promised > now:
+        candidates.append(promised)
+    if business_state.is_closed and business_state.next_open_at is not None:
+        candidates.append(business_state.next_open_at)
+    if not candidates:
+        return ""
+    return format_deadline(max(candidates), now=now)
 
 
 def _courier_tracking_url(order) -> str:
@@ -1333,12 +1379,24 @@ def _build_progress_steps(
         payment_confirmed=payment_confirmed,
     )
 
+    accepted_at = _progress_timestamp(order, "accepted")
     specs: list[tuple[str, str | None]] = [
         ("received", _iso(order.created_at)),
-        ("availability", _progress_timestamp(order, "accepted")),
+        ("availability", accepted_at),
     ]
     if include_payment:
-        specs.append(("payment", _payment_confirmed_timestamp(order)))
+        paid_at = _payment_confirmed_timestamp(order)
+        payment_spec = ("payment", paid_at)
+        paid_dt, accepted_dt = _parse_datetime(paid_at), _parse_datetime(accepted_at)
+        if payment_confirmed and paid_dt and (accepted_dt is None or paid_dt < accepted_dt):
+            # Pagou ANTES de a loja aceitar (a loja online cobra ao pedir): o
+            # passo "Pago" vem antes de "Aceito", na ordem em que aconteceu.
+            # Com a ordem fixa, o Pix pago com o pedido ainda novo sumia do
+            # histórico, e depois do aceite voltava DEPOIS de "Aceito" e como
+            # "em andamento" (beta 06/11, SMS-11).
+            specs.insert(1, payment_spec)
+        else:
+            specs.append(payment_spec)
     specs.append(("preparing", _progress_timestamp(order, "preparing")))
     if is_delivery:
         specs.extend(
@@ -1405,8 +1463,10 @@ def _active_progress_key(
     if order.status == "new":
         return "availability" if payment_confirmed else "received"
     if order.status == "accepted":
+        # Pagamento confirmado nunca é "em andamento": aceito e pago, o que vem
+        # é o preparo.
         if include_payment and payment_confirmed:
-            return "payment"
+            return "preparing"
         return "availability"
     if order.status == "preparing":
         return "preparing"
@@ -1717,12 +1777,14 @@ def _eta_at(order) -> str | None:
 
         shop = Shop.load()
         round_to_5 = False
+        not_before: datetime | None = None
         if order.status == "preparing":
             minutes = getattr(shop, "prep_time_minutes", None) or 30
             baseline = getattr(order, "preparing_at", None)
             if baseline is None:
                 event = _event_for_status(order, "preparing")
                 baseline = event.created_at if event else None
+            not_before = _eta_not_before(order)
         elif order.status == "dispatched":
             data = order.data or {}
             if (data.get("fulfillment_type") or data.get("delivery_method", "")) != "delivery":
@@ -1736,6 +1798,8 @@ def _eta_at(order) -> str | None:
         if baseline is None:
             return None
         eta = baseline + timezone.timedelta(minutes=int(round(minutes)))
+        if not_before is not None and not_before > eta:
+            eta = not_before
         if round_to_5:
             # Tempo "redondo" e levemente conservador: arredonda PARA CIMA ao
             # próximo múltiplo de 5 (um respiro a mais na promessa).
@@ -1747,6 +1811,27 @@ def _eta_at(order) -> str | None:
     except Exception:
         logger.debug("order_tracking_eta_failed order=%s", order.ref, exc_info=True)
         return None
+
+
+def _eta_not_before(order) -> datetime | None:
+    """O mais cedo que o preparo pode PROMETER: a janela combinada e a abertura.
+
+    O preparo que começa cedo (pedido das 15h separado às 5h40) não antecipa a
+    entrega nem a retirada. Somar o tempo de preparo ao início do preparo dava
+    "Deve sair para entrega às 06:12" para uma entrega marcada das 15h às 15h30,
+    com a loja fechada até as 9h (beta 06/11, SMS-02). O aviso do WhatsApp lê o
+    mesmo ``_eta_at``, então os dois mudam juntos.
+    """
+    from shopman.shop.services import fulfillment_window
+
+    candidates: list[datetime] = []
+    promised = fulfillment_window.promised_at(order)
+    if promised is not None:
+        candidates.append(promised)
+    state = current_business_state()
+    if state.is_closed and state.next_open_at is not None:
+        candidates.append(state.next_open_at)
+    return max(candidates) if candidates else None
 
 
 def _contact_and_share(order) -> tuple[str, str, str]:

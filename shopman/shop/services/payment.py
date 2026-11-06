@@ -970,6 +970,104 @@ def _held_refund_balance(intents) -> tuple[int, list[str]]:
     return balance_q, refs
 
 
+@dataclass(frozen=True)
+class CancelledMoney:
+    """O que aconteceu com o dinheiro de um pedido cancelado, lido do Payman.
+
+    ``outcome``:
+
+    - ``refunded``: entrou dinheiro e ele já voltou inteiro;
+    - ``refund_requested``: entrou dinheiro e a devolução ainda não fechou;
+    - ``card_hold_released``: o cartão foi autorizado e a reserva foi desfeita;
+    - ``nothing_charged``: nenhum dinheiro entrou.
+
+    ``late_pix`` marca o Pix que chegou depois de a cobrança morrer
+    (``pix_confirmation._book_pix_outside_charge``): o cliente pagou, mas tarde.
+    """
+
+    outcome: str
+    amount_q: int = 0
+    method: str = ""  # pix | card
+    late_pix: bool = False
+
+
+_HOSTED_CARD_METHODS = frozenset({"card", "link"})
+
+
+def cancelled_money(order) -> CancelledMoney | None:
+    """Conta o destino do dinheiro de um pedido digital cancelado. Só LÊ.
+
+    Soma TODOS os intents do pedido, e não só o ``payment.intent_ref``: o Pix
+    que chega depois do prazo ganha um intent próprio, capturado e estornado,
+    enquanto o ``intent_ref`` segue apontando para a cobrança morta. Lendo só
+    ele, a tela do cliente que pagou dizia apenas "Pagamento expirado" (beta
+    06/11, PIXEXP-02).
+
+    ``None`` quando não há o que dizer com certeza: pedido não cancelado, forma
+    não digital, Payman mudo, ou cartão ainda autorizado (a reserva não foi
+    desfeita, e dizer que foi seria falso).
+    """
+    if str(order.status) != "cancelled":
+        return None
+    payment_data = (order.data or {}).get("payment") or {}
+    method = str(payment_data.get("method") or "").lower()
+    if method != "pix" and method not in _HOSTED_CARD_METHODS:
+        return None
+    try:
+        from shopman.payman import PaymentService
+
+        intents = list(PaymentService.get_by_order(order.ref).order_by("id"))
+        totals = [
+            (intent, PaymentService.captured_total(intent.ref), PaymentService.refunded_total(intent.ref))
+            for intent in intents
+        ]
+    # silêncio-deliberado: sem o Payman a tela não afirma nada sobre o dinheiro.
+    except Exception:
+        logger.warning("payment.cancelled_money_unreadable order=%s", order.ref, exc_info=True)
+        return None
+
+    captured_q = sum(captured for _, captured, _ in totals)
+    refunded_q = sum(refunded for _, _, refunded in totals)
+    if captured_q > 0:
+        paid = [intent for intent, captured, _ in totals if captured > 0]
+        money_method = "pix" if str(paid[0].method or "") == "pix" else "card"
+        late_pix = any((intent.gateway_data or {}).get("booked_by") == "pix_confirmation" for intent in paid)
+        if refunded_q >= captured_q:
+            return CancelledMoney("refunded", amount_q=captured_q, method=money_method, late_pix=late_pix)
+        return CancelledMoney(
+            "refund_requested",
+            amount_q=captured_q - refunded_q,
+            method=money_method,
+            late_pix=late_pix,
+        )
+    if any(str(intent.status) == "authorized" for intent, _, _ in totals):
+        return None
+    if any(
+        str(intent.method) in _HOSTED_CARD_METHODS and intent.authorized_at and str(intent.status) == "cancelled"
+        for intent, _, _ in totals
+    ):
+        return CancelledMoney("card_hold_released", method="card")
+    return CancelledMoney("nothing_charged", method="pix" if method == "pix" else "card")
+
+
+def record_card_decline(order, *, code: str = "") -> None:
+    """Guarda a última recusa do cartão em ``payment.last_decline``.
+
+    O acompanhamento lê para dizer "O cartão não foi aprovado" em vez de repetir
+    o convite para pagar como se nada tivesse acontecido (beta 06/11, F3).
+    Escrevem o webhook ``payment_intent.payment_failed`` e a conferência com o
+    gateway (``settle_from_gateway``), que são as duas portas por onde a recusa
+    chega.
+    """
+    from shopman.shop.services.order_helpers import merge_order_data
+
+    merge_order_data(
+        order,
+        {"last_decline": {"code": str(code or "declined")[:64], "at": timezone.now().isoformat()}},
+        block="payment",
+    )
+
+
 def _customer_name(data: dict) -> str:
     customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
     return str(data.get("customer_name") or customer.get("name") or "")
@@ -2226,6 +2324,15 @@ def settle_from_gateway(order) -> str:
         # ``pending``, o degrau da cascata continua sendo "Pagar com cartão", e
         # quem acabou de pagar no Stripe volta para uma tela que pede pagamento.
         return _record_gateway_authorization(order, intent_ref=intent_ref)
+    if gateway_state == "declined":
+        # Cartão recusado com a sessão ainda aberta: não há pagamento (o timeout
+        # pode seguir), e o cliente precisa saber que o cartão não passou.
+        try:
+            record_card_decline(order)
+        # silêncio-deliberado: a recusa é aviso de tela; não segura a resposta.
+        except Exception:
+            logger.warning("payment.card_decline_record_failed order=%s", order.ref, exc_info=True)
+        return "unpaid"
     if gateway_state != "captured":
         # "pending"/"cancelled": o gateway respondeu e não há pagamento.
         # "not_found": o intent nunca existiu, então também não há pagamento —

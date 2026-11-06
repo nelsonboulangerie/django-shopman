@@ -740,7 +740,12 @@ def check_gateway_status(intent_ref: str) -> str:
 
     Mesmo contrato de ``payment_efi.check_gateway_status``, com um degrau a mais
     que só o cartão tem: ``authorized``. Devolve ``captured``, ``authorized``,
-    ``pending``, ``cancelled``, ``not_found`` ou ``error``.
+    ``declined``, ``pending``, ``cancelled``, ``not_found`` ou ``error``.
+
+    ``declined`` é a sessão aberta cujo último cartão foi RECUSADO
+    (``requires_payment_method`` com ``last_payment_error``): para o timeout
+    vale o mesmo que ``pending`` (não há pagamento), e para o acompanhamento é
+    o que permite dizer ao cliente que o cartão não passou.
 
     ⚠️ **Este verbo existia na Efí e no mock, e não existia aqui.** Sem ele,
     NADA no sistema jamais perguntava ao Stripe: ``get_status`` lê o Payman, o
@@ -805,6 +810,8 @@ def check_gateway_status(intent_ref: str) -> str:
         return "authorized"
     if status == "canceled":
         return "cancelled"
+    if status == "requires_payment_method" and getattr(stripe_intent, "last_payment_error", None):
+        return "declined"
     if status in {
         "requires_payment_method",
         "requires_confirmation",
@@ -815,6 +822,23 @@ def check_gateway_status(intent_ref: str) -> str:
     # Status novo do provedor: incerteza, e incerteza espera.
     logger.warning("stripe.check_gateway_status_unknown intent=%s status=%s", intent_ref, status)
     return "error"
+
+
+def _record_decline_on_order(intent_ref: str, *, code: str) -> None:
+    """Leva a recusa do cartão ao pedido, para o acompanhamento dizer que não passou."""
+    try:
+        from shopman.orderman.models import Order
+        from shopman.payman import PaymentService
+
+        from shopman.shop.services.payment import record_card_decline
+
+        intent = PaymentService.get(intent_ref)
+        order = Order.objects.filter(ref=intent.order_ref).first()
+        if order is not None:
+            record_card_decline(order, code=code)
+    # silêncio-deliberado: a recusa é aviso de tela; o webhook segue respondendo.
+    except Exception:
+        logger.warning("stripe.decline_record_failed intent=%s", intent_ref, exc_info=True)
 
 
 def gateway_payment_intent_id(intent_ref: str) -> str:
@@ -1360,6 +1384,7 @@ def handle_webhook_event(event) -> dict:
                 # cobrança FALHOU e o Payman a tem como capturada. O pedido sai
                 # como pago sem dinheiro nenhum, e é preciso alguém conferir.
                 _record_ledger_drift("fail", shopman_ref, exc, event_type=event.type)
+            _record_decline_on_order(shopman_ref, code=getattr(last_error, "code", "") or "")
 
     elif event.type in DISPUTE_EVENT_TYPES:
         intent_ref = handle_dispute_event(event) or None

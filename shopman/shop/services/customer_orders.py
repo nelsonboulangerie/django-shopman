@@ -466,7 +466,15 @@ def payment_is_due(order) -> bool:
     method = str(payment.get("method") or "").lower()
     if method not in {"pix", "card"}:
         return False
-    if order.status != "accepted":
+    # ``new`` deve pagamento quando a cobrança já nasceu: é o cartão (e o Pix)
+    # da loja online, que cobra ao pedir. Enquanto este filtro aceitava só
+    # ``accepted``, o acompanhamento mostrava "Pague com cartão" e mandava
+    # ``payment_due=false`` para a mesma tela, que então nunca conferia o
+    # pagamento na volta do Stripe (beta 06/11, F1). Sem cobrança nascida,
+    # ``new`` ainda não deve nada (o Pix cobrado depois do aceite).
+    if order.status not in {"new", "accepted"}:
+        return False
+    if order.status == "new" and not payment.get("intent_ref"):
         return False
     expires_at = _parse_payment_deadline(payment.get("expires_at"))
     if expires_at and timezone.now() >= expires_at:
