@@ -317,11 +317,12 @@ def resolve_payment_timeout_if_due(order) -> bool:
             order.refresh_from_db()
         return False
 
-    payment_service.cancel(order, reason="payment_timeout")
-
     from shopman.shop.services import cancel_reasons
     from shopman.shop.services.cancellation import cancel
 
+    # O pedido cancela antes da cobrança: a cobrança morre no ``on_cancelled``.
+    # A ordem inversa deixava o Pix pago no limite sem dono (o porquê está em
+    # ``handlers/payment_timeout``).
     # Um aviso só ao cliente: o ``order_cancelled`` do lifecycle, com a frase do
     # prazo vencido (mesmo caminho de ``handlers/payment_timeout``).
     cancelled = cancel(

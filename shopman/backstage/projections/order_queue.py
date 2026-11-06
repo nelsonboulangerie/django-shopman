@@ -122,6 +122,41 @@ def _order_payment_status_label(order, payment_status: str) -> str:
     return payment_status_label(payment_status)
 
 
+#: Quem registra dinheiro fora da cobrança do pedido: o Pix que caiu numa
+#: cobrança já encerrada, e o pagamento digital que chegou depois de o balcão
+#: receber (``gateway_data.booked_by``).
+_OUTSIDE_CHARGE_BOOKERS = frozenset({"pix_confirmation", "counter_takeover"})
+
+
+def _money_outside_the_charge_label(order, payment_status: str) -> str:
+    """O dinheiro que entrou num intent à parte, quando a cobrança do pedido morreu.
+
+    ``get_payment_status`` lê só ``payment.intent_ref``: com a cobrança cancelada e
+    o Pix registrado à parte (e estornado), o detalhe dizia "Pix · Cancelado" para
+    um dinheiro que entrou e voltou (beta 06/11, PIXEXP-03). Vazio quando a
+    cobrança do pedido responde por si (paga, pendente) ou não há nada à parte.
+    """
+    if order.channel_ref == "ifood" or payment_status in _PAYMENT_COMPLETE:
+        return ""
+    from shopman.payman import PaymentService
+
+    intent_ref = str(((order.data or {}).get("payment") or {}).get("intent_ref") or "")
+    captured_q = refunded_q = 0
+    for intent in PaymentService.get_by_order(order.ref).filter(status__in=("captured", "refunded")):
+        if intent.ref == intent_ref or (intent.gateway_data or {}).get("booked_by") not in _OUTSIDE_CHARGE_BOOKERS:
+            continue
+        captured_q += PaymentService.captured_total(intent.ref)
+        refunded_q += PaymentService.refunded_total(intent.ref)
+    if captured_q <= 0:
+        return ""
+    # A tela já põe o meio na frente ("Pix · R$ 22,00 recebido e estornado").
+    if refunded_q >= captured_q:
+        return f"{_money(captured_q)} recebido e estornado"
+    if refunded_q > 0:
+        return f"{_money(captured_q)} recebido, {_money(refunded_q)} estornado"
+    return f"{_money(captured_q)} recebido fora da cobrança"
+
+
 def _test_order_label(order) -> str:
     """O crachá de pedido de teste, ou vazio quando o pedido é de verdade."""
     from shopman.shop.services.order_helpers import is_test_order
@@ -791,6 +826,14 @@ class OperatorOrderProjection:
     # que consentiu compara a própria posição com esta, no dispositivo; a posição de
     # quem opera nunca vem ao servidor. ``None`` sem coordenadas no cadastro da loja.
     store_location: dict[str, float] | None = None
+    # O que o cancelamento faz com o dinheiro, ANTES de confirmar: "R$ 5,10 serão
+    # estornados no cartão do cliente", "A reserva no cartão será desfeita. Nada
+    # foi cobrado." O diálogo de cancelar e recusar e o PIN do gerente diziam só
+    # o motivo (beta 06/11, F5). Vazio quando não há dinheiro em jogo.
+    cancel_money_effect: str = ""
+    # O cancelamento fala com o gateway dentro do pedido (estorno ou anulação da
+    # reserva): leva alguns segundos, e a tela diz isso enquanto espera (F12).
+    cancel_waits_for_gateway: bool = False
     # O RASTRO da comanda do PDV (dono, T1=1, 13/10/2026): "Transferida da comanda #13"
     # quando o pedido nasceu de uma comanda separada de outra. Vazio no resto.
     transferred_from_label: str = ""
@@ -1058,7 +1101,10 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         test_order_label=_test_order_label(order),
         test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
-        payment_status_label=_order_payment_status_label(order, payment_status),
+        payment_status_label=(
+            _money_outside_the_charge_label(order, payment_status)
+            or _order_payment_status_label(order, payment_status)
+        ),
         fiscal_status=fiscal_status,
         fiscal_status_label=fiscal_status_label,
         fiscal_state=fiscal_state,
@@ -1105,7 +1151,9 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
 
     bloqueio = operator_orders.gestor_advance_block(order)
     next_status = operator_orders.next_status_for(order) if not bloqueio else ""
-    block_label, block_reason = _advance_block_copy(order, bloqueio, method)
+    block_label, block_reason = _advance_block_copy(
+        order, bloqueio, method, payment_pending=_is_payment_pending(order, method, payment_status)
+    )
 
     cancel_capability = _cancel_capability(order, user)
     authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
@@ -1163,7 +1211,48 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         **_ifood_accept_fields(order, accept),
         card_authorization_expires_iso=_card_authorization_expires_iso(order, method, payment_status),
         store_location=_store_location(),
+        **_cancel_money_effect(order, method, payment_status),
     )
+
+
+#: Os meios que o próprio sistema estorna no gateway, e por onde o dinheiro volta.
+_GATEWAY_REFUND_DESTINATION = {"pix": "ao Pix do cliente", "card": "no cartão do cliente", "link": "no cartão do cliente"}
+
+
+def _cancel_money_effect(order: Order, method: str, payment_status: str) -> dict:
+    """O que o cancelamento (ou a recusa) faz com o dinheiro, dito antes do gesto.
+
+    A mesma régua do estorno (``payment.refund``): gateway estorna sozinho;
+    dinheiro e maquininha ficam a devolver por alguém da casa; cartão só
+    autorizado tem a reserva desfeita, sem cobrança.
+    """
+    from shopman.shop.services.order_edit import CARD_MACHINE_METHODS
+
+    empty = {"cancel_money_effect": "", "cancel_waits_for_gateway": False}
+    if order.channel_ref == "ifood" or order.status not in {"new", "accepted", "preparing", "ready", "dispatched", "delivered", "completed"}:
+        return empty
+    captured_q = payment_svc.captured_balance_q(order)
+    if captured_q:
+        money = _money(captured_q)
+        if method in _GATEWAY_REFUND_DESTINATION:
+            return {
+                "cancel_money_effect": f"{money} serão estornados {_GATEWAY_REFUND_DESTINATION[method]}.",
+                "cancel_waits_for_gateway": True,
+            }
+        if method == "cash":
+            return {**empty, "cancel_money_effect": f"{money} em dinheiro ficam a devolver no caixa."}
+        if method in CARD_MACHINE_METHODS:
+            return {**empty, "cancel_money_effect": f"{money} ficam a estornar na maquininha."}
+        return {**empty, "cancel_money_effect": f"{money} ficam a devolver ao cliente."}
+    if method == "card" and str(payment_status).lower() == "authorized":
+        total = _money(order_composition.effective_total_q(order))
+        return {
+            "cancel_money_effect": f"A reserva de {total} no cartão do cliente será desfeita. Nada foi cobrado.",
+            "cancel_waits_for_gateway": True,
+        }
+    if method in _GATEWAY_REFUND_DESTINATION and captured_q == 0:
+        return {**empty, "cancel_money_effect": "Nada foi cobrado do cliente."}
+    return empty
 
 
 def _channel_name(ref: str) -> str:
@@ -2087,7 +2176,9 @@ def _build_card(
     method = payment_data.get("method", "")
     payment_status = (_payment_status(order) if order.channel_ref == "ifood" else (payment_svc.get_payment_status(order, payment_reads=payment_reads) or ""))
     payment_method_label = _payment_method_label(method, payment_data, labels=method_labels, order=order)
-    block_label, block_reason = _advance_block_copy(order, bloqueio, method)
+    block_label, block_reason = _advance_block_copy(
+        order, bloqueio, method, payment_pending=_is_payment_pending(order, method, payment_status)
+    )
     fiscal_status, fiscal_status_label, fiscal_state, _fiscal_links = _fiscal_status(
         order,
         directive_status=fiscal_states.directive_status.get(order.ref, "") if fiscal_states is not None else None,
@@ -2639,7 +2730,7 @@ PAYMENT_LAPSED_LABEL = "Pagamento vencido"
 LAPSED_PAYMENT_LABELS = frozenset({PIX_LAPSED_LABEL, PAYMENT_LAPSED_LABEL})
 
 
-def _payment_wait_copy(order: Order, method: str) -> tuple[str, str]:
+def _payment_wait_copy(order: Order, method: str, *, awaiting_acceptance: bool = False) -> tuple[str, str]:
     """O bloqueio do pagamento escrito como na v4 (G06): o rótulo e a frase do item.
 
     "Aguardando Pix" + "gerado às 21:55 · expira às 22:25 · avança sozinho quando
@@ -2673,17 +2764,38 @@ def _payment_wait_copy(order: Order, method: str) -> tuple[str, str]:
     if lapsed:
         # Cobrança vencida não "cai" mais: prometer o avanço sozinho seria mentir.
         return (PIX_LAPSED_LABEL if is_pix else PAYMENT_LAPSED_LABEL), " · ".join(parts)
-    parts.append("avança sozinho quando cair" if is_pix else "avança sozinho quando o pagamento entrar")
+    if awaiting_acceptance:
+        # Pedido NOVO: o Pix que cai não aceita o pedido sozinho, mas o que não
+        # cai cancela. É isso que o operador precisa saber, com a hora.
+        parts.append("sem pagamento até lá, cancela sozinho")
+    else:
+        parts.append("avança sozinho quando cair" if is_pix else "avança sozinho quando o pagamento entrar")
     return ("Aguardando Pix" if is_pix else "Aguardando pagamento"), " · ".join(parts)
 
 
-def _advance_block_copy(order: Order, bloqueio, method: str) -> tuple[str, str]:
+#: Meios em que o pedido novo espera um pagamento que vence sozinho.
+_EXPIRING_PAYMENT_METHODS = frozenset({"pix", "link"})
+
+
+def _advance_block_copy(order: Order, bloqueio, method: str, *, payment_pending: bool = False) -> tuple[str, str]:
     """O rótulo curto e a frase do bloqueio do avanço, na voz do operador.
 
     ``NO_NEXT_STEP`` não é bloqueio que se mostra (o pedido novo espera o aceite,
     não um fato de fora): sem frase, para o cartão não escrever "Pedido não possui
     próxima etapa" (G24). O pagamento ganha as horas da cobrança (G06).
+
+    A exceção é o pedido NOVO esperando um Pix (ou link) que vence: o Aceitar
+    fica travado pelo pagamento e o pedido cancela sozinho no vencimento. Sem a
+    frase, o cartão dizia só "Bloqueado" e o motivo morava no ``title`` do botão,
+    que tablet e celular não mostram (beta 06/11, PIXEXP-05).
     """
+    if (
+        order.status == Order.Status.NEW
+        and payment_pending
+        and method in _EXPIRING_PAYMENT_METHODS
+        and bloqueio in (None, "", operator_orders.AdvanceBlock.NO_NEXT_STEP, operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED)
+    ):
+        return _payment_wait_copy(order, method, awaiting_acceptance=True)
     if not bloqueio or bloqueio == operator_orders.AdvanceBlock.NO_NEXT_STEP:
         return "", ""
     if bloqueio == operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED:
@@ -3206,7 +3318,20 @@ _EVENT_LABELS = {
     "concierge_cancelled": "Cancelado pela Concierge a pedido do cliente",
     "customer_contact_requested": "Cliente avaliou mal e pediu para falar com o responsável",
     "customer_contact_resolved": "Ouvidoria resolvida",
+    # O dinheiro, nos três fatos que o Payman distingue. Autorizar NÃO é cobrar:
+    # o Gestor dizia "Payment.authorized · Pagamento confirmado" para um cartão
+    # só reservado (beta 06/11, F4).
+    "payment.authorized": "Cartão autorizado (ainda não cobrado)",
+    "payment.captured": "Pagamento recebido",
+    "payment.refunded": "Pagamento estornado",
+    "payment.counter_takeover": "Cobrança online cancelada: o cliente paga no balcão",
 }
+
+#: O Pix que caiu numa cobrança já encerrada e foi registrado à parte.
+_OUTSIDE_CHARGE_CAPTURE_LABEL = "Pix recebido numa cobrança já encerrada"
+
+#: Os eventos de dinheiro levam o meio e o valor como detalhe.
+_PAYMENT_EVENT_TYPES = frozenset({"payment.authorized", "payment.captured", "payment.refunded"})
 
 #: A mesma edição, com o rótulo de quem fez quando não foi o balcão. A Concierge
 #: acrescenta itens pelo MESMO serviço (``order_edit``) e a equipe lê no histórico.
@@ -3235,8 +3360,11 @@ _SYSTEM_ACTOR_LABELS = {
     "system:kds_dispatch": "Cozinha",
     "system:payment": "Pagamento confirmado",
     "system:pix-confirmation": "Pagamento confirmado",
-    "payment.gateway_reconcile": "Pagamento confirmado",
-    "payment.card_authorization": "Pagamento confirmado",
+    # Conferência com o gateway e o vigia da autorização do cartão não
+    # CONFIRMAM pagamento: o primeiro só descobre uma autorização, o segundo
+    # cancela a que venceu. "Pagamento confirmado" ali era rótulo que mente.
+    "payment.gateway_reconcile": "",
+    "payment.card_authorization": "Prazo da autorização do cartão",
     "payment.timeout": "Prazo do pagamento",
     "payment.timeout_gateway_check": "Prazo do pagamento",
     "confirmation.timeout": "Prazo de aceite",
@@ -3331,6 +3459,8 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             label = order_status_label(new_status)
         elif event.type == "order_edited" and payload.get("source") in _EDIT_SOURCE_LABELS:
             label = _EDIT_SOURCE_LABELS[payload["source"]]
+        elif event.type == "payment.captured" and payload.get("outside_charge"):
+            label = _OUTSIDE_CHARGE_CAPTURE_LABEL
         elif event.type in _EVENT_LABELS:
             label = _EVENT_LABELS[event.type]
         else:
@@ -3338,7 +3468,7 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             # feio, mas é o caso raro; o que era comum agora tem nome.
             label = event.type.replace("_", " ").capitalize()
 
-        detail = _event_detail(payload)
+        detail = _payment_event_detail(payload) if event.type in _PAYMENT_EVENT_TYPES else _event_detail(payload)
         if not detail and event.type in _STATUS_EVENT_TYPES and new_status == Order.Status.CANCELLED:
             detail = _cancellation_detail(order)
 
@@ -3361,6 +3491,15 @@ def _short_date(raw) -> str:
         return _date.fromisoformat(str(raw or "")).strftime("%d/%m")
     except ValueError:
         return "sem data"
+
+
+def _payment_event_detail(payload: dict) -> str:
+    """"Pix · R$ 22,00": o meio e o valor do fato de dinheiro, sem chave interna."""
+    method = str(payload.get("method") or "")
+    parts = [payment_method_label(method)] if method else []
+    if payload.get("amount_q"):
+        parts.append(_money(payload.get("amount_q")))
+    return " · ".join(part for part in parts if part)
 
 
 def _event_detail(payload: dict) -> str:

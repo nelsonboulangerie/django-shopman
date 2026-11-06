@@ -2173,6 +2173,22 @@ guarda é o "de onde veio" e o "o que está em curso".
 | `capture_before` | `int` (epoch) ou `str` ISO | ninguém hoje (reservado ao Stripe: `charge.payment_method_details.card.capture_before`) | `services/card_authorization.intent_expires_at` | Até quando a autorização de cartão com captura manual vale. Presente, vence a janela padrão; ausente, o prazo é `authorized_at + 7 dias` (`AUTHORIZATION_WINDOW`). O `checkout.session.completed` não traz a cobrança, e buscar a cobrança só para isto seria uma chamada a mais por pedido. |
 | **`disputes`** | `dict[str, dict]` | `adapters/payment_stripe.py::handle_dispute_event` | operador (alerta `payment_disputed`), suporte | **Disputas em curso e encerradas, por id do gateway** (`du_…`). Só o desfecho `lost` vira `PaymentTransaction(CHARGEBACK)`; o resto é risco, não livro. Cada valor: `{status, amount_q, currency, reason, charge_id, evidence_due_by, funds_withdrawn, funds_reinstated, last_event, updated_at}`. `status` é o do Stripe (`warning_*`, `needs_response`, `under_review`, `won`, `lost`, `prevented`) e é **grudento quando terminal** — evento fora de ordem não reabre disputa encerrada. Pix não popula: a Efí não publica evento de MED (ver docstring de `shopman/shop/webhooks/efi.py`). |
 
+| `booked_by`, `reason`, `superseded_intent_ref`, `superseded_status` | `str` | `services/pix_confirmation.py::_book_pix_outside_charge`, `services/counter_takeover.py` | Gestor (`order_queue._money_outside_the_charge_label`: "R$ 22,00 recebido e estornado"), estorno | Pagamento que caiu numa cobrança já encerrada e foi registrado num intent à parte. `booked_by` ∈ `pix_confirmation`, `counter_takeover`. Com o pedido vivo, sai o alerta `pix_on_closed_charge` (público `orders`), resolvido sozinho quando o pedido é cancelado ou devolvido e o estorno sai (`alert_resolution.RESOLVED_BY_REFUND`). |
+
+### OrderEvent de dinheiro (`payment.*`)
+
+O histórico do pedido (Gestor, PDV, acompanhamento) conta o dinheiro em três fatos, com
+o mesmo payload `{method, amount_q, intent_ref}`:
+
+| `type` | Escrito por | Rótulo no Gestor |
+|--------|-------------|------------------|
+| `payment.authorized` | `services/payment.py::_record_gateway_authorization` | "Cartão autorizado (ainda não cobrado)" |
+| `payment.captured` | `services/payment.py::_capture_once` (cartão no aceite), `services/pix_confirmation.py` (Pix na cobrança, e o Pix registrado à parte com `outside_charge: true`), `settle_from_gateway`, `mock_confirm` | "Pagamento recebido" / "Pix recebido numa cobrança já encerrada" |
+| `payment.refunded` | `services/payment.py::_refund_intent` (estorno que o sistema fez) | "Pagamento estornado" |
+
+Todo `payment.*` gravado pelo código tem rótulo em `order_queue._EVENT_LABELS` (trava em
+`backstage/tests/test_beta_r3_gestor_pagamento.py`).
+
 ---
 
 ## backstage.PrintJob.document — etiquetas internas de produção

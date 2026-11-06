@@ -716,6 +716,18 @@ def _capture_once(order) -> None:
         order.save(update_fields=["data", "updated_at"])
         _ack_payment_failed_alerts(order)
         cancel_stale_intents(order, keep_intent_ref=intent_ref)
+        # A cobrança no aceite é um fato do histórico: sem esta linha, o Gestor
+        # mostrava a autorização e nada mais, como se o cartão nunca tivesse
+        # sido cobrado (beta 06/11, F4).
+        order.emit_event(
+            event_type="payment.captured",
+            actor="payment.capture",
+            payload={
+                "method": method,
+                "amount_q": int(getattr(result, "amount_q", None) or order.total_q or 0),
+                "intent_ref": intent_ref,
+            },
+        )
 
         logger.info("payment.capture: captured %s for order %s", intent_ref, order.ref)
         return
@@ -1473,6 +1485,10 @@ def _refund_intent(
 
     if result.success:
         logger.info("payment.refund: refunded %s for order %s", intent_ref, order.ref)
+        # O estorno entra no histórico do pedido com valor e meio: o Gestor
+        # mostrava "Pix · Cancelado" para um Pix que entrou e voltou, e o único
+        # rastro era a linha do aviso ao cliente (beta 06/11, PIXEXP-03).
+        _record_refund_event(order, method=method, intent_ref=intent_ref, amount_q=requested_q, result=result)
         if adapter is not None:
             _notify_refund(
                 order,
@@ -1487,6 +1503,22 @@ def _refund_intent(
     logger.error("payment.refund: adapter recusou o estorno do pedido %s: %s", order.ref, detail)
     alert_refund_failed(order, intent_ref, requested_q, detail)
     return 0
+
+
+def _record_refund_event(order, *, method: str, intent_ref: str, amount_q, result) -> None:
+    """``payment.refunded`` no histórico. Nunca derruba o estorno que já saiu."""
+    try:
+        order.emit_event(
+            event_type="payment.refunded",
+            actor="payment.refund",
+            payload={
+                "method": method,
+                "amount_q": int(getattr(result, "amount_q", None) or amount_q or 0),
+                "intent_ref": intent_ref,
+            },
+        )
+    except Exception:
+        logger.warning("payment.refund_event_failed order=%s intent=%s", order.ref, intent_ref, exc_info=True)
 
 
 def _notify_refund(order, *, method: str, amount_q: int, idempotency_key: str) -> None:

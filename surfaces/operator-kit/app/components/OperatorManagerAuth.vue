@@ -60,6 +60,12 @@ const props = defineProps<{
   /** Quem pode assinar (`POSProjection.managers`). Vazio mostra que não há outro gerente. */
   managers?: ManagerOption[];
   busy?: boolean;
+  /**
+   * O que acontece enquanto `busy`, quando a espera é longa por um motivo que
+   * o gerente não vê (o estorno no cartão vai ao gateway dentro do pedido).
+   * Sem isto, eram seis segundos de spinner mudo no botão (beta 06/11, F12).
+   */
+  busyText?: string;
   error?: string;
 }>();
 
@@ -140,6 +146,16 @@ function onBadge(token: string) {
           :title="`Você continua como ${operatorName}.`"
         />
         <slot name="context" />
+        <p
+          v-if="busy && busyText"
+          class="flex items-center gap-2 text-sm text-muted-foreground"
+          role="status"
+          aria-live="polite"
+          data-manager-auth-busy
+        >
+          <Icon name="lucide:loader-circle" class="size-4 shrink-0 animate-spin" />
+          {{ busyText }}
+        </p>
         <OperatorIdentify
           ref="identify"
           :people="managers"

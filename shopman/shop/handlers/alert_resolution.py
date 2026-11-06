@@ -48,8 +48,15 @@ COURIER_TYPES = (
 #: Chegou ao cliente: o que era "antes de a sacola sair" perde o sentido.
 RESOLVED_BY_DELIVERY = (*COURIER_TYPES, "danfe_print_failed", "preorder_activation_blocked_unpaid")
 
+#: Cancelado ou devolvido, o ``on_cancelled``/``on_returned`` estorna TODO intent
+#: capturado do pedido, inclusive o Pix registrado à parte por ter caído numa
+#: cobrança encerrada. "Confira e devolva pelo gateway" deixa de ser verdade, e
+#: seguir a instrução devolveria duas vezes (beta 06/11, PIXEXP-01). Estorno que
+#: falhar tem alerta próprio (``payment_refund_failed``).
+RESOLVED_BY_REFUND = ("pix_on_closed_charge",)
+
 #: Desfeito: nada mais vai sair, nem sacola, nem corrida, nem cozinha.
-RESOLVED_BY_UNDO = (*RESOLVED_BY_LEAVING_NEW, *RESOLVED_BY_DELIVERY)
+RESOLVED_BY_UNDO = (*RESOLVED_BY_LEAVING_NEW, *RESOLVED_BY_DELIVERY, *RESOLVED_BY_REFUND)
 
 
 def resolve(order_ref: str, types, *, actor: str) -> None:

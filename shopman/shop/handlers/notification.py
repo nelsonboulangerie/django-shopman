@@ -242,32 +242,35 @@ class NotificationSendHandler:
         """Cria OperatorAlert quando entrega de notificação é exaurida."""
         try:
             from shopman.shop.adapters import alert as alert_adapter
+            from shopman.shop.notification_copy import template_label
 
-            # Um replay/manual retry do mesmo fato não deve gerar uma pilha de
-            # alertas idênticos. Enquanto a causa estiver aberta, ela é uma só.
+            # O operador lê o NOME do aviso ("Pedido pronto"), nunca a chave
+            # ``order_ready`` (beta 06/11, W3). O nome entre aspas é também o
+            # marcador do dedupe: um replay/manual retry do mesmo fato não gera
+            # uma pilha de alertas idênticos enquanto a causa estiver aberta.
+            label = template_label(template)
             if alert_adapter.recent_exists(
                 "notification_failed",
                 timezone.now(),
-                message_contains=f"'{template}'",
+                message_contains=f"\"{label}\"",
                 order_ref=order_ref or "",
             ):
                 return
-            # O ``'{template}'`` entre aspas é o marcador do dedupe logo acima.
             if no_receipt:
                 message = (
-                    f"O aviso '{template}' do pedido {order_ref} foi aceito pelo provedor, mas nenhum canal "
+                    f"O aviso \"{label}\" do pedido {order_ref} foi aceito pelo provedor, mas nenhum canal "
                     "devolveu comprovante de entrega. Confirme com o cliente que ele recebeu."
                 )
             else:
                 message = (
                     (
-                        f"Não dá para saber se o aviso '{template}' chegou ao cliente do pedido {order_ref}. "
+                        f"Não dá para saber se o aviso \"{label}\" chegou ao cliente do pedido {order_ref}. "
                         "Confira com o cliente pelo WhatsApp do pedido antes de mandar de novo."
                         if unknown
-                        else f"O aviso '{template}' não chegou ao cliente do pedido {order_ref} depois de "
+                        else f"O aviso \"{label}\" não chegou ao cliente do pedido {order_ref} depois de "
                         "5 tentativas. Se for importante, fale com o cliente pelo WhatsApp do pedido."
                     )
-                    + f" Último erro: {last_error or 'desconhecido'}"
+                    + f" Motivo: {_failure_reason(last_error)}"
                 )
             alert_adapter.create(
                 "notification_failed",
@@ -344,6 +347,20 @@ class NotificationSendHandler:
             raise DirectiveTerminalError((result.error if result else "unknown")[:500])
 
         raise DirectiveTransientError((result.error if result else "unknown")[:500])
+
+
+#: O erro do envio na voz de quem opera. O texto cru vinha do código, em
+#: inglês ("no active notification backend available"), direto no sino (W3).
+_FAILURE_REASONS = {
+    "no active notification backend available": "nenhum canal de aviso está ligado.",
+}
+
+
+def _failure_reason(last_error: str | None) -> str:
+    error = str(last_error or "").strip()
+    if not error:
+        return "desconhecido."
+    return _FAILURE_REASONS.get(error, error)
 
 
 def _system_backends(payload: dict) -> list[str]:

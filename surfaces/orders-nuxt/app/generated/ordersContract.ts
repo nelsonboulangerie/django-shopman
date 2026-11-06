@@ -740,6 +740,8 @@ export interface OperatorOrderProjection {
   confirmation_action: string;
   card_authorization_expires_iso: string;
   store_location: Record<string, number> | null;
+  cancel_money_effect: string;
+  cancel_waits_for_gateway: boolean;
   transferred_from_label: string;
   payment_lapsed: boolean;
   payment_unrecorded: boolean;

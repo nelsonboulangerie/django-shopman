@@ -44,3 +44,18 @@ describe("managerAuth: o gerente lê o valor que assina", () => {
     expect(managerAuthReason({ action: "day_closing_production" })).toBe("Há produção aberta.");
   });
 });
+
+// Beta 06/11 (F5): o Gestor usava a chave do PDV ("A venda já foi fechada."),
+// falsa para um pedido só autorizado. O cancelamento de pedido diz o dinheiro.
+describe("managerAuth: cancelar pedido no Gestor", () => {
+  it("o motivo é o efeito no dinheiro, vindo da projeção", () => {
+    expect(managerAuthTitle("cancel_order")).toBe("Autorizar cancelamento");
+    expect(
+      managerAuthReason({ action: "cancel_order", detail: "R$ 5,10 serão estornados no cartão do cliente." }),
+    ).toBe("R$ 5,10 serão estornados no cartão do cliente.");
+  });
+
+  it("sem o efeito, a frase fixa não fala em venda fechada", () => {
+    expect(managerAuthReason({ action: "cancel_order" })).toBe("O pedido já foi pago.");
+  });
+});

@@ -27,6 +27,12 @@ const props = defineProps<{
   error?: string;
   /** Motivo já marcado ao abrir (cancelar o Pix vencido: "Pagamento não confirmado"). */
   initialKey?: string;
+  /**
+   * O que acontece com o dinheiro ("R$ 5,10 serão estornados no cartão do
+   * cliente."), da projeção do pedido. O diálogo falava só do motivo, e o
+   * operador cancelava sem saber o destino do dinheiro (beta 06/11, F5).
+   */
+  moneyEffect?: string;
 }>();
 
 const emit = defineEmits<{
@@ -41,13 +47,15 @@ const keyed = computed(() => props.mode === "cancel" && !props.marketplace);
 const title = computed(() =>
   props.mode === "reject" ? "Recusar pedido" : "Cancelar pedido",
 );
-const description = computed(() =>
-  props.marketplace
+const description = computed(() => {
+  const base = props.marketplace
     ? "Escolha o motivo que o iFood exige. Ele é enviado ao iFood."
     : props.mode === "reject"
       ? "Informe o motivo. O cliente recebe o aviso com ele."
-      : "Escolha o motivo. O cliente recebe o aviso com a frase do motivo.",
-);
+      : "Escolha o motivo. O cliente recebe o aviso com a frase do motivo.";
+  const money = String(props.moneyEffect ?? "").trim();
+  return money ? `${money} ${base}` : base;
+});
 </script>
 
 <template>

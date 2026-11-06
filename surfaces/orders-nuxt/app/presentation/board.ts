@@ -87,7 +87,8 @@ export function elapsedLabel(seconds: number): string {
 
 /**
  * Countdown regressivo até o prazo da confirmação otimista.
- * Retorna "" quando não há prazo; "0:00" quando já venceu; senão "M:SS".
+ * Retorna "" quando não há prazo; "0:00" quando já venceu; "M:SS" abaixo de uma
+ * hora; "4h03" de uma hora para cima; "3 dias" a partir de 48 horas.
  * Puro e testável — o card passa um `nowMs` que tica no cliente.
  */
 /**
@@ -115,8 +116,18 @@ export function confirmationRemainingLabel(
   const deadlineMs = Date.parse(deadlineIso);
   if (Number.isNaN(deadlineMs)) return "";
   const left = Math.max(0, Math.round((deadlineMs - nowMs) / 1000));
-  const m = Math.floor(left / 60);
-  return `${m}:${String(left % 60).padStart(2, "0")}`;
+  // M:SS é instrumento de contagem curta (o prazo do iFood, a janela de
+  // desfazer). Prazo de horas (o aceite que vence 30 min depois da abertura)
+  // saía "cancela sozinho em 252:11", e o operador tinha de fazer a conta
+  // (beta 06/11, F8/PIXEXP-11/SMS-18). De uma hora para cima, horas e minutos.
+  if (left < 3600) {
+    const m = Math.floor(left / 60);
+    return `${m}:${String(left % 60).padStart(2, "0")}`;
+  }
+  const totalMinutes = Math.floor(left / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  if (hours >= 48) return `${Math.floor(hours / 24)} dias`;
+  return `${hours}h${String(totalMinutes % 60).padStart(2, "0")}`;
 }
 
 // ── Cartão autorizado esperando aceite (P1-4) ──────────────────────────────

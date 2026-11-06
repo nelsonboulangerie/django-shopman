@@ -1395,7 +1395,26 @@ class TestNotificationSendHandler:
             resolved_at__isnull=True,
         )
         assert alerts.count() == 1
-        assert "'waitlist_available'" in alerts.get().message
+        # O operador lê o nome do aviso, nunca a chave (beta 06/11, W3).
+        assert '"Vaga da fila disponível"' in alerts.get().message
+        assert "waitlist_available" not in alerts.get().message
+
+    @pytest.mark.django_db
+    def test_escalation_names_the_generic_template_and_the_reason_in_portuguese(self):
+        """Beta 06/11 (W3): o sino dizia "O aviso 'order_ready' ... Último erro: no
+        active notification backend available"."""
+        from shopman.backstage.models import OperatorAlert
+        from shopman.shop.handlers.notification import NotificationSendHandler
+
+        NotificationSendHandler()._escalate(
+            "ORD-W3", "order_ready", "no active notification backend available"
+        )
+
+        message = OperatorAlert.objects.get(type="notification_failed", order_ref="ORD-W3").message
+        assert '"Pedido pronto"' in message
+        assert "order_ready" not in message
+        assert "nenhum canal de aviso está ligado" in message
+        assert "no active notification backend" not in message
 
     @pytest.mark.django_db
     def test_real_backend_failure_still_escalates(self):

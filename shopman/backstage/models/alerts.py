@@ -75,6 +75,10 @@ class OperatorAlert(models.Model):
         ("concierge_identity_conflict", "Concierge encontrou identidade divergente"),
         ("stock_discrepancy", "Discrepância de estoque"),
         ("payment_after_cancel", "Pagamento após cancelamento"),
+        # O Pix caiu numa cobrança já encerrada com o pedido ainda vivo (QR velho
+        # ou pago duas vezes). É o financeiro de UM pedido, então é do gerente; o
+        # ``payment_reconciliation_failed`` fica para o livro contra o gateway.
+        ("pix_on_closed_charge", "Pix pago em cobrança encerrada"),
         # A gêmea do `payment_after_cancel`: o dinheiro chegou com o pedido
         # ainda em NEW, antes de alguém confirmar. Não é falha — é o aviso de
         # que existe pedido PAGO esperando decisão do balcão.
@@ -379,6 +383,7 @@ class OperatorAlert(models.Model):
         "payment_insufficient",
         "payment_disputed",
         "payment_after_cancel",
+        "pix_on_closed_charge",
         "card_authorization_expiring",
         "card_authorization_expired",
         "card_authorization_release_failed",

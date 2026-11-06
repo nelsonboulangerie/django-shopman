@@ -816,15 +816,26 @@ watch(
   },
   { immediate: true },
 );
+// O trinco escrito na tela: o avanço travado ou o Aceitar travado pelo pagamento
+// (pedido novo esperando o Pix, com a hora do vencimento). O motivo do Aceitar
+// morava só no `title` do botão, que tablet e celular não mostram (beta 06/11,
+// PIXEXP-05).
+const lockShown = computed(() => {
+  const o = order.value;
+  if (!o?.advance_block_reason) return false;
+  const confirm = projectedAction("confirm");
+  return Boolean(
+    (advanceAction.value && !advanceAction.value.enabled) ||
+      (confirm && !confirm.enabled),
+  );
+});
 const stateInEveryWidth = computed(() =>
   Boolean(
     custodyLines.value.length ||
     acceptNotice.value ||
     deadlineText.value ||
       undo.value ||
-      (advanceAction.value &&
-        !advanceAction.value.enabled &&
-        order.value?.advance_block_reason),
+      lockShown.value,
   ),
 );
 const BACK_VARIANTS = [
@@ -1384,11 +1395,7 @@ const outside = useOutsideStore(
                    fez (o primário do cabeçalho, a ação na base no celular). -->
             </NuxtAlert>
             <NuxtAlert
-              v-if="
-                advanceAction &&
-                !advanceAction.enabled &&
-                order.advance_block_reason
-              "
+              v-if="lockShown"
               color="error"
               variant="subtle"
               icon="i-lucide-lock"
@@ -1572,6 +1579,7 @@ const outside = useOutsideStore(
       :presets="presets"
       :cancel-reasons="cancelReasons"
       :initial-key="cancelInitialKey"
+      :money-effect="order?.cancel_money_effect || ''"
       :busy="busy"
       @dirty-change="reasonDirty = $event"
       @retry="loadReasons"
@@ -1750,9 +1758,15 @@ const outside = useOutsideStore(
          há outro gerente e deixa o crachá valendo; nunca vira campo de nome. -->
     <OperatorManagerAuth
       :open="!!managerChallenge"
-      action="cancel_sale"
+      action="cancel_order"
+      :detail="order?.cancel_money_effect || ''"
       :managers="order?.managers || []"
       :busy="busy"
+      :busy-text="
+        order?.cancel_waits_for_gateway
+          ? 'Cancelando e falando com o meio de pagamento. Leva alguns segundos.'
+          : ''
+      "
       :error="
         managerChallenge?.code === 'manager_approval_invalid'
           ? managerChallenge.message

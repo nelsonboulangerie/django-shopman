@@ -87,7 +87,17 @@ class PaymentTimeoutHandler:
 
         from shopman.shop.services import cancel_reasons
 
-        payment_service.cancel(order, reason="payment_timeout")
+        # O PEDIDO cancela primeiro, e a cobrança morre depois, no
+        # ``on_cancelled`` (``_settle_cancelled_payment``, com o mesmo motivo).
+        # A ordem inversa abria uma janela sem dono (beta 06/11, PIXEXP-01): a
+        # cobrança já cancelada e o pedido ainda vivo. O Pix que caía ali ia para
+        # o ramo "pedido vivo, cobrança morta", que abre alerta mandando devolver
+        # pelo gateway, e o cancelamento logo em seguida estornava sozinho o
+        # mesmo dinheiro. Nesta ordem, os dois desfechos têm dono: o Pix que
+        # chega antes do cancelamento captura a cobrança viva e salva o pedido
+        # (o ``cancel`` abaixo confere a captura sob o lock e desiste); o que
+        # chega depois encontra o pedido cancelado e segue o ramo canônico
+        # (``on_paid``: estorno + alerta ``payment_after_cancel``).
         # Um aviso só ao cliente: o ``order_cancelled`` que o lifecycle manda no
         # cancelamento, com a frase do prazo vencido no ``status_note`` (o que
         # aconteceu, nada foi cobrado, como pedir de novo). O registro operacional
