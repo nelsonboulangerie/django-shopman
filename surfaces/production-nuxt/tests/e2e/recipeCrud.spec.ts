@@ -30,7 +30,7 @@ test("editar receita é um gesto visível desde o inventário", async ({ page },
 
   // Abrir o editor não grava rascunho: ele nasce no primeiro "Salvar" (beta 05/11/2026, PROD-10).
   await expect(page).toHaveURL(/\/recipes\/pao-frances\/edit$/);
-  await expect(page.locator("[data-page-header-eyebrow]:visible, [data-page-header-eyebrow-phone]:visible")).toContainText("Nova versão");
+  await expect(page.locator("[data-page-header-eyebrow]:visible, [data-page-header-eyebrow-phone]:visible")).toContainText("Nova Versão");
   expect(versionPosts).toEqual([]);
   await expect(page.getByRole("button", { name: "Salvar rascunho" })).toBeVisible();
 
