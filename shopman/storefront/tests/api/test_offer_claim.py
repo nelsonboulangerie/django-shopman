@@ -237,6 +237,28 @@ def test_the_same_bag_on_another_device_does_not_add_the_offer_again(client, cro
     assert [(item["sku"], item["qty"]) for item in body["cart"]["items"]] == [("CRO-001", 1)]
 
 
+def test_reopening_the_link_after_removing_the_offer_brings_it_back_once(client, croissant):
+    """O destino da segunda visita é a sacola COM a oferta uma vez.
+
+    Quem tirou o item e abriu o mesmo link de novo quer a oferta de volta: o recibo
+    "a oferta está nesta sacola" deixou de ser verdade e não pode esconder o item.
+    """
+    _promotion()
+    _browse_and_add_other(client)
+    assert _claim(client, idempotency_key="first-visit").json()["added"] == ["CRO-001"]
+    client.put("/api/v1/cart/skus/CRO-001/", data=json.dumps({"qty": 0}), content_type="application/json")
+
+    body = _claim(client, idempotency_key="second-visit").json()
+
+    assert body["already_claimed"] is False
+    assert body["added"] == ["CRO-001"]
+    assert sorted((item["sku"], item["qty"]) for item in body["cart"]["items"]) == [("CRO-001", 1), ("PAO-001", 1)]
+
+    third = _claim(client, idempotency_key="third-visit").json()
+    assert third["already_claimed"] is True
+    assert sorted((item["sku"], item["qty"]) for item in third["cart"]["items"]) == [("CRO-001", 1), ("PAO-001", 1)]
+
+
 def test_a_different_offer_for_the_same_item_still_adds(client, croissant):
     """Ofertas distintas continuam somando ("a oferta sempre soma", 24/09/2026)."""
     _promotion()

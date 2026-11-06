@@ -36,6 +36,23 @@ def test_run_idempotent_mutation_replays_cached_response():
     assert calls == 1
 
 
+def test_release_receipt_lets_the_same_intention_run_once_more():
+    """Recibo de ESTADO cujo fato deixou de valer: liberado, a mesma chave executa de novo."""
+    calls = 0
+
+    def execute():
+        nonlocal calls
+        calls += 1
+        return {"ok": True, "calls": calls}, 200
+
+    remote_mutations.run_idempotent_mutation(scope="state-receipt", key="same-key", execute=execute)
+    remote_mutations.release_receipt(scope="state-receipt", key="same-key")
+    again = remote_mutations.run_idempotent_mutation(scope="state-receipt", key="same-key", execute=execute)
+
+    assert again.replayed is False
+    assert again.response_body == {"ok": True, "calls": 2}
+
+
 def test_idempotency_key_from_request_prefers_header_then_body_then_fallback():
     header_request = SimpleNamespace(
         headers={"Idempotency-Key": "header-key"},
