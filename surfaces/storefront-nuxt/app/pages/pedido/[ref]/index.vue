@@ -1039,7 +1039,7 @@ useSeoMeta({
               <UiAlertDialogContent>
                 <UiAlertDialogHeader>
                   <UiAlertDialogTitle>{{ cancellationConfirmation('title', 'Solicitar cancelamento') }}</UiAlertDialogTitle>
-                  <UiAlertDialogDescription>{{ cancellationConfirmation('message', 'A equipe vai analisar o cancelamento e um possível estorno. Você recebe um protocolo agora.') }}</UiAlertDialogDescription>
+                  <UiAlertDialogDescription>{{ cancellationConfirmation('message', 'A equipe confere o pedido e responde por aqui. Você recebe um protocolo agora.') }}</UiAlertDialogDescription>
                 </UiAlertDialogHeader>
                 <UiTextarea
                   v-model="cancellationReason"

@@ -134,6 +134,7 @@ class TrackingCancellationRequestData:
 
     protocol: str
     requested_at: str
+    before_preparation: bool = False
 
 
 @dataclass(frozen=True)
@@ -601,12 +602,17 @@ def _money_outcome(order) -> TrackingMoneyOutcomeData | None:
 def _cancellation_request(order) -> TrackingCancellationRequestData | None:
     from shopman.shop.services import cancellation_requests
 
+    # Pedido cancelado (ou devolvido) é a solicitação resolvida: quem fala é o
+    # desfecho (``cancellation_money_line``), não o "vamos analisar" de antes.
+    if order.status in cancellation_requests.TERMINAL_STATUSES:
+        return None
     request = cancellation_requests.current(order)
     if request is None:
         return None
     return TrackingCancellationRequestData(
         protocol=request.protocol,
         requested_at=request.requested_at.isoformat(),
+        before_preparation=request.before_preparation,
     )
 
 
@@ -669,6 +675,27 @@ def _copy_message(key: str, fallback: str) -> str:
     except Exception:
         logger.debug("order_tracking_copy_failed key=%s", key, exc_info=True)
         return fallback
+
+
+def _request_cancellation_message(order) -> str:
+    """A frase do diálogo segue a MESMA régua que o Gestor recebe no alerta.
+
+    Antes do preparo, os Termos (§7) garantem o valor inteiro: o cliente lê a
+    regra, não uma análise genérica (beta 06/11). Depois, a equipe analisa.
+    """
+    from shopman.shop.services.cancellation_requests import BEFORE_PREPARATION_STATUSES
+
+    if order.status in BEFORE_PREPARATION_STATUSES:
+        return _copy_message(
+            "TRACKING_REQUEST_CANCELLATION_MESSAGE_BEFORE_PREPARATION",
+            "Ainda não começamos a preparar: se a equipe confirmar o cancelamento, o valor volta "
+            "inteiro. Você recebe um protocolo agora.",
+        )
+    return _copy_message(
+        "TRACKING_REQUEST_CANCELLATION_MESSAGE",
+        "Como o pedido já avançou, a equipe precisa analisar o cancelamento e um possível "
+        "estorno. Você recebe um protocolo agora.",
+    )
 
 
 def _action(
@@ -783,10 +810,7 @@ def _build_order_actions(
                         "TRACKING_REQUEST_CANCELLATION_TITLE",
                         "Solicitar cancelamento",
                     ),
-                    "message": _copy_message(
-                        "TRACKING_REQUEST_CANCELLATION_MESSAGE",
-                        "Como o pedido já avançou, a equipe precisa analisar o cancelamento e um possível estorno. Você recebe um protocolo agora.",
-                    ),
+                    "message": _request_cancellation_message(order),
                     "confirm_label": _copy_title(
                         "TRACKING_REQUEST_CANCELLATION_CONFIRM_CTA",
                         "Enviar solicitação",
