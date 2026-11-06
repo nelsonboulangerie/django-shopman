@@ -335,6 +335,8 @@ def _declared_city_outside_store_area(session_data: dict) -> bool:
     if session_data.get("delivery_distance_km") is not None:
         return False
     addr = session_data.get("delivery_address_structured") or {}
+    if not (str(addr.get("city") or "").strip() or str(addr.get("state_code") or "").strip()):
+        return False  # sem cidade/UF declaradas, não há o que comparar
     from shopman.shop.services import delivery_distance
     from shopman.shop.services import promotions as promotion_service
 
