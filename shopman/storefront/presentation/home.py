@@ -403,8 +403,15 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
     featured = build_featured_items(
         channel_ref=STOREFRONT_CHANNEL_REF, request=request, limit=3, prefer_skus=fresh,
     )
-    # O título diz o que o rail mostra: "Direto do forno" só com fornada recente nele.
-    rail_is_fresh = any(item.sku in fresh for item in featured)
+    # O título diz o que o rail mostra: "Direto do forno" só com fornada recente nele;
+    # "Os mais pedidos" só com um mais pedido nele; sem nenhum dos dois, o rail é a
+    # ordem do cardápio e o título diz isso (nem forno nem "mais pedidos" mentindo).
+    if any(item.sku in fresh for item in featured):
+        rail_heading_key = "HOME_AVAILABILITY_HEADING"
+    elif any(item.is_featured for item in featured):
+        rail_heading_key = "HOME_FEATURED_HEADING"
+    else:
+        rail_heading_key = "HOME_MENU_RAIL_HEADING"
 
     return HomeProjection(
         omotenashi=shell.omotenashi,
@@ -412,7 +419,7 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         sections_copy=_home_sections_copy(
             shell.omotenashi,
             default_city=shell.shop.default_city,
-            rail_is_fresh=rail_is_fresh,
+            rail_heading_key=rail_heading_key,
         ),
         auth_copy=shell.auth_copy,
         pwa_copy=shell.pwa_copy,
@@ -603,13 +610,13 @@ def _pwa_copy(omotenashi: OmotenashiProjection) -> PwaCopyProjection:
 
 
 def _home_sections_copy(
-    omotenashi: OmotenashiProjection, *, default_city: str = "", rail_is_fresh: bool = False,
+    omotenashi: OmotenashiProjection,
+    *,
+    default_city: str = "",
+    rail_heading_key: str = "HOME_AVAILABILITY_HEADING",
 ) -> HomeSectionsCopyProjection:
     return HomeSectionsCopyProjection(
-        availability_heading=_copy_entry(
-            "HOME_AVAILABILITY_HEADING" if rail_is_fresh else "HOME_FEATURED_HEADING",
-            omotenashi=omotenashi,
-        ),
+        availability_heading=_copy_entry(rail_heading_key, omotenashi=omotenashi),
         full_menu_cta=_copy_entry("HOME_FULL_MENU_CTA", omotenashi=omotenashi),
         how_it_works_heading=_copy_entry("HOME_HOW_IT_WORKS_HEADING", omotenashi=omotenashi),
         how_it_works_intro=_copy_entry("HOW_IT_WORKS_INTRO", omotenashi=omotenashi),

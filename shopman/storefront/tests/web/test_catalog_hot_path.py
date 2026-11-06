@@ -155,6 +155,14 @@ class TestFeaturedItems:
         assert home.sections_copy.availability_heading.title == "Direto do forno"
         assert home.featured_items[0].sku == "BAGUETE"
 
+    def test_home_heading_without_fresh_nor_popular_is_the_menu(self, rf, menu, monkeypatch):
+        """Sem fornada e sem mais pedidos, o rail é a ordem do cardápio: "Os mais
+        pedidos" mentiria sobre ele."""
+        monkeypatch.setattr(catalog_module, "popular_skus", lambda limit=5: set())
+        monkeypatch.setattr(home_module, "fresh_from_oven_skus", lambda _channel: ())
+        home = home_module.build_home(rf.get("/"))
+        assert home.sections_copy.availability_heading.title == "Do nosso cardápio"
+
     def test_empty_catalog(self, rf, listing):
         assert build_featured_items(channel_ref="web", request=rf.get("/")) == ()
 
