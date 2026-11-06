@@ -6,7 +6,7 @@ from django import forms
 from django.contrib import admin, messages
 from django.db import transaction
 from django.utils import timezone
-from shopman.utils.contrib.admin_unfold.money import MoneyReaisField, parse_reais
+from shopman.utils import MoneyReaisField, parse_reais
 from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display

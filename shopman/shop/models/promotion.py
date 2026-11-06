@@ -140,8 +140,6 @@ class Promotion(models.Model):
             and self.valid_until <= self.valid_from
         ):
             errors["valid_until"] = "O término precisa ser posterior ao início."
-        if self.min_order_q is not None and self.min_order_q < 0:
-            errors["min_order_q"] = "O pedido mínimo não pode ser negativo."
         if errors:
             raise ValidationError(errors)
         if self.type != self.FREE_DELIVERY:
