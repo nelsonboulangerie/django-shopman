@@ -179,7 +179,7 @@ def order_history_for_customer(
                 "status": rendered.status,
                 "status_label": rendered.status_label,
                 "status_color": rendered.status_color,
-                "status_tone": status_tone(rendered.status),
+                "status_tone": status_tone(rendered.display_status_key, rendered.status),
                 # Dono único da regra "em andamento": ACTIVE_STATUSES, servido
                 # aqui pelo read-side (projections.customer é o contrato único de
                 # identidade para leitura — presentation não toca shop.services).

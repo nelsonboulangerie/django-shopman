@@ -418,7 +418,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         rating_followup=rating_followup,
         order_ref=interaction.order_ref,
         status=order.status,
-        display_status_key=_display_status_key(order),
+        display_status_key=display_status_key(order),
         is_delivery=is_delivery,
         is_pickup=is_pickup,
         is_preorder=is_preorder,
@@ -485,7 +485,7 @@ def build_tracking_status(order) -> TrackingStatusData:
     return TrackingStatusData(
         order_ref=order.ref,
         status=order.status,
-        display_status_key=_display_status_key(order),
+        display_status_key=display_status_key(order),
         progress_steps=_build_progress_steps(order),
         timeline=_build_timeline(order),
         is_terminal=order.status in TERMINAL_STATUSES,
@@ -497,11 +497,14 @@ def build_tracking_status(order) -> TrackingStatusData:
 # ──────────────────────────────────────────────────────────────────────
 
 
-def _display_status_key(order) -> str:
+def display_status_key(order) -> str:
     """Resolve the semantic status descriptor the customer sees.
 
     Returns a key that Presentation maps to a label + colour. Falls back to the
-    raw ``order.status`` for the plain cases.
+    raw ``order.status`` for the plain cases. Dono único do estado que o cliente
+    lê: acompanhamento, lista de pedidos da Conta e faixa da home passam por
+    aqui, para que nenhuma superfície diga "Aguardando a loja" com o pagamento
+    ainda em aberto.
     """
     order_data = order.data or {}
     fulfillment_type = order_data.get("fulfillment_type") or order_data.get("delivery_method", "")
@@ -1979,6 +1982,7 @@ __all__ = [
     "TrackingTimelineEventData",
     "build_tracking",
     "build_tracking_status",
+    "display_status_key",
 ]
 
 

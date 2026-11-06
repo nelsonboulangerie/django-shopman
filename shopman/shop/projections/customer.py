@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from shopman.shop.projections.order_tracking import display_status_key
 from shopman.shop.services.customer_orders import (
     ACTIVE_STATUSES,
     customer_identity_filter,
@@ -29,8 +30,11 @@ logger = logging.getLogger(__name__)
 class CustomerOrderSummary:
     """Canonical compact order summary — semantic, prices in cents.
 
-    Carries the status *key* (``status``); the label and colour are resolved by
-    Presentation. ``created_at`` is the raw timestamp (Presentation formats it).
+    Carries the status *key* (``status``) and the semantic descriptor the
+    customer reads (``display_status_key``, the same one the tracking page uses:
+    ``payment_pending`` while a Pix is unpaid, for instance); the label and
+    colour are resolved by Presentation. ``created_at`` is the raw timestamp
+    (Presentation formats it).
     """
 
     ref: str
@@ -38,6 +42,7 @@ class CustomerOrderSummary:
     total_q: int
     status: str
     item_count: int
+    display_status_key: str
 
 
 def history_summaries_for_customer(
@@ -113,6 +118,7 @@ def _summaries_from_orders(orders) -> tuple[CustomerOrderSummary, ...]:
             total_q=order.total_q,
             status=order.status,
             item_count=order.items.count(),
+            display_status_key=display_status_key(order),
         )
         for order in orders
     )
