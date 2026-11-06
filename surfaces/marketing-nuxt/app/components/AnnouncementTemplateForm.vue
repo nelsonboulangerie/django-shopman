@@ -312,6 +312,7 @@ function submit() {
         id="tpl-name"
         v-model="name"
         type="text"
+        :maxlength="100"
         placeholder="Saiu do forno"
         class="w-full"
       />
@@ -399,8 +400,8 @@ function submit() {
           Composição por destino
         </h3>
         <p class="mt-1 text-xs text-muted-foreground">
-          O texto acima é comum. Abra exceções somente quando a plataforma
-          realmente precisar; formatos e opções vêm da capacidade executável.
+          O texto acima vale para todas as plataformas. Abra exceção só quando
+          uma plataforma precisar de outro texto.
         </p>
       </div>
       <NuxtAlert

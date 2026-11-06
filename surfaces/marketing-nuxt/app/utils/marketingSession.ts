@@ -39,9 +39,19 @@ function parkPendingDecision(): void {
   pending.value = null;
 }
 
+// Só 401 e 403 podem ser sessão vencida ou dispositivo travado. O resto (404 de anúncio
+// que não existe, 409, 5xx) não toca o estado do app: no SSR o gancho do `ofetch` roda
+// fora do contexto da instância Nuxt, o `useState` lançava (e1001) e um 404 virava 500,
+// escondendo "Este anúncio não existe" atrás de "Pode ser a rede" (beta 05/11, ge:MKT-11).
+const SESSION_REFUSAL_STATUSES = new Set([401, 403]);
+
 export function marketingSessionOnError(ctx: {
   response: { status: number; _data?: unknown };
 }): void {
+  if (!SESSION_REFUSAL_STATUSES.has(ctx.response.status)) return;
+  // No servidor não há sessão do navegador a re-portar; a recusa segue no erro do
+  // `useFetch` e o cliente a trata ao hidratar.
+  if (import.meta.server) return;
   flagMarketingSessionError({
     status: ctx.response.status,
     data: ctx.response._data,

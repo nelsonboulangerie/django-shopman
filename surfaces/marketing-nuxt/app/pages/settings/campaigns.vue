@@ -227,6 +227,16 @@ onBeforeUnmount(() => {
 });
 
 const panelOpen = computed(() => creating.value || editing.value !== null);
+// O título é o do momento em que o diálogo abriu: ao fechar uma edição, a animação de
+// saída mostrava "Nova campanha" (beta 05/11, ge:MKT-28).
+const dialogTitle = ref("Nova campanha");
+watch(
+  panelOpen,
+  (open) => {
+    if (open) dialogTitle.value = editing.value ? "Editar campanha" : "Nova campanha";
+  },
+  { immediate: true },
+);
 
 function fireAction(rule: Campaign) {
   return fireActionFor(rule, actions.value);
@@ -490,6 +500,10 @@ const countLabel = computed(() => {
     : `${formatCount(shown)} ${noun(shown)}`;
 });
 
+const createdCanFire = computed(() => {
+  const created = rules.value.find((rule) => rule.pk === createdPk.value);
+  return created ? fireActionFor(created, actions.value)?.reason !== "missing_capability" : false;
+});
 // O aviso da campanha recém-criada mora nas `alerts` do cabeçalho, com a saída "Visto".
 const screenAlerts = computed(() =>
   createdPk.value
@@ -498,8 +512,10 @@ const screenAlerts = computed(() =>
           id: "created",
           color: "success" as const,
           title: "Campanha criada e salva.",
-          description:
-            "Ela está destacada na lista. Abra para conferir ou prepare o primeiro disparo.",
+          // Só convida a disparar quem pode disparar (beta 05/11, ge:MKT-17).
+          description: createdCanFire.value
+            ? "Ela está destacada na lista. Abra para conferir ou prepare o primeiro disparo."
+            : "Ela está destacada na lista. Abra para conferir.",
           action: { label: "Visto", onSelect: dismissCreated },
         },
       ]
@@ -868,7 +884,7 @@ useHead({ title: "Campanhas" });
 
     <MarketingWorkspaceDialog
       :open="panelOpen"
-      :title="editing ? 'Editar campanha' : 'Nova campanha'"
+      :title="dialogTitle"
       description="Um evento da padaria vira um anúncio para as pessoas certas. Configure cada destino e confira as composições antes de salvar."
       @update:open="
         (v) => {

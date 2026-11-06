@@ -1409,6 +1409,38 @@ class TestOptions:
             "catalog_as_of": checked_at.isoformat(),
         }
 
+    def test_form_preview_without_whatsapp_flow_keeps_the_other_platforms(self, client, gestor):
+        """ge:MKT-08 no formulário de campanha: o WhatsApp sem fluxo não derruba o Google."""
+        from shopman.offerman.models import Product
+
+        Product.objects.create(
+            sku="CRO-SEM-FLUXO",
+            name="Croissant sem fluxo",
+            base_price_q=850,
+            is_published=True,
+            is_sellable=True,
+        )
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={"body": "Saiu {{product_name}}", "platforms": ["google_business", "whatsapp"]},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert set(payload["previews"]) == {"google_business"}
+        assert payload["platform_problems"]["whatsapp"]["code"] == "whatsapp_flow_not_selected"
+
+        alone = client.post(
+            PREVIEW_URL,
+            data={"body": "Saiu {{product_name}}", "platforms": ["whatsapp"]},
+            content_type="application/json",
+        )
+        assert alone.status_code == 422
+        assert alone.json()["code"] == "whatsapp_flow_not_selected"
+
     def test_whatsapp_preview_outage_is_retryable_not_an_empty_flow_list(self, client, gestor, monkeypatch):
         from shopman.shop.models import NotificationTemplate
         from shopman.shop.services.manychat_flows import FlowCatalog
@@ -1498,6 +1530,44 @@ class TestAnnouncementReviewPreview:
         assert artifact["body"] == "Ensaio do Google revisado"
         assert artifact["link"] == ""
         assert "AGUA-EXEMPLO" not in json.dumps(payload)
+
+    def test_whatsapp_without_flow_does_not_take_down_the_other_previews(self, client, gestor, rule, template):
+        """ge:MKT-08: a prévia é por plataforma; o WhatsApp sem fluxo sai com o motivo."""
+        announcement = _post(
+            rule,
+            template,
+            content={"body": "Ensaio", "hashtags": [], "link": "", "image_url": ""},
+            platforms=["google_business", "whatsapp"],
+            trigger_context={},
+        )
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={
+                "announcement": announcement.pk,
+                "body": "Ensaio revisado",
+                "hashtags": [],
+                "platforms": ["google_business", "whatsapp"],
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert set(payload["previews"]) == {"google_business"}
+        assert payload["platform_problems"]["whatsapp"]["code"] == "whatsapp_flow_not_selected"
+
+        alone = client.post(
+            PREVIEW_URL,
+            data={"announcement": announcement.pk, "platforms": ["whatsapp"]},
+            content_type="application/json",
+        )
+        assert alone.status_code == 422
+        error = alone.json()
+        flat = json.dumps(error, ensure_ascii=False)
+        # A instrução aparece uma vez só (detail), não duas.
+        assert flat.count("Ajustes › Plataformas") == 1
 
     def test_preview_matches_what_approval_seals(self, client, gestor, rule, template):
         announcement = _post(rule, template, platforms=["instagram"])

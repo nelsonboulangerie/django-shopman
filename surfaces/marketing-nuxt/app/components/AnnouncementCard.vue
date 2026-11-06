@@ -14,6 +14,7 @@ import { useMarketingDraft } from "~/composables/useMarketingDraft";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import {
   isQuietHoursNow,
+  quietHoursOutlastDeadline,
   resolveScheduleInput,
   scheduleSummary,
   suggestedScheduleLocal,
@@ -68,6 +69,11 @@ const props = defineProps<{
    *  topo na mesa) com o que o cartão expõe; sem isto (o painel), o cartão desenha
    *  Recusar e Continuar em fluxo, no fim dele. */
   decisionInPage?: boolean;
+  /** Por que quem olha não pode recusar / seguir (as Actions do servidor vieram com
+   *  `missing_capability`). Preenchido, o gesto fica travado com a frase, em vez de
+   *  abrir e falhar no servidor (beta 05/11, ge:MKT-03). */
+  rejectBlockedReason?: string;
+  proceedBlockedReason?: string;
 }>();
 
 const emit = defineEmits<{
@@ -349,8 +355,39 @@ const nowFallsInQuietHours = computed(
 const canPublishNow = computed(
   () => canPublish.value && !nowFallsInQuietHours.value,
 );
+/** O silêncio do WhatsApp vai além do prazo: agendar não salva, só tirar o WhatsApp.
+ *  Vazio quando não cruza; senão, a hora em que o anúncio vence. */
+const quietOutlastsDeadline = computed(() =>
+  nowFallsInQuietHours.value
+    ? quietHoursOutlastDeadline({
+        timeZone: timezoneName.value,
+        expiresAt: props.announcement.expires_at,
+        nowMs: clockMs.value,
+      })
+    : "",
+);
+/** Tirar o WhatsApp só é saída quando sobra outra plataforma; sozinho, tirá-lo deixa
+ *  o anúncio sem destino, e a saída é escolher outra. */
+const othersBesideDirectMessage = computed(
+  () => platforms.value.some((platform) => !includesDirectMessage([platform])),
+);
+const quietOutlastsDeadlineText = computed(() => {
+  if (!quietOutlastsDeadline.value) return "";
+  const head = `O WhatsApp só envia a partir das 08:00 e este anúncio vence às ${quietOutlastsDeadline.value}.`;
+  return othersBesideDirectMessage.value
+    ? `${head} Tire o WhatsApp para postar agora.`
+    : `${head} Escolha outra plataforma para postar agora.`;
+});
+function removeDirectMessage() {
+  platforms.value = platforms.value.filter(
+    (platform) => !includesDirectMessage([platform]),
+  );
+  scheduling.value = false;
+}
 /** Agendar só é "recomendado" com motivo: o agora cai no silêncio do WhatsApp. */
-const scheduleRecommended = computed(() => nowFallsInQuietHours.value);
+const scheduleRecommended = computed(
+  () => nowFallsInQuietHours.value && !quietOutlastsDeadline.value,
+);
 const scheduleResolution = computed(() =>
   resolveScheduleInput({
     localValue: publishAt.value,
@@ -441,6 +478,7 @@ function useNextAllowedTime() {
 }
 
 function askToReject() {
+  if (props.rejectBlockedReason) return;
   draft.flush();
   emit("reject", props.announcement.pk);
 }
@@ -594,6 +632,7 @@ const foldOptions = computed(() =>
 /** Continuar leva ao selo: pode quando o texto, as plataformas e o "quando" fecham. */
 const canContinue = computed(
   () =>
+    !props.proceedBlockedReason &&
     (scheduling.value ? canSchedule.value : canPublishNow.value) &&
     textLength.value <= textLimit.value,
 );
@@ -602,11 +641,13 @@ const canContinue = computed(
  *  enquanto a decisão anda (`busy`): aí o botão só carrega. */
 const continueBlockedReason = computed(() => {
   if (props.busy) return "";
+  if (props.proceedBlockedReason) return props.proceedBlockedReason;
   if (expired.value) return "O prazo deste anúncio venceu: prepare um disparo novo em Campanhas.";
   if (!body.value.trim()) return "O anúncio precisa de um texto.";
   if (platforms.value.length === 0) return "Escolha ao menos uma plataforma.";
   if (textLength.value > textLimit.value)
     return "O texto passou do limite da plataforma mais curta escolhida.";
+  if (quietOutlastsDeadlineText.value) return quietOutlastsDeadlineText.value;
   if (scheduling.value) {
     return scheduleResolution.value.ok
       ? ""
@@ -642,7 +683,11 @@ defineExpose({
        o cartão desenha a decisão em fluxo, no fim dele. O prazo mora no cabeçalho. -->
   <article class="flex flex-col gap-4" data-announcement-review>
     <p class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm" data-review-origin>
-      <NuxtBadge color="warning" icon="i-lucide-clock">Pede sua aprovação</NuxtBadge>
+      <NuxtBadge
+        color="warning"
+        icon="i-lucide-clock"
+        data-review-badge
+      >{{ rejectBlockedReason && proceedBlockedReason ? "Aguarda quem aprova" : "Pede sua aprovação" }}</NuxtBadge>
       <span v-if="draftOrigin" class="text-muted-foreground">{{ draftOrigin }}</span>
       <span
         v-else-if="announcement.sku"
@@ -818,7 +863,13 @@ defineExpose({
             :data-review-platform="option.value"
           >
             <Icon :name="platformIcon(option.value)" class="size-5 shrink-0" aria-hidden="true" />
-            <span class="min-w-0 flex-1 leading-tight">
+            <!-- A linha inteira liga e desliga: a chave sozinha tinha 36x20 no celular,
+                 abaixo do alvo de toque (beta 05/11, ge:MKT-26). -->
+            <label
+              :for="`review-platform-${announcement.pk}-${option.value}`"
+              class="min-w-0 flex-1 cursor-pointer py-1 leading-tight"
+              data-review-platform-label
+            >
               <span class="text-base">{{ rowLabel(option) }}</span>
               <span v-if="rowKind(option)" class="ml-1.5 text-sm text-muted-foreground">{{ rowKind(option) }}</span>
               <span
@@ -826,8 +877,9 @@ defineExpose({
                 class="block text-xs font-medium"
                 :class="readinessNote(option).tone === 'blocked' ? 'text-error' : 'text-warning'"
               >{{ readinessNote(option).badge }}</span>
-            </span>
+            </label>
             <NuxtSwitch
+              :id="`review-platform-${announcement.pk}-${option.value}`"
               :model-value="platforms.includes(option.value)"
               :aria-label="`${platforms.includes(option.value) ? 'Tirar' : 'Pôr'} ${rowLabel(option)}`"
               @update:model-value="togglePlatform(option.value)"
@@ -926,6 +978,15 @@ defineExpose({
           title="Ensaio local: o silêncio das 20:00 às 08:00 está suspenso e nenhuma mensagem é enviada deste computador."
         />
         <NuxtAlert
+          v-else-if="quietOutlastsDeadlineText"
+          color="warning"
+          variant="subtle"
+          role="status"
+          :title="quietOutlastsDeadlineText"
+          :actions="alertActions('warning', [othersBesideDirectMessage && { label: 'Tirar o WhatsApp', onClick: removeDirectMessage }])"
+          data-quiet-outlasts-deadline
+        />
+        <NuxtAlert
           v-else-if="scheduleRecommended"
           color="warning"
           variant="subtle"
@@ -989,7 +1050,8 @@ defineExpose({
         color="neutral"
         variant="outline"
         label="Recusar"
-        :disabled="busy"
+        :disabled="busy || Boolean(rejectBlockedReason)"
+        :title="rejectBlockedReason || undefined"
         @click="askToReject"
       />
       <NuxtButton

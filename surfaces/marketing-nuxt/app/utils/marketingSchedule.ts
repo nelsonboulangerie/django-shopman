@@ -310,6 +310,29 @@ export function expirySummary(expiresAt: string, timeZone: string, nowMs = Date.
   return `Expira em ${relative} · ${absolute} (${timeZone})`;
 }
 
+/**
+ * O silêncio do WhatsApp atravessa o prazo do anúncio? Agora é silêncio e as 08:00
+ * seguintes já caem depois do vencimento: nem Imediato nem Agendado servem enquanto o
+ * WhatsApp estiver no anúncio (beta 05/11, ge:MKT-07). Devolve a hora do vencimento
+ * (HH:MM, no fuso da loja) quando cruza; vazio quando não cruza.
+ */
+export function quietHoursOutlastDeadline(options: {
+  timeZone: string;
+  expiresAt: string;
+  nowMs?: number;
+}): string {
+  const nowMs = options.nowMs ?? Date.now();
+  const expiryMs = Date.parse(options.expiresAt);
+  if (!Number.isFinite(expiryMs) || expiryMs <= nowMs) return "";
+  if (!isQuietHoursNow(options.timeZone, nowMs)) return "";
+  const opening = zonedScheduleCandidates(
+    tomorrowAtEight(nowMs, options.timeZone),
+    options.timeZone,
+  )[0];
+  if (!opening || opening.epochMs < expiryMs) return "";
+  return localInputFromInstant(options.expiresAt, options.timeZone).slice(11, 16);
+}
+
 export function isQuietHoursNow(timeZone: string, nowMs = Date.now()): boolean {
   try {
     const hour = partsAt(nowMs, timeZone).hour;

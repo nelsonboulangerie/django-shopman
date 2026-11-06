@@ -615,3 +615,26 @@ export function acceptedAwaitingConfirmationNote(count: number): string {
       : `${formatCount(total)} entregas foram aceitas pelo provedor`;
   return `${subject}: ele recebeu e assumiu a entrega, e a confirmação de que chegou à pessoa vem depois, dele mesmo. Quando chegar, aparece neste mesmo quadro, sem você fazer nada. Até lá não reenvie: o reenvio duplicaria a mensagem em vez de apressá-la.`;
 }
+
+/**
+ * Quem olha a revisão pode recusar / seguir? As Actions do servidor dizem; a tela só
+ * traduz `missing_capability` numa frase com saída (beta 05/11, ge:MKT-03). Outros
+ * motivos (prazo, silêncio, congelamento) o cartão da revisão explica por conta própria.
+ */
+export function reviewCapabilityBlock(actions: readonly MarketingActionProjectionV2[]): {
+  reject: string;
+  proceed: string;
+} {
+  const missing = (kind: MarketingActionProjectionV2["kind"]) => {
+    const action = actions.find((candidate) => candidate.kind === kind);
+    return action?.reason === "missing_capability";
+  };
+  const reject = missing("reject_announcement")
+    ? "Seu perfil não aprova anúncios. Peça a quem aprova."
+    : "";
+  const proceed =
+    missing("publish_announcement_now") && missing("schedule_announcement")
+      ? reject || "Seu perfil não publica anúncios. Peça a quem publica."
+      : "";
+  return { reject, proceed };
+}

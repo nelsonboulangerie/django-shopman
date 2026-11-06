@@ -217,9 +217,8 @@ describe("CampaignForm — composer V2", () => {
     expect(rows[0]!.text()).toContain("Publicação pública");
     expect(rows[0]!.text()).toContain("Feed");
     expect(rows[0]!.text()).not.toContain("WhatsApp");
-    expect(wrapper.text()).toContain(
-      "Recursos apenas catalogados para o futuro não entram nesta campanha",
-    );
+    // Beta 05/11 (ge:MKT-10): a mesma regra, na voz do operador.
+    expect(wrapper.text()).toContain("Aqui aparecem só os formatos que já podem ser enviados.");
   });
 
   it("mantém o salto para uma etapa pronta mesmo usando o primitive canônico", async () => {
@@ -233,6 +232,24 @@ describe("CampaignForm — composer V2", () => {
     expect(wrapper.find('[aria-current="step"]').attributes("aria-label")).toBe(
       "5. Revisar",
     );
+  });
+
+  it("o resumo da revisão contém um nome longo sem espaço na coluna dele (ge:MKT-28)", async () => {
+    const longName = "x".repeat(100);
+    const wrapper = form(
+      makeRule({ name: longName, trigger: "production_finished", platforms: ["instagram"] }),
+    );
+    await wrapper.find('button[aria-label="5. Revisar"]').trigger("mousedown", {
+      button: 0,
+      ctrlKey: false,
+    });
+
+    const summary = wrapper.find("[data-campaign-review-summary]");
+    expect(summary.text()).toContain(longName);
+    // Item de grade sem `min-w-0` cresce até o conteúdo; sem quebra em qualquer ponto,
+    // a palavra única vaza para a coluna vizinha.
+    expect(summary.classes()).toContain("[&>div]:min-w-0");
+    expect(summary.classes()).toContain("[&_dd]:[overflow-wrap:anywhere]");
   });
 
   it("não avança de Destinos enquanto nenhuma plataforma foi escolhida", async () => {

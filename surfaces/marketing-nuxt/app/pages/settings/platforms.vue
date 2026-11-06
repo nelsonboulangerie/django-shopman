@@ -524,7 +524,8 @@ useHead({ title: "Plataformas" });
               <h2 class="text-sm font-semibold">Modelo aprovado</h2>
               <p class="mt-0.5 text-xs text-muted-foreground">
                 Com um modelo aprovado, o anúncio alcança quem não conversou nas
-                últimas 24 horas. Sem ele, só a janela.
+                últimas 24 horas. Sem ele, só chega a quem escreveu para a loja nas
+                últimas 24 horas.
               </p>
             </div>
 

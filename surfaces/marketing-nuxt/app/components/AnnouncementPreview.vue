@@ -71,6 +71,9 @@ type PreviewBatch = {
     promotion: Record<string, Scalar>;
     link: Record<string, Scalar>;
   } | null;
+  /** Plataformas que ficaram fora desta prévia, com o motivo (a do formulário e a da
+   *  revisão mandam). Uma plataforma não derruba a prévia das outras. */
+  platform_problems?: Record<string, { code: string; detail: string }>;
   previews: Record<
     string,
     {
@@ -390,11 +393,24 @@ const simulatedScenes = computed(() =>
     >
       <template #description>
         <p>{{ problem.detail }}</p>
-        <p v-if="problem.fieldDetail" class="mt-1">{{ problem.fieldDetail }}</p>
+        <!-- O detalhe do campo só quando acrescenta: repetir a frase do topo era o
+             "mesma instrução duas vezes" do beta 05/11 (ge:MKT-08). -->
+        <p v-if="problem.fieldDetail && problem.fieldDetail !== problem.detail" class="mt-1">{{ problem.fieldDetail }}</p>
       </template>
     </NuxtAlert>
 
     <template v-else-if="preview && artifact">
+      <NuxtAlert
+        v-for="(trouble, platform) in preview.platform_problems ?? {}"
+        :key="platform"
+        class="mt-2"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        :title="`${platformLabels[platform] || platform} fica fora desta prévia.`"
+        :description="trouble.detail"
+        :data-preview-platform-problem="platform"
+      />
       <NuxtTabs
         v-if="platformTabs.length > 1"
         v-model="activePlatform"

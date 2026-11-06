@@ -201,7 +201,10 @@ def test_platform_switched_off_says_so_and_never_asks_for_the_adapter(
     assert state.state == "blocked"
     assert state.reason_code == "platform_switched_off"
     assert "desligad" in state.reason
-    assert switch in state.action
+    # O nome da chave de ambiente é do engenheiro (diagnose_marketing o mostra); ao
+    # operador vai o que pedir e a quem (beta 05/11, ge:MKT-10).
+    assert switch not in state.action
+    assert state.action.startswith("Peça ao suporte técnico para ligar o envio pelo ")
     for wrong in ("integração", "credencia", "adapter", "erro"):
         assert wrong not in state.reason.lower(), wrong
 
