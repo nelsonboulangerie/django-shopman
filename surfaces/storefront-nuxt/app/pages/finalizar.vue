@@ -266,8 +266,8 @@ watch(() => state.fiscal_tax_id_on_pickup, on => {
   if (!on && state.fulfillment_type === 'pickup') clearFieldError('fiscal_tax_id')
 })
 
-// Presente (GIFT-UX). Em ENTREGA: destinatário + mensagem + ocultar valores.
-// Em RETIRADA: "embalar para presente" — só mensagem + ocultar valores (o
+// Presente (GIFT-UX). Em ENTREGA: destinatário + mensagem + sem preços no papel.
+// Em RETIRADA: "embalar para presente" — só mensagem + sem preços no papel (o
 // comprador leva; sem destinatário). Desligar descarta os dados do presente.
 const isPickup = computed(() => state.fulfillment_type === 'pickup')
 const giftTitle = computed(() => (isPickup.value ? 'Embalar para presente' : 'É para presente?'))
@@ -276,7 +276,17 @@ const rememberDescription = computed(() => rememberChoicesDescription(isPickup.v
 const couponCard = computed(() => couponCardState(cart.value))
 const giftDescription = computed(() => (isPickup.value
   ? 'Embalagem especial e um cartão com sua mensagem.'
-  : 'Entregamos para outra pessoa, com cartão e sem valores na nota.'))
+  : 'Entregamos para outra pessoa, com um cartão com sua mensagem.'))
+// "Sem preços no papel" esconde preço só nos papéis da casa (etiqueta, via e
+// cartão; `backstage.services.order_documents._values_are_hidden`). A NFC-e
+// sai sempre com os valores: na retirada ela fica com quem compra; na entrega
+// a DANFE vai dentro da sacola. Com cobrança na porta, o valor a cobrar e o
+// troco saem no papel do entregador. A cópia diz isso, e nada além disso.
+const giftHideValuesDescription = computed(() => {
+  if (isPickup.value) return 'A etiqueta e o cartão saem sem preços. A nota fiscal sai com os valores e fica com você.'
+  const base = 'A etiqueta e o cartão saem sem preços. A nota fiscal vai junto com o pedido e mostra os valores.'
+  return state.payment_method === 'cash' ? `${base} Pagando na entrega, o valor a cobrar aparece no papel.` : base
+})
 watch(() => state.is_gift, (on) => {
   if (on) state.gift_hide_values = true
   if (!on) {
@@ -2244,8 +2254,8 @@ useSeoMeta({
                   </UiField>
                   <UiField orientation="horizontal">
                     <UiFieldContent class="gap-1">
-                      <UiFieldTitle>Ocultar valores</UiFieldTitle>
-                      <UiFieldDescription>Não mostrar preços na nota nem na etiqueta.</UiFieldDescription>
+                      <UiFieldTitle>Sem preços no papel</UiFieldTitle>
+                      <UiFieldDescription data-gift-hide-values-description>{{ giftHideValuesDescription }}</UiFieldDescription>
                     </UiFieldContent>
                     <UiSwitch id="gift-hide-values" v-model="state.gift_hide_values" />
                   </UiField>

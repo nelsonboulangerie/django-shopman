@@ -256,7 +256,7 @@ const itemColumns = [
                 v-if="order.gift_hide_values"
                 color="warning"
                 icon="i-lucide-eye-off"
-                label="Não mostrar valores"
+                label="Sem preços no papel"
                 data-gift-hide-values
               />
             </template>
@@ -516,7 +516,7 @@ const itemColumns = [
                   v-if="order.gift_hide_values"
                   color="warning"
                   icon="i-lucide-eye-off"
-                  label="Não mostrar valores"
+                  label="Sem preços no papel"
                   data-gift-hide-values
                 />
               </template>
