@@ -319,3 +319,25 @@ def _gsm_ascii(text: str) -> str:
     ascii_only = "".join(ch for ch in decomposed if ord(ch) < 128)
     # Emoji some por inteiro; o espaço que o antecedia não fica pendurado.
     return "\n".join(" ".join(line.split()) for line in ascii_only.split("\n"))
+
+
+#: Nomes genéricos que o lifecycle pede e o envio só qualifica depois
+#: (``order_ready`` vira ``order_ready_pickup``/``order_ready_delivery``). Quando o
+#: envio falha antes de qualificar, a diretiva fica com o genérico, e a tela lia
+#: "Order ready" (beta 06/11, W3).
+_GENERIC_TEMPLATE_LABELS = {
+    "order_ready": "Pedido pronto",
+}
+
+
+def template_label(template: str) -> str:
+    """O nome do aviso na língua de quem opera ("Pedido pronto"), nunca a chave."""
+    from shopman.shop.services.marketing_platform_configuration import WHATSAPP_EVENT_LABELS
+
+    key = str(template or "")
+    return (
+        WHATSAPP_EVENT_LABELS.get(key)
+        or _GENERIC_TEMPLATE_LABELS.get(key)
+        or key.replace("_", " ").strip().capitalize()
+        or "Aviso"
+    )

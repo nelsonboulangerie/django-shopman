@@ -280,6 +280,8 @@ def _confirm_pix_on_live_charge(
         )
 
     should_dispatch = _claim_paid_dispatch(order)
+    if should_dispatch:
+        _record_pix_event(order, amount_q=authorized_q, intent_ref=db_intent.ref)
 
     _ack_alerts(order)
     _cancel_stale_intents(order, keep_intent_ref=db_intent.ref)
@@ -365,6 +367,9 @@ def _confirm_pix_on_dead_charge(
         )
         return
 
+    if not already_booked:
+        _record_pix_event(order, amount_q=int(reported_q), intent_ref=booked_ref, outside_charge=True)
+
     # Cancellation can commit while capture discovers the charge is dead.
     # Re-read the canonical order after booking; the initial callback snapshot
     # must not decide whether money belongs to a live or cancelled order.
@@ -421,17 +426,22 @@ def _confirm_pix_on_dead_charge(
     # Pedido vivo com cobrança morta: cliente pagou o QR velho, ou pagou duas
     # vezes. Máquina nenhuma distingue os dois casos, e os dois precisam de
     # gente. O que não pode faltar é o dinheiro estar no livro e alguém saber.
+    # É o financeiro de UM pedido: vai para o gerente (``pix_on_closed_charge``,
+    # público ``orders``), não para o panorâmico do dono. Se o pedido acabar
+    # cancelado, o estorno sai sozinho e o alerta se resolve
+    # (``alert_resolution.RESOLVED_BY_REFUND``).
+    db_intent.refresh_from_db()
     _alert(
         order.ref,
-        alert_type="payment_reconciliation_failed",
+        alert_type="pix_on_closed_charge",
         severity="critical",
         message=(
-            f"PIX de {_money(reported_q)} do pedido {order.ref} caiu numa cobrança já "
-            f"encerrada ({_charge_status_label(db_intent.status)}). O valor foi registrado no "
-            "livro e nada foi confirmado sozinho; confira se o pedido foi pago duas vezes "
-            "e devolva pelo gateway se for o caso."
+            f"Pix de {_money(reported_q)} do pedido {order.ref} caiu numa cobrança já "
+            f"{_charge_status_label(db_intent.status)}. O valor foi registrado e nada foi "
+            "confirmado sozinho; confira se o pedido foi pago duas vezes e devolva pelo "
+            "gateway se for o caso. Se o pedido for cancelado, o estorno sai sozinho."
         ),
-        debounce_on=f"PIX de {_money(reported_q)} do pedido {order.ref} caiu numa cobrança já",
+        debounce_on=f"Pix de {_money(reported_q)} do pedido {order.ref} caiu numa cobrança já",
     )
 
 
@@ -826,6 +836,21 @@ def _money(amount_q) -> str:
     if amount_q is None:
         return "valor não informado"
     return f"R$ {format_money(int(amount_q))}"
+
+
+def _record_pix_event(order, *, amount_q, intent_ref: str, outside_charge: bool = False) -> None:
+    """O Pix recebido entra no histórico do pedido, com valor (beta 06/11, PIXEXP-03).
+
+    ``outside_charge`` marca o Pix que caiu numa cobrança já encerrada e foi
+    registrado à parte. Nunca derruba a confirmação: o dinheiro já está no livro.
+    """
+    payload = {"method": "pix", "amount_q": int(amount_q or 0), "intent_ref": intent_ref}
+    if outside_charge:
+        payload["outside_charge"] = True
+    try:
+        order.emit_event(event_type="payment.captured", actor="payment.pix", payload=payload)
+    except Exception:
+        logger.warning("pix_confirmation_event_failed order=%s", order.ref, exc_info=True)
 
 
 #: Por que a cobrança não recebe mais, em português (beta 06/11, PIXEXP-08). A

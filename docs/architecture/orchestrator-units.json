@@ -1061,6 +1061,7 @@
             "RESOLVED_BY_LEAVING_NEW",
             "COURIER_TYPES",
             "RESOLVED_BY_DELIVERY",
+            "RESOLVED_BY_REFUND",
             "RESOLVED_BY_UNDO"
           ]
         }
@@ -14043,7 +14044,8 @@
           "symbols": [
             "confirm_pix",
             "_DEAD_CHARGE_STATUSES",
-            "_ALERT_DEBOUNCE"
+            "_ALERT_DEBOUNCE",
+            "_record_pix_event"
           ]
         }
       ],

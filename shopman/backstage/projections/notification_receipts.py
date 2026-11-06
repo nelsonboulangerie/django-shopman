@@ -137,9 +137,9 @@ def _time_display(raw, fallback=None) -> str:
 
 
 def _template_label(template: str) -> str:
-    from shopman.shop.services.marketing_platform_configuration import WHATSAPP_EVENT_LABELS
+    from shopman.shop.notification_copy import template_label
 
-    return WHATSAPP_EVENT_LABELS.get(template) or template.replace("_", " ").capitalize()
+    return template_label(template)
 
 
 def _state(directive: Directive, evidence: dict) -> str:

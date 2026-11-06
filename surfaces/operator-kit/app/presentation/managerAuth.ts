@@ -23,6 +23,7 @@ export type ManagerAction =
   | "serve_change"
   | "refund_cash"
   | "cancel_sale"
+  | "cancel_order"
   | "order_edit_refund"
   | "card_machine_refund"
   | "close_shift_review"
@@ -65,6 +66,13 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
   cancel_sale: {
     title: "Autorizar cancelamento",
     reason: "A venda já foi fechada.",
+  },
+  // Cancelar pedido pago no Gestor. O "A venda já foi fechada." do PDV mentia
+  // para um pedido só autorizado; o motivo é o que acontece com o dinheiro, e
+  // ele vem da projeção do pedido em `detail` (beta 06/11, F5).
+  cancel_order: {
+    title: "Autorizar cancelamento",
+    reason: "O pedido já foi pago.",
   },
   order_edit_refund: {
     title: "Autorizar a devolução",
@@ -182,7 +190,7 @@ export function managerAuthReason(input: ManagerAuthReasonInput): string {
   if (withAmount && typeof input.amountQ === "number" && input.amountQ > 0) {
     return withAmount(formatBRL(input.amountQ), detail);
   }
-  if (detail && input.action === "day_closing_production") return detail;
+  if (detail && (input.action === "day_closing_production" || input.action === "cancel_order")) return detail;
   const fixa = input.action && MANAGER_ACTIONS[input.action]?.reason;
   if (fixa) return fixa;
   // Genérico é a última linha, nunca a primeira: dizer pouco é melhor que dizer
