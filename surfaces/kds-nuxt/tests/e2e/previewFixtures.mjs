@@ -212,7 +212,7 @@ export const HISTORY_ENTRIES = [
   historyEntry(
     { pk: 151, order_ref: "BAL-260921-0129", items: [item("2", "Croque monsieur"), item("1", "Café coado grande")] },
     {
-      items_summary: "2x Croque monsieur, 1x Café coado grande",
+      items_summary: "2× Croque monsieur, 1× Café coado grande",
       steps: ["recebido 08:12", "iniciado 08:13 Rafael", "Pronto 08:21 Rafael (tela)"],
       prep_display: "8 min",
       can_reopen: true,

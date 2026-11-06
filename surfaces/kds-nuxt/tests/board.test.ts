@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   allDayCounts,
+  fitAllDayChips,
   barNeedsArmDelay,
   cardScale,
   fulfillmentLabel,
@@ -15,6 +16,8 @@ import {
   ticketAction,
   ticketOverline,
   ticketStartLine,
+  orderWaitLabel,
+  ticketArrivalLine,
   lucideIcon,
   slaPercent,
   sortByUrgency,
@@ -161,10 +164,27 @@ describe("kds board presentation", () => {
 
   it("v4 nota 7: iniciado por e a hora combinada numa linha", () => {
     expect(ticketStartLine(ticket({ started_by: "Rafael", started_at_display: "21:56", due_time_display: "retira às 22:30" }))).toBe(
-      "iniciado por Rafael às 21:56 · retira às 22:30",
+      "Iniciado por Rafael às 21:56 · retira às 22:30",
     );
-    expect(ticketStartLine(ticket({ due_time_display: "entrega às 11:00" }))).toBe("entrega às 11:00");
+    expect(ticketStartLine(ticket({ due_time_display: "entrega às 11:00" }))).toBe("Entrega às 11:00");
     expect(ticketStartLine(ticket())).toBe("");
+  });
+
+  it("a idade do pedido aparece quando ele chegou à cozinha bem depois de entrar (beta 05/11, KDS-04)", () => {
+    expect(orderWaitLabel({ elapsed_seconds: 60, order_elapsed_seconds: 33 * 60 })).toBe("pedido há 33m");
+    expect(orderWaitLabel({ elapsed_seconds: 60, order_elapsed_seconds: 120 })).toBe("");
+    expect(orderWaitLabel({ elapsed_seconds: 60, order_elapsed_seconds: 33 * 60, due_clock_display: "17h" })).toBe("");
+    expect(orderWaitLabel({ elapsed_seconds: 60, order_elapsed_seconds: null })).toBe("");
+    expect(ticketStartLine(ticket({ started_by: "Diofer", started_at_display: "06:16", elapsed_seconds: 60, order_elapsed_seconds: 1980 }))).toBe(
+      "Pedido há 33m · iniciado por Diofer às 06:16",
+    );
+  });
+
+  it("o sobrescrito do detalhe separa a chegada à cozinha da hora do pedido, sem o prefixo do código (KDS-04, KDS-16)", () => {
+    expect(ticketArrivalLine(ticket({ created_at_display: "05/11 às 06:15" }))).toBe("Na cozinha desde 05/11 às 06:15");
+    expect(
+      ticketArrivalLine(ticket({ created_at_display: "05/11 às 06:15", elapsed_seconds: 60, order_elapsed_seconds: 1980, order_created_at_display: "05:43" })),
+    ).toBe("Na cozinha desde 05/11 às 06:15 · pedido às 05:43");
   });
 
   it("o card do tablet e do desktop diz Pronto com o código, como o celular (dono, 04/10/2026)", () => {
@@ -246,6 +266,8 @@ describe("kds board presentation", () => {
     // O de agora no prazo diz o estado, nunca "Próximo" (a posição está no rótulo "Agora").
     expect(ticketPill(ticket({ status: "pending" }), { next: true })).toEqual({ label: "Novo", tone: "info" });
     expect(ticketPill(ticket({ status: "pending" }), {})).toEqual({ label: "Novo", tone: "info" });
+    // Relógio vermelho fora do "Agora" também diz Atrasado, nunca "Novo" (beta 05/11, KDS-15).
+    expect(ticketPill(ticket({ status: "pending", timer_class: "timer-late" }), {})).toEqual({ label: "Atrasado", tone: "destructive" });
     expect(ticketPill(ticket({ status: "in_progress" }), {})).toEqual({ label: "Em preparo", tone: "primary" });
     expect(ticketPill(ticket({ status: "in_progress" }), { blocked: true })?.label).toBe("Bloqueado");
   });
@@ -367,6 +389,23 @@ it("soma quantidades decimais sem concatenar strings nem arredondar unidades", (
   const second = ticket();
   second.items[0]!.qty = "0.2";
   expect(allDayCounts([first, second])).toEqual([{ name: "Pão", qty: 0.3 }]);
+});
+
+describe("A fazer: quais chips cabem na linha (beta 05/11, KDS-08)", () => {
+  const room = { reserve: 94, more: 104, gap: 8 };
+
+  it("um nome longo que não cabe não esconde os curtos que vêm depois", () => {
+    // 2× Croissant Presunto e Queijo (330) cabe; o longo seguinte (400) não; os curtos sim.
+    expect(fitAllDayChips([330, 400, 90, 80, 300], 800, room)).toEqual([0, 2, 3]);
+  });
+
+  it("tudo cabendo, mostra todos e não reserva o +N", () => {
+    expect(fitAllDayChips([100, 100], 320, room)).toEqual([0, 1]);
+  });
+
+  it("sem medida ainda (largura 0), mostra todos", () => {
+    expect(fitAllDayChips([500, 500], 0, room)).toEqual([0, 1]);
+  });
 });
 
 describe("o botão do card", () => {

@@ -22,6 +22,8 @@ export interface POSProductProjection {
   kitchen_station?: string;
   /** A estação tem o envio automático ligado: a linha nova vai sozinha. */
   kitchen_auto_fire?: boolean;
+  /** A estação é de preparo (feito na hora). No balcão, só este vai à cozinha ao finalizar. */
+  kitchen_prep?: boolean;
   /** O preço que o motor cobra AGORA (com a Hora da Xepa aberta, já descontado). */
   price_q: number;
   price_display: string;

@@ -132,7 +132,7 @@ export function useOperatorShortcuts() {
 }
 
 /**
- * O app entrega os atalhos da tela dele (os grupos além de "Em todo o app", que o kit
+ * O app entrega os atalhos da tela dele (os grupos além de "em qualquer tela", que o kit
  * monta com as seções). Chamado pela tela que tem teclas próprias (a venda do PDV, a
  * Produção); some quando ela desmonta.
  */
