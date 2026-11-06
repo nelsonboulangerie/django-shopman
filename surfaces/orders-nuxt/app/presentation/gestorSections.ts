@@ -230,7 +230,7 @@ export function gestorSettingsSections({
   ];
 }
 
-/** O nome de cada seção de Ajustes, para a frase "Seu acesso não inclui …". */
+/** O nome de cada seção de Ajustes, para a frase "Sua conta não abre …". */
 const SETTINGS_ROUTE_NAMES: Record<string, string> = {
   "/history": "o Histórico",
   "/catalog": "o Catálogo",
@@ -251,7 +251,7 @@ function underRoute(path: string, route: string) {
  * Quem chega pela URL direta numa seção que o andar Ajustes não lhe mostra recebia a
  * recusa do servidor (403) como "Sem conexão · Tentar de novo" e insistia achando que
  * a rede caiu (beta 05/11, GES-08). A lista de Ajustes já diz o que o acesso inclui:
- * fora dela, a tela diz "Seu acesso não inclui …" e não monta a página.
+ * fora dela, a tela diz "Sua conta não abre …" e não monta a página.
  */
 export function deniedSettingsSection(
   path: string,
