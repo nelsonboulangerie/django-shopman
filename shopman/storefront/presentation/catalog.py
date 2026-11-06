@@ -14,6 +14,7 @@ Admin-configurable per channel.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -450,19 +451,30 @@ def build_catalog_items_for_products(
     return _build_cards(ordered, channel_ref=channel_ref, request=request)
 
 
+def fresh_from_oven_skus(channel_ref: str) -> tuple[str, ...]:
+    """SKUs da dinâmica "Recém saídos do forno" (fornadas finalizadas há pouco)."""
+    from shopman.shop import dynamic_collections as dyn
+
+    section = dyn.resolve("fresh_from_oven", channel_ref=channel_ref)
+    return section.skus if section is not None else ()
+
+
 def build_featured_items(
     *,
     channel_ref: str,
     request: HttpRequest | None = None,
     limit: int = 3,
+    prefer_skus: tuple[str, ...] = (),
 ) -> tuple[CatalogItemProjection, ...]:
-    """Os ``limit`` primeiros cards de ``build_catalog(...).featured or .items``.
+    """O rail da home: até ``limit`` cards, sem repetir produto.
 
-    O rail da home guarda três cards; montar o cardápio inteiro (preço,
-    disponibilidade, seções, dinâmicas de todos os produtos) para descartar o
-    resto custava o mesmo request do ``menu/``. Aqui a escolha é a mesma, na
-    mesma ordem (coleções ativas, depois sem coleção; destaque = ``popular_skus``,
-    senão os primeiros), e só os escolhidos viram card, pelo mesmo montador.
+    O rail guarda três cards; montar o cardápio inteiro (preço, disponibilidade,
+    seções, dinâmicas de todos os produtos) para descartar o resto custava o
+    mesmo request do ``menu/``. A ordem da escolha: ``prefer_skus`` (o que saiu
+    do forno agora), depois os mais pedidos (``popular_skus``), depois a ordem do
+    cardápio (coleções ativas, depois sem coleção). Era só "mais pedidos ou, sem
+    nenhum, os primeiros": um mais-vendido visível bastava para o rail ficar com
+    um card só, um Frappé sob "Direto do forno" (beta 05/11, LOJA-05).
     """
     all_products = [
         product
@@ -476,7 +488,20 @@ def build_featured_items(
     if not all_products:
         return ()
     popular = popular_skus(limit=5)
-    chosen = [p for p in all_products if p.sku in popular][:limit] or all_products[:limit]
+    by_sku: dict[str, Any] = {}
+    for product in all_products:
+        by_sku.setdefault(product.sku, product)
+    ordered_skus = [
+        *(sku for sku in prefer_skus if sku in by_sku),
+        *(p.sku for p in all_products if p.sku in popular),
+        *(p.sku for p in all_products),
+    ]
+    chosen: list[Any] = []
+    for sku in ordered_skus:
+        if len(chosen) >= limit:
+            break
+        if all(c.sku != sku for c in chosen):
+            chosen.append(by_sku[sku])
     return _build_cards(chosen, channel_ref=channel_ref, request=request, popular=popular)
 
 
@@ -629,7 +654,7 @@ def _build_items(
                     dietary=tuple(str(d) for d in dietary),
                 ),
                 quote=price,
-                unit_weight_label=_unit_weight_label(p),
+                unit_weight_label=unit_weight_label(p),
                 availability=availability,
                 availability_label=avail_label,
                 can_add_to_cart=can_add,
@@ -918,11 +943,25 @@ def _product_tags(product: Any) -> tuple[str, ...]:
     return catalog_context.product_tags(product)
 
 
-def _unit_weight_label(product: Any) -> str | None:
-    # Ao lado do preço, dois números sem conector admitem "R$ 18,00 POR 500 g".
-    # O rótulo diz de quem é o peso; o "~" fica, porque pão não pesa exato — e
-    # peso anunciado nunca mente para menos.
-    return f"peça de ~{product.unit_weight_g} g" if getattr(product, "unit_weight_g", None) else None
+#: Medida já escrita no nome ("Água Mineral 310ml", "Camembert 125g").
+_MEASURE_IN_NAME = re.compile(r"\d+(?:[.,]\d+)?\s*(?:g|kg|ml|l)\b", re.IGNORECASE)
+
+
+def unit_weight_label(product: Any) -> str | None:
+    """O peso aproximado da peça, quando ele acrescenta algo ao nome.
+
+    Ao lado do preço, dois números sem conector admitem "R$ 18,00 POR 500 g".
+    O rótulo diz de quem é o peso; o "~" fica, porque pão não pesa exato, e
+    peso anunciado nunca mente para menos. Quando o nome já traz a medida, o
+    peso aproximado repetia o número com um "~" que o rótulo não tem: "Camembert
+    125g ~125 g/un." (beta 05/11, LOJA-11).
+    """
+    weight = getattr(product, "unit_weight_g", None)
+    if not weight:
+        return None
+    if _MEASURE_IN_NAME.search(str(getattr(product, "name", "") or "")):
+        return None
+    return f"peça de ~{weight} g"
 
 
 def _search_terms(

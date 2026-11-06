@@ -225,6 +225,14 @@ describe("installTextParts", () => {
     expect(installTextParts("sem rótulo")).toEqual([{ text: "sem rótulo", strong: false }]);
   });
 
+  it("rótulo que é só o símbolo mostra o desenho, não o desenho e o caractere (beta 05/11, LOJA-09)", () => {
+    const partes = installTextParts("Toque em **⋮** (três pontinhos), no canto do navegador.", "menu-vertical");
+    const comSimbolo = partes.filter((part) => part.glyph);
+    expect(comSimbolo).toHaveLength(1);
+    expect(comSimbolo[0]!.text).toBe("");
+    expect(partes.map((part) => part.text).join("")).not.toContain("⋮");
+  });
+
   it("o símbolo entra no PRIMEIRO rótulo, que é o que ela procura com os olhos", () => {
     const partes = installTextParts("Toque em **Compartilhar**, na barra de baixo.", "share-ios");
     expect(partes.filter((part) => part.glyph)).toHaveLength(1);

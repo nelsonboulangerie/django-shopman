@@ -5,6 +5,8 @@ import {
   LOGIN_TERMS_LINK_LABEL,
   RESEND_COOLDOWN_MS,
   accessLinkLanding,
+  authErrorBelongsToPhoneField,
+  authErrorOffersSupport,
   authErrorView,
   authStep,
   codeSentPrefix,
@@ -198,3 +200,25 @@ describe('isMarketingPromptRouteExcluded', () => {
     }
   )
 })
+
+describe('beta 05/11: erros do login com o título certo e no lugar certo', () => {
+  it('LOJA-03: conflito de identidade não herda "Código não confere" do campo code', () => {
+    const view = authErrorView({ status: 400, field: 'code', errorCode: 'identity_conflict', detail: 'Este número aparece em mais de um cadastro.' }, 'x')
+    expect(view.kind).toBe('identity_conflict')
+    expect(view.title).toBe('Não conseguimos entrar com este número')
+    expect(authErrorOffersSupport(view)).toBe(true)
+  })
+
+  it('LOJA-03: código errado continua dizendo que o código não confere', () => {
+    const view = authErrorView({ status: 400, field: 'code', detail: 'Código incorreto.' }, 'x')
+    expect(view.title).toBe('Código não confere')
+    expect(authErrorOffersSupport(view)).toBe(false)
+  })
+
+  it('LOJA-04: telefone inválido mora junto do campo', () => {
+    expect(authErrorBelongsToPhoneField(authErrorView({ field: 'phone' }, 'x'))).toBe(true)
+    expect(authErrorBelongsToPhoneField(authErrorView({ field: 'code' }, 'x'))).toBe(false)
+    expect(authErrorBelongsToPhoneField(null)).toBe(false)
+  })
+})
+

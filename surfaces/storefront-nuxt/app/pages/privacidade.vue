@@ -120,8 +120,7 @@ useSeoMeta({
         </li>
         <li>
           <strong>Para avisar que um produto voltou</strong>, quando você pede. Esse aviso vai mesmo
-          sem o consentimento de novidades, porque o pedido foi seu, e para se você desligar as
-          mensagens.
+          sem o consentimento de novidades e com as mensagens desligadas, porque o pedido foi seu.
         </li>
       </ul>
     </LegalSection>

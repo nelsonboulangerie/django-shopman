@@ -256,7 +256,6 @@ export interface CartItemProjection {
   price_display: string
   total_display: string
   image_url: string | null
-  original_price_display: string | null
   discount_label: string | null
   is_available: boolean
   availability_warning: string | null

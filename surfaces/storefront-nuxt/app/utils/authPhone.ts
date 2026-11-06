@@ -114,3 +114,21 @@ export function authPhonePayload (
     ...(deliveryMethod ? { delivery_method: deliveryMethod } : {})
   }
 }
+
+/**
+ * O número está completo o bastante para valer uma ida ao servidor? Brasil:
+ * DDD + 8 ou 9 dígitos (com o DDD padrão da loja completando o número local).
+ * Internacional: ao menos 8 dígitos depois do código do país. Era o servidor
+ * quem descobria que "4399" não é telefone, e o aviso subia para o topo da
+ * página (beta 05/11, LOJA-04).
+ */
+export function authPhoneIsComplete (value: string, region: AuthPhoneRegion, defaultDdd = ''): boolean {
+  const normalized = normalizeAuthPhone(value, region, defaultDdd)
+  if (!normalized) return false
+  const digits = digitsOnly(normalized)
+  if (normalized.startsWith('+55') && region === 'BR') {
+    const national = digits.slice(2)
+    return national.length === 10 || national.length === 11
+  }
+  return digits.length >= 8
+}

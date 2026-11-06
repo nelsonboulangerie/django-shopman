@@ -15,8 +15,13 @@ interface NavigatorWithStandalone extends Navigator {
   standalone?: boolean
 }
 
+// Fora de onde a pessoa está no meio de uma tarefa: entrar, a sacola e o checkout.
+// Em /entrar o convite subia por cima do "Prefere receber um código por SMS?" e o
+// toque se perdia (beta 05/11, LOJA-09).
+const INVITE_EXCLUDED_PATHS = ['/entrar', '/sacola', '/finalizar']
+
 export function isPwaInviteRouteExcluded (path: string): boolean {
-  return path === '/finalizar' || path.startsWith('/finalizar/') || path.startsWith('/pedido/')
+  return INVITE_EXCLUDED_PATHS.some(base => path === base || path.startsWith(`${base}/`)) || path.startsWith('/pedido/')
 }
 
 export function usePwaInstall (options: { now?: () => number, environment?: InstallEnvironment } = {}) {

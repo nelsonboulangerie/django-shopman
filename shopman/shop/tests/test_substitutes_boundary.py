@@ -202,3 +202,29 @@ def test_a_migration_style_update_must_not_leave_the_rule_cache_stale(loja):
     forget_rules_cache()
     assert get_rule_params("suggestion.substitute")["must_match"] == ["sabor"]
     assert "QQ" not in _find("MAD")
+
+
+def test_the_substitute_carries_the_menu_price_with_the_promotion(loja):
+    """Beta 05/11 (LOJA-06): o sheet de limite oferecia pelo preço de lista, e o
+    cardápio, na mesma hora, cobrava a Semana do Pão."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from shopman.shop.models import Promotion
+
+    reference = _product("TRADI", "Baguette de Tradition", listing=loja, price_q=1600)
+    fendu = _product("FENDU", "Fendu", listing=loja, price_q=600)
+    _in("paes", reference, fendu)
+    now = timezone.now()
+    Promotion.objects.create(
+        ref="semana-do-pao", name="Semana do Pão", type=Promotion.PERCENT, value=15,
+        skus=["FENDU"], is_active=True,
+        valid_from=now - timedelta(hours=1), valid_until=now + timedelta(hours=1),
+    )
+
+    found = {r["sku"]: r for r in substitutes.find("TRADI", qty=Decimal("1"), channel=CHANNEL)}
+
+    assert found["FENDU"]["price_q"] == 510
+    assert found["FENDU"]["price_display"] == "R$ 5,10"
+

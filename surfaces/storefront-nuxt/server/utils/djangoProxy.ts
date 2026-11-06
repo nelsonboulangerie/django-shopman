@@ -249,6 +249,15 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   const forwardedFor = getRequestHeader(event, 'x-forwarded-for')
   if (forwardedFor) headers['x-forwarded-for'] = forwardedFor
 
+  // O navegador do cliente também tem de atravessar o BFF (beta 05/11, LOJA-02).
+  // Sem isso o Django lia o UA do Node: todo celular virava computador no login
+  // pelo WhatsApp (a escada de `access.site_origin_is_phone` invertia), e o
+  // dispositivo confiável e a auditoria de entrada gravavam o UA errado.
+  for (const name of ['user-agent', 'accept-language']) {
+    const value = getRequestHeader(event, name)
+    if (value) headers[name] = value
+  }
+
   // Só repassar não basta: o BFF chama o `api.` pela rede pública, e a borda de
   // lá acrescenta o IP de SAÍDA deste processo à direita. Contando da direita, o
   // Django gravava esse IP (igual para todo visitante) como evidência de
