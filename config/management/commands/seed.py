@@ -243,6 +243,31 @@ PRODUCTION_PLAN = [
     ("madeleine", Decimal("68"), (9, 0), (13, 0))
 ]
 
+
+# Quem abre e fecha o lote na bancada é gente da Cozinha, no formato que a tela
+# grava (``production:<username>``). Com ``"seed"`` a Qualidade escrevia "fechado
+# por seed" ao operador (beta 05/11, PROD-20).
+SEED_BENCH_ACTOR = "production:" + next(
+    username for username, _first, _last, groups, *_ in setup_operators.CAST if "Cozinha" in groups
+)
+
+
+def _not_after_now(start_at, finish_at, *, ceiling):
+    """O par (início, fim) de um lote de hoje, sem nenhum dos dois depois de ``ceiling``.
+
+    Lote fechado cujo fim cai no futuro recua INTEIRO, mantendo a duração: o
+    folhado das 8h às 11h, com o seed rodando às 5h50, vira 2h48 às 5h48, e não
+    um lote de zero minutos. Lote só aberto (sem fim) abre no máximo em
+    ``ceiling``. Antes do teto, nada muda.
+    """
+    if finish_at is not None and finish_at > ceiling:
+        shift = finish_at - ceiling
+        finish_at = ceiling
+        start_at = start_at - shift if start_at is not None else None
+    if start_at is not None and start_at > ceiling:
+        start_at = ceiling
+    return start_at, finish_at
+
 # A proveniência das quatro fichas que vieram da aba Fx da planilha de custos
 # (dono, 02/10/2026), copiada da versão publicada no alpha (`<ref>@2`): rótulo,
 # fonte, as linhas da planilha como estavam e as notas das decisões do dono.
@@ -2188,7 +2213,7 @@ class Command(BaseCommand):
              unsplash("photo-1531664412848-9610afed156c"), 320, "Servir quente, imediatamente"),
             ("QJQT", "Queijo-Quente", "Queijo quente da casa, no shokupan", 2600, "un", 0, True,
              unsplash("photo-1528736235302-52922df5c122"), 250, "Servir quente, imediatamente"),
-            ("JB", "Jambon-Beurre", "Baguette, manteiga e presunto — o clássico parisiense", 1800, "un", 0, True,
+            ("JB", "Jambon-Beurre", "Baguette, manteiga e presunto: o clássico parisiense", 1800, "un", 0, True,
              unsplash("photo-1753798130695-3c060be80e83"), 250, "Melhor consumido na hora"),
             # ── Padaria · Doces ──
             ("PERDU", "Pain Perdu", "Fatia de brioche banhada no creme e dourada, com caramelo salgado, chantilly e flor de sal", 1800, "un", 0, True,
@@ -4987,16 +5012,21 @@ class Command(BaseCommand):
         # litro (unidade-base do insumo) e a nutrição precisa de grama. Sem ela o
         # item ficaria de fora da soma — ADR-024 (a ponte é declarada, nunca
         # deduzida) e shopman/shop/services/nutrition_from_recipe.py.
+        #
+        # O `label` vira `Material.name`, e o nome não pode contradizer o SKU: a
+        # Produção busca por um e lê o outro. A NOVARA-T55 se chamava "T65", a
+        # ANACONDA-PREMIUM "T55" e o SAL-REFINADO "Sal marinho" (beta 05/11).
+        # Trava: test_seed_catalog_coerente.py.
         INGREDIENT_PROFILES = {
-            "FARINHA-NOVARA-T55":  {"label": "Farinha de trigo T65",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
-            "FARINHA-ANACONDA-PREMIUM":  {"label": "Farinha de trigo T55",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
+            "FARINHA-NOVARA-T55":  {"label": "Farinha de trigo T55",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
+            "FARINHA-ANACONDA-PREMIUM":  {"label": "Farinha de trigo premium",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
             "FARINHA-BAGATELLE-T45":  {"label": "Farinha de trigo T45",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
             "FARINHA-INTEGRAL-ORGANICA":  {"label": "Farinha de trigo integral", "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 340, "carbohydrates_g": 72, "sugars_g": 0.4, "proteins_g": 13, "total_fat_g": 2.5, "saturated_fat_g": 0.4, "trans_fat_g": 0, "fiber_g": 10.7, "sodium_mg": 2}},
             "FARINHA-CENTEIO-INTEGRAL-ORGANICA":      {"label": "Farinha de centeio",     "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 338, "carbohydrates_g": 76, "sugars_g": 1.0, "proteins_g": 10, "total_fat_g": 1.7, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 15.0, "sodium_mg": 2}},
             "AGUA-FILTRADA": {"label": "Água filtrada",         "allergens": [], "diet": "vegan", "density_g_per_ml": 1.0, "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 0}},
             "LEVAIN-LIQUIDO": {"label": "Fermento natural (levain)", "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 220, "carbohydrates_g": 45, "sugars_g": 0.5, "proteins_g": 7,  "total_fat_g": 0.5, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 1.8,  "sodium_mg": 5}},
             "FERMENTO-BIOLOGICO-FRESCO": {"label": "Fermento biológico",     "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 105, "carbohydrates_g": 12, "sugars_g": 0,   "proteins_g": 13, "total_fat_g": 1.5, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 8.1,  "sodium_mg": 30}},
-            "SAL-REFINADO":          {"label": "Sal marinho",            "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 38758}},
+            "SAL-REFINADO":          {"label": "Sal refinado",            "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 38758}},
             "ACUCAR-CRISTAL":       {"label": "Açúcar",                 "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 387, "carbohydrates_g": 100, "sugars_g": 100, "proteins_g": 0, "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 1}},
             "MANTEIGA-PRESIDENT-SEM-SAL":  {"label": "Manteiga francesa",      "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 717, "carbohydrates_g": 0.1, "sugars_g": 0.1, "proteins_g": 0.9, "total_fat_g": 81, "saturated_fat_g": 51,  "trans_fat_g": 3.3, "fiber_g": 0,  "sodium_mg": 11}},
             "LEITE-INTEGRAL-A":        {"label": "Leite integral",         "allergens": ["leite"], "diet": "vegetarian", "density_g_per_ml": 1.03, "nutrition": {"energy_kcal": 61,  "carbohydrates_g": 4.8, "sugars_g": 4.8, "proteins_g": 3.2, "total_fat_g": 3.3, "saturated_fat_g": 1.9, "trans_fat_g": 0.1, "fiber_g": 0,  "sodium_mg": 40}},
@@ -5887,7 +5917,9 @@ class Command(BaseCommand):
                     "operator_ref": operator_ref,
                 },
                 "seed",
-                at(target_date, (3, 0)),
+                # Planeja-se na véspera, e nunca depois do agora: às 3h do próprio
+                # dia o plano nascia depois da massa (1h) e, para amanhã, no futuro.
+                min(at(target_date - timedelta(days=1), (16, 0)), timezone.now() - timedelta(minutes=5)),
             )
             if status in (WorkOrder.Status.STARTED, WorkOrder.Status.FINISHED):
                 effective_started = started_qty or planned_qty
@@ -5905,7 +5937,7 @@ class Command(BaseCommand):
                             else "seed operacional"
                         ),
                     },
-                    "seed",
+                    SEED_BENCH_ACTOR,
                     start_at or at(target_date, (5, 0)),
                 )
             if status == WorkOrder.Status.FINISHED and finished_qty is not None:
@@ -5937,7 +5969,7 @@ class Command(BaseCommand):
                             else {}
                         ),
                     },
-                    "seed",
+                    SEED_BENCH_ACTOR,
                     finish_at or at(target_date, (8, 0)),
                 )
             return work_order
@@ -5961,6 +5993,13 @@ class Command(BaseCommand):
         # horas fixas foi o que inverteu a ordem da padaria de madrugada — com o
         # seed rodado antes das ~5h25 a massa terminava DEPOIS de a primeira
         # fornada começar, e o dia ficava impossível (22/08).
+        #
+        # A tabela é de horas FIXAS, e o seed pode rodar antes delas: às 7h31 a
+        # Produção mostrava "Madeleine · aberto às 09:00" e "Folhado · fechado
+        # 11:00" (beta 05/11, PROD-20). Nenhum fato de hoje fica depois do agora:
+        # lote fechado no futuro recua inteiro (mantém a duração), lote aberto
+        # no futuro abre agora.
+        today_ceiling = timezone.now() - timedelta(minutes=2)
         today_schedule = []
         for index, (ref, qty, start_hm, finish_hm) in enumerate(production_plan):
             if index in (0, 1, 7, 9):
@@ -5986,6 +6025,8 @@ class Command(BaseCommand):
                 start_at = timezone.now() - timedelta(
                     minutes=self._max_started_minutes_for_recipe(ref) + 15
                 )
+            else:
+                start_at, finish_at = _not_after_now(start_at, finish_at, ceiling=today_ceiling)
             today_schedule.append((ref, qty, status, started, finished, start_at, finish_at))
 
         # A primeira fornada de acabado do dia é a âncora do pré-preparo abaixo.
@@ -6550,7 +6591,7 @@ class Command(BaseCommand):
                     )
 
                 # Create events
-                OrderEvent.objects.create(
+                self._create_order_event(
                     order=order,
                     type="status_change",
                     seq=0,
@@ -6559,7 +6600,7 @@ class Command(BaseCommand):
                 )
 
                 if status in ("accepted", "preparing", "ready", "completed"):
-                    OrderEvent.objects.create(
+                    self._create_order_event(
                         order=order,
                         type="status_change",
                         seq=1,
@@ -6568,7 +6609,7 @@ class Command(BaseCommand):
                     )
 
                 if status in ("preparing", "ready", "completed"):
-                    OrderEvent.objects.create(
+                    self._create_order_event(
                         order=order,
                         type="status_change",
                         seq=2,
@@ -6577,7 +6618,7 @@ class Command(BaseCommand):
                     )
 
                 if status == "completed":
-                    OrderEvent.objects.create(
+                    self._create_order_event(
                         order=order,
                         type="status_change",
                         seq=3,
@@ -6600,7 +6641,9 @@ class Command(BaseCommand):
             ("preparing", random.randint(5, 15)),
             ("accepted",  random.randint(2, 5)),
             ("accepted",  random.randint(2, 5)),
-            ("ready",      1)
+            # Pronto há 5 min: a trilha anda até 3 min depois da abertura, e com
+            # 1 min o "pronto" e o ticket da cozinha concluíam no futuro.
+            ("ready",      5)
         ]
 
         for live_status, minutes_ago in live_specs:
@@ -6661,7 +6704,7 @@ class Command(BaseCommand):
                 )
 
             # Events: realistic minute progression
-            OrderEvent.objects.create(
+            self._create_order_event(
                 order=order,
                 type="status_change",
                 seq=0,
@@ -6670,7 +6713,7 @@ class Command(BaseCommand):
             )
 
             if live_status in ("accepted", "preparing", "ready"):
-                OrderEvent.objects.create(
+                self._create_order_event(
                     order=order,
                     type="status_change",
                     seq=1,
@@ -6679,7 +6722,7 @@ class Command(BaseCommand):
                 )
 
             if live_status in ("preparing", "ready"):
-                OrderEvent.objects.create(
+                self._create_order_event(
                     order=order,
                     type="status_change",
                     seq=2,
@@ -6691,7 +6734,7 @@ class Command(BaseCommand):
                 tickets = dispatch(order)
 
                 if live_status == "ready":
-                    OrderEvent.objects.create(
+                    self._create_order_event(
                         order=order,
                         type="status_change",
                         seq=3,
@@ -6742,14 +6785,14 @@ class Command(BaseCommand):
                 unit_price_q=produced_product.base_price_q,
                 line_total_q=produced_product.base_price_q * 3,
             )
-            OrderEvent.objects.create(
+            self._create_order_event(
                 order=sync_order,
                 type="status_change",
                 seq=0,
                 payload={"new_status": "new"},
                 created_at=order_time,
             )
-            OrderEvent.objects.create(
+            self._create_order_event(
                 order=sync_order,
                 type="status_change",
                 seq=1,
@@ -6793,14 +6836,14 @@ class Command(BaseCommand):
                 unit_price_q=prod_b.base_price_q,
                 line_total_q=prod_b.base_price_q,
             )
-            OrderEvent.objects.create(
+            self._create_order_event(
                 order=order_accepted,
                 type="status_change",
                 seq=0,
                 payload={"new_status": "new"},
                 created_at=now - timedelta(minutes=9),
             )
-            OrderEvent.objects.create(
+            self._create_order_event(
                 order=order_accepted,
                 type="status_change",
                 seq=1,
@@ -7016,7 +7059,7 @@ class Command(BaseCommand):
             line_total_q=total_q,
             meta={"seed": "nelson", "source": "security_reliability_edges"},
         )
-        OrderEvent.objects.create(
+        self._create_order_event(
             order=order,
             type="status_change",
             seq=0,
@@ -7057,27 +7100,33 @@ class Command(BaseCommand):
         expires_at=None,
         captured_at=None,
     ) -> None:
-        intent = PaymentIntent.objects.create(
-            ref=f"PI-EDGE-{uuid.uuid4().hex[:10].upper()}",
-            order_ref=order.ref,
-            method=method,
-            status=status,
-            amount_q=order.total_q,
-            gateway=gateway,
-            gateway_data=self._pix_gateway_data(gateway),
-            gateway_id=f"{gateway_id}-{order.ref}",
-            expires_at=expires_at,
-            captured_at=captured_at,
-        )
+        # A cobrança nasce junto com o pedido, não na hora do seed. Com o
+        # ``auto_now_add`` o Pix vencido nascia DEPOIS de vencer, e o Gestor
+        # escrevia "gerado às 05:51 · expirou às 05:48" (beta 05/11, GES-04).
+        with mock.patch("django.utils.timezone.now", return_value=order.created_at):
+            intent = PaymentIntent.objects.create(
+                ref=f"PI-EDGE-{uuid.uuid4().hex[:10].upper()}",
+                order_ref=order.ref,
+                method=method,
+                status=status,
+                amount_q=order.total_q,
+                gateway=gateway,
+                gateway_data=self._pix_gateway_data(gateway),
+                gateway_id=f"{gateway_id}-{order.ref}",
+                expires_at=expires_at,
+                captured_at=captured_at,
+            )
         payment = dict((order.data or {}).get("payment") or {})
         payment["intent_ref"] = intent.ref
         if status == PaymentIntent.Status.CAPTURED:
-            PaymentTransaction.objects.create(
-                intent=intent,
-                type=PaymentTransaction.Type.CAPTURE,
-                amount_q=order.total_q,
-                gateway_id=intent.gateway_id,
-            )
+            # A transação é imutável: a data entra no próprio insert.
+            with mock.patch("django.utils.timezone.now", return_value=captured_at or order.created_at):
+                PaymentTransaction.objects.create(
+                    intent=intent,
+                    type=PaymentTransaction.Type.CAPTURE,
+                    amount_q=order.total_q,
+                    gateway_id=intent.gateway_id,
+                )
         order.data = {**(order.data or {}), "payment": payment}
         order.save(update_fields=["data", "updated_at"])
 
@@ -7156,7 +7205,7 @@ class Command(BaseCommand):
                         completed_at=order_time,
                     )
                     self._stamp_order(order, order_time)
-                    OrderEvent.objects.create(
+                    self._create_order_event(
                         order=order,
                         type="status_change",
                         seq=0,
@@ -7208,8 +7257,17 @@ class Command(BaseCommand):
             "line_total_q": product.base_price_q * qty,
         }
 
-    def _qa_status_events(self, order: Order, created_at: datetime) -> None:
-        """Reconstrói a trilha de eventos até o status atual (determinística)."""
+    def _qa_status_events(self, order: Order, created_at: datetime, until: datetime) -> None:
+        """Reconstrói a trilha de eventos até o status atual (determinística).
+
+        Duas coerências que a tela de detalhe lê (beta 05/11, CEN-10):
+
+        * pedido que não é de entrega não passa por "Saiu para entrega" nem por
+          "Entregue": a retirada vai de pronto direto a concluído;
+        * nenhum passo fica depois de ``until`` (a conclusão, ou o agora): a
+          trilha andava um minuto por passo a partir da abertura e podia terminar
+          no futuro, ou longe da hora em que o pedido foi carimbado.
+        """
         status = order.status
         if status == Order.Status.CANCELLED:
             path = [Order.Status.NEW, Order.Status.ACCEPTED, Order.Status.CANCELLED]
@@ -7222,13 +7280,18 @@ class Command(BaseCommand):
         else:
             idx = self._QA_STATUS_PATH.index(status)
             path = self._QA_STATUS_PATH[: idx + 1]
+        if (order.data or {}).get("fulfillment_type") != "delivery":
+            path = [
+                step for step in path
+                if step not in (Order.Status.DISPATCHED, Order.Status.DELIVERED) or step == status
+            ]
         for seq, step in enumerate(path):
-            OrderEvent.objects.create(
+            self._create_order_event(
                 order=order,
                 type="status_change",
                 seq=seq,
                 payload={"new_status": step, "source": "seed:qa"},
-                created_at=created_at + timedelta(minutes=seq),
+                created_at=min(created_at + timedelta(minutes=seq), until),
             )
 
     def _make_qa_order(
@@ -7239,21 +7302,26 @@ class Command(BaseCommand):
         status: str,
         items: list[dict],
         data: dict,
-        minutes_ago: int,
+        minutes_ago: int = 0,
+        created_at: datetime | None = None,
+        completed_at: datetime | None = None,
         handle_ref: str = "",
         handle_type: str = "phone",
         external_ref: str | None = None,
     ) -> Order:
         now = timezone.now()
-        created_at = now - timedelta(minutes=minutes_ago)
+        # ``created_at`` explícito é a hora do fato (venda em conta das 7h20);
+        # sem ele, o pedido abriu ``minutes_ago`` atrás. Nunca no futuro.
+        created_at = min(created_at or now - timedelta(minutes=minutes_ago), now)
         total_q = sum(item["line_total_q"] for item in items)
         order_data = {
             "availability_decision": {"approved": True, "source": "seed:qa", "decisions": []},
             **data,
         }
-        completed_at = created_at + timedelta(minutes=15) if status in (
-            Order.Status.COMPLETED, Order.Status.DELIVERED,
-        ) else None
+        if status in (Order.Status.COMPLETED, Order.Status.DELIVERED):
+            completed_at = min(max(completed_at or created_at + timedelta(minutes=15), created_at), now)
+        else:
+            completed_at = None
         order = Order.objects.create(
             ref=ref,
             channel_ref=channel_ref,
@@ -7279,7 +7347,7 @@ class Command(BaseCommand):
                 line_total_q=item["line_total_q"],
                 meta={"seed": "nelson", "source": "qa"},
             )
-        self._qa_status_events(order, created_at)
+        self._qa_status_events(order, created_at, until=completed_at or now)
         return order
 
     def _seed_qa_orders(self, products, customers, channels):
@@ -7386,29 +7454,33 @@ class Command(BaseCommand):
             },
             minutes_ago=180,
         )
-        returned_intent = PaymentIntent.objects.create(
-            ref="PI-QA-RETURNED-01",
-            order_ref=returned.ref,
-            method=PaymentIntent.Method.PIX,
-            status=PaymentIntent.Status.REFUNDED,
-            amount_q=returned.total_q,
-            gateway=self._pix_gateway(),
-            gateway_data=self._pix_gateway_data(self._pix_gateway()),
-            gateway_id=f"seed-qa-refunded-{returned.ref}",
-            captured_at=returned.created_at + timedelta(minutes=5),
-        )
-        PaymentTransaction.objects.create(
-            intent=returned_intent,
-            type=PaymentTransaction.Type.CAPTURE,
-            amount_q=returned.total_q,
-            gateway_id=returned_intent.gateway_id,
-        )
-        PaymentTransaction.objects.create(
-            intent=returned_intent,
-            type=PaymentTransaction.Type.REFUND,
-            amount_q=returned.total_q,
-            gateway_id=f"{returned_intent.gateway_id}-refund",
-        )
+        # Cobrança, captura e estorno com o relógio do pedido, não o do seed.
+        with mock.patch("django.utils.timezone.now", return_value=returned.created_at):
+            returned_intent = PaymentIntent.objects.create(
+                ref="PI-QA-RETURNED-01",
+                order_ref=returned.ref,
+                method=PaymentIntent.Method.PIX,
+                status=PaymentIntent.Status.REFUNDED,
+                amount_q=returned.total_q,
+                gateway=self._pix_gateway(),
+                gateway_data=self._pix_gateway_data(self._pix_gateway()),
+                gateway_id=f"seed-qa-refunded-{returned.ref}",
+                captured_at=returned.created_at + timedelta(minutes=5),
+            )
+        with mock.patch("django.utils.timezone.now", return_value=returned_intent.captured_at):
+            PaymentTransaction.objects.create(
+                intent=returned_intent,
+                type=PaymentTransaction.Type.CAPTURE,
+                amount_q=returned.total_q,
+                gateway_id=returned_intent.gateway_id,
+            )
+        with mock.patch("django.utils.timezone.now", return_value=returned.created_at + timedelta(minutes=90)):
+            PaymentTransaction.objects.create(
+                intent=returned_intent,
+                type=PaymentTransaction.Type.REFUND,
+                amount_q=returned.total_q,
+                gateway_id=f"{returned_intent.gateway_id}-refund",
+            )
         returned.data = {
             **(returned.data or {}),
             "payment": {**(returned.data or {}).get("payment", {}), "intent_ref": returned_intent.ref},
@@ -7616,6 +7688,20 @@ class Command(BaseCommand):
         Order.objects.filter(pk=order.pk).update(created_at=created_at, updated_at=created_at)
         order.created_at = created_at
         order.updated_at = created_at
+
+    def _create_order_event(self, *, created_at: datetime | None = None, **fields) -> OrderEvent:
+        """Evento de pedido na hora do fato, e não na hora do seed.
+
+        ``OrderEvent.created_at`` é ``auto_now_add``: o ``created_at`` passado ao
+        ``create`` é descartado em silêncio. Todo evento do seed nascia na hora em
+        que o seed rodou, e a linha do tempo de um pedido das 7h20 dizia "Novo,
+        Aceito, ..., Concluído, todos às 05:51" (beta 05/11, CEN-10).
+        """
+        event = OrderEvent.objects.create(**fields)
+        if created_at is not None:
+            OrderEvent.objects.filter(pk=event.pk).update(created_at=created_at)
+            event.created_at = created_at
+        return event
 
     def _new_order_ref(self, channel_ref: str, business_date: date) -> str:
         for _attempt in range(20):
@@ -8006,6 +8092,7 @@ class Command(BaseCommand):
         self.stdout.write("  💳 Payments...")
 
         orders = Order.objects.filter(status__in=["completed", "delivered"])
+        now = timezone.now()
         count = 0
         linked = 0
 
@@ -8020,6 +8107,10 @@ class Command(BaseCommand):
             gateway = self._pix_gateway() if method == PaymentIntent.Method.PIX else "stripe"
             intent_ref = f"PI-{uuid.uuid4().hex[:12].upper()}"
 
+            # A cobrança é do dia do pedido: com o ``auto_now_add`` ela nascia na
+            # hora do seed, e o Admin mostrava "Criado em 5 nov" com "Capturado
+            # em 2 out" (beta 05/11, ENV-01). A captura nunca passa do agora.
+            captured_at = min(order.created_at + timedelta(minutes=5), now)
             intent = PaymentIntent(
                 ref=intent_ref,
                 order_ref=order.ref,
@@ -8029,16 +8120,18 @@ class Command(BaseCommand):
                 gateway=gateway,
                 gateway_data=self._pix_gateway_data(gateway),
                 gateway_id=f"gw-{uuid.uuid4().hex[:16]}",
-                captured_at=order.created_at + timedelta(minutes=5),
+                captured_at=captured_at,
             )
-            intent.save()
+            with mock.patch("django.utils.timezone.now", return_value=order.created_at):
+                intent.save()
 
-            PaymentTransaction.objects.create(
-                intent=intent,
-                type=PaymentTransaction.Type.CAPTURE,
-                amount_q=order.total_q,
-                gateway_id=intent.gateway_id,
-            )
+            with mock.patch("django.utils.timezone.now", return_value=captured_at):
+                PaymentTransaction.objects.create(
+                    intent=intent,
+                    type=PaymentTransaction.Type.CAPTURE,
+                    amount_q=order.total_q,
+                    gateway_id=intent.gateway_id,
+                )
             if self._attach_order_payment_link(order, intent):
                 linked += 1
             count += 1
@@ -8749,7 +8842,13 @@ class Command(BaseCommand):
         # Hoje: turno aberto com fundo de troco.
         today_shift = cash.open_shift_for_terminal(terminal)
         if today_shift is None:
-            today_open = timezone.make_aware(datetime.combine(timezone.localdate(), time(8, 45)))
+            # 08:45, ou agora se o seed roda antes disso: um turno aberto no futuro
+            # mostrava "Turno aberto em 05/11, 08:45" com o relógio da loja em
+            # 06:51 (beta 05/11, PDV2-24).
+            today_open = min(
+                timezone.make_aware(datetime.combine(timezone.localdate(), time(8, 45))),
+                timezone.now(),
+            )
             today_shift = cash.open_shift(operator=admin, terminal=terminal, float_q=20000, at=today_open)
 
         self.stdout.write("  ✅ 2 turnos de caixa (ontem fechado + hoje aberto)")
@@ -8766,12 +8865,15 @@ class Command(BaseCommand):
         from shopman.payman import PaymentService
 
         plan = {
-            # (cliente, sku, qtd, hora) — o Restaurante leva baguete e shokupan; o Café, croissant.
-            "yesterday": [("CLI-002", "TRADI", 10, 7), ("CLI-002", "FORMA", 4, 7)],
-            "today": [("CLI-002", "TRADI", 8, 7), ("CLI-004", "CRO", 12, 8)],
+            # (cliente, sku, qtd, hora): o Restaurante leva baguete e shokupan; o Café, croissant.
+            # Horas DENTRO do turno (abre 8h30/8h45): às 7h a venda entrava no livro
+            # antes de o caixa abrir.
+            "yesterday": [("CLI-002", "TRADI", 10, 9), ("CLI-002", "FORMA", 4, 10)],
+            "today": [("CLI-002", "TRADI", 8, 9), ("CLI-004", "CRO", 12, 10)],
         }[which]
         day = timezone.localtime(opened_at).date()
-        for customer_ref, sku, qty, hour in plan:
+        now = timezone.now()
+        for index, (customer_ref, sku, qty, hour) in enumerate(plan):
             # Convenção dos refs do seed: o 2º segmento é a data yymmdd.
             ref = f"CONTA-{day:%y%m%d}-{customer_ref.removeprefix('CLI-')}{sku}"
             if Order.objects.filter(ref=ref).exists():
@@ -8780,7 +8882,20 @@ class Command(BaseCommand):
             product = Product.objects.filter(sku=sku).first()
             if customer is None or product is None:
                 continue
-            at = timezone.make_aware(datetime.combine(day, time(hour, 20)))
+            # A hora da venda cabe entre a abertura do turno e o agora, na ordem do
+            # plano: com hora fixa, o seed das 5h50 gravava venda das 8h20 (CEN-10).
+            # O turno que acabou de abrir (seed antes das 8h45) põe as vendas no
+            # agora: o pedido, a cobrança e o lançamento do livro, todos juntos.
+            at = min(
+                max(
+                    min(
+                        timezone.make_aware(datetime.combine(day, time(hour, 20))),
+                        now - timedelta(minutes=5 * (len(plan) - index)),
+                    ),
+                    opened_at + timedelta(minutes=1 + index),
+                ),
+                now,
+            )
             order = self._make_qa_order(
                 ref=ref,
                 channel_ref="pdv",
@@ -8792,10 +8907,10 @@ class Command(BaseCommand):
                     "fulfillment_type": "pickup",
                     "payment": {"method": "account", "collection": "terminal", "amount_q": product.base_price_q * qty},
                 },
-                minutes_ago=0,
+                created_at=at,
+                completed_at=at,
                 handle_ref=customer.phone or "",
             )
-            Order.objects.filter(pk=order.pk).update(created_at=at, completed_at=at)
             intent = PaymentService.charge_to_account(
                 order.ref,
                 order.total_q,
@@ -9238,7 +9353,7 @@ class Command(BaseCommand):
         """
         from shopman.backstage.models import ProductConsumptionTag
 
-        note_a = "pão de levar — revisão do dono 18/08/2026 (Pães Finos do Yooga)"
+        note_a = "pão de levar, revisão do dono 18/08/2026 (Pães Finos do Yooga)"
         note_h = "híbrido confirmado pelo dono 18/08/2026: a bebida no pedido é que define"
         historical = {
             "leva": (note_a, [
@@ -9267,7 +9382,7 @@ class Command(BaseCommand):
                 "IFOOD_7ee4ad50c82b11eea051db114",
                 "IFOOD_a8feac8b-0c72-43b6-a067-b9e451585762"
             ]),
-            "consome-aqui": ("combo do Yooga sem SKU: lanche + refrigerante, come aqui — confirmado pelo dono 18/08/2026", [
+            "consome-aqui": ("combo do Yooga sem SKU: lanche + refrigerante, come aqui. Confirmado pelo dono 18/08/2026", [
                 "nome:Combo Cola + Hotdog", "nome:Combo Citrus + Hotdog",
                 "nome:Combo Cola + Donut", "nome:Combo Citrus + Donut"
             ]),
@@ -9281,13 +9396,13 @@ class Command(BaseCommand):
         # O café do Yooga vira "bebida preparada" por curadoria, não por
         # reserva de categoria.
         round_two = (
-            ("bebida-preparada", "café/chá da casa — revisão do dono 19/08/2026 (SKUs do Yooga)", [
+            ("bebida-preparada", "café/chá da casa, revisão do dono 19/08/2026 (SKUs do Yooga)", [
                 "CAP", "SP", "SPMC", "CAFL", "CHOQ", "FRAP", "MOCHA", "CTFV", "CAPMO", "VIEN", "CHHIB", "SFTCH"
             ]),
-            ("consome-aqui", "prato servido à mesa — revisão do dono 19/08/2026 (SKUs do Yooga)", [
+            ("consome-aqui", "prato servido à mesa, revisão do dono 19/08/2026 (SKUs do Yooga)", [
                 "CQMO", "QJQT", "CQMA", "CQCOM", "JB", "PERDU",   # croques, queijo quente, jambon, pain perdu
             ]),
-            ("leva", "pão rústico / mercearia — revisão do dono 19/08/2026 (SKUs do Yooga)", [
+            ("leva", "pão rústico / mercearia, revisão do dono 19/08/2026 (SKUs do Yooga)", [
                 "ITA", "TRADI", "CPBG", "CPG", "CPX", "BGG", "BGL", "FOB", "TRABB", "FOA", "BAT", "CPR",
                 "MBAX", "MBF", "MCF", "MCGO", "MCPX", "MBAP", "MCBT", "MFOA", "MBA", "MCGR",
                 "BGGP", "FOC", "MPH",
@@ -9297,7 +9412,7 @@ class Command(BaseCommand):
                 # pães com SKU do iFood (só entrega)
                 "IFOOD_76da4710c82b11ee8012e9ac1", "IFOOD_7554d170c82b11ee9bb70dcd9"
             ]),
-            ("hibrido", "serve aos dois usos (como no cardápio 2027; mini focaccia é lanchinho) — revisão do dono 19/08/2026", [
+            ("hibrido", "serve aos dois usos (como no cardápio 2027; mini focaccia é lanchinho), revisão do dono 19/08/2026", [
                 "CI", "CIQ", "MCI", "TABAT", "MTB", "FENDU", "MFE", "MIB",
                 "FOBP", "FOAP", "FOCP", "MMICBT", "MMIF"
             ]),
@@ -9673,6 +9788,7 @@ class Command(BaseCommand):
         from shopman.backstage.models import OutageReason, ShelfOutage
 
         today = timezone.localdate()
+        now = timezone.now()
         for sku, (_, soldout_hour, weekend_only) in self.BI_SHELF_PROFILES.items():
             if sku not in products or soldout_hour is None:
                 continue
@@ -9687,7 +9803,9 @@ class Command(BaseCommand):
                     started_at=self._at(day, soldout_hour),
                     defaults={
                         "reason": OutageReason.SOLD_OUT,
-                        "ended_at": self._at(day + timedelta(days=1), 9),
+                        # Volta na abertura do dia seguinte; a falta de ontem,
+                        # com o seed rodando antes das 9h, acaba agora, não no futuro.
+                        "ended_at": min(self._at(day + timedelta(days=1), 9), now),
                     },
                 )
         # Um produto parado por decisão: é o que a métrica de tempo pausado lê.
@@ -10186,7 +10304,12 @@ class Command(BaseCommand):
                     batch_size=500,
                 )
             # created_at é auto_now_add: só depois do insert dá para datar.
-            Order.objects.filter(ref__startswith=f"BIV-{day:%y%m%d}-").update(created_at=sold_at)
+            # O pedido concluído leva a data da venda em todos os carimbos: só com o
+            # created_at, o histórico do Gestor mostrava BIV-260924 "de 05/11", o
+            # dia do seed (beta 05/11, GES-27).
+            Order.objects.filter(ref__startswith=f"BIV-{day:%y%m%d}-").update(
+                created_at=sold_at, completed_at=sold_at, updated_at=sold_at,
+            )
             created += len(orders)
         return created
 
