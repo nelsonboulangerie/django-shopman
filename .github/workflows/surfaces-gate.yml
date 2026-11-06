@@ -23,6 +23,11 @@ name: Surfaces Gate
   # ⚠️ Vale para os GATES. O `deploy-images.yml` mantém `push: main` de propósito:
   # lá o push É o deploy (publica a tag no DOCR).
 
+# Um grupo por branch do PR (pull_request) ou por branch da fila (merge_group,
+# `gh-readonly-queue/main/pr-N-<sha>`, único): só um push NOVO no mesmo PR
+# cancela o run anterior dele. Um PR não cancela o de outro. Revisado em
+# 06/11/2026: os três CANCELLED do production-nuxt daquele dia eram o
+# `timeout-minutes` do job estourado pelo espelho apt lento, não concorrência.
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
@@ -210,9 +215,50 @@ jobs:
         if: matrix.catalog
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" build
 
+      # Navegadores do Playwright: cache por versão do Playwright + motores + imagem.
+      # Medido em 06/11/2026: o `install --with-deps chromium webkit` do
+      # production-nuxt travou 3 vezes; os 114 MB de .deb do WebKit vinham do
+      # espelho apt da Azure a 47 kB/s e o job morria aos 45 min, CANCELLED.
+      # O cache guarda os navegadores E os .deb; o script põe teto e nova
+      # tentativa (trocando de espelho) em cada parte. Ver
+      # scripts/install_playwright_browsers.mjs.
+      - name: Resolve Playwright cache key
+        id: playwright
+        if: matrix.visual || matrix.geometry || matrix.browser || matrix.a11y || matrix.browser_suite
+        env:
+          ENGINES: ${{ matrix.browser_engines }}
+          WITH_DEPS: ${{ matrix.browser_with_deps }}
+        run: |
+          version="$(npx --no-install playwright --version | awk '{print $2}')"
+          engines="$(echo "$ENGINES" | tr ' ' '-')"
+          deps="$([ "$WITH_DEPS" = "true" ] && echo "-deps" || true)"
+          echo "key=playwright-${ImageOS:-$RUNNER_OS}-${RUNNER_ARCH}-${version}-${engines}${deps}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browsers
+        id: playwright-cache
+        if: steps.playwright.outputs.key
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ steps.playwright.outputs.key }}
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+            ~/.cache/playwright-apt
+
       - name: Install declared browser engines
         if: matrix.visual || matrix.geometry || matrix.browser || matrix.a11y || matrix.browser_suite
-        run: ${{ matrix.browser_install }}
+        timeout-minutes: 25
+        run: node ../../scripts/install_playwright_browsers.mjs "${{ matrix.browser_engines }}" ${{ matrix.browser_with_deps && '--with-deps' || '' }}
+
+      - name: Save Playwright browsers
+        if: steps.playwright.outputs.key && steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.playwright.outputs.key }}
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+            ~/.cache/playwright-apt
 
       - name: Visual and responsive contract
         if: matrix.visual && !matrix.browser_suite
