@@ -6,6 +6,7 @@ import { nuxtUiStubs } from "../support/nuxtUiStubs";
 import RecipeHeader from "../../app/components/RecipeHeader.vue";
 import RecipeListPage from "../../app/pages/recipes/index.vue";
 import RecipeDetailPage from "../../app/pages/recipes/[ref]/index.vue";
+import RecipeEditPage from "../../app/pages/recipes/[ref]/edit.vue";
 import RecipeDuplicatePanel from "../../app/components/RecipeDuplicatePanel.vue";
 import RecipeExecutionFormPanel from "../../app/components/RecipeExecutionFormPanel.vue";
 import type { RecipeEntryCardProjection } from "../../app/types/recipeBook";
@@ -458,6 +459,22 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
     expect(navigate).toHaveBeenCalledWith("/recipes/pao-b/edit");
   });
 
+  it("an empty formula does not publish, and the header seal says only the version (PROD-02, PROD-14)", async () => {
+    routeParams = { ref: "pao-b" };
+    installEntry({ output_sku: "PAO-B" });
+    const wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+
+    expect(wrapper.findComponent(OperatorPageHeaderStub).props("eyebrow")).toBe("Receitas · Versão 1");
+    await wrapper.findAll("button").find((button) => button.text() === "Publicar")!.trigger("click");
+    await nextTick();
+
+    const dialog = wrapper.find('[data-overlay="NuxtModal"]');
+    expect(dialog.text()).toContain("Adicione ao menos um ingrediente antes de publicar.");
+    const confirm = dialog.findAll("button").filter((button) => button.text() === "Publicar").at(-1);
+    expect(confirm?.attributes("disabled")).toBeDefined();
+  });
+
   it("shows the archived state and names the return gesture Desarquivar", async () => {
     routeParams = { ref: "pao-b" };
     installEntry({ is_active: false });
@@ -559,5 +576,149 @@ describe("Receitas: cadastros turbinados", () => {
     const saveButton = wrapper.findAll("button").find((button) => button.text() === "Salvar configuração")!;
     expect(saveButton.attributes("disabled")).toBeDefined();
     expect(wrapper.text()).toContain("número inteiro");
+  });
+});
+
+describe("Receitas: achados do beta de 05/11/2026", () => {
+  it("the list says a published recipe left production because another one uses the SKU (PROD-06)", async () => {
+    entries.value = [
+      card("pao-joyce-2", { has_ficha: false, ficha_status: "replaced", ficha_status_label: "Fora da produção", ficha_status_detail: "Pão Joyce usa este SKU" } as Partial<RecipeEntryCardProjection>),
+      card("pao-joyce", { has_ficha: true, ficha_status: "in_use", ficha_status_label: "", ficha_status_detail: "" } as Partial<RecipeEntryCardProjection>),
+    ];
+    const wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Fora da produção");
+    // Frase não vai dentro do selo (o selo sai em iniciais maiúsculas): fica ao lado.
+    expect(wrapper.find("[data-recipe-ficha-detail]").text()).toBe("Pão Joyce usa este SKU");
+    expect(wrapper.text()).not.toContain("Ainda não publicada");
+  });
+
+  const servedFormula = { anchor: { kind: "flour" }, basis_g: null, ingredients: [] };
+  const published = {
+    id: 1,
+    number: 1,
+    status: "published",
+    revision: "rev-1",
+    formula: servedFormula,
+    yield_quantity: "1500",
+    yield_unit: "g",
+    steps: [],
+    notes: "",
+    label: "",
+    origin: null,
+    lens: { ingredients: [] },
+  };
+
+  function installEditor(over: Record<string, unknown> = {}) {
+    const entry = ref({
+      ref: "pao-b",
+      name: "Pão Beta MG Joyce",
+      kind: "bread",
+      output_sku: "PAO-B",
+      notes: "",
+      is_active: true,
+      revision: "rev-entry",
+      versions: [published] as Record<string, unknown>[],
+      ...over,
+    });
+    const createVersion = vi.fn(async () => ({ ok: true, version: { number: 2, status: "draft" } }));
+    const updateDraft = vi.fn(async () => ({ ok: true }));
+    vi.stubGlobal("useRecipeEntry", () => ({
+      entry,
+      canEdit: computed(() => true),
+      latestDraft: computed(() => entry.value.versions.find((version) => version.status === "draft") ?? null),
+      versionByNumber: (number: number | null) => entry.value.versions.find((version) => version.number === number) ?? null,
+      notFound: computed(() => false),
+      forbidden: computed(() => false),
+      pending: ref(false),
+      error: ref(null),
+      refresh: vi.fn(),
+      busy: ref(false),
+      patchEntry: vi.fn(async () => ({ ok: true })),
+      saveExecution: vi.fn(async () => ({ ok: true })),
+      createVersion,
+      updateDraft,
+      publish: vi.fn(async () => ({ ok: true })),
+    }));
+    vi.stubGlobal("useFormulaLens", () => ({
+      lens: ref(null),
+      pending: ref(false),
+      error: ref(null),
+      standardizing: ref(false),
+      standardize: vi.fn(),
+    }));
+    vi.stubGlobal("useNextFocus", () => {});
+    vi.stubGlobal("useTouchPointer", () => ref(false));
+    vi.stubGlobal("useConfirm", () => vi.fn(async () => true));
+    vi.stubGlobal("onBeforeRouteLeave", () => {});
+    vi.stubGlobal("onMounted", () => {});
+    return { createVersion, updateDraft };
+  }
+
+  const editorStubs = {
+    ...stubs,
+    NuxtInputNumber: true,
+    NuxtSelectMenu: true,
+    IngredientPicker: true,
+    OperatorActionBar: true,
+    OperatorFieldRow: true,
+    RecipeExecutionFormPanel: true,
+    NuxtCard: passthrough("NuxtCard"),
+  };
+
+  it("opening the editor writes nothing: the draft is born on the first save (PROD-10)", async () => {
+    routeParams = { ref: "pao-b" };
+    const { createVersion } = installEditor();
+    const wrapper = mount(RecipeEditPage, { global: { stubs: editorStubs } });
+    await flushPromises();
+
+    expect(createVersion).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain("Preparando edição");
+
+    await wrapper.find('button[aria-label="Salvar rascunho"]').trigger("click");
+    await flushPromises();
+
+    expect(createVersion).toHaveBeenCalledTimes(1);
+    expect(createVersion).toHaveBeenCalledWith(
+      expect.objectContaining({ from_version: 1, yield_quantity: "1500", yield_unit: "g", expectedRevision: "rev-entry" }),
+    );
+    expect(navigate).toHaveBeenCalledWith("/recipes/pao-b/edit?v=2", { replace: true });
+  });
+
+  it("an existing draft is reopened, not duplicated", async () => {
+    routeParams = { ref: "pao-b" };
+    const { createVersion } = installEditor({ versions: [{ ...published, number: 2, status: "draft", revision: "rev-2" }, published] });
+    mount(RecipeEditPage, { global: { stubs: editorStubs } });
+    await flushPromises();
+
+    expect(createVersion).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith("/recipes/pao-b/edit?v=2", { replace: true });
+  });
+
+  it("the header carries the recipe name and a short seal, and publishing waits for an ingredient (PROD-11, PROD-02)", async () => {
+    routeParams = { ref: "pao-b" };
+    installEditor();
+    const wrapper = mount(RecipeEditPage, { global: { stubs: editorStubs } });
+    await flushPromises();
+
+    const header = wrapper.findComponent(OperatorPageHeaderStub);
+    expect(header.props("title")).toBe("Pão Beta MG Joyce");
+    expect(header.props("eyebrow")).toBe("Receitas · Nova versão");
+    const publish = wrapper.find('button[aria-label="Salvar e publicar"]');
+    expect(publish.attributes("disabled")).toBeDefined();
+    expect(publish.attributes("title")).toBe("Adicione ao menos um ingrediente antes de publicar.");
+  });
+
+  it("an archived recipe does not open an editor", async () => {
+    routeParams = { ref: "pao-b" };
+    const { createVersion } = installEditor({ is_active: false });
+    const wrapper = mount(RecipeEditPage, { global: { stubs: editorStubs } });
+    await flushPromises();
+
+    expect(wrapper.find("[data-editor-archived]").exists()).toBe(true);
+    expect(wrapper.find('button[aria-label="Salvar rascunho"]').exists()).toBe(false);
+    expect(createVersion).not.toHaveBeenCalled();
   });
 });

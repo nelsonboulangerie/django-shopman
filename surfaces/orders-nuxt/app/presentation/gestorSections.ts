@@ -23,12 +23,12 @@ export interface GestorSectionsInput {
   // `true` só quando a antessala confirmou `cashman.manage_operators`: Postos é o
   // cadastro de quem vincula dispositivos. Desconhecido esconde, como em Clientes.
   canManageWorkstations?: boolean;
+  // `true` só quando a antessala confirmou `shop.manage_catalog`: Catálogo e Canais
+  // são o cadastro de quem cuida do catálogo. Desconhecido esconde, como em Clientes
+  // (beta 05/11, GES-08: o Caixa via os dois e, ao entrar, lia "Sem conexão").
+  canManageCatalog?: boolean;
   // Execução das rotinas operacionais; a permissão é perguntada ao servidor.
   canOperateChecklists?: boolean;
-  // `shop.manage_catalog`: Catálogo e Canais. Quem não tem (a Caixa) via os dois em
-  // Ajustes e caía em "Sem conexão" ao abrir (beta 05/11, CEN-05). Ausente conta como
-  // quem tem; o `useGestorSections` sempre passa a resposta do servidor.
-  canManageCatalog?: boolean;
   // Quem só expede (SUITE-UX §15) entra no Gestor pela coluna Saída e não ganha o
   // resto: o rail fica só com a operação. Ausente conta como quem gerencia.
   expeditesOnly?: boolean;
@@ -136,8 +136,8 @@ export function gestorSettingsSections({
   channelsAttention,
   canManageCustomers,
   canManageWorkstations = false,
+  canManageCatalog = false,
   canOperateChecklists = false,
-  canManageCatalog = true,
   catalogOnly = false,
 }: GestorSectionsInput): GestorSettingsEntry[] {
   if (catalogOnly) {
@@ -228,6 +228,43 @@ export function gestorSettingsSections({
         ]
       : []),
   ];
+}
+
+/** O nome de cada seção de Ajustes, para a frase "Seu acesso não inclui …". */
+const SETTINGS_ROUTE_NAMES: Record<string, string> = {
+  "/history": "o Histórico",
+  "/catalog": "o Catálogo",
+  "/customers": "os Clientes",
+  "/feeds": "os Canais",
+  "/channels": "os Canais",
+  "/workstations": "os Postos",
+  "/checklists": "as Rotinas",
+};
+
+function underRoute(path: string, route: string) {
+  return path === route || path.startsWith(`${route}/`);
+}
+
+/**
+ * A seção de Ajustes que a URL abre e o acesso NÃO inclui ("o Catálogo"), ou `""`.
+ *
+ * Quem chega pela URL direta numa seção que o andar Ajustes não lhe mostra recebia a
+ * recusa do servidor (403) como "Sem conexão · Tentar de novo" e insistia achando que
+ * a rede caiu (beta 05/11, GES-08). A lista de Ajustes já diz o que o acesso inclui:
+ * fora dela, a tela diz "Seu acesso não inclui …" e não monta a página.
+ */
+export function deniedSettingsSection(
+  path: string,
+  allowed: readonly OperatorSection[],
+): string {
+  const route = Object.keys(SETTINGS_ROUTE_NAMES).find((r) => underRoute(path, r));
+  if (!route) return "";
+  const ok = allowed.some((section) =>
+    [section.to, ...(section.match ?? [])].some(
+      (to) => typeof to === "string" && underRoute(route, to.split("?")[0] ?? ""),
+    ),
+  );
+  return ok ? "" : SETTINGS_ROUTE_NAMES[route] ?? "";
 }
 
 /** As seções do chão: andando pela loja (dono, 31/10/2026). */

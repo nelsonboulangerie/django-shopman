@@ -22,6 +22,7 @@ const resendPaymentLink = vi.fn();
 const requeueFiscal = vi.fn();
 const equipmentBack = vi.fn();
 const saveNotes = vi.fn();
+const fetchCancellationReasons = vi.fn(async () => []);
 const readError = ref<unknown>(null);
 // A impressora desta estação (a Via Pedido sai por ela; P2-19).
 const estacao = ref<{ can_print: boolean; agent_url?: string; token?: string; reason: string } | null>(null);
@@ -66,7 +67,8 @@ vi.stubGlobal("useOrderDetail", () => ({
   advance: vi.fn(),
   reject: vi.fn(),
   cancel: vi.fn(),
-  fetchCancellationReasons: vi.fn(async () => []),
+  fetchCancellationReasons,
+  courierBack: vi.fn(async () => true),
   settleCash: vi.fn(),
   equipmentBack,
   requeueFiscal,
@@ -188,6 +190,7 @@ const stubs = {
   OrderCourierPanel: true,
   OrderIFoodNegotiations: true,
   OrderReasonDialog: true,
+  CourierBackDialog: defineComponent({ name: "CourierBackDialog", props: { card: { type: Object, default: null }, busy: Boolean }, template: "<div />" }),
   UiDialog: { template: "<div><slot /></div>" },
   UiDialogContent: { template: "<div><slot /></div>" },
   UiDialogHeader: { template: "<div><slot /></div>" },
@@ -729,5 +732,73 @@ describe("G14: o detalhe em duas colunas com a ação primária no cabeçalho", 
     ).toBeUndefined();
     comImpressora.unmount();
     estacao.value = null;
+  });
+});
+
+// Beta test de 05/11/2026 (frente gestor-pedidos).
+describe("detalhe do pedido: achados do beta 05/11", () => {
+  const mutation = (ref: string, label: string, over: Record<string, unknown> = {}) => ({
+    ref, label, enabled: true, reason: "", priority: "primary", kind: "mutation", href: "", method: "POST",
+    payload_schema: { expected_actor_id: 1, base_revision: "b" }, idempotency: "required", confirmation: {}, ...over,
+  });
+  beforeEach(() => {
+    routeHash.value = "";
+    fetchCancellationReasons.mockClear();
+  });
+
+  // GES-10 / GES-15: pedido cancelado continuava com a nota da cozinha editável.
+  it("pedido encerrado: a nota da cozinha não tem editor", () => {
+    const w = abrir(order({
+      status: "cancelled", can_confirm: false, kitchen_note: "Bem assado",
+      actions: [mutation("notes", "Salvar nota", { enabled: false, reason: "Pedido encerrado." })] as never,
+    }));
+    expect(w.find("#order-notes").exists()).toBe(false);
+    expect(w.text()).toContain("Bem assado");
+    w.unmount();
+  });
+
+  // GES-12: o detalhe dizia "Marcar como entregue" e escondia troco e maquininha.
+  it("na rua com troco: o gesto é Entregador voltou e a custódia aparece", async () => {
+    const w = abrir(order({
+      status: "dispatched", fulfillment_type: "delivery", can_confirm: false,
+      change_label: "Entregador levou R$ 26,00 de troco", equipment_label: "Saiu com a maquininha de demonstração",
+      courier_return_lines: ["R$ 50,00 em dinheiro"], courier_return_orders: ["WEB-20260625-0007"],
+      actions: [mutation("advance", "Marcar como entregue"), mutation("courier-back", "Entregador voltou", { confirmation: { required: true } })] as never,
+    }));
+    expect(w.get('[data-action="courier-back"]').text()).toContain("Entregador voltou");
+    expect(w.get("[data-detail-custody]").text()).toContain("Entregador levou R$ 26,00 de troco");
+    expect(w.get("[data-detail-custody]").text()).toContain("Saiu com a maquininha de demonstração");
+    await w.get('[data-action="courier-back"]').trigger("click");
+    await flushPromises();
+    const dialog = w.findComponent({ name: "CourierBackDialog" });
+    expect(dialog.props("card")).toMatchObject({ courier_return_lines: ["R$ 50,00 em dinheiro"] });
+    await w.get('[data-action="menu"]').trigger("click");
+    expect(w.get("[data-detail-menu] [data-action='advance']").text()).toContain("O que saiu com o entregador continua em aberto.");
+    w.unmount();
+  });
+
+  // GES-05 / GES-16: Pix vencido tinha só o botão morto; cancelar exigia achar o ⋯.
+  it("Pix vencido: o aviso do bloqueio traz Cancelar com o motivo já marcado", async () => {
+    const w = abrir(order({
+      status: "accepted", can_confirm: false, can_cancel: true, payment_lapsed: true,
+      advance_block_label: "Pix expirado", advance_block_reason: "gerado às 05:51 · expirou às 05:57",
+    }));
+    await w.get("[data-cancel-unpaid]").trigger("click");
+    await flushPromises();
+    expect(w.get("order-reason-dialog-stub").attributes("initial-key")).toBe("payment_not_confirmed");
+    // Loja online: não há lista viva de códigos para buscar (GES-06).
+    expect(fetchCancellationReasons).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("o cartão da Fila chega com #cancel-unpaid e o cancelar já abre", async () => {
+    routeHash.value = "#cancel-unpaid";
+    const w = abrir(order({
+      status: "accepted", can_confirm: false, can_cancel: true, payment_lapsed: true,
+      advance_block_label: "Pix expirado", advance_block_reason: "expirou às 05:57",
+    }));
+    await flushPromises();
+    expect(w.get("order-reason-dialog-stub").attributes("open")).toBe("true");
+    w.unmount();
   });
 });

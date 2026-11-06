@@ -85,7 +85,7 @@ async function restoreAuthenticatedWorkspace() {
   await refreshNuxtData();
 }
 
-const { sections, settings, current } = useGestorSections();
+const { sections, settings, current, denied } = useGestorSections();
 const routeAccess = useGestorRouteAccess();
 // As seções de Ajustes dependem de permissão lida por uma chave que leva o id de quem
 // opera, e no servidor a sessão ainda não chegou quando a chave nasce: lá a resposta
@@ -150,10 +150,24 @@ useOperatorWindowTitle();
             @dismiss="stationSetup.dismiss()"
             @unavailable="stationSetup.dismiss({ remember: false })"
           />
-          <!-- Tela de Ajustes que não é da conta de quem opera: a recusa no lugar da
-               página, sem "Tentar de novo" (beta 05/11, CEN-05 e GES-17). -->
+          <!-- URL direta numa seção de Ajustes fora do acesso: a recusa dita como
+               recusa, não como "Sem conexão" (beta 05/11, GES-08). -->
+          <div
+            v-if="mounted && denied"
+            class="grid flex-1 place-items-center p-4"
+            data-settings-denied
+          >
+            <NuxtEmpty
+              icon="i-lucide-shield-x"
+              :title="`Seu acesso não inclui ${denied}`"
+              description="Peça a um responsável a permissão de acesso."
+              :actions="[{ label: 'Voltar aos pedidos', to: '/', color: 'neutral', variant: 'outline' }]"
+            />
+          </div>
+          <!-- A régua do servidor para o que a lista não cobre (o Histórico, por exemplo):
+               a recusa no lugar da página, sem "Tentar de novo" (beta 05/11, CEN-05 e GES-17). -->
           <main
-            v-if="routeAccess.denied.value"
+            v-else-if="routeAccess.denied.value"
             class="flex min-h-0 flex-1 flex-col"
             data-gestor-route-forbidden
           >

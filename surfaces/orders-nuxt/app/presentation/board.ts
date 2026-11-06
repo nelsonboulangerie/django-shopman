@@ -483,7 +483,13 @@ export function cardAffordances(card: OrderCardProjection): Affordance[] {
     )
     .map((a) => ({
       ref: a.ref as AffordanceRef,
-      label: a.label,
+      // Avanço travado diz o que espera ("Aguardando o dia da encomenda"), não o
+      // verbo que não vai acontecer: "Bloqueado" e "Iniciar preparo" no mesmo
+      // cartão se contradiziam (beta 05/11, PDV2-03). O mesmo par do detalhe.
+      label:
+        a.ref === "advance" && !a.enabled && card.advance_block_label
+          ? card.advance_block_label.replace(/…$/, "")
+          : a.label,
       icon: a.enabled ? icons[a.ref]! : "lucide:clock",
       priority: a.enabled
         ? (a.priority as Affordance["priority"])
@@ -893,6 +899,41 @@ export function dispatchAsksChange(
   card: Pick<OrderCardProjection, "next_status" | "change_out_suggested_q">,
 ): boolean {
   return card.next_status === "dispatched" && card.change_out_suggested_q > 0;
+}
+
+/** A pergunta antes de entregar um pedido SEM pagamento registrado (beta 05/11,
+ *  GES-03). O gate de pagamento não barra esse pedido (nem há cobrança a esperar),
+ *  e o pill "Pagamento não informado" sozinho não impedia entregar R$ 50,00 com um
+ *  toque. Só o degrau que entrega a mercadoria pergunta: a saída para entrega e o
+ *  balcão entregando na mão (Concluído vindo de Entregue é só escrituração).
+ *  `null` quando não cabe perguntar. */
+export interface HandOverPaymentQuestion {
+  tone: "primary";
+  title: string;
+  description: string;
+  confirmLabel: string;
+  cancelLabel: string;
+}
+export function handOverPaymentQuestion(input: {
+  status: string;
+  target: string;
+  payment_unrecorded?: boolean;
+  total_display: string;
+}): HandOverPaymentQuestion | null {
+  if (!input.payment_unrecorded) return null;
+  const dispatch = input.target === "dispatched";
+  const handOver =
+    input.target === "completed" && input.status !== "delivered";
+  if (!dispatch && !handOver) return null;
+  return {
+    tone: "primary",
+    title: `Já recebeu ${input.total_display}?`,
+    description: dispatch
+      ? "Este pedido não tem pagamento registrado. Se ainda não foi pago, combine a cobrança antes de a sacola sair."
+      : "Este pedido não tem pagamento registrado. Entregue depois de receber.",
+    confirmLabel: dispatch ? "Já foi pago, marcar saída" : "Já foi pago, entregar",
+    cancelLabel: "Voltar",
+  };
 }
 
 /** Um pedido pronto para sair para entrega pelas mãos do operador (candidato a ir junto). */

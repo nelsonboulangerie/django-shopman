@@ -107,6 +107,22 @@ describe("OperatorReasonDialog", () => {
     expect(w.emitted("confirm")).toEqual([[{ reason: "Faltou farinha", code: "", key: "out_of_stock" }]]);
   });
 
+  // Beta 05/11 (Gestor, Pix vencido): a tela que sabe o porquê abre com o motivo
+  // marcado; Confirmar já acende e o rascunho não conta como "texto não salvo".
+  it("motivo inicial: abre marcado, confirma direto e não vira rascunho", async () => {
+    const keyedReasons = [
+      { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou." },
+      { key: "payment_not_confirmed", label: "Pagamento não confirmado", customer_text: "Não recebemos o pagamento." },
+    ];
+    const w = await mount({ keyedReasons, initialKey: "payment_not_confirmed", open: false });
+    await w.setProps({ open: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(dom("[data-reason-preview]").text()).toContain("Não recebemos o pagamento.");
+    expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
+    await dom("[data-reason-confirm]").trigger("click");
+    expect(w.emitted("confirm")).toEqual([[{ reason: "", code: "", key: "payment_not_confirmed" }]]);
+  });
+
   it("fechar com texto digitado pergunta dentro do diálogo, sem window.confirm", async () => {
     const nativeConfirm = vi.fn(() => true);
     vi.stubGlobal("confirm", nativeConfirm);

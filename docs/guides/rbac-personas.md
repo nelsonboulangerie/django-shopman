@@ -160,6 +160,9 @@ JSON não guarda comentário, então o porquê das concessões mora aqui:
   Pronto quando o prato passa por ele (decisão do dono, 13/10/2026).
 - **Cozinha** lê no Admin o que fabrica (`view_*` de craftsman, buyman e stockman):
   ficha técnica, ordem, insumo, saldo, lote. Mexer acontece no app de Produção.
+  A ficha técnica ela só LÊ, também no app: criar, editar, conferir e publicar ficha
+  é da gestão da produção (`craftsman.change_recipe`, Gerente e Dono; decisão do dono,
+  05/11/2026). O `shop.manage_production` dela opera lotes e não abre o editor.
 - **Gerente** consulta auditoria e faz configuração ou reparo excepcional. Dinheiro
   fica de fora de propósito: `payman` e a apuração do turno são do **Dono** (a régua do
   fechamento cego: ela conta às cegas, quem vê o esperado audita). Lê a trilha das

@@ -18,7 +18,6 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import Permission, User
-from django.contrib.contenttypes.models import ContentType
 from shopman.craftsman.contrib.admin_unfold.admin import RecipeAdminForm
 from shopman.craftsman.exceptions import CraftError
 from shopman.craftsman.models import ProductionMode, Recipe, RecipeEntry, RecipeItem
@@ -41,11 +40,9 @@ def shop(db):
 
 @pytest.fixture
 def editor(shop):
-    from shopman.shop.models import Shop
-
     user = grant_production_operator(User.objects.create_user("modo-editor", password="pw", is_staff=True))
     user.user_permissions.add(
-        Permission.objects.get(content_type=ContentType.objects.get_for_model(Shop), codename="manage_production")
+        Permission.objects.get(content_type__app_label="craftsman", codename="change_recipe")
     )
     return User.objects.get(pk=user.pk)
 

@@ -9,6 +9,7 @@ import {
   gestorRoutePermission,
   gestorSections,
   gestorSettingsSections,
+  deniedSettingsSection,
   gestorSwitcherSections,
   SETTINGS_ROUTES,
 } from "../app/presentation/gestorSections";
@@ -139,6 +140,7 @@ describe("gestorSettingsSections (andar Ajustes)", () => {
     const keys = gestorSettingsSections({
       channelsAttention: "",
       canManageCustomers: true,
+      canManageCatalog: true,
     }).map((s) => s.key);
     expect(keys).toEqual(["history", "catalog", "customers", "feeds"]);
   });
@@ -147,6 +149,7 @@ describe("gestorSettingsSections (andar Ajustes)", () => {
     const keys = gestorSettingsSections({
       channelsAttention: "",
       canManageCustomers: false,
+      canManageCatalog: true,
     }).map((s) => s.key);
     expect(keys).toEqual(["history", "catalog", "feeds"]);
   });
@@ -155,6 +158,7 @@ describe("gestorSettingsSections (andar Ajustes)", () => {
     const loud = gestorSettingsSections({
       channelsAttention: "1 desligado",
       canManageCustomers: false,
+      canManageCatalog: true,
     }).find((s) => s.key === "feeds");
     expect(loud?.attention).toBe("1 desligado");
   });
@@ -163,6 +167,7 @@ describe("gestorSettingsSections (andar Ajustes)", () => {
     const keys = gestorSettingsSections({
       channelsAttention: "",
       canManageCustomers: false,
+      canManageCatalog: true,
       canManageWorkstations: true,
     }).map((s) => s.key);
     expect(keys).toEqual(["history", "catalog", "feeds", "workstations"]);
@@ -178,6 +183,7 @@ describe("gestorSettingsSections (andar Ajustes)", () => {
     const visible = gestorSettingsSections({
       channelsAttention: "",
       canManageCustomers: false,
+      canManageCatalog: true,
       canOperateChecklists: true,
     });
     expect(visible.map((s) => s.key)).toEqual([
@@ -201,6 +207,7 @@ describe("gestorSwitcherSections (trocador e barra de baixo)", () => {
   const input = {
     channelsAttention: "",
     canManageCustomers: true,
+    canManageCatalog: true,
     canOperateChecklists: true,
   };
   const all = () => gestorSwitcherSections(gestorSections(input), gestorSettingsSections(input));
@@ -269,5 +276,36 @@ describe("Ajustes só lista o que a conta abre", () => {
 
   it("toda rota de Ajustes tem permissão declarada", () => {
     for (const route of SETTINGS_ROUTES) expect(gestorRoutePermission(route), route).not.toBeNull();
+  });
+});
+
+// Beta 05/11 (GES-08): o Caixa via Catálogo e Canais e, ao entrar, lia "Sem conexão".
+describe("Catálogo e Canais só para quem cuida do catálogo", () => {
+  it("sem shop.manage_catalog (ou sem resposta) as duas linhas não existem", () => {
+    const keys = gestorSettingsSections({
+      channelsAttention: "",
+      canManageCustomers: false,
+    }).map((s) => s.key);
+    expect(keys).toEqual(["history"]);
+  });
+
+  it("a URL direta fora do acesso diz o nome da seção; dentro dele, nada", () => {
+    const caixa = gestorSettingsSections({ channelsAttention: "", canManageCustomers: false });
+    expect(deniedSettingsSection("/catalog", caixa)).toBe("o Catálogo");
+    expect(deniedSettingsSection("/channels/web/catalog", caixa)).toBe("os Canais");
+    expect(deniedSettingsSection("/feeds", caixa)).toBe("os Canais");
+    expect(deniedSettingsSection("/customers/groups", caixa)).toBe("os Clientes");
+    expect(deniedSettingsSection("/workstations", caixa)).toBe("os Postos");
+    expect(deniedSettingsSection("/history", caixa)).toBe("");
+    expect(deniedSettingsSection("/", caixa)).toBe("");
+    expect(deniedSettingsSection("/WEB-261105-K38", caixa)).toBe("");
+    const gerente = gestorSettingsSections({
+      channelsAttention: "",
+      canManageCustomers: true,
+      canManageCatalog: true,
+      canManageWorkstations: true,
+    });
+    for (const path of ["/catalog", "/channels/web/catalog", "/feeds", "/customers", "/workstations"])
+      expect(deniedSettingsSection(path, gerente)).toBe("");
   });
 });

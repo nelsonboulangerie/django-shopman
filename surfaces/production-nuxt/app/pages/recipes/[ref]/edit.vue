@@ -24,6 +24,8 @@ import {
   gramsLabel,
   moveItem,
   originLines,
+  readStepMinutes,
+  readStepTemperature,
   pctOf,
   quantityPreset,
   removeItem,
@@ -51,6 +53,12 @@ const draft = computed<RecipeVersionProjection | null>(() => {
   if (requested?.status === "draft") return requested;
   return latestDraft.value;
 });
+// Sem rascunho, o editor abre sobre uma cópia EM MEMÓRIA da versão mais nova: o
+// rascunho só nasce no primeiro "Salvar". Abrir e sair sem mexer não deixa versão
+// nenhuma para trás (beta 05/11/2026, PROD-10).
+const baseVersion = computed<RecipeVersionProjection | null>(() => entry.value?.versions[0] ?? null);
+const editing = computed(() => !!draft.value || (!!entry.value?.is_active && canEdit.value));
+const editorSubtitle = computed(() => (draft.value ? `Rascunho da versão ${draft.value.number}` : "Nova versão"));
 // Estado local, semeado UMA vez quando o rascunho chega (o refresh depois de salvar
 // não pode sobrescrever o que o padeiro está digitando).
 const formula = ref<Formula>(emptyFormula());
@@ -59,7 +67,8 @@ const yieldUnit = ref("g");
 const steps = ref<RecipeStepInput[]>([]);
 const notes = ref("");
 const label = ref("");
-const seededNumber = ref<number | null>(null);
+// O que semeou o estado local: `draft-<n>` (o rascunho do servidor) ou `base` (a cópia).
+const seededKey = ref<string | null>(null);
 const entryName = ref("");
 const entryKind = ref<RecipeKind>("other");
 const entryOutputSku = ref("");
@@ -72,16 +81,29 @@ const entrySeeded = ref(false);
 const before = ref<{ formula: Formula; anchorTotal: number; total: number; yieldQuantity: string } | null>(null);
 
 watch(
-  draft,
-  (version) => {
-    if (!version || seededNumber.value === version.number) return;
-    formula.value = formulaFromServed(version.formula);
-    yieldQuantity.value = version.yield_quantity;
-    yieldUnit.value = version.yield_unit || "g";
-    steps.value = stepsForPayload(version.steps);
-    notes.value = version.notes;
-    label.value = version.label;
-    seededNumber.value = version.number;
+  [draft, baseVersion, editing],
+  ([version, base, canOpen]) => {
+    if (version) {
+      const key = `draft-${version.number}`;
+      if (seededKey.value === key) return;
+      formula.value = formulaFromServed(version.formula);
+      yieldQuantity.value = version.yield_quantity;
+      yieldUnit.value = version.yield_unit || "g";
+      steps.value = stepsForPayload(version.steps);
+      notes.value = version.notes;
+      label.value = version.label;
+      seededKey.value = key;
+      before.value = null;
+      return;
+    }
+    if (!canOpen || seededKey.value) return;
+    formula.value = base ? formulaFromServed(base.formula) : emptyFormula();
+    yieldQuantity.value = base ? base.yield_quantity : "1";
+    yieldUnit.value = base ? base.yield_unit || "g" : "kg";
+    steps.value = base ? stepsForPayload(base.steps) : [];
+    notes.value = base ? base.notes : "";
+    label.value = "";
+    seededKey.value = "base";
     before.value = null;
   },
   { immediate: true },
@@ -405,6 +427,7 @@ function updateStep(index: number, patch: Partial<RecipeStepInput>) {
 }
 function removeStep(index: number) {
   steps.value = steps.value.filter((_, current) => current !== index);
+  stepErrors.value = {};
 }
 function moveStep(index: number, delta: number) {
   const target = index + delta;
@@ -414,19 +437,27 @@ function moveStep(index: number, delta: number) {
   if (!moved) return;
   next.splice(target, 0, moved);
   steps.value = next;
+  stepErrors.value = {};
 }
 function stepMinutes(step: RecipeStepInput): string {
   return step.target_seconds ? String(step.target_seconds / 60) : "";
 }
+// O valor inválido NÃO é apagado em silêncio (beta 05/11/2026, PROD-19): o campo
+// guarda o que foi digitado, diz o que está errado e o Salvar espera a correção.
+const stepErrors = ref<Record<string, string>>({});
+function setStepError(key: string, message: string) {
+  const others = Object.fromEntries(Object.entries(stepErrors.value).filter(([current]) => current !== key));
+  stepErrors.value = message ? { ...others, [key]: message } : others;
+}
 function onStepMinutes(index: number, event: Event) {
-  const raw = (event.target as HTMLInputElement).value.replace(",", ".");
-  const minutes = Number(raw);
-  updateStep(index, { target_seconds: raw && Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : null });
+  const read = readStepMinutes((event.target as HTMLInputElement).value);
+  setStepError(`${index}-minutes`, read.error);
+  if (!read.error) updateStep(index, { target_seconds: read.seconds });
 }
 function onStepTemperature(index: number, event: Event) {
-  const raw = (event.target as HTMLInputElement).value.replace(",", ".");
-  const celsius = Number(raw);
-  updateStep(index, { temperature_celsius: raw && Number.isFinite(celsius) ? celsius : null });
+  const read = readStepTemperature((event.target as HTMLInputElement).value);
+  setStepError(`${index}-temperature`, read.error);
+  if (!read.error) updateStep(index, { temperature_celsius: read.celsius });
 }
 
 // ── Padronizar para 1000 g (antes/depois + desfazer) ────────────────────────
@@ -456,7 +487,10 @@ function undoStandardize() {
   yieldQuantity.value = before.value.yieldQuantity;
   before.value = null;
 }
-const origin = computed(() => (draft.value ? originLines(draft.value.origin) : []));
+const origin = computed(() => {
+  const version = draft.value ?? baseVersion.value;
+  return version ? originLines(version.origin) : [];
+});
 const originOpen = ref(false);
 
 // ── Salvar / publicar ───────────────────────────────────────────────────────
@@ -483,9 +517,9 @@ function captureEditor() {
 }
 
 watch(
-  [entry, draft],
-  async ([currentEntry, currentDraft]) => {
-    if (!currentEntry || !currentDraft || editorBaseline.value) return;
+  [entry, editing],
+  async ([currentEntry, canOpen]) => {
+    if (!currentEntry || !canOpen || editorBaseline.value) return;
     await nextTick();
     captureEditor();
   },
@@ -528,7 +562,7 @@ function draftPatch() {
   };
 }
 async function save(): Promise<boolean> {
-  if (!draft.value) return false;
+  if (!editing.value) return false;
   saveError.value = "";
   const cleanName = entryName.value.trim();
   if (!cleanName) {
@@ -539,6 +573,11 @@ async function save(): Promise<boolean> {
   if (steps.value.some((step) => !step.name.trim())) {
     editorTab.value = "preparation";
     saveError.value = "Dê um nome a cada etapa do modo de preparo.";
+    return false;
+  }
+  if (Object.keys(stepErrors.value).length) {
+    editorTab.value = "preparation";
+    saveError.value = "Corrija o tempo ou a temperatura marcados no modo de preparo.";
     return false;
   }
   const cleanOutputSku = entryOutputSku.value.trim().toUpperCase();
@@ -564,6 +603,24 @@ async function save(): Promise<boolean> {
       return false;
     }
   }
+  if (!draft.value) {
+    // O primeiro Salvar cria o rascunho com o que está na tela, a partir da versão
+    // mais nova (a publicada segue intacta).
+    const created = await createVersion({
+      ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
+      ...(baseVersion.value ? { from_version: baseVersion.value.number } : {}),
+      ...draftPatch(),
+    });
+    if (!created.ok || !created.version) {
+      saveError.value = created.message ?? "";
+      return false;
+    }
+    useSonner.success("Rascunho salvo.");
+    await navigateTo(`/recipes/${entryRef}/edit?v=${created.version.number}`, { replace: true });
+    await nextTick();
+    captureEditor();
+    return true;
+  }
   const result = await updateDraft(draft.value.number, draftPatch());
   if (result.ok) {
     useSonner.success("Rascunho salvo.");
@@ -581,9 +638,10 @@ async function saveExecutionForm(payload: Parameters<typeof saveExecution>[0]) {
   useSonner.success("Configuração da produção salva.");
 }
 async function saveAndPublish() {
-  if (!draft.value) return;
-  const number = draft.value.number;
+  if (!editing.value) return;
   if (!(await save())) return;
+  const number = draft.value?.number;
+  if (!number) return;
   const result = await publish(number);
   if (result.ok) {
     useSonner.success(`Versão ${number} publicada.`);
@@ -593,63 +651,13 @@ async function saveAndPublish() {
   }
 }
 
-// Entrar no editor já é a intenção explícita de editar. Se ainda não existe um
-// rascunho, cria a cópia de trabalho automaticamente e mantém a publicada intacta.
-const draftStartAttempted = ref(false);
-const draftStartError = ref("");
-async function startDraft() {
-  draftStartError.value = "";
-  const base = entry.value?.versions[0];
-  const result = await createVersion(
-    base
-      ? {
-          ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
-          from_version: base.number,
-          formula: formulaFromServed(base.formula),
-          yield_quantity: base.yield_quantity,
-          yield_unit: base.yield_unit,
-          steps: stepsForPayload(base.steps),
-          notes: base.notes,
-          label: "",
-        }
-      : {
-          ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
-          formula: emptyFormula(),
-          yield_quantity: "1",
-          yield_unit: "kg",
-          steps: [],
-          notes: "",
-          label: "",
-        },
-  );
-  if (result.ok && result.version) {
-    await navigateTo(`/recipes/${entryRef}/edit?v=${result.version.number}`, { replace: true });
-    return;
-  }
-  draftStartError.value = result.message || "Não foi possível preparar a edição.";
-}
-
-async function ensureDraft() {
-  if (draftStartAttempted.value || pending.value || !entry.value?.is_active || !canEdit.value) return;
-  if (draft.value) {
-    if (requestedNumber.value !== draft.value.number) {
-      await navigateTo(`/recipes/${entryRef}/edit?v=${draft.value.number}`, { replace: true });
-    }
-    return;
-  }
-  draftStartAttempted.value = true;
-  await startDraft();
-}
-
-function retryStartDraft() {
-  draftStartAttempted.value = false;
-  void ensureDraft();
-}
-
+// Com um rascunho no servidor, o endereço aponta para ele (?v=n): voltar ao editor
+// continua de onde parou. Sem rascunho, nada é gravado ao abrir (PROD-10).
 watch(
-  [entry, canEdit, draft, pending],
-  () => {
-    if (!import.meta.server) void ensureDraft();
+  [draft, requestedNumber],
+  ([current, requested]) => {
+    if (import.meta.server || !current || requested === current.number) return;
+    void navigateTo(`/recipes/${entryRef}/edit?v=${current.number}`, { replace: true });
   },
   { immediate: true },
 );
@@ -658,6 +666,7 @@ const touch = useTouchPointer();
 
 const publishDisabledReason = computed(() => {
   if (!entryOutputSku.value.trim()) return "Associe um produto à receita antes de publicar.";
+  if (!formula.value.ingredients.length) return "Adicione ao menos um ingrediente antes de publicar.";
   if (unmatchedCount.value) return "Associe todos os ingredientes aos respectivos insumos antes de publicar.";
   return "";
 });
@@ -682,32 +691,37 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
+    <!-- O título é o nome da receita (o "Editar" já está no selo e nos botões): com o
+         prefixo e o selo longo, no tablet o título quebrava palavra por palavra e o selo
+         subia por cima dele (beta 05/11/2026, PROD-11). -->
     <RecipeHeader
-      :title="entry ? `Editar · ${entry.name}` : 'Editar receita'"
-      :subtitle="draft ? `Rascunho · Versão ${draft.number}` : ''"
+      :title="entry?.name || 'Editar receita'"
+      :subtitle="editing ? editorSubtitle : ''"
       :back="`/recipes/${entryRef}`"
       hide-refresh
     >
       <template #actions>
-        <div v-if="draft && canEdit" class="hidden items-center gap-2 lg:flex">
+        <!-- Rótulo completo do xl para cima; no tablet deitado, o curto escrito à mão. -->
+        <div v-if="editing" class="hidden shrink-0 items-center gap-2 lg:flex" data-editor-desk-actions>
           <NuxtButton
             color="neutral"
             variant="outline"
             icon="i-lucide-save"
             aria-label="Salvar rascunho"
+            title="Salvar rascunho"
             :disabled="busy"
             @click="save"
           >
-            <span class="hidden sm:inline">Salvar rascunho</span>
+            <span class="xl:hidden">Salvar</span><span class="hidden xl:inline">Salvar rascunho</span>
           </NuxtButton>
           <NuxtButton
             icon="i-lucide-check"
             aria-label="Salvar e publicar"
-            :disabled="busy || unmatchedCount > 0 || !entryOutputSku.trim()"
-            :title="!entryOutputSku.trim() ? 'Associe um produto à receita antes de publicar' : unmatchedCount ? 'Associe todos os ingredientes aos respectivos insumos antes de publicar' : ''"
+            :disabled="busy || !!publishDisabledReason"
+            :title="publishDisabledReason || 'Salvar e publicar'"
             @click="saveAndPublish"
           >
-            <span class="hidden sm:inline">Salvar e publicar</span>
+            <span class="xl:hidden">Publicar</span><span class="hidden xl:inline">Salvar e publicar</span>
           </NuxtButton>
         </div>
       </template>
@@ -717,7 +731,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
       <div class="grid max-w-md gap-2 rounded-md border border-dashed p-10">
         <Icon name="lucide:lock" class="mx-auto size-8 text-muted-foreground" />
         <p class="text-base font-semibold">Só leitura</p>
-        <p class="text-sm text-muted-foreground">Editar receitas pede a permissão de gestão da produção.</p>
+        <p class="text-sm text-muted-foreground">Só a gestão da produção cria e edita ficha técnica.</p>
         <NuxtLink :to="`/recipes/${entryRef}`" class="mt-1 text-sm text-primary underline-offset-2 hover:underline">Ver a receita</NuxtLink>
       </div>
     </section>
@@ -750,26 +764,18 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
       </div>
 
       <div
-        v-else-if="entry && !draft"
+        v-else-if="entry && !editing"
         class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
+        data-editor-archived
       >
-        <Icon :name="draftStartError ? 'lucide:circle-alert' : 'lucide:loader-circle'" :class="['size-8', { 'animate-spin': !draftStartError }]" />
-        <p class="text-base font-medium text-foreground">{{ draftStartError ? "Não foi possível abrir a edição." : "Preparando edição…" }}</p>
-        <p class="text-sm">A versão publicada permanece intacta enquanto você edita.</p>
-        <NuxtButton
-          v-if="draftStartError && entry.is_active"
-          class="mt-1"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-refresh-cw"
-          label="Tentar novamente"
-          :disabled="busy"
-          @click="retryStartDraft"
-        />
+        <Icon name="lucide:archive" class="size-8" />
+        <p class="text-base font-medium text-foreground">Receita arquivada</p>
+        <p class="text-sm">Desarquive a receita para editar.</p>
+        <NuxtLink :to="`/recipes/${entryRef}`" class="mt-1 text-sm text-primary underline-offset-2 hover:underline">Ver a receita</NuxtLink>
       </div>
 
       <div
-        v-else-if="entry && draft"
+        v-else-if="entry && editing"
         class="mx-auto grid w-full max-w-6xl gap-4"
         :class="editorTab === 'technical' ? 'xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]' : ''"
       >
@@ -1261,10 +1267,10 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     @update:model-value="updateStep(index, { instructions: String($event) })"
                   />
                 </NuxtFormField>
-                <NuxtFormField label="Tempo previsto (min)">
+                <NuxtFormField label="Tempo previsto (min)" :error="stepErrors[`${index}-minutes`]">
                   <NuxtInput :model-value="stepMinutes(step)" inputmode="decimal" class="w-full" :ui="{ base: 'bg-muted' }" @input="onStepMinutes(index, $event)" />
                 </NuxtFormField>
-                <NuxtFormField label="Temperatura (°C)">
+                <NuxtFormField label="Temperatura (°C)" :error="stepErrors[`${index}-temperature`]">
                   <NuxtInput :model-value="String(step.temperature_celsius ?? '')" inputmode="decimal" class="w-full" :ui="{ base: 'bg-muted' }" @input="onStepTemperature(index, $event)" />
                 </NuxtFormField>
                 <NuxtFormField label="Ponto de referência ou cuidado" class="sm:col-span-2">
@@ -1362,10 +1368,10 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
     </section>
 
     <OperatorActionBar
-      v-if="draft && canEdit && editorTab !== 'production'"
+      v-if="editing && editorTab !== 'production'"
       :action="mobilePublishAction"
       :secondary="mobileSaveAction"
-      :context-label="hasUnsavedChanges ? 'Alterações ainda não salvas' : `Rascunho da versão ${draft.number}`"
+      :context-label="hasUnsavedChanges ? 'Alterações ainda não salvas' : editorSubtitle"
       label="Salvar receita"
     />
   </main>

@@ -296,8 +296,95 @@ def best_match(
     return None
 
 
+# ── Autocomplete ────────────────────────────────────────────────────────────
+
+#: Palavras que não distinguem insumo e não contam como "casou".
+_SEARCH_STOPWORDS = frozenset({"de", "da", "do", "das", "dos", "e", "com", "a", "o"})
+#: Palavra digitada que não é começo de nenhuma palavra do nome ou do SKU ainda casa
+#: quando é erro de digitação de uma delas ("fermneto" → fermento) a partir desta nota.
+SEARCH_TYPO_WORD_SCORE = 80
+
+
+def _search_words(text: str) -> list[str]:
+    return [word for word in normalize_name(text).split() if word not in _SEARCH_STOPWORDS]
+
+
+def _is_typo_of(word: str, candidate: str) -> bool:
+    """``word`` é a palavra ``candidate`` (ou o começo dela) com erro de digitação."""
+    if len(word) < 4:
+        return False
+    return max(fuzz.ratio(word, candidate), fuzz.ratio(word, candidate[: len(word)])) >= SEARCH_TYPO_WORD_SCORE
+
+
+def _lexical_fit(query_words: Sequence[str], option: IngredientCandidate) -> tuple[int, bool]:
+    """``(bônus, todas casaram)``: palavra inteira vale mais que prefixo, e a primeira palavra mais que as outras.
+
+    "sal" é a palavra INTEIRA e a PRIMEIRA de "Sal grosso"; em "Salada da Casa" é só
+    prefixo, e em "Caramelo salgado" é prefixo de uma palavra do meio.
+    """
+    name_words = _search_words(option.name)
+    sku_words = _search_words(option.sku.replace("-", " "))
+    bonus = 0
+    matched = 0
+    for word in query_words:
+        if word in name_words:
+            bonus += 20 + (10 if name_words[0] == word else 0)
+        elif any(candidate.startswith(word) for candidate in name_words):
+            bonus += 8 + (4 if name_words[0].startswith(word) else 0)
+        elif any(candidate.startswith(word) for candidate in sku_words):
+            bonus += 5
+        elif not any(_is_typo_of(word, candidate) for candidate in (*name_words, *sku_words)):
+            continue
+        matched += 1
+    return bonus, matched == len(query_words)
+
+
+def _usage_by_sku() -> dict[str, int]:
+    """Em quantas linhas de ficha ativa cada insumo aparece: o insumo da casa vem antes do raro."""
+    try:
+        from django.db.models import Count
+        from shopman.craftsman.models import RecipeItem
+
+        return dict(
+            RecipeItem.objects.filter(recipe__is_active=True)
+            .values("input_sku")
+            .annotate(uses=Count("id"))
+            .values_list("input_sku", "uses")
+        )
+    except DatabaseError:
+        logger.debug("recipe_matching: uso por insumo indisponível", exc_info=True)
+        return {}
+
+
 def search_ingredients(query: str, *, limit: int = 12) -> tuple[IngredientCandidate, ...]:
-    """Autocomplete da tela. Consulta vazia lista os ativos em ordem de nome (nota 0: não houve casamento)."""
+    """Autocomplete da tela. Consulta vazia lista os ativos em ordem de nome (nota 0: não houve casamento).
+
+    Diferente do casamento da captura (``candidates_for``), aqui a pessoa DIGITA o
+    que procura (beta 05/11/2026, PROD-07):
+
+    - cada palavra digitada precisa casar o começo de uma palavra do nome ou do SKU
+      (ou ser erro de digitação dela, ``SEARCH_TYPO_WORD_SCORE``). Sem isso,
+      "Farinha de grilo" completava a lista com flor de sal e amido de milho e não
+      dizia que nada bateu;
+    - palavra inteira e primeira palavra pesam mais ("sal" → Sal grosso antes de
+      Caramelo salgado);
+    - no empate, o insumo mais usado nas fichas ativas vem antes do mais curto
+      ("agua" → Água filtrada antes de Água tônica).
+    """
     if not (query or "").strip():
         return tuple(_active_materials()[:limit])
-    return candidates_for(query, limit=limit)
+    text = canonical_query(query)
+    words = _search_words(text)
+    if not text or not words:
+        return ()
+    usage = _usage_by_sku()
+    ranked: list[tuple[int, int, int, str, IngredientCandidate]] = []
+    for option in _active_materials():
+        score = _score(text, option)
+        bonus, every_word = _lexical_fit(words, option)
+        if not every_word:
+            continue
+        candidate = IngredientCandidate(sku=option.sku, name=option.name, unit=option.unit, role=option.role, score=score)
+        ranked.append((-(score + bonus), -usage.get(option.sku, 0), len(option.name), option.name, candidate))
+    ranked.sort(key=lambda row: row[:4])
+    return tuple(row[4] for row in ranked[:limit])
