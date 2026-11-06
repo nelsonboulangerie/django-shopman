@@ -341,4 +341,6 @@ def test_o_admin_do_posto_mostra_a_saude_da_impressora(posto, impressora):
 
     nova = Terminal.objects.create(ref="sem-agente", label="Impressora nova")
     posto.print_terminal = nova
-    assert "Relay não pareado" in str(model_admin.print_destination_display(posto))
+    shown = str(model_admin.print_destination_display(posto))
+    assert "Agente não pareado" in shown
+    assert "relay" not in shown.lower()

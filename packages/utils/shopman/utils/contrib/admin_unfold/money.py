@@ -8,7 +8,8 @@ A convenção ``_q`` (centavos inteiros) é de ARMAZENAMENTO, não de digitaçã
 
 from __future__ import annotations
 
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+import re
+from decimal import Decimal, InvalidOperation
 
 from django import forms
 from django.core.exceptions import ValidationError
@@ -16,24 +17,36 @@ from unfold.widgets import UnfoldAdminTextInputWidget
 
 from shopman.utils.monetary import format_money
 
-_CENT = Decimal("0.01")
+#: "1.500" ou "12.345.678": ponto só como separador de milhar, sem vírgula.
+_THOUSANDS_ONLY = re.compile(r"[1-9]\d{0,2}(\.\d{3})+")
 
 
 def parse_reais(text: str) -> int:
-    """"15,50" / "R$ 1.234,56" / "15.50" / "15" em centavos. ``ValueError`` se não for número."""
+    """"15,50" / "R$ 1.234,56" / "15.50" / "15" em centavos. ``ValueError`` se não for número.
+
+    Sem vírgula, "1.500" é mil e quinhentos reais, como o gestor escreve, e não
+    R$ 1,50. Mais de dois dígitos de centavos é recusado em vez de arredondado:
+    "15,555" é erro de digitação, e arredondar em silêncio grava um preço que
+    ninguém digitou.
+    """
     cleaned = str(text).replace("R$", "").replace(" ", "").replace(" ", "").strip()
     if not cleaned:
         raise ValueError("vazio")
     if "," in cleaned:
         # Formato brasileiro: ponto separa milhar, vírgula separa os centavos.
         cleaned = cleaned.replace(".", "").replace(",", ".")
+    elif _THOUSANDS_ONLY.fullmatch(cleaned):
+        cleaned = cleaned.replace(".", "")
     try:
         amount = Decimal(cleaned)
     except InvalidOperation as exc:
         raise ValueError(cleaned) from exc
     if not amount.is_finite():
         raise ValueError(cleaned)
-    return int((amount.quantize(_CENT, rounding=ROUND_HALF_UP) * 100).to_integral_value())
+    cents = amount * 100
+    if cents != cents.to_integral_value():
+        raise ValueError(cleaned)
+    return int(cents)
 
 
 class MoneyReaisField(forms.Field):

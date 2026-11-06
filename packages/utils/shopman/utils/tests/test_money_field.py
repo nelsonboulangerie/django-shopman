@@ -21,6 +21,10 @@ class _PriceForm(forms.Form):
         ("R$ 1.234,56", 123456),
         ("15.50", 1550),
         ("0,05", 5),
+        ("1.500", 150000),
+        ("12.345.678", 1234567800),
+        ("1.500,00", 150000),
+        ("0.500", 50),
     ],
 )
 def test_parse_reais(typed, expected_q):
@@ -38,7 +42,7 @@ def test_valor_gravado_aparece_em_reais():
     assert 'value="15,00"' in str(form["price_q"])
 
 
-@pytest.mark.parametrize("typed", ["quinze", "1,2,3", "-1"])
+@pytest.mark.parametrize("typed", ["quinze", "1,2,3", "-1", "15,555", "1.2345"])
 def test_valor_invalido_ou_negativo_e_recusado(typed):
     form = _PriceForm(data={"price_q": typed})
     assert not form.is_valid()

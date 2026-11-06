@@ -210,9 +210,14 @@ def _destination_health(terminal, *, config: PrinterConfig | None = None) -> Pri
     return PrintDestination(
         terminal,
         _terminal_label(terminal),
-        "Pronta" if recently_seen else ("Aguardando estação" if paired else "Relay não pareado"),
+        # Copy de gestor: "relay" é o nome do mecanismo, não do que ele vê na tela
+        # (beta test 05/11/2026, ADM-11). A página do pareamento se chama
+        # "Instalar o agente do balcão", no terminal.
+        "Pronta" if recently_seen else ("Aguardando estação" if paired else "Agente não pareado"),
         paired,
-        "" if paired else "Emita uma credencial para o relay deste terminal.",
+        ""
+        if paired
+        else "Faça o pareamento em Instalar o agente do balcão, na tela deste terminal.",
         config or PrinterConfig.from_terminal(terminal),
     )
 

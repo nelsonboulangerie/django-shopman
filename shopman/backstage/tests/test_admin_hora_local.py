@@ -82,3 +82,11 @@ def test_meio_da_venda_e_comprovante_em_portugues(shift):
     assert "mixed" not in entry_detail(sale)
     receipt = Entry(kind=Entry.Kind.RECEIPT_RESULT, payload={"status": "skipped"})
     assert entry_detail(receipt) == "sem impressora"
+
+
+def test_estoque_mostra_movimento_e_reserva_na_hora_da_loja():
+    """Movimentos, reservas e alertas do estoque usavam ``strftime`` cru."""
+    from shopman.stockman.contrib.admin_unfold.admin import _format_datetime as stock_datetime
+
+    assert stock_datetime(UTC_13H) == "05/11/26 · 10:00"
+    assert stock_datetime(None) == "-"

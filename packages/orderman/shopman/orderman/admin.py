@@ -100,6 +100,7 @@ from shopman.orderman.models import (
     SessionEvent,
 )
 from shopman.utils import unfold_badge, unfold_component
+from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 
 logger = logging.getLogger(__name__)
@@ -245,7 +246,7 @@ class SessionAdmin(ModelAdmin):
             "</li>",
             (
                 (
-                    created_at.strftime("%d/%m %H:%M:%S") if created_at else "—",
+                    format_local(created_at, "%d/%m %H:%M:%S", empty="—"),
                     unfold_badge(phase, "base"),
                     event_type,
                     actor or "—",
