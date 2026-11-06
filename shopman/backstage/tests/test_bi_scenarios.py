@@ -117,6 +117,14 @@ def test_off_contract_answer_is_a_failed_report_never_an_invented_scenario(histo
     assert report.status == BIScenarioReport.Status.FAILED
     assert report.scenarios == [] and "JSON" in report.error
     assert report.raw_text == "Acho que vai vender bem."
+    from shopman.backstage.projections.bi_scenarios import report_view
+
+    view = report_view(report)
+    assert "Tente gerar novamente" in view.error
+    assert str(report.pk) in view.error
+    assert report.error not in view.error
+    report.refresh_from_db()
+    assert "JSON" in report.error
 
     monkeypatch.setattr("shopman.shop.services.copy_assist.suggest", lambda *a, **k: json.dumps({"scenarios": []}))
     empty = scenarios.generate(focus="production")

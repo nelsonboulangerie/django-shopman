@@ -144,7 +144,7 @@ async function run() {
                   color="error"
                   variant="subtle"
                   icon="i-lucide-circle-alert"
-                  title="A IA não respondeu no formato esperado"
+                  title="Não foi possível gerar os cenários"
                   :description="item.report.error"
                   :actions="alertActions('error', retryActions)"
                 />
