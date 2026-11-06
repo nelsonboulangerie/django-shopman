@@ -33,6 +33,8 @@ from django.test import TestCase
 from django.utils import timezone
 from shopman.orderman.tests.commit_support import seal_for
 
+from shopman.shop.tests._payment import with_payment
+
 SKU = "PREORDER-MINI-BAGUETE"
 
 
@@ -98,7 +100,7 @@ def _open_session(channel_ref: str, session_key: str, delivery_date, qty: int):
                 "unit_price_q": 1000,
             }
         ],
-        data={"delivery_date": delivery_date.isoformat()},
+        data=with_payment(channel_ref, {"delivery_date": delivery_date.isoformat()}),
     )
 
 

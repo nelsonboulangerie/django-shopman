@@ -4740,6 +4740,45 @@
       "out_of_extraction": false
     },
     {
+      "id": "order.payment-method",
+      "question": "Este pedido pode nascer com a forma de pagamento que traz (e em conta só para quem tem a conta na casa)?",
+      "owner": "order.payment-method",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.order_payment:PaymentMethodRule",
+      "authoritative_symbols": [
+        "shopman.shop.policies.order_payment:PaymentMethodRule"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/order_payment.py",
+          "symbols": [
+            "MISSING_MESSAGE",
+            "PAYMENT_METHODS",
+            "PaymentMethodRule",
+            "payment_refusal"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_pedido_sem_forma_de_pagamento.py::test_a_regra_do_commit_diz_a_recusa_da_politica_no_campo_da_forma",
+        "shopman/shop/tests/test_pedido_sem_forma_de_pagamento.py::test_toda_forma_conhecida_passa"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
       "id": "account.active-subject",
       "question": "Qual cliente ativo e autenticado pode ser titular desta operação?",
       "owner": "account.active-subject",

@@ -74,6 +74,7 @@ def test_pedido_da_loja_online_nasce_com_a_marca_no_ref():
         state="open",
         rev=1,
         items=[{"line_id": "L1", "sku": "A", "qty": 1, "unit_price_q": 1000}],
+        data={"payment": {"method": "cash"}},
     )
 
     result = CommitService.commit(

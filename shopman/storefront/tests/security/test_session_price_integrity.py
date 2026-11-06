@@ -73,6 +73,7 @@ def test_reprice_persists_listing_total_and_revision_before_second_confirmation(
     data = {
         "customer": {"name": "Ana", "phone": "+5543999990001"},
         "fulfillment_type": "pickup",
+        "payment": {"method": "cash"},
     }
 
     with pytest.raises(OrderingValidationError) as caught:
@@ -148,7 +149,7 @@ def test_stale_revision_does_not_abandon_existing_phone_cart_or_hold(cart_sessio
         checkout_service.process(
             session_key=current.session_key,
             channel_ref="web",
-            data={"customer": {"phone": phone}},
+            data={"customer": {"phone": phone}, "payment": {"method": "cash"}},
             idempotency_key=session_service.new_idempotency_key(),
             expected_total_q=sum(item["line_total_q"] for item in current.items),
             expected_revision=current.rev - 1,
@@ -326,7 +327,7 @@ def test_checkout_without_prior_cart_queues_no_takeover(cart_session):
     result = checkout_service.process(
         session_key=current.session_key,
         channel_ref="web",
-        data={"customer": {"name": "Ana", "phone": phone}, "fulfillment_type": "pickup"},
+        data={"customer": {"name": "Ana", "phone": phone}, "fulfillment_type": "pickup", "payment": {"method": "cash"}},
         idempotency_key=session_service.new_idempotency_key(),
         expected_total_q=sum(item["line_total_q"] for item in current.items),
         expected_revision=current.rev,
@@ -357,7 +358,11 @@ def test_expected_total_guard_blocks_stale_undercharge(cart_session, product):
         checkout_service.process(
             session_key=session_key,
             channel_ref="web",
-            data={"customer": {"name": "Ana", "phone": "+5543999990001"}, "fulfillment_type": "pickup"},
+            data={
+            "customer": {"name": "Ana", "phone": "+5543999990001"},
+            "fulfillment_type": "pickup",
+            "payment": {"method": "cash"},
+        },
             idempotency_key=session_service.new_idempotency_key(),
             expected_total_q=180,  # what the client saw — now stale
             expected_revision=current_revision,
@@ -402,7 +407,11 @@ def test_fixed_discount_cannot_exceed_merchandise_value(channel, product):
     result = checkout_service.process(
         session_key=session.session_key,
         channel_ref="web",
-        data={"customer": {"name": "Ana", "phone": "+5543999990001"}, "fulfillment_type": "pickup"},
+        data={
+            "customer": {"name": "Ana", "phone": "+5543999990001"},
+            "fulfillment_type": "pickup",
+            "payment": {"method": "cash"},
+        },
         idempotency_key=session_service.new_idempotency_key(),
         expected_total_q=0,
         expected_revision=session.rev,

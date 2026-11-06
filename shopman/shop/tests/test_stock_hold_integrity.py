@@ -24,6 +24,7 @@ from shopman.orderman.services import CommitService
 from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.models import Channel
+from shopman.shop.tests._payment import with_payment
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ def _make_session(channel, items):
         channel_ref=channel.ref,
         state="open",
         items=items,
+        data=with_payment(channel),
     )
 
 
