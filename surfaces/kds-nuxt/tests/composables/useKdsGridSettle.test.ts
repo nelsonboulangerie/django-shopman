@@ -45,6 +45,7 @@ describe("useKdsGridSettle", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   function setup(initial: number[]) {
@@ -123,6 +124,21 @@ describe("useKdsGridSettle", () => {
     scope.stop();
   });
 
+  it("relógio parado (hora fixa do teste visual) não deixa a grade surda", () => {
+    vi.spyOn(Date, "now").mockReturnValue(0);
+    const pks = ref([69, 9]);
+    const scope = effectScope();
+    const { settling } = scope.run(() =>
+      useKdsGridSettle(() => signatureOf(pks.value), {
+        stillMoving: () => true,
+      }),
+    )!;
+    pks.value = [30, 69, 9];
+    vi.advanceTimersByTime(KDS_GRID_SETTLE_MAX_MS + KDS_GRID_SETTLE_RECHECK_MS);
+    expect(settling.value).toBe(false);
+    scope.stop();
+  });
+
   it("com movimento reduzido não há animação, então não há o que esperar", () => {
     vi.stubGlobal("matchMedia", () => ({ matches: true }));
     const { pks, settling, scope } = setup([69, 9]);
@@ -157,6 +173,19 @@ describe("a grade da estação usa a trava", () => {
     );
     expect(page).toMatch(
       /\.kds-card-leave-active \{\s*z-index: 0;\s*pointer-events: none;/,
+    );
+  });
+
+  it("a trava nunca liga no servidor (viria no HTML sem o cliente saber desligar)", () => {
+    const composable = readFileSync(
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        "../../app/composables/useKdsGridSettle.ts",
+      ),
+      "utf8",
+    );
+    expect(composable).toMatch(
+      /function settle\(\) \{[^}]*if \(import\.meta\.server\) return;/,
     );
   });
 

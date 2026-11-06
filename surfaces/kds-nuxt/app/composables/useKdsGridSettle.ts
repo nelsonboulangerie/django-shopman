@@ -56,12 +56,14 @@ export function useKdsGridSettle(
   const settleMs = options.settleMs ?? KDS_GRID_SETTLE_MS;
   const settling = ref(false);
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let startedAt = 0;
+  // O tempo de espera se conta pelos próprios timers, não pelo relógio: relógio parado
+  // (teste com hora fixa) ou ajustado não pode deixar a grade surda.
+  let waited = 0;
 
   function release() {
     timer = null;
-    const waited = Date.now() - startedAt;
     if (options.stillMoving?.() && waited < KDS_GRID_SETTLE_MAX_MS) {
+      waited += KDS_GRID_SETTLE_RECHECK_MS;
       timer = setTimeout(release, KDS_GRID_SETTLE_RECHECK_MS);
       return;
     }
@@ -69,9 +71,13 @@ export function useKdsGridSettle(
   }
 
   function settle() {
+    // Só no navegador: a grade do servidor não anima, e a trava ligada no SSR viria
+    // desenhada no HTML (`pointer-events-none`) sem que o cliente soubesse desligá-la.
+    if (import.meta.server) return;
     if (prefersReducedMotion() || settleMs <= 0) return;
+    if (!settling.value) waited = 0;
     settling.value = true;
-    startedAt = Date.now();
+    waited += settleMs;
     if (timer) clearTimeout(timer);
     timer = setTimeout(release, settleMs);
   }
