@@ -1215,6 +1215,11 @@ class Command(BaseCommand):
         # de ontem para hoje (beta 05/11, ge:BI-03).
         self._stamp_closed_orders()
 
+        # Pedido sem forma de pagamento não existe (decisão do dono, 06/11/2026,
+        # GES-03): o seed é a única porta que cria pedido sem passar pelo commit,
+        # então ele se confere antes de dizer "completo".
+        self._assert_every_order_has_payment()
+
         # DEPOIS da fase dinâmica, de propósito: é `_seed_cash_register` quem recria o
         # `pdv-main` (via `Terminal.default()`) e declara o hardware da casa. A loja
         # tem a última palavra sobre a própria config — o seed só preenche lacuna.
@@ -1229,6 +1234,45 @@ class Command(BaseCommand):
         call_command("propose_product_attributes", verbosity=0)
 
         self.stdout.write(self.style.SUCCESS("\n✅ Seed Nelson completo!\n"))
+
+    @staticmethod
+    def _live_order_payment(channel_ref: str, total_q: int) -> dict:
+        """A forma de pagamento de um pedido do seed que ainda está em andamento.
+
+        Ninguém pagou ainda, e nada é cobrança digital pendente (que travaria o
+        avanço do board esperando um Pix que nunca cai): é dinheiro na retirada.
+        No PDV é a marca de "receber na retirada" (``collection: on_delivery``);
+        na loja e no WhatsApp, o dinheiro de retirada que o checkout grava.
+        """
+        if channel_ref == "pdv":
+            return {"method": "cash", "collection": "on_delivery", "amount_q": total_q}
+        return {"method": "cash"}
+
+    def _assert_every_order_has_payment(self) -> None:
+        """Falha o seed se algum pedido nasceu sem forma de pagamento.
+
+        A régua é a mesma do commit (``policies.order_payment``): forma
+        conhecida, ``mixed`` só com linhas, e "em conta" só para cliente com a
+        conta na casa. O iFood entra pela régua dele (``external``).
+        """
+        from django.core.management.base import CommandError
+
+        from shopman.shop.policies.order_payment import payment_refusal
+
+        reasons = {
+            "payment_method_missing": "sem forma de pagamento",
+            "house_account_not_allowed": "em conta para cliente sem conta na casa",
+        }
+        offenders = []
+        for ref, data in Order.objects.values_list("ref", "data").iterator():
+            refused = payment_refusal(data)
+            if refused is not None:
+                offenders.append(f"{ref} ({reasons[refused[0]]})")
+        if offenders:
+            raise CommandError(
+                "O seed criou pedido sem forma de pagamento válida: " + ", ".join(offenders[:20])
+                + (f" e mais {len(offenders) - 20}" if len(offenders) > 20 else "")
+            )
 
     def _materialize_instance(self, path: Path) -> None:
         try:
@@ -6688,9 +6732,12 @@ class Command(BaseCommand):
                 handle_ref=handle_ref,
                 created_at=order_time,
                 # `customer_ref`: o elo que o histórico do cliente usa. Ver o gêmeo acima.
+                # `payment`: pedido sem forma de pagamento não existe (dono, 06/11,
+                # GES-03). Em andamento, ninguém pagou ainda: recebe na retirada.
                 data={
                     "customer_ref": customer.ref,
                     "availability_decision": {"approved": True, "source": "seed", "decisions": []},
+                    "payment": self._live_order_payment(channel.ref, total_q),
                 },
                 # `snapshot["items"]`: o que o histórico do cliente lê. Ver o gêmeo acima.
                 snapshot={"items": items_data},
@@ -7383,6 +7430,8 @@ class Command(BaseCommand):
             "delivery_time_slot": "manha",
             "is_preorder": True,
             "customer": {"name": "Cliente Encomenda QA"},
+            # Pedido sem forma de pagamento não existe (dono, 06/11, GES-03).
+            "payment": {"method": "cash", "collection": "on_delivery"},
         }
         self._make_qa_order(
             ref="QA-PREORDER-01",
@@ -7556,6 +7605,7 @@ class Command(BaseCommand):
                 "fulfillment_type": "pickup",
                 "customer": {"name": "Cliente Observação QA"},
                 "order_notes": "Bem assadinha, por favor. Cortar ao meio.",
+                "payment": {"method": "cash"},
             },
             minutes_ago=8,
         )
@@ -7573,6 +7623,7 @@ class Command(BaseCommand):
             data={
                 "fulfillment_type": "pickup",
                 "customer": {"name": "Cliente Itens Nomeados QA"},
+                "payment": {"method": "cash", "collection": "on_delivery"},
             },
             minutes_ago=6,
         )

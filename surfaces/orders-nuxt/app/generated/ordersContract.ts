@@ -566,7 +566,6 @@ export interface OrderCardProjection {
   ready_eta_iso: string;
   courier_reminder: CourierReminderProjection | null;
   payment_lapsed: boolean;
-  payment_unrecorded: boolean;
 }
 
 /** Uma encomenda na lista, na grade ou no resultado da busca. */
@@ -742,7 +741,6 @@ export interface OperatorOrderProjection {
   store_location: Record<string, number> | null;
   transferred_from_label: string;
   payment_lapsed: boolean;
-  payment_unrecorded: boolean;
 }
 
 /** Top-level read model for the operator order queue. */

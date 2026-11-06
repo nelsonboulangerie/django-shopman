@@ -71,7 +71,7 @@ def _open_session(channel_ref: str, session_key: str, sku: str, qty: int):
                 "unit_price_q": 1000,
             }
         ],
-        data={},
+        data={"payment": {"method": "cash"}},
     )
 
 
