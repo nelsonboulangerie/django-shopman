@@ -715,10 +715,10 @@ def _copy_entry(key: str, *, omotenashi: OmotenashiProjection) -> CopyEntryProje
 
 def _device_trust_entry(key: str, *, omotenashi: OmotenashiProjection) -> CopyEntryProjection:
     """Copy da confiança do aparelho com ``{period}`` trocado pelo prazo real do doorman."""
-    from shopman.shop.services.auth import device_trust_period_display
+    from shopman.shop.projections.storefront_context import device_trust_period
 
     entry = _copy_entry(key, omotenashi=omotenashi)
-    period = device_trust_period_display()
+    period = device_trust_period()
     return CopyEntryProjection(
         title=entry.title.replace("{period}", period),
         message=entry.message.replace("{period}", period),
