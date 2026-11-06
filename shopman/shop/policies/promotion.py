@@ -13,7 +13,8 @@ Sem Django, sem banco: a promoção é qualquer objeto com esses atributos (o mo
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
 
@@ -77,43 +78,95 @@ class PromotionContext:
     promise_to_any_visitor: bool = False
 
 
-def promotion_matches(promo: Any, ctx: PromotionContext) -> bool:
-    """A promoção vale para esta compra, nos eixos que ``ctx`` traz?"""
+#: Condições de compra que uma promoção pode deixar de cumprir, na ordem em que
+#: ``promotion_unmet_condition`` as confere. É também o motivo que a sacola dá ao
+#: cliente para um cupom que ficou sem desconto (``pricing.coupon.reason``).
+UNMET_CUSTOMER = "customer"
+UNMET_FULFILLMENT = "fulfillment"
+UNMET_MINIMUM = "minimum"
+UNMET_ITEMS = "items"
+
+
+def promotion_unmet_condition(promo: Any, ctx: PromotionContext) -> str:
+    """A primeira condição desta compra que a promoção não cumpre, ou ``""``.
+
+    ``customer`` (segmento, grupo ou aniversário), ``fulfillment`` (forma de
+    recebimento), ``minimum`` (pedido mínimo) ou ``items`` (SKU/coleção da linha).
+    ``promotion_matches`` é esta pergunta com resposta sim ou não.
+    """
     segments = list(getattr(promo, "customer_segments", None) or [])
     if segments:
         shopper = ctx.shopper
         if shopper.segment not in segments and not shopper.tier_refs.intersection(segments):
-            return False
+            return UNMET_CUSTOMER
     if getattr(promo, "birthday_only", False) and not ctx.shopper.is_birthday:
-        return False
+        return UNMET_CUSTOMER
 
     fulfillment_types = list(getattr(promo, "fulfillment_types", None) or [])
     if ctx.promise_to_any_visitor:
-        if fulfillment_types or int(getattr(promo, "min_order_q", 0) or 0):
-            return False
+        if fulfillment_types:
+            return UNMET_FULFILLMENT
+        if int(getattr(promo, "min_order_q", 0) or 0):
+            return UNMET_MINIMUM
     if fulfillment_types and ctx.fulfillment_type is not None:
         chosen = ctx.fulfillment_type.strip()
         if chosen:
             if chosen not in fulfillment_types:
-                return False
+                return UNMET_FULFILLMENT
         elif "pickup" not in fulfillment_types:
             # Sem o tipo escolhido, a promoção que NÃO vale na retirada (só entrega)
             # não pré-aplica: o desconto apareceria e sumiria ao trocar para
             # retirada. A restrita à RETIRADA vale, porque retirada é o padrão da
             # casa até alguém escolher entrega.
-            return False
+            return UNMET_FULFILLMENT
 
     if ctx.merchandise_subtotal_q is not None and not promotion_minimum_eligible(
         min_order_q=getattr(promo, "min_order_q", 0),
         merchandise_subtotal_q=ctx.merchandise_subtotal_q,
     ):
-        return False
+        return UNMET_MINIMUM
 
     if ctx.sku is not None:
         skus = list(getattr(promo, "skus", None) or [])
         if skus and ctx.sku not in skus:
-            return False
+            return UNMET_ITEMS
         collections = list(getattr(promo, "collections", None) or [])
         if collections and not any(ref in collections for ref in ctx.sku_collections):
-            return False
-    return True
+            return UNMET_ITEMS
+    return ""
+
+
+def promotion_minimum_missing_q(promo: Any, merchandise_subtotal_q: int) -> int:
+    """Quanto falta (centavos) para a compra chegar ao pedido mínimo da promoção."""
+    return max(0, int(getattr(promo, "min_order_q", 0) or 0) - int(merchandise_subtotal_q or 0))
+
+
+def coupon_zero_reason(
+    promo: Any, order_ctx: PromotionContext, line_ctxs: Iterable[PromotionContext]
+) -> dict:
+    """Por que o cupom ficou na sacola sem descontar nada (beta 06/11).
+
+    O navegador não adivinha: "nenhum item recebe" para um cupom que só esperava o
+    pedido mínimo mandava o cliente embora com a sacola errada. ``reason`` é
+    ``unavailable`` (vencido, esgotado ou fora do canal), ``customer``,
+    ``fulfillment`` (+ ``fulfillment_types``), ``minimum`` (+ ``missing_q``),
+    ``items`` (nenhuma linha no alvo) ou ``already_discounted`` (as linhas do alvo
+    já têm desconto igual ou maior; o maior ganha, sem somar). ``order_ctx`` é a
+    compra inteira (o ``sku`` é ignorado); ``line_ctxs``, uma por linha, sem mínimo.
+    """
+    if promo is None:
+        return {"reason": "unavailable"}
+    unmet = promotion_unmet_condition(promo, replace(order_ctx, sku=None))
+    if unmet == UNMET_MINIMUM:
+        return {"reason": unmet, "missing_q": promotion_minimum_missing_q(promo, order_ctx.merchandise_subtotal_q or 0)}
+    if unmet == UNMET_FULFILLMENT:
+        return {"reason": unmet, "fulfillment_types": list(getattr(promo, "fulfillment_types", None) or [])}
+    if unmet:
+        return {"reason": unmet}
+    targeted = any(promotion_matches(promo, line_ctx) for line_ctx in line_ctxs)
+    return {"reason": "already_discounted" if targeted else UNMET_ITEMS}
+
+
+def promotion_matches(promo: Any, ctx: PromotionContext) -> bool:
+    """A promoção vale para esta compra, nos eixos que ``ctx`` traz?"""
+    return not promotion_unmet_condition(promo, ctx)

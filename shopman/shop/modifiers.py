@@ -43,6 +43,7 @@ from shopman.shop.policies.group_advantage import free_shipping_minimum_q, group
 from shopman.shop.policies.promotion import (
     PromotionContext,
     Shopper,
+    coupon_zero_reason,
     promotion_matches,
     promotion_minimum_eligible,
 )
@@ -465,7 +466,8 @@ def _reverse_prior_pricing(pricing: dict, item: dict) -> None:
         disc["total_discount_q"] = sum(_record_total_q(d) for d in kept)
         pricing["discount"] = disc
         if t == "coupon" and pricing.get("coupon"):
-            pricing["coupon"]["discount_q"] = sum(_record_total_q(d) for d in kept if d.get("type") == "coupon")
+            coupon_q = pricing["coupon"]["discount_q"] = sum(_record_total_q(d) for d in kept if d.get("type") == "coupon")
+            pricing["coupon"].update({} if coupon_q > 0 else {"reason": "already_discounted"})  # maior desconto venceu
     elif t in ("lot_discount", "happy_hour"):
         entry = pricing.get(t)
         if entry:
@@ -1121,8 +1123,6 @@ class DiscountModifier:
             session.update_items(items)
 
         # Persist discount info in session.pricing (items lose extra fields on save)
-        if not session.pricing:
-            session.pricing = {}
         discount_block = {
             "total_discount_q": sum(_record_total_q(d) for d in discounts_applied),
             "items": discounts_applied,
@@ -1146,10 +1146,10 @@ class DiscountModifier:
             }
         session.pricing["discount"] = discount_block
         if coupon_code:
-            session.pricing["coupon"] = {
-                "code": coupon_code,
-                "discount_q": total_coupon_discount_q,
-            }
+            session.pricing["coupon"] = {"code": coupon_code, "discount_q": total_coupon_discount_q}
+            if total_coupon_discount_q <= 0:  # o motivo é do servidor, o navegador não adivinha (beta 06/11)
+                lines = [promotion_context(ctx, sku=i.get("sku", "")) for i in items if not _is_non_merchandise_line(i)]
+                session.pricing["coupon"].update(coupon_zero_reason(coupon_promo, promotion_context(ctx, sku="", merchandise_subtotal_q=session_total), lines))
         else:
             session.pricing.pop("coupon", None)
 

@@ -535,11 +535,25 @@ export function rememberChoicesDescription (isPickup: boolean): string {
 }
 
 // Cupom que ficou na sacola mas não descontou nada (beta SMS-04): o cartão não
-// pode dizer "aplicado" ao lado de um total que não mudou.
+// pode dizer "aplicado" ao lado de um total que não mudou. O MOTIVO vem do
+// servidor (beta 06/11): adivinhar aqui dizia "nenhum item recebe" a quem só
+// não tinha chegado ao pedido mínimo.
+export type CouponZeroReason =
+  | ''
+  | 'unavailable'
+  | 'customer'
+  | 'fulfillment'
+  | 'minimum'
+  | 'items'
+  | 'already_discounted'
+
 export interface CouponCardInput {
   coupon_code?: string | null
   coupon_discount_q?: number | null
   coupon_discount_display?: string | null
+  coupon_zero_reason?: CouponZeroReason | string | null
+  coupon_missing_display?: string | null
+  coupon_fulfillment_types?: readonly string[] | null
 }
 
 export interface CouponCardState {
@@ -547,18 +561,46 @@ export interface CouponCardState {
   description: string
 }
 
+function couponFulfillmentCopy (types: readonly string[] | null | undefined): string {
+  const only = types?.length === 1 ? types[0] : ''
+  if (only === 'delivery') return 'Este cupom vale só para entrega.'
+  if (only === 'pickup') return 'Este cupom vale só para retirada.'
+  return 'Este cupom não vale para esta forma de receber o pedido.'
+}
+
+export function couponZeroDescription (cart: CouponCardInput): string {
+  switch (cart.coupon_zero_reason) {
+    case 'minimum':
+      return cart.coupon_missing_display
+        ? `Faltam ${cart.coupon_missing_display} para usar este cupom.`
+        : 'Esta sacola ainda não chegou ao pedido mínimo deste cupom.'
+    case 'fulfillment':
+      return couponFulfillmentCopy(cart.coupon_fulfillment_types)
+    case 'customer':
+      return 'Este cupom não vale para esta conta.'
+    case 'items':
+      return 'Nenhum item desta sacola recebe o desconto dele.'
+    case 'already_discounted':
+      return 'Os itens deste cupom já têm um desconto igual ou maior, e os descontos não se somam.'
+    case 'unavailable':
+      return 'Este cupom não está mais disponível.'
+    default:
+      return ''
+  }
+}
+
 export function couponCardState (cart: CouponCardInput | null | undefined): CouponCardState {
   if (!cart?.coupon_code) return { status: 'none', description: '' }
   if ((cart.coupon_discount_q ?? 0) > 0) {
     return { status: 'applied', description: cart.coupon_discount_display ? `Desconto de ${cart.coupon_discount_display}` : '' }
   }
-  return { status: 'no_discount', description: 'Nenhum item desta sacola recebe o desconto dele.' }
+  return { status: 'no_discount', description: couponZeroDescription(cart) }
 }
 
 export function couponAppliedToast (cart: CouponCardInput | null | undefined): { kind: 'success' | 'info', message: string } {
-  return couponCardState(cart).status === 'applied'
-    ? { kind: 'success', message: 'Cupom aplicado.' }
-    : { kind: 'info', message: 'Este cupom não dá desconto nesta sacola.' }
+  const state = couponCardState(cart)
+  if (state.status === 'applied') return { kind: 'success', message: 'Cupom aplicado.' }
+  return { kind: 'info', message: state.description || 'Este cupom não dá desconto nesta sacola.' }
 }
 
 // Retirada: o motivo de prontidão ("Brioche sai às 15:00.") vale para todos os

@@ -4295,7 +4295,14 @@
           "symbols": [
             "PromotionContext",
             "Shopper",
-            "promotion_matches"
+            "UNMET_CUSTOMER",
+            "UNMET_FULFILLMENT",
+            "UNMET_ITEMS",
+            "UNMET_MINIMUM",
+            "coupon_zero_reason",
+            "promotion_matches",
+            "promotion_minimum_missing_q",
+            "promotion_unmet_condition"
           ]
         }
       ],

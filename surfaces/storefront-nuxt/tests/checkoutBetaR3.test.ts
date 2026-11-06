@@ -67,6 +67,20 @@ describe('cupom sem desconto (beta SMS-04)', () => {
     expect(couponAppliedToast(zero)).toEqual({ kind: 'info', message: 'Este cupom não dá desconto nesta sacola.' })
     expect(couponCardState(null).status).toBe('none')
   })
+
+  it('a frase é o motivo que o servidor mandou, nunca um palpite (beta 06/11)', () => {
+    const base = { coupon_code: 'PRIMEIRACOMPRA', coupon_discount_q: 0, coupon_discount_display: null }
+    const minimum = { ...base, coupon_zero_reason: 'minimum', coupon_missing_display: 'R$ 11,30' }
+    expect(couponCardState(minimum)).toEqual({ status: 'no_discount', description: 'Faltam R$ 11,30 para usar este cupom.' })
+    expect(couponAppliedToast(minimum)).toEqual({ kind: 'info', message: 'Faltam R$ 11,30 para usar este cupom.' })
+
+    expect(couponCardState({ ...base, coupon_zero_reason: 'items' }).description).toBe('Nenhum item desta sacola recebe o desconto dele.')
+    expect(couponCardState({ ...base, coupon_zero_reason: 'already_discounted' }).description).toContain('desconto igual ou maior')
+    expect(couponCardState({ ...base, coupon_zero_reason: 'fulfillment', coupon_fulfillment_types: ['delivery'] }).description).toBe('Este cupom vale só para entrega.')
+    expect(couponCardState({ ...base, coupon_zero_reason: 'unavailable' }).description).toBe('Este cupom não está mais disponível.')
+    // Sem motivo, nenhuma frase inventada.
+    expect(couponCardState(base).description).toBe('')
+  })
 })
 
 describe('rascunho do checkout e hidratação (beta SMS-22)', () => {
