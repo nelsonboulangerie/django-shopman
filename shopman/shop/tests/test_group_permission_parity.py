@@ -125,6 +125,11 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     ("shop.edit_production_suggested", {"Gerente"}),
     ("shop.view_production_unsold", {"Gerente"}),
     ("shop.edit_production_unsold", {"Gerente"}),
+    # projections/production.py::can_void (Cancelar lote). Decisão do dono,
+    # 05/11/2026: produção aberta impede selar o dia, e Gerente e Dono resolvem
+    # dali cancelando o lote. Sem o grant, o lote de 4.200 do beta ficava preso:
+    # só o superusuário cancelava. A Cozinha segue sem ele.
+    ("backstage.void_production", {"Gerente", "Dono"}),
 ]
 
 # ---------------------------------------------------------------------------
@@ -149,7 +154,6 @@ UNGRANTED_BY_DESIGN: dict[str, str] = {
     # closed until the business chooses which role receives each grant.
     "backstage.quick_finish_production": ("D1 pending: quick finish requires an explicit high-risk grant."),
     "backstage.override_production_shortage": ("D1 pending: shortage override requires an explicit high-risk grant."),
-    "backstage.void_production": ("D1 pending: work-order reversal requires an explicit high-risk grant."),
     "backstage.reveal_production_blind_map": ("D1 pending: revealing blind weighing codes requires an explicit grant."),
     # `cashman.audit_shift` VIVIA AQUI e saiu — vale dizer por quê, para ninguém
     # a trazer de volta achando que corrige algo.

@@ -570,6 +570,9 @@ export interface ProductionDashboardProjection {
   capacity_percent: number | null;
   late_orders: ProductionLateWorkOrderProjection[];
   access: ProductionSurfaceAccess;
+  planned_display: string;
+  loss_display: string;
+  loss_hint: string;
   actions: ProductionActionProjection[];
   generated_at: string;
   source_revision: string;
@@ -919,9 +922,11 @@ export interface ProductionShortagePossibility {
   proof: string;
 }
 
-/** ProductionMaterialShortageItem(sku: 'str', needed: 'str', available: 'str', shortage: 'str') */
+/** ProductionMaterialShortageItem(sku: 'str', name: 'str', unit: 'str', needed: 'str', available: 'str', shortage: 'str') */
 export interface ProductionMaterialShortageItem {
   sku: string;
+  name: string;
+  unit: string;
   needed: string;
   available: string;
   shortage: string;

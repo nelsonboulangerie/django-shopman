@@ -116,6 +116,12 @@ describe("suggestionMath: projeção + encomendas + margem = sugestão", () => {
     expect(math.marginNote).toBe("segurança 4%");
   });
 
+  it("dia de semana é feminino: média das sextas, nunca dos sextas (beta 05/11)", () => {
+    const FRIDAY = "2026-11-06";
+    const math = suggestionMath(suggestion(), FRIDAY);
+    expect(math.terms[0]).toEqual({ value: "44", label: "média das sextas" });
+  });
+
   it("sem encomenda, a encomenda sai da conta; sem recorte, é média de venda", () => {
     const math = suggestionMath(
       suggestion({ committed: "0", same_weekday: false, margin: "8" }),
