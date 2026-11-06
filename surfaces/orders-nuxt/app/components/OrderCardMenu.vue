@@ -36,10 +36,10 @@ const volumesAction = computed(
 );
 const volumesOpen = ref(false);
 const volumesDraft = ref(0);
+// Sem declaração, o rascunho parte de 1: volume nunca se deduz da contagem de
+// itens (que conta unidades: 12 croissants numa sacola não são 12 volumes).
 function openVolumes() {
-  volumesDraft.value =
-    props.card.volumes ||
-    Math.max(1, Math.min(props.card.items_count || 1, 99));
+  volumesDraft.value = props.card.volumes || 1;
   volumesOpen.value = true;
 }
 function saveVolumes() {

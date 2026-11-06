@@ -51,11 +51,11 @@ PROVENANCE_LABELS = {
 }
 
 _PROVENANCE_DETAILS = {
-    "manual": "Escrita à mão no inventário.",
+    "manual": "Criada à mão na tela de receitas.",
     "import": "Veio de uma planilha da casa.",
     "note": "Uma anotação do padeiro, lida pelo sistema.",
     "photo": "Uma foto do caderno, lida pelo sistema.",
-    "ficha": "Ficha do cadastro inicial, escrita por agente. Ninguém da casa a declarou.",
+    "ficha": "Ficha do cadastro inicial, ainda não conferida por ninguém da casa.",
 }
 
 REVIEW_PENDING = "pending"

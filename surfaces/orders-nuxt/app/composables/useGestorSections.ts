@@ -1,6 +1,7 @@
 import { getCurrentInstance, onBeforeUnmount, onMounted, watch } from "vue";
 import {
   accessResolved,
+  deniedSettingsSection,
   gestorSections,
   gestorSettingsSections,
 } from "~/presentation/gestorSections";
@@ -96,6 +97,17 @@ export function useGestorSections() {
       watch: [operatorId],
     },
   );
+  // Catálogo e Canais só para quem cuida do catálogo (`shop.manage_catalog`): o
+  // servidor já recusava; a tela mostrava as duas e depois "Sem conexão".
+  const { data: catalogAccess, status: catalogStatus } = useFetch<{ authorized?: boolean }>(
+    "/api/v1/backstage/operator/session/",
+    {
+      key: useOperatorResourceKey("catalog-access"),
+      query: { perm: "shop.manage_catalog" },
+      server: true,
+      watch: [operatorId],
+    },
+  );
   const { expeditesOnly, catalogOnly } = useGestorAccess();
   const rail = useGestorRail();
   // Fora do quadro (Catálogo, Clientes, Canais) os selos continuam (G26, v4
@@ -106,6 +118,7 @@ export function useGestorSections() {
     channelsAttention: attention.value?.label || "",
     canManageCustomers: customersAccess.value?.authorized === true,
     canManageWorkstations: workstationsAccess.value?.authorized === true,
+    canManageCatalog: catalogAccess.value?.authorized === true,
     canOperateChecklists: checklistsAccess.value?.authorized === true,
     expeditesOnly: expeditesOnly.value,
     catalogOnly: catalogOnly.value,
@@ -124,13 +137,24 @@ export function useGestorSections() {
     }
     return route.path === "/" ? (rail.value.exitPost ? "exit" : "orders") : undefined;
   });
-  // As três perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.
+  // As quatro perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.
   const ready = computed(() =>
     accessResolved([
       customersStatus.value,
       workstationsStatus.value,
       checklistsStatus.value,
+      catalogStatus.value,
     ]),
   );
-  return { sections, settings, current, ready };
+  // A URL direta numa seção que o acesso não inclui: só depois de as quatro
+  // perguntas responderem com sucesso (enquanto carrega, a página monta como antes).
+  const accessReady = computed(() =>
+    [customersStatus, workstationsStatus, checklistsStatus, catalogStatus].every(
+      (s) => s.value === "success",
+    ),
+  );
+  const denied = computed(() =>
+    accessReady.value ? deniedSettingsSection(route.path, settings.value) : "",
+  );
+  return { sections, settings, current, ready, denied };
 }

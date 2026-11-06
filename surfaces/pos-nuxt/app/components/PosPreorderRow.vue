@@ -33,7 +33,6 @@ import { preorderDetailPath } from "~/presentation/preorderDetail";
 import {
   PRINTED_LABEL,
   TO_RECEIVE_CLASS,
-  badgeCase,
   balanceStandsOut,
   moneyBadge,
   customerLine,
@@ -132,7 +131,7 @@ const situationColor = computed(() => situationTone(props.card.situation));
             v-for="pill in pills"
             :key="pill.label"
             :color="pill.tone"
-            :label="badgeCase(pill.label)"
+            :label="pill.label"
             size="sm"
           />
         </span>
@@ -158,11 +157,11 @@ const situationColor = computed(() => situationTone(props.card.situation));
             <NuxtBadge
               color="neutral"
               :icon="fulfillmentIcon(card.fulfillment_type).replace('lucide:', 'i-lucide-')"
-              :label="badgeCase(card.fulfillment_label)"
+              :label="card.fulfillment_label"
               size="sm"
               data-preorder-fulfillment
             />
-            <NuxtBadge v-if="card.channel_label" color="neutral" :label="badgeCase(card.channel_label)" size="sm" data-preorder-channel />
+            <NuxtBadge v-if="card.channel_label" color="neutral" :label="card.channel_label" size="sm" data-preorder-channel />
           </span>
         </span>
         <span class="flex items-center justify-end gap-2 max-md:hidden @max-md:justify-start">
@@ -172,7 +171,7 @@ const situationColor = computed(() => situationTone(props.card.situation));
         <span class="min-w-0 break-words text-xs text-muted max-md:hidden">{{ [card.items_summary, card.ref].filter(Boolean).join(" · ") }}</span>
         <span class="flex items-center justify-end gap-2 text-xs text-muted max-md:hidden @max-md:justify-start">
           <span v-if="money.of" class="tabular-nums">{{ money.of }}</span>
-          <NuxtBadge v-if="rowShowsSituation(card.situation)" :color="situationColor" :label="badgeCase(card.situation_label)" size="sm" data-preorder-situation />
+          <NuxtBadge v-if="rowShowsSituation(card.situation)" :color="situationColor" :label="card.situation_label" size="sm" data-preorder-situation />
           <span v-else-if="card.ticket_printed" class="inline-flex items-center gap-1" data-preorder-printed>
             <Icon name="lucide:printer-check" class="size-3.5" aria-hidden="true" />{{ PRINTED_LABEL }}
           </span>

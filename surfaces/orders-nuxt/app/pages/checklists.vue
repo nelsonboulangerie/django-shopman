@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useAlertDismissals } from "../../../operator-kit/app/composables/useAlertDismissals";
+import { weekdayAndDate } from "../../../operator-kit/app/presentation/dates";
 import type {
   OperationChecklistRun,
   OperationChecklistTask,
@@ -20,6 +21,10 @@ const {
 } = useOperationChecklists();
 
 useHead({ title: "Rotinas" });
+// O dia da loja como a casa escreve ("Qui 05/11"), nunca "2026-11-05" (GES-16).
+const businessDay = computed(
+  () => weekdayAndDate(board.value?.business_date ?? "") || "hoje",
+);
 // O erro de uma ação fecha (X) e volta se a mesma ação falhar com outra mensagem.
 const notices = useAlertDismissals();
 
@@ -53,13 +58,6 @@ function execute(run: OperationChecklistRun, task: OperationChecklistTask) {
         : {},
   });
 }
-
-// "05/11", nunca "2026-11-05" (a data do operador, GES-24).
-const businessDay = computed(() => {
-  const iso = board.value?.business_date ?? "";
-  const [, month, day] = iso.split("-");
-  return month && day ? `${day}/${month}` : "hoje";
-});
 
 /** A recusa da tarefa, embaixo do campo dela (GES-23). */
 function taskError(task: OperationChecklistTask): string | undefined {

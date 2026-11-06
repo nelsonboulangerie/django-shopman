@@ -80,6 +80,7 @@ function mountDialog(props: Partial<{
   busy: boolean;
   marketplace: boolean;
   error: string;
+  initialKey: string;
 }> = {}, options: { attachTo?: HTMLElement } = {}) {
   return mount(OrderReasonDialog, {
     props: { marketplace: Boolean(props.reasons?.length), open: true, mode: "reject", loading: false, reasons: [], presets: [], cancelReasons: [], busy: false, ...props },
@@ -167,6 +168,26 @@ describe("OrderReasonDialog — cancelar em canal comum (lista única, P1-10)", 
   });
 });
 
+describe("Pix vencido: o cancelar abre com o motivo marcado (beta 05/11: GES-05, GES-16)", () => {
+  const cancelReasons: CancelReasonProjection[] = [
+    { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou." },
+    { key: "payment_not_confirmed", label: "Pagamento não confirmado", customer_text: "Não recebemos a confirmação do pagamento a tempo." },
+  ];
+
+  it("o motivo chega marcado e Confirmar já acende; o operador ainda pode trocar", async () => {
+    const w = mountDialog({ mode: "cancel", cancelReasons, open: false, initialKey: "payment_not_confirmed" }, { attachTo: document.body });
+    await w.setProps({ open: true });
+    await w.vm.$nextTick();
+    expect(w.find("[data-reason-preview]").text()).toContain("Não recebemos a confirmação");
+    const btn = confirmBtn(w, "Cancelar pedido");
+    expect(btn.attributes("disabled")).toBeUndefined();
+    expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
+    await btn.trigger("click");
+    expect(w.emitted("confirm")![0]).toEqual([{ reason: "", cancellationCode: "", reasonKey: "payment_not_confirmed" }]);
+    w.unmount();
+  });
+});
+
 describe("OrderReasonDialog — grupos e Outros", () => {
   const groups: CancellationPresetGroupProjection[] = [
     { label: "Produto", presets: ["Item indisponível no momento", "Sem um dos ingredientes hoje"] },
@@ -234,6 +255,12 @@ describe("OrderReasonDialog — estados", () => {
     expect(w.text()).toContain("Carregando motivos do iFood");
     expect(w.find("select").exists()).toBe(false);
     expect(w.find("textarea").exists()).toBe(false);
+  });
+
+  it("fora do iFood o carregando não fala do iFood (beta 05/11: GES-06)", () => {
+    const w = mountDialog({ mode: "cancel", loading: true, marketplace: false });
+    expect(w.text()).toContain("Carregando motivos…");
+    expect(w.text()).not.toContain("iFood");
   });
 
   it("Voltar emite update:open=false", async () => {

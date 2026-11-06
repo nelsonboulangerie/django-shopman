@@ -154,4 +154,13 @@ describe("OperationChecklistsPage", () => {
     );
     taskErrors.value = {};
   });
+
+  // Beta 05/11 (GES-16): "de 2026-11-05" no lugar da data como a casa escreve.
+  it("o dia da loja sai como a casa escreve, nunca em ISO", () => {
+    const wrapper = mount(OperationChecklistsPage, {
+      global: { components: { OperatorPageHeader } },
+    });
+    expect(wrapper.text()).toContain("Abertura, rotina e fechamento de Sáb 17/10.");
+    expect(wrapper.text()).not.toContain("2026-10-17");
+  });
 });

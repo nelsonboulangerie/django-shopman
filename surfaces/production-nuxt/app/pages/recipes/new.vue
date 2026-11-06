@@ -15,7 +15,10 @@ import {
   YIELD_UNIT_OPTIONS,
   emptyFormula,
   formulaFromDraft,
+  yieldNumberFromServed,
+  yieldPayload,
 } from "~/presentation/recipeBook";
+import { quantityRule, type QuantityUnit } from "~/utils/quantity";
 
 useHead({ title: "Nova receita" });
 
@@ -76,7 +79,7 @@ onBeforeUnmount(() => {
 // receita COMO FOI LIDA, e vira `origin` na versão.
 const draftName = ref("");
 const draftKind = ref("other");
-const draftYieldQuantity = ref("");
+const draftYieldQuantity = ref<number | null>(null);
 const draftYieldUnit = ref("g");
 const draftItems = ref<CaptureItemProjection[]>([]);
 const draftSource = ref<"note" | "photo">("note");
@@ -85,7 +88,7 @@ function seedDraft(items: CaptureItemProjection[], source: "note" | "photo") {
   const draft = capture.draft.value;
   draftName.value = draft?.name ?? "";
   draftKind.value = draft?.kind && KIND_OPTIONS.some((option) => option.value === draft.kind) ? draft.kind : "other";
-  draftYieldQuantity.value = draft?.yield_quantity ?? "";
+  draftYieldQuantity.value = yieldNumberFromServed(draft?.yield_quantity);
   draftYieldUnit.value = draft?.yield_unit || "g";
   draftItems.value = items.map((item) => ({ ...item, candidates: [...(item.candidates ?? [])] }));
   draftSource.value = source;
@@ -123,7 +126,7 @@ async function continueToEditor() {
   const formula = formulaFromDraft({ ...draft, items: draftItems.value });
   const version: VersionPayload = {
     formula,
-    yield_quantity: draftYieldQuantity.value.trim() || "1",
+    yield_quantity: yieldPayload(draftYieldQuantity.value),
     yield_unit: draftYieldUnit.value,
     steps: (draft.steps ?? []).map((name) => ({ name })),
     notes: "",
@@ -157,8 +160,13 @@ async function continueToEditor() {
 // ── Manual ──────────────────────────────────────────────────────────────────
 const manualName = ref("");
 const manualKind = ref("bread");
-const manualYieldQuantity = ref("1");
+const manualYieldQuantity = ref<number | null>(1);
 const manualYieldUnit = ref("g");
+// A régua do campo vem da unidade (g sem decimais, kg com três); unidade lida fora
+// da lista (foto, anotação) cai na régua do grama em vez de quebrar o campo.
+const yieldRuleOf = (unit: string) => quantityRule(unit as QuantityUnit) ?? quantityRule("g");
+const draftYieldRule = computed(() => yieldRuleOf(draftYieldUnit.value));
+const manualYieldRule = computed(() => yieldRuleOf(manualYieldUnit.value));
 const manualError = ref("");
 
 async function startManual() {
@@ -175,7 +183,7 @@ async function startManual() {
     notes: "",
     version: {
       formula: emptyFormula(manualKind.value === "bread" || manualKind.value === "viennoiserie" ? "flour" : "total"),
-      yield_quantity: manualYieldQuantity.value.trim() || "1",
+      yield_quantity: yieldPayload(manualYieldQuantity.value),
       yield_unit: manualYieldUnit.value,
       steps: [],
       source: { kind: "manual" },
@@ -218,7 +226,7 @@ const touch = useTouchPointer();
         <Icon name="lucide:lock" class="mx-auto size-8 text-muted-foreground" />
         <p class="text-base font-semibold">Só leitura</p>
         <p class="text-sm text-muted-foreground">
-          Criar receitas pede a permissão de gestão da produção. Peça a liberação a quem administra a loja.
+          Só a gestão da produção cria ficha técnica. Daqui você consulta as receitas da casa.
         </p>
         <NuxtLink to="/recipes" class="mt-1 text-sm text-primary underline-offset-2 hover:underline"
           >Voltar às receitas</NuxtLink
@@ -360,11 +368,15 @@ const touch = useTouchPointer();
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Rendimento
                   <span class="flex items-center gap-1">
-                    <NuxtInput
+                    <NuxtInputNumber
                       v-model="draftYieldQuantity"
-                      type="text"
-                      inputmode="decimal"
-                      class="w-20"
+                      :min="draftYieldRule.min"
+                      :step="draftYieldRule.step"
+                      :format-options="{ maximumFractionDigits: draftYieldRule.maximumFractionDigits }"
+                      locale="pt-BR"
+                      class="w-32"
+                      :ui="{ base: 'tabular-nums' }"
+                      aria-label="Quantidade do rendimento"
                     />
                     <NuxtSelect v-model="draftYieldUnit" :items="yieldUnits" class="w-24" aria-label="Unidade do rendimento" />
                   </span>
@@ -466,11 +478,15 @@ const touch = useTouchPointer();
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Rendimento
               <span class="flex items-center gap-1">
-                <NuxtInput
+                <NuxtInputNumber
                   v-model="manualYieldQuantity"
-                  type="text"
-                  inputmode="decimal"
-                  class="w-20"
+                  :min="manualYieldRule.min"
+                  :step="manualYieldRule.step"
+                  :format-options="{ maximumFractionDigits: manualYieldRule.maximumFractionDigits }"
+                  locale="pt-BR"
+                  class="w-32"
+                  :ui="{ base: 'tabular-nums' }"
+                  aria-label="Quantidade do rendimento"
                 />
                 <NuxtSelect v-model="manualYieldUnit" :items="yieldUnits" class="w-24" aria-label="Unidade do rendimento" />
               </span>

@@ -50,7 +50,7 @@ test("dashboard compõe contagens, gráficos, progresso, tabs e identidade", asy
   await detail.getByRole("button", { name: "Voltar à fila" }).click();
   await dashboard.getByRole("tab", { name: /^Equipe/ }).click();
   await expect(dashboard.getByText("Ana Ferreira", { exact: true })).toBeVisible();
-  await expect(dashboard.getByText("Em pausa", { exact: true })).toBeVisible();
+  await expect(dashboard.getByText("Em Pausa", { exact: true })).toBeVisible();
   await dashboard.getByRole("tab", { name: "Resumo", exact: true }).focus();
   await page.keyboard.press("ArrowRight");
   await expect(dashboard.getByRole("tab", { name: /^Fila/ })).toBeFocused();
