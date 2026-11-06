@@ -41,7 +41,7 @@ def test_pagamento_encomenda_e_alergenos_saem_da_configuracao(channel):
 
     answers = _faq(shop)
 
-    assert answers["payment"] == "Pelo site, você paga com Pix ou cartão."
+    assert answers["payment"] == "Você paga com Pix ou cartão."
     assert answers["preorder"] == "Sim. Ao finalizar o pedido, você escolhe o dia, com até 7 dias de antecedência."
     assert answers["allergens"].startswith("Produzimos com trigo, leite e ovos.")
     assert all("—" not in answer for answer in answers.values())

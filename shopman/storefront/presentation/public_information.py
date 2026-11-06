@@ -32,7 +32,7 @@ _PAYMENT_LABELS = {
     "card": "cartão",
     "credit": "cartão de crédito",
     "debit": "cartão de débito",
-    "cash": "dinheiro",
+    "cash": "dinheiro (na retirada ou na entrega)",
 }
 
 
@@ -57,7 +57,7 @@ def _payment_faq(channel_ref: str) -> FAQItemProjection | None:
     return FAQItemProjection(
         ref="payment",
         question="Como posso pagar?",
-        answer=f"Pelo site, você paga com {_join_pt(labels)}.",
+        answer=f"Você paga com {_join_pt(labels)}.",
     )
 
 
@@ -73,7 +73,7 @@ def _preorder_faq(channel_ref: str) -> FAQItemProjection | None:
     window = "1 dia" if days == 1 else f"{days} dias"
     return FAQItemProjection(
         ref="preorder",
-        question="Vocês aceitam encomendas?",
+        question="Posso encomendar para outro dia?",
         answer=f"Sim. Ao finalizar o pedido, você escolhe o dia, com até {window} de antecedência.",
     )
 
