@@ -8481,6 +8481,7 @@
           "symbols": [
             "register_strategy",
             "ensure",
+            "refresh_insights",
             "SkipAnonymous",
             "first_name_for",
             "_STRATEGIES"
