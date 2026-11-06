@@ -774,8 +774,8 @@ def _promise_footnote(data: TrackingPromiseData, *, copy: CopyCatalog) -> str:
     if not spec:
         return ""
     if data.state == "payment_card_ready" and data.deadline_action in {"", "none"}:
-        # A nota é do LINK (tem prazo); o cartão da loja online não tem, e
-        # prometer consequência sem prazo seria informação solta.
+        # Sessão hospedada sem prazo: prometer consequência sem prazo seria
+        # informação solta.
         return ""
     key, fallback = spec
     return copy.message(key, fallback)
@@ -873,7 +873,17 @@ def _promise_copy(
                 method="card",
             )
             return copy.title("TRACKING_PROMISE_CARD_TITLE", "Pague com cartão"), message
-        if status == "new":
+        deadline = data.payment_deadline_phrase
+        if deadline:
+            # O cartão da loja online tem prazo (o mesmo do `payment.timeout`):
+            # a nota de rodapé diz a consequência ("se o prazo passar"), então a
+            # frase diz QUAL prazo. Sem isso o cliente lia um prazo que a tela
+            # não mostrava.
+            card_message = copy.message(
+                "TRACKING_PROMISE_CARD_MESSAGE_DEADLINE",
+                "Finalize no ambiente seguro até {deadline} para garantir o pedido.",
+            ).replace("{deadline}", deadline)
+        elif status == "new":
             card_message = copy.message(
                 "TRACKING_PROMISE_CARD_MESSAGE_NEW",
                 "Finalize no ambiente seguro para autorizar o cartão e acompanhar o pedido por aqui.",
