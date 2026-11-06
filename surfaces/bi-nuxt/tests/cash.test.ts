@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { divergingText, pointValue } from "../../operator-kit/app/presentation/readingChart";
 import {
+  cashDenied,
+  CASH_DIFFERENCE_SIDES,
   cashDifferenceAxis,
   cashDifferenceCsv,
   cashDifferencePoints,
@@ -22,6 +25,14 @@ const day = (date: string, difference_q: number, extra: Partial<{ shifts: number
 });
 
 describe("caixa: quebra por dia", () => {
+  it("dia sem turno fechado é ponto sem dado, nunca \"Fechou certo\" (ge:BI-01)", () => {
+    const points = cashDifferencePoints([day("2026-10-06", 0, { shifts: 0 }), day("2026-10-07", 0)]);
+    expect(points[0]!.values.difference).toBeNull();
+    expect(points[1]!.values.difference).toBe(0);
+    expect(divergingText(pointValue(points[0]!, "difference"), CASH_DIFFERENCE_SIDES, String)).toBe("Sem turno fechado");
+    expect(divergingText(pointValue(points[1]!, "difference"), CASH_DIFFERENCE_SIDES, String)).toBe("Fechou certo");
+  });
+
   it("um ponto por dia, em reais, com a quebra e o que o CSV leva junto", () => {
     const points = cashDifferencePoints([day("2026-10-06", -300, { sangria_q: 10000 }), day("2026-10-07", 150)]);
     expect(points).toEqual([
@@ -101,5 +112,14 @@ describe("caixa: gaveta e meios", () => {
       ]).header,
     ).toHaveLength(9);
     expect(openAccountsCsv([{ customer_name: "Café Parisiense", balance_q: 15600 }]).rows).toEqual([["Café Parisiense", "156,00"]]);
+  });
+});
+
+describe("caixa: quem não audita (ge:BI-07)", () => {
+  it("403 de permissão é recusa sem retry; sessão caída e trava não são", () => {
+    expect(cashDenied({ status: 403, data: { detail: "Operador sem permissão para esta ação." } })).toBe(true);
+    expect(cashDenied({ status: 403, data: { error: { code: "not_authenticated" } } })).toBe(false);
+    expect(cashDenied({ status: 403, data: { error: { code: "station_locked" } } })).toBe(false);
+    expect(cashDenied({ status: 500 })).toBe(false);
   });
 });

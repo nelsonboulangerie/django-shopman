@@ -24,7 +24,7 @@ import {
   formatMoney,
   formatMoneyCompact,
   missingLabel,
-  rangeLabel,
+  betweenLabel,
   shortDate,
 } from "~/presentation/bi";
 import {
@@ -183,7 +183,7 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
                 v-if="single.revenue_q"
                 variant="soft"
                 :title="ordinaryWeekdayLabel(single.weekday_label)"
-                :value="formatMoney(Math.round(single.revenue_q.expected))"
+                :value="formatMoneyCompact(single.revenue_q.expected)"
                 hint="O contraponto: a diferença é o que a data acrescenta."
               />
             </div>
@@ -219,8 +219,8 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
                 <OperatorMetric
                   variant="soft"
                   title="Faturamento provável"
-                  :value="formatMoney(Math.round(single.revenue_q.expected))"
-                  :hint="`Metade dos dias parecidos ficou entre ${rangeLabel(single.revenue_q.low, single.revenue_q.high)}.`"
+                  :value="formatMoneyCompact(single.revenue_q.expected)"
+                  :hint="`Metade dos dias parecidos ficou entre ${betweenLabel(single.revenue_q.low, single.revenue_q.high)}.`"
                 />
                 <OperatorMetric
                   variant="soft"
@@ -280,7 +280,7 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
                   variant="soft"
                   title="Troco provável"
                   :value="formatMoney(Math.round(singleChange.change_q.expected))"
-                  :hint="`Entre ${rangeLabel(singleChange.change_q.low, singleChange.change_q.high)}.`"
+                  :hint="`Entre ${betweenLabel(singleChange.change_q.low, singleChange.change_q.high)}.`"
                 />
                 <OperatorMetric
                   v-if="change.mix && singleChange.coin_floor_q !== null"
@@ -324,10 +324,10 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
           <div class="grid gap-3 sm:grid-cols-3">
             <OperatorMetric
               title="Faturamento provável no período"
-              :value="report.total_revenue_q ? formatMoney(Math.round(report.total_revenue_q.expected)) : 'sem dado'"
+              :value="report.total_revenue_q ? formatMoneyCompact(report.total_revenue_q.expected) : 'sem dado'"
               :hint="
                 report.total_revenue_q
-                  ? `Entre ${rangeLabel(report.total_revenue_q.low, report.total_revenue_q.high)}.`
+                  ? `Entre ${betweenLabel(report.total_revenue_q.low, report.total_revenue_q.high)}.`
                   : 'Um dia do período ficou sem base, então o total não sai.'
               "
             />
@@ -341,7 +341,7 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
               :value="change?.total_change_q ? formatMoney(Math.round(change.total_change_q.expected)) : 'sem dado'"
               :hint="
                 change?.total_change_q
-                  ? `Entre ${rangeLabel(change.total_change_q.low, change.total_change_q.high)}.`
+                  ? `Entre ${betweenLabel(change.total_change_q.low, change.total_change_q.high)}.`
                   : change?.missing_reason
                     ? missingLabel(change.missing_reason)
                     : 'Um dia do período ficou sem base, então o total não sai.'

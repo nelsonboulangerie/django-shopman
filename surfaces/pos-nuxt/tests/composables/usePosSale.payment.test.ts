@@ -191,6 +191,44 @@ describe("usePosSale — total interino do pagamento (nunca o bruto)", () => {
   });
 });
 
+describe("usePosSale — as formas acompanham o total que mudou", () => {
+  // Beta test de 05/11/2026 (PDV2-05): Dinheiro de R$ 36,00 continuava em
+  // R$ 36,00 depois de o carrinho cair para R$ 13,00.
+  it("a forma intocada passa a valer o total novo", async () => {
+    const h = saleWithTotal1000();
+    await nextTick();
+    h.sale.addTender("cash");
+    h.sale.review.value = { ...h.sale.review.value!, total_q: 700, total_display: "R$ 7,00" };
+    await nextTick();
+    expect(h.sale.cart.paymentTenders[0]!.amount_q).toBe(700);
+    h.handles.dispose();
+  });
+
+  it("dinheiro que o operador contou no balcão fica como está", async () => {
+    const h = saleWithTotal1000();
+    await nextTick();
+    h.sale.addTender("cash");
+    h.sale.tenderDigit("5");
+    h.sale.tenderDigit("0");
+    h.sale.review.value = { ...h.sale.review.value!, total_q: 700, total_display: "R$ 7,00" };
+    await nextTick();
+    expect(h.sale.cart.paymentTenders[0]!.amount_q).toBe(5000);
+    h.handles.dispose();
+  });
+
+  it("na retirada a forma é previsão: acompanha o total mesmo editada", async () => {
+    const h = saleWithTotal1000();
+    await nextTick();
+    h.sale.cart.paymentCollection = "on_delivery";
+    h.sale.addTender("cash");
+    h.sale.tenderDigit("5");
+    h.sale.review.value = { ...h.sale.review.value!, total_q: 700, total_display: "R$ 7,00" };
+    await nextTick();
+    expect(h.sale.cart.paymentTenders[0]!.amount_q).toBe(700);
+    h.handles.dispose();
+  });
+});
+
 describe("usePosSale — dividir a conta", () => {
   let h: ReturnType<typeof saleWithTotal1000>;
 
@@ -253,6 +291,29 @@ describe("usePosSale — dividir a conta", () => {
     sale.addTender("card");
     sale.addTender("pix");
     expect(sale.paymentRemainingQ.value).toBe(0);
+  });
+
+  it("a forma lançada com o total inteiro vira a parte da primeira pessoa", () => {
+    // Beta test de 05/11/2026: Débito com o total, depois "Dividir em 2". A
+    // divisão partia do restante zerado; agora o rascunho vira a parte 1 de 2.
+    const { sale } = h;
+    sale.addTender("debit");
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(1000);
+    sale.setSplitCount(2);
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(500);
+    expect(sale.splitPaidCount.value).toBe(1);
+    sale.addTender("cash");
+    expect(sale.cart.paymentTenders[1]!.amount_q).toBe(500);
+    expect(sale.paymentCovered.value).toBe(true);
+  });
+
+  it("forma que o operador já editou não é rascunho: a divisão não mexe nela", () => {
+    const { sale } = h;
+    sale.addTender("debit");
+    sale.tenderDigit("4");           // R$ 4,00, digitado
+    sale.setSplitCount(2);
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(400);
+    expect(sale.splitPaidCount.value).toBe(0);
   });
 
   it("tocar de novo no mesmo número DESLIGA a divisão", () => {

@@ -29,6 +29,7 @@ from shopman.backstage.api.projections import projection_data, read_data
 from shopman.backstage.api.telemetry import OperationalObservationMixin
 from shopman.backstage.projections.order_history import (
     FULFILLMENT_LABELS,
+    HISTORY_DATE_BASES,
     HISTORY_STATUSES,
     HistoryFilters,
     build_order_history,
@@ -66,6 +67,7 @@ class OrderHistoryQuerySerializer(StrictQuerySerializer):
     fulfillment = _CommaListField(choices=tuple(FULFILLMENT_LABELS))
     q = serializers.CharField(required=False, allow_blank=True, max_length=120)
     sku = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    date_basis = serializers.ChoiceField(choices=HISTORY_DATE_BASES, required=False, default="closed")
     page = serializers.IntegerField(required=False, min_value=1, default=1)
 
     def validate(self, attrs):
@@ -108,6 +110,7 @@ class OrderHistoryView(OperationalObservationMixin, APIView):
                 fulfillments=data.get("fulfillment") or (),
                 query=(data.get("q") or "").strip(),
                 sku=(data.get("sku") or "").strip(),
+                date_basis=data["date_basis"],
                 page=data["page"],
             )
         )

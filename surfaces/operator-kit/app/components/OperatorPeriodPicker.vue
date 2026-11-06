@@ -39,6 +39,7 @@ import {
   customPeriodError,
   goToDate,
   isCurrentPeriod,
+  periodAnchor,
   periodLabel,
   periodShortLabel,
   periodStepLabels,
@@ -78,6 +79,14 @@ const props = withDefaults(
      */
     prevDay?: string;
     nextDay?: string;
+    /**
+     * Só no Dia: o dia mais recente que a leitura tem (o B.I. lê até ontem). Na
+     * âncora igual ou depois dele, o controle já está no atual e o "voltar" some:
+     * mostrá-lo ali era um botão que não fazia nada.
+     */
+    latest?: string;
+    /** O nome do gesto de voltar ao atual. Default: "Voltar para hoje". */
+    backLabel?: string;
   }>(),
   {
     presets: () => ["day"],
@@ -92,6 +101,8 @@ const props = withDefaults(
     compact: false,
     prevDay: undefined,
     nextDay: undefined,
+    latest: undefined,
+    backLabel: "Voltar para hoje",
   },
 );
 
@@ -128,7 +139,11 @@ const steps = computed(() => {
     next: props.nextDay ? `${labels.next}: ${weekdayAndDate(props.nextDay)}` : labels.next,
   };
 });
-const current = computed(() => isCurrentPeriod(props.modelValue));
+const current = computed(
+  () =>
+    isCurrentPeriod(props.modelValue) ||
+    (isDay.value && !!props.latest && periodAnchor(props.modelValue, bounds.value.today) >= props.latest),
+);
 
 const allowed = computed(() =>
   PERIOD_PRESETS.filter((preset) => props.presets.includes(preset.key)),
@@ -426,7 +441,7 @@ const COMPACT_TRIGGER_CLASS =
       v-if="!current"
       color="neutral"
       variant="link"
-      label="Voltar para hoje"
+      :label="backLabel"
       :class="compact ? 'max-sm:hidden' : ''"
       data-period-today
       @click="backToToday"
@@ -440,8 +455,8 @@ const COMPACT_TRIGGER_CLASS =
       variant="ghost"
       icon="i-lucide-calendar-check"
       square
-      aria-label="Voltar para hoje"
-      title="Voltar para hoje"
+      :aria-label="backLabel"
+      :title="backLabel"
       data-period-today-icon
       @click="backToToday"
     />

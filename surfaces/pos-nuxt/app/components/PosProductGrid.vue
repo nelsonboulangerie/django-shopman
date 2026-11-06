@@ -20,7 +20,9 @@ import {
   hideUnavailableProducts,
   orderCollections,
   parseHideUnavailable,
+  productSearchPlaceholder,
 } from "~/presentation/catalog";
+import { isNumericQuery } from "~/presentation/customerSearch";
 
 const props = defineProps<{
   products: POSProductProjection[];
@@ -45,6 +47,13 @@ const emit = defineEmits<{
 // Toque (tablet, celular): sem teclas impressas, chips de 48 px com "Favoritos"
 // primeiro, tile sem SKU, grade pela largura do dedo e "Ler código" pela câmera.
 const coarsePointer = useMediaQuery("(pointer: coarse)");
+const searchBarRef = ref<HTMLElement | null>(null);
+const { width: searchBarWidth } = useElementSize(searchBarRef);
+const searchPlaceholder = computed(() => productSearchPlaceholder({
+  coarse: coarsePointer.value,
+  customerSearch: Boolean(props.customerSearch),
+  width: searchBarWidth.value,
+}));
 // A faixa das coleções: setas, roda do mouse e a escolhida sempre à vista.
 const collectionsStrip = useTemplateRef<HTMLElement>("collectionsStrip");
 const strip = useScrollStrip(collectionsStrip);
@@ -212,9 +221,13 @@ defineExpose({ focusSearch });
 function onSearchEnter() {
   const target = enterTargetProduct(filteredProducts.value, search.value);
   if (!target) {
-    // Sem produto: a comanda que casou sozinha abre; senão, a busca vira cliente.
+    // Sem produto: a comanda que casou sozinha abre. A busca só vira cliente
+    // quando o termo tem cara de telefone ou CPF: um código de produto que não
+    // existe ("BAGUETE-3") ou um nome digitado errado abria o cadastro de
+    // cliente com ele (beta test de 05/11/2026, PDV-15). Para o resto, o botão
+    // "Buscar cliente" ao lado está à vista.
     if (matchedTabs.value.length === 1) openMatchedTab(matchedTabs.value[0]!.ref);
-    else if (!matchedTabs.value.length && props.customerSearch) findCustomer();
+    else if (!matchedTabs.value.length && props.customerSearch && isNumericQuery(search.value)) findCustomer();
     return;
   }
   emit("add", target);
@@ -239,13 +252,13 @@ function onSearchEscape() {
   <section class="@container flex h-full min-h-0 flex-col gap-2.5">
     <!-- Busca + densidade (v4): a busca é o instrumento do balcão (44 px, Enter
          adiciona, F3 ou / focam); a densidade é um seletor segmentado à vista. -->
-    <div class="flex shrink-0 items-center gap-2">
+    <div ref="searchBarRef" class="flex shrink-0 items-center gap-2">
       <PosSearchField
         ref="searchInputRef"
         v-model="search"
         :kbd="coarsePointer ? undefined : ['F3', '/']"
         :hint="coarsePointer ? undefined : 'Enter adiciona'"
-        :placeholder="coarsePointer ? 'Buscar produto ou comanda' : (customerSearch ? 'Buscar produto, código, comanda ou cliente' : 'Buscar produto, código ou comanda')"
+        :placeholder="searchPlaceholder"
         :class="coarsePointer ? 'h-14' : ''"
         :autofocus="!coarsePointer"
         @keydown.enter.prevent="onSearchEnter"
@@ -309,7 +322,9 @@ function onSearchEscape() {
         @click="findCustomer"
       >
         <Icon name="lucide:user-round-search" class="size-4 text-muted-foreground" aria-hidden="true" />
-        Buscar cliente “<span class="max-w-40 truncate">{{ search.trim() }}</span>”
+        <!-- Aspas e termo num span só (o gap do botão separava as aspas do termo,
+             "“ croisant ”"); só o termo digitado corta, o rótulo da casa não. -->
+        <span>Buscar cliente <span class="inline-block max-w-40 truncate align-bottom" :title="search.trim()">“{{ search.trim() }}”</span></span>
       </NuxtButton>
     </div>
 

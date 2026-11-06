@@ -130,6 +130,17 @@ describe("ReceiptLineSheet — a gaveta do item", () => {
     expect(wrapper.emitted("update:open")?.at(-1)).toEqual([false]);
   });
 
+  it("conferir com a validade faltando NÃO fecha a gaveta (CMP-16)", async () => {
+    const wrapper = mountSheet({ expiryDate: "" });
+    await settle();
+
+    document.querySelector<HTMLButtonElement>(receiptFieldSelector("line-1", "check"))!.click();
+    await nextTick();
+
+    expect(wrapper.emitted("check")?.at(-1)).toEqual([true]);
+    expect(wrapper.emitted("update:open")).toBeUndefined();
+  });
+
   it("item já conferido oferece desmarcar, e desmarcar NÃO fecha", async () => {
     const wrapper = mountSheet({ checked: true });
     await settle();

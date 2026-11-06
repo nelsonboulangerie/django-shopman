@@ -778,7 +778,7 @@ def _board_actions(
                     label="Cancelar lote",
                     priority=90,
                     enabled=access.can_void,
-                    reason="Sem capacidade para cancelar lotes.",
+                    reason="Cancelar lote é com o gerente.",
                     href=f"/api/v1/backstage/production/{order.pk}/void/",
                     payload_schema="ProductionVoidMutationRequest",
                     expected_rev=order.rev,
@@ -833,7 +833,7 @@ def _kds_actions(
                 label="Cancelar lote",
                 priority=90,
                 enabled=access.can_void,
-                reason="Sem capacidade para cancelar lotes.",
+                reason="Cancelar lote é com o gerente.",
                 href=f"/api/v1/backstage/production/{card.pk}/void/",
                 payload_schema="ProductionVoidMutationRequest",
                 expected_rev=card.rev,
@@ -1053,6 +1053,12 @@ class ProductionDashboardProjection:
     capacity_percent: int | None
     late_orders: tuple[ProductionLateWorkOrderProjection, ...]
     access: ProductionSurfaceAccess
+    # Grandezas separadas por unidade e escritas em pt-BR ("312 un. · 159,6 kg"):
+    # peça, quilo e litro nunca somam num número só (suite-vocabulary).
+    planned_display: str = "0"
+    loss_display: str = "0"
+    # A frase sob a Perda fala só dos lotes fechados, como a própria perda.
+    loss_hint: str = ""
     actions: tuple[ProductionActionProjection, ...] = ()
     generated_at: str = ""
     source_revision: str = ""
@@ -1579,6 +1585,21 @@ def build_production_weighing(
             batch_size=batch_size,
         )
 
+    # Beta 05/11: "Por preparo" pesava a necessidade sem margem e "Por insumo"
+    # mostrava a necessidade com margem, dois números para o mesmo preparo. A
+    # margem é calculada UMA vez (a mesma de ``build_mise_en_place``) e entra no
+    # ticket do pré-preparo; os dois lados arredondam para cima à balança.
+    margins = {
+        (need.item_ref, need.unit): need.margin.total
+        for need in _work_order_needs(work_orders, expand=False, yield_margin=True)[0]
+        if need.margin is not None
+    }
+    for entry in tickets.values():
+        margin_key = (entry["recipe"].output_sku, entry["unit"])
+        margin_total = margins.pop(margin_key, None)
+        if margin_total:
+            entry["quantity"] += margin_total
+
     ingredient_skus = {item.input_sku for entry in tickets.values() for item in entry["items"]}
     product_names = _product_names(ingredient_skus)
     counting_conversions = _counting_conversions(ingredient_skus)
@@ -1761,11 +1782,17 @@ def build_production_mise_en_place(
         # Saldo só para matéria-prima: pré-preparo é produzido na hora — "falta"
         # de estoque de massa seria ruído, não informação.
         available = None if need.has_recipe else availability.get(need.item_ref)
+        # O pré-preparo se pesa na balança: o alvo é o mesmo do ticket "Por
+        # preparo" (necessidade + margem, arredondada para cima à divisão).
+        target = _scale_rounded(need.quantity, need.unit) if need.has_recipe else need.quantity
+        margin_total = (
+            target - (need.quantity - need.margin.total) if need.margin is not None else None
+        )
         lines.append(
             MiseEnPlaceLineProjection(
                 sku=need.item_ref,
                 name=_ingredient_name(need.item_ref, active_recipes=active_recipes, product_names=product_names),
-                quantity_display=_preparation_measure(need.quantity, need.unit),
+                quantity_display=_preparation_measure(target, need.unit),
                 unit="g" if units.dimension(need.unit) == units.MASS else need.unit,
                 is_subrecipe=need.has_recipe,
                 available_display=_preparation_measure(available, need.unit) if available is not None else "",
@@ -1773,8 +1800,8 @@ def build_production_mise_en_place(
                 breakdown=tuple(breakdown_by_sku.get(need.item_ref, ())),
                 annotation=_preparation_annotation(need.quantity, need.unit, conversions.get(need.item_ref)),
                 margin_display=(
-                    f"+ {_preparation_measure(need.margin.total, need.unit)} de margem"
-                    if need.margin is not None
+                    f"+ {_preparation_measure(margin_total, need.unit)} de margem"
+                    if margin_total is not None
                     else ""
                 ),
                 margin_reason=need.margin.reason() if need.margin is not None else "",
@@ -1919,16 +1946,48 @@ def build_production_dashboard(
     else:
         average_yield_rate = ""
 
-    capacity_total = Decimal("0")
-    planned_total = Decimal("0")
-    seen_recipes: set[int] = set()
-    for wo in wos:
-        planned_total += wo.quantity
-        if wo.recipe_id in seen_recipes:
-            continue
-        seen_recipes.add(wo.recipe_id)
-        capacity_total += _decimal_meta(wo.recipe.meta, "capacity_per_day")
-    capacity_percent = int((planned_total / capacity_total) * 100) if capacity_total else None
+    # Beta 05/11: "Planejado 159966.487" somava gramas de massa com peças de
+    # pão. Cada total sai por unidade da ficha, e a capacidade é a média da
+    # carga de cada ficha (planejado ÷ capacidade da MESMA ficha), nunca a soma.
+    live = [wo for wo in wos if wo.status != WorkOrder.Status.VOID]
+    output_units = _recipe_output_units({wo.recipe for wo in live})
+    planned_by_recipe: dict[int, Decimal] = {}
+    planned_amounts: list[tuple[str, Decimal]] = []
+    for wo in live:
+        planned_by_recipe[wo.recipe_id] = planned_by_recipe.get(wo.recipe_id, Decimal("0")) + wo.quantity
+        planned_amounts.append((output_units.get(wo.recipe_id, ""), wo.quantity))
+    loads: list[Decimal] = []
+    recipes_by_pk = {wo.recipe_id: wo.recipe for wo in live}
+    for recipe_pk, planned in planned_by_recipe.items():
+        capacity = _decimal_meta(recipes_by_pk[recipe_pk].meta, "capacity_per_day")
+        if capacity:
+            loads.append(planned / capacity)
+    capacity_percent = int(sum(loads, Decimal("0")) / len(loads) * 100) if loads else None
+
+    closed = [wo for wo in live if wo.status == WorkOrder.Status.FINISHED and wo.finished is not None]
+    declared_loss = _declared_loss_by_work_order([wo.pk for wo in closed])
+    closed_base: list[tuple[str, Decimal]] = []
+    closed_finished: list[tuple[str, Decimal]] = []
+    closed_loss: list[tuple[str, Decimal]] = []
+    closed_shortfall: list[tuple[str, Decimal]] = []
+    for wo in closed:
+        unit = output_units.get(wo.recipe_id, "")
+        base = wo.started_qty if wo.started_qty is not None else wo.quantity
+        loss = declared_loss.get(wo.pk, Decimal("0"))
+        closed_base.append((unit, base))
+        closed_finished.append((unit, wo.finished))
+        closed_loss.append((unit, loss))
+        closed_shortfall.append((unit, max(base - wo.finished - loss, Decimal("0"))))
+    if closed:
+        loss_hint = (
+            f"Realizado {_amounts_display(closed_finished)} de "
+            f"{_amounts_display(closed_base)} previstos nos lotes fechados"
+        )
+        shortfall_text = _amounts_display(closed_shortfall)
+        if shortfall_text != "0":
+            loss_hint += f" · rendeu menos {shortfall_text}"
+    else:
+        loss_hint = "Nenhum lote fechado no dia"
 
     late = tuple(_late_projection(wo) for wo in wos if _is_late_started(wo))
 
@@ -1947,7 +2006,77 @@ def build_production_dashboard(
         capacity_percent=capacity_percent,
         late_orders=late,
         access=access,
+        planned_display=_amounts_display(planned_amounts),
+        loss_display=_amounts_display(closed_loss),
+        loss_hint=loss_hint,
     )
+
+
+def _declared_loss_by_work_order(work_order_ids: list[int]) -> dict[int, Decimal]:
+    """Perda declarada (linhas WASTE) por lote; "rendeu menos" não entra."""
+    if not work_order_ids:
+        return {}
+    from django.db.models import Sum
+    from shopman.craftsman.models import WorkOrderItem
+
+    rows = (
+        WorkOrderItem.objects.filter(work_order_id__in=work_order_ids, kind=WorkOrderItem.Kind.WASTE)
+        .values("work_order_id")
+        .annotate(total=Sum("quantity"))
+    )
+    return {row["work_order_id"]: row["total"] or Decimal("0") for row in rows}
+
+
+def _ptbr_number(value: Decimal, max_decimals: int = 2) -> str:
+    """1234.5 → "1.234,5"; inteiro sem casas."""
+    quantized = value.quantize(Decimal(1).scaleb(-max_decimals)).normalize()
+    if quantized == quantized.to_integral_value():
+        quantized = quantized.quantize(Decimal(1))
+    text = format(quantized, ",f")
+    return text.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+
+
+def _amounts_display(amounts) -> str:
+    """Soma por grandeza e escreve cada uma com a sua unidade, em pt-BR.
+
+    ``amounts`` é um iterável de ``(unidade, quantidade)``. Peça vira "un.",
+    massa vira g (ou kg a partir de 1.000 g), volume vira ml (ou l a partir de
+    1.000 ml). Grandezas diferentes ficam lado a lado, nunca somadas.
+    """
+    totals: dict[str, Decimal] = {}
+    order: list[str] = []
+    for unit, quantity in amounts:
+        if quantity is None:
+            continue
+        dim = units.dimension(unit) if unit else units.COUNT
+        if dim == units.MASS:
+            key, value = units.MASS, units.convert(quantity, unit, "g")
+        elif dim == units.VOLUME:
+            key, value = units.VOLUME, units.convert(quantity, unit, "ml")
+        elif dim == units.COUNT:
+            key, value = units.COUNT, units.convert(quantity, unit or "un", "un")
+        else:
+            key, value = f"raw:{unit}", Decimal(quantity)
+        if key not in totals:
+            order.append(key)
+            totals[key] = Decimal("0")
+        totals[key] += value
+    # Ordem fixa: peça, massa, volume (a mesma frase todo dia, em qualquer tela).
+    rank = {units.COUNT: 0, units.MASS: 1, units.VOLUME: 2}
+    parts: list[str] = []
+    for key in sorted(order, key=lambda item: rank.get(item, 3)):
+        value = totals[key]
+        if not value:
+            continue
+        if key == units.COUNT:
+            parts.append(f"{_ptbr_number(value)} un.")
+        elif key == units.MASS:
+            parts.append(f"{_ptbr_number(value / 1000)} kg" if value >= 1000 else f"{_ptbr_number(value)} g")
+        elif key == units.VOLUME:
+            parts.append(f"{_ptbr_number(value / 1000)} l" if value >= 1000 else f"{_ptbr_number(value)} ml")
+        else:
+            parts.append(f"{_ptbr_number(value)} {key.removeprefix('raw:')}".strip())
+    return " · ".join(parts) if parts else "0"
 
 
 def build_production_kds(
@@ -3978,7 +4107,7 @@ def _build_weighing_ticket(
         recipe_ref=recipe.ref,
         output_sku=recipe.output_sku,
         name=recipe.name,
-        output_quantity_display=_preparation_measure(output_quantity, output_unit),
+        output_quantity_display=_preparation_measure(_scale_rounded(output_quantity, output_unit), output_unit),
         dough_weight_display=dough_weight_display,
         total_weight_display=total_weight_display,
         theoretical_total_g=(_decimal_fact_string(theoretical_total_g) if theoretical_total_g is not None else None),
@@ -4394,6 +4523,19 @@ def _preparation_measure(value: Decimal, unit: str, *, mass_unit: str = "g") -> 
     return _measure(value, unit)
 
 
+def _scale_rounded(value: Decimal, unit: str) -> Decimal:
+    """Massa arredondada para cima à divisão da balança, na unidade de origem.
+
+    Volume e contagem voltam como vieram: não há balança para eles.
+    """
+    if units.dimension(unit) != units.MASS:
+        return value
+    from shopman.craftsman.services.yield_margin import compute_scale_target
+
+    grams = Decimal(format(units.convert(value, unit, "g"), "f"))
+    return units.convert(compute_scale_target(grams).target_g, "g", unit)
+
+
 def _plain_decimal(value: Decimal) -> str:
     return format(value.normalize(), "f").replace(".", ",")
 
@@ -4522,7 +4664,9 @@ def _format_datetime(dt) -> str:
 #   PLANEJADO  — só planejado; quantidade e horário são estimativa histórica;
 #   PREVISTO   — entrou em produção (start trava a quantidade; horário =
 #                started_at + duração mediana);
-#   CONFIRMADO — expedido (estoque físico): quantidade e horário REAIS.
+#   FECHADO    — lote finalizado (estoque físico): quantidade e horário REAIS.
+#                "Confirmado" era a palavra da Qualidade ("Para confirmar"), e o
+#                Letreiro dizia o contrário da tela de Qualidade (beta 05/11);
 #                Permanece no painel por um TTL (config) e sai — pão
 #                materializado é assunto da gôndola, não do quadro;
 #   ATRASADO   — horário previsto estourou a margem (config) na data corrente.
@@ -4535,7 +4679,7 @@ _FORECAST_STATUS_LABELS = {
     "scheduled": "Planejado",
     "in_progress": "Previsto",
     "delayed": "Atrasado",
-    "arrived": "Confirmado",
+    "arrived": "Fechado",
 }
 
 

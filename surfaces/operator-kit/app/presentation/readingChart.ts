@@ -72,6 +72,8 @@ export interface ReadingDivergingLabels {
   negative: string;
   /** Default: "Sem diferença". */
   zero?: string;
+  /** O ponto sem dado, dito com a palavra do quadro (ex.: "Sem turno fechado"). Default: "sem dado". */
+  missing?: string;
   positiveTone?: ReadingTone;
   negativeTone?: ReadingTone;
 }
@@ -133,7 +135,7 @@ export function divergingText(
   labels: ReadingDivergingLabels,
   format: ReadingFormat,
 ): string {
-  if (value === null) return MISSING_VALUE;
+  if (value === null) return labels.missing ?? MISSING_VALUE;
   if (value === 0) return labels.zero ?? DEFAULT_ZERO;
   return `${value > 0 ? labels.positive : labels.negative} ${format(Math.abs(value))}`;
 }

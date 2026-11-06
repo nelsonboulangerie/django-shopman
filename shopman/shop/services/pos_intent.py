@@ -90,6 +90,10 @@ POS_SALE_INTENT_PAYMENT_COLLECTIONS = tuple(sorted(_ALLOWED_PAYMENT_COLLECTIONS)
 POS_SALE_INTENT_RECEIPT_CHANNELS = tuple(sorted(_ALLOWED_RECEIPT_CHANNELS))
 
 
+# O limite da observação do pedido. A tela do PDV usa o mesmo número.
+ORDER_NOTES_LIMIT = 500
+
+
 @dataclass(eq=False)
 class PosIntentError(ValueError):
     """Validation error with stable recovery metadata for POS surfaces.
@@ -217,7 +221,19 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     payload["delivery_address"] = _text(payload.get("delivery_address"), limit=400)
     payload["delivery_time_slot"] = _text(payload.get("delivery_time_slot"), limit=80)
     payload["delivery_date"] = _text(payload.get("delivery_date"), limit=32)
-    payload["order_notes"] = _text(payload.get("order_notes"), limit=500)
+    # Acima do limite RECUSA com o campo, em vez de cortar em silêncio: o
+    # detalhe da encomenda terminava no meio da frase e ninguém sabia (beta
+    # test de 05/11/2026, PDV2-08). O campo da tela já para no mesmo limite.
+    order_notes = str(payload.get("order_notes") or "").strip()
+    if len(order_notes) > ORDER_NOTES_LIMIT:
+        raise PosIntentError(
+            code="order_notes_too_long",
+            message=f"A observação passou de {ORDER_NOTES_LIMIT} caracteres.",
+            field="order_notes",
+            focus="order_notes",
+            recovery="Encurte a observação e tente de novo.",
+        )
+    payload["order_notes"] = order_notes
     # A taxa NÃO vem daqui: quem a resolve é o motor de entrega (zona/faixa),
     # em `pos._resolve_delivery_fee`. O que atravessa o intent é só a EXCEÇÃO
     # que o operador assume — e ela é opcional de verdade: ausente significa

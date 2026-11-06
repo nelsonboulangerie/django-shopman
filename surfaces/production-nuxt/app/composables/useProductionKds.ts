@@ -24,6 +24,22 @@ export interface ActResult<T = unknown> {
   data?: T;
   shortage?: ProductionShortageError;
   blocked?: ProductionMutationBlock;
+  /** Recusa de validação por campo (error.issues), quando o chamador mostra no campo. */
+  fieldErrors?: Record<string, string>;
+}
+
+/** `error.issues[]` do 400 de validação → `{campo: mensagem}` (a primeira de cada). */
+export function validationIssues(error: unknown): Record<string, string> | null {
+  const envelope = httpError(error).data as
+    | { error?: { code?: string; issues?: Array<{ field?: string; message?: string }> } }
+    | null;
+  if (envelope?.error?.code !== "validation_error") return null;
+  const out: Record<string, string> = {};
+  for (const issue of envelope.error.issues ?? []) {
+    const field = issue.field || "non_field_errors";
+    if (issue.message && !(field in out)) out[field] = issue.message;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 export interface RegisterOldDoughInput {
@@ -105,6 +121,7 @@ export function useProductionKds() {
       metadata: ProductionMutationMetadata,
       projectedAction: ProductionActionProjection,
     ) => Promise<T>,
+    options: { inlineFieldErrors?: boolean } = {},
   ): Promise<ActResult<T>> {
     if (busy.value.has(pk)) return { ok: false };
     const actionRef = `${action}:${pk}`;
@@ -128,6 +145,8 @@ export function useProductionKds() {
     } catch (err) {
       const shortage = parseShortage(httpError(err).data);
       if (shortage) return { ok: false, shortage };
+      const fieldErrors = options.inlineFieldErrors ? validationIssues(err) : null;
+      if (fieldErrors) return { ok: false, fieldErrors };
       if (mutationGuard.handleMutationError(err)) return { ok: false };
       useSonner.error(httpErrorMessage(err, "Falha na ação. Tente de novo."));
       return { ok: false };
@@ -174,6 +193,7 @@ export function useProductionKds() {
             idempotency_key: idempotencyKey,
           },
         }),
+      { inlineFieldErrors: true },
     );
 
   const authorizeFormulaDeviation = (

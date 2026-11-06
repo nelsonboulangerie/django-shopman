@@ -3,7 +3,7 @@
 // "Quando aberto, vira" e as receitas que o consomem. Mora ao lado da tabela na mesa
 // (divide a tela) e numa folha de lado abaixo do `xl`; o mesmo conteúdo nos dois.
 import type { EnrichedMaterial } from "~/types/purchase";
-import { formatMoney, openingView, resaleCopy, resaleSuggestionView, skuRoleBadges } from "~/presentation/purchase";
+import { formatMoney, materialFacts, openingView, resaleCopy, resaleSuggestionView, skuRoleBadges } from "~/presentation/purchase";
 import { TONE_BADGE } from "~/presentation/purchaseUi";
 
 const props = defineProps<{ material: EnrichedMaterial }>();
@@ -102,6 +102,13 @@ const suggestion = computed(() => resaleSuggestionView(props.material.saleSugges
       <slot name="nav" />
     </div>
 
+    <dl class="grid grid-cols-2 gap-x-3 gap-y-2 text-sm" data-material-facts>
+      <div v-for="fact in materialFacts(material)" :key="fact.key" class="min-w-0">
+        <dt class="text-xs text-muted">{{ fact.label }}</dt>
+        <dd class="font-semibold tabular-nums">{{ fact.value }}</dd>
+      </div>
+    </dl>
+
     <ul v-if="material.issues.length" class="space-y-2">
       <li v-for="issue in material.issues" :key="issue.key">
         <NuxtBadge :color="TONE_BADGE[issue.tone]" icon="i-lucide-triangle-alert" :label="issue.label" class="whitespace-normal" />
@@ -135,7 +142,7 @@ const suggestion = computed(() => resaleSuggestionView(props.material.saleSugges
           @update:model-value="onResaleToggle"
         />
         <form v-if="!material.roles?.sellable && saleOpen" class="mt-3 space-y-2" @submit.prevent="confirmSale()">
-          <NuxtFormField :label="resale.priceLabel" :hint="resale.reach">
+          <NuxtFormField :label="resale.priceLabel" :hint="resale.reach" :error="resale.error || undefined">
             <div class="flex gap-2">
               <NuxtInput v-model="salePriceInput" inputmode="decimal" required placeholder="0,00" class="min-w-0 flex-1" />
               <NuxtButton

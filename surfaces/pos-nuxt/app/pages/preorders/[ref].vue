@@ -133,7 +133,10 @@ async function confirmCancel(
       && !pos.value?.has_open_cash_session;
     toast.info(redoNotice(redo.redo, { needsOpenShift }));
     await navigateTo({ path: "/", query: { redo: ref_.value } });
+    return;
   }
+  // Cancelada, a encomenda sai do detalhe: volta para o recorte da lista.
+  goBack();
 }
 
 // O PIN do gerente sobe por cima do diálogo de cancelar; assinado, o mesmo

@@ -7,6 +7,7 @@ import {
   fullDateLabel,
   isoForOffset,
   matchesRowQuery,
+  outsizedQuantityWarning,
   parseShortage,
   plannedWorkOrder,
   resolveDayRollover,
@@ -80,7 +81,7 @@ describe("timerTone / chips", () => {
     expect(timerTone("warning")).toBe("warning");
     expect(timerTone("late")).toBe("late");
   });
-  it("reserva vermelho ao atraso do painel e não pinta Confirmado de verde", () => {
+  it("reserva vermelho ao atraso do painel e não pinta Fechado de verde", () => {
     expect(forecastTimeTone("delayed")).toBe("late");
     expect(forecastTimeTone("scheduled")).toBe("neutral");
     expect(forecastTimeTone("in_progress")).toBe("neutral");
@@ -293,5 +294,21 @@ describe("kiosk day rollover", () => {
     const r = resolveDayRollover("2026-07-04", "2026-07-04", now);
     expect(r.rolled).toBe(false);
     expect(r.selectedDate).toBe("2026-07-04");
+  });
+});
+
+describe("outsizedQuantityWarning — um zero a mais se confere", () => {
+  it("até 3x a referência é rendimento, não pergunta", () => {
+    expect(outsizedQuantityWarning("126", "42")).toBeNull();
+    expect(outsizedQuantityWarning("40", "42")).toBeNull();
+  });
+  it("acima de 3x diz o número e quantas vezes", () => {
+    expect(outsizedQuantityWarning("4200", "42")).toBe(
+      "4.200 é 100 vezes o planejado (42). Confira o número antes de seguir.",
+    );
+  });
+  it("sem referência não inventa conferência", () => {
+    expect(outsizedQuantityWarning("4200", "0")).toBeNull();
+    expect(outsizedQuantityWarning("4200", null)).toBeNull();
   });
 });

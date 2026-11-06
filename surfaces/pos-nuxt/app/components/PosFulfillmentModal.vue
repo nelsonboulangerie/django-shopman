@@ -39,6 +39,9 @@ import {
   type DeliveryAddressField,
 } from "~/presentation/address";
 
+// O mesmo limite de `order_notes` no servidor (`pos_intent`), que recusa acima dele.
+const ORDER_NOTES_LIMIT = 500;
+
 const props = defineProps<{
   open: boolean;
   fulfillmentOptions: POSFulfillmentOptionProjection[];
@@ -548,9 +551,14 @@ function onMapCancel() {
 
         <!-- Observações do pedido valem para RETIRADA também (não só entrega):
              o dado sempre viajou no intent; só a tela o escondia. -->
+        <!-- O limite é o do servidor, e o campo diz quanto já foi: antes o texto
+             era cortado em silêncio no 500º caractere (beta test de 05/11/2026). -->
         <label class="grid gap-1 text-sm">
-          <span class="font-medium text-muted-foreground">Observações</span>
-          <NuxtTextarea class="w-full" :model-value="orderNotes" :rows="2" placeholder="Instruções do pedido, referência, recado" @update:model-value="$emit('update:orderNotes', String($event || ''))" />
+          <span class="flex items-baseline justify-between gap-2">
+            <span class="font-medium text-muted-foreground">Observações</span>
+            <span class="op-micro tabular-nums text-muted-foreground" data-pos-order-notes-count>{{ orderNotes.length }}/{{ ORDER_NOTES_LIMIT }}</span>
+          </span>
+          <NuxtTextarea class="w-full" :model-value="orderNotes" :rows="2" :maxlength="ORDER_NOTES_LIMIT" placeholder="Instruções do pedido, referência, recado" data-pos-order-notes @update:model-value="$emit('update:orderNotes', String($event || ''))" />
         </label>
       </div>
       <PosAddressMapDialog

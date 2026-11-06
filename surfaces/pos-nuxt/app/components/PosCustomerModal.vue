@@ -186,6 +186,37 @@ const identityChips = computed(() =>
 // Reset the shared search field whenever the modal reopens fresh.
 watch(() => props.open, (open) => { if (!open) emit("search", ""); });
 
+// O X FECHA SEM SALVAR (beta test de 05/11/2026). Os campos escrevem direto na
+// comanda, então o rascunho de um cadastro que não aconteceu (recusado por CPF
+// inválido, ou só abandonado) ficava na venda como se fosse o cliente. Ao
+// fechar sem salvar, sem escolher e sem remover, o formulário volta a ser o
+// que era quando o modal abriu.
+type CustomerFields = { name: string; phone: string; taxId: string; email: string };
+const draftBaseline = ref<{ fields: CustomerFields; ref: string } | null>(null);
+const draftCommitted = ref(false);
+function currentFields(): CustomerFields {
+  return { name: props.customerName, phone: props.customerPhone, taxId: props.customerTaxId, email: props.customerEmail };
+}
+function markCommitted() { draftCommitted.value = true; }
+watch(() => props.open, (open) => {
+  if (open) {
+    draftBaseline.value = { fields: currentFields(), ref: props.customerLookup?.ref || "" };
+    draftCommitted.value = false;
+    return;
+  }
+  const baseline = draftBaseline.value;
+  draftBaseline.value = null;
+  if (!baseline || draftCommitted.value) return;
+  // Outro cliente associado enquanto o modal estava aberto (busca, decisão):
+  // o formulário agora é o dele, e não há rascunho a desfazer.
+  if ((props.customerLookup?.ref || "") !== baseline.ref) return;
+  const now = currentFields();
+  if (now.name !== baseline.fields.name) emit("update:customerName", baseline.fields.name);
+  if (now.phone !== baseline.fields.phone) emit("update:customerPhone", baseline.fields.phone);
+  if (now.taxId !== baseline.fields.taxId) emit("update:customerTaxId", baseline.fields.taxId);
+  if (now.email !== baseline.fields.email) emit("update:customerEmail", baseline.fields.email);
+}, { immediate: true });
+
 // A RECUSA TRAZ A TELA DE VOLTA. O "Concluir" fecha o modal e só depois a
 // resposta do servidor chega: sem isto, a recusa nasceria atrás de uma tela
 // fechada e o operador veria a venda seguir com o cliente errado.
@@ -351,6 +382,7 @@ async function cancelDecision() {
 }
 
 function onSelect(result: POSCustomerSearchResult) {
+  markCommitted();
   emit("selectResult", result);
 }
 const concludePending = ref(false);
@@ -365,7 +397,10 @@ function onConclude() {
   concludePending.value = true;
   emit("resolveCustomer", (saved) => {
     concludePending.value = false;
-    if (saved) emit("update:open", false);
+    if (saved) {
+      markCommitted();
+      emit("update:open", false);
+    }
   });
 }
 
@@ -790,7 +825,7 @@ const newCustomerNote = computed(() => {
                   Preencha o que souber; só o nome já basta.
                 </p>
               </div>
-              <NuxtButton v-if="hasCustomer" type="button" color="neutral" variant="outline" size="md" class="shrink-0 text-destructive" @click="$emit('clear')">
+              <NuxtButton v-if="hasCustomer" type="button" color="neutral" variant="outline" size="md" class="shrink-0 text-destructive" @click="markCommitted(); $emit('clear')">
                 <Icon name="lucide:user-x" class="size-4" />
                 Remover cliente
               </NuxtButton>

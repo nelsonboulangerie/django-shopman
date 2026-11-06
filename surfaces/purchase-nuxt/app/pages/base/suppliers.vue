@@ -3,7 +3,7 @@
 // cobre e a pontualidade. O fornecedor aberto é a rota filha (`/base/suppliers/<ref>`).
 import { navigateTo } from "#imports";
 import { SUPPLIERS_TRAIL, baseSectionPath, supplierPath } from "~/presentation/purchaseSections";
-import { plural, supplierDimensions } from "~/presentation/purchaseUi";
+import { plural, supplierDimensions, supplierLeadTimeLabel, supplierReliabilityLabel } from "~/presentation/purchaseUi";
 import type { Supplier } from "~/types/purchase";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 
@@ -308,10 +308,10 @@ const { tone: sealTone, time: sealTime } = usePurchaseReadSeal();
               <span class="tabular-nums">{{ row.original.preferredCount }}</span>
             </template>
             <template #reliability-cell="{ row }">
-              <span class="tabular-nums">{{ row.original.supplier.reliabilityPercent }}%</span>
+              <span class="tabular-nums">{{ supplierReliabilityLabel(row.original.supplier) }}</span>
             </template>
             <template #lead-cell="{ row }">
-              <span class="whitespace-nowrap tabular-nums">{{ row.original.supplier.leadTimeDays }} {{ row.original.supplier.leadTimeDays === 1 ? "dia" : "dias" }}</span>
+              <span class="whitespace-nowrap tabular-nums">{{ supplierLeadTimeLabel(row.original.supplier) }}</span>
             </template>
             <template #status-cell="{ row }">
               <NuxtBadge :color="row.original.supplier.isActive ? 'success' : 'neutral'" :label="row.original.supplier.isActive ? 'Em uso' : 'Arquivado'" />

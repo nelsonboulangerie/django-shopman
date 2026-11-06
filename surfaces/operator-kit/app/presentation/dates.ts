@@ -86,6 +86,22 @@ export function shortDayMonth(iso: string): string {
   return match ? `${match[3]}/${match[2]}` : "";
 }
 
+/**
+ * "2026-10-02" → "02/10" quando é o ano de `today`; "02/10/2025" em outro ano. Sem
+ * o ano, janeiro do ano que vem e o do ano passado se lêem como este janeiro.
+ */
+export function dayMonthIn(iso: string, today: string): string {
+  const match = ISO.exec(iso ?? "");
+  if (!match) return "";
+  const year = ISO.exec(today ?? "")?.[1];
+  return year && year !== match[1] ? `${match[3]}/${match[2]}/${match[1]}` : `${match[3]}/${match[2]}`;
+}
+
+/** "29/09 a 05/10"; com o ano nas pontas que não são do ano de `today`. */
+export function rangeSpanIn(from: string, to: string, today: string): string {
+  return `${dayMonthIn(from, today)} a ${dayMonthIn(to, today)}`;
+}
+
 /** "2026-10-02" → "qui". */
 export function weekdayShort(iso: string): string {
   const date = parseIsoDate(iso);
@@ -119,7 +135,8 @@ export function dayLabel(iso: string, today: string): string {
   if (offset === 0) return `Hoje, ${tail}`;
   if (offset === 1) return `Amanhã, ${tail}`;
   if (offset === -1) return `Ontem, ${tail}`;
-  return weekdayAndDate(iso);
+  const date = dayMonthIn(iso, today);
+  return `${capitalize(weekdayShort(iso))} ${date}`;
 }
 
 // ── Tipo 1: escolha rápida de dia ────────────────────────────────────────────
@@ -351,7 +368,9 @@ function clamp(range: PeriodRange, bounds: PeriodBounds): PeriodRange {
 export function resolvePeriod(selection: PeriodSelection, bounds: PeriodBounds): PeriodRange {
   const { today } = bounds;
   if (selection.preset === CUSTOM_PERIOD) {
-    if (selection.from && selection.to) return { date_from: selection.from, date_to: selection.to };
+    // O personalizado também respeita os limites: colado na URL, um período depois
+    // do `max` pedia ao servidor um futuro que a tela não mostra (ge:BI-14).
+    if (selection.from && selection.to) return clamp({ date_from: selection.from, date_to: selection.to }, bounds);
     return { date_from: today, date_to: today };
   }
   const preset = findPreset(selection.preset);
@@ -522,7 +541,7 @@ export function periodLabel(selection: PeriodSelection, range: PeriodRange, toda
   const name =
     selection.preset === CUSTOM_PERIOD ? "Personalizado" : (preset?.title ?? preset?.label ?? "Período");
   if (range.date_from === range.date_to) return `${name} · ${dayLabel(range.date_from, today)}`;
-  return `${name} · ${shortDayMonth(range.date_from)} a ${shortDayMonth(range.date_to)}`;
+  return `${name} · ${rangeSpanIn(range.date_from, range.date_to, today)}`;
 }
 
 /**
@@ -544,7 +563,7 @@ export function periodShortLabel(selection: PeriodSelection, range: PeriodRange,
   const span =
     range.date_from === range.date_to
       ? dayShort(range.date_from)
-      : `${shortDayMonth(range.date_from)} a ${shortDayMonth(range.date_to)}`;
+      : rangeSpanIn(range.date_from, range.date_to, today);
   if (selection.preset === CUSTOM_PERIOD) return span;
   return `${findPreset(selection.preset)?.label ?? "Período"} · ${span}`;
 }

@@ -79,7 +79,7 @@ useOperatorWindowTitle();
         :switcher-sections="sections"
         default-form="floor"
         floor-bar
-        label="Telas da produção"
+        label="Seções da Produção"
         :operator-name="operator?.name"
         @lock="lock"
       >

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   discountReachText,
   draftDiscountOutcome,
+  lineDiscountCompact,
   lineDiscountDetail,
   lineDiscountFact,
   lineDiscountReach,
@@ -98,5 +99,21 @@ describe("alcance do desconto da linha", () => {
     const pct = draftDiscountOutcome(line, "percent", 10, { list_price_q: 4000, charged_price_q: 3600 });
     expect(pct?.kind === "reach" && pct.reach.multiUnit).toBe(false);
     expect(pct?.kind === "reach" && discountReachText(pct.reach)).toBe(`10% · ${R(200)} na linha`);
+  });
+});
+
+describe("selo da linha fechada", () => {
+  // Beta test de 05/11/2026 (PDV-17): o nome da promoção só existia no aria-label.
+  it("promoção automática diz o nome", () => {
+    const line = item({
+      qty: 2, list_price_q: 900, charged_price_q: 765,
+      pricing_discount: { label: "Semana do Pão", percent: 15, amount_q: 135 },
+    } as Partial<POSCartItem>);
+    expect(lineDiscountCompact(line)).toBe(`Semana do Pão −15% · −${R(270)} na linha`);
+  });
+
+  it("desconto manual fica só com o alcance", () => {
+    const line = item({ qty: 1, list_price_q: 690, charged_price_q: 590, discount: { type: "fixed", value: 1, reason: "cortesia" } });
+    expect(lineDiscountCompact(line, [{ ref: "cortesia", label: "Cortesia" }])).toBe(`−${R(100)}`);
   });
 });

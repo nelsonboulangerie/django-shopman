@@ -1221,7 +1221,9 @@ def _supplier_contact_reach(supplier, role: str) -> tuple[str, str, str]:
     meio da outra.
     """
     SupplierContact = apps.get_model("buyman", "SupplierContact")
-    rows = list(SupplierContact.objects.filter(supplier=supplier))
+    # `contacts.all()` aproveita o prefetch da projeção (que pergunta a rota de
+    # cada fornecedor ativo); fora dela, é a mesma consulta de sempre.
+    rows = list(supplier.contacts.all())
     by_email = SupplierContact.pick(rows, role, requires="email")
     by_phone = SupplierContact.pick(rows, role, requires="phone")
     winner = by_email or by_phone
@@ -1531,7 +1533,20 @@ def parse_money_input(value: str, *, field: str = "costInput") -> int:
             code="money_input_negative",
             field=field,
         )
+    if amount != amount.quantize(Decimal("0.01")):
+        # Dinheiro se guarda em centavos: 0,055 virava R$ 0,06 em silêncio, 9% acima
+        # do digitado (beta 05/11, CMP-07). Recusar e dizer o que cabe.
+        raise PurchaseError(
+            f"O valor guarda centavos: escreva até duas casas, como "
+            f"{_brl(amount.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))}.",
+            code="money_input_subcent",
+            field=field,
+        )
     return int((amount * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def _brl(amount: Decimal) -> str:
+    return f"{amount:.2f}".replace(".", ",")
 
 
 def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> ResolvedReceiptLine:

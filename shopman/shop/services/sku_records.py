@@ -47,7 +47,7 @@ def is_produced_here(sku: str) -> bool:
     """Existe ficha ATIVA que produz este SKU?"""
     from shopman.craftsman.models import Recipe
 
-    return Recipe.objects.filter(output_sku=sku, is_active=True).exists()
+    return Recipe.objects.filter(output_sku__iexact=sku, is_active=True).exists()
 
 
 def ensure_purchase_record(product, *, refuse_if_produced: bool = True):

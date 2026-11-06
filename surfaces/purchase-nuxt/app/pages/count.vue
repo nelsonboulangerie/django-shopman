@@ -3,7 +3,14 @@
 // pede motivo e vira ajuste no estoque, registrado com o operador. Só para quem tem a
 // permissão de auditoria.
 import { formatQty, formatQtyDiff } from "~/presentation/purchase";
-import { plural } from "~/presentation/purchaseUi";
+import { COUNT_FORBIDDEN, plural } from "~/presentation/purchaseUi";
+
+// Sem a permissão de auditoria: dizer quem conta e dar a saída (trocar de operador),
+// em vez de um "entre com o gestor" sem botão (beta 05/11, CMP-12).
+const { lock } = useOperatorLock("backstage.operate_purchase");
+function switchOperator() {
+  void lock();
+}
 
 const { query, countFilteredRows, countDivergentRows, countTotals, countReady, countPending, countForbidden, countConfirmedAt, setCountInput, setCountReason, resetCount, confirmCount, actionPending, refresh } =
   usePurchaseDesk();
@@ -87,9 +94,13 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
           v-if="countForbidden"
           state="empty"
           icon="i-lucide-lock"
-          title="Contagem restrita ao gestor."
-          description="Auditar e ajustar o estoque de insumos pede a permissão de auditoria. Entre com o operador do gestor para contar."
-        />
+          :title="COUNT_FORBIDDEN.title"
+          :description="COUNT_FORBIDDEN.description"
+        >
+          <template #actions>
+            <NuxtButton :label="COUNT_FORBIDDEN.action" icon="i-lucide-users" color="neutral" variant="outline" data-count-switch-operator @click="switchOperator()" />
+          </template>
+        </OperatorScreenState>
         <template v-else>
           <p class="text-sm text-muted">
             Informe o que contou no físico. Divergência pede motivo e vira ajuste no estoque.

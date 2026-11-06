@@ -33,7 +33,10 @@ const identity = computed<OperatorInstallIdentity | null>(
 
 const pwa = usePwaInstall({ app: props.app });
 const plan = computed(() => pwa.plan.value);
-const visible = computed(() => pwa.canInvite.value);
+// Espera a oferta de vincular o dispositivo sair da tela (PDV2-25): um diálogo de
+// primeira entrada por vez.
+const stationOfferOpen = useStationSetupOfferOpen();
+const visible = computed(() => pwa.canInvite.value && !stationOfferOpen.value);
 
 // Um toque resolve, ou a pessoa vai seguir passos — o título diz qual dos dois é, antes
 // de ela decidir se tem tempo agora.

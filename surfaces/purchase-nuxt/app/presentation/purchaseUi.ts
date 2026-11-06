@@ -139,3 +139,37 @@ export function matchesSupplierFilters(
   );
 }
 
+
+/**
+ * O pedido de compra deste fornecedor não tem por onde sair (sem e-mail nem
+ * telefone). O cartão de Comprar avisa antes e troca o gesto por "Cadastrar
+ * contato"; antes a falta só aparecia depois de confirmar, num aviso que sumia
+ * (beta 05/11, CMP-09). Sem fornecedor é outro caso: não é falta de contato.
+ */
+export function supplierLacksOrderContact(supplier: { canReceiveOrder?: boolean } | null | undefined): boolean {
+  return Boolean(supplier) && supplier?.canReceiveOrder === false;
+}
+
+/**
+ * Pontualidade e prazo do fornecedor, sem inventar número. Sem nenhuma entrega
+ * registrada, "100%" e "0 dias" pareciam medida (beta 05/11, CMP-14).
+ */
+export function supplierReliabilityLabel(supplier: Pick<Supplier, "reliabilityPercent" | "lastDeliveryAt">): string {
+  return supplier.lastDeliveryAt ? `${supplier.reliabilityPercent}%` : "sem histórico";
+}
+
+export function supplierLeadTimeLabel(supplier: Pick<Supplier, "leadTimeDays">): string {
+  if (!supplier.leadTimeDays) return "não informado";
+  return `${supplier.leadTimeDays} ${supplier.leadTimeDays === 1 ? "dia" : "dias"}`;
+}
+
+/**
+ * Contar estoque sem a permissão de auditoria. Quem conta é quem tem essa
+ * permissão (no Nelson, o Dono), não "o gestor"; e a tela dá a saída, que é
+ * trocar de operador (beta 05/11, CMP-12).
+ */
+export const COUNT_FORBIDDEN = {
+  title: "Contar estoque pede a permissão de auditoria.",
+  description: "Quem tem essa permissão conta e ajusta o estoque de insumos. Troque de operador para contar.",
+  action: "Trocar operador",
+} as const;

@@ -19,6 +19,7 @@ describe("historyQueryFromRoute / routeQueryFromHistory", () => {
       period: { preset: "day", from: "", to: "" },
       q: "",
       sku: "",
+      basis: "",
       page: 1,
       filters: {},
     });
@@ -58,6 +59,20 @@ describe("historyQueryFromRoute / routeQueryFromHistory", () => {
       date_to: "2026-10-03",
       sku: "CRO",
     });
+  });
+
+  it('o eixo da data do pedido (ge:BI-03) vai e volta e chega ao endpoint como date_basis', () => {
+    const route = { period: "custom", from: "2026-11-04", to: "2026-11-04", sku: "MDLN", basis: "ordered" };
+    const query = historyQueryFromRoute(route);
+    expect(query.basis).toBe("ordered");
+    expect(routeQueryFromHistory(query)).toEqual(route);
+    expect(historyApiQuery(query, "2026-11-05")).toEqual({
+      date_from: "2026-11-04",
+      date_to: "2026-11-04",
+      sku: "MDLN",
+      date_basis: "ordered",
+    });
+    expect(historyQueryFromRoute({ basis: "sideways" }).basis).toBe("");
   });
 
   it("período desconhecido ou data malformada cai no padrão", () => {

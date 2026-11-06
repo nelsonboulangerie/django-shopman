@@ -90,4 +90,23 @@ describe("PosProductGrid — Esc na busca", () => {
 
     wrapper.unmount();
   });
+
+  // Beta test de 05/11/2026 (PDV-15): Enter num código que não existe abria o
+  // cadastro de cliente com "BAGUETE-3".
+  it("Enter sem produto não abre cliente com texto; com telefone, abre", async () => {
+    const wrapper = await mountSuspended(PosProductGrid, {
+      props: { ...props(), customerSearch: true },
+      attachTo: document.body,
+    });
+    const input = wrapper.find('input[type="search"]');
+    await input.setValue("BAGUETE-3");
+    await input.trigger("keydown.enter");
+    expect(wrapper.emitted("findCustomer")).toBeUndefined();
+    expect(wrapper.find("[data-pos-search-customer]").text()).toBe("Buscar cliente “BAGUETE-3”");
+
+    await input.setValue("43 99111-1111");
+    await input.trigger("keydown.enter");
+    expect(wrapper.emitted("findCustomer")?.[0]).toEqual(["43 99111-1111"]);
+    wrapper.unmount();
+  });
 });
