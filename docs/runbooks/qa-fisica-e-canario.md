@@ -95,7 +95,7 @@ faria. Endereço: o domínio da loja (`www.`).
 O Pix só é gerado **depois que a loja aceita** o pedido (o gerente aceita no Gestor, Folha 4,
 G1.3). Combine com o gerente.
 
-- [ ] ★ **C5.1** Depois do aceite, **Confira** sem recarregar: "Gerando seu Pix" e logo "Pague com Pix" com o QR, o **Pix Copia e Cola**, **Copiar código** e o tempo para pagar (10 min).
+- [ ] ★ **C5.1** Depois do aceite, **Confira** sem recarregar: "Gerando seu Pix" e logo "Falta só o pagamento" com o QR, o **Pix Copia e Cola**, **Copiar código** e o tempo para pagar (10 min).
 - [ ] **C5.2** Tocar em **Copiar código**. **Confira:** aviso "Código Pix copiado." e o código cola no app do banco.
 - [ ] ★ **C5.3** Pagar (ensaio: Pix de sandbox pelo gerente na Efí; dia D: Pix real no app do banco). **Confira**, sem recarregar a página: a etapa vira "Pago" e o WhatsApp avisa a confirmação.
 - [ ] ★ **C5.4** **Confira:** o botão "Simular pagamento" **não existe** na tela. Se aparecer, é ✗ que trava (o Pix ainda está no simulado).

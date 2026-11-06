@@ -342,9 +342,9 @@ def validate_pickup_slot_selection(
 def readiness_reason(result: dict) -> str:
     """Por que os turnos antes do mais cedo ficam riscados, na voz da entrega.
 
-    A entrega já dizia qual produto segura o pedido ("{nome} sai às {hora}."); a
-    retirada dizia "Sem tempo de preparo", que o cliente lia como "pronto na
-    hora" (beta SMS-10). O mesmo bloqueio tem uma frase só nos dois.
+    Diz qual produto segura o pedido e a que horas ("{nome} sai às {hora}."),
+    a mesma frase da entrega: o mesmo bloqueio tem uma frase só nos dois (beta
+    SMS-10).
     """
     sku = result.get("bottleneck_sku") or ""
     ready = (result.get("ready_times") or {}).get(sku) or ""
