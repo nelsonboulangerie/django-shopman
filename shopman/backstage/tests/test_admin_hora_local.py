@@ -53,7 +53,9 @@ def test_titulo_do_turno_em_hora_local(shift):
 def test_linha_do_tempo_do_turno_em_hora_local():
     # O livro é imutável: o lançamento do teste não é gravado.
     entry = Entry(kind=Entry.Kind.CASH_IN, amount_q=500, at=UTC_13H)
-    inline = EntryInline(Entry, admin_site=None)
+    from django.contrib import admin
+
+    inline = EntryInline(Entry, admin.site)
     assert inline.at_display(entry) == "05/11 10:00"
     assert str(entry).startswith("05/11 10:00")
 
