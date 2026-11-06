@@ -296,16 +296,42 @@ def code_resend_cooldown_seconds() -> int:
     return max(0, int(doorman_settings.ACCESS_CODE_COOLDOWN_SECONDS))
 
 
+def device_trust_period_display() -> str:
+    """O prazo da confiança do aparelho, dito como o cliente fala ("6 meses").
+
+    Fonte única: ``DEVICE_TRUST_TTL_DAYS`` do doorman, que conta do ÚLTIMO uso.
+    A copy do login tinha "30 dias" escrito à mão e se descolou do prazo real
+    (180 dias) sem ninguém notar (beta 06/11, SMS-09).
+    """
+    from shopman.doorman.conf import doorman_settings
+
+    days = int(doorman_settings.DEVICE_TRUST_TTL_DAYS)
+    if days % 365 == 0:
+        years = days // 365
+        return "1 ano" if years == 1 else f"{years} anos"
+    if days >= 60 and days % 30 == 0:
+        return f"{days // 30} meses"
+    return "1 dia" if days == 1 else f"{days} dias"
+
+
 def auth_error_code(auth_result) -> str | None:
     """O código público do erro, quando a tela precisa de mais que o texto.
 
-    Hoje só o conflito de identidade: o código digitado estava CERTO, e o título
-    "Código não confere" mentia sobre ele (beta 05/11, LOJA-03).
+    - Conflito de identidade: o código digitado estava CERTO, e o título
+      "Código não confere" mentia sobre ele (beta 05/11, LOJA-03).
+    - Código morto (venceu ou acabaram as tentativas): não há o que corrigir no
+      que foi digitado; a tela esconde a validade, limpa o campo e libera o
+      "Reenviar" (beta 06/11, SMS-07).
+    - Espera entre envios (G11): a tela volta ao passo do código, se ele ainda
+      vale, com o relógio do "Reenviar" no tempo do servidor (beta 06/11, SMS-08).
     """
     from shopman.doorman.error_codes import ErrorCode
 
-    if getattr(auth_result, "error_code", None) == ErrorCode.IDENTITY_CONFLICT:
+    error_code = getattr(auth_result, "error_code", None)
+    if error_code == ErrorCode.IDENTITY_CONFLICT:
         return "identity_conflict"
+    if error_code in {ErrorCode.CODE_MAX_ATTEMPTS, ErrorCode.CODE_EXPIRED, ErrorCode.COOLDOWN}:
+        return str(error_code)
     if (auth_result.error or "") in {
         "Identity ownership is conflicting.",
         "This handle belongs to another account.",
@@ -315,17 +341,50 @@ def auth_error_code(auth_result) -> str | None:
 
 
 def auth_error_body(detail: str, auth_result, *, field: str | None = None) -> dict:
-    """Corpo de erro do auth no dialeto da casa ``{detail, field, errors}``."""
+    """Corpo de erro do auth no dialeto da casa ``{detail, field, errors}``.
+
+    O conflito de identidade não aponta campo: o que foi digitado estava certo.
+    """
     error_code = auth_error_code(auth_result)
-    body: dict = {"detail": detail, "field": None if error_code else field, "errors": {}}
+    body: dict = {
+        "detail": detail,
+        "field": None if error_code == "identity_conflict" else field,
+        "errors": {},
+    }
     if error_code:
         body["error_code"] = error_code
     return body
 
 
+def code_cooldown_body(detail: str, auth_result, *, phone: str) -> dict:
+    """Recusa do G11 com o que a tela precisa para não deixar o cliente no escuro.
+
+    Os segundos que faltam (``retry_after_seconds``) e, se o código enviado há
+    pouco ainda vale, a validade e o canal dele: a tela volta ao passo do código
+    para o cliente digitar o que já chegou (beta 06/11, SMS-08).
+    """
+    body = auth_error_body(detail, auth_result)
+    body["phone"] = phone
+    body["retry_after_seconds"] = getattr(auth_result, "retry_after_seconds", None) or 0
+    body["code_expires_at"] = getattr(auth_result, "expires_at", None) or ""
+    return body
+
+
+def _seconds_phrase(seconds: int) -> str:
+    return "1 segundo" if seconds == 1 else f"{seconds} segundos"
+
+
 def request_code_error_message(auth_result) -> str:
     from shopman.doorman.error_codes import ErrorCode
 
+    retry_after = getattr(auth_result, "retry_after_seconds", None)
+    if auth_result.error_code == ErrorCode.COOLDOWN and retry_after:
+        # Quanto falta, sempre: "aguarde" sem número deixava o cliente parado
+        # sem saber até quando (beta 06/11, SMS-08).
+        return (
+            "Já enviamos um código para este número. "
+            f"Você pode pedir outro em {_seconds_phrase(int(retry_after))}."
+        )
     error_map = {
         ErrorCode.RATE_LIMIT: "Muitas tentativas. Aguarde alguns minutos e tente novamente.",
         ErrorCode.COOLDOWN: "Aguarde antes de solicitar um novo código.",
@@ -365,9 +424,17 @@ def verify_for_login(*, phone: str, code_input: str, request):
 
 
 def verify_error_message(auth_result) -> str:
+    from shopman.doorman.conf import doorman_settings
+    from shopman.doorman.error_codes import ErrorCode
+
+    if getattr(auth_result, "error_code", None) == ErrorCode.CODE_MAX_ATTEMPTS:
+        # O código morreu pelas tentativas erradas. Dizer "incorreto" (e depois
+        # "expirado") escondia a causa e não dizia o que fazer (beta 06/11, SMS-07).
+        tentativas = int(doorman_settings.ACCESS_CODE_MAX_ATTEMPTS)
+        return f"Você errou o código {tentativas} vezes, e ele deixou de valer. Peça um novo código."
     translations = {
         "Incorrect code.": "Código incorreto.",
-        "Code expired. Please request a new one.": "Código expirado. Solicite um novo.",
+        "Code expired. Please request a new one.": "Este código não vale mais. Peça um novo código.",
         "Account not found. Please contact support.": "Conta não encontrada.",
         "Identity ownership is conflicting.": IDENTITY_CONFLICT_DETAIL,
         "This handle belongs to another account.": IDENTITY_CONFLICT_DETAIL,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LOCAL_PHONE_ERROR, LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorBelongsToPhoneField, authErrorOffersSupport, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, resendWindowMs, welcomeNameFields, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
+import { LOCAL_PHONE_ERROR, LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, PENDING_CODE_STORAGE_KEY, WELCOME_PENDING_STORAGE_KEY, authErrorBelongsToPhoneField, authErrorKillsCode, authErrorOffersSupport, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, pendingCodeFromCooldown, resendCooldown, resendWindowMs, restorePendingCode, welcomeNameFields, welcomeNameValue, type AuthErrorView, type PendingCode } from '~/presentation/auth'
 import { authPhoneIsComplete, authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
 import type { AuthSessionResponse, CopyEntryProjection, ShellResponse } from '~/types/shopman'
 import type { WhatsappClaimResponse } from '~/composables/useWhatsappReturn'
@@ -218,7 +218,7 @@ const momentMessage = computed(() => moment.value === 'recognized'
   : copyMessage(authCopy.value?.auth_confirmed, 'Identidade confirmada')
 )
 const momentSavedNote = computed(() => moment.value === 'confirmed' && trustSaved.value
-  ? copyMessage(authCopy.value?.device_trust_saved, 'Aparelho salvo por 30 dias.')
+  ? copyMessage(authCopy.value?.device_trust_saved, 'Aparelho salvo. Cada entrada renova o prazo.')
   : ''
 )
 
@@ -233,22 +233,66 @@ onMounted(async () => {
   // quem chega aqui ENTROU num passo cuja próxima ação é digitar o nome — o
   // campo recebe o foco como em qualquer outra troca.
   if (step.value === 'welcome') reveal('welcome')
-  // `?welcome=1` numa CARGA NOVA (ex.: travessia de navegador): o estado do
-  // cliente nasce vazio e só o cookie sabe se há sessão. Perguntamos ao servidor
-  // antes de mostrar o passo de telefone a quem já entrou.
-  if (welcomeRequested.value && !welcomeNeeded.value) {
+  // `?welcome=1` numa CARGA NOVA (ex.: travessia de navegador), ou o recarregar
+  // de quem estava no passo do nome (beta 06/11, SMS-16): o estado do cliente
+  // nasce vazio e só o cookie sabe se há sessão. Perguntamos ao servidor antes
+  // de mostrar o passo de telefone a quem já entrou.
+  const welcomeWasPending = readStored(WELCOME_PENDING_STORAGE_KEY) != null
+  if ((welcomeRequested.value || welcomeWasPending) && !welcomeNeeded.value) {
     const auth = await $fetch<AuthSessionResponse>(apiPath('/api/auth/session/'), {
       credentials: 'include'
     }).catch(() => null)
     if (auth?.is_authenticated) {
       session.setFromAuthSession(auth)
-      if (auth.requires_welcome) enterWelcomeGateFromSession()
+      if (auth.requires_welcome) {
+        enterWelcomeGateFromSession()
+        return
+      }
       // Autenticado e sem nada a confirmar: o convite de boas-vindas já não vale;
       // segue direto ao destino.
-      else await navigateTo(nextUrl.value)
+      forgetStored(WELCOME_PENDING_STORAGE_KEY)
+      await navigateTo(nextUrl.value)
+      return
     }
+    forgetStored(WELCOME_PENDING_STORAGE_KEY)
+  }
+  // O código pedido antes do recarregamento ainda vale: a página volta ao passo
+  // de digitá-lo, com o "Reenviar" no relógio de antes (beta 06/11, SMS-08).
+  if (step.value === 'phone') {
+    const pending = restorePendingCode(readStored(PENDING_CODE_STORAGE_KEY), Date.now())
+    if (pending) applyPendingCode(pending)
+    else forgetStored(PENDING_CODE_STORAGE_KEY)
   }
 })
+
+// sessionStorage pode faltar (aba privada, cota, SSR): sem ele a página só
+// perde a memória entre recarregamentos, como antes.
+function readStored (key: string): string | null {
+  if (!import.meta.client) return null
+  try {
+    return window.sessionStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function writeStored (key: string, value: string) {
+  if (!import.meta.client) return
+  try {
+    window.sessionStorage.setItem(key, value)
+  } catch {
+    // Sem armazenamento, o passo vive só na memória da página.
+  }
+}
+
+function forgetStored (key: string) {
+  if (!import.meta.client) return
+  try {
+    window.sessionStorage.removeItem(key)
+  } catch {
+    // Nada guardado, nada a esquecer.
+  }
+}
 
 onBeforeUnmount(() => {
   if (clockTimer) clearInterval(clockTimer)
@@ -309,13 +353,35 @@ function fetchErrorView (e: unknown, fallback: string, fallbackField?: string): 
 }
 
 function applyCodeDelivery (response: RequestCodeResponse, method: AuthDeliveryMethod) {
-  requestedPhone.value = response.phone
-  deliveryLabel.value = response.delivery_label
   devConsoleHint.value = !!response.dev_console_hint
-  codeExpiresAt.value = response.code_expires_at || ''
-  lastDeliveryMethod.value = method
-  resendWindow.value = resendWindowMs(response.resend_after_seconds)
-  lastSentAtMs.value = Date.now()
+  applyPendingCode({
+    phone: response.phone,
+    deliveryMethod: method,
+    deliveryLabel: response.delivery_label,
+    codeExpiresAt: response.code_expires_at || '',
+    lastSentAtMs: Date.now(),
+    resendWindowMs: resendWindowMs(response.resend_after_seconds)
+  })
+}
+
+// Põe a página no passo do código e guarda o envio para o recarregamento.
+function applyPendingCode (pending: PendingCode) {
+  requestedPhone.value = pending.phone
+  deliveryLabel.value = pending.deliveryLabel
+  codeExpiresAt.value = pending.codeExpiresAt
+  lastDeliveryMethod.value = pending.deliveryMethod === 'sms' ? 'sms' : 'whatsapp'
+  resendWindow.value = pending.resendWindowMs
+  lastSentAtMs.value = pending.lastSentAtMs
+  if (pending.codeExpiresAt) writeStored(PENDING_CODE_STORAGE_KEY, JSON.stringify(pending))
+}
+
+// O servidor recusou um envio novo porque o último é recente. Se aquele código
+// ainda vale, a página vai ao passo de digitá-lo; o aviso diz quanto falta.
+function applyCooldown (e: unknown): boolean {
+  const pending = pendingCodeFromCooldown(httpError(e).data, Date.now())
+  if (!pending) return false
+  applyPendingCode(pending)
+  return true
 }
 
 async function celebrateAndGo (kind: 'recognized' | 'confirmed') {
@@ -378,6 +444,7 @@ async function enterWithPasskey () {
 }
 
 function enterWelcomeGate (sessionResponse: AuthSessionResponse) {
+  writeStored(WELCOME_PENDING_STORAGE_KEY, '1')
   welcomeNeeded.value = true
   welcomeName.value = sessionResponse.welcome_suggested_name?.trim() || ''
 }
@@ -386,6 +453,7 @@ function enterWelcomeGate (sessionResponse: AuthSessionResponse) {
 // chega já autenticado pelo access link pula telefone e código — `verified`
 // vira true para a máquina de passos aterrissar direto em 'welcome'.
 function enterWelcomeGateFromSession () {
+  writeStored(WELCOME_PENDING_STORAGE_KEY, '1')
   verified.value = true
   welcomeNeeded.value = true
   welcomeName.value = (session.welcomeSuggestedName.value || '').trim()
@@ -430,6 +498,7 @@ async function requestCode (method: AuthDeliveryMethod = 'whatsapp', event?: Eve
     })
     applyCodeDelivery(response, method)
   } catch (e) {
+    applyCooldown(e)
     error.value = fetchErrorView(e, 'Não foi possível enviar o código.')
   } finally {
     pending.value = false
@@ -454,6 +523,7 @@ async function resendCode () {
     void listenSmsCode()
     if (import.meta.client) useSonner.success('Enviamos um novo código.')
   } catch (e) {
+    applyCooldown(e)
     error.value = fetchErrorView(e, 'Não foi possível reenviar o código.')
   } finally {
     pending.value = false
@@ -476,6 +546,7 @@ async function verifyCode () {
       body: { phone: requestedPhone.value, code: code.value }
     })
     session.setFromAuthSession(response)
+    forgetStored(PENDING_CODE_STORAGE_KEY)
     if (trustedDevice.value) {
       const trustResponse = await $fetch<{ trusted?: boolean }>(apiPath('/api/auth/trust-device/'), {
         method: 'POST',
@@ -494,6 +565,16 @@ async function verifyCode () {
     await celebrateAndGo('confirmed')
   } catch (e) {
     error.value = fetchErrorView(e, 'Código inválido ou expirado.', 'code')
+    // Os dígitos errados não ficam no campo: o próximo palpite começa limpo.
+    codeDigits.value = []
+    if (authErrorKillsCode(error.value)) {
+      // O código morreu (venceu ou acabaram as tentativas): sai a validade que
+      // a tela ainda mostrava e o "Reenviar" libera já. O servidor não cobra
+      // espera de um código morto por tentativas (beta 06/11, SMS-07).
+      codeExpiresAt.value = ''
+      lastSentAtMs.value = null
+      forgetStored(PENDING_CODE_STORAGE_KEY)
+    }
   } finally {
     pending.value = false
   }
@@ -512,6 +593,7 @@ async function submitWelcome () {
       body: welcomeNameFields(name)
     })
     session.setIdentity({ name, requiresWelcome: false })
+    forgetStored(WELCOME_PENDING_STORAGE_KEY)
     await navigateTo(nextUrl.value)
   } catch (e) {
     error.value = fetchErrorView(e, 'Não foi possível salvar seu nome.')
@@ -522,11 +604,13 @@ async function submitWelcome () {
 
 // "Deixar para depois": o nome fica para outra hora; o gate não prende ninguém.
 async function skipWelcome () {
+  forgetStored(WELCOME_PENDING_STORAGE_KEY)
   session.setIdentity({ requiresWelcome: false })
   await navigateTo(nextUrl.value)
 }
 
 function returnToPhoneStep () {
+  forgetStored(PENDING_CODE_STORAGE_KEY)
   requestedPhone.value = ''
   codeDigits.value = []
   error.value = null
@@ -757,7 +841,7 @@ useSeoMeta({
             <div class="-mx-4 flex w-full items-center gap-4 border-y px-4 py-3 sm:mx-0 sm:px-0" data-login-trust>
               <div class="min-w-0 flex-1">
                 <p class="shop-body font-semibold">{{ copyTitle(authCopy?.device_trust_prompt, 'Salvar este aparelho?') }}</p>
-                <p class="mt-0.5 shop-meta">{{ copyMessage(authCopy?.device_trust_prompt, 'Use só em um aparelho seu. Por 30 dias, você entra sem código.') }}</p>
+                <p class="mt-0.5 shop-meta">{{ copyMessage(authCopy?.device_trust_prompt, 'Use só em um aparelho seu. Nas próximas entradas, você entra sem código.') }}</p>
               </div>
               <UiSwitch id="trusted-device" v-model="trustedDevice" />
             </div>

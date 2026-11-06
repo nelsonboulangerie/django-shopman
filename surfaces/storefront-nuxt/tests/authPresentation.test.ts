@@ -6,13 +6,16 @@ import {
   RESEND_COOLDOWN_MS,
   accessLinkLanding,
   authErrorBelongsToPhoneField,
+  authErrorKillsCode,
   authErrorOffersSupport,
   authErrorView,
   authStep,
   codeSentPrefix,
   otpValidUntilDisplay,
   isMarketingPromptRouteExcluded,
+  pendingCodeFromCooldown,
   resendCooldown,
+  restorePendingCode,
   resendWindowMs,
   welcomeNameFields,
   welcomeNameValue
@@ -222,3 +225,62 @@ describe('beta 05/11: erros do login com o título certo e no lugar certo', () =
   })
 })
 
+
+describe('beta 06/11: o código morto e a espera entre envios dizem a verdade', () => {
+  it('SMS-07: tentativas esgotadas não viram "Código não confere"', () => {
+    const view = authErrorView({ status: 400, field: 'code', errorCode: 'code_max_attempts', detail: 'Você errou o código 5 vezes, e ele deixou de valer. Peça um novo código.' }, 'x')
+    expect(view.kind).toBe('code_dead')
+    expect(view.title).toBe('Peça um novo código')
+    expect(authErrorKillsCode(view)).toBe(true)
+  })
+
+  it('SMS-07: código vencido também libera o reenvio', () => {
+    const view = authErrorView({ status: 400, field: 'code', errorCode: 'code_expired', detail: 'Este código não vale mais.' }, 'x')
+    expect(authErrorKillsCode(view)).toBe(true)
+  })
+
+  it('SMS-07: código errado com tentativas sobrando não mata o código', () => {
+    expect(authErrorKillsCode(authErrorView({ status: 400, field: 'code' }, 'x'))).toBe(false)
+  })
+
+  it('SMS-08: espera entre envios é "Aguarde um instante", não "Algo não deu certo"', () => {
+    expect(authErrorView({ status: 400, errorCode: 'cooldown' }, 'x').title).toBe('Aguarde um instante')
+    expect(authErrorView({ status: 429, errorCode: 'cooldown' }, 'x').kind).toBe('rate_limit')
+  })
+
+  it('SMS-08: a recusa com código válido leva ao passo do código com o relógio do servidor', () => {
+    const now = Date.parse('2026-11-06T05:15:00Z')
+    const pending = pendingCodeFromCooldown({
+      error_code: 'cooldown',
+      phone: '+5543991117788',
+      retry_after_seconds: 45,
+      code_expires_at: '2026-11-06T05:24:00Z',
+      delivery_method: 'sms',
+      delivery_label: 'SMS'
+    }, now)
+    expect(pending).toEqual({
+      phone: '+5543991117788',
+      deliveryMethod: 'sms',
+      deliveryLabel: 'SMS',
+      codeExpiresAt: '2026-11-06T05:24:00Z',
+      lastSentAtMs: now,
+      resendWindowMs: 45_000
+    })
+    expect(resendCooldown(pending!.lastSentAtMs, now + 1000, pending!.resendWindowMs)).toEqual({ ready: false, remainingSeconds: 44 })
+  })
+
+  it('SMS-08: sem código válido não há passo para onde voltar', () => {
+    const now = Date.parse('2026-11-06T05:15:00Z')
+    expect(pendingCodeFromCooldown({ error_code: 'cooldown', phone: '+5543991117788', retry_after_seconds: 45, code_expires_at: '' }, now)).toBeNull()
+    expect(pendingCodeFromCooldown({ error_code: 'rate_limit', phone: '+5543991117788', code_expires_at: '2026-11-06T05:24:00Z' }, now)).toBeNull()
+  })
+
+  it('SMS-08: o passo do código volta do recarregamento enquanto o código vale', () => {
+    const stored = JSON.stringify({ phone: '+5543991117788', deliveryMethod: 'sms', deliveryLabel: 'SMS', codeExpiresAt: '2026-11-06T05:24:00Z', lastSentAtMs: 1, resendWindowMs: 60_000 })
+    expect(restorePendingCode(stored, Date.parse('2026-11-06T05:20:00Z'))?.phone).toBe('+5543991117788')
+    expect(restorePendingCode(stored, Date.parse('2026-11-06T05:24:01Z'))).toBeNull()
+    expect(restorePendingCode('{quebrado', 0)).toBeNull()
+    expect(restorePendingCode(null, 0)).toBeNull()
+  })
+
+})

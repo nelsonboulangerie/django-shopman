@@ -73,7 +73,10 @@ describe('canonical endpoint guardrail', () => {
 
   it('keeps auth verification pinned to the backend-returned requested phone', () => {
     const login = read('app/pages/entrar.vue')
-    expect(login).toContain('requestedPhone.value = response.phone')
+    // O telefone do passo do código é sempre o que o servidor devolveu: o envio
+    // (`phone: response.phone`) ou a recusa por espera, que também o devolve.
+    expect(login).toContain('phone: response.phone')
+    expect(login).toContain('requestedPhone.value = pending.phone')
     expect(login).toContain('body: { phone: requestedPhone.value, code: code.value }')
   })
 })
