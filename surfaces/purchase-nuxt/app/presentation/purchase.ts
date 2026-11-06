@@ -19,6 +19,7 @@ import type {
   ReceiptLine,
   ReceiptLineDifference,
   ReceiptLinePreview,
+  ReceiptPreferredCostChange,
   ReceiptLineRow,
   ReceiptLineStatus,
   ReceiptLineStatusBadge,
@@ -176,6 +177,46 @@ export function isApproximateCost(cost: SupplierMaterialCost, conversions: Mater
 export function costPerBaseUnitQ(cost: SupplierMaterialCost, conversions: MaterialConversion[]): number {
   const factor = baseFactor(cost, conversions);
   return Math.round(cost.costQ / factor);
+}
+
+/**
+ * Os itens desta entrada que trocariam o custo preferencial do insumo.
+ *
+ * Confirmar a entrada grava o preço pago no custo do fornecedor. Quando esse
+ * custo é o preferencial e o preço mudou, a troca não pode acontecer em
+ * silêncio (beta 05/11, CMP-06): cada item daqui pede "Atualizar" ou "Manter".
+ * A conta é a mesma do servidor: o preço recebido levado à unidade de compra
+ * do custo preferencial, arredondado ao centavo.
+ */
+export function receiptPreferredCostChanges(
+  previews: ReceiptLinePreview[],
+  costs: SupplierMaterialCost[],
+  supplierRef: string,
+  conversions: MaterialConversion[],
+): ReceiptPreferredCostChange[] {
+  if (!supplierRef) return [];
+  return previews.flatMap((preview) => {
+    const { line } = preview;
+    const purchaseQty = Number(line.purchaseQty);
+    if (!line.materialSku || preview.totalCostQ <= 0 || !(purchaseQty > 0)) return [];
+    const cost = costs.find(
+      (item) => item.isPreferred && item.materialSku === line.materialSku && item.supplierRef === supplierRef,
+    );
+    if (!cost) return [];
+    const lineFactor = preview.conversion?.toBaseFactor ?? 1;
+    const incomingQ = Math.round((preview.totalCostQ / purchaseQty / lineFactor) * baseFactor(cost, conversions));
+    if (incomingQ === cost.costQ) return [];
+    return [
+      {
+        lineId: line.id,
+        materialName: preview.material.name,
+        unitLabel: purchaseUnitLabel(cost, preview.material, conversions),
+        currentQ: cost.costQ,
+        incomingQ,
+        decision: line.preferredCost ?? "",
+      },
+    ];
+  });
 }
 
 export function quotePreview(

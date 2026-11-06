@@ -284,6 +284,19 @@ def validate_for_dispatch(artifact, *, now: datetime | None = None) -> None:
     """Fail before the provider when a new artifact's factual claim drifted."""
 
     payload = artifact.payload if isinstance(artifact.payload, Mapping) else {}
+    # Link relativo não sai para fora da loja, nem se a aprovação tiver deixado passar.
+    from shopman.shop.policies.marketing_public_link import public_link_problem
+    from shopman.shop.services.storefront_links import storefront_base_url
+
+    problem = public_link_problem(
+        payload.get("content"),
+        payload.get("platform_content"),
+        store_address_configured=bool(storefront_base_url()),
+    )
+    if problem is not None:
+        raise MarketingContractError(
+            code=problem.code, detail=problem.detail, field_errors=problem.field_errors()
+        )
     raw = payload.get("facts")
     if raw is None:
         return  # Explicit compatibility window for pre-MKT-027 approvals.

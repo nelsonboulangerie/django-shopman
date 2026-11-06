@@ -74,6 +74,9 @@ type PreviewBatch = {
   /** Plataformas que ficaram fora desta prévia, com o motivo (a do formulário e a da
    *  revisão mandam). Uma plataforma não derruba a prévia das outras. */
   platform_problems?: Record<string, { code: string; detail: string }>;
+  /** O que impede a aprovação sem derrubar a prévia (MKT-20: link sem o endereço do
+   *  site da loja). A prévia mostra; a aprovação recusa pelo mesmo motivo. */
+  publish_blockers?: { code: string; detail: string; field_detail: string }[];
   previews: Record<
     string,
     {
@@ -97,6 +100,14 @@ const preview = ref<PreviewBatch | null>(null);
 const problem = ref<PreviewProblem | null>(null);
 const pending = ref(false);
 const activePlatform = ref("");
+// Aviso de tela tem X e volta enquanto a causa durar (dono, 02/11): fechado, some até a
+// próxima prévia; se a causa continuar, a prévia seguinte traz o aviso de novo.
+const dismissedBlockers = ref<string[]>([]);
+const visibleBlockers = computed(() =>
+  (preview.value?.publish_blockers ?? []).filter(
+    (blocker) => !dismissedBlockers.value.includes(blocker.code),
+  ),
+);
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 let controller: AbortController | null = null;
@@ -185,6 +196,7 @@ async function load(requestEpoch: number) {
     );
     if (requestEpoch !== epoch) return;
     preview.value = result;
+    dismissedBlockers.value = [];
     const available = Object.keys(result.previews || {});
     if (!available.includes(activePlatform.value))
       activePlatform.value = available[0] || "";
@@ -410,6 +422,19 @@ const simulatedScenes = computed(() =>
         :title="`${platformLabels[platform] || platform} fica fora desta prévia.`"
         :description="trouble.detail"
         :data-preview-platform-problem="platform"
+      />
+      <NuxtAlert
+        v-for="blocker in visibleBlockers"
+        :key="blocker.code"
+        class="mt-2"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-link-2-off"
+        :title="blocker.detail"
+        :description="blocker.field_detail"
+        close
+        :data-preview-publish-blocker="blocker.code"
+        @update:open="dismissedBlockers = [...dismissedBlockers, blocker.code]"
       />
       <NuxtTabs
         v-if="platformTabs.length > 1"
