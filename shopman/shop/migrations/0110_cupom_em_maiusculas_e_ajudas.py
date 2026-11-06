@@ -23,7 +23,7 @@ def cupons_em_maiusculas(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('shop', '0108_pos_venda_sem_conexao'),
+        ('shop', '0109_expediente_da_equipe'),
     ]
 
     operations = [
