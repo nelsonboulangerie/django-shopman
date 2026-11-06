@@ -199,7 +199,12 @@ const stubs = {
   // O cabeçalho é dele mesmo (testado à parte); aqui ele só repassa os recortes
   // e os controles que a grade põe nele.
   ProductionHeader: {
-    template: '<div><slot name="actions" /><slot name="filters" /></div>',
+    template: '<div><slot name="actions" /><slot name="filter-panel" :compact="false" /><slot name="filters" /></div>',
+  },
+  // O filtro único do kit (o da mesa, aqui): as dimensões que ele leva.
+  OperatorFilterPanel: {
+    props: ["modelValue", "dimensions", "trigger", "chips"],
+    template: '<div data-filter-panel-stub :data-dimensions="dimensions.map((d) => d.id).join(\',\')" />',
   },
   OperatorPeriodPicker: true,
   OperatorMoreMenu: OperatorMoreMenuStub,
@@ -634,6 +639,8 @@ describe("ProductionStageGrid — Planejamento: conjunto sem ressalva e recortes
     expect(chip("Com ressalva").text()).toBe("Com ressalva 1");
     expect(chip("Planejados").text()).toBe("Planejados 1");
     expect(chip("Todos").attributes("aria-selected")).toBe("true");
+    // Na mesa a Situação é a faixa: o painel não a repete (um lugar por recorte).
+    expect(w.find("[data-filter-panel-stub]").attributes("data-dimensions")).not.toContain("state");
 
     await chip("Com ressalva").trigger("click");
     expect(chip("Com ressalva").attributes("aria-selected")).toBe("true");

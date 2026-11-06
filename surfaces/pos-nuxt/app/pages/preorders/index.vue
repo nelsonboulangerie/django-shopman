@@ -20,7 +20,10 @@
 //                       últimos dias, personalizado; ‹ › e a data) e o painel de
 //                       filtros único da suíte (`OperatorFilterPanel`): o resto mora
 //                       nos filtros completos, e os favoritos são do balcão
-//                       (`pos`/`preorders`). Na mesa, grade ou lista e, no fim, a
+//                       (`pos`/`preorders`). No celular (filtro único da suíte, dono
+//                       04/11/2026) os recortes de todo dia são os filtros rápidos do
+//                       painel, aberto pelo ícone da linha do chão, e o Período fica
+//                       numa faixa logo abaixo. Na mesa, grade ou lista e, no fim, a
 //                       leitura: "Hoje" (o que falta para o dia, sempre de hoje) e o
 //                       resumo do período. Durante a busca os recortes e o Período
 //                       saem (a busca não tem período) e entra "Incluir concluídas".
@@ -83,6 +86,7 @@ import {
   periodSummaryLabel,
   preorderCountLabel,
   printPlan,
+  QUICK_FILTERS,
   quickFilterItems,
   quickKeysOf,
   searchCompletedHeading,
@@ -474,39 +478,35 @@ function refreshAll() {
     @refresh="refreshAll"
     @compact-clear="compactClear"
   >
-    <!-- O recorte inteiro no Filtros da linha do chão (celular). -->
-    <template #compact-filters>
-      <template v-if="!searching">
-        <OperatorPeriodPicker
-          v-model="periodSelection"
-          :presets="PREORDERS_PERIOD_PRESETS"
-          custom
-          :max-span-days="PREORDERS_MAX_SPAN_DAYS"
-          :today="today"
-          label="Período das encomendas"
-          data-compact-period
-        />
-        <OperatorQuickFilters
-          v-if="list && list.count"
-          v-model="quickModel"
-          :items="quickItems"
-          multiple
-          label="Recortes"
-          surface="pos"
-          screen="preorders"
-          :query="panelQuery"
-          data-compact-quick
-          @apply="applyFavorite"
-        />
-        <OperatorFilterPanel
-          v-if="list && list.count"
-          v-model="activePanel"
-          :dimensions="dimensions"
-          surface="pos"
-          screen="preorders"
-          data-compact-panel
-        />
-      </template>
+    <!-- O filtro único da suíte no celular (dono, 04/11/2026): o ícone na linha do chão,
+         antes da busca, com o número no canto, como o sino. Na mesa os recortes de todo
+         dia têm a faixa de um toque; aqui eles são os filtros rápidos do painel. -->
+    <template v-if="!searching && list && list.count" #compact-filter-panel>
+      <OperatorFilterPanel
+        v-model="activePanel"
+        :dimensions="dimensions"
+        :quick="[...QUICK_FILTERS]"
+        trigger="icon"
+        :chips="false"
+        surface="pos"
+        screen="preorders"
+        data-compact-panel
+      />
+    </template>
+    <!-- O período (que dia é a tela) segue à vista no celular, logo abaixo da linha; na
+         busca, "Incluir concluídas" toma o lugar dele. -->
+    <template #compact-primary>
+      <OperatorPeriodPicker
+        v-if="!searching"
+        v-model="periodSelection"
+        compact
+        :presets="PREORDERS_PERIOD_PRESETS"
+        custom
+        :max-span-days="PREORDERS_MAX_SPAN_DAYS"
+        :today="today"
+        label="Período das encomendas"
+        data-compact-period
+      />
       <NuxtSwitch v-else v-model="includeCompleted" label="Incluir concluídas" />
     </template>
     <!-- HOJE no celular (dono, 03/11/2026: "só indicadores, e o toque mostra mais"): uma
