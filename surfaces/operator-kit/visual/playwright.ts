@@ -111,6 +111,33 @@ export async function captureOperatorEvidence(
 }
 
 /**
+ * Espera as animações finitas da tela terminarem antes de medir.
+ *
+ * O Modal do Nuxt UI entra com `scale-in` (200 ms, opacidade 0 → 1), e o gate de login
+ * vive dentro dele. O axe mede o contraste com a opacidade do momento: no WebKit ele
+ * chegou a rodar com o diálogo a ~94% e leu o latão do Entrar (#8b6b2e, 4,95:1 com o
+ * texto branco) como #92743a a 4,35:1 (fila do #2145, 06/11/2026). Medir no meio de uma
+ * entrada é medir uma cor que a tela não tem. Animação infinita (spinner, anel de
+ * timer) fica de fora: ela não termina e não é de entrada.
+ */
+export async function waitForAnimationsToSettle(page: Page) {
+  await page.evaluate(async () => {
+    const finite = document
+      .getAnimations()
+      .filter((animation) => {
+        const end = Number(animation.effect?.getComputedTiming().endTime);
+        // Só a que está rodando: pausada nunca resolve `finished` e prenderia o teste.
+        return animation.playState === "running" && Number.isFinite(end);
+      });
+    // `allSettled`: animação cancelada (o Vue desmontou o nó) também conta como acabada.
+    await Promise.allSettled(finite.map((animation) => animation.finished));
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
+}
+
+/**
  * Barreira comum entre "a página hidratou" e "a cena está pronta para ser
  * avaliada". O marcador pertence ao app e só muda para `ready` depois dos dados
  * que definem a cena; `subject` protege uma interação (por exemplo um diálogo)
