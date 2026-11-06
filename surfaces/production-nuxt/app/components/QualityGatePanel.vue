@@ -56,6 +56,12 @@ const view = defineModel<View>("view", { default: "pending" });
 const showAllClean = ref(false);
 
 const gate = computed(() => qualityGate(props.orders));
+// Quem não pode confirmar nem corrigir não vê botões mortos nem a promessa
+// "Você confirma como responsável" (beta 05/11): vê quem confirma.
+const MANAGER_ONLY_TEXT = "Quem confirma a qualidade é o gerente. Chame quem está de turno.";
+const managerOnly = computed(
+  () => props.orders.length > 0 && props.orders.every((order) => !order.can_correct),
+);
 const pendingCount = computed(
   () => gate.value.clean.length + gate.value.exceptions.length,
 );
@@ -235,7 +241,14 @@ function closedLine(order: QCOrderCardProjection): string {
             </div>
           </div>
 
-          <div class="grid gap-2">
+          <p
+            v-if="managerOnly"
+            class="text-center text-sm text-muted-foreground"
+            data-quality-manager-only
+          >
+            {{ MANAGER_ONLY_TEXT }}
+          </p>
+          <div v-else class="grid gap-2">
             <NuxtButton
               size="xl"
               block
@@ -361,7 +374,14 @@ function closedLine(order: QCOrderCardProjection): string {
             </span>
           </p>
 
-          <div class="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
+          <p
+            v-if="managerOnly"
+            class="text-sm text-muted-foreground"
+            data-quality-manager-only
+          >
+            {{ MANAGER_ONLY_TEXT }}
+          </p>
+          <div v-else class="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
             <NuxtButton
               color="neutral"
               variant="outline"

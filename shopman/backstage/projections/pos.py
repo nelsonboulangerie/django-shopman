@@ -1358,7 +1358,7 @@ def _fulfillment_options(fulfillment_types: tuple[str, ...]) -> tuple[POSFulfill
             options.append(POSFulfillmentOptionProjection(
                 ref="pickup",
                 label="Retirada",
-                description="Retirada no balcão ou consumo local.",
+                description="O cliente retira no balcão.",
                 requires_address=False,
             ))
     return tuple(options)
@@ -1638,9 +1638,11 @@ def _pos_actions() -> tuple[Action, ...]:
             kind="query",
             label="Buscar cliente",
             priority="quiet",
-            method="GET",
-            href="/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}",
-            payload_schema={"query": {"phone": "string", "ref": "string"}},
+            # POST com o telefone no CORPO: na query string ele ia para o log de
+            # acesso e para o cache (beta test de 05/11/2026, PDV2-07).
+            method="POST",
+            href="/api/v1/backstage/pos/customer/lookup/",
+            payload_schema={"optional": ["phone", "ref"]},
             idempotency="none",
         ),
         Action(
@@ -2630,7 +2632,7 @@ def _kits_without_box(skus: list[str]) -> set[str]:
         return set()
 
 
-def _sold_out_skus(skus: list[str]) -> set[str]:
+def _sold_out_skus(skus: list[str], *, target_date=None) -> set[str]:
     """SKUs esgotados no escopo do canal do PDV — a MESMA leitura em lote que o
     storefront usa (``catalog_context.availability_for_skus`` → stockman), uma
     query para a grade inteira. Silencioso quando o stockman não responde: a
@@ -2644,6 +2646,9 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
     (``fulfillment_window.annotate`` → ``product_readiness``), que é cara por
     produto e que a grade do balcão deliberadamente não paga. Ver o comentário
     em ``shop/services/pos.py`` sobre o custo dessa pergunta.
+
+    ``target_date`` pergunta por OUTRO dia (a encomenda para amanhã): a mesma
+    régua por data da reserva que o salvamento usa (``stock_on_dates``).
     """
     if not skus:
         return set()
@@ -2655,7 +2660,7 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
             basic_availability,
         )
 
-        avail_map = availability_for_skus(skus, channel_ref=POS_CHANNEL_REF)
+        avail_map = availability_for_skus(skus, channel_ref=POS_CHANNEL_REF, target_date=target_date)
         sold_out: set[str] = set()
         for sku in skus:
             raw = avail_map.get(sku)
@@ -3273,6 +3278,24 @@ def customer_history_summary(customer_ref: str, *, limit: int = 5) -> dict:
     }
 
 
+def _pos_sold_out_on(day) -> list[str]:
+    """Os SKUs da grade do PDV sem saldo para ``day`` (encomenda para outro dia).
+
+    Beta test de 05/11/2026 (PDV2-04). A grade só sabia o esgotado de HOJE: na
+    encomenda para amanhã, o pão que acabou hoje não entrava, e o que a grade
+    deixava entrar o salvamento recusava ("não tem saldo para 07/11"). A grade
+    passa a ler a mesma régua por data do salvamento.
+    """
+    from shopman.offerman.models import ListingItem
+
+    skus = list(
+        ListingItem.objects.filter(
+            listing__ref=POS_CHANNEL_REF, is_published=True, is_sellable=True,
+        ).values_list("product__sku", flat=True).distinct()
+    )
+    return sorted(_sold_out_skus(skus, target_date=day))
+
+
 def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None) -> dict:
     """O "quando" do pedido, para a tela poder PERGUNTAR em vez de adivinhar.
 
@@ -3323,6 +3346,9 @@ def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None
         # Não deu para apurar a prontidão: a tela NÃO pode tratar isso como
         # "sem restrição" — todas as janelas voltam desabilitadas.
         "readiness_unavailable": bool(context.get("readiness_unavailable")),
+        # Outro dia: o que a grade NÃO deixa entrar naquela data (a régua da
+        # reserva). Hoje a grade já sabe pelo selo do próprio catálogo.
+        "sold_out_skus": _pos_sold_out_on(day) if day != today else [],
     }
 
 

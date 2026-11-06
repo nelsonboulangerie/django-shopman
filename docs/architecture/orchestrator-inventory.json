@@ -12055,6 +12055,8 @@
             "_reconcile_order_payment_to_total",
             "_reconcile_tenders_to_total",
             "_record_sale",
+            "_refuse_invalid_customer_phone",
+            "_refuse_invalid_customer_tax_id",
             "_refuse_pending_charge_on_fired_preorder",
             "_refuse_priceless_items",
             "_refuse_unpaid_preorder_fire",
@@ -12149,6 +12151,7 @@
           "responsibility": "contrato",
           "symbols": [
             "MAX_LINE_QTY",
+            "ORDER_NOTES_LIMIT",
             "POS_AUTHORSHIP_META_KEY",
             "POS_SALE_INTENT_PAYLOAD_KEYS",
             "POS_SALE_INTENT_PAYMENT_COLLECTIONS",

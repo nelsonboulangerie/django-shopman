@@ -48,6 +48,7 @@ import {
   paymentConfirmView,
   paymentIcon,
   SPLIT_PRESETS,
+  splitBaseRemainingQ,
   splitShareQ,
   tenderLineView,
 } from "~/presentation/payment";
@@ -109,6 +110,8 @@ const props = defineProps<{
   managerUsername: string;
   managerPin: string;
   managerApprovalError: string;
+  /** O PIN do gerente está sendo conferido no servidor (`checkManager`). */
+  managerCheckBusy?: boolean;
   /** Quem pode assinar a exceção. Vazio = o diálogo cai no campo livre. */
   managers: POSManagerProjection[];
   /** Quem CONTINUA operando depois da assinatura do gerente. Ver OperatorManagerAuth. */
@@ -211,6 +214,13 @@ const emit = defineEmits<{
   addTender: [string];
   removeTender: [number];
   setSplitCount: [number];
+  /**
+   * Confere o PIN do gerente ANTES de seguir (beta test de 05/11/2026): o
+   * diálogo só fecha com `done(true)`. Recusado, ele fica aberto com o erro.
+   */
+  checkManager: [string, string, (ok: boolean) => void];
+  /** O diálogo do gerente fechou sem assinar: o erro velho não volta na próxima abertura. */
+  managerAuthDismissed: [];
   selectTender: [number];
   /** Numpad edits the SELECTED tender; decimal entry (reais first, comma → centavos). */
   tenderDigit: [string];
@@ -406,7 +416,13 @@ const digitKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 // com as notas BR como fallback; cada toque SOMA na linha de dinheiro
 // selecionada (o primeiro toque sobre valor automático substitui).
 const cashNotesQ = computed(() => contractCashNotesQ(props.checkoutContract));
-const cashSelected = computed(() => props.selectedTenderMethod === "cash");
+// Na retirada não se conta nota nenhuma agora: as cédulas são de quem recebe já.
+const cashSelected = computed(() => props.selectedTenderMethod === "cash" && props.paymentCollection !== "on_delivery");
+/** O rótulo do total: o que se cobra agora, ou o que se recebe na retirada/entrega. */
+const totalLabel = computed(() => {
+  if (props.paymentCollection !== "on_delivery") return "Total a cobrar";
+  return props.fulfillmentType === "delivery" ? "A receber na entrega" : "A receber na retirada";
+});
 
 // De onde a taxa saiu, em português de balcão. Quem cobra é a loja; a frase
 // existe para o operador saber DIZER isso ao cliente, em vez de repetir um
@@ -512,7 +528,10 @@ function setReceiptChannel(ref: string, on: boolean) {
 const payState = computed<"pending" | "idle" | "short" | "change" | "ready">(() => {
   // Troco, restante e "coberto" são contas sobre o total: sem ele, nenhum vale.
   if (!props.review) return "pending";
-  if (props.paymentChangeQ > 0) return "change";
+  // Na retirada (ou na entrega) nada é recebido agora: não há troco nesta tela.
+  // O troco de quem leva mora no "Troco para quanto?" (beta test de 05/11/2026:
+  // "TROCO R$ 23,00" numa encomenda que só se paga na retirada).
+  if (props.paymentChangeQ > 0) return props.paymentCollection === "on_delivery" ? "ready" : "change";
   if (props.paymentCovered) return "ready";
   if (props.paymentTenders.length) return "short";
   return "idle";
@@ -553,7 +572,12 @@ const splitBadge = computed(() => (
 /** Quanto ficaria cada parte se a conta fosse dividida em `n` — preview do modal. */
 function splitShareLabel(n: number): string {
   if (!props.review) return "calculando";
-  return formatBRL(splitShareQ(props.paymentTotalQ, n, props.splitPaidCount, props.paymentRemainingQ));
+  return formatBRL(splitShareQ(
+    props.paymentTotalQ,
+    n,
+    props.splitPaidCount,
+    splitBaseRemainingQ(props.paymentTenders, props.paymentTotalQ, props.paymentRemainingQ),
+  ));
 }
 
 // O RESUMO DO PEDIDO — o que está sendo cobrado. No checkout o operador via só
@@ -717,7 +741,14 @@ function onSplitKeydown(event: KeyboardEvent) {
   const n = splitCountFromKey(event.key);
   if (n === null) return;
   if (n === 0 ? !splitActive.value : hasLinkTender.value || hasPixProviderTestTender.value) return;
+  // A tecla é DESTE diálogo e morre aqui. Fechar o modal desmonta o diálogo
+  // antes de o evento chegar ao `window`, e o atalho global de pagamento
+  // (`globalKeysBlocked` consulta o DOM, que já não tem o diálogo) mandava o
+  // mesmo "2" para o valor da forma selecionada: Débito de R$ 12,00 virava
+  // R$ 2,00 (beta test de 05/11/2026).
   event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
   emit("setSplitCount", n);
   splitSheetOpen.value = false;
 }
@@ -977,7 +1008,13 @@ const ctaBlock = computed<{
       action: { label: "Preencher", run: () => { focusByAriaLabel("E-mail que recebe a nota"); } },
     };
   }
-  if (!props.paymentTenders.length) return { message: "Escolha a forma de pagamento." };
+  if (!props.paymentTenders.length) {
+    return {
+      message: onDelivery.value
+        ? `Escolha como o cliente vai pagar na ${props.fulfillmentType === "delivery" ? "entrega" : "retirada"}.`
+        : "Escolha a forma de pagamento.",
+    };
+  }
   // `preorder_fired_unpaid` — a gêmea. Encomenda que já está na cozinha não
   // valida com Pix ou link pendentes (encomenda cobra antes).
   if (firedPreorderBlocksPendingCharge({
@@ -1221,11 +1258,19 @@ function proceed() {
   emit("submit");
 }
 function onManagerAuthorize(username: string, pin: string) {
-  emit("update:managerUsername", username);
-  emit("update:managerPin", pin);
-  managerAuthOpen.value = false;
-  proceed();
+  // O PIN é conferido AQUI, com o diálogo aberto: errado, o erro aparece nele
+  // e nada adiante (maquininha, "Recebi o Pix") chegou a acontecer.
+  emit("checkManager", username, pin, (ok) => {
+    if (!ok) return;
+    emit("update:managerUsername", username);
+    emit("update:managerPin", pin);
+    managerAuthOpen.value = false;
+    proceed();
+  });
 }
+watch(managerAuthOpen, (open, wasOpen) => {
+  if (wasOpen && !open && props.managerApprovalError) emit("managerAuthDismissed");
+});
 function onMachineConfirmed() {
   machineConfirmOpen.value = false;
   if (pixTenders.value.length) emit("confirmPix");
@@ -1720,12 +1765,15 @@ defineExpose({
                 block
                 :icon="kitchenLine.icon.replace('lucide:', 'i-lucide-')"
                 trailing-icon="i-lucide-chevron-right"
-                :label="kitchenLine.message"
-                class="min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
-                :ui="{ leadingIcon: `size-4 ${kitchenLine.accent || 'text-muted'}`, trailingIcon: 'ms-auto size-4 text-muted', label: 'text-left' }"
+                class="h-auto min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
+                :ui="{ leadingIcon: `size-4 ${kitchenLine.accent || 'text-muted'}`, trailingIcon: 'ms-auto size-4 text-muted' }"
                 data-checkout-kitchen
                 @click="kitchenOpen = true"
-              />
+              >
+                <!-- No slot, e não no `label`: o rótulo do botão corta numa linha, e
+                     "Ao finalizar, o item vai…" saía cortado em 1024 px (PDV-16). -->
+                <span class="min-w-0 flex-1 text-left whitespace-normal" data-checkout-kitchen-message>{{ kitchenLine.message }}</span>
+              </NuxtButton>
             </li>
             <li
               v-for="note in plainLineNotices"
@@ -1783,14 +1831,14 @@ defineExpose({
              recolhe para uma linha de conferência. -->
         <section
           class="flex min-h-0 flex-1 flex-col items-center justify-center text-center"
-          :aria-label="payState === 'change' ? 'Troco' : 'Total a cobrar'"
+          :aria-label="payState === 'change' ? 'Troco' : totalLabel"
           :aria-busy="payState === 'pending' && !reviewFailed ? 'true' : undefined"
           aria-live="polite"
           data-pos-total
           :data-pos-total-state="review ? 'confirmed' : reviewFailed ? 'failed' : 'calculating'"
         >
           <p class="text-xs font-medium uppercase tracking-wide" :class="payState === 'change' ? 'text-primary' : 'text-muted-foreground'">
-            {{ payState === "change" ? "Troco" : "Total a cobrar" }}
+            {{ payState === "change" ? "Troco" : totalLabel }}
           </p>
           <!-- Sem a revisão do servidor, NENHUM número no lugar do total: o
                que aparece é o estado (ver `needsReview`). -->
@@ -1881,7 +1929,7 @@ defineExpose({
                nem encolhe sozinho, o valor VAZAVA por cima do botão Validar, na
                coluna vizinha. Quebrando, o número desce para a própria linha em
                vez de invadir o botão que fecha a venda. -->
-          <div v-if="payState !== 'change'" class="mt-2 flex flex-wrap items-baseline justify-between gap-x-2 px-1">
+          <div v-if="payState !== 'change' && paymentCollection !== 'on_delivery'" class="mt-2 flex flex-wrap items-baseline justify-between gap-x-2 px-1">
             <span class="shrink-0 text-sm font-medium uppercase tracking-wide text-muted-foreground">Restante</span>
             <strong
               class="ml-auto text-3xl font-bold tabular-nums"
@@ -2520,7 +2568,7 @@ defineExpose({
     :house-account-limit="review?.house_account_limit"
     :operator-name="operatorName || ''"
     :managers="managers"
-    :busy="loading"
+    :busy="loading || managerCheckBusy"
     :error="managerApprovalError"
     @authorize="onManagerAuthorize"
   />

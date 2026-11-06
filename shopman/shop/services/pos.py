@@ -226,9 +226,9 @@ def _clean_tab_ref(value: str) -> str:
     if not raw:
         raise ValueError("Informe uma referência de comanda.")
     if len(raw) > _TAB_REF_MAX_LENGTH:
-        raise ValueError(f"Informe uma comanda com até {_TAB_REF_MAX_LENGTH} caracteres.")
+        raise ValueError(f"O nome da comanda vai até {_TAB_REF_MAX_LENGTH} letras.")
     if any(ch in _TAB_REF_DISALLOWED or ord(ch) < 32 for ch in raw):
-        raise ValueError("A referência da comanda não pode conter barras ou caracteres de URL.")
+        raise ValueError("O nome da comanda não leva / \\ ? # nem %.")
     return raw
 
 
@@ -3879,30 +3879,28 @@ def _stamp_engine_prices(
 def _stamp_tab_engine_prices(
     payload: dict, session, *, channel: Channel, config: ChannelConfig, operator_username: str,
 ) -> None:
-    """Comanda: o preço da linha é o do MOTOR, não o do corpo, com ou sem desconto manual.
+    """Comanda: o preço de cada linha é o do MOTOR, nunca o que o corpo declarou.
 
-    Sem desconto manual, a revisão preenchia a linha sem preço com a ETIQUETA da
-    sessão e o fechamento aceitava o preço que a tela declarava: com uma promoção
-    automática na comanda, a revisão cobrava R$ 43,00, o fechamento R$ 33,00, e a
-    venda recusava ``total_changed`` a cada Enter (beta 05/11/2026, ge:PDV-02).
-    Revisão e fechamento passam pelo mesmo motor e leem o mesmo número.
+    Duas contas dependem disso, e as duas erravam quando o preço vinha do navegador.
 
-    O portão do gerente mede o desconto de linha como ``subtotal - o que o motor
-    cobra`` (``_stamp_engine_manual_discounts``), e o subtotal sai do
-    ``unit_price_q`` das linhas. Na venda sem comanda esse preço é o do motor
-    (``_stamp_engine_prices``); na comanda ele era o que o navegador declarou, e
-    ``_stamp_list_prices_from_session`` só preenche o que falta. Um corpo com
-    R$ 4,00 num pão de R$ 12,00 em cortesia de 100% media R$ 4,00 de desconto,
-    abaixo do limite, e a venda saía de graça sem gerente: o total do motor
-    (zero) batia com o selo do fechamento (auditoria de 03/11/2026).
+    - O total da comanda (beta test de 05/11/2026, P0). O PDV manda a etiqueta
+      em ``unit_price_q``, e ``_stamp_list_prices_from_session`` só preenche o
+      que falta. Com promoção automática no ar (Semana do Pão −15%), a revisão
+      somava a etiqueta (R$ 18,00), o selo do fechamento conferia contra o motor
+      (R$ 15,30) e recusava com "O total mudou" em toda tentativa: a comanda não
+      fechava nunca.
+    - O portão do gerente. Ele mede o desconto de linha como ``subtotal - o que o
+      motor cobra`` (``_stamp_engine_manual_discounts``). Um corpo com R$ 4,00
+      num pão de R$ 12,00 em cortesia de 100% media R$ 4,00 de desconto, abaixo
+      do limite, e a venda saía de graça sem gerente (auditoria de 03/11/2026).
 
-    O remédio é a mesma sonda da venda sem comanda, com a política de preço da
-    comanda: cada linha passa a valer o preço do motor ANTES do desconto manual
-    (promoção, Xepa e grupo do cliente já aplicados), e o desconto medido é só o
-    que o operador deu. Quando a comanda gravada já é este carrinho e o manual
-    não venceu nenhuma linha, o preço sai da própria sessão, sem sonda
-    (``_stamp_tab_prices_from_engine_lines``). A venda feita sem conexão não passa
-    por aqui: nela vale o cobrado (decisão D, 10/10/2026).
+    O remédio é o mesmo da venda sem comanda (``_stamp_engine_prices``), com a
+    política de preço da comanda: cada linha vale o preço do motor ANTES do
+    desconto manual (promoção, Xepa e grupo do cliente já aplicados). Quando a
+    comanda gravada já é este carrinho e nenhum manual venceu linha, o preço sai
+    da própria sessão, sem sonda (``_stamp_tab_prices_from_engine_lines``). A
+    venda feita sem conexão não passa por aqui: nela vale o cobrado (decisão D,
+    10/10/2026).
     """
     if session is None:
         return
@@ -5556,6 +5554,7 @@ def resolve_or_create_customer(
         from shopman.shop.services.pos_receipt_identity import resolve_receipt_identity
 
         return resolve_receipt_identity(receipt_identity_action, operator_username=operator_username)
+    _refuse_invalid_customer_phone(phone)
     return _persist_customer_from_payload(
         {
             "customer_ref": ref,
@@ -5569,6 +5568,47 @@ def resolve_or_create_customer(
         },
         operator_username=operator_username,
     )
+
+
+def _refuse_invalid_customer_tax_id(tax_id: str) -> None:
+    """CPF/CNPJ com dígito errado não vira cadastro (beta test de 05/11/2026).
+
+    A venda já recusava (``parse_pos_sale_intent``), mas o "Cadastrar cliente"
+    gravava antes: o cadastro nascia com ``11111111111`` e a venda recusava
+    depois, com o lixo já no CRM. A recusa vem antes de qualquer escrita e antes
+    da conferência de duplicado.
+    """
+    if not tax_id:
+        return
+    from shopman.utils.documents import is_valid_tax_id
+
+    if not is_valid_tax_id(tax_id):
+        raise PosIntentError(
+            code="invalid_customer_tax_id",
+            message="CPF/CNPJ inválido: confira os dígitos.",
+            field="customer_tax_id",
+            focus="customer_tax_id",
+            recovery="Corrija o documento ou deixe o campo vazio.",
+        )
+
+
+def _refuse_invalid_customer_phone(raw_phone: str) -> None:
+    """WhatsApp que não é telefone não some calado do cadastro.
+
+    ``_normalize_phone("123")`` devolve vazio, e o cadastro nascia sem contato
+    nenhum, com o operador achando que tinha salvo o WhatsApp.
+    """
+    raw = str(raw_phone or "").strip()
+    if not raw or "@" in raw or not _digits(raw):
+        return
+    if not _normalize_phone(raw):
+        raise PosIntentError(
+            code="invalid_customer_phone",
+            message="WhatsApp inválido: digite o DDD e o número.",
+            field="customer_phone",
+            focus="customer_phone",
+            recovery="Corrija o número ou deixe o campo vazio.",
+        )
 
 
 def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> dict:
@@ -5638,6 +5678,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
 
     if not any((raw_ref, name, phone, fill_tax_id, fill_email, address)):
         return {}
+    _refuse_invalid_customer_tax_id(tax_id)
 
     try:
         from shopman.guestman.models import ContactPoint, Customer

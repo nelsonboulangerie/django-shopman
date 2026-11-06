@@ -283,22 +283,22 @@ watch(
       <OperatorFormSection class="rounded-md border bg-card p-4" section-key="identity" title="Identificação" description="A empresa, do jeito que ela aparece na nota.">
         <div class="grid gap-3 sm:grid-cols-2">
           <NuxtFormField label="Referência" :required="isDuplicate" description="Identificador curto, sem acento. Vazio gera do nome.">
-            <NuxtInput v-model="form.ref" :disabled="isEdit" class="w-full" placeholder="moinho-sp" data-testid="supplier-ref" data-focus-control />
+            <NuxtInput v-model="form.ref" :disabled="isEdit" class="w-full" placeholder="ex.: moinho-sp" data-testid="supplier-ref" data-focus-control />
           </NuxtFormField>
           <NuxtFormField label="Razão social" required>
-            <NuxtInput v-model="form.name" class="w-full" placeholder="Moinho São Paulo Ltda." data-testid="supplier-name" />
+            <NuxtInput v-model="form.name" class="w-full" placeholder="ex.: Moinho São Paulo Ltda." data-testid="supplier-name" />
           </NuxtFormField>
           <NuxtFormField label="Nome fantasia" description="Como a casa chama no dia a dia.">
-            <NuxtInput v-model="form.tradeName" class="w-full" placeholder="Moinho SP" data-testid="supplier-trade-name" />
+            <NuxtInput v-model="form.tradeName" class="w-full" placeholder="ex.: Moinho SP" data-testid="supplier-trade-name" />
           </NuxtFormField>
           <NuxtFormField label="CNPJ/Documento">
-            <NuxtInput v-model="form.document" class="w-full" placeholder="12.345.678/0001-90" data-testid="supplier-document" />
+            <NuxtInput v-model="form.document" class="w-full" placeholder="CNPJ ou CPF" data-testid="supplier-document" />
           </NuxtFormField>
           <NuxtFormField label="E-mail da central">
-            <NuxtInput v-model="form.email" class="w-full" type="email" placeholder="compras@fornecedor.com.br" />
+            <NuxtInput v-model="form.email" class="w-full" type="email" placeholder="ex.: compras@fornecedor.com.br" />
           </NuxtFormField>
           <NuxtFormField label="Telefone da central">
-            <NuxtInput v-model="form.phone" class="w-full" placeholder="(43) 3333-0000" />
+            <NuxtInput v-model="form.phone" class="w-full" placeholder="DDD e número" />
           </NuxtFormField>
           <div class="flex items-center sm:col-span-2">
             <NuxtCheckbox v-model="form.isActive" label="Ativo" description="Inativo sai dos pedidos, sem apagar o histórico." />
@@ -309,10 +309,10 @@ watch(
       <OperatorFormSection v-if="!isDuplicate" class="rounded-md border bg-card p-4" section-key="commercial" title="Condições comerciais" description="O que o pedido de compra e a reposição usam.">
         <div class="grid gap-3 sm:grid-cols-2">
           <NuxtFormField label="Prazo de entrega (dias)">
-            <NuxtInput v-model="form.leadTimeDaysText" class="w-full" inputmode="numeric" placeholder="3" data-testid="supplier-lead-time" />
+            <NuxtInput v-model="form.leadTimeDaysText" class="w-full" inputmode="numeric" placeholder="ex.: 3" data-testid="supplier-lead-time" />
           </NuxtFormField>
           <NuxtFormField label="Condição de pagamento">
-            <NuxtInput v-model="form.paymentTerm" class="w-full" placeholder="28 dias" data-testid="supplier-payment-term" />
+            <NuxtInput v-model="form.paymentTerm" class="w-full" placeholder="ex.: 28 dias" data-testid="supplier-payment-term" />
           </NuxtFormField>
           <div class="sm:col-span-2">
             <NuxtCheckbox

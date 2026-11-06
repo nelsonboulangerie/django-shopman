@@ -91,3 +91,22 @@ it("edição de encomenda: a barra não repete a ref e o cliente fica numa linha
   expect(w.find("[data-pos-tab-title] h1").classes()).toContain("truncate");
   w.unmount();
 });
+
+it("PDV2-21: o nome da comanda diz no campo o que não leva, em vez de o servidor recusar depois", async () => {
+  const w = await mountSuspended(PosTabHeader, { props: {
+    salesMode: "counter", tabDisplay: "7", hasOpenTab: true, canRename: true,
+    customerName: "", customerPhone: "", customerTaxId: "", customerEmail: "", customerLookup: null,
+    lookupBusy: false, searchResults: [], searchBusy: false, fulfillmentType: "pickup",
+    fulfillmentLabel: "Retirada", scheduleLabel: "Para hoje", scheduled: false, loading: false,
+    tabMaxLength: 64, tabDisallowedChars: ["/", "\\", "?", "#", "%"],
+  }, global: { stubs: { PosCustomerModal: true } } });
+  await w.find('[aria-label="Renomear comanda"]').trigger("click");
+  const input = w.find("[data-pos-tab-rename] input");
+  expect(input.attributes("maxlength")).toBe("64");
+  await input.setValue("Mesa 7/8");
+  expect((input.element as HTMLInputElement).value).toBe("Mesa 78");
+  expect(w.find("[data-pos-tab-rename-hint]").text()).toBe("O nome da comanda não leva /.");
+  await input.setValue("Mesa 78");
+  expect(w.find("[data-pos-tab-rename-hint]").exists()).toBe(false);
+  w.unmount();
+});

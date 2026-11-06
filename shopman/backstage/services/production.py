@@ -112,6 +112,8 @@ class MissingMaterial:
     sku: str
     needed: Decimal
     available: Decimal
+    #: Unidade da ficha em que ``needed`` e ``available`` foram comparados.
+    unit: str = ""
 
     @property
     def shortage(self) -> Decimal:
@@ -3198,12 +3200,27 @@ def apply_finish(
             if yield_anchor is None:
                 yield_anchor = Decimal(str(work_order.quantity))
             yield_deviation = reported_quantity - yield_anchor
-            if yield_deviation < 0:
-                raise ProductionError(
-                    "A quantidade total deve incluir toda perda do lote. "
-                    "Classifique o déficit com quantidade e motivo."
-                )
             deviation_context = None
+            if yield_deviation < 0:
+                # Rendeu menos que o previsto (beta 05/11): a diferença não é
+                # perda de qualidade nem estoque. Fica no evento, com o motivo
+                # e o nome de quem confirmou; sem eles, recusa.
+                deviation_reason = str(yield_deviation_reason or "").strip()
+                if yield_deviation_confirmed is not True or not deviation_reason:
+                    raise ProductionError(
+                        "O total ficou abaixo do previsto. Lance a perda com o motivo, "
+                        "ou confirme que rendeu menos e diga por quê."
+                    )
+                deviation_context = {
+                    "kind": "yield_shortfall",
+                    "anchor_qty": _qty(yield_anchor),
+                    "reported_qty": _qty(reported_quantity),
+                    "saleable_qty": _qty(saleable_quantity),
+                    "deviation_qty": _qty(-yield_deviation),
+                    "confirmed": True,
+                    "reason": deviation_reason,
+                    "actor": str(actor or ""),
+                }
             if yield_deviation > 0:
                 deviation_reason = str(yield_deviation_reason or "").strip()
                 if yield_deviation_confirmed is not True:
@@ -4022,11 +4039,13 @@ def check_finish_materials(work_order) -> list[MissingMaterial]:
         # evidence of sufficient stock and must fail closed in every mode.
         raise ProductionError(f"Falha ao consultar estoque de insumos: {exc}") from exc
 
+    units_by_sku = {need.sku: need.unit for need in material_needs}
     return [
         MissingMaterial(
             sku=status.sku,
             needed=status.needed,
             available=status.available,
+            unit=units_by_sku.get(status.sku, ""),
         )
         for status in result.materials
         if not status.sufficient

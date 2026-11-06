@@ -991,6 +991,8 @@ export interface POSScheduleResponse {
   is_today: boolean;
   /** Não deu para apurar a prontidão — NÃO é "sem restrição". */
   readiness_unavailable: boolean;
+  /** Outro dia: os SKUs da grade sem saldo NAQUELA data (vazio para hoje). */
+  sold_out_skus?: string[];
 }
 
 /** A renúncia de frete que a loja aplicou (P2-21). `promotion`: a promoção

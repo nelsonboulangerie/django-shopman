@@ -304,3 +304,22 @@ def test_bloquear_da_central_trava_o_dispositivo_e_qualquer_destrave_libera(
     )
     assert client.get(session_url).json()["locked"] is False
     assert client.get(board).status_code == 200
+
+
+@pytest.mark.django_db
+def test_bi_session_says_whether_the_operator_audits_the_cash(client, balcao):
+    """ge:BI-07: o B.I. esconde o Caixa de quem não audita, pela persona da antessala."""
+    gerente = User.objects.create_user("gerente-bi", password="x", is_staff=True)
+    PinCredential.set_for(gerente, "4321")
+    gerente = _grant(gerente, "view_bi")
+    permission = "backstage.view_bi"
+    unlocked = client.post(
+        reverse("api-backstage-operator-unlock"),
+        {"operator_id": gerente.pk, "pin": "4321", "perm": permission},
+        content_type="application/json",
+    )
+    assert unlocked.status_code == 200
+    assert client.get(reverse("api-backstage-operator-session"), {"perm": permission}).json()["surface_role"] == "reader"
+
+    _grant(gerente, "audit_shift", app="cashman")
+    assert client.get(reverse("api-backstage-operator-session"), {"perm": permission}).json()["surface_role"] == "cash_auditor"

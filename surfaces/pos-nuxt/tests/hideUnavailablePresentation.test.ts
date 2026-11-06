@@ -9,6 +9,7 @@ import {
   hideUnavailableProducts,
   isUnavailableProduct,
   parseHideUnavailable,
+  productsForOrderDate,
 } from "../app/presentation/catalog";
 
 function product(overrides: Partial<POSProductProjection> & { sku: string }): POSProductProjection {
@@ -80,5 +81,30 @@ describe("presentation/catalog — ocultar indisponíveis", () => {
     expect(parseHideUnavailable("0")).toBe(false);
     expect(parseHideUnavailable(null)).toBe(false);
     expect(parseHideUnavailable("true")).toBe(false);
+  });
+});
+
+describe("productsForOrderDate — a grade da encomenda lê o saldo do dia combinado", () => {
+  // Beta test de 05/11/2026 (PDV2-04): o esgotado de HOJE bloqueava a
+  // encomenda para amanhã, e o que a grade deixava entrar o salvamento recusava.
+  const amanha = { date: "2026-11-07", is_today: false, sold_out_skus: ["BAG"] };
+
+  it("o esgotado de hoje entra amanhã; o sem saldo amanhã sai com a data no motivo", () => {
+    const grade = productsForOrderDate([baguete, brioche], amanha, "2026-11-07");
+    expect(grade.find((p) => p.sku === "BRI")?.sold_out).toBe(false);
+    expect(grade.find((p) => p.sku === "BAG")).toMatchObject({ sold_out: true, sold_out_reason: "Sem saldo para 07/11" });
+  });
+
+  it("bloqueio com motivo do catálogo continua", () => {
+    const grade = productsForOrderDate([semCaixa], amanha, "2026-11-07");
+    expect(grade[0]).toBe(semCaixa);
+  });
+
+  it("sem a resposta da data escolhida, ou para hoje, a grade fica como está", () => {
+    const produtos = [baguete, brioche];
+    expect(productsForOrderDate(produtos, null, "2026-11-07")).toBe(produtos);
+    expect(productsForOrderDate(produtos, amanha, "2026-11-08")).toBe(produtos);
+    expect(productsForOrderDate(produtos, { ...amanha, is_today: true }, "2026-11-07")).toBe(produtos);
+    expect(productsForOrderDate(produtos, amanha, "")).toBe(produtos);
   });
 });

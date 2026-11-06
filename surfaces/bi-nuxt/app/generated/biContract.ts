@@ -185,6 +185,7 @@ export interface BISalesPrevious {
   revenue_total_q: number;
   average_ticket_q: number;
   revenue_by_day: number[];
+  partial_until: string;
 }
 
 /** Dia em que o nativo venceu e apagou histórico relevante — declarado, não mudo. */

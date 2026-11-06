@@ -43,6 +43,8 @@ import {
   paymentProofView,
   paymentRemainingQ,
   qrCodeSrc,
+  splitBaseRemainingQ,
+  splitDraftTender,
   splitHint,
   splitShareQ,
   tenderLineView,
@@ -1359,6 +1361,24 @@ describe("atalhos das formas de pagamento", () => {
     const keys = methodShortcuts([m("credit", "Crédito"), m("card", "Cartão")]);
     expect(keys).toEqual({ credit: "C" });
     expect(keys.card).toBeUndefined();
+  });
+});
+
+describe("dividir a conta depois de uma forma lançada sozinha", () => {
+  const rascunho = { method: "debit", amount_q: 1200, collection: "terminal" as const, _virgin: true };
+
+  it("a forma intocada com o total inteiro é rascunho: as prévias dividem o TOTAL", () => {
+    // Beta test de 05/11/2026: o modal oferecia "R$ 0,00" de 2 a 6 pessoas.
+    expect(splitDraftTender([rascunho], 1200)).toBe(rascunho);
+    expect(splitBaseRemainingQ([rascunho], 1200, 0)).toBe(1200);
+    expect(splitShareQ(1200, 2, 0, splitBaseRemainingQ([rascunho], 1200, 0))).toBe(600);
+  });
+
+  it("forma editada, parcial ou acompanhada não é rascunho", () => {
+    expect(splitDraftTender([{ ...rascunho, _virgin: false }], 1200)).toBeNull();
+    expect(splitDraftTender([{ ...rascunho, amount_q: 600 }], 1200)).toBeNull();
+    expect(splitDraftTender([rascunho, { ...rascunho, amount_q: 0 }], 1200)).toBeNull();
+    expect(splitBaseRemainingQ([{ ...rascunho, _virgin: false }], 1200, 0)).toBe(0);
   });
 });
 

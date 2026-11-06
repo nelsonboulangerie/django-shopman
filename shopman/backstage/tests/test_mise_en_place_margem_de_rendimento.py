@@ -22,7 +22,10 @@ import pytest
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrderItem
 
-from shopman.backstage.projections.production import build_production_mise_en_place
+from shopman.backstage.projections.production import (
+    build_production_mise_en_place,
+    build_production_weighing,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -66,9 +69,26 @@ class TestAMargemApareceComOMotivo:
         projection = build_production_mise_en_place(selected_date=date.today())
         massa_line = _line(projection, "MASSA-TRADICAO")
 
-        # 7 kg + 25 g de arredondamento + 150 g de masseira + ~8,66 g de folga
-        assert massa_line.quantity_display == "7183,66 g"
-        assert massa_line.margin_display == "+ 183,66 g de margem"
+        # 7 kg + 25 g de arredondamento + 150 g de masseira + ~8,66 g de folga,
+        # e o alvo sobe à divisão da balança (2 g), o mesmo do ticket "Por
+        # preparo" (beta 05/11: as duas abas mostravam números diferentes).
+        assert massa_line.quantity_display == "7184 g"
+        assert massa_line.margin_display == "+ 184 g de margem"
+
+    def test_por_preparo_e_por_insumo_mostram_o_mesmo_alvo(self, baguete):
+        """Beta 05/11: "Peso total 108 g" numa aba e "258 g + 156 g de margem"
+        na outra, para o mesmo preparo. O alvo é um só: necessidade + margem,
+        arredondado para cima à balança."""
+        craft.plan(baguete, 25, date=date.today())
+
+        line = _line(build_production_mise_en_place(selected_date=date.today()), "MASSA-TRADICAO")
+        ticket = next(
+            ticket
+            for ticket in build_production_weighing(selected_date=date.today()).tickets
+            if ticket.output_sku == "MASSA-TRADICAO"
+        )
+
+        assert ticket.output_quantity_display == line.quantity_display == "7184 g"
 
     def test_o_motivo_nomeia_as_tres_parcelas(self, baguete):
         """Três parcelas com formas diferentes; uma porcentagem só erraria as três."""
@@ -134,7 +154,7 @@ class TestOLedgerNaoLevaAMargem:
         plano = _line(
             build_production_mise_en_place(selected_date=date.today()), "MASSA-TRADICAO"
         )
-        assert plano.quantity_display == "7183,66 g"
+        assert plano.quantity_display == "7184 g"
 
         craft.start(wo, quantity=25)
         wo.refresh_from_db()

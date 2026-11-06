@@ -113,7 +113,7 @@ class TestMiseEnPlaceAggregation:
             mixer_loss_g_for,
         )
 
-        from shopman.backstage.projections.production import _preparation_measure
+        from shopman.backstage.projections.production import _preparation_measure, _scale_rounded
 
         massa = Recipe.objects.create(
             ref="massa",
@@ -158,8 +158,10 @@ class TestMiseEnPlaceAggregation:
 
         assert margin is not None
         assert projection.yield_margin_applied
-        assert line.quantity_display == _preparation_measure(Decimal("1") + margin.total, "kg")
-        assert line.margin_display == f"+ {_preparation_measure(margin.total, 'kg')} de margem"
+        # O alvo sobe à divisão da balança, como no ticket "Por preparo".
+        target = _scale_rounded(Decimal("1") + margin.total, "kg")
+        assert line.quantity_display == _preparation_measure(target, "kg")
+        assert line.margin_display == f"+ {_preparation_measure(target - Decimal('1'), 'kg')} de margem"
         assert "5 peças" in line.margin_reason
 
 

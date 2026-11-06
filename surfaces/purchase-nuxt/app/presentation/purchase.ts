@@ -211,6 +211,31 @@ export function invoiceProbe(raw: string) {
 }
 
 /**
+ * O aviso junto do campo quando o que se digitou é só número e não fecha os 44
+ * dígitos da chave. Antes a chave curta ia ao servidor e voltava num aviso que
+ * sumia (beta 05/11, CMP-10). QR e código de barras (com letras ou URL) passam
+ * direto: quem decide é a leitura.
+ */
+export function invoiceKeyHint(raw: string): string {
+  const text = raw.trim();
+  if (!text || /[^\d\s.\-/]/.test(text)) return "";
+  const digits = text.replace(/\D/g, "").length;
+  if (digits === 44) return "";
+  return digits > 44 ?
+      `A chave da NF tem 44 dígitos; aqui há ${digits}.`
+    : `A chave da NF tem 44 dígitos; faltam ${44 - digits}.`;
+}
+
+/**
+ * O começo de Receber (com NF ou sem NF) some só quando a entrada tem item. Digitar
+ * a chave ou a referência em papel não pode tirar as abas de baixo do dedo e
+ * subir a tela inteira (beta 05/11, CMP-10).
+ */
+export function receiptHasStarted(lines: readonly unknown[]): boolean {
+  return lines.length > 0;
+}
+
+/**
  * O número da NF lido da própria chave de acesso ("NF 12.884"), para o cabeçalho da
  * conferência. A chave de 44 dígitos traz o número nas posições 26 a 34 (layout
  * oficial: UF, AAMM, CNPJ, modelo, série, número, tipo de emissão, código, DV).
@@ -1087,11 +1112,33 @@ export function skuRoleBadges(roles: SkuRoles | undefined): string[] {
  */
 export function resaleCopy(unit: string, priceInput: string) {
   const byWeight = unit === "kg";
+  const error = moneyInputError(priceInput);
   return {
     priceLabel: byWeight ? "Preço por kg (R$)" : `Preço de venda (R$ por ${unit})`,
     reach: byWeight ? "Vendido só no balcão, por peso." : "Entra no PDV. Na loja online, só com foto.",
-    ready: parseMoneyInput(priceInput) > 0,
+    ready: !error && parseMoneyInput(priceInput) > 0,
+    // O motivo junto do campo: botão só apagado não diz o que falta (CMP-07, CMP-16).
+    error,
   };
+}
+
+/**
+ * Por que o valor digitado não serve, ou "" quando serve (ou está vazio).
+ * Dinheiro se guarda em centavos: 0,055 virava R$ 0,06 em silêncio, 9% acima do
+ * digitado (beta 05/11, CMP-07). O servidor recusa do mesmo jeito.
+ */
+export function moneyInputError(value: string): string {
+  const text = value.trim().replace(/[R$\s]/g, "");
+  if (!text) return "";
+  const normalized = text.includes(",") ? text.replace(/\./g, "").replace(",", ".") : text;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return "Escreva só o número, como 12,50.";
+  if (parsed <= 0) return "O preço precisa ser maior que zero.";
+  const decimals = normalized.includes(".") ? normalized.split(".")[1]!.length : 0;
+  if (decimals > 2) {
+    return `O valor guarda centavos: escreva até duas casas, como ${(Math.round(parsed * 100) / 100).toFixed(2).replace(".", ",")}.`;
+  }
+  return "";
 }
 
 /**
@@ -1321,4 +1368,22 @@ export function receiptVolumesStep(view: ReceiptExceptionView): string {
   if (!view.available || view.countOk) return "";
   if (view.countedVolumes === null) return "Contar os volumes da entrega";
   return `Contou ${view.countedVolumes} de ${view.expectedVolumes}: ache o item que não bate`;
+}
+
+/**
+ * Os números do insumo aberto: estoque, mínimo, cobertura e custo preferencial.
+ * O detalhe só tinha selos e "Permitir revenda"; no celular, onde a tabela não
+ * cabe, não havia onde ver o estoque nem o custo (beta 05/11, CMP-13).
+ */
+export function materialFacts(material: Pick<EnrichedMaterial, "unit" | "stockOnHand" | "minStock" | "minStockDeclared" | "coverageDays" | "preferredBaseCostQ">) {
+  return [
+    { key: "stock", label: "Estoque", value: formatQty(material.stockOnHand, material.unit) },
+    { key: "minimum", label: "Mínimo", value: material.minStockDeclared ? formatQty(material.minStock, material.unit) : "nenhum" },
+    { key: "coverage", label: "Cobertura", value: coverageLabel(material.coverageDays) },
+    {
+      key: "cost",
+      label: "Custo preferencial",
+      value: material.preferredBaseCostQ == null ? "sem custo" : `${formatMoney(material.preferredBaseCostQ)} / ${material.unit}`,
+    },
+  ];
 }

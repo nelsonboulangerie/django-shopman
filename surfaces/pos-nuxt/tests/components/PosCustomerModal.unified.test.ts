@@ -260,3 +260,31 @@ describe("PosCustomerModal — os atos nomeados da busca levam ao formulário", 
     expect(document.activeElement).toBe(phoneInput());
   });
 });
+
+describe("PosCustomerModal — o X fecha sem salvar", () => {
+  // Beta test de 05/11/2026: o cadastro recusado por CPF inválido ficava na
+  // comanda depois do X, como se o cliente tivesse sido associado.
+  it("fechar sem cadastrar devolve o formulário ao que era na abertura", async () => {
+    const wrapper = await mount();
+    await wrapper.setProps({ customerName: "Beta Fran", customerTaxId: "11111111111" });
+    await wrapper.setProps({ open: false });
+    expect(wrapper.emitted("update:customerName")?.at(-1)).toEqual([""]);
+    expect(wrapper.emitted("update:customerTaxId")?.at(-1)).toEqual([""]);
+  });
+
+  it("cadastro salvo não volta atrás ao fechar", async () => {
+    const wrapper = await mount({ customerName: "Outra Pessoa" });
+    footer().click();
+    const done = wrapper.emitted("resolveCustomer")![0]![0] as (saved: boolean) => void;
+    done(true);
+    await wrapper.setProps({ open: false });
+    expect(wrapper.emitted("update:customerName")).toBeUndefined();
+  });
+
+  it("cliente escolhido na busca durante o modal não é desfeito", async () => {
+    const wrapper = await mount();
+    await wrapper.setProps({ customerLookup: LOOKUP, ...ANA });
+    await wrapper.setProps({ open: false });
+    expect(wrapper.emitted("update:customerName")).toBeUndefined();
+  });
+});

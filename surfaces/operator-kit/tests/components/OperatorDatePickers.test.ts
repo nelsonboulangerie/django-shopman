@@ -129,6 +129,24 @@ describe("OperatorPeriodPicker (Tipo 2)", () => {
     expect(wrapper.emitted("update:modelValue")).toEqual([[{ preset: "week", from: "", to: "" }]]);
   });
 
+  it("com `latest`, o dia mais recente da leitura já é o atual: o voltar some (ge:BI-11)", async () => {
+    const atLatest = await mount(OperatorPeriodPicker, {
+      props: { modelValue: { preset: "day", from: "2026-09-30", to: "" }, today: TODAY, max: "2026-09-30", latest: "2026-09-30" },
+    });
+    expect(atLatest.find("[data-period-today]").exists()).toBe(false);
+
+    const before = await mount(OperatorPeriodPicker, {
+      props: {
+        modelValue: { preset: "day", from: "2026-09-28", to: "" },
+        today: TODAY,
+        max: "2026-09-30",
+        latest: "2026-09-30",
+        backLabel: "Ir ao último dia",
+      },
+    });
+    expect(before.get("[data-period-today]").text()).toBe("Ir ao último dia");
+  });
+
   it("o popover mostra só as granularidades declaradas, e Ir para o dia quando não há personalizado", async () => {
     const wrapper = await mount(OperatorPeriodPicker, {
       props: { modelValue: { preset: "day", from: "", to: "" }, today: TODAY, presets: ["day", "week"] },

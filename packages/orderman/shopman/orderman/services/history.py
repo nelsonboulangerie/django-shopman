@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from django.db.models import Count, Max, Min
+from django.db.models import Count, Max, Min, Sum
+from django.db.models.functions import Coalesce
 from shopman.orderman.models import Order
 
 
@@ -53,10 +54,7 @@ class CustomerOrderHistoryService:
                 order_ref=order.ref,
                 channel_ref=order.channel_ref or "",
                 ordered_at=order.created_at,
-                total_q=(order.snapshot or {}).get("pricing", {}).get(
-                    "total_q",
-                    order.total_q,
-                ),
+                total_q=order.total_q,
                 items_count=len((order.snapshot or {}).get("items", [])),
                 status=order.status,
                 items=list((order.snapshot or {}).get("items", [])),
@@ -71,13 +69,14 @@ class CustomerOrderHistoryService:
             total_orders=Count("id"),
             first_order_at=Min("created_at"),
             last_order_at=Max("created_at"),
+            # `Order.total_q` é o total selado de todo pedido. O `snapshot.pricing`
+            # só existe quando a sessão passou pelo ModifyService (PDV, conta e seed
+            # não passam), e somá-lo dava gasto zero ao cliente fiel.
+            total_spent_q=Coalesce(Sum("total_q"), 0),
         )
 
         total_orders = stats["total_orders"] or 0
-        total_spent_q = sum(
-            (snapshot or {}).get("pricing", {}).get("total_q", 0)
-            for snapshot in qs.values_list("snapshot", flat=True).iterator()
-        )
+        total_spent_q = stats["total_spent_q"] or 0
 
         return CustomerOrderStats(
             total_orders=total_orders,

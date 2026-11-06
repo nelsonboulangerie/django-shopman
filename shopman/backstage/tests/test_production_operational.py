@@ -71,6 +71,33 @@ def test_production_dashboard_projection_summarizes_day_and_late_orders(recipe):
 
 
 @pytest.mark.django_db
+def test_dashboard_never_sums_pieces_with_grams_and_loss_hint_speaks_of_closed_lots(recipe):
+    """Beta 05/11: "Planejado 159966.487" somava gramas de massa com peças, e a
+    frase sob a Perda usava o previsto dos lotes ainda abertos."""
+    dough = Recipe.objects.create(
+        ref="massa-op-v1",
+        name="Massa Operacional",
+        output_sku="MASSA-OP",
+        batch_size=Decimal("1000"),
+        steps=["Mistura"],
+        meta={"output_unit": "g", "capacity_per_day": 20000},
+    )
+    craft.plan(dough, 18720, date=date.today(), position_ref="forno")
+    open_lot = craft.plan(recipe, 30, date=date.today(), position_ref="forno")
+    craft.start(open_lot, quantity=30, position_ref="forno", expected_rev=0)
+    closed = craft.plan(recipe, 40, date=date.today(), position_ref="forno")
+    craft.finish(closed, finished=36, actor="test")
+
+    dashboard = build_production_dashboard(selected_date=date.today(), position_ref="forno")
+
+    assert dashboard.planned_display == "70 un. · 18,72 kg"
+    assert dashboard.loss_display == "4 un."
+    assert dashboard.loss_hint == "Realizado 36 un. de 40 un. previstos nos lotes fechados"
+    # Carga média das fichas (70/100 e 18720/20000), nunca a soma das grandezas.
+    assert dashboard.capacity_percent == 81
+
+
+@pytest.mark.django_db
 def test_kds_card_exposes_linked_order_refs(recipe, superuser):
     """WP-PE5: o chão mostra quantos pedidos aguardam o lote (aviso no estorno)."""
     wo = craft.plan(recipe, 10, date=date.today())

@@ -21,9 +21,13 @@ const emit = defineEmits<{
   confirm: [{ reasonKey: string; internalNote: string }];
 }>();
 
+// A aprovação de gerente é pedida exatamente quando há (ou pode haver) dinheiro
+// recebido (`operator_cancel_policy`). Sem ela, não há o que devolver, e falar de
+// devolução numa encomenda sem pagamento confundia (beta test de 05/11/2026, PDV2-20).
 const description = computed(() =>
-  "O que já foi pago volta no mesmo meio. Devolução em dinheiro aparece no Caixa, em Precisa de você."
-  + (props.requiresApproval ? " Encomenda paga: um gerente precisa autorizar." : ""),
+  props.requiresApproval
+    ? "O que já foi pago volta no mesmo meio. Devolução em dinheiro aparece no Caixa, em Precisa de você. Encomenda paga: um gerente precisa autorizar."
+    : "Nada foi pago nesta encomenda: não há o que devolver.",
 );
 </script>
 
