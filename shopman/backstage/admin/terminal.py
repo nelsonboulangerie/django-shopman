@@ -25,6 +25,7 @@ from unfold.widgets import (
     UnfoldBooleanSwitchWidget,
 )
 
+from shopman.backstage.permissions import can_audit_cash
 from shopman.backstage.projections.operator_badge import mask_badge
 from shopman.backstage.services.order_danfe import DESTINATION_FLAG as DANFE_DESTINATION_FLAG
 from shopman.backstage.services.pos_hardware import (
@@ -43,6 +44,9 @@ from shopman.backstage.station_trust import (
     eligible_station_operators,
     terminal_mode,
 )
+
+#: Os campos da tolerância do caixa deste terminal.
+CASH_TOLERANCE_FIELDS = ("cash_tolerance_percent", "cash_tolerance_min", "cash_tolerance_max")
 
 
 class TerminalForm(forms.ModelForm):
@@ -254,12 +258,25 @@ class TerminalForm(forms.ModelForm):
         help_text="Em branco = a da loja. Padrão: R$ 20,00.",
     )
 
+    #: Quem pode mudar a tolerância do caixa. Fechado por padrão: o Admin abre
+    #: só para quem audita o caixa (``TerminalAdmin.get_form``).
+    cash_tolerance_editable = False
+
     class Meta:
         model = Terminal
         fields = ("ref", "label", "channel_ref", "location_ref", "is_active")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if not self.cash_tolerance_editable:
+            # A tolerância decide o veredito da apuração; só o Dono a muda
+            # (decisão do dono, 06/11/2026, beta test ADM-05). Campo desabilitado
+            # mostra o valor e o Django ignora o que chegar no POST.
+            for name in CASH_TOLERANCE_FIELDS:
+                self.fields[name].disabled = True
+            self.fields["cash_tolerance_percent"].help_text = (
+                "Só o Dono altera a tolerância do caixa. Em branco = a da loja."
+            )
         self._stale_print_target = ""
         self._stale_station_operator = ""
         self._load_print_target_choices()
@@ -519,6 +536,12 @@ class TerminalForm(forms.ModelForm):
             metadata.pop("station", None)
         # A tolerância do caixa DESTE terminal, por cima da da loja, chave a
         # chave (services/cash_tolerance.policy_for). Campo vazio = vale a loja.
+        # Quem não pode mudá-la salva o resto do terminal sem tocar no bloco.
+        if not self.cash_tolerance_editable:
+            instance.metadata = metadata
+            if commit:
+                instance.save()
+            return instance
         tolerance = {}
         percent = self.cleaned_data.get("cash_tolerance_percent")
         if percent is not None:
@@ -625,6 +648,14 @@ class TerminalAdmin(_CashmanTerminalAdmin):
             },
         ),
     )
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        form = super().get_form(request, obj, change=change, **kwargs)
+        # Só o Dono muda a tolerância do caixa (decisão do dono, 06/11/2026).
+        # A régua é a da apuração: a tolerância decide o veredito que só quem
+        # audita lê, e a Gerente não audita (``can_audit_cash``).
+        editable = can_audit_cash(request.user)
+        return type(form.__name__, (form,), {"cash_tolerance_editable": editable})
 
     def drawer_install_display(self, obj):
         """Ponte para a tela que entrega o agente e o comando pronto.
