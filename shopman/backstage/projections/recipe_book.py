@@ -131,8 +131,11 @@ class RecipeEntryCardProjection:
     #: publicada), ``replaced`` (publicada, mas outra receita usa o mesmo SKU),
     #: ``off`` (publicada e sem ficha ativa) ou vazio (sem SKU e sem ficha).
     ficha_status: str
-    #: O selo da lista; vazio em ``in_use``.
+    #: O selo da lista, curto (o selo sai em iniciais maiúsculas); vazio em ``in_use``.
     ficha_status_label: str
+    #: A frase ao lado do selo, quando há quem dizer: ``<ficha> usa este SKU`` em
+    #: ``replaced``. Frase não vai dentro do selo.
+    ficha_status_detail: str
     #: Modo de produção da ficha vigente (``batch`` | ``made_to_order``); vazio sem ficha.
     production_mode: str
     production_mode_label: str
@@ -1159,17 +1162,17 @@ def _active_sheet_names_by_sku(skus: set[str]) -> dict[str, str]:
 
 def ficha_status_of(
     entry: RecipeEntry, *, has_ficha: bool, in_use_by_sku: dict[str, str]
-) -> tuple[str, str]:
-    """``(status, selo)`` da receita diante da produção. Ver ``RecipeEntryCardProjection.ficha_status``."""
+) -> tuple[str, str, str]:
+    """``(status, selo, frase)`` da receita diante da produção. Ver ``RecipeEntryCardProjection.ficha_status``."""
     if has_ficha:
-        return "in_use", ""
+        return "in_use", "", ""
     current = entry.current_version
     if current is None or current.status != RecipeVersion.Status.PUBLISHED:
-        return ("unpublished", "Ainda não publicada") if entry.output_sku else ("", "")
+        return ("unpublished", "Ainda não publicada", "") if entry.output_sku else ("", "", "")
     other = in_use_by_sku.get(str(entry.output_sku or "").upper())
     if other:
-        return "replaced", f"Fora da produção: {other} usa este SKU"
-    return "off", "Fora da produção"
+        return "replaced", "Fora da produção", f"{other} usa este SKU"
+    return "off", "Fora da produção", ""
 
 
 def _card(
@@ -1187,7 +1190,7 @@ def _card(
     hydration = ""
     if anchor_kind == "flour":
         hydration = _pct_display(analyze(formula, ingredient_formulas_for(formula)).hydration_pct)
-    status, status_label = ficha_status_of(
+    status, status_label, status_detail = ficha_status_of(
         entry, has_ficha=entry.ref in ficha_modes, in_use_by_sku=in_use_by_sku or {}
     )
     return RecipeEntryCardProjection(
@@ -1200,6 +1203,7 @@ def _card(
         has_ficha=entry.ref in ficha_modes,
         ficha_status=status,
         ficha_status_label=status_label,
+        ficha_status_detail=status_detail,
         production_mode=ficha_modes.get(entry.ref, ""),
         production_mode_label=_production_mode_label(ficha_modes.get(entry.ref, "")),
         current_version_number=current.number if current is not None else None,

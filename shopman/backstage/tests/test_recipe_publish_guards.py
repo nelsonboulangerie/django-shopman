@@ -156,8 +156,11 @@ def test_the_list_says_who_took_the_sku(client_as_editor):
 
     assert cards["pao-joyce-2"]["ficha_status"] == "in_use"
     assert cards["pao-joyce-2"]["ficha_status_label"] == ""
+    assert cards["pao-joyce-2"]["ficha_status_detail"] == ""
     assert cards["pao-joyce"]["ficha_status"] == "replaced"
-    assert cards["pao-joyce"]["ficha_status_label"] == "Fora da produção: Pão Joyce 2 usa este SKU"
+    # O selo é curto (sai em iniciais maiúsculas); quem tomou o SKU vai na frase ao lado.
+    assert cards["pao-joyce"]["ficha_status_label"] == "Fora da produção"
+    assert cards["pao-joyce"]["ficha_status_detail"] == "Pão Joyce 2 usa este SKU"
 
 
 # ── PROD-02: fórmula vazia e SKU que não existe ─────────────────────────────

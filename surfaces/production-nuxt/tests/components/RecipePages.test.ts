@@ -582,13 +582,15 @@ describe("Receitas: cadastros turbinados", () => {
 describe("Receitas: achados do beta de 05/11/2026", () => {
   it("the list says a published recipe left production because another one uses the SKU (PROD-06)", async () => {
     entries.value = [
-      card("pao-joyce-2", { has_ficha: false, ficha_status: "replaced", ficha_status_label: "Fora da produção: Pão Joyce usa este SKU" } as Partial<RecipeEntryCardProjection>),
-      card("pao-joyce", { has_ficha: true, ficha_status: "in_use", ficha_status_label: "" } as Partial<RecipeEntryCardProjection>),
+      card("pao-joyce-2", { has_ficha: false, ficha_status: "replaced", ficha_status_label: "Fora da produção", ficha_status_detail: "Pão Joyce usa este SKU" } as Partial<RecipeEntryCardProjection>),
+      card("pao-joyce", { has_ficha: true, ficha_status: "in_use", ficha_status_label: "", ficha_status_detail: "" } as Partial<RecipeEntryCardProjection>),
     ];
     const wrapper = mount(RecipeListPage, { global: { stubs } });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Fora da produção: Pão Joyce usa este SKU");
+    expect(wrapper.text()).toContain("Fora da produção");
+    // Frase não vai dentro do selo (o selo sai em iniciais maiúsculas): fica ao lado.
+    expect(wrapper.find("[data-recipe-ficha-detail]").text()).toBe("Pão Joyce usa este SKU");
     expect(wrapper.text()).not.toContain("Ainda não publicada");
   });
 

@@ -13,6 +13,7 @@ export interface RecipeEntryCardProjection {
   has_ficha: boolean;
   ficha_status: string;
   ficha_status_label: string;
+  ficha_status_detail: string;
   production_mode: string;
   production_mode_label: string;
   current_version_number: number | null;
