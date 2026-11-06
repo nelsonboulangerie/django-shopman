@@ -335,9 +335,9 @@ describe("detalhe do pedido — presente", () => {
     expect(w.find("[data-gift-phone]").exists()).toBe(false);
   });
 
-  it("gift_hide_values vira instrução visível: 'Não mostrar valores'", () => {
+  it("gift_hide_values vira instrução visível: 'Sem preços no papel'", () => {
     const w = abrir(order({ is_gift: true, gift_hide_values: true }));
-    expect(w.find("[data-gift-hide-values]").text()).toContain("Não mostrar valores");
+    expect(w.find("[data-gift-hide-values]").text()).toContain("Sem preços no papel");
   });
 
   it("sem hide_values o selo não aparece", () => {

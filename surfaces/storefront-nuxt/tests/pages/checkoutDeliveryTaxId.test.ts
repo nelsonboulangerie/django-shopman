@@ -229,6 +229,24 @@ describe('checkout: presente começa sem valores, como a descrição promete', (
     expect(page.find('#gift-hide-values').attributes('aria-checked')).toBe('true')
     page.unmount()
   })
+
+  it('na retirada não promete nota sem valores: a nota fica com quem compra', async () => {
+    store.set(DRAFT_KEY, JSON.stringify({ version: 2, context: 'ctx-entrega', attemptKey: null, state: { fulfillment_type: 'pickup', is_gift: true }, activeStep: 'payment', savedAt: Date.now() }))
+    const page = await abrirCheckout(projection())
+    await vi.waitFor(() => expect(page.find('[data-gift-hide-values-description]').exists()).toBe(true))
+    const texto = page.find('[data-gift-hide-values-description]').text()
+    expect(texto).toBe('A etiqueta e o cartão saem sem preços. A nota fiscal sai com os valores e fica com você.')
+    expect(page.text()).not.toContain('sem valores na nota')
+    page.unmount()
+  })
+
+  it('na entrega diz que a nota vai junto com os valores', async () => {
+    store.set(DRAFT_KEY, JSON.stringify({ version: 2, context: 'ctx-entrega', attemptKey: null, state: { fulfillment_type: 'delivery', is_gift: true }, activeStep: 'payment', savedAt: Date.now() }))
+    const page = await abrirCheckout(projection())
+    await vi.waitFor(() => expect(page.find('[data-gift-hide-values-description]').exists()).toBe(true))
+    expect(page.find('[data-gift-hide-values-description]').text()).toContain('A nota fiscal vai junto com o pedido e mostra os valores.')
+    page.unmount()
+  })
 })
 
 
