@@ -111,7 +111,10 @@ const { run: readAll, pending: readAllPending } = usePendingAction(() => markAll
 
 // "Não fui eu": o servidor descreve o que vai acontecer, a pessoa confirma, e só então
 // as sessões da conta caem (a ação mora no backend desde sempre; faltava o botão).
+// O giro fica no botão tocado; os outros "Não fui eu" só esperam (um de cada vez).
+const notMeTarget = ref<number | null>(null);
 const { run: reportNotMe, pending: notMePending } = usePendingAction(async (item: UserNotification) => {
+  notMeTarget.value = item.pk;
   const first = await notMe(item.pk, false);
   if (first === "done" || first === "failed") return;
   const ok = await confirm({
@@ -383,7 +386,7 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
                 :color="isHighlighted(item) ? 'warning' : 'neutral'"
                 variant="solid"
                 label="Não fui eu"
-                :loading="notMePending"
+                :loading="notMePending && notMeTarget === item.pk"
                 :disabled="notMePending"
                 data-notification-not-me
                 @click="reportNotMe(item)"
@@ -393,7 +396,7 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
                 :color="isHighlighted(item) ? 'warning' : 'neutral'"
                 variant="outline"
                 label="Não fui eu"
-                :loading="notMePending"
+                :loading="notMePending && notMeTarget === item.pk"
                 :disabled="notMePending"
                 data-notification-not-me
                 @click="reportNotMe(item)"

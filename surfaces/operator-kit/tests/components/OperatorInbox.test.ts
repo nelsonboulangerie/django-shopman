@@ -405,6 +405,22 @@ describe("OperatorInbox", () => {
     expect(notMe.mock.calls).toEqual([[2, false], [2, true]]);
   });
 
+  it("o giro do 'Não fui eu' fica no acesso tocado; os outros só esperam", async () => {
+    items.value = [SUSPEITO, { ...SUSPEITO, pk: 9 }];
+    let release!: (value: "done") => void;
+    notMe.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+    await mount();
+    await openPanel();
+    const buttons = () => [...document.querySelectorAll<HTMLButtonElement>("[data-notification-not-me]")];
+    expect(buttons()).toHaveLength(2);
+    buttons()[0]!.click();
+    await nextTick();
+    expect(buttons().map((button) => button.disabled)).toEqual([true, true]);
+    const spinning = (button: HTMLButtonElement) => Boolean(button.querySelector(".animate-spin"));
+    expect(buttons().map(spinning)).toEqual([true, false]);
+    release("done");
+  });
+
   it("desistir do 'Não fui eu' não encerra nada", async () => {
     items.value = [SUSPEITO];
     notMe.mockResolvedValueOnce({ needsConfirmation: "Isto encerra as sessões." });

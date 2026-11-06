@@ -13,7 +13,8 @@ describe("Central: configuração segura de release", () => {
   });
 
   it("abre só a exceção decidida: o ícone de cada app na origem dele", () => {
-    expect(config).toContain('"img-src": process.env.NODE_ENV === "production" ? ["https:"]');
+    // O loopback só no `nuxi dev`; o resto (build incluído) cai no `["https:"]`.
+    expect(config).toContain('"img-src": process.env.NODE_ENV === "development" ? ["https:", ...DEV_LOOPBACK_IMAGES] : ["https:"]');
     expect(config).not.toContain('"connect-src"');
     expect(config).not.toContain('"script-src"');
   });

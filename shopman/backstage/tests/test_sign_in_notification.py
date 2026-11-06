@@ -71,10 +71,22 @@ class SignInNotificationTests(TestCase):
 
         A segunda entrada na MESMA estação é o dia normal: a primeira é sempre
         "estação nunca usada", que é o que o destaque deve pegar.
+
+        O relógio fica ao meio-dia: o expediente da equipe (5h às 19h) é régua de
+        destaque, e o mesmo teste rodado às 21h via "fora do expediente" e reprovava
+        só à noite, na fila de merge (revisão do #2148).
         """
-        self._unlock_pin()
-        self.client.post("/api/v1/backstage/operator/lock/", {"perm": POS_PERM})
-        self._unlock_pin()
+        from unittest import mock
+
+        from django.utils import timezone
+
+        meio_dia = timezone.localtime(timezone.now()).replace(
+            hour=12, minute=0, second=0, microsecond=0
+        )
+        with mock.patch("django.utils.timezone.now", return_value=meio_dia):
+            self._unlock_pin()
+            self.client.post("/api/v1/backstage/operator/lock/", {"perm": POS_PERM})
+            self._unlock_pin()
 
         ultimo = UserNotification.objects.order_by("-pk").first()
         self.assertFalse(ultimo.action_data["highlight"])
@@ -132,7 +144,7 @@ class SignInNotificationTests(TestCase):
 
         self._unlock_pin()
         evento = SignInEvent.objects.get()
-        # Às 03h de um dia com expediente 09-18: fora da janela.
+        # Às 03h de um dia com venda das 9h às 18h: fora do expediente da equipe também.
         madrugada = timezone.localtime(evento.created_at).replace(hour=3, minute=0)
         SignInEvent.objects.filter(pk=evento.pk).update(created_at=madrugada)
         evento.refresh_from_db()

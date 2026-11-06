@@ -145,11 +145,8 @@ watch(sessionState, async (next, previous) => {
         </main>
 
         <OperatorSurfaceForbidden
-
           v-else-if="sessionState === 'forbidden'"
-
           :perm="OPERATOR_PERM"
-
         />
 
         <OperatorLogin
