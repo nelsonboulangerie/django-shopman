@@ -1249,6 +1249,7 @@ export interface AccountNotificationPreference {
   label: string
   description: string
   enabled: boolean
+  order_notifications_enabled: boolean | null
 }
 
 export interface AccountStockAlertSubscription {

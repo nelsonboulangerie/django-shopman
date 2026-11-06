@@ -142,7 +142,7 @@ Eles não gravam nada em lugar nenhum.
 9. **Nada auto-suprimível atravessa.** A Meta não aceita parâmetro vazio, então todo pedaço
    que o código apaga sozinho quando não há dado **não pode virar variável**: `{eta_note}`,
    `{courier_tracking_suffix}`, `{reserve_note}`, `{deadline_note}`, `{pix_suffix}`,
-   `{reason_note}`, `{tracking_suffix}`, `{reorder_suffix}`, `{commitment_suffix}`. Eles continuam saindo inteiros
+   `{reason_note}`, `{tracking_suffix}`, `{reorder_suffix}`, `{commitment_suffix}`, `{cancellation_reason_suffix}`. Eles continuam saindo inteiros
    por SMS e e-mail, que interpolam na hora. No template, ou a informação é fixa no texto,
    ou fica de fora.
 
@@ -801,3 +801,12 @@ fallback). Inverter antes troca "SMS que chega em 76%" por "WhatsApp que não ch
 - [WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN](../plans/completed/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md)
 - Meta: [template fundamentals](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/overview)
 - ManyChat: [usar Message Templates](https://help.manychat.com/hc/en-us/articles/14281326740124-How-to-use-WhatsApp-Messages-Templates-in-Manychat)
+
+### Cancelamento solicitado pelo cliente (revisão de 06/11/2026)
+
+O texto livre passa a dizer "Seu pedido V55 foi cancelado, conforme sua solicitação.".
+`{cancellation_reason_suffix}` une o motivo à frase do cancelamento no texto livre;
+nos outros motivos, preserva a frase completa de `{status_note}`. O modelo já aprovado
+na Meta mantém sua pontuação fixa e recebe "Conforme sua solicitação." em `status_note`,
+sem repetir "Cancelamos". A unificação da frase também nesse modelo depende de uma
+nova aprovação da Meta; o deploy não altera modelos externos aprovados.

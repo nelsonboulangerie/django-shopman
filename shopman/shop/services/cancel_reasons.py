@@ -47,7 +47,7 @@ OPERATOR_CANCEL_REASONS: tuple[CancelReason, ...] = (
     CancelReason(
         key="customer_request",
         label="O cliente pediu",
-        customer_text="Cancelamos conforme você nos pediu.",
+        customer_text="Conforme sua solicitação.",
     ),
     CancelReason(
         key="payment_not_confirmed",

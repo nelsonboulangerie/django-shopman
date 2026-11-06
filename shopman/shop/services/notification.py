@@ -1146,6 +1146,8 @@ def _status_note(order, template: str, reason, *, note=None) -> str:
         # Sem ela no payload (reenvio), a mesma frase sai da chave gravada no pedido.
         from shopman.shop.services import cancel_reasons
 
+        if cancel_reasons.reason_key_of(order.data) == "customer_request":
+            return cancel_reasons.customer_text(order.data)
         return str(note or "").strip() or cancel_reasons.customer_text(order.data)
     if template == "order_rejected":
         return f"Motivo: {reason}." if reason else "Os detalhes estão no pedido."

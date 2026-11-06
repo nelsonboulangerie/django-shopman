@@ -211,3 +211,31 @@ describe('checkout: na retirada, CPF na nota é o do balcão, opcional', () => {
     page.unmount()
   })
 })
+
+
+describe('checkout: presente começa sem valores, como a descrição promete', () => {
+  it('ativa ocultar valores ao ligar presente e permite mudar depois', async () => {
+    store.set(DRAFT_KEY, JSON.stringify({ version: 2, context: 'ctx-entrega', attemptKey: null, state: { fulfillment_type: 'pickup' }, activeStep: 'payment', savedAt: Date.now() }))
+    const page = await abrirCheckout(projection())
+    const toggle = page.find('#checkout-gift-toggle')
+    await toggle.trigger('click')
+    await vi.waitFor(() => expect(page.find('#gift-hide-values').exists()).toBe(true))
+    expect(page.find('#gift-hide-values').attributes('aria-checked')).toBe('true')
+    await page.find('#gift-hide-values').trigger('click')
+    expect(page.find('#gift-hide-values').attributes('aria-checked')).toBe('false')
+    await toggle.trigger('click')
+    expect(page.find('#gift-hide-values').exists()).toBe(false)
+    await toggle.trigger('click')
+    expect(page.find('#gift-hide-values').attributes('aria-checked')).toBe('true')
+    page.unmount()
+  })
+})
+
+
+it('restaurar um presente respeita a escolha explícita de mostrar valores', async () => {
+  store.set(DRAFT_KEY, JSON.stringify({ version: 2, context: 'ctx-entrega', attemptKey: null, state: { fulfillment_type: 'pickup', is_gift: true, gift_hide_values: false }, activeStep: 'payment', savedAt: Date.now() }))
+  const page = await abrirCheckout(projection())
+  await vi.waitFor(() => expect(page.find('#gift-hide-values').exists()).toBe(true))
+  expect(page.find('#gift-hide-values').attributes('aria-checked')).toBe('false')
+  page.unmount()
+})

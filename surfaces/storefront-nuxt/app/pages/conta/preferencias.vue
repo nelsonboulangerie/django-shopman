@@ -170,15 +170,27 @@ useSeoMeta({ title: 'Preferências' })
                desligar a chave que o cala. Sem esta linha, quem nunca mexeu aqui vê
                tudo desligado e recebe mesmo assim. -->
           <UiFieldDescription class="mb-2">
-            Recados sobre o seu pedido vão pelo canal em que você comprou: eles fazem parte da
-            compra. Estas chaves valem para o resto, e desligar uma delas também cala os recados
-            do pedido por ali.
+            As chaves autorizam novidades e outros avisos. Mesmo sem essa autorização, podemos
+            enviar recados do seu pedido pelos canais disponíveis. O estado abaixo informa
+            se esses recados estão permitidos. Bloquear o canal também interrompe os recados do pedido.
           </UiFieldDescription>
           <UiFieldGroup>
             <UiField v-for="pref in summary?.notification_preferences || []" :key="pref.key" orientation="horizontal">
               <UiFieldContent>
                 <UiFieldLabel :for="`notification-pref-${pref.key}`">{{ pref.label }}</UiFieldLabel>
                 <UiFieldDescription>{{ pref.description }}</UiFieldDescription>
+                <p class="text-sm text-muted-foreground">
+                  Avisos de pedido: {{ pref.order_notifications_enabled === null ? 'não foi possível consultar' : pref.order_notifications_enabled ? 'permitidos' : 'bloqueados' }}.
+                </p>
+                <UiButton
+                  v-if="!pref.enabled && pref.order_notifications_enabled"
+                  size="sm"
+                  variant="outline"
+                  :disabled="!!preferencePending[pref.key]"
+                  @click="toggleNotification({ key: pref.key, enabled: true })"
+                >
+                  Bloquear avisos por {{ pref.label }}
+                </UiButton>
               </UiFieldContent>
               <UiSwitch
                 :id="`notification-pref-${pref.key}`"
