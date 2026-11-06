@@ -157,12 +157,11 @@ useOperatorWindowTitle();
             class="grid flex-1 place-items-center p-4"
             data-settings-denied
           >
-            <NuxtEmpty
-              icon="i-lucide-shield-x"
-              :title="`Seu acesso não inclui ${denied}`"
-              description="Peça a um responsável a permissão de acesso."
-              :actions="[{ label: 'Voltar aos pedidos', to: '/', color: 'neutral', variant: 'outline' }]"
-            />
+            <OperatorScreenState state="forbidden" :what="denied">
+              <template #actions>
+                <NuxtButton label="Voltar aos pedidos" to="/" color="neutral" variant="outline" />
+              </template>
+            </OperatorScreenState>
           </div>
           <!-- A régua do servidor para o que a lista não cobre (o Histórico, por exemplo):
                a recusa no lugar da página, sem "Tentar de novo" (beta 05/11, CEN-05 e GES-17). -->

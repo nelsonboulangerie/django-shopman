@@ -102,7 +102,9 @@ const retryActions = computed(() => [
     :title="title"
     :description="description || undefined"
     data-operator-screen-state="forbidden"
-  />
+  >
+    <template v-if="$slots.actions" #actions><slot name="actions" /></template>
+  </NuxtEmpty>
   <NuxtAlert
     v-else
     color="warning"
