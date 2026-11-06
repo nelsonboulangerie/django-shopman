@@ -326,8 +326,9 @@ def start_selling(material, *, price_q: int | None):
     if scale != 1:
         raise ValidationError({
             "unit": (
-                f"{material.name} é contado em {material.unit}, e o preço por {material.unit} "
-                f"perde os centavos. Para vender, cadastre o item em {reading} ou por unidade."
+                f"{material.name}: item contado em {material.unit} não se vende, porque o preço "
+                f"por {material.unit} perde os centavos. Para vender, cadastre o item em {reading} "
+                "ou por unidade."
             )
         })
     if price_q is None or price_q <= 0:
