@@ -83,3 +83,26 @@ describe("custo de insumo em g é por kg (CMP-07)", () => {
     expect(resaleCopy("kg", "").blocked).toBe("");
   });
 });
+
+describe("pergunta do custo preferencial fala por kg (CMP-06 com CMP-07)", () => {
+  it("1200 g por R$ 110 contra preferencial de R$ 80/kg mostra R$ 91,67 / kg", async () => {
+    const { receiptPreferredCostChanges } = await import("~/presentation/purchase");
+    const line: ReceiptLine = {
+      id: "line-1",
+      materialSku: "TONICA-ANTARCTICA",
+      conversionId: "",
+      purchaseQty: 1200,
+      costInput: "110,00",
+      expiryDate: "",
+      checked: true,
+    };
+    const preview = receiptLinePreview(line, "manual", [tonica], [])!;
+    const cost: SupplierMaterialCost = {
+      id: "c1", materialSku: "TONICA-ANTARCTICA", supplierRef: "ambev", conversionId: null,
+      costQ: 8000, isPreferred: true, updatedAt: "2026-11-06",
+    };
+    const [change] = receiptPreferredCostChanges([preview], [cost], "ambev", []);
+    expect(change).toMatchObject({ unitLabel: "kg", currentQ: 8000, incomingQ: 9167 });
+    expect(receiptPreferredCostChanges([preview], [{ ...cost, costQ: 9167 }], "ambev", [])).toEqual([]);
+  });
+});

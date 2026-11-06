@@ -224,8 +224,8 @@ export function costForBaseQtyQ(
  * Confirmar a entrada grava o preço pago no custo do fornecedor. Quando esse
  * custo é o preferencial e o preço mudou, a troca não pode acontecer em
  * silêncio (beta 05/11, CMP-06): cada item daqui pede "Atualizar" ou "Manter".
- * A conta é a mesma do servidor: o preço recebido levado à unidade de compra
- * do custo preferencial, arredondado ao centavo.
+ * A conta é a mesma do servidor: o preço recebido levado à unidade de preço
+ * do custo preferencial (embalagem, ou kg/L sem embalagem), arredondado ao centavo.
  */
 export function receiptPreferredCostChanges(
   previews: ReceiptLinePreview[],
@@ -242,14 +242,18 @@ export function receiptPreferredCostChanges(
       (item) => item.isPreferred && item.materialSku === line.materialSku && item.supplierRef === supplierRef,
     );
     if (!cost) return [];
-    const lineFactor = preview.conversion?.toBaseFactor ?? 1;
-    const incomingQ = Math.round((preview.totalCostQ / purchaseQty / lineFactor) * baseFactor(cost, conversions));
+    // Na unidade de preço do custo preferencial: a embalagem dele, ou o kg/L de
+    // quem é contado em g/ml (CMP-07).
+    const baseQty = purchaseQty * (preview.conversion?.toBaseFactor ?? 1);
+    const incomingQ = Math.round(
+      (preview.totalCostQ / baseQty) * pricedUnitFactor(preview.material, conversionFor(cost, conversions)),
+    );
     if (incomingQ === cost.costQ) return [];
     return [
       {
         lineId: line.id,
         materialName: preview.material.name,
-        unitLabel: purchaseUnitLabel(cost, preview.material, conversions),
+        unitLabel: pricedUnitLabel(cost, preview.material, conversions),
         currentQ: cost.costQ,
         incomingQ,
         decision: line.preferredCost ?? "",

@@ -116,3 +116,14 @@ def test_a_migracao_converte_o_custo_por_grama_para_o_quilo(tonica):
     por_unidade.refresh_from_db()
     assert por_grama.cost_q == 9000
     assert por_unidade.cost_q == 450
+
+
+def test_receber_o_mesmo_preco_por_kg_nao_pergunta_pelo_preferencial(tonica, operador):
+    fornecedor, material = tonica
+    _receber(fornecedor, user=operador)  # 1ª entrada: vira o preferencial, R$ 91,67/kg
+
+    # 600 g por R$ 55 é o mesmo R$ 91,67/kg: nada a decidir.
+    _receber(fornecedor, qty="600", valor="55,00", user=operador)
+
+    custo = SupplierMaterialCost.objects.get(material=material, supplier=fornecedor)
+    assert (custo.is_preferred, custo.cost_q) == (True, 9167)

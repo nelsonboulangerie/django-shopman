@@ -1691,10 +1691,10 @@ def _preferred_cost_decision(raw: dict[str, Any], *, index: int) -> str:
 
 def _supplier_preferred_cost(line: ResolvedReceiptLine, *, supplier):
     """O custo preferencial do insumo neste fornecedor e o preço desta entrada
-    dito na unidade de compra dele, ou ``None``.
+    dito na unidade de preço dele, ou ``None``.
 
-    A comparação é na unidade de compra do custo preferencial: a mesma conta
-    que a tela mostra.
+    A comparação é na unidade de preço do custo preferencial (a embalagem, ou o
+    kg/L sem embalagem): a mesma conta que a tela mostra.
     """
     if line.total_cost_q <= 0:
         return None
@@ -1706,9 +1706,10 @@ def _supplier_preferred_cost(line: ResolvedReceiptLine, *, supplier):
     )
     if cost is None:
         return None
-    line_factor = Decimal(line.conversion.to_base_factor) if line.conversion else Decimal("1")
+    # Na unidade de preço do custo preferencial: a embalagem dele, ou o kg/L
+    # de quem é contado em g/ml (CMP-07).
     incoming_q = int(
-        (Decimal(line.total_cost_q) / line.purchase_qty / line_factor * cost.base_factor).quantize(
+        (Decimal(line.total_cost_q) / line.base_qty * cost.priced_unit_factor).quantize(
             Decimal("1"), rounding=ROUND_HALF_UP
         )
     )
