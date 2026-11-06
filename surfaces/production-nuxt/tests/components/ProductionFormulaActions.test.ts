@@ -166,6 +166,28 @@ describe("RegisterOldDoughDialog — recusa no campo (beta 05/11)", () => {
     expect(alerts).toContain("A validade da massa velha não pode estar no passado.");
     expect(wrapper.get("[data-old-dough-error]").text()).toContain("Posição desconhecida.");
   });
+
+  it("a marca do servidor sai do campo assim que o operador corrige o número", async () => {
+    const wrapper = mount(RegisterOldDoughDialog, {
+      props: {
+        open: true,
+        workOrderLabel: "Pão Francês · lote #42",
+        fieldErrors: {},
+      },
+      global: { stubs },
+    });
+    await nextTick();
+    await wrapper.find('input[aria-label="Quantidade de massa velha"]').setValue("900");
+    await wrapper.setProps({ fieldErrors: { quantity: "Até 50 kg por registro. Confira o número." } });
+    expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toContain(
+      "Até 50 kg por registro. Confira o número.",
+    );
+
+    await wrapper.find('input[aria-label="Quantidade de massa velha"]').setValue("800");
+    expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).not.toContain(
+      "Até 50 kg por registro. Confira o número.",
+    );
+  });
 });
 
 describe("AuthorizeFormulaDeviationDialog", () => {

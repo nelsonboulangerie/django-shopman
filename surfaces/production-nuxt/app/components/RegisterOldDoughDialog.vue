@@ -50,17 +50,30 @@ function tomorrowIso(): string {
 // A validade não pode estar no passado (hoje vale, como no servidor).
 const minExpiry = computed(() => isoDay(0));
 
+// A recusa do servidor vale para o número que ele recusou: mexeu no campo, a
+// marca sai (senão o campo corrigido continua dizendo que está errado). A foto
+// dos valores é tirada quando a recusa chega (watch abaixo do de abertura).
+const rejected = ref<{ quantity: number | null; unit: string; expiryDate: string }>({
+  quantity: null,
+  unit: "g",
+  expiryDate: "",
+});
+const quantityEdited = computed(
+  () => quantity.value !== rejected.value.quantity || unit.value !== rejected.value.unit,
+);
+const expiryEdited = computed(() => expiryDate.value !== rejected.value.expiryDate);
+
 const quantityError = computed(() => {
   if (quantity.value != null && quantity.value > maxQuantity.value) {
     return `Até ${unit.value === "kg" ? "50 kg" : "50.000 g"} por registro. Confira o número.`;
   }
-  return props.fieldErrors.quantity ?? "";
+  return quantityEdited.value ? "" : (props.fieldErrors.quantity ?? "");
 });
 const expiryError = computed(() => {
   if (expiryDate.value && expiryDate.value < minExpiry.value) {
     return "A validade não pode estar no passado.";
   }
-  return props.fieldErrors.expiryDate ?? "";
+  return expiryEdited.value ? "" : (props.fieldErrors.expiryDate ?? "");
 });
 
 const ready = computed(
@@ -82,6 +95,17 @@ watch(
     expiryDate.value = tomorrowIso();
     note.value = "";
     void nextTick(() => quantityInput.value?.inputRef?.focus());
+  },
+  { immediate: true },
+);
+watch(
+  () => props.fieldErrors,
+  () => {
+    rejected.value = {
+      quantity: quantity.value,
+      unit: unit.value,
+      expiryDate: expiryDate.value,
+    };
   },
   { immediate: true },
 );
