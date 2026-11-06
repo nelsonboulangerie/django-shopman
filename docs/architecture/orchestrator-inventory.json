@@ -12898,6 +12898,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_promotional_prices",
             "_resolve_availability",
             "_same_boundary",
             "_target_qty",

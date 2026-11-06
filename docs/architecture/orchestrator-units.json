@@ -5461,7 +5461,9 @@
             "verify_contact_code",
             "contact_verify_error_message",
             "verify_for_login",
-            "verify_error_message"
+            "verify_error_message",
+            "auth_error_code",
+            "auth_error_body"
           ]
         }
       ],
