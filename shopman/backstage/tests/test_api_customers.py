@@ -382,6 +382,7 @@ def test_create_customer_refuses_invalid_fields_and_reused_intention(client, man
         ({"firstName": "Ana", "tags": ["[]"]}, "tags"),
         ({"firstName": "Ana", "tags": ["{}"]}, "tags"),
         ({"firstName": "Ana", "tags": ["!!!"]}, "tags"),
+        ({"firstName": "Ana", "tags": ["!" * 100 + "x"]}, "tags"),
     ],
 )
 def test_create_customer_refuses_inconsistent_commercial_data(client, manager, shop, payload, field):
