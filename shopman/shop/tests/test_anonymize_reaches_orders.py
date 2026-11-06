@@ -69,6 +69,7 @@ def _order_for(customer, *, channel_ref="web", origin="whatsapp"):
         handle_ref=customer.phone,
         items=[{"sku": "CROIS-01", "qty": 2, "unit_price_q": 500, "line_id": "L1"}],
         data={
+            "payment": {"method": "cash"},
             "customer": {
                 "ref": customer.ref,
                 "name": f"{FIRST_NAME} {LAST_NAME}",
@@ -436,6 +437,7 @@ def test_commit_recusa_sessao_antiga_de_customer_inativo() -> None:
         handle_ref=customer.phone,
         items=[{"sku": "CROIS-01", "qty": 1, "unit_price_q": 500, "line_id": "L1"}],
         data={
+            "payment": {"method": "cash"},
             "customer_ref": customer.ref,
             "customer": {"ref": customer.ref, "phone": customer.phone},
         },
@@ -476,6 +478,7 @@ def test_commit_recusa_ref_e_telefone_de_clientes_diferentes() -> None:
         handle_ref=phone_owner.phone,
         items=[{"sku": "CROIS-01", "qty": 1, "unit_price_q": 500, "line_id": "L1"}],
         data={
+            "payment": {"method": "cash"},
             "customer_ref": referenced.ref,
             "customer": {"ref": referenced.ref, "phone": phone_owner.phone},
         },

@@ -255,16 +255,23 @@ def _create_announcement(
     # atropela.
     publish_at = campaign_schedule.next_publish_at(rule.schedule)
 
+    platform_content = _platform_content(
+        rule.template,
+        content,
+        platforms=rule.platforms,
+    )
+    # Campanha automática (ou texto escrito na hora) pula a revisão, mas não pula o
+    # MKT-20: com link relativo o anúncio nasce para revisão, onde a prévia mostra o
+    # motivo e a aprovação recusa enquanto ele durar.
+    requires_review = rule.requires_approval or bool(
+        _publish_blockers(content, platform_content)
+    )
     announcement = Announcement.objects.create(
         rule=rule,
         template=rule.template,
-        status=AnnouncementStatus.PENDING_REVIEW if rule.requires_approval else AnnouncementStatus.APPROVED,
+        status=AnnouncementStatus.PENDING_REVIEW if requires_review else AnnouncementStatus.APPROVED,
         content=content,
-        platform_content=_platform_content(
-            rule.template,
-            content,
-            platforms=rule.platforms,
-        ),
+        platform_content=platform_content,
         platforms=list(rule.platforms or []),
         audience=resolved.summary(),
         trigger_context=context,
@@ -273,7 +280,7 @@ def _create_announcement(
         expires_at=_expiry(rule),
     )
 
-    if rule.requires_approval:
+    if requires_review:
         notify_reviewers(rule, announcement)
     elif publish_at is None:
         dispatch(announcement)
@@ -1294,14 +1301,15 @@ def preview_platforms(
         if flow_binding is not None
         else {}
     )
+    preview_content = {
+        "body": render(body or "", variables, field="body"),
+        "hashtags": variables["hashtags_list"],
+        "link": variables["link"],
+        "image_url": variables["product_image_url"],
+    }
     artifacts = resolve_all_dispatch_artifacts(
         platforms=normalized_platforms,
-        content={
-            "body": render(body or "", variables, field="body"),
-            "hashtags": variables["hashtags_list"],
-            "link": variables["link"],
-            "image_url": variables["product_image_url"],
-        },
+        content=preview_content,
         platform_content=rendered_variants,
         content_version=content_version,
         facts_as_of=facts.as_of.isoformat(),
@@ -1328,6 +1336,7 @@ def preview_platforms(
         "ai_writes": bool(use_ai),
         "facts": facts.as_payload(),
         "platform_problems": platform_problems,
+        "publish_blockers": _publish_blockers(preview_content, rendered_variants),
         "previews": {
             artifact.platform: {
                 "artifact": artifact.as_payload(),
@@ -1435,6 +1444,7 @@ def preview_announcement(
         "ai_writes": False,
         "facts": facts.as_payload() if facts is not None else None,
         "platform_problems": platform_problems,
+        "publish_blockers": _publish_blockers(content, platform_content),
         "previews": {
             artifact.platform: {
                 "artifact": artifact.as_payload(),
@@ -1448,6 +1458,17 @@ def preview_announcement(
             for artifact in artifacts
         },
     }
+
+
+def _publish_blockers(content: dict, platform_content: object) -> list[dict]:
+    """O que a aprovação vai recusar, mostrado na prévia sem derrubá-la (MKT-20)."""
+    from shopman.shop.policies.marketing_public_link import public_link_problem
+    from shopman.shop.services.storefront_links import storefront_base_url
+
+    problem = public_link_problem(
+        content, platform_content, store_address_configured=bool(storefront_base_url())
+    )
+    return [problem.as_payload()] if problem is not None else []
 
 
 def _preview_whatsapp_binding(
@@ -1959,6 +1980,11 @@ def dispatch(announcement: Announcement) -> int:
             announcement.status = current.status
             logger.info("campaign.dispatch_superseded announcement=%s", current.pk)
             return 0
+        # MKT-20: o caminho sem selo (automático, agendado) também não sai com link
+        # relativo. Recusa antes de marcar PUBLISHING; o agendado espera a causa sumir.
+        blockers = _publish_blockers(current.content or {}, current.platform_content)
+        if blockers:
+            raise CampaignError(blockers[0]["detail"])
 
         current.status = AnnouncementStatus.PUBLISHING
         current.save(update_fields=["status"])

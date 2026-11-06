@@ -313,9 +313,23 @@ def start_selling(material, *, price_q: int | None):
 
     Recusa o SKU com ficha ativa: o que é produzido aqui se vende pelo
     catálogo, não nasce do Compras.
+
+    Recusa também o que é contado em g, mg ou ml: o preço de venda é centavo
+    inteiro por unidade do produto, e por grama ele perde os centavos (R$ 0,055
+    virava R$ 0,06; beta 05/11, CMP-07). Vender a granel é por quilo
+    (``Product.unit == "kg"``, "Preço por kg"), como o custo do insumo.
     """
+    from shopman.buyman.models.cost import reading_unit
     from shopman.offerman.models import AvailabilityPolicy, Collection, CollectionItem, Product
 
+    scale, reading = reading_unit(material.unit)
+    if scale != 1:
+        raise ValidationError({
+            "unit": (
+                f"{material.name} é contado em {material.unit}, e o preço por {material.unit} "
+                f"perde os centavos. Para vender, cadastre o item em {reading} ou por unidade."
+            )
+        })
     if price_q is None or price_q <= 0:
         raise ValidationError({"price_q": "Informe o preço de venda para ligar a venda."})
     if is_produced_here(material.sku):

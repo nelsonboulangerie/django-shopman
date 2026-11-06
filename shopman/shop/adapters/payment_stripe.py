@@ -162,23 +162,32 @@ def create_intent(
     # virar a cobrança do pedido.
     stripe = _get_stripe()
 
-    # O LINK tem prazo, e o prazo é UM: o mesmo instante vai para o Payman
-    # (agenda o `payment.timeout` e aparece no PDV como "vale até …") e para o
-    # Stripe, logo abaixo. Sem mandar, o Stripe expirava a sessão em 24 h por
-    # conta própria e a casa não sabia — o pedido ficava aberto, o estoque
-    # preso, e o cliente ligava dizendo que "o link parou de funcionar".
-    # O cartão da loja online segue sem prazo: lá o cliente está na tela, e o
-    # abandono tem a própria rede (`reconcile_with_gateway_if_due`).
-    # A janela e o corte do atendimento chegam prontos pelo `_adapter_config`;
-    # aqui só se fecha o `min(agora + janela, corte)` na régua do Stripe.
-    expires_at = (
-        link_expires_at(
+    # Toda sessão hospedada tem prazo, e o prazo é UM: o mesmo instante vai
+    # para o Payman (agenda o `payment.timeout` e aparece na tela como "vale
+    # até …") e para o Stripe, logo abaixo. Sem mandar, o Stripe expirava a
+    # sessão em 24 h por conta própria e a casa não sabia — o pedido ficava
+    # aberto, o estoque preso, e o cliente ligava dizendo que "o link parou de
+    # funcionar".
+    #
+    # - LINK: a janela do link e o corte do atendimento chegam prontos pelo
+    #   `_adapter_config`; aqui só se fecha o `min(agora + janela, corte)`.
+    # - CARTÃO da loja online: a janela de pagamento do canal
+    #   (`card_timeout_minutes`, a mesma do Pix), presa ao piso de 30 min do
+    #   Stripe. Sem prazo, o cartão recusado ou abandonado deixava o pedido
+    #   "Novo" para sempre e o estoque preso pelo hold: a "rede" da
+    #   reconciliação só age quando o gateway diz pago ou autorizado, e um
+    #   gateway dizendo "pendente" não cancelava nada (beta 06/11, F2).
+    if method == "link":
+        expires_at = link_expires_at(
             timeout_minutes=config.get("link_timeout_minutes"),
             expires_by=config.get("link_expires_by"),
         )
-        if method == "link"
-        else None
-    )
+    else:
+        from shopman.shop.config import ChannelConfig
+
+        expires_at = link_expires_at(
+            timeout_minutes=config.get("card_timeout_minutes") or ChannelConfig.Payment.timeout_minutes,
+        )
 
     provenance = provenance_metadata(test=test_mode())
     db_intent = PaymentService.create_intent(
@@ -203,10 +212,9 @@ def create_intent(
         return _intent_from_db(db_intent, currency=currency)
 
     create_options = {"idempotency_key": idempotency_key} if idempotency_key else {}
-    if expires_at is not None:
-        # `expires_at` é o nome do Stripe para o mesmo instante (epoch, em
-        # segundos). Vocabulário de terceiro, na porta de saída.
-        create_options["expires_at"] = link_expires_at_epoch(expires_at)
+    # `expires_at` é o nome do Stripe para o mesmo instante (epoch, em
+    # segundos). Vocabulário de terceiro, na porta de saída.
+    create_options["expires_at"] = link_expires_at_epoch(expires_at)
     session = stripe.checkout.Session.create(
         mode="payment",
         payment_method_types=["card"],

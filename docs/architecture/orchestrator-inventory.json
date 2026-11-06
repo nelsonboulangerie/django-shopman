@@ -7390,6 +7390,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/marketing_public_link.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "marketing.public-link"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/rating_contact.py",
       "touchpoints": [
         "outro"
@@ -7397,6 +7411,20 @@
       "out_of_extraction": false,
       "unit_ids": [
         "rating.contact-offer"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/order_payment.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.payment-method"
       ],
       "responsibilities": [
         "decisão"

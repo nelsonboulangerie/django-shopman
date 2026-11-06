@@ -63,6 +63,15 @@ sai do conteúdo GRAVADO do anúncio mais as edições do card (`body`, `hashtag
 anúncio não tem link, a prévia não mostra link, porque o post não terá
 (`campaign.preview_announcement`).
 
+**Conteúdo público nunca sai com link relativo** (MKT-20, beta 05/11). Sem o endereço do
+site da loja (`SHOPMAN_STOREFRONT_BASE_URL`, lido por `storefront_links`), o link nasce `/produto/<sku>` ou `/oferta/<ref>`, e fora da loja
+isso não abre. O rascunho automático continua nascendo; as duas prévias devolvem o motivo
+em `publish_blockers` (`marketing_link_store_address_missing`, aviso com X na revisão), e a
+aprovação e o envio recusam. A decisão mora em `policies/marketing_public_link.py`
+(`public_link_problem`), chamada em `marketing_approval._validate_content`, em
+`marketing_facts.validate_for_dispatch` e nas duas prévias. Ela olha o `link` do conteúdo
+e de cada variante, e o caminho da loja solto no texto.
+
 ### Post do Google Meu Negócio
 
 Três formatos (`publication_format`): `standard` (Atualização), `event` (Evento: título,

@@ -170,6 +170,7 @@ from .operations import (
     OperatorPinChangeView,
     OperatorPinResetView,
     OperatorSessionView,
+    OperatorUnlockPasswordView,
     OperatorUnlockView,
     OrderAdvanceView,
     OrderAssignView,
@@ -465,6 +466,12 @@ urlpatterns = [
     path("operator/tenant/", OperatorTenantView.as_view(), name="api-backstage-operator-tenant"),
     path("operator/eligible/", OperatorEligibleView.as_view(), name="api-backstage-operator-eligible"),
     path("operator/unlock/", OperatorUnlockView.as_view(), name="api-backstage-operator-unlock"),
+    # "Entrar com senha" na trava: só quem não tem PIN; num posto, só o Dono (06/11).
+    path(
+        "operator/unlock/password/",
+        OperatorUnlockPasswordView.as_view(),
+        name="api-backstage-operator-unlock-password",
+    ),
     path("operator/lock/", OperatorLockView.as_view(), name="api-backstage-operator-lock"),
     # Sair deste dispositivo: encerra a sessão (o vínculo de posto fica).
     path("operator/logout/", OperatorLogoutView.as_view(), name="api-backstage-operator-logout"),

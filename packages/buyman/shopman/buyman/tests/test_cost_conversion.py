@@ -205,3 +205,28 @@ class TestInsumoEmGramaSeLePorQuilo:
             supplier=moinho, material=farinha, conversion=saco_25, cost_q=18000,
         )
         assert cost.cost_per_display_unit_q() == (720, "kg")
+
+
+class TestSemConversaoGramaSeGuardaPorQuilo:
+    """Emenda de 06/11/2026 (beta CMP-07): sem conversão, o custo do g é por kg."""
+
+    def test_o_custo_sem_embalagem_e_do_quilo(self, moinho):
+        tonica = Material.objects.create(sku="TONICA", name="Água tônica", unit="g")
+        cost = SupplierMaterialCost.objects.create(supplier=moinho, material=tonica, cost_q=9167)
+
+        assert cost.priced_unit_factor == Decimal("1000")
+        assert cost.priced_unit_label == "kg"
+        assert cost.base_factor == Decimal("1")
+        assert cost.purchase_unit_label == "g"
+        assert cost.cost_per_base_unit == Decimal("9.167")
+        assert cost.cost_for_base_qty_q(300) == 2750
+        assert cost.cost_per_display_unit_q() == (9167, "kg")
+
+    def test_ml_e_por_litro_e_un_fica_na_propria_unidade(self, moinho):
+        leite = Material.objects.create(sku="LEITE", name="Leite", unit="ml")
+        ovo = Material.objects.create(sku="OVO-UN", name="Ovo", unit="un")
+        por_litro = SupplierMaterialCost.objects.create(supplier=moinho, material=leite, cost_q=550)
+        por_ovo = SupplierMaterialCost.objects.create(supplier=moinho, material=ovo, cost_q=90)
+
+        assert (por_litro.priced_unit_label, por_litro.cost_per_base_unit) == ("l", Decimal("0.55"))
+        assert (por_ovo.priced_unit_label, por_ovo.cost_per_base_unit) == ("un", Decimal("90"))

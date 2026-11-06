@@ -39,6 +39,7 @@ from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.lifecycle import dispatch
 from shopman.shop.models import Channel
+from shopman.shop.tests._payment import with_payment
 
 # ── Test infrastructure ───────────────────────────────────────────────
 
@@ -130,6 +131,7 @@ def _session(channel, items=None):
         channel_ref=channel.ref,
         state="open",
         items=items,
+        data=with_payment(channel),
     )
 
 

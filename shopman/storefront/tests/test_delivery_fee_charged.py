@@ -54,6 +54,7 @@ def _session_with_delivery_cart(channel, *, address=ADDRESS):
         {"op": "set_data", "path": "fulfillment_type", "value": "delivery"},
         {"op": "set_data", "path": "delivery_address", "value": "Rua das Flores, 1"},
         {"op": "set_data", "path": "delivery_address_structured", "value": address},
+        {"op": "set_data", "path": "payment", "value": {"method": "cash", "collection": "on_delivery"}},
     ])
     session.refresh_from_db()
     return session
