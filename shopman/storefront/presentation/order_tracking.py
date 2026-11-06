@@ -144,6 +144,9 @@ class PickupInfoProjection:
     opening_hours: str
     directions_label: str
     directions_url: str | None
+    # O horário combinado ("hoje · 19:30 às 20:00"), ou None quando não houve
+    # horário escolhido. A aba Retirada responde "onde" E "quando".
+    when_display: str | None
 
 
 @dataclass(frozen=True)
@@ -419,7 +422,12 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         is_delivery=data.is_delivery,
         delivery_fulfillments=_present_fulfillments(data.delivery_fulfillments, copy=copy),
         pickup_fulfillments=_present_fulfillments(data.pickup_fulfillments, copy=copy, is_pickup=True),
-        pickup_info=_present_pickup(data.pickup, copy=copy),
+        pickup_info=_present_pickup(
+            data.pickup,
+            copy=copy,
+            # Só a data não é horário combinado: sem janela, a aba não inventa um.
+            when_display=when_display if data.commitment_slot_label else None,
+        ),
         actions=data.actions,
         is_active=data.is_active,
         server_now_iso=data.server_now_iso,
@@ -1484,7 +1492,12 @@ def _present_fulfillments(
     )
 
 
-def _present_pickup(pickup: TrackingPickupData | None, *, copy: CopyCatalog) -> PickupInfoProjection | None:
+def _present_pickup(
+    pickup: TrackingPickupData | None,
+    *,
+    copy: CopyCatalog,
+    when_display: str | None = None,
+) -> PickupInfoProjection | None:
     if pickup is None:
         return None
     return PickupInfoProjection(
@@ -1493,6 +1506,7 @@ def _present_pickup(pickup: TrackingPickupData | None, *, copy: CopyCatalog) -> 
         opening_hours=_format_opening_hours(pickup.opening_hours),
         directions_label=copy.title("TRACKING_PICKUP_DIRECTIONS_CTA", "Como chegar"),
         directions_url=pickup.directions_url,
+        when_display=when_display,
     )
 
 

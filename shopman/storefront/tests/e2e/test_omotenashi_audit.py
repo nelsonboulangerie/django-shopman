@@ -205,7 +205,7 @@ def test_07_checkout_rejected_date_is_actionable(client):
         client,
         fulfillment_type="pickup",
         delivery_date=J.days_ahead_iso(-1),  # yesterday
-        delivery_time_slot=J.last_pickup_slot(),
+        delivery_time_slot=J.today_pickup_slot(),
     )
     assert status == 400, body
     assert body["field"] == "delivery_date"
@@ -249,7 +249,7 @@ def test_07b_checkout_closed_day_surfaces_reopening_and_preorder(client):
         client,
         fulfillment_type="pickup",
         delivery_date=closed_date.isoformat(),
-        delivery_time_slot=J.last_pickup_slot(),
+        delivery_time_slot=J.today_pickup_slot(),
     )
     assert status == 400, body
     assert body["field"] == "delivery_date"

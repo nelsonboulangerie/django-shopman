@@ -83,16 +83,34 @@ describe('edição de endereço por confirmar (beta SMS-15)', () => {
   })
 })
 
-describe('motivo da retirada (beta SMS-10)', () => {
-  it('o motivo de prontidão é um só e ignora os motivos de cada turno', async () => {
-    const { pickupReadinessReason } = await import('../app/utils/checkoutFlow')
-    expect(pickupReadinessReason([
-      { enabled: false, reason: 'Horário já passou' },
+describe('motivo da janela riscada (beta SMS-10)', () => {
+  it('o motivo de prontidão sai uma vez, com o aviso do riscado quando há horário livre', async () => {
+    const { checkoutWindowsReason } = await import('../app/utils/checkoutFlow')
+    expect(checkoutWindowsReason([
       { enabled: false, reason: 'Brioche sai às 15:00.' },
       { enabled: true, reason: '' }
-    ])).toBe('Brioche sai às 15:00.')
-    expect(pickupReadinessReason([{ enabled: false, reason: 'Loja fechada hoje' }])).toBe('')
+    ])).toBe('Brioche sai às 15:00. Antes disso, os horários ficam riscados.')
+    expect(checkoutWindowsReason([{ enabled: false, reason: 'Brioche sai às 15:00.' }])).toBe('Brioche sai às 15:00.')
+    expect(checkoutWindowsReason([{ enabled: true, reason: '' }])).toBe('')
     expect(finalizar).toContain('data-checkout-pickup-readiness')
+  })
+})
+
+describe('horário de retirada de hoje (beta 06/11)', () => {
+  it('retirada de hoje usa a grade de meias horas; encomenda, a lista de turnos', async () => {
+    const { usesWindowGrid } = await import('../app/utils/checkoutFlow')
+    expect(usesWindowGrid({ pickup_grid: 'half_hour' }, 'pickup')).toBe(true)
+    expect(usesWindowGrid({ pickup_grid: 'canonical' }, 'pickup')).toBe(false)
+    expect(usesWindowGrid({ pickup_grid: 'canonical' }, 'delivery')).toBe(true)
+    expect(usesWindowGrid(null, 'pickup')).toBe(false)
+  })
+
+  it('dia sem horário diz o recebimento certo, e a tela não esconde o vazio', async () => {
+    const { noWindowsMessage } = await import('../app/utils/checkoutFlow')
+    expect(noWindowsMessage('pickup')).toBe('Não há horário de retirada nesse dia. Escolha outra data.')
+    expect(noWindowsMessage('delivery')).toBe('Não há horário de entrega nesse dia. Escolha outra data.')
+    expect(finalizar).toContain('data-checkout-pickup-slots-empty')
+    expect(finalizar).toContain("'Horário da retirada'")
   })
 })
 

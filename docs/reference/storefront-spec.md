@@ -145,11 +145,14 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   expira por tempo; só muda quando o operador sinaliza o planejado como realizado (ou uma confirmação
   negativa). Estados `is_awaiting_confirmation`→`is_ready_for_confirmation`. Web: `check_on_commit=False`
   (confia nos holds); POS/marketplace re-verifica.
-- **Slots de retirada:** mediana do `WorkOrder.finished_at` por SKU (30d, arredonda p/ 30min) → gargalo
-  define o slot mais cedo. **Fallback p/ pouca/nenhuma amostra:** SKU sem histórico é omitido (não
-  distorce o gargalo); se NENHUM SKU do carrinho tem histórico, usa o `fallback_slot` configurável em
-  `Shop.defaults["pickup_slot_config"]` (ou o 1º slot), sempre respeitando o relógio de hoje. **Regra de
-  hora:** não vende retirada/entrega HOJE após o fechamento; slot passado é rejeitado. Preorder:
+- **Horários de retirada:** a grade é a de `shop/services/fulfillment_window` (a mesma da entrega, da
+  concierge e do PDV), e a DATA decide qual. **Hoje** → as meias horas do expediente que ainda dão (agora
+  + `DELIVERY_SLOT_LEAD_MINUTES` até o fechamento); sem nenhuma sobrando, hoje não tem horário e a tela
+  manda escolher outra data. **Encomenda** → os turnos de `Shop.defaults["pickup_slots"]` que cabem no
+  expediente do dia. A prontidão (`product_readiness`: declarada em `ready_from` e/ou mediana do
+  `WorkOrder.finished_at`; histórico e arredondamento em `Shop.defaults["pickup_slot_config"]`, 30d e 30min por padrão, valendo para toda superfície) risca as janelas que começam antes de o item ficar
+  pronto, com o produto e a hora no motivo. O commit recusa horário fora da grade do dia (passou, ou não
+  existe) e horário antes da prontidão (`validate_pickup_slot_selection`). Preorder:
   `today ≤ data ≤ today+max_preorder_days`, fora de `closed_dates`.
 - **Pagamento:** timing `at_commit`/`post_commit`/`external` por `ChannelConfig`. PIX (QR+copia-cola,
   `expires_at`) / cartão (intent + captura na confirmação). Expiry → cancela + libera holds.

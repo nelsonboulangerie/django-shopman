@@ -53,8 +53,8 @@ def test_catalog_sku_without_ledger_goes_from_cart_to_order(allow_untracked):
     from shopman.stockman.models import Quant
     from shopman.stockman.services.availability import availability_for_sku, decision_from_availability
 
-    from shopman.storefront.services.pickup_slots import get_slots
     from shopman.storefront.tests._checkout_baseline import with_baseline
+    from shopman.storefront.tests._pickup_today import today_pickup_slot
     from shopman.storefront.tests.security.conftest import login_as_customer
 
     _world(allow_untracked=allow_untracked)
@@ -78,7 +78,7 @@ def test_catalog_sku_without_ledger_goes_from_cart_to_order(allow_untracked):
         "name": "Ana", "phone": "+5543999990001",
         "fulfillment_type": "pickup",
         "delivery_date": timezone.localdate().isoformat(),
-        "delivery_time_slot": get_slots()[-1]["ref"],
+        "delivery_time_slot": today_pickup_slot(),
         "payment_method": "cash",
     })
     resp = client.post("/api/v1/checkout/", data=payload, content_type="application/json")

@@ -474,7 +474,6 @@ class TestShopAdminCalendar:
         data["defaults_max_preorder_days"] = "21"
         data["defaults_pickup_rounding_minutes"] = "30"
         data["defaults_pickup_history_days"] = "45"
-        data["defaults_pickup_fallback_slot"] = "slot-09"
         data["defaults_pickup_slot_1_ref"] = "slot-09"
         data["defaults_pickup_slot_1_label"] = "A partir das 9h"
         data["defaults_pickup_slot_1_starts_at"] = "09:00"
@@ -514,7 +513,6 @@ class TestShopAdminCalendar:
             "rounding_minutes": 30,
             "history_days": 45,
             "other": "kept",
-            "fallback_slot": "slot-09",
         }
         assert saved.defaults["closed_dates"] == [
             {"date": "2026-12-25", "label": "Natal"},

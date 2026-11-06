@@ -257,8 +257,8 @@ def test_checkout_recusa_o_exclusivo_de_quem_saiu_do_grupo(cardapio):
     from django.utils import timezone
     from shopman.orderman.models import Order
 
-    from shopman.storefront.services.pickup_slots import get_slots
     from shopman.storefront.tests._checkout_baseline import with_baseline
+    from shopman.storefront.tests._pickup_today import today_pickup_slot
 
     ana, _ = cardapio
     client = Client()
@@ -270,7 +270,7 @@ def test_checkout_recusa_o_exclusivo_de_quem_saiu_do_grupo(cardapio):
         "name": "Ana", "phone": "+5543999990001",
         "fulfillment_type": "pickup",
         "delivery_date": timezone.localdate().isoformat(),
-        "delivery_time_slot": get_slots()[-1]["ref"],
+        "delivery_time_slot": today_pickup_slot(),
         "payment_method": "cash",
     })
     response = client.post("/api/v1/checkout/", data=payload, content_type="application/json")

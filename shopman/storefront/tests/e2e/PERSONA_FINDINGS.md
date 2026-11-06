@@ -135,5 +135,5 @@ counter, PIN") is a backstage/POS concern, not a storefront journey.
   callbacks, so use `J.checkout_committed(client, django_capture_on_commit_callbacks, …)`
   to see the ledger actually debited.
 - Today-pickup slots depend on wall clock + closing time; use the **last** slot
-  (`J.last_pickup_slot()`) for today or any slot for a future date to stay
+  (`J.today_pickup_slot()`) for today or any slot for a future date to stay
   time-stable.

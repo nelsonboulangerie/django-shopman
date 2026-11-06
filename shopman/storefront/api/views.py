@@ -312,15 +312,10 @@ class CheckoutView(APIView):
         if fulfillment_type == "pickup":
             from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection
 
-            try:
-                now_local = timezone.localtime().time().replace(second=0, microsecond=0)
-            except (ValueError, KeyError):
-                now_local = None
             slot_error = validate_pickup_slot_selection(
                 delivery_time_slot,
                 delivery_date=delivery_date,
                 cart_skus=[str(line.sku) for line in cart.lines if line.sku],
-                now=now_local,
             )
             if slot_error:
                 return Response(

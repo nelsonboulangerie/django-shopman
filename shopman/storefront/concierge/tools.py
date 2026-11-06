@@ -903,8 +903,7 @@ def set_fulfillment(
         values["fiscal"] = {}
         if slot_ref:
             skus = [str(item.get("sku")) for item in (session.items or [])]
-            now_time = timezone.localtime().time().replace(second=0, microsecond=0)
-            error = validate_pickup_slot_selection(slot_ref, delivery_date=when, cart_skus=skus, now=now_time)
+            error = validate_pickup_slot_selection(slot_ref, delivery_date=when, cart_skus=skus)
             if error:
                 errors["delivery_time_slot"] = error
             else:
@@ -1362,8 +1361,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
             if locked.data.get("fulfillment_type") == "pickup":
                 from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection
                 slot_error = validate_pickup_slot_selection(locked.data.get("delivery_time_slot", ""),
-                    delivery_date=locked.data.get("delivery_date", ""), cart_skus=[str(i.get("sku")) for i in locked.items],
-                    now=timezone.localtime().time().replace(second=0, microsecond=0))
+                    delivery_date=locked.data.get("delivery_date", ""), cart_skus=[str(i.get("sku")) for i in locked.items])
                 if slot_error:
                     errors["delivery_time_slot"] = slot_error
             elif locked.data.get("fulfillment_type") == "delivery" and locked.data.get("delivery_time_slot"):
