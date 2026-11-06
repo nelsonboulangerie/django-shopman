@@ -163,14 +163,20 @@ onBeforeUnmount(() => {
         data-operator-pin-field
       />
       <span class="sr-only" aria-live="polite">{{ spoken }}</span>
-      <!-- A recusa se dispensa no X, e some sozinha quando se volta a digitar. -->
+      <!-- A recusa se dispensa no X, e some sozinha quando se volta a digitar.
+           Some sem devolver a altura (`invisible`): se o aviso saísse do fluxo,
+           o teclado subia no meio da digitação e o dedo seguinte caía na tecla
+           de cima (beta test de 05/11/2026: digitava 4 e saía 7). -->
       <NuxtAlert
-        v-if="showError"
+        v-if="error"
         color="error"
         variant="subtle"
         icon="i-lucide-circle-alert"
         :title="error"
+        :class="showError ? undefined : 'invisible'"
+        :aria-hidden="showError ? undefined : 'true'"
         close
+        data-operator-pin-error
         @update:open="errorDismissed = true"
       />
     </div>

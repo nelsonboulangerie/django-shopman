@@ -15,7 +15,7 @@ import { redoTabLabel } from "~/presentation/preorderActions";
 import type { PreorderRedoResponse } from "~/types/preorders";
 import type { PosSettingsResponse } from "~/types/settings";
 import { rollStyle } from "~/presentation/printGeometry";
-import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
+import { firstFittingWindow, scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
 import { enterAdvances, paymentFailed, pendingPixBadge, pixAwaiting } from "~/presentation/saleResult";
 import { POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION } from "~/presentation/shortcuts";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
@@ -104,6 +104,7 @@ const {
   completeOrderSetup,
   setSalesMode,
   openNewOrder,
+  releaseAbandonedOrderTab,
   itemCount,
   tabInput,
   busy,
@@ -118,6 +119,9 @@ const {
   cancelSaleError,
   lookupBusy,
   managerApprovalError,
+  managerCheckBusy,
+  checkManagerApproval,
+  gridProducts,
   customerFocusNonce,
   result,
   closeGuardNotice,
@@ -424,6 +428,8 @@ watchEffect(() => {
 });
 onBeforeUnmount(() => {
   paymentHold.value = false;
+  // A encomenda nova que ficou sem item libera a comanda ao sair (PDV2-13).
+  void releaseAbandonedOrderTab();
 });
 
 // RECARREGAR SOZINHO para entrar na versão nova é uma pergunta mais larga do que
@@ -892,6 +898,20 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
       title: "A comanda mudou em outro dispositivo.",
       description: "Confira antes de salvar. Atualizar descarta as suas alterações.",
       action: { label: "Descartar minhas alterações e atualizar", onSelect: () => { if (!busy.value) void reloadConflictingTab(); } },
+    });
+  }
+  // O horário escolhido deixou de caber quando um item entrou (PDV2-09): o aviso
+  // diz na hora, com o primeiro horário que cabe a um toque. Antes, só o chip
+  // ficava vermelho e o motivo aparecia no Pagamento.
+  if (inSaleView.value && !checkoutMode.value && scheduleConflictReason.value) {
+    const fit = firstFittingWindow(deliverySlots.value, cart.deliveryTimeSlot);
+    list.push({
+      id: "schedule-conflict",
+      color: "warning",
+      title: scheduleConflictReason.value,
+      action: fit
+        ? { label: `Mudar para ${fit.label}`, onSelect: () => { cart.deliveryTimeSlot = fit.ref; } }
+        : { label: "Escolher outro dia", onSelect: () => openScheduleHere() },
     });
   }
   if (inSaleView.value && editing.value) {
@@ -1371,6 +1391,8 @@ onBeforeUnmount(() => {
               :customer-merge-busy="customerMergeBusy"
               :customer-release-busy="customerReleaseBusy"
               :read-only="checkoutMode"
+              :tab-max-length="tabMaxLength"
+              :tab-disallowed-chars="tabDisallowedChars"
               :fulfillment-type="cart.fulfillmentType"
               :fulfillment-label="fulfillmentChipLabel"
               :schedule-label="scheduleChipLabel"
@@ -1477,6 +1499,9 @@ onBeforeUnmount(() => {
         v-model:manager-username="cart.managerUsername"
         v-model:manager-pin="cart.managerPin"
         :manager-approval-error="managerApprovalError"
+        :manager-check-busy="managerCheckBusy"
+        @check-manager="(username, pin, done) => { void checkManagerApproval(username, pin).then(done) }"
+        @manager-auth-dismissed="managerApprovalError = ''"
         v-model:fulfillment-type="cart.fulfillmentType"
         v-model:fulfillment-confirmed="cart.fulfillmentConfirmed"
         v-model:payment-collection="cart.paymentCollection"
@@ -1642,7 +1667,7 @@ onBeforeUnmount(() => {
         <PosProductGrid
           v-else
           ref="productGridRef"
-          :products="pos?.products || []"
+          :products="gridProducts"
           :collections="pos?.collections || []"
           :favorite-refs="pos?.favorite_collection_refs || []"
           :cart-items="cart.items"

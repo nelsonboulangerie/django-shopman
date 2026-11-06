@@ -45,6 +45,15 @@ export function useStationSetupRequest() {
   };
 }
 
+/**
+ * A oferta de vincular está na tela agora? O convite de instalar espera por ela:
+ * dois diálogos de primeira entrada empilhados misturavam os textos no celular
+ * (beta test de 05/11/2026, PDV2-25). Primeiro o vínculo, depois o convite.
+ */
+export function useStationSetupOfferOpen() {
+  return useState<boolean>("station-setup-offer-open", () => false);
+}
+
 export function useStationSetupOffer(state: {
   canIdentify: Ref<boolean>;
   locked: Ref<boolean>;
@@ -66,6 +75,10 @@ export function useStationSetupOffer(state: {
       dismissed: dismissed.value,
     }) || (requested.value && state.canIdentify.value && !state.locked.value),
   );
+
+  const offerOpen = useStationSetupOfferOpen();
+  watch(offer, (value) => { offerOpen.value = value; }, { immediate: true });
+  onBeforeUnmount(() => { offerOpen.value = false; });
 
   /** "Usar sem vincular" (ou sem permissão para vincular): some, e fica lembrado aqui. */
   function dismiss(options: { remember?: boolean } = { remember: true }): void {

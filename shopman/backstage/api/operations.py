@@ -1087,8 +1087,17 @@ class OperatorUnlockView(APIView):
                 request=request,
                 reason="operator_unlock_invalid",
             )
+            # A recusa diz o que houve (beta test de 05/11/2026, PDV-20): o
+            # "Identificação inválida." não dizia se era o PIN, o crachá ou o
+            # acesso. O acesso só se conta de quem a tela já lista.
+            if metodo == SignInMethod.BADGE:
+                detail = "Crachá não reconhecido. Passe de novo ou digite o PIN."
+            elif alvo is not None and not operator_service.is_eligible_operator(alvo, required_perm=perm):
+                detail = "Esta pessoa não tem acesso a este app. Fale com o gerente."
+            else:
+                detail = "PIN não confere. Tente de novo."
             return Response(
-                {"detail": "Identificação inválida.", "error": {"code": "operator_unlock_invalid"}},
+                {"detail": detail, "error": {"code": "operator_unlock_invalid"}},
                 status=403,
             )
         # `login()` de verdade, e não um cartão guardado na sessão: a partir daqui
@@ -6395,7 +6404,7 @@ class POSTabUnfireView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Look up customer by ref or phone",
         responses={200: OpenApiResponse(description="Customer projection or null.")},
@@ -6405,9 +6414,13 @@ class POSCustomerLookupView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
-    def get(self, request):
-        ref = (request.query_params.get("ref") or "").strip()
-        phone = (request.query_params.get("phone") or "").strip()
+    def post(self, request):
+        # O telefone viaja no CORPO: na query string ele ficava no log de acesso
+        # e no cache (beta test de 05/11/2026, PDV2-07). Leitura pura, POST só
+        # para o dado pessoal não aparecer na URL.
+        body = request.data if isinstance(request.data, dict) else {}
+        ref = str(body.get("ref") or "").strip()
+        phone = str(body.get("phone") or "").strip()
         # `ref` vence: é a chave exata do cadastro (cliente sem telefone existe).
         if ref:
             customer = build_pos_customer_lookup_by_ref(ref)
@@ -6503,6 +6516,46 @@ def _pos_customer_integrity_response(exc: Exception, *, action: str) -> Response
         },
         status=422,
     )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Check a manager approval (PIN or badge) without recording anything",
+        responses={200: OpenApiResponse(description="The approving manager's username.")},
+    ),
+)
+class POSManagerApprovalCheckView(APIView):
+    """Confere o PIN (ou o crachá) do gerente NA HORA, no próprio diálogo.
+
+    Beta test de 05/11/2026 (PDV-05). O diálogo "Quem autoriza?" guardava o PIN
+    e fechava; a conferência só acontecia no fechamento, depois de o operador já
+    ter confirmado "Recebi o Pix" com o cliente. PIN errado voltava como recusa
+    da VENDA, com a tela já adiante.
+
+    É o MESMO desafio do fechamento (``validate_manager_override``: permissão
+    ``cashman.adjust_shift``, ``PinCredential`` com trava progressiva), então
+    errar aqui conta na mesma trava. Não grava nada: o fechamento confere de
+    novo, porque é ele que assina a linha.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        approval = (request.data or {}).get("manager_approval")
+        if not isinstance(approval, dict):
+            approval = {}
+        try:
+            approver = pos_tabs_service.validate_manager_override(
+                approval,
+                operator_username=_username(request),
+                action="sale_approval_check",
+                recovery_invalid="Confira o gerente e digite o PIN de novo.",
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=422)
+        return Response({"approved_by": approver.get_username()})
 
 
 @extend_schema_view(

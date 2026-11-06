@@ -24,8 +24,8 @@ import {
   discountReachText,
   draftDiscountOutcome,
   lineDiscountBadge,
+  lineDiscountCompact,
   lineDiscountDetail,
-  lineDiscountFact,
   lineListTotalDisplay,
   lineTotalQ,
   manualDiscountLabel,
@@ -406,7 +406,7 @@ function discountBadge(item: POSCartItem) {
  *  −R$ 3,00 na linha" quando a linha tem mais de uma unidade (o desconto em R$ é
  *  por unidade, regra do kernel); em %, o percentual e o valor na linha. */
 function compactDiscount(item: POSCartItem) {
-  return lineDiscountFact(item) || discountBadge(item);
+  return lineDiscountCompact(item, reasonOptions.value) || discountBadge(item);
 }
 /** O detalhe da linha aberta: o motivo e o alcance. */
 function discountDetail(item: POSCartItem) {
@@ -827,6 +827,15 @@ function kitchenFact(item: POSCartItem): string {
 
 function setMode(mode: "qty" | "disc" | "disc_brl") {
   numpadMode.value = mode;
+}
+/** O botão da quantidade TOMA o teclado: com a busca de produto ainda focada
+ *  (o Enter que lançou o item mantém o foco nela), o "5" digitado depois caía na
+ *  busca e a quantidade não mudava (beta test de 05/11/2026, PDV2-10). Sem campo
+ *  focado, os dígitos chegam ao numpad da linha (`onWindowKeydown`). */
+function takeKeyboardForQty() {
+  if (!import.meta.client) return;
+  const active = document.activeElement;
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) active.blur();
 }
 
 // Observação da linha (Odoo Note): o texto da linha ativa, escrito NO EDITOR (o mesmo
@@ -1631,6 +1640,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                 @click="
                   selectLine(activeItem.line_id);
                   setMode('qty');
+                  takeKeyboardForQty();
                 "
               />
               <NuxtButton
