@@ -151,10 +151,18 @@ class CartDiscountLineProjection:
 
 @dataclass(frozen=True)
 class CartCouponProjection:
-    """Applied coupon — code + cents saved."""
+    """Applied coupon — code + cents saved.
+
+    Com ``discount_q == 0``, ``zero_reason`` diz por quê (``pricing.coupon.reason``,
+    ``DiscountModifier._coupon_zero_reason``); ``missing_q`` é o que falta para o
+    pedido mínimo e ``fulfillment_types`` onde o cupom vale.
+    """
 
     code: str
     discount_q: int
+    zero_reason: str = ""
+    missing_q: int = 0
+    fulfillment_types: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -676,7 +684,16 @@ def _coupon(data: dict, pricing: dict) -> CartCouponProjection | None:
     coupon_data = pricing.get("coupon")
     if not (code and coupon_data):
         return None
-    return CartCouponProjection(code=code, discount_q=int(coupon_data.get("discount_q", 0) or 0))
+    discount_q = int(coupon_data.get("discount_q", 0) or 0)
+    if discount_q > 0:
+        return CartCouponProjection(code=code, discount_q=discount_q)
+    return CartCouponProjection(
+        code=code,
+        discount_q=discount_q,
+        zero_reason=str(coupon_data.get("reason") or ""),
+        missing_q=int(coupon_data.get("missing_q") or 0),
+        fulfillment_types=tuple(coupon_data.get("fulfillment_types") or ()),
+    )
 
 
 def _checkout_eligibility(

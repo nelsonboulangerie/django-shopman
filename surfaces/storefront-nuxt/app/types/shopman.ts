@@ -319,6 +319,11 @@ export interface CartProjection {
   coupon_code: string | null
   coupon_discount_q: number | null
   coupon_discount_display: string | null
+  // Cupom com desconto zero: o motivo vem do servidor (pricing.coupon.reason).
+  coupon_zero_reason: '' | 'unavailable' | 'customer' | 'fulfillment' | 'minimum' | 'items' | 'already_discounted'
+  coupon_missing_q: number
+  coupon_missing_display: string | null
+  coupon_fulfillment_types: string[]
   has_unavailable_items: boolean
   has_awaiting_confirmation_items: boolean
   has_ready_for_confirmation_items: boolean

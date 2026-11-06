@@ -694,6 +694,27 @@ O mesmo bloco vive em `Session.pricing` durante o rascunho e é selado em
 | `items[]` | `list[dict]` | Um registro por desconto vencedor: `{line_id, sku, type, name, original_price_q, discount_q, qty, discount_kind?, fulfillment_types?}`. `type` `"promotion"` | `"coupon"` | `"manual"`; `discount_kind` (equipe/parceiro/...) só quando o desconto veio do PRÓPRIO grupo do cliente (promoção `grupo-<ref>`); `fulfillment_types` presente quando a promoção é restrita a canal de entrega/retirada (ex.: `["pickup"]`). |
 | `savings` | `dict` ou ausente | A economia DO GRUPO consolidada para a mensagem ao cliente: `{amount_q, group, kind, message}` (presente só quando `amount_q > 0`). `message` já vem renderizada do `PriceTier.metadata.savings_message` ou do copy `CHECKOUT_GROUP_SAVINGS`. O comprovante e o checkout leem daqui, do snapshot imutável do pedido. |
 
+### `pricing.coupon` — o cupom da sacola e, sem desconto, o motivo
+
+Escrito pelo `DiscountModifier` (`shop/modifiers.py`) a cada reprice quando há
+`Session.data.coupon_code`; selado em `Order.snapshot["pricing"]` no commit. O lifecycle
+(`_record_coupon_use`) só gasta um uso do cupom quando `discount_q > 0`: cupom que ficou na
+sacola sem descontar não consome `max_uses`.
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `code` | `str` | O código do cupom. |
+| `discount_q` | `int` | O desconto que o cupom REALMENTE aplicou (centavos). |
+| `reason` | `str` ou ausente | Só com `discount_q == 0` (beta 06/11): por que o cupom não descontou. `unavailable` (vencido, esgotado ou fora do canal) · `customer` (segmento, grupo ou aniversário) · `fulfillment` (forma de recebimento) · `minimum` (pedido mínimo) · `items` (nenhuma linha no alvo de SKU/coleção) · `already_discounted` (as linhas do alvo já têm desconto igual ou maior; o maior ganha, sem somar). A condição vem de `policies/promotion.promotion_unmet_condition`. |
+| `missing_q` | `int` ou ausente | Com `reason == "minimum"`: quanto falta para o pedido mínimo (centavos). |
+| `fulfillment_types` | `list[str]` ou ausente | Com `reason == "fulfillment"`: onde o cupom vale (ex.: `["delivery"]`). |
+
+A sacola do Storefront (`GET /api/v1/storefront/cart/`) entrega esses campos como
+`coupon_zero_reason`, `coupon_missing_q`, `coupon_missing_display` e
+`coupon_fulfillment_types` (vazios quando o cupom descontou), e o checkout escreve a frase
+a partir deles (`checkoutFlow.couponZeroDescription`), ex. "Faltam R$ 11,30 para usar este
+cupom.".
+
 ### Exemplo completo
 
 ```json

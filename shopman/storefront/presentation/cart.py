@@ -192,6 +192,12 @@ class CartProjection:
     coupon_code: str | None
     coupon_discount_q: int | None
     coupon_discount_display: str | None
+    # Cupom na sacola com desconto zero: o motivo vem do servidor (beta 06/11).
+    # "" quando há desconto ou não há cupom. Ver ``CartCouponProjection``.
+    coupon_zero_reason: str
+    coupon_missing_q: int
+    coupon_missing_display: str | None
+    coupon_fulfillment_types: tuple[str, ...]
 
     # Warnings
     has_unavailable_items: bool
@@ -302,6 +308,12 @@ def build_cart(
             if data.coupon and data.coupon.discount_q
             else None
         ),
+        coupon_zero_reason=data.coupon.zero_reason if data.coupon else "",
+        coupon_missing_q=data.coupon.missing_q if data.coupon else 0,
+        coupon_missing_display=(
+            _money(data.coupon.missing_q) if data.coupon and data.coupon.missing_q else None
+        ),
+        coupon_fulfillment_types=data.coupon.fulfillment_types if data.coupon else (),
         has_unavailable_items=data.has_unavailable,
         has_awaiting_confirmation_items=data.has_awaiting_confirmation,
         has_ready_for_confirmation_items=data.has_ready_for_confirmation,
