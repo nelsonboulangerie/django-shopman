@@ -2,6 +2,12 @@ import { toast } from "vue-sonner";
 
 import type { DayClosingResponse } from "~/types/closing";
 
+/** A liberação do fechamento com produção aberta: o porquê e a assinatura do gerente. */
+export interface ProductionRelease {
+  reason: string;
+  manager_approval: { username?: string; pin?: string; badge?: string };
+}
+
 interface DayClosingDeps {
   action: { call: (path: string, opts?: { body?: Record<string, unknown> }) => Promise<unknown> };
 }
@@ -29,15 +35,39 @@ export async function useDayClosing({ action }: DayClosingDeps) {
 
   const submitting = ref(false);
 
-  async function submit(quantities: Record<string, string>): Promise<boolean> {
+  // Produção aberta IMPEDE selar o dia (decisão do dono, 05/11/2026): o servidor
+  // recusa com 409 `pending_production`, e a página abre a liberação (motivo +
+  // gerente da lista com PIN). A assinatura recusada (`manager_approval_*`) volta
+  // ao diálogo do gerente, não a um toast: a saída É assinar de novo.
+  const productionBlock = ref("");
+  const releaseChallenge = ref<{ code: string; message: string } | null>(null);
+
+  async function submit(
+    quantities: Record<string, string>,
+    release: ProductionRelease | null = null,
+  ): Promise<boolean> {
     if (submitting.value) return false;
     submitting.value = true;
+    const body: Record<string, unknown> = { quantities };
+    if (release) body.production_release = release;
     try {
-      await action.call("/api/v1/backstage/closing/", { body: { quantities } });
+      await action.call("/api/v1/backstage/closing/", { body });
+      productionBlock.value = "";
+      releaseChallenge.value = null;
       await refresh();
-      toast.success("Fechamento do dia registrado.");
+      toast.success(release ? "Fechamento do dia registrado, com a liberação do gerente." : "Fechamento do dia registrado.");
       return true;
     } catch (err) {
+      const code = httpErrorCode(err);
+      if (code === "pending_production") {
+        productionBlock.value = httpErrorMessage(err, "Há produção aberta.");
+        await refresh();
+        return false;
+      }
+      if (code === "manager_approval_required" || code === "manager_approval_invalid") {
+        releaseChallenge.value = { code, message: httpErrorMessage(err, "Revise o gerente e o PIN.") };
+        return false;
+      }
       toast.error(`${httpErrorMessage(err, "A contagem do fechamento não foi registrada.")} Os números seguem na tela. Tente de novo.`);
       // 409 (dia já fechado) ou validação: a projection manda na tela.
       await refresh();
@@ -67,5 +97,17 @@ export async function useDayClosing({ action }: DayClosingDeps) {
     }
   }
 
-  return { closing, pending, error, accessDenied, refresh, submitting, submit, answering, answerEpisode };
+  return {
+    closing,
+    pending,
+    error,
+    accessDenied,
+    refresh,
+    submitting,
+    submit,
+    productionBlock,
+    releaseChallenge,
+    answering,
+    answerEpisode,
+  };
 }

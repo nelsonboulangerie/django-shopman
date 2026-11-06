@@ -16,6 +16,10 @@ const props = defineProps<{
   openTabs: number;
   /** A comanda aberta NESTA mesa (vínculo opcional comanda × mesa); "" = nenhuma. */
   spotTab?: string;
+  /** Quem não grava o salão (a Caixa) confere a mesa sem mexer: tudo desabilitado. */
+  readOnly?: boolean;
+  /** Outra mesa tem o mesmo nome (sigla, ou nome sem sigla). */
+  nameTaken?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -99,6 +103,7 @@ const tabsNote = computed(() => {
 
 <template>
   <section class="flex min-h-0 flex-1 flex-col" :aria-label="`Mesa ${spot.label}`" data-seating-panel>
+   <fieldset :disabled="readOnly" class="contents" :data-seating-panel-read-only="readOnly ? '' : undefined">
     <div class="flex items-center gap-3 border-b border-border px-4 pt-4 pb-3">
       <span
         class="grid size-10 shrink-0 place-items-center border-2 border-primary bg-primary/12 op-label font-semibold"
@@ -242,12 +247,18 @@ const tabsNote = computed(() => {
             :ui="{ base: 'uppercase' }"
             :maxlength="8"
             :placeholder="shortLabelOf({ short_label: '', label: spot.label })"
+            :color="nameTaken ? 'error' : undefined"
+            :highlight="nameTaken"
+            :aria-invalid="nameTaken || undefined"
             data-seating-short-label
             @change="commitNames"
             @keydown.enter="($event.target as HTMLInputElement).blur()"
           />
         </label>
       </div>
+      <p v-if="nameTaken" class="op-micro text-error" role="alert" data-seating-name-taken>
+        Outra mesa já se chama assim. Dê outra sigla a uma das duas.
+      </p>
 
     </div>
 
@@ -261,5 +272,6 @@ const tabsNote = computed(() => {
         @click="emit('remove')"
       />
     </div>
+   </fieldset>
   </section>
 </template>

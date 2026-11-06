@@ -1058,6 +1058,25 @@ def set_sale(material_sku: str, payload: dict[str, Any], *, user=None) -> tuple[
         raise PurchaseError(text, code="sale_refused", field=field) from exc
     if is_sold_by_weight(product.unit):
         return build_purchase(), f"{material.name} está à venda por peso, só no balcão."
+    if not product.is_published:
+        # Oculto no catálogo sai de TODOS os canais, PDV incluído (decisão do
+        # dono, 05/11): religar a venda de um produto oculto não o põe no balcão.
+        return build_purchase(), (
+            f"{material.name} está oculto no Catálogo: publique lá para vender no PDV."
+        )
+    from shopman.offerman.models import ListingItem
+
+    from shopman.shop.services.sku_records import remote_listing_refs
+
+    paused_remote = ListingItem.objects.filter(
+        product=product, listing__ref__in=remote_listing_refs(),
+    ).exclude(is_published=True, is_sellable=True).exists()
+    if paused_remote:
+        # O item novo vende só no balcão: os canais remotos nascem pausados, e o
+        # Catálogo mostra "Só no balcão" (beta 05/11, CMP-08).
+        return build_purchase(), (
+            f"{material.name} está à venda no PDV. Loja online, iFood e WhatsApp ficam pausados até você ligar no Catálogo."
+        )
     return build_purchase(), f"{material.name} está à venda no PDV."
 
 
@@ -1221,7 +1240,9 @@ def _supplier_contact_reach(supplier, role: str) -> tuple[str, str, str]:
     meio da outra.
     """
     SupplierContact = apps.get_model("buyman", "SupplierContact")
-    rows = list(SupplierContact.objects.filter(supplier=supplier))
+    # `contacts.all()` aproveita o prefetch da projeção (que pergunta a rota de
+    # cada fornecedor ativo); fora dela, é a mesma consulta de sempre.
+    rows = list(supplier.contacts.all())
     by_email = SupplierContact.pick(rows, role, requires="email")
     by_phone = SupplierContact.pick(rows, role, requires="phone")
     winner = by_email or by_phone
@@ -1531,7 +1552,20 @@ def parse_money_input(value: str, *, field: str = "costInput") -> int:
             code="money_input_negative",
             field=field,
         )
+    if amount != amount.quantize(Decimal("0.01")):
+        # Dinheiro se guarda em centavos: 0,055 virava R$ 0,06 em silêncio, 9% acima
+        # do digitado (beta 05/11, CMP-07). Recusar e dizer o que cabe.
+        raise PurchaseError(
+            f"O valor guarda centavos: escreva até duas casas, como "
+            f"{_brl(amount.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))}.",
+            code="money_input_subcent",
+            field=field,
+        )
     return int((amount * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def _brl(amount: Decimal) -> str:
+    return f"{amount:.2f}".replace(".", ",")
 
 
 def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> ResolvedReceiptLine:

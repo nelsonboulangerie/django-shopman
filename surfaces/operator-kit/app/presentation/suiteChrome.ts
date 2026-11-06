@@ -272,7 +272,9 @@ export function suiteShortcutGroup(sections: readonly OperatorSection[], options
   if (options.search) items.push({ keys: ["/"], label: "Buscar nesta tela" });
   if (options.rail) items.push({ keys: ["C"], label: "Barra lateral: aberta, compacta ou oculta" });
   items.push({ keys: ["?"], label: "Abrir esta ajuda" });
-  return { title: options.appLabel ? `Em todo o ${options.appLabel}` : "Em todo o app", items };
+  // Sem artigo: "Em todo o Cozinha" errava o gênero (beta 05/11, KDS-12), e cada app
+  // tem o seu (a Cozinha, o PDV, o B.I.). O nome do app abre, como no "Voltar à Central".
+  return { title: options.appLabel ? `${options.appLabel}: em qualquer tela` : "Em qualquer tela", items };
 }
 
 /**

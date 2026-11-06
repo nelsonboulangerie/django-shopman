@@ -101,7 +101,7 @@ def test_required_evidence_and_double_check_gate_completion(operator):
     cash = run.task_runs.get(template__ref="opening-cash-test")
     equipment = run.task_runs.get(template__ref="opening-equipment-test")
 
-    with pytest.raises(OperationChecklistError, match="evidência numérica"):
+    with pytest.raises(OperationChecklistError, match="valor conferido"):
         complete_task_run(cash, user=operator)
 
     complete_task_run(cash, user=operator, evidence_number=Decimal("200.00"))

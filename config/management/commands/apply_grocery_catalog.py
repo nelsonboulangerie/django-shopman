@@ -38,19 +38,21 @@ oficial do catálogo, ``gtin_is_valid``). Quem falta alguma dessas fica em
   o item comprável, e é por ele que o Compras recebe a NF-e (ver
   ``shopman/shop/services/sku_records.py``).
 - Coleção ``mercearia``.
-- **Despublicado** (``is_published=False``) e vendável, como os chás Kãnfa:
-  alérgenos, tabela nutricional e ingredientes são dado da embalagem, que
-  ninguém digitou ainda. Publicar é passo do gestor, depois da ficha.
+- **Publicado e vendável, só no balcão**: alérgenos, tabela nutricional e
+  ingredientes são dado da embalagem, que ninguém digitou ainda. Ligar os
+  canais remotos é passo do gestor, depois da ficha. "Ocultar no catálogo"
+  (``is_published=False``) tira o item de TODOS os canais, PDV incluído
+  (decisão do dono, 05/11/2026): vender só no balcão é pausar os remotos.
 
 **Onde se vende — a regra das listagens**
 
-- **PDV sempre.** O balcão já vende estes itens hoje (é o histórico do Yooga);
-  o PDV lê a listagem ``pdv``, não ``Product.is_published``.
+- **PDV sempre.** O balcão já vende estes itens hoje (é o histórico do Yooga).
 - **Loja online, WhatsApp e iFood só com foto.** Sem foto nenhum item entra
   em canal onde o cliente compra de longe: ele decide pela imagem, e produto
   sem retrato na vitrine é produto que parece faltar. Nenhum item desta tabela
   tem foto hoje, então todos nascem só no PDV; quando a foto chegar
-  (``image_url``), rodar o comando de novo os lista nos canais remotos. E o
+  (``image_url``), rodar o comando de novo os lista nos canais remotos,
+  PAUSADOS: quem liga é a gerente, no Catálogo. E o
   contrário também vale: item desta tabela sem foto que estiver num canal
   remoto sai dele.
 
@@ -535,7 +537,8 @@ def _sync_listings(product, price_q: int, report: dict) -> None:
     from django.core.exceptions import ValidationError
 
     try:
-        listed, unlisted = sync_sale_listings(product, price_q)
+        # Remoto nasce pausado: o comando nunca liga a venda de longe (ver o topo).
+        listed, unlisted = sync_sale_listings(product, price_q, remote_paused=True)
     except ValidationError as exc:
         raise CommandError(exc.messages[0]) from exc
     report["listed"].extend((product.sku, ref) for ref in listed)
@@ -605,7 +608,7 @@ def _get_or_build(sku: str, name: str, price_q: int, *, unit: str, weight_g: int
     if product is None:
         product = Product(
             sku=sku, name=name, base_price_q=price_q, unit=unit, unit_weight_g=weight_g,
-            is_published=False, is_sellable=True,
+            is_published=True, is_sellable=True,
             availability_policy=AvailabilityPolicy.PLANNED_OK,
         )
         product.metadata = {"fiscal": {"profile": "standard", "ncm": ncm, "unit": unit.upper()}}

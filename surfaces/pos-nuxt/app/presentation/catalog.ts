@@ -107,6 +107,37 @@ export function isUnavailableProduct(
   return Boolean(productBlockedLabel(product));
 }
 
+/**
+ * A grade da ENCOMENDA PARA OUTRO DIA: o esgotado é o daquele dia, não o de hoje.
+ *
+ * Beta test de 05/11/2026 (PDV2-04). O selo do catálogo é o saldo de AGORA: o
+ * pão que acabou hoje não entrava numa encomenda para amanhã, e o que a grade
+ * deixava entrar o salvamento recusava por falta de saldo na data. O
+ * agendamento traz, para a data escolhida, o que não tem saldo
+ * (`sold_out_skus`), pela régua da reserva; aqui só se aplica.
+ *
+ * Bloqueio com motivo próprio do catálogo (ex.: "Sem caixa") continua valendo:
+ * ele não é saldo do dia. Sem a resposta da data escolhida, a grade fica como
+ * está (o salvamento confere de qualquer jeito).
+ */
+export function productsForOrderDate(
+  products: POSProductProjection[],
+  schedule: { date: string; is_today: boolean; sold_out_skus?: string[] } | null | undefined,
+  deliveryDate: string,
+): POSProductProjection[] {
+  if (!schedule || !deliveryDate || schedule.is_today || schedule.date !== deliveryDate) return products;
+  if (!Array.isArray(schedule.sold_out_skus)) return products;
+  const soldOut = new Set(schedule.sold_out_skus);
+  const [, month = "", day = ""] = deliveryDate.split("-");
+  const reason = `Sem saldo para ${day}/${month}`;
+  return products.map((product) => {
+    if (product.sold_out && product.sold_out_reason) return product;
+    const sold = soldOut.has(product.sku);
+    if (sold === Boolean(product.sold_out) && !sold) return product;
+    return { ...product, sold_out: sold, sold_out_reason: sold ? reason : "" };
+  });
+}
+
 /** Tira os indisponíveis quando `hide` está ligado, e diz quantos saíram. */
 export function hideUnavailableProducts(
   products: POSProductProjection[],
@@ -331,4 +362,16 @@ export function priceWindowRefreshDelayMs(nextChangeAt: string | null | undefine
   const at = Date.parse(nextChangeAt);
   if (!Number.isFinite(at)) return null;
   return Math.min(MAX_TIMER_MS, Math.max(0, at - nowMs) + PRICE_WINDOW_REFRESH_GRACE_MS);
+}
+
+/**
+ * O convite da busca de produtos, pelo espaço que ela tem. Em 1024 px a frase
+ * longa saía cortada ("Buscar produto, có"; beta test de 05/11/2026, PDV-16):
+ * abaixo de 560 px de campo vale a curta, a mesma do toque. Largura 0 é "ainda
+ * não medido", e fica a longa.
+ */
+export const SEARCH_PLACEHOLDER_SHORT_BELOW_PX = 560;
+export function productSearchPlaceholder(input: { coarse: boolean; customerSearch: boolean; width: number }): string {
+  if (input.coarse || (input.width > 0 && input.width < SEARCH_PLACEHOLDER_SHORT_BELOW_PX)) return "Buscar produto ou comanda";
+  return input.customerSearch ? "Buscar produto, código, comanda ou cliente" : "Buscar produto, código ou comanda";
 }

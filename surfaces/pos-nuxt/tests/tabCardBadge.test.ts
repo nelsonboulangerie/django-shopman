@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { tabCardBadge, tabCardView } from "~/presentation/tabBoard";
+import { renameRefusal, tabCardAccessibleName, tabCardBadge, tabCardView } from "~/presentation/tabBoard";
 import type { POSTabProjection } from "~/types/pos";
 
 function tab(overrides: Partial<POSTabProjection> & { ref: string }): POSTabProjection {
@@ -41,5 +41,29 @@ describe("presentation/tabBoard — o selo de estado do cartão de comanda", () 
   it("os ícones dos selos vão no pacote do cliente (são dado num .ts; o scan do @nuxt/icon não os vê)", () => {
     const config = readFileSync(new URL("../nuxt.config.ts", import.meta.url), "utf8");
     for (const badge of Object.values(badges)) expect(config).toContain(`"${badge.icon}"`);
+  });
+});
+
+describe("presentation/tabBoard — o cartão diz o que é (beta test de 05/11/2026)", () => {
+  it("PDV2-22: o cartão tem nome acessível com número, estado e conteúdo", () => {
+    const free = tabCardView(tab({ ref: "1009", status_label: "Livre" }));
+    expect(tabCardAccessibleName(free, tabCardBadge(free), "#1009")).toBe("Comanda #1009, Livre");
+    const busy = tabCardView(tab({ ref: "7", state: "in_use", item_count: 2, customer_name: "Maria", total_display: "R$ 10,00" }));
+    expect(tabCardAccessibleName(busy, tabCardBadge(busy), "Mesa 7")).toBe("Comanda Mesa 7, A enviar, Maria, 2 itens · R$ 10,00");
+  });
+
+  it("PDV-19: a comanda Em uso sem item diz desde quando está aberta", () => {
+    const view = tabCardView(tab({ ref: "1008", state: "in_use", status_label: "Em uso", opened_at_display: "14:32" }));
+    expect(view.identity).toBe("Aberta às 14:32");
+    const withCustomer = tabCardView(tab({ ref: "1008", state: "in_use", customer_name: "Ana", opened_at_display: "14:32" }));
+    expect(withCustomer.identity).toBe("Ana");
+  });
+});
+
+describe("presentation/tabBoard — renameRefusal (PDV2-21)", () => {
+  it("diz o caractere tirado, o limite cortado, e nada quando está limpo", () => {
+    expect(renameRefusal("Mesa 7/8", "Mesa 78", ["/", "#"])).toBe("O nome da comanda não leva /.");
+    expect(renameRefusal("abcdef", "abcd", ["/"])).toBe("O nome da comanda vai até 4 letras.");
+    expect(renameRefusal("Mesa 7", "Mesa 7", ["/"])).toBe("");
   });
 });

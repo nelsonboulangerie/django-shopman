@@ -33,10 +33,27 @@ const activeCount = computed(() => (hydrated.value ? timers.activeCount.value : 
 
 const visibleTags = computed(() => filterTags(tags.value, query.value));
 
-/** O caminho principal: um toque, e o tempo já está correndo. */
+/** O caminho principal: um toque, e o tempo já está correndo. O segundo toque
+ *  na mesma etiqueta em menos de 800 ms é o mesmo gesto, não outro timer
+ *  (beta 05/11: um toque duplo virou três "Freezer 20 min"). */
+const TAG_REFIRE_GUARD_MS = 800;
+const lastFired = new Map<string, number>();
 function fireTag(tag: TimerTagProjection) {
+  const now = Date.now();
+  const previous = lastFired.get(tag.ref);
+  if (previous !== undefined && now - previous < TAG_REFIRE_GUARD_MS) return;
+  lastFired.set(tag.ref, now);
   timers.create(tag.minutes, { label: tag.label });
   useSonner.success(`${tag.label} · ${minutesLabel(tag.minutes)}`);
+}
+
+/** Encerrar é imediato, e o aviso oferece Desfazer com o mesmo fim. */
+function clearTimer(key: string) {
+  const removed = timers.clear(key);
+  if (!removed) return;
+  useSonner.success("Timer encerrado.", {
+    action: { label: "Desfazer", onClick: () => timers.restore(key, removed) },
+  });
 }
 
 async function startFree(payload: {
@@ -158,7 +175,7 @@ useHead({ title: "Timers" });
           :entry="entry"
           :remaining="timers.remainingLabel(entry.key)"
           @seen="timers.seen(entry.key)"
-          @clear="timers.clear(entry.key)"
+          @clear="clearTimer(entry.key)"
           @extend="(extra: number) => timers.extend(entry.key, extra)"
         />
       </ul>

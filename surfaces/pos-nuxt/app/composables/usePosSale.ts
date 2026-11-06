@@ -41,7 +41,7 @@ import {
   resolvePayment,
   withExpectedTotal,
 } from "~/utils/posIntent";
-import { cartQtyForSku } from "~/presentation/catalog";
+import { cartQtyForSku, productsForOrderDate } from "~/presentation/catalog";
 import { fireRefusalView } from "~/presentation/kitchen";
 import { lineUnits, productBlockedLabel } from "~/presentation/weighed";
 import { hasOptionGroups, lineUnitPriceQ, optionLineName, optionsSignature } from "~/presentation/productOptions";
@@ -53,6 +53,7 @@ import {
   paymentProofView,
   paymentRemainingQ as computeRemainingQ,
   splitHint,
+  splitDraftTender,
   splitShareQ,
 } from "~/presentation/payment";
 import {
@@ -1070,6 +1071,9 @@ export function usePosSale(deps: PosSaleDeps) {
   const inSaleView = computed(() => !showTabs.value && (hasOpenTab.value || cart.localTab));
   function goToTabs() {
     showTabs.value = true;
+    // Voltar ao quadro também é sair: a encomenda nova que segue sem item volta a
+    // ser comanda livre, em vez de ficar "Em uso" vazia no quadro (PDV2-13).
+    void releaseAbandonedOrderTab({ resetAfter: true });
   }
   const hasDraftWithoutTab = computed(() => !hasOpenTab.value && cart.items.length > 0);
   const canUseCart = computed(() => !tabRequiredForCart.value || hasOpenTab.value);
@@ -1167,6 +1171,9 @@ export function usePosSale(deps: PosSaleDeps) {
     },
   );
 
+  // A grade que o operador vê: na encomenda para outro dia, o esgotado é o
+  // daquele dia (`productsForOrderDate`).
+  const gridProducts = computed(() => productsForOrderDate(pos.value?.products || [], schedule.value, cart.deliveryDate));
   const scheduleToday = computed(() => schedule.value?.today || pos.value?.delivery_today || "");
   const scheduleAvailableDates = computed(() => schedule.value?.available_dates ?? []);
   const scheduleBottleneckName = computed(() => schedule.value?.bottleneck_name || "");
@@ -1213,6 +1220,40 @@ export function usePosSale(deps: PosSaleDeps) {
   const lastReviewTotalQ = ref(0);
   watch(review, (value) => {
     if (value) lastReviewTotalQ.value = value.total_q;
+  });
+  // AS FORMAS ACOMPANHAM O TOTAL QUE MUDOU (beta test de 05/11/2026). A linha
+  // lançada com R$ 36,00 continuava em R$ 36,00 depois de o operador voltar e
+  // tirar a baguete (total R$ 13,00), e a tela mostrava "TROCO R$ 23,00" numa
+  // encomenda que só se paga na retirada; o "Exato" em R$ 43,00 seguido de um
+  // desconto deixava "Dinheiro R$ 43,00 · TROCO R$ 20,00" e a gaveta pagava troco
+  // que o cliente nunca deu (PDV-13).
+  //
+  // Só a linha que o SISTEMA preencheu se move (a digitada é o que o cliente
+  // entregou), e só uma: a selecionada, ou a única virgem. Com mais de uma virgem
+  // (divisão por pessoas), cada parcela é de alguém e ninguém é remexido em
+  // silêncio. A única linha de uma venda que não recebe nada agora (pagamento na
+  // retirada/entrega) sempre vale o total. A comparação é com o último total
+  // CONFIRMADO (há review), não com o "calculando" de um instante antes.
+  let tendersTotalQ = 0;
+  watch(() => review.value?.total_q, (total) => {
+    if (typeof total !== "number") return;
+    const before = tendersTotalQ;
+    tendersTotalQ = total;
+    if (!before || before === total) return;
+    const tenders = cart.paymentTenders;
+    if (tenders.length === 1 && cart.paymentCollection === "on_delivery") {
+      tenders[0]!.amount_q = total;
+      tenders[0]!._virgin = true;
+      return;
+    }
+    const virgins = tenders.map((line, idx) => ({ line, idx })).filter(({ line }) => line._virgin);
+    const selected = tenders[selectedTenderIndex.value];
+    const target = selected?._virgin
+      ? { line: selected, idx: selectedTenderIndex.value }
+      : virgins.length === 1 ? virgins[0]! : null;
+    if (!target) return;
+    const others = tenders.reduce((sum, line, idx) => (idx === target.idx ? sum : sum + line.amount_q), 0);
+    target.line.amount_q = Math.max(0, total - others);
   });
   watch(checkoutMode, (open) => {
     // Fora do checkout o carrinho volta a mudar (itens novos): o total retido
@@ -1312,6 +1353,17 @@ export function usePosSale(deps: PosSaleDeps) {
     // é dito ANTES de alguém pagar, e herdar a contagem antiga faria a próxima
     // parcela sair do lugar errado da fila.
     splitPaidCount.value = 0;
+    // A forma que o sistema lançou com o total inteiro, sem ninguém tocar, é
+    // rascunho: vira a parte da PRIMEIRA pessoa, como as prévias do modal
+    // prometeram (beta test de 05/11/2026: o modal oferecia "R$ 0,00").
+    const draft = totalStatus.value === "confirmed"
+      ? splitDraftTender(cart.paymentTenders, paymentTotalQ.value)
+      : null;
+    if (draft && splitCount.value > 0) {
+      draft.amount_q = splitShareQ(paymentTotalQ.value, splitCount.value, 0, paymentTotalQ.value);
+      splitPaidCount.value = 1;
+      tenderEntry.value = null;
+    }
   }
   /** Uma pessoa a menos na fila — some junto com a linha que ela pagou. */
   function splitUnwind() {
@@ -2183,6 +2235,15 @@ export function usePosSale(deps: PosSaleDeps) {
    * vale, como em qualquer venda que começa (`openTab`).
    */
   async function openNewOrder() {
+    // A encomenda que o assistente abriu e ninguém usou ainda É a nova: abrir
+    // outra deixava esta "Em uso" com 0 itens no quadro (beta test de
+    // 05/11/2026, PDV2-13).
+    if (isAbandonedOrderTab()) {
+      // Pedida do quadro, a encomenda reaproveitada tem de voltar para a tela:
+      // retornar calado deixava o operador no quadro, com o toque sem efeito.
+      showTabs.value = false;
+      return;
+    }
     const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
     if (!tabRef) return;
     await openTab(tabRef, { salesMode: "order" });
@@ -2332,14 +2393,12 @@ export function usePosSale(deps: PosSaleDeps) {
     lookupBusy.value = true;
     serverError.value = "";
     try {
-      const path = concreteActionHref(
-        actions.value,
-        "customer_lookup",
-        "/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}",
-        { phone, ref: customerRef },
-      );
+      // POST com o telefone no corpo: na URL ele ia para o log de acesso
+      // (beta test de 05/11/2026, PDV2-07).
+      const path = concreteActionHref(actions.value, "customer_lookup", "/api/v1/backstage/pos/customer/lookup/", {});
       const response = await $fetch<POSCustomerLookupResponse>(apiPath(path), {
-        method: "GET",
+        method: "POST",
+        body: { phone, ref: customerRef },
         credentials: "include",
         headers: requestHeaders,
         signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
@@ -2519,6 +2578,29 @@ export function usePosSale(deps: PosSaleDeps) {
     });
   }
 
+  // O PIN DO GERENTE É CONFERIDO NO DIÁLOGO (beta test de 05/11/2026). Antes o
+  // diálogo guardava o PIN e fechava, e o PIN errado só voltava no fechamento,
+  // depois de o operador já ter confirmado "Recebi o Pix" com o cliente. A
+  // conferência é a mesma do fechamento, com a mesma trava; não grava nada.
+  const managerCheckBusy = ref(false);
+  async function checkManagerApproval(username: string, pin: string): Promise<boolean> {
+    if (managerCheckBusy.value) return false;
+    managerCheckBusy.value = true;
+    managerApprovalError.value = "";
+    try {
+      const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
+      await action.call(path, { body: { manager_approval: { username, pin } } });
+      return true;
+    } catch (error) {
+      const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
+      managerApprovalError.value = failure?.recovery || failure?.message
+        || httpErrorMessage(error, "Não deu para conferir o PIN. Tente de novo.");
+      return false;
+    } finally {
+      managerCheckBusy.value = false;
+    }
+  }
+
   async function resolveCustomer(options: { contactCorrection?: boolean } = {}): Promise<boolean> {
     const customerRef = cart.customerRef.trim();
     const name = cart.customerName.trim();
@@ -2683,10 +2765,9 @@ export function usePosSale(deps: PosSaleDeps) {
         lookupBusy.value = true;
         let response: POSCustomerLookupResponse;
         if (targetRef) {
-          const path = concreteActionHref(actions.value, "customer_lookup",
-            "/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}", { phone: "", ref: targetRef });
+          const path = concreteActionHref(actions.value, "customer_lookup", "/api/v1/backstage/pos/customer/lookup/", {});
           response = await $fetch<POSCustomerLookupResponse>(apiPath(path), {
-            method: "GET", credentials: "include", headers: requestHeaders, signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
+            method: "POST", body: { phone: "", ref: targetRef }, credentials: "include", headers: requestHeaders, signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
           });
           if (customerDecision.value !== decision || pendingReceiptDecision.value !== pending || !receiptDecisionMatches()
             || session !== cart.tabSessionKey || !response.customer || response.customer.ref !== targetRef) return;
@@ -2961,9 +3042,17 @@ export function usePosSale(deps: PosSaleDeps) {
   // `fiscal_prefs` do resolve. Zera quando o cadastro nasce, ao remover o
   // cliente e ao trocar de comanda.
   const pendingCustomerPrefs = ref<{ cpf_na_nota?: boolean; email_receipt?: boolean }>({});
+  // Só a resposta da ÚLTIMA busca vale: uma resposta lenta de "ma" chegando
+  // depois da de "maria" pintava a lista do termo velho (beta test 05/11/2026).
+  let customerSearchSeq = 0;
   async function searchCustomers(query: string) {
     const q = (query || "").trim();
-    if (q.length < 2) { customerSearchResults.value = []; return; }
+    const seq = ++customerSearchSeq;
+    if (q.length < 2) {
+      customerSearchResults.value = [];
+      customerSearchBusy.value = false;
+      return;
+    }
     customerSearchBusy.value = true;
     try {
       const path = concreteActionHref(
@@ -2978,11 +3067,13 @@ export function usePosSale(deps: PosSaleDeps) {
         headers: requestHeaders,
         signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
       });
+      if (seq !== customerSearchSeq) return;
       customerSearchResults.value = response.results || [];
     } catch {
+      if (seq !== customerSearchSeq) return;
       customerSearchResults.value = [];
     } finally {
-      customerSearchBusy.value = false;
+      if (seq === customerSearchSeq) customerSearchBusy.value = false;
     }
   }
   async function selectCustomerResult(result: POSCustomerSearchResult) {
@@ -3825,6 +3916,44 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
+  /** A comanda que o assistente da encomenda abriu e que segue sem item nenhum. */
+  function isAbandonedOrderTab(): boolean {
+    // Cliente já escolhido é trabalho feito: a comanda não é abandonada.
+    return Boolean(cart.tabSessionKey) && !cart.localTab && cart.salesMode === "order" && !cart.items.length
+      && !cart.customerRef && !cart.customerName.trim() && !cart.customerPhone.trim();
+  }
+
+  /**
+   * Sair da venda com a encomenda ainda vazia LIBERA a comanda. Antes ela ficava
+   * "Em uso" com 0 itens, a próxima "Nova encomenda" pegava outra e o quadro
+   * enchia de comandas vazias (beta test de 05/11/2026, PDV2-13). Sem item não
+   * há nada a perder; se o servidor recusar, a comanda segue no quadro como
+   * estava.
+   */
+  async function releaseAbandonedOrderTab(options: { resetAfter?: boolean } = {}) {
+    if (!isAbandonedOrderTab()) return;
+    const sessionKey = cart.tabSessionKey;
+    const path = concreteActionHref(
+      actions.value,
+      "clear_tab",
+      "/api/v1/backstage/pos/tabs/{session_key}/clear/",
+      { session_key: sessionKey },
+    );
+    try {
+      await action.call(path, { method: "DELETE", body: { expected_revision: cart.expectedRevision } });
+      // Ainda na tela (voltou ao quadro): a venda esquece a comanda liberada e o
+      // quadro relê, para ela aparecer Livre. Se o operador já abriu outra no
+      // caminho, a venda dele fica como está.
+      if (options.resetAfter && cart.tabSessionKey === sessionKey && showTabs.value) {
+        resetCart();
+        await refreshTabs();
+      }
+    } catch {
+      // silêncio-deliberado: quem saiu da tela não está mais aqui para ler, e a
+      // comanda vazia segue no quadro como estava (nada se perde).
+    }
+  }
+
   async function clearCurrentTab() {
     if (!cart.tabSessionKey) {
       resetCart();
@@ -4298,6 +4427,7 @@ export function usePosSale(deps: PosSaleDeps) {
     completeOrderSetup,
     setSalesMode,
     openNewOrder,
+    releaseAbandonedOrderTab,
     // draft + flags
     cart,
     tabInput,
@@ -4318,6 +4448,9 @@ export function usePosSale(deps: PosSaleDeps) {
     lookupBusy,
     serverError,
     managerApprovalError,
+    managerCheckBusy,
+    checkManagerApproval,
+    gridProducts,
     customerFocusNonce,
     result,
     closeOutcomeUncertain,

@@ -124,7 +124,9 @@ def test_finished_row_is_confirmed_with_real_time_and_qty(recipe):
     )
     row = build_production_forecast(target).rows[0]
     assert row.status == "arrived"
-    assert row.status_label == "Confirmado"
+    # Beta 05/11: "Confirmado" no Letreiro contradizia "Para confirmar" na
+    # Qualidade. O lote finalizado é Fechado (suite-vocabulary).
+    assert row.status_label == "Fechado"
     assert row.eta_display == timezone.localtime(finished_at).strftime("%H:%M")
     assert row.eta_is_actual is True
     assert row.qty == "10"

@@ -18,6 +18,7 @@ import {
   slaPercent,
   splitRef,
   targetLabel,
+  ticketArrivalLine,
   ticketClockLabel,
   ticketTone,
   toneBar,
@@ -42,7 +43,10 @@ const canDeclareVolumes = computed(
 );
 const volumesEditing = ref(false);
 const volumesDraft = ref(0);
-watch(() => [props.open, props.ticket?.pk], () => { volumesEditing.value = false; });
+// Multi-fonte: compara valor a valor. O quadro entrega um objeto de ticket NOVO a cada
+// leitura (poll ou SSE); um getter que devolve array literal dispararia a cada refresh e
+// fecharia o rascunho no meio da edição (beta 05/11, KDS-01).
+watch([() => props.open, () => props.ticket?.pk], () => { volumesEditing.value = false; });
 function openVolumes() {
   const t = props.ticket;
   if (!t) return;
@@ -114,9 +118,7 @@ const fill = computed(() =>
                 :name="`lucide:${lucideIcon(ticket.fulfillment_icon)}`"
                 class="size-3.5"
               />
-              <span class="tabular-nums"
-                >{{ ref_.prefix }}{{ ticket.created_at_display }}</span
-              >
+              <span class="tabular-nums" data-kds-ticket-arrival>{{ ticketArrivalLine(ticket) }}</span>
             </p>
             <p
               class="break-words text-4xl font-extrabold tracking-tight tabular-nums leading-none"

@@ -221,6 +221,18 @@ function clearQuery () {
                 <UiEmptyTitle>{{ catalog?.search_empty_state?.title || 'Nada por aqui' }}</UiEmptyTitle>
                 <UiEmptyDescription>{{ catalog?.search_empty_state?.message || 'Não encontramos esse item. Tente outro termo ou veja o cardápio completo.' }}</UiEmptyDescription>
               </UiEmptyHeader>
+              <!-- A mesma saída da página /busca: a frase manda ver o cardápio, então o
+                   botão está aqui (beta 05/11, LOJA-12). Navegar fecha a busca. -->
+              <UiEmptyContent>
+                <UiButton
+                  :to="catalog?.search_empty_state?.cta_href || '/menu'"
+                  variant="outline"
+                  data-search-empty-menu
+                  @click="closeSearch"
+                >
+                  {{ catalog?.search_empty_state?.cta_label || 'Ver cardápio completo' }}
+                </UiButton>
+              </UiEmptyContent>
             </UiEmpty>
           </template>
         </div>

@@ -167,6 +167,6 @@ def test_o_total_numa_ida_tem_teto_de_consultas(balcao):
 # 03/11/2026: +17 consultas, e de propósito. A revisão de comanda com desconto
 # manual que VENCEU a linha pergunta ao motor o preço antes do desconto (uma sonda
 # descartável), porque o preço que o navegador declara não pode medir o desconto
-# do portão do gerente (``_stamp_tab_prices_for_manual_discount``). Medido: 95 e 83.
+# do portão do gerente (``_stamp_tab_engine_prices``). Medido: 95 e 83.
 TETO_SALVAR_E_REVISAR = 97
 TETO_SALVAR_E_REVISAR_SEM_MUDANCA = 85

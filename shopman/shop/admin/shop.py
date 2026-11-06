@@ -2513,8 +2513,12 @@ _OPERATION_FIELDSETS = (
                 ("opening_hours_friday_status", "opening_hours_friday_open", "opening_hours_friday_close"),
                 ("opening_hours_saturday_status", "opening_hours_saturday_open", "opening_hours_saturday_close"),
                 ("opening_hours_sunday_status", "opening_hours_sunday_open", "opening_hours_sunday_close"),
+                ("staff_hours_start", "staff_hours_end"),
             ),
-            "description": "Moeda, fuso e horários de funcionamento, editados como campos por dia.",
+            "description": (
+                "Moeda, fuso, horários de funcionamento por dia e o expediente da equipe. "
+                "Acesso de operador fora do expediente aparece destacado no aviso."
+            ),
         },
     ),
     (

@@ -21,6 +21,7 @@ import type {
   RecipeVersionResponse,
   VersionPayload,
 } from "~/types/recipeBook";
+import { useConfirm } from "../../../operator-kit/app/composables/useConfirm";
 import { errorField } from "~/presentation/recipeBook";
 import { useRecipeFavorite } from "~/composables/useRecipeFavorite";
 
@@ -30,7 +31,34 @@ export interface EntryActionResult {
   version?: RecipeVersionProjection;
   field?: string;
   message?: string;
+  /** `error.code` do dialeto canônico ("sku_already_in_use"), ou "". */
+  code?: string;
   uncertain?: boolean;
+}
+
+/**
+ * As recusas do publicar que são PERGUNTA, não erro (beta 05/11/2026, PROD-01/02): o
+ * servidor diz o que a publicação faria e a tela pergunta. "Sim" reenvia com a
+ * confirmação no corpo; "não" deixa tudo como estava.
+ */
+export const PUBLISH_CONFIRMATIONS = {
+  sku_already_in_use: {
+    flag: "replace_active",
+    title: "Substituir a ficha em uso na produção?",
+    confirmLabel: "Substituir e publicar",
+    cancelLabel: "Manter a ficha atual",
+  },
+  output_sku_unknown: {
+    flag: "new_output_sku",
+    title: "Publicar com um SKU novo?",
+    confirmLabel: "Publicar com SKU novo",
+    cancelLabel: "Revisar o SKU",
+  },
+} as const;
+export type PublishConfirmationCode = keyof typeof PUBLISH_CONFIRMATIONS;
+
+export function isPublishConfirmation(code: string | undefined): code is PublishConfirmationCode {
+  return !!code && Object.hasOwn(PUBLISH_CONFIRMATIONS, code);
 }
 
 function newMutationKey(): string {
@@ -68,6 +96,7 @@ export function useRecipeEntry(entryRef: string) {
   async function act<T extends { entry?: RecipeEntryDetailProjection; version?: RecipeVersionProjection }>(
     request: () => Promise<T>,
     fallback: string,
+    quiet: (code: string) => boolean = () => false,
   ): Promise<EntryActionResult> {
     if (busy.value) return { ok: false };
     busy.value = true;
@@ -77,9 +106,10 @@ export function useRecipeEntry(entryRef: string) {
       return { ok: true, entry: response.entry, version: response.version };
     } catch (err) {
       const message = httpErrorMessage(err, fallback);
-      useSonner.error(message);
+      const code = httpErrorCode(err);
+      if (!quiet(code)) useSonner.error(message);
       const parsed = httpError(err);
-      return { ok: false, field: errorField(parsed.data), message, uncertain: !parsed.status };
+      return { ok: false, field: errorField(parsed.data), message, code, uncertain: !parsed.status };
     } finally {
       busy.value = false;
     }
@@ -180,7 +210,8 @@ export function useRecipeEntry(entryRef: string) {
     );
 
   const publishKeys = new Map<number, string>();
-  async function publish(number: number) {
+  const confirmPublish = useConfirm();
+  async function publishOnce(number: number, confirmations: Record<string, true>) {
     const key = publishKeys.get(number) ?? newMutationKey();
     publishKeys.set(number, key);
     const version = versionByNumber(number);
@@ -192,15 +223,40 @@ export function useRecipeEntry(entryRef: string) {
           body: {
             ...(version?.revision ? { expectedRevision: version.revision } : {}),
             ...(entry.value?.revision ? { expectedEntryRevision: entry.value.revision } : {}),
+            ...confirmations,
           },
         });
         if (response.outcome !== "applied") throw new Error(response.outcome);
         return response;
       },
       "Não foi possível publicar a versão.",
+      isPublishConfirmation,
     );
     if (result.ok || !result.uncertain) publishKeys.delete(number);
     return result;
+  }
+  /**
+   * Publica. Se o servidor responder com uma pergunta (a ficha em uso seria trocada,
+   * o SKU é novo), pergunta à pessoa com o texto dele e só reenvia com o "sim".
+   */
+  async function publish(number: number): Promise<EntryActionResult> {
+    const confirmations: Record<string, true> = {};
+    for (;;) {
+      const result = await publishOnce(number, confirmations);
+      const code = result.code;
+      if (result.ok || !isPublishConfirmation(code)) return result;
+      const question = PUBLISH_CONFIRMATIONS[code];
+      if (confirmations[question.flag]) return result;
+      const accepted = await confirmPublish({
+        tone: "primary",
+        title: question.title,
+        description: result.message ?? "",
+        confirmLabel: question.confirmLabel,
+        cancelLabel: question.cancelLabel,
+      });
+      if (!accepted) return { ok: false, code, field: result.field };
+      confirmations[question.flag] = true;
+    }
   }
 
   return {

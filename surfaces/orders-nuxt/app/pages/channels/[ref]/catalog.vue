@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { realtimeIndicator } from "~/presentation/board";
+import { channelHasBindingReview } from "~/presentation/ifoodStore";
+import { httpError } from "../../../../../operator-kit/app/utils/httpError";
 import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
 
 definePageMeta({ key: (route) => route.path });
 const route = useRoute();
 const channel = String(route.params.ref);
+// Canal sem catálogo externo (Loja, PDV, WhatsApp) ou que não existe: a tela diz
+// isso em vez de falar do iFood (GES-09).
+const supported = channelHasBindingReview(channel);
 // O aviso de item do iFood sem produto da casa chega com ``?q=<nome do item>``.
 const initialSearch =
   typeof route.query.q === "string" ? route.query.q.trim() : "";
@@ -23,6 +28,7 @@ const {
   bind,
   changeCategory,
 } = useCatalogBindings(channel);
+const notFound = computed(() => httpError(error.value).status === 404);
 const fileName = ref("");
 const rawJson = ref("");
 const fileError = ref("");
@@ -159,11 +165,45 @@ const phoneHeaderActions = computed(() => [
         />
       </template>
     </OperatorPageHeader>
-    <div class="min-h-0 min-w-0 flex-1 space-y-4 overflow-auto p-4 sm:p-6">
-      <p class="max-w-4xl text-sm text-muted-foreground">
-        Organize as categorias e confira a identidade dos anúncios. Alterações
-        de categoria exigem confirmação do iFood; os vínculos de produto abaixo
-        continuam locais.
+    <div
+      v-if="!supported || notFound"
+      class="min-h-0 min-w-0 flex-1 overflow-auto p-4 sm:p-6"
+    >
+      <NuxtEmpty
+        icon="i-lucide-link-2-off"
+        :title="
+          notFound ? 'Canal não encontrado' : 'Este canal não tem vínculos para revisar'
+        "
+        :description="
+          notFound
+            ? 'Confira o endereço ou volte para Canais.'
+            : 'A revisão de vínculos é do catálogo do iFood. Os produtos deste canal se ajustam no Catálogo.'
+        "
+        :actions="[
+          { label: 'Voltar para Canais', to: '/feeds', color: 'neutral', variant: 'outline' },
+          ...(notFound
+            ? []
+            : [
+                {
+                  label: 'Ver produtos no Catálogo',
+                  to: `/catalog?surface=${encodeURIComponent(channel)}`,
+                  color: 'neutral' as const,
+                  variant: 'ghost' as const,
+                },
+              ]),
+        ]"
+        data-channel-catalog-unsupported
+      />
+    </div>
+    <div v-else class="min-h-0 min-w-0 flex-1 space-y-4 overflow-auto p-4 sm:p-6">
+      <!-- A confirmação remota é do iFood: na Loja online a frase falava de um
+           canal que não é este (beta 05/11, GES-16). -->
+      <p class="max-w-4xl text-sm text-muted-foreground" data-channel-catalog-intro>
+        Organize as categorias e confira a identidade dos anúncios.
+        <template v-if="channel === 'ifood'">
+          Alterações de categoria exigem confirmação do iFood; os vínculos de
+          produto abaixo continuam locais.
+        </template>
       </p>
       <NuxtAlert
         v-if="message"

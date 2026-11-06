@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // Finalização de um único lote. Os quatro botões são buckets de qualidade
 // disjuntos; o grau padrão recebe automaticamente o saldo que não foi lançado
-// nos demais graus nem em Perda.
+// nos demais graus nem em Perda. Quando rendeu menos (beta 05/11), o operador
+// toca no grau padrão e digita o que saiu: a diferença para o previsto vira
+// "rendeu menos", com motivo, sem virar perda de qualidade nem estoque.
 import type { QCDefectProjection, QCGradeProjection } from "~/types/production";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import {
@@ -56,6 +58,8 @@ const emit = defineEmits<{
 type QuantityTarget = { kind: "grade"; gradeRef: string } | { kind: "loss" };
 type SheetQuestion =
   | { kind: "overshoot" }
+  | { kind: "shortfall" }
+  | { kind: "loss_exceeds" }
   | { kind: "grade_reason"; gradeRef: string }
   | { kind: "loss_reason" }
   | { kind: "correction_reason" };
@@ -114,6 +118,8 @@ const lossDefectRef = ref(
 );
 const overshootConfirmed = ref(false);
 const overshootReason = ref("");
+// O que o operador digitou no grau padrão (só na Finalização). null = saldo.
+const defaultOverride = ref<number | null>(null);
 const correctionReason = ref("");
 const submitLatched = ref(false);
 
@@ -146,8 +152,17 @@ const explicitTotal = computed(() =>
 const defaultQuantity = computed(() => {
   if (!defaultRef.value) return 0;
   if (anchor.anchor === null) return explicitGradeQuantity(defaultRef.value);
+  if (defaultOverride.value !== null) return defaultOverride.value;
   return Math.max(0, anchor.anchor - explicitTotal.value - lossQuantity.value);
 });
+// O grau padrão segue o saldo até o operador digitar nele (só na Finalização;
+// a correção mantém o total do lote).
+const defaultIsBalance = computed(
+  () => anchor.anchor !== null && defaultOverride.value === null,
+);
+const defaultEditable = computed(
+  () => anchor.anchor !== null && props.mode === "close",
+);
 
 function gradeQuantity(gradeRef: string): number {
   return gradeRef === defaultRef.value
@@ -165,6 +180,14 @@ const total = computed(() => finishedTotal.value + lossQuantity.value);
 const overshootQuantity = computed(() =>
   anchor.anchor === null ? 0 : Math.max(0, total.value - anchor.anchor),
 );
+// Rendeu menos que o previsto: não é perda de qualidade, é o que não saiu.
+const shortfallQuantity = computed(() =>
+  anchor.anchor === null ? 0 : Math.max(0, anchor.anchor - total.value),
+);
+// Perda maior que o lote inteiro é dígito a mais, nunca um caso de "acima".
+const lossExceedsLot = computed(
+  () => anchor.anchor !== null && lossQuantity.value > anchor.anchor,
+);
 
 const activeGrade = computed(() => {
   const target = activeTarget.value;
@@ -175,7 +198,8 @@ const activeLabel = computed(() => {
   if (activeTarget.value?.kind === "loss") return "Perda";
   if (activeGrade.value) return activeGrade.value.label;
   const grade = props.grades.find((item) => item.ref === defaultRef.value);
-  return grade ? `${grade.label} · Saldo automático` : "Escolha um grau";
+  if (!grade) return "Escolha um grau";
+  return defaultIsBalance.value ? `${grade.label} · Saldo automático` : grade.label;
 });
 const activeQuantity = computed(() => {
   if (activeTarget.value?.kind === "loss") return lossQuantity.value;
@@ -211,6 +235,8 @@ function setTargetQuantity(quantity: number) {
     }
     lossQuantity.value = nextQuantity;
     if (nextQuantity === 0) lossDefectRef.value = "";
+  } else if (target.gradeRef === defaultRef.value && defaultEditable.value) {
+    defaultOverride.value = quantity;
   } else {
     let nextQuantity = quantity;
     if (props.mode === "correct" && target.gradeRef !== defaultRef.value) {
@@ -262,7 +288,9 @@ function onClear() {
 }
 
 function pickGrade(grade: QCGradeProjection) {
-  if (grade.ref === defaultRef.value && anchor.anchor !== null) {
+  if (grade.ref === defaultRef.value && defaultEditable.value) {
+    activeTarget.value = { kind: "grade", gradeRef: grade.ref };
+  } else if (grade.ref === defaultRef.value && anchor.anchor !== null) {
     // Normal continua sendo o próprio botão/grau, mas sua quantidade é o
     // saldo: não há um segundo input capaz de duplicá-la.
     activeTarget.value = null;
@@ -279,7 +307,13 @@ const DOUBLE_ACTIVATION_MS = 600;
 let lastGradeActivation: { ref: string; at: number } | null = null;
 
 function takeAvailableBalance(grade: QCGradeProjection) {
-  if (anchor.anchor === null || grade.ref === defaultRef.value) return;
+  if (anchor.anchor === null) return;
+  if (grade.ref === defaultRef.value) {
+    // Dois toques no grau padrão devolvem o saldo automático.
+    defaultOverride.value = null;
+    resetOvershootConfirmation();
+    return;
+  }
   const usedElsewhere = orderedGrades.value
     .filter(
       (item) =>
@@ -317,6 +351,16 @@ function gradeNeedsReason(grade: QCGradeProjection): boolean {
 
 function pendingQuestions(): SheetQuestion[] {
   const questions: SheetQuestion[] = [];
+  if (lossExceedsLot.value) {
+    // Bloqueia: nenhuma resposta transforma 99 de perda num lote de 3.
+    return [{ kind: "loss_exceeds" }];
+  }
+  if (
+    shortfallQuantity.value > 0 &&
+    (!overshootConfirmed.value || !overshootReason.value.trim())
+  ) {
+    questions.push({ kind: "shortfall" });
+  }
   if (
     overshootQuantity.value > 0 &&
     (!overshootConfirmed.value || !overshootReason.value.trim())
@@ -377,6 +421,12 @@ const activeDefects = computed(() =>
 const sheetTitle = computed(() => {
   if (sheetQuestion.value?.kind === "overshoot") {
     return `Foram contabilizadas ${total.value} de ${anchor.anchor} unidades?`;
+  }
+  if (sheetQuestion.value?.kind === "shortfall") {
+    return `Rendeu ${total.value} de ${anchor.anchor} previstos?`;
+  }
+  if (sheetQuestion.value?.kind === "loss_exceeds") {
+    return `A perda (${lossQuantity.value}) é maior que o lote (${anchor.anchor}). Confira.`;
   }
   if (sheetQuestion.value?.kind === "loss_reason") {
     return `Qual o motivo principal da perda de ${lossQuantity.value}?`;
@@ -439,6 +489,11 @@ function fixOvershoot() {
   sheetQuestion.value = null;
   submitAfterAnswer.value = false;
   fresh.value = true;
+}
+
+function fixLoss() {
+  fixOvershoot();
+  pickLoss();
 }
 
 function onConfirm() {
@@ -708,7 +763,7 @@ const actionBarValue = computed(() =>
                   variant="ghost"
                   :data-grade-ref="grade.ref"
                   class="absolute inset-0 z-0 h-auto w-full rounded-none p-0 text-left font-normal focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
-                  :aria-label="`${grade.label}: ${gradeQuantity(grade.ref)} unidades${grade.ref === defaultRef && anchor.anchor !== null ? ', saldo' : ''}`"
+                  :aria-label="`${grade.label}: ${gradeQuantity(grade.ref)} unidades${grade.ref === defaultRef && defaultIsBalance ? ', saldo' : ''}`"
                   :aria-pressed="gradeQuantity(grade.ref) > 0"
                   @click="activateGrade(grade)"
                 >
@@ -718,7 +773,7 @@ const actionBarValue = computed(() =>
                     <span class="min-w-0">
                       <span class="block font-medium">{{ grade.label }}</span>
                       <span
-                        v-if="grade.ref === defaultRef && anchor.anchor !== null"
+                        v-if="grade.ref === defaultRef && defaultIsBalance"
                         class="block text-xs leading-tight text-muted-foreground"
                       >
                         Saldo automático
@@ -853,7 +908,63 @@ const actionBarValue = computed(() =>
       "
     >
       <template #body>
-        <div v-if="sheetQuestion?.kind === 'overshoot'" class="grid gap-3">
+        <div
+          v-if="sheetQuestion?.kind === 'loss_exceeds'"
+          class="grid gap-3"
+          data-loss-exceeds
+        >
+          <p class="text-sm text-muted-foreground">
+            A perda não pode passar do que entrou no forno.
+          </p>
+          <NuxtButton
+            size="xl"
+            block
+            class="h-auto whitespace-normal"
+            label="Corrigir a perda"
+            @click="fixLoss"
+          />
+        </div>
+        <div
+          v-else-if="sheetQuestion?.kind === 'shortfall'"
+          class="grid gap-3"
+          data-shortfall
+        >
+          <label class="grid gap-1.5 text-sm">
+            <span class="font-medium">
+              Por que rendeu menos? A diferença ({{ shortfallQuantity }}) não entra
+              como perda nem no estoque.
+            </span>
+            <NuxtTextarea
+              v-model="overshootReason"
+              :rows="3"
+              :maxlength="500"
+              required
+              class="w-full"
+              aria-label="Motivo de ter rendido menos que o previsto"
+              placeholder="Ex.: a massa rendeu menos peças que o previsto"
+            />
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              size="xl"
+              block
+              class="h-auto whitespace-normal"
+              label="Corrigir"
+              @click="fixOvershoot"
+            />
+            <NuxtButton
+              size="xl"
+              block
+              class="h-auto whitespace-normal"
+              :label="`Confirmar ${total} unidades`"
+              :disabled="!overshootReason.trim()"
+              @click="confirmOvershoot"
+            />
+          </div>
+        </div>
+        <div v-else-if="sheetQuestion?.kind === 'overshoot'" class="grid gap-3">
           <label class="grid gap-1.5 text-sm">
             <span class="font-medium">
               Por que o realizado ficou acima do previsto?

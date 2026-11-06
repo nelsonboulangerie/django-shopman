@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { toast } from "vue-sonner";
 import type { POSProductProjection } from "~/types/pos";
 import { productFallbackIcon, productFallbackStyle, productStrikePrice } from "~/presentation/catalog";
 import { productBlockedLabel } from "~/presentation/weighed";
@@ -14,13 +15,24 @@ const props = defineProps<{
   row?: boolean;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   add: [POSProductProjection];
 }>();
 
 // Inerte com selo: esgotado, ou sem preço no catálogo (nenhum canal vende preço zero).
 const blockedLabel = computed(() => productBlockedLabel(props.product) || (props.disabled ? "Esgotado" : ""));
 const inert = computed(() => Boolean(blockedLabel.value));
+// O selo de bloqueio (Esgotado, "Sem saldo para 07/11"): o preço já diz "Sem preço".
+const blockedPill = computed(() => (inert.value && blockedLabel.value !== "Sem preço" ? blockedLabel.value : ""));
+// Tile bloqueado RESPONDE ao toque (beta test de 05/11/2026): mudo, o operador
+// tocava de novo achando que a tela travou. O toque diz o motivo e não lança.
+function onTap() {
+  if (inert.value) {
+    toast.info(`${props.product.name}: ${blockedLabel.value}.`);
+    return;
+  }
+  emit("add", props.product);
+}
 // Com escolhas (sabor, adicionais), o toque abre o diálogo em vez de somar 1.
 const opensChoice = computed(() => hasOptionGroups(props.product));
 
@@ -48,14 +60,14 @@ const strikePrice = computed(() => productStrikePrice(props.product));
     v-if="row"
     color="neutral"
     variant="ghost"
-    class="flex w-full items-center gap-3 rounded-lg border bg-card px-2 text-left font-normal text-card-foreground transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0"
+    class="flex w-full items-center gap-3 rounded-lg border bg-card px-2 text-left font-normal text-card-foreground transition hover:border-primary/50 active:translate-y-px aria-disabled:cursor-not-allowed aria-disabled:hover:border-border aria-disabled:active:translate-y-0"
     :class="[touch ? 'min-h-16 py-2' : 'min-h-12 py-1.5', qty > 0 ? 'border-primary' : 'border-border']"
-    :disabled="inert"
+    :aria-disabled="inert ? 'true' : undefined"
     :aria-label="opensChoice ? `${product.name}: abre as escolhas` : undefined"
     :data-pos-product-options="opensChoice ? '' : undefined"
     data-pos-product
     data-pos-product-row
-    @click="$emit('add', product)"
+    @click="onTap"
   >
     <span class="relative grid shrink-0 place-items-center overflow-hidden rounded-md" :class="[touch ? 'size-12' : 'size-9', inert ? 'opacity-55' : '']">
       <img v-if="showImage" :src="product.image_url" alt="" loading="lazy" class="size-full object-cover" @error="imageBroken = true" />
@@ -65,13 +77,13 @@ const strikePrice = computed(() => productStrikePrice(props.product));
     </span>
     <span class="flex min-w-0 flex-1 flex-col gap-0.5">
       <span class="line-clamp-2 op-label leading-tight font-semibold" :class="inert ? 'text-muted-foreground' : ''" :title="product.name" data-pos-product-name>{{ product.name }}</span>
-      <span v-if="opensChoice || blockedLabel === 'Esgotado'" class="flex items-center gap-1.5">
+      <span v-if="opensChoice || blockedPill" class="flex items-center gap-1.5">
         <span v-if="opensChoice" class="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold"><Icon name="lucide:layers" class="size-3" />Escolhas</span>
-        <span v-if="blockedLabel === 'Esgotado'" class="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold text-muted-foreground"><span class="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />Esgotado</span>
+        <span v-if="blockedPill" class="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold text-muted-foreground" data-pos-product-blocked><span class="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />{{ blockedPill }}</span>
       </span>
     </span>
     <span class="flex shrink-0 flex-col items-end gap-0.5" data-pos-product-price>
-      <strong class="op-title tnum whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
+      <strong class="op-title tnum shrink-0 whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
       <s v-if="strikePrice" class="op-micro tnum text-muted-foreground" aria-hidden="true" data-pos-product-list-price>{{ strikePrice }}</s>
       <span v-if="strikePrice" class="sr-only">, {{ product.discount_label ? `${product.discount_label}, ` : "" }}antes {{ strikePrice }}</span>
     </span>
@@ -88,16 +100,16 @@ const strikePrice = computed(() => productStrikePrice(props.product));
     v-else
     color="neutral"
     variant="ghost"
-    class="group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left text-card-foreground transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0 items-stretch gap-0 p-0 font-normal"
+    class="group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left text-card-foreground transition hover:border-primary/50 active:translate-y-px aria-disabled:cursor-not-allowed aria-disabled:hover:border-border aria-disabled:active:translate-y-0 items-stretch gap-0 p-0 font-normal"
     :class="[
       qty > 0 ? 'border-primary' : 'border-border',
       opensChoice ? 'shadow-[4px_4px_0_-1px_var(--card),4px_4px_0_0_var(--border)]' : '',
     ]"
-    :disabled="inert"
+    :aria-disabled="inert ? 'true' : undefined"
     :aria-label="opensChoice ? `${product.name}: abre as escolhas` : undefined"
     :data-pos-product-options="opensChoice ? '' : undefined"
     data-pos-product
-    @click="$emit('add', product)"
+    @click="onTap"
   >
     <div class="relative w-full shrink-0 overflow-hidden" :class="[touch ? 'h-[108px]' : 'h-[92px]', inert ? 'opacity-55' : '']">
       <img
@@ -115,11 +127,27 @@ const strikePrice = computed(() => productStrikePrice(props.product));
         aria-hidden="true"
       >
         <Icon :name="fallbackIcon" class="size-9" />
-        <span v-if="!touch" class="absolute bottom-1.5 left-2 max-w-[calc(100%-1rem)] truncate font-mono op-eyebrow font-normal tracking-wide" data-pos-tile-sku>{{ product.sku }}</span>
+        <span
+          v-if="!touch"
+          class="absolute bottom-1.5 left-2 max-w-[calc(100%-1rem)] truncate font-mono op-eyebrow font-normal tracking-wide"
+          :title="product.sku"
+          data-pos-tile-sku
+        >{{ product.sku }}</span>
       </div>
 
+      <!-- O selo de bloqueio mora na FAIXA, nunca ao lado do preço: lá ele
+           disputava a largura e cortava o preço ("R$ 143,0C", o "/kg" sumido;
+           beta test de 05/11/2026). -->
       <span
-        v-if="opensChoice"
+        v-if="blockedPill"
+        class="absolute left-2 top-2 inline-flex h-6 max-w-[calc(100%-1rem)] items-center gap-1 rounded-full bg-card/90 px-2 op-micro font-semibold text-muted-foreground"
+        data-pos-product-blocked
+      >
+        <span class="size-1.5 shrink-0 rounded-full bg-muted-foreground" aria-hidden="true" />
+        <span class="truncate">{{ blockedPill }}</span>
+      </span>
+      <span
+        v-if="opensChoice && !blockedPill"
         class="absolute top-2 inline-flex h-6 items-center gap-1 rounded-full bg-card/90 px-2 op-micro font-semibold"
         :class="qty > 0 ? 'left-2' : 'right-2'"
       >
@@ -152,7 +180,8 @@ const strikePrice = computed(() => productStrikePrice(props.product));
              (nunca embaixo): a altura do cartão não muda com o desconto, e o
              riscado corta com reticências antes de empurrar o preço. -->
         <span class="flex min-w-0 items-baseline gap-1.5" data-pos-product-price>
-          <strong class="op-title tnum whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
+          <!-- O preço nunca corta: ele é o que o operador lê do cartão. -->
+          <strong class="op-title tnum shrink-0 whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
           <s
             v-if="strikePrice"
             class="min-w-0 truncate op-micro tnum text-muted-foreground"
@@ -161,16 +190,6 @@ const strikePrice = computed(() => productStrikePrice(props.product));
             data-pos-product-list-price
           >{{ strikePrice }}</s>
           <span v-if="strikePrice" class="sr-only">, {{ product.discount_label ? `${product.discount_label}, ` : "" }}antes {{ strikePrice }}</span>
-        </span>
-        <!-- Esgotado: a pílula ao lado do preço; o tile fica visível porém inerte
-             (sumir da grade faria o operador procurar um botão que "sumiu"). Sem
-             preço, quem diz é a linha do preço ("Sem preço"). -->
-        <span
-          v-if="blockedLabel === 'Esgotado'"
-          class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold text-muted-foreground"
-        >
-          <span class="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />
-          Esgotado
         </span>
       </span>
     </div>

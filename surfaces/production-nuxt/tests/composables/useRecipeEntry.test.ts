@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
+import { useConfirmState } from "../../../operator-kit/app/composables/useConfirm";
 import { useRecipeEntry } from "~/composables/useRecipeEntry";
 import { emptyFormula } from "~/presentation/recipeBook";
 
@@ -145,6 +146,46 @@ describe("useRecipeEntry", () => {
     expect(first).toMatchObject({ ok: false, uncertain: false });
     expect(second.ok).toBe(true);
     expect(secondHeaders["Idempotency-Key"]).not.toBe(firstHeaders["Idempotency-Key"]);
+  });
+
+  // Beta 05/11/2026, PROD-01: publicar sobre um SKU que já tem outra ficha em uso trocava
+  // a ficha da produção em silêncio. Agora o servidor pergunta e a tela repassa.
+  it("asks before replacing the sheet in use and resends with the confirmation", async () => {
+    env.fetchData.value = { entry: ENTRY };
+    const { publish } = useRecipeEntry("pao-campanha");
+    const detail = "O SKU PAO-CAMP já tem a ficha Pão antigo em uso na produção. Publicar esta receita tira aquela ficha de uso.";
+    env.fetchMock
+      .mockRejectedValueOnce({ status: 409, data: { detail, field: "output_sku", error: { code: "sku_already_in_use" } } })
+      .mockResolvedValueOnce({ ok: true, outcome: "applied", resource: { kind: "recipe-version", ref: "pao-campanha@3" }, entry: ENTRY });
+
+    const { pending, answer } = useConfirmState();
+    const result = publish(3);
+    await vi.waitFor(() => expect(pending.value).not.toBeNull());
+    expect(pending.value).toMatchObject({ tone: "primary", description: detail, confirmLabel: "Substituir e publicar" });
+    expect(env.sonner.error).not.toHaveBeenCalled();
+    answer(true);
+
+    expect((await result).ok).toBe(true);
+    expect(env.fetchMock.mock.calls[0]?.[1]?.body).not.toHaveProperty("replace_active");
+    expect(env.fetchMock.mock.calls[1]?.[1]?.body).toMatchObject({ replace_active: true });
+  });
+
+  it("keeps everything as it was when the person declines", async () => {
+    env.fetchData.value = { entry: ENTRY };
+    const { publish } = useRecipeEntry("pao-campanha");
+    env.fetchMock.mockRejectedValueOnce({
+      status: 409,
+      data: { detail: "O SKU XYZ não existe no Catálogo.", field: "output_sku", error: { code: "output_sku_unknown" } },
+    });
+
+    const { pending, answer } = useConfirmState();
+    const result = publish(3);
+    await vi.waitFor(() => expect(pending.value).not.toBeNull());
+    expect(pending.value?.confirmLabel).toBe("Publicar com SKU novo");
+    answer(false);
+
+    expect(await result).toMatchObject({ ok: false, code: "output_sku_unknown", field: "output_sku" });
+    expect(env.fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("saves execution with the revision and reconciles the served projection", async () => {

@@ -22,6 +22,8 @@ export interface POSProductProjection {
   kitchen_station?: string;
   /** A estação tem o envio automático ligado: a linha nova vai sozinha. */
   kitchen_auto_fire?: boolean;
+  /** A estação é de preparo (feito na hora). No balcão, só este vai à cozinha ao finalizar. */
+  kitchen_prep?: boolean;
   /** O preço que o motor cobra AGORA (com a Hora da Xepa aberta, já descontado). */
   price_q: number;
   price_display: string;
@@ -352,6 +354,8 @@ export interface POSCashRuntimeProjection {
   terminal_label: string;
   operator_username: string;
   opened_at: string;
+  /** Quem ABRIU a gaveta; `operator_username` é quem opera agora (PDV-19). */
+  opened_by_username?: string;
   status?: "open" | "closed" | string;
   /**
    * Pode ver a APURAÇÃO (esperado, contado, diferença, faturamento)?
@@ -613,6 +617,8 @@ export interface POSProjection {
    * decide; a tela não renderiza porta que devolve 404. É consulta — a via do
    * cliente sai na bobina, e essa não depende deste gate. */
   danfe_screen_allowed: boolean;
+  /** O operador fecha o dia (Gerente)? Sem isso, o "Fim do dia" não aparece na barra. */
+  can_close_day?: boolean;
   /** Hoje pelo relógio da LOJA — o padrão da data de entrega. */
   delivery_today: string;
   /** As janelas de hoje, para o formulário abrir já respondendo. A review
@@ -987,6 +993,8 @@ export interface POSScheduleResponse {
   is_today: boolean;
   /** Não deu para apurar a prontidão — NÃO é "sem restrição". */
   readiness_unavailable: boolean;
+  /** Outro dia: os SKUs da grade sem saldo NAQUELA data (vazio para hoje). */
+  sold_out_skus?: string[];
 }
 
 /** A renúncia de frete que a loja aplicou (P2-21). `promotion`: a promoção

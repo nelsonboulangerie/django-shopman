@@ -121,6 +121,16 @@ onMounted(() => {
   if (!props.keyboard || !root.value) return;
   frame = root.value.closest<HTMLElement>("[data-operator-lock], [role='dialog']") ?? root.value;
   frame.addEventListener("keydown", onKeydown);
+  // Cada passo da troca de PIN remonta esta peça, e o botão que levou até ele
+  // ("Continuar", "Trocar meu PIN") sai do DOM com o foco junto: o foco caía no
+  // `body`, fora da moldura, e o teclado físico não chegava aqui até alguém
+  // tocar num dígito (beta 05/11, PDV-25). Foco perdido volta para a moldura;
+  // foco que o operador pôs DENTRO dela é dele.
+  const active = document.activeElement as HTMLElement | null;
+  if (!active || active === document.body || !frame.contains(active)) {
+    if (!frame.hasAttribute("tabindex")) frame.setAttribute("tabindex", "-1");
+    frame.focus({ preventScroll: true });
+  }
 });
 onBeforeUnmount(() => {
   frame?.removeEventListener("keydown", onKeydown);
@@ -163,14 +173,20 @@ onBeforeUnmount(() => {
         data-operator-pin-field
       />
       <span class="sr-only" aria-live="polite">{{ spoken }}</span>
-      <!-- A recusa se dispensa no X, e some sozinha quando se volta a digitar. -->
+      <!-- A recusa se dispensa no X, e some sozinha quando se volta a digitar.
+           Some sem devolver a altura (`invisible`): se o aviso saísse do fluxo,
+           o teclado subia no meio da digitação e o dedo seguinte caía na tecla
+           de cima (beta test de 05/11/2026: digitava 4 e saía 7). -->
       <NuxtAlert
-        v-if="showError"
+        v-if="error"
         color="error"
         variant="subtle"
         icon="i-lucide-circle-alert"
         :title="error"
+        :class="showError ? undefined : 'invisible'"
+        :aria-hidden="showError ? undefined : 'true'"
         close
+        data-operator-pin-error
         @update:open="errorDismissed = true"
       />
     </div>

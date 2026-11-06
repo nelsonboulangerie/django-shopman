@@ -47,7 +47,7 @@ def is_produced_here(sku: str) -> bool:
     """Existe ficha ATIVA que produz este SKU?"""
     from shopman.craftsman.models import Recipe
 
-    return Recipe.objects.filter(output_sku=sku, is_active=True).exists()
+    return Recipe.objects.filter(output_sku__iexact=sku, is_active=True).exists()
 
 
 def ensure_purchase_record(product, *, refuse_if_produced: bool = True):
@@ -178,22 +178,80 @@ def sells_remotely(product) -> bool:
     return bool(product.image_url) and not is_sold_by_weight(product.unit)
 
 
+#: Os canais remotos que a regra (peso ou falta de foto) pausou, e que voltam
+#: quando a regra deixa de valer. Chave de ``Product.metadata``.
+REMOTE_PAUSE_KEY = "remote_paused_by_rule"
+
+
 def withdraw_from_remote_channels(product) -> list[str]:
-    """Tira o item dos canais remotos. Devolve de quais saiu."""
+    """Pausa o item nos canais remotos. Devolve de quais saiu.
+
+    PAUSA, não apaga (beta 05/11, GES-02): o preço de cada canal e a decisão de
+    publicar são da gerente, e apagar a listagem tirava o item da Loja, do iFood
+    e do WhatsApp para sempre: desmarcar "Vendido por peso" não trazia nada de
+    volta. Os canais que estavam vendendo ficam anotados em
+    ``Product.metadata[REMOTE_PAUSE_KEY]``, e ``restore_remote_channels`` os
+    religa quando a regra deixa de valer. O que já estava pausado à mão não entra
+    na nota: continua pausado.
+    """
     from shopman.offerman.models import ListingItem
 
-    removed = ListingItem.objects.filter(product=product, listing__ref__in=remote_listing_refs())
-    refs = list(removed.values_list("listing__ref", flat=True))
-    removed.delete()
+    live = ListingItem.objects.filter(
+        product=product, listing__ref__in=remote_listing_refs(), is_published=True, is_sellable=True,
+    )
+    items = list(live.select_related("listing"))
+    refs = sorted({item.listing.ref for item in items})
+    if not refs:
+        return []
+    # Um ``save()`` por item: é ele que dispara ``availability_changed`` e o
+    # iFood/Meta ficam sabendo que o item saiu.
+    for item in items:
+        item.is_published = False
+        item.is_sellable = False
+        item.save()
+    metadata = dict(product.metadata or {})
+    metadata[REMOTE_PAUSE_KEY] = sorted(set(metadata.get(REMOTE_PAUSE_KEY) or []) | set(refs))
+    type(product).objects.filter(pk=product.pk).update(metadata=metadata)
+    product.metadata = metadata
     return refs
 
 
-def sync_sale_listings(product, price_q: int, *, reactivate: bool = False) -> tuple[list[str], list[str]]:
+def restore_remote_channels(product) -> list[str]:
+    """Religa os canais remotos que a regra pausou. Devolve quais voltaram.
+
+    Só volta o que ``withdraw_from_remote_channels`` anotou, e só quando o item
+    vende de longe de novo (``sells_remotely``). Sem a regra, nada muda.
+    """
+    from shopman.offerman.models import ListingItem
+
+    metadata = dict(product.metadata or {})
+    refs = list(metadata.get(REMOTE_PAUSE_KEY) or [])
+    if not refs or not sells_remotely(product):
+        return []
+    for item in ListingItem.objects.filter(product=product, listing__ref__in=refs):
+        item.is_published = True
+        item.is_sellable = True
+        item.save()
+    metadata.pop(REMOTE_PAUSE_KEY, None)
+    type(product).objects.filter(pk=product.pk).update(metadata=metadata)
+    product.metadata = metadata
+    return refs
+
+
+def sync_sale_listings(
+    product, price_q: int, *, reactivate: bool = False, remote_paused: bool = False,
+) -> tuple[list[str], list[str]]:
     """PDV sempre; canal remoto só com foto e nunca por peso. Devolve ``(listados, deslistados)``.
 
     Fora da regra (``sells_remotely``), o item sai do canal remoto em que
     estiver. Com ``reactivate``, o item que já estava listado mas pausado volta
     a vender, com o preço dado — é o gesto de quem ligou a venda.
+
+    Com ``remote_paused``, o vínculo remoto nasce PAUSADO (com o preço já
+    posto) e o ``reactivate`` não o religa: o item vende só no balcão até a
+    gerente ligar o canal no Catálogo. É como se vende só no balcão desde a
+    decisão do dono de 05/11/2026 ("Ocultar no catálogo" tira de TODOS os
+    canais, PDV incluído; para vender só no balcão, pausam-se os remotos).
     """
     from shopman.offerman.models import Listing, ListingItem
 
@@ -204,13 +262,15 @@ def sync_sale_listings(product, price_q: int, *, reactivate: bool = False) -> tu
     wanted = [POS_LISTING] + ([ref for ref in remote if ref in listings] if sells_remotely(product) else [])
     listed: list[str] = []
     for ref in wanted:
+        live = not (remote_paused and ref != POS_LISTING)
         item, created = ListingItem.objects.get_or_create(
             listing=listings[ref], product=product,
-            defaults={"price_q": price_q, "is_published": True, "is_sellable": True},
+            defaults={"price_q": price_q, "is_published": live, "is_sellable": live},
         )
         if created:
-            listed.append(ref)
-        elif reactivate and (not item.is_published or not item.is_sellable or item.price_q != price_q):
+            if live:
+                listed.append(ref)
+        elif reactivate and live and (not item.is_published or not item.is_sellable or item.price_q != price_q):
             item.is_published = True
             item.is_sellable = True
             item.price_q = price_q
@@ -245,9 +305,11 @@ def start_selling(material, *, price_q: int | None):
     Cria o cadastro de venda com o mesmo SKU, copiando nome, unidade, validade,
     marca, GTIN, NCM e foto de referência do cadastro de compra — ou religa o
     que existia com a venda pausada. Entra no PDV; nos canais remotos só com
-    foto. Nasce fora do catálogo publicado da loja (``is_published=False``):
-    alérgenos, ingredientes e tabela nutricional são dado da embalagem, e
-    publicar é passo do gestor depois dela.
+    foto, e PAUSADO: alérgenos, ingredientes e tabela nutricional são dado da
+    embalagem, e ligar a loja online, o iFood e o WhatsApp é passo do gestor
+    depois dela. O produto nasce publicado: "Ocultar no catálogo" tira o item
+    de TODOS os canais, PDV incluído (decisão do dono, beta 05/11/2026, GES-10
+    e CMP-08), e vender só no balcão é pausar os remotos.
 
     Recusa o SKU com ficha ativa: o que é produzido aqui se vende pelo
     catálogo, não nasce do Compras.
@@ -270,7 +332,7 @@ def start_selling(material, *, price_q: int | None):
             unit=material.unit,
             shelf_life_days=material.shelf_life_days,
             base_price_q=price_q,
-            is_published=False,
+            is_published=True,
             is_sellable=True,
             availability_policy=AvailabilityPolicy.PLANNED_OK,
             image_url=str(source.get("image_url") or "").strip(),
@@ -289,7 +351,10 @@ def start_selling(material, *, price_q: int | None):
         product.is_sellable = True
         product.base_price_q = price_q
         product.save()
-    sync_sale_listings(product, price_q, reactivate=True)
+    # O gesto liga o BALCÃO, nunca o remoto: nem no item novo, nem no religar
+    # (desligar pausou tudo; religar não pode publicar na Loja, no iFood e no
+    # WhatsApp sem a gerente passar pelo Catálogo). O remoto que já vendia segue.
+    sync_sale_listings(product, price_q, reactivate=True, remote_paused=True)
     return product
 
 

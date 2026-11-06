@@ -24,12 +24,40 @@ const props = withDefaults(defineProps<{
   operatorName?: string;
   /** `rail`: com "Ocultar a barra lateral". `phone`: com Bloquear. */
   mode: "rail" | "phone";
-}>(), { operatorName: undefined });
+  /**
+   * Há barra lateral para ocultar? Na gaveta do celular o menu é o mesmo do rail, mas
+   * não há barra lateral nenhuma, e o item oferecia esconder o que não existe
+   * (beta 05/11, CEN-08).
+   */
+  railHidable?: boolean;
+}>(), { operatorName: undefined, railHidable: true });
 
 const emit = defineEmits<{ lock: []; hide: [] }>();
 
 const { data: operatorSession } = useNuxtData<OperatorSession>("operator-session");
 const workstationContext = computed(() => operatorSession.value?.workstation?.context_label ?? "");
+
+// Sair deste dispositivo: encerra a sessão. Só fora de um posto (o celular de
+// quem entrou com senha, o PC do escritório): ali o Bloquear deixava a lista de
+// operadores à mostra para quem achasse o dispositivo (beta 05/11, CEN-07). Num
+// posto, sair é o mesmo que bloquear (a estação continua pedindo PIN), e o
+// vínculo do posto tem gesto próprio, no cadastro de Postos.
+const canSignOut = computed(
+  () => Boolean(operatorSession.value?.operator) && !operatorSession.value?.station,
+);
+const { run: signOut, pending: signOutPending } = usePendingAction(async () => {
+  try {
+    await $fetch("/api/v1/backstage/operator/logout/", {
+      method: "POST",
+      credentials: "same-origin",
+    });
+  } catch (err) {
+    useSonner.error(httpErrorMessage(err, "Não foi possível sair. Tente de novo."));
+    return;
+  }
+  // Recarregar zera o que a tela guardava da pessoa; o app sobe no login.
+  window.location.reload();
+});
 
 // A leitura que a caixa de Avisos já faz; sem ela (tela sem a caixa), uma própria.
 const shared = useSharedCapacity().value;
@@ -77,6 +105,21 @@ const { run: toggleOrientation, pending: orientationPending } = usePendingAction
       @click="emit('lock')"
     />
 
+    <NuxtButton
+      v-if="canSignOut"
+      block
+      class="justify-start"
+      color="neutral"
+      variant="ghost"
+      icon="i-lucide-log-out"
+      label="Sair deste dispositivo"
+      description="Para entrar de novo, só com senha"
+      :loading="signOutPending"
+      :disabled="signOutPending"
+      data-operator-menu-sign-out
+      @click="signOut"
+    />
+
     <ClientOnly>
       <NuxtButton block class="justify-start" color="neutral" variant="ghost" icon="i-lucide-moon" :label="themeLabel" data-operator-menu-theme @click="toggleTheme" />
       <NuxtButton
@@ -96,7 +139,7 @@ const { run: toggleOrientation, pending: orientationPending } = usePendingAction
     </ClientOnly>
 
     <NuxtButton
-      v-if="props.mode === 'rail'"
+      v-if="props.mode === 'rail' && props.railHidable"
       block
       class="justify-start"
       color="neutral"
@@ -108,10 +151,12 @@ const { run: toggleOrientation, pending: orientationPending } = usePendingAction
     />
 
     <!-- Capacidade do serviço: o estado escrito, sempre com o número. Quando passa do
-         limite, ela também entra na caixa de Avisos. -->
+         limite, ela também entra na caixa de Avisos. Sem leitura, nada: "Este ambiente
+         não informa a capacidade" é nota de engenheiro, não informação para quem opera
+         (beta 05/11, CEN-08 da rodada gestor). -->
     <ClientOnly>
       <div
-        v-if="authorized && reading"
+        v-if="authorized && reading?.available"
         class="mt-1 px-2.5 pt-2 pb-1"
         data-operator-menu-capacity
         :data-capacity-level="level"

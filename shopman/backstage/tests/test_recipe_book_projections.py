@@ -610,11 +610,20 @@ def test_access_rule():
     from shopman.shop.models import Shop
 
     viewer = grant_production_operator(User.objects.create_user("viewer", password="pw", is_staff=True))
-    editor = grant_production_operator(User.objects.create_user("editor", password="pw", is_staff=True))
-    editor.user_permissions.add(
+    # A Cozinha gere lotes (``shop.manage_production``) e só LÊ a ficha (dono, 05/11/2026).
+    kitchen = grant_production_operator(User.objects.create_user("kitchen", password="pw", is_staff=True))
+    kitchen.user_permissions.add(
         Permission.objects.get(
             content_type=ContentType.objects.get_for_model(Shop),
             codename="manage_production",
+        )
+    )
+    kitchen = User.objects.get(pk=kitchen.pk)
+    editor = grant_production_operator(User.objects.create_user("editor", password="pw", is_staff=True))
+    editor.user_permissions.add(
+        Permission.objects.get(
+            content_type=ContentType.objects.get_for_model(Recipe),
+            codename="change_recipe",
         )
     )
     editor = User.objects.get(pk=editor.pk)
@@ -631,6 +640,7 @@ def test_access_rule():
 
     assert (resolve_recipe_book_access(viewer).can_view, resolve_recipe_book_access(viewer).can_edit) == (True, False)
     assert (resolve_recipe_book_access(editor).can_view, resolve_recipe_book_access(editor).can_edit) == (True, True)
+    assert (resolve_recipe_book_access(kitchen).can_view, resolve_recipe_book_access(kitchen).can_edit) == (True, False)
     assert (resolve_recipe_book_access(sheet_reader).can_view, resolve_recipe_book_access(sheet_reader).can_edit) == (
         True,
         False,

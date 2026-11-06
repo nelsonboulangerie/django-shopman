@@ -212,6 +212,12 @@ export function useProductionMutationGuard<T extends FreshProjection>(
   }
 
   function notify(block: ProductionMutationBlock) {
+    // Ação desligada pela projeção (permissão, regra do dia) não volta por
+    // atualizar: o aviso diz o motivo e não oferece "Atualizar os números".
+    if (block.code === "action_disabled") {
+      useSonner.error(block.detail);
+      return;
+    }
     const label =
       block.recovery.action === "refresh"
         ? block.recovery.label

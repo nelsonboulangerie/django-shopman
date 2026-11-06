@@ -13,7 +13,6 @@ function line (overrides: Partial<CartItemProjection> = {}): CartItemProjection 
     price_display: 'R$ 1,50',
     total_display: 'R$ 3,00',
     image_url: null,
-    original_price_display: null,
     discount_label: null,
     is_available: true,
     availability_warning: null,

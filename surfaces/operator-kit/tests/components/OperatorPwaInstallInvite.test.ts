@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime";
 import type { VueWrapper } from "@vue/test-utils";
+import { nextTick } from "vue";
 import OperatorPwaInstallInvite from "../../app/components/OperatorPwaInstallInvite.vue";
 import { OPERATOR_APPS } from "../../appIdentity";
 import { installPlan, type InstallPlan } from "../../app/utils/installGuide";
@@ -32,6 +33,12 @@ const state = vi.hoisted(() => ({
   dismiss: vi.fn(),
   dismissAsDone: vi.fn(),
 }));
+
+const session = vi.hoisted(() => ({
+  value: { operator: { id: 1, username: "bia", name: "Bia" }, locked: false, authorized: true } as unknown,
+}));
+mockNuxtImport("useNuxtData", () => () => ({ data: session }));
+const INSIDE = { operator: { id: 1, username: "bia", name: "Bia" }, locked: false, authorized: true };
 
 const mounted: VueWrapper[] = [];
 
@@ -78,11 +85,47 @@ describe("OperatorPwaInstallInvite", () => {
     state.install.mockReset().mockResolvedValue(true);
     state.dismiss.mockReset();
     state.dismissAsDone.mockReset();
+    session.value = INSIDE;
   });
 
   afterEach(() => {
     for (const wrapper of mounted.splice(0)) wrapper.unmount();
     document.body.innerHTML = "";
+  });
+
+  // Beta 05/11 (CEN-15): o convite cobria o login antes de alguém entrar.
+  it("não aparece no login, na trava nem no acesso negado: só dentro do app", async () => {
+    state.plan.value = PROMPT;
+    state.canInvite.value = true;
+    for (const fora of [
+      null,
+      { operator: null, locked: true, authorized: false },
+      { ...INSIDE, locked: true },
+      { ...INSIDE, authorized: false },
+    ]) {
+      session.value = fora;
+      await mountInvite();
+      expect(document.body.querySelector("[data-operator-pwa-install]")).toBeNull();
+      for (const wrapper of mounted.splice(0)) wrapper.unmount();
+      document.body.innerHTML = "";
+    }
+
+    session.value = INSIDE;
+    await mountInvite();
+    expect(document.body.querySelector("[data-operator-pwa-install]")).not.toBeNull();
+  });
+
+  it("espera a oferta de vincular o dispositivo sair da tela (PDV2-25)", async () => {
+    state.plan.value = PROMPT;
+    state.canInvite.value = true;
+    const offerOpen = useState<boolean>("station-setup-offer-open", () => false);
+    offerOpen.value = true;
+    await mountInvite();
+    expect(document.body.querySelector("[data-operator-pwa-install]")).toBeNull();
+    offerOpen.value = false;
+    await nextTick();
+    await nextTick();
+    expect(document.body.querySelector("[data-operator-pwa-install]")).not.toBeNull();
   });
 
   it("fica ausente quando não há caminho acionável aqui", async () => {

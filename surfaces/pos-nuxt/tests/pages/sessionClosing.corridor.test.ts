@@ -44,8 +44,24 @@ mockNuxtImport("usePosAction", () => () => ({ call }));
 async function openScreen(closing: DayClosingProjection) {
   servido = closing;
   clearNuxtData("day-closing");
-  return mountSuspended(ClosingPage);
+  // A contagem mora no estado do app para sobreviver ao "Sair" (PDV-04): cada
+  // cenário começa de uma contagem vazia.
+  clearNuxtState((key) => key.startsWith("pos-closing:"));
+  return mountSuspended(ClosingPage, { attachTo: document.body });
 }
+
+const PENDING = [
+  {
+    ref: "WO-2026-00023",
+    output_sku: "PCHOC",
+    status: "planned",
+    status_label: "Planejada",
+    quantity: "36",
+    target_date: "2026-10-03",
+    target_date_display: "03/10",
+    is_overdue: false,
+  },
+];
 
 describe("Fim do dia em corredor", () => {
   it("três passos no topo, com estado e sem valor", async () => {
@@ -97,5 +113,81 @@ describe("Fim do dia em corredor", () => {
     for (const input of page.findAll("input[data-count-input]")) await input.setValue("0");
     await page.find("[data-closing-review]").trigger("click");
     expect(page.find("[data-closing-episode]").exists()).toBe(false);
+  });
+});
+
+describe("Fim do dia: o que foi contado sobrevive ao Sair (beta 05/11, PDV-04)", () => {
+  it("sair e voltar mantém as contagens da vitrine e o passo", async () => {
+    const page = await openScreen(projection());
+    const [bag, cro] = page.findAll("input[data-count-input]");
+    await bag!.setValue("17");
+    await cro!.setValue("3");
+    page.unmount();
+
+    clearNuxtData("day-closing");
+    const back = await mountSuspended(ClosingPage);
+    const values = back.findAll("input[data-count-input]").map((input) => (input.element as HTMLInputElement).value);
+    expect(values).toEqual(["17", "3"]);
+    expect(back.find("[data-closing-review]").text()).toContain("Contei 20 peças");
+    back.unmount();
+  });
+});
+
+describe("Fim do dia: produção aberta impede selar (decisão do dono, 05/11)", () => {
+  it("o selo abre a liberação em vez de fechar, e não manda nada ao servidor", async () => {
+    call.mockClear();
+    const page = await openScreen(
+      projection({ pending_production: PENDING as never, has_pending_production: true, pending_episodes: [], has_pending_episodes: false }),
+    );
+    for (const input of page.findAll("input[data-count-input]")) await input.setValue("0");
+    await page.find("[data-closing-review]").trigger("click");
+    await page.find("[data-closing-seal]").trigger("click");
+    await flushPromises();
+
+    expect(call).not.toHaveBeenCalled();
+    const release = document.body.querySelector("[data-closing-release]");
+    expect(release?.textContent).toContain("Uma ordem de produção segue aberta.");
+    expect(release?.textContent).toContain("WO-2026-00023");
+    const ask = document.body.querySelector<HTMLButtonElement>("[data-closing-release-ask]");
+    // Sem o porquê, não há o que o gerente assinar.
+    expect(ask?.disabled).toBe(true);
+    page.unmount();
+  });
+
+  it("o diálogo do gerente diz que o dia fecha e não reabre", async () => {
+    // A liberação sela direto, sem o "Fechar o dia?" do caminho comum: a
+    // consequência tem de estar onde o PIN é digitado.
+    call.mockClear();
+    const page = await openScreen(
+      projection({ pending_production: PENDING as never, has_pending_production: true, pending_episodes: [], has_pending_episodes: false }),
+    );
+    for (const input of page.findAll("input[data-count-input]")) await input.setValue("0");
+    await page.find("[data-closing-review]").trigger("click");
+    await page.find("[data-closing-seal]").trigger("click");
+    await flushPromises();
+    const reason = document.body.querySelector<HTMLTextAreaElement>("[data-closing-release-reason]");
+    reason!.value = "o lote da noite segue no forno";
+    reason!.dispatchEvent(new Event("input"));
+    await flushPromises();
+    document.body.querySelector<HTMLButtonElement>("[data-closing-release-ask]")!.click();
+    await flushPromises();
+    const auth = document.body.querySelector("[data-drawer-manager-auth]");
+    expect(auth?.textContent).toContain("Uma ordem de produção segue aberta.");
+    expect(auth?.textContent).toContain("fecha e não reabre.");
+    expect(call).not.toHaveBeenCalled();
+    page.unmount();
+  });
+
+  it("o resumo diz que fechar pede o gerente, sem o selo 'automático'", async () => {
+    const page = await openScreen(
+      projection({ pending_production: PENDING as never, has_pending_production: true, pending_episodes: [], has_pending_episodes: false }),
+    );
+    for (const input of page.findAll("input[data-count-input]")) await input.setValue("0");
+    await page.find("[data-closing-review]").trigger("click");
+    const card = page.find("[data-closing-production]").text();
+    expect(card).toContain("Fechar o dia pede a liberação de um gerente.");
+    expect(card).not.toContain("automático");
+    expect(page.find("[data-closing-production-resolve]").exists()).toBe(true);
+    page.unmount();
   });
 });

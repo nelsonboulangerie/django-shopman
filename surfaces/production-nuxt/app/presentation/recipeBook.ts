@@ -673,3 +673,56 @@ export function reviewSignature(byName: string, atDisplay: string): string {
   if (!byName) return "";
   return atDisplay ? `Conferida por ${byName} em ${atDisplay}` : `Conferida por ${byName}`;
 }
+
+// ── Rendimento digitado ──────────────────────────────────────────────────────
+// O rendimento entra por `NuxtInputNumber` pt-BR (o mesmo do editor), que lê
+// "1.500" como mil e quinhentos. Para a porta ele viaja em formato de máquina,
+// ponto decimal e sem milhar: o campo de texto cru mandava "1.500" e o servidor
+// gravava 1,5 (beta 05/11/2026, PROD-03).
+
+/** O rendimento servido ("1500", "1.5") como número do campo, ou `null`. */
+export function yieldNumberFromServed(value: string | null | undefined): number | null {
+  const parsed = Number(String(value ?? "").trim());
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+/** O número do campo para o corpo da requisição; sem número, a unidade mínima "1". */
+export function yieldPayload(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? String(value) : "1";
+}
+
+// ── Tempo e temperatura da etapa do preparo ──────────────────────────────────
+// O campo do modo de preparo apagava em silêncio o tempo negativo e aceitava
+// 9999 °C (beta 05/11/2026, PROD-19). A leitura devolve o valor OU o aviso, e a
+// tela mostra o aviso no campo. A faixa é a mesma da porta
+// (`shopman/backstage/services/recipe_book.py`, STEP_TEMPERATURE_RANGE).
+
+/** Do congelador ao forno a lenha: fora disso é erro de digitação. */
+export const STEP_TEMPERATURE_RANGE = { min: -40, max: 450 } as const;
+
+function stepNumber(raw: string): number | null {
+  const text = raw.trim().replace(",", ".");
+  if (!text) return null;
+  return /^-?\d+(\.\d+)?$/.test(text) ? Number(text) : Number.NaN;
+}
+
+/** Minutos digitados → segundos da etapa, ou o aviso. Vazio limpa o tempo. */
+export function readStepMinutes(raw: string): { seconds: number | null; error: string } {
+  const minutes = stepNumber(raw);
+  if (minutes === null) return { seconds: null, error: "" };
+  if (!Number.isFinite(minutes)) return { seconds: null, error: "Use só números, em minutos." };
+  if (minutes <= 0) return { seconds: null, error: "O tempo precisa ser maior que zero." };
+  return { seconds: Math.round(minutes * 60), error: "" };
+}
+
+/** Graus digitados → temperatura da etapa, ou o aviso. Vazio limpa a temperatura. */
+export function readStepTemperature(raw: string): { celsius: number | null; error: string } {
+  const celsius = stepNumber(raw);
+  if (celsius === null) return { celsius: null, error: "" };
+  if (!Number.isFinite(celsius)) return { celsius: null, error: "Use só números, em °C." };
+  const { min, max } = STEP_TEMPERATURE_RANGE;
+  if (celsius < min || celsius > max) {
+    return { celsius: null, error: `Use uma temperatura entre ${min} e ${max} °C.` };
+  }
+  return { celsius: Math.round(celsius * 10) / 10, error: "" };
+}

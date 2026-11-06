@@ -138,3 +138,16 @@ export function kdsSwitcherSections(input: Omit<KdsSectionsInput, "place">): Ope
     return { ...section, form: "floor" as const, quick: onBar.has(section.key) || undefined };
   });
 }
+
+/**
+ * O título do quadro: o nome da estação. Enquanto o quadro dela ainda carrega (troca de
+ * estação), o nome vem do índice que a barra já tem; o ref cru ("cafes") só quando
+ * nenhum dos dois sabe (beta 05/11, KDS-14: o cabeçalho piscava "cafes").
+ */
+export function stationTitleFor(
+  ref: string,
+  boardName: string | undefined,
+  instances: ReadonlyArray<{ ref: string; name: string }> | undefined,
+): string {
+  return boardName || instances?.find((inst) => inst.ref === ref)?.name || ref;
+}

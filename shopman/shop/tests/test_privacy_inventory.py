@@ -142,3 +142,17 @@ def test_o_sinal_de_ligado_realmente_liga(processor, settings):
         "está preenchida — o caminho dentro dela está errado, e ele ficaria fora da "
         "política em silêncio."
     )
+
+
+def test_login_pelo_whatsapp_declara_o_manychat_mesmo_sem_notificacao(settings):
+    """Beta 05/11 (LOJA-08): a tela oferece "Entre pelo WhatsApp" e a política dizia
+    "mais ninguém recebe os seus dados" sem o ManyChat, porque o único sinal dele era
+    a notificação por WhatsApp."""
+    settings.SHOPMAN_NOTIFICATION_ADAPTERS = {}
+    settings.MANYCHAT_WEBHOOK_SECRET = "segredo-do-flow"
+
+    assert "manychat" in {processor.key for processor in active_processors()}
+
+    settings.MANYCHAT_WEBHOOK_SECRET = ""
+    assert "manychat" not in {processor.key for processor in active_processors()}
+

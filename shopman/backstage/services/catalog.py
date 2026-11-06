@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import asdict
 from math import isfinite
 
@@ -177,8 +178,10 @@ def set_cell(
         patch["is_sellable"] = _as_flag(is_sellable, "is_sellable")
     if price_q is not None:
         patch["price_q"] = _as_nullable_int(price_q, "price_q")
-        if patch["price_q"] is None or patch["price_q"] < 0:
-            raise CatalogError("Preço não pode ser negativo.")
+        if patch["price_q"] is None or patch["price_q"] <= 0:
+            # Zero não é "grátis": o PDV trata preço zero como "Sem preço" e não
+            # vende (beta 05/11, GES-05). Mesma régua do "Permitir revenda".
+            raise _field_error("O preço precisa ser maior que zero.", "price_q")
     if min_qty is not None:
         from decimal import Decimal, InvalidOperation
 
@@ -591,6 +594,17 @@ def _apply_price_op(old_q: int, op: str, value: int) -> int:
     return max(new_q, 0)
 
 
+def _refuse_zeroed_prices(count: int) -> None:
+    """O ajuste em lote que zera um preço tira o item de venda calado (o PDV
+    chama de "Sem preço"): recusa o lote inteiro e diz quantos zerariam (GES-05)."""
+    if count:
+        raise _field_error(
+            f"O ajuste deixaria {count} {'preço' if count == 1 else 'preços'} em zero. "
+            "O preço precisa ser maior que zero.",
+            "value",
+        )
+
+
 def bulk_price(
     skus: list[str],
     surface_ref: str,
@@ -612,8 +626,8 @@ def bulk_price(
 
     if op not in _PRICE_OPS:
         raise CatalogError(f"Operação de preço inválida: {op!r}.")
-    if op == "set" and value < 0:
-        raise CatalogError("Preço não pode ser negativo.")
+    if op == "set" and value <= 0:
+        raise _field_error("O preço precisa ser maior que zero.", "value")
     if not skus:
         return 0
     if surface_ref == ALL_SURFACES:
@@ -637,6 +651,7 @@ def bulk_price(
         if new_q != item.price_q:
             item.price_q = new_q
             changed.append(item)
+    _refuse_zeroed_prices(sum(1 for item in changed if item.price_q <= 0))
 
     if changed:
         ListingItem.objects.bulk_update(changed, ["price_q"])
@@ -936,7 +951,7 @@ def _admin_history_path(product) -> str:
 
 def _channel_note(channel, *, state: str, sale: bool, waiting: int) -> str:
     """A segunda linha do canal indisponível (v4): o que o cliente vê ali agora."""
-    if state == "available":
+    if state in ("available", "not_listed"):
         return ""
     ref = channel.ref
     if ref == "web":
@@ -953,12 +968,19 @@ def _channel_note(channel, *, state: str, sale: bool, waiting: int) -> str:
 def _channel_availability_payload(sku: str) -> list[dict]:
     """Em que canal dá para comprar o produto agora, e desde quando não dá.
 
-    ``state``: ``available`` · ``sold_out`` · ``paused``. Canal de exibição
-    (Meta, Google) não vende: segue o estoque do canal para onde manda o
+    ``state``: ``available`` · ``sold_out`` · ``paused`` · ``not_listed``. Canal de
+    exibição (Meta, Google) não vende: segue o estoque do canal para onde manda o
     cliente (``external_availability.stock_channel_ref``) e é ``automatic``.
     Leitura que falha some (lista vazia): ausência de resposta não é resposta.
+
+    A linha de cada canal sai da MESMA fonte da aba Vínculos e do Tabelão (beta
+    05/11, GES-03): canal de venda sem ``ListingItem`` é ``not_listed``, e com o
+    item despublicado ou pausado é ``paused``; canal de exibição fora das coleções
+    dele é ``not_listed``, e pausado ou oculto ali é ``paused``. Sem isso a aba
+    Geral dizia "À venda" onde a Loja respondia 404.
     """
     from django.utils import timezone
+    from shopman.offerman.models import Collection, ListingItem
 
     from shopman.backstage.models import ShelfOutage
     from shopman.shop.models import Channel
@@ -970,12 +992,36 @@ def _channel_availability_payload(sku: str) -> list[dict]:
         open_rows = {row.channel_ref: row for row in ShelfOutage.objects.filter(sku=sku, ended_at__isnull=True)}
         waiting = demand_count(sku) if open_rows else 0
         batch = _next_batch(sku) if open_rows else None
+        # O vínculo por canal de venda: o tier base (menor quantidade mínima), como a matriz.
+        listing_by_ref: dict[str, object] = {}
+        for item in ListingItem.objects.filter(product__sku=sku).select_related("listing").order_by("min_qty", "pk"):
+            listing_by_ref.setdefault(item.listing.ref, item)
         rows = []
         for channel in Channel.objects.filter(is_active=True).order_by("display_order", "name"):
             sale = channel.commerce_policy == Channel.CommercePolicy.ORDER
             source = channel.ref if sale else external_availability.stock_channel_ref(channel.ref)
             outage = open_rows.get(source)
-            state = outage.reason if outage else "available"
+            if sale:
+                item = listing_by_ref.get(channel.ref)
+                link = "missing" if item is None else ("off" if not (item.is_published and item.is_sellable) else "on")
+            else:
+                display = (channel.config or {}).get("display") or {}
+                refs = display.get("collections") or []
+                member = any(
+                    collection.product_queryset().filter(sku=sku).exists()
+                    for collection in Collection.objects.filter(ref__in=refs)
+                )
+                off = sku in {str(value) for value in (display.get("paused_skus") or [])} | {
+                    str(value) for value in (display.get("hidden_skus") or [])
+                }
+                link = "missing" if not member else ("off" if off else "on")
+            if link == "missing":
+                state = "not_listed"
+            elif link == "off":
+                state = "paused"
+            else:
+                state = outage.reason if outage else "available"
+            outage = outage if state in ("sold_out", "paused") and link == "on" else None
             rows.append({
                 "ref": channel.ref,
                 "name": channel.name or channel.ref,
@@ -1591,12 +1637,15 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
 
     if "unit" in data:
         # Vendido por peso é só no balcão: o preço final nasce na balança, e o
-        # cliente de longe não vê a peça (``sku_records.sells_remotely``).
-        from shopman.shop.services.sku_records import withdraw_from_remote_channels
+        # cliente de longe não vê a peça (``sku_records.sells_remotely``). A ida
+        # PAUSA os canais remotos; a volta os religa (GES-02).
+        from shopman.shop.services.sku_records import restore_remote_channels, withdraw_from_remote_channels
         from shopman.shop.services.weighed_sale import is_sold_by_weight
 
         if is_sold_by_weight(product.unit):
             withdraw_from_remote_channels(product)
+        else:
+            restore_remote_channels(product)
 
     if keywords is not None:
         product.keywords.set(keywords)
@@ -1624,16 +1673,28 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
 # marca de recusa do original, que é história daquele SKU).
 
 
+#: O SKU vira URL (``/produto/<sku>``), código de barras e linha da nota: só
+#: letras, números e hífen, começando por letra ou número. Maiúsculas, como os
+#: SKUs da casa e da revenda (GES-11).
+_SKU_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9-]*$")
+
+
+def _field_error(message: str, field: str) -> CatalogError:
+    error = CatalogError(message)
+    error.field = field
+    return error
+
+
 def _new_product_sku(raw) -> str:
     if not isinstance(raw, str):
-        raise CatalogError("Informe o SKU do produto.")
-    sku = raw.strip()
+        raise _field_error("Informe o SKU do produto.", "sku")
+    sku = raw.strip().upper()
     if not sku:
-        raise CatalogError("Informe o SKU do produto.")
+        raise _field_error("Informe o SKU do produto.", "sku")
     if len(sku) > 100:
-        raise CatalogError("O SKU deve ter no máximo 100 caracteres.")
-    if "/" in sku:
-        raise CatalogError("O SKU não pode ter barra (/).")
+        raise _field_error("O SKU deve ter no máximo 100 caracteres.", "sku")
+    if not _SKU_PATTERN.match(sku):
+        raise _field_error("Use só letras, números e hífen no SKU, sem espaço nem acento.", "sku")
     return sku
 
 
@@ -2568,8 +2629,8 @@ def _price_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> tuple[d
     op, value = data.get("op"), data.get("value")
     if op not in _PRICE_OPS or not isinstance(value, int) or isinstance(value, bool):
         raise CatalogError("Informe operação de preço e valor inteiro válidos.")
-    if op == "set" and value < 0:
-        raise CatalogError("Preço não pode ser negativo.")
+    if op == "set" and value <= 0:
+        raise _field_error("O preço precisa ser maior que zero.", "value")
     refs, channels, collection, skus, products, listings, all_items, _groups = _bulk_selection(data, lock=lock)
     by_product = {product.pk: product for product in products}
     by_listing = {listing.pk: listing for listing in listings}
@@ -2587,6 +2648,7 @@ def _price_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> tuple[d
         items.append(item)
     if len(cells) > MAX_BULK_PRICE_CELLS:
         raise CatalogError(f"Selecione no máximo {MAX_BULK_PRICE_CELLS} células somando os canais.")
+    _refuse_zeroed_prices(sum(1 for cell in cells if cell["after_q"] <= 0 < cell["before_q"]))
     state = {
         "actor": actor_id, "operation": "bulk-price", "op": op, "value": value,
         "skus": skus, "refs": refs, "cells": cells,
@@ -2846,6 +2908,19 @@ def _run_product_import(csv_text, *, dry_run: bool) -> dict:
         parsed.append(row)
     if not parsed:
         raise CatalogError("O CSV não tem nenhuma linha para importar.")
+    # Produto NOVO pelo CSV segue a mesma régua de SKU do criar e do duplicar
+    # (GES-11); o que já existe é casado pelo SKU que tem.
+    from shopman.offerman.models import Product
+
+    new_skus = {str(row.get("sku") or "").strip() for row in parsed} - set(
+        Product.objects.filter(sku__in=[str(row.get("sku") or "").strip() for row in parsed]).values_list("sku", flat=True)
+    )
+    invalid = sorted(sku for sku in new_skus if sku and not _SKU_PATTERN.match(sku))
+    if invalid:
+        raise _field_error(
+            f"SKU fora do padrão no CSV: {', '.join(invalid[:5])}. Use só letras maiúsculas, números e hífen.",
+            "sku",
+        )
 
     result = ProductResource().import_data(
         dataset, dry_run=dry_run, raise_errors=False, use_transactions=True,

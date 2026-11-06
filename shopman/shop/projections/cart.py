@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from shopman.shop import product_options
@@ -30,6 +30,7 @@ DEFAULT_STOREFRONT_CHANNEL_REF = "web"
 # Pricing-modifier discount keys aggregated into the cart breakdown.
 _PRICING_MODIFIER_KEYS = (
     "happy_hour",
+    "lot_discount",
     "loyalty_redeem",
     "manual_discount",
 )
@@ -105,8 +106,13 @@ class CartLineProjection:
     # Batch date the waitlisted line is planned against (None = no plan yet).
     planned_for_date: str | None
 
-    # Pricing transparency — set when a promo/coupon reduced the line.
-    original_price_q: int | None
+    # Preço de LISTA da linha (``meta._list_q``, carimbado pelo ItemPricingModifier
+    # antes de qualquer desconto) e o total a esse preço. A sacola mostra a linha
+    # cheia e o desconto só no resumo: Subtotal = soma das linhas, Subtotal menos
+    # descontos = Total (beta 05/11, MKT-05). O preço cobrado continua em
+    # ``unit_price_q``/``line_total_q``.
+    list_price_q: int
+    list_total_q: int
     discount_name: str | None  # raw promo/coupon name (presentation prefixes "Cupom")
     discount_is_coupon: bool
 
@@ -508,7 +514,19 @@ def _build_line(
     )
 
     disc = discount_items.get(sku)
-    original_price_q = int(disc["original_price_q"]) if disc else None
+    unit_price_q = int(item.get("unit_price_q", 0) or 0)
+    line_total_q = int(item.get("line_total_q", 0) or 0)
+    listed = (item.get("meta") or {}).get("_list_q")
+    if listed is None and disc and int(disc.get("original_price_q") or 0) > 0:
+        listed = disc["original_price_q"]
+    list_price_q = max(unit_price_q, int(listed)) if listed is not None else unit_price_q
+    list_total_q = (
+        # Mesma conta do ``monetary_mult`` (meio para cima), sem importar o
+        # formatador: projection de dados não carrega aparência (regra R-B).
+        int((Decimal(str(qty)) * list_price_q).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        if list_price_q != unit_price_q
+        else line_total_q
+    )
     discount_name = (disc.get("name") or "") if disc else None
     discount_is_coupon = bool(disc and disc.get("type") == "coupon")
 
@@ -517,8 +535,8 @@ def _build_line(
         sku=sku,
         name=name,
         qty=qty,
-        unit_price_q=int(item.get("unit_price_q", 0) or 0),
-        line_total_q=int(item.get("line_total_q", 0) or 0),
+        unit_price_q=unit_price_q,
+        line_total_q=line_total_q,
         is_available=is_available,
         available_qty=available_qty,
         is_made_to_order=is_made_to_order,
@@ -530,7 +548,8 @@ def _build_line(
         is_ready_for_confirmation=is_ready,
         confirmation_deadline_iso=deadline_iso,
         planned_for_date=planned_for_date,
-        original_price_q=original_price_q,
+        list_price_q=list_price_q,
+        list_total_q=list_total_q,
         discount_name=discount_name or None,
         discount_is_coupon=discount_is_coupon,
     )

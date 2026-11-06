@@ -6,6 +6,7 @@
 // what the read-side hands it and emits intent; the shell resolves the commands.
 import type { POSCustomerLookupProjection, POSCustomerSearchResult, POSSeatingSpotOption } from "~/types/pos";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
+import { renameRefusal, sanitizeTabRef } from "~/presentation/tabBoard";
 import { tabTitleView } from "~/presentation/tabTitle";
 
 const props = defineProps<{
@@ -75,6 +76,10 @@ const props = defineProps<{
   /** Sem o seletor Balcão/Encomenda (edição de encomenda): a encomenda continua
    *  encomenda, e um botão que nunca troca nada não fica na tela. */
   hideSalesModes?: boolean;
+  /** Os limites do nome da comanda (do canal): o campo diz na hora, em vez de o
+   *  servidor recusar depois ("Mesa 7/8"; beta test de 05/11/2026, PDV2-21). */
+  tabMaxLength?: number;
+  tabDisallowedChars?: string[];
   loading: boolean;
 }>();
 
@@ -129,10 +134,20 @@ const isCounter = computed(() => (props.salesMode || "counter") === "counter");
 const renaming = ref(false);
 const renameValue = ref("");
 function startRename() {
+  renameHint.value = "";
   renameValue.value = props.tabDisplay || "";
   renaming.value = true;
 }
+const renameHint = ref("");
+function onRenameInput(value: unknown) {
+  const typed = String(value ?? "");
+  const disallowed = props.tabDisallowedChars || [];
+  const clean = sanitizeTabRef(typed, { maxLength: props.tabMaxLength || 64, disallowedChars: disallowed });
+  renameValue.value = clean;
+  renameHint.value = renameRefusal(typed, clean, disallowed);
+}
 function confirmRename() {
+  renameHint.value = "";
   const next = renameValue.value.trim();
   renaming.value = false;
   if (next && next !== (props.tabDisplay || "")) emit("rename", next);
@@ -260,14 +275,24 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         />
       </div>
       <UiInput
-        v-model="renameValue"
+        :model-value="renameValue"
         class="h-10 w-40 text-lg font-semibold"
         placeholder="Mesa, nome…"
+        :maxlength="tabMaxLength || 64"
         autofocus
+        :aria-describedby="renameHint ? 'pos-tab-rename-hint' : undefined"
+        @update:model-value="onRenameInput"
         @keydown="onRenameKeydown"
       />
       <NuxtButton color="neutral" variant="ghost" icon="i-lucide-check" square aria-label="Confirmar nome" @click="confirmRename" />
       <NuxtButton color="neutral" variant="ghost" icon="i-lucide-x" square aria-label="Cancelar" @click="cancelRename" />
+      <p
+        v-if="renameHint"
+        id="pos-tab-rename-hint"
+        role="alert"
+        class="absolute left-0 top-full z-20 mt-1 w-max max-w-72 rounded-md bg-default px-2 py-1 text-xs text-error shadow-md ring ring-default"
+        data-pos-tab-rename-hint
+      >{{ renameHint }}</p>
     </div>
     <NuxtButton
       v-else-if="hasOpenTab && canRename && !readOnly"

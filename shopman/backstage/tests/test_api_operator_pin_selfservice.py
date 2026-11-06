@@ -85,7 +85,7 @@ class PinChangeTests(TestCase):
             CHANGE, {"current_pin": "1234", "new_pin": "5678"}, content_type="application/json"
         )
         self.assertEqual(resp.status_code, 423)
-        self.assertEqual(resp.json()["error"]["code"], "locked")
+        self.assertEqual(resp.json()["error"]["code"], "pin_locked")
 
     def test_change_clears_must_change_flag(self):
         cred = PinCredential.objects.get(user=self.op)

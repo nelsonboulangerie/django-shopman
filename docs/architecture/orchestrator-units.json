@@ -5461,7 +5461,9 @@
             "verify_contact_code",
             "contact_verify_error_message",
             "verify_for_login",
-            "verify_error_message"
+            "verify_error_message",
+            "auth_error_code",
+            "auth_error_body"
           ]
         }
       ],
@@ -6448,6 +6450,7 @@
             "preview",
             "preview_platforms",
             "preview_announcement",
+            "_preview_whatsapp_binding",
             "_TEST_IDEMPOTENCY_KEY"
           ]
         }
@@ -10422,7 +10425,10 @@
             "order_lines",
             "_made_to_order_skus",
             "_match_instances",
-            "_build_routable_items"
+            "_build_routable_items",
+            "_component_line_name",
+            "_package_note",
+            "_join_notes"
           ]
         }
       ],
@@ -12755,7 +12761,10 @@
             "add_comment",
             "timezone_now_iso",
             "MAX_VOLUMES",
-            "VOLUME_SURFACES"
+            "VOLUME_SURFACES",
+            "CLOSED_ORDER_STATUSES",
+            "CLOSED_ORDER_MESSAGE",
+            "_refuse_closed"
           ]
         }
       ],
@@ -12772,6 +12781,7 @@
       "tests": [
         "shopman/shop/tests/test_cod_custody_concurrency.py::test_stale_order_does_not_duplicate_collection_or_erase_context",
         "shopman/shop/tests/test_equipment_return_fresh_state.py::test_equipment_return_preserves_concurrent_note",
+        "shopman/backstage/tests/test_beta_gestor_pedidos_0511.py::test_server_refuses_kitchen_note_volumes_and_assign_on_closed_order",
         "shopman/shop/tests/test_orders_intention_concurrency.py::test_note_and_assignment_merge_but_stale_same_field_conflicts"
       ],
       "test_gap_reason": null,
@@ -15867,7 +15877,9 @@
             "sku_roles",
             "remote_listing_refs",
             "sells_remotely",
+            "REMOTE_PAUSE_KEY",
             "withdraw_from_remote_channels",
+            "restore_remote_channels",
             "sync_sale_listings",
             "start_selling",
             "stop_selling",

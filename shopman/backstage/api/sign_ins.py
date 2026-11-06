@@ -21,7 +21,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.backstage.models import SignInEvent
-from shopman.backstage.services.sign_in_audit import ANOMALY_LABELS
+from shopman.backstage.services.sign_in_audit import ANOMALY_LABELS, station_display, station_labels
 
 from .permissions import IsBackstageOperator
 
@@ -29,7 +29,7 @@ _DEFAULT_LIMIT = 30
 _MAX_LIMIT = 100
 
 
-def _sign_in_dict(event: SignInEvent) -> dict:
+def _sign_in_dict(event: SignInEvent, labels: dict[str, str]) -> dict:
     realces = event.anomalies
     return {
         "pk": event.pk,
@@ -38,9 +38,9 @@ def _sign_in_dict(event: SignInEvent) -> dict:
         "outcome": event.outcome,
         "outcome_display": event.get_outcome_display(),
         # Vazio quer dizer "de fora da loja" — informação, não lacuna. A tela
-        # mostra a frase, não um campo em branco.
+        # mostra a frase, não um campo em branco. Com posto, o NOME dele.
         "station_ref": event.station_ref,
-        "station_display": event.station_ref or "fora da loja",
+        "station_display": station_display(event.station_ref, labels),
         "ip_address": event.ip_address or "",
         "created_at": event.created_at.isoformat(),
         "created_at_display": timezone.localtime(event.created_at).strftime("%d/%m às %H:%M"),
@@ -69,8 +69,9 @@ class SignInListView(APIView):
         # ramo para staff privilegiado: a porta que não existe não vaza.
         queryset = SignInEvent.objects.filter(user=request.user)
         eventos = list(queryset[: _limit(request)])
+        labels = station_labels(e.station_ref for e in eventos)
         return Response({
-            "sign_ins": [_sign_in_dict(e) for e in eventos],
+            "sign_ins": [_sign_in_dict(e, labels) for e in eventos],
             "highlighted_count": sum(1 for e in eventos if e.anomalies),
         })
 

@@ -312,7 +312,7 @@ jobs:
     # derrubou o job — suíte verde virou check vermelho e a fila de merge
     # expulsou PR inocente (#361). O job cobre install (~3 min) + step.
     #
-    # O backstage saiu desta matriz e virou dois shards logo abaixo: ele era o
+    # O backstage saiu desta matriz e virou shards logo abaixo (hoje três): ele era o
     # caminho crítico do gate inteiro (12min26s a 12min55s, contra ~5 min do
     # segundo colocado). O shop saiu depois, pelo mesmo motivo (18min12s e
     # 20min00s na fila de 30/09). Aqui ficaram as suítes que já respondem em
@@ -361,7 +361,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  # ── O backstage roda em DOIS shards, sob um nome só ────────────────────
+  # ── O backstage roda em TRÊS shards, sob um nome só ───────────────────
   # `Testes (test-backstage)` é check OBRIGATÓRIO em `main`. Trocar as entradas
   # da matriz por dois nomes novos faria esse nome nunca mais aparecer — e check
   # obrigatório AUSENTE trava o PR para sempre, todos eles, inclusive o que faz
@@ -371,6 +371,12 @@ jobs:
   # ⚠️ `needs:` que falha PULA o dependente, e job pulado conta como SUCESSO
   # para branch protection — o agregador viraria um gate que não guarda nada.
   # Daí o `if: always()` e a conferência explícita de `needs.*.result`.
+  #
+  # O terceiro shard (`heavy`) nasceu em 06/11/2026: o `rest` passou a estourar
+  # o teto de 30 min do step (job 127686511444: "10225 passed ... in 1792.68s"
+  # e morto pelo timeout; job 127687615016 morreu antes de terminar) e tirou o
+  # #2154 da fila. A divisão e a medição moram no Makefile, junto de
+  # BACKSTAGE_HEAVY_TESTS. O nome `Backstage rest` ficou com o shard do resto.
   tests-backstage-shards:
     name: Backstage ${{ matrix.shard }}
     runs-on: ubuntu-latest
@@ -378,7 +384,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [seed, rest]
+        shard: [seed, heavy, rest]
 
     steps:
       - name: Checkout
@@ -421,7 +427,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Os dois shards do backstage passaram
+      - name: Os três shards do backstage passaram
         run: |
           resultado='${{ needs.tests-backstage-shards.result }}'
           echo "shards: $resultado"
@@ -527,8 +533,8 @@ jobs:
       - name: Instalar coverage
         run: python -m pip install 'coverage[toml]>=7.6,<8.0'
 
-      # storefront + backstage (seed, rest) + shop (heavy, rest) = 5
-      - name: Baixar todos os cinco shards
+      # storefront + backstage (seed, heavy, rest) + shop (heavy, rest) = 6
+      - name: Baixar todos os seis shards
         uses: actions/download-artifact@v8
         with:
           pattern: coverage-*
@@ -538,7 +544,7 @@ jobs:
       - name: Combinar, publicar e aplicar o piso de 75%
         run: |
           count=$(find coverage-data -type f -name '.coverage.*' | wc -l | tr -d ' ')
-          test "$count" = "5"
+          test "$count" = "6"
           python -m coverage combine coverage-data
           python -m coverage report --fail-under=75 | tee coverage.txt
           python -m coverage xml -o coverage.xml

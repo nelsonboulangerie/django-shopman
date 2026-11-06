@@ -18,3 +18,20 @@ export function mutationFieldErrors(error: unknown): Record<string, string> {
   }
   return result;
 }
+
+/** O cadastro dono do contato recusado (`error.owner` da recusa `contact_conflict`). */
+export interface ContactOwner {
+  field: "phone" | "email";
+  ref: string;
+  name: string;
+}
+
+export function contactOwner(error: unknown): ContactOwner | null {
+  const data = record(httpError(error).data);
+  const owner = record(record(data?.error)?.owner);
+  const field = data?.field;
+  if (!owner || (field !== "phone" && field !== "email")) return null;
+  const ref = typeof owner.ref === "string" ? owner.ref : "";
+  const name = typeof owner.name === "string" ? owner.name : "";
+  return ref ? { field, ref, name: name || ref } : null;
+}

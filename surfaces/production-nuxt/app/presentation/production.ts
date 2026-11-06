@@ -27,7 +27,7 @@ export function timerTone(status: ProductionTimerStatusCode): TimerTone {
   return timeTone("on_time");
 }
 
-/** O painel mantém Planejado, Previsto e Confirmado neutros; só Atrasado é tempo vermelho. */
+/** O painel mantém Planejado, Previsto e Fechado neutros; só Atrasado é tempo vermelho. */
 export function forecastTimeTone(status: ForecastStatus): TimerTone {
   return timeTone(status === "delayed" ? "late" : "on_time");
 }
@@ -439,4 +439,47 @@ export function parseShortage(
     return error as ProductionShortageError;
   }
   return null;
+}
+
+// ── Sanidade da quantidade (abrir ou planejar lote) ──────────────────────────
+
+/** Acima de quantas vezes o número de referência a tela pede para conferir. */
+export const OUTSIZED_FACTOR = 3;
+
+/**
+ * Um zero a mais vira um lote que ninguém consegue assar (beta 05/11: 42 virou
+ * 4.200). Diferença de rendimento continua sendo só um aviso; passar de três
+ * vezes a referência pede um segundo toque, com o número escrito na frase.
+ * Devolve a frase da conferência, ou null quando o número é plausível.
+ */
+export function outsizedQuantityWarning(
+  quantity: string | number,
+  reference: string | number | null | undefined,
+  referenceLabel = "o planejado",
+): string | null {
+  const parse = (value: string | number | null | undefined) =>
+    typeof value === "number"
+      ? value
+      : Number.parseFloat(String(value ?? "").replace(",", ".")) || 0;
+  const amount = parse(quantity);
+  const base = parse(reference);
+  if (amount <= 0 || base <= 0) return null;
+  if (amount <= base * OUTSIZED_FACTOR) return null;
+  const times = Math.round(amount / base);
+  return `${QTY_FORMAT.format(amount)} é ${QTY_FORMAT.format(times)} vezes ${referenceLabel} (${QTY_FORMAT.format(base)}). Confira o número antes de seguir.`;
+}
+
+// ── Letreiro (painel Solari) ─────────────────────────────────────────────────
+
+/** "12 UN": a quantidade com a unidade, como a palheta escreve. */
+export function boardQtyLabel(qty: string): string {
+  return `${qty} UN`;
+}
+
+/**
+ * Largura da coluna de quantidade, em palhetas: a maior quantidade do dia
+ * cabe inteira (beta 05/11: "4200 U" perdia o N). Nunca menos que "999 UN".
+ */
+export function boardQtyChars(rows: readonly { qty: string }[]): number {
+  return Math.max(6, ...rows.map((row) => boardQtyLabel(row.qty).length));
 }

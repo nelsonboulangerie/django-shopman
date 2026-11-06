@@ -75,10 +75,11 @@ export function ticketPill(
   const tone = ticketTone(ticket.timer_class as KDSTimerClass);
   // O de agora já diz a posição no rótulo acima do código ("Agora"); a pílula diz só o
   // prazo, para "Próximo" não nomear dois tickets na mesma tela.
-  if (state.next) {
-    if (tone === "late") return { label: "Atrasado", tone: "destructive" };
-    if (tone === "warning") return { label: "Perto da meta", tone: "warning" };
-  }
+  // Atrasado vale para todo card, não só o de agora: o relógio vermelho com a pílula
+  // "Novo" ao lado se contradiziam (beta 05/11, KDS-15). O estado o botão já diz
+  // ("Iniciar preparo" / "Pronto").
+  if (tone === "late") return { label: "Atrasado", tone: "destructive" };
+  if (state.next && tone === "warning") return { label: "Perto da meta", tone: "warning" };
   if (ticket.status === "pending") return { label: "Novo", tone: "info" };
   if (ticket.status === "in_progress") return { label: "Em preparo", tone: "primary" };
   return null;
@@ -158,6 +159,31 @@ export function allDayCounts(cards: KDSTicketProjection[]): KDSAllDayCount[] {
   return [...counts.entries()]
     .map(([name, qty]) => ({ name, qty: Number(qty.toFixed(9)) }))
     .sort((a, b) => b.qty - a.qty);
+}
+
+/**
+ * Quais chips do "A fazer" cabem numa linha, em ordem (os índices). Cabem os que
+ * cabem, INTEIROS: um nome longo que não cabe não esconde os curtos que vêm depois
+ * (beta 05/11, KDS-08: parar no primeiro que não cabia deixava 40% da linha vazia).
+ * `reserve` é o lugar do rótulo; `more` o do "+N itens", só descontado quando sobra algo.
+ */
+export function fitAllDayChips(
+  widths: number[],
+  available: number,
+  { reserve, more, gap }: { reserve: number; more: number; gap: number },
+): number[] {
+  const all = widths.map((_, index) => index);
+  if (!available) return all;
+  const total = widths.reduce((sum, value) => sum + value + gap, 0);
+  if (reserve + total <= available) return all;
+  let used = reserve + more;
+  const fit: number[] = [];
+  widths.forEach((value, index) => {
+    if (used + value + gap > available) return;
+    used += value + gap;
+    fit.push(index);
+  });
+  return fit;
 }
 
 // ── Os dois gestos da cozinha ───────────────────────────────────────────────
@@ -384,9 +410,12 @@ function looksLikePhone(value: string): boolean {
 /** "iniciado por Rafael às 21:56 · retira às 22:30" (prévia v4, nota 7: "quem iniciou
  *  aparece no card"). Vazio quando não há nada a dizer. */
 export function ticketStartLine(
-  ticket: Pick<KDSTicketProjection, "started_by" | "started_at_display" | "due_time_display">,
+  ticket: Pick<KDSTicketProjection, "started_by" | "started_at_display" | "due_time_display"> &
+    Partial<Pick<KDSTicketProjection, "order_elapsed_seconds" | "elapsed_seconds" | "due_clock_display">>,
 ): string {
   const parts: string[] = [];
+  const waited = orderWaitLabel(ticket);
+  if (waited) parts.push(waited);
   if (ticket.started_by) {
     parts.push(
       ticket.started_at_display
@@ -395,7 +424,43 @@ export function ticketStartLine(
     );
   }
   if (ticket.due_time_display) parts.push(ticket.due_time_display);
-  return parts.join(" · ");
+  // A linha abre com maiúscula, como o "Iniciado por" do detalhe (beta 05/11, KDS-15).
+  const line = parts.join(" · ");
+  return line ? line.charAt(0).toUpperCase() + line.slice(1) : "";
+}
+
+/** Quanto o pedido esperou ANTES de chegar a esta tela para contar como contexto. */
+export const ORDER_WAIT_NOTICE_SECONDS = 5 * 60;
+
+/**
+ * "pedido há 33m": a idade do PEDIDO, quando ele chegou à cozinha bem depois de entrar
+ * (o pedido sem estação espera no Gestor até alguém iniciar o preparo). O relógio do
+ * card segue medindo o tempo de cozinha contra a meta; isto diz que o cliente já
+ * espera há mais tempo (beta 05/11, KDS-04). Vazio com hora combinada (a encomenda
+ * nasce de madrugada de propósito) e quando a diferença é pequena.
+ */
+export function orderWaitLabel(
+  ticket: Partial<Pick<KDSTicketProjection, "order_elapsed_seconds" | "elapsed_seconds" | "due_clock_display">>,
+): string {
+  const order = ticket.order_elapsed_seconds;
+  if (order == null || ticket.due_clock_display) return "";
+  if (order - (ticket.elapsed_seconds ?? 0) < ORDER_WAIT_NOTICE_SECONDS) return "";
+  return `pedido há ${elapsedLabel(order)}`;
+}
+
+/**
+ * O sobrescrito do detalhe: quando o ticket chegou à cozinha e, se for outra hora,
+ * quando o pedido entrou. Era o prefixo do código colado na hora ("WHATSAPP-261105-05/11
+ * ÀS 05:51"), que se lia como um código e passava a hora do ticket pela do pedido
+ * (beta 05/11, KDS-04 e KDS-16). O canal já está no ícone ao lado.
+ */
+export function ticketArrivalLine(
+  ticket: Pick<KDSTicketProjection, "created_at_display"> &
+    Partial<Pick<KDSTicketProjection, "order_created_at_display" | "order_elapsed_seconds" | "elapsed_seconds" | "due_clock_display">>,
+): string {
+  const kitchen = ticket.created_at_display ? `Na cozinha desde ${ticket.created_at_display}` : "";
+  const order = orderWaitLabel(ticket) && ticket.order_created_at_display ? `pedido às ${ticket.order_created_at_display}` : "";
+  return [kitchen, order].filter(Boolean).join(" · ");
 }
 
 /** Tickets que são ADICIONAL de um pedido que já passou por esta estação.

@@ -424,7 +424,11 @@ def test_produto_a_quilo_fica_so_no_balcao():
 
     assert listed == ["pdv"]
     assert unlisted == ["web"]
-    assert list(ListingItem.objects.filter(product=queijo).values_list("listing__ref", flat=True)) == ["pdv"]
+    # Sai da venda remota PAUSADO, não apagado: o preço do canal e a decisão de
+    # publicar são da gerente, e voltam se a regra deixar de valer (GES-02).
+    web = ListingItem.objects.get(product=queijo, listing__ref="web")
+    assert (web.is_published, web.is_sellable, web.price_q) == (False, False, PRECO_KG)
+    assert ListingItem.objects.get(product=queijo, listing__ref="pdv").is_sellable is True
 
 
 def test_vendido_por_peso_tem_uma_definicao_so():

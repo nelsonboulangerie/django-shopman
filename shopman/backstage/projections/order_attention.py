@@ -450,6 +450,9 @@ def menu_outages(*, channel_names: dict[str, str]) -> tuple[tuple[MenuOutageProj
     for row in open_rows:
         by_sku.setdefault(row.sku, []).append(row)
     names = dict(Product.objects.filter(sku__in=list(by_sku)).values_list("sku", "name"))
+    # Só o que está no cardápio: a falta de um insumo (TOMATE, LEVAIN) não é item
+    # "fora do ar", e contá-la fazia o "+N" passar do tamanho do catálogo (GES-08).
+    by_sku = {sku: rows for sku, rows in by_sku.items() if sku in names}
     items = []
     for sku, rows in list(by_sku.items())[:MAX_MENU_OUTAGES]:
         paused = any(row.reason == OutageReason.PAUSED for row in rows)

@@ -204,6 +204,15 @@ describe('menu presentation — sections and filters', () => {
     expect(byTypo.flatMap(s => s.items).map(i => i.sku)).toEqual(['CROIS-001'])
   })
 
+  it('beta 05/11 (LOJA-12): dois erros de digitação ainda acham o produto', () => {
+    expect(searchTextMatches('crosant', 'Croissant')).toBe(true)
+    const byTwoTypos = filteredSections(sections, 'crosant', [], sectionsBySku)
+    expect(byTwoTypos.flatMap(s => s.items).map(i => i.sku)).toEqual(['CROIS-001'])
+    // Palavra curta continua exigente: "pao" não vira "pau".
+    expect(searchTextMatches('brigadeirx', 'Brigadeiro')).toBe(true)
+    expect(searchTextMatches('xyzwvut', 'Croissant')).toBe(false)
+  })
+
   it('applies multi-select filters as OR', () => {
     const keys = [filterKey('product', 'PAO-001'), filterKey('keyword', 'chocolate')]
     expect(itemMatchesAnyFilter(item(), sections[0], keys, sectionsBySku)).toBe(true)

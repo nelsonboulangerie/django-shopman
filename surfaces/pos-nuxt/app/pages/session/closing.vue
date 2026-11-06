@@ -49,7 +49,8 @@ import {
 } from "~/presentation/closing";
 import { oldestPendingDate, productionGridUrl, productionWorkOrderUrl } from "~/presentation/crossAppLinks";
 import type { ClosingPendingProduction } from "~/types/closing";
-import { DRAWER_DENOMINATIONS, formatAmountInput } from "~/presentation/cash";
+import { DRAWER_DENOMINATIONS, closeShiftDevicesWarning, formatAmountInput, shiftOpenedLine } from "~/presentation/cash";
+import { toast } from "vue-sonner";
 
 useHead({ title: "Fim do dia" });
 
@@ -75,7 +76,18 @@ function workOrderHref(row: ClosingPendingProduction): string {
 const { pos, actions, refresh: refreshPos } = await usePosTerminal();
 const canAuditCash = computed(() => pos.value?.cash_runtime?.can_audit_cash === true);
 
-const { closing, pending, accessDenied, refresh, submitting, submit, answering, answerEpisode } = await useDayClosing({ action });
+const {
+  closing,
+  pending,
+  accessDenied,
+  refresh,
+  submitting,
+  submit,
+  productionBlock,
+  releaseChallenge,
+  answering,
+  answerEpisode,
+} = await useDayClosing({ action });
 
 const dayProduction = computed(() => productionRows(closing.value?.production_summary));
 
@@ -94,9 +106,16 @@ const productionGrid = computed(() =>
 // lá embaixo enquanto o de cima estava vazio.
 const countItems = computed(() => closingCountOrder(closing.value?.items ?? []));
 
+// O que já foi contado sobrevive ao "Sair" (beta 05/11, PDV-04): o botão promete
+// "o que já foi contado fica na tela até você voltar", e o estado local da página
+// morria ao desmontar. Mora no estado do app (`useState`), por dia e por balcão,
+// e só se limpa quando o passo é selado.
+const closingStateKey = `pos-closing:${closing.value?.today_display || ""}:${pos.value?.terminal_ref || ""}`;
+const closingState = (name: string) => `${closingStateKey}:${name}`;
+
 // Contagem cega: um input por SKU, começa VAZIO (contar de verdade, não
 // aceitar default). O CTA só arma quando toda linha tem um número.
-const quantities = reactive<Record<string, string>>({});
+const quantities = useState<Record<string, string>>(closingState("quantities"), () => ({})).value;
 const canSubmit = computed(
   () => !!closing.value && !closing.value.already_closed
     && allQuantitiesFilled(closing.value.items, quantities),
@@ -149,12 +168,14 @@ const cashOpen = computed<boolean | null>(() => {
   const runtime = pos.value?.cash_runtime;
   return runtime ? Boolean(runtime.has_open_shift) : null;
 });
-const step = ref<"cash" | "count" | "day">(cashOpen.value ? "cash" : "count");
+const step = useState<"cash" | "count" | "day">(closingState("step"), () => (cashOpen.value ? "cash" : "count"));
 
 // PASSO 1: a contagem cega da gaveta. Nada de esperado, nem antes nem depois (o
 // veredito da conferência fica com o gerente: decisão do dono). O selo ecoa o número.
 const { busy: cashBusy, closeCashShift } = usePosCashSession({ pos, actions, refresh: refreshPos, action });
-const drawerMode = ref<"denominations" | "total">("denominations");
+const drawerMode = useState<"denominations" | "total">(closingState("drawer-mode"), () => "denominations");
+// O contador guarda as cédulas no mesmo estado do app, por modo.
+const drawerCounterKey = computed(() => closingState(`drawer:${drawerMode.value}`));
 const drawerQ = ref(0);
 const drawerFilled = ref(0);
 const drawerTotal = ref(0);
@@ -165,10 +186,11 @@ const drawerDisplay = computed(() => `R$ ${formatAmountInput(drawerQ.value).repl
 const drawerMissing = computed(() => Math.max(0, drawerTotal.value - drawerFilled.value));
 const drawerShift = computed(() => {
   const runtime = pos.value?.cash_runtime;
-  if (!runtime?.opened_at) return "";
-  const at = new Date(runtime.opened_at);
-  const time = Number.isNaN(at.getTime()) ? "" : at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  return [runtime.terminal_label || pos.value?.terminal_label || "", time ? `turno aberto às ${time}` : "", runtime.operator_username ? `por ${runtime.operator_username}` : ""].filter(Boolean).join(" · ");
+  return shiftOpenedLine({
+    terminalLabel: runtime?.terminal_label || pos.value?.terminal_label || "",
+    openedAt: runtime?.opened_at,
+    openedBy: runtime?.opened_by_username,
+  });
 });
 const drawerModes = [
   { label: "Por cédula", value: "denominations" },
@@ -177,6 +199,11 @@ const drawerModes = [
 watch(drawerMode, () => {
   drawerQ.value = 0;
 });
+function clearDrawerState() {
+  clearNuxtState([closingState("drawer:denominations"), closingState("drawer:total"), closingState("drawer-mode")].flatMap(
+    (key) => [key, `${key}:counts`, `${key}:total`, `${key}:touched`],
+  ));
+}
 // O selo ecoa o número antes de fechar: é a última leitura antes de ele virar a única
 // palavra do operador no livro.
 async function confirmDrawer() {
@@ -189,13 +216,19 @@ async function confirmDrawer() {
     title: empty ? "Confirmar gaveta vazia?" : `Fechar o caixa com ${drawerDisplay.value} contados?`,
     description: empty
       ? "Nenhum valor foi contado: o turno encerra com R$ 0,00 na gaveta. Se ainda há dinheiro nela, volte e conte."
-      : "O turno encerra aqui. A contagem fica registrada no turno; a conferência é da retaguarda.",
+      : ["O turno encerra aqui. A contagem fica registrada no turno; a conferência é da retaguarda.", closeShiftDevicesWarning(pos.value?.cash_runtime)].filter(Boolean).join(" "),
     confirmLabel: empty ? "Fechar com a gaveta vazia" : "Fechar o caixa",
     cancelLabel: "Voltar à contagem",
   });
   if (!ok) return;
+  const counted = drawerDisplay.value;
   const closed = await closeCashShift({ amount: formatAmountInput(drawerQ.value), notes: drawerNote.value.trim() });
-  if (closed) step.value = "count";
+  if (closed) {
+    // A confirmação do que aconteceu (beta 05/11, PDV-20): o passo mudar não diz.
+    toast.success(`Caixa fechado com ${counted} contados.`);
+    clearDrawerState();
+    step.value = "count";
+  }
 }
 const steps = computed(() =>
   closingSteps({
@@ -240,9 +273,67 @@ const appColor = String(
   (runtimeConfig.public.operatorPwa as { identity?: { color?: string } } | undefined)?.identity?.color || "var(--primary)",
 );
 
+// ── Produção aberta IMPEDE selar o dia (decisão do dono, 05/11/2026) ──────────
+// O aviso dizia "conclua ou estorne antes de encerrar" e o selo passava assim mesmo
+// (beta 05/11, PDV-06). Agora quem fecha resolve na Produção (concluir ou cancelar
+// as ordens, um toque daqui) ou libera aqui mesmo: o porquê, e um gerente da lista
+// com o PIN. O servidor recusa sem isso e grava quem, quando e por quê.
+const pendingCount = computed(() => closing.value?.pending_production?.length ?? 0);
+const pendingProductionLine = computed(() =>
+  pendingCount.value === 1
+    ? "Uma ordem de produção segue aberta."
+    : `${pendingCount.value} ordens de produção seguem abertas.`,
+);
+// O que o gerente assina: a produção aberta E o selo do dia, que não reabre. A
+// liberação vai direto ao fechamento, sem o "Fechar o dia?" do caminho comum; a
+// consequência tem de estar escrita onde o PIN é digitado.
+const releaseAuthDetail = computed(() => {
+  const day = closing.value?.today_display || "";
+  return `${pendingProductionLine.value} ${day ? `O dia ${day} fecha` : "O dia fecha"} e não reabre.`;
+});
+const managers = computed(() => pos.value?.managers ?? []);
+const releaseOpen = ref(false);
+// A marca mora no DialogContent (prop oficial `content`), como no `OperatorManagerAuth`.
+const releaseDialogContent = { "data-closing-release": "" } as Record<string, string>;
+const releaseReason = ref("");
+const releaseAuthOpen = ref(false);
+const releaseError = computed(() =>
+  releaseChallenge.value?.code === "manager_approval_invalid" ? releaseChallenge.value.message : "",
+);
+// O servidor é quem sabe: se ele recusou por produção aberta que a tela não via
+// (alguém abriu uma ordem agora), a liberação sobe do mesmo jeito.
+watch(productionBlock, (message) => {
+  if (message) releaseOpen.value = true;
+});
+watch(releaseChallenge, (challenge) => {
+  if (challenge) releaseAuthOpen.value = true;
+});
+function askRelease() {
+  if (!releaseReason.value.trim()) return;
+  releaseOpen.value = false;
+  releaseAuthOpen.value = true;
+}
+async function authorizeRelease(approval: { username?: string; pin?: string; badge?: string }) {
+  if (!closing.value) return;
+  releaseAuthOpen.value = false;
+  const done = await submit(buildQuantitiesPayload(closing.value.items, quantities), {
+    reason: releaseReason.value.trim(),
+    manager_approval: approval,
+  });
+  if (done) {
+    for (const key of Object.keys(quantities)) quantities[key] = "";
+    releaseReason.value = "";
+    justClosedDay.value = true;
+  }
+}
+
 // O selo irreversível: a confirmação diz a consequência antes do toque.
 async function confirmSubmit() {
   if (!closing.value || !canSubmit.value) return;
+  if (closing.value.has_pending_production) {
+    releaseOpen.value = true;
+    return;
+  }
   const day = closing.value.today_display;
   const ok = await confirm({
     title: `Fechar o dia ${day}?`,
@@ -544,6 +635,7 @@ const discrepancyColumns = [
             </p>
             <PosDenominationCounter
               :key="drawerMode"
+              :state-key="drawerCounterKey"
               layout="corridor"
               :mode="drawerMode"
               :denominations="denominations"
@@ -590,7 +682,7 @@ const discrepancyColumns = [
                   {{ closing.pending_production.length === 1
                     ? "Uma ordem de produção ainda está aberta."
                     : `${closing.pending_production.length} ordens de produção ainda estão abertas.` }}
-                  Conclua ou estorne antes de encerrar o dia.
+                  Conclua ou cancele na Produção antes de fechar o dia, ou libere o fechamento com a autorização de um gerente.
                 </span>
                 <!-- A contagem é CEGA: aqui o link não pode apontar para uma ordem,
                      porque a ordem carrega SKU. Leva à grade da Produção no dia do
@@ -829,10 +921,18 @@ const discrepancyColumns = [
                 />
                 <p class="min-w-0 flex-1 op-body">
                   {{ closing.has_pending_production
-                    ? (closing.pending_production.length === 1 ? "Produção: uma ordem ainda aberta" : `Produção: ${closing.pending_production.length} ordens ainda abertas`)
+                    ? `${pendingProductionLine} Fechar o dia pede a liberação de um gerente.`
                     : "Produção: todos os lotes de hoje fechados" }}
                 </p>
-                <NuxtBadge color="neutral" icon="i-lucide-sparkles" label="automático" />
+                <NuxtButton
+                  v-if="closing.has_pending_production"
+                  color="neutral"
+                  variant="outline"
+                  label="Resolver"
+                  icon="i-lucide-list-checks"
+                  data-closing-production-resolve
+                  @click="releaseOpen = true"
+                />
               </div>
             </NuxtCard>
 
@@ -915,6 +1015,75 @@ const discrepancyColumns = [
       :secondary="bar.secondary"
       label="Gesto do fim do dia"
       :data-closing-bar="bar.kind"
+    />
+
+    <!-- Produção aberta: resolver na Produção (cada ordem, um toque) ou liberar com o
+         gerente. Só aparece depois da contagem (passo 3), então a lista com o SKU já
+         não entrega a resposta da vitrine. -->
+    <NuxtModal
+      v-model:open="releaseOpen"
+      title="Produção aberta"
+      :description="`${pendingProductionLine} Conclua ou cancele na Produção, ou libere o fechamento com a autorização de um gerente.`"
+      :content="releaseDialogContent"
+    >
+      <template #body>
+        <div class="grid gap-4">
+          <ul v-if="closing?.pending_production?.length" class="grid gap-1.5" aria-label="Ordens de produção abertas">
+            <li
+              v-for="row in closing.pending_production"
+              :key="row.ref"
+              class="flex items-center justify-between gap-3 rounded-lg bg-secondary px-3 py-2"
+              data-closing-release-order
+            >
+              <span class="min-w-0">
+                <span class="block font-medium">{{ row.ref }}</span>
+                <span class="block op-micro text-muted-foreground">{{ pendingStatusDisplay(row) }}</span>
+              </span>
+              <a
+                v-if="workOrderHref(row)"
+                class="shrink-0 font-semibold underline underline-offset-4"
+                :href="workOrderHref(row)"
+                v-bind="attrsFor(workOrderHref(row))"
+                :aria-label="`Abrir a ordem ${row.ref} na Produção`"
+              >Abrir na Produção</a>
+            </li>
+          </ul>
+          <NuxtFormField label="Por que o dia fecha com produção aberta?" required>
+            <NuxtTextarea
+              v-model="releaseReason"
+              class="w-full"
+              :rows="2"
+              :maxlength="200"
+              placeholder="Ex.: o lote da noite segue no forno"
+              data-closing-release-reason
+            />
+          </NuxtFormField>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex w-full flex-wrap justify-end gap-2">
+          <NuxtButton color="neutral" variant="outline" label="Voltar" @click="releaseOpen = false" />
+          <NuxtButton
+            color="primary"
+            icon="i-lucide-shield-check"
+            label="Pedir autorização"
+            :disabled="!releaseReason.trim() || submitting"
+            data-closing-release-ask
+            @click="askRelease"
+          />
+        </div>
+      </template>
+    </NuxtModal>
+
+    <OperatorManagerAuth
+      v-model:open="releaseAuthOpen"
+      action="day_closing_production"
+      :detail="releaseAuthDetail"
+      :managers="managers"
+      :busy="submitting"
+      :error="releaseError"
+      @authorize="(username: string, pin: string) => authorizeRelease({ username, pin })"
+      @authorize-badge="(badge: string) => authorizeRelease({ badge })"
     />
   </main>
 </template>

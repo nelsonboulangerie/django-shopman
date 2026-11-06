@@ -1,6 +1,7 @@
 import type { Ref } from "vue";
 import type { BIChangeReport, BIReading } from "~/types/bi";
 import type { ForecastHorizon } from "./useBiForecast";
+import { readingFor } from "~/presentation/forecast";
 
 /**
  * Quanto de troco separar. Anda junto com a projeção porque é a mesma decisão
@@ -21,5 +22,7 @@ export function useBiChange(target: Ref<string>, horizon: Ref<ForecastHorizon>) 
     },
   );
 
-  return { change: computed(() => data.value?.bi ?? null), pending, error, refresh };
+  // O troco do dia pedido, nunca o do dia anterior enquanto o novo chega (ge:BI-04).
+  const change = computed(() => readingFor(data.value?.bi, target.value, horizon.value));
+  return { change, pending, error, refresh };
 }

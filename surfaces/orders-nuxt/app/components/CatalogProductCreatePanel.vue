@@ -89,13 +89,13 @@ const subtitle = computed(() =>
     ? props.source
       ? "Cópia de " + props.source.name + " (" + props.source.sku + ")"
       : ""
-    : "Cria um produto do zero. Publicar em canal e colecionar são gestos da matriz.",
+    : "Cria um produto do zero. Publicar em canal e colecionar são gestos do Tabelão.",
 );
 const duplicateNote = computed(
   () =>
     "A cópia traz o conteúdo do original (campos, palavras-chave, rótulos e a composição do combo). " +
     "Não traz preço por canal, publicação nem coleção: a cópia nasce oculta e fora de venda, e o GTIN fica de fora. " +
-    "Confira e publique na matriz.",
+    "Ao duplicar, a cópia abre aqui para você conferir e publicar.",
 );
 
 const policyOptions = [

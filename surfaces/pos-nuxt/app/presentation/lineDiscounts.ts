@@ -234,6 +234,19 @@ export function lineDiscountDetail(item: POSCartItem, reasons: readonly Discount
   return `${label} ${fact}`;
 }
 
+/** O selo da linha FECHADA: o alcance e, quando quem venceu foi uma promoção
+ *  automática, o nome dela ("Semana do Pão −15% · −R$ 2,70 na linha").
+ *
+ *  Beta test de 05/11/2026 (PDV-17): a linha dizia só "−15% · −R$ 2,70 na
+ *  linha" e o nome da promoção morava no aria-label. O operador não tinha como
+ *  dizer ao cliente de onde veio o desconto. O desconto manual segue sem o
+ *  motivo: quem deu foi o próprio operador, e o motivo aparece na linha aberta. */
+export function lineDiscountCompact(item: POSCartItem, reasons: readonly DiscountReasonOption[] = []): string {
+  const fact = lineDiscountFact(item);
+  if (!fact) return "";
+  return pricingDiscountBadge(item) ? lineDiscountDetail(item, reasons) : fact;
+}
+
 /** A pergunta da prévia ao servidor e a resposta dela: o desconto que o operador
  *  está digitando nesta linha, e o preço que a revisão deu à linha com ele. */
 export type DiscountPreview = {

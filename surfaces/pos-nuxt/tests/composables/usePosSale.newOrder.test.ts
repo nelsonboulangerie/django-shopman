@@ -91,3 +91,66 @@ describe("usePosSale.openNewOrder", () => {
     expect(h.sale.cart.salesMode).toBe("counter");
   });
 });
+
+describe("Nova encomenda abandonada não prende a comanda", () => {
+  // Beta test de 05/11/2026 (PDV2-13): a segunda "Nova" abriu #1009 e a #1008
+  // ficou "Em uso" com 0 itens.
+  const opened = { tab_ref: "2", tab_display: "2", session_key: "sess-2", tab_session_key: "sess-2" };
+
+  it("a segunda Nova encomenda reaproveita a que segue vazia", async () => {
+    const h = sale([tab("1", "in_use"), tab("2", "empty")], opened);
+    await h.sale.openNewOrder();
+    await nextTick();
+    const opens = () => h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/open/")).length;
+    expect(opens()).toBe(1);
+    await h.sale.openNewOrder();
+    expect(opens()).toBe(1);
+    expect(h.sale.cart.tabRef).toBe("2");
+  });
+
+  it("sair com a encomenda vazia libera a comanda; com item, não", async () => {
+    const h = sale([tab("2", "empty")], opened);
+    await h.sale.openNewOrder();
+    await nextTick();
+    await h.sale.releaseAbandonedOrderTab();
+    const clears = h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/clear/"));
+    expect(clears).toHaveLength(1);
+    expect(String(clears[0]![0])).toContain("/tabs/sess-2/clear/");
+    expect(clears[0]![1]).toMatchObject({ method: "DELETE" });
+
+    h.handles.actionCall.mockClear();
+    h.sale.cart.items.push({ line_id: "L-1", sku: "PAO", name: "Pão", qty: 1, price_q: 500, notes: "" } as never);
+    await h.sale.releaseAbandonedOrderTab();
+    expect(h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/clear/"))).toHaveLength(0);
+  });
+
+  it("voltar ao quadro também libera a encomenda vazia, e a venda esquece a comanda", async () => {
+    const h = sale([tab("2", "empty")], opened);
+    await h.sale.openNewOrder();
+    await nextTick();
+    h.sale.goToTabs();
+    await vi.waitFor(() => expect(h.sale.cart.tabSessionKey).toBe(""));
+    const clears = h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/clear/"));
+    expect(clears).toHaveLength(1);
+    expect(h.sale.inSaleView.value).toBe(false);
+  });
+
+  it("com o cliente já escolhido a encomenda não é abandonada", async () => {
+    const h = sale([tab("2", "empty")], opened);
+    await h.sale.openNewOrder();
+    await nextTick();
+    h.sale.cart.customerName = "Maria";
+    await h.sale.releaseAbandonedOrderTab();
+    expect(h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/clear/"))).toHaveLength(0);
+  });
+
+  it("Nova encomenda pedida do quadro reaproveita a vazia E volta para a tela dela", async () => {
+    const h = sale([tab("2", "empty")], opened);
+    await h.sale.openNewOrder();
+    await nextTick();
+    h.sale.showTabs.value = true;
+    await h.sale.openNewOrder();
+    expect(h.sale.showTabs.value).toBe(false);
+    expect(h.sale.inSaleView.value).toBe(true);
+  });
+});

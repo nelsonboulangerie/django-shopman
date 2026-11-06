@@ -151,7 +151,7 @@ const BOM_COLUMNS = [
         >
           <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">{{ metric.label }}</p>
           <p class="mt-1 text-xl font-bold tabular-nums" :class="toneClass(metric.tone)">
-            {{ metric.value_display || "—" }}
+            {{ metric.value_display || "Não informado" }}
           </p>
           <p v-if="rangeLabel(metric)" class="text-xs text-muted-foreground">
             Referência {{ rangeLabel(metric) }}

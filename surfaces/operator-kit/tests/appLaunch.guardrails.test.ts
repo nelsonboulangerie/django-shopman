@@ -62,7 +62,9 @@ describe("link para outro app de operador", () => {
   it("nunca navega a própria janela: todo href cross-app declara :target", () => {
     const offenders: string[] = [];
     let scanned = 0;
-    for (const app of OPERATOR_APPS) {
+    // O kit entra na varredura: a recusa de app sem acesso (`OperatorSurfaceForbidden`)
+    // mora nele desde o beta de 05/11, com o "Voltar à Central" que era do Marketing.
+    for (const app of [...OPERATOR_APPS, "operator-kit"]) {
       for (const file of vueFiles(join(surfacesDir, app, "app"))) {
         const source = readFileSync(file, "utf8");
         for (const match of source.matchAll(new RegExp(CROSS_APP_HREF, "g"))) {
@@ -75,8 +77,8 @@ describe("link para outro app de operador", () => {
     expect(offenders, "use useOperatorAppLink().attrsFor(href) e ligue :target/:rel").toEqual([]);
     // Varredura que não acha nada não prova nada: se o padrão do href mudar (ou os
     // links saírem do lugar), este teste passaria a ser decorativo sem ninguém notar.
-    // Hoje são os tiles da Central, o "Voltar à Central" da tela sem
-    // acesso do Marketing e as três travessias do PDV (duas para a Produção no
+    // Hoje são os tiles da Central, o "Voltar à Central" da recusa do kit
+    // (`OperatorSurfaceForbidden`, que todo app usa) e as três travessias do PDV (duas para a Produção no
     // fechamento e a da trava de cobrança). O aviso de saldo na retirada deixou de
     // ser travessia: o PDV recebe em Encomendas, no próprio app.
     expect(scanned, "a varredura parou de encontrar os links cross-app").toBeGreaterThanOrEqual(6);

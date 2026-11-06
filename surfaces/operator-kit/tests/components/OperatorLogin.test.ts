@@ -39,7 +39,15 @@ afterEach(() => {
 });
 
 describe("OperatorLogin", () => {
-  it("abre com foco em Usuário, campos acessíveis e submit bloqueado", async () => {
+  it("a página de login ocupa a largura do pai flex e centraliza o cartão (beta 05/11, CEN-09)", async () => {
+    const wrapper = await mountLogin({ mode: "page" });
+    const page = wrapper.get("[data-operator-login-page]");
+    expect(page.classes()).toEqual(
+      expect.arrayContaining(["w-full", "flex-1", "place-items-center"]),
+    );
+  });
+
+  it("abre com foco em Usuário e campos acessíveis", async () => {
     const wrapper = await mountLogin();
     const form = wrapper.getComponent(OperatorLoginForm);
     const inputs = form.findAll("input");
@@ -59,7 +67,28 @@ describe("OperatorLogin", () => {
     expect(form.get('label[for="operator-login-password"]').text()).toBe(
       "Senha",
     );
-    expect(form.get('button[type="submit"]').attributes("disabled")).toBe("");
+  });
+
+  // Beta 05/11 (CEN-15): o Entrar apagado com os campos vazios não dizia nada.
+  it("Entrar com campo vazio diz o que falta, marca só esse campo e não chama o servidor", async () => {
+    const wrapper = await mountLogin();
+    const form = wrapper.getComponent(OperatorLoginForm);
+    const submit = form.get('button[type="submit"]');
+    expect(submit.attributes("disabled")).toBeUndefined();
+
+    await form.get("form").trigger("submit");
+    await flushPromises();
+    expect(form.get("[data-operator-login-error]").text()).toBe("Informe usuário e senha.");
+
+    await form.findAll("input")[0]!.setValue("ana");
+    await form.get("form").trigger("submit");
+    await flushPromises();
+    expect(form.get("[data-operator-login-error]").text()).toBe("Informe a senha.");
+    const [usuario, senha] = form.findAll("input");
+    expect(usuario!.attributes("aria-invalid")).not.toBe("true");
+    expect(senha!.attributes("aria-invalid")).toBe("true");
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("submete uma vez, apara só o usuário e anuncia sucesso", async () => {

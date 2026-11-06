@@ -95,6 +95,11 @@ class SuiteSearchProjection:
 # ── Telas ──────────────────────────────────────────────────────────────────
 
 
+def _perm(perm: str) -> Callable[[object], bool]:
+    """A tela só entra na busca de quem a abre: a mesma régua do endpoint dela."""
+    return lambda user: is_superuser(user) or user.has_perm(perm)
+
+
 @dataclass(frozen=True)
 class _Screen:
     app: str
@@ -114,12 +119,14 @@ SCREENS: tuple[_Screen, ...] = (
     _Screen("pos", "Salão", "/settings/seating", "armchair", "mesas planta"),
     _Screen("kds", "Preparo", "/", "chef-hat", "cozinha ticket estacao"),
     _Screen("kds", "Painel de retirada", "/pickup", "monitor", "tela do cliente chamada"),
-    _Screen("gestor", "Pedidos", "/", "clipboard-list", "fila"),
-    _Screen("gestor", "Catálogo", "/catalog", "book-open", "produtos precos colecoes"),
-    _Screen("gestor", "Clientes", "/customers", "users", "cadastro"),
-    _Screen("gestor", "Histórico", "/history", "history", "concluidos cancelados devolvidos"),
-    _Screen("gestor", "Canais", "/feeds", "radio-tower", "ifood feed loja"),
-    _Screen("gestor", "Postos", "/workstations", "monitor-smartphone", "dispositivos estacao"),
+    _Screen("gestor", "Pedidos", "/", "clipboard-list", "fila", _perm("shop.manage_orders")),
+    # As telas do Gestor pela permissão de cada uma: a Caixa via "Gestor › Catálogo" e
+    # caía numa tela que não abre (beta 05/11, CEN-05).
+    _Screen("gestor", "Catálogo", "/catalog", "book-open", "produtos precos colecoes", _perm("shop.manage_catalog")),
+    _Screen("gestor", "Clientes", "/customers", "users", "cadastro", _perm("shop.manage_customers")),
+    _Screen("gestor", "Histórico", "/history", "history", "concluidos cancelados devolvidos", _perm("shop.manage_orders")),
+    _Screen("gestor", "Canais", "/feeds", "radio-tower", "ifood feed loja", _perm("shop.manage_catalog")),
+    _Screen("gestor", "Postos", "/workstations", "monitor-smartphone", "dispositivos estacao", _perm("cashman.manage_operators")),
     _Screen("gestor", "Ajustes", "/settings", "settings-2", "configuracao"),
     _Screen("production", "Produção", "/", "croissant", "lotes"),
     _Screen("production", "Planejamento", "/plan", "calendar-range", "plano sugestao amanha"),

@@ -3,8 +3,8 @@
 // cartão por insumo, com o fornecedor, a sugestão e o gesto de enviar o pedido.
 import type { EnrichedMaterial } from "~/types/purchase";
 import { coverageLabel, formatMoney, purchaseSuggestionLabel } from "~/presentation/purchase";
-import { baseSectionPath } from "~/presentation/purchaseSections";
-import { REQUEST_BADGE, REQUEST_LABEL, plural } from "~/presentation/purchaseUi";
+import { baseSectionPath, supplierPath } from "~/presentation/purchaseSections";
+import { REQUEST_BADGE, REQUEST_LABEL, plural, supplierLacksOrderContact } from "~/presentation/purchaseUi";
 
 const {
   reorderRows,
@@ -50,6 +50,10 @@ function openQuoteFor(material: EnrichedMaterial, supplierRef?: string) {
   if (supplierRef) noteSupplierRef.value = supplierRef;
   void navigateTo(baseSectionPath("costs"));
 }
+
+// Fornecedor sem e-mail nem telefone: o pedido não tem por onde sair. O cartão diz
+// antes, e o gesto vira cadastrar o contato (CMP-09).
+const lacksOrderContact = (row: { supplier?: { canReceiveOrder?: boolean } | null }) => supplierLacksOrderContact(row.supplier);
 
 const sendingSku = ref("");
 async function send(sku: string) {
@@ -102,6 +106,9 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
                 <div class="min-w-0"><dt class="text-xs text-muted">Fornecedor</dt><dd class="font-semibold">{{ row.supplier?.displayName || row.supplier?.name || "Sem fornecedor" }}</dd></div>
                 <div><dt class="text-xs text-muted">Estimado</dt><dd class="font-semibold tabular-nums">{{ row.estimatedCostQ == null ? "sem custo" : formatMoney(row.estimatedCostQ) }}</dd></div>
               </dl>
+              <p v-if="lacksOrderContact(row) && purchaseRequestStatus(row.material.sku) !== 'sent'" class="mt-3 text-sm text-warning" data-buy-no-contact>
+                Fornecedor sem e-mail nem telefone: o pedido não tem por onde sair.
+              </p>
               <div class="mt-3 grid grid-cols-2 gap-2">
                 <NuxtButton
                   label="Lançar custo"
@@ -123,6 +130,17 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
                     block
                     :disabled="readonlyFallback || actionPending"
                     @click="cancelPurchaseRequest(row.material.sku, row.material.name)"
+                  />
+                  <OperatorButton
+                    v-else-if="lacksOrderContact(row) && row.supplier"
+                    label="Cadastrar contato"
+                    short-label="Contato"
+                    icon="i-lucide-contact"
+                    color="neutral"
+                    variant="outline"
+                    block
+                    :to="supplierPath(row.supplier.ref)"
+                    data-buy-register-contact
                   />
                   <OperatorButton
                     v-else

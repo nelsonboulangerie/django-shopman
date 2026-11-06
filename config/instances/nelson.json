@@ -1766,7 +1766,7 @@
         "enabled": true,
         "config": {
           "title": "Fechamento da casa",
-          "description": "Checklist canônico Nelson para operação diária.",
+          "description": "O que se confere antes de fechar a loja.",
           "moment": "closing",
           "sort_order": 30,
           "tasks": [
@@ -1846,7 +1846,7 @@
         "enabled": true,
         "config": {
           "title": "Abertura da casa",
-          "description": "Checklist canônico Nelson para operação diária.",
+          "description": "O que se confere antes de abrir a loja.",
           "moment": "opening",
           "sort_order": 10,
           "tasks": [
@@ -1909,7 +1909,7 @@
         "enabled": true,
         "config": {
           "title": "Rotina do dia",
-          "description": "Checklist canônico Nelson para operação diária.",
+          "description": "O que se confere ao longo do dia.",
           "moment": "routine",
           "sort_order": 20,
           "tasks": [
@@ -2061,6 +2061,7 @@
         "name": "Dono",
         "permissions": [
           "backstage.audit_stock",
+          "backstage.void_production",
           "cashman.audit_shift",
           "payman.refund_paymentintent",
           "payman.view_paymentintent",
@@ -2135,6 +2136,7 @@
           "backstage.view_signinevent",
           "backstage.view_timertag",
           "backstage.view_workstation",
+          "backstage.void_production",
           "buyman.view_material",
           "buyman.view_materialconversion",
           "buyman.view_supplier",

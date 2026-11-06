@@ -11,7 +11,12 @@ import type {
   ProductionShortageError,
 } from "~/types/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
-import { isStale, isoForOffset, matchLotCode } from "~/presentation/production";
+import {
+  formatQtyUnit,
+  isStale,
+  isoForOffset,
+  matchLotCode,
+} from "~/presentation/production";
 import {
   periodAnchor,
   periodOfDay,
@@ -776,7 +781,7 @@ function onTimerKeydown(event: KeyboardEvent) {
             @click="openOrder(order)"
           >
             <span class="op-figure leading-none"
-              >{{ cardAnchor(order) }} un.</span
+              >{{ formatQtyUnit(cardAnchor(order), order.output_unit) }}</span
             >
             <span class="op-eyebrow">{{
               ovenFacts.isPending(order.pk) ? "Abrindo…" : "Finalizar"

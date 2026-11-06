@@ -18,8 +18,7 @@ import json
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.contrib.contenttypes.models import ContentType
-from shopman.cashman.models import Shift, Terminal
+from shopman.cashman.models import Terminal
 from shopman.offerman.models import Collection, CollectionItem, Product
 from shopman.orderman.models import Session
 
@@ -53,9 +52,8 @@ def _open(tab_ref: str) -> Session:
 
 def _operador(*codenames: str):
     user = get_user_model().objects.create_user("bruna", password="x", is_staff=True, first_name="Bruna")
-    ct = ContentType.objects.get_for_model(Shift)
     for codename in codenames or ("operate_pos",):
-        user.user_permissions.add(Permission.objects.get(content_type=ct, codename=codename))
+        user.user_permissions.add(Permission.objects.get(content_type__app_label="cashman", codename=codename))
     return get_user_model().objects.get(pk=user.pk)
 
 
@@ -160,7 +158,7 @@ def test_roteamento_diz_a_estacao_e_o_envio_automatico_comeca_desligado(loja):
     station = KDSInstance.objects.create(ref="bar", name="Bar", type="picking")
     station.collections.add(bebidas)
 
-    assert kitchen_routes_for_skus(["CAFE"]) == {"CAFE": {"station": "Bar", "auto_fire": False}}
+    assert kitchen_routes_for_skus(["CAFE"]) == {"CAFE": {"station": "Bar", "auto_fire": False, "prep": False}}
 
     station.config = {"auto_fire": True}
     station.save()
@@ -179,7 +177,7 @@ def test_ajustes_le_e_grava_cada_aba(loja, client):
     terminal = Terminal.objects.create(ref="balcao", label="Balcão", metadata={})
     Collection.objects.create(ref="doces", name="Doces")
     KDSInstance.objects.create(ref="forno", name="Forno", type="prep")
-    client.force_login(_operador())
+    client.force_login(_operador("operate_pos", "change_terminal"))
     url = "/api/v1/backstage/pos/settings/"
 
     data = client.get(url).json()
@@ -217,12 +215,72 @@ def test_ajustes_pede_a_permissao_do_balcao(loja, client):
     assert client.get("/api/v1/backstage/pos/settings/").status_code == 403
 
 
+def _post_settings(client, body):
+    return client.post("/api/v1/backstage/pos/settings/", data=json.dumps(body), content_type="application/json")
+
+
+def test_a_caixa_nao_grava_maquininha_nem_impressora(loja, client):
+    """Beta 05/11 (op:PDV-08, CEN-06): a Caixa cadastrava maquininha e trocava o rolo.
+
+    Decisão do dono (05/11/2026): só o Gerente e o Dono. A Caixa lê, e segue
+    gravando os atalhos e o envio à cozinha.
+    """
+    terminal = Terminal.objects.create(ref="balcao", label="Balcão", metadata={})
+    client.force_login(_operador())
+
+    data = client.get("/api/v1/backstage/pos/settings/").json()
+    assert data["can_manage_setup"] is False
+    assert data["terminal_is_this_device"] is False
+
+    refused = _post_settings(client, {"section": "card_machine", "label": "Teste", "identification": "SN 9"})
+    assert refused.status_code == 403
+    assert refused.json()["detail"] == "Maquininha, impressora e Salão são ajustados pelo gerente."
+    assert not DeliveryDevice.objects.exists()
+    refused = _post_settings(client, {"section": "printer", "terminal_ref": "balcao", "roll_width_mm": 58,
+                                      "cut_mode": "none"})
+    assert refused.status_code == 403
+    terminal.refresh_from_db()
+    assert "hardware" not in terminal.metadata
+
+    Collection.objects.create(ref="doces", name="Doces")
+    shortcuts = _post_settings(client, {"section": "shortcuts", "terminal_ref": "balcao",
+                                        "favorite_collection_refs": ["doces"]})
+    assert shortcuts.status_code == 200
+
+
+def test_maquininha_valida_tamanho_e_identificacao(loja, client):
+    """Beta 05/11 (PDV-11, PDV-27): nome de 101 caracteres era 500; caixa diferente
+    duplicava a identificação; apagar a identificação na edição não apagava nada."""
+    client.force_login(_operador("operate_pos", "change_terminal"))
+
+    long_name = _post_settings(client, {"section": "card_machine", "label": "M" * 101, "identification": "SN 1"})
+    assert long_name.status_code == 400
+    assert long_name.json()["field"] == "label"
+    long_id = _post_settings(client, {"section": "card_machine", "label": "M", "identification": "S" * 101})
+    assert long_id.json()["field"] == "identification"
+
+    assert _post_settings(client, {"section": "card_machine", "label": "M1", "identification": "MG-SN-001"}).status_code == 200
+    clash = _post_settings(client, {"section": "card_machine", "label": "M2", "identification": "mg-sn-001"})
+    assert clash.status_code == 400
+    assert clash.json()["field"] == "identification"
+
+    device = DeliveryDevice.objects.get()
+    emptied = _post_settings(client, {"section": "card_machine", "ref": str(device.ref), "label": "M1",
+                                      "identification": "", "active": True})
+    assert emptied.status_code == 400
+    assert emptied.json()["field"] == "identification"
+    toggled = _post_settings(client, {"section": "card_machine", "ref": str(device.ref), "label": "M1", "active": False})
+    assert toggled.status_code == 200
+    device.refresh_from_db()
+    assert device.identification == "MG-SN-001"
+
+
 # ── Planta: vitrine e caixa, entrada ─────────────────────────────────────
 
 
 def test_salao_grava_a_vitrine_e_a_entrada(loja, client):
     SeatingSpot.objects.create(ref="mesa-1", label="Mesa 1", seats=2)
-    client.force_login(_operador())
+    client.force_login(_operador("operate_pos", "change_terminal"))
     url = "/api/v1/backstage/pos/seating/"
     revision = client.get(url).json()["revision"]
     response = client.post(url, data=json.dumps({

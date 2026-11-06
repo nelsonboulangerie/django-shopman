@@ -99,6 +99,10 @@ class POSProductProjection:
     # A estação dele tem o envio automático ligado (opcional por estação,
     # desligado por padrão): o PDV envia a linha nova sozinho ao sair da comanda.
     kitchen_auto_fire: bool = False
+    # A estação dele é de PREPARO (feito na hora). Na venda de balcão em que o
+    # cliente leva a mercadoria, só o de preparo vai à cozinha ao finalizar; o de
+    # separação (pão de vitrine) já está na mão dele (beta 05/11, PDV-09).
+    kitchen_prep: bool = False
     # Janela de desconto por horário aberta (Hora da Xepa): ``price_q`` já é o
     # preço que o motor cobra AGORA, e a etiqueta cheia vem aqui para o tile
     # mostrá-la riscada. Zero/vazio = sem desconto, ``price_q`` é a etiqueta.
@@ -314,6 +318,10 @@ class POSCashRuntimeProjection:
     terminal_label: str
     operator_username: str
     opened_at: str
+    # Quem ABRIU a gaveta (``Shift.opened_by``). Não é quem opera agora: "turno
+    # aberto às 08:45 por joyce" atribuía a abertura do admin a quem estava no
+    # balcão (beta 05/11, PDV-19). Vazio sem turno aberto.
+    opened_by_username: str = ""
     # Dois valores: "open" e "closed". Houve um terceiro, `terminal_occupied`,
     # com quatro campos de bloqueio ao lado — de quando a custódia era da pessoa
     # e a gaveta podia estar "ocupada por outra". Saíram inteiros: com a custódia
@@ -518,6 +526,10 @@ class POSProjection:
     # renderiza a porta quando ela abre para QUEM está logado. É consulta: a via
     # do cliente sai na bobina, e essa não depende deste gate.
     danfe_screen_allowed: bool = False
+    # O operador fecha o dia (``backstage.perform_closing``, o Gerente)? O "Fim do
+    # dia" da barra de baixo só aparece para ele: para a Caixa era um beco, "Sua
+    # conta não tem permissão" (beta 05/11, op:PDV-13).
+    can_close_day: bool = False
     # ENTREGA, estado inicial. A review responde pela data ESCOLHIDA, mas ela só
     # existe depois que há endereço — e a tela precisa abrir o formulário já
     # dizendo "hoje" e já mostrando as janelas de hoje. Sem isto o operador
@@ -717,6 +729,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         fiscal_label=fiscal_label,
         fiscal_message=fiscal_message,
         danfe_screen_allowed=bool(getattr(operator, "is_staff", False)),
+        can_close_day=bool(operator is not None and operator.has_perm("backstage.perform_closing")),
         weighed_weight_entry=weighed_sale.weight_entry_enabled(),
         offline_sale_enabled=pos_offline_sale.enabled(),
         price_window=_price_window_projection(offer),
@@ -1250,6 +1263,12 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
                 listing__ref=POS_CHANNEL_REF,
                 is_published=True,
                 is_sellable=True,
+                # Visibilidade e vendabilidade são o AND do produto com o vínculo
+                # (system-spec, Offerman). "Ocultar no catálogo" tira o item de
+                # TODOS os canais, PDV incluído (decisão do dono, beta 05/11,
+                # GES-10): para vender só no balcão, pausam-se os canais remotos.
+                product__is_published=True,
+                product__is_sellable=True,
             )
             .select_related("listing", "product")
             .prefetch_related(
@@ -1289,6 +1308,7 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
             sold_out_reason="Sem caixa" if p.sku in without_box else "",
             kitchen_station=(routes.get(p.sku) or {}).get("station", ""),
             kitchen_auto_fire=bool((routes.get(p.sku) or {}).get("auto_fire")),
+            kitchen_prep=bool((routes.get(p.sku) or {}).get("prep")),
             offer=offer,
         )
         for p, price_q in entries
@@ -1349,7 +1369,7 @@ def _fulfillment_options(fulfillment_types: tuple[str, ...]) -> tuple[POSFulfill
             options.append(POSFulfillmentOptionProjection(
                 ref="pickup",
                 label="Retirada",
-                description="Retirada no balcão ou consumo local.",
+                description="O cliente retira no balcão.",
                 requires_address=False,
             ))
     return tuple(options)
@@ -1629,9 +1649,11 @@ def _pos_actions() -> tuple[Action, ...]:
             kind="query",
             label="Buscar cliente",
             priority="quiet",
-            method="GET",
-            href="/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}",
-            payload_schema={"query": {"phone": "string", "ref": "string"}},
+            # POST com o telefone no CORPO: na query string ele ia para o log de
+            # acesso e para o cache (beta test de 05/11/2026, PDV2-07).
+            method="POST",
+            href="/api/v1/backstage/pos/customer/lookup/",
+            payload_schema={"optional": ["phone", "ref"]},
             idempotency="none",
         ),
         Action(
@@ -2278,6 +2300,7 @@ def _cash_runtime_projection(cash_shift, runtime, operator, terminal=None) -> PO
         # quem abriu vive em `cash_shift.opened_by` e aparece na auditoria.
         operator_username=getattr(operator, "username", "") if operator is not None else "",
         opened_at=cash_shift.opened_at.isoformat() if cash_shift.opened_at else "",
+        opened_by_username=cash_shift.opened_by.get_username() if cash_shift.opened_by_id else "",
         status="open",
         can_audit_cash=audita,
         pending_change_requests=_pending_change_requests(cash_shift),
@@ -2524,6 +2547,7 @@ def _product_projection(
     product: Product, price_q: int, *, sold_out: bool = False, sold_out_reason: str = "",
     kitchen_station: str = "",
     kitchen_auto_fire: bool = False,
+    kitchen_prep: bool = False,
     offer=None,
 ) -> POSProductProjection:
     prefetched = getattr(product, "primary_collection_items", None)
@@ -2573,6 +2597,7 @@ def _product_projection(
         option_groups=tuple(product_option_groups(product)),
         kitchen_station=kitchen_station,
         kitchen_auto_fire=kitchen_auto_fire,
+        kitchen_prep=kitchen_prep,
         list_price_q=list_price_q,
         list_price_display=list_price_display,
         discount_label=discount_label,
@@ -2620,7 +2645,7 @@ def _kits_without_box(skus: list[str]) -> set[str]:
         return set()
 
 
-def _sold_out_skus(skus: list[str]) -> set[str]:
+def _sold_out_skus(skus: list[str], *, target_date=None) -> set[str]:
     """SKUs esgotados no escopo do canal do PDV — a MESMA leitura em lote que o
     storefront usa (``catalog_context.availability_for_skus`` → stockman), uma
     query para a grade inteira. Silencioso quando o stockman não responde: a
@@ -2634,6 +2659,9 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
     (``fulfillment_window.annotate`` → ``product_readiness``), que é cara por
     produto e que a grade do balcão deliberadamente não paga. Ver o comentário
     em ``shop/services/pos.py`` sobre o custo dessa pergunta.
+
+    ``target_date`` pergunta por OUTRO dia (a encomenda para amanhã): a mesma
+    régua por data da reserva que o salvamento usa (``stock_on_dates``).
     """
     if not skus:
         return set()
@@ -2645,7 +2673,7 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
             basic_availability,
         )
 
-        avail_map = availability_for_skus(skus, channel_ref=POS_CHANNEL_REF)
+        avail_map = availability_for_skus(skus, channel_ref=POS_CHANNEL_REF, target_date=target_date)
         sold_out: set[str] = set()
         for sku in skus:
             raw = avail_map.get(sku)
@@ -3263,6 +3291,24 @@ def customer_history_summary(customer_ref: str, *, limit: int = 5) -> dict:
     }
 
 
+def _pos_sold_out_on(day) -> list[str]:
+    """Os SKUs da grade do PDV sem saldo para ``day`` (encomenda para outro dia).
+
+    Beta test de 05/11/2026 (PDV2-04). A grade só sabia o esgotado de HOJE: na
+    encomenda para amanhã, o pão que acabou hoje não entrava, e o que a grade
+    deixava entrar o salvamento recusava ("não tem saldo para 07/11"). A grade
+    passa a ler a mesma régua por data do salvamento.
+    """
+    from shopman.offerman.models import ListingItem
+
+    skus = list(
+        ListingItem.objects.filter(
+            listing__ref=POS_CHANNEL_REF, is_published=True, is_sellable=True,
+        ).values_list("product__sku", flat=True).distinct()
+    )
+    return sorted(_sold_out_skus(skus, target_date=day))
+
+
 def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None) -> dict:
     """O "quando" do pedido, para a tela poder PERGUNTAR em vez de adivinhar.
 
@@ -3313,6 +3359,9 @@ def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None
         # Não deu para apurar a prontidão: a tela NÃO pode tratar isso como
         # "sem restrição" — todas as janelas voltam desabilitadas.
         "readiness_unavailable": bool(context.get("readiness_unavailable")),
+        # Outro dia: o que a grade NÃO deixa entrar naquela data (a régua da
+        # reserva). Hoje a grade já sabe pelo selo do próprio catálogo.
+        "sold_out_skus": _pos_sold_out_on(day) if day != today else [],
     }
 
 

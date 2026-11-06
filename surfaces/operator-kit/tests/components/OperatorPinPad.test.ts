@@ -110,3 +110,23 @@ describe("OperatorPinPad dentro da moldura da trava", () => {
     expect(inside.defaultPrevented).toBe(true);
   });
 });
+
+describe("OperatorPinPad — a recusa some sem mexer no teclado", () => {
+  // Beta test de 05/11/2026: o aviso de PIN errado saía do fluxo no primeiro
+  // dígito, o teclado subia uns 30 px e o toque seguinte caía na tecla de cima.
+  it("voltar a digitar esconde o aviso, mas ele continua ocupando o lugar", async () => {
+    const wrapper = await mount({ pin: "", error: "Aprovação gerencial inválida." });
+    const alert = () => wrapper.find("[data-operator-pin-error]");
+    expect(alert().exists()).toBe(true);
+    expect(alert().classes()).not.toContain("invisible");
+    await wrapper.setProps({ pin: "4" });
+    expect(alert().exists()).toBe(true);
+    expect(alert().classes()).toContain("invisible");
+    expect(alert().attributes("aria-hidden")).toBe("true");
+  });
+
+  it("sem recusa, o lugar não existe", async () => {
+    const wrapper = await mount({ pin: "" });
+    expect(wrapper.find("[data-operator-pin-error]").exists()).toBe(false);
+  });
+});

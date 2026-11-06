@@ -24,7 +24,6 @@ const {
 const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
 const publicConfig = useRuntimeConfig().public;
-const hubUrl = publicConfig.operatorHubUrl as string;
 // A cor do app (a mesma do selo na barra lateral) vira `--app-color` no `<html>`: as
 // miniaturas da fila de decisões e o carimbo do selo usam o tom dela. No `<html>`, e
 // não no shell, porque o selo é diálogo teleportado para fora dele.
@@ -32,8 +31,6 @@ const appColor = (
   publicConfig.operatorPwa as { identity?: { color?: string } } | undefined
 )?.identity?.color;
 if (appColor) useHead({ htmlAttrs: { style: `--app-color: ${appColor}` } });
-const { attrsFor: appLinkAttrsFor } = useOperatorAppLink();
-const hubLink = computed(() => appLinkAttrsFor(hubUrl));
 
 // O selo abre o trocador (modelo de navegação, 31/10/2026): a operação no chão, com a
 // barra de baixo no celular; Ajustes no escritório. A tela que não é seção (a página de
@@ -147,28 +144,10 @@ watch(sessionState, async (next, previous) => {
           />
         </main>
 
-        <main
+        <OperatorSurfaceForbidden
           v-else-if="sessionState === 'forbidden'"
-          class="grid min-h-dvh flex-1 place-items-center p-4"
-        >
-          <!-- Mesma regra do ícone da Central na barra lateral: instalado, ele abre na
-               janela DELA (ver operator-kit/app/presentation/appLaunch.ts). -->
-          <NuxtEmpty
-            icon="i-lucide-shield-x"
-            title="Seu acesso não inclui o Marketing"
-            description="Entrar de novo não resolve. Peça a um responsável o acesso ao Marketing."
-            :actions="[
-              {
-                label: 'Voltar à Central',
-                color: 'neutral',
-                variant: 'outline',
-                href: hubUrl,
-                target: hubLink.target,
-                rel: hubLink.rel,
-              },
-            ]"
-          />
-        </main>
+          :perm="OPERATOR_PERM"
+        />
 
         <OperatorLogin
           v-else-if="sessionState === 'expired' || !canIdentify"

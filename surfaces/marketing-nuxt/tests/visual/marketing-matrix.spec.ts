@@ -250,9 +250,10 @@ test.describe("gate global", () => {
     // O fato que este teste protege é que a tela NÃO manda entrar de novo, e diz a
     // quem pedir. A frase mudou no 21adc94c8 e a asserção ficou para trás; o fato, não.
     await expect(page.getByText("Entrar de novo não resolve")).toBeVisible();
-    await expect(
-      page.getByText("Peça a um responsável o acesso ao Marketing"),
-    ).toBeVisible();
+    await expect(page.getByText("peça o acesso a um gerente")).toBeVisible();
+    // E a tela tem saída (beta 05/11, CEN-04): trocar operador e voltar à Central.
+    await expect(page.getByRole("button", { name: "Trocar operador" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Voltar à Central" })).toBeVisible();
     await expectStableScreenshot(page, "login__forbidden", V1280);
   });
 

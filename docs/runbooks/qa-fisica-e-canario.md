@@ -131,7 +131,7 @@ B2, B5 e B8 (no tablet a gaveta não abre sozinha: ver Folha 5, P2.5).
 
 ### B1. Entrar e abrir o caixa
 
-- [ ] ★ **B1.1** Abrir o PDV. **Confira:** "Identifique-se para operar"; entrar com o PIN. PIN errado mostra "Identificação inválida. Tente de novo."
+- [ ] ★ **B1.1** Abrir o PDV. **Confira:** "Identifique-se para operar"; entrar com o PIN. PIN errado mostra "PIN não confere. Tente de novo."
 - [ ] **B1.2** Ficar 1 min sem tocar em nada. **Confira:** a tela trava sozinha e pede o PIN de novo.
 - [ ] ★ **B1.3** Ir em **Caixa**, tocar em **Abrir caixa**, contar a gaveta e informar o **Fundo de troco**; **Abrir caixa e vender**. **Confira:** aviso "Caixa aberto · fundo R$ X".
 - [ ] ★ **B1.4** Em **Ajustes › Terminal**, tocar em **Testar o agente de novo**. **Confira:** Impressora e Gaveta aparecem prontas. Se não, ✗ e vá à Folha 5.

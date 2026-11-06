@@ -182,9 +182,12 @@ describe("Seguem sozinhos: o que está de fato na cozinha (dono, 07/10/2026)", (
         station({ station_ref: "lanches", station_name: "Lanches", prints: true, paper_failed: true, items: ["1x Misto"] }),
       ] },
     } as Partial<OrderCardProjection>);
-    const fresh = card({ ref: "W-NEW", status: "accepted", created_at_iso: ago(2 * 60), kitchen: null });
+    // Aceito com ticket aberto (preparo automático) está na cozinha, ainda sem estação
+    // pronta; aceito SEM ticket ainda espera "Iniciar preparo" e fica fora (beta 05/11).
+    const fresh = card({ ref: "W-NEW", status: "preparing", created_at_iso: ago(2 * 60), kitchen: null });
+    const waiting = card({ ref: "W-WAIT", status: "accepted", created_at_iso: ago(30 * 60), kitchen: null });
     const road = card({ ref: "W-ROAD", status: "dispatched", dispatched_at_iso: ago(5 * 60), courier_status_label: "a 5 min do cliente" });
-    const { kitchen, road: onRoad } = workingOrders([fresh, old, road, old], NOW);
+    const { kitchen, road: onRoad } = workingOrders([fresh, old, road, old, waiting], NOW);
     expect(kitchen.map((w) => w.card.ref)).toEqual(["W-OLD", "W-NEW"]);
     expect(kitchen[0]!.summary).toBe("1 de 2 prontas");
     expect(kitchen[0]!.stations.map((s) => [s.name, s.label, s.tone, s.items])).toEqual([

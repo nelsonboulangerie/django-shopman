@@ -236,11 +236,23 @@ def _save_customer(customer, *, tags: list[str], cleared: set[str]) -> None:
             owned = ContactPoint.objects.filter(type=contact_type, value_normalized=normalized)
             if customer.pk:
                 owned = owned.exclude(customer=customer)
-            if owned.exists():
-                raise _mutation_error(
-                    f"Este {'telefone' if field == 'phone' else 'e-mail'} já pertence a outro cadastro. Abra o cadastro existente para unificar.",
+            holder = owned.select_related("customer").first()
+            if holder is not None:
+                # Diz DE QUEM é o contato e leva até a ficha (GES-13): "outro
+                # cadastro" sem nome mandava a gerente procurar à mão.
+                owner = holder.customer
+                name = owner.name if owner is not None else ""
+                what = "telefone" if field == "phone" else "e-mail"
+                detail = (
+                    f"Este {what} é de {f'{name} ({owner.ref})' if name else owner.ref}. Abra o cadastro para conferir ou unificar."
+                    if owner is not None
+                    else f"Este {what} já pertence a outro cadastro. Abra o cadastro existente para unificar."
+                )
+                raise CustomerMutationError(
+                    detail,
                     field=field,
                     code="contact_conflict",
+                    owner={"ref": owner.ref, "name": name} if owner is not None else None,
                 )
         customer.full_clean()
         customer.save()

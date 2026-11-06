@@ -20,6 +20,7 @@ import {
   enterAction,
   enterActionCaveat,
   enterActionLabel,
+  formatPhoneDisplay,
   maskQueryIfCpf,
   moveHighlight,
 } from "~/presentation/customerSearch";
@@ -52,6 +53,11 @@ const highlighted = ref(0);
 // Enter durante a busca apenas antecipa o pedido. Um resultado que ainda não
 // estava visível precisa de uma nova escolha quando chegar.
 let timer: ReturnType<typeof setTimeout> | null = null;
+// O termo mudou e a busca dele ainda não voltou. Enquanto isso, a lista na tela
+// é de OUTRO termo: mostrá-la (com o Enter pronto) colava o cliente errado, e o
+// "Nenhum cadastro" oferecia cadastrar quem existe (beta test de 05/11/2026).
+const debouncing = ref(false);
+const searching = computed(() => debouncing.value || props.busy);
 
 watch(query, (q) => {
   const masked = maskQueryIfCpf(q);
@@ -62,8 +68,10 @@ watch(query, (q) => {
   }
   highlighted.value = 0;
   if (timer) clearTimeout(timer);
+  debouncing.value = q.trim().length >= 2;
   timer = setTimeout(() => {
     timer = null;
+    debouncing.value = false;
     emit("search", q);
   }, 350);
 });
@@ -114,6 +122,7 @@ function onEnter(event: KeyboardEvent) {
   if (timer) {
     clearTimeout(timer);
     timer = null;
+    debouncing.value = false;
     emit("search", query.value);
     if (query.value.trim().length >= 2) {
       return;
@@ -148,6 +157,9 @@ const inputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 function reset() {
   query.value = "";
 }
+function resultContact(result: POSCustomerSearchResult): string {
+  return [result.phone ? formatPhoneDisplay(result.phone) : "", result.document, result.email].filter(Boolean).join(" · ");
+}
 function focus() {
   inputRef.value?.inputRef?.focus();
 }
@@ -174,7 +186,7 @@ onBeforeUnmount(() => {
         role="combobox"
         aria-expanded="true"
         aria-controls="pos-customer-search-listbox"
-        :aria-activedescendant="results.length ? optionId(highlighted) : undefined"
+        :aria-activedescendant="results.length && !searching ? optionId(highlighted) : undefined"
         aria-label="Buscar cliente"
         @keydown.enter="onEnter"
         @keydown.down="onArrow($event, 1)"
@@ -191,8 +203,16 @@ onBeforeUnmount(() => {
       CPF inválido: confira os dígitos.
     </p>
 
+    <p
+      v-if="searching && query.trim().length >= 2"
+      class="flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground"
+      role="status"
+    >
+      <Icon name="lucide:loader-circle" class="size-3.5 shrink-0 animate-spin" />
+      Buscando…
+    </p>
     <div
-      v-if="results.length"
+      v-else-if="results.length"
       id="pos-customer-search-listbox"
       role="listbox"
       aria-label="Clientes encontrados"
@@ -214,7 +234,7 @@ onBeforeUnmount(() => {
       >
         <span class="min-w-0">
           <span class="block truncate text-sm font-medium">{{ result.name || "Sem nome" }}</span>
-          <span class="block truncate text-xs tabular-nums text-muted-foreground">{{ [result.phone, result.document, result.email].filter(Boolean).join(" · ") }}</span>
+          <span class="block truncate text-xs tabular-nums text-muted-foreground">{{ resultContact(result) }}</span>
         </span>
         <span class="flex shrink-0 items-center gap-1.5">
           <OperatorKbd v-if="index === highlighted"  aria-hidden="true">Enter</OperatorKbd>
@@ -225,7 +245,7 @@ onBeforeUnmount(() => {
     <!-- SEM RESULTADO: o que fazer agora vira BOTÃO, com o resultado no rótulo.
          O `<kbd>` é affordance da mesma ação — a tecla nunca promete outra
          coisa, porque as duas leem o mesmo `pendingAction`. -->
-    <div v-else-if="query.trim().length >= 2 && !busy" class="grid gap-2">
+    <div v-else-if="query.trim().length >= 2" class="grid gap-2">
       <p class="text-center text-xs text-muted-foreground">
         {{ hint === "valid" ? "Nenhum cadastro com este CPF." : "Nenhum cadastro encontrado." }}
       </p>

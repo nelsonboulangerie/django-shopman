@@ -28,6 +28,8 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
     Returns:
         [{"sku", "name", "price_q", "price_display", "available_qty", "can_order", "target_qty"}, ...]
 
+    ``price_q`` é o preço do cardápio de hoje, promoção automática incluída.
+
     ``target_qty`` is ``min(requested_qty, sub.available_qty)`` — the amount
     the client should add when the shopper accepts this substitute in a
     1-click swap. Minimum of 1 so the button always does something useful.
@@ -94,6 +96,8 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
         logger.warning("substitutes_price_map_failed: %s", e, exc_info=True)
         return []
 
+    promo_price_of = _promotional_prices(candidates, price_map, channel_ref=channel_ref)
+
     result = []
     for product in candidates:
         if len(result) >= limit:
@@ -106,7 +110,11 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
         if HAS_STOCKMAN and raw_avail is not None and not can_order:
             continue
 
-        price_q = price_map[product.sku] if product.sku in price_map else product.base_price_q
+        list_q = price_map[product.sku] if product.sku in price_map else product.base_price_q
+        # O preço que o cardápio cobra HOJE, promoção automática incluída. Era o de
+        # lista: o sheet oferecia "Fendu R$ 6,00" com o cardápio dizendo R$ 5,10
+        # (beta 05/11, LOJA-06).
+        price_q = promo_price_of.get(product.sku, list_q)
         price_display = f"R$ {format_money(price_q)}" if price_q else None
 
         target_qty = _target_qty(qty, available_qty)
@@ -123,6 +131,41 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
         })
 
     return result
+
+
+def _promotional_prices(candidates: list, price_map: dict[str, int], *, channel_ref: str) -> dict[str, int]:
+    """Preço final por SKU pelo MESMO caminho do card do cardápio.
+
+    Promoções automáticas do canal carregadas uma vez, coleções do SKU e o preço
+    de lista do canal: ``catalog_context.contextual_price`` aplica a regra que o
+    cardápio aplica. Falha aqui não derruba o sheet: fica o preço de lista.
+    """
+    try:
+        from shopman.shop.projections import catalog_context
+
+        skus = [p.sku for p in candidates]
+        promotions = catalog_context.active_promotions(channel_ref)
+        if not promotions:
+            return {}
+        collections = catalog_context.collection_refs_by_sku(skus)
+        result: dict[str, int] = {}
+        for product in candidates:
+            list_q = price_map[product.sku] if product.sku in price_map else product.base_price_q
+            quote = catalog_context.contextual_price(
+                product.sku,
+                qty=1,
+                listing_ref=channel_ref,
+                context={
+                    "sku_collections": collections.get(product.sku, []),
+                    "active_promotions": promotions,
+                },
+                list_unit_price_q=list_q,
+            )
+            result[product.sku] = int(quote.final_unit_price_q)
+        return result
+    except Exception as e:
+        logger.warning("substitutes_promotional_price_failed: %s", e, exc_info=True)
+        return {}
 
 
 def _same_boundary(sku: str, candidates: list) -> list:

@@ -34,6 +34,16 @@ def _actor(request) -> str:
     return getattr(user, "username", None) or "operator"
 
 
+
+def _not_applied(exc) -> dict:
+    """Recusa no dialeto da casa: ``{detail, field, errors}`` quando há campo."""
+    body = {"outcome": "not_applied", "detail": str(exc)}
+    field = getattr(exc, "field", "")
+    if field:
+        body["field"] = field
+        body["errors"] = {field: [str(exc)]}
+    return body
+
 class _CatalogBase(OperationalObservationMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_catalog"
@@ -143,7 +153,7 @@ class CatalogCellView(_CatalogBase):
             except CatalogConflict as exc:
                 return {"outcome": "not_applied", "detail": str(exc), "current": getattr(exc, "current", {}), "conflicting_fields": getattr(exc, "fields", [])}, 409
             except (CatalogError, ValidationError) as exc:
-                return {"outcome": "not_applied", "detail": str(exc)}, 400
+                return _not_applied(exc), 400
             return {"ok": True, "outcome": "applied", "intention": key, "sku": sku, "surface_ref": surface_ref,
                 "is_published": item.is_published, "is_sellable": item.is_sellable, "price_q": item.price_q, "min_qty": str(getattr(item, "min_qty", ""))}, 200
 
@@ -207,7 +217,7 @@ class _CatalogBatchView(_CatalogBase):
             try:
                 result = type(self).command(entries, actor=_actor(request))
             except (CatalogError, ValidationError) as exc:
-                return {"outcome": "not_applied", "detail": str(exc)}, 400
+                return _not_applied(exc), 400
             return {"ok": True, "outcome": "applied", "intention": key, **result}, 200
 
         try:
@@ -302,7 +312,7 @@ class CatalogProductArchiveView(_CatalogBase):
             try:
                 receipt = catalog_service.set_products_active(products, is_active=is_active, actor=request.user)
             except (CatalogError, ValidationError) as exc:
-                return {"outcome": "not_applied", "detail": str(exc)}, 400
+                return _not_applied(exc), 400
             return {"ok": True, "outcome": "applied", "intention": key, **receipt}, 200
 
         try:
@@ -548,14 +558,15 @@ class _CatalogPreviewMutationView(_CatalogBase):
                 except CatalogConflict as exc:
                     return {"outcome": "not_applied", "detail": str(exc), "error": {"code": "catalog_changed"}}, 409
                 except (CatalogError, ValidationError) as exc:
-                    return {"outcome": "not_applied", "detail": str(exc)}, 400
+                    return _not_applied(exc), 400
 
             result = run_idempotent_mutation(
                 scope=scope, key=key, fingerprint=mutation_fingerprint({"scope": scope, "payload": payload}), execute=execute,
             )
             return Response(result.response_body, status=result.response_code)
         except (CatalogError, ValidationError) as exc:
-            return Response({"detail": str(exc)}, status=400)
+            # A prévia recusa no mesmo dialeto da confirmação: o campo vai junto.
+            return Response(_not_applied(exc), status=400)
         except RemoteMutationConflict:
             return Response({"detail": "Esta intenção já representa outra alteração.", "error": {"code": "intention_conflict"}}, status=409)
         except RemoteMutationInProgress:
@@ -638,7 +649,7 @@ class _CatalogReorderView(_CatalogBase):
             except CatalogConflict as exc:
                 return {"outcome": "not_applied", "detail": str(exc)}, 409
             except (CatalogError, ValidationError) as exc:
-                return {"outcome": "not_applied", "detail": str(exc)}, 400
+                return _not_applied(exc), 400
             return {"ok": True, "outcome": "applied", "count": count}, 200
 
         try:
@@ -753,7 +764,7 @@ class CatalogResyncView(_CatalogBase):
             except CatalogConflict as exc:
                 return {"outcome": "not_applied", "detail": str(exc)}, 409
             except CatalogError as exc:
-                return {"outcome": "not_applied", "detail": str(exc)}, 400
+                return _not_applied(exc), 400
 
         try:
             result = run_idempotent_mutation(scope=scope, key=key, fingerprint=mutation_fingerprint(payload), execute=execute)

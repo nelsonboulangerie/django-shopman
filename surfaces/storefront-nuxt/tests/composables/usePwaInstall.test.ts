@@ -129,6 +129,8 @@ describe('usePwaInstall', () => {
 
   it('excludes checkout and order tracking routes', () => {
     expect(isPwaInviteRouteExcluded('/finalizar')).toBe(true)
+    expect(isPwaInviteRouteExcluded('/entrar')).toBe(true)
+    expect(isPwaInviteRouteExcluded('/sacola')).toBe(true)
     expect(isPwaInviteRouteExcluded('/pedido/PED-123')).toBe(true)
     expect(isPwaInviteRouteExcluded('/menu')).toBe(false)
   })

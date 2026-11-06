@@ -146,7 +146,10 @@ export function usePosPreorderActions(options: {
       lastAttempt = null;
       managerChallenge.value = null;
       toast.success("Encomenda cancelada.");
-      await options.refresh();
+      // Sem refresh: o detalhe não serve encomenda cancelada, e reler aqui
+      // virava a página de erro "não é uma encomenda" logo depois do toast
+      // (beta test de 05/11/2026, PDV2-12). Quem chamou leva o operador para a
+      // lista (ou para a comanda do "Cancelar e refazer").
       return true;
     } catch (error) {
       const code = httpErrorCode(error);

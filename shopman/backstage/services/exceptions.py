@@ -193,18 +193,22 @@ class CustomerNotFound(CustomerMergeError):
 class CustomerMutationError(BackstageServiceError):
     """Recusa de criar/editar cliente já traduzida para o Gestor."""
 
-    def __init__(self, detail: str, *, field: str = "", code: str = "invalid_payload"):
+    def __init__(self, detail: str, *, field: str = "", code: str = "invalid_payload", owner: dict | None = None):
         super().__init__(detail)
         self.detail = detail
         self.field = field
         self.code = code
+        # O cadastro dono do contato recusado (``{ref, name}``), para a tela levar até ele.
+        self.owner = dict(owner) if owner else None
 
 
 class CustomerGroupMutationError(BackstageServiceError):
     """Recusa de criar/editar grupo comercial já traduzida para o Gestor."""
 
-    def __init__(self, detail: str, *, field: str = "", code: str = "invalid_payload"):
+    def __init__(self, detail: str, *, field: str = "", code: str = "invalid_payload", owner: dict | None = None):
         super().__init__(detail)
         self.detail = detail
         self.field = field
         self.code = code
+        # O cadastro dono do contato recusado (``{ref, name}``), para a tela levar até ele.
+        self.owner = dict(owner) if owner else None

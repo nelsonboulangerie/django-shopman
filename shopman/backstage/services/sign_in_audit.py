@@ -319,35 +319,32 @@ def detect_anomalies(event) -> list[str]:
 
 
 def _outside_business_hours(event) -> bool:
-    """O acesso caiu fora do expediente da loja?
+    """O acesso caiu fora do expediente da EQUIPE?
 
-    Quem responde é o ``business_calendar``, e não uma leitura própria de
-    ``Shop.opening_hours``: ele já sabe de feriado e férias coletivas, e uma
-    segunda implementação de "a loja estava aberta?" divergiria da primeira no
-    primeiro feriado — marcando como anômalo o acesso de um dia em que a casa
-    de fato abriu, ou deixando passar o de um dia em que não abriu.
+    A janela é ``Shop.staff_hours_start``/``staff_hours_end`` (decisão do dono,
+    05/11/2026: 5h às 19h), e não o horário de venda: a produção começa de
+    madrugada, e com a janela de venda (9h às 18h) todo acesso da equipe antes
+    da abertura virava destaque, todo dia, e o destaque perdia valor (beta
+    05/11, CEN-02).
 
-    Sem grade configurada, ``is_open_on`` degrada para aberto e nada é "fora do
-    horário" — inventar uma janela aqui marcaria a loja inteira como anômala no
-    primeiro dia.
+    O dia em que a casa não abre continua vindo do ``business_calendar``, que já
+    sabe de feriado e férias coletivas: entrar nele é justamente o que se quer
+    ver destacado. Sem loja configurada, nada é "fora do horário".
     """
     from django.utils import timezone
 
-    from shopman.shop.services.business_calendar import is_open_on, selling_hours_for
+    from shopman.shop.models import Shop
+    from shopman.shop.services.business_calendar import is_open_on
 
     momento = timezone.localtime(event.created_at)
-    dia = momento.date()
 
-    if not is_open_on(dia):
-        # Dia fechado (feriado, folga semanal): entrar nele é justamente o que
-        # se quer ver destacado.
+    if not is_open_on(momento.date()):
         return True
 
-    janela = selling_hours_for(dia)
-    if janela is None:
+    loja = Shop.load()
+    if loja is None:
         return False
-    abre, fecha = janela
-    return not (abre <= momento.time() <= fecha)
+    return not (loja.staff_hours_start <= momento.time() <= loja.staff_hours_end)
 
 
 # ── O aviso ──────────────────────────────────────────────────────────────────
@@ -357,7 +354,7 @@ ANOMALY_LABELS = {
     "failure": "tentativa recusada",
     "badge": "entrou com crachá",
     "unknown_station": "estação nunca usada por esta conta",
-    "outside_hours": "fora do horário de funcionamento",
+    "outside_hours": "fora do expediente da equipe",
     "burst": "vários acessos em pouco tempo",
     "after_failure": "acertou logo depois de errar",
 }
@@ -424,12 +421,33 @@ def _notification_title(event) -> str:
     return f"Sua conta foi usada ({metodo})"
 
 
-def _notification_message(event, realces: list[str]) -> str:
-    from django.utils import timezone
+def station_labels(refs) -> dict[str, str]:
+    """O nome de cada posto pelo ``ref`` do dispositivo ("pdv-main" → "PDV principal").
 
-    quando = timezone.localtime(event.created_at).strftime("%d/%m às %H:%M")
-    onde = event.station_ref or "fora da loja"
-    linhas = [f"{quando} · {onde}"]
+    O aviso e a lista de acessos mostravam o código (beta 05/11, CEN-13). Posto que não
+    existe mais fica pelo código: é o que sobrou dele, e ainda identifica o lugar.
+    """
+    from shopman.backstage.models import Workstation
+
+    wanted = {ref for ref in refs if ref}
+    if not wanted:
+        return {}
+    return dict(Workstation.objects.filter(ref__in=wanted).values_list("ref", "label"))
+
+
+def station_display(ref: str, labels: dict[str, str] | None = None) -> str:
+    """Onde foi o acesso, na palavra de quem lê. Vazio é "fora da loja", não lacuna."""
+    if not ref:
+        return "fora da loja"
+    known = labels if labels is not None else station_labels([ref])
+    return known.get(ref) or ref
+
+
+def _notification_message(event, realces: list[str]) -> str:
+    # Sem a data: a tela já põe a hora do aviso ao lado, e o acesso e o aviso nascem
+    # juntos. Com as duas, cada linha dizia "05/11 às 06:23" duas vezes (beta 05/11,
+    # CEN-13 e MKT-24).
+    linhas = [station_display(event.station_ref)]
     if event.ip_address:
         linhas.append(f"IP {event.ip_address}")
     if realces:
@@ -570,6 +588,50 @@ def _notify_badge_reissue(user, reason: str) -> None:
             message=f"Motivo: {motivo}. O PIN segue valendo. Reemita em Operadores, no Admin.",
         )
         push_user_notification(notificacao)
+
+
+def notify_pin_locked(user, locked_until) -> None:
+    """Avisar UMA vez que o PIN travou: o dono da conta e quem pode desbloquear.
+
+    Cada recusa já vira linha e aviso ao dono ("Tentativa recusada"), mas nenhum
+    deles dizia que a conta TRAVOU, e o gerente, que é quem resolve antes da hora,
+    não sabia de nada (beta 05/11, CEN-01). Chamado na transição para bloqueado,
+    não a cada recusa. Nunca levanta: o aviso não derruba a trava que o motivou.
+    """
+    from django.utils import timezone
+
+    from shopman.shop.models import NotificationCategory, UserNotification
+    from shopman.shop.services.campaign import push_user_notification
+
+    try:
+        nome = user.get_full_name().strip() or user.get_username()
+        hora = timezone.localtime(locked_until).strftime("%H:%M")
+        avisos = [
+            UserNotification(
+                user=user,
+                category=NotificationCategory.SIGN_IN,
+                title="Seu PIN foi bloqueado por tentativas",
+                message=f"Bloqueado até {hora}. Se não foi você, avise um gerente.",
+                action_url=SIGN_IN_LOG_PATH,
+            )
+        ]
+        avisos += [
+            UserNotification(
+                user=gerente,
+                category=NotificationCategory.SIGN_IN,
+                title=f"PIN de {nome} bloqueado por tentativas",
+                message=(
+                    f"Bloqueado até {hora}. Para liberar antes, use Desbloquear PIN "
+                    "em Operadores, no Admin."
+                ),
+            )
+            for gerente in _badge_managers(exclude=user)
+        ]
+        for aviso in avisos:
+            aviso.save()
+            push_user_notification(aviso)
+    except Exception:  # pragma: no cover - o aviso nunca derruba a trava
+        logger.warning("sign_in_audit.notify_pin_locked_failed user=%s", getattr(user, "pk", None), exc_info=True)
 
 
 def _badge_managers(*, exclude=None):

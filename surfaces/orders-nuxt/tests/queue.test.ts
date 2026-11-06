@@ -2,7 +2,7 @@
 // com o verbo da v4. O fato e a meta vêm do servidor; aqui só relógio e ordem.
 import { describe, expect, it } from "vitest";
 
-import { goalTone, inProgress, minutesLabel, queueGesture, queueItems, queueWho, restLine } from "../app/presentation/queue";
+import { goalTone, inKitchen, inProgress, minutesLabel, queueGesture, queueItems, queueWho, restLine, workingOrders } from "../app/presentation/queue";
 import type { OrderCardProjection } from "../app/types/orders";
 
 const NOW = Date.parse("2026-10-04T22:03:00Z");
@@ -49,7 +49,7 @@ describe("Em andamento e o excedente", () => {
   it("agrega o que não pede ninguém em Na Cozinha e Na rua", () => {
     const lines = inProgress([
       card({ attention: "", status: "preparing", created_at_iso: ago(600) }),
-      card({ attention: "", status: "accepted", created_at_iso: ago(240) }),
+      card({ attention: "", status: "accepted", created_at_iso: ago(240), kitchen: { order_pk: 2, missing_label: "", stations: [{ station_ref: "cafes" }] } } as Partial<OrderCardProjection>),
       card({ attention: "", status: "dispatched", dispatched_at_iso: ago(18 * 60) }),
       card(),
     ], NOW);
@@ -59,6 +59,23 @@ describe("Em andamento e o excedente", () => {
     ]);
     expect(restLine(lines)).toEqual({ hidden: 0, moving: 3, text: "Seguem sozinhos: 2 na cozinha, 1 na rua" });
     expect(restLine(inProgress([card()], NOW))).toEqual({ hidden: 0, moving: 0, text: "" });
+  });
+});
+
+describe("Na Cozinha é só o que foi para a cozinha (beta 05/11: GES-13, PDV2-03)", () => {
+  it("aceito sem ticket ainda pede Iniciar preparo: não está na cozinha", () => {
+    const waiting = card({ ref: "W-M99", attention: "", status: "accepted", kitchen: null });
+    expect(inKitchen(waiting, NOW)).toBe(false);
+    expect(inProgress([waiting], NOW)[0]).toMatchObject({ key: "kitchen", count: 0 });
+    expect(workingOrders([waiting], NOW).kitchen).toEqual([]);
+  });
+
+  it("encomenda de amanhã não entra na cozinha de hoje, nem em preparo", () => {
+    const tomorrow = card({ ref: "PDV-N84", attention: "", status: "preparing", is_preorder: true, commitment_date: "2026-10-05" });
+    const today = card({ ref: "PDV-N85", attention: "", status: "preparing", is_preorder: true, commitment_date: "2026-10-04" });
+    expect(inKitchen(tomorrow, NOW)).toBe(false);
+    expect(inKitchen(today, NOW)).toBe(true);
+    expect(workingOrders([tomorrow, today], NOW).kitchen.map((w) => w.card.ref)).toEqual(["PDV-N85"]);
   });
 });
 

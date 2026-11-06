@@ -99,6 +99,36 @@ def _verify_with_perm(user, raw_pin: str, perm: str | None) -> bool:
     return cred.verify(raw_pin)
 
 
+def is_eligible_operator(user, *, required_perm: str | None = OPERATE_POS) -> bool:
+    """True if ``user`` may operate with ``required_perm`` (sem olhar o PIN)."""
+    return _eligible(user, required_perm)
+
+
+def pin_locked_until(user):
+    """Até quando o PIN de ``user`` está bloqueado por tentativas, ou ``None``."""
+    if user is None:
+        return None
+    try:
+        cred = user.pin_credential
+    except PinCredential.DoesNotExist:
+        return None
+    return cred.locked_until if cred.is_locked else None
+
+
+def pin_locked_message(locked_until) -> str:
+    """A frase do PIN bloqueado: até que horas, e quem resolve antes disso.
+
+    Uma frase só para a trava, a troca de PIN e o "Perdi meu crachá". Antes do
+    beta de 05/11 a trava respondia "Identificação inválida." também para o PIN
+    CERTO de quem estava bloqueado, e a pessoa seguia tentando, o que estende o
+    bloqueio (ele é progressivo).
+    """
+    from django.utils import timezone
+
+    hora = timezone.localtime(locked_until).strftime("%H:%M")
+    return f"PIN bloqueado por tentativas até {hora}. Peça a um gerente para desbloquear."
+
+
 def verify_operator_pin(user, raw_pin: str, *, required_perm: str | None = OPERATE_POS) -> bool:
     """True if ``user`` is an eligible operator (for ``required_perm``) and the PIN matches."""
     return _verify_with_perm(user, raw_pin, required_perm)
@@ -112,6 +142,32 @@ def resolve_operator_by_badge(raw_token: str, *, required_perm: str | None = OPE
     """
     user = PinCredential.resolve_by_badge(raw_token)
     return user if _eligible(user, required_perm) else None
+
+
+def unlock_refusal_detail(target_user, *, badge: bool) -> str:
+    """A frase da recusa do destrave, dita a quem está no balcão.
+
+    "Identificação inválida." não dizia se foi o PIN, nem que a trava vem depois
+    de poucas tentativas (beta 05/11/2026, PDV-24). O PIN errado diz quantas
+    restam; a conta travada diz que esperar resolve. Lida DEPOIS da verificação,
+    que já contou a falha.
+    """
+    if badge:
+        return "Crachá não reconhecido. Passe de novo ou digite o PIN."
+    try:
+        credential = PinCredential.objects.get(user=target_user) if target_user is not None else None
+    except PinCredential.DoesNotExist:
+        credential = None
+    if credential is None:
+        return "PIN incorreto. Confira e tente de novo."
+    if credential.is_locked:
+        return "PIN travado por excesso de tentativas. Aguarde alguns minutos ou chame o gerente."
+    remaining = credential.max_attempts - credential.attempts
+    if remaining == 1:
+        return "PIN incorreto. Resta 1 tentativa antes da trava."
+    if remaining > 1:
+        return f"PIN incorreto. Restam {remaining} tentativas antes da trava."
+    return "PIN incorreto. Confira e tente de novo."
 
 
 def verify_manager_pin(user, raw_pin: str) -> bool:
@@ -180,11 +236,14 @@ def change_own_pin(user, current_pin: str, new_pin: str) -> None:
             "no_credential", "Você ainda não tem um PIN. Peça ao gerente para provisionar."
         ) from None
     if cred.is_locked:
-        raise PinChangeError(
-            "locked", "PIN bloqueado por tentativas. Aguarde ou peça desbloqueio ao gerente."
-        )
+        raise PinChangeError("locked", pin_locked_message(cred.locked_until))
     if not cred.verify(current_pin):
         raise PinChangeError("invalid_current", "PIN atual incorreto.")
+    # Trocar pelo mesmo PIN não é troca: a tela diria "PIN atualizado" e nada mudou
+    # (beta 05/11, PDV-26). Conferido DEPOIS de provar o atual, para a recusa não
+    # virar um oráculo do PIN de ninguém.
+    if new_pin.strip() == current_pin.strip():
+        raise PinChangeError("same_pin", "Escolha um PIN diferente do atual.")
     # validate_raw (via set_pin) raises PinCredentialError before mutating on policy failure.
     cred.set_pin(new_pin)
 

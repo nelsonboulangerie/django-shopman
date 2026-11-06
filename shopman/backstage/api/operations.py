@@ -308,6 +308,25 @@ def _shortage_override_proof(body: dict, exc: ProductionError) -> str:
     )
 
 
+def _material_display_names(skus: set[str]) -> dict[str, str]:
+    """Nome legível de cada insumo em falta: catálogo, compras ou ficha."""
+    from shopman.craftsman.models import Recipe
+
+    from shopman.backstage.projections.production import _product_names
+
+    names = _product_names(skus)
+    missing = skus - names.keys()
+    if missing:
+        names.update(
+            (sku, name)
+            for sku, name in Recipe.objects.filter(output_sku__in=missing, is_active=True).values_list(
+                "output_sku", "name"
+            )
+            if str(name or "").strip()
+        )
+    return names
+
+
 def _production_error_response(
     exc: ProductionError,
     *,
@@ -381,6 +400,7 @@ def _production_error_response(
             status=404,
         )
     if isinstance(exc, ProductionStockShortError):
+        material_names = _material_display_names({item.sku for item in exc.missing})
         possibilities = [
             {
                 "kind": "retry",
@@ -406,9 +426,13 @@ def _production_error_response(
                     "work_order_ref": exc.work_order_ref,
                     "idempotency_key": idempotency_key,
                     "possibilities": possibilities,
+                    # Nome e unidade para a tela escrever "Massa de croissant:
+                    # precisa 336 kg", nunca o SKU cru com três casas (beta 05/11).
                     "missing": [
                         {
                             "sku": item.sku,
+                            "name": material_names.get(item.sku, item.sku),
+                            "unit": item.unit,
                             "needed": str(item.needed),
                             "available": str(item.available),
                             "shortage": str(item.shortage),
@@ -813,6 +837,13 @@ class OperatorSessionView(APIView):
         )
         is_gestor = surface_perm_codes(required_perm) == GESTOR_SURFACE_PERMISSIONS
         surface_role = gestor_surface_role(operador) if is_gestor and operador and not locked else None
+        if required_perm == "backstage.view_bi" and operador and not locked:
+            # O B.I. tem duas personas: quem audita o caixa (o Dono) e quem lê o
+            # resto (o Gerente). O rail esconde o Caixa de quem não audita, em vez
+            # de abrir uma tela que só sabe dizer "tentar de novo" (beta 05/11, ge:BI-07).
+            from shopman.backstage.permissions import can_audit_cash
+
+            surface_role = "cash_auditor" if can_audit_cash(operador) else "reader"
         return Response({
             # `station` substituiu `device_user`: o que a tela precisa saber é de
             # QUE BALCÃO ela é, não com que conta a máquina entrou — porque não
@@ -853,8 +884,55 @@ def _login_username_key(group, request):
     return (str(username or "").strip().lower()) or "anon"
 
 
+#: Falhas de senha por conta-alvo: 5 por minuto. Só a FALHA conta (beta 05/11,
+#: BI-08/MKT-19): o decorator contava todo POST, e a Gerente que abria seis
+#: dispositivos de manhã travava a própria conta com a senha certa.
+_LOGIN_FAILURE_GROUP = "operator-login-failure"
+_LOGIN_FAILURE_RATE = "5/m"
+
+
+def _login_failures(request, *, increment: bool) -> dict | None:
+    """O balde de falhas de senha da conta-alvo (``get_usage`` do django-ratelimit).
+
+    ``get_usage`` não lê ``RATELIMIT_ENABLE`` (só o decorator lê): sem a guarda,
+    desligar os freios deixava este ligado, e o balde em cache atravessava testes.
+    """
+    from django.conf import settings
+    from django_ratelimit.core import get_usage
+
+    if not getattr(settings, "RATELIMIT_ENABLE", True):
+        return None
+    return get_usage(
+        request,
+        group=_LOGIN_FAILURE_GROUP,
+        key=_login_username_key,
+        rate=_LOGIN_FAILURE_RATE,
+        method="POST",
+        increment=increment,
+    )
+
+
+def _login_rate_limited_response(usage: dict | None) -> Response:
+    # `time_left` vem -1 quando o cache falhou: aí não se sabe, e o teto é a janela.
+    restante = int((usage or {}).get("time_left") or 0)
+    segundos = restante if 0 < restante <= 60 else 60
+    if segundos >= 60:
+        espera = "um minuto"
+    elif segundos == 1:
+        espera = "1 segundo"
+    else:
+        espera = f"{segundos} segundos"
+    return Response(
+        {
+            "detail": f"Muitas senhas erradas para este usuário. Tente de novo em {espera}.",
+            "error": {"code": "operator_login_rate_limited", "retry_after": segundos},
+        },
+        status=429,
+        headers={"Retry-After": str(segundos)},
+    )
+
+
 @method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
-@method_decorator(ratelimit(key=_login_username_key, rate="5/m", method="POST", block=False), name="dispatch")
 class OperatorLoginView(APIView):
     """Login de operador NO PRÓPRIO app (sem bounce pro Django admin).
 
@@ -868,9 +946,11 @@ class OperatorLoginView(APIView):
     que sai daqui é a mesma coisa, a identidade de uma pessoa. Não existe login
     "do dispositivo": o dispositivo é reconhecido por confiança de dispositivo.
 
-    Freio contra brute-force de senha staff: limite por-username (ataque a uma conta)
-    de 5/min e teto por-IP de 30/min — generoso porque os dispositivos da loja
-    compartilham o IP (NAT). Ambos `block=False`: o handler devolve 429 amigável.
+    Freio contra brute-force de senha staff: 5 FALHAS por minuto por username
+    (ataque a uma conta) e teto por-IP de 30/min, generoso porque os dispositivos da
+    loja compartilham o IP (NAT). O balde por conta conta só a senha errada: login
+    certo não gasta tentativa de ninguém. Estourado, nem a senha certa entra até a
+    janela virar (o 429 diz quanto falta).
     """
 
     permission_classes = [AllowAny]
@@ -881,6 +961,7 @@ class OperatorLoginView(APIView):
         from shopman.backstage.services.operator import operator_card
 
         if getattr(request, "limited", False):
+            # O teto por IP (a loja inteira atrás do mesmo NAT), não a conta.
             return Response(
                 {
                     "detail": "Muitas tentativas de login. Aguarde um minuto e tente de novo.",
@@ -895,8 +976,15 @@ class OperatorLoginView(APIView):
         if not username or not password:
             return Response({"detail": "Informe usuário e senha."}, status=400)
 
+        falhas = _login_failures(request, increment=False)
+        if falhas and falhas.get("should_limit"):
+            return _login_rate_limited_response(falhas)
+
         user = authenticate(request, username=username, password=password)
         if user is None or not user.is_staff:
+            falhas = _login_failures(request, increment=True)
+            if falhas and falhas.get("should_limit"):
+                return _login_rate_limited_response(falhas)
             return Response(
                 {"detail": "Usuário ou senha inválidos.", "error": {"code": "operator_login_invalid"}},
                 status=403,
@@ -907,6 +995,11 @@ class OperatorLoginView(APIView):
         sign_in_audit.mark_method(request, SignInMethod.PASSWORD)
         login(request, user)
         operator_session.start(request)
+        # A senha prova a pessoa mais do que o PIN: as travas desta sessão caem.
+        # Sem isto, quem travou e entrava com a PRÓPRIA senha ("Entrar com senha",
+        # na trava) continuava travado: o `login()` da mesma pessoa só cicla a
+        # chave e guarda as travas, e a tela não saía do lugar (beta 05/11, BI-09).
+        operator_session.unlock_capability(request, None)
         # `operator`, e não `device_user`: entrar com senha é identificar-se como
         # aquela pessoa. Não existe mais conta de máquina para nomear aqui.
         return Response({"ok": True, "operator": operator_card(user)})
@@ -978,6 +1071,40 @@ def _pin_rate_limited_response() -> Response:
     )
 
 
+def _pin_locked_response(locked_until) -> Response:
+    """423 com a frase do bloqueio e a hora em que ele vence.
+
+    PIN bloqueado não é PIN errado, e as duas recusas não podem ter a mesma cara:
+    com "Identificação inválida." a pessoa acha que errou o dedo e segue tentando,
+    e o bloqueio é progressivo (beta 05/11, CEN-01).
+    """
+    from shopman.backstage.services.operator import pin_locked_message
+
+    return Response(
+        {
+            "detail": pin_locked_message(locked_until),
+            "error": {"code": "pin_locked", "locked_until": locked_until.isoformat()},
+        },
+        status=423,
+    )
+
+
+def _pin_locked_by_this_failure(user):
+    """Se a falha que acabou de acontecer TRAVOU o PIN, avisa e devolve até quando.
+
+    Quem chama já sabe que o PIN NÃO estava bloqueado antes da tentativa (a
+    recusa de bloqueado sai antes de verificar), então achar o bloqueio agora é a
+    transição. É o momento de avisar: o dono da conta e quem pode desbloquear
+    recebem um aviso só, em vez de descobrir pela fila de "Tentativa recusada".
+    """
+    from shopman.backstage.services.operator import pin_locked_until
+
+    ate = pin_locked_until(user)
+    if ate is not None:
+        sign_in_audit.notify_pin_locked(user, ate)
+    return ate
+
+
 @method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
 @method_decorator(ratelimit(key=_unlock_target_key, rate="5/m", method="POST", block=False), name="dispatch")
 class OperatorUnlockView(APIView):
@@ -1003,7 +1130,17 @@ class OperatorUnlockView(APIView):
 
         from shopman.backstage.services import operator as operator_service
 
+        body = request.data or {}
+        perm, ok = _validated_unlock_perm(body.get("perm"))
+
         if getattr(request, "limited", False):
+            # O freio por conta e o bloqueio do PIN disparam juntos na quinta
+            # falha. Quando o PIN está bloqueado, é isso que a pessoa precisa
+            # ler (até que horas, e quem resolve), e não "aguarde um minuto",
+            # que vence antes do bloqueio e manda tentar de novo.
+            bloqueado_ate = self._locked_target(body, perm) if ok else None
+            if bloqueado_ate is not None:
+                return _pin_locked_response(bloqueado_ate)
             return Response(
                 {
                     "detail": "Muitas tentativas de identificação. Aguarde um minuto e tente de novo.",
@@ -1012,8 +1149,6 @@ class OperatorUnlockView(APIView):
                 status=429,
             )
 
-        body = request.data or {}
-        perm, ok = _validated_unlock_perm(body.get("perm"))
         if not ok:
             return Response({"detail": "Permissão de operador inválida."}, status=400)
 
@@ -1036,10 +1171,35 @@ class OperatorUnlockView(APIView):
             # None e some a única referência à conta-alvo — que é justamente
             # quem precisa ser avisado de que alguém errou o PIN dela.
             alvo = operator
+            # PIN bloqueado responde COMO bloqueado, antes de verificar: o
+            # `verify` recusaria até o PIN certo, com a mesma cara de um errado.
+            # Só para quem pode se identificar aqui (a lista da trava já mostra
+            # essas pessoas), e sem gravar falha nova nem avisar de novo: o aviso
+            # do bloqueio já saiu na transição.
+            bloqueado_ate = (
+                operator_service.pin_locked_until(operator)
+                if operator is not None and operator_service.is_eligible_operator(operator, required_perm=perm)
+                else None
+            )
+            if bloqueado_ate is not None:
+                sign_in_audit.record(
+                    user=operator,
+                    method=metodo,
+                    outcome=SignInOutcome.FAILED,
+                    request=request,
+                    reason="operator_pin_locked",
+                    notify_owner=False,
+                )
+                return _pin_locked_response(bloqueado_ate)
             if operator is not None and not operator_service.verify_operator_pin(operator, pin, required_perm=perm):
                 operator = None
 
         if operator is None:
+            travou_ate = (
+                _pin_locked_by_this_failure(alvo)
+                if alvo is not None and operator_service.is_eligible_operator(alvo, required_perm=perm)
+                else None
+            )
             # A recusa de PIN/crachá NÃO passa por `authenticate()`, então não
             # existe `user_login_failed` para ouvir: é aqui, na única view que a
             # produz, que ela vira linha. Mesma função de gravação do sucesso —
@@ -1055,9 +1215,24 @@ class OperatorUnlockView(APIView):
                 outcome=SignInOutcome.FAILED,
                 request=request,
                 reason="operator_unlock_invalid",
+                # A falha que travou o PIN avisa pelo aviso do bloqueio, não por
+                # mais um "Tentativa recusada".
+                notify_owner=travou_ate is None,
             )
+            if travou_ate is not None:
+                return _pin_locked_response(travou_ate)
+            # A recusa diz o que houve (beta test de 05/11/2026, PDV-20 e
+            # PDV-24): o "Identificação inválida." não dizia se era o PIN, o
+            # crachá ou o acesso, nem quantas tentativas restam antes da trava.
+            # O acesso só se conta de quem a tela já lista.
+            if metodo != SignInMethod.BADGE and alvo is not None and not operator_service.is_eligible_operator(
+                alvo, required_perm=perm
+            ):
+                detail = "Esta pessoa não tem acesso a este app. Fale com o gerente."
+            else:
+                detail = operator_service.unlock_refusal_detail(alvo, badge=metodo == SignInMethod.BADGE)
             return Response(
-                {"detail": "Identificação inválida.", "error": {"code": "operator_unlock_invalid"}},
+                {"detail": detail, "error": {"code": "operator_unlock_invalid"}},
                 status=403,
             )
         # `login()` de verdade, e não um cartão guardado na sessão: a partir daqui
@@ -1078,6 +1253,24 @@ class OperatorUnlockView(APIView):
         operator_session.start(request)
         operator_session.unlock_capability(request, _surface_lock_key(perm))
         return Response({"ok": True, "operator": operator_service.operator_card(operator)})
+
+    @staticmethod
+    def _locked_target(body, perm):
+        """Até quando está bloqueado o PIN da conta nomeada no corpo, ou ``None``.
+
+        Só para quem pode se identificar nesta superfície, como no caminho normal.
+        """
+        from django.contrib.auth import get_user_model
+
+        from shopman.backstage.services import operator as operator_service
+
+        operator_id = str(body.get("operator_id") or "").strip()
+        if not operator_id or str(body.get("badge") or "").strip():
+            return None
+        alvo = get_user_model().objects.filter(pk=operator_id, is_active=True).first()
+        if alvo is None or not operator_service.is_eligible_operator(alvo, required_perm=perm):
+            return None
+        return operator_service.pin_locked_until(alvo)
 
 
 class OperatorLockView(APIView):
@@ -1100,6 +1293,28 @@ class OperatorLockView(APIView):
         if not valid or perm is None:
             return Response({"detail": "Permissão de operador inválida."}, status=400)
         operator_session.lock_capability(request, _surface_lock_key(perm))
+        return Response({"ok": True})
+
+
+class OperatorLogoutView(APIView):
+    """Sair deste dispositivo: encerra a sessão da pessoa, e só ela.
+
+    O Bloquear fecha a superfície e deixa a sessão viva para a troca por PIN; num
+    celular pessoal ou num PC de escritório sem posto, isso deixava a lista de
+    operadores à mostra para quem achasse o dispositivo (beta 05/11, CEN-07).
+    Sair derruba a sessão: o dispositivo sem posto volta a pedir senha.
+
+    O vínculo de POSTO não é tocado. Ele é da loja, não de quem saiu, e tem gesto
+    próprio ("Desvincular deste posto"); revogá-lo aqui faria o balcão amanhecer
+    pedindo senha porque alguém tocou em Sair. Num posto, sair é ficar na trava.
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from django.contrib.auth import logout
+
+        logout(request)
         return Response({"ok": True})
 
 
@@ -1151,10 +1366,15 @@ class OperatorBadgeLostView(APIView):
                 status=400,
             )
 
+        bloqueado_ate = operator_service.pin_locked_until(alvo)
+        if bloqueado_ate is not None:
+            return _pin_locked_response(bloqueado_ate)
+
         # `required_perm=None`: o crachá é da PESSOA, não da tela. Exigir a
         # permissão desta superfície deixaria quem opera só a Produção sem poder
         # matar o próprio crachá a partir do balcão em que está.
         if not operator_service.verify_operator_pin(alvo, pin, required_perm=None):
+            travou_ate = _pin_locked_by_this_failure(alvo)
             # Errar o PIN aqui é tentar matar o crachá de alguém: vira linha, e o
             # dono é avisado como em qualquer recusa.
             sign_in_audit.record(
@@ -1163,7 +1383,10 @@ class OperatorBadgeLostView(APIView):
                 outcome=SignInOutcome.FAILED,
                 request=request,
                 reason="badge_lost_invalid",
+                notify_owner=travou_ate is None,
             )
+            if travou_ate is not None:
+                return _pin_locked_response(travou_ate)
             return Response(
                 {"detail": "PIN inválido.", "error": {"code": "operator_pin_invalid"}},
                 status=403,
@@ -1219,8 +1442,14 @@ class OperatorPinChangeView(APIView):
         try:
             operator_service.change_own_pin(target, current_pin, new_pin)
         except operator_service.PinChangeError as exc:
-            status = 423 if exc.code == "locked" else 400
-            return Response({"detail": str(exc), "error": {"code": exc.code}}, status=status)
+            bloqueado_ate = operator_service.pin_locked_until(target) if exc.code == "locked" else None
+            if bloqueado_ate is not None:
+                return _pin_locked_response(bloqueado_ate)
+            if exc.code == "invalid_current":
+                travou_ate = _pin_locked_by_this_failure(target)
+                if travou_ate is not None:
+                    return _pin_locked_response(travou_ate)
+            return Response({"detail": str(exc), "error": {"code": exc.code}}, status=400)
         except PinCredentialError as exc:
             return Response({"detail": str(exc), "error": {"code": "pin_policy"}}, status=400)
         return Response({"ok": True})
@@ -1932,12 +2161,33 @@ class DayClosingView(APIView):
         if closing.already_closed:
             return Response({"detail": "Fechamento de hoje já foi realizado."}, status=409)
 
+        release = request.data.get("production_release") if hasattr(request, "data") else None
+        if release is not None and not isinstance(release, dict):
+            return Response(
+                {"detail": "Envie a liberação como um objeto (motivo e autorização).", "field": "production_release"},
+                status=400,
+            )
         try:
             closing_date = closing_service.perform_day_closing(
                 user=request.user,
                 items=list(closing.items),
                 quantities_by_sku={str(k): str(v) for k, v in quantities.items()},
+                production_release=release,
             )
+        except closing_service.PendingProductionBlocksClosing as exc:
+            # Produção aberta impede selar (decisão do dono, 05/11/2026). 409: o
+            # pedido está certo, o estado do dia é que não deixa.
+            return Response(
+                {
+                    "detail": str(exc),
+                    "field": exc.field,
+                    "error": {"code": exc.code, "message": str(exc), "field": exc.field},
+                },
+                status=409,
+            )
+        except PosIntentError as exc:
+            # A assinatura do gerente que libera: o mesmo desafio da sangria.
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
         except Exception as exc:  # pragma: no cover - defensive
@@ -4642,12 +4892,17 @@ class WorkOrderFinishView(_ProductionActionBase):
                 WorkOrder.Status.VOID,
             ):
                 yield_anchor = work_order.started_qty or work_order.quantity
-                if body["quantity"] < yield_anchor:
+                # Rendeu menos (beta 05/11): vale com a confirmação e o motivo
+                # do operador; sem eles, a diferença não pode sumir calada.
+                shortfall_explained = body["yield_deviation_confirmed"] and bool(
+                    str(body.get("yield_deviation_reason") or "").strip()
+                )
+                if body["quantity"] < yield_anchor and not shortfall_explained:
                     raise ProductionMutationValidationError(
                         {
                             "quantity": (
-                                "A quantidade total deve incluir toda perda do lote. "
-                                "Classifique o déficit em partition com um motivo de qualidade."
+                                "O total ficou abaixo do previsto. Lance a perda com o motivo, "
+                                "ou confirme que rendeu menos e diga por quê."
                             )
                         }
                     )
@@ -6359,7 +6614,7 @@ class POSTabUnfireView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Look up customer by ref or phone",
         responses={200: OpenApiResponse(description="Customer projection or null.")},
@@ -6369,9 +6624,13 @@ class POSCustomerLookupView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
-    def get(self, request):
-        ref = (request.query_params.get("ref") or "").strip()
-        phone = (request.query_params.get("phone") or "").strip()
+    def post(self, request):
+        # O telefone viaja no CORPO: na query string ele ficava no log de acesso
+        # e no cache (beta test de 05/11/2026, PDV2-07). Leitura pura, POST só
+        # para o dado pessoal não aparecer na URL.
+        body = request.data if isinstance(request.data, dict) else {}
+        ref = str(body.get("ref") or "").strip()
+        phone = str(body.get("phone") or "").strip()
         # `ref` vence: é a chave exata do cadastro (cliente sem telefone existe).
         if ref:
             customer = build_pos_customer_lookup_by_ref(ref)
@@ -6467,6 +6726,46 @@ def _pos_customer_integrity_response(exc: Exception, *, action: str) -> Response
         },
         status=422,
     )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Check a manager approval (PIN or badge) without recording anything",
+        responses={200: OpenApiResponse(description="The approving manager's username.")},
+    ),
+)
+class POSManagerApprovalCheckView(APIView):
+    """Confere o PIN (ou o crachá) do gerente NA HORA, no próprio diálogo.
+
+    Beta test de 05/11/2026 (PDV-05). O diálogo "Quem autoriza?" guardava o PIN
+    e fechava; a conferência só acontecia no fechamento, depois de o operador já
+    ter confirmado "Recebi o Pix" com o cliente. PIN errado voltava como recusa
+    da VENDA, com a tela já adiante.
+
+    É o MESMO desafio do fechamento (``validate_manager_override``: permissão
+    ``cashman.adjust_shift``, ``PinCredential`` com trava progressiva), então
+    errar aqui conta na mesma trava. Não grava nada: o fechamento confere de
+    novo, porque é ele que assina a linha.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        approval = (request.data or {}).get("manager_approval")
+        if not isinstance(approval, dict):
+            approval = {}
+        try:
+            approver = pos_tabs_service.validate_manager_override(
+                approval,
+                operator_username=_username(request),
+                action="sale_approval_check",
+                recovery_invalid="Confira o gerente e digite o PIN de novo.",
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=422)
+        return Response({"approved_by": approver.get_username()})
 
 
 @extend_schema_view(

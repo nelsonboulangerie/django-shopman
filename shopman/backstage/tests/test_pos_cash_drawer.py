@@ -227,10 +227,16 @@ def test_agente_sem_token_nao_imprime_e_o_defeito_e_dito():
         label="Balcão",
         metadata={"hardware": {"device_agent": {"enabled": True, "agent_url": "http://127.0.0.1:47811"}}},
     )
-    payload = DeviceAgentConfig.from_terminal(terminal).surface_payload()
+    config = DeviceAgentConfig.from_terminal(terminal)
+    payload = config.surface_payload()
 
     assert payload["can_print"] is False
-    assert "token" in payload["reason"]
+    # Beta 05/11 (PDV-11/23): o balcão lê o que fazer, sem nota de engenheiro; o
+    # motivo técnico fica para quem configura (Ajustes e Admin).
+    assert "token" not in payload["reason"]
+    assert "Admin" not in payload["reason"]
+    assert payload["reason"].endswith("Chame o gerente.")
+    assert "token" in config.misconfigured_reason
 
 
 def test_gaveta_por_agente_tambem_declara_impressao():
@@ -372,8 +378,13 @@ def test_gaveta_desligada_diz_que_esta_desligada():
 
 
 def test_agente_sem_token_leva_o_motivo_ate_a_tela():
-    payload = CashDrawerConfig.from_dict({"adapter": "agent", "token": ""}).surface_payload()
-    assert "token" in payload["reason"]
+    # Beta 05/11 (PDV-11/23): a tela é do balcão. Ela diz o que fazer ("chame o
+    # gerente"); o "falta o token" é de quem configura e fica no motivo técnico.
+    config = CashDrawerConfig.from_dict({"adapter": "agent", "token": ""})
+    payload = config.surface_payload()
+    assert payload["reason"] == "Gaveta não configurada neste balcão. Chame o gerente."
+    assert "token" in config.misconfigured_reason
+    assert config.misconfigured_reason.endswith("para gerar o token")
 
 
 def test_todo_terminal_que_nao_chuta_TEM_um_motivo():

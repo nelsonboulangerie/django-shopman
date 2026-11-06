@@ -78,9 +78,12 @@ function resumo (): string {
  * (`to="/privacy"` → `to="/privacidade"`): mesmo documento, endereço novo. A régua
  * conta destino de link, então o resumo mudou (`23d85fed71300bf0` → `051f28aae9f18c86`);
  * a versão não, porque o cliente não lê palavra nova.
+ *
+ * 2026-11-05: a frase do aviso de volta na política ("e para se você desligar as
+ * mensagens", beta 05/11, LOJA-08) virou frase inteira. Palavra nova, versão nova.
  */
-const RESUMO_PUBLICADO = '7f11a0154a125c19'
-const VERSAO_PUBLICADA = '2026-10-23'
+const RESUMO_PUBLICADO = '926c7033999d75e4'
+const VERSAO_PUBLICADA = '2026-11-05'
 
 describe('páginas legais — o relógio', () => {
   it('a versão declarada no servidor é a mesma que esta trava conhece', () => {

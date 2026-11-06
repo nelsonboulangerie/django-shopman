@@ -241,6 +241,22 @@ describe("installTextParts", () => {
     expect(partes[0]).toMatchObject({ text: "Abra o menu do navegador.", glyph: "menu-lines" });
   });
 
+  // Beta 05/11 (CEN-07 e LOJA-09): "Toque em [⋮] ⋮ (três pontinhos)", o símbolo duas vezes.
+  it("o símbolo escrito não se repete ao lado do desenho", () => {
+    const partes = installTextParts("Toque em **⋮** (três pontinhos), no canto da barra do navegador, fora do app.", "menu-vertical");
+    expect(partes.filter((part) => part.glyph)).toHaveLength(1);
+    const comDesenho = partes.find((part) => part.glyph);
+    expect(comDesenho).toMatchObject({ glyph: "menu-vertical", text: "" });
+    expect(partes.map((part) => part.text).join("")).not.toContain("⋮");
+    expect(partes.map((part) => part.text).join("")).toContain("fora do app");
+  });
+
+  it("as três linhas (≡) do Samsung Internet também não se repetem", () => {
+    const partes = installTextParts("Toque em **≡** (as três linhas), na barra de baixo.", "menu-lines");
+    expect(partes.find((part) => part.glyph)).toMatchObject({ glyph: "menu-lines", text: "" });
+    expect(partes.map((part) => part.text).join("")).not.toContain("≡");
+  });
+
   it("sem símbolo, nada muda", () => {
     expect(installTextParts("Escolha **Instalar**.").every((part) => part.glyph === undefined)).toBe(true);
   });

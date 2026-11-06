@@ -15,10 +15,11 @@ import { redoTabLabel } from "~/presentation/preorderActions";
 import type { PreorderRedoResponse } from "~/types/preorders";
 import type { PosSettingsResponse } from "~/types/settings";
 import { rollStyle } from "~/presentation/printGeometry";
-import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
+import { firstFittingWindow, scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
 import { enterAdvances, paymentFailed, pendingPixBadge, pixAwaiting } from "~/presentation/saleResult";
 import { POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION } from "~/presentation/shortcuts";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
+import { kitchenBoundSkus, kitchenRoutedSkus } from "~/presentation/kitchen";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
 // PosPaymentWorkspace). O chrome comum (login, lock, offline) vive no shell
@@ -104,6 +105,7 @@ const {
   completeOrderSetup,
   setSalesMode,
   openNewOrder,
+  releaseAbandonedOrderTab,
   itemCount,
   tabInput,
   busy,
@@ -118,6 +120,9 @@ const {
   cancelSaleError,
   lookupBusy,
   managerApprovalError,
+  managerCheckBusy,
+  checkManagerApproval,
+  gridProducts,
   customerFocusNonce,
   result,
   closeGuardNotice,
@@ -424,6 +429,8 @@ watchEffect(() => {
 });
 onBeforeUnmount(() => {
   paymentHold.value = false;
+  // A encomenda nova que ficou sem item libera a comanda ao sair (PDV2-13).
+  void releaseAbandonedOrderTab();
 });
 
 // RECARREGAR SOZINHO para entrar na versão nova é uma pergunta mais larga do que
@@ -610,13 +617,17 @@ watch([fulfillmentSheetOpen, scheduleSheetOpen], ([fulfillment, schedule]) => {
 // de encomenda), nada abre.
 // "vai à cozinha" na linha nova (v4): para onde o roteamento real mandaria cada
 // produto (`kitchen_station` do catálogo, `services/kds.kitchen_routes_for_skus`).
-const kitchenStations = computed<Record<string, string>>(() => {
-  const map: Record<string, string> = {};
-  for (const product of pos.value?.products || []) {
-    if (product.kitchen_station) map[product.sku] = product.kitchen_station;
-  }
-  return map;
-});
+// Na comanda, o "Enviar" manda TUDO que tem estação (`fire_lines` sem `prep_only`),
+// então a linha e o Envio Auto/Manual leem o mapa inteiro.
+const kitchenStations = computed<Record<string, string>>(() => kitchenRoutedSkus(pos.value?.products || []));
+// Ao FINALIZAR é outra conta: na venda de balcão que o cliente leva agora, só o feito
+// na hora vai; o pão de vitrine já está na mão dele (beta 05/11, PDV-09). É a régua
+// de `order_helpers.is_counter_takeaway` (balcão e retirada).
+const checkoutKitchenStations = computed<Record<string, string>>(() =>
+  kitchenBoundSkus(pos.value?.products || [], {
+    counter: (cart.salesMode || "counter") === "counter" && cart.fulfillmentType !== "delivery",
+  }),
+);
 // PIX e Maquininha direto na folha (v4 tablet b): os meios que o PDV já tem,
 // lidos da projeção; um meio que o canal não oferece não aparece.
 const quickPayments = computed(() => {
@@ -892,6 +903,20 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
       title: "A comanda mudou em outro dispositivo.",
       description: "Confira antes de salvar. Atualizar descarta as suas alterações.",
       action: { label: "Descartar minhas alterações e atualizar", onSelect: () => { if (!busy.value) void reloadConflictingTab(); } },
+    });
+  }
+  // O horário escolhido deixou de caber quando um item entrou (PDV2-09): o aviso
+  // diz na hora, com o primeiro horário que cabe a um toque. Antes, só o chip
+  // ficava vermelho e o motivo aparecia no Pagamento.
+  if (inSaleView.value && !checkoutMode.value && scheduleConflictReason.value) {
+    const fit = firstFittingWindow(deliverySlots.value, cart.deliveryTimeSlot);
+    list.push({
+      id: "schedule-conflict",
+      color: "warning",
+      title: scheduleConflictReason.value,
+      action: fit
+        ? { label: `Mudar para ${fit.label}`, onSelect: () => { cart.deliveryTimeSlot = fit.ref; } }
+        : { label: "Escolher outro dia", onSelect: () => openScheduleHere() },
     });
   }
   if (inSaleView.value && editing.value) {
@@ -1371,6 +1396,8 @@ onBeforeUnmount(() => {
               :customer-merge-busy="customerMergeBusy"
               :customer-release-busy="customerReleaseBusy"
               :read-only="checkoutMode"
+              :tab-max-length="tabMaxLength"
+              :tab-disallowed-chars="tabDisallowedChars"
               :fulfillment-type="cart.fulfillmentType"
               :fulfillment-label="fulfillmentChipLabel"
               :schedule-label="scheduleChipLabel"
@@ -1468,6 +1495,7 @@ onBeforeUnmount(() => {
       <div v-else-if="checkoutMode" class="h-full md:overflow-y-auto">
       <PosPaymentWorkspace
         ref="paymentWorkspaceRef"
+        :kitchen-stations="checkoutKitchenStations"
         :can-fire-now="hasOpenTab && fireAction.present && fireAction.enabled"
         @fire-now="fireTab()"
         :sales-mode="cart.salesMode"
@@ -1477,6 +1505,9 @@ onBeforeUnmount(() => {
         v-model:manager-username="cart.managerUsername"
         v-model:manager-pin="cart.managerPin"
         :manager-approval-error="managerApprovalError"
+        :manager-check-busy="managerCheckBusy"
+        @check-manager="(username, pin, done) => { void checkManagerApproval(username, pin).then(done) }"
+        @manager-auth-dismissed="managerApprovalError = ''"
         v-model:fulfillment-type="cart.fulfillmentType"
         v-model:fulfillment-confirmed="cart.fulfillmentConfirmed"
         v-model:payment-collection="cart.paymentCollection"
@@ -1642,7 +1673,7 @@ onBeforeUnmount(() => {
         <PosProductGrid
           v-else
           ref="productGridRef"
-          :products="pos?.products || []"
+          :products="gridProducts"
           :collections="pos?.collections || []"
           :favorite-refs="pos?.favorite_collection_refs || []"
           :cart-items="cart.items"

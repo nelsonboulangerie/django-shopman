@@ -12062,6 +12062,8 @@
             "_reconcile_order_payment_to_total",
             "_reconcile_tenders_to_total",
             "_record_sale",
+            "_refuse_invalid_customer_phone",
+            "_refuse_invalid_customer_tax_id",
             "_refuse_pending_charge_on_fired_preorder",
             "_refuse_priceless_items",
             "_refuse_unpaid_preorder_fire",
@@ -12096,7 +12098,7 @@
             "_stamp_engine_prices",
             "_stamp_list_prices_from_session",
             "_stamp_pricing_channel",
-            "_stamp_tab_prices_for_manual_discount",
+            "_stamp_tab_engine_prices",
             "_stamp_tab_prices_from_engine_lines",
             "_structured_coordinates",
             "_tab_label_from_input",
@@ -12156,6 +12158,7 @@
           "responsibility": "contrato",
           "symbols": [
             "MAX_LINE_QTY",
+            "ORDER_NOTES_LIMIT",
             "POS_AUTHORSHIP_META_KEY",
             "POS_SALE_INTENT_PAYLOAD_KEYS",
             "POS_SALE_INTENT_PAYMENT_COLLECTIONS",
@@ -12905,6 +12908,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_promotional_prices",
             "_resolve_availability",
             "_same_boundary",
             "_target_qty",

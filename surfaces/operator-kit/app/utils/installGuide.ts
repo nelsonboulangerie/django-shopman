@@ -234,7 +234,7 @@ function androidPlan(env: InstallEnvironment, browser: InstallBrowser): InstallP
     return {
       ...base,
       steps: [
-        { glyph: "menu-vertical", text: "Toque em **⋮** (três pontinhos), no canto do Firefox." },
+        { glyph: "menu-vertical", text: "Toque em **⋮** (três pontinhos), no canto da barra do Firefox, fora do app." },
         { glyph: "add-home", text: "Escolha **Instalar**." },
         { glyph: "confirm", text: "Confirme em **Adicionar**." },
       ],
@@ -255,7 +255,7 @@ function androidPlan(env: InstallEnvironment, browser: InstallBrowser): InstallP
   return {
     ...base,
     steps: [
-      { glyph: "menu-vertical", text: "Toque em **⋮** (três pontinhos), no canto do navegador." },
+      { glyph: "menu-vertical", text: "Toque em **⋮** (três pontinhos), no canto da barra do navegador, fora do app." },
       { glyph: "add-home", text: "Escolha **Instalar aplicativo**." },
       { glyph: "confirm", text: "Confirme em **Instalar**." },
     ],
@@ -363,6 +363,9 @@ export interface InstallTextPart {
   glyph?: InstallGlyph;
 }
 
+/** Rótulos que são só o símbolo do menu: o desenho substitui o caractere. */
+const SYMBOL_ONLY_LABELS = new Set(["⋮", "⋯", "≡", "☰"]);
+
 /**
  * Quebra `**assim**` em pedaços para a tela destacar o rótulo do menu — e diz onde o
  * símbolo entra.
@@ -390,6 +393,10 @@ export function installTextParts(text: string, glyph?: InstallGlyph): InstallTex
   if (!glyph || parts.length === 0) return parts;
   const alvo = parts.find((part) => part.strong) || parts[0]!;
   alvo.glyph = glyph;
+  // O símbolo escrito ("**⋮**") é o próprio desenho: com os dois, a tela mostrava o
+  // símbolo duas vezes, lado a lado (beta 05/11, CEN-07 e LOJA-09). O desenho fica;
+  // o texto sai.
+  if (alvo.strong && SYMBOL_ONLY_LABELS.has(alvo.text.trim())) alvo.text = "";
   return parts;
 }
 

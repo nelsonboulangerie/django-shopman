@@ -6,9 +6,11 @@ import { recordTrailCount, recordTrailPosition } from "../../../../../operator-k
 import { MATERIALS_TRAIL, baseSectionPath, materialPath } from "~/presentation/purchaseSections";
 
 const route = useRoute();
-const { enrichedMaterials, backendReady, openMaterialEdit, openMaterialDuplicate } = usePurchaseDesk();
+const { findMaterial, backendReady, openMaterialEdit, openMaterialDuplicate } = usePurchaseDesk();
 const sku = computed(() => String(route.params.sku ?? ""));
-const material = computed(() => enrichedMaterials.value.find((item) => item.sku === sku.value) ?? null);
+// Pelo SKU, na base inteira: o link direto e a recarga abrem o insumo de qualquer
+// página, não só da primeira (beta 05/11, CMP-03).
+const material = computed(() => findMaterial(sku.value));
 const { trail } = useRecordTrail(MATERIALS_TRAIL);
 const position = computed(() => recordTrailPosition(trail.value, sku.value));
 const trailCount = computed(() => (position.value ? recordTrailCount(position.value) : ""));

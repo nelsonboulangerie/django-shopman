@@ -25,6 +25,12 @@ const editing = ref<AnnouncementTemplate | null>(null);
 const creating = ref(false);
 const busy = ref(false);
 const removing = ref<AnnouncementTemplate | null>(null);
+// O diálogo fecha com animação: enquanto some, mostra o último modelo, não
+// "Apagar “undefined”?" (beta 05/11, ge:MKT-28).
+const shownRemoval = ref<AnnouncementTemplate | null>(null);
+watch(removing, (target) => {
+  if (target) shownRemoval.value = target;
+});
 const draftOwner = useMarketingDraftOwner();
 
 const panelOpen = computed(() => creating.value || editing.value !== null);
@@ -239,12 +245,12 @@ useHead({ title: "Modelos" });
     <NuxtModal
       :open="removing !== null"
       :title="
-        removing?.used_by_campaigns?.length
-          ? `“${removing.name}” está em uso`
-          : `Apagar “${removing?.name}”?`
+        shownRemoval?.used_by_campaigns?.length
+          ? `“${shownRemoval.name}” está em uso`
+          : `Apagar “${shownRemoval?.name ?? ''}”?`
       "
       :description="
-        removing?.used_by_campaigns?.length
+        shownRemoval?.used_by_campaigns?.length
           ? 'Troque o modelo nas campanhas abaixo antes de apagá-lo. Nenhuma alteração foi feita.'
           : 'O modelo será removido. Nada do que já foi disparado muda.'
       "
@@ -255,10 +261,10 @@ useHead({ title: "Modelos" });
         }
       "
     >
-      <template v-if="removing?.used_by_campaigns?.length" #body>
+      <template v-if="shownRemoval?.used_by_campaigns?.length" #body>
         <ul class="space-y-1 text-sm">
           <li
-            v-for="campaign in removing.used_by_campaigns"
+            v-for="campaign in shownRemoval.used_by_campaigns"
             :key="campaign"
             class="flex items-center gap-2"
           >
@@ -279,7 +285,7 @@ useHead({ title: "Modelos" });
             @click="removing = null"
           />
           <NuxtButton
-            v-if="removing?.used_by_campaigns?.length"
+            v-if="shownRemoval?.used_by_campaigns?.length"
             to="/settings/campaigns"
             label="Ver campanhas"
             @click="removing = null"

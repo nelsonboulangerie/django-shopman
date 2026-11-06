@@ -8,9 +8,6 @@ import { ssePath } from "../app/utils/ssePath";
 import { FakeEventSource } from "./support/fakeEventSource";
 
 describe("useUserNotifications: tempo real que reconecta", () => {
-  let mounted!: () => void;
-  let unmount!: () => void;
-
   beforeEach(() => {
     vi.useFakeTimers();
     FakeEventSource.instances = [];
@@ -20,8 +17,6 @@ describe("useUserNotifications: tempo real que reconecta", () => {
     vi.stubGlobal("ssePath", ssePath);
     vi.stubGlobal("useRuntimeConfig", () => ({ app: { baseURL: "/" } }));
     vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { id: 7 } }) }));
-    vi.stubGlobal("onMounted", (fn: () => void) => { mounted = fn; });
-    vi.stubGlobal("onBeforeUnmount", (fn: () => void) => { unmount = fn; });
     const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
     vi.stubGlobal("document", { ...listeners, visibilityState: "visible" });
     vi.stubGlobal("window", listeners);
@@ -33,8 +28,8 @@ describe("useUserNotifications: tempo real que reconecta", () => {
 
   it("depois do 502 recria o stream com backoff e refaz o fetch ao reabrir", async () => {
     const onPush = vi.fn();
-    const { realtime } = useUserNotifications(onPush);
-    mounted();
+    const { realtime, start } = useUserNotifications(onPush);
+    const stop = start();
 
     const first = FakeEventSource.instances[0]!;
     expect(first.url).toBe("/sse/notifications");
@@ -64,7 +59,7 @@ describe("useUserNotifications: tempo real que reconecta", () => {
     expect(realtime.value).toBe("live");
     expect(onPush).toHaveBeenCalledTimes(2);
 
-    unmount();
+    stop();
     expect(FakeEventSource.alive()).toHaveLength(0);
   });
 });

@@ -47,9 +47,15 @@ export function pendingStatusDisplay(row: ClosingPendingProduction): string {
   return row.is_overdue ? `${row.status_label} (atrasada)` : row.status_label;
 }
 
-/** Contagem cega: só dígitos (quantidades inteiras, nunca negativas). */
+/**
+ * Contagem cega: só dígitos (quantidades inteiras, nunca negativas).
+ *
+ * O que vem depois da vírgula ou do ponto cai fora, em vez de colar nos dígitos
+ * de antes: "3,5" virava 35 em silêncio, dez vezes a sobra, e a contagem é cega,
+ * então o erro só aparecia como diferença na retaguarda (beta 05/11, PDV-12).
+ */
 export function sanitizeQtyInput(raw: string): string {
-  return raw.replace(/\D/g, "");
+  return String(raw ?? "").split(/[.,]/)[0]!.replace(/\D/g, "");
 }
 
 /** O formulário só envia quando TODO item tem uma contagem explícita. */
@@ -158,7 +164,7 @@ export function closingSteps(input: {
   dayClosed: boolean;
 }): ClosingStepView[] {
   const cash: ClosingStepView = input.cashOpen === false
-    ? { key: "cash", label: "Fechar caixa", detail: "conferido", state: "done" }
+    ? { key: "cash", label: "Fechar caixa", detail: "contado", state: "done" }
     : {
         key: "cash",
         label: "Fechar caixa",
@@ -169,7 +175,7 @@ export function closingSteps(input: {
   const count: ClosingStepView = {
     key: "count",
     label: "Contar a vitrine",
-    detail: input.dayClosed ? "conferido" : input.total ? `${input.counted} de ${input.total}` : "nada a contar",
+    detail: input.dayClosed ? "contado" : input.total ? `${input.counted} de ${input.total}` : "nada a contar",
     state: countDone ? "done" : input.step === "count" ? "current" : "todo",
   };
   const day: ClosingStepView = {

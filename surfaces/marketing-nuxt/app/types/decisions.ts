@@ -82,6 +82,13 @@ export interface DecisionQueue {
   active_campaign_count: number;
 }
 
+/** O que quem olha a fila pode fazer: decidir anúncios e disparar campanhas. */
+export interface DecisionQueueViewer {
+  can_decide: boolean;
+  can_fire: boolean;
+}
+
 export interface DecisionQueueResponse {
   queue: DecisionQueue;
+  viewer: DecisionQueueViewer;
 }

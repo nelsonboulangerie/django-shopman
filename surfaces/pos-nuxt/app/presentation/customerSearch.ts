@@ -38,6 +38,23 @@ export function formatCpf(value: string): string {
 
 /** Eco do input: quando a digitação numérica fecha um CPF VÁLIDO, o campo ganha a
  *  máscara (idempotente; digitação parcial e telefone seguem crus). */
+/**
+ * O telefone como se fala no balcão: ``+5543991111111`` vira ``(43) 99111-1111``.
+ *
+ * A busca de cliente mostrava o E.164 cru, e o detalhe da encomenda mostrava o
+ * formatado (beta test de 05/11/2026). Número de fora do Brasil, ou que não tem
+ * o tamanho de um telefone daqui, sai como veio.
+ */
+export function formatPhoneDisplay(value: string): string {
+  const raw = (value || "").trim();
+  let digits = digitsOnly(raw);
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) digits = digits.slice(2);
+  else if (raw.startsWith("+")) return raw;
+  if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return raw;
+}
+
 export function maskQueryIfCpf(query: string): string {
   if (!isNumericQuery(query)) return query;
   if (!isValidCpf(query)) return query;

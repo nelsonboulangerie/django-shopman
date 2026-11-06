@@ -79,7 +79,7 @@ useOperatorWindowTitle();
         :switcher-sections="sections"
         default-form="floor"
         floor-bar
-        label="Telas da produção"
+        label="Seções da Produção"
         :operator-name="operator?.name"
         @lock="lock"
       >
@@ -94,13 +94,7 @@ useOperatorWindowTitle();
           <NuxtPage />
         </div>
       </OperatorSuiteShell>
-      <main v-else-if="surface.showForbidden" class="grid min-h-dvh flex-1 place-items-center p-4">
-        <NuxtEmpty
-          icon="i-lucide-shield-x"
-          title="Seu acesso não inclui a Produção"
-          description="Peça a um responsável a permissão de acesso. Entrar novamente não concede essa permissão."
-        />
-      </main>
+      <OperatorSurfaceForbidden v-else-if="surface.showForbidden" :perm="OPERATOR_PERM" />
       <main
         v-else-if="surface.showChecking"
         class="grid min-h-dvh flex-1 place-items-center p-4"

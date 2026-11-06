@@ -166,6 +166,7 @@ from .operations import (
     OperatorEligibleView,
     OperatorLockView,
     OperatorLoginView,
+    OperatorLogoutView,
     OperatorPinChangeView,
     OperatorPinResetView,
     OperatorSessionView,
@@ -239,6 +240,7 @@ from .operations import (
     POSCustomerSearchView,
     POSDanfeEscposView,
     POSEmitFiscalView,
+    POSManagerApprovalCheckView,
     POSMovementView,
     POSPaymentStatusView,
     POSPreorderDetailView,
@@ -464,6 +466,8 @@ urlpatterns = [
     path("operator/eligible/", OperatorEligibleView.as_view(), name="api-backstage-operator-eligible"),
     path("operator/unlock/", OperatorUnlockView.as_view(), name="api-backstage-operator-unlock"),
     path("operator/lock/", OperatorLockView.as_view(), name="api-backstage-operator-lock"),
+    # Sair deste dispositivo: encerra a sessão (o vínculo de posto fica).
+    path("operator/logout/", OperatorLogoutView.as_view(), name="api-backstage-operator-logout"),
     # "Perdi meu crachá": ativo, pela própria pessoa, sem esperar uso indevido.
     path("operator/badge/lost/", OperatorBadgeLostView.as_view(), name="api-backstage-operator-badge-lost"),
     path("operator/pin/change/", OperatorPinChangeView.as_view(), name="api-backstage-operator-pin-change"),
@@ -1303,6 +1307,11 @@ urlpatterns = [
     path("pos/customer/lookup/", POSCustomerLookupView.as_view(), name="api-backstage-pos-customer-lookup"),
     path("pos/customer/search/", POSCustomerSearchView.as_view(), name="api-backstage-pos-customer-search"),
     path("pos/customer/resolve/", POSCustomerResolveView.as_view(), name="api-backstage-pos-customer-resolve"),
+    path(
+        "pos/manager-approval/check/",
+        POSManagerApprovalCheckView.as_view(),
+        name="api-backstage-pos-manager-approval-check",
+    ),
     path("pos/customer/merge/", POSCustomerMergeView.as_view(), name="api-backstage-pos-customer-merge"),
     path(
         "pos/customer/contact/release/",

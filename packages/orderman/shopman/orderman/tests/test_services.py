@@ -476,3 +476,24 @@ class TestCustomerOrderHistoryService(TestCase):
         assert orders[0].order_ref == "ORD-HIST-001"
         assert stats.total_orders == 1
         assert stats.total_spent_q == 2500
+
+    def test_stats_sum_sealed_total_without_snapshot_pricing(self):
+        """ge:BI-02: pedido do PDV/conta não tem snapshot.pricing; o gasto vem de total_q."""
+        for index in (1, 2):
+            Order.objects.create(
+                ref=f"ORD-HIST-NOPRICING-{index}",
+                channel_ref="pos",
+                session_key=f"sess-hist-nopricing-{index}",
+                status=Order.Status.COMPLETED,
+                snapshot={"items": [{"sku": "SKU-1"}]},
+                data={"customer_ref": "CUST-HIST-NOPRICING"},
+                total_q=5000,
+            )
+
+        stats = CustomerOrderHistoryService.get_customer_stats("CUST-HIST-NOPRICING")
+        orders = CustomerOrderHistoryService.list_customer_orders("CUST-HIST-NOPRICING")
+
+        assert stats.total_orders == 2
+        assert stats.total_spent_q == 10000
+        assert stats.average_order_q == 5000
+        assert [order.total_q for order in orders] == [5000, 5000]

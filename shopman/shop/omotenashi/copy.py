@@ -307,8 +307,26 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    # O rail da home sem fornada recente nele: os mais pedidos e o cardápio.
+    "HOME_FEATURED_HEADING": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Os mais pedidos",
+                message="Disponibilidade em tempo real",
+            ),
+        },
+    },
+    # O rail da home sem fornada recente e sem mais pedidos: a ordem do cardápio.
+    "HOME_MENU_RAIL_HEADING": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Do nosso cardápio",
+                message="Disponibilidade em tempo real",
+            ),
+        },
+    },
     "HOME_HOW_IT_WORKS_HEADING": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Como Funciona")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Como funciona")},
     },
     "HOME_FAQ_HEADING": {
         WILDCARD: {

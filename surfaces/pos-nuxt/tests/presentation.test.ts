@@ -43,12 +43,15 @@ import {
   paymentProofView,
   paymentRemainingQ,
   qrCodeSrc,
+  splitBaseRemainingQ,
+  splitDraftTender,
   splitHint,
   splitShareQ,
   tenderLineView,
   tenderSumQ,
 } from "../app/presentation/payment";
 import {
+  amountEcho,
   amountInputError,
   amountToQ,
   canRegisterMovement,
@@ -84,7 +87,9 @@ import {
 } from "../app/presentation/moveLines";
 import {
   allLinesFired,
+  kitchenBoundSkus,
   kitchenHandoffNote,
+  kitchenRoutedSkus,
   kitchenSurplusQty,
   fireBarView,
   firedCount,
@@ -720,6 +725,24 @@ describe("presentation/cash — valores explícitos (abrir/fechar caixa)", () =>
     expect(amountToQ("10,555")).toBeNull();
   });
 
+  // Beta 05/11 (PDV-01): "5.000,00", que é como a tela escreve o valor de volta,
+  // era "Valor ilegível", enquanto "5000" passava calado como R$ 5.000,00.
+  it("amountToQ aceita milhar com vírgula decimal, como o servidor", () => {
+    expect(amountToQ("5.000,00")).toBe(500000);
+    expect(amountToQ("R$ 1.234,56")).toBe(123456);
+    expect(amountToQ("12,")).toBe(1200);
+    expect(amountToQ("1.2,00")).toBeNull();
+    expect(amountToQ("12,,30")).toBeNull();
+  });
+
+  it("amountEcho diz o valor por extenso antes de registrar", () => {
+    expect(amountEcho("5000")).toBe(formatBRL(500000));
+    expect(amountEcho("50,00")).toBe(formatBRL(5000));
+    expect(amountEcho("")).toBe("");
+    expect(amountEcho("abc")).toBe("");
+    expect(amountEcho("0")).toBe("");
+  });
+
   it("parseAmountToQ continua esmagando ilegível em 0 (contrato do troco)", () => {
     expect(parseAmountToQ("120,50")).toBe(12050);
     expect(parseAmountToQ("abc")).toBe(0);
@@ -809,7 +832,10 @@ describe("presentation/cash — pedido de troco (o dinheiro não anda)", () => {
       ref: "a1", amount_q: 10000, amount_display: "R$ 100,00",
       denominations: [500, 50], note: "", requested_by: "marina", requested_at: "",
     };
-    expect(changeRequestSummary(base, denominacoes)).toBe("R$ 100,00 · em 5, 0,50");
+    expect(changeRequestSummary(base, denominacoes)).toBe("R$ 100,00 em nota de R$ 5 e moeda de R$ 0,50");
+    // Beta 05/11 (PDV-24): "em 2" não dizia 2 o quê.
+    expect(changeRequestSummary({ ...base, denominations: [2000, 500] }, denominacoes))
+      .toBe("R$ 100,00 em notas de R$ 20 e R$ 5");
   });
 
   // Sem denominação é um pedido INTEIRO, não um pedido pela metade: o gerente
@@ -1340,6 +1366,24 @@ describe("atalhos das formas de pagamento", () => {
   });
 });
 
+describe("dividir a conta depois de uma forma lançada sozinha", () => {
+  const rascunho = { method: "debit", amount_q: 1200, collection: "terminal" as const, _virgin: true };
+
+  it("a forma intocada com o total inteiro é rascunho: as prévias dividem o TOTAL", () => {
+    // Beta test de 05/11/2026: o modal oferecia "R$ 0,00" de 2 a 6 pessoas.
+    expect(splitDraftTender([rascunho], 1200)).toBe(rascunho);
+    expect(splitBaseRemainingQ([rascunho], 1200, 0)).toBe(1200);
+    expect(splitShareQ(1200, 2, 0, splitBaseRemainingQ([rascunho], 1200, 0))).toBe(600);
+  });
+
+  it("forma editada, parcial ou acompanhada não é rascunho", () => {
+    expect(splitDraftTender([{ ...rascunho, _virgin: false }], 1200)).toBeNull();
+    expect(splitDraftTender([{ ...rascunho, amount_q: 600 }], 1200)).toBeNull();
+    expect(splitDraftTender([rascunho, { ...rascunho, amount_q: 0 }], 1200)).toBeNull();
+    expect(splitBaseRemainingQ([{ ...rascunho, _virgin: false }], 1200, 0)).toBe(0);
+  });
+});
+
 describe("dividir a conta — a máquina faz a conta, não o operador", () => {
   it("dois iguais numa conta par", () => {
     expect(splitShareQ(10000, 2, 0, 10000)).toBe(5000);
@@ -1627,6 +1671,33 @@ describe("a frase da cozinha no checkout conta unidades", () => {
 
   it("carrinho vazio não fala", () => {
     expect(kitchenHandoffNote([])).toBe("");
+  });
+
+  it("no balcão, só promete cozinha ao que vai mesmo; pão de vitrine não (beta 05/11, PDV-09)", () => {
+    const products = [
+      { sku: "CAPU", kitchen_station: "Cafés", kitchen_prep: true },
+      { sku: "CROI", kitchen_station: "Encomendas", kitchen_prep: false },
+      { sku: "BAG", kitchen_station: "Encomendas", kitchen_prep: false },
+      { sku: "AGUA" },
+    ];
+    const counter = kitchenBoundSkus(products, { counter: true });
+    expect(counter).toEqual({ CAPU: "Cafés" });
+    expect(kitchenBoundSkus(products, { counter: false })).toEqual({ CAPU: "Cafés", CROI: "Encomendas", BAG: "Encomendas" });
+
+    const goes = (item: POSCartItem) => Boolean(counter[item.sku]);
+    expect(kitchenHandoffNote([linha({ sku: "CROI", qty: 4 }), linha({ sku: "BAG", qty: 2 })], { goesToKitchen: goes }))
+      .toBe("");
+    expect(kitchenHandoffNote([linha({ sku: "CROI", qty: 4 }), linha({ sku: "CAPU", qty: 1 })], { goesToKitchen: goes }))
+      .toBe("Ao finalizar, o item vai para a cozinha.");
+  });
+
+  it("a comanda continua vendo a separação: o Enviar dela manda tudo que tem estação (revisão #2152)", () => {
+    const products = [
+      { sku: "CAPU", kitchen_station: "Cafés", kitchen_prep: true },
+      { sku: "SUCO", kitchen_station: "Bar", kitchen_prep: false },
+      { sku: "AGUA" },
+    ];
+    expect(kitchenRoutedSkus(products)).toEqual({ CAPU: "Cafés", SUCO: "Bar" });
   });
 });
 
