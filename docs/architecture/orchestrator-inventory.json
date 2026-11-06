@@ -7087,7 +7087,6 @@
             "_copy_message",
             "_copy_title",
             "_courier_tracking_url",
-            "_display_status_key",
             "_eta_at",
             "_eta_not_before",
             "_event_for_status",
@@ -7125,6 +7124,7 @@
             "build_tracking",
             "build_tracking_status",
             "convenience_pending",
+            "display_status_key",
             "logger"
           ]
         }
