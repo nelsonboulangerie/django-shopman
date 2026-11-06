@@ -126,8 +126,7 @@ const unfilledItemName = computed(
   () => (closing.value ? firstUnfilledItemName(countItems.value, quantities) : ""),
 );
 
-// Só dígitos no @input: quantidade é inteira e nunca negativa, e o que não
-// for número não deve nem chegar a morar no campo.
+// O sinal negativo permanece visível para ser corrigido, nunca vira positivo.
 function setQuantity(sku: string, raw: string) {
   quantities[sku] = sanitizeQtyInput(raw);
 }
@@ -815,6 +814,9 @@ const discrepancyColumns = [
                   <div class="min-w-0 flex-1">
                     <p class="truncate op-title" :title="item.name">{{ item.name }}</p>
                     <p class="op-micro font-mono text-muted-foreground">{{ item.sku }}</p>
+                    <p v-if="/[-−]/.test(quantities[item.sku] || '')" :id="`count-error-${item.sku}`" class="text-sm text-destructive" role="alert">
+                      Informe zero ou uma quantidade inteira positiva.
+                    </p>
                   </div>
                   <span
                     class="inline-flex h-6 shrink-0 items-center rounded-full border px-2 op-micro font-semibold"
@@ -822,8 +824,7 @@ const discrepancyColumns = [
                   >
                     {{ closingBadge(item.classification).label }}
                   </span>
-                  <!-- Só dígitos no @input: o "1,5" colado não chega a morar no
-                       campo, e o CTA não trava por um caractere invisível. -->
+                  <!-- Entrada negativa fica visível e bloqueia a revisão. -->
                   <!-- Sem placeholder "0": um zero cinza parece contado, e a
                        contagem cega começa VAZIA. -->
                   <NuxtInput
@@ -835,6 +836,8 @@ const discrepancyColumns = [
                     :ui="{ base: 'text-right tabular-nums font-semibold' }"
                     :disabled="closing.already_closed || submitting"
                     :aria-label="`Sobras de ${item.name}`"
+                    :aria-invalid="/[-−]/.test(quantities[item.sku] || '') ? true : undefined"
+                    :aria-describedby="/[-−]/.test(quantities[item.sku] || '') ? `count-error-${item.sku}` : undefined"
                     data-count-input
                     @update:model-value="setQuantity(item.sku, String($event ?? ''))"
                     @keydown.enter.prevent="focusNextCount(index)"

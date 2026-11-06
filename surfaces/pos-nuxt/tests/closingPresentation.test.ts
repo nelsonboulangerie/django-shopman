@@ -49,14 +49,14 @@ describe("presentation/closing — fechamento do dia (contagem cega)", () => {
 
   it("sanitiza a contagem para dígitos", () => {
     expect(sanitizeQtyInput("12a")).toBe("12");
-    expect(sanitizeQtyInput("-3")).toBe("3");
+    expect(sanitizeQtyInput("-3")).toBe("-3");
     expect(sanitizeQtyInput("")).toBe("");
   });
 
   // Beta 05/11 (PDV-12): "3,5" colava os dígitos e virava 35, dez vezes a sobra.
   it("corta no separador em vez de juntar os dígitos", () => {
     expect(sanitizeQtyInput("3,5")).toBe("3");
-    expect(sanitizeQtyInput("-3,5abc😀")).toBe("3");
+    expect(sanitizeQtyInput("-3,5abc😀")).toBe("-3,5abc😀");
     expect(sanitizeQtyInput("12.0")).toBe("12");
     expect(sanitizeQtyInput(",5")).toBe("");
   });

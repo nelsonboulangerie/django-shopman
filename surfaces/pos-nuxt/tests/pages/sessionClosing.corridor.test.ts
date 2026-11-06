@@ -73,6 +73,21 @@ describe("Fim do dia em corredor", () => {
     expect(page.find("[data-closing-steps]").text()).not.toContain("R$");
   });
 
+  it("uma sobra negativa permanece visível e impede revisar a contagem", async () => {
+    const page = await openScreen(projection());
+    const [bag, cro] = page.findAll("input[data-count-input]");
+    await bag!.setValue("-1");
+    await cro!.setValue("0");
+    expect((bag!.element as HTMLInputElement).value).toBe("-1");
+    expect(bag!.attributes("aria-invalid")).toBe("true");
+    expect(page.text()).toContain("Informe zero ou uma quantidade inteira positiva.");
+    expect(page.find("[data-closing-review]").attributes("disabled")).toBeDefined();
+    await bag!.setValue("1");
+    expect(bag!.attributes("aria-invalid")).not.toBe("true");
+    expect(page.find("[data-closing-review]").attributes("disabled")).toBeUndefined();
+    page.unmount();
+  });
+
   it("contar tudo leva ao resumo em peças, e o resumo pergunta do dia estranho", async () => {
     const page = await openScreen(projection());
     const [bag, cro] = page.findAll("input[data-count-input]");

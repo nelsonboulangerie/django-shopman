@@ -3076,7 +3076,7 @@ def review_line_prices(priced_lines) -> dict[str, dict]:
     Mesmo formato do eco do salvar (:func:`tab_line_prices`): as linhas que a
     revisão devolve (``PosSaleReview.priced_lines``) já têm o feitio da linha da
     comanda, e o desconto manual já foi decidido contra o automático ali. Sem
-    comanda vêm todas; com comanda, as que o motor reviu com desconto manual.
+    comanda ou com ela, vêm todas, inclusive ao remover o último desconto.
     """
     return {
         line["line_id"]: _tab_line_price_fields(line, {})
