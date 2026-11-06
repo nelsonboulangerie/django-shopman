@@ -25,9 +25,9 @@ def channel(monkeypatch):
     state = {"config": _config(method=["pix", "card"])}
     monkeypatch.setattr(ChannelConfig, "for_channel", classmethod(lambda cls, ref: state["config"]))
     monkeypatch.setattr(faq, "channel_capabilities", lambda ref: SimpleNamespace(fulfillment_types=("pickup", "delivery")))
-    from shopman.shop.services import preorder_dates
+    from shopman.shop.projections import checkout_context
 
-    monkeypatch.setattr(preorder_dates, "max_preorder_days", lambda: 7)
+    monkeypatch.setattr(checkout_context, "preorder_config", lambda: (7, []))
     return state
 
 

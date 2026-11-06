@@ -18,10 +18,8 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
-
-from shopman.utils.monetary import monetary_mult
 
 from shopman.shop import product_options
 
@@ -523,7 +521,9 @@ def _build_line(
         listed = disc["original_price_q"]
     list_price_q = max(unit_price_q, int(listed)) if listed is not None else unit_price_q
     list_total_q = (
-        monetary_mult(Decimal(str(qty)), list_price_q)
+        # Mesma conta do ``monetary_mult`` (meio para cima), sem importar o
+        # formatador: projection de dados não carrega aparência (regra R-B).
+        int((Decimal(str(qty)) * list_price_q).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
         if list_price_q != unit_price_q
         else line_total_q
     )

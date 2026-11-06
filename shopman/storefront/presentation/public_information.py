@@ -63,11 +63,11 @@ def _payment_faq(channel_ref: str) -> FAQItemProjection | None:
 
 def _preorder_faq(channel_ref: str) -> FAQItemProjection | None:
     from shopman.shop.config import ChannelConfig
-    from shopman.shop.services.preorder_dates import max_preorder_days
+    from shopman.shop.projections.checkout_context import preorder_config
 
     if not ChannelConfig.for_channel(channel_ref).stock.preorder:
         return None
-    days = max_preorder_days()
+    days = preorder_config()[0]
     if days <= 0:
         return None
     window = "1 dia" if days == 1 else f"{days} dias"
