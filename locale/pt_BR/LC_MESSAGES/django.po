@@ -79,6 +79,43 @@ msgstr "Mostrar/ocultar senha"
 msgid "View traceback"
 msgstr "Ver detalhes do erro"
 
+# Beta test 05/11/2026 (ADM-11): placeholders do Unfold que ainda saíam em inglês.
+msgid "Select action"
+msgstr "Escolha uma ação"
+
+msgid "Select action to run"
+msgstr "Escolha a ação"
+
+msgid "Select value"
+msgstr "Escolha um valor"
+
+msgid "Date"
+msgstr "Data"
+
+msgid "Date from"
+msgstr "Data inicial"
+
+msgid "Date to"
+msgstr "Data final"
+
+msgid "Cancel"
+msgstr "Cancelar"
+
+msgid "Return to site"
+msgstr "Voltar ao site"
+
+msgid "Search apps and models..."
+msgstr "Buscar telas e cadastros..."
+
+msgid "Light"
+msgstr "Claro"
+
+msgid "Dark"
+msgstr "Escuro"
+
+msgid "System"
+msgstr "Do sistema"
+
 msgid "Go back"
 msgstr "Voltar"
 

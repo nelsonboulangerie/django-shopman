@@ -120,7 +120,7 @@ def _audit_links(request) -> list[dict]:
 
 def dashboard_callback(request, context):
     """Populate admin dashboard with config shortcuts, audit trails and alerts."""
-    proj = build_dashboard()
+    proj = build_dashboard(request.user)
 
     context.update({
         # Config + auditoria
@@ -195,6 +195,23 @@ def _build_ratings_table(rows):
     }
 
 
+def _short_message(message: str, width: int = 100) -> str:
+    """Corta na fronteira de palavra, com reticências, e sem o marcador de dedupe.
+
+    O ``[:100]`` cortava no meio da palavra ("O item pode faltar na separ") e o
+    leitor não sabia se a frase tinha acabado (beta test 05/11/2026, ADM-12).
+    """
+    from shopman.backstage.projections.alerts import readable_message
+
+    text = " ".join(readable_message(message).split())
+    if len(text) <= width:
+        return text
+    cut = text[: width - 1]
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" ,.;:") + "…"
+
+
 def _build_operator_alerts_table(alerts):
     """Operator alerts table for dashboard."""
     rows = []
@@ -204,7 +221,7 @@ def _build_operator_alerts_table(alerts):
                 SEVERITY_LABEL.get(alert.severity, alert.severity),
                 SEVERITY_BADGE_TYPE.get(alert.severity, "base"),
             ),
-            alert.message[:100],
+            _short_message(alert.message),
             alert.order_ref or "—",
             alert.created_at_display,
         ])

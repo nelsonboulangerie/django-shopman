@@ -7,18 +7,18 @@
     {% include "unfold/helpers/site_branding.html" %}
 {% endblock %}
 
-{# Layout: as GRADES continuam sendo `div` porque o Unfold não tem componente de
+{% comment %} Layout: as GRADES continuam sendo `div` porque o Unfold não tem componente de
    grade (o próprio demo oficial usa as classes). Tudo o mais que era `div` de
    layout virou `flex.html`, e os números grandes viraram `title.html` em vez de
-   `span` com text-3xl inventado. #}
+   `span` com text-3xl inventado. {% endcomment %}
 {% block content %}
 {% component "unfold/components/flex.html" with col=1 class="gap-8" %}
 
     {# ── ROW 1: Configuração + Auditoria + Textos ───────────────── #}
     <div class="grid grid-cols-1 gap-4 lg:gap-8 lg:grid-cols-3">
 
-        {# Atalhos de configuração. O card só existe se sobrou link: quem não
-           alcança nenhuma dessas telas não ganha uma caixa vazia com título. #}
+        {% comment %} Atalhos de configuração. O card só existe se sobrou link: quem não
+           alcança nenhuma dessas telas não ganha uma caixa vazia com título. {% endcomment %}
         {% if config_links %}
             {% component "unfold/components/card.html" with title="Configuração" %}
                 {% component "unfold/components/flex.html" with col=1 class="gap-3" %}

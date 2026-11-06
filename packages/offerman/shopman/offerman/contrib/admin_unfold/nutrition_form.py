@@ -16,6 +16,7 @@ from shopman.offerman.nutrition import (
     NUTRIENT_LABELS_PT,
     NutritionFacts,
 )
+from shopman.utils.contrib.admin_unfold.money import MoneyReaisField
 from unfold.widgets import (
     UnfoldAdminDecimalFieldWidget,
     UnfoldAdminTextInputWidget,
@@ -115,6 +116,10 @@ def _join_list(value: object) -> str:
 
 class ProductAdminForm(forms.ModelForm):
     """Form that exposes nutrition_facts as flat per-nutrient fields."""
+
+    # Em reais na tela, centavos no banco: com o inteiro cru, quem digitava 15
+    # publicava o produto a R$ 0,15 (beta test 05/11/2026, ADM-09).
+    base_price_q = MoneyReaisField(label="Preço base", help_text="Em reais. Ex.: 15,00.")
 
     image_url = forms.URLField(
         label="URL da imagem",

@@ -139,6 +139,21 @@ class RuleConfigForm(forms.ModelForm):
         return instance
 
 
+
+def _param_summary(value) -> str:
+    """Um parâmetro numa linha de lista: o valor simples aparece; a estrutura, contada.
+
+    A coluna mostrava o dict cru do Python (``pairings=[{'when': ...}]``, beta
+    test 05/11/2026, ADM-11). O detalhe mora na tela da regra, editado como campo.
+    """
+    if isinstance(value, bool):
+        return "sim" if value else "não"
+    if isinstance(value, (list, tuple)):
+        return "1 item" if len(value) == 1 else f"{len(value)} itens"
+    if isinstance(value, dict):
+        return "1 campo" if len(value) == 1 else f"{len(value)} campos"
+    return str(value)
+
 @admin.register(RuleConfig)
 class RuleConfigAdmin(ModelAdmin):
     form = RuleConfigForm
@@ -225,7 +240,7 @@ class RuleConfigAdmin(ModelAdmin):
         params = obj.params if isinstance(obj.params, dict) else {}
         if not params:
             return "—"
-        return ", ".join(f"{k}={v}" for k, v in params.items())
+        return " · ".join(f"{k}: {_param_summary(v)}" for k, v in params.items())
 
     @display(description="carrega?", label={"Sim": "success", "NÃO CARREGA": "danger"})
     def loads_display(self, obj):

@@ -32,6 +32,7 @@ from shopman.offerman.models import (
 from shopman.utils.admin.mixins import AutofillInlineMixin
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
+from shopman.utils.contrib.admin_unfold.money import MoneyReaisField
 from shopman.utils.monetary import format_money
 from taggit.forms import TagWidgetMixin
 from taggit.managers import TaggableManager
@@ -192,11 +193,40 @@ class CollectionAdmin(BaseModelAdmin):
 # =============================================================================
 
 
+class ListingItemAdminForm(forms.ModelForm):
+    """O preço do item na lista em reais, como o preço base do produto.
+
+    O produto passou a pedir reais (ADM-09); com o item da lista ainda em
+    centavos, a mesma tela do produto mostrava "15,00" no preço base e "1500"
+    no preço do canal, duas grandezas para o mesmo número.
+    """
+
+    # Opcional: em branco, ``ListingAdmin.save_formset`` usa o preço base.
+    price_q = MoneyReaisField(
+        label="Preço",
+        required=False,
+        help_text="Em reais. Em branco, vale o preço base do produto.",
+    )
+
+    class Meta:
+        model = ListingItem
+        fields = "__all__"
+
+
+class ProductListingItemAdminForm(ListingItemAdminForm):
+    """Na tela do produto o item já existe: o preço é obrigatório."""
+
+    price_q = MoneyReaisField(label="Preço", help_text="Em reais. Ex.: 15,00.")
+
+
 class ListingItemInline(AutofillInlineMixin, BaseTabularInline):
     model = ListingItem
+    form = ListingItemAdminForm
     extra = 1
     autocomplete_fields = ["product"]
-    autofill_fields = {"product": {"price_q": "base_price_q"}}
+    # ``base_price`` (reais), não ``base_price_q``: o campo de destino é em reais,
+    # e copiar os centavos faria R$ 15,00 virar R$ 1.500,00.
+    autofill_fields = {"product": {"price_q": "base_price"}}
     fields = ["product", "price_q", "min_qty", "is_published", "is_sellable"]
 
 
@@ -287,6 +317,7 @@ class ProductCollectionItemInline(BaseTabularInline):
 class ProductListingItemInline(BaseTabularInline):
     """Inline to manage product's listing (per-channel pricing/visibility)."""
     model = ListingItem
+    form = ProductListingItemAdminForm
     extra = 0
     fields = ["listing", "price_q", "is_published", "is_sellable", "min_qty"]
     readonly_fields = ["listing"]
@@ -358,7 +389,8 @@ class ProductAdmin(_ProductImportExportBase):
     form = ProductAdminForm
     resource_classes = [ProductResource]
 
-    autocomplete_extra_fields = ["base_price_q"]
+    # ``base_price`` em reais alimenta o preço do item da lista (ListingItemInline).
+    autocomplete_extra_fields = ["base_price_q", "base_price"]
     list_display = [
         "product_header",
         "formatted_price",

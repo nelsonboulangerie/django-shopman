@@ -434,3 +434,52 @@ def test_bulk_refund_action_no_longer_exists():
 
     model_admin = django_admin.site._registry[PaymentIntent]
     assert "refund_selected" not in (model_admin.actions or [])
+
+
+# ── o status diz quanto voltou (beta test 05/11/2026, ADM-07) ──────────
+
+
+def _refunded_without_gateway(amount_q: int, refund_q: int) -> PaymentIntent:
+    intent = PaymentService.create_intent(f"ORD-STATUS{PaymentIntent.objects.count()}", amount_q, "cash")
+    PaymentService.authorize(intent.ref)
+    PaymentService.capture(intent.ref)
+    PaymentService.refund(intent.ref, amount_q=refund_q, reason="teste")
+    return PaymentService.get(intent.ref)
+
+
+def test_estorno_parcial_diz_quanto_voltou_e_de_quanto():
+    from shopman.payman.contrib.admin_unfold.admin import status_label
+
+    intent = _refunded_without_gateway(3200, 100)
+    assert intent.status == PaymentIntent.Status.REFUNDED
+    assert status_label(intent) == "Estornado em parte: R$ 1,00 de R$ 32,00"
+
+
+def test_estorno_total_diz_estornado():
+    from shopman.payman.contrib.admin_unfold.admin import status_label
+
+    assert status_label(_refunded_without_gateway(3200, 3200)) == "Estornado"
+
+
+def test_titulo_da_cobranca_nao_mostra_codigo_cru():
+    intent = _refunded_without_gateway(3200, 100)
+    assert str(intent) == f"{intent.ref} (Dinheiro)"
+
+
+def test_transacao_fala_em_reais_e_nao_em_centavos_crus():
+    """ADM-11: a linha dizia "capture 3200q → PI-..."."""
+    intent = _refunded_without_gateway(3200, 100)
+    capture = intent.transactions.get(type=PaymentTransaction.Type.CAPTURE)
+    text = str(capture)
+    assert "3200q" not in text and "capture" not in text
+    assert "R$ 32,00" in text and intent.ref in text
+
+
+def test_detalhe_da_cobranca_mostra_valor_em_reais_e_estorno_parcial(refunder_client):
+    intent = _refunded_without_gateway(3200, 100)
+    response = refunder_client.get(f"/admin/payman/paymentintent/{intent.pk}/change/")
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert "R$ 32,00" in body
+    assert "ESTORNADO EM PARTE: R$ 1,00 DE R$ 32,00" in body
+    assert "(cash/refunded)" not in body

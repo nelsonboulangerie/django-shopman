@@ -35,7 +35,7 @@ def _clear_registry_cache():
 
 def _form_data(**overrides):
     data = {
-        "sku": "PAO", "name": "Pão", "unit": "un", "base_price_q": "100",
+        "sku": "PAO", "name": "Pão", "unit": "un", "base_price_q": "1,00",
         "availability_policy": "planned_ok", "metadata": "{}",
         "nutrition_facts": "{}", "is_published": "on", "is_sellable": "on",
         "allergens_text": "", "dietary_info_text": "",

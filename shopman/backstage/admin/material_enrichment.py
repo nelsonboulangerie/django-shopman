@@ -7,6 +7,7 @@ from django.contrib import admin, messages
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.utils.dateparse import parse_datetime
+from shopman.utils.formatting import format_local
 from unfold.decorators import action
 from unfold.forms import BaseDialogForm
 from unfold.widgets import UnfoldAdminTextareaWidget, UnfoldBooleanSwitchWidget
@@ -17,7 +18,7 @@ from shopman.shop.services import material_enrichment as enrichment
 
 def _date(iso: str) -> str:
     moment = parse_datetime(iso or "")
-    return moment.strftime("%d/%m/%Y") if moment else "data não registrada"
+    return format_local(moment, "%d/%m/%Y", empty="data não registrada")
 
 
 def _source(entry: dict) -> str:

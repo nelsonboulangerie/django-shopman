@@ -1985,6 +1985,7 @@
             "CouponAdmin",
             "CouponInline",
             "PromotionAdmin",
+            "PromotionAdminForm",
             "PromotionStatusFilter",
             "_set_active"
           ]
@@ -2050,6 +2051,7 @@
             "RuleTypeFilter",
             "_format_time",
             "_param_field_name",
+            "_param_summary",
             "logger"
           ]
         }
@@ -2140,8 +2142,10 @@
             "_oklch_raw_to_hex",
             "_opening_field",
             "_parse_markup_by_collection",
+            "_people",
             "_production_suggestion_defaults",
             "_q_to_reais",
+            "_readonly_form_value",
             "_reais_to_q",
             "_remove_calendar_decision",
             "_replace_calendar_decision",
@@ -6008,8 +6012,11 @@
         {
           "responsibility": "configuração",
           "symbols": [
+            "COUPON_CODE_ERROR",
+            "COUPON_CODE_PATTERN",
             "Coupon",
-            "Promotion"
+            "Promotion",
+            "normalize_coupon_code"
           ]
         }
       ]

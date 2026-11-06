@@ -24,7 +24,7 @@ from shopman.stockman.models import Batch, Hold, HoldStatus, Move, Position, Qua
 from shopman.utils import unfold_link
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge, unfold_badge_numeric
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin
-from shopman.utils.formatting import format_quantity
+from shopman.utils.formatting import format_local, format_quantity
 from unfold.contrib.filters.admin.datetime_filters import RangeDateFilter
 
 # =============================================================================
@@ -133,10 +133,8 @@ class ExpiryStatusFilter(admin.SimpleListFilter):
 
 
 def _format_datetime(dt):
-    """Format datetime as DD/MM/AA . HH:MM."""
-    if dt:
-        return dt.strftime('%d/%m/%y · %H:%M')
-    return '-'
+    """DD/MM/AA · HH:MM na hora da loja (o banco devolve UTC; ADM-04)."""
+    return format_local(dt, '%d/%m/%y · %H:%M', empty='-')
 
 
 def _format_date(d):

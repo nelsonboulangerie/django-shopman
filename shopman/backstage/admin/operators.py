@@ -105,10 +105,14 @@ class PinCredentialAdmin(ModelAdmin):
     )
     list_filter = ("must_change",)
     search_fields = ("user__username", "user__first_name", "user__last_name")
-    readonly_fields = (
-        "user", "pin_hash", "badge_hash", "attempts", "max_attempts",
+    # Sem ``pin_hash`` nem ``badge_hash``: nenhum operador precisa do digest, e um
+    # PIN de 4 dígitos tem 10 mil combinações. Com a chave do HMAC vazada, o hash
+    # na tela vira o PIN (beta test 05/11/2026, ADM-10). Na tela fica o FATO.
+    fields = (
+        "user", "state_display", "badge_display", "attempts", "max_attempts",
         "locked_until", "must_change", "last_verified_at", "created_at", "updated_at",
     )
+    readonly_fields = fields
     ordering = ["user__first_name", "user__username"]
     actions = ["issue_badge", "revoke_badge", "reset_pin", "unlock_pin"]
     actions_list = ["issue_own_pin"]
@@ -297,4 +301,6 @@ class PinCredentialAdmin(ModelAdmin):
         return request.user.has_perm(MANAGE_OPERATORS)
 
     def has_delete_permission(self, request, obj=None):
-        return request.user.has_perm(MANAGE_OPERATORS)
+        # Apagar a credencial é do dono. A gerente tira o acesso de alguém pelas
+        # ações "Resetar PIN" e "Revogar crachá", que deixam rastro e têm volta.
+        return bool(getattr(request.user, "is_superuser", False))

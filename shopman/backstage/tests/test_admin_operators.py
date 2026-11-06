@@ -68,3 +68,26 @@ class PinCredentialAdminTests(TestCase):
 
     def test_no_add_permission(self):
         self.assertFalse(self.admin.has_add_permission(self._request(self.manager)))
+
+    def test_hash_do_pin_e_do_cracha_nunca_aparece(self):
+        """Beta test 05/11/2026, ADM-10: a tela mostrava o HMAC do PIN e do crachá."""
+        self.cred.badge_hash = "c322a7" + "0" * 58
+        self.cred.save(update_fields=["badge_hash"])
+        for campos in (self.admin.fields, self.admin.readonly_fields):
+            self.assertNotIn("pin_hash", campos)
+            self.assertNotIn("badge_hash", campos)
+        from shopman.shop.models import Shop
+
+        Shop.objects.create(name="Loja")
+        self.client.force_login(self.manager)
+        response = self.client.get(f"/admin/doorman/pincredential/{self.cred.pk}/change/")
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertNotIn(self.cred.pin_hash, body)
+        self.assertNotIn(self.cred.badge_hash, body)
+        self.assertNotIn("HMAC", body)
+
+    def test_apagar_credencial_e_so_do_dono(self):
+        self.assertFalse(self.admin.has_delete_permission(self._request(self.manager), self.cred))
+        dono = User.objects.create_superuser("dono-pin", password="x")
+        self.assertTrue(self.admin.has_delete_permission(self._request(dono), self.cred))

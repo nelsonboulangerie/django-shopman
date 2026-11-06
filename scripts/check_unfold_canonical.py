@@ -350,6 +350,17 @@ RUNTIME_BACKSTAGE_SURFACES: tuple[Surface, ...] = (
             "self-contained por design, fora do shell Unfold."
         ),
     ),
+    Surface(
+        id="runtime-admin-403",
+        kind="registered-runtime-backstage",
+        templates=(ROOT / "shopman/backstage/templates/403.html",),
+        replacement=(
+            "Página de acesso negado do Django (`403.html`): o permission_denied a "
+            "renderiza sem o contexto do Admin, então ela usa o layout "
+            "`unfold/layouts/unauthenticated.html` com componentes canônicos e um "
+            "caminho de volta. Não é tela de gestão."
+        ),
+    ),
 )
 
 EXCEPTION_SURFACES: tuple[Surface, ...] = (

@@ -65,9 +65,9 @@ class TerminalForm(forms.ModelForm):
         choices=(
             ("", "Não configurada"),
             (ADAPTER_MANUAL, "Com a chave (o PDV não abre)"),
-            (ADAPTER_AGENT, "Pelo agente local (kick na impressora)"),
+            (ADAPTER_AGENT, "Pelo agente do balcão (abre junto com a impressora)"),
         ),
-        help_text="O agente é um processo na máquina do balcão. Instale com <code>python3 counter_agent.py --install</code>.",
+        help_text="O agente do balcão é um programa no computador do caixa. Quem instala é o suporte.",
     )
     counter_agent_url = forms.URLField(
         label="Endereço do agente do dispositivo",
@@ -75,7 +75,7 @@ class TerminalForm(forms.ModelForm):
         widget=UnfoldAdminURLInputWidget,
         assume_scheme="http",
         initial=DEFAULT_AGENT_URL,
-        help_text="Sempre loopback do próprio balcão. O servidor nunca alcança este endereço: quem chama é o navegador.",
+        help_text="Endereço do agente no próprio computador do balcão. Quem chama é o navegador do caixa, nunca o servidor.",
     )
     drawer_rotate_token = forms.BooleanField(
         label="Gerar um token novo",
@@ -193,12 +193,9 @@ class TerminalForm(forms.ModelForm):
         # age — sem nada escrito em tela dizendo por quê.
         choices=(("", "Nenhuma"),),
         help_text=(
-            "Superusuário não aparece aqui e o servidor o recusa: "
-            "<code>is_superuser</code> curto-circuita toda checagem de permissão, "
-            "e um painel de parede com chave-mestra é o incidente de 20/08 com outro "
-            "nome. Conceda a esta conta só o que a Produção precisa "
-            "(<code>backstage.operate_production</code>), e desative a conta para "
-            "desligar o painel sem ir até ele."
+            "A conta do dono não aparece aqui: ela abre tudo, e um painel de parede "
+            "não pode ter a chave da casa inteira. Dê a esta conta só a permissão da "
+            "Produção, e desative a conta para desligar o painel sem ir até ele."
         ),
     )
     prints_delivery_danfe = forms.BooleanField(
@@ -581,7 +578,7 @@ class TerminalAdmin(_CashmanTerminalAdmin):
                 ),
                 # Quem testa é a estação: só o navegador do balcão alcança a
                 # loopback do agente. Este Admin não tem como chutar a gaveta.
-                "description": "O teste da gaveta fica no próprio PDV (antesala do caixa): só o navegador do balcão alcança o agente local.",
+                "description": "O teste da gaveta se faz no próprio PDV, antes de abrir o caixa: só o computador do balcão alcança o agente.",
             },
         ),
         (

@@ -16,6 +16,7 @@ from django.utils import timezone
 from django.utils.html import escape, format_html, format_html_join
 from django.utils.safestring import mark_safe
 from shopman.utils import unfold_component
+from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin
 from unfold.contrib.forms.widgets import ArrayWidget
 from unfold.decorators import action
@@ -2770,8 +2771,8 @@ _INTEGRATIONS_FIELDSETS = (
         {
             "fields": ("integrations_payment_pix", "integrations_payment_card"),
             "description": (
-                "Escolha o gateway de cada meio de pagamento. Sobreescreve o padrão do "
-                "deployment (settings). Em branco = herda do sistema."
+                "Escolha o gateway de cada meio de pagamento. Sobrescreve o padrão do "
+                "sistema. Em branco, vale o do sistema."
             ),
         },
     ),
@@ -2839,17 +2840,17 @@ _INTEGRATIONS_FIELDSETS = (
             "description": (
                 "A conta para onde o catálogo do canal do Google é enviado. Para mudar, use "
                 "o botão “Google Merchant Center” no alto da página. A chave de acesso "
-                "(service account) fica no deployment, não aqui."
+                "do Google fica na instalação do sistema, não aqui."
             ),
         },
     ),
     (
-        "Canais do sistema (deployment)",
+        "Canais do sistema",
         {
             "fields": ("channel_refs_display",),
             "description": (
-                "Quais canais respondem pela Loja online e pelo PDV. Definidos no "
-                "deployment (settings/env) e exibidos aqui só para conferência."
+                "Quais canais respondem pela Loja online e pelo PDV. Definidos na "
+                "instalação do sistema e exibidos aqui só para conferência."
             ),
         },
     ),
@@ -2889,6 +2890,71 @@ class _ShopSingletonAdmin(ModelAdmin):
         if obj:
             return self.changeform_view(request, str(obj.pk), extra_context=extra_context)
         return super().changelist_view(request, extra_context=extra_context)
+
+    # ── Modo só leitura (quem vê sem poder editar, como a Gerente) ─────────
+    #
+    # Sem permissão de editar, o Django troca cada campo por um
+    # ``AdminReadonlyField``. Os campos que só existem no form (as chaves de
+    # ``Shop.defaults``/``integrations``) não são campo do modelo nem atributo do
+    # admin: o rótulo caía no ``pretty_name`` do nome ("Integrations payment
+    # pix") e o valor em branco (beta test 05/11/2026, ADM-08). Aqui cada um
+    # desses ganha um leitor com o rótulo do form e o valor que o form mostraria.
+
+    def _form_only_fields(self) -> frozenset[str]:
+        cached = type(self).__dict__.get("_form_only_cache")
+        if cached is not None:
+            return cached
+        names = set()
+        form_class = getattr(type(self), "form", None)
+        base_fields = getattr(form_class, "base_fields", {}) or {}
+        model_fields = {f.name for f in self.model._meta.get_fields()}
+        for name in flatten_fieldsets(getattr(type(self), "fieldsets", None) or ()):
+            if name in base_fields and name not in model_fields:
+                names.add(name)
+        result = frozenset(names)
+        type(self)._form_only_cache = result
+        return result
+
+    def __getattr__(self, name):
+        if name.startswith("_") or name not in self._form_only_fields():
+            raise AttributeError(name)
+        field = type(self).form.base_fields[name]
+
+        def reader(obj):
+            return _readonly_form_value(type(self).form, obj, name)
+
+        reader.short_description = field.label or name
+        return reader
+
+
+def _people(count) -> str:
+    """"1 pessoa", "2 pessoas": a tela dizia "Pela fatia 1 pessoas"."""
+    return f"{count} pessoa" if count == 1 else f"{count} pessoas"
+
+
+def _readonly_form_value(form_class, obj, name: str) -> str:
+    """O valor de um campo só do form, como o form o desenharia, em texto."""
+    if obj is None:
+        return "—"
+    cache = getattr(obj, "_readonly_form_cache", None)
+    if cache is None:
+        cache = form_class(instance=obj)
+        obj._readonly_form_cache = cache
+    if name not in cache.fields:
+        return "—"
+    field = cache.fields[name]
+    value = cache[name].value()
+    if value in (None, "", [], ()):
+        return "—"
+    if isinstance(field, forms.BooleanField):
+        return "Sim" if value else "Não"
+    choices = {str(k): v for k, v in getattr(field, "choices", ()) or () if not isinstance(v, (list, tuple))}
+    if choices:
+        values = value if isinstance(value, (list, tuple)) else [value]
+        return ", ".join(str(choices.get(str(v), v)) for v in values)
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value)
+    return str(value)
 
 
 @admin.register(Shop)
@@ -3407,23 +3473,23 @@ class ShopIntegrationsAdmin(_ShopSingletonAdmin):
             "floor": "o piso (a base ainda é pequena para a fatia)",
         }[threshold.binding]
         spend_row = (
-            f"{threshold.from_spend} pessoas"
+            _people(threshold.from_spend)
             if threshold.from_spend is not None
             else "sem teto (custo por mensagem em branco ou zero)"
         )
         rows = (
-            ("Base de clientes", f"{base} pessoas no cadastro ativo"),
-            ("Pela fatia", f"{threshold.from_percent} pessoas"),
+            ("Base de clientes", f"{_people(base)} no cadastro ativo"),
+            ("Pela fatia", _people(threshold.from_percent)),
             ("Pelo gasto", spend_row),
             ("Vale", binding),
             (
                 "Frase digitada + senha",
-                f"a partir de {threshold.typed} pessoas "
-                f"(≈ R$ {policy.estimated_cost_q(threshold.typed) / 100:.2f} de mensagens)",
+                f"a partir de {_people(threshold.typed)} "
+                f"(≈ R$ {format_money(policy.estimated_cost_q(threshold.typed))} de mensagens)",
             ),
             (
                 "Autenticador + segunda pessoa",
-                f"a partir de {threshold.dual_control} pessoas",
+                f"a partir de {_people(threshold.dual_control)}",
             ),
         )
         body = format_html_join(

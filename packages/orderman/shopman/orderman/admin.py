@@ -100,6 +100,7 @@ from shopman.orderman.models import (
     SessionEvent,
 )
 from shopman.utils import unfold_badge, unfold_component
+from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 
 logger = logging.getLogger(__name__)
@@ -245,7 +246,7 @@ class SessionAdmin(ModelAdmin):
             "</li>",
             (
                 (
-                    created_at.strftime("%d/%m %H:%M:%S") if created_at else "—",
+                    format_local(created_at, "%d/%m %H:%M:%S", empty="—"),
                     unfold_badge(phase, "base"),
                     event_type,
                     actor or "—",
@@ -645,7 +646,9 @@ class OrderAdmin(ModelAdmin):
     @display(description=_("total"))
     def total_display(self, obj: Order) -> str:
         if obj.total_q:
-            return f"{obj.currency} {obj.total_q / 100:.2f}"
+            # "BRL 156.00" era o formato do código; a casa lê "R$ 156,00".
+            prefix = "R$" if obj.currency == "BRL" else obj.currency
+            return f"{prefix} {format_money(obj.total_q)}"
         return "-"
 
     @display(description=_("avaliação"))
