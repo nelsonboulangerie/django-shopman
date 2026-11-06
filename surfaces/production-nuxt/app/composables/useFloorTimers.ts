@@ -90,6 +90,21 @@ export function nextFreeTimerTitle(
   return `Timer ${n}`;
 }
 
+/**
+ * Nome dado que já está num timer ativo ganha número: "Freezer 20 min 2". Dois
+ * cartões idênticos não se distinguem na hora de encerrar (beta 05/11).
+ */
+export function distinctTimerLabel(
+  label: string,
+  existing: Record<string, FloorTimer>,
+): string {
+  const taken = new Set(Object.values(existing).map((timer) => timer.label ?? ""));
+  if (!taken.has(label)) return label;
+  let n = 2;
+  while (taken.has(`${label} ${n}`)) n += 1;
+  return `${label} ${n}`;
+}
+
 export function floorTimerMode(t: FloorTimer, now: number): FloorTimerMode {
   if (t.seenAt != null) return "seen";
   return t.endsAt <= now ? "ringing" : "running";
@@ -218,16 +233,30 @@ export function useFloorTimers() {
     const key = `${FREE_KEY_PREFIX}${Date.now().toString(36)}-${Math.random()
       .toString(36)
       .slice(2, 6)}`;
-    const label = (meta.label ?? "").trim() || nextFreeTimerTitle(timers.value);
+    const named = (meta.label ?? "").trim();
+    const label = named
+      ? distinctTimerLabel(named, timers.value)
+      : nextFreeTimerTitle(timers.value);
     arm(key, minutes, { ...meta, kind: "free", label });
     return key;
   }
 
-  function clear(key: string) {
+  /** Encerra e devolve o timer encerrado, para o Desfazer recolocá-lo. */
+  function clear(key: string): FloorTimer | null {
+    const removed = timers.value[key] ?? null;
     const { [key]: _, ...rest } = timers.value;
     timers.value = rest;
     chimes.delete(key);
     persist();
+    return removed;
+  }
+
+  /** Desfazer o Encerrar: o timer volta com o mesmo fim (o tempo não parou). */
+  function restore(key: string, timer: FloorTimer) {
+    if (timers.value[key]) return;
+    timers.value = { ...timers.value, [key]: timer };
+    persist();
+    ensureTicker();
   }
 
   /** Marca que alguém viu o alerta; não altera qualquer fato produtivo. */
@@ -302,6 +331,7 @@ export function useFloorTimers() {
     arm,
     create,
     clear,
+    restore,
     seen,
     extend,
     get,

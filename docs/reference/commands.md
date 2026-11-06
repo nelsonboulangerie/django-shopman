@@ -43,6 +43,7 @@ DigitalOcean ou do Sentry.
 |---------|-----|-----------|-----------|
 | [`release_expired_holds`](#release_expired_holds) | stockman | Manutenção | Libera holds expirados |
 | [`compute_product_affinity`](#compute_product_affinity) | shop | Manutenção | Recalcula o que a casa vende junto (cestas do ano, lift) — segura a própria cadência |
+| [`bake_alpha_tradi_daily`](#bake_alpha_tradi_daily) | backstage | Manutenção | Só no alpha: a fornada diária da TRADI pelo caminho do operador, para o Google ler a baguete disponível. Segura a própria cadência |
 | [`propose_product_attributes`](#propose_product_attributes) | shop | Catálogo | Propõe natureza, sabor e temperatura pela coleção primária, para o gestor revisar |
 | [`sweep_orphan_holds`](#sweep_orphan_holds) | shop | Manutenção | Libera holds indefinidos órfãos (sem sessão viva ou com data passada) |
 | [`sweep_dead_production_stock`](#sweep_dead_production_stock) | shop | Manutenção | Zera pelo ledger o resíduo de processo (target vencida) de WOs mortas |
@@ -2158,6 +2159,22 @@ Contrato e estado de rollout:
 
 # Worker de directives (systemd/supervisor, não cron)
 # python manage.py process_directives --watch
+```
+
+### bake_alpha_tradi_daily
+
+Só no alpha (`SHOPMAN_ENVIRONMENT=staging`) e só a TRADI: a fornada diária que
+o dono aprovou em 29/10/2026 para a página do produto mostrar estoque de verdade
+e o Google aceitar as Listagens locais gratuitas. Roda no `maintenance_worker`;
+assa 20 baguetes uma vez por dia a partir das 7h, de segunda a sábado (a chave
+de idempotência é a data). O caminho é a fornada avulsa da Produção
+(`apply_quick_finish`): `WorkOrder`, `production_changed` e ledger `MAKE`.
+Quando a massa falta, confirma a falta exata que o guardrail mediu, com
+justificativa, como o operador faz na tela.
+
+```bash
+python manage.py bake_alpha_tradi_daily            # o que o worker roda
+python manage.py bake_alpha_tradi_daily --dry-run  # diz o que faria
 ```
 
 ### compute_product_affinity

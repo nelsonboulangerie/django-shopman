@@ -55,10 +55,23 @@ export const BI_SECTIONS: readonly OperatorSection[] = [
   },
 ];
 
-/** As seções com a janela de análise (`period=…&from=…`) na query de cada link. */
-export function biSections(windowQuery: string): OperatorSection[] {
-  if (!windowQuery) return [...BI_SECTIONS];
-  return BI_SECTIONS.map((section) => ({
+/**
+ * A persona do B.I. que a antessala devolve (`surface_role`): `cash_auditor` audita
+ * o caixa (o Dono), `reader` lê o resto (o Gerente). Desconhecida (a sessão ainda não
+ * chegou), nada some: esconder o Caixa do Dono enquanto carrega seria pior.
+ */
+export type BiSurfaceRole = "cash_auditor" | "reader" | null | undefined;
+
+/**
+ * As seções com a janela de análise (`period=…&from=…`) na query de cada link. Quem
+ * não audita o caixa não vê a seção Caixa: ela só sabia dizer "tentar de novo" a um
+ * 403 que nunca vai passar (beta 05/11, ge:BI-07), e ocupava uma das quatro vagas da
+ * barra de baixo do Gerente.
+ */
+export function biSections(windowQuery: string, role: BiSurfaceRole = null): OperatorSection[] {
+  const visible = BI_SECTIONS.filter((section) => !(section.key === "cash" && role === "reader"));
+  if (!windowQuery) return [...visible];
+  return visible.map((section) => ({
     ...section,
     to: `${section.to}?${windowQuery}`,
   }));

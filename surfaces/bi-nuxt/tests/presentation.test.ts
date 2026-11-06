@@ -56,6 +56,8 @@ describe("presentation/bi", () => {
 
   it("quantidades e minutos trocam ponto por vírgula", () => {
     expect(formatQty("38.5")).toBe("38,5");
+    expect(formatQty("2178")).toBe("2.178");
+    expect(formatQty("159758.487")).toBe("159.758,487");
     expect(formatMinutes("23.5")).toBe("23,5 min");
   });
 

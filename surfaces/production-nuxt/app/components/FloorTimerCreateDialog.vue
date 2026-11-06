@@ -127,7 +127,7 @@ const PAD_ADD_UI = {
   <NuxtModal
     v-model:open="open"
     title="Novo timer"
-    description="Lembrete deste dispositivo. Não trava lote, QC nem Continuar."
+    description="Lembrete só deste dispositivo. Não muda nada no lote."
     class="sm:max-w-md"
     :content="TIMER_DIALOG_CONTENT"
   >
@@ -218,6 +218,7 @@ const PAD_ADD_UI = {
           type="text"
           placeholder="Nome (opcional), ex.: Croissant"
           aria-label="Nome do timer"
+          :maxlength="40"
           @keydown.enter.prevent="start()"
         />
 

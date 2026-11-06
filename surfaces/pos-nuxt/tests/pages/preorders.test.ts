@@ -499,6 +499,21 @@ describe("Detalhe — cancelar", () => {
     expect(options.body.idempotency_key).toBeTruthy();
   });
 
+  it("cancelada, a tela volta para a lista em vez de reler um detalhe que não existe mais", async () => {
+    // Beta test de 05/11/2026 (PDV2-12): o toast "Encomenda cancelada." vinha
+    // seguido da página de erro "não é uma encomenda".
+    const wrapper = await mount(DetailPage);
+    route.query = { back: "/preorders?mode=week" };
+    await wrapper.find("[data-preorder-cancel]").trigger("click");
+    await settle();
+    pickCancelReason("O cliente pediu");
+    await settle();
+    body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
+    await settle();
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith("/preorders?mode=week");
+  });
+
   it("encomenda paga: o servidor pede gerente e o PIN sobe; assinado, o gesto se repete com a assinatura", async () => {
     call.mockRejectedValueOnce({ status: 403, data: { detail: "Precisa de gerente.", error: { code: "manager_approval_required" } } });
     const wrapper = await mount(DetailPage);
@@ -667,8 +682,14 @@ function printAction(wrapper: Mounted): HeaderAction | undefined {
 }
 
 /** O painel de filtros único da suíte. */
+/** O painel da mesa (o do celular, na linha do chão, leva os filtros rápidos). */
 function panel(wrapper: Mounted) {
-  return wrapper.findComponent({ name: "OperatorFilterPanel" });
+  return wrapper.findAllComponents({ name: "OperatorFilterPanel" }).find((item) => item.props("trigger") !== "icon")!;
+}
+
+/** O painel do celular: o ícone da linha do chão. */
+function compactPanel(wrapper: Mounted) {
+  return wrapper.findAllComponents({ name: "OperatorFilterPanel" }).find((item) => item.props("trigger") === "icon")!;
 }
 
 /** O painel devolve o recorte (o que um toque num filtro rápido ou completo faz). */
@@ -891,8 +912,13 @@ describe("Encomendas — filtros e o lote das vias que faltam", () => {
     // O card leva o recorte ao detalhe: a volta cai na semana filtrada, não na casa.
     expect(wrapper.find('[data-week-grid] [data-preorder="NB-8"]').attributes("href"))
       .toBe("/preorders/NB-8?back=%2Fpreorders%3Ffulfillment%3Ddelivery");
-    // O recorte não se esconde só no painel: ele não declara filtro rápido próprio.
+    // Na mesa o recorte não se esconde no painel: ele não declara filtro rápido próprio.
     expect(panel(wrapper).props("quick")).toEqual([]);
+    // No celular (filtro único da suíte, 04/11/2026) a faixa não existe: os recortes são
+    // os filtros rápidos do painel, aberto pelo ícone da linha do chão.
+    expect(wrapper.find("[data-compact-quick]").exists()).toBe(false);
+    expect((compactPanel(wrapper).props("quick") as { label: string }[]).map((quick) => quick.label))
+      .toEqual(["A receber", "Sem Via Pedido", "Retiradas", "Entregas"]);
   });
 
   it("os recortes somam; Retiradas e Entregas se excluem (o tocado vence), e tocar de novo desliga", async () => {
@@ -999,13 +1025,14 @@ describe("Encomendas — filtros e o lote das vias que faltam", () => {
 });
 
 describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
-  it("o Período mora na toolbar da seção, e sai durante a busca", async () => {
+  it("o Período mora na toolbar da seção (e, no celular, na faixa abaixo da linha), e sai durante a busca", async () => {
     const wrapper = await mount(PreordersPage);
-    expect(wrapper.findAll("[data-period-picker]")).toHaveLength(1);
+    expect(wrapper.findAll("[data-period-picker]")).toHaveLength(2);
     expect(wrapper.find("[data-page-header-filters] [data-period-picker]").exists()).toBe(true);
+    expect(wrapper.find("[data-compact-primary] [data-period-picker]").exists()).toBe(true);
     await typeSearch(wrapper, "Ana");
     expect(wrapper.find("[data-period-picker]").exists()).toBe(false);
-    expect(panel(wrapper).exists()).toBe(false);
+    expect(wrapper.findAllComponents({ name: "OperatorFilterPanel" })).toHaveLength(0);
   });
 
   it("a linha 'Hoje': para entregar, a receber e as vias que faltam, com o peso do 'A receber'", async () => {
@@ -1183,9 +1210,12 @@ describe("Encomendas: a arrumação do balcão (OBS0310-D)", () => {
     // O lote e Atualizar moram no ⋯ (agem sobre a tela inteira).
     expect(printAction(wrapper)).toBeDefined();
     expect(headerAction(wrapper, "Atualizar")).toBeDefined();
+    // A ordem da mesa, a partir do cabeçalho: a linha do chão do celular vem antes dele
+    // no DOM (o kit a esconde do `md` para cima) e não entra na conta.
     const html = wrapper.html();
+    const start = html.indexOf("data-page-header-search");
     const order = ["data-page-header-search", "data-preorders-new", "data-preorders-quick", "data-period-picker", "data-operator-filter-panel-root", "data-preorders-today", "data-week-board"]
-      .map((marker) => html.indexOf(marker));
+      .map((marker) => html.indexOf(marker, start));
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 

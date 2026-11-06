@@ -307,7 +307,17 @@ export function customerLine(card: Pick<PreorderCard, "customer_name" | "ref" | 
 // A contagem de cada chip é a do que ELE mostraria com os OUTROS filtros como
 // estão: "A receber 3" com "Entregas" ligado quer dizer 3 entregas a receber.
 
-type FilterCard = Pick<PreorderCard, "fulfillment_type" | "payment_state" | "ticket_printed">;
+type FilterCard = Pick<PreorderCard, "fulfillment_type" | "payment_state" | "ticket_printed"> & Partial<Pick<PreorderCard, "situation">>;
+
+/**
+ * Falta a Via Pedido: ainda não impressa E a encomenda ainda não saiu. A via de
+ * encomenda entregue não serve para nada, e contá-la fazia o chip dizer "Sem Via
+ * Pedido 12" ao lado de "9 sem Via Pedido" no resumo de hoje (beta test de
+ * 05/11/2026, PDV2-14). Uma régua só para o chip, o filtro, o lote e o resumo.
+ */
+export function needsTicket(card: Pick<PreorderCard, "ticket_printed"> & Partial<Pick<PreorderCard, "situation">>): boolean {
+  return !card.ticket_printed && card.situation !== "delivered";
+}
 
 function matchesFulfillment(card: FilterCard, filter: FulfillmentFilter): boolean {
   return filter === "all" || (filter === "delivery" ? card.fulfillment_type === "delivery" : card.fulfillment_type !== "delivery");
@@ -318,7 +328,7 @@ function matchesPay(card: FilterCard, filter: PaymentFilter): boolean {
 }
 
 function matchesPrint(card: FilterCard, filter: PrintFilter): boolean {
-  return filter === "all" || !card.ticket_printed;
+  return filter === "all" || needsTicket(card);
 }
 
 export function matchesFilters(card: FilterCard, filters: PreorderFilters): boolean {
@@ -370,7 +380,7 @@ export function filterChips(cards: readonly FilterCard[], filters: PreorderFilte
     pay,
     print: [
       { key: "all", label: "Todas", count: byPrint.length },
-      { key: "pending", label: "Falta imprimir", count: count(byPrint, (c) => !c.ticket_printed) },
+      { key: "pending", label: "Falta imprimir", count: count(byPrint, needsTicket) },
     ],
   };
 }
@@ -492,7 +502,7 @@ export interface PrintPlan {
  * alarga (`order_ticket.select_refs`).
  */
 export function printPlan(list: Pick<PreorderListResponse, "date_from" | "date_to">, visibleDays: readonly PreorderDay[]): PrintPlan {
-  const refs = flattenDays(visibleDays).filter((card) => !card.ticket_printed).map((card) => card.ref);
+  const refs = flattenDays(visibleDays).filter(needsTicket).map((card) => card.ref);
   return { date_from: list.date_from, date_to: list.date_to, refs };
 }
 
@@ -742,7 +752,7 @@ export function todayFacts(day: PreorderDay | null): TodayFact[] {
   const pending = day.orders.filter((card) => card.situation !== "delivered");
   if (!pending.length) return [{ key: "leaving", text: "Todas entregues", urgent: false }];
 
-  const tickets = pending.filter((card) => !card.ticket_printed).length;
+  const tickets = pending.filter(needsTicket).length;
   const check = pending.filter((card) => card.payment_state === "check").length;
   const facts: TodayFact[] = [
     { key: "leaving", text: `${pending.length} para entregar`, urgent: false },
@@ -954,30 +964,6 @@ export function flipDay(flipped: ReadonlySet<string>, date: string): Set<string>
   if (next.has(date)) next.delete(date);
   else next.add(date);
   return next;
-}
-
-// ── Os selos da linha (dono, 03/11/2026) ───────────────────────────────────
-
-const LOWER_WORDS = new Set(["a", "o", "as", "os", "e", "de", "da", "do", "das", "dos", "na", "no", "nas", "nos", "em", "com", "por", "para"]);
-
-/**
- * Selo leva iniciais maiúsculas, sempre (dono, 03/11/2026): "Loja Online", "Pagar na
- * Retirada", "A Receber". Artigo e preposição no meio ficam em minúscula; a primeira
- * palavra, sempre maiúscula.
- */
-export function badgeCase(label: string): string {
-  return label
-    .trim()
-    .split(/\s+/)
-    .map((word, index) => {
-      if (!word) return word;
-      // Marca e sigla já escritas como são ("iFood", "PDV", "NB-1042") não se mexem.
-      if (/[A-Z]/.test(word.slice(1)) || /\d/.test(word)) return word;
-      const lower = word.toLowerCase();
-      if (index > 0 && LOWER_WORDS.has(lower)) return lower;
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    })
-    .join(" ");
 }
 
 export type BadgeTone = "neutral" | "primary" | "info" | "success" | "warning" | "error";

@@ -5,9 +5,11 @@ import { recordTrailCount, recordTrailPosition } from "../../../../../operator-k
 import { SUPPLIERS_TRAIL, baseSectionPath, supplierPath } from "~/presentation/purchaseSections";
 
 const route = useRoute();
-const { suppliers, backendReady, openSupplierEdit, openSupplierDuplicate } = usePurchaseDesk();
+const { findSupplier, backendReady, openSupplierEdit, openSupplierDuplicate } = usePurchaseDesk();
 const supplierRef = computed(() => String(route.params.ref ?? ""));
-const supplier = computed(() => suppliers.value.find((item) => item.ref === supplierRef.value) ?? null);
+// Pelo ref, nos ativos e na página da tabela: o arquivado aberto pelo filtro
+// "Arquivados" não está entre os ativos da base de trabalho.
+const supplier = computed(() => findSupplier(supplierRef.value));
 const { trail } = useRecordTrail(SUPPLIERS_TRAIL);
 const position = computed(() => recordTrailPosition(trail.value, supplierRef.value));
 const trailCount = computed(() => (position.value ? recordTrailCount(position.value) : ""));

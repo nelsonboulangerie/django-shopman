@@ -706,16 +706,7 @@ describe("Hoje no celular: só indicadores, e o toque mostra a frase (dono, 03/1
   });
 });
 
-describe("selo com iniciais maiúsculas (dono, 03/11/2026)", () => {
-  it("cada palavra maiúscula, artigo e preposição no meio em minúscula, marca como é", async () => {
-    const { badgeCase } = await import("../app/presentation/preorders");
-    expect(badgeCase("Loja online")).toBe("Loja Online");
-    expect(badgeCase("Pagar na retirada")).toBe("Pagar na Retirada");
-    expect(badgeCase("a receber")).toBe("A Receber");
-    expect(badgeCase("iFood")).toBe("iFood");
-    expect(badgeCase("Saiu para entrega")).toBe("Saiu para Entrega");
-  });
-
+describe("selos da linha (dono, 03/11/2026)", () => {
   it("o dinheiro vira valor + selo semântico", async () => {
     const { moneyBadge } = await import("../app/presentation/preorders");
     const base = { total_q: 6000, total_display: "R$ 60,00", balance_display: "R$ 0,00", situation: "to_pay" as const };
@@ -723,5 +714,25 @@ describe("selo com iniciais maiúsculas (dono, 03/11/2026)", () => {
     expect(moneyBadge({ ...base, balance_q: 2000, balance_display: "R$ 20,00" })).toEqual({ amount: "R$ 20,00", of: "de R$ 60,00", label: "A Receber", tone: "warning" });
     expect(moneyBadge({ ...base, balance_q: 0, situation: "paid" as never })).toMatchObject({ label: "Pago", tone: "success" });
     expect(moneyBadge({ ...base, balance_q: null })).toMatchObject({ label: "Conferir Pagamento", tone: "warning" });
+  });
+});
+
+describe("Via Pedido que falta: uma régua só", () => {
+  // Beta test de 05/11/2026 (PDV2-14): o chip contava "Sem Via Pedido 12" e o
+  // resumo de hoje "9 sem Via Pedido". O chip contava as 3 já entregues.
+  const cards = [
+    card({ ref: "NB-1" }),
+    card({ ref: "NB-2" }),
+    card({ ref: "NB-3", situation: "delivered", situation_label: "Entregue" }),
+  ];
+
+  it("o chip, o filtro, o lote e o resumo contam o mesmo número", () => {
+    const quick = quickFilterItems(cards, NO_FILTERS).find((item) => item.key === "unprinted");
+    expect(quick?.count).toBe(2);
+    const facts = todayFacts(day({ orders: cards, orders_count: 3 }));
+    expect(facts.find((fact) => fact.key === "tickets")?.text).toBe("2 sem Via Pedido");
+    const filtered = filterDays([day({ orders: cards })], { ...NO_FILTERS, print: "pending" });
+    expect(filtered[0]!.orders.map((c) => c.ref)).toEqual(["NB-1", "NB-2"]);
+    expect(printPlan({ date_from: HOJE, date_to: HOJE }, [day({ orders: cards })]).refs).toEqual(["NB-1", "NB-2"]);
   });
 });

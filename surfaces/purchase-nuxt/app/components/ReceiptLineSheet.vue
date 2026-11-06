@@ -17,9 +17,10 @@ import {
   receiptLineLabel,
   receiptLineStatus,
   receiptLineStatusBadge,
+  receiptNextStepField,
 } from "~/presentation/purchase";
 import { RECEIPT_LINE_STATUS_COLOR } from "~/utils/receiptLineStatus";
-import { FLASH_RING } from "~/utils/receiptFocus";
+import { FLASH_RING, receiptFieldSelector } from "~/utils/receiptFocus";
 import { todayIso as todayIsoDate } from "../../../operator-kit/app/presentation/dates";
 
 /**
@@ -208,7 +209,18 @@ function ring(field: ReceiptFieldAnchor): string {
 /** Conferir fecha a gaveta; desmarcar mantém aberta, porque ainda há o que ver. */
 function onCheck(checked: boolean) {
   emit("check", checked);
-  if (checked) emit("update:open", false);
+  if (!checked) return;
+  // Com o que ainda trava o item (a validade, o insumo), conferir NÃO fecha: a
+  // gaveta fechava, a linha ficava "Pendente" e o motivo só aparecia no painel ao
+  // lado. Fica aberta, com o foco no campo que falta (beta 05/11, CMP-16).
+  const blocked = props.preview?.warnings.some((warning) => warning.tone === "block");
+  if (blocked && props.preview) {
+    const anchor = receiptNextStepField(props.preview.warnings);
+    const field = anchor ? document.querySelector<HTMLElement>(receiptFieldSelector(props.preview.line.id, anchor)) : null;
+    (field?.querySelector<HTMLElement>("input, button, textarea") ?? field)?.focus?.();
+    return;
+  }
+  emit("update:open", false);
 }
 </script>
 

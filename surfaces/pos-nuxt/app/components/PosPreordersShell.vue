@@ -12,8 +12,12 @@
 //   buscar", com o `/`), a ação primária da tela (`#primary`, só na mesa) e o ⋯
 //   "Mais ações" (`actions`, com "Atualizar" sempre no fim; `phone-actions` no
 //   celular, onde a ação primária entra no topo do ⋯);
-// - toolbar: o recorte (`#filters-primary`, `#filter-panel`, `#filters` só na mesa
-//   e a leitura em `#filters-end`), com os recortes ativos (`active-filters`);
+// - toolbar: o modo da tela (`#filters-primary`: o período), o filtro único da suíte
+//   (`#filter-panel`, dono 04/11/2026), `#filters` só na mesa e a leitura em
+//   `#filters-end`, com os recortes ativos (`active-filters`);
+// - no celular, a linha do chão: o filtro único no ícone da linha
+//   (`#compact-filter-panel`) e o modo da tela numa faixa logo abaixo
+//   (`#compact-primary`);
 // - aviso da tela (`alerts`);
 // - a PORTA da seção é o item "Encomendas" da barra lateral (decisão do dono,
 //   26/09): o nome no começo da barra é só o título, não é segundo link.
@@ -91,8 +95,17 @@ const headerPhoneActions = computed<OperatorHeaderAction[] | undefined>(() =>
     >
       <template v-if="$slots['compact-lead']" #lead><slot name="compact-lead" /></template>
       <template v-if="$slots['compact-identity']" #identity><slot name="compact-identity" /></template>
-      <template v-if="$slots['compact-filters']" #filters="scope"><slot name="compact-filters" v-bind="scope" /></template>
+      <template v-if="$slots['compact-filter-panel']" #filter-panel><slot name="compact-filter-panel" /></template>
     </PosCompactBar>
+    <!-- O modo da tela no celular (o período, ou "Incluir concluídas" na busca), logo
+         abaixo da linha: é o que diz de quando é a lista, e trocar não pode custar ⋮. -->
+    <div
+      v-if="$slots['compact-primary']"
+      class="flex min-h-12 items-center gap-2 border-b border-default bg-card px-2 py-1.5 md:hidden"
+      data-compact-primary
+    >
+      <slot name="compact-primary" />
+    </div>
     <slot name="compact-below" />
     <OperatorPageHeader
       :title="title"

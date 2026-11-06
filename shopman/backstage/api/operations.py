@@ -308,6 +308,25 @@ def _shortage_override_proof(body: dict, exc: ProductionError) -> str:
     )
 
 
+def _material_display_names(skus: set[str]) -> dict[str, str]:
+    """Nome legível de cada insumo em falta: catálogo, compras ou ficha."""
+    from shopman.craftsman.models import Recipe
+
+    from shopman.backstage.projections.production import _product_names
+
+    names = _product_names(skus)
+    missing = skus - names.keys()
+    if missing:
+        names.update(
+            (sku, name)
+            for sku, name in Recipe.objects.filter(output_sku__in=missing, is_active=True).values_list(
+                "output_sku", "name"
+            )
+            if str(name or "").strip()
+        )
+    return names
+
+
 def _production_error_response(
     exc: ProductionError,
     *,
@@ -381,6 +400,7 @@ def _production_error_response(
             status=404,
         )
     if isinstance(exc, ProductionStockShortError):
+        material_names = _material_display_names({item.sku for item in exc.missing})
         possibilities = [
             {
                 "kind": "retry",
@@ -406,9 +426,13 @@ def _production_error_response(
                     "work_order_ref": exc.work_order_ref,
                     "idempotency_key": idempotency_key,
                     "possibilities": possibilities,
+                    # Nome e unidade para a tela escrever "Massa de croissant:
+                    # precisa 336 kg", nunca o SKU cru com três casas (beta 05/11).
                     "missing": [
                         {
                             "sku": item.sku,
+                            "name": material_names.get(item.sku, item.sku),
+                            "unit": item.unit,
                             "needed": str(item.needed),
                             "available": str(item.available),
                             "shortage": str(item.shortage),
@@ -813,6 +837,13 @@ class OperatorSessionView(APIView):
         )
         is_gestor = surface_perm_codes(required_perm) == GESTOR_SURFACE_PERMISSIONS
         surface_role = gestor_surface_role(operador) if is_gestor and operador and not locked else None
+        if required_perm == "backstage.view_bi" and operador and not locked:
+            # O B.I. tem duas personas: quem audita o caixa (o Dono) e quem lê o
+            # resto (o Gerente). O rail esconde o Caixa de quem não audita, em vez
+            # de abrir uma tela que só sabe dizer "tentar de novo" (beta 05/11, ge:BI-07).
+            from shopman.backstage.permissions import can_audit_cash
+
+            surface_role = "cash_auditor" if can_audit_cash(operador) else "reader"
         return Response({
             # `station` substituiu `device_user`: o que a tela precisa saber é de
             # QUE BALCÃO ela é, não com que conta a máquina entrou — porque não
@@ -1147,7 +1178,7 @@ class OperatorUnlockView(APIView):
             # do bloqueio já saiu na transição.
             bloqueado_ate = (
                 operator_service.pin_locked_until(operator)
-                if operator is not None and operator_service.is_eligible_operator(operator, perm)
+                if operator is not None and operator_service.is_eligible_operator(operator, required_perm=perm)
                 else None
             )
             if bloqueado_ate is not None:
@@ -1166,7 +1197,7 @@ class OperatorUnlockView(APIView):
         if operator is None:
             travou_ate = (
                 _pin_locked_by_this_failure(alvo)
-                if alvo is not None and operator_service.is_eligible_operator(alvo, perm)
+                if alvo is not None and operator_service.is_eligible_operator(alvo, required_perm=perm)
                 else None
             )
             # A recusa de PIN/crachá NÃO passa por `authenticate()`, então não
@@ -1190,8 +1221,17 @@ class OperatorUnlockView(APIView):
             )
             if travou_ate is not None:
                 return _pin_locked_response(travou_ate)
+            # A recusa diz o que houve (beta test de 05/11/2026, PDV-20): o
+            # "Identificação inválida." não dizia se era o PIN, o crachá ou o
+            # acesso. O acesso só se conta de quem a tela já lista.
+            if metodo == SignInMethod.BADGE:
+                detail = "Crachá não reconhecido. Passe de novo ou digite o PIN."
+            elif alvo is not None and not operator_service.is_eligible_operator(alvo, required_perm=perm):
+                detail = "Esta pessoa não tem acesso a este app. Fale com o gerente."
+            else:
+                detail = "PIN não confere. Tente de novo."
             return Response(
-                {"detail": "Identificação inválida.", "error": {"code": "operator_unlock_invalid"}},
+                {"detail": detail, "error": {"code": "operator_unlock_invalid"}},
                 status=403,
             )
         # `login()` de verdade, e não um cartão guardado na sessão: a partir daqui
@@ -1227,7 +1267,7 @@ class OperatorUnlockView(APIView):
         if not operator_id or str(body.get("badge") or "").strip():
             return None
         alvo = get_user_model().objects.filter(pk=operator_id, is_active=True).first()
-        if alvo is None or not operator_service.is_eligible_operator(alvo, perm):
+        if alvo is None or not operator_service.is_eligible_operator(alvo, required_perm=perm):
             return None
         return operator_service.pin_locked_until(alvo)
 
@@ -4830,12 +4870,17 @@ class WorkOrderFinishView(_ProductionActionBase):
                 WorkOrder.Status.VOID,
             ):
                 yield_anchor = work_order.started_qty or work_order.quantity
-                if body["quantity"] < yield_anchor:
+                # Rendeu menos (beta 05/11): vale com a confirmação e o motivo
+                # do operador; sem eles, a diferença não pode sumir calada.
+                shortfall_explained = body["yield_deviation_confirmed"] and bool(
+                    str(body.get("yield_deviation_reason") or "").strip()
+                )
+                if body["quantity"] < yield_anchor and not shortfall_explained:
                     raise ProductionMutationValidationError(
                         {
                             "quantity": (
-                                "A quantidade total deve incluir toda perda do lote. "
-                                "Classifique o déficit em partition com um motivo de qualidade."
+                                "O total ficou abaixo do previsto. Lance a perda com o motivo, "
+                                "ou confirme que rendeu menos e diga por quê."
                             )
                         }
                     )
@@ -6547,7 +6592,7 @@ class POSTabUnfireView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Look up customer by ref or phone",
         responses={200: OpenApiResponse(description="Customer projection or null.")},
@@ -6557,9 +6602,13 @@ class POSCustomerLookupView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
-    def get(self, request):
-        ref = (request.query_params.get("ref") or "").strip()
-        phone = (request.query_params.get("phone") or "").strip()
+    def post(self, request):
+        # O telefone viaja no CORPO: na query string ele ficava no log de acesso
+        # e no cache (beta test de 05/11/2026, PDV2-07). Leitura pura, POST só
+        # para o dado pessoal não aparecer na URL.
+        body = request.data if isinstance(request.data, dict) else {}
+        ref = str(body.get("ref") or "").strip()
+        phone = str(body.get("phone") or "").strip()
         # `ref` vence: é a chave exata do cadastro (cliente sem telefone existe).
         if ref:
             customer = build_pos_customer_lookup_by_ref(ref)
@@ -6655,6 +6704,46 @@ def _pos_customer_integrity_response(exc: Exception, *, action: str) -> Response
         },
         status=422,
     )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Check a manager approval (PIN or badge) without recording anything",
+        responses={200: OpenApiResponse(description="The approving manager's username.")},
+    ),
+)
+class POSManagerApprovalCheckView(APIView):
+    """Confere o PIN (ou o crachá) do gerente NA HORA, no próprio diálogo.
+
+    Beta test de 05/11/2026 (PDV-05). O diálogo "Quem autoriza?" guardava o PIN
+    e fechava; a conferência só acontecia no fechamento, depois de o operador já
+    ter confirmado "Recebi o Pix" com o cliente. PIN errado voltava como recusa
+    da VENDA, com a tela já adiante.
+
+    É o MESMO desafio do fechamento (``validate_manager_override``: permissão
+    ``cashman.adjust_shift``, ``PinCredential`` com trava progressiva), então
+    errar aqui conta na mesma trava. Não grava nada: o fechamento confere de
+    novo, porque é ele que assina a linha.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        approval = (request.data or {}).get("manager_approval")
+        if not isinstance(approval, dict):
+            approval = {}
+        try:
+            approver = pos_tabs_service.validate_manager_override(
+                approval,
+                operator_username=_username(request),
+                action="sale_approval_check",
+                recovery_invalid="Confira o gerente e digite o PIN de novo.",
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=422)
+        return Response({"approved_by": approver.get_username()})
 
 
 @extend_schema_view(

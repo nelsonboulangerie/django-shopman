@@ -163,6 +163,33 @@ export function splitShareQ(
 }
 
 /**
+ * A forma que o sistema lançou sozinha com o total inteiro e ninguém tocou.
+ *
+ * Tocar num método lança uma linha do tamanho do restante (``_virgin``). Se o
+ * cliente diz "vamos dividir" logo depois, essa linha é rascunho, não pagamento:
+ * ela vira a parte da primeira pessoa e as prévias dividem o TOTAL. Sem isto a
+ * divisão partia de um restante zerado e o modal oferecia "R$ 0,00" para 2 a 6
+ * pessoas (beta test de 05/11/2026).
+ */
+export function splitDraftTender(
+  tenders: POSPaymentTenderDraft[],
+  totalQ: number,
+): POSPaymentTenderDraft | null {
+  if (tenders.length !== 1 || totalQ <= 0) return null;
+  const only = tenders[0]!;
+  return only._virgin && only.amount_q === totalQ ? only : null;
+}
+
+/** O restante que a divisão enxerga: a forma-rascunho não conta como paga. */
+export function splitBaseRemainingQ(
+  tenders: POSPaymentTenderDraft[],
+  totalQ: number,
+  remainingQ: number,
+): number {
+  return splitDraftTender(tenders, totalQ) ? totalQ : remainingQ;
+}
+
+/**
  * "R$ 33,34 · 1 de 3" — o estado da divisão em uma linha.
  *
  * O operador precisa saber quanto pedir à PESSOA À SUA FRENTE e quantas faltam,

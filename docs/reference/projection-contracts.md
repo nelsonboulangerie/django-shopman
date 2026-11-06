@@ -45,6 +45,22 @@ erro estável. Projection v2 não transporta copy de UX, PII ou membership; aç�
 resolvidas pelo backend. Rotas e ownership:
 [`marketing-surface-contract.md`](marketing-surface-contract.md).
 
+### Histórico do Gestor × B.I.: o eixo da data
+
+O Histórico (`shopman/backstage/projections/order_history.py`,
+`GET /api/v1/backstage/orders/history/`) conta o período pelo dia em que o pedido
+**fechou** (`Coalesce(completed_at, cancelled_at, returned_at, updated_at)`). O B.I.
+conta a venda pelo dia em que o pedido foi **feito** (`created_at`). Uma encomenda
+feita num dia e retirada no outro cai em dias diferentes nas duas leituras.
+
+Por isso o link "Abrir os N pedidos" do B.I. (`overShortOrdersHref`) manda
+`basis=ordered` na URL do Gestor, que vira `date_basis=ordered` no endpoint: o
+Histórico filtra por `created_at` e abre os mesmos N que o B.I. contou. Sem o
+parâmetro (`date_basis=closed`, o padrão), vale o eixo do fechamento. Tirar o
+recorte do produto tira o eixo junto. Trava:
+`test_ordered_basis_counts_by_the_day_the_order_was_made` e
+`surfaces/orders-nuxt/tests/history.test.ts` (beta 05/11/2026, ge:BI-03).
+
 ### Central (hub): o número no canto do ícone
 
 A Central (`shopman/backstage/projections/hub.py`, `GET /api/v1/backstage/hub/`) é uma

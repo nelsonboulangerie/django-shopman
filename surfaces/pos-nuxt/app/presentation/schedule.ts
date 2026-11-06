@@ -203,6 +203,17 @@ export function selectedWindowConflict(
 }
 
 /**
+ * O primeiro horário que CABE depois do escolhido, na ordem da grade: é o gesto
+ * pronto do aviso "não cabe mais" (beta test de 05/11/2026, PDV2-09). A grade
+ * vem em ordem do dia; antes do escolhido não adianta oferecer, porque o motivo
+ * é sempre "sai mais tarde".
+ */
+export function firstFittingWindow(windows: ScheduleWindow[], ref: string): ScheduleWindow | null {
+  const from = windows.findIndex((w) => w.ref === ref);
+  return windows.slice(from + 1).find((w) => w.enabled !== false) || null;
+}
+
+/**
  * A última data encomendável: a última que o servidor oferece.
  *
  * As datas ofertadas já param no limite da casa (Admin: `max_preorder_days`).

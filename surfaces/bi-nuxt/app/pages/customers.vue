@@ -113,24 +113,27 @@ const formatCount = (value: number) => formatInt(value);
             size="statement"
             class="col-span-2 xl:col-span-1"
           />
-          <OperatorMetric title="Clientes" :value="formatInt(report.customers_total)" />
+          <!-- Cada número diz se é do período ou de todo o histórico: o seletor de
+               período só recorta os clientes novos (ge:BI-19). -->
+          <OperatorMetric title="Clientes" :value="formatInt(report.customers_total)" hint="Desde sempre" />
           <OperatorMetric
             title="Com histórico analisado"
             :value="formatInt(report.with_insight)"
-            hint="Clientes com recência, frequência e valor já calculados"
+            hint="Desde sempre: recência, frequência e valor já calculados"
           />
           <OperatorMetric
             title="Em risco de sumir"
             :value="formatInt(report.at_risk)"
             :tone="report.at_risk ? 'warning' : undefined"
+            hint="Desde sempre"
           />
-          <OperatorMetric title="Ticket médio por cliente" :value="formatMoney(report.average_ticket_q)" />
+          <OperatorMetric title="Ticket médio por cliente" :value="formatMoney(report.average_ticket_q)" hint="Desde sempre" />
         </div>
 
         <div class="grid items-start gap-3 lg:grid-cols-2">
           <OperatorReadingCard
             title="Segmentos de cliente"
-            description="Recência, frequência e valor, calculados pelo CRM"
+            description="Desde sempre: recência, frequência e valor, calculados pelo CRM"
             :csv="readingChartCsv('Segmento', segmentSeries, segmentPoints)"
           >
             <OperatorReadingChart

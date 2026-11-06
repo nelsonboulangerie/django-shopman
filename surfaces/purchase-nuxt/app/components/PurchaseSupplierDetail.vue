@@ -4,6 +4,7 @@
 import type { Material, Supplier, SupplierMaterialCost } from "~/types/purchase";
 import { costPerBaseUnitQ, formatMoney, formatShortDate, isApproximateCost, purchaseUnitLabel } from "~/presentation/purchase";
 import { materialPath } from "~/presentation/purchaseSections";
+import { supplierLeadTimeLabel, supplierReliabilityLabel } from "~/presentation/purchaseUi";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{ supplier: Supplier }>();
@@ -48,8 +49,8 @@ const portfolio = computed(() =>
     </div>
 
     <dl class="grid grid-cols-2 gap-3">
-      <div><dt class="text-xs text-muted">Prazo de entrega</dt><dd class="text-sm font-semibold">{{ supplier.leadTimeDays }} {{ supplier.leadTimeDays === 1 ? "dia" : "dias" }}</dd></div>
-      <div><dt class="text-xs text-muted">Entregas no prazo</dt><dd class="text-sm font-semibold tabular-nums">{{ supplier.reliabilityPercent }}%</dd></div>
+      <div><dt class="text-xs text-muted">Prazo de entrega</dt><dd class="text-sm font-semibold">{{ supplierLeadTimeLabel(supplier) }}</dd></div>
+      <div><dt class="text-xs text-muted">Entregas no prazo</dt><dd class="text-sm font-semibold tabular-nums">{{ supplierReliabilityLabel(supplier) }}</dd></div>
       <div><dt class="text-xs text-muted">Última entrega</dt><dd class="text-sm font-semibold tabular-nums">{{ formatShortDate(supplier.lastDeliveryAt) }}</dd></div>
       <div><dt class="text-xs text-muted">Pagamento</dt><dd class="text-sm font-semibold">{{ supplier.paymentTerm || "a combinar" }}</dd></div>
     </dl>

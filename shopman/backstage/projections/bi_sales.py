@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
+from django.utils import timezone
+
 from .bi_production import _normalize_window, _previous_window, _qty
 
 #: As bases do "Comparar com" das Vendas (prévia ``depois-bi-vendas``, pino 5): o
@@ -80,6 +82,10 @@ class BISalesPrevious:
     revenue_total_q: int
     average_ticket_q: int
     revenue_by_day: tuple[int, ...]  # alinhado posicionalmente com `days`
+    #: "HH:MM" quando o período inclui hoje: o dia em curso só tem venda até agora,
+    #: e a base é cortada na mesma hora (o dia correspondente da base, até HH:MM;
+    #: os dias depois dele ficam de fora). Vazio quando os dois períodos são inteiros.
+    partial_until: str = ""
 
 
 @dataclass(frozen=True)
@@ -257,9 +263,21 @@ def _sales_previous(
     from shopman.backstage.bi.canonical import iter_days, read_sales
 
     prev_from, prev_to = _compare_window(date_from, date_to, compare)
+    # Dia em curso: às 07:25 o hoje tem venda só até 07:25, e comparar com um dia
+    # inteiro da base dá "85% abaixo" toda manhã. A base corta no dia que
+    # corresponde a hoje, na mesma hora (beta 05/11, ge:BI-06).
+    now = timezone.localtime()
+    today = now.date()
+    base_today = None
+    if date_from <= today <= date_to:
+        base_today = prev_from + (today - date_from)
     day_orders: dict[date, int] = defaultdict(int)
     day_revenue: dict[date, int] = defaultdict(int)
     for sale in _only_channel(read_sales(prev_from, prev_to), channel).sales:
+        if base_today is not None and (
+            sale.day > base_today or (sale.day == base_today and sale.occurred_at.time() > now.time())
+        ):
+            continue
         day_orders[sale.day] += 1
         day_revenue[sale.day] += sale.total_q
 
@@ -272,6 +290,7 @@ def _sales_previous(
         revenue_total_q=revenue_total,
         average_ticket_q=revenue_total // orders_total if orders_total else 0,
         revenue_by_day=tuple(day_revenue.get(day, 0) for day in iter_days(prev_from, prev_to)),
+        partial_until=now.strftime("%H:%M") if base_today is not None else "",
     )
 
 

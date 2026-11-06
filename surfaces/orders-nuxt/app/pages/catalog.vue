@@ -144,6 +144,17 @@ const readClock = computed(() => {
       })
     : "";
 });
+// O tom da leitura: o mesmo do `OperatorLiveStatus` da mesa e do ponto no selo do
+// trocador (`seal-tone`), para o chip de leitura não ficar solto no celular.
+const liveTone = computed<"live" | "calm" | "late" | "off">(() =>
+  error.value
+    ? "off"
+    : realtime.value === "live"
+      ? "live"
+      : realtime.value === "connecting"
+        ? "late"
+        : "calm",
+);
 // Collection navigation remains available while only the row resource changes.
 const collections = shallowRef<CollectionProjection[]>(
   matrix.value?.collections ?? [],
@@ -1607,6 +1618,8 @@ useHead({ title: "Catálogo" });
     </DefineBulkPrice>
 
     <OperatorPageHeader
+      :seal-tone="liveTone"
+      :seal-time="readClock"
       title="Catálogo"
       :filters-wrap="false"
       desk-only-filters
@@ -1617,15 +1630,7 @@ useHead({ title: "Catálogo" });
     >
       <template #status>
         <OperatorLiveStatus
-          :tone="
-            error
-              ? 'off'
-              : realtime === 'live'
-                ? 'live'
-                : realtime === 'connecting'
-                  ? 'late'
-                  : 'calm'
-          "
+          :tone="liveTone"
           :time="readClock"
           :label="
             error ? 'Atualização falhou' : realtimeIndicator(realtime).label

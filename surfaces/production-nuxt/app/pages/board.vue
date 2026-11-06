@@ -12,6 +12,8 @@
 //   posição; confirmados saem pelo TTL.
 import type { ForecastStatus } from "~/types/production";
 import {
+  boardQtyChars,
+  boardQtyLabel,
   forecastTimeTone,
   fullDateLabel,
   isStale,
@@ -106,8 +108,9 @@ const statusToneClass = (status: ForecastStatus) =>
   TIME_TONE_CLASS[forecastTimeTone(status)];
 
 const NAME_CHARS = 22; // maior nome atual: "Pão de Forma Artesanal"
-const QTY_CHARS = 6; // "999 UN"
-const STATUS_CHARS = 10; // CONFIRMADO
+// A maior quantidade do dia cabe inteira; o mínimo é "999 UN".
+const QTY_CHARS = computed(() => boardQtyChars(rows.value));
+const STATUS_CHARS = 9; // PLANEJADO
 </script>
 
 <template>
@@ -119,7 +122,8 @@ const STATUS_CHARS = 10; // CONFIRMADO
           color="neutral"
           variant="ghost"
           icon="i-lucide-arrow-left"
-          label="Voltar à produção"
+          aria-label="Voltar à produção"
+          title="Voltar à produção"
           class="board-key"
         />
         <span>{{ fullDateLabel(selectedDate) }}</span>
@@ -219,7 +223,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
                 class="board-flap min-w-0"
               />
               <SplitFlap
-                :value="`${row.qty} UN`"
+                :value="boardQtyLabel(row.qty)"
                 :chars="QTY_CHARS"
                 align="right"
                 class="board-flap"

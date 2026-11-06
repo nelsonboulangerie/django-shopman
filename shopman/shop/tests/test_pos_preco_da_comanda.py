@@ -124,3 +124,54 @@ def test_venda_sem_comanda_com_preco_forjado_e_reprecificada(counter):
             items=[{"sku": "PAO", "name": "Pão", "qty": 1, "unit_price_q": 1}],
             expected_total_q=1,
         )
+
+
+# ── Promoção automática na comanda (beta test de 05/11/2026, P0) ─────────────
+#
+# O PDV manda a etiqueta em ``unit_price_q``. Sem desconto manual, a revisão
+# somava a etiqueta (R$ 12,00), o selo do fechamento conferia contra o motor
+# (R$ 10,20, com a Semana do Pão) e recusava com "O total mudou" em toda
+# tentativa: a comanda com item em promoção não fechava nunca.
+
+
+@pytest.fixture
+def semana_do_pao(counter):
+    from datetime import timedelta
+
+    from django.core.cache import cache
+    from django.utils import timezone
+
+    from shopman.shop.models import Promotion
+
+    now = timezone.now()
+    Promotion.objects.create(
+        ref="semana-do-pao", name="Semana do Pão", type=Promotion.PERCENT, value=15, is_active=True,
+        skus=["PAO"], valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
+    )
+    cache.clear()
+    return counter
+
+
+def test_comanda_com_promocao_automatica_revisa_o_preco_do_motor(semana_do_pao):
+    tab, _ = _tab_with([_line()])
+    review = _review(semana_do_pao, tab, [_line()])
+    assert review.total_q == 1020
+
+
+def test_comanda_com_promocao_automatica_fecha_pelo_total_da_revisao(semana_do_pao):
+    line = _line(qty=5)
+    tab, rev = _tab_with([line])
+    review = _review(semana_do_pao, tab, [line])
+    assert review.total_q == 1020 * 5
+    result = semana_do_pao.close(
+        client_request_id="comanda-promo", items=[line], tab_session_key=tab.session_key,
+        expected_revision=rev, expected_total_q=review.total_q,
+    )
+    assert Order.objects.get(ref=result.order_ref).total_q == 1020 * 5
+
+
+def test_linha_nova_na_comanda_com_promocao_revisa_pelo_motor(semana_do_pao):
+    """O carrinho que a comanda ainda não gravou passa pela sonda, com a mesma promoção."""
+    tab, _ = _tab_with([_line()])
+    review = _review(semana_do_pao, tab, [_line(qty=2)])
+    assert review.total_q == 1020 * 2

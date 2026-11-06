@@ -44,10 +44,10 @@ por default.
 |-------|-----------|----------------|
 | **Caixa** | `cashman.operate_pos`, `shop.manage_orders` | Atendente de balcão / PDV |
 | **Cozinha** | `backstage.operate_kds`, `shop.manage_production` | Cozinheiro / preparador |
-| **Gerente** | `shop.manage_orders`, `shop.manage_catalog`, `shop.manage_customers`, `shop.manage_campaigns`, `craftsman.change_recipe`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.view_bi` | Gerente de turno |
+| **Gerente** | `shop.manage_orders`, `shop.manage_catalog`, `shop.manage_customers`, `shop.manage_campaigns`, `craftsman.change_recipe`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.view_bi`, `backstage.void_production` | Gerente de turno |
 | **Admin de Catálogo** | `manage_catalog`, `manage_rules` | Responsável por produtos e regras |
 | **Rules Managers** | `manage_rules` | Segurança (WP-GAP-06, sem membros por default) |
-| **Dono** | `cashman.audit_shift`, `payman.refund_paymentintent` | Quem vê dinheiro e estorna cobrança no Admin. Portão, não persona — some com "Gerente" quando a pessoa faz as duas coisas |
+| **Dono** | `cashman.audit_shift`, `payman.refund_paymentintent`, `backstage.void_production` | Quem vê dinheiro e estorna cobrança no Admin. Portão, não persona — some com "Gerente" quando a pessoa faz as duas coisas |
 
 ### Ação é uma permissão; ABRIR A TELA é outra
 
@@ -160,6 +160,9 @@ JSON não guarda comentário, então o porquê das concessões mora aqui:
   Pronto quando o prato passa por ele (decisão do dono, 13/10/2026).
 - **Cozinha** lê no Admin o que fabrica (`view_*` de craftsman, buyman e stockman):
   ficha técnica, ordem, insumo, saldo, lote. Mexer acontece no app de Produção.
+  A ficha técnica ela só LÊ, também no app: criar, editar, conferir e publicar ficha
+  é da gestão da produção (`craftsman.change_recipe`, Gerente e Dono; decisão do dono,
+  05/11/2026). O `shop.manage_production` dela opera lotes e não abre o editor.
 - **Gerente** consulta auditoria e faz configuração ou reparo excepcional. Dinheiro
   fica de fora de propósito: `payman` e a apuração do turno são do **Dono** (a régua do
   fechamento cego: ela conta às cegas, quem vê o esperado audita). Lê a trilha das

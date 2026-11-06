@@ -12,7 +12,6 @@ import json
 
 import pytest
 from django.contrib.auth.models import Permission, User
-from django.contrib.contenttypes.models import ContentType
 from shopman.craftsman.models import RecipeEntry, RecipeVersion
 from shopman.craftsman.services import recipe_book as craftsman
 
@@ -40,11 +39,9 @@ def viewer(shop):
 
 @pytest.fixture
 def editor(shop):
-    from shopman.shop.models import Shop
-
     user = grant_production_operator(User.objects.create_user("ref-editor", password="pw", is_staff=True))
     user.user_permissions.add(
-        Permission.objects.get(content_type=ContentType.objects.get_for_model(Shop), codename="manage_production")
+        Permission.objects.get(content_type__app_label="craftsman", codename="change_recipe")
     )
     return User.objects.get(pk=user.pk)
 

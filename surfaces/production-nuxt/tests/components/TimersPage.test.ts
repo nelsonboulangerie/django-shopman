@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { mount, type VueWrapper } from "@vue/test-utils";
 
+import FloorTimerCreateDialog from "../../app/components/FloorTimerCreateDialog.vue";
 import TimersPage from "../../app/pages/timers.vue";
 // O card entra DE VERDADE: é a integração página↔card que importa aqui (o
 // gesto em si tem teste próprio em FloorTimerCard.test.ts). Componente
@@ -22,6 +23,7 @@ const tags = ref([
 const createSpy = vi.fn();
 const seenSpy = vi.fn();
 const clearSpy = vi.fn();
+const restoreSpy = vi.fn();
 const extendSpy = vi.fn();
 const createTagSpy = vi.fn();
 const sonnerSuccess = vi.fn();
@@ -71,6 +73,7 @@ beforeEach(() => {
     create: createSpy,
     seen: seenSpy,
     clear: clearSpy,
+    restore: restoreSpy,
     extend: extendSpy,
     remainingLabel: () => "12:34",
   }));
@@ -125,6 +128,14 @@ describe("Página /timers — disparo de um toque", () => {
     expect(page.find("[data-create-dialog]").exists()).toBe(false);
   });
 
+  it("toque duplo na mesma etiqueta arma um timer só (beta 05/11)", async () => {
+    const page = await mountPage();
+    const tag = byLabel(page, "Disparar Estufa, 1 h")!;
+    await tag.trigger("click");
+    await tag.trigger("click");
+    expect(createSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('"Novo timer" abre o caminho livre', async () => {
     const page = await mountPage();
     expect(page.find("[data-create-dialog]").exists()).toBe(false);
@@ -133,6 +144,18 @@ describe("Página /timers — disparo de um toque", () => {
     await novo!.trigger("click");
 
     expect(page.find("[data-create-dialog]").exists()).toBe(true);
+  });
+
+  it("o nome do timer para em 40 letras, o teto da etiqueta (beta 05/11)", async () => {
+    const dialog = mount(FloorTimerCreateDialog, {
+      props: { open: true, tags: [], lastMinutes: 20, savingTag: false },
+      global: { stubs: { ...nuxtUiStubs, Icon: true } },
+    });
+    await nextTick();
+    const nameInput = dialog.find('[aria-label="Nome do timer"]');
+    expect(nameInput.attributes("maxlength")).toBe("40");
+    expect(dialog.html()).not.toContain("Não trava lote");
+    dialog.unmount();
   });
 });
 
@@ -167,8 +190,15 @@ describe("Página /timers — os ativos como cards", () => {
     await explicit.find((b) => b.text() === "+5 min")!.trigger("click");
     expect(extendSpy).toHaveBeenCalledWith("a", 5);
 
+    const removed = { endsAt: 123, minutes: 20, kind: "free", label: "Estufa" };
+    clearSpy.mockReturnValueOnce(removed);
     await explicit.find((b) => b.text() === "Encerrar")!.trigger("click");
     expect(clearSpy).toHaveBeenCalledWith("a");
+    // Encerrar não pergunta, mas oferece Desfazer com o mesmo fim (beta 05/11).
+    const [message, options] = sonnerSuccess.mock.calls.at(-1)!;
+    expect(message).toBe("Timer encerrado.");
+    options.action.onClick();
+    expect(restoreSpy).toHaveBeenCalledWith("a", removed);
   });
 });
 

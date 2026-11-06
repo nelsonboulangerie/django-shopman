@@ -99,8 +99,8 @@ def _verify_with_perm(user, raw_pin: str, perm: str | None) -> bool:
     return cred.verify(raw_pin)
 
 
-def is_eligible_operator(user, required_perm: str | None = OPERATE_POS) -> bool:
-    """``user`` pode se identificar nesta superfície (ativo, equipe, com a permissão)?"""
+def is_eligible_operator(user, *, required_perm: str | None = OPERATE_POS) -> bool:
+    """True if ``user`` may operate with ``required_perm`` (sem olhar o PIN)."""
     return _eligible(user, required_perm)
 
 

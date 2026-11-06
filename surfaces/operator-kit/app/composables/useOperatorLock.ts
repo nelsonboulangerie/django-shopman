@@ -154,7 +154,7 @@ export function useOperatorLock(perm: string) {
       await refreshNuxtData();
       return true;
     } catch (err) {
-      unlockError.value = httpErrorMessage(err, "Identificação inválida. Tente de novo.");
+      unlockError.value = httpErrorMessage(err, "Não deu para entrar. Tente de novo.");
       return false;
     } finally {
       busy.value = false;

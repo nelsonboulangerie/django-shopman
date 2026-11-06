@@ -43,6 +43,12 @@ export interface HistoryQuery {
   q: string;
   /** Só os pedidos com este produto (o "Abrir os N pedidos" do B.I.). */
   sku: string;
+  /**
+   * O eixo do período. Vazio é o do Histórico (o dia em que o pedido fechou);
+   * `ordered` é o do B.I. (o dia em que o pedido foi feito), que o "Abrir os N
+   * pedidos" manda para abrir os mesmos N que contou.
+   */
+  basis: "" | "ordered";
   page: number;
   filters: ActiveFilters;
 }
@@ -90,6 +96,7 @@ export function historyQueryFromRoute(
     period,
     q: first(query.q),
     sku: first(query.sku),
+    basis: first(query.basis) === "ordered" ? "ordered" : "",
     page: Number.isFinite(page) && page > 1 ? page : 1,
     filters: filtersFromQuery(historyDimensions(), query),
   };
@@ -106,6 +113,7 @@ export function routeQueryFromHistory(
   if (to) out.to = to;
   if (history.q) out.q = history.q;
   if (history.sku) out.sku = history.sku;
+  if (history.basis) out.basis = history.basis;
   if (history.page > 1) out.page = String(history.page);
   return { ...out, ...filtersToQuery(historyDimensions(), history.filters) };
 }
@@ -124,6 +132,7 @@ export function historyApiQuery(
     date_to: range.date_to,
     ...(history.q ? { q: history.q } : {}),
     ...(history.sku ? { sku: history.sku } : {}),
+    ...(history.basis ? { date_basis: history.basis } : {}),
     ...(history.page > 1 ? { page: history.page } : {}),
     ...filtersToQuery(historyDimensions(), history.filters),
   };

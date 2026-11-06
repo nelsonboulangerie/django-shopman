@@ -315,7 +315,25 @@ const notices = computed<CardNotice[]>(() => {
       color: seal.value.tone === "error" ? "error" : "info",
       icon: "i-lucide-lock",
       label: "Por que espera",
-      title: card.advance_block_reason,
+      // O nome do bloqueio primeiro ("Pix expirado"), o porquê embaixo: só os
+      // horários ("gerado às 05:51 · expirou às 05:57") não diziam o que trava.
+      // O mesmo par do aviso de bloqueio do detalhe.
+      title: card.advance_block_label?.replace(/…$/, "") || "Bloqueado",
+      description: card.advance_block_reason,
+      // Pix ou link vencido nunca destrava sozinho: o próximo passo vem pronto.
+      // O detalhe abre o cancelar com "Pagamento não confirmado" já marcado.
+      actions: card.payment_lapsed
+        ? [
+            action(
+              {
+                label: "Cancelar pedido",
+                icon: "i-lucide-ban",
+                to: `/${card.ref}#cancel-unpaid`,
+              },
+              { "data-cancel-unpaid": "" },
+            ),
+          ]
+        : undefined,
       attrs: { "data-advance-block": "" },
     });
   for (const chip of attentionStations.value)

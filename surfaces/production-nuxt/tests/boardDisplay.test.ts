@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { boardDisplay, isStale } from "../app/presentation/production";
+import {
+  boardDisplay,
+  boardQtyChars,
+  boardQtyLabel,
+  isStale,
+} from "../app/presentation/production";
+
+describe("Letreiro — coluna de quantidade", () => {
+  // Beta 05/11: "CROISSANT MANTEIGA 4200 U" perdia o N com 6 palhetas fixas.
+  it("cabe a maior quantidade do dia, com a unidade", () => {
+    expect(boardQtyLabel("4200")).toBe("4200 UN");
+    expect(boardQtyChars([{ qty: "12" }, { qty: "4200" }])).toBe(7);
+  });
+  it("nunca encolhe abaixo de 999 UN", () => {
+    expect(boardQtyChars([])).toBe(6);
+    expect(boardQtyChars([{ qty: "8" }])).toBe(6);
+  });
+});
 
 describe("boardDisplay — stale-tolerant board state", () => {
   it("shows the board whenever there is data, even mid-refresh or after a failed poll", () => {

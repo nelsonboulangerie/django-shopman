@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
-import { useProductionKds } from "~/composables/useProductionKds";
+import { useProductionKds, validationIssues } from "~/composables/useProductionKds";
 
 const env = installNuxtGlobals();
 
@@ -236,5 +236,34 @@ describe("useProductionKds — per-WO writes", () => {
     expect((await voidOrder(7, 5, reason)).blocked?.code).toBe("offline");
     expect(reason).toBe("queimou");
     expect(env.fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("validationIssues — a recusa campo a campo", () => {
+  beforeEach(() => {
+    installNuxtGlobals();
+  });
+  it("lê error.issues do 400 e guarda a primeira mensagem de cada campo", () => {
+    const error = {
+      status: 400,
+      data: {
+        detail: "Corrija os campos indicados e tente novamente.",
+        error: {
+          code: "validation_error",
+          issues: [
+            { field: "quantity", message: "Até 50 kg por registro. Confira o número." },
+            { field: "expiry_date", message: "A validade da massa velha não pode estar no passado." },
+            { field: "quantity", message: "segunda" },
+          ],
+        },
+      },
+    };
+    expect(validationIssues(error)).toEqual({
+      quantity: "Até 50 kg por registro. Confira o número.",
+      expiry_date: "A validade da massa velha não pode estar no passado.",
+    });
+  });
+  it("outro erro não vira recusa de campo", () => {
+    expect(validationIssues({ status: 409, data: { error: { code: "stale_projection" } } })).toBeNull();
   });
 });
