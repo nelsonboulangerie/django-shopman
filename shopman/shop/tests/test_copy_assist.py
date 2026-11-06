@@ -114,6 +114,8 @@ def test_ai_opt_in_never_changes_announcement_birth(configured, monkeypatch, tem
 
 
 def test_ai_can_never_inherit_no_approval_auto_dispatch(configured, monkeypatch, template, product):
+    # Com link relativo o anúncio nasce para revisão (MKT-20); aqui a loja tem endereço.
+    configured.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.example.com"
     provider_calls: list[int] = []
     dispatches: list[int] = []
     monkeypatch.setattr(

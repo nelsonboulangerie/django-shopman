@@ -180,19 +180,6 @@ def test_skipped_notice_says_why_instead_of_omitted():
     assert "outro meio" in receipts._detail(receipts.STATE_FAILED, {})
 
 
-# ── GES-03 ──────────────────────────────────────────────────────────────────
-
-
-def test_order_without_any_payment_trace_is_flagged_for_the_handover_question(gestor):
-    """Sem meio, sem intent e sem tender: a tela pergunta "Já recebeu?" antes de entregar."""
-    unrecorded = _order("B-C02", status="ready", payment={"amount_q": 5000})
-    assert build_order_card(unrecorded).payment_unrecorded is True
-    assert build_operator_order(unrecorded, user=gestor).payment_unrecorded is True
-    cash = _order("B-C03", status="ready", payment={"method": "cash"})
-    assert build_order_card(cash).payment_unrecorded is False
-    assert build_operator_order(cash, user=gestor).payment_unrecorded is False
-
-
 # ── PDV-10 (cliente) ────────────────────────────────────────────────────────
 
 

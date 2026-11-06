@@ -786,3 +786,15 @@ def _validate_content(
             detail="Cada variante de plataforma deve ser um objeto.",
             field_errors={"platform_content": ("Revise as variantes.",)},
         )
+    # Conteúdo público nunca sai com link relativo ("/produto/KUP" não abre fora da
+    # loja). O rascunho nasce assim quando falta o endereço do site; a aprovação recusa.
+    from shopman.shop.policies.marketing_public_link import public_link_problem
+    from shopman.shop.services.storefront_links import storefront_base_url
+
+    problem = public_link_problem(
+        content, platform_content, store_address_configured=bool(storefront_base_url())
+    )
+    if problem is not None:
+        raise MarketingContractError(
+            code=problem.code, detail=problem.detail, field_errors=problem.field_errors()
+        )

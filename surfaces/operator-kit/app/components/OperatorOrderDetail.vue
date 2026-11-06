@@ -211,7 +211,7 @@ const itemColumns = [
             </p>
             <p class="flex items-center gap-2 text-muted-foreground">
               <Icon name="lucide:wallet" class="size-4" />
-              {{ order.payment_method_label || "Pagamento não informado"
+              {{ order.payment_method_label
               }}<template v-if="order.payment_status_label">
                 · {{ order.payment_status_label }}</template
               >
@@ -478,7 +478,7 @@ const itemColumns = [
               </p>
               <p class="flex items-center gap-2 text-muted-foreground">
                 <Icon name="lucide:wallet" class="size-4" />
-                {{ order.payment_method_label || "Pagamento não informado"
+                {{ order.payment_method_label
                 }}<template v-if="order.payment_status_label">
                   · {{ order.payment_status_label }}</template
                 >

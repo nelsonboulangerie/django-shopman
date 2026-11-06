@@ -34,6 +34,12 @@ pytestmark = pytest.mark.django_db
 SKU = "croissant-e2e"
 
 
+# Conteúdo público só sai com link absoluto (MKT-20): a loja tem endereço de site.
+@pytest.fixture(autouse=True)
+def _loja_com_endereco(settings):
+    settings.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.example.com"
+
+
 @pytest.fixture
 def product():
     return Product.objects.create(

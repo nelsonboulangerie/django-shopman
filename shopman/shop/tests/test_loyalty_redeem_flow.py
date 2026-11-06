@@ -55,6 +55,7 @@ def _commit_with_loyalty(channel, *, redeem_q: int, django_capture_on_commit_cal
             {"op": "set_data", "path": "customer_ref", "value": CUSTOMER_REF},
             {"op": "set_data", "path": "fulfillment_type", "value": "pickup"},
             {"op": "set_data", "path": "loyalty", "value": {"redeem_points_q": redeem_q}},
+            {"op": "set_data", "path": "payment", "value": {"method": "cash"}},
         ],
     )
     with django_capture_on_commit_callbacks(execute=True):

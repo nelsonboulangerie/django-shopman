@@ -3039,6 +3039,11 @@ def _adapter_config(order, *, method: str) -> dict:
         stripe_config = getattr(settings, "SHOPMAN_STRIPE", {}) or {}
         capture_method = str(stripe_config.get("capture_method") or "manual").strip().lower()
         config["capture_method"] = capture_method if capture_method in {"automatic", "manual"} else "manual"
+        # O prazo do cartão é a janela de pagamento do canal, a mesma do Pix: o
+        # pedido que nunca foi autorizado (recusado, abandonado na tela do
+        # Stripe) vence, é cancelado pelo `payment.timeout` e devolve o estoque.
+        # O adapter prende a janela ao piso de 30 min do Stripe.
+        config["card_timeout_minutes"] = cfg.payment.timeout_minutes
     return config
 
 

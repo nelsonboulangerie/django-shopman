@@ -28,6 +28,8 @@ from django.test import TestCase
 from django.utils import timezone
 from shopman.orderman.tests.commit_support import seal_for
 
+from shopman.shop.tests._payment import with_payment
+
 # ── Helpers (estilo do vizinho test_storefront_backstage_stress) ──
 
 
@@ -106,7 +108,7 @@ def _open_session(channel_ref: str, session_key: str, sku: str, qty: int, *, dat
                 "unit_price_q": 1000,
             }
         ],
-        data=data or {},
+        data=with_payment(channel_ref, data),
     )
 
 

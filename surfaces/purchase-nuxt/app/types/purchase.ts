@@ -172,6 +172,17 @@ export interface SupplierMaterialCost {
   updatedAt: string;
 }
 
+/** Um item cuja entrada trocaria o custo preferencial do insumo (CMP-06). */
+export interface ReceiptPreferredCostChange {
+  lineId: string;
+  materialName: string;
+  /** A unidade de compra do custo preferencial: os dois valores falam nela. */
+  unitLabel: string;
+  currentQ: number;
+  incomingQ: number;
+  decision: "update" | "keep" | "";
+}
+
 export interface ReceiptHistoryEntry {
   sourceRef: string;
   mode: string;
@@ -239,7 +250,8 @@ export interface MaterialIssue {
 export interface EnrichedMaterial extends Material {
   coverageDays: number;
   preferredCost: SupplierMaterialCost | null;
-  preferredBaseCostQ: number | null;
+  /** Custo preferencial na unidade de leitura (R$/kg do insumo em g). */
+  preferredReadingCostQ: number | null;
   supplierCount: number;
   conversionCount: number;
   tone: MaterialTone;
@@ -278,8 +290,8 @@ export interface SupplierCostRow {
   cost: SupplierMaterialCost;
   supplier: Supplier;
   conversion: MaterialConversion | null;
-  purchaseUnitLabel: string;
-  baseCostQ: number;
+  pricedUnitLabel: string;
+  readingCostQ: number;
   approximate: boolean;
   deltaQ: number;
   deltaPercent: number;
@@ -287,9 +299,11 @@ export interface SupplierCostRow {
 
 export interface QuotePreview {
   costQ: number;
-  purchaseUnitLabel: string;
-  baseFactor: number;
-  baseCostQ: number;
+  /** A unidade que o valor digitado paga: a embalagem, ou o kg/l/un sem embalagem. */
+  pricedUnitLabel: string;
+  readingUnitLabel: string;
+  /** Custo na unidade de leitura (R$/kg do insumo em g), arredondado só aqui. */
+  readingCostQ: number;
   approximate: boolean;
 }
 
@@ -327,6 +341,12 @@ export interface ReceiptLine {
   // A OCORRENCIA do operador (avaria, falta, ressalva). Nasce vazia: o que a
   // nota diz mora nos campos `invoice*` abaixo.
   lineNote: string;
+  /**
+   * O que o operador decidiu quando o preço desta entrada difere do custo
+   * preferencial do insumo neste fornecedor: "update" troca, "keep" mantém.
+   * Sem diferença, fica vazio. Sem resposta, o servidor recusa a entrada.
+   */
+  preferredCost?: "update" | "keep" | "";
   invoiceDescription?: string;
   invoiceQty?: number;
   invoiceUnit?: string;
@@ -383,7 +403,9 @@ export interface ReceiptLinePreview {
   // justamente o numero errado do QA ("10 unidades" lidas como "10 kg"). A tela
   // le esta flag para nao imprimir um total que ninguem apurou ainda.
   baseQtyKnown: boolean;
-  baseCostQ: number;
+  /** Custo na unidade de leitura: R$ 110 por 1200 g = R$ 91,67/kg, nunca R$ 0,09/g. */
+  readingUnitLabel: string;
+  readingCostQ: number;
   totalCostQ: number;
   approximate: boolean;
   suggestion: ReceiptLineSuggestion | null;
