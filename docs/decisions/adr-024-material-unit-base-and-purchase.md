@@ -30,6 +30,19 @@
 > mesma unidade (`units_agree`). Execução: [WP-UNIDADE-BASE-GRAMA](../plans/completed/WP-UNIDADE-BASE-GRAMA.md).
 > Onde o texto abaixo diz "se é pesado, `kg`", leia `g`.
 
+> ⚠️ **Emenda de 2026-11-06 (beta 05/11, CMP-07; decisão do dono): sem conversão, o
+> custo se guarda por kg ou por litro.** A emenda de 24/09 deixou um buraco: quando a
+> compra é na própria base (sem `conversion`), a "unidade de compra" era o grama, e o
+> recebimento gravava `cost_q` em centavo inteiro por grama. 1200 g por R$ 110 virava
+> R$ 0,09/g (o real é 0,0917), e a reposição de 300 g saía R$ 27,00 em vez de R$ 27,50.
+> Agora `cost_q` é sempre o custo da **unidade de preço**: a embalagem da conversão ou,
+> sem conversão, a **unidade de leitura** da base (`buyman.models.cost.reading_unit`:
+> kg para g e mg, l para ml, a própria nas demais). O divisor único é
+> `priced_unit_factor`; a migração `buyman.0012` converteu o que existia. O preço de
+> venda continua centavo inteiro por unidade do produto, e por isso **não se vende por
+> grama**: "Permitir revenda" recusa item em g, mg ou ml (venda a granel é `kg`,
+> "Preço por kg").
+
 ---
 
 ## Contexto

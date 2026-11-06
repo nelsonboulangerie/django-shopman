@@ -511,7 +511,7 @@ def _open_cart(channel_ref, session_key, sku, qty, *, data=None):
         state="open",
         rev=1,
         items=[{"line_id": f"L-{session_key}", "sku": sku, "name": sku, "qty": qty, "unit_price_q": 1000}],
-        data=data or {},
+        data={"payment": {"method": "cash"}, **(data or {})},
     )
 
 

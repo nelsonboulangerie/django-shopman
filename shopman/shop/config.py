@@ -127,7 +127,10 @@ class ChannelConfig:
         # "post_commit" — initiate payment after order confirmed (default for remote)
         # "at_commit"   — initiate payment at commit time
         # "external"    — no digital payment (local counter / marketplace)
-        timeout_minutes: int = 10  # só para method=pix
+        # Janela para pagar a cobrança online (Pix e cartão da loja online), em
+        # minutos. Vencida sem pagamento, o `payment.timeout` cancela o pedido e
+        # devolve o estoque. O cartão respeita o piso de 30 min do Stripe.
+        timeout_minutes: int = 10
         # Janela do LINK de pagamento (pedido remoto anotado no balcão), em
         # minutos, contada da venda. É o teto: o link vence em
         # ``min(agora + janela, corte do atendimento)`` — o corte é o início da
@@ -538,8 +541,8 @@ class ChannelConfig:
         for m in self.payment.available_methods:
             if m not in valid_methods:
                 raise ValueError(f"payment.method inválido: {m}")
-        if "pix" in self.payment.available_methods and self.payment.timeout_minutes <= 0:
-            raise ValueError("timeout_minutes deve ser > 0 para method=pix")
+        if {"pix", "card"} & set(self.payment.available_methods) and self.payment.timeout_minutes <= 0:
+            raise ValueError("timeout_minutes deve ser > 0 para method=pix ou card")
         if self.payment.link_timeout_minutes <= 0:
             raise ValueError("payment.link_timeout_minutes deve ser > 0")
         valid_timings = {"at_commit", "post_commit", "external"}

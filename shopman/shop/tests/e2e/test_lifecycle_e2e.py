@@ -30,6 +30,7 @@ from shopman.orderman.services import CommitService
 from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.models import Channel
+from shopman.shop.tests._payment import with_payment
 
 # ── Service patch targets ─────────────────────────────────────────────
 
@@ -132,6 +133,7 @@ def _make_session(channel, key=None):
         channel_ref=channel.ref,
         state="open",
         items=[{"sku": "PAO-FRANCES", "qty": 2, "unit_price_q": 80, "line_id": "L1"}],
+        data=with_payment(channel),
     )
 
 
@@ -372,6 +374,7 @@ class TestE2E6DuplicateCommit(TestCase):
             channel_ref=self.channel.ref,
             state="open",
             items=[{"sku": "PAO-FRANCES", "qty": 1, "unit_price_q": 80, "line_id": "L1"}],
+            data=with_payment(self.channel),
         )
         idem_key = generate_idempotency_key()
 
@@ -421,6 +424,7 @@ class TestE2E7ConcurrentCommits(TransactionTestCase):
             channel_ref=self.channel.ref,
             state="open",
             items=[{"sku": "PAO-FRANCES", "qty": 1, "unit_price_q": 80, "line_id": "L1"}],
+            data=with_payment(self.channel),
         )
 
         results = []
@@ -615,6 +619,7 @@ class TestE2E10WhatsappChannel(TransactionTestCase):
             items=[{"sku": "PAO-FRANCES", "qty": 2, "unit_price_q": 80, "line_id": "L1"}],
             handle_type="manychat",
             handle_ref="mc_subscriber_12345",
+            data=with_payment(self.channel),
         )
         result = CommitService.commit(
             session_key=session.session_key,

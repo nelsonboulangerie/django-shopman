@@ -29,6 +29,17 @@ pytestmark = pytest.mark.django_db
 URL = "/api/v1/offers/relampago-17h30/claim/"
 
 
+@pytest.fixture(autouse=True)
+def _fresh_rate_limit():
+    """O balde de 20/min por IP é do minuto, não do teste: sem limpar, a soma dos
+    POSTs deste arquivo esbarra nele e o 429 vira falha de outro teste."""
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+    cache.clear()
+
+
 @pytest.fixture
 def croissant(db):
     """Loja de pé, produto vendável e com estoque — a sacola é real neste teste."""
@@ -184,6 +195,74 @@ def test_the_same_sku_already_in_the_bag_is_summed(client, croissant):
     assert response.status_code == 200
     assert response.json()["kept_existing_items"] is True
     assert sum(item["qty"] for item in response.json()["cart"]["items"]) == 3
+
+
+def test_opening_the_same_link_again_does_not_add_another_unit(client, croissant):
+    """⚠️ A mesma oferta entra UMA vez na mesma sacola (decisão do dono, 06/11/2026).
+
+    A segunda visita chega com intenção nova (a página esquece a chave depois do
+    sucesso), e mesmo assim não soma: o recibo é da sacola. Nada a perguntar, e o
+    destino é o da primeira visita.
+    """
+    _promotion()
+    _browse_and_add_other(client)
+    first = _claim(client, idempotency_key="first-visit").json()
+    assert first["added"] == ["CRO-001"]
+
+    second = _claim(client, idempotency_key="second-visit")
+
+    assert second.status_code == 200, second.content
+    body = second.json()
+    assert body["ok"] is True
+    assert body["already_claimed"] is True
+    assert body["added"] == []
+    assert body["kept_existing_items"] is False
+    assert sorted((item["sku"], item["qty"]) for item in body["cart"]["items"]) == [("CRO-001", 1), ("PAO-001", 1)]
+
+
+def test_the_same_bag_on_another_device_does_not_add_the_offer_again(client, croissant):
+    """O recibo não mora no navegador: a sacola viaja para outro dispositivo no login."""
+    _promotion()
+    assert _claim(client, idempotency_key="phone").json()["added"] == ["CRO-001"]
+    other_device = Client()
+    session = other_device.session
+    session["cart_session_key"] = client.session["cart_session_key"]
+    session.save()
+
+    body = other_device.post(
+        URL, data=json.dumps({"idempotency_key": "laptop"}), content_type="application/json",
+    ).json()
+
+    assert body["already_claimed"] is True
+    assert [(item["sku"], item["qty"]) for item in body["cart"]["items"]] == [("CRO-001", 1)]
+
+
+def test_a_different_offer_for_the_same_item_still_adds(client, croissant):
+    """Ofertas distintas continuam somando ("a oferta sempre soma", 24/09/2026)."""
+    _promotion()
+    _promotion(ref="cafe-da-tarde", name="Café da tarde")
+    _claim(client, idempotency_key="relampago")
+
+    response = client.post(
+        "/api/v1/offers/cafe-da-tarde/claim/",
+        data=json.dumps({"idempotency_key": "cafe"}), content_type="application/json",
+    )
+
+    body = response.json()
+    assert body["already_claimed"] is False
+    assert body["added"] == ["CRO-001"]
+    assert sum(item["qty"] for item in body["cart"]["items"]) == 2
+
+
+def test_another_bag_gets_the_offer_again(client, croissant):
+    """O recibo é da sacola: quem recebeu o mesmo link monta a sua."""
+    _promotion()
+    _claim(client, idempotency_key="one")
+
+    body = Client().post(URL, data=json.dumps({"idempotency_key": "one"}), content_type="application/json").json()
+
+    assert body["already_claimed"] is False
+    assert body["added"] == ["CRO-001"]
 
 
 def test_only_the_offer_removes_what_was_there_before(client, croissant):

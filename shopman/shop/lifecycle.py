@@ -692,6 +692,9 @@ def _on_cancelled(order, config: ChannelConfig) -> None:
     # E os pontos que o cliente RESGATOU como desconto também: o débito só é
     # justo se a venda existiu.
     loyalty.restore(order, reason="cancelled")
+    # O pedido cancelado deixa de ser compra no histórico do cliente: o insight
+    # (contagem, ticket médio, favorito, RFM) é recalculado sem ele.
+    customer.refresh_insights(order)
 
     # Venda de balcão cancelada não vira aviso: o cliente está na frente do
     # caixa e vê o cancelamento acontecer. "Seu pedido foi cancelado" chega a
@@ -761,6 +764,7 @@ def _on_returned(order, config: ChannelConfig) -> None:
         stock.revert(order)
         payment.refund(order)
     fiscal.cancel(order)
+    customer.refresh_insights(order)
     loyalty.revoke(order, reason="returned")
     loyalty.restore(order, reason="returned")
 

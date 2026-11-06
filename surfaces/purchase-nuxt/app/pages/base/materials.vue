@@ -4,7 +4,7 @@
 // a tabela fica montada enquanto o detalhe abre ao lado e "‹ 3 de 18 ›" anda dentro da
 // lista que a pessoa via (o recorte e a ordem dela).
 import type { EnrichedMaterial } from "~/types/purchase";
-import { coverageLabel, formatMoney, formatQty, formatStockOnHand, skuRoleBadges } from "~/presentation/purchase";
+import { coverageLabel, formatMoney, formatQty, formatStockOnHand, readingUnit, skuRoleBadges } from "~/presentation/purchase";
 import { MATERIALS_TRAIL, baseSectionPath, materialPath, urgentLabel } from "~/presentation/purchaseSections";
 import { MATERIAL_ATTENTION_TONES, TONE_BADGE, TONE_LABEL, TONE_RANK, isAttentionRecorte, materialDimensions, plural } from "~/presentation/purchaseUi";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
@@ -78,7 +78,7 @@ const SORT_VALUE: Record<string, (material: EnrichedMaterial) => number | string
   name: (material) => material.name,
   stock: (material) => material.stockOnHand,
   coverage: (material) => material.coverageDays,
-  cost: (material) => material.preferredBaseCostQ ?? Number.POSITIVE_INFINITY,
+  cost: (material) => material.preferredReadingCostQ ?? Number.POSITIVE_INFINITY,
   tone: (material) => TONE_RANK[material.tone],
 };
 // Com o insumo aberto ao lado, a tabela encolhe e solta Cobertura e Custo-base antes de
@@ -362,8 +362,8 @@ const { tone: sealTone, time: sealTime } = usePurchaseReadSeal();
               </div>
             </template>
             <template #cost-cell="{ row }">
-              <span class="whitespace-nowrap tabular-nums" :class="row.original.preferredBaseCostQ ? '' : 'text-muted'">
-                {{ row.original.preferredBaseCostQ ? `${formatMoney(row.original.preferredBaseCostQ)} / ${row.original.unit}` : "sem custo" }}
+              <span class="whitespace-nowrap tabular-nums" :class="row.original.preferredReadingCostQ ? '' : 'text-muted'">
+                {{ row.original.preferredReadingCostQ ? `${formatMoney(row.original.preferredReadingCostQ)} / ${readingUnit(row.original.unit).label}` : "sem custo" }}
               </span>
             </template>
             <template #tone-cell="{ row }">

@@ -19,7 +19,6 @@ import {
   exitGesture,
   flattenZones,
   fulfillmentCounts,
-  handOverPaymentQuestion,
   lucideIcon,
   negotiationZoneView,
   nextOutRef,
@@ -1304,17 +1303,8 @@ function courierBackDifferent() {
   else navigateTo(`/${card.ref}`);
 }
 
-// Pedido sem pagamento registrado: "Já recebeu R$ 50,00?" antes do degrau que
-// entrega a mercadoria (GES-03). Os outros degraus seguem com um toque.
-const confirmHandOver = useConfirm();
-async function paymentCleared(card: OrderCardProjection | undefined) {
-  if (!card) return true;
-  const question = handOverPaymentQuestion({ ...card, target: card.next_status });
-  return !question || (await confirmHandOver(question));
-}
-async function onAdvanceAction(ref_: string) {
+function onAdvanceAction(ref_: string) {
   const card = allCards.value.find((c) => c.ref === ref_);
-  if (!(await paymentCleared(card))) return;
   if (card?.next_status !== "dispatched") advance(ref_);
   else {
     const steps = oneTapDispatch(card, allCards.value);
@@ -1325,7 +1315,7 @@ async function onAdvanceAction(ref_: string) {
 
 function onAction(ref_: string, action: AffordanceRef) {
   if (action === "confirm") confirm(ref_);
-  else if (action === "advance") void onAdvanceAction(ref_);
+  else if (action === "advance") onAdvanceAction(ref_);
   else if (action === "courier_back") courierBackRef.value = ref_;
   else if (action === "reject") openReject(ref_);
   else if (action === "settle_cash") openSettle(ref_);
