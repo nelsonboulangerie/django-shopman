@@ -20,7 +20,7 @@ const active = computed(() => isFavorite(props.sku, props.initial ?? false))
 
 async function onClick () {
   if (!isAuthenticated.value) {
-    if (import.meta.client) useSonner('Entre para salvar seus favoritos.')
+    if (import.meta.client) useSonner('Entre para guardar seus favoritos.')
     // O motivo viaja junto: a /entrar diz por que pediu o login, em vez de a pessoa
     // cair numa tela de entrada sem saber o que o coração tinha a ver com ela
     // (beta 05/11, LOJA-13). O aviso efêmero acima some na troca de página.

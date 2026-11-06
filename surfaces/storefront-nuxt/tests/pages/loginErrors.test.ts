@@ -104,6 +104,9 @@ describe('login: erros com o título certo e no lugar certo', () => {
     expect(alert.text()).toContain('Não conseguimos entrar com este número')
     expect(alert.text()).not.toContain('Código não confere')
     expect(alert.find('[data-login-error-support]').exists()).toBe(true)
+    // Um "Falar com a loja" só: o cartão de ajuda do rodapé sai enquanto o aviso o oferece.
+    expect(page.findAll('a').filter((a: any) => a.text().includes('Falar com a loja'))).toHaveLength(1)
+    expect(page.find('[data-login-support]').exists()).toBe(false)
     useNuxtData('shopman-shell').data.value = null
   }, 30_000)
 

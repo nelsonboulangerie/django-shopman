@@ -811,7 +811,9 @@ useSeoMeta({
              chamada: título, frase e botão centrados. -->
         <!-- Ajuda só onde alguém pode estar travado: esperando a mensagem ou o código.
              Na primeira tela ela era mais uma coisa a entender antes do botão. -->
-        <div v-if="supportUrl && (step === 'code' || waWaiting)" class="rounded-lg border bg-transparent p-4 text-center" data-login-support>
+        <!-- Com o conflito de identidade o botão já está no aviso de cima: o cartão
+             repetiria "Falar com a loja" duas vezes na mesma tela. -->
+        <div v-if="supportUrl && (step === 'code' || waWaiting) && !authErrorOffersSupport(error)" class="rounded-lg border bg-transparent p-4 text-center" data-login-support>
           <p class="shop-item-title font-semibold">{{ supportHeading }}</p>
           <p class="mt-1 shop-muted">Fale com a loja e resolvemos juntos.</p>
           <UiButton
