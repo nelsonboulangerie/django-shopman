@@ -828,17 +828,17 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
     committed_session_keys: set[str] = set()
 
     orders = list(orders_qs)
-    # Pedido aceito que NENHUMA estação recebeu ("Sem estação" no Gestor, até alguém
-    # tocar "Iniciar preparo") não é "Em preparo" para o cliente: o painel prometia
-    # preparo que não tinha começado (beta 05/11, KDS-05). Aceito entra quando a
-    # cozinha tem o ticket dele na tela.
+    # Pedido aceito que ninguém começou a fazer não é "Em preparo" para o cliente:
+    # o painel prometia preparo que não tinha começado (beta 05/11, KDS-05). Desde
+    # 06/11 o ticket nasce no aceite e espera "Iniciar preparo" no posto, então ter
+    # ticket não basta: Aceito entra quando alguma estação iniciou o preparo.
     accepted_keys = {
         order.session_key for order in orders if order.status == Order.Status.ACCEPTED and order.session_key
     }
     in_kitchen_keys = (
         set(
             KDSTicket.objects.filter(session_key__in=accepted_keys)
-            .exclude(status="cancelled")
+            .exclude(status__in=["pending", "cancelled"])
             .values_list("session_key", flat=True)
         )
         if accepted_keys
