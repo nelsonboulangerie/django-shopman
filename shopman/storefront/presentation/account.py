@@ -46,10 +46,10 @@ TAB_OPTIONS: tuple[tuple[str, str], ...] = (
 # is the domain registry NOTIFICATION_CONSENT_CHANNELS in shop.services.account;
 # here we add the customer-facing copy for each.
 NOTIFICATION_CHANNELS: tuple[tuple[str, str, str], ...] = (
-    ("whatsapp", "WhatsApp", "Receber atualizações de pedidos via WhatsApp"),
+    ("whatsapp", "WhatsApp", "Receber novidades e outros avisos por WhatsApp"),
     ("email", "Email", "Receber novidades e promoções por email"),
-    ("sms", "SMS", "Receber notificações por SMS"),
-    ("push", "Push", "Notificações push no navegador"),
+    ("sms", "SMS", "Receber novidades e outros avisos por SMS"),
+    ("push", "Push", "Receber novidades e outros avisos no navegador"),
 )
 
 FOOD_PREFERENCE_OPTIONS: tuple[tuple[str, str], ...] = (
@@ -64,11 +64,15 @@ FOOD_PREFERENCE_OPTIONS: tuple[tuple[str, str], ...] = (
 )
 
 
-def present_notification_prefs(enabled_channels) -> tuple[NotificationPrefProjection, ...]:
+def present_notification_prefs(enabled_channels, *, revoked_channels=None) -> tuple[NotificationPrefProjection, ...]:
     """Map the enabled-channel set onto the display catalog."""
     enabled = set(enabled_channels)
+    revoked = set(revoked_channels) if revoked_channels is not None else None
     return tuple(
-        NotificationPrefProjection(key=key, label=label, description=description, enabled=key in enabled)
+        NotificationPrefProjection(
+            key=key, label=label, description=description, enabled=key in enabled,
+            order_notifications_enabled=key not in revoked if revoked is not None else None,
+        )
         for key, label, description in NOTIFICATION_CHANNELS
     )
 
@@ -333,7 +337,8 @@ def _build_notification_prefs(
     try:
         channels = tuple(key for key, _label, _description in NOTIFICATION_CHANNELS)
         enabled_channels = customer_context.enabled_notification_channels(customer.ref, channels)
-        return present_notification_prefs(enabled_channels)
+        revoked_channels = customer_context.revoked_notification_channels(customer.ref, channels)
+        return present_notification_prefs(enabled_channels, revoked_channels=revoked_channels)
     except Exception:
         logger.debug(
             "account_projection_notif_prefs_failed customer=%s",

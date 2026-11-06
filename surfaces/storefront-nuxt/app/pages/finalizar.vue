@@ -278,6 +278,7 @@ const giftDescription = computed(() => (isPickup.value
   ? 'Embalagem especial e um cartão com sua mensagem.'
   : 'Entregamos para outra pessoa, com cartão e sem valores na nota.'))
 watch(() => state.is_gift, (on) => {
+  if (on) state.gift_hide_values = true
   if (!on) {
     state.recipient_name = ''
     state.recipient_phone = ''

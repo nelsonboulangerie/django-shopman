@@ -171,7 +171,7 @@ beforeEach(() => {
     },
     managers: [{ username: "gerente", name: "Gerente" }],
     cancel_reasons: [
-      { key: "customer_request", label: "O cliente pediu", customer_text: "Cancelamos conforme você nos pediu." },
+      { key: "customer_request", label: "O cliente pediu", customer_text: "Conforme sua solicitação." },
       { key: "other", label: "Outro motivo", customer_text: "Sentimos muito pelo imprevisto." },
     ],
   };
@@ -486,7 +486,7 @@ describe("Detalhe — cancelar", () => {
     expect(body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.disabled).toBe(true);
     pickCancelReason("O cliente pediu");
     await settle();
-    expect(body().querySelector("[data-reason-preview]")?.textContent).toContain("Cancelamos conforme você nos pediu.");
+    expect(body().querySelector("[data-reason-preview]")?.textContent).toContain("Conforme sua solicitação.");
     body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
     await settle();
 

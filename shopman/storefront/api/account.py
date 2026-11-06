@@ -20,6 +20,7 @@ from rest_framework.views import APIView
 
 from shopman.shop.observability import ServerTimingMixin
 from shopman.shop.omotenashi import resolve_copy
+from shopman.shop.projections import customer_context
 from shopman.shop.projections.types import Action
 from shopman.shop.services import account as account_service
 from shopman.shop.services import auth as auth_service
@@ -663,6 +664,7 @@ class AccountSummaryView(ServerTimingMixin, APIView):
                     "label": pref.label,
                     "description": pref.description,
                     "enabled": pref.enabled,
+                    "order_notifications_enabled": pref.order_notifications_enabled,
                 }
                 for pref in account.notification_prefs
             ],
@@ -974,8 +976,11 @@ class NotificationPreferenceToggleView(APIView):
         if result.response_code != 200:
             return Response(result.response_body, status=result.response_code)
         # A receipt is historical; show the current preference after a later opt-out.
-        prefs = present_notification_prefs(account_service.enabled_notification_channels(customer.ref))
-        return Response({"notification_preferences": [{"key": p.key, "label": p.label, "description": p.description, "enabled": p.enabled} for p in prefs]})
+        prefs = present_notification_prefs(
+            account_service.enabled_notification_channels(customer.ref),
+            revoked_channels=customer_context.revoked_notification_channels(customer.ref, account_service.NOTIFICATION_CONSENT_CHANNELS),
+        )
+        return Response({"notification_preferences": [{"key": p.key, "label": p.label, "description": p.description, "enabled": p.enabled, "order_notifications_enabled": p.order_notifications_enabled} for p in prefs]})
 
     def _post(self, request):
         customer = get_authenticated_customer(request)
@@ -999,7 +1004,8 @@ class NotificationPreferenceToggleView(APIView):
                 # TRUSTED_PROXY_DEPTH — o leftmost é forjável pelo cliente.
                 ip_address=auth_service.client_ip(request),
                 **({"enabled": enabled} if "enabled" in request.data else {}),
-            )
+            ),
+            revoked_channels=customer_context.revoked_notification_channels(customer.ref, account_service.NOTIFICATION_CONSENT_CHANNELS),
         )
         return Response({
             "notification_preferences": [
@@ -1008,6 +1014,7 @@ class NotificationPreferenceToggleView(APIView):
                     "label": pref.label,
                     "description": pref.description,
                     "enabled": pref.enabled,
+                    "order_notifications_enabled": pref.order_notifications_enabled,
                 }
                 for pref in prefs
             ]

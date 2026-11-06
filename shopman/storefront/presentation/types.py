@@ -79,6 +79,7 @@ class NotificationPrefProjection:
     label: str        # "WhatsApp"
     description: str  # "Receber atualizações via WhatsApp"
     enabled: bool
+    order_notifications_enabled: bool | None = None
 
 
 @dataclass(frozen=True)

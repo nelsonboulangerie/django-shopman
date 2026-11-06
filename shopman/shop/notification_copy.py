@@ -95,7 +95,7 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     "order_cancelled": {
         "subject": "Pedido {order_ref_short} cancelado",
         "body": (
-            "Oi{customer_name_greeting}. Seu pedido *{order_ref_short}* foi cancelado. {status_note} "
+            "Oi{customer_name_greeting}. Seu pedido *{order_ref_short}* foi cancelado{cancellation_reason_suffix} "
             "Qualquer dúvida, estamos à disposição. 😌\n"
             "Veja os detalhes: {tracking_url}"
         ),

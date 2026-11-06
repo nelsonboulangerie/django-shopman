@@ -738,7 +738,7 @@ const preorderDetail = {
   cancel_reasons: [
     { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou e não conseguimos preparar o pedido completo." },
     { key: "cannot_deliver", label: "Não dá para entregar", customer_text: "Não conseguimos fazer a entrega no endereço e no horário do pedido." },
-    { key: "customer_request", label: "O cliente pediu", customer_text: "Cancelamos conforme você nos pediu." },
+    { key: "customer_request", label: "O cliente pediu", customer_text: "Conforme sua solicitação." },
     { key: "payment_not_confirmed", label: "Pagamento não confirmado", customer_text: "Não recebemos a confirmação do pagamento a tempo." },
     { key: "store_closing", label: "A loja vai fechar", customer_text: "Precisamos encerrar o atendimento antes do horário do seu pedido." },
     { key: "other", label: "Outro motivo", customer_text: "Sentimos muito pelo imprevisto." },

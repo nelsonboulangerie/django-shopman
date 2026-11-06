@@ -289,6 +289,27 @@ class TestCustomerProfileNotificationPrefs:
     def test_notification_prefs_disabled_by_default(self, customer):
         proj = build_account(customer)
         assert all(not p.enabled for p in proj.notification_prefs)
+        assert all(p.order_notifications_enabled for p in proj.notification_prefs)
+
+    def test_failed_preference_read_does_not_claim_order_notices_are_blocked(self, customer, monkeypatch):
+        from shopman.shop.projections import customer_context
+
+        def fail(*args):
+            raise RuntimeError("unavailable")
+
+        monkeypatch.setattr(customer_context, "revoked_notification_channels", fail)
+        proj = build_account(customer)
+        assert all(p.order_notifications_enabled is None for p in proj.notification_prefs)
+
+    def test_explicit_opt_out_blocks_order_notices_in_projection(self, customer):
+        from shopman.guestman import ConsentService
+
+        ConsentService.revoke_consent(customer.ref, "sms")
+        proj = build_account(customer)
+        sms = next(p for p in proj.notification_prefs if p.key == "sms")
+        assert not sms.enabled
+        assert not sms.order_notifications_enabled
+        assert next(p for p in proj.notification_prefs if p.key == "whatsapp").order_notifications_enabled
 
 
 # ──────────────────────────────────────────────────────────────────────
