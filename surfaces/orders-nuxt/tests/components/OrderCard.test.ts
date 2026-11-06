@@ -526,10 +526,12 @@ describe("OrderCard: quem embalou declara os volumes", () => {
     await w.get("[data-card-menu]").trigger("click");
     await w.get("[data-card-volumes]").trigger("click");
     expect(w.find("[data-card-volumes-editor]").exists()).toBe(true);
+    // Sem declaração, parte de 1: o cartão conta 3 UNIDADES, e 3 croissants
+    // numa sacola não são 3 volumes (volume nunca se deduz dos itens).
     expect(w.get("[data-card-volumes-draft] input").attributes("value")).toBe(
-      "3",
+      "1",
     );
-    await w.get("[aria-label='Um volume a menos']").trigger("click");
+    await w.get("[aria-label='Um volume a mais']").trigger("click");
     await w.get("[data-card-volumes-save]").trigger("click");
     expect(w.emitted("volumes")?.[0]).toEqual([2]);
   });

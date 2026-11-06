@@ -773,7 +773,7 @@ describe("detalhe do pedido: achados do beta 05/11", () => {
     const dialog = w.findComponent({ name: "CourierBackDialog" });
     expect(dialog.props("card")).toMatchObject({ courier_return_lines: ["R$ 50,00 em dinheiro"] });
     await w.get('[data-action="menu"]').trigger("click");
-    expect(w.get("[data-detail-menu] [data-action='advance']").text()).toContain("O troco e a maquininha continuam em aberto.");
+    expect(w.get("[data-detail-menu] [data-action='advance']").text()).toContain("O que saiu com o entregador continua em aberto.");
     w.unmount();
   });
 

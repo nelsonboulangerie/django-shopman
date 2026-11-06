@@ -612,7 +612,9 @@ const detailMenuItems = computed(() => [
     ? [
         {
           label: advanceAction.value.label,
-          description: "O troco e a maquininha continuam em aberto.",
+          // O que saiu pode ser só o troco, só a maquininha ou o dinheiro a
+          // receber: a frase vale para qualquer combinação.
+          description: "O que saiu com o entregador continua em aberto.",
           icon: "i-lucide-check",
           "data-action": "advance",
           disabled: busy.value || !advanceAction.value.enabled,
