@@ -18,7 +18,7 @@ from django.utils import timezone
 from shopman.utils.monetary import format_money
 
 from shopman.shop.projections import customer as customer_projection
-from shopman.storefront.presentation.status import order_status_label, status_color
+from shopman.storefront.presentation.status import customer_status_label, status_color
 from shopman.storefront.presentation.types import OrderSummaryProjection
 
 logger = logging.getLogger(__name__)
@@ -83,8 +83,9 @@ def present_summary(summary) -> OrderSummaryProjection:
         total_q=summary.total_q,
         total_display=f"R$ {format_money(summary.total_q)}",
         status=summary.status,
-        status_label=order_status_label(summary.status),
-        status_color=status_color(summary.status),
+        display_status_key=summary.display_status_key,
+        status_label=customer_status_label(summary.display_status_key, summary.status),
+        status_color=status_color(summary.display_status_key, summary.status),
         item_count=summary.item_count,
     )
 

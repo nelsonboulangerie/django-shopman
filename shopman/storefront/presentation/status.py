@@ -44,14 +44,18 @@ def status_color(status: str, fallback_status: str | None = None) -> str:
     return _TONE_CLASSES[tone] if tone else DEFAULT_STATUS_COLOR
 
 
-def status_tone(status: str | None) -> str:
+def status_tone(status: str | None, fallback_status: str | None = None) -> str:
     """Map an order status to its semantic tone keyword (surface-agnostic).
 
     The data read-side carries *meaning* (the ``Tone``); each surface owns the
     tone→class translation. Surfaces that render their own classes (the Nuxt
     storefront) consume this keyword instead of the legacy class string.
+    ``fallback_status`` follows :func:`status_color`: a semantic key without a
+    tone of its own resolves through the raw ``order.status``.
     """
     tone = ORDER_STATUS_TONES.get(status or "")
+    if tone is None and fallback_status:
+        tone = ORDER_STATUS_TONES.get(fallback_status)
     return tone.value if tone else Tone.INFO.value
 
 
@@ -81,6 +85,45 @@ def order_status_label(status: str | None, fallback: str | None = None) -> str:
     if proprio:
         return build_copy("TRACKING").title(proprio[0], proprio[1])
     return build_copy("ORDER_STATUS").title(f"ORDER_STATUS_{status.upper()}", fb)
+
+
+# display_status_key → (copy key, fallback). O estado semântico que o cliente lê
+# (``shop.projections.order_tracking.display_status_key``). Keys absent here fall
+# back to the canonical order status labels.
+STATUS_LABEL_COPY: dict[str, tuple[str, str]] = {
+    "payment_expired": ("TRACKING_STATUS_PAYMENT_EXPIRED", "Pagamento expirado"),
+    "waiting_store_confirmation": ("TRACKING_STATUS_WAITING_STORE_CONFIRMATION", "Aguardando a loja"),
+    "payment_pending": ("TRACKING_STATUS_PAYMENT_PENDING", "Aguardando pagamento"),
+    "card_authorized": ("TRACKING_STATUS_CARD_AUTHORIZED", "Pagamento autorizado"),
+    "ready_delivery": ("TRACKING_STATUS_READY_DELIVERY", "Aguardando entregador"),
+    "ready_pickup": ("TRACKING_STATUS_READY_PICKUP", "Pronto para retirada"),
+    "preorder_scheduled": ("TRACKING_STATUS_PREORDER_SCHEDULED", "Encomenda confirmada"),
+}
+
+
+def customer_status_label(
+    display_status_key: str | None,
+    status: str | None,
+    *,
+    copy: CopyCatalog | None = None,
+) -> str:
+    """O rótulo de status que o cliente lê, em qualquer superfície da loja.
+
+    Uma função só para acompanhamento, lista de pedidos da Conta e faixa de
+    pedido ativo da home: todas recebem o ``display_status_key`` semântico, que
+    olha o pagamento. Rotular pelo ``order.status`` cru dizia "Aguardando a loja"
+    para um Pix ainda não pago (beta 06/11).
+    """
+    spec = STATUS_LABEL_COPY.get(display_status_key or "")
+    if spec:
+        if copy is None:
+            copy = build_copy("TRACKING")
+        return copy.title(spec[0], spec[1])
+    return (
+        order_status_label(display_status_key, "")
+        or order_status_label(status, "")
+        or (status or "")
+    )
 
 
 def payment_method_label(method: str) -> str:

@@ -1206,25 +1206,24 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_STATUS_CARD_AUTHORIZED": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STATUS_PAYMENT_EXPIRED": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STATUS_PAYMENT_PENDING": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STATUS_PREORDER_SCHEDULED": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STATUS_READY_DELIVERY": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STATUS_READY_PICKUP": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STATUS_WAITING_STORE_CONFIRMATION": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STEP_AVAILABILITY_CONFIRMED": (

@@ -41,6 +41,7 @@ from shopman.shop.projections.types import (
     TimelineEventProjection,
 )
 from shopman.storefront.presentation.status import (
+    customer_status_label,
     order_status_label,
     payment_method_label,
     status_color,
@@ -76,18 +77,6 @@ FULFILLMENT_STATUS_LABELS: dict[str, str] = {
     "dispatched": "Saiu para entrega",
     "delivered": "Entregue",
     "cancelled": "Cancelado",
-}
-
-# display_status_key → (copy key, fallback). Keys absent here fall back to the
-# canonical order status labels.
-STATUS_LABEL_COPY: dict[str, tuple[str, str]] = {
-    "payment_expired": ("TRACKING_STATUS_PAYMENT_EXPIRED", "Pagamento expirado"),
-    "waiting_store_confirmation": ("TRACKING_STATUS_WAITING_STORE_CONFIRMATION", "Aguardando a loja"),
-    "payment_pending": ("TRACKING_STATUS_PAYMENT_PENDING", "Aguardando pagamento"),
-    "card_authorized": ("TRACKING_STATUS_CARD_AUTHORIZED", "Pagamento autorizado"),
-    "ready_delivery": ("TRACKING_STATUS_READY_DELIVERY", "Aguardando entregador"),
-    "ready_pickup": ("TRACKING_STATUS_READY_PICKUP", "Pronto para retirada"),
-    "preorder_scheduled": ("TRACKING_STATUS_PREORDER_SCHEDULED", "Encomenda confirmada"),
 }
 
 # Semantic payment status descriptor → customer-facing label.
@@ -403,7 +392,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         convenience_pending=data.convenience_pending,
         order_ref=data.order_ref,
         status=data.status,
-        status_label=_status_label(data.display_status_key, data.status, copy),
+        status_label=customer_status_label(data.display_status_key, data.status, copy=copy),
         status_color=status_color(data.display_status_key, data.status),
         is_preorder=data.is_preorder,
         when_display=when_display if data.is_preorder else None,
@@ -511,7 +500,7 @@ def present_tracking_status(data: TrackingStatusData) -> OrderTrackingStatusProj
     return OrderTrackingStatusProjection(
         order_ref=data.order_ref,
         status=data.status,
-        status_label=_status_label(data.display_status_key, data.status, copy),
+        status_label=customer_status_label(data.display_status_key, data.status, copy=copy),
         status_color=status_color(data.display_status_key, data.status),
         progress_steps=_present_progress_steps_from(data.progress_steps, is_pickup=False, copy=copy),
         timeline=_present_timeline(data),
@@ -522,13 +511,6 @@ def present_tracking_status(data: TrackingStatusData) -> OrderTrackingStatusProj
 # ──────────────────────────────────────────────────────────────────────
 # Status, payment, money, ETA
 # ──────────────────────────────────────────────────────────────────────
-
-
-def _status_label(display_status_key: str, status: str, copy: CopyCatalog) -> str:
-    spec = STATUS_LABEL_COPY.get(display_status_key)
-    if spec:
-        return copy.title(spec[0], spec[1])
-    return order_status_label(display_status_key, "") or order_status_label(status, "") or status
 
 
 def _money_outcome_line(money: TrackingMoneyOutcomeData | None, copy: CopyCatalog) -> str:

@@ -69,6 +69,7 @@ class OrderSummaryProjection:
     status_label: str
     status_color: str        # Penguin UI token classes
     item_count: int
+    display_status_key: str  # estado semântico do acompanhamento (olha o pagamento)
 
 
 @dataclass(frozen=True)
