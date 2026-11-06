@@ -127,6 +127,9 @@ const suggestion = computed(() => resaleSuggestionView(props.material.saleSugges
       <p v-if="material.roles?.produced && !material.roles?.sellable" class="text-xs text-muted">
         É produzido aqui: a venda dele é do Catálogo, não do Compras.
       </p>
+      <p v-else-if="resale.blocked && !material.roles?.sellable" class="text-xs text-muted" data-testid="sale-blocked">
+        {{ resale.blocked }}
+      </p>
       <template v-else>
         <NuxtCheckbox
           :model-value="Boolean(material.roles?.sellable) || saleOpen"

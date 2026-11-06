@@ -97,13 +97,22 @@ def suggested_price_q(cost_q: int, markup_pct: int) -> int:
 def unit_costs_map(skus) -> dict[str, int]:
     """Custo por unidade-base de cada SKU: fornecedor preferido, senão a última compra.
 
-    SKU sem custo conhecido fica de fora — e aí não há sugestão: nunca se
-    inventa custo. Duas consultas para a lista inteira.
+    SKU sem custo conhecido fica de fora, e aí não há sugestão: nunca se
+    inventa custo. Fica de fora também o que é contado em g, mg ou ml: não se
+    vende por grama (``sku_records.start_selling``), e o centavo inteiro por
+    grama seria a sugestão de um preço que não existe. Três consultas para a
+    lista inteira.
     """
-    from shopman.buyman.models import SupplierMaterialCost
+    from shopman.buyman.models import Material, SupplierMaterialCost
+    from shopman.buyman.models.cost import reading_unit
     from shopman.stockman.models import Move
 
     skus = [sku for sku in dict.fromkeys(skus) if sku]
+    by_gram = {
+        sku for sku, unit in Material.objects.filter(sku__in=skus).values_list("sku", "unit")
+        if reading_unit(unit)[0] != 1
+    }
+    skus = [sku for sku in skus if sku not in by_gram]
     costs: dict[str, int] = {}
     rows = (
         SupplierMaterialCost.objects.filter(material__sku__in=skus, cost_q__gt=0)
@@ -114,9 +123,8 @@ def unit_costs_map(skus) -> dict[str, int]:
         sku = row.material.sku
         if sku in costs:
             continue
-        factor = Decimal(row.conversion.to_base_factor) if row.conversion_id else Decimal(1)
-        if factor > 0:
-            costs[sku] = int((Decimal(row.cost_q) / factor).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+        if row.priced_unit_factor > 0:
+            costs[sku] = int(row.cost_per_base_unit.quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
     missing = [sku for sku in skus if sku not in costs]
     if missing:
