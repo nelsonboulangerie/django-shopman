@@ -6,6 +6,8 @@ builders consume them through this stable import path):
 - ``popular_skus`` — most-favourited SKUs across customer insights.
 - ``session_pricing_hints`` — fulfillment type + subtotal from the active
   cart session, matching what DiscountModifier sees at checkout.
+- ``device_trust_period`` — the device-trust period as the customer says it,
+  read from the auth service (Presentation never reads ``shop.services``).
 
 A clean read facade (policy/data, no presentation), so it lives in the
 orchestrator read-side (``shop/projections/``).
@@ -93,3 +95,14 @@ def session_pricing_hints(request) -> tuple[str, int]:
     except Exception as e:
         logger.warning("session_pricing_hints_failed: %s", e, exc_info=True)
         return "", 0
+
+
+def device_trust_period() -> str:
+    """O prazo da confiança do dispositivo salvo, dito como o cliente fala ("6 meses").
+
+    Fachada de leitura para a Presentation da Loja, que não importa
+    ``shop.services`` (R-A, ADR-014). A fonte é o service de auth.
+    """
+    from shopman.shop.services.auth import device_trust_period_display
+
+    return device_trust_period_display()

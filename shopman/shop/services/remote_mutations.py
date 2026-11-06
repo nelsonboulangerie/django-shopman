@@ -229,6 +229,16 @@ def lookup_idempotent_mutation(
     return None
 
 
+def release_receipt(*, scope: str, key: str) -> None:
+    """Apagar um recibo concluído cujo fato deixou de valer.
+
+    Só para recibos que descrevem um ESTADO ("esta oferta está nesta sacola"), nunca
+    para os que guardam um efeito externo (pagamento, nota): quando o estado some, a
+    mesma intenção volta a poder executar uma vez.
+    """
+    IdempotencyKey.objects.filter(scope=scope, key=key, status="done").delete()
+
+
 def _acquire(
     *,
     scope: str,

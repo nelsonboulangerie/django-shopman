@@ -989,9 +989,11 @@ Roda no `maintenance_worker`, depois do `check_directive_health`. Está no ciclo
 min mas **não trabalha a cada 5 min**: carrega a própria janela (03h–05h local) e o
 próprio teto de lote (200 por execução). Três decisões valem registro:
 
-- **Cliente sem nenhum pedido fica de fora.** Sem pedido, `r=1, f=1, m=1` cai em
-  `lost` — carimbar "Perdido" em quem nunca comprou é mentira, não classificação.
-  Para dar insight a cliente importado, use `--all` (ou a ação do CustomerAdmin).
+- **Cliente sem nenhum pedido fica de fora.** Sem pedido não há recência para
+  envelhecer. E sem pedido não há segmento: o próprio `InsightService.recalculate`
+  grava `rfm_segment` vazio (e R/F/M e `churn_risk` nulos) para quem nunca comprou,
+  então nenhum caminho, `--all` incluído, carimba "Perdido" nele. Para dar insight a
+  cliente importado, use `--all` (ou a ação do CustomerAdmin).
 - **Teto de lote porque o worker é serial.** Varrer a base inteira num ciclo atrasaria
   `reconcile_payments` e tudo atrás dela. A janela de 2h drena o resto, do insight mais
   velho para o mais novo.

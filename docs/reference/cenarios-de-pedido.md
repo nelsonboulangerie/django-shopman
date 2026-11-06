@@ -50,7 +50,7 @@ na §8.
 | Canal | Confirmação | Pagamento | Preparo começa | Avisos ao cliente |
 |---|---|---|---|---|
 | `pdv` | `immediate` (encomenda vira manual: `lifecycle.py:776`) | `external`; formas do PDV: R dinheiro, P Pix, C crédito, D débito, L link, E em conta | sozinho (`prep_start` padrão) | ManyChat → e-mail → SMS |
-| `web` (loja online) | `manual`, alerta de pedido parado em 10 min | Pix e cartão, `post_commit`, prazo 10 min | **o operador** dá "Iniciar preparo" (`prep_start=operator`) | ManyChat → SMS → e-mail |
+| `web` (loja online) | `manual`, alerta de pedido parado em 10 min | Pix e cartão, `post_commit`, prazo 10 min | o ticket nasce no aceite e espera **o operador** dar "Iniciar preparo" na Cozinha (ou o atalho do Gestor, mesmo ato; `prep_start=operator`) | ManyChat → SMS → e-mail |
 | `whatsapp` | `manual`, alerta em 10 min | Pix e cartão, `at_commit`, prazo 10 min | sozinho | ManyChat → SMS → e-mail |
 | `ifood` | `manual`, alerta em 5 min, SLA do iFood 8 min | `external` | sozinho | nenhum (o telefone é a central do iFood) |
 
@@ -69,7 +69,7 @@ stateDiagram-v2
     new --> accepted: Aceitar (Gestor) · immediate (PDV) · iFood confirma
     new --> cancelled: Recusar (Gestor, com motivo) · Pix venceu · sem estoque · iFood CAN
     accepted --> completed: venda de balcão já entregue (system:counter_handoff, só PDV)
-    accepted --> preparing: KDS Iniciar · "Iniciar preparo" (Gestor, loja online) · despertador 00:05 da encomenda
+    accepted --> preparing: KDS Iniciar · "Iniciar preparo" (atalho do Gestor, mesmo ato) · despertador 00:05 da encomenda
     accepted --> ready: (existe no mapa; nenhum botão usa)
     preparing --> ready: último ticket Pronto (KDS) · "Marcar pronto" (Gestor)
     ready --> preparing: Desfazer o Pronto · reabrir ticket
@@ -422,7 +422,8 @@ antecipada pelos marcos invertidos (horário − tempo de chegada) é pós-go-li
    "se ninguém aceitar até HH:MM, ele é cancelado sozinho e o que o cliente pagou é devolvido".
    Recusou ou venceu: cancelado, Pix estornado ou cartão anulado, cliente avisado dos dois.
 7. **No aceite:** o cartão é capturado; o Pix já entrou.
-8. **Pago:** o Gestor mostra; o operador dá **Iniciar preparo** (`prep_start=operator`) → KDS →
+8. **Pago:** o ticket já está na Cozinha, esperando; o operador do posto dá **Iniciar preparo** (o
+   Gestor tem o mesmo gesto como atalho; `prep_start=operator`) → em preparo →
    Pronto → `order_ready_pickup`.
 9. **Cliente chega:** Gestor/Saída **Marcar como retirado** → `completed`, NFC-e.
 
@@ -540,7 +541,7 @@ conclui de `ready`. O código de retirada só aparece se o iFood mandar `deliver
 | Aceitar | Gestor (atalho de tecla) | não | OK |
 | Recusar | Gestor | diálogo com motivo (iFood: lista de códigos) | OK |
 | Ajustar itens/disponibilidade | Gestor, tela de edição com prévia | tela própria | OK |
-| Iniciar preparo | Gestor (loja online) ou KDS | não | OK |
+| Iniciar preparo | KDS (a verdade) ou o atalho no Gestor, mesmo ato | não | OK |
 | Pronto | KDS (desfazer 5 s; reabrir pelo histórico) ou "Marcar pronto" no Gestor | não | OK; na entrega com ticket aberto fica no menu (à vista desde #1712) |
 | Saída / Marcar como retirado / Marcar como entregue | Gestor ou Saída, desfazer 5 s | diálogo só com troco ou maquininha | OK |
 | Chamar entregador / Chamar de novo / Cancelar corrida / Cotar | Gestor | pergunta com a custódia | OK; cedo e no PDV desde #1712 e #1711; Cancelar a corrida e Entregador voltou também no PDV desde #1765 |

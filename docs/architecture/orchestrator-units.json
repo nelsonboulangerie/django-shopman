@@ -5345,6 +5345,7 @@
           "symbols": [
             "device_is_trusted",
             "trust_device",
+            "device_trust_period_display",
             "revoke_current_device"
           ]
         }
@@ -5464,6 +5465,8 @@
             "request_contact_verification_code",
             "ContactVerifyResult",
             "code_resend_cooldown_seconds",
+            "code_cooldown_body",
+            "_seconds_phrase",
             "request_code_error_message",
             "CONTACT_VERIFICATION_PURPOSE"
           ]
@@ -10587,6 +10590,7 @@
           "symbols": [
             "start_ticket",
             "_start_ticket_locked",
+            "start_order_tickets",
             "_record_ticket_start",
             "complete_ticket",
             "_complete_ticket_locked",
@@ -15702,6 +15706,7 @@
             "idempotency_key_from_request",
             "run_idempotent_mutation",
             "lookup_idempotent_mutation",
+            "release_receipt",
             "mutation_fingerprint",
             "lookup_local_mutation",
             "_LOCAL_CONTRACT"

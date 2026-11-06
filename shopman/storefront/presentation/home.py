@@ -698,11 +698,11 @@ def _auth_copy(omotenashi: OmotenashiProjection) -> AuthCopyProjection:
         name_subtitle=_copy_entry("LOGIN_NAME_SUBTITLE", omotenashi=omotenashi),
         name_cta=_copy_entry("LOGIN_NAME_CTA", omotenashi=omotenashi),
         auth_confirmed=_copy_entry("LOGIN_AUTH_CONFIRMED", omotenashi=omotenashi),
-        device_trust_prompt=_copy_entry("DEVICE_TRUST_PROMPT", omotenashi=omotenashi),
-        device_trust_cta=_copy_entry("DEVICE_TRUST_CTA", omotenashi=omotenashi),
+        device_trust_prompt=_device_trust_entry("DEVICE_TRUST_PROMPT", omotenashi=omotenashi),
+        device_trust_cta=_device_trust_entry("DEVICE_TRUST_CTA", omotenashi=omotenashi),
         device_trust_skip_cta=_copy_entry("DEVICE_TRUST_SKIP_CTA", omotenashi=omotenashi),
         device_trust_redirecting=_copy_entry("DEVICE_TRUST_REDIRECTING", omotenashi=omotenashi),
-        device_trust_saved=_copy_entry("DEVICE_TRUST_SAVED", omotenashi=omotenashi),
+        device_trust_saved=_device_trust_entry("DEVICE_TRUST_SAVED", omotenashi=omotenashi),
     )
 
 
@@ -711,6 +711,18 @@ def _copy_entry(key: str, *, omotenashi: OmotenashiProjection) -> CopyEntryProje
 
     entry = resolve_copy(key, moment=omotenashi.moment, audience=omotenashi.audience)
     return CopyEntryProjection(title=entry.title, message=entry.message)
+
+
+def _device_trust_entry(key: str, *, omotenashi: OmotenashiProjection) -> CopyEntryProjection:
+    """Copy da confiança do aparelho com ``{period}`` trocado pelo prazo real do doorman."""
+    from shopman.shop.projections.storefront_context import device_trust_period
+
+    entry = _copy_entry(key, omotenashi=omotenashi)
+    period = device_trust_period()
+    return CopyEntryProjection(
+        title=entry.title.replace("{period}", period),
+        message=entry.message.replace("{period}", period),
+    )
 
 
 def _marketing_prompt_pending(request: HttpRequest) -> bool:

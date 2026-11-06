@@ -90,7 +90,7 @@ def test_item_contado_em_g_nao_se_coloca_a_venda(tonica):
     with pytest.raises(purchase_service.PurchaseError) as exc:
         purchase_service.set_sale(material.sku, {"enabled": True, "priceInput": "0,06"})
 
-    assert "perde os centavos" in str(exc.value)
+    assert "item contado em g não se vende" in str(exc.value)
     assert not Product.objects.filter(sku=material.sku).exists()
 
 

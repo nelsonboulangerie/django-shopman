@@ -7216,6 +7216,7 @@
           "responsibility": "leitura",
           "symbols": [
             "DEFAULT_STOREFRONT_CHANNEL_REF",
+            "device_trust_period",
             "logger",
             "popular_skus",
             "session_pricing_hints"
