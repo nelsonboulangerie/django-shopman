@@ -128,6 +128,10 @@ def check_payment(order) -> None:
     ensure_payment_intent(order)
 
 
+def switch_declined_card_to_pix(order) -> bool:
+    return customer_orders.switch_declined_card_to_pix(order)
+
+
 def mock_confirm_payment(order) -> bool:
     return customer_orders.mock_confirm_payment(order)
 

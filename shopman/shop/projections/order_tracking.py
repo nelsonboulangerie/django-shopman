@@ -1117,6 +1117,29 @@ def _build_promise(
             # acontecido (beta 06/11, F3). A ação é a mesma: a sessão do gateway
             # continua aberta para outro cartão.
             declined = bool(payment.get("last_decline"))
+            card_actions = [
+                _action(
+                    ref="pay_card",
+                    kind="external",
+                    label=_copy_title("TRACKING_PROMISE_CARD_ACTION", "Pagar com cartão"),
+                    href=checkout_url,
+                    idempotency="none",
+                ),
+            ]
+            # Recusado, o Pix entra como saída ao lado de outro cartão, quando o
+            # canal aceita Pix e ele pode nascer agora (decisão do dono, F3).
+            if declined and not payment_service.pix_switch_blocker(order):
+                card_actions.append(
+                    _action(
+                        ref="pay_with_pix",
+                        kind="mutation",
+                        label=_copy_title("TRACKING_PROMISE_PIX_SWITCH_ACTION", "Pagar com Pix"),
+                        priority="secondary",
+                        href=f"/api/v1/orders/{order.ref}/payment/switch-to-pix/",
+                        method="POST",
+                        idempotency="required",
+                    ),
+                )
             return promise(
                 state="payment_card_declined" if declined else "payment_card_ready",
                 tone="warning" if declined else "info",
@@ -1126,15 +1149,7 @@ def _build_promise(
                 payment_deadline_phrase=(format_deadline(parse_datetime(payment_expires_at)) if has_deadline else ""),
                 requires_active_notification=True,
                 notification_topic="payment_requested" if order.status == "accepted" else None,
-                actions=(
-                    _action(
-                        ref="pay_card",
-                        kind="external",
-                        label=_copy_title("TRACKING_PROMISE_CARD_ACTION", "Pagar com cartão"),
-                        href=checkout_url,
-                        idempotency="none",
-                    ),
-                ),
+                actions=tuple(card_actions),
                 payment_method=method,
                 checkout_url=checkout_url,
             )

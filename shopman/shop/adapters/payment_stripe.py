@@ -843,7 +843,7 @@ def _record_decline_on_order(intent_ref: str, *, code: str) -> None:
         intent = PaymentService.get(intent_ref)
         order = Order.objects.filter(ref=intent.order_ref).first()
         if order is not None:
-            record_card_decline(order, code=code)
+            record_card_decline(order, code=code, intent_ref=intent_ref)
     # silêncio-deliberado: a recusa é aviso de tela; o webhook segue respondendo.
     except Exception:
         logger.warning("stripe.decline_record_failed intent=%s", intent_ref, exc_info=True)

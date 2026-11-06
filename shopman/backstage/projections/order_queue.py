@@ -3152,6 +3152,7 @@ _EVENT_LABELS = {
     "order_unassigned": "Atendimento liberado",
     "created": "Pedido criado",
     "payment_collected": "Pagamento recebido",
+    "payment_switched_to_pix": "Cliente trocou o cartão recusado por Pix",
     "equipment_returned": "Maquininha devolvida",
     "partner_custody_recorded": "Separado para o entregador da TaOn (troco ou maquininha)",
     "partner_custody_returned": "A corrida não coletou: o que ia com o entregador voltou",
