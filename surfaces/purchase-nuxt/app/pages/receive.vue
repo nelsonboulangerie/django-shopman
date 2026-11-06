@@ -62,6 +62,8 @@ const {
   receiptTotalCostQ,
   receiptHasRejectionReason,
   receiptReady,
+  receiptPreferredCostChanges,
+  setReceiptPreferredCost,
   receiptTotalPending,
   readonlyFallback,
   actionPending,
@@ -287,12 +289,23 @@ function reportReceiptBlocker(blocker: ReceiptBlocker) {
   });
   goThere();
 }
+// Preço diferente do custo preferencial: confirmar pergunta antes se o custo muda.
+// Gravar em silêncio trocava o custo que alimenta custeio e pedido (CMP-06).
+const preferredCostOpen = ref(false);
+const preferredCostAnswered = computed(() =>
+  receiptPreferredCostChanges.value.every((change) => change.decision !== ""),
+);
 async function onConfirmReceipt() {
   const blocker = receiptFirstBlocker.value;
   if (blocker) {
     reportReceiptBlocker(blocker);
     return;
   }
+  if (!preferredCostAnswered.value) {
+    preferredCostOpen.value = true;
+    return;
+  }
+  preferredCostOpen.value = false;
   if (await confirmReceipt()) await revealReceiptOutcome();
 }
 async function onRejectReceipt() {
@@ -1237,6 +1250,57 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
         </div>
       </template>
     </NuxtDrawer>
+
+    <!-- Preço diferente do custo preferencial: a troca do custo é escolha, nunca efeito colateral. -->
+    <NuxtModal
+      v-model:open="preferredCostOpen"
+      title="Preço diferente do custo preferencial"
+      description="O custo preferencial alimenta o custeio das receitas, a sugestão de preço e o pedido de compra. Escolha, em cada item, se ele passa a ser o preço desta entrada."
+    >
+      <template #body>
+        <ul class="space-y-3" data-preferred-cost-changes>
+          <li v-for="change in receiptPreferredCostChanges" :key="change.lineId" :data-preferred-cost-line="change.lineId">
+            <NuxtCard variant="soft">
+              <p class="text-sm font-semibold">{{ change.materialName }} · {{ change.unitLabel }}</p>
+              <p class="text-xs text-muted tabular-nums">
+                Custo preferencial {{ formatMoney(change.currentQ) }} · Esta entrada {{ formatMoney(change.incomingQ) }}
+              </p>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <NuxtButton
+                  :label="`Atualizar para ${formatMoney(change.incomingQ)}`"
+                  :color="change.decision === 'update' ? 'primary' : 'neutral'"
+                  :variant="change.decision === 'update' ? 'solid' : 'outline'"
+                  :aria-pressed="change.decision === 'update'"
+                  data-preferred-cost-update
+                  @click="setReceiptPreferredCost(change.lineId, 'update')"
+                />
+                <NuxtButton
+                  :label="`Manter ${formatMoney(change.currentQ)}`"
+                  :color="change.decision === 'keep' ? 'primary' : 'neutral'"
+                  :variant="change.decision === 'keep' ? 'solid' : 'outline'"
+                  :aria-pressed="change.decision === 'keep'"
+                  data-preferred-cost-keep
+                  @click="setReceiptPreferredCost(change.lineId, 'keep')"
+                />
+              </div>
+            </NuxtCard>
+          </li>
+        </ul>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <NuxtButton label="Voltar" color="neutral" variant="outline" @click="preferredCostOpen = false" />
+          <NuxtButton
+            icon="i-lucide-check"
+            label="Confirmar entrada"
+            :disabled="!preferredCostAnswered"
+            :loading="actionPending"
+            data-preferred-cost-confirm
+            @click="onConfirmReceipt"
+          />
+        </div>
+      </template>
+    </NuxtModal>
 
     <!-- Ressalva geral: abre pelo ⋯ ou pelo painel da conferência. -->
     <NuxtModal

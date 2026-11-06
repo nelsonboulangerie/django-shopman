@@ -57,6 +57,12 @@ HISTORY_URL = "/api/v1/backstage/marketing/history/"
 PREVIEW_URL = "/api/v1/backstage/marketing/preview/"
 
 
+# Conteúdo público só aprova com link absoluto (MKT-20): a loja tem endereço de site.
+@pytest.fixture(autouse=True)
+def _loja_com_endereco(settings):
+    settings.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.example.com"
+
+
 @pytest.fixture
 def gestor():
     user = User.objects.create_user(username="marketing", password="x", is_staff=True)
@@ -100,7 +106,7 @@ def _post(rule, template, *, status=AnnouncementStatus.PENDING_REVIEW, **kwargs)
             "body": "Croissant saiu do forno",
             "hashtags": ["padaria"],
             "image_url": "/media/croissant.jpg",
-            "link": "/produto/cro",
+            "link": "https://loja.example.com/produto/cro",
         },
         "platforms": ["instagram", "google_business"],
         "audience": {"favorites": 12, "alerts": 3, "total": 15},
@@ -1602,7 +1608,62 @@ class TestAnnouncementReviewPreview:
         ]
         for key in ("body", "link", "hashtags", "image_url"):
             assert preview["artifact"][key] == sealed[key], key
-        assert sealed["link"] == "/produto/cro"
+        assert sealed["link"] == "https://loja.example.com/produto/cro"
+
+    def test_relative_link_shows_in_preview_and_approval_refuses(self, client, gestor, rule, template, settings):
+        """MKT-20 (beta 05/11): conteúdo público nunca sai com "/produto/KUP".
+
+        Sem o endereço do site da loja, o rascunho nasce com caminho relativo. A prévia
+        da revisão continua abrindo e diz o motivo; a aprovação recusa e nada é selado.
+        """
+        settings.SHOPMAN_STOREFRONT_BASE_URL = ""
+        announcement = _post(
+            rule,
+            template,
+            content={
+                "body": "Croissant saiu do forno: /produto/cro",
+                "hashtags": [],
+                "image_url": "/media/croissant.jpg",
+                "link": "/produto/cro",
+            },
+            platforms=["instagram"],
+        )
+        client.force_login(gestor)
+
+        preview = client.post(
+            PREVIEW_URL,
+            data={"announcement": announcement.pk, "platforms": ["instagram"]},
+            content_type="application/json",
+        )
+        assert preview.status_code == 200, preview.content
+        blockers = preview.json()["publish_blockers"]
+        assert [b["code"] for b in blockers] == ["marketing_link_store_address_missing"]
+        assert "endereço do site da loja" in blockers[0]["detail"]
+        assert "suporte técnico" in blockers[0]["field_detail"]
+        assert "—" not in json.dumps(blockers, ensure_ascii=False)
+
+        response = _confirmed_post(
+            client,
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            {"base_version": announcement.version, "publish_mode": "now", "platforms": ["instagram"]},
+            key="relative-link-refused",
+        )
+        assert response.status_code == 422, response.content
+        assert "marketing_link_store_address_missing" in json.dumps(response.json())
+        assert not MarketingContentArtifact.objects.filter(announcement=announcement).exists()
+
+    def test_absolute_link_has_no_publish_blocker(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["instagram"])
+        client.force_login(gestor)
+
+        preview = client.post(
+            PREVIEW_URL,
+            data={"announcement": announcement.pk, "platforms": ["instagram"]},
+            content_type="application/json",
+        )
+
+        assert preview.status_code == 200, preview.content
+        assert preview.json()["publish_blockers"] == []
 
     def test_unknown_announcement_is_404(self, client, gestor):
         client.force_login(gestor)
