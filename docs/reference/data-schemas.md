@@ -654,6 +654,18 @@ O vocabulário de cada `type` pertence a quem emite (`Session.emit_event`). Uma 
 
 ---
 
+## craftsman.WorkOrderEvent.payload["context"] — evento FINISHED
+
+Escrito por `shopman/backstage/services/production.py::apply_finish`.
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `committed_order_refs` | `list[str]` | Pedidos que dependiam do lote no momento do fechamento |
+| `production_outcome` | `dict` | Só na perda total: `{kind: "total_loss", saleable_qty: "0", loss_qty}` |
+| `yield_deviation` | `dict` | Só quando o total difere do previsto: `{kind, anchor_qty, reported_qty, saleable_qty, deviation_qty, confirmed, reason, actor}`. `kind` é `yield_overshoot` (saiu mais) ou `yield_shortfall` (rendeu menos; a diferença não é perda nem estoque, beta 05/11/2026). Sempre com o motivo do operador |
+
+---
+
 ## Order.snapshot
 
 Snapshot selado do pedido no momento da criação. **Imutável** — nunca editado após o commit.

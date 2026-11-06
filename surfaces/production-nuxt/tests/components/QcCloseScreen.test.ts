@@ -294,6 +294,60 @@ describe("QcCloseScreen — classificação por grau", () => {
     });
   });
 
+  it("rendeu menos: o Normal aceita número, pede motivo e a diferença não vira perda", async () => {
+    // Beta 05/11: Normal era só saldo, e fechar abaixo do previsto exigia lançar
+    // a diferença como Perda com motivo de defeito.
+    const wrapper = mountQc();
+
+    await wrapper.find('[data-grade-ref="standard"]').trigger("click");
+    expect(wrapper.find('[data-digit="1"]').attributes("disabled")).toBeUndefined();
+    await enter(wrapper, "32");
+    expect(wrapper.text()).not.toContain("Saldo automático");
+    await buttonByText(wrapper, "Finalizar")!.trigger("click");
+
+    expect(wrapper.text()).toContain("Rendeu 32 de 40 previstos?");
+    expect(wrapper.emitted("confirm")).toBeUndefined();
+    await wrapper
+      .find('textarea[aria-label="Motivo de ter rendido menos que o previsto"]')
+      .setValue("A massa rendeu menos peças");
+    await buttonByText(wrapper, "Confirmar 32 unidades")!.trigger("click");
+
+    expect(wrapper.emitted("confirm")?.[0]?.[0]).toEqual({
+      quantity: "32",
+      partition: [{ quantity: "32", quality_grade_ref: "standard" }],
+      yield_deviation_confirmed: true,
+      yield_deviation_reason: "A massa rendeu menos peças",
+      reason: "",
+    });
+  });
+
+  it("dois toques no Normal devolvem o saldo automático", async () => {
+    const wrapper = mountQc();
+    const normal = wrapper.find('[data-grade-ref="standard"]');
+    await normal.trigger("click");
+    await enter(wrapper, "5");
+    await normal.trigger("click");
+    await normal.trigger("click");
+    expect(normal.attributes("aria-label")).toContain("40 unidades, saldo");
+  });
+
+  it("perda maior que o lote trava e diz isso, nunca 'realizado acima'", async () => {
+    // Beta 05/11: Perda 99 num lote de 3 perguntava "Por que o realizado ficou
+    // acima do previsto?" e deixava confirmar 99 unidades.
+    const wrapper = mountQc({ planned: 3, started: 3 });
+
+    await buttonByText(wrapper, "Perda")!.trigger("click");
+    await enter(wrapper, "99");
+    await buttonByText(wrapper, "Finalizar")!.trigger("click");
+
+    expect(wrapper.text()).toContain("A perda (99) é maior que o lote (3). Confira.");
+    expect(wrapper.text()).not.toContain("acima do previsto");
+    expect(buttonByText(wrapper, "Confirmar 99")).toBeUndefined();
+    await buttonByText(wrapper, "Corrigir a perda")!.trigger("click");
+    expect(wrapper.emitted("confirm")).toBeUndefined();
+    expect(wrapper.find("[data-loss-exceeds]").exists()).toBe(false);
+  });
+
   it("registra perda total como conclusão auditável, nunca como estorno", async () => {
     const wrapper = mountQc();
 

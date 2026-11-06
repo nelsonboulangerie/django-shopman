@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  REPORT_HISTORY_COLUMNS,
   REPORT_KINDS,
   REPORT_PERIOD_PRESETS,
   capacityLabel,
@@ -107,5 +108,14 @@ describe("painel de filtros dos relatórios", () => {
       position_ref: "",
       operator_ref: "ana",
     });
+  });
+});
+
+describe("Histórico — a Data fica no celular", () => {
+  // Beta 05/11: no celular, lotes de sete dias apareciam sem a coluna Data.
+  it("a coluna Data não é de apoio", () => {
+    const date = REPORT_HISTORY_COLUMNS.find((column) => "accessorKey" in column && column.accessorKey === "date");
+    expect(date).toBeDefined();
+    expect((date as { meta?: { supporting?: boolean } }).meta?.supporting).toBeFalsy();
   });
 });

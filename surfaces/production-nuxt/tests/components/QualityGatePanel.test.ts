@@ -110,6 +110,22 @@ describe("QualityGatePanel — qualidade em lote", () => {
     expect(wrapper.emitted("confirm-batch")).toHaveLength(1);
   });
 
+  it("sem permissão, diz quem confirma em vez de botões mortos (beta 05/11)", () => {
+    const orders = ORDERS().map((order) => ({ ...order, can_correct: false }));
+    const wrapper = mountPanel(orders, {
+      batchAvailable: false,
+      reviewAvailable: () => false,
+      correctionAvailable: () => false,
+    });
+
+    expect(wrapper.find("[data-quality-confirm-batch]").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Você confirma como responsável");
+    expect(wrapper.text()).not.toContain("Confirmar assim");
+    const hints = wrapper.findAll("[data-quality-manager-only]").map((hint) => hint.text());
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints[0]).toBe("Quem confirma a qualidade é o gerente. Chame quem está de turno.");
+  });
+
   it("mostra todos os lotes limpos só quando pedido", async () => {
     const wrapper = mountPanel(ORDERS());
     expect(wrapper.find("[data-quality-clean]").text()).not.toContain("Receita 6");

@@ -150,7 +150,12 @@ export function suggestionMath(
   const terms: ReasonTerm[] = [
     {
       value: display(s.projected),
-      label: days.many === "dias" ? "média de venda" : `média dos ${days.many}`,
+      // Segunda a sexta são femininas ("das sextas"); sábado e domingo, não
+      // (beta 05/11: "média dos quintas").
+      label:
+        days.many === "dias"
+          ? "média de venda"
+          : `média ${["sábados", "domingos"].includes(days.many) ? "dos" : "das"} ${days.many}`,
     },
   ];
   if (asNumber(s.committed) > 0) {

@@ -6,8 +6,9 @@ chama a orquestração fina (``services.recipe_book``) e devolve a projection
 (``projections.recipe_book``) já formatada.
 
 Permissão: **ler** é o gate do app de Produção (``backstage.operate_production``,
-ou ver a ficha); **escrever** é ``shop.manage_production`` (ou mudar a ficha),
-a mesma régua de "mexer acontece no app de Produção". A régua vive em
+ou ver a ficha); **escrever** é ``craftsman.change_recipe``: criar, editar,
+conferir e publicar ficha é da gestão da produção (Gerente e Dono), e a Cozinha,
+que opera lotes com ``shop.manage_production``, só lê. A régua vive em
 ``resolve_recipe_book_access``; aqui só se pergunta.
 
 A estrela (``recipes/<ref>/favorite/``) é preferência do operador, não edição
@@ -68,7 +69,7 @@ from .permissions import HasBackstagePermission
 from .projections import projection_data
 
 _MSG_VIEW = "O inventário de receitas exige backstage.operate_production."
-_MSG_EDIT = "Alterar o inventário de receitas exige shop.manage_production."
+_MSG_EDIT = "Só a gestão da produção cria, edita e publica ficha técnica."
 
 #: Códigos do Craftsman que são conflito de ESTADO, não de campo: 409, não 400.
 _STATE_CONFLICT_CODES = (
@@ -77,6 +78,10 @@ _STATE_CONFLICT_CODES = (
     "NO_ACTIVE_CRITERIA",
     "RECIPE_CHANGED",
     "REVIEW_NOT_CURRENT",
+    # Publicar pede confirmação explícita (``replace_active`` / ``new_output_sku``):
+    # a tela lê o código e pergunta, em vez de mostrar só o erro.
+    "SKU_ALREADY_IN_USE",
+    "OUTPUT_SKU_UNKNOWN",
 )
 
 _KINDS = ("bread", "viennoiserie", "sweet_dough", "cookie", "filling", "cream", "sauce", "beverage", "other")
@@ -103,7 +108,11 @@ def _actor(request) -> str:
 def _service_error_response(exc: RecipeBookServiceError) -> Response:
     """``RecipeBookServiceError`` no dialeto canônico: 409 para estado, 400 com ``field`` para campo."""
     if exc.code in _STATE_CONFLICT_CODES:
-        return Response({"detail": exc.detail, "error": {"code": exc.code.lower()}}, status=409)
+        payload = {"detail": exc.detail, "error": {"code": exc.code.lower()}}
+        if exc.field:
+            payload["field"] = exc.field
+            payload["errors"] = {exc.field: [exc.detail]}
+        return Response(payload, status=409)
     payload: dict = {"detail": exc.detail}
     if exc.field:
         payload["field"] = exc.field

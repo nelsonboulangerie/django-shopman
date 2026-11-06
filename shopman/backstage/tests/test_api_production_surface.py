@@ -1111,6 +1111,45 @@ def test_kds_registers_old_dough_with_projected_proof_and_replays(
 
 
 @pytest.mark.django_db
+def test_old_dough_refuses_absurd_quantity_on_the_field(
+    client,
+    recipe,
+    production_operator,
+):
+    """Beta 05/11: 500999999999 g chegou ao servidor. Acima de 50 kg é dígito a
+    mais, e a recusa vem no campo quantity, para a tela marcar o campo."""
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    production_service.apply_start(
+        work_order_id=work_order.pk,
+        quantity="10",
+        actor="production:setup",
+        expected_rev=work_order.rev,
+        idempotency_key="old-dough-absurd-start",
+    )
+    client.force_login(production_operator)
+    kds = client.get(reverse("api-backstage-production-kds")).json()["kds"]
+    action = next(item for item in kds["actions"] if item["ref"] == f"register_old_dough:{work_order.pk}")
+    body = _projected_body(
+        kds,
+        action,
+        quantity="51",
+        unit="kg",
+        expiry_date=(date.today() + timedelta(days=1)).isoformat(),
+        expected_rev=action["expected_rev"],
+        idempotency_key="old-dough-absurd",
+    )
+
+    response = client.post(
+        reverse("api-backstage-wo-old-dough", args=[work_order.pk]), body, content_type="application/json"
+    )
+
+    assert response.status_code == 400
+    issues = response.json()["error"]["issues"]
+    assert issues[0]["field"] == "quantity"
+    assert "50 kg" in issues[0]["message"]
+
+
+@pytest.mark.django_db
 def test_mutation_requires_complete_fresh_projection_metadata(
     client,
     recipe,
@@ -1923,6 +1962,38 @@ def test_finish_rejects_unclassified_yield_deficit(
 
 
 @pytest.mark.django_db
+def test_finish_accepts_confirmed_shortfall_with_reason(
+    client,
+    recipe,
+    production_operator,
+):
+    """Beta 05/11: "produzi menos" fecha com o motivo do operador, sem perda."""
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    craft.start(work_order, quantity=10, position_ref="forno", expected_rev=work_order.rev)
+    work_order.refresh_from_db()
+    client.force_login(production_operator)
+
+    response = production_mutation_post(
+        client,
+        reverse("api-backstage-wo-finish", args=[work_order.pk]),
+        data={
+            "quantity": "9",
+            "partition": [{"quantity": "9", "quality_grade_ref": "standard"}],
+            "yield_deviation_confirmed": True,
+            "yield_deviation_reason": "Rendeu menos peças",
+            "expected_rev": work_order.rev,
+            "idempotency_key": "confirmed-shortfall",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200, response.json()
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.FINISHED
+    assert work_order.finished == Decimal("9")
+
+
+@pytest.mark.django_db
 def test_forged_finish_overshoot_requires_audited_confirmation(
     client,
     recipe,
@@ -2163,7 +2234,7 @@ def test_finish_material_shortage_returns_structured_envelope(client, recipe, pr
     def block_finish(**kwargs):
         raise ProductionStockShortError(
             work_order_ref=wo.ref,
-            missing=[MissingMaterial(sku="FARINHA", needed=Decimal("5"), available=Decimal("2"))],
+            missing=[MissingMaterial(sku="FARINHA", needed=Decimal("5"), available=Decimal("2"), unit="kg")],
         )
 
     monkeypatch.setattr(
@@ -2186,6 +2257,9 @@ def test_finish_material_shortage_returns_structured_envelope(client, recipe, pr
     assert error["code"] == "material_shortage"
     assert error["missing"][0]["sku"] == "FARINHA"
     assert error["missing"][0]["shortage"] == "3"
+    # Beta 05/11: a tela escrevia o SKU cru e o número sem unidade.
+    assert error["missing"][0]["unit"] == "kg"
+    assert error["missing"][0]["name"] == "FARINHA"
 
 
 @pytest.mark.django_db

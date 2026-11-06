@@ -3,7 +3,7 @@
 Cobre a porta que o app de Produção consome nas telas ``/recipes``: leitura
 (inventário, receita, comparação, referência, insumos) com o gate do app de
 Produção, escrita (entry, versão, rascunho, publicar) com
-``shop.manage_production``, a lente e a padronização, a captura por IA (503
+``craftsman.change_recipe`` (a Cozinha, que gere lotes, só lê), a lente e a padronização, a captura por IA (503
 sem credencial, 200 com o provedor fingido) e os 404/400/409 no dialeto
 canônico. As regras do inventário moram no Craftsman; aqui se prova a porta.
 """
@@ -17,7 +17,6 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import Permission, User
-from django.contrib.contenttypes.models import ContentType
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -25,6 +24,7 @@ from shopman.buyman.models import Material
 from shopman.craftsman.models import Recipe, RecipeEntry, RecipeVersion
 from shopman.craftsman.services import recipe_book as craftsman
 
+from shopman.backstage.services import recipe_book as recipe_book_service
 from shopman.backstage.tests.production_grants import grant_production_operator
 
 pytestmark = pytest.mark.django_db
@@ -32,12 +32,17 @@ pytestmark = pytest.mark.django_db
 LIST_URL = "/api/v1/backstage/recipes/"
 
 
-def _manage_production_perm() -> Permission:
-    from shopman.shop.models import Shop
+def _change_recipe_perm() -> Permission:
+    """Mudar a ficha: a régua da escrita (Gerente e Dono; a Cozinha só lê)."""
+    return Permission.objects.get(content_type__app_label="craftsman", codename="change_recipe")
 
-    return Permission.objects.get(
-        content_type=ContentType.objects.get_for_model(Shop), codename="manage_production",
-    )
+
+@pytest.fixture(autouse=True)
+def output_skus_are_known(monkeypatch):
+    """As saídas destes testes (``MASSA-TRADICAO``, ``PAO-SOLTO``…) não têm cadastro de
+    venda nem de compra. Aqui se prova a porta; a pergunta do SKU novo no publicar tem
+    teste próprio em ``test_recipe_publish_guards.py``."""
+    monkeypatch.setattr(recipe_book_service, "output_sku_is_known", lambda sku: True)
 
 
 @pytest.fixture
@@ -56,10 +61,10 @@ def viewer(shop):
 
 @pytest.fixture
 def editor(shop):
-    """Cozinha/gerente: gere a produção, então escreve no inventário."""
+    """Gerente: muda a ficha, então escreve no inventário."""
     user = User.objects.create_user("recipes-editor", password="pw", is_staff=True)
     user = grant_production_operator(user)
-    user.user_permissions.add(_manage_production_perm())
+    user.user_permissions.add(_change_recipe_perm())
     return User.objects.get(pk=user.pk)
 
 
@@ -198,7 +203,7 @@ def test_viewer_reads_but_does_not_write(client, viewer, entry):
     ]
     for response in forbidden:
         assert response.status_code == 403, response.content
-        assert "shop.manage_production" in response.json()["detail"]
+        assert response.json()["detail"] == "Só a gestão da produção cria, edita e publica ficha técnica."
     entry.refresh_from_db()
     assert entry.notes == ""
 

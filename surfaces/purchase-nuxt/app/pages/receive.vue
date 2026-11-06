@@ -18,8 +18,10 @@ import type {
 import {
   formatMoney,
   formatShortDate,
+  invoiceKeyHint,
   invoiceKeyTail,
   invoiceNumberLabel,
+  receiptHasStarted,
   receiptOutcomeSummary,
 } from "~/presentation/purchase";
 import { materialForEan, parseGs1, receiptLineForEan } from "~/presentation/scanning";
@@ -81,6 +83,10 @@ const {
   receiptHistory,
   refresh,
 } = usePurchaseDesk();
+// O começo (abas Com NF/Sem NF) fica até entrar o primeiro item; digitar a chave não
+// mexe no layout (CMP-10). E a chave só de números que não fecha 44 dígitos avisa ali.
+const receiptStarted = computed(() => receiptHasStarted(receiptLines.value));
+const keyHint = computed(() => (receiptMode.value === "invoice" ? invoiceKeyHint(invoiceInput.value) : ""));
 
 const touch = useCoarsePointer();
 const supplierItems = computed(() => suppliers.value.map((supplier) => ({ label: supplier.displayName, value: supplier.ref })));
@@ -777,7 +783,7 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
           data-receipt-key-badge
         />
         <!-- O documento da entrada aberta, ao lado do título (na mesa). -->
-        <span v-if="!receiptIsBlank" class="min-w-0 text-sm max-md:hidden" data-receipt-document>
+        <span v-if="receiptStarted" class="min-w-0 text-sm max-md:hidden" data-receipt-document>
           <span class="font-semibold">{{ receiptDocumentTitle || "Entrada em conferência" }}</span>
           <span class="text-muted tabular-nums">
             · {{ receiptSupplier?.paymentTerm || "prazo a combinar" }} · {{ formatMoney(receiptTotalCostQ) }}
@@ -794,7 +800,7 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
         />
       </template>
       <!-- Origem da entrada (só no começo): com NF ou sem NF. -->
-      <template v-if="receiptIsBlank" #filters-primary>
+      <template v-if="!receiptStarted" #filters-primary>
         <div class="flex gap-1" role="group" aria-label="Origem da entrada" data-receipt-origin>
           <NuxtButton
             icon="i-lucide-scan-line"
@@ -895,6 +901,11 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
                     placeholder="Escaneie, cole ou digite a chave de acesso"
                     class="w-full [&_textarea]:tabular-nums"
                   />
+                  <!-- A linha de ajuda existe sempre: o aviso troca o texto, não a altura, e o
+                       botão de baixo não foge do dedo. -->
+                  <template #help>
+                    <span :class="keyHint ? 'text-warning' : ''" data-receipt-key-hint>{{ keyHint || "A chave de acesso tem 44 dígitos." }}</span>
+                  </template>
                 </NuxtFormField>
                 <div class="mt-2 grid grid-cols-2 gap-2">
                   <NuxtButton
@@ -904,7 +915,7 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
                     variant="outline"
                     block
                     :loading="actionPending"
-                    :disabled="readonlyFallback || !invoiceInput.trim()"
+                    :disabled="readonlyFallback || !invoiceInput.trim() || Boolean(keyHint)"
                     @click="onReadInvoice()"
                   />
                   <NuxtButton

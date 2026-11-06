@@ -30,6 +30,14 @@ import type {
   SupplierMaterialCost,
 } from "~/types/purchase";
 import { PURCHASE_API_ENDPOINTS, usePurchaseApi } from "~/composables/usePurchaseApi";
+import {
+  RECEIPT_DRAFT_STORAGE_KEY,
+  materialBySku,
+  purchaseWorkSet,
+  supplierByRef,
+  receiptDraftFromStore,
+  receiptDraftToStore,
+} from "~/presentation/purchaseWorkSet";
 import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import {
   costBatchLineErrors as buildCostBatchLineErrors,
@@ -231,14 +239,28 @@ export function usePurchaseDesk() {
 
   // A ordem já vem da consulta paginada. Reordenar esta página no navegador
   // faria a mesma coluna significar coisas diferentes entre páginas.
+  // `enrichedMaterials` é a base de trabalho inteira (todos os ativos);
+  // `filteredMaterials` é a página da tabela da Base. Ver `purchaseWorkSet`.
   const enrichedMaterials = computed(() =>
     materials.value.map((material) => enrichMaterial(material, costs.value, conversions.value)),
   );
 
-  const filteredMaterials = computed(() => enrichedMaterials.value);
+  const filteredMaterials = computed(() =>
+    materialList.value.items.map((material) => enrichMaterial(material, costs.value, conversions.value)),
+  );
+
+  /** O insumo pelo SKU, na base de trabalho ou na página (arquivado aberto pela tabela). */
+  function findMaterial(sku: string) {
+    return materialBySku(sku, enrichedMaterials.value, filteredMaterials.value);
+  }
+
+  /** O fornecedor pelo ref, na base de trabalho ou na página (arquivado aberto pela tabela). */
+  function findSupplier(ref: string) {
+    return supplierByRef(ref, suppliers.value, supplierList.value.items);
+  }
 
   const selectedMaterial = computed(() =>
-    enrichedMaterials.value.find((material) => material.sku === selectedMaterialSku.value) ??
+    findMaterial(selectedMaterialSku.value) ??
     enrichedMaterials.value[0] ??
     null,
   );
@@ -618,7 +640,7 @@ export function usePurchaseDesk() {
   }
 
   const supplierSummaries = computed(() =>
-    suppliers.value.map((supplier) => {
+    supplierList.value.items.map((supplier) => {
       const supplierCosts = costs.value.filter((cost) => cost.supplierRef === supplier.ref);
       const preferredCount = supplierCosts.filter((cost) => cost.isPreferred).length;
       const materialsCovered = new Set(supplierCosts.map((cost) => cost.materialSku)).size;
@@ -650,7 +672,7 @@ export function usePurchaseDesk() {
   function normalizeSelections() {
     const firstMaterialSku = materials.value[0]?.sku ?? "";
     const firstSupplierRef = suppliers.value[0]?.ref ?? "";
-    if (!materials.value.some((material) => material.sku === selectedMaterialSku.value)) {
+    if (!findMaterial(selectedMaterialSku.value)) {
       selectedMaterialSku.value = firstMaterialSku;
     }
     if (!materials.value.some((material) => material.sku === noteMaterialSku.value)) {
@@ -662,8 +684,10 @@ export function usePurchaseDesk() {
     if (!suppliers.value.some((supplier) => supplier.ref === noteSupplierRef.value)) {
       noteSupplierRef.value = firstSupplierRef;
     }
+    // Fornecedor ou item que sumiu da base volta a "Definir", nunca vira o
+    // primeiro da lista em silêncio.
     if (receiptSupplierRef.value && !suppliers.value.some((supplier) => supplier.ref === receiptSupplierRef.value)) {
-      receiptSupplierRef.value = firstSupplierRef;
+      receiptSupplierRef.value = "";
     }
     if (
       noteConversionId.value &&
@@ -685,7 +709,7 @@ export function usePurchaseDesk() {
     receiptLines.value = receiptLines.value.map((line) => {
       const materialSku = !line.materialSku || materials.value.some((material) => material.sku === line.materialSku) ?
         line.materialSku
-      : firstMaterialSku;
+      : "";
       const conversionAllowed =
         line.conversionId &&
         conversions.value.some(
@@ -709,17 +733,12 @@ export function usePurchaseDesk() {
   // primeiro carregamento e as ações que falam do recibo (scan/confirmar/
   // recusar) podem sobrescrevê-lo — senão qualquer refresh apaga as linhas
   // que o operador acabou de receber ou digitar.
-  function applyProjection(next: PurchaseProjection, options: { receipt?: boolean } = {}) {
-    const nextMaterials = Array.isArray(next.materials)
-      ? { items: next.materials, total: next.materials.length, has_next: false, page: 1, page_size: next.materials.length || 30, query: "", order: "name" }
-      : next.materials;
-    const nextSuppliers = Array.isArray(next.suppliers)
-      ? { items: next.suppliers, total: next.suppliers.length, has_next: false, page: 1, page_size: next.suppliers.length || 30, query: "", order: "name" }
-      : next.suppliers;
-    materialList.value = { ...nextMaterials, items: copy(nextMaterials.items) };
-    supplierList.value = { ...nextSuppliers, items: copy(nextSuppliers.items) };
-    materials.value = copy(nextMaterials.items);
-    suppliers.value = copy(nextSuppliers.items);
+  function applyProjection(next: PurchaseProjection, options: { receipt?: boolean; restoreDraft?: boolean } = {}) {
+    const workSet = purchaseWorkSet(next);
+    materialList.value = { ...workSet.materialPage, items: copy(workSet.materialPage.items) };
+    supplierList.value = { ...workSet.supplierPage, items: copy(workSet.supplierPage.items) };
+    materials.value = copy(workSet.materials);
+    suppliers.value = copy(workSet.suppliers);
     conversions.value = copy(next.conversions);
     costs.value = copy(next.costs);
     purchaseRequestStatuses.value = { ...next.purchaseRequestStatuses };
@@ -735,15 +754,66 @@ export function usePurchaseDesk() {
       // dispositivo já chega contada.
       receiptVolumesCounted.value = next.activeReceipt.volumesCounted ?? null;
       receiptOutcome.value = null;
+      // Primeira carga sem rascunho no servidor: volta o que ficou neste
+      // dispositivo antes da recarga, da queda ou do login (CMP-04).
+      if (options.restoreDraft && receiptIsBlankDraft(receiptLines.value, invoiceInput.value, receiptNote.value)) {
+        restoreReceiptDraft();
+      }
       receiptHydrated.value = true;
     }
     normalizeSelections();
   }
 
+  function restoreReceiptDraft() {
+    if (!import.meta.client) return;
+    let raw: string | null;
+    try {
+      raw = window.localStorage.getItem(RECEIPT_DRAFT_STORAGE_KEY);
+    } catch {  // silêncio-deliberado: armazenamento bloqueado, não há rascunho a restaurar
+      return;
+    }
+    const draft = receiptDraftFromStore(raw, Date.now());
+    if (!draft) return;
+    receiptMode.value = draft.mode;
+    receiptSupplierRef.value = draft.supplierRef;
+    invoiceInput.value = draft.invoiceInput;
+    receiptNote.value = draft.note;
+    receiptLines.value = receiptLineCopy(draft.lines);
+    receiptInvoiceVolumes.value = draft.invoiceVolumes;
+  }
+
+  if (import.meta.client) {
+    watch(
+      [receiptMode, receiptSupplierRef, invoiceInput, receiptNote, receiptLines, receiptInvoiceVolumes, receiptHydrated],
+      () => {
+        // Antes da primeira carga o estado ainda é o vazio inicial: gravar
+        // agora apagaria o rascunho que a carga vai restaurar.
+        if (!receiptHydrated.value) return;
+        const stored = receiptDraftToStore(
+          {
+            mode: receiptMode.value,
+            supplierRef: receiptSupplierRef.value,
+            invoiceInput: invoiceInput.value,
+            note: receiptNote.value,
+            lines: receiptLines.value,
+            invoiceVolumes: receiptInvoiceVolumes.value,
+          },
+          Date.now(),
+        );
+        try {
+          if (stored) window.localStorage.setItem(RECEIPT_DRAFT_STORAGE_KEY, stored);
+          else window.localStorage.removeItem(RECEIPT_DRAFT_STORAGE_KEY);
+        } catch {  // silêncio-deliberado: armazenamento cheio ou bloqueado, o rascunho segue só na memória
+        }
+      },
+      { deep: true },
+    );
+  }
+
   watch(
     () => data.value?.purchase,
     (next) => {
-      if (next) applyProjection(next, { receipt: !receiptHydrated.value });
+      if (next) applyProjection(next, { receipt: !receiptHydrated.value, restoreDraft: !receiptHydrated.value });
     },
     { immediate: true },
   );
@@ -836,8 +906,11 @@ export function usePurchaseDesk() {
   function setReceiptMode(mode: ReceiptMode) {
     receiptMode.value = mode;
     receiptOutcome.value = null;
-    receiptSupplierRef.value = suppliers.value[0]?.ref ?? "";
-    receiptNote.value = mode === "manual" ? "Romaneio em papel conferido na entrega" : "";
+    // Fornecedor e referência nascem vazios: quem diz é a NF ou o operador, nunca
+    // o primeiro da ordem alfabética nem uma frase que afirma uma conferência
+    // que ninguém fez (CMP-06, CMP-15).
+    receiptSupplierRef.value = "";
+    receiptNote.value = "";
     receiptLines.value = [];
     receiptInvoiceVolumes.value = 0;
     receiptVolumesCounted.value = null;
@@ -963,8 +1036,10 @@ export function usePurchaseDesk() {
   }
 
   function addReceiptLine() {
-    const materialSku = materials.value[0]?.sku ?? "";
-    const conversionId = defaultReceiptConversionId(materialSku);
+    // O item nasce vazio, com "Definir insumo" pendente: o primeiro da lista
+    // entrava sozinho e passava por escolha de alguém (CMP-06).
+    const materialSku = "";
+    const conversionId = null;
     receiptOutcome.value = null;
     receiptLines.value = receiptLines.value.concat({
       id: `receipt-${Date.now()}`,
@@ -1285,12 +1360,12 @@ export function usePurchaseDesk() {
     () => ({ open: false, mode: "create", ref: "", mutationKey: newMutationKey() }),
   );
 
-  const materialFormSource = computed(
-    () => materials.value.find((material) => material.sku === materialForm.value.sku) ?? null,
+  // Na base de trabalho E na página: editar um arquivado (aberto pelo filtro
+  // "Arquivados") precisa do cadastro dele, que não está entre os ativos.
+  const materialFormSource = computed(() =>
+    materialBySku(materialForm.value.sku, materials.value, materialList.value.items),
   );
-  const supplierFormSource = computed(
-    () => suppliers.value.find((supplier) => supplier.ref === supplierForm.value.ref) ?? null,
-  );
+  const supplierFormSource = computed(() => findSupplier(supplierForm.value.ref));
   const materialCategories = computed(() =>
     [...new Set(enrichedMaterials.value.map((material) => material.category).filter(Boolean))].sort((a, b) =>
       a.localeCompare(b, "pt-BR"),
@@ -1457,6 +1532,8 @@ export function usePurchaseDesk() {
     costs,
     enrichedMaterials,
     filteredMaterials,
+    findMaterial,
+    findSupplier,
     selectedMaterial,
     selectedSupplier,
     selectedCostRows,

@@ -2061,6 +2061,7 @@
         "name": "Dono",
         "permissions": [
           "backstage.audit_stock",
+          "backstage.void_production",
           "cashman.audit_shift",
           "payman.refund_paymentintent",
           "payman.view_paymentintent",
@@ -2135,6 +2136,7 @@
           "backstage.view_signinevent",
           "backstage.view_timertag",
           "backstage.view_workstation",
+          "backstage.void_production",
           "buyman.view_material",
           "buyman.view_materialconversion",
           "buyman.view_supplier",
