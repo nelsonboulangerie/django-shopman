@@ -544,17 +544,24 @@ describe("Gestor canônico em Nuxt UI", () => {
         (boardHeading.match(/<NuxtTabs\b/g)?.length ?? 0),
       // Abas das colunas no celular e no tablet em pé, e a visão Grade | Lista.
     ).toBeGreaterThanOrEqual(2);
-    // Os recortes (escopo da Fila e o fluxo, o mesmo na Saída) são os filtros rápidos
-    // da suíte, com a contagem e o colapso no celular do kit.
-    expect(board.match(/<OperatorQuickFilters\b/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    // O escopo da Fila é o modo da lista (filtro rápido); o recebimento e o canal moram
+    // SÓ no filtro único da suíte (dono, 04/11/2026): o painel na mesa e o ícone na linha
+    // do chão, sem abas, seletor de canal nem gaveta paralelos.
+    expect(board.match(/<OperatorQuickFilters\b/g)?.length ?? 0).toBe(1);
+    expect(board).toContain('data-queue-scopes');
+    expect(board.match(/<OperatorFilterPanel\b/g)?.length ?? 0).toBe(2);
+    expect(board).toMatch(/<OperatorFilterPanel\b[^>]*trigger="icon"[^>]*:chips="false"/s);
+    expect(board).not.toContain("data-fulfillment-filters");
+    expect(board).not.toContain("data-channel-picker");
+    expect(board).not.toContain("Filtros e ações da fila");
+    expect(board).not.toMatch(/<OperatorCompactBar[\s\S]*?<template[^>]*#filters>[\s\S]*?<\/OperatorCompactBar>/);
     expect(board).toContain("<OperatorSplitter");
     expect(board).not.toContain("<QueueColumnResizeHandle");
     expect(board).not.toContain("<QueueColumnStrip");
     expect(board).toContain('v-if="hasChannelQueueSignal" #feedback');
     expect(boardColumn).toContain('v-if="!phone && heading" as="header"');
     expect(boardColumn).toContain("<OrderBoardHeading");
-    // O posto Saída usa a mesma faixa de recortes; não há cabeçalho de coluna na toolbar.
-    expect(board).toContain(':items="fulfillmentFilterTabs"');
+    // O posto Saída usa o mesmo painel de filtros; não há cabeçalho de coluna na toolbar.
     expect(board).not.toContain('v-if="exitPostView && desktopZones[0]"');
     expect(board).toContain(':heading="!exitPostView"');
     expect(board).toMatch(
