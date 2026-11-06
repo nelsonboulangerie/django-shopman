@@ -10422,7 +10422,10 @@
             "order_lines",
             "_made_to_order_skus",
             "_match_instances",
-            "_build_routable_items"
+            "_build_routable_items",
+            "_component_line_name",
+            "_package_note",
+            "_join_notes"
           ]
         }
       ],

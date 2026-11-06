@@ -19,7 +19,7 @@ import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindow
 import { enterAdvances, paymentFailed, pendingPixBadge, pixAwaiting } from "~/presentation/saleResult";
 import { POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION } from "~/presentation/shortcuts";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
-import { kitchenBoundSkus } from "~/presentation/kitchen";
+import { kitchenBoundSkus, kitchenRoutedSkus } from "~/presentation/kitchen";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
 // PosPaymentWorkspace). O chrome comum (login, lock, offline) vive no shell
@@ -611,10 +611,16 @@ watch([fulfillmentSheetOpen, scheduleSheetOpen], ([fulfillment, schedule]) => {
 // de encomenda), nada abre.
 // "vai à cozinha" na linha nova (v4): para onde o roteamento real mandaria cada
 // produto (`kitchen_station` do catálogo, `services/kds.kitchen_routes_for_skus`).
-// No balcão só o feito na hora vai ao finalizar: o pão de vitrine já está na mão do
-// cliente (beta 05/11, PDV-09).
-const kitchenStations = computed<Record<string, string>>(() =>
-  kitchenBoundSkus(pos.value?.products || [], { counter: (cart.salesMode || "counter") === "counter" }),
+// Na comanda, o "Enviar" manda TUDO que tem estação (`fire_lines` sem `prep_only`),
+// então a linha e o Envio Auto/Manual leem o mapa inteiro.
+const kitchenStations = computed<Record<string, string>>(() => kitchenRoutedSkus(pos.value?.products || []));
+// Ao FINALIZAR é outra conta: na venda de balcão que o cliente leva agora, só o feito
+// na hora vai; o pão de vitrine já está na mão dele (beta 05/11, PDV-09). É a régua
+// de `order_helpers.is_counter_takeaway` (balcão e retirada).
+const checkoutKitchenStations = computed<Record<string, string>>(() =>
+  kitchenBoundSkus(pos.value?.products || [], {
+    counter: (cart.salesMode || "counter") === "counter" && cart.fulfillmentType !== "delivery",
+  }),
 );
 // PIX e Maquininha direto na folha (v4 tablet b): os meios que o PDV já tem,
 // lidos da projeção; um meio que o canal não oferece não aparece.
@@ -1467,7 +1473,7 @@ onBeforeUnmount(() => {
       <div v-else-if="checkoutMode" class="h-full md:overflow-y-auto">
       <PosPaymentWorkspace
         ref="paymentWorkspaceRef"
-        :kitchen-stations="kitchenStations"
+        :kitchen-stations="checkoutKitchenStations"
         :can-fire-now="hasOpenTab && fireAction.present && fireAction.enabled"
         @fire-now="fireTab()"
         :sales-mode="cart.salesMode"

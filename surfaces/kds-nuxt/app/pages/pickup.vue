@@ -49,11 +49,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!-- h-dvh + overflow-hidden: a TV não rola, então a página nunca passa da tela. -->
   <div
     class="dark grid h-dvh grid-rows-[auto_1fr] overflow-hidden bg-background text-foreground"
     data-kds-pickup
   >
+    <!-- h-dvh + overflow-hidden: a TV não rola, então a página nunca passa da tela. -->
     <!-- header -->
     <header
       class="flex items-center justify-between gap-4 border-b px-6 py-5 md:px-10"

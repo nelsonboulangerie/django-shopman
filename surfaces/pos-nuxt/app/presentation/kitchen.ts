@@ -88,6 +88,21 @@ export function kitchenHandoffNote(
 }
 
 /**
+ * Para onde vai cada SKU que tem estação, pelo roteamento real (`kitchen_station`).
+ * É o que a COMANDA mostra ("vai à cozinha") e o que o Envio Auto/Manual alcança: o
+ * "Enviar" da comanda manda tudo que tem estação, preparo ou separação.
+ */
+export function kitchenRoutedSkus(
+  products: ReadonlyArray<{ sku: string; kitchen_station?: string }>,
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const product of products) {
+    if (product.kitchen_station) map[product.sku] = product.kitchen_station;
+  }
+  return map;
+}
+
+/**
  * Os SKUs que vão à cozinha AO FINALIZAR, pelo roteamento real (`kitchen_station` e
  * `kitchen_prep` do catálogo, `services/kds.kitchen_routes_for_skus`).
  *
@@ -99,13 +114,10 @@ export function kitchenBoundSkus(
   products: ReadonlyArray<{ sku: string; kitchen_station?: string; kitchen_prep?: boolean }>,
   options: { counter: boolean },
 ): Record<string, string> {
-  const map: Record<string, string> = {};
-  for (const product of products) {
-    if (!product.kitchen_station) continue;
-    if (options.counter && !product.kitchen_prep) continue;
-    map[product.sku] = product.kitchen_station;
-  }
-  return map;
+  const routed = kitchenRoutedSkus(products);
+  if (!options.counter) return routed;
+  const prep = new Set(products.filter((product) => product.kitchen_prep).map((product) => product.sku));
+  return Object.fromEntries(Object.entries(routed).filter(([sku]) => prep.has(sku)));
 }
 
 export interface FireRefusalView {

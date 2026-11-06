@@ -86,6 +86,7 @@ import {
   allLinesFired,
   kitchenBoundSkus,
   kitchenHandoffNote,
+  kitchenRoutedSkus,
   kitchenSurplusQty,
   fireBarView,
   firedCount,
@@ -1646,6 +1647,15 @@ describe("a frase da cozinha no checkout conta unidades", () => {
       .toBe("");
     expect(kitchenHandoffNote([linha({ sku: "CROI", qty: 4 }), linha({ sku: "CAPU", qty: 1 })], { goesToKitchen: goes }))
       .toBe("Ao finalizar, o item vai para a cozinha.");
+  });
+
+  it("a comanda continua vendo a separação: o Enviar dela manda tudo que tem estação (revisão #2152)", () => {
+    const products = [
+      { sku: "CAPU", kitchen_station: "Cafés", kitchen_prep: true },
+      { sku: "SUCO", kitchen_station: "Bar", kitchen_prep: false },
+      { sku: "AGUA" },
+    ];
+    expect(kitchenRoutedSkus(products)).toEqual({ CAPU: "Cafés", SUCO: "Bar" });
   });
 });
 
