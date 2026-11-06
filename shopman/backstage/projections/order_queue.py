@@ -65,7 +65,7 @@ logger = logging.getLogger(__name__)
 ACTIVE_STATUSES = ("new", "accepted", "preparing", "ready", "dispatched", "delivered")
 
 _PAYMENT_COMPLETE = frozenset({"captured", "paid"})
-_OFFLINE_METHODS = frozenset({"cash", "credit", "debit", "external", ""})
+_OFFLINE_METHODS = frozenset({"cash", "credit", "debit", "external"})
 # Um tender de balcão nasce ``received`` ao ser liquidado no PDV; o dinheiro na
 # entrega (COD) nasce ``pending`` e vira ``received`` quando o entregador acerta.
 # Ver shop/services/pos.py (status do tender) e operator_orders.settle_delivery_cash.
@@ -571,10 +571,6 @@ class OrderCardProjection:
     # destravar sozinho, e a tela oferece o próximo passo pronto (cancelar com o
     # motivo "Pagamento não confirmado" já marcado), em vez de um botão morto.
     payment_lapsed: bool = False
-    # Pedido sem NENHUM rastro de cobrança (o pill "Pagamento não informado"). O
-    # gate de pagamento não o barra (payment_gate.requires_captured_payment), então
-    # a tela pergunta "já recebeu?" antes do degrau que entrega a mercadoria.
-    payment_unrecorded: bool = False
 
 
 @dataclass(frozen=True)
@@ -839,8 +835,6 @@ class OperatorOrderProjection:
     transferred_from_label: str = ""
     # Igual ao do cartão: a cobrança venceu e o avanço não destrava mais sozinho.
     payment_lapsed: bool = False
-    # Igual ao do cartão: nenhum rastro de cobrança; a tela pergunta antes de entregar.
-    payment_unrecorded: bool = False
 
 
 #: Os contextos que leem o detalhe do pedido (:func:`build_operator_order`).
@@ -1198,7 +1192,6 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
-        payment_unrecorded=_payment_unrecorded(order, payment_data),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         cancellation_presets=_cancellation_presets(),
         cancel_reasons=_cancel_reasons(),
@@ -2253,7 +2246,6 @@ def _build_card(
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
-        payment_unrecorded=_payment_unrecorded(order, payment_data),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status_label=fiscal_status_label,
         fiscal_status=fiscal_status,
@@ -2638,24 +2630,15 @@ def _is_payment_pending(order: Order, method: str, payment_status: str) -> bool:
     return payment_status not in _PAYMENT_COMPLETE
 
 
-def _payment_unrecorded(order: Order, payment_data: dict) -> bool:
-    """Nenhum rastro de cobrança fora do iFood (o iFood traz o pagamento no payload)."""
-    return order.channel_ref != "ifood" and _has_no_payment_info(payment_data or {})
+def _report_order_without_payment(order: Order | None) -> None:
+    """Pedido sem forma de pagamento não existe (decisão do dono, 06/11/2026, GES-03).
 
-
-def _has_no_payment_info(payment_data: dict) -> bool:
-    """True quando o pedido não traz nenhum rastro de cobrança: sem meio, sem
-    intent de Pix/cartão e sem tender de balcão/entrega.
-
-    Um pedido assim avançando no board é um vão: sem este sinal o card fica MUDO
-    (o pill some quando não há rótulo de meio) e um pedido pronto sem pagamento
-    registrado se confunde no olho com um pedido pago. O operador precisa VER que
-    não sabemos o status do pagamento.
+    Toda porta que cria pedido recusa sem ela (``policies.order_payment.PaymentMethodRule``
+    no commit; o seed se confere no fim). Se um aparecer mesmo assim, é defeito de
+    porta, e a tela não o maquia com um estado próprio: grita no Sentry com a ref.
     """
-    return (
-        not payment_data.get("method")
-        and not payment_data.get("intent_ref")
-        and not (payment_data.get("tenders") or [])
+    logger.error(
+        "order_queue.order_without_payment order=%s", getattr(order, "ref", "?"),
     )
 
 
@@ -2696,11 +2679,7 @@ def _payment_tone(order: Order, method: str, payment_status: str, payment_data: 
     # já foi pago), então o dinheiro está garantido — verde, mesmo sem captura nossa.
     if method == "external":
         return "success"
-    if _has_no_payment_info(payment_data):
-        # Nenhum rastro de cobrança: âmbar de atenção, não o neutro de "cobra no
-        # balcão". Não afirmamos "pago" nem "esperando" — apenas que não sabemos.
-        return "warning"
-    if method in _OFFLINE_METHODS or not method:
+    if method in _OFFLINE_METHODS:
         # Dinheiro/cartão no balcão: verde SÓ quando de fato liquidado — tender
         # recebido no PDV, ou COD acertado na entrega. Pedido web para pagar na
         # retirada e COD ainda pendente ficam neutros: não afirmamos "pago" sem
@@ -2823,10 +2802,9 @@ def _payment_status(order: Order) -> str:
 
 
 def _payment_method_label(method: str, payment_data: dict, *, labels: dict | None = None, order: Order | None = None) -> str:
-    if _has_no_payment_info(payment_data):
-        # Pill explícito em vez de rótulo vazio (que sumiria o pill). Ver
-        # _has_no_payment_info: card mudo se confunde com pedido pago.
-        return "Pagamento não informado"
+    if not method:
+        _report_order_without_payment(order)
+        return ""
     label = labels[method] if labels is not None else payment_method_label(method)
     if method == "mixed" and payment_data.get("tenders"):
         label = " + ".join(

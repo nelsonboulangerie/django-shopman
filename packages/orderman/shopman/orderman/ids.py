@@ -22,7 +22,7 @@ def _generate_id(prefix: str, length: int = 8) -> str:
 
 
 # Sufixo curto (1 letra + 2 dígitos) é ALEATÓRIO num espaço de 24×100 = 2.400 por dia,
-# e é ÚNICO NO DIA ENTRE TODOS OS CANAIS: é por ele que a mensagem chama o pedido ("seu
+# e é ÚNICO NO DIA ENTRE TODOS OS CANAIS (e entre os pedidos ainda abertos de outros dias): é por ele que a mensagem chama o pedido ("seu
 # pedido A47") e que o balcão o procura, então WEB-…-A47 e POS-…-A47 no mesmo dia seriam
 # dois pedidos com o mesmo nome. Aleatório pode repetir (aniversário), então sorteamos
 # de novo se o final já existe no dia. O índice único de Order.ref é a guarda final do
@@ -42,14 +42,25 @@ def sanitize_preferred_suffix(value: object) -> str:
 
 
 def _day_code_taken(candidate: str, business_day: date) -> bool:
-    """O final (``-{YYMMDD}-{código}``) já foi dado hoje, em qualquer canal?"""
+    """O código curto já está em uso: dado hoje, ou num pedido AINDA ABERTO de outro dia?
+
+    O balcão e a mensagem chamam o pedido só pelo código ("K49"). Um pedido de
+    ontem que segue aberto (encomenda paga antes, pedido atrasado) está na mesma
+    tela do Gestor que o de hoje, então "K49" de ontem e "K49" de hoje seriam dois
+    pedidos com o mesmo nome (beta 06/11, F7). Pedido já fechado de outro dia não
+    disputa o código: ninguém mais o chama.
+    """
     from shopman.orderman.models import Order
 
-    day_code = "-" + "-".join(candidate.rsplit("-", 2)[-2:])
+    date_part, code = candidate.rsplit("-", 2)[-2:]
     # O recorte por `created_at` (indexado) poupa a varredura da tabela inteira pelo
     # LIKE '%…': um pedido do dia D nasce no dia D (ou na virada, logo depois).
     since = timezone.make_aware(datetime.combine(business_day - timedelta(days=1), time.min))
-    return Order.objects.filter(created_at__gte=since, ref__endswith=day_code).exists()
+    if Order.objects.filter(created_at__gte=since, ref__endswith=f"-{date_part}-{code}").exists():
+        return True
+    # Abertos são poucos e `status` é indexado: o filtro por status vem antes do LIKE.
+    open_statuses = [status for status in Order.Status.values if status not in Order.TERMINAL_STATUSES]
+    return Order.objects.filter(status__in=open_statuses, ref__endswith=f"-{code}").exists()
 
 
 def _order_ref_candidate(channel_ref: str, business_day: date) -> str:
@@ -75,8 +86,8 @@ def generate_order_ref(
     """Gera um ref de pedido único: {CHANNEL_REF}-{YYMMDD}-{L##} (ex. WEB-260421-A17).
 
     Código ALEATÓRIO (curto, memorável, não revela volume). Sorteia de novo enquanto o
-    final colidir com um já dado no dia, em qualquer canal; o índice único no INSERT é
-    a guarda final do ref completo.
+    final colidir com um já dado no dia, em qualquer canal, ou com o de um pedido ainda
+    aberto de outro dia; o índice único no INSERT é a guarda final do ref completo.
 
     ``preferred_suffix`` é o número que o CANAL já deu ao pedido — o ``displayId`` do
     iFood. Quando o canal já batizou o pedido, o cliente, o portal e o suporte falam

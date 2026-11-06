@@ -86,6 +86,21 @@ def ensure(order) -> None:
         _update_insights(customer["ref"])
 
 
+def refresh_insights(order) -> None:
+    """Recalcula o insight do cliente quando um pedido DEIXA de ser compra.
+
+    O insight materializado no ``ensure`` contava o pedido como compra. Cancelado
+    (inclusive o Pix ou cartão vencido) ou devolvido, ele sai do histórico, e o
+    insight precisa sair junto: senão o Gestor segue dizendo "Cliente fiel · 5
+    pedidos" de quem nunca pagou (beta 06/11, PIXEXP-07). Nunca levanta.
+    """
+    if not _customers_available():
+        return
+    customer_ref = str((order.data or {}).get("customer_ref") or "").strip()
+    if customer_ref:
+        _update_insights(customer_ref)
+
+
 # ── Built-in strategies ──
 
 

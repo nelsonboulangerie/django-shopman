@@ -15,7 +15,6 @@ import {
   cardAuthorizationNotice,
   changeBackSuggestionQ,
   confirmationRemainingLabel,
-  handOverPaymentQuestion,
   ifoodAcceptNotice,
   lucideIcon,
   onRoadLine,
@@ -532,13 +531,7 @@ function onCourierBackDifferent() {
   if (order.value?.can_settle_delivery_cash) void openDialog("settle");
 }
 
-// Pedido sem pagamento registrado: a mesma pergunta da Fila (GES-03).
-const confirmHandOver = useConfirm();
-async function onAdvance() {
-  const o = order.value;
-  const target = String(projectedAction("advance")?.payload_schema?.target_status ?? "");
-  const question = o ? handOverPaymentQuestion({ ...o, target }) : null;
-  if (question && !(await confirmHandOver(question))) return;
+function onAdvance() {
   if (dispatchAsks.value) openDialog("dispatch");
   else advance();
 }

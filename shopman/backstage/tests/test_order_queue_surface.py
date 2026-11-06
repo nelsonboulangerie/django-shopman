@@ -359,19 +359,25 @@ class OrderQueueSurfaceTests(TestCase):
 
         self.assertEqual(card.payment_tone, "neutral")
 
-    def test_order_without_any_payment_info_is_flagged_not_silent(self) -> None:
-        """Pedido sem NENHUM rastro de cobrança (sem meio/intent/tender) não pode
-        ficar mudo no board: pill explícito 'Pagamento não informado' em âmbar, para
-        o operador ver que não sabemos o status — e não confundir com pago."""
+    def test_order_without_payment_has_no_state_of_its_own_and_screams(self) -> None:
+        """Pedido sem forma de pagamento não existe (dono, 06/11/2026, GES-03): o
+        commit o recusa. Se um aparecer mesmo assim, o card não ganha o estado
+        "Pagamento não informado" (que tratava o defeito como situação normal):
+        o erro vai ao Sentry com a ref do pedido."""
+        from unittest import mock
+
+        from shopman.backstage.projections import order_queue
+
         order = _order("A-SEM-PGTO", "ready")
         order.data["payment"] = {}
         order.save(update_fields=["data", "updated_at"])
 
-        card = build_order_card(Order.objects.get(pk=order.pk))
+        with mock.patch.object(order_queue.logger, "error") as error:
+            card = build_order_card(Order.objects.get(pk=order.pk))
 
-        self.assertEqual(card.payment_method, "")
-        self.assertEqual(card.payment_method_label, "Pagamento não informado")
-        self.assertEqual(card.payment_tone, "warning")
+        self.assertEqual(card.payment_method_label, "")
+        self.assertNotEqual(card.payment_tone, "warning")
+        error.assert_called_with("order_queue.order_without_payment order=%s", "A-SEM-PGTO")
 
     def test_card_timer_is_anchored_to_server_time(self) -> None:
         card = build_order_card(_order("A-TIMER", "new"))

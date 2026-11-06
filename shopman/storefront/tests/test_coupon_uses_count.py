@@ -44,6 +44,7 @@ def _commit(coupon_code: str | None, django_capture_on_commit_callbacks):
         {"op": "add_line", "sku": "PAO-TESTE", "name": "Pão", "qty": 1, "unit_price_q": 2500},
         {"op": "set_data", "path": "customer", "value": {"name": "Ana", "phone": "+5543999990001"}},
         {"op": "set_data", "path": "fulfillment_type", "value": "pickup"},
+        {"op": "set_data", "path": "payment", "value": {"method": "cash"}},
     ]
     if coupon_code:
         ops.append({"op": "set_data", "path": "coupon_code", "value": coupon_code})

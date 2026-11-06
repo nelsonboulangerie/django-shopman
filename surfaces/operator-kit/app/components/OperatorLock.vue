@@ -231,14 +231,17 @@ async function submitForcedChange(payload: {
 
       <!-- "Entrar com senha": quem não tem PIN nesta tela (o dono, alguém de
            outra equipe) entra pelo usuário e senha, sem sair da trava. Antes a
-           única saída era abrir o app em outro endereço (beta 05/11, BI-09). -->
+           única saída era abrir o app em outro endereço (beta 05/11, BI-09).
+           A porta é a da TRAVA, e não o login geral: o servidor recusa quem tem
+           PIN e, num posto da loja, quem não é o Dono (dono, 06/11, PDV-21). -->
       <template v-else-if="withPassword">
         <OperatorLoginForm
           heading
           title="Entrar com senha"
           description="Para quem não tem PIN nesta tela."
           icon="i-lucide-key-round"
-          login-url="/api/v1/backstage/operator/login/"
+          login-url="/api/v1/backstage/operator/unlock/password/"
+          :extra-body="{ perm }"
         />
         <div class="flex justify-center">
           <NuxtButton

@@ -9,12 +9,15 @@ const props = withDefaults(
     largeFields?: boolean;
     reloadOnSuccess?: boolean;
     heading?: boolean;
+    /** Campos a mais no corpo do POST (a trava manda o `perm` da superfície). */
+    extraBody?: Record<string, string>;
   }>(),
   {
     iconSrc: "",
     largeFields: false,
     reloadOnSuccess: true,
     heading: false,
+    extraBody: () => ({}),
   },
 );
 
@@ -58,7 +61,7 @@ async function submit() {
     await $fetch(props.loginUrl, {
       method: "POST",
       credentials: "same-origin",
-      body: { username: username.value.trim(), password: password.value },
+      body: { ...props.extraBody, username: username.value.trim(), password: password.value },
     });
     await refreshNuxtData("operator-session");
     resetSession();
