@@ -1294,14 +1294,15 @@ def preview_platforms(
         if flow_binding is not None
         else {}
     )
+    preview_content = {
+        "body": render(body or "", variables, field="body"),
+        "hashtags": variables["hashtags_list"],
+        "link": variables["link"],
+        "image_url": variables["product_image_url"],
+    }
     artifacts = resolve_all_dispatch_artifacts(
         platforms=normalized_platforms,
-        content={
-            "body": render(body or "", variables, field="body"),
-            "hashtags": variables["hashtags_list"],
-            "link": variables["link"],
-            "image_url": variables["product_image_url"],
-        },
+        content=preview_content,
         platform_content=rendered_variants,
         content_version=content_version,
         facts_as_of=facts.as_of.isoformat(),
@@ -1328,6 +1329,7 @@ def preview_platforms(
         "ai_writes": bool(use_ai),
         "facts": facts.as_payload(),
         "platform_problems": platform_problems,
+        "publish_blockers": _publish_blockers(preview_content, rendered_variants),
         "previews": {
             artifact.platform: {
                 "artifact": artifact.as_payload(),
@@ -1435,6 +1437,7 @@ def preview_announcement(
         "ai_writes": False,
         "facts": facts.as_payload() if facts is not None else None,
         "platform_problems": platform_problems,
+        "publish_blockers": _publish_blockers(content, platform_content),
         "previews": {
             artifact.platform: {
                 "artifact": artifact.as_payload(),
@@ -1448,6 +1451,17 @@ def preview_announcement(
             for artifact in artifacts
         },
     }
+
+
+def _publish_blockers(content: dict, platform_content: object) -> list[dict]:
+    """O que a aprovação vai recusar, mostrado na prévia sem derrubá-la (MKT-20)."""
+    from shopman.shop.policies.marketing_public_link import public_link_problem
+    from shopman.shop.services.storefront_links import storefront_base_url
+
+    problem = public_link_problem(
+        content, platform_content, store_address_configured=bool(storefront_base_url())
+    )
+    return [problem.as_payload()] if problem is not None else []
 
 
 def _preview_whatsapp_binding(
