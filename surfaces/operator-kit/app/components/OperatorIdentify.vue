@@ -61,9 +61,15 @@ const props = withDefaults(
 const emit = defineEmits<{
   pin: [{ person: IdentifiablePerson | null; username: string; pin: string }];
   badge: [string];
+  /** Quem está escolhido agora (`null` ao voltar à lista). A trava precisa saber
+   *  ANTES do PIN: o "Trocar meu PIN" é da pessoa escolhida, e sem este aviso a
+   *  trava só descobria quem era no primeiro PIN digitado (beta 05/11, CEN-02 e
+   *  PDV-03: o botão não fazia nada, e depois trocava o PIN de outra pessoa). */
+  pick: [IdentifiablePerson | null];
 }>();
 
 const picked = ref<IdentifiablePerson | null>(null);
+watch(picked, (person) => emit("pick", person));
 
 const hasList = computed(() => props.people.length > 0);
 const username = computed(() => picked.value?.username ?? "");
@@ -125,6 +131,25 @@ watch(
   () => props.error,
   (e) => {
     if (e) clear();
+  },
+);
+
+// A recusa está à vista no teclado até a pessoa voltar a digitar (o teclado
+// dispensa o aviso no primeiro dígito). Enquanto está, ela ocupa o lugar da dica
+// do crachá: com as duas, a trava passava da tela do celular (pin-erro em
+// 375x548, matriz `operator-lock.spec.ts`), e quem acabou de errar precisa ler o
+// erro. A dica volta com o próximo dígito.
+const errorShowing = ref(Boolean(props.error));
+watch(
+  () => props.error,
+  (e) => {
+    errorShowing.value = Boolean(e);
+  },
+);
+watch(
+  () => pin.value.length,
+  (length) => {
+    if (length > 0) errorShowing.value = false;
   },
 );
 
@@ -193,10 +218,22 @@ defineExpose({ reset });
           </span>
         </NuxtButton>
       </div>
-      <p v-if="numberedCount" class="text-center text-xs text-muted-foreground">
+      <!-- O número é atalho de TECLADO: só aparece onde há um (ponteiro fino).
+           No toque, a instrução é o toque (beta 05/11, CEN-12). -->
+      <p
+        v-if="numberedCount"
+        class="hidden text-center text-xs text-muted-foreground pointer-fine:block"
+        data-operator-identify-hint="keyboard"
+      >
         Digite o número para escolher{{
           badgeEnabled !== false ? ", ou passe o crachá" : ""
         }}.
+      </p>
+      <p
+        class="text-center text-xs text-muted-foreground pointer-fine:hidden"
+        data-operator-identify-hint="touch"
+      >
+        Toque no seu nome{{ badgeEnabled !== false ? ", ou passe o crachá" : "" }}.
       </p>
       <NuxtAlert
         v-if="error && !showPad"
@@ -254,8 +291,9 @@ defineExpose({ reset });
       <!-- O crachá segue valendo aqui: a frase existe para o operador saber que
            não precisa terminar de digitar se estiver com ele no pescoço. -->
       <p
-        v-if="badgeEnabled !== false"
+        v-if="badgeEnabled !== false && !errorShowing"
         class="text-center text-xs text-muted-foreground"
+        data-operator-identify-badge-hint
       >
         Ou passe o crachá no leitor.
       </p>

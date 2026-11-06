@@ -2720,7 +2720,7 @@ achado a linha**, e por isso não vira coluna.
 |-------|------|---------|
 | `user_agent` | `str` (≤300) | navegador/dispositivo de quem entrou. Truncado: o cabeçalho não tem teto e não vale uma linha de 2KB por acesso |
 | `path` | `str` (≤200) | a rota por onde a autenticação passou (`/admin/login/`, `/api/v1/backstage/operator/unlock/`) — separa Admin de balcão sem uma coluna a mais |
-| `reason` | `str` | por que a linha é o que é: `operator_unlock_invalid` (PIN ou crachá que não bateu) ou `not_me` (revogação pedida pelo dono) |
+| `reason` | `str` | por que a linha é o que é: `operator_unlock_invalid` (PIN ou crachá que não bateu), `operator_pin_locked` (tentativa com o PIN já bloqueado por tentativas: fica na trilha, sem novo aviso ao dono), `badge_lost_invalid` (PIN errado no "Perdi meu crachá") ou `not_me` (revogação pedida pelo dono) |
 | `anomalies` | `list[str]` | os códigos que fizeram este acesso ser **destacado**: `failure`, `badge`, `unknown_station`, `outside_hours`, `burst`, `after_failure`. Vazio/ausente = acesso de rotina |
 | `revoked_at` | `str` (ISO) | quando o dono clicou "não fui eu" **sobre este acesso** |
 | `revoked_sign_in_event_id` | `int` | na linha `outcome=revoked`, qual acesso foi repudiado |

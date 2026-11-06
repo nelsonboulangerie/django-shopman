@@ -31,6 +31,28 @@ const emit = defineEmits<{ lock: []; hide: [] }>();
 const { data: operatorSession } = useNuxtData<OperatorSession>("operator-session");
 const workstationContext = computed(() => operatorSession.value?.workstation?.context_label ?? "");
 
+// Sair deste dispositivo: encerra a sessão. Só fora de um posto (o celular de
+// quem entrou com senha, o PC do escritório): ali o Bloquear deixava a lista de
+// operadores à mostra para quem achasse o dispositivo (beta 05/11, CEN-07). Num
+// posto, sair é o mesmo que bloquear (a estação continua pedindo PIN), e o
+// vínculo do posto tem gesto próprio, no cadastro de Postos.
+const canSignOut = computed(
+  () => Boolean(operatorSession.value?.operator) && !operatorSession.value?.station,
+);
+const { run: signOut, pending: signOutPending } = usePendingAction(async () => {
+  try {
+    await $fetch("/api/v1/backstage/operator/logout/", {
+      method: "POST",
+      credentials: "same-origin",
+    });
+  } catch (err) {
+    useSonner.error(httpErrorMessage(err, "Não foi possível sair. Tente de novo."));
+    return;
+  }
+  // Recarregar zera o que a tela guardava da pessoa; o app sobe no login.
+  window.location.reload();
+});
+
 // A leitura que a caixa de Avisos já faz; sem ela (tela sem a caixa), uma própria.
 const shared = useSharedCapacity().value;
 const { reading, authorized, stale } = shared ?? useOperatorCapacity();
@@ -75,6 +97,21 @@ const { run: toggleOrientation, pending: orientationPending } = usePendingAction
       description="Outra pessoa entra com o PIN dela"
       data-operator-menu-lock
       @click="emit('lock')"
+    />
+
+    <NuxtButton
+      v-if="canSignOut"
+      block
+      class="justify-start"
+      color="neutral"
+      variant="ghost"
+      icon="i-lucide-log-out"
+      label="Sair deste dispositivo"
+      description="Para entrar de novo, só com senha"
+      :loading="signOutPending"
+      :disabled="signOutPending"
+      data-operator-menu-sign-out
+      @click="signOut"
     />
 
     <ClientOnly>
