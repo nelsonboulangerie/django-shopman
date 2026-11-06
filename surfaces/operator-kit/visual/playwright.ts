@@ -134,7 +134,8 @@ export async function waitForAnimationsToSettle(page: Page) {
         const end = Number(animation.effect?.getComputedTiming().endTime);
         return animation.playState !== "finished" && Number.isFinite(end);
       });
-    await Promise.all(finite.map((animation) => animation.finished.catch(() => undefined)));
+    // `allSettled`: animação cancelada (o Vue desmontou o nó) também conta como acabada.
+    await Promise.allSettled(finite.map((animation) => animation.finished));
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
