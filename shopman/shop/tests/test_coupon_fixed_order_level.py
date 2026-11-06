@@ -206,3 +206,28 @@ def test_only_one_coupon_code_is_ever_active():
     assert _order_total_q(session) == 3000 - 600
     assert session.pricing["coupon"]["code"] == "VINTE"
     assert session.pricing["coupon"]["discount_q"] == 600
+
+
+def test_fixed_coupon_beats_a_bigger_fixed_promotion_that_reaches_no_line():
+    """Beta SMS-04: promoção automática de R$ 10 só para CRO, carrinho sem CRO.
+
+    Antes, o fixo de maior valor NOMINAL vencia, não tinha linha elegível, aplicava
+    zero, e o cupom de R$ 5 (que valia para o carrinho) nunca era tentado: a tela
+    dizia "Cupom aplicado" e o total não mudava.
+    """
+    _seed(promo_type=Promotion.FIXED, value=500, min_order_q=3000, code="PRIMEIRACOMPRA")
+    now = timezone.now()
+    Promotion.objects.create(
+        ref="auto-croissant-fixo",
+        name="Croissant R$ 10",
+        type=Promotion.FIXED,
+        value=1000,
+        skus=["CRO"],
+        valid_from=now - timedelta(days=1),
+        valid_until=now + timedelta(days=1),
+    )
+    session = _cart_with_coupon(sku="PAO", qty=4, unit_price_q=1500, code="PRIMEIRACOMPRA")
+
+    assert _order_total_q(session) == 6000 - 500
+    assert session.pricing["coupon"]["discount_q"] == 500
+    _assert_lines_are_coherent(session)

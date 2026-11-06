@@ -159,7 +159,8 @@ class TestValidateSlot(TestCase):
             )
 
         assert "delivery_time_slot" in errors
-        assert "preparo" in errors["delivery_time_slot"].lower()
+        # Beta SMS-10: o motivo diz o produto e a hora, como na entrega.
+        assert errors["delivery_time_slot"].startswith("BRIGADEIRO sai às 13:30. Escolha ")
 
     # ── Slot vazio + pickup → exige seleção ──────────────────────────────
 

@@ -665,6 +665,24 @@ def recover_checkout_response(*, browser_session: str, principal: str, key: str 
     return None
 
 
+def checkout_attempt_in_flight(*, browser_session: str, principal: str, key: str) -> bool:
+    """Esta tentativa ainda pode virar pedido?
+
+    Sim só quando o servidor a recebeu e ela não terminou (``in_progress``).
+    Tentativa que nunca chegou, ou que falhou, não vira pedido sozinha: o
+    cliente pode reenviar com a mesma chave sem esperar o teto da conferência
+    (beta SMS-17).
+    """
+    from shopman.orderman.models import IdempotencyKey
+
+    from shopman.shop.services.remote_mutations import fingerprint
+
+    if not key:
+        return False
+    prefix = f"co:{fingerprint([browser_session, principal])[:32]}:"
+    return IdempotencyKey.objects.filter(scope__startswith=prefix, key=key, status="in_progress").exists()
+
+
 def _build_ops_from_data(data: dict) -> list[dict]:
     """Convert checkout data dict into Orderman session operations."""
     ops = []
