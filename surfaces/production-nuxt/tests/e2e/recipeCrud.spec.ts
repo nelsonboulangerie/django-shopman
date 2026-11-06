@@ -20,10 +20,18 @@ test("editar receita é um gesto visível desde o inventário", async ({ page },
   const card = page.locator("[data-recipe-card]").filter({ hasText: "Pão francês" });
   const edit = card.getByRole("link", { name: "Editar Pão francês" });
   await expect(edit).toBeVisible();
+  const versionPosts: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && /\/recipes\/pao-frances\/versions\/?$/.test(new URL(request.url()).pathname)) {
+      versionPosts.push(request.url());
+    }
+  });
   await edit.click();
 
-  await expect(page).toHaveURL(/\/recipes\/pao-frances\/edit\?v=3$/);
-  await expect(page.locator("[data-page-header-eyebrow]:visible, [data-page-header-eyebrow-phone]:visible")).toContainText("Rascunho · Versão 3");
+  // Abrir o editor não grava rascunho: ele nasce no primeiro "Salvar" (beta 05/11/2026, PROD-10).
+  await expect(page).toHaveURL(/\/recipes\/pao-frances\/edit$/);
+  await expect(page.locator("[data-page-header-eyebrow]:visible, [data-page-header-eyebrow-phone]:visible")).toContainText("Nova Versão");
+  expect(versionPosts).toEqual([]);
   await expect(page.getByRole("button", { name: "Salvar rascunho" })).toBeVisible();
 
   await testInfo.attach(`receita-editar-${testInfo.project.name}`, {

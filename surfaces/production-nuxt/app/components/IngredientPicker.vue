@@ -104,7 +104,7 @@ const touch = useTouchPointer();
       </span>
     </template>
     <template #empty>
-      {{ pending ? "Buscando…" : "Nenhum ingrediente encontrado." }}
+      {{ pending ? "Buscando…" : "Nenhum insumo com esse nome. Insumo novo se cadastra no Compras." }}
     </template>
   </NuxtSelectMenu>
 </template>
