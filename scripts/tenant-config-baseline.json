@@ -12,7 +12,7 @@
     "TAON"
   ],
   "totals": {
-    "settings": 312,
+    "settings": 313,
     "env": 24,
     "settings_env": 174
   },
@@ -94,6 +94,9 @@
       "settings": 1
     },
     "shopman/backstage/middleware_2fa.py": {
+      "settings": 1
+    },
+    "shopman/backstage/projections/bi_profiles.py": {
       "settings": 1
     },
     "shopman/backstage/projections/bi_sales.py": {
