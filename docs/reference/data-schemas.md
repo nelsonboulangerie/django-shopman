@@ -2671,7 +2671,7 @@ quem confirmou, de qual NF, com que preço — mais **uma** estruturada:
 | `purchase_line_id` · `purchase_material_sku` | `str` | rastro da linha do rascunho |
 | `opened_from_sku` · `opened_from_batch` | `str` | abertura de embalagem (`shop/services/package_opening.open_package`): de que SKU/lote fechado veio o aberto. Movimento `make`, par da saída de 1 un da embalagem |
 | `purchase_qty` · `purchase_base_qty` | `str` (Decimal) | quantidade **na unidade de compra** e **na unidade-base** — é o par que prova a conversão |
-| `purchase_total_cost_q` · `purchase_unit_cost_q` | `int` (centavos) | valor da linha e custo por unidade de compra |
+| `purchase_total_cost_q` · `purchase_unit_cost_q` | `int` (centavos) | valor da linha e custo da unidade de preço: a embalagem da conversão ou, sem conversão, o kg do insumo em g e o litro do insumo em ml (o mesmo contrato de `SupplierMaterialCost.cost_q`) |
 | `converted_via` | `{label: str, factor: str, approximate: bool}` | **a ponte que a quantidade atravessou** — ver abaixo |
 | `purchase_line_attested_by` | `"line_check" \| "volume_count"` | como a linha foi assinada: o ok dela, ou a contagem de volumes do recebimento por exceção (UX-C1). Quem contou é o `Move.user` |
 | `purchase_volumes_counted` · `purchase_volumes_expected` | `int` | só com `volume_count`: quantos volumes o recebedor contou na doca e quantos deviam ser |

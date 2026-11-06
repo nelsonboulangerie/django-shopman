@@ -42,7 +42,7 @@ import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import {
   costBatchLineErrors as buildCostBatchLineErrors,
   costBatchPayload as buildCostBatchPayload,
-  costPerBaseUnitQ,
+  costPerReadingUnitQ,
   countConfirmPayload,
   countRows,
   countSummary,
@@ -1655,7 +1655,7 @@ export function usePurchaseDesk() {
     cancelPurchaseRequest,
     setPreferredCost,
     saveQuote,
-    costPerBaseUnitQ,
+    costPerReadingUnitQ,
     materialForm,
     supplierForm,
     materialFormSource,

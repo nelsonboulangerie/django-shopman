@@ -185,7 +185,7 @@ describe("detalhe do insumo mostra os números (CMP-13)", () => {
       minStock: 500,
       minStockDeclared: true,
       coverageDays: Number.POSITIVE_INFINITY,
-      preferredBaseCostQ: null,
+      preferredReadingCostQ: null,
     });
     expect(facts.map((fact) => fact.label)).toEqual(["Estoque", "Mínimo", "Cobertura", "Custo preferencial"]);
     expect(facts.find((fact) => fact.key === "cost")?.value).toBe("sem custo");
@@ -193,9 +193,10 @@ describe("detalhe do insumo mostra os números (CMP-13)", () => {
   });
 
   it("sem mínimo declarado diz nenhum", () => {
-    const facts = materialFacts({ unit: "g", stockOnHand: 0, minStock: 0, minStockDeclared: false, coverageDays: 3, preferredBaseCostQ: 9 });
+    const facts = materialFacts({ unit: "g", stockOnHand: 0, minStock: 0, minStockDeclared: false, coverageDays: 3, preferredReadingCostQ: 9167 });
     expect(facts.find((fact) => fact.key === "minimum")?.value).toBe("nenhum");
-    expect(facts.find((fact) => fact.key === "cost")?.value).toContain("/ g");
+    // Insumo em g se lê por kg: R$ 91,67 / kg, nunca R$ 0,09 / g (CMP-07).
+    expect(facts.find((fact) => fact.key === "cost")?.value).toMatch(/^R\$\s91,67 \/ kg$/);
   });
 });
 
