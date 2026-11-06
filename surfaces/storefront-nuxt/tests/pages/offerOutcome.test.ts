@@ -109,6 +109,15 @@ describe('offer on a bag that already had items', () => {
     page.unmount()
   })
 
+  it('opening the same link again goes to the bag without asking', async () => {
+    fetchMock.mockResolvedValue({ ...merged, added: [], kept_existing_items: false, already_claimed: true })
+    const page = await mountSuspended(OfferPage, { route: '/oferta/cafe' })
+    await flushPromises()
+    expect(document.body.textContent).not.toContain(QUESTION)
+    expect(navigate).toHaveBeenCalledWith('/sacola')
+    page.unmount()
+  })
+
   it('does not ask when the bag was empty', async () => {
     fetchMock.mockResolvedValue({ ...onlyTheOffer })
     const page = await mountSuspended(OfferPage, { route: '/oferta/cafe' })
