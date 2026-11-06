@@ -1410,16 +1410,31 @@ def _declared_adapter_paths(adapter_type: str, settings_name: str) -> dict[str, 
             found[origin] = str(value)
 
     collect(settings_name, getattr(settings, settings_name, None))
-    try:
-        from shopman.shop.adapters import _shop_integrations_value
+    from django.db.utils import OperationalError, ProgrammingError
 
-        collect(f"Shop.integrations[{adapter_type}]", _shop_integrations_value(adapter_type))
+    from shopman.shop.models import Shop
+
+    # Só a coluna ``integrations``, e não o ``Shop.load()`` inteiro: o release
+    # roda ``check --deploy`` ANTES do ``migrate``, com o modelo já pedindo a
+    # coluna nova que o banco ainda não tem (``staff_hours_start``, 06/11). A
+    # loja inteira caía e soltava traceback no release; a coluna de que este
+    # check precisa já existe e responde.
+    try:
+        integrations = Shop.objects.values_list("integrations", flat=True).first()
+    except (OperationalError, ProgrammingError):
+        # Sem banco ou sem a tabela (build, primeira migração): vale o que o
+        # settings declara, em WARNING de uma linha, sem traceback.
+        logging.getLogger(__name__).warning(
+            "live_provider_check: tabela da loja ainda não migrada; só o settings foi conferido"
+        )
     except Exception:
-        # Sem banco (build, check sem migração) vale o que o settings declara,
-        # mas em WARNING: um override do Admin pode estar fora desta conta.
+        # Um override do Admin pode estar fora desta conta.
         logging.getLogger(__name__).warning(
             "live_provider_check: Shop.integrations ilegível; só o settings foi conferido", exc_info=True
         )
+    else:
+        if isinstance(integrations, Mapping):
+            collect(f"Shop.integrations[{adapter_type}]", integrations.get(adapter_type))
     return found
 
 
