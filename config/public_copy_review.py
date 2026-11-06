@@ -29,8 +29,8 @@ PUBLIC_COPY_REVIEW: tuple[dict[str, str], ...] = (
         "id": "copy_contradictions",
         "title": "Contradições da copy resolvidas",
         "detail": (
-            "Encomenda: a copy da home diz até 7 dias (HOME_*), o canal permite 30 "
-            "(max_preorder_days). Prazo do Pix: 10 minutos na configuração, 15 na documentação. "
+            "Encomenda: a home e a FAQ derivam a janela de max_preorder_days (o mesmo "
+            "teto do checkout); confirmar o número configurado. Prazo do Pix: 10 minutos na configuração, 15 na documentação. "
             "'100% fermentação natural' não vale para croissant e brioche (fermento biológico)."
         ),
         "approved_by": "",
