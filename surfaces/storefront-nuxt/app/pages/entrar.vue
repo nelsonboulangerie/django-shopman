@@ -248,11 +248,15 @@ onMounted(async () => {
         enterWelcomeGateFromSession()
         return
       }
-      // Autenticado e sem nada a confirmar: o convite de boas-vindas já não vale;
-      // segue direto ao destino.
+      // Autenticado e sem nada a confirmar: o passo do nome já não vale.
       forgetStored(WELCOME_PENDING_STORAGE_KEY)
-      await navigateTo(nextUrl.value)
-      return
+      // Só o convite (`?welcome=1`) segue direto ao destino. A marca sozinha pode
+      // ser de outra visita (o nome veio depois, pelo checkout), e quem chega
+      // logado por "Entrar com outra conta" (/conta/perfil) quer ver o login.
+      if (welcomeRequested.value) {
+        await navigateTo(nextUrl.value)
+        return
+      }
     }
     forgetStored(WELCOME_PENDING_STORAGE_KEY)
   }

@@ -31,6 +31,15 @@ describe('beta 06/11: /entrar sobrevive ao recarregamento', () => {
     expect(mounted).toContain('enterWelcomeGateFromSession()')
   })
 
+  it('SMS-16: a marca sozinha, com sessão sem nome pendente, não tira o logado do login', () => {
+    // "Entrar com outra conta" (/conta/perfil) abre /entrar logado; uma marca
+    // velha não pode mandá-lo de volta ao destino. Só o convite `?welcome=1` segue.
+    const afterWelcome = mounted.slice(mounted.indexOf('if (auth.requires_welcome)'))
+    const nav = afterWelcome.indexOf('await navigateTo(nextUrl.value)')
+    expect(nav).toBeGreaterThan(-1)
+    expect(afterWelcome.slice(0, nav)).toContain('if (welcomeRequested.value) {')
+  })
+
   it('SMS-08: todo envio do código passa por applyPendingCode, que guarda o passo', () => {
     expect(body('applyCodeDelivery')).toContain('applyPendingCode(')
     expect(body('applyPendingCode')).toContain('writeStored(PENDING_CODE_STORAGE_KEY')
