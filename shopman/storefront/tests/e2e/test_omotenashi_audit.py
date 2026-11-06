@@ -557,7 +557,9 @@ def test_16_reorder_readds_previous_order_in_one_call(client):
     # The available item lands in the cart…
     assert body["cart"]["items_count"] == 2
     # …and the unavailable one is reported (not silently dropped, not a hard failure).
-    assert "GHOST-SKU" in body.get("skipped", [])
+    # O cliente lê o nome do que pediu, nunca o SKU (beta SMS-03).
+    assert body.get("skipped", []) == ["Item Saído de Linha"]
+    assert "GHOST-SKU" not in str(body.get("skipped_items"))
     assert body["skipped_items"][0]["reason"]
 
 
