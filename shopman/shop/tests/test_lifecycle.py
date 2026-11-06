@@ -645,10 +645,11 @@ class TestOnPaid:
     def test_operator_mode_paid_order_stays_accepted_until_operator_starts(
         self, mock_stock, mock_notification, mock_dispatch_work, mock_cc,
     ):
-        """prep_start="operator": pagar NÃO manda pra cozinha nem vira "preparando".
+        """prep_start="operator": pago vai para a Cozinha, mas NÃO vira "preparando".
 
-        O pedido fica em "Aceito"; o cliente lê "Pagamento confirmado". A cozinha
-        só é acionada quando o operador dá "Iniciar preparo" no gestor.
+        Os tickets nascem agora e esperam o "Iniciar preparo" do posto (dono,
+        06/11/2026: a verdade é da cozinha); o pedido fica em "Aceito" e o
+        cliente lê "Pagamento confirmado".
         """
         mock_cc.for_channel.return_value = _config(prep_start="operator")
         order = _make_order(status=Order.Status.ACCEPTED)
@@ -656,7 +657,7 @@ class TestOnPaid:
 
         dispatch(order, "on_paid")
 
-        mock_dispatch_work.assert_not_called()
+        mock_dispatch_work.assert_called_once_with(order)
         order.transition_status.assert_not_called()
         mock_stock.fulfill.assert_called_once_with(order)
         mock_notification.send.assert_called_once_with(order, "payment_confirmed")
@@ -667,8 +668,8 @@ class TestOnPaid:
     def test_on_preparing_dispatches_the_kitchen(
         self, mock_notification, mock_dispatch_work, mock_cc,
     ):
-        """A transição para "preparando" (o "Iniciar preparo" do operador) é o
-        momento em que os tickets do KDS nascem."""
+        """A transição para "preparando" garante os tickets do KDS (idempotente:
+        os do aceite já existem, e só a linha ainda não firada nasce aqui)."""
         mock_cc.for_channel.return_value = _config(prep_start="operator")
         order = _make_order(status=Order.Status.PREPARING)
 
@@ -745,9 +746,9 @@ class TestOnPreparing:
     @patch("shopman.shop.lifecycle._dispatch_physical_work", return_value=True)
     @patch("shopman.shop.lifecycle.notification")
     def test_dispatches_kitchen_and_notifies(self, mock_notification, mock_dispatch_work, mock_cc):
-        """on_preparing dispara a cozinha (KDS) + notifica. É o momento em que o
-        trabalho físico nasce — sob prep_start="operator" via "Iniciar preparo";
-        sob "auto" é idempotente (os tickets já foram criados no on_paid)."""
+        """on_preparing garante a cozinha (KDS) + notifica. Idempotente em todo
+        canal: os tickets nasceram no aceite/pago, e o "Iniciar preparo" (da
+        Cozinha ou o atalho do Gestor) só põe o pedido em preparo."""
         mock_cc.for_channel.return_value = _config()
         order = _make_order()
         dispatch(order, "on_preparing")

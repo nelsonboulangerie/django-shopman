@@ -478,6 +478,19 @@ class RequestCodeView(APIView):
             ip_address=auth_service.client_ip(request),
         )
         if not auth_result.success:
+            if auth_service.auth_error_code(auth_result) == "cooldown":
+                # Espera entre envios (G11): `error_code: cooldown`, os segundos
+                # que faltam e o código que ainda vale (validade e canal), para a
+                # tela voltar ao passo de digitar. Era "Aguarde" sem número, e
+                # quem recarregava a página no passo do código ficava sem onde
+                # digitar o código que já tinha chegado (beta 06/11, SMS-08).
+                # Segue 400: o 429 desta rota é o limite por cliente (5/min).
+                body = auth_service.code_cooldown_body(
+                    auth_service.request_code_error_message(auth_result), auth_result, phone=phone,
+                )
+                if body["code_expires_at"]:
+                    body.update(_delivery_response(getattr(auth_result, "delivery_method", None) or delivery_method))
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
             return Response(
                 auth_service.auth_error_body(
                     auth_service.request_code_error_message(auth_result), auth_result,
@@ -616,7 +629,7 @@ class TrustDeviceView(APIView):
         if customer_info is None:
             return Response({"detail": "Entre na sua conta para continuar."}, status=status.HTTP_401_UNAUTHORIZED)
         if knows_only_the_number(request):
-            # Confiar o aparelho é PROMOVER: o cookie de 30 dias faz o próximo navegador
+            # Confiar o aparelho é PROMOVER: o cookie de confiança faz o próximo navegador
             # entrar forte (`device`), e forte libera passkey. Quem só provou o número (link
             # encaminhado) não promove a si mesmo; confirma o código antes, e é o step-up que
             # confia o aparelho.

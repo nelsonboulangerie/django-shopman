@@ -731,6 +731,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    "TRACKING_PROMISE_CARD_MESSAGE_DEADLINE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Finalize no ambiente seguro até {deadline} para garantir o pedido.",
+            ),
+        },
+    },
     "TRACKING_PROMISE_CARD_MESSAGE_ACCEPTED": {
         WILDCARD: {
             WILDCARD: CopyEntry(
@@ -1510,17 +1517,24 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "DEVICE_TRUST_REDIRECTING": {
         WILDCARD: {WILDCARD: CopyEntry(message="Aparelho reconhecido. Entrando automaticamente…")},
     },
+    # ``{period}`` vira o prazo da confiança (DEVICE_TRUST_TTL_DAYS do doorman,
+    # "6 meses" com 180 dias). O prazo conta do ÚLTIMO uso, não da data em que o
+    # aparelho foi salvo: cada entrada o renova. A copy dizia "30 dias" fixos
+    # enquanto o doorman guardava 180 que se renovam (beta 06/11, SMS-09).
     "DEVICE_TRUST_PROMPT": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Salvar este aparelho?", message="Use só em um aparelho seu. Por 30 dias, você entra sem código.")},
+        WILDCARD: {WILDCARD: CopyEntry(
+            title="Salvar este aparelho?",
+            message="Use só em um aparelho seu. Você entra sem código enquanto voltar dentro de {period}.",
+        )},
     },
     "DEVICE_TRUST_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Salvar por 30 dias")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Salvar este aparelho")},
     },
     "DEVICE_TRUST_SKIP_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Agora não")},
     },
     "DEVICE_TRUST_SAVED": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Aparelho salvo por 30 dias.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Aparelho salvo. Cada entrada renova o prazo de {period}.")},
     },
 
     # ── History / account empty states ────────────────────────────

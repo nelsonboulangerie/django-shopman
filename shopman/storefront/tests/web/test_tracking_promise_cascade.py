@@ -191,7 +191,7 @@ def test_link_deadline_travels_on_the_promise(make_order, patch_payment):
 
 
 def test_card_without_deadline_carries_no_consequence(make_order, patch_payment):
-    """O cartão da loja online não tem prazo: nada a prometer sobre vencimento."""
+    """Sessão de cartão sem prazo gravado: nada a prometer sobre vencimento."""
     patch_payment()
     order = make_order(status="accepted", payment={"method": "card", "checkout_url": "https://pay"})
     promise = build_tracking(order).promise
@@ -395,3 +395,29 @@ def test_one_order_one_state_one_phrase(make_order, patch_payment):
     # E a copy estática do bloco vem no payload do acompanhamento (uma tela só).
     assert proj.copy.pix_copy_btn
     assert proj.copy.pix_instruction
+
+
+def test_card_with_deadline_says_until_when(make_order, patch_payment):
+    """O cartão da loja online agora vence (beta 06/11, F2): a nota de rodapé
+    diz a consequência ("se o prazo passar"), então a frase diz QUAL prazo.
+    Sem isso o cliente lia um prazo que a tela não mostrava."""
+    from shopman.storefront.presentation.order_tracking import build_order_tracking
+
+    patch_payment()
+    expires_at = (timezone.now() + timedelta(minutes=30)).isoformat()
+    order = make_order(
+        status="new",
+        payment={
+            "method": "card",
+            "intent_ref": "PAY-CARD-1",
+            "checkout_url": "https://pay",
+            "expires_at": expires_at,
+        },
+    )
+    promise = build_order_tracking(order).promise
+    assert promise.title == "Pague com cartão"
+    assert promise.message.startswith("Finalize no ambiente seguro até ")
+    assert " às " in promise.message
+    assert promise.message.endswith(" para garantir o pedido.")
+    assert "{deadline}" not in promise.message
+    assert promise.footnote == "Se o prazo passar, liberamos a reserva e avisamos você."
