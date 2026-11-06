@@ -41,14 +41,34 @@ class CustomerOrderHistoryService:
     customer resolution flow in the framework.
     """
 
+    #: O que NÃO é compra: o pedido que não aconteceu (cancelado, inclusive o
+    #: Pix ou cartão que venceu sem pagamento) e o que foi desfeito (devolvido).
+    #: Contá-los fazia "Cliente fiel · 5 pedidos" de quem nunca pagou nada, com
+    #: ticket médio e favorito tirados de pedidos que não existiram (beta 06/11,
+    #: PIXEXP-07).
+    NOT_PURCHASES = (Order.Status.CANCELLED, Order.Status.RETURNED)
+
     @classmethod
     def list_customer_orders(
         cls,
         customer_ref: str,
         *,
         limit: int = 10,
+        include_not_purchases: bool = False,
     ) -> list[CustomerOrderRecord]:
-        orders = cls._base_queryset(customer_ref).order_by("-created_at")[:limit]
+        """Os pedidos do cliente, do mais recente.
+
+        Por padrão, só as compras (o mesmo recorte de ``get_customer_stats``):
+        favorito, "comprou da última vez" e RFM leem daqui. Quem LISTA o
+        histórico com o status ao lado (o cadastro do cliente) pede
+        ``include_not_purchases=True`` e mostra também o cancelado, rotulado.
+        """
+        qs = (
+            Order.objects.filter(data__customer_ref=customer_ref)
+            if include_not_purchases
+            else cls._base_queryset(customer_ref)
+        )
+        orders = qs.order_by("-created_at")[:limit]
         return [
             CustomerOrderRecord(
                 order_ref=order.ref,
@@ -86,6 +106,7 @@ class CustomerOrderHistoryService:
             average_order_q=total_spent_q // total_orders if total_orders > 0 else 0,
         )
 
-    @staticmethod
-    def _base_queryset(customer_ref: str):
-        return Order.objects.filter(data__customer_ref=customer_ref)
+    @classmethod
+    def _base_queryset(cls, customer_ref: str):
+        """As compras do cliente: tudo menos ``NOT_PURCHASES``."""
+        return Order.objects.filter(data__customer_ref=customer_ref).exclude(status__in=cls.NOT_PURCHASES)
