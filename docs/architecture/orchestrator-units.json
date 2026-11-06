@@ -10507,6 +10507,7 @@
           "symbols": [
             "start_ticket",
             "_start_ticket_locked",
+            "start_order_tickets",
             "_record_ticket_start",
             "complete_ticket",
             "_complete_ticket_locked",
