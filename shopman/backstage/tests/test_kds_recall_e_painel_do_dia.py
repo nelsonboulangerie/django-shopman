@@ -104,8 +104,9 @@ def test_pickup_board_shows_only_the_day(db):
     _pickup("WEB-TOMORROW", Order.Status.ACCEPTED, delivery_date=today + timedelta(days=1))
     _pickup("PDV-TODAY-READY", Order.Status.READY)
     _pickup("PDV-TODAY-PREP", Order.Status.PREPARING)
-    # Encomenda feita dias atrás PARA hoje: é do dia (já na tela da cozinha; aceito
-    # sem ticket nenhum não é "Em preparo", ver test_kds_beta_1105).
+    # Encomenda feita dias atrás PARA hoje: é do dia (o posto já iniciou o preparo;
+    # aceito com o ticket esperando "Iniciar preparo" não é "Em preparo", ver
+    # test_kds_beta_1105).
     preorder = _pickup(
         "WEB-PREORDER-TODAY", Order.Status.ACCEPTED, created_days_ago=3, delivery_date=today,
         session_key="sk-preorder-today",
@@ -113,6 +114,7 @@ def test_pickup_board_shows_only_the_day(db):
     KDSTicket.objects.create(
         session_key=preorder.session_key,
         kds_instance=KDSInstance.objects.create(ref="painel-dia", name="Cafés", type="prep"),
+        status="in_progress",
         items=[{"sku": "SKU", "name": "Produto", "qty": 1}],
     )
     # Comanda aberta esquecida desde ontem com linhas na cozinha.
