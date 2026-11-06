@@ -34,6 +34,7 @@ import {
   RECEIPT_DRAFT_STORAGE_KEY,
   materialBySku,
   purchaseWorkSet,
+  supplierByRef,
   receiptDraftFromStore,
   receiptDraftToStore,
 } from "~/presentation/purchaseWorkSet";
@@ -251,6 +252,11 @@ export function usePurchaseDesk() {
   /** O insumo pelo SKU, na base de trabalho ou na página (arquivado aberto pela tabela). */
   function findMaterial(sku: string) {
     return materialBySku(sku, enrichedMaterials.value, filteredMaterials.value);
+  }
+
+  /** O fornecedor pelo ref, na base de trabalho ou na página (arquivado aberto pela tabela). */
+  function findSupplier(ref: string) {
+    return supplierByRef(ref, suppliers.value, supplierList.value.items);
   }
 
   const selectedMaterial = computed(() =>
@@ -1354,12 +1360,12 @@ export function usePurchaseDesk() {
     () => ({ open: false, mode: "create", ref: "", mutationKey: newMutationKey() }),
   );
 
-  const materialFormSource = computed(
-    () => materials.value.find((material) => material.sku === materialForm.value.sku) ?? null,
+  // Na base de trabalho E na página: editar um arquivado (aberto pelo filtro
+  // "Arquivados") precisa do cadastro dele, que não está entre os ativos.
+  const materialFormSource = computed(() =>
+    materialBySku(materialForm.value.sku, materials.value, materialList.value.items),
   );
-  const supplierFormSource = computed(
-    () => suppliers.value.find((supplier) => supplier.ref === supplierForm.value.ref) ?? null,
-  );
+  const supplierFormSource = computed(() => findSupplier(supplierForm.value.ref));
   const materialCategories = computed(() =>
     [...new Set(enrichedMaterials.value.map((material) => material.category).filter(Boolean))].sort((a, b) =>
       a.localeCompare(b, "pt-BR"),
@@ -1527,6 +1533,7 @@ export function usePurchaseDesk() {
     enrichedMaterials,
     filteredMaterials,
     findMaterial,
+    findSupplier,
     selectedMaterial,
     selectedSupplier,
     selectedCostRows,

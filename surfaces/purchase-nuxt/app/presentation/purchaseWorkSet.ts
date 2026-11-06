@@ -46,6 +46,20 @@ export function materialBySku<T extends { sku: string }>(sku: string, ...lists: 
 }
 
 /**
+ * O fornecedor pedido pela URL ou pelo formulário de edição: na base de trabalho
+ * (os ativos) e na página da tabela, onde mora o arquivado aberto pelo filtro
+ * "Arquivados". Só na base de trabalho, o arquivado sumia do detalhe e o
+ * formulário de edição abria vazio.
+ */
+export function supplierByRef<T extends { ref: string }>(ref: string, ...lists: T[][]): T | null {
+  for (const list of lists) {
+    const found = list.find((item) => item.ref === ref);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
  * O rascunho de recebimento sobrevive a recarga, a queda de rede e à sessão que
  * expira (o login promete que ele foi preservado). Mora no dispositivo, que é a
  * bancada onde a entrega está sendo conferida (beta 05/11, CMP-04).

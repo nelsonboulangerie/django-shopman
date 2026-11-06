@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Material, PurchaseList, ReceiptLine, Supplier } from "~/types/purchase";
 import {
   RECEIPT_DRAFT_MAX_AGE_MS,
   materialBySku,
   purchaseWorkSet,
+  supplierByRef,
   receiptDraftFromStore,
   receiptDraftToStore,
 } from "~/presentation/purchaseWorkSet";
@@ -201,5 +204,27 @@ describe("Contar estoque sem permissão (CMP-12)", () => {
     expect(COUNT_FORBIDDEN.title).toContain("permissão de auditoria");
     expect(`${COUNT_FORBIDDEN.title} ${COUNT_FORBIDDEN.description}`).not.toMatch(/gestor/i);
     expect(COUNT_FORBIDDEN.action).toBe("Trocar operador");
+  });
+});
+
+describe("arquivado aberto pelo filtro continua achável (revisão do #2151)", () => {
+  // A base de trabalho só tem os ATIVOS. O arquivado vive só na página da tabela
+  // (filtro "Arquivados"): o detalhe do fornecedor e os formulários de edição
+  // procuravam só nos ativos, e o formulário de editar um insumo arquivado abria
+  // vazio, como se fosse cadastro novo.
+  it("o fornecedor arquivado é achado na página quando não está entre os ativos", () => {
+    const archived = { ...supplier("velho"), isActive: false };
+    expect(supplierByRef("velho", [supplier("alto")], [archived])?.ref).toBe("velho");
+    expect(supplierByRef("nao-existe", [supplier("alto")], [archived])).toBeNull();
+  });
+
+  it("detalhe do fornecedor e formulários de edição procuram nos ativos E na página", () => {
+    const desk = readFileSync(resolve(__dirname, "../app/composables/usePurchaseDesk.ts"), "utf8");
+    const detail = readFileSync(resolve(__dirname, "../app/pages/base/suppliers/[ref].vue"), "utf8");
+
+    expect(desk).toMatch(/materialFormSource = computed\(\(\) =>\s*materialBySku\(materialForm\.value\.sku, materials\.value, materialList\.value\.items\)/);
+    expect(desk).toMatch(/supplierFormSource = computed\(\(\) => findSupplier\(supplierForm\.value\.ref\)\)/);
+    expect(desk).toMatch(/supplierByRef\(ref, suppliers\.value, supplierList\.value\.items\)/);
+    expect(detail).toContain("findSupplier(supplierRef.value)");
   });
 });
