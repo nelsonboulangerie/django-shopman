@@ -186,3 +186,23 @@ def test_invalid_input_speaks_the_error_dialect(client, manager, orders):
     response = _get(client, manager, colour="blue")
     assert response.status_code == 400
     assert response.json()["field"] == "colour"
+
+
+def test_ordered_basis_counts_by_the_day_the_order_was_made(client, manager, shop):
+    """ge:BI-03: o "Abrir os N pedidos" do B.I. conta pela hora da venda.
+
+    A encomenda feita ontem e retirada hoje fecha hoje; pelo eixo do B.I.
+    (``date_basis=ordered``) ela é de ontem, e é ontem que o link abre.
+    """
+    today = timezone.localdate()
+    yesterday = today - timedelta(days=1)
+    order = _order("H-PRE", day=today)
+    Order.objects.filter(pk=order.pk).update(created_at=_at(yesterday, 9))
+
+    closed = _get(client, manager, date_from=yesterday.isoformat(), date_to=yesterday.isoformat())
+    ordered = _get(
+        client, manager, date_from=yesterday.isoformat(), date_to=yesterday.isoformat(), date_basis="ordered"
+    )
+    assert "H-PRE" not in _refs(closed)
+    assert _refs(ordered) == ["H-PRE"]
+    assert _get(client, manager, date_basis="sideways").json()["field"] == "date_basis"

@@ -16,6 +16,7 @@ const shareItems = useBiShareMenuItems();
 const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 const focus = ref("sales");
 const openId = ref<number | null>(null);
+const generationOffDismissed = ref(false);
 
 watch(page, (value) => {
   if (value && openId.value === null && value.reports.length) openId.value = value.reports[0]!.id;
@@ -103,14 +104,18 @@ async function run() {
                 @click="run"
               />
             </template>
+            <!-- Aviso de tela tem X e volta enquanto a causa durar (dono, 02/11): fechado,
+                 some até a próxima visita; a frase dos relatórios só quando há algum (ge:BI-22). -->
             <NuxtAlert
-              v-else
+              v-else-if="!generationOffDismissed"
               color="info"
               variant="subtle"
               icon="i-lucide-info"
               title="Geração desligada neste ambiente"
-              description="A IA ainda não foi ligada nesta loja. Quem liga é a TI. Os relatórios já gerados seguem abaixo."
+              :description="`A IA ainda não foi ligada nesta loja. Quem liga é a TI.${rounds.length ? ' Os relatórios já gerados seguem abaixo.' : ''}`"
+              close
               data-bi-generate-off
+              @update:open="generationOffDismissed = true"
             />
           </div>
         </OperatorReadingCard>

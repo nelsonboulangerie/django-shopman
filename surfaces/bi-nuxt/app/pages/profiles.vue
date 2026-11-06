@@ -653,7 +653,7 @@ const revpashCsv = computed<ReadingCsv>(() => ({
         <div class="grid items-start gap-3 2xl:grid-cols-2">
           <OperatorReadingCard
             title="Receita por categoria"
-            :description="`Soma das linhas de balcão (histórico: categoria do Yooga; nativo: coleção do catálogo). Difere do faturamento por ${formatMoney(report.category_header_gap_q)} de desconto ou acréscimo de venda.`"
+            :description="`Soma das linhas de balcão (histórico: categoria do Yooga; nativo: coleção do catálogo).${report.category_header_gap_q ? ` Difere do faturamento por ${formatMoney(report.category_header_gap_q)} de desconto ou acréscimo de venda.` : ''}`"
             :csv="categoryCsv"
             data-bi-categories
           >

@@ -4,6 +4,7 @@
 import type { ReadingChartPoint, ReadingChartSeries, ReadingCsv } from "../../../operator-kit/app/presentation/readingChart";
 import { csvMoney, formatInt, formatMoney, missingLabel, rangeLabel, reais, shortDate, shortDateWithYear } from "./bi";
 import type { DayForecast, ForecastOccasion, OccasionYear } from "~/types/bi";
+import { isoDate, parseIsoDate } from "../../../operator-kit/app/presentation/dates";
 
 export type ForecastHorizon = "day" | "week" | "month";
 
@@ -147,6 +148,17 @@ export function missingDaysLabel(dates: string[]): string {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const HORIZONS: readonly ForecastHorizon[] = ["day", "week", "month"];
 
+/**
+ * Data que existe no calendário: "2026-02-31" passa na forma, mas o servidor não a
+ * lê e responde por amanhã. Com o `readingFor`, a tela esperaria para sempre a
+ * leitura de um dia que nunca chega; o dia inexistente cai no padrão aqui.
+ */
+function isRealDate(value: string): boolean {
+  if (!ISO_DATE.test(value)) return false;
+  const date = parseIsoDate(value);
+  return !!date && isoDate(date) === value;
+}
+
 function first(value: unknown): string {
   const raw = Array.isArray(value) ? value[0] : value;
   return typeof raw === "string" ? raw : "";
@@ -166,7 +178,7 @@ export function forecastFromQuery(
   const target = first(query.target);
   return {
     horizon: (HORIZONS as readonly string[]).includes(horizon) ? (horizon as ForecastHorizon) : "day",
-    target: ISO_DATE.test(target) ? target : fallbackTarget,
+    target: isRealDate(target) ? target : fallbackTarget,
   };
 }
 
@@ -179,4 +191,19 @@ export function forecastToQuery(
   if (value.horizon !== "day") query.horizon = value.horizon;
   if (value.target !== fallbackTarget) query.target = value.target;
   return query;
+}
+
+/**
+ * A leitura só vale para o dia e o horizonte pedidos. O `useFetch` guarda a resposta
+ * anterior enquanto a nova chega, e por 5 a 11 s a tela dizia o faturamento de
+ * quinta sob a data de quarta (beta 05/11, ge:BI-04). Leitura de outra chave vira
+ * `null`: a página mostra o carregando até a resposta certa chegar.
+ */
+export function readingFor<T extends { target: string; horizon: string }>(
+  report: T | null | undefined,
+  target: string,
+  horizon: string,
+): T | null {
+  if (!report) return null;
+  return report.target === target && report.horizon === horizon ? report : null;
 }

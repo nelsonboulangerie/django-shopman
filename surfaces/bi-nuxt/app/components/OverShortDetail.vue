@@ -20,6 +20,7 @@ import {
   inTypical,
   lotsLine,
   ordersLinkLabel,
+  overShortOrdersHref,
   unavailableText,
   verdictMeta,
 } from "~/presentation/overShort";
@@ -39,7 +40,7 @@ const { attrsFor } = useOperatorAppLink();
 const closeLink = computed(() => attrsFor(props.closeUrl));
 const ordersHref = computed(() =>
   props.ordersUrl && props.row.orders
-    ? `${props.ordersUrl}history?period=custom&from=${props.day}&to=${props.day}&sku=${encodeURIComponent(props.row.sku)}`
+    ? overShortOrdersHref(props.ordersUrl, props.day, props.row.sku)
     : "",
 );
 const ordersLink = computed(() => attrsFor(ordersHref.value));
