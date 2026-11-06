@@ -56,6 +56,20 @@ describe("useOperatorSession — primeira visita não é sessão que terminou", 
     expect(session.expired.value).toBe(false);
   });
 
+  it("a antessala lida com alguém (a Central, sem useOperatorLock) também é sessão", () => {
+    useState("operator-session-had-session").value = false;
+    const session = useOperatorSession();
+    session.reset();
+    const { data } = useNuxtData("operator-session");
+    data.value = { operator: { id: 7, username: "joyce" } };
+    try {
+      session.flagIfUnauthenticated({ status: 401 });
+      expect(session.expired.value).toBe(true);
+    } finally {
+      data.value = undefined;
+    }
+  });
+
   it("depois que a antessala viu alguém identificado, 401 é sessão que terminou", () => {
     useState("operator-session-had-session").value = false;
     const session = useOperatorSession();

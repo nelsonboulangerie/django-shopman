@@ -260,6 +260,39 @@ class LoginCountsOnlyFailuresTests(TestCase):
         self.assertGreater(resp.json()["error"]["retry_after"], 0)
         self.assertEqual(resp["Retry-After"], str(resp.json()["error"]["retry_after"]))
 
+    def test_o_429_nunca_diz_1_segundos(self):
+        from shopman.backstage.api.operations import _login_rate_limited_response
+
+        self.assertIn("em 1 segundo.", _login_rate_limited_response({"time_left": 1}).data["detail"])
+        # Cache falhou (-1): não se sabe quanto falta, e o teto é a janela.
+        self.assertIn("em um minuto.", _login_rate_limited_response({"time_left": -1}).data["detail"])
+
+    @override_settings(RATELIMIT_ENABLE=False)
+    def test_freios_desligados_desligam_tambem_o_balde_de_falhas(self):
+        for _ in range(8):
+            self._login("errada")
+
+        self.assertEqual(self._login("segredo123").status_code, 200)
+
+
+class PasswordInsideTheLockTests(TestCase):
+    """BI-09: "Entrar com senha" na trava abre a trava, também para a própria pessoa."""
+
+    def setUp(self):
+        Shop.objects.create(name="Test Shop", brand_name="Test")
+        Channel.objects.create(ref="pdv", name="PDV", is_active=True)
+        self.ana = _operator("ana", "1234")
+
+    def test_quem_travou_e_entra_com_a_propria_senha_sai_da_trava(self):
+        self.client.post(LOGIN, {"username": "ana", "password": "segredo123"})
+        self.client.post("/api/v1/backstage/operator/lock/", {"scope": "device"}, content_type="application/json")
+        self.assertTrue(self.client.get(SESSION, {"perm": POS_PERM}).json()["locked"])
+
+        resp = self.client.post(LOGIN, {"username": "ana", "password": "segredo123"})
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(self.client.get(SESSION, {"perm": POS_PERM}).json()["locked"])
+
 
 class LogoutTests(TestCase):
     """CEN-07: sair deste dispositivo encerra a sessão; o posto fica."""

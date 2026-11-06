@@ -861,9 +861,16 @@ _LOGIN_FAILURE_RATE = "5/m"
 
 
 def _login_failures(request, *, increment: bool) -> dict | None:
-    """O balde de falhas de senha da conta-alvo (``get_usage`` do django-ratelimit)."""
+    """O balde de falhas de senha da conta-alvo (``get_usage`` do django-ratelimit).
+
+    ``get_usage`` não lê ``RATELIMIT_ENABLE`` (só o decorator lê): sem a guarda,
+    desligar os freios deixava este ligado, e o balde em cache atravessava testes.
+    """
+    from django.conf import settings
     from django_ratelimit.core import get_usage
 
+    if not getattr(settings, "RATELIMIT_ENABLE", True):
+        return None
     return get_usage(
         request,
         group=_LOGIN_FAILURE_GROUP,
@@ -875,8 +882,15 @@ def _login_failures(request, *, increment: bool) -> dict | None:
 
 
 def _login_rate_limited_response(usage: dict | None) -> Response:
-    segundos = max(1, int((usage or {}).get("time_left") or 60))
-    espera = "um minuto" if segundos >= 60 else f"{segundos} segundos"
+    # `time_left` vem -1 quando o cache falhou: aí não se sabe, e o teto é a janela.
+    restante = int((usage or {}).get("time_left") or 0)
+    segundos = restante if 0 < restante <= 60 else 60
+    if segundos >= 60:
+        espera = "um minuto"
+    elif segundos == 1:
+        espera = "1 segundo"
+    else:
+        espera = f"{segundos} segundos"
     return Response(
         {
             "detail": f"Muitas senhas erradas para este usuário. Tente de novo em {espera}.",
@@ -950,6 +964,11 @@ class OperatorLoginView(APIView):
         sign_in_audit.mark_method(request, SignInMethod.PASSWORD)
         login(request, user)
         operator_session.start(request)
+        # A senha prova a pessoa mais do que o PIN: as travas desta sessão caem.
+        # Sem isto, quem travou e entrava com a PRÓPRIA senha ("Entrar com senha",
+        # na trava) continuava travado: o `login()` da mesma pessoa só cicla a
+        # chave e guarda as travas, e a tela não saía do lugar (beta 05/11, BI-09).
+        operator_session.unlock_capability(request, None)
         # `operator`, e não `device_user`: entrar com senha é identificar-se como
         # aquela pessoa. Não existe mais conta de máquina para nomear aqui.
         return Response({"ok": True, "operator": operator_card(user)})
