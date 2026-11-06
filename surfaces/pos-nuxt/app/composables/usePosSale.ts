@@ -1071,6 +1071,9 @@ export function usePosSale(deps: PosSaleDeps) {
   const inSaleView = computed(() => !showTabs.value && (hasOpenTab.value || cart.localTab));
   function goToTabs() {
     showTabs.value = true;
+    // Voltar ao quadro também é sair: a encomenda nova que segue sem item volta a
+    // ser comanda livre, em vez de ficar "Em uso" vazia no quadro (PDV2-13).
+    void releaseAbandonedOrderTab({ resetAfter: true });
   }
   const hasDraftWithoutTab = computed(() => !hasOpenTab.value && cart.items.length > 0);
   const canUseCart = computed(() => !tabRequiredForCart.value || hasOpenTab.value);
@@ -2220,7 +2223,12 @@ export function usePosSale(deps: PosSaleDeps) {
     // A encomenda que o assistente abriu e ninguém usou ainda É a nova: abrir
     // outra deixava esta "Em uso" com 0 itens no quadro (beta test de
     // 05/11/2026, PDV2-13).
-    if (isAbandonedOrderTab()) return;
+    if (isAbandonedOrderTab()) {
+      // Pedida do quadro, a encomenda reaproveitada tem de voltar para a tela:
+      // retornar calado deixava o operador no quadro, com o toque sem efeito.
+      showTabs.value = false;
+      return;
+    }
     const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
     if (!tabRef) return;
     await openTab(tabRef, { salesMode: "order" });
@@ -3895,7 +3903,9 @@ export function usePosSale(deps: PosSaleDeps) {
 
   /** A comanda que o assistente da encomenda abriu e que segue sem item nenhum. */
   function isAbandonedOrderTab(): boolean {
-    return Boolean(cart.tabSessionKey) && !cart.localTab && cart.salesMode === "order" && !cart.items.length;
+    // Cliente já escolhido é trabalho feito: a comanda não é abandonada.
+    return Boolean(cart.tabSessionKey) && !cart.localTab && cart.salesMode === "order" && !cart.items.length
+      && !cart.customerRef && !cart.customerName.trim() && !cart.customerPhone.trim();
   }
 
   /**
@@ -3905,16 +3915,24 @@ export function usePosSale(deps: PosSaleDeps) {
    * há nada a perder; se o servidor recusar, a comanda segue no quadro como
    * estava.
    */
-  async function releaseAbandonedOrderTab() {
+  async function releaseAbandonedOrderTab(options: { resetAfter?: boolean } = {}) {
     if (!isAbandonedOrderTab()) return;
+    const sessionKey = cart.tabSessionKey;
     const path = concreteActionHref(
       actions.value,
       "clear_tab",
       "/api/v1/backstage/pos/tabs/{session_key}/clear/",
-      { session_key: cart.tabSessionKey },
+      { session_key: sessionKey },
     );
     try {
       await action.call(path, { method: "DELETE", body: { expected_revision: cart.expectedRevision } });
+      // Ainda na tela (voltou ao quadro): a venda esquece a comanda liberada e o
+      // quadro relê, para ela aparecer Livre. Se o operador já abriu outra no
+      // caminho, a venda dele fica como está.
+      if (options.resetAfter && cart.tabSessionKey === sessionKey && showTabs.value) {
+        resetCart();
+        await refreshTabs();
+      }
     } catch {
       // silêncio-deliberado: quem saiu da tela não está mais aqui para ler, e a
       // comanda vazia segue no quadro como estava (nada se perde).

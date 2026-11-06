@@ -6485,8 +6485,8 @@ def _pos_customer_integrity_response(exc: Exception, *, action: str) -> Response
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Resolve or create a customer just-in-time (get-or-create)",
-        responses={200: OpenApiResponse(description="The resolved/created customer lookup.")},
+        summary="Check a manager approval (PIN or badge) without recording anything",
+        responses={200: OpenApiResponse(description="The approving manager's username.")},
     ),
 )
 class POSManagerApprovalCheckView(APIView):
@@ -6522,6 +6522,13 @@ class POSManagerApprovalCheckView(APIView):
         return Response({"approved_by": approver.get_username()})
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Resolve or create a customer just-in-time (get-or-create)",
+        responses={200: OpenApiResponse(description="The resolved/created customer lookup.")},
+    ),
+)
 class POSCustomerResolveView(APIView):
     """Just-in-time get-or-create: when the operator defines a customer on the
     counter, resolve them (phone/CPF/email) or create the record NOW, returning

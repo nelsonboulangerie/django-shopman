@@ -123,4 +123,34 @@ describe("Nova encomenda abandonada não prende a comanda", () => {
     await h.sale.releaseAbandonedOrderTab();
     expect(h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/clear/"))).toHaveLength(0);
   });
+
+  it("voltar ao quadro também libera a encomenda vazia, e a venda esquece a comanda", async () => {
+    const h = sale([tab("2", "empty")], opened);
+    await h.sale.openNewOrder();
+    await nextTick();
+    h.sale.goToTabs();
+    await vi.waitFor(() => expect(h.sale.cart.tabSessionKey).toBe(""));
+    const clears = h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/clear/"));
+    expect(clears).toHaveLength(1);
+    expect(h.sale.inSaleView.value).toBe(false);
+  });
+
+  it("com o cliente já escolhido a encomenda não é abandonada", async () => {
+    const h = sale([tab("2", "empty")], opened);
+    await h.sale.openNewOrder();
+    await nextTick();
+    h.sale.cart.customerName = "Maria";
+    await h.sale.releaseAbandonedOrderTab();
+    expect(h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/clear/"))).toHaveLength(0);
+  });
+
+  it("Nova encomenda pedida do quadro reaproveita a vazia E volta para a tela dela", async () => {
+    const h = sale([tab("2", "empty")], opened);
+    await h.sale.openNewOrder();
+    await nextTick();
+    h.sale.showTabs.value = true;
+    await h.sale.openNewOrder();
+    expect(h.sale.showTabs.value).toBe(false);
+    expect(h.sale.inSaleView.value).toBe(true);
+  });
 });
