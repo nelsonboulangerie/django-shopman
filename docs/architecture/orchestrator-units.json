@@ -4675,7 +4675,6 @@
             "DeliveryZoneRule",
             "delivery_minimum_message",
             "_delivery_minimum_q",
-            "_normalize_city",
             "_coordinates_match_claimed_address"
           ]
         }
@@ -8727,7 +8726,10 @@
           "symbols": [
             "haversine_km",
             "_to_float",
-            "store_distance_km"
+            "store_distance_km",
+            "normalize_locality",
+            "declared_locality_outside_store",
+            "session_address_outside_store_area"
           ]
         }
       ],

@@ -274,8 +274,12 @@ class DeliveryZoneRule(BaseRule):
         # O mínimo de entrega continua valendo.
         agreed_by_operator = operator_agreed_delivery_fee_q(session_data) is not None
 
+        from shopman.shop.services.delivery_distance import session_address_outside_store_area
+
+        # A cidade/UF são reconferidas aqui, na porta do pedido, sem depender de a
+        # sessão ter passado pelos modifiers depois da última troca de endereço.
         if not agreed_by_operator and (
-            session_data.get("delivery_zone_error") or _declared_city_outside_store_area(session_data)
+            session_data.get("delivery_zone_error") or session_address_outside_store_area(session_data)
         ):
             raise OrderValidationError(
                 code="delivery_zone_not_covered",
@@ -321,30 +325,6 @@ def delivery_minimum_message(minimum_q: int) -> str:
     """A frase do mínimo de entrega — uma só, para o commit e para o PDV avisar antes."""
     minimum_display = f"R$ {minimum_q / 100:.2f}".replace(".", ",")
     return f"Pedido mínimo para entrega: {minimum_display}."
-
-
-def _declared_city_outside_store_area(session_data: dict) -> bool:
-    """Trava do commit para a distância desconhecida: cidade/UF fora das da loja.
-
-    O ``DeliveryFeeModifier`` já marca ``delivery_zone_error`` nesse caso; aqui o
-    servidor confere de novo na porta do pedido, sem depender de a sessão ter
-    passado pelos modifiers depois da última troca de endereço. Só vale quando a
-    taxa NÃO saiu de distância (``delivery_distance_km`` ausente) nem de zona por
-    CEP/bairro, que são evidências mais fortes que a cidade digitada.
-    """
-    if session_data.get("delivery_distance_km") is not None:
-        return False
-    addr = session_data.get("delivery_address_structured") or {}
-    if not (str(addr.get("city") or "").strip() or str(addr.get("state_code") or "").strip()):
-        return False  # sem cidade/UF declaradas, não há o que comparar
-    from shopman.shop.services import delivery_distance
-    from shopman.shop.services import promotions as promotion_service
-
-    if promotion_service.match_delivery_zone(
-        str(addr.get("postal_code") or ""), str(addr.get("neighborhood") or "")
-    ) is not None:
-        return False
-    return delivery_distance.declared_locality_outside_store(addr.get("city"), addr.get("state_code"))
 
 
 def _coordinates_match_claimed_address(session_data: dict) -> bool:

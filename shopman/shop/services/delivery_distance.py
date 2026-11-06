@@ -68,8 +68,8 @@ def normalize_locality(value) -> str:
     return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
 
 
-def declared_locality_outside_store(city, state_code) -> bool:
-    """A cidade/UF DECLARADAS no endereço diferem das da loja?
+def declared_locality_outside_store(address: dict) -> bool:
+    """A cidade/UF DECLARADAS no endereço (``city``/``state_code``) diferem das da loja?
 
     Rede de segurança de quando a distância é desconhecida (sem coordenada e sem
     geocode): a taxa-padrão só vale para quem está na cidade da loja. Um endereço
@@ -83,6 +83,7 @@ def declared_locality_outside_store(city, state_code) -> bool:
     shop = Shop.load()
     if shop is None:
         return False
+    city, state_code = address.get("city"), address.get("state_code")
     claimed_state = normalize_locality(state_code)
     store_state = normalize_locality(getattr(shop, "state_code", ""))
     if claimed_state and store_state and claimed_state != store_state:
@@ -90,3 +91,25 @@ def declared_locality_outside_store(city, state_code) -> bool:
     claimed_city = normalize_locality(city)
     store_city = normalize_locality(getattr(shop, "city", ""))
     return bool(claimed_city and store_city and claimed_city != store_city)
+
+
+def session_address_outside_store_area(session_data: dict) -> bool:
+    """O endereço da sessão está fora da cidade/UF da loja, com a distância desconhecida?
+
+    Trava do commit (``DeliveryZoneRule``) para o caso que o ``DeliveryFeeModifier``
+    já marca como ``delivery_zone_error``. Só vale quando a taxa NÃO saiu de
+    distância (``delivery_distance_km`` ausente) nem de zona por CEP/bairro, que são
+    evidências mais fortes que a cidade digitada.
+    """
+    if session_data.get("delivery_distance_km") is not None:
+        return False
+    addr = session_data.get("delivery_address_structured") or {}
+    if not (str(addr.get("city") or "").strip() or str(addr.get("state_code") or "").strip()):
+        return False  # sem cidade/UF declaradas, não há o que comparar
+    from shopman.shop.services import promotions as promotion_service
+
+    if promotion_service.match_delivery_zone(
+        str(addr.get("postal_code") or ""), str(addr.get("neighborhood") or "")
+    ) is not None:
+        return False
+    return declared_locality_outside_store(addr)
