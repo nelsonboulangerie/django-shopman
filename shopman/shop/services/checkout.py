@@ -221,7 +221,7 @@ def map_checkout_error(exc: Exception) -> dict[str, str] | None:
         # A trava da nota de entrega diz QUAL campo consertar (CPF ou endereço).
         from shopman.shop.services.delivery_fiscal_identity import REFUSAL_CODES
 
-        if exc.code in REFUSAL_CODES:
+        if exc.code in REFUSAL_CODES or exc.code in {"payment_method_missing", "house_account_not_allowed"}:
             field = str((exc.context or {}).get("field") or field)
         return {field: exc.message}
     if isinstance(exc, DjangoValidationError):
