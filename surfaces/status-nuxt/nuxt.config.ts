@@ -16,7 +16,7 @@ export default defineNuxtConfig({
   app: {
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Status — Nelson Boulangerie",
+      title: "Status · Nelson Boulangerie",
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
         { name: "description", content: "Disponibilidade dos serviços digitais da Nelson Boulangerie." },

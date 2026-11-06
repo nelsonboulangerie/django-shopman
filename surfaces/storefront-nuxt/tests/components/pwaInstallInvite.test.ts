@@ -111,7 +111,7 @@ describe('PwaInstallInvite', () => {
 
     const passos = wrapper.get('[data-testid="pwa-install-steps"]').text()
     // O símbolo vem desenhado, uma vez só: o caractere "⋯" ao lado do desenho era
-    // o símbolo repetido (beta 05/11, LOJA-09).
+    // o símbolo repetido (beta 05/11, CEN-07 e LOJA-09).
     expect(passos).toContain('três pontinhos')
     expect(passos).not.toContain('⋯')
     expect(wrapper.findAll('[data-testid="pwa-install-steps"] svg').length).toBeGreaterThan(0)

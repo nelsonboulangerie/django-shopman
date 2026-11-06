@@ -1,12 +1,14 @@
 import {
-  openResilientEventSource,
-  type ResilientEventSource,
-} from "../../../operator-kit/app/utils/resilientEventSource";
+  subscribeSharedEventSource,
+  type SharedEventSourceSubscription,
+} from "../../../operator-kit/app/utils/sharedEventSource";
 
 // Shared same-origin SSE lifecycle for canonical backstage reads. Push invalidates;
 // polling and visibility recovery use the same caller-owned coalesced refresh.
 // O stream se recria sozinho, com backoff, depois do 502 de deploy; cada abertura
 // (a primeira e as reaberturas) refaz o fetch canônico para cobrir o que passou.
+// Um stream por canal na aba (`subscribeSharedEventSource`): cada chamada assina o
+// mesmo `/sse/<canal>`, em vez de abrir o seu (beta 05/11, GES-01).
 export function useBackstageEvents(
   channel: "orders" | "catalog",
   onPush: () => void,
@@ -15,7 +17,7 @@ export function useBackstageEvents(
   const config = useRuntimeConfig();
   const realtime = ref<"connecting" | "live" | "polling">("polling");
   let pollTimer: ReturnType<typeof setInterval> | null = null;
-  let source: ResilientEventSource | null = null;
+  let source: SharedEventSourceSubscription | null = null;
 
   function connectSse() {
     if (source) return;
@@ -30,7 +32,7 @@ export function useBackstageEvents(
         onPush(); // unparseable push → refetch is cheap and safe
       }
     };
-    source = openResilientEventSource({
+    source = subscribeSharedEventSource({
       url: ssePath(`/sse/${channel}`, config.app.baseURL),
       events: [`backstage-${channel}-update`],
       onEvent,

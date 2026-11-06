@@ -31,7 +31,7 @@ describe("a frase de cada estado, uma só na suíte", () => {
   });
 
   it("nenhuma frase usa travessão", () => {
-    for (const kind of ["loading", "empty", "error", "offline"] as const) {
+    for (const kind of ["loading", "empty", "error", "offline", "forbidden"] as const) {
       const copy = screenStateCopy(kind, { what: "a fila", since: "10:42" });
       expect(`${copy.title} ${copy.description}`).not.toMatch(/[—–]/);
     }
@@ -75,6 +75,21 @@ describe("OperatorScreenState", () => {
     expect(state().textContent).toContain("Nenhum lote fechado no período");
   });
 
+  it("sem permissão: diz de quem é, e não oferece Tentar de novo (beta 05/11, CEN-05)", async () => {
+    expect(screenStateCopy("forbidden", { what: "o Catálogo" })).toEqual({
+      title: "Sua conta não abre o Catálogo",
+      description: "Peça o acesso a um gerente.",
+    });
+    mounted = await mountSuspended(OperatorScreenState, {
+      attachTo: document.body,
+      props: { state: "forbidden", what: "o Catálogo" },
+    });
+    expect(state().getAttribute("data-operator-screen-state")).toBe("forbidden");
+    expect(state().textContent).toContain("Sua conta não abre o Catálogo");
+    expect(state().textContent).not.toContain("Sem conexão");
+    expect(state().querySelector("button")).toBeNull();
+  });
+
   it("sem conexão: aviso warning com a hora do que está na tela", async () => {
     mounted = await mountSuspended(OperatorScreenState, {
       attachTo: document.body,
@@ -110,6 +125,37 @@ describe("OperatorPageHeader: o lugar do aviso da tela", () => {
     await nextTick();
     expect(shown()).toHaveLength(3);
     expect(document.querySelector("[data-page-header-alerts-more]")).toBeNull();
+  });
+
+  it("o selo do posto vira ícone abaixo de xl e não quebra em duas linhas (beta 05/11, PDV2-17)", async () => {
+    useNuxtData("operator-session").data.value = {
+      workstation: { context_label: "Posto PDV principal" },
+    };
+    try {
+      mounted = await mountSuspended(OperatorPageHeader, {
+        attachTo: document.body,
+        props: { title: "Encomendas", search: false, inbox: false },
+      });
+      const full = document.querySelector<HTMLElement>("[data-page-header-eyebrow]")!;
+      // O selo leva iniciais maiúsculas (NuxtBadge, #2130); o nome lido não.
+      expect(full.textContent).toContain("Posto PDV Principal · Este Dispositivo");
+      expect(full.className).toContain("max-xl:hidden");
+      expect(full.className).toContain("whitespace-nowrap");
+      const icon = document.querySelector<HTMLElement>("[data-page-header-eyebrow-icon]")!;
+      expect(icon.className).toContain("xl:hidden");
+      expect(icon.getAttribute("aria-label")).toBe("Posto PDV principal · este dispositivo");
+    } finally {
+      useNuxtData("operator-session").data.value = undefined;
+    }
+  });
+
+  it("o eyebrow que a tela declara fica escrito (é o assunto dela)", async () => {
+    mounted = await mountSuspended(OperatorPageHeader, {
+      attachTo: document.body,
+      props: { title: "Croissant", eyebrow: "Rascunho · Versão 3", search: false, inbox: false },
+    });
+    expect(document.querySelector("[data-page-header-eyebrow]")?.className).toContain("max-sm:hidden");
+    expect(document.querySelector("[data-page-header-eyebrow-icon]")).toBeNull();
   });
 
   it("sem avisos, nenhuma faixa", async () => {

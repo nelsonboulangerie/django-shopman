@@ -25,7 +25,6 @@ import { posCorridorRoute } from "~/presentation/sections";
 // dá o aviso calmo enquanto offline.
 const { pos, refresh, refreshTabs } = await usePosTerminal();
 const { onReconnect } = useConnectivity();
-onReconnect(() => refresh());
 
 // Re-gate global de sessão (kit): um 401 no meio do turno (sessão expirada do
 // lado do Django) sobe a tela de senha em vez de o operador bater numa sessão
@@ -37,8 +36,33 @@ const { expired: sessionExpired } = useOperatorSession();
 const OPERATOR_PERM = "cashman.operate_pos";
 // `refreshOperatorSession` e não `refresh`: `refresh` aqui já é o da Projection
 // do terminal (`usePosTerminal`, linha 17). São duas leituras diferentes.
-const { locked, canIdentify, sessionUnavailable, refresh: refreshOperatorSession, stationRef, mustChange, lock, operator } =
-  useOperatorLock(OPERATOR_PERM);
+const {
+  locked,
+  canIdentify,
+  sessionState,
+  sessionUnavailable,
+  refresh: refreshOperatorSession,
+  stationRef,
+  mustChange,
+  lock,
+  operator,
+} = useOperatorLock(OPERATOR_PERM);
+// O mesmo portão dos outros apps (beta 05/11, CEN-03). Sem ele, quem não opera o
+// caixa (a Cozinha, digitando o endereço) via a casca do PDV com "Não foi possível
+// ler as comandas agora", sem saída, e o servidor recebia o mesmo 403 em sequência.
+// Do portão o PDV usa só a recusa: a trava continua sobreposta à venda (ela não
+// derruba a tela por baixo), e a tela de senha tem a regra própria logo abaixo.
+const surface = computed(() =>
+  operatorSurfaceGate({
+    sessionState: sessionState.value,
+    canIdentify: canIdentify.value,
+    sessionUnavailable: sessionUnavailable.value,
+    locked: locked.value,
+    mustChange: mustChange.value,
+    harness: false,
+  }),
+);
+const forbidden = computed(() => surface.value.showForbidden);
 
 // Tempo real entre estações (ADR-016): pedido de troco, devolução pendente e
 // turno aberto/fechado feitos em OUTRA estação chegam por push; no evento,
@@ -49,12 +73,19 @@ const { locked, canIdentify, sessionUnavailable, refresh: refreshOperatorSession
 // reconexão com 400 — quem garante a tela ali é o poll de fallback.
 // O aviso de comanda relê só o quadro (`refreshTabs`); o do caixa, o poll e a
 // volta à aba relêem a projeção inteira.
+// Recusado não relê: a resposta seria o mesmo 403.
 const { realtime } = usePosEvents(
-  (channel) => (refreshScopeForChannel(channel?.path) === "tabs" ? refreshTabs() : refresh()),
-  { enabled: () => canIdentify.value && !locked.value },
+  (channel) => {
+    if (forbidden.value) return;
+    return refreshScopeForChannel(channel?.path) === "tabs" ? refreshTabs() : refresh();
+  },
+  { enabled: () => canIdentify.value && !locked.value && !forbidden.value },
 );
 // O "ao vivo" dos cabeçalhos (camada da suíte) lê daqui: o estado do push e a hora
 // da última leitura da Projection.
+onReconnect(() => {
+  if (!forbidden.value) void refresh();
+});
 const live = usePosLiveState();
 watch(realtime, (value) => { live.value.realtime = value; }, { immediate: true });
 watch(pos, () => { live.value.lastRead = new Date().toISOString(); }, { immediate: true });
@@ -63,7 +94,7 @@ watch(pos, () => { live.value.lastRead = new Date().toISOString(); }, { immediat
 // qualquer tela do PDV e dá o pronto do ticket da estação sem tela (decisão do
 // dono, 26/09/2026). Só com alguém identificado — com a tela travada, as teclas
 // são do PIN/crachá, e o pronto precisa de um operador para assinar.
-useKitchenTicketScanner({ enabled: () => canIdentify.value && !locked.value });
+useKitchenTicketScanner({ enabled: () => canIdentify.value && !locked.value && !forbidden.value });
 
 // Comanda pronta: a cozinha terminou tudo o que foi disparado e o balcão ouve, em
 // qualquer tela do PDV (decisão do dono, 13/10/2026). O selo e o topo são do quadro.
@@ -140,6 +171,8 @@ const corridor = computed(() => posCorridorRoute(route.path));
           : 'Acesse com sua conta autorizada a operar o caixa.'
       "
     />
+
+    <OperatorSurfaceForbidden v-else-if="forbidden" :perm="OPERATOR_PERM" />
 
     <OperatorStationSetup
       v-else-if="stationSetup.offer.value"

@@ -267,6 +267,23 @@ def test_products_need_the_catalog_permission(client):
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_gestor_screens_follow_the_permission_of_each_screen(client):
+    """Beta 05/11 (CEN-05): a Caixa via "Gestor › Catálogo" e caía numa tela que não abre."""
+    caixa = _operator("caixa-gestor", ("shop", "manage_orders"))
+    titles = [r["title"] for r in _group(_search(client, caixa, "catalogo"), "screens")]
+    assert "Gestor › Catálogo" not in titles
+    titles = [r["title"] for r in _group(_search(client, caixa, "canais"), "screens")]
+    assert "Gestor › Canais" not in titles
+    titles = [r["title"] for r in _group(_search(client, caixa, "historico"), "screens")]
+    assert "Gestor › Histórico" in titles
+    catalogo = _operator("catalogo-gestor", ("shop", "manage_catalog"))
+    titles = [r["title"] for r in _group(_search(client, catalogo, "catalogo"), "screens")]
+    assert "Gestor › Catálogo" in titles
+    titles = [r["title"] for r in _group(_search(client, catalogo, "pedidos"), "screens")]
+    assert "Gestor › Pedidos" not in titles
+
+
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_purchase_results_only_for_who_operates_purchase(client):
     Material.objects.create(sku="FARINHA-T55", name="Farinha T55", unit="kg")
     pos = _operator("caixa", ("cashman", "operate_pos"))

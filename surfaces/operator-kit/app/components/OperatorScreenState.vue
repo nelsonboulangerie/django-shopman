@@ -7,6 +7,8 @@
 //   exceção declarada do conjunto mínimo: a saída do aviso repete a cor dele), botão
 //   `md` como o resto da suíte, nunca o `xs` do default do aviso.
 // - Sem conexão é o `NuxtAlert` `warning`, com a hora da leitura que está na tela.
+// - Sem permissão é o vazio com o escudo, SEM "Tentar de novo": repetir não concede
+//   nada (`isForbiddenError` decide; beta 05/11, CEN-05/GES-17).
 // - `in-card`: dentro de um cartão o `NuxtEmpty` perde a moldura própria (`naked`); no
 //   corpo da página, fica com ela. Uma regra, em vez de cada tela escolher.
 //
@@ -93,6 +95,16 @@ const retryActions = computed(() => [
     role="alert"
     data-operator-screen-state="error"
   />
+  <NuxtEmpty
+    v-else-if="state === 'forbidden'"
+    :variant="variant"
+    icon="i-lucide-shield-x"
+    :title="title"
+    :description="description || undefined"
+    data-operator-screen-state="forbidden"
+  >
+    <template v-if="$slots.actions" #actions><slot name="actions" /></template>
+  </NuxtEmpty>
   <NuxtAlert
     v-else
     color="warning"

@@ -230,7 +230,7 @@ export function gestorSettingsSections({
   ];
 }
 
-/** O nome de cada seção de Ajustes, para a frase "Seu acesso não inclui …". */
+/** O nome de cada seção de Ajustes, para a frase "Sua conta não abre …". */
 const SETTINGS_ROUTE_NAMES: Record<string, string> = {
   "/history": "o Histórico",
   "/catalog": "o Catálogo",
@@ -251,7 +251,7 @@ function underRoute(path: string, route: string) {
  * Quem chega pela URL direta numa seção que o andar Ajustes não lhe mostra recebia a
  * recusa do servidor (403) como "Sem conexão · Tentar de novo" e insistia achando que
  * a rede caiu (beta 05/11, GES-08). A lista de Ajustes já diz o que o acesso inclui:
- * fora dela, a tela diz "Seu acesso não inclui …" e não monta a página.
+ * fora dela, a tela diz "Sua conta não abre …" e não monta a página.
  */
 export function deniedSettingsSection(
   path: string,
@@ -302,3 +302,27 @@ export function accessResolved(statuses: readonly string[]): boolean {
 
 /** Quantos cartões a grade de Ajustes reserva enquanto as permissões chegam. */
 export const SETTINGS_SKELETON_CARDS = 6;
+
+/**
+ * A permissão de cada tela de Ajustes, com o nome dela para a recusa ("Sua conta não abre
+ * o Catálogo"). A mesma régua dos endpoints que a tela lê (`required_permission` no
+ * backstage). Quem chega pela barra de endereço sem a permissão vê a recusa no lugar da
+ * página, e não "Sem conexão" com "Tentar de novo" e o servidor recebendo o mesmo 403 a
+ * cada minuto (beta 05/11, CEN-05 e GES-17).
+ */
+const ROUTE_PERMISSIONS: ReadonlyArray<{ prefix: string; perm: string; what: string }> = [
+  { prefix: "/catalog", perm: "shop.manage_catalog", what: "o Catálogo" },
+  { prefix: "/feeds", perm: "shop.manage_catalog", what: "os Canais" },
+  { prefix: "/channels", perm: "shop.manage_catalog", what: "os Canais" },
+  { prefix: "/customers", perm: "shop.manage_customers", what: "os Clientes" },
+  { prefix: "/history", perm: "shop.manage_orders", what: "o Histórico" },
+  { prefix: "/workstations", perm: "cashman.manage_operators", what: "os Postos" },
+  { prefix: "/checklists", perm: "backstage.perform_operation_task", what: "as Rotinas" },
+];
+
+export function gestorRoutePermission(path: string): { perm: string; what: string } | null {
+  const hit = ROUTE_PERMISSIONS.find(
+    (entry) => path === entry.prefix || path.startsWith(`${entry.prefix}/`),
+  );
+  return hit ? { perm: hit.perm, what: hit.what } : null;
+}

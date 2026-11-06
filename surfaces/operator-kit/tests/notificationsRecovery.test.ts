@@ -5,7 +5,9 @@ import { useNotifications } from "../app/composables/useNotifications";
 import { useOperatorSession } from "../app/composables/useOperatorSession";
 
 const env = installNuxtGlobals();
-const session = ref<any>({ operator: { id: 1 } });
+// Uma sessão por teste, como um app por teste: a caixa é compartilhada por app
+// (`useSharedLive`) e a de um teste anterior continua ouvindo a sessão DELE.
+let session = ref<any>({ operator: { id: 1 } });
 const scopes: ReturnType<typeof effectScope>[] = [];
 function inboxForTest() {
   const scope = effectScope();
@@ -16,9 +18,9 @@ afterEach(() => { for (const scope of scopes.splice(0)) scope.stop(); });
 const notice = { pk: 42, title: "Pedido precisa de atenção", is_read: false };
 beforeEach(() => {
   env.reset();
-  session.value = { operator: { id: 1 } };
+  session = ref<any>({ operator: { id: 1 } });
   vi.stubGlobal("useNuxtData", () => ({ data: session }));
-  vi.stubGlobal("useUserNotifications", () => ({ realtime: ref("polling") }));
+  vi.stubGlobal("useUserNotifications", () => ({ realtime: ref("polling"), start: () => () => {} }));
 });
 
 it("keeps the last confirmed inbox when its refresh fails", async () => {

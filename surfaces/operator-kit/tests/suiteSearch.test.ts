@@ -10,6 +10,7 @@ import {
   suiteLevels,
   suiteQueryReady,
   suiteResultColor,
+  suiteResultHref,
   suiteResultLabel,
   isSuiteScreenLabel,
   suiteScreenTarget,
@@ -135,5 +136,26 @@ describe("teclas", () => {
   it("onde o `/` é do campo da tela (PDV), só Ctrl K abre a suíte", () => {
     expect(suiteSearchHotkey(key("/"), { slash: false })).toBe(false);
     expect(suiteSearchHotkey(key("k", { ctrlKey: true }), { slash: false })).toBe(true);
+  });
+});
+
+// Beta 05/11 (PROD-10): na Produção aberta por `op-prod.localhost`, a receita achada na
+// busca levava a `127.0.0.1:3005/recipes/croissant`, outra origem, sem a sessão.
+describe("destino do resultado", () => {
+  const croissant = { app: "production", url: "http://127.0.0.1:3005/recipes/croissant?v=2#formula" };
+
+  it("no próprio app, o caminho; a origem é a de quem está usando", () => {
+    expect(suiteResultHref(croissant, "production")).toBe("/recipes/croissant?v=2#formula");
+  });
+
+  it("noutro app, o endereço dele", () => {
+    expect(suiteResultHref(croissant, "gestor")).toBe(croissant.url);
+    expect(suiteResultHref(croissant, "")).toBe(croissant.url);
+  });
+
+  it("app servido sob um prefixo: o caminho é o do roteador", () => {
+    expect(
+      suiteResultHref({ app: "production", url: "https://x.test/prod/recipes/croissant" }, "production", "/prod/"),
+    ).toBe("/recipes/croissant");
   });
 });

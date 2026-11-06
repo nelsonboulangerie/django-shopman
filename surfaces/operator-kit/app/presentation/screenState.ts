@@ -10,7 +10,7 @@
 //
 // Funções puras: o componente só desenha o que elas decidem.
 
-export type OperatorScreenStateKind = "loading" | "empty" | "error" | "offline";
+export type OperatorScreenStateKind = "loading" | "empty" | "error" | "offline" | "forbidden";
 
 export interface OperatorScreenStateCopy {
   title: string;
@@ -35,6 +35,12 @@ export function screenStateCopy(
       return {
         title: what ? `Não foi possível carregar ${what}` : "Não foi possível carregar esta tela",
         description: "",
+      };
+    case "forbidden":
+      // Sem "Tentar de novo": nem repetir nem entrar de novo concede a permissão.
+      return {
+        title: what ? `Sua conta não abre ${what}` : "Sua conta não abre esta tela",
+        description: "Peça o acesso a um gerente.",
       };
     case "offline":
       return {

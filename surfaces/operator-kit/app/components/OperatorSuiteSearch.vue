@@ -24,6 +24,7 @@ import {
   suiteEmptyCopy,
   suiteLevels,
   suiteQueryReady,
+  suiteResultHref,
   suiteResultLabel,
   suiteScreenTarget,
   surfaceRefForKitApp,
@@ -90,8 +91,12 @@ function closeDialog() {
 }
 
 const appLink = useOperatorAppLink();
+const baseURL = useRuntimeConfig().app?.baseURL || "/";
+function hrefFor(result: SuiteSearchResult) {
+  return suiteResultHref(result, appRef, baseURL);
+}
 function linkFor(result: SuiteSearchResult) {
-  return appLink.attrsFor(result.url);
+  return appLink.attrsFor(hrefFor(result));
 }
 
 const { isOwner } = useSuiteSearchOwnership();
@@ -219,7 +224,7 @@ const levelGroups = computed(() => {
     description: [result.place, result.detail].filter(Boolean).join(" · "),
     suffix: typeLabel,
     icon: `i-lucide-${result.icon}`,
-    to: result.url,
+    to: hrefFor(result),
     target: linkFor(result).target,
     rel: linkFor(result).rel,
     "aria-label": suiteResultLabel(result),

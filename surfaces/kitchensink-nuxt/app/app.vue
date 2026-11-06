@@ -38,7 +38,7 @@ useOperatorWindowTitle();
     <NuxtRouteAnnouncer />
     <OfflineBanner />
     <NuxtPage v-slot="{ Component }"><component :is="Component" v-if="surface.showPage" /></NuxtPage>
-    <main v-if="surface.showForbidden"><NuxtEmpty icon="i-lucide-shield-x" title="Seu acesso não inclui o Catálogo do operador" description="Peça a um responsável a permissão de acesso. Entrar novamente não concede essa permissão." /></main>
+    <OperatorSurfaceForbidden v-if="surface.showForbidden" :perm="OPERATOR_PERM" />
     <main v-else-if="surface.showChecking" role="status" aria-busy="true"><NuxtSkeleton class="h-48" /><p>Conferindo acesso ao Catálogo do operador.</p></main>
     <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy
          subiria a tela de senha com a sessão viva. -->

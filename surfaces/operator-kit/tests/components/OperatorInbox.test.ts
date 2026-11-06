@@ -6,7 +6,7 @@
 // da operação moram no MESMO painel (outra aba), com um selo somado, o "Visto" e o
 // lugar exato; a capacidade do serviço entra na caixa quando passa do limite; e o
 // painel abre num portal, com a cor do popover (o título não some no creme do rail).
-import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick, ref } from "vue";
 
@@ -36,19 +36,32 @@ const SUSPEITO = {
 
 const items = ref<unknown[]>([]);
 const unread = ref(0);
+const settled = ref(true);
 const signIns = ref<unknown[]>([]);
 const markRead = vi.fn();
 const loadSignIns = vi.fn();
+const { markAllRead, notMe, confirmAnswer } = vi.hoisted(() => ({
+  markAllRead: vi.fn(),
+  notMe: vi.fn(),
+  confirmAnswer: vi.fn(),
+}));
+mockNuxtImport("useConfirm", () => () => confirmAnswer);
+// O toast é do app hospedeiro (o kit não o declara fora do catálogo).
+const sonner = { success: vi.fn(), error: vi.fn() };
+vi.stubGlobal("useSonner", sonner);
 
 vi.mock("../../app/composables/useNotifications", () => ({
   useNotifications: () => ({
     items,
     unread,
+    settled,
     loading: ref(false),
     error: ref(""),
     signInError: ref(""),
     refresh: vi.fn(),
     markRead,
+    markAllRead,
+    notMe,
     signIns,
     loadSignIns,
     realtime: ref("live"),
@@ -101,11 +114,15 @@ describe("OperatorInbox", () => {
   beforeEach(() => {
     items.value = [];
     unread.value = 0;
+    settled.value = true;
     signIns.value = [];
     reading.value = null;
     authorized.value = false;
     markRead.mockReset();
     loadSignIns.mockReset();
+    markAllRead.mockReset();
+    notMe.mockReset();
+    confirmAnswer.mockReset();
     useOperatorInboxAlerts().value = null;
   });
 
@@ -128,6 +145,19 @@ describe("OperatorInbox", () => {
     await mount("rail");
     const trigger = mounted!.get("[data-operator-inbox-trigger]");
     expect(trigger.attributes("aria-label")).toBe("Avisos (5 pedem sua atenção)");
+  });
+
+  // Beta 05/11 (MKT-22): o selo pintava "1" (a operação) e logo "9+" (com a caixa pessoal).
+  it("antes da primeira leitura da caixa pessoal, o selo não pinta número", async () => {
+    settled.value = false;
+    unread.value = 28;
+    useOperatorInboxAlerts().value = { items: [], count: 1 };
+    await mount("rail");
+    const trigger = () => mounted!.get("[data-operator-inbox-trigger]");
+    expect(trigger().attributes("aria-label")).toBe("Avisos");
+    settled.value = true;
+    await nextTick();
+    expect(trigger().attributes("aria-label")).toBe("Avisos (29 pedem sua atenção)");
   });
 
   it("o contador some quando não há nada", async () => {
@@ -316,5 +346,96 @@ describe("OperatorInbox", () => {
     expect(linhas[0]!.dataset.highlight).toBe("true");
     expect(panel()!.textContent).toContain("crachá · pdv-main");
     expect(panel()!.querySelectorAll("a")).toHaveLength(0);
+  });
+
+  // Beta 05/11 (CEN-01): o sino afogado em acessos, os lotes da Qualidade no fim, e o
+  // "Não fui eu" que o servidor já sabia fazer sem botão na tela.
+  it("a operação vem antes dos acessos, e os de rotina viram uma linha que se abre ali", async () => {
+    const lote = {
+      ...ROTINA,
+      pk: 50,
+      category: "production" as const,
+      title: "Lote aguardando revisão de qualidade",
+      is_actionable: false,
+    };
+    items.value = [
+      ROTINA,
+      { ...ROTINA, pk: 3 },
+      { ...ROTINA, pk: 4 },
+      SUSPEITO,
+      lote,
+    ];
+    unread.value = 5;
+    await mount();
+    await openPanel();
+    let rows = [...document.querySelectorAll<HTMLElement>("[data-notification-item]")];
+    expect(rows[0]!.textContent).toContain("Lote aguardando revisão de qualidade");
+    expect(rows).toHaveLength(2);
+    expect(rows[1]!.dataset.highlight).toBe("true");
+    const routineGroup = document.querySelector<HTMLButtonElement>("[data-notifications-routine]")!;
+    expect(routineGroup.textContent).toContain("3 acessos seus sem nada fora do comum");
+    routineGroup.click();
+    await nextTick();
+    rows = [...document.querySelectorAll<HTMLElement>("[data-notification-item]")];
+    expect(rows).toHaveLength(5);
+  });
+
+  it("marcar todas como lidas, num toque", async () => {
+    items.value = [ROTINA, SUSPEITO];
+    unread.value = 2;
+    await mount();
+    await openPanel();
+    await click("[data-notifications-read-all]");
+    expect(markAllRead).toHaveBeenCalledTimes(1);
+  });
+
+  it("'Não fui eu' pergunta com as palavras do servidor e só então encerra os acessos", async () => {
+    items.value = [SUSPEITO];
+    unread.value = 1;
+    notMe.mockResolvedValueOnce({ needsConfirmation: "Isto encerra as sessões abertas da sua conta." });
+    notMe.mockResolvedValueOnce("done");
+    confirmAnswer.mockResolvedValueOnce(true);
+    await mount();
+    await openPanel();
+    await click("[data-notification-not-me]");
+    await vi.waitFor(() => expect(sonner.success).toHaveBeenCalled());
+    expect(confirmAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({ description: "Isto encerra as sessões abertas da sua conta." }),
+    );
+    expect(notMe.mock.calls).toEqual([[2, false], [2, true]]);
+  });
+
+  it("o giro do 'Não fui eu' fica no acesso tocado; os outros só esperam", async () => {
+    items.value = [SUSPEITO, { ...SUSPEITO, pk: 9 }];
+    let release!: (value: "done") => void;
+    notMe.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+    await mount();
+    await openPanel();
+    const buttons = () => [...document.querySelectorAll<HTMLButtonElement>("[data-notification-not-me]")];
+    expect(buttons()).toHaveLength(2);
+    buttons()[0]!.click();
+    await nextTick();
+    expect(buttons().map((button) => button.disabled)).toEqual([true, true]);
+    const spinning = (button: HTMLButtonElement) => Boolean(button.querySelector(".animate-spin"));
+    expect(buttons().map(spinning)).toEqual([true, false]);
+    release("done");
+  });
+
+  it("desistir do 'Não fui eu' não encerra nada", async () => {
+    items.value = [SUSPEITO];
+    notMe.mockResolvedValueOnce({ needsConfirmation: "Isto encerra as sessões." });
+    confirmAnswer.mockResolvedValueOnce(false);
+    await mount();
+    await openPanel();
+    await click("[data-notification-not-me]");
+    await vi.waitFor(() => expect(confirmAnswer).toHaveBeenCalled());
+    expect(notMe).toHaveBeenCalledTimes(1);
+  });
+
+  it("o leitor de tela não lê códigos crus em inglês (beta 05/11, CEN-08 e CEN-13)", async () => {
+    items.value = [SUSPEITO];
+    await mount();
+    await openPanel();
+    expect(panel()!.textContent).not.toMatch(/\bbadge\b|outside_hours|after_failure/);
   });
 });

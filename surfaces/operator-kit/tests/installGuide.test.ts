@@ -225,14 +225,6 @@ describe("installTextParts", () => {
     expect(installTextParts("sem rótulo")).toEqual([{ text: "sem rótulo", strong: false }]);
   });
 
-  it("rótulo que é só o símbolo mostra o desenho, não o desenho e o caractere (beta 05/11, LOJA-09)", () => {
-    const partes = installTextParts("Toque em **⋮** (três pontinhos), no canto do navegador.", "menu-vertical");
-    const comSimbolo = partes.filter((part) => part.glyph);
-    expect(comSimbolo).toHaveLength(1);
-    expect(comSimbolo[0]!.text).toBe("");
-    expect(partes.map((part) => part.text).join("")).not.toContain("⋮");
-  });
-
   it("o símbolo entra no PRIMEIRO rótulo, que é o que ela procura com os olhos", () => {
     const partes = installTextParts("Toque em **Compartilhar**, na barra de baixo.", "share-ios");
     expect(partes.filter((part) => part.glyph)).toHaveLength(1);
@@ -247,6 +239,22 @@ describe("installTextParts", () => {
   it("sem rótulo nenhum, o símbolo abre a frase", () => {
     const partes = installTextParts("Abra o menu do navegador.", "menu-lines");
     expect(partes[0]).toMatchObject({ text: "Abra o menu do navegador.", glyph: "menu-lines" });
+  });
+
+  // Beta 05/11 (CEN-07 e LOJA-09): "Toque em [⋮] ⋮ (três pontinhos)", o símbolo duas vezes.
+  it("o símbolo escrito não se repete ao lado do desenho", () => {
+    const partes = installTextParts("Toque em **⋮** (três pontinhos), no canto da barra do navegador, fora do app.", "menu-vertical");
+    expect(partes.filter((part) => part.glyph)).toHaveLength(1);
+    const comDesenho = partes.find((part) => part.glyph);
+    expect(comDesenho).toMatchObject({ glyph: "menu-vertical", text: "" });
+    expect(partes.map((part) => part.text).join("")).not.toContain("⋮");
+    expect(partes.map((part) => part.text).join("")).toContain("fora do app");
+  });
+
+  it("as três linhas (≡) do Samsung Internet também não se repetem", () => {
+    const partes = installTextParts("Toque em **≡** (as três linhas), na barra de baixo.", "menu-lines");
+    expect(partes.find((part) => part.glyph)).toMatchObject({ glyph: "menu-lines", text: "" });
+    expect(partes.map((part) => part.text).join("")).not.toContain("≡");
   });
 
   it("sem símbolo, nada muda", () => {

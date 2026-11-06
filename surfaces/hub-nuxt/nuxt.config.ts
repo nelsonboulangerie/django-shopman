@@ -2,6 +2,9 @@ import tailwindcss from "@tailwindcss/vite";
 import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
+/** No dev, o ícone de cada app vem do servidor dele, em loopback (só fora do build). */
+const DEV_LOOPBACK_IMAGES = ["http://127.0.0.1:*", "http://localhost:*"];
+
 export default defineNuxtConfig({
   // Central: 5º cliente do kit compartilhado (BFF/resiliência/telemetria/DS).
   // É o launcher pós-login — não hospeda CRUD; deep-linka pro Unfold quando preciso.
@@ -16,9 +19,12 @@ export default defineNuxtConfig({
     // Exceção da CSP do kit (SEC-SURF-001, decisão do dono em 29/09/2026): cada tile
     // mostra o ícone PWA real do app buscado na origem DELE (tileIconUrl, em
     // pdv.<zona>, kds.<zona>...), e a Central mora em central.<zona>. Mesma
-    // regra do Pedidos: imagem de qualquer https.
+    // regra do Pedidos: imagem de qualquer https. No dev os apps moram em
+    // http://127.0.0.1:<porta> e o ícone caía na CSP (beta 05/11, CEN-18). Só o
+    // `nuxi dev` (NODE_ENV=development) leva o loopback: qualquer outro ambiente, o
+    // build incluído, fica com a regra estrita (falha fechada).
     operatorCspAllow: {
-      "img-src": ["https:"],
+      "img-src": process.env.NODE_ENV === "development" ? ["https:", ...DEV_LOOPBACK_IMAGES] : ["https:"],
     },
     public: {
       // O NOME da chave é o contrato com a env: o Nuxt deriva

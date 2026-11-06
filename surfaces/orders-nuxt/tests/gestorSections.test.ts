@@ -6,6 +6,7 @@ import {
   quickBarProblems,
 } from "../../operator-kit/app/presentation/suiteChrome";
 import {
+  gestorRoutePermission,
   gestorSections,
   gestorSettingsSections,
   deniedSettingsSection,
@@ -244,6 +245,37 @@ describe("gestorSwitcherSections (trocador e barra de baixo)", () => {
     expect(
       gestorSwitcherSections(gestorSections(input), []).map((s) => s.key),
     ).toEqual(["orders", "exit"]);
+  });
+});
+
+// Beta 05/11 (CEN-05, GES-17): a Caixa via Catálogo e Canais em Ajustes e, ao abrir,
+// "Sem conexão" com "Tentar de novo"; o servidor respondia 403 a cada minuto.
+describe("Ajustes só lista o que a conta abre", () => {
+  it("sem shop.manage_catalog, Catálogo e Canais saem de Ajustes", () => {
+    const keys = gestorSettingsSections({
+      channelsAttention: "",
+      canManageCustomers: true,
+      canManageCatalog: false,
+    }).map((s) => s.key);
+    expect(keys).not.toContain("catalog");
+    expect(keys).not.toContain("feeds");
+    expect(keys).toContain("customers");
+  });
+
+  it("cada tela de Ajustes diz a permissão dela e o nome para a recusa", () => {
+    expect(gestorRoutePermission("/catalog")).toEqual({ perm: "shop.manage_catalog", what: "o Catálogo" });
+    expect(gestorRoutePermission("/channels/ifood")?.perm).toBe("shop.manage_catalog");
+    expect(gestorRoutePermission("/customers/CLI-003")?.perm).toBe("shop.manage_customers");
+    expect(gestorRoutePermission("/history")?.perm).toBe("shop.manage_orders");
+    expect(gestorRoutePermission("/workstations")?.perm).toBe("cashman.manage_operators");
+    // O quadro e Ajustes são do Gestor inteiro: a antessala já respondeu por eles.
+    expect(gestorRoutePermission("/")).toBeNull();
+    expect(gestorRoutePermission("/settings")).toBeNull();
+    expect(gestorRoutePermission("/catalogue")).toBeNull();
+  });
+
+  it("toda rota de Ajustes tem permissão declarada", () => {
+    for (const route of SETTINGS_ROUTES) expect(gestorRoutePermission(route), route).not.toBeNull();
   });
 });
 

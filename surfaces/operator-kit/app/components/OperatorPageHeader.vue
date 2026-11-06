@@ -215,6 +215,13 @@ const eyebrowText = computed(() => {
   return context ? `${context} · este dispositivo` : "";
 });
 
+// O selo do posto ("Posto PDV principal · este dispositivo") é longo e não é o assunto
+// da tela. No tablet (1024 com a barra lateral) ele quebrava em duas linhas por cima da
+// busca e cortava o título em "Enco…" (beta 05/11, PDV2-17): abaixo de xl ele vira só o
+// ícone, com o texto inteiro no nome acessível e no `title`. O `eyebrow` declarado pela
+// tela ("Rascunho · Versão 3") é assunto da tela e fica escrito.
+const eyebrowIsStation = computed(() => !props.eyebrow && Boolean(eyebrowText.value));
+
 const { request: openSearch } = useSuiteSearchRequest();
 
 // Barra do topo no celular. Avisos ocupa uma vaga onde a barra lateral não está na
@@ -385,10 +392,20 @@ function clearAll() {
         <NuxtBadge
           v-if="eyebrowText"
           color="neutral"
-          class="max-sm:hidden"
+          :class="eyebrowIsStation ? 'whitespace-nowrap max-xl:hidden' : 'max-sm:hidden'"
           data-page-header-eyebrow
           >{{ eyebrowText }}</NuxtBadge
         >
+        <NuxtBadge
+          v-if="eyebrowIsStation"
+          color="neutral"
+          icon="i-lucide-map-pin"
+          class="hidden shrink-0 sm:inline-flex xl:hidden"
+          role="img"
+          :aria-label="eyebrowText"
+          :title="eyebrowText"
+          data-page-header-eyebrow-icon
+        />
       </template>
 
       <!-- No celular, o estado e o posto descem para uma segunda linha da barra (o
