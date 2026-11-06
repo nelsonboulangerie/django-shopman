@@ -1436,7 +1436,12 @@ function submit() {
           </p>
         </div>
 
-        <dl class="grid gap-3 text-sm sm:grid-cols-2">
+        <!-- `min-w-0` e quebra em qualquer ponto: um nome de 100 letras sem espaço
+             vazava da coluna e invadia "Quando começa" (beta 05/11, ge:MKT-28). -->
+        <dl
+          class="grid gap-3 text-sm sm:grid-cols-2 [&>div]:min-w-0 [&_dd]:[overflow-wrap:anywhere]"
+          data-campaign-review-summary
+        >
           <div>
             <dt class="text-xs text-muted-foreground">Objetivo interno</dt>
             <dd class="font-medium">{{ name || "Sem nome" }}</dd>

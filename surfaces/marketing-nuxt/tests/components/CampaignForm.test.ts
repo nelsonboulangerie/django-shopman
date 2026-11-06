@@ -234,6 +234,24 @@ describe("CampaignForm — composer V2", () => {
     );
   });
 
+  it("o resumo da revisão contém um nome longo sem espaço na coluna dele (ge:MKT-28)", async () => {
+    const longName = "x".repeat(100);
+    const wrapper = form(
+      makeRule({ name: longName, trigger: "production_finished", platforms: ["instagram"] }),
+    );
+    await wrapper.find('button[aria-label="5. Revisar"]').trigger("mousedown", {
+      button: 0,
+      ctrlKey: false,
+    });
+
+    const summary = wrapper.find("[data-campaign-review-summary]");
+    expect(summary.text()).toContain(longName);
+    // Item de grade sem `min-w-0` cresce até o conteúdo; sem quebra em qualquer ponto,
+    // a palavra única vaza para a coluna vizinha.
+    expect(summary.classes()).toContain("[&>div]:min-w-0");
+    expect(summary.classes()).toContain("[&_dd]:[overflow-wrap:anywhere]");
+  });
+
   it("não avança de Destinos enquanto nenhuma plataforma foi escolhida", async () => {
     const wrapper = form(
       makeRule({ trigger: "production_finished", platforms: [] }),

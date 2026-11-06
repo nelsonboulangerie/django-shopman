@@ -366,11 +366,18 @@ const quietOutlastsDeadline = computed(() =>
       })
     : "",
 );
-const quietOutlastsDeadlineText = computed(() =>
-  quietOutlastsDeadline.value
-    ? `O WhatsApp só envia a partir das 08:00 e este anúncio vence às ${quietOutlastsDeadline.value}. Tire o WhatsApp para postar agora.`
-    : "",
+/** Tirar o WhatsApp só é saída quando sobra outra plataforma; sozinho, tirá-lo deixa
+ *  o anúncio sem destino, e a saída é escolher outra. */
+const othersBesideDirectMessage = computed(
+  () => platforms.value.some((platform) => !includesDirectMessage([platform])),
 );
+const quietOutlastsDeadlineText = computed(() => {
+  if (!quietOutlastsDeadline.value) return "";
+  const head = `O WhatsApp só envia a partir das 08:00 e este anúncio vence às ${quietOutlastsDeadline.value}.`;
+  return othersBesideDirectMessage.value
+    ? `${head} Tire o WhatsApp para postar agora.`
+    : `${head} Escolha outra plataforma para postar agora.`;
+});
 function removeDirectMessage() {
   platforms.value = platforms.value.filter(
     (platform) => !includesDirectMessage([platform]),
@@ -976,7 +983,9 @@ defineExpose({
           variant="subtle"
           role="status"
           :title="quietOutlastsDeadlineText"
-          :actions="alertActions('warning', [{ label: 'Tirar o WhatsApp', onClick: removeDirectMessage }])"
+          :actions="othersBesideDirectMessage
+            ? alertActions('warning', [{ label: 'Tirar o WhatsApp', onClick: removeDirectMessage }])
+            : undefined"
           data-quiet-outlasts-deadline
         />
         <NuxtAlert

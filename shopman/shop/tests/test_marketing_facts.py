@@ -121,6 +121,30 @@ def test_campaign_preview_sample_comes_from_inside_the_offer(product, promotion)
     assert campaign._sample_sku(promotion.ref) == product.sku
 
 
+def test_campaign_form_preview_without_product_uses_one_the_offer_reaches(product, promotion):
+    """ge:MKT-12 na prévia do formulário: sem produto escolhido, o exemplo é da oferta.
+
+    Antes a prévia pegava o primeiro produto do catálogo e recusava "a oferta não
+    alcança o produto do anúncio" por uma escolha nossa.
+    """
+    Product.objects.create(
+        sku="aaa-fora-da-oferta",
+        name="Abacaxi",
+        base_price_q=500,
+        is_published=True,
+        is_sellable=True,
+    )
+
+    preview = campaign.preview_platforms(
+        "{{product_name}} por {{price}}",
+        platforms=["instagram"],
+        promotion_ref=promotion.ref,
+    )
+
+    assert preview["sample"] is True
+    assert preview["sku"] == product.sku
+
+
 def test_operator_override_resolves_new_fact_placeholder_canonically(product):
     template = AnnouncementTemplate.objects.create(
         name="Texto sem preço",

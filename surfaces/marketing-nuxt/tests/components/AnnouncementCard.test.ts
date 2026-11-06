@@ -897,6 +897,29 @@ describe("AnnouncementCard — decisão montada pela página", () => {
     expect(edits.platforms).toEqual(["instagram"]);
   });
 
+  it("silêncio que passa do prazo com só o WhatsApp: a saída é outra plataforma, não tirá-lo (ge:MKT-07)", () => {
+    vi.setSystemTime(new Date("2026-07-18T10:21:00Z")); // 07:21 no relógio da loja.
+    const wrapper = mountCard(
+      makeAnnouncement({
+        platforms: ["whatsapp"],
+        expires_at: "2026-07-18T07:45:00-03:00",
+      }),
+      "",
+      "America/Sao_Paulo",
+      false,
+      false,
+      { decisionInPage: true },
+    );
+    const card = wrapper.vm as unknown as Exposed;
+
+    expect(card.canContinue).toBe(false);
+    expect(card.continueBlockedReason).toBe(
+      "O WhatsApp só envia a partir das 08:00 e este anúncio vence às 07:45. Escolha outra plataforma para postar agora.",
+    );
+    const alert = wrapper.get("[data-quiet-outlasts-deadline]");
+    expect(alert.findAll("button").some((button) => button.text() === "Tirar o WhatsApp")).toBe(false);
+  });
+
   it("o nome da plataforma é rótulo da chave: a linha inteira é alvo de toque (ge:MKT-26)", () => {
     const wrapper = mountCard(makeAnnouncement({ platforms: ["instagram"] }));
     const row = wrapper.get('[data-review-platform="whatsapp"]');

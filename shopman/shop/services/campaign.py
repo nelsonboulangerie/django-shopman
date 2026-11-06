@@ -1244,14 +1244,16 @@ def preview_platforms(
             field_errors={"platform_content": ("Use um objeto por plataforma.",)},
         )
 
+    # O WhatsApp sem fluxo sai antes de qualquer leitura: ele não entra nas variantes,
+    # nos fatos nem nos artefatos desta prévia (beta 05/11, ge:MKT-08).
+    flow_binding, normalized_platforms, platform_problems = _preview_whatsapp_binding(
+        normalized_platforms
+    )
     sample = (sku or "").strip() or _sample_sku(promotion_ref)
     variables = resolve_variables({"sku": sample}, promotion_ref=promotion_ref)
     from shopman.shop.services import marketing_facts
     from shopman.shop.services.marketing_artifacts import (
         resolve_all_dispatch_artifacts,
-    )
-    from shopman.shop.services.marketing_platform_configuration import (
-        verified_whatsapp_flow_binding,
     )
 
     selected_variants = {
@@ -1287,11 +1289,6 @@ def preview_platforms(
             timezone_name=marketing_time.configured_timezone_name(),
             now=timezone.now(),
         )
-    flow_binding = (
-        verified_whatsapp_flow_binding()
-        if "whatsapp" in normalized_platforms
-        else None
-    )
     platform_bindings = (
         {"whatsapp": flow_binding.artifact_payload()}
         if flow_binding is not None
@@ -1330,6 +1327,7 @@ def preview_platforms(
         },
         "ai_writes": bool(use_ai),
         "facts": facts.as_payload(),
+        "platform_problems": platform_problems,
         "previews": {
             artifact.platform: {
                 "artifact": artifact.as_payload(),
@@ -1366,9 +1364,6 @@ def preview_announcement(
     from shopman.shop.services.marketing_artifacts import (
         normalize_platform_content,
         resolve_all_dispatch_artifacts,
-    )
-    from shopman.shop.services.marketing_platform_configuration import (
-        verified_whatsapp_flow_binding,
     )
 
     normalized_platforms = tuple(dict.fromkeys(
@@ -1410,24 +1405,13 @@ def preview_announcement(
             timezone_name=marketing_time.configured_timezone_name(),
             now=timezone.now(),
         )
-    # A prévia é por plataforma: o WhatsApp sem fluxo aprovado não derruba a prévia do
-    # Instagram. Ele sai desta prévia com o motivo, e a aprovação continua recusando
-    # do mesmo jeito (beta 05/11, ge:MKT-08). Sozinho, o erro dele é o da prévia.
-    platform_problems: dict[str, dict[str, str]] = {}
-    flow_binding = None
-    if "whatsapp" in normalized_platforms:
-        try:
-            flow_binding = verified_whatsapp_flow_binding()
-        except MarketingContractError as exc:
-            if normalized_platforms == ("whatsapp",):
-                raise
-            platform_problems["whatsapp"] = {"code": exc.code, "detail": exc.detail}
-            normalized_platforms = tuple(
-                platform for platform in normalized_platforms if platform != "whatsapp"
-            )
-            platform_content = {
-                key: value for key, value in platform_content.items() if key != "whatsapp"
-            }
+    flow_binding, normalized_platforms, platform_problems = _preview_whatsapp_binding(
+        normalized_platforms
+    )
+    if platform_problems:
+        platform_content = {
+            key: value for key, value in platform_content.items() if key not in platform_problems
+        }
     artifacts = resolve_all_dispatch_artifacts(
         platforms=normalized_platforms,
         content=content,
@@ -1464,6 +1448,31 @@ def preview_announcement(
             for artifact in artifacts
         },
     }
+
+
+def _preview_whatsapp_binding(
+    platforms: tuple[str, ...],
+) -> tuple[object | None, tuple[str, ...], dict[str, dict[str, str]]]:
+    """O fluxo do WhatsApp para a prévia, isolado das outras plataformas.
+
+    A prévia é por plataforma: o WhatsApp sem fluxo aprovado (ou com o catálogo fora do
+    ar) não derruba a prévia do Instagram. Ele sai desta prévia com o motivo, e a
+    aprovação continua recusando do mesmo jeito (beta 05/11, ge:MKT-08). Sozinho, o
+    erro dele é o da prévia. Vale para a prévia do formulário e para a da revisão.
+    """
+    from shopman.shop.services.marketing_platform_configuration import (
+        verified_whatsapp_flow_binding,
+    )
+
+    if "whatsapp" not in platforms:
+        return None, platforms, {}
+    try:
+        return verified_whatsapp_flow_binding(), platforms, {}
+    except MarketingContractError as exc:
+        if platforms == ("whatsapp",):
+            raise
+        remaining = tuple(platform for platform in platforms if platform != "whatsapp")
+        return None, remaining, {"whatsapp": {"code": exc.code, "detail": exc.detail}}
 
 
 def _sample_sku(promotion_ref: str = "") -> str:

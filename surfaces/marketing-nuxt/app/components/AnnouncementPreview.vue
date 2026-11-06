@@ -71,8 +71,8 @@ type PreviewBatch = {
     promotion: Record<string, Scalar>;
     link: Record<string, Scalar>;
   } | null;
-  /** Plataformas que ficaram fora desta prévia, com o motivo (só a da revisão manda;
-   *  a do formulário nunca traz). Uma plataforma não derruba a prévia das outras. */
+  /** Plataformas que ficaram fora desta prévia, com o motivo (a do formulário e a da
+   *  revisão mandam). Uma plataforma não derruba a prévia das outras. */
   platform_problems?: Record<string, { code: string; detail: string }>;
   previews: Record<
     string,
