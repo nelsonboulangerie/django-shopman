@@ -23,6 +23,8 @@ const publicConfig = useRuntimeConfig().public as {
 const config = (publicConfig.operatorPwa || {}) as OperatorPwaRuntimeConfig;
 const enabled = Boolean(config.app);
 const route = useRoute();
+const installVisible = ref(false);
+const updateVisible = ref(false);
 // A recusa de app (`OperatorSurfaceForbidden`) cala os convites: não se pede para pôr
 // na tela inicial um app que a pessoa não abre (beta 05/11, CEN-04).
 const quiet = useState<boolean>("operator-pwa-quiet", () => false);
@@ -57,18 +59,28 @@ const autoUpdate = usePwaAutoUpdate({
        perguntar antes de descartar não depende de o app ser instalável. -->
   <OperatorConfirmDialog />
   <ClientOnly v-if="enabled && showPrompts && !quiet">
-    <!-- Avisos persistentes do app compartilham uma região: instalação, update e push
-         podem coexistir e nunca devem ocupar o mesmo canto um por cima do outro. -->
+    <!-- Um aviso por vez: versão, instalação, depois notificações. Os componentes
+         seguem montados para preservar os eventos de instalação do navegador. -->
     <aside
-      class="fixed inset-x-4 bottom-[calc(var(--ui-header-height)+1rem+env(safe-area-inset-bottom))] z-[60] flex flex-col gap-2 sm:end-6 sm:start-auto sm:w-[28rem] lg:bottom-[calc(1.5rem+env(safe-area-inset-bottom))]"
+      class="fixed inset-x-4 bottom-[calc(var(--ui-header-height)+1rem+env(safe-area-inset-bottom))] z-[60] flex flex-col gap-2 max-h-[50dvh] overflow-y-auto sm:end-6 sm:start-auto sm:w-[28rem] lg:bottom-[calc(1.5rem+env(safe-area-inset-bottom))]"
       aria-live="polite"
       data-operator-pwa-notices
     >
       <!-- Aplicando sozinho, o aviso sairia da tela no mesmo instante em que ela
            recarrega: pisca sem ninguém para ler. -->
-      <OperatorPwaInstallInvite :app="config.app!" />
-      <OperatorPwaUpdatePrompt v-if="!autoUpdate.applying.value" />
-      <OperatorPushInvite v-if="config.push && config.app !== 'hub'" />
+      <OperatorPwaInstallInvite
+        v-show="!updateVisible"
+        :app="config.app!"
+        @visibility="installVisible = $event"
+      />
+      <OperatorPwaUpdatePrompt
+        v-if="!autoUpdate.applying.value"
+        @visibility="updateVisible = $event"
+      />
+      <OperatorPushInvite
+        v-if="config.push && config.app !== 'hub'"
+        v-show="!updateVisible && !installVisible"
+      />
     </aside>
   </ClientOnly>
 </template>

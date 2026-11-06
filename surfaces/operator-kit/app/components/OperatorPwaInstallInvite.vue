@@ -19,6 +19,8 @@ interface OperatorInstallIdentity {
   install: string;
 }
 
+const emit = defineEmits<{ visibility: [visible: boolean] }>();
+
 const props = defineProps<{
   app: string;
   /** Sobrescreve a identidade canônica — existe para o harness de teste. */
@@ -47,6 +49,7 @@ const insideTheApp = computed(() => {
 // primeira entrada por vez.
 const stationOfferOpen = useStationSetupOfferOpen();
 const visible = computed(() => pwa.canInvite.value && insideTheApp.value && !stationOfferOpen.value);
+watch(visible, (value) => emit("visibility", value), { immediate: true });
 
 // Um toque resolve, ou a pessoa vai seguir passos — o título diz qual dos dois é, antes
 // de ela decidir se tem tempo agora.

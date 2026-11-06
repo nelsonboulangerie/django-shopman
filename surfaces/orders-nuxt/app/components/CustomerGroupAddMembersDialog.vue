@@ -142,7 +142,7 @@ async function confirm() {
             type="search"
             autocomplete="off"
             icon="i-lucide-search"
-            placeholder="Nome, telefone, CPF…"
+            placeholder="Nome, telefone, CPF/CNPJ…"
             data-customer-group-add-search
           />
         </NuxtFormField>

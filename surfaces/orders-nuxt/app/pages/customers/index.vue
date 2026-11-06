@@ -324,7 +324,7 @@ function exportSelectionCsv() {
   if (!chosen.length) return;
   downloadCsv(
     {
-      header: ["Cliente", "Referência", "Telefone", "CPF", "Pedidos"],
+      header: ["Cliente", "Referência", "Telefone", "CPF/CNPJ", "Pedidos"],
       rows: chosen.map((row) => [
         row.name,
         row.ref,
@@ -366,7 +366,7 @@ const phoneHeaderActions = computed(() => [
         <OperatorSuiteSearch
           v-model="search"
           screen-label="filtrando os clientes"
-          placeholder="Nome, telefone, CPF…"
+          placeholder="Nome, telefone, CPF/CNPJ…"
           aria-label="Buscar cliente"
         />
       </template>
@@ -513,7 +513,7 @@ const phoneHeaderActions = computed(() => [
           <span
             v-if="row.original.document_display"
             class="block text-xs text-muted-foreground"
-            >CPF {{ row.original.document_display }}</span
+            >CPF/CNPJ {{ row.original.document_display }}</span
           >
         </template>
         <template #groups-cell="{ row }">
