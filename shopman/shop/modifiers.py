@@ -1055,11 +1055,19 @@ class DiscountModifier:
                 if source_type == "coupon":
                     total_coupon_discount_q += monetary_mult(qty, best_discount_q)
 
-        # Order-level FIXED discount (fixed promo / fixed coupon). A fixed value
-        # like "R$5 off" is a single per-ORDER discount, never per unit — 6 units
-        # of a R$5 coupon is R$5 off the order, not R$30. Applied once to the
-        # eligible merchandise subtotal, distributed across lines that don't
-        # already carry a per-line discount (no stacking on the same line).
+        # Order-level FIXED discount (fixed promo / fixed coupon): "R$5 off" is one per-ORDER discount,
+        # never per unit (6 units of a R$5 coupon is R$5 off, not R$30). Applied once to the eligible
+        # merchandise subtotal, spread across lines without a per-line discount (no stacking).
+        def _fixed_eligible_lines(promo) -> list[dict]:
+            return [
+                item
+                for item in items
+                if not _is_non_merchandise_line(item)
+                # Linha com desconto por-linha (``meta._disc``) não recebe o fixo de pedido: não empilha.
+                and not (item.get("meta") or {}).get("_disc")
+                and int(item.get("line_total_q", 0)) > 0
+                and promotion_matches(promo, promotion_context(ctx, sku=item.get("sku", "")))
+            ]
         fixed = self._best_fixed_discount(
             promotions,
             coupon_promo,
@@ -1067,19 +1075,11 @@ class DiscountModifier:
             session_total,
             group_refs=group_refs,
             group_meta=_winning_group_meta,
+            applicable_q=lambda promo: sum(int(i.get("line_total_q", 0)) for i in _fixed_eligible_lines(promo)),
         )
         if fixed is not None:
             fixed_value, fixed_source, fixed_promo = fixed
-            eligible = [
-                item
-                for item in items
-                if not _is_non_merchandise_line(item)
-                # Linha sem desconto por-linha (durável em ``meta._disc``): um fixo
-                # de pedido não empilha sobre promo/cupom/manual já aplicados.
-                and not (item.get("meta") or {}).get("_disc")
-                and int(item.get("line_total_q", 0)) > 0
-                and promotion_matches(fixed_promo, promotion_context(ctx, sku=item.get("sku", "")))
-            ]
+            eligible = _fixed_eligible_lines(fixed_promo)
             eligible_subtotal = sum(int(item.get("line_total_q", 0)) for item in eligible)
             target_q = min(fixed_value, eligible_subtotal)
             src_type, src_name, src_kind, src_group = fixed_source
@@ -1248,16 +1248,16 @@ class DiscountModifier:
         *,
         group_refs: set[str] = frozenset(),
         group_meta=None,
+        applicable_q=None,
     ) -> tuple[int, tuple[str, str, str | None, str], Any] | None:
         """Largest applicable FIXED discount, as a single order-level candidate.
 
         Fixed promotions and the fixed coupon compete on value (best wins, no
         stacking of two fixed discounts). min_order_q is gated against the gross
-        order subtotal; SKU/collection scope is enforced later when picking the
-        eligible lines. A fixed discount of the customer's own group carries its
-        (discount_kind, group_ref) per the WINNING group, not the primary one.
-        Returns (value_q, source, promo) where source is
-        (type, name, discount_kind, group_ref), or None.
+        order subtotal. Compete o que aplica, ``min(valor, applicable_q(promo))`` (subtotal que o
+        escopo alcança): fixo sem linha não vence o cupom (beta SMS-04). A fixed discount of the
+        customer's own group carries its (discount_kind, group_ref) per the WINNING group, not the
+        primary one. Returns (value_q, source, promo), source = (type, name, discount_kind, group_ref), or None.
         """
         best: tuple[int, tuple[str, str, str | None, str], Any] | None = None
         for promo in promotions:
@@ -1268,7 +1268,7 @@ class DiscountModifier:
                 merchandise_subtotal_q=session_total,
             ):
                 continue
-            value = max(0, int(promo.value or 0))
+            value = min(max(0, int(promo.value or 0)), applicable_q(promo) if applicable_q else 1 << 62)
             if value > 0 and (best is None or value > best[0]):
                 kind, group_ref = None, ""
                 if getattr(promo, "ref", "") in group_refs and group_meta is not None:
@@ -1279,7 +1279,7 @@ class DiscountModifier:
                 min_order_q=coupon_promo.min_order_q,
                 merchandise_subtotal_q=session_total,
             ):
-                value = max(0, int(coupon_promo.value or 0))
+                value = min(max(0, int(coupon_promo.value or 0)), applicable_q(coupon_promo) if applicable_q else 1 << 62)
                 if value > 0 and (best is None or value >= best[0]):
                     best = (value, ("coupon", coupon_code or "", None, ""), coupon_promo)
         return best

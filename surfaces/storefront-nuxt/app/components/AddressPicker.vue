@@ -7,6 +7,7 @@ import {
   ADDRESS_LABEL_OPTIONS,
   BR_STATES,
   addressDraftErrors,
+  cepSearchIssue,
   composedAddressLine,
   draftFromGooglePlace,
   draftFromSavedAddress,
@@ -19,6 +20,7 @@ import {
   maskCepInput,
   mergeReverseGeocode,
   nextFocusAfterSuggestion,
+  pickerDraftPending,
   resolvePreselectedAddress,
   savedAddressDisplayLabel,
   selectionFromDraft,
@@ -84,6 +86,8 @@ const emit = defineEmits<{
   done: []
   // Checkout: um endereço salvo foi editado in-loco — o pai re-busca a lista.
   'addresses-changed': []
+  // Checkout: o formulário tem algo que o pai ainda não recebeu.
+  'draft-pending': [pending: boolean]
 }>()
 
 const apiPath = useShopmanApiPath()
@@ -176,6 +180,18 @@ const mapConfirmationEnabled = computed(() => (
   && !!session.publicConfig.value?.address_map_confirmation_enabled
 ))
 const draftLine = computed(() => draftSummaryLine(draft as AddressDraft))
+const draftPending = computed(() => pickerDraftPending({
+  context: props.context,
+  mode: mode.value,
+  editingSaved: editingSavedId.value != null,
+  draft: draft as AddressDraft,
+  selection: props.selection
+}))
+watch(draftPending, pending => emit('draft-pending', pending), { immediate: true })
+onBeforeUnmount(() => emit('draft-pending', false))
+// Na edição de um salvo, a linha de cima é o que está gravado, não o que se
+// digita: o rótulo diz isso enquanto os dois divergem.
+const acceptedLineIsStale = computed(() => editingSavedId.value != null && draftLine.value !== acceptedLine.value)
 const mapAccuracyText = computed(() => accuracyMessage(mapAccuracyM.value))
 const mapAccuracyKind = computed(() => accuracyBucket(mapAccuracyM.value))
 const locationConfig = computed<AddressLocationDivergenceConfig>(() => {
@@ -370,12 +386,14 @@ async function runSearch (value: string) {
   searching.value = true
   searchIssue.value = ''
   let results: PickerSuggestion[] = []
+  let cepUnavailable = false
   try {
     if (maps.enabled.value && !isCep) results = await placesSuggestions(trimmed)
     if (maps.enabled.value && isCep && !results.length) results = await placesSuggestions(trimmed)
     if (isCep && !results.length) {
-      const cepSuggestion = await viaCepSuggestion(trimmed)
-      if (cepSuggestion) results = [cepSuggestion]
+      const cepLookup = await viaCepSuggestion(trimmed)
+      if (cepLookup.suggestion) results = [cepLookup.suggestion]
+      cepUnavailable = cepLookup.unavailable
     }
   } finally {
     if (seq === searchSeq) {
@@ -384,7 +402,7 @@ async function runSearch (value: string) {
       searchIssue.value = results.length
         ? ''
         : isCep
-          ? 'Não achamos esse CEP. Confira os números — ou toque em "Preencher manualmente" e escreva o endereço.'
+          ? cepSearchIssue(cepUnavailable)
           : 'Nenhum endereço com esse nome. Tente a rua com o número, ou o CEP. Se preferir, preencha manualmente.'
       searching.value = false
     }
@@ -420,21 +438,28 @@ async function placesSuggestions (input: string): Promise<PickerSuggestion[]> {
   }
 }
 
-async function viaCepSuggestion (value: string): Promise<PickerSuggestion | null> {
+// "Não achamos esse CEP" só quando a ViaCEP respondeu que ele não existe. Falha
+// de consulta (rede, bloqueio, serviço fora) é nossa, e a frase não pode mandar o
+// cliente conferir números que estão certos (beta SMS-01).
+async function viaCepSuggestion (value: string): Promise<{ suggestion: PickerSuggestion | null, unavailable: boolean }> {
+  const cep = value.replace(/\D/g, '')
+  let payload: ViaCepPayload
   try {
-    const cep = value.replace(/\D/g, '')
-    const payload = await $fetch<ViaCepPayload>(`https://viacep.com.br/ws/${cep}/json/`)
-    const partial = draftFromViaCep(payload, cep)
-    if (!partial) return null
-    return {
+    payload = await $fetch<ViaCepPayload>(`https://viacep.com.br/ws/${cep}/json/`)
+  } catch {
+    return { suggestion: null, unavailable: true }
+  }
+  const partial = draftFromViaCep(payload, cep)
+  if (!partial) return { suggestion: null, unavailable: false }
+  return {
+    suggestion: {
       id: `cep-${cep}`,
       kind: 'cep',
       main: partial.formatted_address || maskCepInput(cep),
       secondary: `CEP ${maskCepInput(cep)}`,
       cepPartial: partial
-    }
-  } catch {
-    return null
+    },
+    unavailable: false
   }
 }
 
@@ -1153,7 +1178,10 @@ function onLabelResolved () {
       <div v-if="acceptedLine" class="space-y-1" data-address-accepted>
         <div class="flex items-start gap-2">
           <Icon name="lucide:map-pin" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <p class="min-w-0 flex-1 text-sm font-semibold">{{ acceptedLine }}</p>
+          <p class="min-w-0 flex-1 text-sm font-semibold">
+            <span v-if="acceptedLineIsStale" class="block text-xs font-normal text-muted-foreground" data-address-accepted-stale>Endereço salvo</span>
+            {{ acceptedLine }}
+          </p>
         </div>
         <UiButton
           v-if="canAdjustOnMap"

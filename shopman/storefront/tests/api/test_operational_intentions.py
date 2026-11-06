@@ -213,7 +213,10 @@ def test_replay_with_original_cookie_and_read_recovery(client):
     assert repeated.status_code == 201
     assert repeated.json()["order_ref"] == first.json()["order_ref"]
     stranger = Client()
-    assert stranger.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"]).status_code == 204
+    # Do navegador de outra pessoa a tentativa nunca chegou: nada do pedido vaza.
+    refused = stranger.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"])
+    assert refused.status_code == 404
+    assert "order_ref" not in refused.json()
     assert Order.objects.count() == 1
 
 
@@ -239,6 +242,37 @@ def test_checkout_recovery_is_a_command_and_get_has_no_effect(client):
     assert recovered.json()["next_url"] == f"/pedido/{order_ref}"
     assert client.session.get(ORDER_ACCESS_SESSION_KEY) == [order_ref]
     assert Order.objects.count() == 1
+
+
+def test_checkout_recovery_says_when_the_attempt_never_arrived(client):
+    """Beta SMS-17: envio sem rede. A primeira conferência já diz que nada entrou."""
+    _checkout_payload(client)
+    response = client.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY="never-sent-attempt")
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "checkout_attempt_not_received"
+
+
+def test_checkout_recovery_keeps_waiting_while_the_attempt_is_in_progress(client):
+    _checkout_payload(client)
+    with patch("shopman.shop.services.checkout.checkout_attempt_in_flight", return_value=True):
+        response = client.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY="slow-attempt")
+    assert response.status_code == 204
+
+
+def test_checkout_attempt_in_flight_only_for_received_unfinished_attempts():
+    from shopman.orderman.models import IdempotencyKey
+
+    from shopman.shop.services.checkout import checkout_attempt_in_flight, checkout_receipt_scope
+
+    scope = checkout_receipt_scope(browser_session="sess", principal="ana", cart_session="cart", key="k1")
+    assert checkout_attempt_in_flight(browser_session="sess", principal="ana", key="k1") is False
+    idem = IdempotencyKey.objects.create(scope=scope, key="k1", status="in_progress")
+    assert checkout_attempt_in_flight(browser_session="sess", principal="ana", key="k1") is True
+    # Outro navegador nunca enxerga a tentativa desta pessoa.
+    assert checkout_attempt_in_flight(browser_session="other", principal="ana", key="k1") is False
+    idem.status = "failed"
+    idem.save(update_fields=["status"])
+    assert checkout_attempt_in_flight(browser_session="sess", principal="ana", key="k1") is False
 
 
 def test_checkout_recovery_requires_csrf_for_signed_in_customer():

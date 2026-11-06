@@ -601,9 +601,14 @@ def add_reorder_items(
     skipped: list[str] = []
 
     for item in order.items.all():
+        # A taxa de entrega é cobrança gravada como linha do pedido, não
+        # mercadoria: não se repete e não vira "ficou de fora" para o cliente.
+        if item.sku == "__DELIVERY_FEE__" or (item.meta or {}).get("type") == "delivery_fee":
+            continue
         product = _sellable_product(item.sku)
         if product is None:
-            skipped.append(item.sku)
+            # O cliente lê o nome do que pediu, nunca o SKU.
+            skipped.append(item.name or item.sku)
             continue
 
         price_q = _price_q(product, channel_ref=channel_ref, qty=item.qty)

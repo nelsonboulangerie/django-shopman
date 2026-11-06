@@ -259,7 +259,15 @@ class GetEarliestSlotTests(TestCase):
         self.assertFalse(by_ref["slot-09"]["enabled"])
         self.assertFalse(by_ref["slot-12"]["enabled"])
         self.assertTrue(by_ref["slot-15"]["enabled"])
-        self.assertEqual(by_ref["slot-09"]["reason"], "Sem tempo de preparo")
+        # Beta SMS-10: o motivo diz qual produto segura o pedido e a que horas,
+        # como a entrega já dizia; "Sem tempo de preparo" soava como "pronto na hora".
+        ready = ctx["ready_times"]["BRIGADEIRO"]
+        self.assertEqual(by_ref["slot-09"]["reason"], f"BRIGADEIRO sai às {ready}.")
+        self.assertEqual(by_ref["slot-12"]["reason"], f"BRIGADEIRO sai às {ready}.")
+        error = validate_pickup_slot_selection(
+            "slot-09", delivery_date=future, cart_skus=["BRIGADEIRO"]
+        )
+        self.assertEqual(error, f"BRIGADEIRO sai às {ready}. Escolha {by_ref['slot-15']['label']} ou mais tarde.")
 
     def test_ready_early_item_keeps_slot_15_at_and_after_15h(self):
         for clock in (time(15, 0), time(16, 0)):

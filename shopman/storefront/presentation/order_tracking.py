@@ -832,7 +832,7 @@ def _promise_copy(
                 wait_display=wait_display,
                 method="pix",
             )
-            return copy.title("TRACKING_PAYMENT_REQUESTED", "Pague com Pix"), message
+            return copy.title("TRACKING_PAYMENT_REQUESTED", "Falta só o pagamento"), message
         message = (
             copy.message(
                 "TRACKING_PAYMENT_PIX_READY_MESSAGE_NEW",
@@ -844,7 +844,7 @@ def _promise_copy(
                 "Pedido aceito. Pague com o Pix abaixo. A confirmação do Pix é automática; acompanhe os próximos passos por aqui.",
             )
         )
-        return copy.title("TRACKING_PAYMENT_REQUESTED", "Pague com Pix"), message
+        return copy.title("TRACKING_PAYMENT_REQUESTED", "Falta só o pagamento"), message
 
     if state == "payment_card_ready":
         if data.payment_method == "link":
@@ -1062,8 +1062,8 @@ def _promise_copy(
 
     if state == "ready_delivery":
         return _pair(copy, "TRACKING_DELIVERY_WAITING_COURIER",
-                     "Pronto para coleta",
-                     "Estamos aguardando um entregador.")
+                     "Pronto, esperando o entregador",
+                     "Assim que ele chegar, seu pedido sai para entrega.")
 
     if state == "ready_pickup":
         return (

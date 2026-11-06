@@ -7859,7 +7859,8 @@
           "symbols": [
             "recover_committed_checkout",
             "checkout_receipt_scope",
-            "recover_checkout_response"
+            "recover_checkout_response",
+            "checkout_attempt_in_flight"
           ]
         }
       ],
