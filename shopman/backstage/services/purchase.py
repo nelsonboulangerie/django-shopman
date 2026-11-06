@@ -1367,7 +1367,7 @@ def _purchase_request_snapshot(material, cost) -> dict[str, str]:
     if purchase_qty <= 0:
         purchase_qty = Decimal("1")
     base_qty = purchase_qty * factor
-    estimated_total_q = int((Decimal(cost.cost_q) * purchase_qty).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    estimated_total_q = cost.cost_for_base_qty_q(base_qty)
     unit_label = cost.purchase_unit_label or material.unit
     purchase_qty_display = f"{_format_decimal(purchase_qty)} {unit_label}".strip()
     base_qty_display = f"{_format_decimal(base_qty)} {material.unit}".strip()
@@ -1630,7 +1630,16 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
     total_cost_q = parse_money_input(str(raw.get("costInput") or raw.get("cost_input") or ""))
     unit_cost_q = 0
     if total_cost_q > 0:
-        unit_cost_q = int((Decimal(total_cost_q) / purchase_qty).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        from shopman.buyman.models.cost import priced_unit_factor
+
+        # O custo da unidade de PREÇO: a embalagem da conversão, ou o kg/L de
+        # quem é contado em g/ml. R$ 110 por 1200 g = R$ 91,67 o kg; por grama,
+        # o centavo inteiro arredondava para R$ 0,09 (beta 05/11, CMP-07).
+        unit_cost_q = int(
+            (Decimal(total_cost_q) * priced_unit_factor(material, conversion) / base_qty).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+        )
     note = str(raw.get("lineNote") or raw.get("line_note") or raw.get("note") or "").strip()
 
     return ResolvedReceiptLine(
@@ -1682,10 +1691,10 @@ def _preferred_cost_decision(raw: dict[str, Any], *, index: int) -> str:
 
 def _supplier_preferred_cost(line: ResolvedReceiptLine, *, supplier):
     """O custo preferencial do insumo neste fornecedor e o preço desta entrada
-    dito na unidade de compra dele, ou ``None``.
+    dito na unidade de preço dele, ou ``None``.
 
-    A comparação é na unidade de compra do custo preferencial: a mesma conta
-    que a tela mostra.
+    A comparação é na unidade de preço do custo preferencial (a embalagem, ou o
+    kg/L sem embalagem): a mesma conta que a tela mostra.
     """
     if line.total_cost_q <= 0:
         return None
@@ -1697,9 +1706,10 @@ def _supplier_preferred_cost(line: ResolvedReceiptLine, *, supplier):
     )
     if cost is None:
         return None
-    line_factor = Decimal(line.conversion.to_base_factor) if line.conversion else Decimal("1")
+    # Na unidade de preço do custo preferencial: a embalagem dele, ou o kg/L
+    # de quem é contado em g/ml (CMP-07).
     incoming_q = int(
-        (Decimal(line.total_cost_q) / line.purchase_qty / line_factor * cost.base_factor).quantize(
+        (Decimal(line.total_cost_q) / line.base_qty * cost.priced_unit_factor).quantize(
             Decimal("1"), rounding=ROUND_HALF_UP
         )
     )

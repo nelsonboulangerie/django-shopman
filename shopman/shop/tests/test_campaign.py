@@ -720,3 +720,44 @@ class TestPreview:
             == whatsapp["facts_as_of"]
             == result["facts"]["as_of"]
         )
+
+
+# ── MKT-20: link relativo não sai nem pelo caminho sem revisão ───────
+
+
+class TestRelativeLinkNeverAutoPublishes:
+    """Decisão do dono (06/11, MKT-20): sem o endereço do site da loja, o link nasce
+    ``/produto/<sku>`` e não abre fora da loja. A campanha automática pula a revisão,
+    mas não pula esta recusa: o anúncio nasce para revisão e nenhuma Directive sai."""
+
+    def test_auto_post_rule_without_store_address_goes_to_review(
+        self, product, rule, settings
+    ):
+        settings.SHOPMAN_STOREFRONT_BASE_URL = ""
+        rule.requires_approval = False
+        rule.save()
+
+        announcement = campaign.evaluate("production_finished", _context())[0]
+
+        assert announcement.content["link"] == f"/produto/{SKU}"
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+        assert not Directive.objects.filter(
+            topic__in=[ANNOUNCEMENT_PUBLISH, ANNOUNCEMENT_NOTIFY]
+        ).exists()
+
+    def test_scheduled_dispatch_refuses_a_relative_link(self, product, rule, settings):
+        rule.requires_approval = False
+        rule.save()
+        announcement = Announcement.objects.create(
+            rule=rule,
+            template=rule.template,
+            status=AnnouncementStatus.APPROVED,
+            content={"body": "Saiu", "link": f"/produto/{SKU}"},
+            platforms=["instagram"],
+            publish_at=timezone.now() - timedelta(minutes=1),
+        )
+
+        assert campaign.dispatch_due() == 0
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.APPROVED
+        assert not Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).exists()

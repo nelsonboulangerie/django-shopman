@@ -61,6 +61,7 @@ def _open_session_with_item(sku: str, name: str, qty: int, price_q: int):
             {"op": "add_line", "sku": sku, "name": name, "qty": qty, "unit_price_q": price_q},
             {"op": "set_data", "path": "customer", "value": {"name": "Ana", "phone": "+5543999990001"}},
             {"op": "set_data", "path": "fulfillment_type", "value": "pickup"},
+            {"op": "set_data", "path": "payment", "value": {"method": "cash"}},
         ],
     )
     return session
@@ -74,7 +75,11 @@ def test_double_submit_never_duplicates_order(channel, product):
     session = _open_session_with_item(product.sku, product.name, 1, 500)
     reviewed_total_q = sum(int(item["line_total_q"]) for item in session.items)
     key = session_service.new_idempotency_key()
-    data = {"customer": {"name": "Ana", "phone": "+5543999990001"}, "fulfillment_type": "pickup"}
+    data = {
+        "customer": {"name": "Ana", "phone": "+5543999990001"},
+        "fulfillment_type": "pickup",
+        "payment": {"method": "cash"},
+    }
 
     r1 = checkout_service.process(
         session_key=session.session_key,
@@ -167,7 +172,11 @@ def test_single_use_coupon_second_order_gets_no_discount(channel, django_capture
             res = checkout_service.process(
                 session_key=session.session_key,
                 channel_ref="web",
-                data={"customer": {"name": "Ana", "phone": "+5543999990001"}, "fulfillment_type": "pickup"},
+                data={
+                    "customer": {"name": "Ana", "phone": "+5543999990001"},
+                    "fulfillment_type": "pickup",
+                    "payment": {"method": "cash"},
+                },
                 idempotency_key=session_service.new_idempotency_key(),
                 expected_total_q=2000 if session_key_suffix == "a" else 2500,
                 expected_revision=session.rev,
@@ -256,7 +265,7 @@ def test_single_use_coupon_no_concurrent_over_redemption(channel):
             res = checkout_service.process(
                 session_key=session.session_key,
                 channel_ref="web",
-                data={"customer": customer, "fulfillment_type": "pickup"},
+                data={"customer": customer, "fulfillment_type": "pickup", "payment": {"method": "cash"}},
                 idempotency_key=session_service.new_idempotency_key(),
                 expected_total_q=2000,
                 expected_revision=session.rev,

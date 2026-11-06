@@ -155,6 +155,7 @@ class GiftPropagationContractTests(TestCase):
             data={
                 "customer": {"name": "Pablo", "phone": "5543999887766"},
                 "fulfillment_type": "pickup",
+                "payment": {"method": "cash"},
                 "is_gift": True,
                 "recipient": {"name": "Maria Silva", "phone": "5543999990000"},
                 "gift_message": "Feliz aniversário!",
@@ -180,6 +181,7 @@ class GiftPropagationContractTests(TestCase):
             data={
                 "customer": {"name": "Pablo", "phone": "5543999887766"},
                 "fulfillment_type": "pickup",
+                "payment": {"method": "cash"},
             },
             idempotency_key="gift-test-2",
             expected_total_q=5000,

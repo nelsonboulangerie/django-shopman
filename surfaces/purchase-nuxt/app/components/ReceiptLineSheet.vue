@@ -370,8 +370,8 @@ function onCheck(checked: boolean) {
               <span class="text-xs font-medium text-muted-foreground">Valor total (R$)</span>
               <span class="flex w-full items-baseline justify-between gap-2">
                 <span class="text-2xl font-semibold tabular-nums">{{ preview.line.costInput || "0,00" }}</span>
-                <span v-if="preview.baseQtyKnown && preview.baseCostQ > 0" class="text-xs font-normal text-muted-foreground tabular-nums">
-                  {{ formatMoney(preview.baseCostQ) }}/{{ preview.material.unit }}
+                <span v-if="preview.baseQtyKnown && preview.readingCostQ > 0" class="text-xs font-normal text-muted-foreground tabular-nums">
+                  {{ formatMoney(preview.readingCostQ) }}/{{ preview.readingUnitLabel }}
                 </span>
               </span>
             </NuxtButton>

@@ -287,11 +287,12 @@ def test_live_cost_is_recipe_times_preferred_material_cost(shop):
     backend = RecipeCostBackend()
 
     # Sem custo de algum insumo: None, nunca zero.
-    SupplierMaterialCost.objects.create(supplier=supplier, material=flour, cost_q=1, is_preferred=True)
+    SupplierMaterialCost.objects.create(supplier=supplier, material=flour, cost_q=1000, is_preferred=True)
     assert backend.get_cost("CUSTO1") is None
 
-    # Farinha 1 centavo/g × 1000 g = 1000; manteiga 6 centavos/g × 500 g = 3000; ÷ 10.
-    SupplierMaterialCost.objects.create(supplier=supplier, material=butter, cost_q=6, is_preferred=True)
+    # Insumo em g sem embalagem tem custo por kg (CMP-07): farinha R$ 10/kg × 1000 g
+    # = 1000; manteiga R$ 60/kg × 500 g = 3000; ÷ 10.
+    SupplierMaterialCost.objects.create(supplier=supplier, material=butter, cost_q=6000, is_preferred=True)
     assert backend.get_cost("CUSTO1") == 400
     assert backend.get_cost("SEM-FICHA") is None
 

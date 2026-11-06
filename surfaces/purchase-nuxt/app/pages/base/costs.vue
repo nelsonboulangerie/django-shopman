@@ -3,7 +3,7 @@
 // o gesto que tira dezenas de insumos do estado "sem custo preferencial"), o custo
 // avulso e os custos de cada fornecedor por insumo.
 import type { EnrichedMaterial, SupplierMaterialCost } from "~/types/purchase";
-import { costPerBaseUnitQ, formatMoney, isApproximateCost, purchaseUnitLabel } from "~/presentation/purchase";
+import { basePricedOptionLabel, costPerReadingUnitQ, formatMoney, isApproximateCost, pricedUnitLabel, readingUnit } from "~/presentation/purchase";
 import { plural } from "~/presentation/purchaseUi";
 
 const {
@@ -76,8 +76,9 @@ const noteConversionModel = computed({
   get: () => noteConversionId.value || BASE_UNIT,
   set: (value: string) => (noteConversionId.value = value === BASE_UNIT ? "" : value),
 });
+const noteMaterial = computed(() => materials.value.find((material) => material.sku === noteMaterialSku.value));
 const noteConversionItems = computed(() => [
-  { label: "Unidade-base", value: BASE_UNIT },
+  { label: noteMaterial.value ? basePricedOptionLabel(noteMaterial.value.unit) : "Unidade-base", value: BASE_UNIT },
   ...availableNoteConversions.value.map((conversion) => ({
     label: conversion.label,
     value: conversion.id,
@@ -85,7 +86,7 @@ const noteConversionItems = computed(() => [
 ]);
 function batchConversionItems(row: EnrichedMaterial) {
   return [
-    { label: `Unidade-base (${row.unit})`, value: BASE_UNIT },
+    { label: basePricedOptionLabel(row.unit), value: BASE_UNIT },
     ...batchConversionsFor(row.sku).map((conversion) => ({
       label: conversion.label,
       value: conversion.id,
@@ -104,7 +105,7 @@ const costColumns = [
   { id: "material", header: "Insumo", enableHiding: false },
   { id: "supplier", header: "Fornecedor" },
   { id: "purchase", header: "Compra", meta: { supporting: true } },
-  { id: "base", header: "Custo-base" },
+  { id: "base", header: "Custo" },
   { id: "preferred", header: "Padrão", enableHiding: false },
 ];
 const materialName = (sku: string) => materials.value.find((material) => material.sku === sku)?.name ?? sku;
@@ -311,13 +312,13 @@ const { tone: sealTone, time: sealTime } = usePurchaseReadSeal();
                 <NuxtFormField label="Unidade de compra">
                   <NuxtSelect v-model="noteConversionModel" :items="noteConversionItems" value-key="value" class="w-full" />
                 </NuxtFormField>
-                <NuxtFormField label="Valor da unidade de compra">
+                <NuxtFormField :label="notePreview ? `Valor (R$ por ${notePreview.pricedUnitLabel})` : 'Valor da unidade de compra'">
                   <NuxtInput v-model="noteCostInput" inputmode="decimal" placeholder="ex.: 180,00" class="w-full [&_input]:tabular-nums" />
                 </NuxtFormField>
                 <NuxtCard variant="soft">
-                  <p class="text-xs text-muted">Custo por unidade-base</p>
+                  <p class="text-xs text-muted">{{ noteMaterial ? `Custo por ${readingUnit(noteMaterial.unit).label}` : "Custo" }}</p>
                   <p class="text-2xl font-semibold tabular-nums">
-                    <template v-if="notePreview"><span v-if="notePreview.approximate">≈ </span>{{ formatMoney(notePreview.baseCostQ) }}</template>
+                    <template v-if="notePreview"><span v-if="notePreview.approximate">≈ </span>{{ formatMoney(notePreview.readingCostQ) }}</template>
                     <template v-else>R$ 0,00</template>
                   </p>
                 </NuxtCard>
@@ -353,7 +354,7 @@ const { tone: sealTone, time: sealTime } = usePurchaseReadSeal();
                 <span class="whitespace-nowrap tabular-nums">
                   {{ formatMoney(row.original.costQ) }} /
                   {{
-                    purchaseUnitLabel(
+                    pricedUnitLabel(
                       row.original,
                       materials.find((material) => material.sku === row.original.materialSku),
                       conversions,
@@ -362,7 +363,7 @@ const { tone: sealTone, time: sealTime } = usePurchaseReadSeal();
                 </span>
               </template>
               <template #base-cell="{ row }">
-                <span class="whitespace-nowrap font-semibold tabular-nums"> <span v-if="isApproximateCost(row.original, conversions)">≈ </span>{{ formatMoney(costPerBaseUnitQ(row.original, conversions)) }} </span>
+                <span class="whitespace-nowrap font-semibold tabular-nums"> <span v-if="isApproximateCost(row.original, conversions)">≈ </span>{{ formatMoney(costPerReadingUnitQ(row.original, materials.find((material) => material.sku === row.original.materialSku), conversions)) }} / {{ readingUnit(materials.find((material) => material.sku === row.original.materialSku)?.unit).label }} </span>
               </template>
               <template #preferred-cell="{ row }">
                 <NuxtBadge v-if="row.original.isPreferred" color="success" icon="i-lucide-check" label="Padrão" />

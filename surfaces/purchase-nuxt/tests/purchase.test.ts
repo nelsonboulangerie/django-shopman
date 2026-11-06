@@ -5,7 +5,7 @@ import {
   PURCHASE_API_BASE,
 } from "~/composables/usePurchaseApi";
 import {
-  costPerBaseUnitQ,
+  costPerReadingUnitQ,
   countConfirmPayload,
   countRow,
   countRows,
@@ -160,12 +160,12 @@ describe("purchase presentation", () => {
       updatedAt: "2026-08-22",
     };
 
-    expect(costPerBaseUnitQ(cost, conversions)).toBe(720);
+    expect(costPerReadingUnitQ(cost, farinha, conversions)).toBe(720);
     expect(quotePreview("180,00", farinha, conversions[0])).toMatchObject({
       costQ: 18000,
-      purchaseUnitLabel: "saco 25 kg",
-      baseFactor: 25,
-      baseCostQ: 720,
+      pricedUnitLabel: "saco 25 kg",
+      readingUnitLabel: "kg",
+      readingCostQ: 720,
       approximate: false,
     });
   });
@@ -195,7 +195,7 @@ describe("purchase presentation", () => {
     const rows = supplierCostRows(farinha, costs, suppliers, conversions);
 
     expect(rows.map((row) => row.supplier.ref)).toEqual(["SUP-MOINHO", "SUP-COOP"]);
-    expect(rows[1].baseCostQ).toBe(760);
+    expect(rows[1].readingCostQ).toBe(760);
     expect(rows[1].deltaQ).toBe(40);
     expect(rows[1].deltaPercent).toBe(5.6);
   });
@@ -251,7 +251,7 @@ describe("purchase presentation", () => {
     expect(preview).toMatchObject({
       baseQty: 3,
       totalCostQ: 4800,
-      baseCostQ: 1600,
+      readingCostQ: 1600,
       approximate: true,
     });
     expect(preview?.warnings.map((warning) => warning.key)).toEqual(
@@ -424,7 +424,7 @@ describe("purchase presentation", () => {
     // O total na unidade-base NAO e conhecido ainda: imprimir "10 kg" ao lado do
     // bloqueio seria repetir na tela exatamente o numero que o dono reportou.
     expect(preview?.baseQtyKnown).toBe(false);
-    expect(preview?.baseCostQ).toBe(0);
+    expect(preview?.readingCostQ).toBe(0);
     expect(preview?.warnings).toContainEqual({
       key: "confirm-conversion",
       label: "Confirme a conversão que a NF sugere",

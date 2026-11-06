@@ -9,7 +9,7 @@ import type { ConversionKind, Material, MaterialConversion, MaterialUnit, Purcha
 import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
 import OperatorFormShell from "../../../operator-kit/app/components/OperatorFormShell.vue";
 import { useDirtyForm } from "../../../operator-kit/app/composables/useDirtyForm";
-import { costPerBaseUnitQ, formatMoney, parseMoneyInput, purchaseUnitLabel } from "~/presentation/purchase";
+import { costPerReadingUnitQ, formatMoney, parseMoneyInput, pricedUnitLabel, readingUnit } from "~/presentation/purchase";
 
 const props = withDefaults(
   defineProps<{
@@ -283,6 +283,16 @@ const materialCosts = computed(() => props.costs.filter((row) => row.materialSku
 const supplierOptions = computed(() => props.suppliers.map((row) => ({ value: row.ref, label: row.displayName })));
 const costConversions = computed(() => materialConversions.value.filter((row) => row.isActive && (!row.supplierRef || row.supplierRef === cost.supplierRef)).map((row) => ({ value: row.id, label: row.label })));
 const costValid = computed(() => cost.supplierRef !== "" && parseMoneyInput(cost.costInput) > 0);
+// Sem embalagem, o insumo em g se paga por kg (e o em ml, por litro): centavo
+// inteiro por grama arredondava R$ 0,0917 para R$ 0,09 (beta 05/11, CMP-07).
+const costPricedLabel = computed(
+  () =>
+    costConversions.value.find((option) => option.value === cost.conversionId)?.label ?? readingUnit(props.source?.unit).label,
+);
+const costBaseHint = computed(() => {
+  const reading = readingUnit(props.source?.unit);
+  return reading.scale === 1 ? "Vazio = comprado na unidade-base." : `Vazio = preço por ${reading.label}.`;
+});
 const costDisabledReason = computed(() => {
   if (!cost.supplierRef) return "Escolha o fornecedor do custo.";
   if (!(parseMoneyInput(cost.costInput) > 0)) return "Informe o valor pago na unidade de compra.";
@@ -322,10 +332,10 @@ function makePreferred(row: SupplierMaterialCost) {
 function costRowLabel(row: SupplierMaterialCost): string {
   const material = props.source;
   if (!material) return "";
-  return purchaseUnitLabel(row, material, props.conversions);
+  return pricedUnitLabel(row, material, props.conversions);
 }
-function costRowBase(row: SupplierMaterialCost): number {
-  return costPerBaseUnitQ(row, props.conversions);
+function costRowReading(row: SupplierMaterialCost): number {
+  return costPerReadingUnitQ(row, props.source ?? undefined, props.conversions);
 }
 function supplierName(ref: string): string {
   return props.suppliers.find((row) => row.ref === ref)?.displayName ?? ref;
@@ -456,7 +466,7 @@ watch(
               <span class="block text-sm font-medium">{{ supplierName(row.supplierRef) }}</span>
               <span class="block text-xs text-muted tabular-nums">
                 {{ formatMoney(row.costQ) }} / {{ costRowLabel(row) }}
-                <template v-if="costRowBase(row) !== row.costQ"> · {{ formatMoney(costRowBase(row)) }} / {{ source.unit }}</template>
+                <template v-if="row.conversionId"> · {{ formatMoney(costRowReading(row)) }} / {{ readingUnit(source.unit).label }}</template>
               </span>
             </span>
             <span class="flex shrink-0 items-center gap-1">
@@ -473,10 +483,10 @@ watch(
             <NuxtFormField label="Fornecedor" required>
               <NuxtSelect v-model="cost.supplierRef" :items="supplierOptions" class="w-full" data-testid="cost-supplier" />
             </NuxtFormField>
-            <NuxtFormField label="Unidade de compra" description="Vazio = comprado na unidade-base.">
+            <NuxtFormField label="Unidade de compra" :description="costBaseHint">
               <NuxtSelect v-model="cost.conversionId" :items="costConversions" class="w-full" placeholder="Unidade-base" />
             </NuxtFormField>
-            <NuxtFormField label="Valor pago (R$)" required>
+            <NuxtFormField :label="`Valor pago (R$ por ${costPricedLabel})`" required>
               <NuxtInput v-model="cost.costInput" class="w-full" inputmode="decimal" placeholder="ex.: 180,00" data-testid="cost-input" />
             </NuxtFormField>
             <div class="flex items-end">

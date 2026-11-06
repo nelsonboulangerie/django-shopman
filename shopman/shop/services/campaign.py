@@ -255,16 +255,23 @@ def _create_announcement(
     # atropela.
     publish_at = campaign_schedule.next_publish_at(rule.schedule)
 
+    platform_content = _platform_content(
+        rule.template,
+        content,
+        platforms=rule.platforms,
+    )
+    # Campanha automática (ou texto escrito na hora) pula a revisão, mas não pula o
+    # MKT-20: com link relativo o anúncio nasce para revisão, onde a prévia mostra o
+    # motivo e a aprovação recusa enquanto ele durar.
+    requires_review = rule.requires_approval or bool(
+        _publish_blockers(content, platform_content)
+    )
     announcement = Announcement.objects.create(
         rule=rule,
         template=rule.template,
-        status=AnnouncementStatus.PENDING_REVIEW if rule.requires_approval else AnnouncementStatus.APPROVED,
+        status=AnnouncementStatus.PENDING_REVIEW if requires_review else AnnouncementStatus.APPROVED,
         content=content,
-        platform_content=_platform_content(
-            rule.template,
-            content,
-            platforms=rule.platforms,
-        ),
+        platform_content=platform_content,
         platforms=list(rule.platforms or []),
         audience=resolved.summary(),
         trigger_context=context,
@@ -273,7 +280,7 @@ def _create_announcement(
         expires_at=_expiry(rule),
     )
 
-    if rule.requires_approval:
+    if requires_review:
         notify_reviewers(rule, announcement)
     elif publish_at is None:
         dispatch(announcement)
@@ -1973,6 +1980,11 @@ def dispatch(announcement: Announcement) -> int:
             announcement.status = current.status
             logger.info("campaign.dispatch_superseded announcement=%s", current.pk)
             return 0
+        # MKT-20: o caminho sem selo (automático, agendado) também não sai com link
+        # relativo. Recusa antes de marcar PUBLISHING; o agendado espera a causa sumir.
+        blockers = _publish_blockers(current.content or {}, current.platform_content)
+        if blockers:
+            raise CampaignError(blockers[0]["detail"])
 
         current.status = AnnouncementStatus.PUBLISHING
         current.save(update_fields=["status"])
