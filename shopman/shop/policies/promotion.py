@@ -13,7 +13,8 @@ Sem Django, sem banco: a promoção é qualquer objeto com esses atributos (o mo
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
 
@@ -138,6 +139,32 @@ def promotion_unmet_condition(promo: Any, ctx: PromotionContext) -> str:
 def promotion_minimum_missing_q(promo: Any, merchandise_subtotal_q: int) -> int:
     """Quanto falta (centavos) para a compra chegar ao pedido mínimo da promoção."""
     return max(0, int(getattr(promo, "min_order_q", 0) or 0) - int(merchandise_subtotal_q or 0))
+
+
+def coupon_zero_reason(
+    promo: Any, order_ctx: PromotionContext, line_ctxs: Iterable[PromotionContext]
+) -> dict:
+    """Por que o cupom ficou na sacola sem descontar nada (beta 06/11).
+
+    O navegador não adivinha: "nenhum item recebe" para um cupom que só esperava o
+    pedido mínimo mandava o cliente embora com a sacola errada. ``reason`` é
+    ``unavailable`` (vencido, esgotado ou fora do canal), ``customer``,
+    ``fulfillment`` (+ ``fulfillment_types``), ``minimum`` (+ ``missing_q``),
+    ``items`` (nenhuma linha no alvo) ou ``already_discounted`` (as linhas do alvo
+    já têm desconto igual ou maior; o maior ganha, sem somar). ``order_ctx`` é a
+    compra inteira (o ``sku`` é ignorado); ``line_ctxs``, uma por linha, sem mínimo.
+    """
+    if promo is None:
+        return {"reason": "unavailable"}
+    unmet = promotion_unmet_condition(promo, replace(order_ctx, sku=None))
+    if unmet == UNMET_MINIMUM:
+        return {"reason": unmet, "missing_q": promotion_minimum_missing_q(promo, order_ctx.merchandise_subtotal_q or 0)}
+    if unmet == UNMET_FULFILLMENT:
+        return {"reason": unmet, "fulfillment_types": list(getattr(promo, "fulfillment_types", None) or [])}
+    if unmet:
+        return {"reason": unmet}
+    targeted = any(promotion_matches(promo, line_ctx) for line_ctx in line_ctxs)
+    return {"reason": "already_discounted" if targeted else UNMET_ITEMS}
 
 
 def promotion_matches(promo: Any, ctx: PromotionContext) -> bool:

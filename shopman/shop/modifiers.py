@@ -41,14 +41,11 @@ from shopman.utils.monetary import monetary_div, monetary_mult
 
 from shopman.shop.policies.group_advantage import free_shipping_minimum_q, group_free_shipping_for_order
 from shopman.shop.policies.promotion import (
-    UNMET_FULFILLMENT,
-    UNMET_MINIMUM,
     PromotionContext,
     Shopper,
+    coupon_zero_reason,
     promotion_matches,
     promotion_minimum_eligible,
-    promotion_minimum_missing_q,
-    promotion_unmet_condition,
 )
 from shopman.shop.services import promotions as promotion_service
 
@@ -469,11 +466,8 @@ def _reverse_prior_pricing(pricing: dict, item: dict) -> None:
         disc["total_discount_q"] = sum(_record_total_q(d) for d in kept)
         pricing["discount"] = disc
         if t == "coupon" and pricing.get("coupon"):
-            coupon_q = sum(_record_total_q(d) for d in kept if d.get("type") == "coupon")
-            pricing["coupon"]["discount_q"] = coupon_q
-            if coupon_q <= 0:
-                # Um desconto maior (happy hour) venceu as linhas do cupom.
-                pricing["coupon"]["reason"] = "already_discounted"
+            coupon_q = pricing["coupon"]["discount_q"] = sum(_record_total_q(d) for d in kept if d.get("type") == "coupon")
+            pricing["coupon"].update({} if coupon_q > 0 else {"reason": "already_discounted"})  # maior desconto venceu
     elif t in ("lot_discount", "happy_hour"):
         entry = pricing.get(t)
         if entry:
@@ -1129,8 +1123,6 @@ class DiscountModifier:
             session.update_items(items)
 
         # Persist discount info in session.pricing (items lose extra fields on save)
-        if not session.pricing:
-            session.pricing = {}
         discount_block = {
             "total_discount_q": sum(_record_total_q(d) for d in discounts_applied),
             "items": discounts_applied,
@@ -1154,56 +1146,12 @@ class DiscountModifier:
             }
         session.pricing["discount"] = discount_block
         if coupon_code:
-            coupon_block = {
-                "code": coupon_code,
-                "discount_q": total_coupon_discount_q,
-            }
-            if total_coupon_discount_q <= 0:
-                coupon_block.update(
-                    self._coupon_zero_reason(coupon_promo, items, ctx, session_total)
-                )
-            session.pricing["coupon"] = coupon_block
+            session.pricing["coupon"] = {"code": coupon_code, "discount_q": total_coupon_discount_q}
+            if total_coupon_discount_q <= 0:  # o motivo é do servidor, o navegador não adivinha (beta 06/11)
+                lines = [promotion_context(ctx, sku=i.get("sku", "")) for i in items if not _is_non_merchandise_line(i)]
+                session.pricing["coupon"].update(coupon_zero_reason(coupon_promo, promotion_context(ctx, sku="", merchandise_subtotal_q=session_total), lines))
         else:
             session.pricing.pop("coupon", None)
-
-    @staticmethod
-    def _coupon_zero_reason(
-        coupon_promo: Any, items: list[dict], ctx: dict, session_total: int
-    ) -> dict:
-        """Por que o cupom ficou na sacola sem descontar nada (beta 06/11).
-
-        O navegador não adivinha: "nenhum item recebe" para um cupom que só
-        esperava o pedido mínimo mandava o cliente embora com a sacola errada.
-        ``reason`` é ``unavailable`` (cupom vencido, esgotado ou fora do canal),
-        ``customer``, ``fulfillment`` (+ ``fulfillment_types``), ``minimum``
-        (+ ``missing_q``), ``items`` (nenhuma linha está no alvo) ou
-        ``already_discounted`` (as linhas do alvo já têm desconto igual ou maior,
-        e o maior desconto ganha, sem somar).
-        """
-        if coupon_promo is None:
-            return {"reason": "unavailable"}
-        order_ctx = replace(
-            promotion_context(ctx, sku="", merchandise_subtotal_q=session_total), sku=None
-        )
-        unmet = promotion_unmet_condition(coupon_promo, order_ctx)
-        if unmet == UNMET_MINIMUM:
-            return {
-                "reason": unmet,
-                "missing_q": promotion_minimum_missing_q(coupon_promo, session_total),
-            }
-        if unmet == UNMET_FULFILLMENT:
-            return {
-                "reason": unmet,
-                "fulfillment_types": list(getattr(coupon_promo, "fulfillment_types", None) or []),
-            }
-        if unmet:
-            return {"reason": unmet}
-        targeted = any(
-            promotion_matches(coupon_promo, promotion_context(ctx, sku=item.get("sku", "")))
-            for item in items
-            if not _is_non_merchandise_line(item)
-        )
-        return {"reason": "already_discounted" if targeted else "items"}
 
     @staticmethod
     def _resolve_customer_ctx(session: Any, ctx: dict) -> None:

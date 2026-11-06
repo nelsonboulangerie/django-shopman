@@ -705,7 +705,7 @@ sacola sem descontar não consome `max_uses`.
 |-------|------|-----------|
 | `code` | `str` | O código do cupom. |
 | `discount_q` | `int` | O desconto que o cupom REALMENTE aplicou (centavos). |
-| `reason` | `str` ou ausente | Só com `discount_q == 0` (beta 06/11): por que o cupom não descontou. `unavailable` (vencido, esgotado ou fora do canal) · `customer` (segmento, grupo ou aniversário) · `fulfillment` (forma de recebimento) · `minimum` (pedido mínimo) · `items` (nenhuma linha no alvo de SKU/coleção) · `already_discounted` (as linhas do alvo já têm desconto igual ou maior; o maior ganha, sem somar). A condição vem de `policies/promotion.promotion_unmet_condition`. |
+| `reason` | `str` ou ausente | Só com `discount_q == 0` (beta 06/11): por que o cupom não descontou. `unavailable` (vencido, esgotado ou fora do canal) · `customer` (segmento, grupo ou aniversário) · `fulfillment` (forma de recebimento) · `minimum` (pedido mínimo) · `items` (nenhuma linha no alvo de SKU/coleção) · `already_discounted` (as linhas do alvo já têm desconto igual ou maior; o maior ganha, sem somar). A decisão é de `policies/promotion.coupon_zero_reason` (sobre `promotion_unmet_condition`). |
 | `missing_q` | `int` ou ausente | Com `reason == "minimum"`: quanto falta para o pedido mínimo (centavos). |
 | `fulfillment_types` | `list[str]` ou ausente | Com `reason == "fulfillment"`: onde o cupom vale (ex.: `["delivery"]`). |
 
