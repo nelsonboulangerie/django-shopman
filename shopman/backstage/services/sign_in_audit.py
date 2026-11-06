@@ -590,6 +590,50 @@ def _notify_badge_reissue(user, reason: str) -> None:
         push_user_notification(notificacao)
 
 
+def notify_pin_locked(user, locked_until) -> None:
+    """Avisar UMA vez que o PIN travou: o dono da conta e quem pode desbloquear.
+
+    Cada recusa já vira linha e aviso ao dono ("Tentativa recusada"), mas nenhum
+    deles dizia que a conta TRAVOU, e o gerente, que é quem resolve antes da hora,
+    não sabia de nada (beta 05/11, CEN-01). Chamado na transição para bloqueado,
+    não a cada recusa. Nunca levanta: o aviso não derruba a trava que o motivou.
+    """
+    from django.utils import timezone
+
+    from shopman.shop.models import NotificationCategory, UserNotification
+    from shopman.shop.services.campaign import push_user_notification
+
+    try:
+        nome = user.get_full_name().strip() or user.get_username()
+        hora = timezone.localtime(locked_until).strftime("%H:%M")
+        avisos = [
+            UserNotification(
+                user=user,
+                category=NotificationCategory.SIGN_IN,
+                title="Seu PIN foi bloqueado por tentativas",
+                message=f"Bloqueado até {hora}. Se não foi você, avise um gerente.",
+                action_url=SIGN_IN_LOG_PATH,
+            )
+        ]
+        avisos += [
+            UserNotification(
+                user=gerente,
+                category=NotificationCategory.SIGN_IN,
+                title=f"PIN de {nome} bloqueado por tentativas",
+                message=(
+                    f"Bloqueado até {hora}. Para liberar antes, use Desbloquear PIN "
+                    "em Operadores, no Admin."
+                ),
+            )
+            for gerente in _badge_managers(exclude=user)
+        ]
+        for aviso in avisos:
+            aviso.save()
+            push_user_notification(aviso)
+    except Exception:  # pragma: no cover - o aviso nunca derruba a trava
+        logger.warning("sign_in_audit.notify_pin_locked_failed user=%s", getattr(user, "pk", None), exc_info=True)
+
+
 def _badge_managers(*, exclude=None):
     """Quem pode reemitir crachá (``cashman.manage_operators``)."""
     from django.contrib.auth import get_user_model

@@ -333,11 +333,23 @@ export function deadlinePresentation(
 }
 
 /** O cabeçalho da fila: quantas decisões, e em que ordem estão. */
-export function queueHeadline(count: number): { strong: string; rest: string } {
-  if (count === 0) return { strong: "Nada pede você agora", rest: "" };
+export function queueHeadline(
+  count: number,
+  awaitingApprover = 0,
+): { strong: string; rest: string } {
+  // O que espera aprovação de outro perfil não "pede você" (beta 05/11, ge:MKT-03).
+  const awaiting =
+    awaitingApprover === 1
+      ? "1 aguarda quem aprova"
+      : `${formatCount(awaitingApprover)} aguardam quem aprova`;
+  if (count === 0) {
+    return awaitingApprover > 0
+      ? { strong: awaiting, rest: "" }
+      : { strong: "Nada pede você agora", rest: "" };
+  }
   return {
     strong: count === 1 ? "1 pede você" : `${formatCount(count)} pedem você`,
-    rest: count === 1 ? "" : "o prazo mais curto primeiro",
+    rest: awaitingApprover > 0 ? awaiting : count === 1 ? "" : "o prazo mais curto primeiro",
   };
 }
 

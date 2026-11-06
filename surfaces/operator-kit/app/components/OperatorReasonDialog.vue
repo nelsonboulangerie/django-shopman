@@ -164,6 +164,17 @@ const canConfirm = computed(() => {
   return true;
 });
 
+// O Cancelar fica apagado até haver motivo, e apagado sozinho não diz por quê: o
+// toque não fazia nada e a pessoa não sabia o que faltava (beta 05/11, GES-14).
+// A linha diz, ao lado do botão. O "Outros" sem texto já tem a dica dele.
+const missingHint = computed(() => {
+  if (canConfirm.value || props.loading || props.error) return "";
+  if (props.coded) return "Selecione o motivo na lista para confirmar.";
+  if (keyed.value) return "Escolha um motivo para confirmar.";
+  if (other.value) return "";
+  return "Escreva o motivo para confirmar.";
+});
+
 function onCodeChange() {
   const picked = props.codedReasons.find((r) => r.code === code.value);
   if (picked) reason.value = picked.description;
@@ -372,7 +383,15 @@ function submit() {
           </template>
         </NuxtAlert>
 
-        <div v-else class="flex justify-end gap-2">
+        <p
+          v-if="!discarding && missingHint"
+          class="text-end text-sm text-muted-foreground"
+          data-reason-missing
+        >
+          {{ missingHint }}
+        </p>
+
+        <div v-if="!discarding" class="flex justify-end gap-2">
           <NuxtButton
             color="neutral"
             variant="outline"

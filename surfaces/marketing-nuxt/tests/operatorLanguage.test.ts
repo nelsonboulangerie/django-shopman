@@ -361,4 +361,18 @@ describe("o selo ao vivo fala na voz aprovada", () => {
 
     expect(leaks).toEqual([]);
   });
+
+  // Beta 05/11 (ge:MKT-10): nota de rodapé do engenheiro e jargão na tela do gestor.
+  it("não fala de capacidade executável, de janela nem do nome do sistema", () => {
+    const appRoot = new URL("../app", import.meta.url).pathname;
+    const leaks = vueFiles(appRoot).flatMap((path) => {
+      const text = literalTemplateText(readFileSync(path, "utf8"));
+      const found = text.match(
+        /capacidade execut[áa]vel|s[óo] a janela|\bShopman\b|SHOPMAN_[A-Z_]+|catalogados para o futuro/i,
+      )?.[0];
+      return found ? [`${path}: ${found}`] : [];
+    });
+
+    expect(leaks).toEqual([]);
+  });
 });

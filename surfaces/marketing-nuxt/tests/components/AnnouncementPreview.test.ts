@@ -202,6 +202,47 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     wrapper.unmount();
   });
 
+  it("uma plataforma fora da prévia não apaga as outras, e diz o motivo uma vez (ge:MKT-08)", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ...batch({ instagram: "Croissant saiu" }),
+      sample: false,
+      platform_problems: {
+        whatsapp: {
+          code: "whatsapp_flow_not_selected",
+          detail: "O WhatsApp ainda não tem um fluxo aprovado.",
+        },
+      },
+    });
+    vi.stubGlobal("$fetch", fetch);
+    const wrapper = mountPreview({ announcementId: 1, platforms: ["instagram", "whatsapp"] });
+
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+
+    expect(wrapper.find("[data-testid='preview-error']").exists()).toBe(false);
+    expect(wrapper.text()).toContain("Croissant saiu");
+    const trouble = wrapper.get("[data-preview-platform-problem='whatsapp']").text();
+    expect(trouble).toContain("WhatsApp fica fora desta prévia.");
+    expect(trouble).toContain("O WhatsApp ainda não tem um fluxo aprovado.");
+    wrapper.unmount();
+  });
+
+  it("não repete a mesma frase no detalhe do campo (ge:MKT-08)", async () => {
+    const same = "O texto passou do limite.";
+    vi.stubGlobal(
+      "$fetch",
+      vi.fn().mockRejectedValueOnce({
+        data: { detail: same, field_errors: { body: [same] }, retryable: false },
+      }),
+    );
+    const wrapper = mountPreview();
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+    const text = wrapper.get("[data-testid='preview-error']").text();
+    expect(text.split(same).length - 1).toBe(1);
+    wrapper.unmount();
+  });
+
   it("orienta a correção de erro determinístico sem oferecer repetição inútil", async () => {
     const fetch = vi.fn().mockRejectedValueOnce({
       data: {

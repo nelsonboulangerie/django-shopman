@@ -46,6 +46,14 @@ describe("disparo manual — liberado ou com o porquê", () => {
     ).toBe("Seu perfil não autoriza disparos manuais.");
   });
 
+  it("sem permissão, campanha desligada não promete que ligar resolve (ge:MKT-17)", () => {
+    expect(
+      fireAvailability({ pk: 5, is_active: false }, [
+        action({ enabled: false, reason: "missing_capability" }),
+      ]).reason,
+    ).toBe("Seu perfil não autoriza disparos manuais.");
+  });
+
   it("nunca devolve botão morto sem frase", () => {
     const result = fireAvailability({ pk: 5, is_active: true }, [
       action({ enabled: false, reason: "algo_novo_do_servidor" }),
@@ -68,4 +76,5 @@ describe("a lista de campanhas mostra o porquê por extenso", () => {
     expect(page).toContain("{{ fireState(row.original).reason }}");
     expect(page).not.toMatch(/:title="[^"]*fireState\(row\.original\)\.reason/);
   });
+
 });

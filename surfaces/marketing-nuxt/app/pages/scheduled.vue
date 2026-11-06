@@ -71,8 +71,10 @@ useHead({ title: "Agendados" });
 
     <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
       <div class="mx-auto flex w-full max-w-3xl flex-col gap-3">
+        <!-- Vazio, quem fala é o estado vazio: duas frases dizendo "nada" era ruído
+             (beta 05/11, ge:MKT-29). -->
         <p
-          v-if="queue"
+          v-if="queue && scheduled.length"
           class="flex min-h-8 items-center text-sm text-muted-foreground"
           role="status"
           :aria-busy="loading"

@@ -72,8 +72,11 @@ describe("useOperatorLock — session derivations", () => {
       pin_must_change: false,
       authorized: true,
     };
+    // A antessala viu alguém identificado (marca a sessão); o 401 depois disso é
+    // sessão que TERMINOU.
+    const lock = useOperatorLock(PERM);
     useOperatorSession().flagIfUnauthenticated({ status: 401 });
-    expect(useOperatorLock(PERM).sessionState.value).toBe("expired");
+    expect(lock.sessionState.value).toBe("expired");
 
     env.states.clear();
     env.fetchData.value = null;
@@ -194,12 +197,34 @@ describe("useOperatorLock — unlock", () => {
     );
   });
 
-  it("toasts and returns false on a bad identification", async () => {
+  it("a recusa fica junto do teclado (unlockError), não num aviso no canto", async () => {
     env.fetchData.value = { station: "balcao" };
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "PIN inválido" } });
-    const { unlock } = useOperatorLock(PERM);
+    const { unlock, unlockError } = useOperatorLock(PERM);
     expect(await unlock({ operatorId: 3, pin: "0000" })).toBe(false);
-    expect(env.sonner.error).toHaveBeenCalledWith("PIN inválido");
+    expect(unlockError.value).toBe("PIN inválido");
+    expect(env.sonner.error).not.toHaveBeenCalled();
+  });
+
+  it("PIN bloqueado chega com a frase do servidor, e a próxima tentativa limpa", async () => {
+    env.fetchData.value = { station: "balcao" };
+    env.fetchMock.mockRejectedValueOnce({
+      status: 423,
+      data: {
+        detail: "PIN bloqueado por tentativas até 07:05. Peça a um gerente para desbloquear.",
+        error: { code: "pin_locked" },
+      },
+    });
+    const { unlock, unlockError } = useOperatorLock(PERM);
+    await unlock({ operatorId: 3, pin: "1234" });
+    expect(unlockError.value).toContain("PIN bloqueado por tentativas até 07:05");
+
+    let during = "x";
+    env.fetchMock.mockImplementationOnce(async () => {
+      during = unlockError.value;
+    });
+    await unlock({ operatorId: 3, pin: "1234" });
+    expect(during).toBe("");
   });
 
   it("ignores a concurrent unlock while one is in flight", async () => {
@@ -257,12 +282,27 @@ describe("useOperatorLock — lock / changePin / eligible", () => {
     expect(changeError.value).toBe("PIN atual errado");
   });
 
-  it("loadEligible falls back to an empty list on error (never throws to the UI)", async () => {
+  it("loadEligible never throws to the UI, and says it could not read", async () => {
     env.fetchData.value = { station: "balcao" };
     env.fetchMock.mockRejectedValueOnce(new Error("down"));
-    const { loadEligible, eligible } = useOperatorLock(PERM);
+    const { loadEligible, eligible, eligibleStatus } = useOperatorLock(PERM);
     await loadEligible();
     expect(eligible.value).toEqual([]);
+    // Falha de rede não é "Nenhum operador habilitado".
+    expect(eligibleStatus.value).toBe("error");
+  });
+
+  it("enquanto lê a lista, o estado é pending, não lista vazia (PDV2-16)", async () => {
+    env.fetchData.value = { station: "balcao" };
+    let release!: (v: unknown) => void;
+    env.fetchMock.mockImplementationOnce(() => new Promise((r) => (release = r)));
+    const { loadEligible, eligibleStatus } = useOperatorLock(PERM);
+    expect(eligibleStatus.value).toBe("idle");
+    const loading = loadEligible();
+    expect(eligibleStatus.value).toBe("pending");
+    release({ operators: [] });
+    await loading;
+    expect(eligibleStatus.value).toBe("ready");
   });
 
   it("a lista de quem destrava sobrevive entre aberturas da trava", async () => {

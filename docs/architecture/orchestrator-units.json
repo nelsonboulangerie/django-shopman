@@ -6450,6 +6450,7 @@
             "preview",
             "preview_platforms",
             "preview_announcement",
+            "_preview_whatsapp_binding",
             "_TEST_IDEMPOTENCY_KEY"
           ]
         }

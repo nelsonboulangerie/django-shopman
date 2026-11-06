@@ -337,8 +337,12 @@ quando a sessão carrega o código. A API não muda precedência nem empilhament
 | cupom | código normalizado em maiúsculas, único e necessário para ativar sua promoção |
 | limite de usos | `0` é ilimitado; contagem continua no mecanismo atômico existente |
 
-O cockpit permite somente criar e listar. Editar, desativar ou excluir uma regra já
-criada permanece fora desta superfície.
+O cockpit cria, lista e edita (`PATCH offers/<ref>/`, inclusive ativar e desativar).
+Excluir uma regra já criada permanece fora desta superfície. O nome da oferta é o
+que o cliente vê na loja (página da oferta e resumo da sacola), por isso o campo se
+chama "Nome que o cliente vê". O cartão diz por que a oferta não pode ir numa
+campanha: fora de vigor, com cupom, valendo para o catálogo todo ou com coleções
+vazias.
 
 ## Projeção e comandos
 
