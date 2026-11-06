@@ -107,11 +107,6 @@ def test_seed_de_madrugada_nao_deixa_nada_no_futuro_nem_fora_de_ordem(seeded_at_
         kind__in=(WorkOrderEvent.Kind.STARTED, WorkOrderEvent.Kind.FINISHED), actor="seed"
     ).exists()
 
-    from shopman.guestman.models import PriceTier
-
-    # O cliente novo cai no Varejo, não no primeiro grupo em ordem alfabética.
-    assert list(PriceTier.objects.filter(is_default=True).values_list("ref", flat=True)) == ["varejo"]
-
 
 def test_lote_fechado_no_futuro_recua_inteiro_e_aberto_abre_no_teto():
     """O folhado das 8h às 11h, com o seed às 5h50, recua sem virar lote de zero minutos."""

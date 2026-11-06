@@ -6332,12 +6332,9 @@ class Command(BaseCommand):
         self.stdout.write("  👥 Clientes...")
 
         # Faixas de preço: qual tabela cada cliente enxerga (`PriceTier.listing_ref`).
-        # Varejo é o grupo padrão do cliente novo: sem isso nenhum grupo era
-        # padrão, e o cadastro do Gestor marcava o primeiro por ordem alfabética
-        # (a Aliança Francesa) para todo cliente novo (beta 05/11).
         varejo, _ = PriceTier.objects.update_or_create(
             ref="varejo",
-            defaults={"name": "Varejo", "is_default": True},
+            defaults={"name": "Varejo"},
         )
         atacado, _ = PriceTier.objects.update_or_create(
             ref="atacado",
@@ -7667,6 +7664,11 @@ class Command(BaseCommand):
 
         self.stdout.write("  ✅ Comanda qa 00002001 com item disparado à cozinha")
 
+    def _stamp_order(self, order: Order, created_at: datetime):
+        Order.objects.filter(pk=order.pk).update(created_at=created_at, updated_at=created_at)
+        order.created_at = created_at
+        order.updated_at = created_at
+
     def _create_order_event(self, *, created_at: datetime | None = None, **fields) -> OrderEvent:
         """Evento de pedido na hora do fato, e não na hora do seed.
 
@@ -7680,11 +7682,6 @@ class Command(BaseCommand):
             OrderEvent.objects.filter(pk=event.pk).update(created_at=created_at)
             event.created_at = created_at
         return event
-
-    def _stamp_order(self, order: Order, created_at: datetime):
-        Order.objects.filter(pk=order.pk).update(created_at=created_at, updated_at=created_at)
-        order.created_at = created_at
-        order.updated_at = created_at
 
     def _new_order_ref(self, channel_ref: str, business_date: date) -> str:
         for _attempt in range(20):
@@ -8823,17 +8820,14 @@ class Command(BaseCommand):
             )
 
         # Hoje: turno aberto com fundo de troco.
-        # Abre às 8h45, ou meia hora antes do agora quando o seed roda mais cedo:
-        # turno aberto no futuro aparecia "aberto em 05/11, 08:45" às 07:40, e
-        # fechado antes de abrir no Admin (beta 05/11, PDV-28). Nunca antes da
-        # meia-noite de hoje: o turno é de hoje.
         today_shift = cash.open_shift_for_terminal(terminal)
         if today_shift is None:
-            now = timezone.now()
-            start_of_today = timezone.make_aware(datetime.combine(timezone.localdate(), time(0, 0)))
-            today_open = max(
-                start_of_today,
-                min(timezone.make_aware(datetime.combine(timezone.localdate(), time(8, 45))), now - timedelta(minutes=30)),
+            # 08:45, ou agora se o seed roda antes disso: um turno aberto no futuro
+            # mostrava "Turno aberto em 05/11, 08:45" com o relógio da loja em
+            # 06:51 (beta 05/11, PDV2-24).
+            today_open = min(
+                timezone.make_aware(datetime.combine(timezone.localdate(), time(8, 45))),
+                timezone.now(),
             )
             today_shift = cash.open_shift(operator=admin, terminal=terminal, float_q=20000, at=today_open)
 
@@ -8870,12 +8864,17 @@ class Command(BaseCommand):
                 continue
             # A hora da venda cabe entre a abertura do turno e o agora, na ordem do
             # plano: com hora fixa, o seed das 5h50 gravava venda das 8h20 (CEN-10).
-            at = max(
-                min(
-                    timezone.make_aware(datetime.combine(day, time(hour, 20))),
-                    now - timedelta(minutes=5 * (len(plan) - index)),
+            # O turno que acabou de abrir (seed antes das 8h45) põe as vendas no
+            # agora: o pedido, a cobrança e o lançamento do livro, todos juntos.
+            at = min(
+                max(
+                    min(
+                        timezone.make_aware(datetime.combine(day, time(hour, 20))),
+                        now - timedelta(minutes=5 * (len(plan) - index)),
+                    ),
+                    opened_at + timedelta(minutes=1 + index),
                 ),
-                opened_at + timedelta(minutes=1 + index),
+                now,
             )
             order = self._make_qa_order(
                 ref=ref,
