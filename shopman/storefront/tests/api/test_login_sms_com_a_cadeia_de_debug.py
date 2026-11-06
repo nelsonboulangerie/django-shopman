@@ -26,6 +26,7 @@ PHONE = "+5543991374682"
 @pytest.fixture(autouse=True)
 def _cadeia_de_debug(settings, monkeypatch):
     settings.RATELIMIT_ENABLE = False
+    settings.DEBUG = True  # a cadeia ``sms,console`` só existe em DEBUG
     settings.DOORMAN = {
         **settings.DOORMAN,
         "DELIVERY_CHAIN": ["sms", "console"],

@@ -46,6 +46,13 @@ def _proof_methods() -> frozenset[str]:
     return frozenset(VerificationCode.DeliveryMethod.values)
 
 
+def _simulation_allowed() -> bool:
+    """Elo de simulação só vale como prova do canal pedido em DEBUG."""
+    from django.conf import settings
+
+    return bool(getattr(settings, "DEBUG", False))
+
+
 class DefaultAuthAdapter:
     """
     Default auth adapter.
@@ -191,8 +198,11 @@ class DefaultAuthAdapter:
                     # é a do canal simulado, senão o vínculo do contato recusa a
                     # prova "console" e nenhum cliente entra em DEBUG (beta 05/11,
                     # LOJA-01). Elo que É transporte ("sms", mesmo com um dublê no
-                    # lugar) prova o próprio canal.
-                    if method not in _proof_methods():
+                    # lugar) prova o próprio canal. Fora de DEBUG o console NÃO vira
+                    # prova: o código só existe no log, e quem lê o log não é o dono
+                    # do telefone. Ali a prova fica "console" e o vínculo recusa
+                    # (falha fechada, como antes).
+                    if method not in _proof_methods() and _simulation_allowed():
                         return True, preferred_method
                     return True, method
                 logger.warning(
