@@ -230,3 +230,12 @@ describe('checkout: presente começa sem valores, como a descrição promete', (
     page.unmount()
   })
 })
+
+
+it('restaurar um presente respeita a escolha explícita de mostrar valores', async () => {
+  store.set(DRAFT_KEY, JSON.stringify({ version: 2, context: 'ctx-entrega', attemptKey: null, state: { fulfillment_type: 'pickup', is_gift: true, gift_hide_values: false }, activeStep: 'payment', savedAt: Date.now() }))
+  const page = await abrirCheckout(projection())
+  await vi.waitFor(() => expect(page.find('#gift-hide-values').exists()).toBe(true))
+  expect(page.find('#gift-hide-values').attributes('aria-checked')).toBe('false')
+  page.unmount()
+})

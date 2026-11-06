@@ -286,7 +286,9 @@ watch(() => state.is_gift, (on) => {
     state.gift_hide_values = false
     clearFieldErrors(['recipient_name', 'recipient_phone'])
   }
-})
+// Na restauração, os campos do rascunho vêm depois do toggle. A escolha salva
+// prevalece sobre o padrão aplicado ao gesto de ativar presente.
+}, { flush: 'sync' })
 watch(() => state.recipient_name, value => {
   if (value.trim()) clearFieldError('recipient_name')
 })
