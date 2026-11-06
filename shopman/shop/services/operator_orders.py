@@ -588,7 +588,17 @@ def advance_order(
         from shopman.shop.services import volume_check
 
         volume_check.alert_if_unchecked(order, target_status=next_status)
-        order.transition_status(next_status, actor=actor)
+        if next_status == Order.Status.PREPARING:
+            # "Iniciar preparo" no Gestor é atalho do MESMO ato da Cozinha
+            # (decisão do dono, 06/11/2026): inicia os tickets que esperam no
+            # posto, e é o início deles que põe o pedido em preparo. Pedido sem
+            # item de cozinha não tem ticket e segue pela transição abaixo.
+            from shopman.shop.services import kds as kds_service
+
+            if kds_service.start_order_tickets(order, actor=actor):
+                order.refresh_from_db()
+        if order.status != next_status:
+            order.transition_status(next_status, actor=actor)
         if next_status in _KITCHEN_FINISHED_STATUSES:
             # "Marcar pronto" por fora do KDS: quem avançou afirmou que a cozinha
             # terminou. Ticket que ficasse aberto penduraria o pedido na grade

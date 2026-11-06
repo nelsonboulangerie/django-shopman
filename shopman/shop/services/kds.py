@@ -2,7 +2,10 @@
 KDS (Kitchen Display System) dispatch service.
 
 Bridge: KDS is reactive to the order lifecycle (unidirecional Order→KDS):
-- dispatch()         — cria tickets quando o trabalho físico é liberado; o lifecycle grava PREPARING em seguida
+- dispatch()         — cria tickets quando o pedido é aceito (o trabalho físico é liberado); no
+                       canal ``prep_start="operator"`` eles esperam "Iniciar preparo" no posto
+- start_ticket()     — "Iniciar preparo" da Cozinha: a verdade; põe o pedido em PREPARING
+- start_order_tickets() — o mesmo ato pelo atalho do Gestor, em todos os tickets do pedido
 - cancel_tickets()   — cancela tickets abertos quando Order é CANCELLED
 - on_all_tickets_done() — transiciona Order para READY; balcão encerra no próprio KDS
 
@@ -884,6 +887,41 @@ def _start_ticket_locked(ticket, *, source, actor: str) -> bool:
         if first_start:
             _record_ticket_start(order, ticket, actor=actor)
     return True
+
+
+def start_order_tickets(order, *, actor: str) -> int:
+    """O "Iniciar preparo" do Gestor: o MESMO ato da Cozinha, nas estações do pedido.
+
+    Decisão do dono (06/11/2026): a verdade é da Cozinha, o Gestor é um atalho.
+    O pedido aceito já está na Cozinha, com os tickets esperando "Iniciar
+    preparo" no posto; o gerente que adianta pelo Gestor faz exatamente o que o
+    operador do posto faria, em cada ticket que ainda espera: põe em preparo com
+    ``started_by`` = quem tocou, e o pedido entra em preparo junto
+    (``_start_ticket_locked``). Nunca cria ticket: quem cria é o aceite.
+
+    Idempotente: ticket que a Cozinha já iniciou fica como está (o primeiro toque
+    é o que vale), e um segundo toque não acha ticket esperando. Retorna quantos
+    tickets este toque iniciou; 0 quando o pedido não tem item de cozinha.
+    """
+    from django.db import transaction
+
+    from shopman.shop.adapters import kds as kds_adapter
+
+    if not order.session_key:
+        return 0
+    started = 0
+    with transaction.atomic():
+        source = _lock_source_for_session(order.session_key)
+        if not isinstance(source, Order):
+            return 0
+        waiting = list(kds_adapter.get_tickets(source).filter(status="pending").order_by("created_at", "pk"))
+        for ticket in waiting:
+            ticket = _lock_ticket_after_source(ticket)
+            if ticket.status == "pending" and _start_ticket_locked(ticket, source=source, actor=actor):
+                started += 1
+    if started:
+        logger.info("kds.start_order_tickets: %d ticket(s) order=%s actor=%s", started, order.ref, actor)
+    return started
 
 
 def _record_ticket_start(order, ticket, *, actor: str) -> None:
