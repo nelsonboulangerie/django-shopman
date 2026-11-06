@@ -70,7 +70,27 @@ _SKIP_REASONS = {
     "payment_link_order_cancelled": "O pedido foi cancelado.",
     "payment_link_expired": "O link venceu.",
     "payment_link_unavailable": "O link não está disponível.",
+    "payment_taken_over_at_counter": "O pagamento passou para o balcão.",
 }
+
+#: Motivo com sufixo variável: o processo que não fala com ninguém de fora
+#: (``external_suppressed:<motivo>``, o seed e o ambiente de teste). Sem este
+#: prefixo o operador lia "O aviso foi omitido." sem saber por quê.
+_SKIP_REASON_PREFIXES = (
+    ("external_suppressed:", "Avisos ao cliente desligados neste ambiente."),
+)
+
+#: O que dizer quando o motivo gravado não tem tradução: o fato, e o gesto.
+_SKIP_FALLBACK = "O aviso não saiu. Fale com o cliente por outro meio, se precisar."
+
+
+def _skip_reason(reason: str) -> str:
+    if reason in _SKIP_REASONS:
+        return _SKIP_REASONS[reason]
+    for prefix, text in _SKIP_REASON_PREFIXES:
+        if reason.startswith(prefix):
+            return text
+    return _SKIP_FALLBACK
 
 
 @dataclass(frozen=True)
@@ -155,9 +175,9 @@ def _detail(state: str, evidence: dict) -> str:
     if state == STATE_UNKNOWN:
         return "Não dá para saber se o aviso saiu. Confirme com o cliente antes de reenviar."
     if state == STATE_FAILED:
-        return "Nenhum canal aceitou o envio."
+        return "Nenhum canal aceitou o envio. Fale com o cliente por outro meio."
     if state == STATE_SKIPPED:
-        return _SKIP_REASONS.get(str(evidence.get("reason") or ""), "O aviso foi omitido.")
+        return _skip_reason(str(evidence.get("reason") or ""))
     return ""
 
 

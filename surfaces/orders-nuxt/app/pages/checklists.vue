@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useAlertDismissals } from "../../../operator-kit/app/composables/useAlertDismissals";
+import { weekdayAndDate } from "../../../operator-kit/app/presentation/dates";
 import type {
   OperationChecklistRun,
   OperationChecklistTask,
@@ -19,6 +20,10 @@ const {
 } = useOperationChecklists();
 
 useHead({ title: "Rotinas" });
+// O dia da loja como a casa escreve ("Qui 05/11"), nunca "2026-11-05" (GES-16).
+const businessDay = computed(
+  () => weekdayAndDate(board.value?.business_date ?? "") || "hoje",
+);
 // O erro de uma ação fecha (X) e volta se a mesma ação falhar com outra mensagem.
 const notices = useAlertDismissals();
 
@@ -101,7 +106,7 @@ const phoneHeaderActions = computed(() => [
     >
       <div class="mx-auto grid max-w-3xl gap-4">
         <p class="text-sm text-muted-foreground">
-          Abertura, rotina e fechamento de {{ board?.business_date ?? "hoje" }}.
+          Abertura, rotina e fechamento de {{ businessDay }}.
           A configuração e a auditoria permanecem no Admin.
         </p>
 

@@ -25,6 +25,8 @@ const props = defineProps<{
   busy: boolean;
   marketplace: boolean;
   error?: string;
+  /** Motivo já marcado ao abrir (cancelar o Pix vencido: "Pagamento não confirmado"). */
+  initialKey?: string;
 }>();
 
 const emit = defineEmits<{
@@ -57,12 +59,13 @@ const description = computed(() =>
     :required="mode === 'reject'"
     :presets="keyed ? [] : presets"
     :keyed-reasons="keyed ? cancelReasons : []"
+    :initial-key="keyed ? (initialKey ?? '') : ''"
     :coded="marketplace"
     :coded-reasons="reasons"
     coded-label="Motivo exigido pelo iFood"
     coded-empty-text="O iFood não oferece motivos de cancelamento neste momento."
     :loading="loading"
-    loading-text="Carregando motivos do iFood…"
+    :loading-text="marketplace ? 'Carregando motivos do iFood…' : 'Carregando motivos…'"
     :error="error"
     :busy="busy"
     placeholder="Motivo da recusa…"

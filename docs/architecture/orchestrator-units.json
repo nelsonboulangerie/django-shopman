@@ -12755,7 +12755,10 @@
             "add_comment",
             "timezone_now_iso",
             "MAX_VOLUMES",
-            "VOLUME_SURFACES"
+            "VOLUME_SURFACES",
+            "CLOSED_ORDER_STATUSES",
+            "CLOSED_ORDER_MESSAGE",
+            "_refuse_closed"
           ]
         }
       ],
@@ -12772,6 +12775,7 @@
       "tests": [
         "shopman/shop/tests/test_cod_custody_concurrency.py::test_stale_order_does_not_duplicate_collection_or_erase_context",
         "shopman/shop/tests/test_equipment_return_fresh_state.py::test_equipment_return_preserves_concurrent_note",
+        "shopman/backstage/tests/test_beta_gestor_pedidos_0511.py::test_server_refuses_kitchen_note_volumes_and_assign_on_closed_order",
         "shopman/shop/tests/test_orders_intention_concurrency.py::test_note_and_assignment_merge_but_stale_same_field_conflicts"
       ],
       "test_gap_reason": null,

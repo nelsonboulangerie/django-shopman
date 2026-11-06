@@ -315,6 +315,24 @@ describe("cardAffordances", () => {
     expect(pickup?.label).toBe("Receber na retirada");
     expect(delivery?.label).toBe("Acertar entrega");
   });
+  // Beta 05/11 (PDV2-03): "Bloqueado" e "Iniciar preparo" no mesmo cartão.
+  it("o avanço travado diz o que espera, não o verbo que não acontece", () => {
+    const blocked = card({
+      advance_block_label: "Aguardando o dia da encomenda…",
+      advance_block_reason: "Encomenda para uma data futura. O preparo abre no dia combinado.",
+      actions: [
+        {
+          ref: "advance", label: "Iniciar preparo", enabled: false,
+          reason: "Encomenda para uma data futura.", priority: "primary",
+          kind: "mutation", href: "", method: "POST", payload_schema: {},
+          idempotency: "required", confirmation: {},
+        },
+      ],
+    });
+    const advance = cardAffordances(blocked).find((a) => a.ref === "advance");
+    expect(advance?.label).toBe("Aguardando o dia da encomenda");
+    expect(advance?.disabled).toBe(true);
+  });
 });
 
 describe("matchesQuery", () => {

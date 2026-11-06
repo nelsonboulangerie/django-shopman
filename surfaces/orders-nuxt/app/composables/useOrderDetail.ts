@@ -129,6 +129,7 @@ export function useOrderDetail(orderRef: string) {
           "assign",
           "unassign",
           "equipment-back",
+          "courier-back",
           "comment",
           "settle-delivery-cash",
           "requeue-fiscal",
@@ -229,6 +230,9 @@ export function useOrderDetail(orderRef: string) {
     return act("advance", Object.keys(body).length ? body : undefined);
   };
   const equipmentBack = () => act("equipment-back");
+  // "Entregador voltou": o MESMO gesto do cartão, que fecha a saída inteira
+  // (entrega, dinheiro, troco e maquininha).
+  const courierBack = () => act("courier-back");
   // Desfazer o que ainda está na janela (a saída tocada; o pronto da Cozinha).
   const undoHandoff = () => act("undo-handoff");
   const undoReady = () => act("undo-ready");
@@ -417,6 +421,7 @@ export function useOrderDetail(orderRef: string) {
     fetchCancellationReasons,
     settleCash,
     equipmentBack,
+    courierBack,
     undoHandoff,
     undoReady,
     requeueFiscal,
