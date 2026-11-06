@@ -42,7 +42,7 @@ import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import {
   costBatchLineErrors as buildCostBatchLineErrors,
   costBatchPayload as buildCostBatchPayload,
-  costPerBaseUnitQ,
+  costPerReadingUnitQ,
   countConfirmPayload,
   countRows,
   countSummary,
@@ -65,11 +65,15 @@ import {
   reorderBlockers as buildReorderBlockers,
   reorderRows as buildReorderRows,
   supplierCostRows,
+  receiptPreferredCostChanges as buildReceiptPreferredCostChanges,
 } from "~/presentation/purchase";
 
 function copy<T>(items: T[]): T[] {
   return items.map((item) => ({ ...item }));
 }
+
+/** O que muda o preço de um item: mexer nisso desfaz a resposta sobre o custo preferencial. */
+const PRICE_FIELDS: ReadonlyArray<keyof ReceiptLine> = ["costInput", "purchaseQty", "conversionId", "materialSku"];
 
 function receiptLineCopy(lines: ReceiptLine[]): ReceiptLine[] {
   return lines.map((line) => ({
@@ -372,6 +376,11 @@ export function usePurchaseDesk() {
   );
   const receiptHasRejectionReason = computed(
     () => Boolean(receiptNote.value.trim()) || receiptLines.value.some((line) => Boolean(line.lineNote.trim())),
+  );
+  // O preço desta entrada difere do custo preferencial: confirmar pergunta antes
+  // se o custo muda (CMP-06). Não é pendência do item: a pergunta vem no gesto.
+  const receiptPreferredCostChanges = computed(() =>
+    buildReceiptPreferredCostChanges(receiptLinePreviews.value, costs.value, receiptSupplierRef.value, conversions.value),
   );
   const receiptReady = computed(
     () =>
@@ -932,13 +941,25 @@ export function usePurchaseDesk() {
 
   function updateReceiptLine(lineId: string, patch: Partial<ReceiptLine>) {
     receiptOutcome.value = null;
-    receiptLines.value = receiptLines.value.map((line) => (line.id === lineId ? { ...line, ...patch } : line));
+    // A resposta sobre o custo preferencial vale para o preço que ela viu: mudou
+    // preço, quantidade, embalagem ou item, a pergunta volta.
+    const repriced = PRICE_FIELDS.some((field) => field in patch) && !("preferredCost" in patch);
+    receiptLines.value = receiptLines.value.map((line) =>
+      line.id === lineId ? { ...line, ...patch, ...(repriced ? { preferredCost: "" as const } : {}) } : line,
+    );
+  }
+
+  /** Responde a pergunta do custo preferencial de um item (CMP-06). */
+  function setReceiptPreferredCost(lineId: string, decision: "update" | "keep") {
+    updateReceiptLine(lineId, { preferredCost: decision });
   }
 
   function setReceiptSupplier(ref: string) {
     receiptSupplierRef.value = ref;
     receiptOutcome.value = null;
-    receiptLines.value = receiptLines.value.map((line) => {
+    // Outro fornecedor, outro custo preferencial: a resposta anterior não vale.
+    receiptLines.value = receiptLines.value.map((current) => {
+      const line: ReceiptLine = { ...current, preferredCost: "" };
       const currentConversion =
         line.conversionId ? conversions.value.find((conversion) => conversion.id === line.conversionId) : null;
       const currentIsAllowed =
@@ -1607,6 +1628,8 @@ export function usePurchaseDesk() {
     receiptTotalCostQ,
     receiptHasRejectionReason,
     receiptReady,
+    receiptPreferredCostChanges,
+    setReceiptPreferredCost,
     purchaseRequestStatuses,
     pending,
     error,
@@ -1655,7 +1678,7 @@ export function usePurchaseDesk() {
     cancelPurchaseRequest,
     setPreferredCost,
     saveQuote,
-    costPerBaseUnitQ,
+    costPerReadingUnitQ,
     materialForm,
     supplierForm,
     materialFormSource,

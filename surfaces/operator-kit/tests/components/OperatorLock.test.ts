@@ -821,4 +821,16 @@ describe("OperatorLock — entrar com senha (BI-09)", () => {
     await button(wrapper, "Voltar")!.trigger("click");
     expect(wrapper.text()).toContain("Quem está operando?");
   });
+
+  // Dono, 06/11 (PDV-21): a senha na trava é a porta de quem NÃO tem PIN, e num
+  // posto só do Dono. Quem decide é o servidor, na porta da TRAVA, e não o login
+  // geral: o formulário manda o `perm` da superfície para a régua de acesso.
+  it("a senha vai para a porta da trava, com o perm da superfície", async () => {
+    const wrapper = await mount();
+    await wrapper.find("[data-operator-lock-password]").trigger("click");
+
+    const form = wrapper.findComponent({ name: "OperatorLoginForm" });
+    expect(form.props("loginUrl")).toBe("/api/v1/backstage/operator/unlock/password/");
+    expect(form.props("extraBody")).toEqual({ perm: "backstage.operate_pos" });
+  });
 });

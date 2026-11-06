@@ -215,6 +215,65 @@ class CardPaidAtOrderTests(TestCase):
         self.assertNotEqual(order.status, Order.Status.CANCELLED)
 
 
+# ── Cartão nunca autorizado: o prazo de pagamento fecha o pedido ───────────
+
+
+@override_settings(
+    SHOPMAN_STRIPE=STRIPE_MANUAL,
+    SHOPMAN_PAYMENT_ADAPTERS=PAYMENT_ADAPTERS_STRIPE_CARD,
+    DEBUG=False,
+)
+class CardNeverAuthorizedTests(TestCase):
+    """Beta 06/11, F2: cartão recusado ou abandonado na tela do Stripe deixava o
+    pedido "Novo · Bloqueado" para sempre, com o estoque preso. Agora ele nasce
+    com ``payment.timeout``, e vencido com o gateway dizendo "pendente" cancela."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _web_channel()
+        self.stripe = FakeStripe()
+        # Sessão aberta, nada pago: o cliente teve o cartão recusado e desistiu.
+        self.stripe.session.status = "open"
+        self.stripe.session.payment_intent = None
+        from shopman.shop.adapters import payment_stripe
+
+        patcher = patch.object(payment_stripe, "_get_stripe", return_value=self.stripe)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_pedido_de_cartao_nasce_com_prazo_de_pagamento(self) -> None:
+        with self.captureOnCommitCallbacks(execute=True):
+            order = _commit_card_order()
+        order.refresh_from_db()
+
+        self.assertTrue(order.data["payment"].get("expires_at"))
+        directive = Directive.objects.get(topic="payment.timeout", payload__order_ref=order.ref)
+        self.assertEqual(directive.payload["intent_ref"], order.data["payment"]["intent_ref"])
+
+    def test_prazo_vencido_sem_autorizacao_cancela_e_libera_o_estoque(self) -> None:
+        from shopman.shop.handlers.payment_timeout import PaymentTimeoutHandler
+
+        with self.captureOnCommitCallbacks(execute=True):
+            order = _commit_card_order()
+        directive = Directive.objects.get(topic="payment.timeout", payload__order_ref=order.ref)
+        directive.payload = {**directive.payload, "expires_at": (timezone.now() - timedelta(seconds=1)).isoformat()}
+        directive.save(update_fields=["payload"])
+
+        with (
+            patch("shopman.shop.services.stock.release") as release,
+            patch("shopman.shop.services.notification.send"),
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            PaymentTimeoutHandler().handle(message=directive, ctx={})
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.CANCELLED)
+        self.assertEqual(order.data["cancellation_reason"], "payment_timeout")
+        self.assertEqual(order.data["cancellation_reason_key"], "payment_deadline_passed")
+        release.assert_called_once()
+        self.assertEqual(release.call_args.args[0].ref, order.ref)
+
+
 # ── Pix pago, ninguém aceita: estorno ───────────────────────────────────────
 
 

@@ -33,6 +33,12 @@ type ClaimResponse = {
   skipped: SkippedOfferItem[]
   /** A sacola já tinha itens e eles ficaram: a oferta foi somada a eles. */
   kept_existing_items: boolean
+  /**
+   * Esta oferta já estava nesta sacola: nada foi somado (`added` vazio) e não há o que
+   * perguntar. O recibo é do servidor, por sacola, então vale para outra aba e para
+   * outro dispositivo; a chave que a página esquece abaixo só cobre esta aba.
+   */
+  already_claimed?: boolean
   cart: CartProjection
 }
 
@@ -76,9 +82,11 @@ async function claim (mode: ClaimMode = 'merge') {
     addedNames.value = response.cart.items.filter(item => response.added.includes(item.sku)).map(item => item.name)
     setFromServer(response.cart)
     assembled.value = response.ok
-    // A oferta SEMPRE soma: quem decide é o servidor, e ele nunca troca sem pedido. A
-    // pergunta que sobra é sobre o que já estava na sacola, e só existe se havia algo lá
-    // e a oferta de fato entrou — sem item novo, não há nada a manter nem a dispensar.
+    // Oferta nova SEMPRE soma; a mesma oferta entra uma vez por sacola (o servidor
+    // devolve `already_claimed` e `added` vazio). Quem decide é o servidor, e ele nunca
+    // troca sem pedido. A pergunta que sobra é sobre o que já estava na sacola, e só
+    // existe se havia algo lá e a oferta de fato entrou: sem item novo, não há nada a
+    // manter nem a dispensar, e o destino é a sacola, como na primeira visita.
     if (response.kept_existing_items && response.added.length) {
       decisionOpen.value = true
       return

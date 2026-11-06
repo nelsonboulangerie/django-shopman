@@ -497,3 +497,28 @@ class TestCustomerOrderHistoryService(TestCase):
         assert stats.total_spent_q == 10000
         assert stats.average_order_q == 5000
         assert [order.total_q for order in orders] == [5000, 5000]
+
+    def test_cancelled_and_returned_orders_are_not_purchases(self):
+        """Beta 06/11, PIXEXP-07: pedido cancelado (Pix vencido) não é compra."""
+        for ref, status, total_q in (
+            ("ORD-NP-PAID", Order.Status.COMPLETED, 1530),
+            ("ORD-NP-CANCELLED", Order.Status.CANCELLED, 510),
+            ("ORD-NP-RETURNED", Order.Status.RETURNED, 2200),
+        ):
+            Order.objects.create(
+                ref=ref,
+                channel_ref="web",
+                session_key=f"sess-{ref}",
+                status=status,
+                data={"customer_ref": "CUST-HIST-NP"},
+                total_q=total_q,
+            )
+
+        stats = CustomerOrderHistoryService.get_customer_stats("CUST-HIST-NP")
+        purchases = CustomerOrderHistoryService.list_customer_orders("CUST-HIST-NP")
+        everything = CustomerOrderHistoryService.list_customer_orders("CUST-HIST-NP", include_not_purchases=True)
+
+        assert stats.total_orders == 1
+        assert stats.total_spent_q == 1530
+        assert [o.order_ref for o in purchases] == ["ORD-NP-PAID"]
+        assert {o.order_ref for o in everything} == {"ORD-NP-PAID", "ORD-NP-CANCELLED", "ORD-NP-RETURNED"}

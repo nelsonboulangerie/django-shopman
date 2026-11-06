@@ -28,6 +28,12 @@ from shopman.shop.models import (
 )
 
 
+# Conteúdo público só aprova com link absoluto (MKT-20): a loja tem endereço de site.
+@pytest.fixture(autouse=True)
+def _loja_com_endereco(settings):
+    settings.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.example.com"
+
+
 @pytest.fixture
 def gestor(db):
     Shop.objects.create(name="Nelson")
@@ -56,7 +62,7 @@ def anuncio(db):
             "body": "Saiu pão",
             "hashtags": [],
             "image_url": "/media/pao.jpg",
-            "link": "/produto/pao",
+            "link": "https://loja.example.com/produto/pao",
         },
         platforms=["instagram"],
         audience={"favorites": 3, "alerts": 0, "total": 3},

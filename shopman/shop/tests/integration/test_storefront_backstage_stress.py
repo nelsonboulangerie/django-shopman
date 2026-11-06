@@ -42,6 +42,8 @@ from django.conf import settings
 from django.test import TestCase, TransactionTestCase
 from shopman.orderman.tests.commit_support import seal_for
 
+from shopman.shop.tests._payment import with_payment
+
 requires_postgres = pytest.mark.skipif(
     "sqlite" in settings.DATABASES["default"]["ENGINE"],
     reason="Requires PostgreSQL for real concurrency testing",
@@ -131,7 +133,7 @@ def _open_session(
         state="open",
         rev=1,
         items=items,
-        data=data or {},
+        data=with_payment(channel_ref, data),
     )
 
 

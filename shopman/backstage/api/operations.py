@@ -1273,6 +1273,105 @@ class OperatorUnlockView(APIView):
         return operator_service.pin_locked_until(alvo)
 
 
+@method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
+class OperatorUnlockPasswordView(APIView):
+    """"Entrar com senha" na trava: a porta de quem NÃO tem PIN.
+
+    Decisão do dono (06/11/2026, beta PDV-21): a Dona, que não tem PIN, destrava
+    o balcão com a senha dela. A trava lista só quem tem PIN, e sem esta porta o
+    Dono não chegava ao relatório de caixa pelo PDV.
+
+    A régua, conferida no servidor (a tela só mostra o botão):
+
+    * **Quem tem PIN entra pelo PIN.** O PIN tem bloqueio progressivo e aviso ao
+      gerente; a senha na trava não pode ser o atalho que pula isso.
+    * **Num posto da loja (estação vinculada), só o Dono** (superusuário ou quem
+      audita o caixa, ``can_audit_cash``). Caixa e Gerente usam PIN no balcão.
+      Fora de posto (o dispositivo pessoal de quem travou, beta BI-09), basta não
+      ter PIN: a pessoa já entrou com senha naquele dispositivo.
+    * **Precisa poder usar a superfície** (o mesmo ``perm`` da lista da trava).
+
+    Mesma trilha e mesmos freios da senha do ``OperatorLoginView``: a recusa de
+    senha vira linha pelo ``user_login_failed`` (o ``authenticate()`` o emite), o
+    acerto pelo ``user_logged_in`` com o método ``password``, e o balde de falhas
+    por conta é o MESMO dos dois caminhos (5 senhas erradas por minuto). Duas
+    portas com baldes separados dobrariam a cota de quem tenta adivinhar.
+    """
+
+    permission_classes = [IsTrustedStation]
+
+    def post(self, request):
+        from django.contrib.auth import authenticate
+        from shopman.doorman.models import PinCredential
+
+        from shopman.backstage.permissions import can_audit_cash
+        from shopman.backstage.services import operator as operator_service
+
+        if getattr(request, "limited", False):
+            return Response(
+                {
+                    "detail": "Muitas tentativas de login. Aguarde um minuto e tente de novo.",
+                    "error": {"code": "operator_login_rate_limited"},
+                },
+                status=429,
+            )
+
+        body = request.data or {}
+        perm, ok = _validated_unlock_perm(body.get("perm"))
+        if not ok:
+            return Response({"detail": "Permissão de operador inválida."}, status=400)
+        username = str(body.get("username") or "").strip()
+        password = str(body.get("password") or "")
+        if not username or not password:
+            return Response({"detail": "Informe usuário e senha."}, status=400)
+
+        falhas = _login_failures(request, increment=False)
+        if falhas and falhas.get("should_limit"):
+            return _login_rate_limited_response(falhas)
+
+        user = authenticate(request, username=username, password=password)
+        if user is None or not user.is_staff:
+            falhas = _login_failures(request, increment=True)
+            if falhas and falhas.get("should_limit"):
+                return _login_rate_limited_response(falhas)
+            return Response(
+                {"detail": "Usuário ou senha inválidos.", "error": {"code": "operator_login_invalid"}},
+                status=403,
+            )
+
+        # A senha está certa daqui para baixo: a recusa é da régua da porta, e
+        # não conta como senha errada. Fica na trilha, como toda recusa.
+        if not operator_service.is_eligible_operator(user, required_perm=perm):
+            recusa = ("operator_unlock_invalid", "Esta pessoa não tem acesso a este app. Fale com o gerente.")
+        elif PinCredential.objects.filter(user=user).exists():
+            recusa = ("operator_password_has_pin", "Você tem PIN: escolha seu nome na lista e digite o PIN.")
+        elif station_trust.is_trusted_station(request) and not can_audit_cash(user):
+            recusa = (
+                "operator_password_owner_only",
+                "Neste posto, só o Dono entra com senha. Peça um PIN ao gerente.",
+            )
+        else:
+            recusa = None
+        if recusa is not None:
+            codigo, frase = recusa
+            sign_in_audit.record(
+                user=user,
+                method=SignInMethod.PASSWORD,
+                outcome=SignInOutcome.FAILED,
+                request=request,
+                reason=codigo,
+            )
+            return Response({"detail": frase, "error": {"code": codigo}}, status=403)
+
+        sign_in_audit.mark_method(request, SignInMethod.PASSWORD)
+        login(request, user)
+        operator_session.start(request)
+        # Como no login com senha (beta BI-09): a senha prova a pessoa mais do
+        # que o PIN, e as travas desta sessão caem.
+        operator_session.unlock_capability(request, None)
+        return Response({"ok": True, "operator": operator_service.operator_card(user)})
+
+
 class OperatorLockView(APIView):
     """Trava só a superfície pedida; a sessão compartilhada continua viva.
 

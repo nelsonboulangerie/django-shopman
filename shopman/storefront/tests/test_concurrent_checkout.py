@@ -51,7 +51,7 @@ def _make_open_session(channel, session_key, sku="TEST-SKU", qty=1, price_q=1000
         state="open",
         rev=1,
         items=[{"line_id": f"L-{session_key}", "sku": sku, "qty": qty, "unit_price_q": price_q}],
-        data={},
+        data={"payment": {"method": "cash"}},
     )
 
 
@@ -214,7 +214,7 @@ class ConcurrentOversellTests(TransactionTestCase):
                 state="open",
                 rev=1,
                 items=[{"line_id": f"L-{session_key}", "sku": self.product.sku, "qty": 1, "unit_price_q": 1000}],
-                data={},
+                data={"payment": {"method": "cash"}},
             )
             from shopman.orderman.services.commit import CommitService
             result = CommitService.commit(

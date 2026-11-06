@@ -814,6 +814,11 @@ class OfferClaimView(APIView):
     fica, e a resposta diz `kept_existing_items` para a tela perguntar DEPOIS se o
     cliente quer manter tudo. Quem responde "só a oferta" volta com `mode=replace`, que
     esvazia a sacola e remonta a oferta. Nunca se troca sem esse pedido explícito.
+
+    **A mesma oferta entra uma vez por sacola** (decisão do dono, 06/11/2026): abrir o
+    mesmo link de novo, nesta aba, em outra ou em outro dispositivo com a mesma sacola,
+    não soma outra unidade; a resposta volta com `already_claimed`, `added` vazio, e a
+    tela leva à sacola como na primeira visita. Ofertas diferentes continuam somando.
     """
 
     permission_classes = [AllowAny]
@@ -880,23 +885,59 @@ class OfferClaimView(APIView):
             # somar: depois não há como saber (um item que já estava lá E está na oferta
             # volta em `added`). E dentro da execução, o toque repetido no mesmo link
             # repete a resposta guardada — com o mesmo `kept_existing_items`.
+            def assemble() -> tuple[dict, int]:
+                result = offer_service.add_offer_items(
+                    request, promotion,
+                    cart_service=CartService,
+                    channel_ref=STOREFRONT_CHANNEL_REF,
+                )
+                return (
+                    {
+                        "assembled": result.assembled,
+                        "added": list(result.added),
+                        "skipped": _skipped_offer_items(result.skipped, request=request),
+                    },
+                    status.HTTP_200_OK,
+                )
+
+            already_claimed = False
             if mode == "replace":
                 CartService.clear_items(request)
                 kept_existing_items = False
+                assembly, _code = assemble()
             else:
                 kept_existing_items = CartService.has_items(request)
-            result = offer_service.add_offer_items(
-                request, promotion,
-                cart_service=CartService,
-                channel_ref=STOREFRONT_CHANNEL_REF,
-            )
+                # ⚠️ A mesma oferta entra UMA vez na mesma sacola (decisão do dono,
+                # 06/11/2026). O recibo é da SACOLA, não do navegador: a chave que a
+                # página guarda só cobre o toque duplo naquela aba, e a sacola viaja
+                # para outra aba e para outro dispositivo no login. Oferta diferente
+                # tem recibo próprio e continua somando ("a oferta sempre soma",
+                # 24/09/2026). Só fica recibo quando algo entrou: a oferta que não
+                # montou nada pode ser tentada de novo quando o estoque voltar.
+                claimed = remote_mutations.run_idempotent_mutation(
+                    scope=remote_mutations.mutation_scope(
+                        "web", "offer-in-cart", request.session.get("cart_session_key", ""), promotion.ref,
+                    ),
+                    key=promotion.ref,
+                    cache_response=lambda body, code: code < 400 and bool(body.get("added")),
+                    execute=assemble,
+                )
+                already_claimed = claimed.replayed
+                if already_claimed:
+                    # A oferta já está nesta sacola: nada a somar, nada a perguntar, e o
+                    # destino é o mesmo da primeira visita (a sacola).
+                    kept_existing_items = False
+                    assembly = {"assembled": True, "added": [], "skipped": []}
+                else:
+                    assembly = claimed.response_body
             return (
                 {
-                    "ok": result.assembled,
+                    "ok": assembly["assembled"],
                     "offer": {"ref": promotion.ref, "name": promotion.name},
-                    "added": list(result.added),
-                    "skipped": _skipped_offer_items(result.skipped, request=request),
+                    "added": assembly["added"],
+                    "skipped": assembly["skipped"],
                     "kept_existing_items": kept_existing_items,
+                    "already_claimed": already_claimed,
                     "cart": _cart_payload(request),
                 },
                 status.HTTP_200_OK,

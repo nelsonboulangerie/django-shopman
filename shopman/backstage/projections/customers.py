@@ -720,7 +720,9 @@ def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
 
     stats = CustomerOrderHistoryService.get_customer_stats(customer.ref)
     stats_count, stats_spent, stats_last = stats.total_orders, stats.total_spent_q, stats.last_order_at
-    recent = CustomerOrderHistoryService.list_customer_orders(customer.ref, limit=10)
+    # A lista do cadastro mostra o cancelado também, com o status ao lado; a
+    # contagem e o gasto acima são só das compras.
+    recent = CustomerOrderHistoryService.list_customer_orders(customer.ref, limit=10, include_not_purchases=True)
 
     channels = _channel_names({record.channel_ref for record in recent})
     recent_orders = tuple(

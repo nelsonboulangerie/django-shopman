@@ -2,7 +2,7 @@
 // O fornecedor aberto na Base: prazo, entrega, pagamento, para quem vai o pedido de
 // compra e a carteira (os custos dele por insumo).
 import type { Material, Supplier, SupplierMaterialCost } from "~/types/purchase";
-import { costPerBaseUnitQ, formatMoney, formatShortDate, isApproximateCost, purchaseUnitLabel } from "~/presentation/purchase";
+import { costPerReadingUnitQ, formatMoney, formatShortDate, isApproximateCost, pricedUnitLabel, readingUnit } from "~/presentation/purchase";
 import { materialPath } from "~/presentation/purchaseSections";
 import { supplierLeadTimeLabel, supplierReliabilityLabel } from "~/presentation/purchaseUi";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
@@ -13,7 +13,7 @@ const { costs, materials, conversions, openSupplierEdit } = usePurchaseDesk();
 // Contato inativo continua no cadastro (histórico), mas não na tela de quem vai ligar hoje.
 const activeContacts = computed(() => props.supplier.contacts.filter((person) => person.isActive));
 
-type PortfolioRow = { cost: SupplierMaterialCost; material: Material; unitLabel: string; baseCostQ: number; approximate: boolean };
+type PortfolioRow = { cost: SupplierMaterialCost; material: Material; unitLabel: string; readingCostQ: number; readingLabel: string; approximate: boolean };
 const portfolio = computed(() =>
   costs.value
     .filter((cost) => cost.supplierRef === props.supplier.ref)
@@ -23,8 +23,9 @@ const portfolio = computed(() =>
       return {
         cost,
         material,
-        unitLabel: purchaseUnitLabel(cost, material, conversions.value),
-        baseCostQ: costPerBaseUnitQ(cost, conversions.value),
+        unitLabel: pricedUnitLabel(cost, material, conversions.value),
+        readingCostQ: costPerReadingUnitQ(cost, material, conversions.value),
+        readingLabel: readingUnit(material.unit).label,
         approximate: isApproximateCost(cost, conversions.value),
       };
     })
@@ -104,7 +105,7 @@ const portfolio = computed(() =>
               <span class="block text-xs text-muted tabular-nums">{{ formatMoney(row.cost.costQ) }} / {{ row.unitLabel }}</span>
             </span>
             <span class="shrink-0 text-sm font-semibold tabular-nums">
-              <span v-if="row.approximate">≈ </span>{{ formatMoney(row.baseCostQ) }} / {{ row.material.unit }}
+              <span v-if="row.approximate">≈ </span>{{ formatMoney(row.readingCostQ) }} / {{ row.readingLabel }}
             </span>
           </NuxtLink>
         </li>
