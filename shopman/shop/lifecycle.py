@@ -1368,6 +1368,11 @@ def _create_alert(order, alert_type: str) -> None:
 
     message = _ALERT_MESSAGES[alert_type].format(ref=order.ref)
     try:
+        # Uma causa aberta por pedido: o sweeper re-despacha a fase (crash
+        # pós-commit) e o alerta nascia de novo ao lado do que ninguém resolveu
+        # ainda (beta 06/11, W7). Resolvido, o próximo fato volta a alertar.
+        if alert_adapter.recent_exists(alert_type, None, order_ref=order.ref):
+            return
         alert_adapter.create(alert_type, "warning", message, order_ref=order.ref)
     except Exception:
         logger.exception("lifecycle._create_alert: failed for order %s", order.ref)

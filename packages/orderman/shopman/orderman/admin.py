@@ -839,7 +839,8 @@ class DirectiveAdmin(ModelAdmin):
     # Remover não custa capacidade nenhuma, e é por isso que remover foi o caminho:
     #
     #   * a fila roda sozinha — `process_directives` drena `queued` com
-    #     `available_at__lte=now`, e o `maintenance_worker` a chama no ciclo;
+    #     `available_at__lte=now`, num processo próprio (o `directive-worker`),
+    #     fora do `maintenance_worker`;
     #   * directive que esgota tentativas NÃO silencia: `check_directive_health`
     #     vira `OperatorAlert` (a observabilidade que a ADR-003 exige, justamente
     #     porque não há dead-letter queue);

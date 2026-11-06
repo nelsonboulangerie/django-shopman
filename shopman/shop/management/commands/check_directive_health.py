@@ -38,6 +38,11 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+def _tasks(count: int) -> str:
+    """Contagem na língua do operador: tarefa de fundo, nunca "directive(s)"."""
+    return "1 tarefa de fundo" if count == 1 else f"{count} tarefas de fundo"
+
+
 #: Alertas cujo e-mail não pode esperar a fila de directives.
 QUEUE_HEALTH_ALERT_TYPES = ("directive_backlog", "directive_worker_stale")
 
@@ -100,10 +105,9 @@ class Command(BaseCommand):
             type="directive_failed_spike",
             severity="error",
             message=(
-                f"{count} directive(s) falharam em definitivo nos últimos "
-                f"{window_minutes} min. Tarefas de fundo (notificação, fiscal, "
-                "estoque) podem ter sido perdidas — conferir no Admin (Diretivas, "
-                "status 'falhou')."
+                f"{_tasks(count)} falharam de vez nos últimos {window_minutes} min e não "
+                "vão ser tentadas de novo sozinhas. Avisos ao cliente, nota fiscal ou "
+                "estoque podem ter ficado para trás. Avise a TI para conferir e reprocessar."
             ),
             dedupe_key="directive_failed_spike",
         )
@@ -115,9 +119,9 @@ class Command(BaseCommand):
             type="directive_backlog",
             severity="error",
             message=(
-                f"{count} directive(s) na fila vencidas há mais de {age_minutes} min "
-                "sem processamento. O pipeline de tarefas de fundo pode estar "
-                "parado ou sobrecarregado — conferir o worker de directives."
+                f"{_tasks(count)} esperam há mais de {age_minutes} min para rodar. O "
+                "processo que executa essas tarefas pode estar parado ou sobrecarregado, "
+                "e avisos ao cliente, nota fiscal e estoque atrasam com ele. Avise a TI."
             ),
             dedupe_key="directive_backlog",
         )
@@ -144,9 +148,9 @@ class Command(BaseCommand):
             type="directive_worker_stale",
             severity="critical",
             message=(
-                "O worker de directives (process_directives) não completa um ciclo "
-                f"há {int(age.total_seconds() // 60)} min. Notificações, fiscal e "
-                "demais tarefas de fundo dependem dele — verificar o processo."
+                "O processo que executa as tarefas de fundo não termina uma rodada há "
+                f"{int(age.total_seconds() // 60)} min. Avisos ao cliente, nota fiscal e "
+                "estoque esperam por ele. Avise a TI."
             ),
             dedupe_key="directive_worker_stale:process_directives",
         )

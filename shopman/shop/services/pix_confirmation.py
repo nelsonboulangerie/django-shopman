@@ -828,8 +828,21 @@ def _money(amount_q) -> str:
     return f"R$ {format_money(int(amount_q))}"
 
 
+#: Por que a cobrança não recebe mais, em português (beta 06/11, PIXEXP-08). A
+#: cobrança morta que ainda está ``pending`` é a que VENCEU: dizer "encerrada
+#: (pending)" era inglês e contradição na mesma frase.
+_CHARGE_STATUS_LABELS = {
+    "pending": "vencida",
+    "authorized": "vencida",
+    "cancelled": "cancelada",
+    "failed": "com falha",
+    "captured": "já paga",
+    "refunded": "devolvida",
+}
+
+
 def _charge_status_label(status: str) -> str:
-    return {"cancelled": "cancelada", "failed": "com falha"}.get(status, status)
+    return _CHARGE_STATUS_LABELS.get(str(status or ""), "fora do prazo")
 
 
 # ── alertas ──
