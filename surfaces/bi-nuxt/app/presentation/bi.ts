@@ -757,6 +757,14 @@ function comparedTo(current: number, previous: number, against: string): string 
 
 const countOf = (count: number, one: string, many: string) => `${formatInt(count)} ${count === 1 ? one : many}`;
 
+/**
+ * O ticket médio de um período sem pedido nenhum não é R$ 0,00: é que não houve
+ * pedido. Zero ali se lia como "vendemos de graça" (beta 05/11, ge:BI-14).
+ */
+export function averageTicketText(ordersTotal: number, averageTicketQ: number): string {
+  return ordersTotal ? formatMoney(averageTicketQ) : "sem pedidos";
+}
+
 export function salesAnswer(report: {
   orders_total: number;
   revenue_total_q: number;

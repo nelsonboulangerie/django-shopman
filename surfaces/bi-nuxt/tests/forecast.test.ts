@@ -130,6 +130,12 @@ describe("o planejamento na URL", () => {
     });
   });
 
+  it("dia que não existe no calendário cai no padrão (o servidor responderia por amanhã)", () => {
+    // Com o readingFor (ge:BI-04), "2026-02-31" deixava a tela esperando para sempre.
+    expect(forecastFromQuery({ target: "2026-02-31" }, tomorrow)).toEqual({ horizon: "day", target: tomorrow });
+    expect(forecastFromQuery({ target: "2028-02-29" }, tomorrow)).toEqual({ horizon: "day", target: "2028-02-29" });
+  });
+
   it("não lê a janela das outras telas", () => {
     expect(forecastFromQuery({ period: "28d", from: "2026-09-01" }, tomorrow)).toEqual({
       horizon: "day",

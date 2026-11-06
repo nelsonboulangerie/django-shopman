@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { BIOverShortReport, BIOverShortRow } from "~/types/bi";
 import { BI_SECTIONS, biSections } from "~/presentation/biSections";
-import { cashAnswer, customersAnswer, salesAnswer } from "~/presentation/bi";
+import { averageTicketText, cashAnswer, customersAnswer, salesAnswer } from "~/presentation/bi";
 import {
   overShortOrdersHref,
   MADE_SOLD_SERIES,
@@ -395,5 +395,12 @@ describe("V6: a resposta agrupada, a comparação escolhida e o que aconteceu de
     ]);
     expect(sections.find((section) => section.key === "sales")?.to).toBe("/sales?period=28d");
     expect(biSections("")).toEqual([...BI_SECTIONS]);
+  });
+});
+
+describe("ticket médio sem pedido (ge:BI-14)", () => {
+  it("sem pedido no período diz que não houve pedido, nunca R$ 0,00", () => {
+    expect(averageTicketText(0, 0)).toBe("sem pedidos");
+    expect(averageTicketText(3, 4500).replace(/\u00a0/g, " ")).toBe("R$ 45,00");
   });
 });

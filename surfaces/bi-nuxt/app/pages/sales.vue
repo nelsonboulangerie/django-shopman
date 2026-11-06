@@ -16,6 +16,7 @@ import type { QuickFilterItem } from "../../../operator-kit/app/presentation/qui
 import type { BISalesReport } from "~/types/bi";
 import {
   SALES_COMPARE_LABELS,
+  averageTicketText,
   channelIcon,
   csvMoney,
   delta,
@@ -295,8 +296,8 @@ const activeFilters = computed(() => {
           <OperatorMetric
             title="Ticket médio"
             icon="i-lucide-ticket"
-            :value="formatMoney(report.average_ticket_q)"
-            :delta="delta(report.average_ticket_q, report.previous.average_ticket_q, { base: formatMoney(report.previous.average_ticket_q), against })"
+            :value="averageTicketText(report.orders_total, report.average_ticket_q)"
+            :delta="report.orders_total ? delta(report.average_ticket_q, report.previous.average_ticket_q, { base: formatMoney(report.previous.average_ticket_q), against }) : undefined"
           />
           <OperatorMetric
             title="Cancelados"
