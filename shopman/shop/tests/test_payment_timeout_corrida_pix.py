@@ -105,3 +105,39 @@ def test_pix_que_cai_no_limite_do_prazo_nao_abre_alerta_de_devolver_pelo_gateway
     assert not OperatorAlert.objects.filter(
         order_ref=order.ref, type__in=("payment_reconciliation_failed", "pix_on_closed_charge"),
     ).exists()
+
+
+def test_vencimento_visto_pelo_acompanhamento_tambem_cancela_o_pedido_antes_da_cobranca(
+    django_capture_on_commit_callbacks,
+):
+    """O mesmo vencimento, resolvido pelo acompanhamento da Loja (sem worker):
+    ``customer_orders.resolve_payment_timeout_if_due`` tinha a mesma ordem
+    invertida, e a corrida abria o mesmo alerta de "devolva pelo gateway"."""
+    from shopman.payman import PaymentService
+
+    from shopman.backstage.models import OperatorAlert
+    from shopman.shop.services.customer_orders import resolve_payment_timeout_if_due
+    from shopman.shop.services.pix_confirmation import confirm_pix
+
+    order = _overdue_pix_order("ORD-CORRIDA-LOJA")
+    real_cancel = cancellation.cancel
+
+    def _pix_lands_right_before_the_order_cancel(*args, **kwargs):
+        confirm_pix(txid=TXID, e2e_id="E2E-CORRIDA-LOJA", amount="22.00")
+        return real_cancel(*args, **kwargs)
+
+    with (
+        _gateway_that_cancels_in_the_ledger(),
+        patch.object(cancellation, "cancel", side_effect=_pix_lands_right_before_the_order_cancel),
+        django_capture_on_commit_callbacks(execute=True),
+    ):
+        cancelled = resolve_payment_timeout_if_due(order)
+
+    order.refresh_from_db()
+    intent = PaymentService.get(order.data["payment"]["intent_ref"])
+    assert cancelled is False
+    assert intent.status == "captured"
+    assert order.status != Order.Status.CANCELLED
+    assert not OperatorAlert.objects.filter(
+        order_ref=order.ref, type__in=("payment_reconciliation_failed", "pix_on_closed_charge"),
+    ).exists()
