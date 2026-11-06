@@ -110,7 +110,10 @@ export function startOfCheckoutDay (now = new Date()): Date {
 export function checkoutDateBounds (checkout: Pick<CheckoutProjection, 'max_preorder_days'> | null | undefined, now = new Date()): CheckoutDateBounds {
   const minDate = startOfCheckoutDay(now)
   const maxDate = new Date(minDate)
-  maxDate.setDate(maxDate.getDate() + (checkout?.max_preorder_days ?? 30))
+  // A janela é a da casa (`max_preorder_days`, o mesmo teto que o servidor
+  // confere no commit e que a home promete). Sem a projection, o calendário não
+  // inventa número: só o dia de hoje.
+  maxDate.setDate(maxDate.getDate() + (checkout?.max_preorder_days ?? 0))
 
   const tomorrowDate = new Date(minDate)
   tomorrowDate.setDate(tomorrowDate.getDate() + 1)

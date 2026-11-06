@@ -667,11 +667,28 @@ def _home_facets(
 
     facets = (
         HomeFacetProjection(ref="delivery", message=delivery),
-        HomeFacetProjection(ref="preorder", message=_msg("HOW_PREORDER_MESSAGE")),
+        HomeFacetProjection(ref="preorder", message=_preorder_facet_message(_msg("HOW_PREORDER_MESSAGE"))),
         HomeFacetProjection(ref="quality", message=_msg("HOW_QUALITY_MESSAGE")),
         HomeFacetProjection(ref="tracking", message=_msg("HOW_TRACKING_MESSAGE")),
     )
     return tuple(facet for facet in facets if facet.message)
+
+
+def _preorder_facet_message(template: str) -> str:
+    """Faceta de encomenda com a janela configurada no lugar de ``{window}``.
+
+    O número não mora na copy: vem de ``max_preorder_days``, o mesmo teto do
+    calendário do checkout e da recusa no servidor. Canal sem encomenda (ou
+    janela zero) não promete encomenda: a faceta cai fora.
+    """
+    from shopman.storefront.presentation.public_information import preorder_window
+
+    if "{window}" not in template:
+        return template
+    window = preorder_window(STOREFRONT_CHANNEL_REF)
+    if window is None:
+        return ""
+    return template.replace("{window}", window)
 
 
 def _auth_copy(omotenashi: OmotenashiProjection) -> AuthCopyProjection:

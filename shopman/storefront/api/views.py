@@ -250,7 +250,11 @@ class CheckoutView(APIView):
                 _max_preorder_days, _ = checkout_context.preorder_config()
                 _max_date = _today_local + _timedelta(days=_max_preorder_days)
                 if _parsed_date > _max_date:
-                    message = f"Data máxima permitida: {_max_date.strftime('%d/%m/%Y')}."
+                    _window = "1 dia" if _max_preorder_days == 1 else f"{_max_preorder_days} dias"
+                    message = (
+                        f"Aceitamos encomendas com até {_window} de antecedência. "
+                        f"Data máxima: {_max_date.strftime('%d/%m/%Y')}."
+                    )
                     return Response(
                         {"detail": message, "field": "delivery_date", "errors": {"delivery_date": message}},
                         status=status.HTTP_400_BAD_REQUEST,

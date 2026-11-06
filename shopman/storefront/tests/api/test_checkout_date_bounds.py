@@ -109,3 +109,30 @@ def test_today_after_close_is_rejected(client):
     body = resp.json()
     assert body["field"] == "delivery_date"
     assert "encerramos" in body["detail"]
+
+
+def test_window_is_the_configured_one_and_the_refusal_names_it(client):
+    """A janela é ``max_preorder_days`` da casa, não um número da copy.
+
+    Regressão do beta (06/11/2026): a home dizia 7 dias e o checkout aceitou 22.
+    Com a casa configurada em 7, o último dia da janela passa da guarda de
+    teto e o dia seguinte é recusado com o mesmo número que a home promete.
+    """
+    from shopman.shop.models import Shop
+
+    authenticate_checkout(client)
+    _seed_surface()
+    shop = Shop.load()
+    shop.defaults = {**(shop.defaults or {}), "max_preorder_days": 7}
+    shop.save()
+    _add_item(client)
+
+    beyond = timezone.localdate() + timedelta(days=8)
+    resp = _checkout(client, beyond.isoformat())
+
+    assert resp.status_code == 400, resp.content
+    body = resp.json()
+    assert body["field"] == "delivery_date"
+    assert "até 7 dias de antecedência" in body["detail"]
+    assert (timezone.localdate() + timedelta(days=7)).strftime("%d/%m/%Y") in body["detail"]
+    assert "—" not in body["detail"]

@@ -56,6 +56,14 @@ describe('checkout flow view model', () => {
     ])
   })
 
+  it('takes the preorder window only from the projection, never from a local number', () => {
+    // Beta 06/11: a home prometia 7 dias e o calendário deixou escolher 22. O teto
+    // é o `max_preorder_days` que o servidor manda; sem ele, só hoje.
+    expect(checkoutDateBounds({ max_preorder_days: 7 }, now).maxDateValue).toBe('2026-05-27')
+    expect(checkoutDateBounds({ max_preorder_days: 30 }, now).maxDateValue).toBe('2026-06-19')
+    expect(checkoutDateBounds(null, now).maxDateValue).toBe('2026-05-20')
+  })
+
   it('disables the quick date shortcuts on a weekday the shop does not open', () => {
     // Fallback local do "Quando" (só entra quando `available_dates` vem vazia).
     // Sem repassar `closed_weekdays`, "Amanhã" nascia clicável num dia fechado e
