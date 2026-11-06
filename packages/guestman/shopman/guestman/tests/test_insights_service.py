@@ -159,6 +159,31 @@ class TestRecalculate:
         assert insight.average_days_between_orders is None
         assert insight.favorite_products == []
 
+    def test_recalculate_no_orders_is_not_lost(self, customer, settings):
+        """Sem pedido não há segmento: "Perdido" para quem nunca comprou é mentira."""
+        stats = OrderStats(
+            total_orders=0,
+            total_spent_q=0,
+            first_order_at=None,
+            last_order_at=None,
+            average_order_q=0,
+        )
+        backend = MockOrderHistoryBackend(stats=stats, orders=[])
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "shopman.guestman.contrib.insights.service._get_order_backend",
+                lambda: backend,
+            )
+            insight = InsightService.recalculate(customer.ref)
+
+        insight.refresh_from_db()
+        assert insight.rfm_segment == ""
+        assert insight.rfm_recency is None
+        assert insight.rfm_frequency is None
+        assert insight.rfm_monetary is None
+        assert insight.churn_risk is None
+
     def test_recalculate_single_order(self, customer, settings):
         """Single order → no average_days_between."""
         now = datetime.now(UTC)
@@ -414,6 +439,48 @@ class TestRecalculateAll:
         count = InsightService.recalculate_all()
 
         assert count == 0
+
+    def test_recalculate_all_never_marks_customer_without_orders_as_lost(
+        self, customer, customer2, settings
+    ):
+        """Medido no alpha (06/11): `--all` carimbou "lost" em 7 clientes sem pedido.
+
+        Quem nunca comprou sai sem segmento, e o "lost" velho que já estava gravado
+        é apagado pela mesma passada; quem comprou continua classificado.
+        """
+        CustomerInsight.objects.create(customer=customer2, rfm_segment="lost")
+        now = datetime.now(UTC)
+        bought = OrderStats(
+            total_orders=1,
+            total_spent_q=5000,
+            first_order_at=now - timedelta(days=200),
+            last_order_at=now - timedelta(days=200),
+            average_order_q=5000,
+        )
+        never = OrderStats(
+            total_orders=0,
+            total_spent_q=0,
+            first_order_at=None,
+            last_order_at=None,
+            average_order_q=0,
+        )
+
+        class PerCustomerBackend(MockOrderHistoryBackend):
+            def get_order_stats(self, customer_ref):
+                return bought if customer_ref == customer.ref else never
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "shopman.guestman.contrib.insights.service._get_order_backend",
+                lambda: PerCustomerBackend(),
+            )
+            assert InsightService.recalculate_all() == 2
+
+        assert CustomerInsight.objects.get(customer=customer).rfm_segment == "lost"
+        assert CustomerInsight.objects.get(customer=customer2).rfm_segment == ""
+        assert not CustomerInsight.objects.filter(
+            rfm_segment="lost", total_orders=0
+        ).exists()
 
 
 # ── Query Methods ──
