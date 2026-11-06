@@ -157,12 +157,14 @@ class ChannelConfig:
         # "external"    — handled externally (marketplace)
         auto_sync: bool = True
         prep_start: str = "auto"
-        # QUANDO o trabalho físico (tickets do KDS + status "preparando") começa:
-        # "auto"     — dispara sozinho quando o pedido é aceito e pago. Bom para
+        # QUANDO o pedido entra em "preparando". Os tickets do KDS nascem no
+        # aceite (pago) em todo canal; o knob decide o status do pedido:
+        # "auto"     — vai a "preparando" junto com os tickets. Bom para
         #              iFood/PDV/balcão (operador presente ou marketplace).
-        # "operator" — pago fica em "Aceito"; a cozinha só é acionada quando o
-        #              operador dá "Iniciar preparo" no gestor. Honesto com o
-        #              cliente remoto (web): "Em preparo" só quando alguém encosta.
+        # "operator" — fica em "Aceito" com os tickets esperando "Iniciar
+        #              preparo" na Cozinha (a verdade); o do Gestor é atalho do
+        #              mesmo ato. Honesto com o cliente remoto (web): "Em
+        #              preparo" só quando alguém encosta.
         auto_ready: bool = True
         # A Cozinha concluiu TODAS as estações do pedido (inclusive a estação sem
         # tela, que conclui pelo papel na Saída): o pedido vai a "pronto"

@@ -116,11 +116,21 @@ Pipeline do `request_code`:
 4. Gera código + hash HMAC
 5. Envia código raw via sender
 
+Recusa do G11 (`COOLDOWN`): o `CodeRequestResult` traz `retry_after_seconds` (quanto
+falta) e, se o último código ainda vale, o `expires_at` e o `delivery_method` dele, para
+a superfície levar o cliente de volta a digitá-lo. O G11 não segura o reenvio quando o
+último código morreu por tentativas: não há o que esperar, e o G13 continua somando os
+erros entre códigos.
+
 Pipeline do `verify_for_login`:
 1. Busca código válido (status, expiração, tentativas)
 2. Compara via HMAC timing-safe
 3. Resolve/cria a identidade via `IdentityResolver.resolve(kind, value)`
 4. Marca como VERIFIED
+
+O palpite que gasta a última tentativa responde `CODE_MAX_ATTEMPTS` (e não
+`CODE_INVALID`), e qualquer código digitado depois dele também (e não `CODE_EXPIRED`):
+a causa é o excesso de tentativas, e a saída é pedir um código novo.
 
 ### AccessLinkService
 

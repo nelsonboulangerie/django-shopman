@@ -39,6 +39,8 @@ class CodeRequestResult:
     delivery_method: str | None = None
     error: str | None = None
     error_code: ErrorCode | None = None
+    #: COOLDOWN only: seconds until G11 accepts a new request for this target.
+    retry_after_seconds: int | None = None
 
 
 @dataclass
@@ -197,11 +199,19 @@ class AuthService:
                     target_value=target_value,
                     cooldown_seconds=doorman_settings.ACCESS_CODE_COOLDOWN_SECONDS,
                 )
-            except GateError:
+            except GateError as exc:
+                # The code sent moments ago may still be valid: say so (expiry
+                # and channel), so the surface can take the person back to
+                # typing it instead of a bare "wait".
+                pending = cls._get_valid_code(target_value, purpose)
+                retry_after = exc.data.get("retry_after")
                 return CodeRequestResult(
                     success=False,
                     error="Please wait before requesting a new code.",
                     error_code=ErrorCode.COOLDOWN,
+                    retry_after_seconds=int(retry_after) if retry_after is not None else None,
+                    expires_at=pending.expires_at.isoformat() if pending else None,
+                    delivery_method=pending.delivery_method if pending else None,
                 )
 
             # G10: Rate limit by IP
@@ -443,6 +453,8 @@ class AuthService:
             for_update=False,
         )
         if not code_hint:
+            if cls._latest_code_exhausted(target_value, VerificationCode.Purpose.LOGIN):
+                return cls._max_attempts_result()
             return VerifyResult(
                 success=False,
                 error="Code expired. Please request a new one.",
@@ -530,6 +542,10 @@ class AuthService:
         if not code.verify(code_input):
             code.record_attempt()
             adapter.on_login_failed(request, target_value, "incorrect_code")
+            if code.attempts_remaining == 0:
+                # This guess killed the code: say that, not "incorrect" with
+                # nothing left to try (and not "expired" on the next one).
+                return cls._max_attempts_result()
             return VerifyResult(
                 success=False,
                 error="Incorrect code.",
@@ -613,6 +629,25 @@ class AuthService:
     # ===========================================
     # Helpers
     # ===========================================
+
+    @classmethod
+    def _latest_code_exhausted(cls, target_value: str, purpose: str) -> bool:
+        """Whether the newest code for target/purpose died by wrong guesses."""
+        latest = (
+            VerificationCode.objects.filter(target_value=target_value, purpose=purpose)
+            .order_by("-created_at")
+            .first()
+        )
+        return latest is not None and latest.attempts >= latest.max_attempts
+
+    @staticmethod
+    def _max_attempts_result() -> VerifyResult:
+        return VerifyResult(
+            success=False,
+            error="Too many incorrect attempts. Please request a new code.",
+            error_code=ErrorCode.CODE_MAX_ATTEMPTS,
+            attempts_remaining=0,
+        )
 
     @classmethod
     def _get_valid_code(

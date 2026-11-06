@@ -155,12 +155,18 @@ def _ingest_and_prepare(rehearsal):
     expected = {(item.get("externalCode") or item["id"]): Decimal("10") - Decimal(str(item["quantity"]))
                 for item in rehearsal.raw["items"]}
     assert _quantities() == expected
-    assert not KDSTicket.objects.exists()
+    # Aceito já está na Cozinha, esperando o "Iniciar preparo" do posto (dono,
+    # 06/11/2026: a verdade é da cozinha, o Gestor é um atalho).
+    tickets = set(KDSTicket.objects.filter(session_key=order.session_key).values_list("pk", flat=True))
+    assert tickets
+    assert set(KDSTicket.objects.values_list("status", flat=True)) == {"pending"}
+    assert sum(len(ticket.items) for ticket in KDSTicket.objects.all()) == len(rehearsal.raw["items"])
     rehearsal.act(lambda: operator_orders.advance_order(order, actor="local-operator"))
     order.refresh_from_db()
     assert order.status == "preparing"
-    assert KDSTicket.objects.filter(session_key=order.session_key).exists()
-    assert sum(len(ticket.items) for ticket in KDSTicket.objects.all()) == len(rehearsal.raw["items"])
+    # O atalho do Gestor inicia os MESMOS tickets; não nasce nenhum.
+    assert set(KDSTicket.objects.values_list("pk", flat=True)) == tickets
+    assert set(KDSTicket.objects.values_list("status", flat=True)) == {"in_progress"}
     # O preparo ATRAVESSA: a mesma transição que abre o ticket na cozinha conta
     # ao iFood que a comida começou. Sem isto o cliente vê "confirmado" enquanto
     # a padaria já está trabalhando.
@@ -208,7 +214,7 @@ def test_food_cancellation_waits_for_can_then_restores_stock_and_cancels_kds(reh
     assert order.status == "preparing"
     assert order.data[ifood_cancellation.KEY]["state"] == "sent"
     assert _quantities() == expected
-    assert set(KDSTicket.objects.values_list("status", flat=True)) == {"pending"}
+    assert set(KDSTicket.objects.values_list("status", flat=True)) == {"in_progress"}
     assert rehearsal.event("CAN")["ingested"] == 1
     order.refresh_from_db()
     assert order.status == "cancelled"

@@ -787,6 +787,14 @@ class OrderReorderView(APIView):
         return Response({**result.response_body, "cart": _cart_payload(request), "replayed": result.replayed}, status=result.response_code)
 
 
+def _offer_still_in_bag(request, offer_skus: list[str]) -> bool:
+    """Algum item que a oferta trouxe ainda está na sacola, com quantidade?"""
+    from shopman.storefront.cart import CartService
+
+    items = CartService.get_cart_summary(request, include_items=True)["items"]
+    return any(item.get("sku") in offer_skus and float(item.get("qty") or 0) > 0 for item in items)
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["cart"],
@@ -860,7 +868,7 @@ class OfferClaimView(APIView):
             except offer_service.OfferUnavailable as exc:
                 return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
 
-        CartService._get_or_create_session(request)
+        _cart, cart_key = CartService._get_or_create_session(request)
 
         def execute_claim() -> tuple[dict, int]:
             try:
@@ -914,14 +922,26 @@ class OfferClaimView(APIView):
                 # tem recibo próprio e continua somando ("a oferta sempre soma",
                 # 24/09/2026). Só fica recibo quando algo entrou: a oferta que não
                 # montou nada pode ser tentada de novo quando o estoque voltar.
-                claimed = remote_mutations.run_idempotent_mutation(
-                    scope=remote_mutations.mutation_scope(
-                        "web", "offer-in-cart", request.session.get("cart_session_key", ""), promotion.ref,
-                    ),
-                    key=promotion.ref,
-                    cache_response=lambda body, code: code < 400 and bool(body.get("added")),
-                    execute=assemble,
-                )
+                # O escopo é a ref que `_get_or_create_session` acabou de devolver, nunca
+                # a lida de novo da sessão HTTP: `has_items` pode esvaziá-la, e um escopo
+                # com ref vazia seria o mesmo para todo visitante da oferta.
+                in_cart_scope = remote_mutations.mutation_scope("web", "offer-in-cart", cart_key, promotion.ref)
+
+                def claim_in_cart() -> remote_mutations.RemoteMutationResult:
+                    return remote_mutations.run_idempotent_mutation(
+                        scope=in_cart_scope,
+                        key=promotion.ref,
+                        cache_response=lambda body, code: code < 400 and bool(body.get("added")),
+                        execute=assemble,
+                    )
+
+                claimed = claim_in_cart()
+                if claimed.replayed and not _offer_still_in_bag(request, claimed.response_body.get("added") or []):
+                    # O recibo diz "a oferta está nesta sacola" e a sacola desmente: o
+                    # cliente tirou tudo o que ela trouxe. Abrir o link de novo devolve a
+                    # oferta UMA vez, que é o destino da primeira visita.
+                    remote_mutations.release_receipt(scope=in_cart_scope, key=promotion.ref)
+                    claimed = claim_in_cart()
                 already_claimed = claimed.replayed
                 if already_claimed:
                     # A oferta já está nesta sacola: nada a somar, nada a perguntar, e o
