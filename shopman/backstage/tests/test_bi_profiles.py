@@ -463,7 +463,8 @@ def test_endpoint_requires_view_bi(client):
 
 
 @pytest.mark.django_db
-def test_endpoint_responds(client, week):
+def test_endpoint_responds(client, week, settings):
+    settings.SHOPMAN_ADMIN_HOST = "admin.example.test"
     user = User.objects.create_user("bi-profiles", password="pw", is_staff=True)
     user.user_permissions.add(Permission.objects.get(
         content_type=ContentType.objects.get_for_model(DayClosing), codename="view_bi",
@@ -475,6 +476,7 @@ def test_endpoint_responds(client, week):
     )
     assert response.status_code == 200
     body = response.json()["bi"]
+    assert body["consumption_tags_url"] == "https://admin.example.test/admin/backstage/productconsumptiontag/"
     assert body["weekday"] == 4 and body["hour_band"] == "lunch"
     assert len(body["profiles"]) == 12
     assert [b["key"] for b in body["bands"]] == ["morning", "lunch", "afternoon", "late", "outside"]

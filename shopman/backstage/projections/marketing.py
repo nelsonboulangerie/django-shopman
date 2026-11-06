@@ -20,6 +20,7 @@ Duas escolhas deliberadas:
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import ceil
@@ -1045,6 +1046,7 @@ def _tag_choices() -> tuple[ChoiceProjection, ...]:
                 label=f"{tag.name} ({tag.people})" if tag.people else f"{tag.name} (ninguém)",
             )
             for tag in CustomerTag.objects.annotate(people=Count("tagged_items")).order_by("name")
+            if re.sub(r"\s+", "", tag.name) not in {"", "[]", "{}"}
         )
     except Exception:
         logger.warning("marketing.tags_failed", exc_info=True)

@@ -221,6 +221,22 @@ describe("CampaignForm — composer V2", () => {
     expect(wrapper.text()).toContain("Aqui aparecem só os formatos que já podem ser enviados.");
   });
 
+  it("discarding from review restores the initial step together with the draft", async () => {
+    const wrapper = form(
+      makeRule({ trigger: "production_finished", platforms: ["instagram"] }),
+      "operator:7",
+    );
+    await wrapper.find("#rule-name").setValue("Mudança descartada");
+    await wrapper.find('button[aria-label="5. Revisar"]').trigger("mousedown", {
+      button: 0, ctrlKey: false,
+    });
+    expect(wrapper.find('[aria-current="step"]').attributes("aria-label")).toBe("5. Revisar");
+    wrapper.findComponent(DraftRecoveryNotice).vm.$emit("discard");
+    await flushPromises();
+    expect(wrapper.find('[aria-current="step"]').attributes("aria-label")).toBe("1. Objetivo");
+    expect((wrapper.find("#rule-name").element as HTMLInputElement).value).toBe("Relâmpago das 17h30");
+  });
+
   it("mantém o salto para uma etapa pronta mesmo usando o primitive canônico", async () => {
     const wrapper = form(
       makeRule({ trigger: "production_finished", platforms: ["instagram"] }),

@@ -40,12 +40,12 @@ const shareItems = useBiShareMenuItems();
 // O aviso da vocação leva aonde ela se edita: as etiquetas de consumo no Admin.
 const djangoBase = String((useRuntimeConfig().public as { djangoBaseUrl?: string }).djangoBaseUrl || "").replace(/\/$/, "");
 const { attrsFor } = useOperatorAppLink();
-const tagsUrl = `${djangoBase}/admin/backstage/productconsumptiontag/`;
+const tagsUrl = computed(() => report.value?.consumption_tags_url || `${djangoBase}/admin/backstage/productconsumptiontag/`);
 // Instalado, o Admin abre em janela própria (a regra do kit para link entre apps).
 function openTags() {
-  const { target } = attrsFor(tagsUrl);
-  if (target === "_blank") window.open(tagsUrl, "_blank", "noopener");
-  else void navigateTo(tagsUrl, { external: true });
+  const { target } = attrsFor(tagsUrl.value);
+  if (target === "_blank") window.open(tagsUrl.value, "_blank", "noopener");
+  else void navigateTo(tagsUrl.value, { external: true });
 }
 // O lugar do aviso é o `alerts` do cabeçalho (fecha no X e volta ao reabrir a tela),
 // não um `NuxtAlert` solto no topo do conteúdo.
@@ -57,7 +57,7 @@ const alerts = computed<OperatorScreenAlert[]>(() => [
     title: "Perfil presumido pela cesta",
     description:
       "Cada produto tem uma vocação (consome aqui, leva ou híbrido), editável em Configurações › Como vendemos › Etiquetas de consumo. Entrega e iFood ficam fora da pergunta e dentro da conta. A hora é a do registro da venda.",
-    action: { label: "Abrir as etiquetas de consumo", onSelect: openTags },
+    action: report.value ? { label: "Abrir as etiquetas de consumo", onSelect: openTags } : undefined,
   },
 ]);
 const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);

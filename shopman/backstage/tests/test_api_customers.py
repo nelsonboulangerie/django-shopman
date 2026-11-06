@@ -379,6 +379,10 @@ def test_create_customer_refuses_invalid_fields_and_reused_intention(client, man
         ({"firstName": "Ana", "fiscalCpfNaNota": True}, "document"),
         ({"firstName": "Ana", "fiscalEmailReceipt": True}, "email"),
         ({"firstName": "Ana", "tags": ["vizinha", 7]}, "tags"),
+        ({"firstName": "Ana", "tags": ["[]"]}, "tags"),
+        ({"firstName": "Ana", "tags": ["{}"]}, "tags"),
+        ({"firstName": "Ana", "tags": [" [  ] "]}, "tags"),
+        ({"firstName": "Ana", "tags": ["{ \n }"]}, "tags"),
     ],
 )
 def test_create_customer_refuses_inconsistent_commercial_data(client, manager, shop, payload, field):
@@ -1019,3 +1023,11 @@ def test_bulk_customers_replays_with_the_same_intention(client, manager, people)
 
     assert first.status_code == replay.status_code == 200
     assert replay.json() == first.json()
+
+
+def test_customer_tags_accept_unicode_names_and_numeric_codes():
+    from shopman.backstage.services.customers import _tags
+
+    assert _tags(["Café", "お客様", "2026", "VIP-2", "🥐", "⭐", "!!!"]) == [
+        "Café", "お客様", "2026", "VIP-2", "🥐", "⭐", "!!!",
+    ]
