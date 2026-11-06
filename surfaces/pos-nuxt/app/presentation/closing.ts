@@ -48,14 +48,17 @@ export function pendingStatusDisplay(row: ClosingPendingProduction): string {
 }
 
 /**
- * Contagem cega: só dígitos (quantidades inteiras, nunca negativas).
+ * Contagem cega: limpa a entrada sem inverter o sinal de uma quantidade inválida.
  *
  * O que vem depois da vírgula ou do ponto cai fora, em vez de colar nos dígitos
  * de antes: "3,5" virava 35 em silêncio, dez vezes a sobra, e a contagem é cega,
  * então o erro só aparecia como diferença na retaguarda (beta 05/11, PDV-12).
  */
 export function sanitizeQtyInput(raw: string): string {
-  return String(raw ?? "").split(/[.,]/)[0]!.replace(/\D/g, "");
+  const text = String(raw ?? "");
+  // Preserva o sinal inválido para a tela recusá-lo, sem transformar perda em sobra.
+  if (/[-−]/.test(text)) return text;
+  return text.split(/[.,]/)[0]!.replace(/\D/g, "");
 }
 
 /** O formulário só envia quando TODO item tem uma contagem explícita. */

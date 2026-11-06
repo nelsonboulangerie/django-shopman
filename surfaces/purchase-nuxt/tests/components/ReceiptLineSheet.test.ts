@@ -137,8 +137,18 @@ describe("ReceiptLineSheet — a gaveta do item", () => {
     document.querySelector<HTMLButtonElement>(receiptFieldSelector("line-1", "check"))!.click();
     await nextTick();
 
-    expect(wrapper.emitted("check")?.at(-1)).toEqual([true]);
+    expect(wrapper.emitted("check")).toBeUndefined();
     expect(wrapper.emitted("update:open")).toBeUndefined();
+  });
+
+  it("não marca como conferido o item ainda sem insumo", async () => {
+    const wrapper = mountSheet({ materialSku: "" });
+    await settle();
+    document.querySelector<HTMLButtonElement>(receiptFieldSelector("line-1", "check"))!.click();
+    await nextTick();
+    expect(wrapper.emitted("check")).toBeUndefined();
+    expect(wrapper.emitted("update:open")).toBeUndefined();
+    expect(document.body.querySelector('[data-receipt-sheet-status]')?.textContent).toContain("Pendente");
   });
 
   it("item já conferido oferece desmarcar, e desmarcar NÃO fecha", async () => {

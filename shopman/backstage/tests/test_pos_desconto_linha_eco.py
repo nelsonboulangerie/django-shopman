@@ -191,8 +191,8 @@ def test_a_revisao_da_comanda_responde_pela_linha_com_desconto_antes_de_gravar(b
 
     sem_desconto = _review(client, _intent(session, discount=None, revision=revision))
     assert sem_desconto.status_code == 200, sem_desconto.content
-    # Sem desconto manual, quem responde pela linha da comanda é o salvar.
-    assert sem_desconto.json()["review"]["line_prices"] == {}
+    # A revisão responde também pela linha sem desconto manual.
+    assert sem_desconto.json()["review"]["line_prices"]["L1"]["charged_price_q"] == 680
 
     perde = _review(
         client, _intent(session, discount={"type": "percent", "value": 10, "reason": "cortesia"}, revision=revision),
@@ -229,3 +229,37 @@ def test_venda_sem_comanda_tambem_diz_o_descarte(balcao):
 
     assert review["line_prices"]["L1"]["charged_price_q"] == 680
     assert review["line_prices"]["L1"]["manual_discount_discarded"] is True
+
+
+@pytest.mark.parametrize("scope", ["order", "line"])
+def test_remover_o_ultimo_desconto_restaura_o_preco_da_linha_junto_com_o_total(balcao, scope):
+    client, session = balcao["client"], balcao["session"]
+    first = _save(client, _intent(session, discount=None, revision=build_open_tab(session)["revision"]))
+    body = _intent(session, discount=None, revision=first.json()["revision"])
+    discount = {"type": "percent", "value": "100", "reason": "cortesia"}
+    if scope == "order":
+        body["manual_discount"] = discount
+    else:
+        body["items"][0]["discount"] = discount
+    gratis = _review(client, body)
+    assert gratis.status_code == 200, gratis.content
+    assert gratis.json()["review"]["total_q"] == 0
+    if scope == "order":
+        body.pop("manual_discount")
+    else:
+        body["items"][0].pop("discount")
+    restored = _review(client, body)
+    assert restored.status_code == 200, restored.content
+    review = restored.json()["review"]
+    assert review["total_q"] == 2400
+    assert review["line_prices"]["L1"]["charged_price_q"] == 800
+    assert review["line_prices"]["L1"]["pricing_discount"] is None
+
+
+def test_desconto_percentual_acima_de_cem_e_recusado_sem_total_gratis(balcao):
+    client, session = balcao["client"], balcao["session"]
+    body = _intent(session, discount=None, revision=build_open_tab(session)["revision"])
+    body["manual_discount"] = {"type": "percent", "value": "101", "reason": "cortesia"}
+    response = _review(client, body)
+    assert response.status_code == 422, response.content
+    assert "entre 0 e 100" in response.json()["detail"]
