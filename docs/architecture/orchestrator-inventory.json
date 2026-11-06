@@ -6237,10 +6237,12 @@
             "ACCESS_BUTTON_COPY",
             "ACCESS_BUTTON_MAX_CHARS",
             "CUSTOMER_COPY",
+            "_GENERIC_TEMPLATE_LABELS",
             "_gsm_ascii",
             "plain_bodies",
             "sms_bodies",
-            "subjects"
+            "subjects",
+            "template_label"
           ]
         }
       ]
@@ -11765,6 +11767,7 @@
             "_pix_intent_needs_creation_resume",
             "_record_gateway_authorization",
             "_record_initiate_error",
+            "_record_refund_event",
             "_refund_gateway_intents",
             "_refund_intent",
             "_refund_without_gateway",

@@ -1061,6 +1061,7 @@
             "RESOLVED_BY_LEAVING_NEW",
             "COURIER_TYPES",
             "RESOLVED_BY_DELIVERY",
+            "RESOLVED_BY_REFUND",
             "RESOLVED_BY_UNDO"
           ]
         }
@@ -2377,7 +2378,9 @@
           "path": "shopman/shop/handlers/notification.py",
           "symbols": [
             "NotificationSendHandler",
-            "PREORDER_REMINDER_DEAD_STATUSES"
+            "PREORDER_REMINDER_DEAD_STATUSES",
+            "_FAILURE_REASONS",
+            "_failure_reason"
           ]
         }
       ],
@@ -13956,7 +13959,8 @@
           "symbols": [
             "confirm_pix",
             "_DEAD_CHARGE_STATUSES",
-            "_ALERT_DEBOUNCE"
+            "_ALERT_DEBOUNCE",
+            "_record_pix_event"
           ]
         }
       ],
