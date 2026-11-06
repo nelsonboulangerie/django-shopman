@@ -28,7 +28,8 @@ class UnlockRefusalCopyTests(TestCase):
     def test_pin_errado_diz_que_o_pin_nao_confere(self):
         resp = self.client.post(UNLOCK, {"operator_id": self.op.pk, "pin": "0000", "perm": POS_PERM})
         self.assertEqual(resp.status_code, 403)
-        self.assertEqual(resp.json()["detail"], "PIN não confere. Tente de novo.")
+        # A frase também conta quantas tentativas restam antes da trava (PDV-24).
+        self.assertTrue(resp.json()["detail"].startswith("PIN incorreto. Rest"), resp.json()["detail"])
 
     def test_cracha_desconhecido_diz_cracha(self):
         resp = self.client.post(UNLOCK, {"badge": "naoexiste", "perm": POS_PERM})

@@ -53,6 +53,14 @@ describe("presentation/closing — fechamento do dia (contagem cega)", () => {
     expect(sanitizeQtyInput("")).toBe("");
   });
 
+  // Beta 05/11 (PDV-12): "3,5" colava os dígitos e virava 35, dez vezes a sobra.
+  it("corta no separador em vez de juntar os dígitos", () => {
+    expect(sanitizeQtyInput("3,5")).toBe("3");
+    expect(sanitizeQtyInput("-3,5abc😀")).toBe("3");
+    expect(sanitizeQtyInput("12.0")).toBe("12");
+    expect(sanitizeQtyInput(",5")).toBe("");
+  });
+
   it("só libera o envio quando toda linha tem contagem explícita", () => {
     const items = [item("PAO"), item("CROIS")];
     expect(allQuantitiesFilled(items, {})).toBe(false);

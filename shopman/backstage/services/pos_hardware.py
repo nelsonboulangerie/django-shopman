@@ -79,7 +79,7 @@ class DeviceAgentConfig:
         if not self.declared or not self.enabled:
             return ""
         if not self.token:
-            return "falta o token: salve este terminal para gerar um"
+            return "falta o token: salve este terminal para gerar o token"
         if not self.agent_url:
             return "sem endereço do agente"
         return ""
@@ -106,21 +106,24 @@ class DeviceAgentConfig:
         }
 
     def _unavailable_reason(self) -> str:
-        """Por que este balcão não imprime, em uma frase DE IMPRESSORA.
+        """Por que este balcão não imprime, em uma frase DE IMPRESSORA, para o BALCÃO.
 
         Frase própria, nunca a da gaveta: o operador que tem impressora e abre
         a gaveta com a chave lia "Gaveta não configurada" e ia procurar defeito
         no lugar errado.
+
+        ⚠️ Quem lê é quem está no balcão, não quem configura (beta 05/11, PDV-11
+        e PDV-23): "token", "agente" e "no Admin" são nota de engenheiro para
+        essa pessoa. O motivo técnico continua em ``misconfigured_reason``, que é
+        o que Ajustes e o Admin mostram a quem resolve.
         """
         if not self.declared:
-            return "Impressora não configurada neste terminal. Configure em Terminais do PDV, no Admin."
+            return PRINTER_NOT_CONFIGURED
         if not self.enabled:
-            return "O agente deste terminal está desligado na configuração."
-        if not self.token:
-            return "A impressora deste terminal está sem token. Salve o terminal no gestor para gerar um."
-        if not self.agent_url:
-            return "A impressora deste terminal está sem endereço do agente."
-        return "Impressora indisponível neste terminal."
+            return "Impressora desligada neste balcão. Chame o gerente."
+        if self.misconfigured_reason:
+            return PRINTER_NOT_CONFIGURED
+        return "Impressora indisponível neste balcão."
 
 
 @dataclass(frozen=True)
@@ -195,7 +198,7 @@ class CashDrawerConfig:
             # O token nasce no Admin desde que o fluxo inverteu: basta salvar o
             # terminal com "Pelo agente local". Mandar colar o do instalador era
             # instrução do fluxo antigo, e mandava a pessoa para o lado errado.
-            return "falta o token: salve este terminal com “Pelo agente local” para gerar um"
+            return "falta o token: salve este terminal com “Pelo agente local” para gerar o token"
         if not self.agent_url:
             return "sem endereço do agente"
         return ""
@@ -232,7 +235,9 @@ class CashDrawerConfig:
                 "off_ms": self.pulse_off_ms,
             },
             "open_on_cash_sale": self.open_on_cash_sale,
-            "reason": self.misconfigured_reason,
+            # Para o BALCÃO, não para quem configura: o motivo técnico fica em
+            # `misconfigured_reason`, que Ajustes e o Admin mostram (PDV-11/23).
+            "reason": DRAWER_NOT_CONFIGURED if self.misconfigured_reason else "",
             # Quantos minutos a gaveta pode ficar aberta ENTRE vendas antes de
             # virar aviso. A trava já cuida do instante da venda; isto cobre a
             # hora morta, em que ninguém inicia venda nenhuma e a gaveta aberta
@@ -241,14 +246,20 @@ class CashDrawerConfig:
         }
 
     def _unavailable_reason(self) -> str:
-        """Por que este balcão não abre a gaveta por software, em uma frase."""
+        """Por que este balcão não abre a gaveta por software, em uma frase para o BALCÃO."""
         if not self.declared:
-            return "Gaveta não configurada neste terminal. Configure em Terminais do PDV, no Admin."
+            return DRAWER_NOT_CONFIGURED
         if not self.enabled:
-            return "A gaveta deste terminal está desligada na configuração."
+            return "Gaveta desligada neste balcão. Chame o gerente."
         if self.adapter != ADAPTER_AGENT:
             return "Este balcão abre a gaveta com a chave: o PDV não tem como abrir."
-        return self.misconfigured_reason or "Gaveta indisponível."
+        return DRAWER_NOT_CONFIGURED if self.misconfigured_reason else "Gaveta indisponível."
+
+
+#: Gaveta e impressora sem configuração, ditas a quem está no BALCÃO (beta 05/11,
+#: PDV-11/23). Quem configura lê o motivo técnico em ``misconfigured_reason``.
+DRAWER_NOT_CONFIGURED = "Gaveta não configurada neste balcão. Chame o gerente."
+PRINTER_NOT_CONFIGURED = "Impressora não configurada neste balcão. Chame o gerente."
 
 
 def _positive_int(value, fallback: int) -> int:

@@ -318,6 +318,10 @@ class POSCashRuntimeProjection:
     terminal_label: str
     operator_username: str
     opened_at: str
+    # Quem ABRIU a gaveta (``Shift.opened_by``). Não é quem opera agora: "turno
+    # aberto às 08:45 por joyce" atribuía a abertura do admin a quem estava no
+    # balcão (beta 05/11, PDV-19). Vazio sem turno aberto.
+    opened_by_username: str = ""
     # Dois valores: "open" e "closed". Houve um terceiro, `terminal_occupied`,
     # com quatro campos de bloqueio ao lado — de quando a custódia era da pessoa
     # e a gaveta podia estar "ocupada por outra". Saíram inteiros: com a custódia
@@ -522,6 +526,10 @@ class POSProjection:
     # renderiza a porta quando ela abre para QUEM está logado. É consulta: a via
     # do cliente sai na bobina, e essa não depende deste gate.
     danfe_screen_allowed: bool = False
+    # O operador fecha o dia (``backstage.perform_closing``, o Gerente)? O "Fim do
+    # dia" da barra de baixo só aparece para ele: para a Caixa era um beco, "Sua
+    # conta não tem permissão" (beta 05/11, op:PDV-13).
+    can_close_day: bool = False
     # ENTREGA, estado inicial. A review responde pela data ESCOLHIDA, mas ela só
     # existe depois que há endereço — e a tela precisa abrir o formulário já
     # dizendo "hoje" e já mostrando as janelas de hoje. Sem isto o operador
@@ -721,6 +729,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         fiscal_label=fiscal_label,
         fiscal_message=fiscal_message,
         danfe_screen_allowed=bool(getattr(operator, "is_staff", False)),
+        can_close_day=bool(operator is not None and operator.has_perm("backstage.perform_closing")),
         weighed_weight_entry=weighed_sale.weight_entry_enabled(),
         offline_sale_enabled=pos_offline_sale.enabled(),
         price_window=_price_window_projection(offer),
@@ -2291,6 +2300,7 @@ def _cash_runtime_projection(cash_shift, runtime, operator, terminal=None) -> PO
         # quem abriu vive em `cash_shift.opened_by` e aparece na auditoria.
         operator_username=getattr(operator, "username", "") if operator is not None else "",
         opened_at=cash_shift.opened_at.isoformat() if cash_shift.opened_at else "",
+        opened_by_username=cash_shift.opened_by.get_username() if cash_shift.opened_by_id else "",
         status="open",
         can_audit_cash=audita,
         pending_change_requests=_pending_change_requests(cash_shift),

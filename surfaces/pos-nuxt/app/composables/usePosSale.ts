@@ -1224,21 +1224,36 @@ export function usePosSale(deps: PosSaleDeps) {
   // AS FORMAS ACOMPANHAM O TOTAL QUE MUDOU (beta test de 05/11/2026). A linha
   // lançada com R$ 36,00 continuava em R$ 36,00 depois de o operador voltar e
   // tirar a baguete (total R$ 13,00), e a tela mostrava "TROCO R$ 23,00" numa
-  // encomenda que só se paga na retirada. A linha que o sistema lançou sozinha
-  // (intocada), ou a única de uma venda que não recebe nada agora, passa a valer
-  // o total novo. Linha que o operador contou fica como está: o restante ou o
-  // troco que aparecem são verdade.
+  // encomenda que só se paga na retirada; o "Exato" em R$ 43,00 seguido de um
+  // desconto deixava "Dinheiro R$ 43,00 · TROCO R$ 20,00" e a gaveta pagava troco
+  // que o cliente nunca deu (PDV-13).
+  //
+  // Só a linha que o SISTEMA preencheu se move (a digitada é o que o cliente
+  // entregou), e só uma: a selecionada, ou a única virgem. Com mais de uma virgem
+  // (divisão por pessoas), cada parcela é de alguém e ninguém é remexido em
+  // silêncio. A única linha de uma venda que não recebe nada agora (pagamento na
+  // retirada/entrega) sempre vale o total. A comparação é com o último total
+  // CONFIRMADO (há review), não com o "calculando" de um instante antes.
   let tendersTotalQ = 0;
   watch(() => review.value?.total_q, (total) => {
     if (typeof total !== "number") return;
     const before = tendersTotalQ;
     tendersTotalQ = total;
-    if (!before || before === total || cart.paymentTenders.length !== 1) return;
-    const only = cart.paymentTenders[0]!;
-    if (only._virgin || cart.paymentCollection === "on_delivery") {
-      only.amount_q = total;
-      only._virgin = true;
+    if (!before || before === total) return;
+    const tenders = cart.paymentTenders;
+    if (tenders.length === 1 && cart.paymentCollection === "on_delivery") {
+      tenders[0]!.amount_q = total;
+      tenders[0]!._virgin = true;
+      return;
     }
+    const virgins = tenders.map((line, idx) => ({ line, idx })).filter(({ line }) => line._virgin);
+    const selected = tenders[selectedTenderIndex.value];
+    const target = selected?._virgin
+      ? { line: selected, idx: selectedTenderIndex.value }
+      : virgins.length === 1 ? virgins[0]! : null;
+    if (!target) return;
+    const others = tenders.reduce((sum, line, idx) => (idx === target.idx ? sum : sum + line.amount_q), 0);
+    target.line.amount_q = Math.max(0, total - others);
   });
   watch(checkoutMode, (open) => {
     // Fora do checkout o carrinho volta a mudar (itens novos): o total retido

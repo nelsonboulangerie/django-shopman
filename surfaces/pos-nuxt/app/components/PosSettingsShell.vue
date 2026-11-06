@@ -5,6 +5,7 @@
 // uma vez em `PosOperatorShell`. O Salão tem casca própria (planta em tela cheia),
 // com as mesmas abas.
 import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 
 const props = defineProps<{
   title: string;
@@ -17,6 +18,8 @@ const props = defineProps<{
    * outra leitura (Terminal: a saúde do balcão) passa a dela.
    */
   refresh?: () => unknown;
+  /** Os avisos da aba, no lugar único do cabeçalho (fecham no X). */
+  alerts?: OperatorScreenAlert[];
 }>();
 
 const { pos, refresh: refreshPos } = await usePosTerminal();
@@ -39,13 +42,14 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
     <!-- No celular, a linha do chão: o selo diz "Ajustes, <aba>" e troca de seção; as
          abas descem logo abaixo, porque a faixa de filtros do cabeçalho some ali. -->
     <PosCompactBar :title="`Ajustes, ${title}`" :options="headerActions" />
-    <!-- A ação da aba (Gravar atalhos, Nova maquininha) mora no cabeçalho, que some no
-         celular: ela desce para a linha das abas, à vista. -->
+    <!-- As abas descem para o celular. A ação da aba (Gravar atalhos, Nova maquininha)
+         NÃO se repete aqui: o cabeçalho do kit já a desce para a linha própria no
+         celular, e as duas juntas desenhavam "Nova maquininha" duas vezes (beta 05/11,
+         PDV-07). -->
     <div class="flex flex-wrap items-center justify-between gap-2 border-b border-default px-3 py-2 md:hidden" data-compact-settings-tabs>
       <PosSettingsTabs />
-      <slot v-if="$slots.actions" name="actions" />
     </div>
-    <OperatorPageHeader :title="title" :actions="headerActions" actions-label="Mais ações dos Ajustes">
+    <OperatorPageHeader :title="title" :actions="headerActions" :alerts="alerts ?? []" actions-label="Mais ações dos Ajustes">
       <template #lead>
         <span class="hidden items-center gap-1 text-sm text-muted-foreground md:inline-flex">
           Ajustes<Icon name="lucide:chevron-right" class="size-4" aria-hidden="true" />

@@ -210,6 +210,7 @@ defineExpose({ reset });
         >
           <NuxtKbd
             v-if="index < numberedCount"
+            class="pointer-coarse:hidden"
             :value="String(index + 1)"
             aria-hidden="true"
           />

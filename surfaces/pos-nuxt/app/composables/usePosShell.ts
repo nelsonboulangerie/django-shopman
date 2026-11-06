@@ -42,6 +42,7 @@ export function usePosShell(pos: Ref<POSProjection | null>) {
       hasOpenCashSession: Boolean(pos.value?.has_open_cash_session),
       preorders: { allowed: preorders.allowed.value, badge: preorders.badge.value },
       terminal: terminal.value,
+      canCloseDay: pos.value?.can_close_day === true,
     }),
   );
   const switcherSections = computed(() => posSwitcherSections(sections.value));

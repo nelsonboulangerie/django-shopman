@@ -3,7 +3,7 @@ import { toast } from "vue-sonner";
 
 import type { PrintOutcome } from "~/composables/useCounterAgent";
 import type { Action, POSCashManagementCapability, POSProjection } from "~/types/pos";
-import { requiresOpenShiftForSale } from "~/presentation/cash";
+import { cashMovementDoneMessage, changeServedMessage, requiresOpenShiftForSale } from "~/presentation/cash";
 import { actionHref } from "~/utils/posIntent";
 import { cashCloseBlockedByQueue } from "~/presentation/offlineSales";
 
@@ -204,6 +204,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       // Só abre depois do servidor aceitar: gaveta aberta por um movimento que
       // foi recusado (PIN errado, caixa fechado) é dinheiro exposto sem lastro.
       if (ok) {
+        toast.success(cashMovementDoneMessage(payload.kind, payload.amount));
         void drawer.kick(payload.kind);
         void printMovementReceipt(lastEntryId.value);
       }
@@ -264,7 +265,10 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       // comprovante na bobina. Não tem "Tentar de novo" porque repetir não
       // resolve configuração ausente; tem o que FALTA e onde se resolve.
       toast.warning(`O comprovante não saiu: ${outcome.detail}`, {
-        description: "O movimento está registrado no livro-caixa. Configure a impressora em Terminais do PDV, no Admin.",
+        // O `detail` já diz o que fazer a quem está no balcão ("Chame o gerente").
+        // "Configure em Terminais do PDV, no Admin" era um segundo destino, de
+        // quem configura, na mesma mensagem (beta 05/11, PDV-11/23).
+        description: "O movimento está registrado no livro-caixa.",
       });
     } else if (opts.reprint) {
       toast.success("Segunda via enviada para a impressora.");
@@ -367,6 +371,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   }): Promise<boolean> {
     const body: Record<string, unknown> = {};
     if (payload.managerApproval) body.manager_approval = payload.managerApproval;
+    // O valor é lido ANTES: no sucesso o pedido some da lista com o refresh.
+    const amountQ = pos.value?.cash_runtime?.pending_change_requests?.find((row) => row.ref === payload.ref)?.amount_q ?? null;
     return run(
       `/api/v1/backstage/pos/cash/change-request/${encodeURIComponent(payload.ref)}/serve/`,
       body,
@@ -376,7 +382,10 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     ).then((ok) => {
       // Só depois do `ok`: gaveta aberta por um atendimento recusado (PIN
       // errado, pedido já resolvido) é dinheiro exposto sem lastro.
-      if (ok) void drawer.kick("change_request");
+      if (ok) {
+        toast.success(changeServedMessage(amountQ));
+        void drawer.kick("change_request");
+      }
       return ok;
     });
   }

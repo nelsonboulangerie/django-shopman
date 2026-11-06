@@ -11,6 +11,8 @@ const props = defineProps<{
   spots: readonly DraftSpot[];
   areas: readonly AreaSummary[];
   changedKeys: ReadonlySet<string>;
+  /** Quem não grava o salão não põe mesa nova (decisão do dono, 05/11/2026). */
+  readOnly?: boolean;
 }>();
 
 const emit = defineEmits<{ select: [key: string]; add: [shape: SpotShape, area: string] }>();
@@ -42,6 +44,7 @@ function areaLine(area: AreaSummary) {
           color="neutral"
           variant="outline"
           class="h-16 flex-col justify-center gap-1 px-1"
+          :disabled="readOnly"
           :aria-label="`Pôr mesa ${shape.label.toLowerCase()} em ${activeArea || 'Sem área'}`"
           :data-seating-add="shape.value"
           @click="emit('add', shape.value, activeArea === 'Sem área' ? '' : activeArea)"

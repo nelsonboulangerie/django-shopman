@@ -37,7 +37,14 @@ def parse_money_to_q(raw) -> int:
 
     from shopman.utils.monetary import brl_to_q
 
-    text = str(raw or "").strip().replace("R$", "").replace(" ", "").replace(",", ".")
+    text = str(raw or "").strip().replace("R$", "").replace(" ", "")
+    # Com vírgula, a vírgula é o decimal e o ponto é milhar ("5.000,00", que é como
+    # o próprio sistema escreve o valor de volta). Antes o ponto sobrava e o
+    # "5.000,00" virava "Valor ilegível", enquanto o "5000" passava calado.
+    # Sem vírgula, o ponto continua sendo o decimal ("12.34").
+    if "," in text:
+        text = text.replace(".", "")
+    text = text.replace(",", ".")
     if not text:
         return 0
     try:
@@ -157,6 +164,8 @@ def register_cash_movement(
         )
 
     kind = MOVEMENT_KIND_BY_API[api_kind]
+    if kind == "cash_out":
+        _refuse_withdrawal_above_drawer(shift, amount_q)
     signed_q = -amount_q if kind == "cash_out" else amount_q
     return _record(
         kind,
@@ -166,6 +175,21 @@ def register_cash_movement(
         approved_by=approved_by,
         reason=reason,
     )
+
+
+def _refuse_withdrawal_above_drawer(shift, amount_q: int) -> None:
+    """Retirada maior do que a gaveta tem é dedo trocado, não sangria.
+
+    A gaveta física não entrega o que não tem: um "5000" lido como R$ 5.000,00
+    passava pelo PIN do gerente e deixava o livro negativo. A recusa vem DEPOIS
+    da assinatura do gerente (``validate_manager_override`` roda antes), então
+    sondar o esperado tentando valores custa um PIN de gerente por tentativa, e
+    a mensagem não diz o número: a contagem continua cega para o balcão.
+    """
+    from shopman.cashman import services as cash
+
+    if amount_q > cash.balance(shift):
+        raise POSError("A gaveta não tem esse valor. Confira o valor digitado.")
 
 
 def register_drawer_opening(*, operator, reason: str = "", terminal_ref: str = ""):

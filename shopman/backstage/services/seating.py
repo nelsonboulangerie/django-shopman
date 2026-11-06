@@ -238,6 +238,9 @@ def save_layout(*, actor, spots, removed, expected_revision, fixtures=None) -> S
     taken = set(current)
     result = SaveResult(changed=0, created=0, versioned=0, removed=0)
     seen: set[str] = set()
+    # De qual linha do corpo saiu cada mesa gravada: a recusa de sigla repetida
+    # aponta o campo da mesa que a tela mandou, não uma lista inteira.
+    index_of: dict[str, int] = {}
 
     for index, raw in enumerate(spots):
         fields = clean_spot(raw, index=index)
@@ -270,11 +273,13 @@ def save_layout(*, actor, spots, removed, expected_revision, fixtures=None) -> S
                     **{key: fields.get(key, getattr(spot, key)) for key in EDITABLE_FIELDS},
                 )
                 successor.save()
+                index_of[successor.ref] = index
                 old, new = _diff(before, snapshot(successor))
                 _audit(actor, successor, flag=ADDITION, change="version", before=old, after=new,
                        replaces=spot.ref)
                 result.versioned += 1
                 continue
+            index_of[spot.ref] = index
             for key, value in fields.items():
                 setattr(spot, key, value)
             spot.kind = _kind_for(spot.shape)
@@ -298,6 +303,7 @@ def save_layout(*, actor, spots, removed, expected_revision, fixtures=None) -> S
                 **{key: value for key, value in fields.items() if key != "shape"},
             )
             spot.save()
+            index_of[spot.ref] = index
             _audit(actor, spot, flag=ADDITION, change="add", before=None, after=snapshot(spot))
             result.created += 1
 
@@ -312,9 +318,40 @@ def save_layout(*, actor, spots, removed, expected_revision, fixtures=None) -> S
                after={"active_until": yesterday.isoformat()})
         result.removed += 1
 
+    _refuse_repeated_names(day, index_of)
     if fixtures is not None:
         save_fixtures(fixtures)
     return result
+
+
+def _refuse_repeated_names(day, index_of: dict[str, int]) -> None:
+    """Duas mesas com a mesma sigla no salão de hoje não se gravam (beta 05/11, PDV-18).
+
+    A sigla é o que a comanda, a planta e o operador leem ("M2"); com duas, "leva
+    para a M2" tem duas respostas. Sem sigla vale o nome. A conferência é depois de
+    tudo aplicado, no salão que fica: trocar as siglas de duas mesas entre si num
+    salvar só passa.
+    """
+    owner: dict[str, SeatingSpot] = {}
+    for spot in SeatingSpot.objects.order_by("kind", "ref"):
+        if not spot.existed_on(day):
+            continue
+        name = (spot.short_label or spot.label or "").strip()
+        key = name.casefold()
+        if not key:
+            continue
+        other = owner.get(key)
+        if other is None:
+            owner[key] = spot
+            continue
+        culprit = spot if spot.ref in index_of else other
+        index = index_of.get(culprit.ref)
+        field = "short_label" if culprit.short_label else "label"
+        raise SeatingError(
+            f"Já existe uma mesa {name}. Dê outra sigla a uma das duas.",
+            field=f"spots[{index}].{field}" if index is not None else "spots",
+            code="spot_name_taken",
+        )
 
 
 FIXTURE_MAX = 2000

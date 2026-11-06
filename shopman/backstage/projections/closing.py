@@ -174,7 +174,9 @@ def build_day_closing() -> DayClosingProjection:
     reconciliation_errors: tuple[ReconciliationError, ...] = ()
     if existing:
         by = existing.closed_by.get_username() if existing.closed_by else "?"
-        at = existing.closed_at.strftime("%H:%M") if existing.closed_at else ""
+        # Hora da LOJA: o banco devolve UTC, e 08:33 em Brasília saía "11:33"
+        # (beta 05/11, PDV-05). O Admin converte; a projeção também.
+        at = timezone.localtime(existing.closed_at).strftime("%H:%M") if existing.closed_at else ""
         closing_display = f"Fechado por {by} às {at}"
         production_summary = _closing_data(existing).get("production_summary") or production_summary
         raw_errors = _closing_data(existing).get("reconciliation_errors") or ()

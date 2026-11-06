@@ -18,7 +18,8 @@ const SHELL_SECTIONS = readFileSync(app("composables", "usePosShell.ts"), "utf8"
 const SESSION = readFileSync(app("pages", "session", "index.vue"), "utf8");
 const CASH = readFileSync(app("presentation", "cash.ts"), "utf8");
 
-const base = { tabs: [], hasOpenCashSession: true };
+// O gerente (fecha o dia). A Caixa, sem `canCloseDay`, tem o teste dela abaixo.
+const base = { tabs: [], hasOpenCashSession: true, canCloseDay: true };
 
 describe("Encomendas na barra lateral do PDV", () => {
   it("a seção mora entre Comandas e Caixa, e leva à casa da seção", () => {
@@ -156,5 +157,18 @@ describe("O trocador do PDV (modelo de navegação, 31/10/2026)", () => {
     expect(layout.items.map((s) => s.label)).toEqual(["Comandas", "Encomendas", "Caixa", "Fim do dia"]);
     expect(layout.more).toBe(false);
     expect(quickBarProblems(floor)).toEqual([]);
+  });
+});
+
+// Beta 05/11/2026 (op:PDV-13): o "Fim do dia" levava a Caixa a "Fechamento é do gerente".
+describe("Fim do dia só para quem fecha o dia", () => {
+  it("sem a permissão, a barra de baixo não oferece o Fim do dia", () => {
+    const sections = posSections({ tabs: [], hasOpenCashSession: true, preorders: { allowed: true } });
+    expect(sections.map((s) => s.key)).not.toContain("closing");
+    expect(quickBarProblems(sections)).toEqual([]);
+  });
+
+  it("o shell lê a permissão da projection", () => {
+    expect(SHELL_SECTIONS).toContain("canCloseDay: pos.value?.can_close_day === true");
   });
 });
