@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import type { Action, TrackingResponse } from '~/types/shopman'
 import {
+  EXPIRY_RECONCILE_INTERVAL_MS,
   hasLiveDeadline,
+  paymentDeadlineLapsed,
   pollIntervalMs,
   ratingThanksView,
+  shouldRetryExpiryReconcile,
+  showsTrackingSkeleton,
   timelineActiveStep,
-  timelineStepStateLabel,
+  timelineStepSrSuffix,
   trackingFreshness,
   trackingPanelClass,
   trackingPanelIcon,
@@ -56,13 +60,26 @@ const { data, pending, error, refresh } = await useFetch<TrackingResponse>(
   () => apiPath(`/api/v1/tracking/${encodeURIComponent(orderRef.value)}/`),
   { credentials: 'include', headers: requestHeaders, lazy: true }
 )
-usePageContentPending(pending)
+// Só a primeira carga avisa a espera: refresh em segundo plano (SSE, poll) não
+// é espera do cliente.
+const firstLoadPending = computed(() => showsTrackingSkeleton(pending.value, Boolean(data.value)))
+usePageContentPending(firstLoadPending)
 
 const tracking = computed(() => data.value || null)
 const errorView = computed(() => orderAccessErrorView((error.value as { statusCode?: number } | null)?.statusCode, 'tracking'))
 const loginHref = computed(() => `/entrar?next=${encodeURIComponent(`/pedido/${orderRef.value}`)}`)
-const cancelAction = computed(() => tracking.value?.actions.find(action => action.ref === 'cancel_order' && action.enabled) || null)
+// Com o prazo de pagar vencido, cancelar à mão não tem mais o que fazer: o
+// pedido está sendo cancelado pelo prazo.
+const cancelAction = computed(() => paymentLapsed.value
+  ? null
+  : tracking.value?.actions.find(action => action.ref === 'cancel_order' && action.enabled) || null)
 const cancellationRequestAction = computed(() => tracking.value?.actions.find(action => action.ref === 'request_cancellation' && action.enabled) || null)
+// O diálogo de cancelar diz o que acontece com o dinheiro (a reserva do cartão
+// desfeita, ou nada cobrado) na mesma frase do aviso à loja.
+const cancelDialogDescription = computed(() => [
+  tracking.value?.copy.cancel_dialog_message,
+  tracking.value?.cancel_dialog_money_line
+].filter(Boolean).join(' '))
 const cancellationReason = ref('')
 const rateAction = computed(() => tracking.value?.actions.find(action => action.ref === 'rate_order' && action.enabled) || null)
 // Estado de agradecimento (título/mensagem + se cabe confete) montado a partir da
@@ -96,6 +113,7 @@ const statusPanelIcon = computed(() => trackingPanelIcon(promiseTone.value))
 const showPaymentBlock = computed(() => {
   const t = tracking.value
   if (!t?.promise) return false
+  if (paymentLapsed.value) return false
   return showsPaymentBlock({
     payment_method: t.promise.payment_method,
     pix_qr_code: t.promise.pix_qr_code,
@@ -172,6 +190,13 @@ watch(deadlineCount, count => {
   }
 }, { immediate: true })
 const deadlinePct = computed(() => deadlineCount.value ? countdownPct(deadlineCount.value.totalSeconds, deadlineWindowSeconds.value) : 0)
+// Prazo de PAGAR zerado com o pedido ainda ativo no último fetch: o QR e o
+// "Cancelar pedido" saem da tela até o servidor trazer o cancelamento.
+const paymentLapsed = computed(() => mounted.value && paymentDeadlineLapsed(
+  tracking.value?.promise,
+  deadlineCount.value?.isExpired,
+  tracking.value?.is_active
+))
 const deadlineUrgent = computed(() => isCountdownUrgent(deadlinePct.value))
 
 // Frescor do dado: idade viva "Atualizado há X", que vira aviso se um poll falhar
@@ -264,12 +289,25 @@ onBeforeUnmount(() => {
   if (poll) clearInterval(poll)
 })
 
-// Ao zerar o prazo, o backend decide (deadline_action): a UI sincroniza uma vez.
-watch(() => deadlineCount.value?.isExpired, async expired => {
+// Ao zerar o prazo, o backend decide (deadline_action). Quem cancela é o worker,
+// segundos depois, então a UI insiste: refresh a cada 3 s enquanto o pedido
+// segue ativo com o MESMO prazo, até 10 vezes. O poll segue como rede.
+let expiryTimer: ReturnType<typeof setTimeout> | null = null
+async function reconcileExpiry (deadlineAt: string | null | undefined, attempts: number) {
+  await refresh()
+  const stillLapsed = Boolean(tracking.value?.is_active && tracking.value?.promise.deadline_at === deadlineAt)
+  if (shouldRetryExpiryReconcile(attempts + 1, stillLapsed)) {
+    expiryTimer = setTimeout(() => { void reconcileExpiry(deadlineAt, attempts + 1) }, EXPIRY_RECONCILE_INTERVAL_MS)
+  }
+}
+watch(() => deadlineCount.value?.isExpired, expired => {
   if (expired && !deadlineHandled && tracking.value?.is_active) {
     deadlineHandled = true
-    await refresh()
+    void reconcileExpiry(tracking.value?.promise.deadline_at, 0)
   }
+})
+onBeforeUnmount(() => {
+  if (expiryTimer) clearTimeout(expiryTimer)
 })
 
 // Mensagem de sucesso específica e mais quente por ação (um "Atualizado." seco não
@@ -553,7 +591,7 @@ useSeoMeta({
         <!-- Yoin: fechamento do pedido. Some assim que o cliente volta. -->
         <!-- Skeleton que espelha o layout real (painel de status + abas), não um
              bloco único que não conta o que está por vir. -->
-        <div v-if="pending" class="shop-stack-block">
+        <div v-if="showsTrackingSkeleton(pending, Boolean(tracking))" class="shop-stack-block">
           <UiSkeleton class="h-40 rounded-lg" />
           <div class="flex gap-6">
             <UiSkeleton class="h-6 w-20 rounded" />
@@ -609,14 +647,11 @@ useSeoMeta({
               <div class="w-full shop-stack-block">
                 <p>{{ tracking.promise.message || tracking.copy.promise_fallback_message }}</p>
 
-                <!-- Nota de rodapé: complemento opcional, sem rótulo. Fica em tom
-                     secundário para não competir com o aviso principal. -->
-                <p v-if="tracking.promise.footnote" class="shop-body">{{ tracking.promise.footnote }}</p>
-
-                <!-- Cancelamento pelo estabelecimento: motivo + estorno visíveis —
-                     o cliente não depende da notificação para saber o porquê. -->
+                <!-- Cancelamento: o motivo e o destino do dinheiro, numa frase com o
+                     valor. Vem ANTES do convite para pedir de novo (a nota de
+                     rodapé): primeiro o cliente sabe do dinheiro. -->
                 <div
-                  v-if="tracking.status === 'cancelled' && (tracking.cancellation_note || tracking.refund_status_label)"
+                  v-if="tracking.status === 'cancelled' && (tracking.cancellation_note || tracking.cancellation_money_line)"
                   class="mt-2 space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
                   data-cancellation-info
                 >
@@ -624,11 +659,14 @@ useSeoMeta({
                     <span class="font-semibold">{{ tracking.copy.cancelled_reason_title }}:</span>
                     {{ tracking.cancellation_note }}
                   </p>
-                  <p v-if="tracking.refund_status_label">
-                    <span class="font-semibold">{{ tracking.copy.refund_title }}:</span>
-                    {{ tracking.refund_status_label }}
+                  <p v-if="tracking.cancellation_money_line" data-cancellation-money>
+                    {{ tracking.cancellation_money_line }}
                   </p>
                 </div>
+
+                <!-- Nota de rodapé: complemento opcional, sem rótulo. Fica em tom
+                     secundário para não competir com o aviso principal. -->
+                <p v-if="tracking.promise.footnote" class="shop-body">{{ tracking.promise.footnote }}</p>
 
                 <!-- Fila de espera: a promessa em duas fases, dita na tela que
                      sempre existe. Esperar não cobra nada; o chamado tem relógio;
@@ -702,9 +740,14 @@ useSeoMeta({
                 <!-- Ponte de expiração: no instante em que o prazo zera, o timer some
                      e um refresh reconcilia. Enquanto a projeção nova não chega, um
                      estado explícito evita a tela piscar sem explicação. -->
-                <p v-else-if="mounted && deadlineCount?.isExpired && tracking.is_active" class="flex items-center gap-2 shop-meta" role="status" aria-live="polite">
+                <p v-else-if="mounted && deadlineCount?.isExpired && tracking.is_active" class="flex items-center gap-2 shop-meta" role="status" aria-live="polite" data-expiry-bridge>
                   <Icon name="lucide:rotate-cw" class="size-3.5 shrink-0 animate-spin" />
-                  O prazo terminou. Estamos atualizando seu pedido…
+                  <template v-if="paymentLapsed && tracking.promise.payment_method === 'pix'">
+                    O Pix venceu. Não pague este código. Estamos atualizando seu pedido…
+                  </template>
+                  <template v-else>
+                    O prazo terminou. Estamos atualizando seu pedido…
+                  </template>
                 </p>
 
                 <div v-if="hasStatusPanelActions" class="w-full pt-1">
@@ -828,7 +871,7 @@ useSeoMeta({
                         />
                         <UiTimelineDate v-if="step.timestamp_display">{{ step.timestamp_display }}</UiTimelineDate>
                         <UiTimelineTitle :class="step.state === 'cancelled' ? 'text-destructive' : ''">
-                          {{ step.label }}<span class="sr-only">, {{ timelineStepStateLabel(step.state) }}</span>
+                          {{ step.label }}<span v-if="timelineStepSrSuffix(step)" class="sr-only">{{ timelineStepSrSuffix(step) }}</span>
                         </UiTimelineTitle>
                         <!-- Passo cancelado: indicador próprio (X destrutivo), nunca um
                              check verde de "concluído" — a timeline não pode contradizer
@@ -981,7 +1024,7 @@ useSeoMeta({
               <UiAlertDialogContent>
                 <UiAlertDialogHeader>
                   <UiAlertDialogTitle>{{ tracking.copy.cancel_dialog_title }}</UiAlertDialogTitle>
-                  <UiAlertDialogDescription>{{ tracking.copy.cancel_dialog_message }}</UiAlertDialogDescription>
+                  <UiAlertDialogDescription>{{ cancelDialogDescription }}</UiAlertDialogDescription>
                 </UiAlertDialogHeader>
                 <UiAlertDialogFooter>
                   <UiAlertDialogCancel>{{ tracking.copy.cancel_dialog_back }}</UiAlertDialogCancel>

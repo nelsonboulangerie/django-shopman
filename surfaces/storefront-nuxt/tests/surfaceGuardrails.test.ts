@@ -1681,7 +1681,9 @@ describe('surface claims stay inside what the projection actually says', () => {
     const tracking = read('app/pages/pedido/[ref]/index.vue')
 
     expect(tracking).toContain("v-else-if=\"step.state === 'current'\"")
-    expect(tracking).toContain('timelineStepStateLabel(step.state)')
+    // O estado é dito ao leitor de tela (o sufixo cala só o "Cancelado,
+    // cancelado"; ver presentation/orderTracking.timelineStepSrSuffix).
+    expect(tracking).toContain('timelineStepSrSuffix(step)')
   })
 
   it('offers the notify bell on a bag line that fell to a real stockout', () => {

@@ -399,7 +399,6 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     cancel_dialog_confirm = serializers.CharField()
     cancel_dialog_back = serializers.CharField()
     cancelled_reason_title = serializers.CharField()
-    refund_title = serializers.CharField()
     mock_payment_success_title = serializers.CharField()
     mock_payment_success_message = serializers.CharField()
     mock_payment_failed_title = serializers.CharField()
@@ -480,9 +479,11 @@ class OrderTrackingSerializer(serializers.Serializer):
     payment_expired = serializers.BooleanField()
     payment_confirmed = serializers.BooleanField()
     payment_status_label = serializers.CharField(allow_null=True, required=False)
-    # Cancelamento pelo estabelecimento: motivo + estorno visíveis ao cliente.
+    # Cancelamento: motivo + o destino do dinheiro numa frase com o valor.
     cancellation_note = serializers.CharField(allow_blank=True, required=False)
-    refund_status_label = serializers.CharField(allow_null=True, required=False)
+    cancellation_money_line = serializers.CharField(allow_blank=True, required=False)
+    # Antes de cancelar: o que acontece com o dinheiro (reserva do cartão, nada cobrado).
+    cancel_dialog_money_line = serializers.CharField(allow_blank=True, required=False)
     cancellation_request = CancellationRequestProjectionSerializer(allow_null=True, required=False)
     rating_followup = RatingFollowupProjectionSerializer(allow_null=True, required=False)
     # A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem

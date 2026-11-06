@@ -1080,9 +1080,8 @@ export interface TrackingCopyProjection {
   pix_auto_update_note: string
   card_intro: string
   card_security_note: string
-  // Cancelamento pelo estabelecimento: rótulos do motivo e do estorno.
+  // Cancelamento pelo estabelecimento: rótulo do motivo.
   cancelled_reason_title: string
-  refund_title: string
   // Fila de espera: cada fase tem a sua voz — esperar, confirmar, sair.
   waitlist_waiting_title: string
   waitlist_waiting_message: string
@@ -1142,10 +1141,13 @@ export interface TrackingResponse {
   // Captura simulada (DEBUG/staging) disponível — mostra a caixa "Simular
   // pagamento" dentro do bloco inline.
   mock_payment_enabled: boolean
-  // Cancelamento pelo estabelecimento: o cliente lê o porquê e o estado do
-  // estorno na própria tela, sem depender da notificação.
+  // Cancelamento: o cliente lê o porquê e o destino do dinheiro (nada cobrado,
+  // reserva desfeita, devolvido com valor) na própria tela, sem depender da
+  // notificação.
   cancellation_note: string
-  refund_status_label: string | null
+  cancellation_money_line?: string
+  // Antes de confirmar o cancelamento: o que acontece com o dinheiro.
+  cancel_dialog_money_line?: string
   cancellation_request: {
     protocol: string
     requested_at_display: string

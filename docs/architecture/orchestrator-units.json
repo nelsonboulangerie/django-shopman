@@ -13607,7 +13607,8 @@
             "HOSTED_CHECKOUT_METHODS",
             "_PAYMENT_GATEWAY_ADAPTER_PATHS",
             "_INTENT_PRESENTATION_KEYS",
-            "GATEWAY_RECHECK_SECONDS"
+            "GATEWAY_RECHECK_SECONDS",
+            "record_card_decline"
           ]
         }
       ],
@@ -13830,7 +13831,10 @@
             "balance_due_q",
             "has_sufficient_captured_payment",
             "_PAID_STATUSES",
-            "_UNCERTAIN_STATUSES"
+            "_UNCERTAIN_STATUSES",
+            "cancelled_money",
+            "CancelledMoney",
+            "_HOSTED_CARD_METHODS"
           ]
         }
       ],
