@@ -695,6 +695,33 @@ def test_channel_config_fiscal_enabled_is_not_the_predicate_anymore(db):
     assert checks.check_fiscal_adapter(None) == []
 
 
+@override_settings(SHOPMAN_FISCAL_ADAPTER=None)
+def test_check_is_quiet_while_migrate_has_not_added_the_new_shop_column(db):
+    # O ``migrate`` roda os checks antes de migrar: o modelo já pede a coluna
+    # nova (``staff_hours_start`` no beta de 06/11) e o banco ainda não a tem.
+    # O check não pode soltar traceback no release nem fingir uma resposta.
+    from django.core.cache import cache
+    from django.db import connection
+    from django.db.utils import ProgrammingError
+
+    from shopman.shop.models.shop import SHOP_CACHE_KEY
+    from shopman.shop.services import pos
+
+    cache.delete(SHOP_CACHE_KEY)
+    touched = []
+
+    def schema_behind(execute, sql, params, many, context):
+        if "shop_shop" in sql:
+            touched.append(sql)
+            raise ProgrammingError("column shop_shop.staff_hours_start does not exist")
+        return execute(sql, params, many, context)
+
+    with patch.object(pos, "logger") as pos_logger, connection.execute_wrapper(schema_behind):
+        assert checks.check_fiscal_adapter(None) == []
+    assert touched, "o check precisa ler a loja para responder"
+    pos_logger.warning.assert_not_called()
+
+
 # ── produção: catálogo QC e configuração resolvida são gates de release ─────
 
 

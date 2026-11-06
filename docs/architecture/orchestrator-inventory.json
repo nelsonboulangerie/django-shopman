@@ -3646,10 +3646,15 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_CHANNEL_NAMES",
+            "_EXTRA_NOTICE_LABELS",
+            "_ORDER_FAILURE_CAUSES",
             "_enrich_system_context",
             "_stock_alert_context",
             "_system_backends",
-            "logger"
+            "logger",
+            "notice_label",
+            "order_failure_cause"
           ]
         }
       ]
@@ -4211,6 +4216,7 @@
           "symbols": [
             "Command",
             "QUEUE_HEALTH_ALERT_TYPES",
+            "_tasks",
             "logger"
           ]
         }
@@ -11898,6 +11904,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_CHARGE_STATUS_LABELS",
             "_ack_alerts",
             "_alert",
             "_alert_insufficient",
@@ -12011,6 +12018,7 @@
             "_ensure_resolved_prices",
             "_existing_sale_by_client_request_id",
             "_find_customer_identifier",
+            "_fiscal_toggle_in_defaults",
             "_get_open_pos_tab_session",
             "_get_open_pos_tab_session_by_key",
             "_guard_receipt_contact_owner",

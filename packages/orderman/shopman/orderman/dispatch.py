@@ -111,8 +111,12 @@ def _process_directive(directive) -> None:
     wrote = False
     try:
         handler.handle(message=directive, ctx={"actor": "signal_dispatch"})
-        # Auto-complete: only if handler didn't change status (e.g. deferral)
-        wrote = save_if_claimed(directive, attempts, now, {"status": "done"}, only_if_running=True)
+        # Auto-complete: only if handler didn't change status (e.g. deferral).
+        # O erro de uma tentativa anterior não sobrevive ao sucesso: diretiva
+        # concluída com ``last_error`` preenchido engana quem audita.
+        wrote = save_if_claimed(
+            directive, attempts, now, {"status": "done", "error_code": "", "last_error": ""}, only_if_running=True,
+        )
     except DirectiveTerminalError as exc:
         logger.error(
             "Directive %s #%s terminal failure (attempt %d): %s",

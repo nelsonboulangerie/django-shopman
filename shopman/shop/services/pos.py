@@ -4506,6 +4506,12 @@ def discount_approval_threshold_q() -> int:
     return max(0, int(getattr(settings, "SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", 0) or 0))
 
 
+def _fiscal_toggle_in_defaults(defaults) -> bool:
+    """A resposta de ``fiscal_toggle_enabled`` a partir do ``Shop.defaults`` já lido."""
+    pos_cfg = defaults.get("pos") if isinstance(defaults, dict) else {}
+    return bool((pos_cfg or {}).get("fiscal_toggle", False))
+
+
 def fiscal_toggle_enabled() -> bool:
     """A loja OFERECE emissão de NFC-e no balcão?
 
@@ -4524,9 +4530,7 @@ def fiscal_toggle_enabled() -> bool:
         from shopman.shop.models import Shop
 
         shop = Shop.load()
-        defaults = (getattr(shop, "defaults", None) or {}) if shop else {}
-        pos_cfg = defaults.get("pos") if isinstance(defaults, dict) else {}
-        return bool((pos_cfg or {}).get("fiscal_toggle", False))
+        return _fiscal_toggle_in_defaults(getattr(shop, "defaults", None) if shop else None)
     # Irmão do teto de desconto logo acima, e pela mesma razão: cair para
     # `False` porque a leitura falhou faz o toggle "Nota fiscal" SUMIR do balcão
     # numa loja que oferece NFC-e — o operador não tem como pedir a nota e não

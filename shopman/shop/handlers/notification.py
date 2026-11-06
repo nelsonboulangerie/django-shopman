@@ -68,6 +68,15 @@ class NotificationSendHandler:
     """Processa directives de notificação. Topic: notification.send"""
 
     topic = NOTIFICATION_SEND
+    #: Régua própria (beta 06/11, W2): o padrão do despacho (2, 4, 8, 16 s)
+    #: desistia em meio minuto, e uma queda curta do WhatsApp ou do SMS perdia o
+    #: "pedido pronto" de vez. Com esta régua a última tentativa sai cerca de
+    #: 9 min depois da primeira; só então o aviso vira alerta ao operador.
+    retry_delays_seconds = (15, 30, 60, 120, 300)
+
+    @property
+    def max_attempts(self) -> int:
+        return len(self.retry_delays_seconds) + 1
 
     def handle(self, *, message: Directive, ctx: dict) -> None:
         payload = message.payload
@@ -210,11 +219,10 @@ class NotificationSendHandler:
             self._escalate(order_ref, template, None, unknown=True)
             raise DirectiveTerminalError("notification acceptance unconfirmed; automatic resend blocked")
 
-        # Todos os backends falharam — escalate if exhausted, then raise
-        exhausted = message.attempts >= 5
-        if exhausted:
-            self._escalate(order_ref, template, last_error)
-            raise DirectiveTerminalError(last_error or "all backends failed after 5 attempts")
+        # Todos os backends falharam: alerta só quando a régua acabou.
+        if message.attempts >= self.max_attempts:
+            self._escalate(order_ref, template, last_error, attempts=message.attempts)
+            raise DirectiveTerminalError(last_error or f"all backends failed after {message.attempts} attempts")
 
         raise DirectiveTransientError(last_error or "all backends failed")
 
@@ -238,36 +246,43 @@ class NotificationSendHandler:
         *,
         unknown: bool = False,
         no_receipt: bool = False,
+        attempts: int | None = None,
     ) -> None:
-        """Cria OperatorAlert quando entrega de notificação é exaurida."""
+        """Cria OperatorAlert quando entrega de notificação é exaurida.
+
+        O texto é para o operador: o nome do aviso em português e a causa em
+        palavras dele (beta 06/11, PIXEXP-08). A chave interna do template e o
+        erro cru do provedor ficam no log e na Directive, nunca na tela.
+        """
         try:
             from shopman.shop.adapters import alert as alert_adapter
 
-            # Um replay/manual retry do mesmo fato não deve gerar uma pilha de
-            # alertas idênticos. Enquanto a causa estiver aberta, ela é uma só.
+            label = notice_label(template)
+            # O nome do aviso entre aspas é o marcador do dedupe: um replay ou
+            # retry manual do mesmo fato não empilha alertas idênticos.
+            marker = f'"{label}"'
             if alert_adapter.recent_exists(
                 "notification_failed",
                 timezone.now(),
-                message_contains=f"'{template}'",
+                message_contains=marker,
                 order_ref=order_ref or "",
             ):
                 return
-            # O ``'{template}'`` entre aspas é o marcador do dedupe logo acima.
             if no_receipt:
                 message = (
-                    f"O aviso '{template}' do pedido {order_ref} foi aceito pelo provedor, mas nenhum canal "
+                    f"O aviso {marker} do pedido {order_ref} foi aceito pelo provedor, mas nenhum canal "
                     "devolveu comprovante de entrega. Confirme com o cliente que ele recebeu."
                 )
-            else:
+            elif unknown:
                 message = (
-                    (
-                        f"Não dá para saber se o aviso '{template}' chegou ao cliente do pedido {order_ref}. "
-                        "Confira com o cliente pelo WhatsApp do pedido antes de mandar de novo."
-                        if unknown
-                        else f"O aviso '{template}' não chegou ao cliente do pedido {order_ref} depois de "
-                        "5 tentativas. Se for importante, fale com o cliente pelo WhatsApp do pedido."
-                    )
-                    + f" Último erro: {last_error or 'desconhecido'}"
+                    f"Não dá para saber se o aviso {marker} chegou ao cliente do pedido {order_ref}. "
+                    "Confira com o cliente pelo WhatsApp do pedido antes de mandar de novo."
+                )
+            else:
+                cause, advice = order_failure_cause(last_error)
+                message = (
+                    f"O aviso {marker} não chegou ao cliente do pedido {order_ref} depois de "
+                    f"{attempts or self.max_attempts} tentativas. Motivo: {cause}. {advice}"
                 )
             alert_adapter.create(
                 "notification_failed",
@@ -276,11 +291,52 @@ class NotificationSendHandler:
                 order_ref=order_ref or "",
             )
             logger.warning(
-                "notification_escalated order=%s template=%s",
-                order_ref, template,
+                "notification_escalated order=%s template=%s error=%s",
+                order_ref, template, last_error,
             )
         except Exception:
             logger.exception("Failed to create OperatorAlert for notification failure")
+
+    def _escalate_system(self, template: str, context: dict, reasons: list[str], *, attempts: int) -> None:
+        """Alerta do aviso INTERNO que não saiu (estoque baixo, pedido de compra).
+
+        Não é aviso de pedido (beta 06/11, W1): não há cliente nem pedido, e o
+        texto de pedido dizia "fale com o cliente pelo WhatsApp do pedido" com
+        o ref vazio. Cada evento diz o que se perdeu e o gesto que ainda serve.
+        """
+        try:
+            from shopman.shop.adapters import alert as alert_adapter
+
+            cause = "; ".join(dict.fromkeys(reasons)) or "o motivo não ficou registrado"
+            if template == "stock_alert":
+                product = str(context.get("product_label") or context.get("sku") or "um produto").strip()
+                marker = f"de {product}"
+                message = (
+                    f"O alerta de estoque baixo {marker} não foi enviado depois de {attempts} tentativas. "
+                    f"Motivo: {cause}. Confira o estoque desse produto e peça à TI para revisar o envio."
+                )
+            elif template == "purchase_request":
+                purchase_ref = str(context.get("purchase_ref") or "").strip()
+                supplier = str(context.get("supplier_name") or context.get("supplier_ref") or "").strip()
+                marker = f"pedido de compra {purchase_ref}".strip()
+                message = (
+                    f"O {marker} não chegou ao fornecedor {supplier or 'escolhido'} depois de {attempts} "
+                    f"tentativas. Motivo: {cause}. Mande o pedido pelo contato do fornecedor."
+                )
+            else:
+                marker = f'"{notice_label(template)}"'
+                message = (
+                    f"O aviso interno {marker} não saiu depois de {attempts} tentativas. "
+                    f"Motivo: {cause}. Peça à TI para revisar o envio."
+                )
+            if alert_adapter.recent_exists(
+                "notification_failed", timezone.now(), message_contains=marker, order_ref="",
+            ):
+                return
+            alert_adapter.create("notification_failed", "error", message, order_ref="")
+            logger.warning("notification_escalated system template=%s reasons=%s", template, reasons)
+        except Exception:
+            logger.exception("Failed to create OperatorAlert for system notification failure")
 
     @staticmethod
     def _record_skip(message: Directive, reason: str) -> None:
@@ -318,16 +374,27 @@ class NotificationSendHandler:
         recipients = payload.get("recipients") if isinstance(payload.get("recipients"), dict) else {}
 
         result = None
+        # Por que cada canal não serviu, na língua do operador. Sem isto o
+        # canal pulado por falta de configuração chegava ao alerta como
+        # "desconhecido" (beta 06/11, W1).
+        reasons: list[str] = []
         from shopman.shop.notifications import get_backend as _get_backend
 
         for backend_name in _system_backends(payload):
+            channel = _CHANNEL_NAMES.get(backend_name, backend_name)
             backend_recipient = str(recipients.get(backend_name) or recipient or "").strip()
             if not backend_recipient:
+                reasons.append(f"{channel} sem destinatário")
                 continue
 
             backend_module = _get_backend(backend_name)
-            if backend_module and hasattr(backend_module, "is_available"):
+            if backend_module is None:
+                reasons.append(f"{channel} não está ligado")
+                logger.debug("notification.system: backend=%s not registered, skipping", backend_name)
+                continue
+            if hasattr(backend_module, "is_available"):
                 if not backend_module.is_available(backend_recipient):
+                    reasons.append(f"{channel} não está configurado")
                     logger.debug(
                         "notification.system: backend=%s not configured, skipping",
                         backend_name,
@@ -336,14 +403,76 @@ class NotificationSendHandler:
             result = notify(event=template, recipient=backend_recipient, context=context, backend=backend_name)
             if result.success:
                 return
+            reasons.append(f"{channel} recusou o envio")
+            logger.info("notification.system: backend=%s failed: %s", backend_name, result.error)
 
-        # All backends failed
-        exhausted = message.attempts >= 5
-        if exhausted:
-            self._escalate("", event, result.error if result else None)
-            raise DirectiveTerminalError((result.error if result else "unknown")[:500])
+        error = (result.error if result else "; ".join(reasons) or "no backend attempted")[:500]
+        if message.attempts >= self.max_attempts:
+            self._escalate_system(template, context, reasons, attempts=message.attempts)
+            raise DirectiveTerminalError(error)
 
-        raise DirectiveTransientError((result.error if result else "unknown")[:500])
+        raise DirectiveTransientError(error)
+
+
+#: Nome do canal como o operador fala.
+_CHANNEL_NAMES = {
+    "email": "e-mail",
+    "manychat": "WhatsApp",
+    "sms": "SMS",
+    "push": "notificação no celular",
+    "webhook": "integração",
+    "console": "console",
+}
+
+#: Avisos cujo nome não está no catálogo do WhatsApp do Marketing.
+_EXTRA_NOTICE_LABELS = {
+    "order_ready": "Pedido pronto",
+    "payment.reminder": "Lembrete de pagamento",
+    "stock_alert": "Alerta de estoque baixo",
+}
+
+#: Erro gravado pela cadeia de avisos (``services/notification.py``) → causa e
+#: gesto para o operador. O que não está aqui é erro do provedor, em inglês e
+#: sem utilidade na tela: vira "o canal recusou o envio".
+_ORDER_FAILURE_CAUSES = {
+    "no active notification backend available": (
+        "nenhum canal de envio está ligado",
+        "Se for importante, fale com o cliente pelo WhatsApp do pedido.",
+    ),
+    "no active notification channel available": (
+        "nenhum canal de envio está ligado",
+        "Se for importante, fale com o cliente pelo WhatsApp do pedido.",
+    ),
+    "no active notification recipient available": (
+        "o pedido não tem contato do cliente",
+        "Se for importante, procure o contato no cadastro do cliente.",
+    ),
+    "notification customer identity unavailable": (
+        "não deu para consultar o cadastro do cliente",
+        "Se for importante, fale com o cliente pelo WhatsApp do pedido.",
+    ),
+    "notification preferences unavailable": (
+        "não deu para consultar as preferências de aviso do cliente",
+        "Se for importante, fale com o cliente pelo WhatsApp do pedido.",
+    ),
+}
+
+
+def notice_label(template: str) -> str:
+    """Nome do aviso em português; nunca a chave interna."""
+    from shopman.shop.services.marketing_platform_configuration import WHATSAPP_EVENT_LABELS
+
+    key = str(template or "").strip()
+    return WHATSAPP_EVENT_LABELS.get(key) or _EXTRA_NOTICE_LABELS.get(key) or "aviso ao cliente"
+
+
+def order_failure_cause(last_error: str | None) -> tuple[str, str]:
+    """(causa, gesto) do aviso de pedido que esgotou as tentativas."""
+    error = str(last_error or "").strip()
+    if error in _ORDER_FAILURE_CAUSES:
+        return _ORDER_FAILURE_CAUSES[error]
+    cause = "o canal recusou o envio" if error else "o motivo não ficou registrado"
+    return cause, "Se for importante, fale com o cliente pelo WhatsApp do pedido."
 
 
 def _system_backends(payload: dict) -> list[str]:

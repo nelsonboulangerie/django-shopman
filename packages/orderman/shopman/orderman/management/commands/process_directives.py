@@ -330,7 +330,8 @@ class Command(BaseCommand):
                 try:
                     handler.handle(message=directive, ctx={"actor": "process_directives"})
                     # Auto-complete: only if handler didn't change status (e.g. deferral)
-                    outcome = {"status": "done", "error_code": ""}
+                    # O erro de uma tentativa anterior não sobrevive ao sucesso.
+                    outcome = {"status": "done", "error_code": "", "last_error": ""}
                     only_if_running = True
                     processed += 1
                 except DirectiveTerminalError as exc:

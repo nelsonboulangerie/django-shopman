@@ -639,12 +639,18 @@ def check_fiscal_adapter(app_configs, **kwargs):
 
     from django.db.utils import OperationalError, ProgrammingError
 
-    from shopman.shop.services.pos import fiscal_toggle_enabled
+    from shopman.shop.models import Shop
+    from shopman.shop.services.pos import _fiscal_toggle_in_defaults
 
+    # O ``migrate`` roda os checks ANTES de migrar: o modelo já tem a coluna
+    # nova e o banco ainda não. ``fiscal_toggle_enabled`` (o ``Shop.load()``
+    # inteiro) engolia o erro e soltava um traceback no meio do release. O check
+    # lê só a coluna de que precisa e fica quieto enquanto o schema não chegou.
     try:
-        offers_fiscal = fiscal_toggle_enabled()
+        defaults = Shop.objects.values_list("defaults", flat=True).first()
     except (OperationalError, ProgrammingError):
-        return warnings  # tables not ready (initial migration)
+        return warnings  # schema ainda não migrado (primeira migração ou coluna nova)
+    offers_fiscal = _fiscal_toggle_in_defaults(defaults)
 
     if offers_fiscal:
         warnings.append(

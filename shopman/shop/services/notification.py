@@ -636,15 +636,16 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
             _record_delivery(payload, status="skipped", reason="expected_no_contact")
             return True, None
         if requires_active:
-            logger.warning(
-                "notification.deliver: active notification has no recipient order=%s template=%s",
-                order.ref,
-                template,
-            )
             error = (
                 "no active notification backend available"
                 if any_recipient
                 else "no active notification recipient available"
+            )
+            logger.warning(
+                "notification.deliver: active notification not attempted (%s) order=%s template=%s",
+                error,
+                order.ref,
+                template,
             )
             _record_delivery(
                 payload,
@@ -778,6 +779,12 @@ def _filter_backend_chain(
         channel = _BACKEND_CHANNELS.get(backend)
         if channel in allowed_channels:
             filtered.append(backend)
+    # Dev local: o console entra no FIM, depois dos canais reais (beta 06/11,
+    # PIXEXP-09). Sem isto o cliente sem opt-out perdia o console e o aviso
+    # falhava, enquanto quem revogou tudo recebia pelo console. No fim ele não
+    # engole WhatsApp nem SMS: só responde quando nenhum real atendeu.
+    if dev_console_allowed(backend_chain) and "console" not in filtered:
+        filtered.append("console")
     return filtered
 
 
@@ -1430,9 +1437,16 @@ def _canonical_template(template: str) -> str:
 
 
 def requires_active_notification(template: str, *, payload: dict | None = None) -> bool:
+    """O aviso precisa sair: sem canal, ele FALHA (retry e alerta), não é pulado.
+
+    Crítico implica obrigatório (beta 06/11, W4): o ``order_accepted`` é crítico
+    por decisão do dono e, sem canal, era gravado "não se aplica" e sumia em
+    silêncio ao lado do selo "Crítico".
+    """
     if payload and payload.get("requires_active_notification") is True:
         return True
-    return _canonical_template(template) in _ACTIVE_NOTIFICATION_TEMPLATES
+    canonical = _canonical_template(template)
+    return canonical in _ACTIVE_NOTIFICATION_TEMPLATES or canonical in CRITICAL_NOTIFICATION_TEMPLATES
 
 
 def _dedupe_key(order, template: str) -> str:

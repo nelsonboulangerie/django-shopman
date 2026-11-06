@@ -36,12 +36,13 @@ def _debounce_key(alert) -> str:
 def enqueue(alert):
     recipient = str(getattr(settings, "SHOPMAN_ALERT_EMAIL", "") or "").strip()
     if not recipient:
-        # Alerta crítico sem ninguém para receber o e-mail: só a tela sabe dele.
+        # Alerta crítico sem ninguém para receber o e-mail: só o Admin e o
+        # sino sem recorte (``scope``) sabem dele.
         # Isto é defeito de configuração, e grita (o `operator_alert.created`
         # é rastro justamente porque conta com este e-mail).
         logger.error(
             "operator_alert.external_recipient_missing: SHOPMAN_ALERT_EMAIL vazio; "
-            "alerta crítico %s só na tela",
+            "alerta %s sem e-mail, só no Admin e no sino",
             getattr(alert, "type", ""),
         )
         return None
@@ -167,7 +168,12 @@ def deliver_now(alert):
     """
     if alert is None:
         return None
-    task = _existing_task(alert) or enqueue(alert)
+    task = _existing_task(alert)
+    # O alerta crítico já passou pelo ``enqueue`` em ``create_operator_alert``:
+    # sem Directive aqui, foi debounce ou falta de destinatário, e chamar de
+    # novo só repetia o mesmo ERROR no log (beta 06/11, W6).
+    if task is None and getattr(alert, "severity", "") != "critical":
+        task = enqueue(alert)
     if task is None:
         return None
     return _run_inline(task)
