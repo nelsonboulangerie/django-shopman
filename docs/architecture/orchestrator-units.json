@@ -6450,6 +6450,7 @@
             "preview",
             "preview_platforms",
             "preview_announcement",
+            "_publish_blockers",
             "_preview_whatsapp_binding",
             "_TEST_IDEMPOTENCY_KEY"
           ]
@@ -6891,6 +6892,42 @@
       "out_of_extraction": false,
       "authoritative_symbols": [
         "shopman.shop.services.customer_contact:request_contact"
+      ]
+    },
+    {
+      "id": "marketing.public-link",
+      "question": "Este conteúdo público de Marketing pode sair com os links que tem?",
+      "owner": "marketing.public-link",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.marketing_public_link:public_link_problem",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/marketing_public_link.py",
+          "symbols": [
+            "STORE_ADDRESS_MISSING",
+            "_RELATIVE_STORE_PATH_IN_TEXT",
+            "PublicLinkProblem",
+            "public_link_problem"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_marketing_public_link_policy.py::test_absolute_store_link_in_link_and_text_passes"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.policies.marketing_public_link:public_link_problem"
       ]
     },
     {
@@ -10909,6 +10946,7 @@
       "events": [],
       "directives": [],
       "config_surface": [
+        "SHOPMAN_STOREFRONT_BASE_URL",
         "TIME_ZONE"
       ],
       "tests": [

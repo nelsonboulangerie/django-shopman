@@ -106,6 +106,10 @@ class ResolvedReceiptLine:
     invoice_total_q: int = 0
     invoice_commercial_unit: str = ""
     invoice_conversion_factor: Decimal | None = None
+    #: O que o operador decidiu quando o preço desta entrada difere do custo
+    #: preferencial do insumo neste fornecedor: ``"update"`` troca o custo,
+    #: ``"keep"`` mantém. Vazio quando não houve diferença a decidir.
+    preferred_cost: str = ""
 
     @property
     def sku(self) -> str:
@@ -215,6 +219,7 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
         _require_supplier_is_issuer(supplier=supplier, invoice_key=invoice_key)
 
     lines = [_resolve_receipt_line(raw, index=index, supplier=supplier) for index, raw in enumerate(raw_lines)]
+    _require_preferred_cost_decisions(lines, supplier=supplier)
     attestation = _receipt_attestation(lines, payload, mode=mode)
     note = str(payload.get("note") or "").strip()
     source_ref = invoice_key or _manual_source_ref(supplier_ref=supplier.ref, note=note, lines=lines)
@@ -347,7 +352,19 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user
                 **_converted_via(line),
                 **_attested_by(line, attestation),
             )
-            if line.total_cost_q > 0:
+            # O custo preferencial deste fornecedor só muda por escolha: "Manter"
+            # deixa como estava (o preço pago fica no movimento de estoque) e
+            # "Atualizar" grava o valor que a pergunta mostrou, na embalagem do
+            # próprio custo preferencial. Receber em outra embalagem não troca a
+            # unidade em que o pedido de compra é feito.
+            preferred = _supplier_preferred_cost(line, supplier=supplier)
+            if preferred is not None:
+                cost, incoming_q = preferred
+                if line.preferred_cost == "update" and incoming_q != cost.cost_q:
+                    cost.cost_q = incoming_q
+                if line.preferred_cost != "keep":
+                    cost.save()
+            elif line.total_cost_q > 0:
                 _upsert_supplier_cost(
                     material=line.material,
                     supplier=supplier,
@@ -1644,7 +1661,75 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
         invoice_total_q=_invoice_total_q(raw),
         invoice_commercial_unit=_raw_text(raw, "invoiceUnit", "invoice_unit"),
         invoice_conversion_factor=_invoice_conversion_factor(raw),
+        preferred_cost=_preferred_cost_decision(raw, index=index),
     )
+
+
+#: As duas respostas possíveis quando o preço recebido difere do custo preferencial.
+PREFERRED_COST_DECISIONS = frozenset({"update", "keep"})
+
+
+def _preferred_cost_decision(raw: dict[str, Any], *, index: int) -> str:
+    decision = _raw_text(raw, "preferredCost", "preferred_cost")
+    if decision and decision not in PREFERRED_COST_DECISIONS:
+        raise PurchaseError(
+            "Escolha se o custo preferencial muda ou fica como está.",
+            code="preferred_cost_decision_invalid",
+            field=f"lines.{index}.preferredCost",
+        )
+    return decision
+
+
+def _supplier_preferred_cost(line: ResolvedReceiptLine, *, supplier):
+    """O custo preferencial do insumo neste fornecedor e o preço desta entrada
+    dito na unidade de compra dele, ou ``None``.
+
+    A comparação é na unidade de compra do custo preferencial: a mesma conta
+    que a tela mostra.
+    """
+    if line.total_cost_q <= 0:
+        return None
+    SupplierMaterialCost = apps.get_model("buyman", "SupplierMaterialCost")
+    cost = (
+        SupplierMaterialCost.objects.select_related("conversion")
+        .filter(material=line.material, supplier=supplier, is_preferred=True)
+        .first()
+    )
+    if cost is None:
+        return None
+    line_factor = Decimal(line.conversion.to_base_factor) if line.conversion else Decimal("1")
+    incoming_q = int(
+        (Decimal(line.total_cost_q) / line.purchase_qty / line_factor * cost.base_factor).quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP
+        )
+    )
+    return cost, incoming_q
+
+
+def _preferred_cost_at_stake(line: ResolvedReceiptLine, *, supplier):
+    """O custo preferencial que esta entrada trocaria, ou ``None``.
+
+    Receber grava o preço pago no custo do fornecedor. Quando esse custo é o
+    preferencial do insumo e o preço mudou, gravar em silêncio troca o custo
+    que alimenta o custeio, a sugestão de preço e o pedido de compra (beta
+    05/11, CMP-06).
+    """
+    preferred = _supplier_preferred_cost(line, supplier=supplier)
+    if preferred is None:
+        return None
+    cost, incoming_q = preferred
+    return cost if incoming_q != cost.cost_q else None
+
+
+def _require_preferred_cost_decisions(lines: list[ResolvedReceiptLine], *, supplier) -> None:
+    for index, line in enumerate(lines):
+        if line.preferred_cost or _preferred_cost_at_stake(line, supplier=supplier) is None:
+            continue
+        raise PurchaseError(
+            f"O preço de {line.name} difere do custo preferencial. Escolha se o custo preferencial muda.",
+            code="preferred_cost_decision_required",
+            field=f"lines.{index}.preferredCost",
+        )
 
 
 def _invoice_purchase_qty(raw: dict[str, Any]) -> Decimal | None:

@@ -227,6 +227,44 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     wrapper.unmount();
   });
 
+  it("mostra por que o link relativo não pode ser aprovado, com X que volta (MKT-20)", async () => {
+    const blocked = {
+      ...batch({ instagram: "Croissant saiu" }),
+      sample: false,
+      publish_blockers: [
+        {
+          code: "marketing_link_store_address_missing",
+          detail: "O link do anúncio está sem o endereço do site da loja. Fora da loja, o cliente não conseguiria abrir.",
+          field_detail: "Peça ao suporte técnico para configurar o endereço do site da loja. Depois, atualize a prévia.",
+        },
+      ],
+    };
+    vi.stubGlobal("$fetch", vi.fn().mockResolvedValue(blocked));
+    const wrapper = mountPreview({ announcementId: 1 });
+
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Croissant saiu");
+    const selector = "[data-preview-publish-blocker='marketing_link_store_address_missing']";
+    const alert = wrapper.get(selector).text();
+    expect(alert).toContain("sem o endereço do site da loja");
+    expect(alert).toContain("suporte técnico");
+    expect(alert).not.toContain("—");
+
+    const close = wrapper.get(selector).find("button");
+    expect(close.exists()).toBe(true);
+    await close.trigger("click");
+    await flushPromises();
+    expect(wrapper.find(selector).exists()).toBe(false);
+
+    await wrapper.setProps({ body: "Croissant saiu de novo" });
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+    expect(wrapper.find(selector).exists()).toBe(true);
+    wrapper.unmount();
+  });
+
   it("não repete a mesma frase no detalhe do campo (ge:MKT-08)", async () => {
     const same = "O texto passou do limite.";
     vi.stubGlobal(
