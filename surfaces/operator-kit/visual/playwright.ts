@@ -111,12 +111,6 @@ export async function captureOperatorEvidence(
 }
 
 /**
- * Barreira comum entre "a página hidratou" e "a cena está pronta para ser
- * avaliada". O marcador pertence ao app e só muda para `ready` depois dos dados
- * que definem a cena; `subject` protege uma interação (por exemplo um diálogo)
- * contra uma remontagem tardia durante a estabilização de fontes/layout.
- */
-/**
  * Espera as animações finitas da tela terminarem antes de medir.
  *
  * O Modal do Nuxt UI entra com `scale-in` (200 ms, opacidade 0 → 1), e o gate de login
@@ -132,7 +126,8 @@ export async function waitForAnimationsToSettle(page: Page) {
       .getAnimations()
       .filter((animation) => {
         const end = Number(animation.effect?.getComputedTiming().endTime);
-        return animation.playState !== "finished" && Number.isFinite(end);
+        // Só a que está rodando: pausada nunca resolve `finished` e prenderia o teste.
+        return animation.playState === "running" && Number.isFinite(end);
       });
     // `allSettled`: animação cancelada (o Vue desmontou o nó) também conta como acabada.
     await Promise.allSettled(finite.map((animation) => animation.finished));
@@ -142,6 +137,12 @@ export async function waitForAnimationsToSettle(page: Page) {
   });
 }
 
+/**
+ * Barreira comum entre "a página hidratou" e "a cena está pronta para ser
+ * avaliada". O marcador pertence ao app e só muda para `ready` depois dos dados
+ * que definem a cena; `subject` protege uma interação (por exemplo um diálogo)
+ * contra uma remontagem tardia durante a estabilização de fontes/layout.
+ */
 export async function waitForOperatorScene(
   page: Page,
   ready: Locator,
