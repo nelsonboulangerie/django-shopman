@@ -86,7 +86,7 @@ class AdvanceBlock(StrEnum):
 _ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
     AdvanceBlock.IFOOD_SCHEDULE_BLOCKED: "O horário de preparo do iFood ainda não permite avançar. Confira o agendamento deste pedido.",
     AdvanceBlock.IFOOD_WAITING_PICKUP: "Aguardando o iFood confirmar a retirada pelo entregador.",
-    AdvanceBlock.IFOOD_DELIVERY_UNKNOWN: "O iFood não informou o responsável pela entrega. Confira a integração antes de despachar.",
+    AdvanceBlock.IFOOD_DELIVERY_UNKNOWN: "O iFood ainda não disse quem leva este pedido. Confira no app do iFood ou chame o gerente.",
     AdvanceBlock.DEVICE_UNAVAILABLE: "Nenhuma maquininha está disponível. Aguarde a devolução para despachar esta entrega.",
     AdvanceBlock.IFOOD_CANCELLATION_PENDING: "Cancelamento solicitado ao iFood. Aguardando confirmação.",
     AdvanceBlock.NO_NEXT_STEP: "Pedido não possui próxima etapa",
@@ -1911,6 +1911,18 @@ def settle_delivery_cash(
     return amount
 
 
+#: Pedido encerrado: nada do que vai à cozinha ou à embalagem muda mais. O
+#: comentário continua (é o histórico); nota da cozinha, volumes e atendimento
+#: prometeriam um efeito que não existe (o ticket já foi cancelado ou entregue).
+CLOSED_ORDER_STATUSES = frozenset({Order.Status.CANCELLED, Order.Status.COMPLETED, Order.Status.RETURNED})
+CLOSED_ORDER_MESSAGE = "Pedido encerrado."
+
+
+def _refuse_closed(order: Order) -> None:
+    if order.status in CLOSED_ORDER_STATUSES:
+        raise OrderStateConflict(CLOSED_ORDER_MESSAGE)
+
+
 @transaction.atomic
 def save_kitchen_note(order: Order, *, notes: str, expected_revision: str | None = None, actor: str = "system") -> None:
     """Persist the operator's kitchen note on the order data payload.
@@ -1921,6 +1933,7 @@ def save_kitchen_note(order: Order, *, notes: str, expected_revision: str | None
     """
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
+    _refuse_closed(order)
     if expected_revision is not None and expected_revision != operational_revision(order, field="kitchen_note"):
         raise OrderStateConflict("Este campo mudou. Seu rascunho foi preservado; compare com o valor atual.")
     data = dict(order.data or {})
@@ -1963,6 +1976,7 @@ def save_volumes(
         raise ValueError(f"Superfície desconhecida para volumes: {surface!r}.")
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
+    _refuse_closed(order)
     if expected_revision is not None and expected_revision != operational_revision(order, field="volumes"):
         raise OrderStateConflict("Os volumes deste pedido mudaram. Confira o valor atual antes de gravar.")
     data = dict(order.data or {})
@@ -1991,6 +2005,7 @@ def assign_order(order: Order, *, operator_id: int, operator_name: str, actor: s
 
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
+    _refuse_closed(order)
     if expected_revision is not None and expected_revision != operational_revision(order, field="assignment"):
         raise OrderStateConflict("Este campo mudou. Seu rascunho foi preservado; compare com o valor atual.")
     data = dict(order.data or {})
@@ -2303,9 +2318,12 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
         ))
     # Volumes: quem embalou declara, onde estiver. Quem só expede (posto Saída,
     # Cozinha) também embala, então o gesto é dele também.
+    closed = order.status in CLOSED_ORDER_STATUSES
+    can_pack = (authorized or expedite) and not closed
     actions.append(Action(
         ref="volumes", kind="mutation", label="Declarar volumes",
-        enabled=authorized or expedite, reason="" if authorized or expedite else permission_reason,
+        enabled=can_pack,
+        reason="" if can_pack else CLOSED_ORDER_MESSAGE if closed else permission_reason,
         method="POST", idempotency="required",
         payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order, field="volumes")},
     ))
@@ -2314,9 +2332,15 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
         ("comment", "Adicionar comentário", "comment"),
         ("unassign", "Liberar atendimento", "assignment") if (order.data or {}).get("assignment") else ("assign", "Atender", "assignment"),
     ):
+        # Encerrado, só o comentário segue: é o histórico. O resto prometeria um
+        # efeito (ticket da cozinha, embalagem, atendimento) que já não existe.
+        # "Liberar" continua, para não deixar um atendimento preso num pedido fechado.
+        blocked = closed and ref in {"notes", "assign"}
+        enabled = authorized and not blocked
         actions.append(Action(
-            ref=ref, kind="mutation", label=label, enabled=authorized,
-            reason="" if authorized else permission_reason, method="POST", idempotency="required",
+            ref=ref, kind="mutation", label=label, enabled=enabled,
+            reason="" if enabled else CLOSED_ORDER_MESSAGE if blocked else permission_reason,
+            method="POST", idempotency="required",
             payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order, field=field)},
         ))
     # "Entregador voltou": um gesto fecha a saída inteira (entrega, dinheiro,

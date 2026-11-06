@@ -170,7 +170,7 @@ function openOrder(ref: string) {
     >
       <template #status>
         <span class="hidden op-micro text-muted-foreground lg:inline"
-          >Pedidos concluídos e cancelados</span
+          >Pedidos concluídos, cancelados e devolvidos</span
         >
       </template>
       <template #search>
@@ -251,7 +251,7 @@ function openOrder(ref: string) {
         :empty-description="history ? `${history.total_label}.` : ''"
         pinned="order"
         view-key="orders-history"
-        caption="Pedidos concluídos e cancelados"
+        caption="Pedidos concluídos, cancelados e devolvidos"
         data-history-list
         @retry="refresh()"
       >
