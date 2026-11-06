@@ -292,6 +292,18 @@ export function gestorSwitcherSections(
 }
 
 /**
+ * As respostas de permissão já chegaram (sucesso OU erro)? A grade de Ajustes só
+ * desenha depois disso: antes, 3 cartões apareciam, os outros 3 entravam logo em
+ * seguida, a grade deslocava e o toque caía no cartão errado (beta 05/11, GES-22).
+ */
+export function accessResolved(statuses: readonly string[]): boolean {
+  return statuses.every((status) => status === "success" || status === "error");
+}
+
+/** Quantos cartões a grade de Ajustes reserva enquanto as permissões chegam. */
+export const SETTINGS_SKELETON_CARDS = 6;
+
+/**
  * A permissão de cada tela de Ajustes, com o nome dela para a recusa ("Sua conta não abre
  * o Catálogo"). A mesma régua dos endpoints que a tela lê (`required_permission` no
  * backstage). Quem chega pela barra de endereço sem a permissão vê a recusa no lugar da

@@ -19,6 +19,7 @@ import type { OperatorActionBarAction } from "../../../../operator-kit/app/prese
 import { toast } from "vue-sonner";
 
 import {
+  amountEcho,
   amountInputError,
   amountToQ,
   attentionCount,
@@ -51,7 +52,7 @@ useHead({ title: "Caixa" });
 const liveStatus = usePosLiveStatus();
 
 const action = usePosAction();
-const { pos, shift, actions, pending, refresh } = await usePosTerminal();
+const { pos, shift, actions, station, pending, refresh } = await usePosTerminal();
 
 const OPERATOR_PERM = "cashman.operate_pos";
 const { operator: activeOperator } = useOperatorLock(OPERATOR_PERM);
@@ -147,6 +148,7 @@ const endOfDay = computed(() => endOfDayTiles({
   shiftOpen: screen.value === "open",
   justClosedShift: justClosedShift.value,
   canAuditCash: canAuditCash.value,
+  atCounter: station?.value?.ready !== false,
   dayClosing: dayClosing.value,
 }));
 // Fim de dia EM CURSO: acabou de fechar o caixa e o dia está por fechar. Aí o
@@ -345,6 +347,9 @@ const shiftBar = computed<OperatorActionBarAction>(() => ({
 const movementKind = ref("");
 const movementAmount = ref("");
 const movementError = computed(() => amountInputError(movementAmount.value));
+// O valor por extenso, ao lado do campo: "5000" é R$ 5.000,00 e o operador lê isso
+// antes de registrar (beta 05/11, PDV-01).
+const movementEcho = computed(() => amountEcho(movementAmount.value));
 // Escolher o tipo leva o foco direto ao valor: o toque no botão já respondeu a
 // primeira pergunta, e a mão não deveria precisar de um segundo alvo.
 const movementAmountField = useTemplateRef<{ inputRef: HTMLInputElement | null }>("movementAmountField");
@@ -354,6 +359,12 @@ const movementReasonPick = ref("");
 const movementReasonOther = ref("");
 const movementReasonOptions = computed(() => movementReasons(cashManagement.value, movementKind.value));
 const movementReason = computed(() => movementReasonPick.value || movementReasonOther.value.trim());
+// Na entrada o campo é "Observação (opcional)"; um "Motivo" dentro dele dizia o
+// contrário do rótulo (beta 05/11, PDV-24 b).
+const movementReasonPlaceholder = computed(() => {
+  if (movementKind.value !== "sangria") return "Observação";
+  return movementReasonOptions.value.length ? "Outro motivo" : "Motivo";
+});
 const canSubmitMovement = computed(
   () => canRegisterMovement(movementKind.value, movementAmount.value, movementReason.value),
 );
@@ -416,6 +427,26 @@ const managerAuthAction = computed<ManagerAction>(() => {
   if (managerIntent.value.action === "close_shift") return "close_shift_review";
   return "cash_out";
 });
+
+// O VALOR que o gerente assina, e o complemento do ato (beta 05/11, PDV-09). O
+// diálogo dizia só "Sai dinheiro da gaveta.", e foi assim que um R$ 5.000,00
+// digitado no lugar de R$ 50,00 passou pelo PIN.
+const managerAuthAmountQ = computed<number | null>(() => {
+  const intent = managerIntent.value;
+  const runtime = cashRuntime.value;
+  if (intent.action === "movement") return amountToQ(movementAmount.value);
+  if (intent.action === "serve_change") {
+    return runtime?.pending_change_requests?.find((row) => row.ref === intent.ref)?.amount_q ?? null;
+  }
+  if (intent.action === "refund_cash") {
+    return runtime?.pending_cash_refunds?.find((row) => row.order_ref === intent.orderRef)?.amount_q ?? null;
+  }
+  if (intent.action === "card_machine_refund") {
+    return runtime?.pending_card_machine_refunds?.find((row) => row.order_ref === intent.orderRef)?.amount_q ?? null;
+  }
+  return null;
+});
+const managerAuthDetail = computed(() => (managerIntent.value.action === "movement" ? movementReason.value : ""));
 
 function onManagerAuthorize(username: string, pin: string) {
   autorizar({ username, pin });
@@ -491,6 +522,9 @@ async function submitSettle() {
 async function submitMovement(managerApproval: ManagerApproval | null = null) {
   if (!canSubmitMovement.value) return;
   managerIntent.value = { action: "movement" };
+  // A confirmação com o valor ("R$ 50,00 entrou na gaveta.") é do
+  // `registerCashMovement`, uma vez só: repetida aqui, o balcão via dois toasts
+  // para um movimento (beta 05/11, PDV-10/11).
   const ok = await registerCashMovement({
     kind: movementKind.value,
     amount: movementAmount.value,
@@ -543,6 +577,8 @@ async function submitChangeRequest() {
 
 async function serveChange(ref_: string, managerApproval: ManagerApproval | null = null) {
   managerIntent.value = { action: "serve_change", ref: ref_ };
+  // A confirmação com o valor ("Troco de R$ 100,00 atendido.") é do
+  // `serveChangeRequest`, uma vez só (beta 05/11, PDV-10).
   const ok = await serveChangeRequest({ ref: ref_, managerApproval });
   if (ok) {
     managerChallenge.value = null;
@@ -1131,7 +1167,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
                 size="xl"
                 :color="denom.shape === 'note' ? 'success' : 'warning'"
                 :variant="changeDenominationsPicked.includes(denom.q) ? 'solid' : 'outline'"
-                :class="denom.shape === 'note' ? 'min-w-16 justify-center' : 'size-12 justify-center rounded-full'"
+                :class="denom.shape === 'note' ? 'min-w-16 justify-center' : 'h-12 min-w-12 justify-center rounded-full px-2'"
                 :label="denom.label"
                 :aria-pressed="changeDenominationsPicked.includes(denom.q)"
                 :aria-label="`${denom.shape === 'note' ? 'Nota' : 'Moeda'} de ${denom.label}`"
@@ -1189,14 +1225,14 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
                 :key="kind"
                 block
                 :color="movementKind === kind ? 'primary' : 'neutral'"
-                :variant="movementKind === kind ? 'soft' : 'outline'"
+                :variant="movementKind === kind ? 'solid' : 'outline'"
                 :label="movementLabel(kind)"
                 :aria-pressed="movementKind === kind"
                 @click="pickMovementKind(kind)"
               />
             </div>
           </div>
-          <NuxtFormField label="Valor" :error="movementError || undefined">
+          <NuxtFormField label="Valor" :error="movementError || undefined" :help="movementEcho ? `${movementEcho} ${movementKind === 'sangria' ? 'saem da' : 'entram na'} gaveta` : undefined">
             <NuxtInput
               ref="movementAmountField"
               v-model="movementAmount"
@@ -1227,7 +1263,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
                 :key="reason"
                 block
                 :color="movementReasonPick === reason ? 'primary' : 'neutral'"
-                :variant="movementReasonPick === reason ? 'soft' : 'outline'"
+                :variant="movementReasonPick === reason ? 'solid' : 'outline'"
                 :label="reason"
                 :aria-pressed="movementReasonPick === reason"
                 @click="pickMovementReason(reason)"
@@ -1236,8 +1272,8 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
             <NuxtInput
               v-model="movementReasonOther"
               class="w-full"
-              :aria-label="movementReasonOptions.length ? 'Outro motivo' : 'Motivo'"
-              :placeholder="movementReasonOptions.length ? 'Outro motivo' : 'Motivo'"
+              :aria-label="movementReasonPlaceholder"
+              :placeholder="movementReasonPlaceholder"
             />
           </div>
 
@@ -1451,6 +1487,8 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
     <OperatorManagerAuth
       v-model:open="managerAuthOpen"
       :action="managerAuthAction"
+      :amount-q="managerAuthAmountQ"
+      :detail="managerAuthDetail"
       :operator-name="activeOperator?.name || ''"
       :managers="pos?.managers || []"
       :busy="busy"

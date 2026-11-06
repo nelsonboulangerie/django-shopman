@@ -105,6 +105,8 @@ COPY: dict[str, str] = {
     "manage_devices_none": "Nenhum dispositivo vinculado a este posto.",
     "manage_device_last_used": "Usado por último em {when}",
     "manage_device_never_used": "Ainda não usado",
+    "manage_device_name_label": "Nome do dispositivo",
+    "manage_device_name_hint": "Dê um nome que diga qual é, como Tablet do balcão.",
     "manage_error": "Não foi possível salvar o posto.",
 }
 

@@ -1,4 +1,5 @@
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
+import { httpError } from "../../../operator-kit/app/utils/httpError";
 import type { OperationChecklistResponse } from "~/types/operationChecklists";
 
 const BASE = "/api/v1/backstage/operation-checklists";
@@ -19,16 +20,25 @@ export function useOperationChecklists() {
     });
   const busy = ref("");
   const message = ref("");
+  // A recusa que tem campo (a evidência que faltou) fica com a TAREFA, embaixo do
+  // campo, e não no topo da página, fora da vista (GES-23).
+  const taskErrors = ref<Record<number, { field: string; message: string }>>({});
   const board = computed(() => data.value?.checklists ?? null);
 
   async function mutate(
     key: string,
     url: string,
     body: Record<string, unknown> = {},
+    taskId?: number,
   ): Promise<boolean> {
     if (busy.value) return false;
     busy.value = key;
     message.value = "";
+    if (taskId !== undefined) {
+      taskErrors.value = Object.fromEntries(
+        Object.entries(taskErrors.value).filter(([id]) => Number(id) !== taskId),
+      );
+    }
     try {
       data.value = await $fetch<OperationChecklistResponse>(url, {
         method: "POST",
@@ -36,10 +46,19 @@ export function useOperationChecklists() {
       });
       return true;
     } catch (err) {
-      message.value = httpErrorMessage(
+      const text = httpErrorMessage(
         err,
         "Não foi possível atualizar o checklist.",
       );
+      const field = (httpError(err).data as { field?: unknown } | null)?.field;
+      if (taskId !== undefined && typeof field === "string" && field) {
+        taskErrors.value = {
+          ...taskErrors.value,
+          [taskId]: { field, message: text },
+        };
+      } else {
+        message.value = text;
+      }
       return false;
     } finally {
       busy.value = "";
@@ -63,6 +82,7 @@ export function useOperationChecklists() {
       `task:${taskId}`,
       `${BASE}/${runId}/tasks/${taskId}/complete/`,
       evidence,
+      taskId,
     );
   }
 
@@ -84,6 +104,7 @@ export function useOperationChecklists() {
     refresh,
     busy,
     message,
+    taskErrors,
     start,
     completeTask,
     superviseTask,

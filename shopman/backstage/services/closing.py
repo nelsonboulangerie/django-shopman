@@ -23,17 +23,86 @@ from shopman.backstage.models import DayClosing
 logger = logging.getLogger(__name__)
 
 
+class PendingProductionBlocksClosing(ValueError):
+    """Há ordem de produção aberta e ninguém liberou o fechamento.
+
+    Decisão do dono (05/11/2026): produção aberta IMPEDE selar o dia. Quem fecha
+    resolve na Produção (conclui ou cancela as ordens) ou libera ali mesmo com a
+    autorização de um gerente escolhido da lista, com PIN e motivo. A camada
+    HTTP responde 409 com ``code="pending_production"``.
+    """
+
+    code = "pending_production"
+
+    def __init__(self, message: str, *, field: str = "production_release"):
+        super().__init__(message)
+        self.field = field
+
+
+def _authorize_production_release(*, user, pending: list[dict], release: dict | None) -> dict:
+    """A liberação do fechamento com produção aberta, assinada e com o porquê.
+
+    O motivo vem ANTES do PIN: conferir o PIN de um pedido que vai ser recusado
+    por falta de motivo gastaria uma tentativa do gerente à toa. Quem assina é o
+    APROVADOR que o PIN (ou o crachá) resolveu, o mesmo validador da sangria
+    (``validate_manager_override``): uma regra de quem pode autorizar, não duas.
+    Levanta ``PosIntentError`` quando a assinatura falta ou não confere.
+    """
+    from shopman.shop.services.pos import validate_manager_override
+
+    quantas = len(pending)
+    if not release:
+        aberta = "Uma ordem de produção segue aberta" if quantas == 1 else f"{quantas} ordens de produção seguem abertas"
+        raise PendingProductionBlocksClosing(
+            f"{aberta}. Conclua ou cancele na Produção, ou libere o fechamento com a autorização de um gerente."
+        )
+    reason = str(release.get("reason") or "").strip()[:200]
+    if not reason:
+        raise PendingProductionBlocksClosing(
+            "Diga por que o dia fecha com produção aberta.",
+            field="production_release.reason",
+        )
+    approver = validate_manager_override(
+        release.get("manager_approval") or {},
+        operator_username=user.get_username() if user is not None else "",
+        action="day_closing_release_production",
+    )
+    return {
+        "approved_by": approver.get_username(),
+        "approved_by_id": approver.pk,
+        "requested_by": user.get_username() if user is not None else "",
+        "reason": reason,
+        "at": timezone.now().isoformat(),
+        "work_orders": [row["ref"] for row in pending],
+    }
+
+
 def perform_day_closing(
     *,
     user,
     items: Iterable,
     quantities_by_sku: dict[str, str],
     closing_date: date | None = None,
+    production_release: dict | None = None,
 ) -> date:
-    """Execute day closing and return the closing date."""
+    """Execute day closing and return the closing date.
+
+    Produção aberta (ordem planejada ou em produção com alvo até hoje) impede o
+    fechamento, salvo ``production_release`` = ``{"reason": ..., "manager_approval":
+    {"username", "pin"} | {"badge"}}``. A liberação fica gravada no próprio
+    ``DayClosing`` (``data["pending_production_release"]``): quem pediu, quem
+    autorizou, quando, por quê e quais ordens.
+    """
     closing_date = closing_date or timezone.localdate()
     if DayClosing.objects.filter(date=closing_date).exists():
         raise ValueError("Fechamento de hoje já foi realizado.")
+
+    pending_production = _pending_production_snapshot(closing_date)
+    release_record = None
+    if pending_production:
+        release_record = _authorize_production_release(
+            user=user, pending=pending_production, release=production_release
+        )
 
     snapshot = []
     with transaction.atomic():
@@ -86,7 +155,8 @@ def perform_day_closing(
                 "items": snapshot,
                 "production_summary": production_summary(closing_date),
                 "production_by_version": production_summary_by_version(closing_date),
-                "pending_production": _pending_production_snapshot(closing_date),
+                "pending_production": pending_production,
+                "pending_production_release": release_record,
                 "cash_shift_summary": cash_summary,
                 "reconciliation_errors": _reconciliation_errors(
                     closing_date=closing_date,
@@ -96,6 +166,14 @@ def perform_day_closing(
         )
 
     _alert_open_cash_shifts(closing_date, cash_summary.get("open_shifts") or [])
+    if release_record:
+        logger.info(
+            "day_closing_production_released date=%s requested_by=%s approved_by=%s work_orders=%s",
+            closing_date,
+            release_record["requested_by"],
+            release_record["approved_by"],
+            ",".join(release_record["work_orders"]),
+        )
     return closing_date
 
 
@@ -253,7 +331,7 @@ def _write_off_lots(
 
 
 def _pending_production_snapshot(closing_date: date) -> list[dict]:
-    """WOs abertas no fechamento — registradas para auditoria (não bloqueiam)."""
+    """WOs abertas no fechamento: impedem selar sem liberação, e ficam registradas."""
     from shopman.craftsman.models import WorkOrder
 
     rows = []

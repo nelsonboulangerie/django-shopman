@@ -144,6 +144,32 @@ def resolve_operator_by_badge(raw_token: str, *, required_perm: str | None = OPE
     return user if _eligible(user, required_perm) else None
 
 
+def unlock_refusal_detail(target_user, *, badge: bool) -> str:
+    """A frase da recusa do destrave, dita a quem está no balcão.
+
+    "Identificação inválida." não dizia se foi o PIN, nem que a trava vem depois
+    de poucas tentativas (beta 05/11/2026, PDV-24). O PIN errado diz quantas
+    restam; a conta travada diz que esperar resolve. Lida DEPOIS da verificação,
+    que já contou a falha.
+    """
+    if badge:
+        return "Crachá não reconhecido. Passe de novo ou digite o PIN."
+    try:
+        credential = PinCredential.objects.get(user=target_user) if target_user is not None else None
+    except PinCredential.DoesNotExist:
+        credential = None
+    if credential is None:
+        return "PIN incorreto. Confira e tente de novo."
+    if credential.is_locked:
+        return "PIN travado por excesso de tentativas. Aguarde alguns minutos ou chame o gerente."
+    remaining = credential.max_attempts - credential.attempts
+    if remaining == 1:
+        return "PIN incorreto. Resta 1 tentativa antes da trava."
+    if remaining > 1:
+        return f"PIN incorreto. Restam {remaining} tentativas antes da trava."
+    return "PIN incorreto. Confira e tente de novo."
+
+
 def verify_manager_pin(user, raw_pin: str) -> bool:
     """True if ``user`` may authorize overrides (cash-shift adjust) and the PIN matches.
 

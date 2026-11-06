@@ -26,6 +26,7 @@ export type ManagerAction =
   | "order_edit_refund"
   | "card_machine_refund"
   | "close_shift_review"
+  | "day_closing_production"
   | "sale_approval"
   | "emit_fiscal"
   | "channel_off"
@@ -78,6 +79,12 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
   close_shift_review: {
     title: "Autorizar o fechamento",
     reason: "Há venda sem conexão a conferir.",
+  },
+  // Fechar o dia com produção aberta (decisão do dono, 05/11/2026): impede, e o
+  // gerente libera com o PIN e o motivo. O que fica aberto vem em `detail`.
+  day_closing_production: {
+    title: "Autorizar fechar o dia",
+    reason: "Há produção aberta.",
   },
   sale_approval: {
     title: "Autorizar a venda",
@@ -132,6 +139,15 @@ export interface HouseAccountLimitInput {
 export interface ManagerAuthReasonInput {
   /** O ato, quando a tela sabe qual é. */
   action?: ManagerAction;
+  /**
+   * O valor que o gerente assina, em centavos. Nos atos em que dinheiro sai, o
+   * número é a frase: a sangria de "5000" (R$ 5.000,00 lido de um R$ 50,00)
+   * passou pelo PIN porque o diálogo dizia só "Sai dinheiro da gaveta" (beta
+   * 05/11, PDV-09).
+   */
+  amountQ?: number | null;
+  /** O complemento do ato, na voz da tela (o motivo da sangria, as ordens abertas). */
+  detail?: string;
   /** Códigos vindos da review (`approval_reasons`). */
   reasons?: string[];
   thresholdQ?: number;
@@ -144,11 +160,29 @@ export function managerAuthTitle(action?: ManagerAction): string {
   return (action && MANAGER_ACTIONS[action]?.title) || "Autorização do gerente";
 }
 
+/**
+ * Os atos em que o gerente assina um VALOR: a frase nomeia o valor primeiro.
+ * Sem valor (a tela não sabe), cai na frase fixa do ato.
+ */
+const AMOUNT_COPY: Partial<Record<ManagerAction, (amount: string, detail: string) => string>> = {
+  cash_out: (amount, detail) => `Retirada de ${amount}${detail ? ` (${detail})` : ""}.`,
+  refund_cash: (amount) => `Devolução de ${amount} em dinheiro.`,
+  serve_change: (amount) => `Troco de ${amount}. Atender abre a gaveta.`,
+  card_machine_refund: (amount) => `Estorno de ${amount} no cartão do cliente.`,
+  order_edit_refund: (amount) => `Devolução de ${amount}: a encomenda paga ficou mais barata.`,
+};
+
 export function managerAuthReason(input: ManagerAuthReasonInput): string {
   const listed = (input.reasons ?? [])
     .map((code) => REASON_COPY[code]?.(input))
     .filter(Boolean);
   if (listed.length) return listed.join(" ");
+  const detail = String(input.detail ?? "").trim();
+  const withAmount = input.action && AMOUNT_COPY[input.action];
+  if (withAmount && typeof input.amountQ === "number" && input.amountQ > 0) {
+    return withAmount(formatBRL(input.amountQ), detail);
+  }
+  if (detail && input.action === "day_closing_production") return detail;
   const fixa = input.action && MANAGER_ACTIONS[input.action]?.reason;
   if (fixa) return fixa;
   // Genérico é a última linha, nunca a primeira: dizer pouco é melhor que dizer

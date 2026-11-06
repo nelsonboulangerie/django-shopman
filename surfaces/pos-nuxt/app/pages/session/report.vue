@@ -87,7 +87,7 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
         state="empty"
         icon="i-lucide-lock"
         title="Relatório é de quem audita"
-        description="Esta tela mostra o faturamento do dia. Sua conta opera o caixa, mas não audita: quem vê a apuração é a gestão."
+        description="Esta tela mostra o faturamento do dia, e quem audita o caixa é o dono."
       >
         <template #actions>
           <NuxtButton color="neutral" variant="outline" icon="i-lucide-arrow-left" label="Voltar ao Caixa" to="/session" />

@@ -22,7 +22,7 @@ import {
   customerGroupsLabel,
   groupMembersResultMessage,
 } from "~/presentation/customerGroupMembers";
-import { mutationFieldErrors } from "~/utils/mutationFieldErrors";
+import { contactOwner, mutationFieldErrors, type ContactOwner } from "~/utils/mutationFieldErrors";
 
 useHead({ title: "Clientes" });
 
@@ -72,13 +72,15 @@ const createOpen = ref(false);
 const createBusy = ref(false);
 const createError = ref("");
 const createFieldErrors = ref<Record<string, string>>({});
+const createContactOwner = ref<ContactOwner | null>(null);
 watch(createOpen, (open) => {
   if (!open) return;
   createError.value = "";
   createFieldErrors.value = {};
+  createContactOwner.value = null;
 });
 let createKey = crypto.randomUUID();
-const emptyForm: CustomerFormOptionsProjection = { customer_types: [], price_tiers: [] };
+const emptyForm: CustomerFormOptionsProjection = { customer_types: [], price_tiers: [], default_price_tier_refs: [] };
 const formOptions = computed(() => list.value?.form ?? emptyForm);
 
 async function saveCustomer(payload: CustomerMutationPayload) {
@@ -86,6 +88,7 @@ async function saveCustomer(payload: CustomerMutationPayload) {
   createBusy.value = true;
   createError.value = "";
   createFieldErrors.value = {};
+  createContactOwner.value = null;
   try {
     const response = await createCustomer(payload, createKey);
     if (response.outcome !== "applied" || !response.customer) {
@@ -100,6 +103,7 @@ async function saveCustomer(payload: CustomerMutationPayload) {
   } catch (failure) {
     createError.value = httpErrorMessage(failure, "Não foi possível cadastrar o cliente.");
     createFieldErrors.value = mutationFieldErrors(failure);
+    createContactOwner.value = contactOwner(failure);
     if (httpError(failure).status) createKey = crypto.randomUUID();
   } finally {
     createBusy.value = false;
@@ -345,9 +349,10 @@ const phoneHeaderActions = computed(() => [
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
+    <!-- A barra quebra a linha (GES-18): no tablet de 1024 px, Grupos, Unificações e
+         a ordenação saíam da tela numa linha só, sem rolagem que as alcançasse. -->
     <OperatorPageHeader
       title="Clientes"
-      :filters-wrap="false"
       :phone-actions="phoneHeaderActions"
       desk-only-filters
       :active-filters="activeFilters"
@@ -392,7 +397,7 @@ const phoneHeaderActions = computed(() => [
         />
       </template>
       <template #filters>
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3" data-customers-toolbar>
           <NuxtButton
             icon="i-lucide-user-round-plus"
             label="Cadastrar cliente"
@@ -498,8 +503,11 @@ const phoneHeaderActions = computed(() => [
           </div>
         </template>
         <template #contact-cell="{ row }">
+          <!-- O telefone não quebra no meio ("(43) 98000-" / "1212"). -->
           <span
+            class="whitespace-nowrap"
             :class="row.original.phone_display ? '' : 'text-muted-foreground'"
+            data-customer-phone
             >{{ row.original.phone_display || "Sem telefone" }}</span
           >
           <span
@@ -575,6 +583,7 @@ const phoneHeaderActions = computed(() => [
       :busy="createBusy"
       :error="createError"
       :field-errors="createFieldErrors"
+      :contact-owner="createContactOwner"
       @save="saveCustomer"
     />
   </main>

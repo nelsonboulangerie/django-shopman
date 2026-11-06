@@ -212,7 +212,7 @@ describe("Vendido por peso", () => {
 });
 
 describe("Permitir compra", () => {
-  it("é gesto na hora, fora do rascunho, e o quadrado espera o servidor", async () => {
+  it("é gesto na hora, com cara de botão, fora do rascunho (GES-20)", async () => {
     const w = panel();
     await w.setProps({
       roles: {
@@ -222,18 +222,47 @@ describe("Permitir compra", () => {
         used_in_recipe: true,
       },
     });
-    const box = w.get('[data-testid="purchase-toggle"] [role="checkbox"]');
+    // Nada de quadrado dentro do rascunho: ele prometia "Descartar" e gravava na hora.
+    expect(
+      w.find('[data-testid="purchase-toggle"] [role="checkbox"]').exists(),
+    ).toBe(false);
+    const action = w.get("[data-purchase-action]");
+    expect(action.text()).toContain("Permitir compra");
+    expect(w.find('[data-testid="purchase-toggle"]').text()).toContain(
+      "Vale na hora, sem o Salvar.",
+    );
     expect(w.find('[data-testid="purchase-toggle"]').text()).toContain(
       "Vendável",
     );
     expect(w.find('[data-testid="purchase-toggle"]').text()).toContain(
       "Usado em receita",
     );
-    await box.trigger("click");
+    await action.trigger("click");
+    await flushPromises();
     expect(w.emitted("set-purchasable")).toEqual([[true]]);
-    // Ninguém confirmou ainda: o quadrado volta ao que o servidor diz.
-    expect(box.attributes("aria-checked")).toBe("false");
-    expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
+    expect(w.emitted("dirty-change")?.at(-1) ?? [false]).toEqual([false]);
+  });
+
+  it("desligar a compra confirma antes (D9)", async () => {
+    const w = panel();
+    await w.setProps({
+      roles: {
+        purchasable: true,
+        sellable: true,
+        produced: false,
+        used_in_recipe: false,
+      },
+    });
+    archiveDialog = mount(OperatorConfirmDialog, { attachTo: document.body });
+    const action = w.get("[data-purchase-action]");
+    expect(action.text()).toContain("Desligar compra");
+    await action.trigger("click");
+    await flushPromises();
+    expect(document.body.textContent).toContain("O item sai do Compras.");
+    expect(w.emitted("set-purchasable")).toBeUndefined();
+    await archiveDialog.get("[data-operator-confirm-act]").trigger("click");
+    await flushPromises();
+    expect(w.emitted("set-purchasable")).toEqual([[false]]);
   });
 
   it("o que é produzido aqui não oferece o interruptor", async () => {
@@ -517,6 +546,27 @@ describe("disponibilidade nos canais (V4-G4)", () => {
     expect(rows).toHaveLength(3);
     expect(rows[1]!.text()).toContain("automático");
     expect(rows[2]!.text()).toContain("À venda");
+  });
+
+  it("canal onde o produto não está diz 'Não incluído', e o selo não mente 'À venda em todos' (GES-03)", async () => {
+    const w = panel();
+    await w.setProps({
+      detail: {
+        ...detail,
+        channel_availability: [
+          { ref: "pdv", name: "PDV", kind: "sale", state: "available", since: "", automatic: false },
+          { ref: "web", name: "Loja online", kind: "sale", state: "not_listed", since: "", automatic: false },
+          { ref: "meta", name: "Catálogo Meta", kind: "display", state: "not_listed", since: "", automatic: true },
+        ],
+      },
+    });
+    const block = w.find("[data-panel-availability]");
+    expect(block.text()).not.toContain("À venda em todos");
+    expect(block.text()).toContain("À venda em 1 de 3");
+    const rows = w.findAll("[data-panel-channel]");
+    expect(rows[1]!.text()).toContain("Não incluído");
+    expect(rows[2]!.text()).toContain("Não incluído");
+    expect(rows[2]!.text()).not.toContain("automático");
   });
 
   it("sem a leitura, o bloco não aparece", () => {

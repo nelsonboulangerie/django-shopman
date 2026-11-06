@@ -3,7 +3,9 @@
 // que se consulta fora do turno. Histórico, Catálogo, Clientes, Canais e Postos saíram
 // do rail da operação e moram aqui, cada um a um toque. O ponto de atenção de Canais
 // ("1 desligado") aparece no item Ajustes do rail e na linha de Canais.
-const { settings } = useGestorSections();
+import { SETTINGS_SKELETON_CARDS } from "~/presentation/gestorSections";
+
+const { settings, ready } = useGestorSections();
 const { expeditesOnly } = useGestorAccess();
 const settingsItems = computed(() =>
   settings.value.map((entry) => ({
@@ -31,6 +33,21 @@ useHead({ title: "Ajustes" });
       />
       <!-- Navegação entre áreas: PageGrid de PageCard (contrato de Card do kit), com
            a descrição de cada área à vista e o aviso de atenção como Badge. -->
+      <!-- A grade só desenha com as permissões resolvidas (GES-22): antes, metade
+           dos cartões entrava depois e o toque caía no cartão errado. -->
+      <NuxtPageGrid
+        v-else-if="!ready"
+        class="gap-[var(--op-region-gap)]"
+        aria-label="Carregando os Ajustes do Gestor"
+        aria-busy="true"
+        data-settings-loading
+      >
+        <NuxtSkeleton
+          v-for="i in SETTINGS_SKELETON_CARDS"
+          :key="i"
+          class="h-28 w-full"
+        />
+      </NuxtPageGrid>
       <NuxtPageGrid
         v-else
         class="gap-[var(--op-region-gap)]"

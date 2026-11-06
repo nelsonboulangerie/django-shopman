@@ -18,6 +18,12 @@ cadastro que já existe, e a configuração rara continua no Admin.
   (``Terminal.metadata.favorite_collection_refs``), que abrem a grade do PDV.
 
 Toda gravação deixa uma linha no log com quem e o quê.
+
+**Quem grava.** Maquininha, impressora e Salão são equipamento e planta da casa:
+só o Gerente e o Dono gravam (decisão do dono, 05/11/2026, beta test). A régua é
+``cashman.change_terminal``, a mesma do cadastro de terminal no Admin, que a Caixa
+não tem. A Caixa lê as três abas, sem gravar. Envio à cozinha e Atalhos de venda
+seguem com quem opera o PDV.
 """
 
 from __future__ import annotations
@@ -30,6 +36,20 @@ logger = logging.getLogger(__name__)
 
 ROLL_WIDTHS = (80, 58)
 CUT_MODES = (("partial", "Corte parcial"), ("none", "Sem guilhotina"))
+
+
+#: Quem grava maquininha, impressora e Salão (Gerente e Dono).
+SETUP_PERMISSION = "cashman.change_terminal"
+#: As seções do POST que pedem ``SETUP_PERMISSION``.
+SETUP_SECTIONS = frozenset({"printer", "card_machine"})
+#: O que a recusa diz a quem não pode gravar.
+SETUP_REFUSAL = "Maquininha, impressora e Salão são ajustados pelo gerente."
+#: Até onde vão o nome e a identificação da maquininha (o banco guarda 100).
+CARD_MACHINE_TEXT_MAX = 100
+
+
+def can_manage_setup(user) -> bool:
+    return bool(user and user.is_authenticated and user.has_perm(SETUP_PERMISSION))
 
 
 class PosSettingsError(Exception):
@@ -54,7 +74,7 @@ def _printer(terminal) -> dict:
     }
 
 
-def build_settings(*, terminal=None) -> dict:
+def build_settings(*, terminal=None, can_manage_setup: bool = False) -> dict:
     from shopman.cashman.models import Terminal
     from shopman.offerman.models import Collection
 
@@ -109,6 +129,11 @@ def build_settings(*, terminal=None) -> dict:
     return {
         "terminal_ref": current.ref if current else "",
         "terminal_label": (current.label or current.ref) if current else "",
+        # O terminal acima é o DESTE dispositivo só quando ele está vinculado a um
+        # posto; sem vínculo é o primeiro da loja, e a tela não pode chamá-lo de
+        # "este dispositivo" (beta 05/11, CEN-06).
+        "terminal_is_this_device": terminal is not None,
+        "can_manage_setup": bool(can_manage_setup),
         "printers": printers,
         "roll_widths": list(ROLL_WIDTHS),
         "cut_modes": [{"value": v, "label": label} for v, label in CUT_MODES],
@@ -145,25 +170,42 @@ def update_printer(*, terminal_ref: str, roll_width_mm, cut_mode: str, actor: st
 
 
 @transaction.atomic
-def save_card_machine(*, ref: str, label: str, identification: str, active: bool, actor: str) -> None:
+def save_card_machine(
+    *, ref: str, label: str, identification: str, active: bool, actor: str, identification_sent: bool = True,
+) -> None:
     from shopman.backstage.models import DeliveryDevice
 
     label = (label or "").strip()
     identification = (identification or "").strip()
     if not label:
         raise PosSettingsError("Dê um nome à maquininha.", field="label")
+    # O banco guarda 100; passar disso era um 500 com "Não deu para gravar"
+    # (beta 05/11, PDV-11).
+    if len(label) > CARD_MACHINE_TEXT_MAX:
+        raise PosSettingsError(f"Use no máximo {CARD_MACHINE_TEXT_MAX} caracteres no nome.", field="label")
+    if len(identification) > CARD_MACHINE_TEXT_MAX:
+        raise PosSettingsError(
+            f"Use no máximo {CARD_MACHINE_TEXT_MAX} caracteres na identificação.", field="identification",
+        )
     if ref:
         device = DeliveryDevice.objects.select_for_update().filter(ref=ref).first()
         if device is None:
             raise PosSettingsError("Maquininha não encontrada.", field="ref")
         if not active and device.current_order_id:
             raise PosSettingsError("Esta maquininha está numa entrega agora. Desative quando ela voltar.", field="active")
+        # Ligar e desligar manda só o nome; a edição manda a identificação, e
+        # apagá-la ali é engano, não "manter a antiga" calado (beta 05/11, PDV-27).
+        if identification_sent and not identification:
+            raise PosSettingsError(
+                "Escreva a identificação (o número de série ou a etiqueta da maquininha).", field="identification",
+            )
     else:
         if not identification:
             raise PosSettingsError("Escreva a identificação (o número de série ou a etiqueta da maquininha).", field="identification")
         device = DeliveryDevice()
     if identification:
-        clash = DeliveryDevice.objects.filter(identification=identification).exclude(pk=device.pk).exists()
+        # "SN-001" e "sn-001" são a mesma etiqueta colada na maquininha.
+        clash = DeliveryDevice.objects.filter(identification__iexact=identification).exclude(pk=device.pk).exists()
         if clash:
             raise PosSettingsError("Já existe uma maquininha com essa identificação.", field="identification")
         device.identification = identification

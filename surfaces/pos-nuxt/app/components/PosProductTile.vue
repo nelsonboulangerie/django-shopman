@@ -83,7 +83,7 @@ const strikePrice = computed(() => productStrikePrice(props.product));
       </span>
     </span>
     <span class="flex shrink-0 flex-col items-end gap-0.5" data-pos-product-price>
-      <strong class="op-title tnum whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
+      <strong class="op-title tnum shrink-0 whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
       <s v-if="strikePrice" class="op-micro tnum text-muted-foreground" aria-hidden="true" data-pos-product-list-price>{{ strikePrice }}</s>
       <span v-if="strikePrice" class="sr-only">, {{ product.discount_label ? `${product.discount_label}, ` : "" }}antes {{ strikePrice }}</span>
     </span>
@@ -127,7 +127,12 @@ const strikePrice = computed(() => productStrikePrice(props.product));
         aria-hidden="true"
       >
         <Icon :name="fallbackIcon" class="size-9" />
-        <span v-if="!touch" class="absolute bottom-1.5 left-2 max-w-[calc(100%-1rem)] truncate font-mono op-eyebrow font-normal tracking-wide" data-pos-tile-sku>{{ product.sku }}</span>
+        <span
+          v-if="!touch"
+          class="absolute bottom-1.5 left-2 max-w-[calc(100%-1rem)] truncate font-mono op-eyebrow font-normal tracking-wide"
+          :title="product.sku"
+          data-pos-tile-sku
+        >{{ product.sku }}</span>
       </div>
 
       <!-- O selo de bloqueio mora na FAIXA, nunca ao lado do preço: lá ele
@@ -175,7 +180,8 @@ const strikePrice = computed(() => productStrikePrice(props.product));
              (nunca embaixo): a altura do cartão não muda com o desconto, e o
              riscado corta com reticências antes de empurrar o preço. -->
         <span class="flex min-w-0 items-baseline gap-1.5" data-pos-product-price>
-          <strong class="op-title tnum whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
+          <!-- O preço nunca corta: ele é o que o operador lê do cartão. -->
+          <strong class="op-title tnum shrink-0 whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
           <s
             v-if="strikePrice"
             class="min-w-0 truncate op-micro tnum text-muted-foreground"

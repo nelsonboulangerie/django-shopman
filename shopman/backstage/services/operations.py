@@ -18,7 +18,15 @@ from shopman.backstage.models import (
 
 
 class OperationChecklistError(ValueError):
-    """Raised when an operational checklist transition is invalid."""
+    """Raised when an operational checklist transition is invalid.
+
+    ``field`` nomeia o campo do payload que causou a recusa (a evidência que
+    faltou), para a tela mostrar a mensagem embaixo dele (GES-23).
+    """
+
+    def __init__(self, message: str, *, field: str = ""):
+        super().__init__(message)
+        self.field = field
 
 
 def start_checklist_run(
@@ -159,8 +167,8 @@ def _validate_evidence(
     evidence_data: dict,
 ) -> None:
     if required == OperationEvidence.TEXT and not evidence_text:
-        raise OperationChecklistError("Esta tarefa exige evidência textual.")
+        raise OperationChecklistError("Escreva a evidência para concluir esta tarefa.", field="evidence_text")
     if required == OperationEvidence.NUMBER and evidence_number is None:
-        raise OperationChecklistError("Esta tarefa exige evidência numérica.")
+        raise OperationChecklistError("Informe o valor conferido para concluir esta tarefa.", field="evidence_number")
     if required == OperationEvidence.PHOTO and not evidence_data:
-        raise OperationChecklistError("Esta tarefa exige evidência de foto em evidence_data.")
+        raise OperationChecklistError("Cole o link ou o código da foto para concluir esta tarefa.", field="evidence_data")

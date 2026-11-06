@@ -1058,6 +1058,25 @@ def set_sale(material_sku: str, payload: dict[str, Any], *, user=None) -> tuple[
         raise PurchaseError(text, code="sale_refused", field=field) from exc
     if is_sold_by_weight(product.unit):
         return build_purchase(), f"{material.name} está à venda por peso, só no balcão."
+    if not product.is_published:
+        # Oculto no catálogo sai de TODOS os canais, PDV incluído (decisão do
+        # dono, 05/11): religar a venda de um produto oculto não o põe no balcão.
+        return build_purchase(), (
+            f"{material.name} está oculto no Catálogo: publique lá para vender no PDV."
+        )
+    from shopman.offerman.models import ListingItem
+
+    from shopman.shop.services.sku_records import remote_listing_refs
+
+    paused_remote = ListingItem.objects.filter(
+        product=product, listing__ref__in=remote_listing_refs(),
+    ).exclude(is_published=True, is_sellable=True).exists()
+    if paused_remote:
+        # O item novo vende só no balcão: os canais remotos nascem pausados, e o
+        # Catálogo mostra "Só no balcão" (beta 05/11, CMP-08).
+        return build_purchase(), (
+            f"{material.name} está à venda no PDV. Loja online, iFood e WhatsApp ficam pausados até você ligar no Catálogo."
+        )
     return build_purchase(), f"{material.name} está à venda no PDV."
 
 

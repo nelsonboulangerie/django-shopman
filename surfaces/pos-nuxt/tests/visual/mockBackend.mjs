@@ -172,7 +172,8 @@ const pos = {
   fiscal_label: "",
   fiscal_message: "",
   danfe_screen_allowed: false,
-  day_closing_allowed: true,
+  // O retrato é do gerente: a barra de baixo leva o Fim do dia.
+  can_close_day: true,
   operators: [],
   auto_lock_seconds: 0,
 };

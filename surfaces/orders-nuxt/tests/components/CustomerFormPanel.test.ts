@@ -13,6 +13,7 @@ const options: CustomerFormOptionsProjection = {
     { value: "varejo", label: "Varejo" },
     { value: "equipe", label: "Equipe" },
   ],
+  default_price_tier_refs: ["varejo"],
 };
 
 const customer = {
@@ -80,6 +81,62 @@ describe("CustomerFormPanel", () => {
     }));
   });
 
+  it("sem grupo padrão, o cadastro novo nasce sem grupo, nunca no primeiro da lista (GES-01)", async () => {
+    const wrapper = panel({
+      options: {
+        ...options,
+        // Em ordem alfabética, o primeiro é o que dava 15% calado a todo cadastro.
+        price_tiers: [
+          { value: "alianca-francesa", label: "Aliança Francesa" },
+          { value: "atacado", label: "Atacado" },
+          { value: "varejo", label: "Varejo" },
+        ],
+        default_price_tier_refs: [],
+      },
+    });
+    await wrapper.get("[data-testid='customer-first-name']").setValue("Rui");
+    await wrapper.get("[data-testid='customer-submit']").trigger("click");
+    expect(wrapper.emitted("save")?.[0]?.[0]).toEqual(
+      expect.objectContaining({ priceTierRefs: [] }),
+    );
+    expect(wrapper.text()).toContain("Sem nenhum, o cadastro fica sem grupo comercial.");
+  });
+
+  it("com grupo padrão, nasce só nele", async () => {
+    const wrapper = panel({
+      options: {
+        ...options,
+        price_tiers: [
+          { value: "alianca-francesa", label: "Aliança Francesa" },
+          { value: "varejo", label: "Varejo" },
+        ],
+        default_price_tier_refs: ["varejo"],
+      },
+    });
+    await wrapper.get("[data-testid='customer-first-name']").setValue("Rui");
+    await wrapper.get("[data-testid='customer-submit']").trigger("click");
+    expect(wrapper.emitted("save")?.[0]?.[0]).toEqual(
+      expect.objectContaining({ priceTierRefs: ["varejo"] }),
+    );
+  });
+
+  it("telefone de outro cadastro diz de quem é e leva até a ficha; editar apaga a recusa (GES-13)", async () => {
+    const wrapper = panel({
+      fieldErrors: { phone: "Este telefone é de João Oliveira (CLI-003). Abra o cadastro para conferir ou unificar." },
+      contactOwner: { field: "phone", ref: "CLI-003", name: "João Oliveira" },
+    });
+    expect(wrapper.text()).toContain("Este telefone é de João Oliveira (CLI-003).");
+    const open = wrapper.get("[data-contact-owner] a");
+    expect(open.text()).toContain("Abrir cadastro de João Oliveira");
+    expect(open.attributes("href")).toBe("/customers/CLI-003");
+
+    const vm = wrapper.vm as unknown as { form: { phone: string } };
+    vm.form.phone = "43 98888-0000";
+    await wrapper.vm.$nextTick();
+    expect(wrapper.text()).not.toContain("Este telefone é de João Oliveira");
+    expect(wrapper.find("[data-contact-owner]").exists()).toBe(false);
+  });
+
   it("marca mais de um grupo e diz qual decide o preço", async () => {
     const wrapper = panel({
       customer: {
@@ -133,5 +190,14 @@ describe("CustomerFormPanel", () => {
   it("mostra a recusa no campo apontado pelo servidor", () => {
     const wrapper = panel({ fieldErrors: { document: "O CPF ou CNPJ não confere." } });
     expect(wrapper.text()).toContain("O CPF ou CNPJ não confere.");
+  });
+
+  it("na edição, o telefone vem como a ficha mostra, e descartar fala das alterações (GES-24)", () => {
+    const wrapper = panel({ customer });
+    const vm = wrapper.vm as unknown as { form: { phone: string } };
+    expect(vm.form.phone).toBe("(43) 99999-1111");
+    const shell = wrapper.findComponent({ name: "OperatorFormShell" });
+    expect(shell.props("confirmDiscard")).toMatchObject({ title: "Descartar as alterações?" });
+    expect(panel().findComponent({ name: "OperatorFormShell" }).props("confirmDiscard")).toBeUndefined();
   });
 });
