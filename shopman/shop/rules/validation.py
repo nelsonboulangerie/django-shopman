@@ -274,7 +274,9 @@ class DeliveryZoneRule(BaseRule):
         # O mínimo de entrega continua valendo.
         agreed_by_operator = operator_agreed_delivery_fee_q(session_data) is not None
 
-        if session_data.get("delivery_zone_error") and not agreed_by_operator:
+        if not agreed_by_operator and (
+            session_data.get("delivery_zone_error") or _declared_city_outside_store_area(session_data)
+        ):
             raise OrderValidationError(
                 code="delivery_zone_not_covered",
                 message="Não entregamos neste endereço ainda.",
@@ -321,16 +323,26 @@ def delivery_minimum_message(minimum_q: int) -> str:
     return f"Pedido mínimo para entrega: {minimum_display}."
 
 
-def _normalize_city(value) -> str:
-    """Cidade comparável: sem acento, minúscula, sem espaços nas pontas.
+def _declared_city_outside_store_area(session_data: dict) -> bool:
+    """Trava do commit para a distância desconhecida: cidade/UF fora das da loja.
 
-    'São Paulo' e 'Sao Paulo' (digitado à mão vs autocomplete do Google) têm
-    de casar — senão o antifraude bloqueia entrega legítima.
+    O ``DeliveryFeeModifier`` já marca ``delivery_zone_error`` nesse caso; aqui o
+    servidor confere de novo na porta do pedido, sem depender de a sessão ter
+    passado pelos modifiers depois da última troca de endereço. Só vale quando a
+    taxa NÃO saiu de distância (``delivery_distance_km`` ausente) nem de zona por
+    CEP/bairro, que são evidências mais fortes que a cidade digitada.
     """
-    import unicodedata
+    if session_data.get("delivery_distance_km") is not None:
+        return False
+    addr = session_data.get("delivery_address_structured") or {}
+    from shopman.shop.services import delivery_distance
+    from shopman.shop.services import promotions as promotion_service
 
-    text = str(value or "").strip().lower()
-    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+    if promotion_service.match_delivery_zone(
+        str(addr.get("postal_code") or ""), str(addr.get("neighborhood") or "")
+    ) is not None:
+        return False
+    return delivery_distance.declared_locality_outside_store(addr.get("city"), addr.get("state_code"))
 
 
 def _coordinates_match_claimed_address(session_data: dict) -> bool:
@@ -385,10 +397,12 @@ def _coordinates_match_claimed_address(session_data: dict) -> bool:
         return True
 
     resolved_cep = "".join(c for c in str(getattr(resolved, "postal_code", "") or "") if c.isdigit())
-    resolved_city = _normalize_city(getattr(resolved, "city", ""))
+    from shopman.shop.services.delivery_distance import normalize_locality
+
+    resolved_city = normalize_locality(getattr(resolved, "city", ""))
     if claimed_cep and resolved_cep and claimed_cep[:5] == resolved_cep[:5]:
         return True
-    if claimed_city and resolved_city and _normalize_city(claimed_city) == resolved_city:
+    if claimed_city and resolved_city and normalize_locality(claimed_city) == resolved_city:
         return True
     logger.warning(
         "delivery_zone_rule: coordenadas não conferem com o endereço (cep %s×%s, cidade %s×%s)",

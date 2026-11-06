@@ -54,3 +54,39 @@ def store_distance_km(dest_lat, dest_lng) -> float | None:
         return None
 
     return haversine_km(origin_lat, origin_lng, dest_lat_f, dest_lng_f)
+
+
+def normalize_locality(value) -> str:
+    """Cidade/UF comparável: sem acento, minúscula, espaços internos colapsados.
+
+    'São Paulo' e 'Sao Paulo' (digitado à mão vs autocomplete do Google) têm de
+    casar, senão uma entrega legítima vira "fora da área".
+    """
+    import unicodedata
+
+    text = " ".join(str(value or "").split()).lower()
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+
+
+def declared_locality_outside_store(city, state_code) -> bool:
+    """A cidade/UF DECLARADAS no endereço diferem das da loja?
+
+    Rede de segurança de quando a distância é desconhecida (sem coordenada e sem
+    geocode): a taxa-padrão só vale para quem está na cidade da loja. Um endereço
+    em São Paulo para uma loja de Londrina é fora da área, mesmo sem mapa.
+
+    Só afirma "fora" com evidência: campo declarado E campo da loja preenchidos e
+    diferentes. Loja sem cidade/UF cadastradas, ou endereço sem elas, não decide.
+    """
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    if shop is None:
+        return False
+    claimed_state = normalize_locality(state_code)
+    store_state = normalize_locality(getattr(shop, "state_code", ""))
+    if claimed_state and store_state and claimed_state != store_state:
+        return True
+    claimed_city = normalize_locality(city)
+    store_city = normalize_locality(getattr(shop, "city", ""))
+    return bool(claimed_city and store_city and claimed_city != store_city)
