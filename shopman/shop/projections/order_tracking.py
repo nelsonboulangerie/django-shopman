@@ -677,27 +677,6 @@ def _copy_message(key: str, fallback: str) -> str:
         return fallback
 
 
-def _request_cancellation_message(order) -> str:
-    """A frase do diálogo segue a MESMA régua que o Gestor recebe no alerta.
-
-    Antes do preparo, os Termos (§7) garantem o valor inteiro: o cliente lê a
-    regra, não uma análise genérica (beta 06/11). Depois, a equipe analisa.
-    """
-    from shopman.shop.services.cancellation_requests import BEFORE_PREPARATION_STATUSES
-
-    if order.status in BEFORE_PREPARATION_STATUSES:
-        return _copy_message(
-            "TRACKING_REQUEST_CANCELLATION_MESSAGE_BEFORE_PREPARATION",
-            "Ainda não começamos a preparar: se a equipe confirmar o cancelamento, o valor volta "
-            "inteiro. Você recebe um protocolo agora.",
-        )
-    return _copy_message(
-        "TRACKING_REQUEST_CANCELLATION_MESSAGE",
-        "Como o pedido já avançou, a equipe precisa analisar o cancelamento e um possível "
-        "estorno. Você recebe um protocolo agora.",
-    )
-
-
 def _action(
     *,
     ref: str,
@@ -760,6 +739,8 @@ def _build_order_actions(
     can_mock_confirm_payment: bool,
     can_request_contact: bool = False,
 ) -> tuple[Action, ...]:
+    from shopman.shop.services import cancellation_requests
+
     actions: list[Action] = []
     if can_cancel:
         actions.append(
@@ -810,7 +791,22 @@ def _build_order_actions(
                         "TRACKING_REQUEST_CANCELLATION_TITLE",
                         "Solicitar cancelamento",
                     ),
-                    "message": _request_cancellation_message(order),
+                    # A frase segue a MESMA régua do alerta do Gestor: antes do
+                    # preparo os Termos (§7) garantem o valor inteiro; depois,
+                    # a equipe analisa (beta 06/11).
+                    "message": (
+                        _copy_message(
+                            "TRACKING_REQUEST_CANCELLATION_MESSAGE_BEFORE_PREPARATION",
+                            "Ainda não começamos a preparar: se a equipe confirmar o "
+                            "cancelamento, o valor volta inteiro. Você recebe um protocolo agora.",
+                        )
+                        if order.status in cancellation_requests.BEFORE_PREPARATION_STATUSES
+                        else _copy_message(
+                            "TRACKING_REQUEST_CANCELLATION_MESSAGE",
+                            "Como o pedido já avançou, a equipe precisa analisar o cancelamento "
+                            "e um possível estorno. Você recebe um protocolo agora.",
+                        )
+                    ),
                     "confirm_label": _copy_title(
                         "TRACKING_REQUEST_CANCELLATION_CONFIRM_CTA",
                         "Enviar solicitação",
