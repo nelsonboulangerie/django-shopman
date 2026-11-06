@@ -56,9 +56,13 @@ const filled = computed(() => props.denominations.filter((d) => /^\d+$/.test(Str
 // Emite só quando a soma MUDA — nunca no mount. Quem abriu o contador pode já
 // ter digitado um valor no campo; sobrescrevê-lo com 0 antes do primeiro toque
 // apagaria uma resposta dada.
-// `immediate`: a contagem que voltou do estado do app chega ao pai já no início.
-watch(totalQ, (value) => emit("total-q", value), { immediate: true });
-watch(filled, (value) => emit("progress", value, props.denominations.length), { immediate: true });
+// A exceção é a contagem guardada no estado do app (`stateKey`): ela volta ao pai
+// já no início, porque é ela a resposta dada. Sem `stateKey` (abrir e fechar o
+// caixa na Sessão), emitir no mount trocava o valor digitado no campo por 0,00 ao
+// tocar "Contar por cédulas e moedas".
+const restored = Boolean(props.stateKey);
+watch(totalQ, (value) => emit("total-q", value), { immediate: restored });
+watch(filled, (value) => emit("progress", value, props.denominations.length), { immediate: restored });
 
 // ── Corredor ──────────────────────────────────────────────────────────────────
 const notes = computed(() => props.denominations.filter((d) => d.shape === "note"));

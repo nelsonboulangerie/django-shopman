@@ -48,6 +48,14 @@ export function cashMovementDoneMessage(kind: string, amount: string): string {
 }
 
 /**
+ * A confirmação do pedido de troco atendido, com o valor: o pedido sumir da lista
+ * não confirmava nada a quem olhava para a gaveta (beta 05/11, PDV-10).
+ */
+export function changeServedMessage(amountQ: number | null | undefined): string {
+  return typeof amountQ === "number" && amountQ > 0 ? `Troco de ${formatBRL(amountQ)} atendido.` : "Pedido de troco atendido.";
+}
+
+/**
  * Os motivos que viram botão, por tipo de movimento — vindos do SERVIDOR.
  *
  * O motivo é obrigatório na saída e quem cobra é o servidor. Exigir DIGITAÇÃO

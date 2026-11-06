@@ -64,4 +64,15 @@ describe("PosProductTile — esgotado", () => {
     expect(wrapper.find("[data-pos-product-price]").text()).not.toContain("Esgotado");
     expect(wrapper.find("[data-pos-product-sold-out]").text()).toBe("Esgotado");
   });
+
+  it("o SKU corta antes da pílula, em vez de passar por baixo dela", async () => {
+    const sold = await mountSuspended(PosProductTile, {
+      props: { product: product({ sku: "KRAEUTERKAESE-POMERODE-90G", sold_out: true }), qty: 0 },
+    });
+    expect(sold.find("[data-pos-tile-sku]").classes()).toContain("max-w-[calc(100%-7rem)]");
+    const fresh = await mountSuspended(PosProductTile, {
+      props: { product: product({ sku: "KRAEUTERKAESE-POMERODE-90G" }), qty: 0 },
+    });
+    expect(fresh.find("[data-pos-tile-sku]").classes()).toContain("max-w-[calc(100%-1rem)]");
+  });
 });

@@ -3,7 +3,7 @@ import { toast } from "vue-sonner";
 
 import type { PrintOutcome } from "~/composables/useCounterAgent";
 import type { Action, POSCashManagementCapability, POSProjection } from "~/types/pos";
-import { cashMovementDoneMessage, requiresOpenShiftForSale } from "~/presentation/cash";
+import { cashMovementDoneMessage, changeServedMessage, requiresOpenShiftForSale } from "~/presentation/cash";
 import { actionHref } from "~/utils/posIntent";
 import { cashCloseBlockedByQueue } from "~/presentation/offlineSales";
 
@@ -371,6 +371,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   }): Promise<boolean> {
     const body: Record<string, unknown> = {};
     if (payload.managerApproval) body.manager_approval = payload.managerApproval;
+    // O valor é lido ANTES: no sucesso o pedido some da lista com o refresh.
+    const amountQ = pos.value?.cash_runtime?.pending_change_requests?.find((row) => row.ref === payload.ref)?.amount_q ?? null;
     return run(
       `/api/v1/backstage/pos/cash/change-request/${encodeURIComponent(payload.ref)}/serve/`,
       body,
@@ -381,7 +383,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       // Só depois do `ok`: gaveta aberta por um atendimento recusado (PIN
       // errado, pedido já resolvido) é dinheiro exposto sem lastro.
       if (ok) {
-        toast.success("Pedido de troco atendido.");
+        toast.success(changeServedMessage(amountQ));
         void drawer.kick("change_request");
       }
       return ok;

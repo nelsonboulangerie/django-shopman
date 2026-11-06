@@ -115,7 +115,15 @@ const strikePrice = computed(() => productStrikePrice(props.product));
         aria-hidden="true"
       >
         <Icon :name="fallbackIcon" class="size-9" />
-        <span v-if="!touch" class="absolute bottom-1.5 left-2 max-w-[calc(100%-1rem)] truncate font-mono op-eyebrow font-normal tracking-wide" data-pos-tile-sku>{{ product.sku }}</span>
+        <!-- Com a pílula de Esgotado no canto de baixo, o SKU corta antes dela em vez
+             de passar por baixo (o SKU da mercearia é longo). -->
+        <span
+          v-if="!touch"
+          class="absolute bottom-1.5 left-2 truncate font-mono op-eyebrow font-normal tracking-wide"
+          :class="blockedLabel === 'Esgotado' ? 'max-w-[calc(100%-7rem)]' : 'max-w-[calc(100%-1rem)]'"
+          :title="product.sku"
+          data-pos-tile-sku
+        >{{ product.sku }}</span>
       </div>
 
       <span

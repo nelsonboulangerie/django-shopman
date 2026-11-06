@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { cashMovementDoneMessage, closeShiftDevicesWarning, formatOpenedAt, shiftOpenedLine } from "../app/presentation/cash";
+import { cashMovementDoneMessage, changeServedMessage, closeShiftDevicesWarning, formatOpenedAt, shiftOpenedLine } from "../app/presentation/cash";
 import { closingSteps } from "../app/presentation/closing";
 import type { POSCashRuntimeProjection } from "../app/types/pos";
 
@@ -68,7 +68,22 @@ describe("o movimento aceito diz o valor (op:PDV-11, PDV-10)", () => {
   it("o caixa confirma o movimento e o troco atendido antes do aviso do comprovante", () => {
     const cash = source("composables", "usePosCashSession.ts");
     expect(cash).toContain("toast.success(cashMovementDoneMessage(payload.kind, payload.amount));");
-    expect(cash).toContain('toast.success("Pedido de troco atendido.");');
+    expect(cash).toContain("toast.success(changeServedMessage(amountQ));");
+  });
+
+  it("o troco atendido diz o valor, quando a tela o tem", () => {
+    const plain = (text: string) => text.replace(/\s/g, " ");
+    expect(plain(changeServedMessage(10000))).toBe("Troco de R$ 100,00 atendido.");
+    expect(changeServedMessage(null)).toBe("Pedido de troco atendido.");
+  });
+
+  it("um movimento, uma confirmação: a página não repete o toast do caixa", () => {
+    // Duas mãos puseram o toast em lugares diferentes, e o balcão via dois para o
+    // mesmo dinheiro ("R$ 50,00 entrou na gaveta." e "R$ 50,00 entraram na
+    // gaveta."). O toast de sucesso do movimento e do troco é do composable.
+    const page = source("pages", "session", "index.vue");
+    expect(page).not.toMatch(/toast\.success\([^)]*gaveta/);
+    expect(page).not.toMatch(/toast\.success\([^)]*[Tt]roco/);
   });
 
   it("gaveta e impressora sem configuração falam com o balcão, sem Admin", () => {

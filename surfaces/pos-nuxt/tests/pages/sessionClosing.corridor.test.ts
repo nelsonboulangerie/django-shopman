@@ -154,6 +154,30 @@ describe("Fim do dia: produção aberta impede selar (decisão do dono, 05/11)",
     page.unmount();
   });
 
+  it("o diálogo do gerente diz que o dia fecha e não reabre", async () => {
+    // A liberação sela direto, sem o "Fechar o dia?" do caminho comum: a
+    // consequência tem de estar onde o PIN é digitado.
+    call.mockClear();
+    const page = await openScreen(
+      projection({ pending_production: PENDING as never, has_pending_production: true, pending_episodes: [], has_pending_episodes: false }),
+    );
+    for (const input of page.findAll("input[data-count-input]")) await input.setValue("0");
+    await page.find("[data-closing-review]").trigger("click");
+    await page.find("[data-closing-seal]").trigger("click");
+    await flushPromises();
+    const reason = document.body.querySelector<HTMLTextAreaElement>("[data-closing-release-reason]");
+    reason!.value = "o lote da noite segue no forno";
+    reason!.dispatchEvent(new Event("input"));
+    await flushPromises();
+    document.body.querySelector<HTMLButtonElement>("[data-closing-release-ask]")!.click();
+    await flushPromises();
+    const auth = document.body.querySelector("[data-drawer-manager-auth]");
+    expect(auth?.textContent).toContain("Uma ordem de produção segue aberta.");
+    expect(auth?.textContent).toContain("fecha e não reabre.");
+    expect(call).not.toHaveBeenCalled();
+    page.unmount();
+  });
+
   it("o resumo diz que fechar pede o gerente, sem o selo 'automático'", async () => {
     const page = await openScreen(
       projection({ pending_production: PENDING as never, has_pending_production: true, pending_episodes: [], has_pending_episodes: false }),

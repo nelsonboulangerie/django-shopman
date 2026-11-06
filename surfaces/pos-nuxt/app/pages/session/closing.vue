@@ -284,6 +284,13 @@ const pendingProductionLine = computed(() =>
     ? "Uma ordem de produção segue aberta."
     : `${pendingCount.value} ordens de produção seguem abertas.`,
 );
+// O que o gerente assina: a produção aberta E o selo do dia, que não reabre. A
+// liberação vai direto ao fechamento, sem o "Fechar o dia?" do caminho comum; a
+// consequência tem de estar escrita onde o PIN é digitado.
+const releaseAuthDetail = computed(() => {
+  const day = closing.value?.today_display || "";
+  return `${pendingProductionLine.value} ${day ? `O dia ${day} fecha` : "O dia fecha"} e não reabre.`;
+});
 const managers = computed(() => pos.value?.managers ?? []);
 const releaseOpen = ref(false);
 // A marca mora no DialogContent (prop oficial `content`), como no `OperatorManagerAuth`.
@@ -1071,7 +1078,7 @@ const discrepancyColumns = [
     <OperatorManagerAuth
       v-model:open="releaseAuthOpen"
       action="day_closing_production"
-      :detail="pendingProductionLine"
+      :detail="releaseAuthDetail"
       :managers="managers"
       :busy="submitting"
       :error="releaseError"

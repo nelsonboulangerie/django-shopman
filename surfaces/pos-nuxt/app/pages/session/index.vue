@@ -17,7 +17,6 @@ import type { OperatorActionBarAction } from "../../../../operator-kit/app/prese
 // organização (quais cards, em que ordem, com que destaque) é pura, em
 // `presentation/cash`; a página só abre o que o card nomeia.
 import { toast } from "vue-sonner";
-import { formatBRL } from "~/utils/posIntent";
 
 import {
   amountEcho,
@@ -523,18 +522,16 @@ async function submitSettle() {
 async function submitMovement(managerApproval: ManagerApproval | null = null) {
   if (!canSubmitMovement.value) return;
   managerIntent.value = { action: "movement" };
-  const kind = movementKind.value;
-  const amountQ = amountToQ(movementAmount.value) ?? 0;
+  // A confirmação com o valor ("R$ 50,00 entrou na gaveta.") é do
+  // `registerCashMovement`, uma vez só: repetida aqui, o balcão via dois toasts
+  // para um movimento (beta 05/11, PDV-10/11).
   const ok = await registerCashMovement({
-    kind,
+    kind: movementKind.value,
     amount: movementAmount.value,
     reason: movementReason.value,
     managerApproval,
   });
   if (ok) {
-    // Primeiro o que aconteceu com o dinheiro, na voz do balcão; o aviso do
-    // comprovante, se houver, vem depois (beta 05/11, PDV-11).
-    toast.success(`${formatBRL(amountQ)} ${kind === "sangria" ? "saíram da" : "entraram na"} gaveta.`);
     managerChallenge.value = null;
     managerAuthOpen.value = false;
     movementAmount.value = "";
@@ -580,15 +577,12 @@ async function submitChangeRequest() {
 
 async function serveChange(ref_: string, managerApproval: ManagerApproval | null = null) {
   managerIntent.value = { action: "serve_change", ref: ref_ };
-  // O valor é lido ANTES: no sucesso o pedido some da lista com o refresh.
-  const amountQ = cashRuntime.value?.pending_change_requests?.find((row) => row.ref === ref_)?.amount_q ?? 0;
+  // A confirmação com o valor ("Troco de R$ 100,00 atendido.") é do
+  // `serveChangeRequest`, uma vez só (beta 05/11, PDV-10).
   const ok = await serveChangeRequest({ ref: ref_, managerApproval });
   if (ok) {
     managerChallenge.value = null;
     managerAuthOpen.value = false;
-    // O pedido sumir da lista não é confirmação para quem olhava para a gaveta
-    // (beta 05/11, PDV-10).
-    toast.success(amountQ > 0 ? `Troco de ${formatBRL(amountQ)} atendido.` : "Troco atendido.");
   }
 }
 
