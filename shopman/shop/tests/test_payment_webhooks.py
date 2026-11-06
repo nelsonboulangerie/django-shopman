@@ -1617,8 +1617,8 @@ class EfiPixWebhookMoneyTests(WebhookTestBase):
         from shopman.shop.services.pix_confirmation import _charge_status_label
 
         self.assertEqual(_charge_status_label("cancelled"), "cancelada")
-        self.assertEqual(_charge_status_label("pending"), "encerrada")
-        self.assertEqual(_charge_status_label(""), "encerrada")
+        self.assertEqual(_charge_status_label("pending"), "vencida")
+        self.assertEqual(_charge_status_label(""), "fora do prazo")
 
 
 # ══════════════════════════════════════════════════════════════

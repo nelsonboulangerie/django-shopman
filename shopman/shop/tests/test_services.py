@@ -888,7 +888,8 @@ class TestNotificationService:
         assert directive.topic == "notification.send"
         assert directive.payload["order_ref"] == "ORD-001"
         assert directive.payload["template"] == "order_accepted"
-        assert directive.payload["requires_active_notification"] is False
+        # Crítico implica obrigatório (beta 06/11, W4).
+        assert directive.payload["requires_active_notification"] is True
         assert directive.dedupe_key == "notification.send:ORD-001:order_accepted"
 
     @pytest.mark.django_db
@@ -1413,7 +1414,7 @@ class TestNotificationSendHandler:
         message = OperatorAlert.objects.get(type="notification_failed", order_ref="ORD-W3").message
         assert '"Pedido pronto"' in message
         assert "order_ready" not in message
-        assert "nenhum canal de aviso está ligado" in message
+        assert "nenhum canal de envio está ligado" in message
         assert "no active notification backend" not in message
 
     @pytest.mark.django_db
@@ -1443,7 +1444,8 @@ class TestNotificationSendHandler:
             dedupe_key="notification.send:ORD-001:order_cancelled",
             payload={"order_ref": "ORD-001", "template": "order_cancelled",
                      "notification_delivery": {"status": "failed", "outcome": "not_applied"}},
-            attempts=5,
+            # Última tentativa da régua do handler (5 esperas + a primeira).
+            attempts=len(NotificationSendHandler.retry_delays_seconds) + 1,
         )
         with (
             patch(

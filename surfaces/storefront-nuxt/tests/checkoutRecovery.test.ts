@@ -44,3 +44,19 @@ describe('startCheckoutRecovery', () => {
     expect(attempt).not.toHaveBeenCalled()
   })
 })
+
+// Beta SMS-17: o servidor diz que a tentativa não chegou; não há o que esperar.
+describe('startCheckoutRecovery com tentativa que não chegou', () => {
+  it('para na primeira conferência que diz "não chegou"', async () => {
+    const waits: number[] = []
+    const attempt = vi.fn()
+      .mockRejectedValueOnce(new Error('ainda sem rede'))
+      .mockResolvedValueOnce('not_received')
+      .mockResolvedValue(true)
+    const loop = startCheckoutRecovery(attempt, CHECKOUT_RECOVERY_DELAYS_MS, instant(waits))
+
+    await expect(loop.done).resolves.toBe(false)
+    expect(attempt).toHaveBeenCalledTimes(2)
+    expect(waits).toEqual([2_000, 4_000])
+  })
+})

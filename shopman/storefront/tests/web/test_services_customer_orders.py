@@ -107,6 +107,32 @@ def test_reorder_service_uses_listing_price(order_items, listing_item):
     assert name_by_sku[listing_item.product.sku] == listing_item.product.name
 
 
+def test_reorder_skips_delivery_fee_line_and_names_unsellable_items(order_items, listing_item):
+    """SMS-03: a linha de taxa não é item; o que ficou de fora sai pelo nome."""
+    from shopman.orderman.models import OrderItem
+
+    OrderItem.objects.create(
+        order=order_items, line_id="fee", sku="__DELIVERY_FEE__", name="__DELIVERY_FEE__",
+        qty=1, unit_price_q=800, line_total_q=800, meta={"type": "delivery_fee"},
+    )
+    OrderItem.objects.create(
+        order=order_items, line_id="gone", sku="FORMA-SAIU", name="Pão de forma",
+        qty=1, unit_price_q=900, line_total_q=900,
+    )
+    request = RequestFactory().post("/")
+    StubCartService.calls = []
+
+    skipped = customer_orders.add_reorder_items(
+        request,
+        order_items,
+        cart_service=StubCartService,
+        channel_ref=listing_item.listing.ref,
+    )
+
+    assert skipped == ["Pão de forma"]
+    assert "__DELIVERY_FEE__" not in {call["sku"] for call in StubCartService.calls}
+
+
 def test_payment_status_invalid_expiry_degrades_to_pending(order_with_payment):
     order_with_payment.data["payment"]["expires_at"] = "not-a-datetime"
     order_with_payment.save(update_fields=["data"])

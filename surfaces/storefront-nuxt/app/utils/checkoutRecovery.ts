@@ -9,6 +9,13 @@
 // Aqui a pergunta se repete com espera crescente até achar o pedido ou até o
 // teto. No teto, a tela para de prometer e devolve a decisão ao cliente, com a
 // verdade: o reenvio usa a mesma tentativa, e o mesmo pedido não entra duas vezes.
+//
+// O servidor também diz quando a tentativa NUNCA chegou (envio sem rede) ou
+// falhou: aí não há o que esperar, e a conferência para na hora em vez de segurar
+// o botão até o teto (beta SMS-17).
+
+/** O que uma conferência achou: o pedido, nada ainda, ou que ele não chegou. */
+export type CheckoutRecoveryOutcome = boolean | 'not_received'
 
 /** Esperas entre as conferências: ~1min30 no total, a maior parte no começo. */
 export const CHECKOUT_RECOVERY_DELAYS_MS = [2_000, 4_000, 8_000, 15_000, 30_000, 30_000] as const
@@ -16,12 +23,12 @@ export const CHECKOUT_RECOVERY_DELAYS_MS = [2_000, 4_000, 8_000, 15_000, 30_000,
 export interface CheckoutRecoveryLoop {
   /** Interrompe as conferências que faltam (o cliente reenviou, saiu da tela). */
   cancel(): void
-  /** Resolve `true` quando achou o pedido; `false` no teto ou se cancelado. */
+  /** Resolve `true` quando achou o pedido; `false` no teto, se cancelado ou se a tentativa não chegou. */
   done: Promise<boolean>
 }
 
 export function startCheckoutRecovery (
-  attempt: () => Promise<boolean>,
+  attempt: () => Promise<CheckoutRecoveryOutcome>,
   delays: readonly number[] = CHECKOUT_RECOVERY_DELAYS_MS,
   wait: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms))
 ): CheckoutRecoveryLoop {
@@ -30,13 +37,14 @@ export function startCheckoutRecovery (
     for (const delay of delays) {
       await wait(delay)
       if (cancelled) return false
-      let found: boolean
+      let found: CheckoutRecoveryOutcome
       try {
         found = await attempt()
       } catch {
         found = false
       }
       if (cancelled) return false
+      if (found === 'not_received') return false
       if (found) return true
     }
     return false

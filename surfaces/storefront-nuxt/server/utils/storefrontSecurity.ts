@@ -15,7 +15,8 @@ const ONE_YEAR_SECONDS = 31_536_000
 export const STOREFRONT_CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "base-uri 'self'",
-  "connect-src 'self' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://api.stripe.com https://checkout.stripe.com data: blob:",
+  // viacep.com.br: a busca do endereço pelo CEP (AddressPicker), a mesma do PDV.
+  "connect-src 'self' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://api.stripe.com https://checkout.stripe.com https://viacep.com.br data: blob:",
   "font-src 'self' data: https://fonts.gstatic.com",
   "form-action 'self'",
   "frame-ancestors 'none'",

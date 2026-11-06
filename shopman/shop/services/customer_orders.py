@@ -467,7 +467,15 @@ def payment_is_due(order) -> bool:
     method = str(payment.get("method") or "").lower()
     if method not in {"pix", "card"}:
         return False
-    if order.status != "accepted":
+    # ``new`` deve pagamento quando a cobrança já nasceu: é o cartão (e o Pix)
+    # da loja online, que cobra ao pedir. Enquanto este filtro aceitava só
+    # ``accepted``, o acompanhamento mostrava "Pague com cartão" e mandava
+    # ``payment_due=false`` para a mesma tela, que então nunca conferia o
+    # pagamento na volta do Stripe (beta 06/11, F1). Sem cobrança nascida,
+    # ``new`` ainda não deve nada (o Pix cobrado depois do aceite).
+    if order.status not in {"new", "accepted"}:
+        return False
+    if order.status == "new" and not payment.get("intent_ref"):
         return False
     expires_at = _parse_payment_deadline(payment.get("expires_at"))
     if expires_at and timezone.now() >= expires_at:
@@ -602,9 +610,14 @@ def add_reorder_items(
     skipped: list[str] = []
 
     for item in order.items.all():
+        # A taxa de entrega é cobrança gravada como linha do pedido, não
+        # mercadoria: não se repete e não vira "ficou de fora" para o cliente.
+        if item.sku == "__DELIVERY_FEE__" or (item.meta or {}).get("type") == "delivery_fee":
+            continue
         product = _sellable_product(item.sku)
         if product is None:
-            skipped.append(item.sku)
+            # O cliente lê o nome do que pediu, nunca o SKU.
+            skipped.append(item.name or item.sku)
             continue
 
         price_q = _price_q(product, channel_ref=channel_ref, qty=item.qty)

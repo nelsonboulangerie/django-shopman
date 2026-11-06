@@ -109,7 +109,17 @@ def test_painel_do_cliente_nao_promete_preparo_sem_estacao(loja):
         ref="PDV-261105-R09", channel_ref="pos", session_key="sk-r09", status=Order.Status.ACCEPTED,
         data={"fulfillment_type": "pickup"},
     )
-    KDSTicket.objects.create(session_key="sk-r09", kds_instance=prep, items=[{"sku": "SP", "name": "Espresso", "qty": 1}])
+    KDSTicket.objects.create(
+        session_key="sk-r09", kds_instance=prep, status="in_progress",
+        items=[{"sku": "SP", "name": "Espresso", "qty": 1}],
+    )
+    # Desde 06/11 o ticket nasce no aceite e espera "Iniciar preparo" no posto:
+    # ter ticket na tela não é estar sendo feito.
+    Order.objects.create(
+        ref="WEB-261106-W11", channel_ref="web", session_key="sk-w11", status=Order.Status.ACCEPTED,
+        data={"fulfillment_type": "pickup"},
+    )
+    KDSTicket.objects.create(session_key="sk-w11", kds_instance=prep, items=[{"sku": "SP", "name": "Espresso", "qty": 1}])
     Order.objects.create(
         ref="PDV-261105-C02", channel_ref="pos", session_key="sk-c02", status=Order.Status.PREPARING,
         data={"fulfillment_type": "pickup"},

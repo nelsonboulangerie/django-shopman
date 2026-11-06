@@ -606,7 +606,8 @@ class CheckoutRecoverView(APIView):
     Devolve o pedido que esta tentativa já confirmou (resposta perdida, aba
     recarregada). É POST porque recuperar grava: dá ao navegador o acesso ao
     pedido e refaz os efeitos pós-commit que ficaram para trás. Sem pedido
-    confirmado, 204.
+    confirmado, 204 enquanto a tentativa ainda está em curso; 404
+    (``checkout_attempt_not_received``) quando ela nunca chegou ou falhou.
     """
 
     permission_classes = [AllowAny]
@@ -616,7 +617,7 @@ class CheckoutRecoverView(APIView):
         tags=["checkout"],
         summary="Recover an order this checkout attempt already committed",
         request=None,
-        responses={200: CheckoutResponseSerializer, 204: None},
+        responses={200: CheckoutResponseSerializer, 204: None, 404: None},
     )
     def post(self, request):
         from shopman.shop.services import remote_mutations
@@ -636,6 +637,20 @@ class CheckoutRecoverView(APIView):
             )
             if recovered is not None:
                 response = CheckoutView._success_data(recovered)
+            # Tentativa que o servidor nunca recebeu (ou que falhou) não vai
+            # aparecer: dizer isso já na primeira conferência libera o reenvio,
+            # em vez de a tela esperar ~90 s pelo teto (beta SMS-17). O reenvio
+            # usa a mesma chave, e o mesmo pedido não entra duas vezes.
+            if response is None and not checkout_service.checkout_attempt_in_flight(
+                browser_session=request.session.session_key or "", principal=principal, key=key
+            ):
+                return Response(
+                    {
+                        "detail": "Este pedido não chegou até nós.",
+                        "error_code": "checkout_attempt_not_received",
+                    },
+                    status=status.HTTP_404_NOT_FOUND,
+                )
         if response is None:
             return Response(status=status.HTTP_204_NO_CONTENT)
         order_service.grant_order_access(request, response["order_ref"])

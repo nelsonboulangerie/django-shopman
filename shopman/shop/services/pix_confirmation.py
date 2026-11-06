@@ -853,11 +853,21 @@ def _record_pix_event(order, *, amount_q, intent_ref: str, outside_charge: bool 
         logger.warning("pix_confirmation_event_failed order=%s", order.ref, exc_info=True)
 
 
+#: Por que a cobrança não recebe mais, em português (beta 06/11, PIXEXP-08). A
+#: cobrança morta que ainda está ``pending`` é a que VENCEU: dizer "encerrada
+#: (pending)" era inglês e contradição na mesma frase.
+_CHARGE_STATUS_LABELS = {
+    "pending": "vencida",
+    "authorized": "vencida",
+    "cancelled": "cancelada",
+    "failed": "com falha",
+    "captured": "já paga",
+    "refunded": "devolvida",
+}
+
+
 def _charge_status_label(status: str) -> str:
-    """Como a cobrança morreu, em português. Status cru nunca vai para a tela."""
-    return {"cancelled": "cancelada", "failed": "recusada", "expired": "vencida"}.get(
-        str(status or ""), "encerrada"
-    )
+    return _CHARGE_STATUS_LABELS.get(str(status or ""), "fora do prazo")
 
 
 # ── alertas ──

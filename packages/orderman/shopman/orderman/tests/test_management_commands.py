@@ -392,3 +392,58 @@ class WatchdogTests(TestCase):
         instance = watchdog_cls.return_value.start.return_value
         instance.feed.assert_called_with(90)
         instance.stop.assert_called_once()
+
+
+class NoOpHandler:
+    topic = "noop.topic"
+
+    def handle(self, *, message: Directive, ctx: dict) -> None:
+        return None
+
+
+class CompletedDirectiveForgetsPreviousErrorTests(TestCase):
+    """Diretiva concluída não guarda o erro da tentativa anterior (beta 06/11, W8)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        registry.clear()
+        registry.register_directive_handler(NoOpHandler())
+
+    def tearDown(self) -> None:
+        registry.clear()
+        super().tearDown()
+
+    def _queued_after_a_failure(self) -> Directive:
+        return Directive.objects.bulk_create([
+            Directive(
+                topic="noop.topic",
+                payload={},
+                status="queued",
+                attempts=1,
+                error_code="transient",
+                last_error="Stuck in 'running' for >10min (reaped, will retry)",
+            )
+        ])[0]
+
+    def test_worker_clears_last_error_when_the_retry_succeeds(self) -> None:
+        directive = self._queued_after_a_failure()
+
+        call_command("process_directives")
+
+        directive.refresh_from_db()
+        self.assertEqual(directive.status, "done")
+        self.assertEqual(directive.attempts, 2)
+        self.assertEqual(directive.error_code, "")
+        self.assertEqual(directive.last_error, "")
+
+    def test_inline_dispatch_clears_last_error_when_the_retry_succeeds(self) -> None:
+        from shopman.orderman.dispatch import _process_directive
+
+        directive = self._queued_after_a_failure()
+
+        _process_directive(directive)
+
+        directive.refresh_from_db()
+        self.assertEqual(directive.status, "done")
+        self.assertEqual(directive.error_code, "")
+        self.assertEqual(directive.last_error, "")

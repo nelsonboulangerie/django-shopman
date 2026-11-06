@@ -12,7 +12,8 @@ Um dispatch completo grava ``order.data["lifecycle"][fase] = "done"``
 parados além do limiar SEM o marcador da fase do seu status e re-despacha — os
 handlers são idempotentes (hold via presença de hold_ids, fulfill via state
 machine do Hold, tickets KDS por delta de line_id, notificação via dedupe de
-directive, pagamento via intent/captured_at):
+directive, pagamento via intent/captured_at, alerta ao operador via causa
+aberta do mesmo tipo no pedido):
 
   * NEW sem on_commit           → dispatch("on_commit")
   * ACCEPTED sem on_accepted  → dispatch("on_accepted")

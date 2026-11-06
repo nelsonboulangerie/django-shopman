@@ -488,3 +488,81 @@ export function notesToggleState (open: boolean, notes: string, stashed: string)
   if (open) return { notes: kept, stashed: '' }
   return { notes: '', stashed: kept }
 }
+
+// Recusa de zona (beta SMS-05/06). Entrega num endereço que a loja ainda não
+// atende não sai do passo do endereço: nem pelo `confirmed` do picker, nem pelo
+// "Continuar", nem pela revisão. O aviso (com "Mudar para retirada" quando a
+// loja tem retirada) é o próximo foco, nunca um texto no topo que ninguém vê.
+export interface DeliveryZoneRefusalInput {
+  fulfillmentType: FulfillmentType | string
+  pickupSwapOffer: boolean
+  deliveryUncovered: boolean
+  zoneError?: boolean | null
+}
+
+export function deliveryZoneRefused ({ fulfillmentType, pickupSwapOffer, deliveryUncovered, zoneError }: DeliveryZoneRefusalInput): boolean {
+  return fulfillmentType === 'delivery' && (pickupSwapOffer || deliveryUncovered || !!zoneError)
+}
+
+export const DELIVERY_ZONE_REFUSAL_SELECTOR = '[data-checkout-pickup-swap], [data-checkout-zone-uncovered]'
+
+// Observação e "Lembrar destas escolhas" falam do pedido que a pessoa está
+// fazendo (beta PIXEXP-12, SMS-21). Na retirada não há interfone nem endereço;
+// troco tem campo próprio no pagamento em dinheiro e não entra em nenhum dos dois.
+export interface CheckoutNotesCopy {
+  description: string
+  placeholder: string
+}
+
+export function checkoutNotesCopy (isPickup: boolean): CheckoutNotesCopy {
+  if (isPickup) {
+    return {
+      description: 'Algum recado para quem vai preparar.',
+      placeholder: 'Ex: quem vai retirar é outra pessoa, sem sacola…'
+    }
+  }
+  return {
+    description: 'Ponto de referência, interfone…',
+    placeholder: 'Ex: tocar o interfone, ponto de referência…'
+  }
+}
+
+export function rememberChoicesDescription (isPickup: boolean): string {
+  return isPickup ? 'Pagamento e horário.' : 'Endereço, pagamento e horário.'
+}
+
+// Cupom que ficou na sacola mas não descontou nada (beta SMS-04): o cartão não
+// pode dizer "aplicado" ao lado de um total que não mudou.
+export interface CouponCardInput {
+  coupon_code?: string | null
+  coupon_discount_q?: number | null
+  coupon_discount_display?: string | null
+}
+
+export interface CouponCardState {
+  status: 'none' | 'applied' | 'no_discount'
+  description: string
+}
+
+export function couponCardState (cart: CouponCardInput | null | undefined): CouponCardState {
+  if (!cart?.coupon_code) return { status: 'none', description: '' }
+  if ((cart.coupon_discount_q ?? 0) > 0) {
+    return { status: 'applied', description: cart.coupon_discount_display ? `Desconto de ${cart.coupon_discount_display}` : '' }
+  }
+  return { status: 'no_discount', description: 'Nenhum item desta sacola recebe o desconto dele.' }
+}
+
+export function couponAppliedToast (cart: CouponCardInput | null | undefined): { kind: 'success' | 'info', message: string } {
+  return couponCardState(cart).status === 'applied'
+    ? { kind: 'success', message: 'Cupom aplicado.' }
+    : { kind: 'info', message: 'Este cupom não dá desconto nesta sacola.' }
+}
+
+// Retirada: o motivo de prontidão ("Brioche sai às 15:00.") vale para todos os
+// turnos antes do mais cedo e sai UMA vez acima da lista, como na entrega (beta
+// SMS-10). Embaixo de cada turno fica só o que muda de um para outro.
+export const PICKUP_PER_SLOT_REASONS: readonly string[] = ['Horário já passou', 'Loja fechada hoje']
+
+export function pickupReadinessReason (slots: Array<Pick<PickupSlotProjection, 'enabled' | 'reason'>>): string {
+  return slots.find(slot => !slot.enabled && slot.reason && !PICKUP_PER_SLOT_REASONS.includes(slot.reason))?.reason || ''
+}

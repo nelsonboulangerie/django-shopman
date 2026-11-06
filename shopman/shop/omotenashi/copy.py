@@ -487,26 +487,15 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_CANCEL_FAILED_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Não foi possível cancelar este pedido agora.")},
     },
-    "TRACKING_CANCEL_CONFIRM_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Cancelar pedido")},
-    },
-    "TRACKING_CANCEL_WARNING_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Essa ação altera o pedido em andamento")},
-    },
-    "TRACKING_CANCEL_WARNING_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="O cancelamento só é permitido enquanto o pagamento não foi capturado e a loja ainda permite reversão.")},
-    },
-    "TRACKING_CANCEL_CONFIRM_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Confirme apenas se não quiser mais seguir com este pedido.")},
-    },
-    "TRACKING_CANCEL_ACK_LABEL": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Entendo que o pedido será cancelado e deixará de ser preparado.")},
-    },
     "TRACKING_CANCEL_KEEP_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Manter pedido")},
     },
-    "TRACKING_CANCEL_CONFIRM_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Confirmar cancelamento")},
+    # Antes de confirmar o cancelamento, o que acontece com o dinheiro.
+    "TRACKING_CANCEL_MONEY_CARD_HOLD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="A reserva no seu cartão será desfeita, e nada será cobrado.")},
+    },
+    "TRACKING_CANCEL_MONEY_NOTHING_CHARGED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Nada foi cobrado até agora.")},
     },
     "TRACKING_MOCK_PAYMENT_SUCCESS_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento teste capturado")},
@@ -642,8 +631,8 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_DELIVERY_WAITING_COURIER": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                title="Pronto para coleta",
-                message="Estamos aguardando um entregador.",
+                title="Pronto, esperando o entregador",
+                message="Assim que ele chegar, seu pedido sai para entrega.",
             ),
         },
     },
@@ -662,14 +651,34 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_CANCELLED_REASON_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Motivo do cancelamento")},
     },
-    "TRACKING_REFUND_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Reembolso")},
+    # Pedido cancelado: o destino do dinheiro numa frase, com o valor. {amount}
+    # chega pronto ("R$ 13,60").
+    "TRACKING_MONEY_REFUNDED_PIX": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Devolvemos os {amount} do seu Pix para a mesma conta.")},
     },
-    "TRACKING_REFUND_STATUS_REFUNDED": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Reembolso concluído")},
+    "TRACKING_MONEY_REFUNDED_CARD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Estornamos os {amount} no seu cartão. O valor volta na fatura no prazo do seu banco.")},
     },
-    "TRACKING_REFUND_STATUS_PROCESSING": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Reembolso em processamento")},
+    "TRACKING_MONEY_REFUNDING_PIX": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Estamos devolvendo os {amount} do seu Pix para a mesma conta.")},
+    },
+    "TRACKING_MONEY_REFUNDING_CARD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Estamos estornando os {amount} no seu cartão. O valor volta na fatura no prazo do seu banco.")},
+    },
+    "TRACKING_MONEY_LATE_PIX_REFUNDED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Seu Pix de {amount} chegou depois do prazo, e devolvemos o valor para a mesma conta.")},
+    },
+    "TRACKING_MONEY_LATE_PIX_REFUNDING": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Seu Pix de {amount} chegou depois do prazo. Estamos devolvendo o valor para a mesma conta.")},
+    },
+    "TRACKING_MONEY_CARD_HOLD_RELEASED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="A reserva no seu cartão foi desfeita, e nada foi cobrado.")},
+    },
+    "TRACKING_MONEY_NOTHING_CHARGED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Nada foi cobrado.")},
+    },
+    "TRACKING_PROMISE_COMPLETED_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Obrigada pela preferência!")},
     },
     "TRACKING_STEP_RETURNED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Devolvido")},
@@ -677,7 +686,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PAYMENT_REQUESTED": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                title="Pague com Pix",
+                title="Falta só o pagamento",
             ),
         },
     },
@@ -816,7 +825,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 title="Pagamento expirado",
-                message="O prazo acabou e cancelamos o pedido.",
+                message="O prazo para pagar acabou e cancelamos o pedido.",
             ),
         },
     },
@@ -922,6 +931,22 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE_NEXT": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos fechados agora. Conferimos seu pedido quando abrirmos, {next}.")},
     },
+    # Pago com a loja fechada: o pagamento entra na frase, como no store_checking.
+    "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE_PAID": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento recebido. Estamos fechados agora e conferimos seu pedido assim que abrirmos. Se não conseguirmos confirmar, devolvemos o valor.")},
+    },
+    "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE_PAID_NEXT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento recebido. Estamos fechados agora e conferimos seu pedido quando abrirmos, {next}. Se não conseguirmos confirmar, devolvemos o valor.")},
+    },
+    # O último cartão foi recusado e a sessão segue aberta para outro.
+    "TRACKING_PROMISE_CARD_DECLINED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="O cartão não foi aprovado",
+                message="Nada foi cobrado. Tente de novo com outro cartão no ambiente seguro.",
+            ),
+        },
+    },
     # Preparo é o estado mais longo do pedido: a mensagem diz quando fica pronto e
     # promete o aviso, sem rótulo "Previsão:" no meio da frase.
     "TRACKING_PROMISE_PREPARING_MESSAGE_PICKUP": {
@@ -933,8 +958,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_PREPARING_MESSAGE_DELIVERY": {
         WILDCARD: {WILDCARD: CopyEntry(message="Avisamos quando sair para entrega.")},
     },
+    # O {eta} é a hora em que o pedido fica PRONTO, e a frase diz isso.
     "TRACKING_PROMISE_PREPARING_MESSAGE_DELIVERY_ETA": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Deve sair para entrega às {eta}. Avisamos quando sair.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Fica pronto por volta de {eta}. Avisamos quando sair para entrega.")},
+    },
+    # Entrega com janela combinada: a promessa é a janela ({when} = "hoje, 15:00 às 15:30").
+    "TRACKING_PROMISE_PREPARING_MESSAGE_DELIVERY_WINDOW": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Entrega combinada para {when}. Avisamos quando sair.")},
     },
     # Título do painel leva reticências ("em curso"); a etapa da linha do tempo
     # segue "Preparando", senão o passo concluído apareceria com check E reticências.
@@ -962,6 +992,11 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "TRACKING_PROMISE_READY_PICKUP_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Está esperando por você no balcão.")},
+    },
+    # Pronto, mas a janela combinada não começou ou a loja está fechada
+    # ({when} = "hoje às 15h").
+    "TRACKING_PROMISE_READY_PICKUP_MESSAGE_FROM": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Já está separado. Pode retirar a partir de {when}.")},
     },
     "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade. Se não conseguirmos confirmar, devolvemos o valor.")},
@@ -1636,7 +1671,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # ── Kintsugi ──────────────────────────────────────────────────
     # ── Rating ────────────────────────────────────────────────────
     "TRACKING_RATE_THANKS": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Obrigado!", message="Valorizamos muito seu retorno.")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Obrigada!", message="Valorizamos muito seu retorno.")},
     },
     # Agradecimento caloroso quando a nota é positiva (>= 4). Abaixo disso o
     # sheet usa o TRACKING_RATE_THANKS acima (sincero, mas sóbrio).

@@ -331,11 +331,33 @@ def validate_pickup_slot_selection(
         earliest_ref = result.get("slot_ref")
         if not _slot_is_at_or_after(slots, delivery_time_slot, earliest_ref):
             label = _slot_label(slots, earliest_ref)
+            reason = readiness_reason(result)
             if label:
-                return f"Sem tempo de preparo. Escolha {label} ou mais tarde."
-            return "Sem tempo de preparo para este horário."
+                return f"{reason} Escolha {label} ou mais tarde."
+            return reason
 
     return None
+
+
+def readiness_reason(result: dict) -> str:
+    """Por que os turnos antes do mais cedo ficam riscados, na voz da entrega.
+
+    Diz qual produto segura o pedido e a que horas ("{nome} sai às {hora}."),
+    a mesma frase da entrega: o mesmo bloqueio tem uma frase só nos dois (beta
+    SMS-10).
+    """
+    sku = result.get("bottleneck_sku") or ""
+    ready = (result.get("ready_times") or {}).get(sku) or ""
+    if sku and ready:
+        from shopman.shop.services.product_readiness import product_names
+
+        try:
+            name = product_names([sku]).get(sku) or sku
+        except Exception:
+            logger.debug("pickup_slots: could not name the bottleneck", exc_info=True)
+            name = sku
+        return f"{name} sai às {ready}."
+    return "Seu pedido ainda não fica pronto antes disso."
 
 
 def annotate_slots_for_checkout(cart_skus: list[str], *, delivery_date: str = "") -> dict:
@@ -362,6 +384,7 @@ def annotate_slots_for_checkout(cart_skus: list[str], *, delivery_date: str = ""
     clock = _wall_clock() if is_today else None
     closes_at = _today_closes_at() if is_today else None
     store_closed_today = is_today and isinstance(closes_at, time) and clock is not None and clock >= closes_at
+    preparation_reason = readiness_reason(cart_result)
 
     annotated_slots = []
     for slot in slots:
@@ -371,7 +394,7 @@ def annotate_slots_for_checkout(cart_skus: list[str], *, delivery_date: str = ""
             enabled = is_slot_available_for_today(slots, slot_ref, now=clock, closes_at=closes_at)
         reason = ""
         if not _slot_is_at_or_after(slots, slot_ref, cart_earliest_ref):
-            reason = "Sem tempo de preparo"
+            reason = preparation_reason
         elif store_closed_today:
             reason = "Loja fechada hoje"
         elif not enabled:

@@ -2378,9 +2378,7 @@
           "path": "shopman/shop/handlers/notification.py",
           "symbols": [
             "NotificationSendHandler",
-            "PREORDER_REMINDER_DEAD_STATUSES",
-            "_FAILURE_REASONS",
-            "_failure_reason"
+            "PREORDER_REMINDER_DEAD_STATUSES"
           ]
         }
       ],
@@ -7862,7 +7860,8 @@
           "symbols": [
             "recover_committed_checkout",
             "checkout_receipt_scope",
-            "recover_checkout_response"
+            "recover_checkout_response",
+            "checkout_attempt_in_flight"
           ]
         }
       ],
@@ -13609,7 +13608,8 @@
             "HOSTED_CHECKOUT_METHODS",
             "_PAYMENT_GATEWAY_ADAPTER_PATHS",
             "_INTENT_PRESENTATION_KEYS",
-            "GATEWAY_RECHECK_SECONDS"
+            "GATEWAY_RECHECK_SECONDS",
+            "record_card_decline"
           ]
         }
       ],
@@ -13832,7 +13832,10 @@
             "balance_due_q",
             "has_sufficient_captured_payment",
             "_PAID_STATUSES",
-            "_UNCERTAIN_STATUSES"
+            "_UNCERTAIN_STATUSES",
+            "cancelled_money",
+            "CancelledMoney",
+            "_HOSTED_CARD_METHODS"
           ]
         }
       ],

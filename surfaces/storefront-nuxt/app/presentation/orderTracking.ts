@@ -63,6 +63,42 @@ export function timelineStepStateLabel (state: string): string {
   return 'ainda não'
 }
 
+// Sufixo do passo para o leitor de tela. O passo cancelado já se chama
+// "Cancelado": repetir o estado lia "Cancelado, cancelado" (beta 06/11, PIXEXP-10).
+export function timelineStepSrSuffix (step: Pick<OrderProgressStepProjection, 'state'>): string {
+  if (step.state === 'cancelled') return ''
+  return `, ${timelineStepStateLabel(step.state)}`
+}
+
+// O esqueleto é só da PRIMEIRA carga. No Nuxt 4 o `pending` volta a `true` em
+// todo `refresh()`, e o `v-if="pending"` desmontava o painel e o histórico a
+// cada evento do SSE e a cada poll: a tela piscava (beta 06/11, SMS-12).
+export function showsTrackingSkeleton (pending: boolean | null | undefined, hasTracking: boolean): boolean {
+  return Boolean(pending) && !hasTracking
+}
+
+// O prazo de PAGAR zerou e o servidor ainda não trouxe o pedido cancelado (quem
+// cancela é o worker, segundos depois). Nesse intervalo o QR, o "Copiar código"
+// e o "Cancelar pedido" saem da tela: pagar um Pix vencido é o erro que a tela
+// existe para evitar (beta 06/11, PIXEXP-04).
+export function paymentDeadlineLapsed (
+  promise: Pick<TrackingPromiseProjection, 'deadline_kind'> | null | undefined,
+  deadlineExpired: boolean | null | undefined,
+  isActive: boolean | null | undefined
+): boolean {
+  return Boolean(promise?.deadline_kind === 'payment' && deadlineExpired && isActive)
+}
+
+// A ponte de expiração insiste: um refresh a cada 3 s, até 10 vezes, enquanto o
+// pedido continua ativo com o mesmo prazo. Um refresh único quase sempre
+// chegava antes do worker cancelar, e aí só o poll (15 s ou mais) trazia a troca.
+export const EXPIRY_RECONCILE_INTERVAL_MS = 3000
+export const EXPIRY_RECONCILE_MAX_ATTEMPTS = 10
+
+export function shouldRetryExpiryReconcile (attempts: number, stillLapsed: boolean): boolean {
+  return stillLapsed && attempts < EXPIRY_RECONCILE_MAX_ATTEMPTS
+}
+
 // Cadência do polling: respeita stale_after_seconds, com piso de 15s.
 export function pollIntervalMs (staleAfterSeconds: number | null | undefined): number {
   return Math.max((staleAfterSeconds || 30) * 1000, 15000)

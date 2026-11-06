@@ -369,9 +369,9 @@ def test_customer_board_dedups_session_on_payment(kds_setup):
         handle_ref="00009999",
         data={"fired_lines": ["1"], "tab_ref": "00009999", "fulfillment_type": "pickup"},
     )
-    # As linhas disparadas estão na tela da cozinha (o ticket da comanda).
+    # As linhas disparadas estão na tela da cozinha, já em preparo (o ticket da comanda).
     KDSTicket.objects.create(
-        session_key="sk-dup", kds_instance=kds_setup[0], items=[{"sku": "SKU", "name": "Produto", "qty": 1}],
+        session_key="sk-dup", kds_instance=kds_setup[0], status="in_progress", items=[{"sku": "SKU", "name": "Produto", "qty": 1}],
     )
 
     status = build_kds_customer_status()

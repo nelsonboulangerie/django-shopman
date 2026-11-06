@@ -7,7 +7,7 @@ import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentat
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
-import { startCheckoutRecovery, type CheckoutRecoveryLoop } from '~/utils/checkoutRecovery'
+import { CHECKOUT_RECOVERY_DELAYS_MS, startCheckoutRecovery, type CheckoutRecoveryLoop, type CheckoutRecoveryOutcome } from '~/utils/checkoutRecovery'
 import { buildCheckoutPayload, checkoutBaseline, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
 import { formatCount } from '~/utils/display'
 import { markJustPlaced } from '~/utils/justPlaced'
@@ -47,6 +47,12 @@ import {
   reconciledWindowRef,
   selectedPickupSlot,
   shouldOfferPickupSwap,
+  pickupReadinessReason,
+  checkoutNotesCopy,
+  couponCardState,
+  deliveryZoneRefused,
+  DELIVERY_ZONE_REFUSAL_SELECTOR,
+  rememberChoicesDescription,
   whenSummary as buildWhenSummary,
   type CheckoutSectionState,
   type CheckoutStep
@@ -160,11 +166,21 @@ function clearFieldErrors (keys: string[]) {
 const deliveryDateHint = ref('')
 const attemptKey = ref(createCheckoutAttemptKey())
 const addressSelection = ref<AddressSelection | null>(null)
+// Formulário do picker aberto com edição que o checkout ainda não recebeu
+// (beta SMS-15): o "Continuar" espera a confirmação, em vez de seguir com o
+// endereço antigo e perder a edição.
+const addressDraftPending = ref(false)
 const pickupSwapOffer = ref(false)
 // Fora da área numa loja SEM retirada: `pickupSwapOffer` fica falso, o `v-else-if` da
 // cobertura também, e nenhuma linha era renderizada — o cliente atravessava o resto do
 // checkout e tomava o erro no commit. A recusa precisa de ramo próprio.
 const deliveryUncovered = ref(false)
+const zoneRefused = computed(() => deliveryZoneRefused({
+  fulfillmentType: state.fulfillment_type,
+  pickupSwapOffer: pickupSwapOffer.value,
+  deliveryUncovered: deliveryUncovered.value,
+  zoneError: cart.value?.delivery_zone_error
+}))
 // ⚠️ Aparece numa combinação só: pontos + entrega em endereço NOVO, em sessão que conhece o
 // número e não as mãos (chegou por link de campanha). É a única rota que converteria o saldo
 // de alguém em pão entregue em outro lugar. Endereço salvo e balcão nunca passam por aqui.
@@ -255,6 +271,9 @@ watch(() => state.fiscal_tax_id_on_pickup, on => {
 // comprador leva; sem destinatário). Desligar descarta os dados do presente.
 const isPickup = computed(() => state.fulfillment_type === 'pickup')
 const giftTitle = computed(() => (isPickup.value ? 'Embalar para presente' : 'É para presente?'))
+const notesCopy = computed(() => checkoutNotesCopy(isPickup.value))
+const rememberDescription = computed(() => rememberChoicesDescription(isPickup.value))
+const couponCard = computed(() => couponCardState(cart.value))
 const giftDescription = computed(() => (isPickup.value
   ? 'Embalagem especial e um cartão com sua mensagem.'
   : 'Entregamos para outra pessoa, com cartão e sem valores na nota.'))
@@ -455,6 +474,12 @@ const deliveryWindowsReason = computed(() => {
   if (!reason) return ''
   return slots.value.some(slot => slot.enabled) ? `${reason} Antes disso, os horários ficam riscados.` : reason
 })
+const pickupSlotsReason = computed(() => {
+  if (isDeliveryWindows.value) return ''
+  const reason = pickupReadinessReason(slots.value)
+  if (!reason) return ''
+  return slots.value.some(slot => slot.enabled) ? `${reason} Antes disso, os horários ficam riscados.` : reason
+})
 const selectedSlot = computed(() => selectedPickupSlot(slots.value, state.delivery_time_slot))
 const paymentMethodLabel = computed(() => resolvePaymentMethodLabel(checkout.value, state.payment_method))
 const selectedSlotLabel = computed(() => selectedSlot.value?.label || state.delivery_time_slot || '')
@@ -630,10 +655,12 @@ const primaryAction = computed<CheckoutPrimaryAction>(() => {
       label: 'Continuar',
       icon: 'lucide:arrow-right',
       loading: draftSyncing.value,
-      disabled: draftSyncing.value || !addressSelection.value || deliveryUncovered.value,
+      disabled: draftSyncing.value || !addressSelection.value || zoneRefused.value || addressDraftPending.value,
       reason: !addressSelection.value
         ? 'Escolha ou informe o endereço de entrega.'
-        : deliveryUncovered.value
+        : addressDraftPending.value
+          ? 'Confirme o endereço que você está editando.'
+          : zoneRefused.value
           ? 'Ainda não entregamos nesse endereço.'
           : '',
       run: continueFromAddress
@@ -676,9 +703,14 @@ let hasRestoredCheckoutDraft = false
 function clearCheckoutDraft () {
   if (import.meta.client) { try { localStorage.removeItem(CHECKOUT_DRAFT_KEY) } catch { /* noop */ } }
 }
-// No SSR/hydration o checkout já existe e isto continua síncrono. Em navegação
-// cliente a projeção é lazy: esperamos o draft_context verdadeiro antes de
-// validar o rascunho, sem manter a página anterior presa à requisição.
+// O rascunho mora no localStorage, que o servidor não vê. Aplicá-lo durante a
+// hidratação fazia o primeiro render do cliente divergir do HTML do servidor
+// ("Hydration completed but contains mismatches", beta SMS-22). Na carga direta
+// ele entra depois de montar; em navegação cliente a projeção é lazy e esperamos
+// o draft_context verdadeiro antes de validar o rascunho.
+// O AddressPicker lê a seleção só ao montar: a chave o remonta com a seleção
+// restaurada, em vez de deixar o rádio no endereço pré-selecionado.
+const addressPickerKey = ref(0)
 function restoreCheckoutDraft () {
   if (!import.meta.client || draftRestored) return
   if (!checkout.value) return
@@ -693,7 +725,10 @@ function restoreCheckoutDraft () {
       // A seleção de endereço restaurada alimenta o AddressPicker (prop
       // `selection`): salvo re-marca o rádio; novo reabre o form preenchido.
       // Sem ela, o preselect do picker SOBRESCREVIA o endereço do rascunho.
-      if (draft.addressSelection) addressSelection.value = draft.addressSelection
+      if (draft.addressSelection) {
+        addressSelection.value = draft.addressSelection
+        addressPickerKey.value += 1
+      }
       // Observação restaurada reabre o toggle — texto nunca viaja escondido.
       if (draft.notesOpen) notesOpen.value = true
     } else if (stale) {
@@ -702,7 +737,11 @@ function restoreCheckoutDraft () {
   } catch { /* rascunho corrompido: ignora */ }
   draftRestored = true
 }
-watch(checkout, restoreCheckoutDraft, { immediate: true })
+if (import.meta.client && useNuxtApp().isHydrating) {
+  onMounted(() => { watch(checkout, restoreCheckoutDraft, { immediate: true }) })
+} else {
+  watch(checkout, restoreCheckoutDraft, { immediate: true })
+}
 function saveCheckoutDraft () {
   if (!import.meta.client || !draftRestored) return
   try {
@@ -1139,7 +1178,18 @@ async function continueFromAddress () {
   // a fila garante que taxa, cobertura e revisão usadas adiante são as que o
   // servidor acabou de aceitar.
   await draftSyncTail
+  // Fora da área o passo não avança (beta SMS-06): o aviso de cobertura, com a
+  // troca para retirada quando houver, vira o foco da página.
+  if (zoneRefused.value) { revealZoneRefusal(); return }
   activeStep.value = 'when'
+}
+
+// O aviso de cobertura mora no topo do fluxo (fora da seção de endereço, para
+// não remontar o picker). Quem recusa leva a página até ele e põe o foco no
+// gesto que resolve ("Mudar para retirada"), em vez de deixar o cliente olhando
+// para a seção onde estava (beta SMS-05).
+function revealZoneRefusal () {
+  reveal(() => document.querySelector(DELIVERY_ZONE_REFUSAL_SELECTOR), { align: 'start', focus: true })
 }
 
 function continueFromWhen () {
@@ -1154,6 +1204,17 @@ function continueFromPayment () {
 
 function openConfirmSheet () {
   if (!validate()) { revealFirstError(); return }
+  // Defesa em profundidade: entrega numa zona recusada nunca chega à revisão
+  // com o envio liberado e total sem taxa (beta SMS-06).
+  if (zoneRefused.value) {
+    if (!pickupSwapOffer.value && !deliveryUncovered.value) {
+      pickupSwapOffer.value = availableFulfillment.value.includes('pickup')
+      deliveryUncovered.value = !pickupSwapOffer.value
+    }
+    activeStep.value = 'address'
+    revealZoneRefusal()
+    return
+  }
   if (submitDisabled.value) {
     serverError.value = action.value?.reason || 'Pedido não pode ser confirmado agora.'
     return
@@ -1188,6 +1249,11 @@ async function goToAuthRoute () {
 }
 
 async function recoverCheckout (key = '') {
+  return (await checkCheckoutRecovery(key)) === true
+}
+// `not_received`: o servidor nunca recebeu esta tentativa (ou ela falhou). Não
+// vai virar pedido sozinha, e o reenvio com a mesma chave é seguro (beta SMS-17).
+async function checkCheckoutRecovery (key = ''): Promise<CheckoutRecoveryOutcome> {
   try {
     // POST: recuperar dá a este navegador o acesso ao pedido e refaz o que ficou
     // pendente depois do commit. GET não produz efeito.
@@ -1202,14 +1268,28 @@ async function recoverCheckout (key = '') {
     clearCart()
     await navigateTo(receipt.next_url || `/pedido/${encodeURIComponent(receipt.order_ref)}`)
     return true
-  } catch {
+  } catch (e) {
     if (confirmedTrackingUrl.value) {
       serverError.value = 'Pedido confirmado. Continue no acompanhamento.'
       confirmOpen.value = false
       return true
     }
+    if (httpError(e).data?.error_code === 'checkout_attempt_not_received') return 'not_received'
     return false
   }
+}
+// A conferência seguinte não espera o degrau inteiro quando a rede volta: é
+// justamente quando o servidor já pode responder se a tentativa chegou.
+function waitOrOnline (ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer)
+      window.removeEventListener('online', done)
+      resolve()
+    }
+    const timer = setTimeout(done, ms)
+    window.addEventListener('online', done)
+  })
 }
 function onDraftRemoved (event: StorageEvent) {
   if (event.key === CHECKOUT_DRAFT_KEY && event.newValue === null) window.location.reload()
@@ -1246,7 +1326,7 @@ function startUncertainCheck () {
   checkingOrder.value = true
   serverError.value = UNCERTAIN_CHECKING
   const key = attemptKey.value
-  const loop = startCheckoutRecovery(() => recoverCheckout(key))
+  const loop = startCheckoutRecovery(() => checkCheckoutRecovery(key), CHECKOUT_RECOVERY_DELAYS_MS, waitOrOnline)
   recoveryLoop = loop
   void loop.done.then((found) => {
     if (recoveryLoop !== loop) return
@@ -1389,8 +1469,10 @@ async function submitCheckout () {
         // marcar fieldError nem reabrir o passo: o erro poria a seção de
         // endereço em estado de erro, remontando o picker — que
         // re-selecionaria o salvo e apagaria o endereço fora de área e a
-        // própria oferta. Fecha só o sheet de revisão.
+        // própria oferta. Fecha o sheet de revisão e leva a página até o
+        // aviso: sem isso a recusa ficava fora da tela (beta SMS-05).
         confirmOpen.value = false
+        revealZoneRefusal()
       } else {
         fieldErrors.value = { ...fieldErrors.value, [field]: serverError.value }
         // O CPF da retirada mora no passo do pagamento, não no do endereço.
@@ -1477,7 +1559,7 @@ useSeoMeta({
             <UiAlertTitle>{{ serverError || 'Ainda não entregamos nesse endereço' }}</UiAlertTitle>
             <UiAlertDescription>
               <p>Mas você pode retirar na loja quando quiser.</p>
-              <UiButton size="sm" icon="lucide:store" class="mt-2" @click="switchToPickup">
+              <UiButton size="sm" icon="lucide:store" class="mt-2" data-focus-control @click="switchToPickup">
                 Mudar para retirada
               </UiButton>
             </UiAlertDescription>
@@ -1691,11 +1773,13 @@ useSeoMeta({
               @edit="goToStep('address')"
             >
               <AddressPicker
+                :key="addressPickerKey"
                 v-model:selection="addressSelection"
                 context="checkout"
                 :saved-addresses="savedAddresses"
                 :preselected-id="checkout.preselected_address_id"
                 @confirmed="onAddressConfirmed"
+                @draft-pending="addressDraftPending = $event"
                 @addresses-changed="refresh"
               />
               <UiFieldError v-if="fieldErrors.delivery_address" :errors="fieldErrors.delivery_address" />
@@ -1722,7 +1806,7 @@ useSeoMeta({
                 <!-- A única pergunta de quem informa o endereço é quanto custa entregar,
                      e esta linha só existe quando a taxa ACABOU de ser calculada. A
                      distância é complemento; o número é a resposta. -->
-                Entregamos no seu endereço<span v-if="cart.delivery_fee_display" class="font-normal shop-muted">&nbsp;· taxa de {{ cart.delivery_fee_display }}</span><span v-if="cart.delivery_distance_display" class="font-normal shop-muted">&nbsp;· a {{ cart.delivery_distance_display }}</span>
+                Entregamos no seu endereço<span v-if="cart.delivery_fee_display" class="font-normal shop-muted" data-checkout-delivery-fee-line>: taxa de {{ cart.delivery_fee_display }}</span><span v-if="cart.delivery_distance_display" class="font-normal shop-muted"> (a {{ cart.delivery_distance_display }})</span>
               </p>
               <div v-if="freeDeliveryUpsell" class="mt-3" data-checkout-free-delivery>
                 <div class="mb-2 flex items-center justify-between gap-3 text-sm font-semibold">
@@ -1893,6 +1977,9 @@ useSeoMeta({
 
                 <div v-if="state.fulfillment_type === 'pickup' && slots.length" class="space-y-2">
                   <UiLabel>Horário</UiLabel>
+                  <p v-if="pickupSlotsReason" class="shop-meta text-muted-foreground" data-checkout-pickup-readiness>
+                    {{ pickupSlotsReason }}
+                  </p>
                   <UiRadioGroup v-model="state.delivery_time_slot" class="grid gap-2">
                     <UiFieldLabel
                       v-for="slot in slots"
@@ -1917,7 +2004,7 @@ useSeoMeta({
                                enxerga via um horário riscado sem saber se lotou, se
                                passou ou se o turno não existe — e a diferença decide
                                entre mudar de horário e mudar de dia. -->
-                          <UiFieldDescription v-if="!slot.enabled">
+                          <UiFieldDescription v-if="!slot.enabled && !(pickupSlotsReason && slot.reason && pickupSlotsReason.startsWith(slot.reason))">
                             {{ slot.reason || 'Esgotado para este horário.' }}
                           </UiFieldDescription>
                         </UiFieldContent>
@@ -2092,11 +2179,11 @@ useSeoMeta({
                   <UiFieldContent class="gap-1">
                     <UiFieldTitle>
                       <template v-if="cart?.coupon_code">
-                        <span class="font-normal text-muted-foreground">Cupom</span> {{ cart.coupon_code }} <span class="font-normal text-muted-foreground">aplicado</span>
+                        <span class="font-normal text-muted-foreground">Cupom</span> {{ cart.coupon_code }} <span class="font-normal text-muted-foreground">{{ couponCard.status === 'applied' ? 'aplicado' : 'sem desconto' }}</span>
                       </template>
                       <template v-else>Cupom de desconto?</template>
                     </UiFieldTitle>
-                    <UiFieldDescription v-if="cart?.coupon_code && cart.coupon_discount_display">Desconto de {{ cart.coupon_discount_display }}</UiFieldDescription>
+                    <UiFieldDescription v-if="couponCard.description" :data-checkout-coupon-status="couponCard.status">{{ couponCard.description }}</UiFieldDescription>
                   </UiFieldContent>
                   <UiSwitch id="checkout-coupon-toggle" :model-value="couponSwitchOn" @update:model-value="onCouponToggle" />
                 </UiField>
@@ -2169,7 +2256,7 @@ useSeoMeta({
                 <UiField orientation="horizontal">
                   <UiFieldContent class="gap-1">
                     <UiFieldTitle>Adicionar observação</UiFieldTitle>
-                    <UiFieldDescription>Ponto de referência, interfone, troco…</UiFieldDescription>
+                    <UiFieldDescription>{{ notesCopy.description }}</UiFieldDescription>
                   </UiFieldContent>
                   <UiSwitch id="checkout-notes-toggle" v-model="notesOpen" />
                 </UiField>
@@ -2178,7 +2265,7 @@ useSeoMeta({
                     id="checkout-notes"
                     v-model="state.notes"
                     :rows="2"
-                    placeholder="Ex: tocar o interfone, ponto de referência…"
+                    :placeholder="notesCopy.placeholder"
                     @click.stop
                   />
                 </div>
@@ -2195,7 +2282,7 @@ useSeoMeta({
                 <UiField orientation="horizontal">
                   <UiFieldContent class="gap-1">
                     <UiFieldTitle>Lembrar destas escolhas</UiFieldTitle>
-                    <UiFieldDescription>Endereço, pagamento e horário.</UiFieldDescription>
+                    <UiFieldDescription>{{ rememberDescription }}</UiFieldDescription>
                   </UiFieldContent>
                   <UiSwitch id="checkout-save-default" v-model="state.save_as_default" />
                 </UiField>
