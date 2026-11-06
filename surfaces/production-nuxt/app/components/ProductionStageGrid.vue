@@ -112,9 +112,12 @@ watch(
   },
 );
 // A data mora na URL (beta 05/11): recarregar o Planejamento de sábado não
-// pode voltar para hoje e deixar alguém planejar no dia errado.
+// pode voltar para hoje e deixar alguém planejar no dia errado. Só no
+// Planejamento: o tablet do chão fica dias aberto, e recarregar (atualização do
+// app) tem de voltar para hoje, nunca para o dia que alguém espiou.
 const router = useRouter();
 watch(selectedDate, (date) => {
+  if (props.stage !== "plan") return;
   if (route.query.date === date) return;
   void router.replace({ query: { ...route.query, date } });
 });

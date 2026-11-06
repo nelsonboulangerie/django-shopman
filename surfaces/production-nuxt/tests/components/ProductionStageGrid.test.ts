@@ -374,6 +374,37 @@ describe("ProductionStageGrid — planning authority", () => {
     expect(w.find("[data-switching-day]").exists()).toBe(false);
   });
 
+  it("no chão a data espiada não vai para a URL: recarregar volta para hoje", async () => {
+    // O tablet do chão fica dias aberto; uma atualização do app recarrega a
+    // URL, e o dia que alguém espiou não pode virar o dia de trabalho.
+    const selectedDate = ref("2026-07-06");
+    vi.stubGlobal("useProductionBoard", () => ({
+      board: ref({
+        access: FULL_ACCESS,
+        base_recipes: [],
+        selected_date: "2026-07-06",
+        selected_position_ref: "",
+        default_position_pk: 7,
+        positions: [{ pk: 7, ref: "forno", name: "Forno", is_default: true }],
+      }),
+      rows: boardRows,
+      counts: ref(null),
+      selectedDate,
+      pending: ref(false),
+      error: ref(null),
+      refresh: boardRefresh,
+      isBusy: () => false,
+      plan: planSpy,
+      start: startSpy,
+    }));
+    routerReplace.mockClear();
+    mountGrid("open");
+
+    selectedDate.value = "2026-07-05";
+    await flushPromises();
+    expect(routerReplace).not.toHaveBeenCalled();
+  });
+
   it("lets a suggestion-only persona submit only the exact suggestion", async () => {
     stubBoardAccess({
       ...FULL_ACCESS,
