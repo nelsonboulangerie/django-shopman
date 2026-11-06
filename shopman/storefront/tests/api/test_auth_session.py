@@ -786,8 +786,7 @@ def test_espera_entre_envios_diz_quanto_falta_e_devolve_o_codigo_que_vale(monkey
 
     response = _pedir_codigo(client)
 
-    assert response.status_code == 429
-    assert response["Retry-After"] == "45"
+    assert response.status_code == 400
     data = response.json()
     assert data["error_code"] == "cooldown"
     assert data["retry_after_seconds"] == 45

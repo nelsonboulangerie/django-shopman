@@ -479,20 +479,18 @@ class RequestCodeView(APIView):
         )
         if not auth_result.success:
             if auth_service.auth_error_code(auth_result) == "cooldown":
-                # Espera entre envios (G11): 429 com os segundos que faltam, e o
-                # código que ainda vale (validade e canal) para a tela voltar ao
-                # passo de digitar. Era 400 com "Aguarde" sem número, e quem
-                # recarregava a página no passo do código ficava sem onde digitar
-                # o código que já tinha chegado (beta 06/11, SMS-08).
+                # Espera entre envios (G11): `error_code: cooldown`, os segundos
+                # que faltam e o código que ainda vale (validade e canal), para a
+                # tela voltar ao passo de digitar. Era "Aguarde" sem número, e
+                # quem recarregava a página no passo do código ficava sem onde
+                # digitar o código que já tinha chegado (beta 06/11, SMS-08).
+                # Segue 400: o 429 desta rota é o limite por cliente (5/min).
                 body = auth_service.code_cooldown_body(
                     auth_service.request_code_error_message(auth_result), auth_result, phone=phone,
                 )
                 if body["code_expires_at"]:
                     body.update(_delivery_response(getattr(auth_result, "delivery_method", None) or delivery_method))
-                response = Response(body, status=status.HTTP_429_TOO_MANY_REQUESTS)
-                if body["retry_after_seconds"]:
-                    response["Retry-After"] = str(body["retry_after_seconds"])
-                return response
+                return Response(body, status=status.HTTP_400_BAD_REQUEST)
             return Response(
                 auth_service.auth_error_body(
                     auth_service.request_code_error_message(auth_result), auth_result,

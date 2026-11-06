@@ -297,7 +297,7 @@ def code_resend_cooldown_seconds() -> int:
 
 
 def device_trust_period_display() -> str:
-    """O prazo da confiança do aparelho, dito como o cliente fala ("6 meses").
+    """O prazo da confiança do dispositivo, dito como o cliente fala ("6 meses").
 
     Fonte única: ``DEVICE_TRUST_TTL_DAYS`` do doorman, que conta do ÚLTIMO uso.
     A copy do login tinha "30 dias" escrito à mão e se descolou do prazo real
