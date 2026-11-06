@@ -722,6 +722,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    "TRACKING_PROMISE_CARD_MESSAGE_DEADLINE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Finalize no ambiente seguro até {deadline} para garantir o pedido.",
+            ),
+        },
+    },
     "TRACKING_PROMISE_CARD_MESSAGE_ACCEPTED": {
         WILDCARD: {
             WILDCARD: CopyEntry(
