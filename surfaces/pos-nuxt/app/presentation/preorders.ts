@@ -982,7 +982,7 @@ export interface MoneyBadge {
  * O dinheiro da linha em duas peças: o valor e o selo semântico do estado (dono,
  * 03/11/2026: "A receber" e "Pago" viram selos). Amarelo só para o que pede gesto.
  */
-export function moneyBadge(card: Pick<PreorderCard, "balance_q" | "balance_display" | "total_q" | "total_display" | "situation">): MoneyBadge {
+export function moneyBadge(card: Pick<PreorderCard, "balance_q" | "balance_display" | "total_q" | "total_display" | "payment_state">): MoneyBadge {
   if (card.balance_q === null) return { amount: card.total_display, of: "", label: "Conferir Pagamento", tone: "warning" };
   if (card.balance_q > 0) {
     const partial = card.balance_q < card.total_q;
