@@ -33,7 +33,8 @@
 // cabeçalho. A tela que filtra a própria lista passa a sua no `#search` (com `v-model`,
 // o nível "Nesta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
 // cheia.
-import { computed, onMounted, ref, useSlots } from "vue";
+import { computed, onMounted, ref, useSlots, useTemplateRef } from "vue";
+import { usePageHeaderFit } from "../composables/usePageHeaderFit";
 import { useScreen } from "../composables/useScreen";
 
 import { SUITE_MARKER_SELECTOR } from "../composables/useSuiteMarker";
@@ -224,6 +225,13 @@ const eyebrowIsStation = computed(() => !props.eyebrow && Boolean(eyebrowText.va
 
 const { request: openSearch } = useSuiteSearchRequest();
 
+// A barra que cabe (dono, 07/11/2026): mede a si mesma e cede em degraus (a busca vira
+// lupa; depois as ações descem de linha). Nunca sobrepõe. Ver `usePageHeaderFit`.
+// O `DashboardNavbar` tem raiz em fragmento (o molde do ☰ vem antes): o `$el` dele não
+// é a barra. A barra se acha dentro do landmark, pelo atributo.
+const landmark = useTemplateRef<HTMLElement>("landmark");
+usePageHeaderFit(landmark);
+
 // Barra do topo no celular. Avisos ocupa uma vaga onde a barra lateral não está na
 // tela (abaixo de `sm` ela nunca está).
 const slots = useSlots();
@@ -332,12 +340,13 @@ function clearAll() {
        ao lado, fora de qualquer landmark (axe `region`, onda da Central, 09/10/2026).
        `contents`: o invólucro não entra no layout, os filhos seguem na coluna do pai
        como antes. -->
-  <header class="contents" data-operator-page-header-landmark>
+  <header ref="landmark" class="contents" data-operator-page-header-landmark>
     <NuxtDashboardNavbar
       as="div"
       :toggle="Boolean(suiteRail) && !switcherEnabled"
       class="print:hidden"
       data-operator-page-header
+      data-page-header-fit="full"
     >
       <template #leading>
         <!-- Com o trocador, onde não há barra lateral (o tablet em pé; no celular a linha do
@@ -736,3 +745,29 @@ function clearAll() {
     </div>
   </header>
 </template>
+
+<style>
+/* A barra que cabe (`usePageHeaderFit`). Os degraus só valem onde a barra é a da mesa:
+   a busca inteira mora no centro do `lg` para cima (abaixo, o Nuxt UI já esconde o
+   centro e a lupa aparece); a segunda linha vale do `sm` para cima (abaixo, a coluna da
+   esquerda já quebra, `app.config`). Fora de camada, para vencer as utilidades. */
+@media (min-width: 64rem) {
+  [data-operator-page-header][data-page-header-fit="compact"] > [data-slot="center"],
+  [data-operator-page-header][data-page-header-fit="wrap"] > [data-slot="center"] {
+    display: none;
+  }
+  [data-operator-page-header][data-page-header-fit="compact"] [data-page-header-search-toggle],
+  [data-operator-page-header][data-page-header-fit="wrap"] [data-page-header-search-toggle] {
+    display: inline-flex;
+  }
+}
+@media (min-width: 40rem) {
+  [data-operator-page-header][data-page-header-fit="wrap"] {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+  [data-operator-page-header][data-page-header-fit="wrap"] > [data-slot="right"] {
+    margin-inline-start: auto;
+  }
+}
+</style>
