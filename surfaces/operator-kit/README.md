@@ -981,6 +981,37 @@ CI: catálogo do kit, Kitchen Sink, Compras e Gestor (a varredura inteira, por
 `captureOperatorEvidence`); Cozinha, Marketing e Produção (só a do rótulo, por
 `expectOperatorLabelsFit`, porque essas matrizes ainda não passam a varredura inteira).
 
+### Nada se sobrepõe (dono, 07/11/2026)
+
+No cabeçalho do pedido do Gestor, a 1360 px, a seta "Pedido anterior" se desenhava por
+cima da hora do selo de atualização e a busca por cima do "Próximo pedido" ("parece
+coisa de amador; não pode acontecer, nem nessa tela nem em nenhuma"). A causa era do
+kit: a coluna da esquerda do `DashboardNavbar` é `min-w-0` e encolhe abaixo do conteúdo,
+que então vaza por baixo da busca.
+
+**A barra do topo que cabe (`usePageHeaderFit`, no `OperatorPageHeader`).** A barra mede a
+si mesma (no `ResizeObserver`, depois do layout e antes da pintura) e cede em degraus,
+nesta ordem, no atributo `data-page-header-fit`:
+
+1. `full`: tudo na linha, a busca inteira (o selo de atualização já encolhe sozinho);
+2. `compact`: a busca vira a lupa (a mesma do celular);
+3. `wrap`: as ações descem para uma segunda linha, à direita.
+
+Conta como "não caber" o conteúdo que passa da coluna e o título espremido em duas
+linhas. Nenhum degrau é largura fixa: a régua é o que a tela pôs na barra.
+
+**A trava (`expectNoOperatorOverlap`, `visual/playwright.ts`).** Reprova o que se desenha
+por cima de outra coisa visível na mesma camada: controle sobre controle
+(`control-overlap`) e texto solto (título, selo, hora, "2 de 4") sobre controle ou sobre
+outro texto (`content-overlap`, a caixa das próprias letras, linha a linha). Ficam de fora o
+que mora em overlay aberto ou atrás de modal, o chip sobre ícone (`[data-slot="chip"]`)
+e a camada empilhada de propósito, que a tela declara com
+`data-operator-overlap-allowed`. É geometria, não retrato: não precisa de baseline. O
+`content-overlap` é opt-in no `scanOperatorGeometry` (`contentOverlap: true`) enquanto as
+matrizes dos outros apps não passam por ele. Onde roda na CI: Gestor
+(`orders-nuxt/tests/e2e/overlap.spec.ts`, todas as telas em 1440, 1360, 1280, 1024, 768
+e 390).
+
 ## Peças de tela (fase 2)
 
 As atividades comuns do operador, uma peça para cada uma

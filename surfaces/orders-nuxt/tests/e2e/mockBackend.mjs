@@ -75,7 +75,7 @@ const QUEUE = {
     preparing_count: 3,
     prep: [CARD, {
       ...CARD,
-      ref: "WEB-BLOCKED",
+      ref: "WEB-20260625-0008",
       customer_name: "Pagamento pendente",
       items_summary: "0.5× Pesado",
       total_display: "R$ 3,00",
@@ -89,7 +89,7 @@ const QUEUE = {
       attention_since_iso: new Date(Date.now() - 8 * 60_000).toISOString(),
     }, {
       ...CARD,
-      ref: "IFOOD-SCHEDULED",
+      ref: "IFOOD-260914-1515",
       channel_ref: "ifood",
       fulfillment_type: "delivery",
       fulfillment_label: "Entrega",
@@ -117,7 +117,7 @@ const QUEUE = {
       // Em preparo de verdade: o único que conta em "Seguem sozinhos: 1 na cozinha".
       // O iFood agendado acima espera o horário e NÃO foi para a cozinha (GES-13).
       ...CARD,
-      ref: "WEB-IN-KITCHEN",
+      ref: "WEB-20260625-0009",
       status: "preparing",
       status_label: "Em preparo",
       customer_name: "Bia",
