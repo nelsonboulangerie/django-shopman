@@ -1335,6 +1335,15 @@ services:
     scope: RUN_AND_BUILD_TIME
     value: 'https://central.boulangerie.com.br'
     type: GENERAL
+  # B.I.: os atalhos de lotes e planejamento abrem os apps do ambiente.
+  - key: BI__NUXT_PUBLIC_PRODUCTION_URL
+    value: "https://prod.boulangerie.com.br/"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: BI__NUXT_PUBLIC_ORDERS_URL
+    value: "https://gestor.boulangerie.com.br/"
+    scope: RUN_TIME
+    type: GENERAL
   # ── Compras (compras.) ──
   - key: PURCHASE__NUXT_PUBLIC_ORDERS_URL
     scope: RUN_TIME

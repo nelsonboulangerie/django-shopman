@@ -1049,6 +1049,15 @@ services:
         value: "https://central.STORE_DOMAIN"
         scope: RUN_TIME
         type: GENERAL
+      # B.I.: os atalhos de lotes e planejamento abrem os apps do ambiente.
+      - key: BI__NUXT_PUBLIC_PRODUCTION_URL
+        value: "https://prod.STORE_DOMAIN/"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: BI__NUXT_PUBLIC_ORDERS_URL
+        value: "https://gestor.STORE_DOMAIN/"
+        scope: RUN_TIME
+        type: GENERAL
       # Compras
       - key: PURCHASE__NUXT_PUBLIC_ORDERS_URL
         value: "https://gestor.STORE_DOMAIN/"

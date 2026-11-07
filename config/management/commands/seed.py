@@ -6225,7 +6225,11 @@ class Command(BaseCommand):
         )
 
     def _production_steps_for_recipe(self, ref: str) -> list[str]:
-        if "croissant" in ref or "chocolat" in ref or "folhado" in ref:
+        # Não inventar um modo de preparo para cremes, molhos e preparações.
+        # Etapas conhecidas vêm de rd["steps"]; sem elas a ficha pede cadastro.
+        if ref.startswith(("creme-", "molho-", "salada-", "vinagrete-")):
+            return []
+        if "croissant" in ref or ref == "pain-chocolat" or "folhado" in ref:
             return ["Massa", "Laminação", "Forno"]
         if "focaccia" in ref:
             return ["Mistura", "Fermentação", "Cobertura", "Forno"]
@@ -6242,7 +6246,9 @@ class Command(BaseCommand):
             return ["Pesagem", "Cocção", "Resfriamento"]
         if ref.startswith("manteiga-"):
             return ["Pesagem", "Mistura", "Resfriamento"]
-        return ["Mistura", "Fermentação", "Modelagem", "Forno"]
+        if ref in ("coelhinho", "ursinho", "porquinho"):
+            return ["Mistura", "Fermentação", "Modelagem", "Forno"]
+        return []
 
     def _max_started_minutes_for_recipe(self, ref: str) -> int:
         if "croissant" in ref or "chocolat" in ref or "folhado" in ref:
