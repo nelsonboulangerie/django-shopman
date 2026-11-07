@@ -288,14 +288,14 @@ describe("useOrdersBoard — ações (act)", () => {
     expect(env.fetchMock.mock.calls[0]![1].headers["Idempotency-Key"]).toBeTruthy();
   });
 
-  it("reject envia reason + cancellation_code", async () => {
+  it("reject envia a chave da lista única e a nota interna, em qualquer canal (dono, 07/11)", async () => {
     env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "IFOOD-9", actions: fixtureActions({ can_confirm: true }) }] } };
     env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
     const board = useOrdersBoard();
-    await board.reject("IFOOD-9", "Sem estoque", "CODE_2");
+    await board.reject("IFOOD-9", { reasonKey: "high_demand", internalNote: "" });
     const [path, opts] = env.fetchMock.mock.calls[0]!;
     expect(String(path)).toBe("/api/v1/backstage/orders/IFOOD-9/reject/");
-    expect(opts.body).toMatchObject({ reason: "Sem estoque", cancellation_code: "CODE_2" });
+    expect(opts.body).toMatchObject({ reason_key: "high_demand", internal_note: "" });
   });
 
   it("falha na ação acende erro inline por-ref (um lugar só, sem toast), devolve false e reconcilia via refresh", async () => {
@@ -416,14 +416,6 @@ describe("useOrdersBoard — bulk + reasons", () => {
     const board = useOrdersBoard();
     expect(await board.confirmMany(["WEB-1", "WEB-2"])).toBe(2);
     expect(env.sonner.error).toHaveBeenCalledWith("2 pedidos ficaram como estavam. Cada cartão diz por quê.");
-  });
-
-  it("fetchCancellationReasons devolve a lista, propaga indisponibilidade", async () => {
-    env.fetchMock.mockResolvedValueOnce({ reasons: [{ code: "1", description: "Sem estoque" }] });
-    const board = useOrdersBoard();
-    expect(await board.fetchCancellationReasons("IFOOD-1")).toEqual([{ code: "1", description: "Sem estoque" }]);
-    env.fetchMock.mockRejectedValueOnce(new Error("net"));
-    await expect(board.fetchCancellationReasons("IFOOD-2")).rejects.toThrow("net");
   });
 });
 

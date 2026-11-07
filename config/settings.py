@@ -989,12 +989,6 @@ SHOPMAN_IFOOD = {
     # neither, the projection fails loudly (an item needs a target category).
     "catalog_category_map": json.loads(os.environ.get("IFOOD_CATALOG_CATEGORY_MAP", "{}")),
     "catalog_default_category": os.environ.get("IFOOD_CATALOG_DEFAULT_CATEGORY", ""),
-    # Order cancellation (WP-4): iFood requires a cancellationCode from its fixed
-    # list. Discover valid codes per order via ifood_callbacks.fetch_cancellation_reasons.
-    # Empty → a cancellation callback fails loudly (must be set post-homologação).
-    "cancellation_default_code": os.environ.get("IFOOD_CANCELLATION_CODE", ""),
-    # iFood requires a non-empty `reason` alongside the code (400 otherwise).
-    "cancellation_default_reason": os.environ.get("IFOOD_CANCELLATION_REASON", "Problemas de sistema na loja"),
     # Módulo Merchant: o Shopman como fonte única de "loja aberta" no iFood — grava
     # o horário semanal (PUT opening-hours), vira feriado/fechamento do calendário
     # em interrupção, deixa o gestor pausar a loja no iFood e confere o status do

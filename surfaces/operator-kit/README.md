@@ -1820,29 +1820,29 @@ montar.
 
 O gesto destrutivo que o cliente vai ler (cancelar, recusar) pergunta o motivo, diz a
 consequência e confirma num diálogo só. Consumidores: o cancelar da encomenda no PDV
-(`PosPreorderCancelDialog`) e o recusar/cancelar do Gestor (`OrderReasonDialog`).
+(`PosPreorderCancelDialog`), o recusar/cancelar do Gestor (`OrderReasonDialog`), a
+ouvidoria resolvida do Gestor e o recusar anúncio do Marketing.
 
 ```html
 <OperatorReasonDialog
   :open="open" title="Cancelar pedido" :description="consequence"
-  confirm-label="Confirmar" :presets="cancellation_presets" :busy="busy"
-  @update:open="open = $event" @confirm="({ reason, code }) => cancelOrder(reason, code)" />
+  confirm-label="Confirmar" :keyed-reasons="cancel_reasons" :busy="busy"
+  @update:open="open = $event" @confirm="({ key, reason }) => cancelOrder(key, reason)" />
 ```
 
 Contrato:
 
 - **A consequência é obrigatória** (`description`): reembolso, para onde vai o motivo.
-- **Motivos prontos** (`presets`, os grupos cadastrados no Admin) são um toque; com
-  eles vem o "Outros", que exige texto. "Outros" nunca é o motivo enviado.
-- **Motivo codificado** (`coded` + `codedReasons`): o iFood exige um código da lista
-  dele; a descrição escolhida vira o texto que o cliente lê.
-- `required` diz se confirmar em branco é permitido (recusar exige; cancelar não).
+- **Motivo da lista** (`keyedReasons`): a lista única do backend, a MESMA para recusar e
+  cancelar (dono, 07/11/2026). Escolher é obrigatório, a tela mostra a frase que o
+  cliente lê, e o texto livre é a observação interna (`{ key, reason }`).
+- **Texto livre** (sem lista): o motivo escrito; `required` exige texto para confirmar.
 - **Fechar com texto digitado pergunta dentro do diálogo**, nunca por
   `window.confirm`. Ocupado (`busy`), o diálogo não fecha nem confirma de novo.
 - A autorização do gerente fica **fora**: o `OperatorManagerAuth` sobe por cima, e o
   motivo digitado continua embaixo.
-- Peças do Nuxt UI, nada do app hospedeiro: `NuxtModal`, `NuxtSelect`, `NuxtFormField`
-  com `NuxtTextarea`, `NuxtAlert` e `NuxtButton`.
+- Peças do Nuxt UI, nada do app hospedeiro: `NuxtModal`, `NuxtRadioGroup`,
+  `NuxtFormField` com `NuxtTextarea`, `NuxtAlert` e `NuxtButton`.
 
 ## Pergunta antes de descartar (`useConfirm`)
 

@@ -129,7 +129,7 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     gift_recipient_phone: "",
     gift_message: "",
     gift_hide_values: false,
-    cancellation_presets: [],
+    cancel_reasons: [],
     kitchen_note_tags: [],
     equipment_options: [],
     equipment_out: [],

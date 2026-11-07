@@ -14,7 +14,7 @@ for (const width of [375, 820, 1280]) {
       await route.fulfill({ json: body });
     });
     await page.route("**/api/v1/backstage/orders/IFOOD-COMPLETED/", route => route.fulfill({ json: { order: {
-      ...card, customer_phone: "", customer_phone_uri: "", customer_whatsapp_url: "", customer_email: "", customer_ref: "", delivery_address: "", delivery_instructions: "", items: [{ sku: "CAFE", name: "Café com leite", qty: "1", unit_price_display: "R$ 10,00", total_display: "R$ 10,00" }], timeline: [], kitchen_note: "", customer_note: "", fiscal_links: [], awaiting_work_orders: [], equipment_options: [], equipment_out: [], cancellation_presets: [], kitchen_note_tags: [], customer_profile: null, revisions: {},
+      ...card, customer_phone: "", customer_phone_uri: "", customer_whatsapp_url: "", customer_email: "", customer_ref: "", delivery_address: "", delivery_instructions: "", items: [{ sku: "CAFE", name: "Café com leite", qty: "1", unit_price_display: "R$ 10,00", total_display: "R$ 10,00" }], timeline: [], kitchen_note: "", customer_note: "", fiscal_links: [], awaiting_work_orders: [], equipment_options: [], equipment_out: [], cancel_reasons: [], kitchen_note_tags: [], customer_profile: null, revisions: {},
     } } }));
     await page.goto("/");
     if (width >= 1024) {

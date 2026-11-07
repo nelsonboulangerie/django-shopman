@@ -62,7 +62,6 @@ _ATTEMPT_OUTCOMES = {
 _SKIP_REASONS = {
     "customer_opt_out": "O cliente não autorizou avisos.",
     "expected_no_contact": "Não há contato do cliente.",
-    "notification_not_required": "Este aviso não se aplica.",
     "payment_not_pending": "O pagamento não está mais pendente.",
     "preorder_not_awaiting": "A encomenda não espera mais a data.",
     "rescheduled": "A data mudou antes do envio.",
@@ -226,14 +225,31 @@ def build_receipt(directive: Directive) -> NotificationReceiptProjection:
     )
 
 
+#: O motivo de omissão que diz "este aviso não cabe a este pedido": não é falha
+#: nem envio que deixou de sair, é aviso que não existe. A lista não o mostra
+#: (beta 06/11: "Não enviado · Este aviso não se aplica" se contradizia).
+_NOT_APPLICABLE_REASON = "notification_not_required"
+
+
+def _applies(directive: Directive) -> bool:
+    evidence = (directive.payload or {}).get("notification_delivery") or {}
+    if not isinstance(evidence, dict):
+        return True
+    return not (evidence.get("status") == "skipped" and evidence.get("reason") == _NOT_APPLICABLE_REASON)
+
+
 def build_notification_receipts(order) -> tuple[NotificationReceiptProjection, ...]:
-    """Os avisos deste pedido ao cliente, do mais antigo ao mais recente."""
+    """Os avisos deste pedido ao cliente, do mais antigo ao mais recente.
+
+    O aviso que não se aplica ao pedido (``notification_not_required``) fica de
+    fora: ele não falhou nem deixou de sair, ele não existe para este pedido.
+    """
     directives = list(
         Directive.objects.filter(topic=notification_svc.TOPIC, payload__order_ref=order.ref)
         .order_by("-created_at", "-pk")[:MAX_RECEIPTS]
     )
     directives.reverse()
-    return tuple(build_receipt(directive) for directive in directives)
+    return tuple(build_receipt(directive) for directive in directives if _applies(directive))
 
 
 __all__ = [

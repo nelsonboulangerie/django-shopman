@@ -262,7 +262,7 @@ export function ifoodAcceptNotice(
 
 export interface UndoLine {
   kind: "auto_ready" | "handoff";
-  /** O fato: "Pronto · automático", "Entregue às 14:02". */
+  /** O fato: "Pronto pela Cozinha", "Pronto marcado na Saída", "Entregue às 14:02". */
   label: string;
   /** O que a janela segura, ou o carimbo depois dela. */
   detail: string;

@@ -21,7 +21,7 @@ def test_existing_fiscal_attempt_survives_missing_backend(worker_state, visible_
         state, label, fiscal_state, _ = order_queue._fiscal_status(order)
     assert state == visible_state
     assert fiscal_state == ("failed" if worker_state == "failed" else "queued")
-    assert "não estabelecida" not in label
+    assert "não pedida" not in label
 
 
 def test_fiscal_evidence_is_batched_for_the_whole_board():
@@ -100,4 +100,4 @@ def test_not_requested_stays_not_requested(_backend_present, settings):
     order = Order.objects.create(channel_ref="web", ref="LAB-FISCAL-NOT", status="accepted", total_q=1000,
         data={"payment": {"method": "cash"}, "fulfillment_type": "pickup"})
 
-    assert order_queue._fiscal_status(order)[:3] == ("not_requested", "Emissão não estabelecida", "not_expected")
+    assert order_queue._fiscal_status(order)[:3] == ("not_requested", "NFC-e não pedida", "not_expected")

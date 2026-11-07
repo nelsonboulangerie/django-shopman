@@ -29,6 +29,7 @@ from shopman.backstage.presentation.status import (
     status_color,
 )
 from shopman.backstage.projections import ifood as ifood_projection
+from shopman.backstage.projections import order_pricing
 from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection, negotiations
 from shopman.backstage.projections.notification_receipts import (
     NotificationReceiptProjection,
@@ -206,24 +207,18 @@ class AwaitingWorkOrderProjection:
 
 @dataclass(frozen=True)
 class CancelReasonProjection:
-    """Um motivo de cancelar da lista única (``shop/services/cancel_reasons.py``).
+    """Um motivo de recusar ou cancelar da lista única (``shop/services/cancel_reasons.py``).
 
-    ``key`` é o que a tela devolve no cancelar; ``label`` é o que o operador
-    escolhe; ``customer_text`` é a frase que o cliente vai ler, mostrada na hora
-    da escolha para o operador saber o que sai.
+    ``key`` é o que a tela devolve no recusar/cancelar; ``label`` é o que o
+    operador escolhe; ``customer_text`` é a frase que o cliente vai ler, mostrada
+    na hora da escolha para o operador saber o que sai. ``offered_on_ifood``: o
+    motivo aparece no pedido do iFood (o quadro mistura canais e filtra por ele).
     """
 
     key: str
     label: str
     customer_text: str
-
-
-@dataclass(frozen=True)
-class CancellationPresetGroupProjection:
-    """Motivos de recusa sob um cabeçalho (``label`` vazio = sem cabeçalho)."""
-
-    label: str
-    presets: tuple[str, ...]
+    offered_on_ifood: bool
 
 
 @dataclass(frozen=True)
@@ -303,6 +298,17 @@ class UndoProjection:
     undo_since_iso: str = ""
 
 
+#: A porta do toque que fechou a última estação (``auto_ready["via"]``) → o rótulo
+#: do pronto e quem o fez, para o detalhe. "Pronto · automático" valia para todo
+#: pronto, até o que alguém marcou à mão na Saída (beta 06/11).
+_READY_ORIGIN = {
+    "station": ("Pronto pela Cozinha", "Cozinha concluiu"),
+    "exit": ("Pronto marcado na Saída", "Marcado na Saída"),
+    "pos": ("Pronto marcado no PDV", "Marcado no PDV"),
+    "scanner": ("Pronto marcado pelo leitor", "Marcado pelo leitor de código"),
+}
+
+
 def _undo_projection(order: Order) -> UndoProjection | None:
     """O bloco "o sistema fez · desfazer" do card e do detalhe, ou ``None``."""
     from shopman.shop.services import order_undo
@@ -323,10 +329,11 @@ def _undo_projection(order: Order) -> UndoProjection | None:
     if record and order.status == Order.Status.READY:
         hold = order_undo.ready_hold(order)
         clock = order_undo._clock(record.get("at"))
+        label, done_by = _READY_ORIGIN.get(str(record.get("via") or "station"), _READY_ORIGIN["station"])
         return UndoProjection(
             kind="auto_ready",
-            label="Pronto · automático",
-            detail=f"Cozinha concluiu às {clock}" if clock else "Cozinha concluiu",
+            label=label,
+            detail=f"{done_by} às {clock}" if clock else done_by,
             undo_until_iso=str(hold.get("undo_until") or "") if hold else "",
             action_ref="undo-ready",
             held_effect="Aviso de pronto ao cliente" if hold else "",
@@ -694,7 +701,10 @@ class OperatorOrderProjection:
     delivery_address: str
     delivery_instructions: str
     total_display: str
+    # Os itens a preço de tabela; o desconto (cupom com o código, promoção, grupo)
+    # vem em ``discount_lines``, uma linha por origem, com o valor negativo pronto.
     items: tuple[OrderItemProjection, ...]
+    discount_lines: tuple[order_pricing.OrderDiscountLineProjection, ...]
     timeline: tuple[TimelineEventProjection, ...]
     kitchen_note: str
     # Observação do CLIENTE (``order_notes``, escrita no checkout). Dona
@@ -734,9 +744,8 @@ class OperatorOrderProjection:
     gift_recipient_phone: str
     gift_message: str
     gift_hide_values: bool
-    cancellation_presets: tuple[CancellationPresetGroupProjection, ...]
-    # Os motivos de CANCELAR (lista única, chave estável). Os presets acima
-    # ficam para a recusa.
+    # Os motivos de RECUSAR e de CANCELAR: a lista única, com chave estável e a
+    # frase que o cliente lê (``services/cancel_reasons``).
     cancel_reasons: tuple[CancelReasonProjection, ...]
     kitchen_note_tags: tuple[str, ...]
     # Quem é este cliente (WP-360): recorrência, recência, ticket, favorito e o
@@ -933,6 +942,8 @@ class TwoZoneQueueProjection:
     ride_candidates: tuple[RideCandidateProjection, ...] = ()
 
     ifood_negotiation_orders: tuple[OrderCardProjection, ...] = ()
+    # Os motivos de recusar do quadro: a MESMA lista única do detalhe e do cancelar.
+    cancel_reasons: tuple[CancelReasonProjection, ...] = ()
     # A coluna ao lado da Fila: o que o sistema fez nos últimos minutos e o estado
     # do cardápio e dos canais (``order_attention.build_queue_awareness``).
     awareness: QueueAwarenessProjection | None = None
@@ -1055,16 +1066,9 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     """
     if context not in DETAIL_CONTEXTS:
         raise ValueError(f"Contexto de detalhe desconhecido: {context!r}")
-    items = tuple(
-        OrderItemProjection(
-            sku=it.sku,
-            name=it.name or it.sku,
-            qty=format(it.qty.normalize(), "f"),
-            unit_price_display=_money(it.unit_price_q),
-            total_display=_money(it.line_total_q),
-        )
-        for it in order_composition.effective_items(order)
-    )
+    # Itens a preço de tabela e o desconto (cupom, promoção) em linha própria:
+    # rateado no preço, o cupom sumia para o operador (beta 06/11).
+    items, discount_lines = order_pricing.priced_items(order)
 
     customer_data = order.data.get("customer", {})
     customer_name = _format_customer_display(
@@ -1100,6 +1104,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         delivery_instructions=delivery_instructions,
         total_display=_money(order_composition.effective_total_q(order)),
         items=items,
+        discount_lines=discount_lines,
         timeline=_build_timeline(order),
         notification_receipts=build_notification_receipts(order),
         kitchen_note=order.data.get("kitchen_note", ""),
@@ -1158,8 +1163,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             counter=preorders.build_counter_block(order, user=user),
             # O cancelar do balcão usa os MESMOS motivos do Gestor: a lista é uma
             # só, no backend (``cancel_reasons``).
-            cancellation_presets=_cancellation_presets(),
-            cancel_reasons=_cancel_reasons(),
+            cancel_reasons=_cancel_reasons(order.channel_ref or ""),
         )
 
     bloqueio = operator_orders.gestor_advance_block(order)
@@ -1213,8 +1217,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
-        cancellation_presets=_cancellation_presets(),
-        cancel_reasons=_cancel_reasons(),
+        cancel_reasons=_cancel_reasons(order.channel_ref or ""),
         kitchen_note_tags=_kitchen_note_tags(),
         courier=courier_block,
         **_courier_change_fields(order),
@@ -1552,41 +1555,17 @@ def _courier_block(order: Order) -> dict | None:
         return None
 
 
-def _cancel_reasons() -> tuple[CancelReasonProjection, ...]:
+def _cancel_reasons(channel_ref: str = "") -> tuple[CancelReasonProjection, ...]:
+    """A lista única; no detalhe de um pedido do iFood, só os motivos que ele oferece."""
+    from shopman.shop.policies.ifood_cancel_reasons import offered_on_ifood
     from shopman.shop.services.cancel_reasons import OPERATOR_CANCEL_REASONS
 
     return tuple(
-        CancelReasonProjection(key=r.key, label=r.label, customer_text=r.customer_text)
+        CancelReasonProjection(
+            key=r.key, label=r.label, customer_text=r.customer_text, offered_on_ifood=offered_on_ifood(r.key),
+        )
         for r in OPERATOR_CANCEL_REASONS
-    )
-
-
-def _cancellation_presets() -> tuple[CancellationPresetGroupProjection, ...]:
-    """Store-configured REJECT justification presets (Admin/Unfold), grouped.
-
-    The operator injects one with a tap in the gestor; the chosen text is sent to
-    the customer in the rejection notification. Cancelling uses the canonical
-    ``cancel_reasons`` list instead. Read from the Shop singleton;
-    never fails the projection. Order is the stored order: groups appear where
-    their first preset is, presets keep their order inside the group. Presets
-    without a group form groups with an empty ``label`` (no heading).
-    """
-    try:
-        from shopman.shop.models import Shop
-        from shopman.shop.models.shop import cancellation_preset_entries
-
-        entries = cancellation_preset_entries(Shop.load().cancellation_presets or [])
-    except Exception:
-        logger.debug("orders.cancellation_presets_read_failed", exc_info=True)
-        return ()
-    grouped: dict[str, list[str]] = {}
-    for group, label in entries:
-        bucket = grouped.setdefault(group, [])
-        if label not in bucket:
-            bucket.append(label)
-    return tuple(
-        CancellationPresetGroupProjection(label=group, presets=tuple(presets))
-        for group, presets in grouped.items()
+        if channel_ref != "ifood" or offered_on_ifood(r.key)
     )
 
 
@@ -1963,6 +1942,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         preorders=preorders,
         preorders_count=len(preorders),
         awareness=build_queue_awareness(user=user, expectation=expectation),
+        cancel_reasons=_cancel_reasons(),
     )
 
 
@@ -2984,10 +2964,12 @@ def payment_link_notice(order: Order) -> str:
             return f"Link entregue pelo provedor{at}, com comprovante. Leitura pelo cliente não confirmada."
         return f"Link aceito pelo provedor{at}, sem comprovante de entrega."
     if delivery.get("status") == "skipped":
+        if delivery.get("reason") == "notification_not_required":
+            # Aviso que não se aplica não é envio que deixou de sair: nada a dizer.
+            return ""
         reason = {
             "customer_opt_out": "o cliente não autorizou notificações",
             "expected_no_contact": "não há contato disponível",
-            "notification_not_required": "a notificação não se aplica",
             "payment_not_pending": "o pagamento não está pendente",
             "payment_link_already_paid": "o cliente já pagou",
             "payment_link_order_cancelled": "o pedido foi cancelado",
@@ -3030,9 +3012,11 @@ _FISCAL_PILL = {
     "awaiting_payment": ("awaiting_payment", "NFC-e sai quando o pagamento confirmar"),
     "awaiting_pickup": ("awaiting_pickup", "NFC-e sai na retirada"),
     "awaiting_delivery": ("awaiting_delivery", "NFC-e sai na entrega"),
-    # Escolha do Pablo, a mesma do PDV (`pos-nuxt/app/presentation/saleResult.ts`):
-    # diz o fato sem alarme; não trocar num lado só.
-    "not_expected": ("not_requested", "Emissão não estabelecida"),
+    # A regra da casa só emite quando pedem (nota, CPF ou comprovante): a pill diz
+    # o fato em português claro e sem alarme, o MESMO texto do PDV
+    # (`pos-nuxt/app/presentation/saleResult.ts`). Se o cliente pedir depois, o
+    # "Emitir NFC-e…" do PDV sai com o gerente.
+    "not_expected": ("not_requested", "NFC-e não pedida"),
 }
 
 
@@ -3359,7 +3343,7 @@ _EVENT_LABELS = {
     "handoff_requested": "Saída tocada (janela de desfazer)",
     "handoff_undone": "Saída desfeita",
     "handoff_refused": "Saída não gravada",
-    "auto_ready_undone": "Pronto automático desfeito",
+    "auto_ready_undone": "Pronto desfeito",
     "volumes_declared": "Volumes declarados",
     "ifood_accept_failed": "O aceite não chegou ao iFood",
     "ifood_accept_retried": "Aceite enviado de novo ao iFood",

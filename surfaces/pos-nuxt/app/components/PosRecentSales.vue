@@ -484,12 +484,12 @@ function fiscalChipClass(status: string): string {
                 @click="openEmitFiscal(sale)"
               >
                 <Icon name="lucide:file-plus" class="size-3.5" />
-                <!-- Par do chip "Emissão não estabelecida" (escolha do Pablo).
-                     Reticências: o toque abre a autorização do gerente. Não é
-                     "Tentar novamente" (nunca houve tentativa) nem "Solicitar
-                     autorização" (a mesma tela já pede a autorização do
-                     GERENTE: a palavra teria dois sentidos no mesmo toque). -->
-                Estabelecer emissão…
+                <!-- Par do chip "NFC-e não pedida" (dono, 07/11/2026): o verbo
+                     claro do que o toque faz. Reticências: o toque abre a
+                     autorização do gerente. Não é "Tentar novamente" (nunca houve
+                     tentativa) nem "Solicitar autorização" (a mesma tela já pede a
+                     autorização do GERENTE). -->
+                Emitir NFC-e…
               </NuxtButton>
               <!-- Desfazer dentro da janela: exceção auditada, sempre com o
                    desafio gerencial do mesmo diálogo da tela de venda. -->

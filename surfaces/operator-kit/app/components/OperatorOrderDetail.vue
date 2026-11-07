@@ -352,6 +352,21 @@ const itemColumns = [
               <span class="tabular-nums">{{ row.original.total_display }}</span>
             </template>
           </NuxtTable>
+          <dl
+            v-if="order.discount_lines?.length"
+            class="grid gap-1 text-sm"
+            data-order-discounts
+          >
+            <div
+              v-for="(line, i) in order.discount_lines"
+              :key="i"
+              class="flex items-baseline justify-between gap-3"
+              :data-discount-kind="line.kind"
+            >
+              <dt>{{ line.label }}</dt>
+              <dd class="tabular-nums">{{ line.amount_display }}</dd>
+            </div>
+          </dl>
         </div>
       </NuxtCard>
 
@@ -438,6 +453,22 @@ const itemColumns = [
                 <span class="tabular-nums">{{ row.original.total_display }}</span>
               </template>
             </NuxtTable>
+            <!-- O desconto fora do preço dos itens: o cupom com o código (beta 06/11). -->
+            <dl
+              v-if="order.discount_lines?.length"
+              class="grid gap-1 text-sm"
+              data-order-discounts
+            >
+              <div
+                v-for="(line, i) in order.discount_lines"
+                :key="i"
+                class="flex items-baseline justify-between gap-3"
+                :data-discount-kind="line.kind"
+              >
+                <dt>{{ line.label }}</dt>
+                <dd class="tabular-nums">{{ line.amount_display }}</dd>
+              </div>
+            </dl>
             <NuxtSeparator />
             <div class="flex items-baseline justify-between gap-3">
               <span class="op-label text-muted-foreground">Total</span>

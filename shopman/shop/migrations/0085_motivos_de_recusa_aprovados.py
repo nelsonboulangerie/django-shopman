@@ -17,8 +17,6 @@ migração é história e não pode mudar quando o ``seed`` mudar. O teste
 
 from django.db import migrations, models
 
-import shopman.shop.models.shop
-
 PREVIOUS_SEED_PRESETS = [
     "Item indisponível no momento",
     "Sem um dos ingredientes hoje",
@@ -73,7 +71,6 @@ class Migration(migrations.Migration):
                     '  {"label": "Pagamento não aprovado", "group": "Pagamento"},\n'
                     '  "Fora do horário de atendimento"\n]'
                 ),
-                validators=[shopman.shop.models.shop.validate_cancellation_presets],
                 verbose_name="motivos de cancelamento/recusa",
             ),
         ),

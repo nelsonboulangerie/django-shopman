@@ -47,29 +47,12 @@ describe("useOrderDetail", () => {
     expect(env.refresh).toHaveBeenCalledTimes(1);
   });
 
-  it("recusar envia reason; cancelar envia a CHAVE do motivo e a observação interna", async () => {
-    const d = useOrderDetail("WEB-2");
-    await d.reject("sem estoque");
-    expect(env.fetchMock.mock.calls[0]![1].body).toMatchObject({ reason: "sem estoque", cancellation_code: "" });
-    await d.cancel({ reasonKey: "customer_request", internalNote: "ligou às 10h", reason: "", cancellationCode: "" });
-    expect(env.fetchMock.mock.calls[1]![1].body).toMatchObject({ reason_key: "customer_request", internal_note: "ligou às 10h", reason: "", cancellation_code: "" });
-  });
-
-  it("reject/cancel de iFood repassam o código exigido pelo marketplace", async () => {
+  it("recusar e cancelar enviam a CHAVE do motivo da lista única e a observação interna, em qualquer canal", async () => {
     const d = useOrderDetail("IFOOD-2");
-    await d.reject("Item em falta", "IN_STORE_OUT_OF_STOCK");
-    expect(env.fetchMock.mock.calls[0]![1].body).toMatchObject({ reason: "Item em falta", cancellation_code: "IN_STORE_OUT_OF_STOCK" });
-    await d.cancel({ reasonKey: "", internalNote: "", reason: "Loja fechada", cancellationCode: "STORE_CLOSED" });
-    expect(env.fetchMock.mock.calls[1]![1].body).toMatchObject({ reason_key: "", reason: "Loja fechada", cancellation_code: "STORE_CLOSED" });
-  });
-
-  it("fetchCancellationReasons devolve a lista do pedido, propaga indisponibilidade", async () => {
-    env.fetchMock.mockResolvedValueOnce({ reasons: [{ code: "1", description: "Sem estoque" }] });
-    const d = useOrderDetail("IFOOD-3");
-    expect(await d.fetchCancellationReasons()).toEqual([{ code: "1", description: "Sem estoque" }]);
-    expect(String(env.fetchMock.mock.calls[0]![0])).toBe("/api/v1/backstage/orders/IFOOD-3/cancellation-reasons/");
-    env.fetchMock.mockRejectedValueOnce(new Error("boom"));
-    await expect(d.fetchCancellationReasons()).rejects.toThrow("boom");
+    await d.reject({ reasonKey: "out_of_stock", internalNote: "faltou farinha" });
+    expect(env.fetchMock.mock.calls[0]![1].body).toMatchObject({ reason_key: "out_of_stock", internal_note: "faltou farinha" });
+    await d.cancel({ reasonKey: "customer_request", internalNote: "ligou às 10h" });
+    expect(env.fetchMock.mock.calls[1]![1].body).toMatchObject({ reason_key: "customer_request", internal_note: "ligou às 10h" });
   });
 
   it("guarda de reentrância: 2ª ação enquanto em voo é no-op", async () => {
@@ -122,7 +105,7 @@ describe("useOrderDetail", () => {
     });
     const d = useOrderDetail("WEB-PAGO");
 
-    expect(await d.cancel({ reasonKey: "customer_request", internalNote: "", reason: "", cancellationCode: "" })).toBe(false);
+    expect(await d.cancel({ reasonKey: "customer_request", internalNote: "" })).toBe(false);
     // Desafio NÃO é falha: um toast vermelho aqui ensina que o sistema quebrou.
     expect(env.sonner.error).not.toHaveBeenCalled();
     expect(d.managerChallenge.value?.code).toBe("manager_approval_required");
@@ -134,7 +117,7 @@ describe("useOrderDetail", () => {
       data: { detail: "precisa de gerente", error: { code: "manager_approval_required" } },
     });
     const d = useOrderDetail("WEB-PAGO2");
-    await d.cancel({ reasonKey: "customer_request", internalNote: "ligou às 10h", reason: "", cancellationCode: "" });
+    await d.cancel({ reasonKey: "customer_request", internalNote: "ligou às 10h" });
 
     expect(await d.authorize({ username: "joyce", pin: "1234" })).toBe(true);
 

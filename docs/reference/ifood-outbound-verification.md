@@ -60,7 +60,7 @@ Mapa canônico status→ação em
 | **confirm** (aceitar pedido) | `accepted` | `POST /order/v1.0/orders/{id}/confirm` | `ifood_callbacks.py:82` (`confirm`), map em `:42` | `channel_ref=="ifood"` **e** existe `ifood_order_id` |
 | **readyToPickup** (pronto) | `ready` | `POST /order/v1.0/orders/{id}/readyToPickup` | `ifood_callbacks.py` (`STATUS_ACTION` → `send_action`) | idem |
 | **dispatch** (saiu p/ entrega) | `dispatched` | `POST /order/v1.0/orders/{id}/dispatch` | `ifood_callbacks.py:90` (`dispatch`), map em `:44` | idem |
-| **requestCancellation** (cancelar) | `cancelled` | `POST /order/v1.0/orders/{id}/requestCancellation` (body `{reason, cancellationCode}`) | `ifood_callbacks.py:120` (`request_cancellation`), map em `:45` | idem **e** `cancellation_default_code` (ou código escolhido pelo operador) preenchido — senão **falha alto** |
+| **requestCancellation** (cancelar) | `cancelled` | `POST /order/v1.0/orders/{id}/requestCancellation` (body `{reason, cancellationCode}`) | `ifood_callbacks.py:120` (`request_cancellation`), map em `:45` | idem **e** o motivo da casa com código em `DEFAULT_REASON_CODES`; sem código, **falha alto** |
 | _(sem ação)_ | `preparing` | — | `action_for_status` retorna `None` (`:57`) | iFood não tem callback de "em preparo"; ignorado |
 | _(sem ação)_ | `delivered` | — | não está em `STATUS_ACTION` | ver **Gap G1** abaixo |
 | _(sem ação)_ | `completed` | — | não está em `STATUS_ACTION` | ver **Gap G1** abaixo |
@@ -74,12 +74,12 @@ Detalhes finos:
   sem `client_id`/`client_secret` retornam `None` e o callback levanta
   `IFoodCallbackError` (`ifood_callbacks.py:65`). O token OAuth é
   `client_credentials`, cacheado em processo (`ifood_auth.py`).
-- **Cancelamento exige código válido da lista fixa do iFood.** O código default vem
-  de `SHOPMAN_IFOOD["cancellation_default_code"]` (env `IFOOD_CANCELLATION_CODE`); o
-  operador pode escolher um código por pedido no gestor (gravado em
-  `order.data["ifood_cancellation_code"]`, propagado em `ifood_status.py:87`). Sem
-  código nenhum → `IFoodCallbackError` **antes** de qualquer POST
-  (`ifood_callbacks.py:128-133`). O `reason` nunca pode ser vazio (iFood 400) — há
+- **Cancelamento exige código válido da lista fixa do iFood.** O código sai do motivo
+  da casa escolhido no Gestor (lista única `services/cancel_reasons.py`), pelo de-para
+  fixo `ifood_callbacks.DEFAULT_REASON_CODES` (dono, 07/11/2026), gravado em
+  `order.data["ifood_cancellation_code"]`. Antes de mexer no pedido, o código é
+  conferido contra `GET cancellationReasons` do pedido. Sem código → `IFoodCallbackError`
+  **antes** de qualquer POST. O `reason` nunca pode ser vazio (iFood 400) — há
   fallback para `"Cancelado pela loja"` (`:136-140`). Os códigos válidos por pedido
   vêm de `GET .../cancellationReasons` (`fetch_cancellation_reasons`, `:94`).
 - **iFood responde 202 Accepted** para ações de status; o cliente aceita 200/202
@@ -142,9 +142,8 @@ Pré-requisitos de configuração (env do deployment):
 - [ ] `IFOOD_CLIENT_ID` e `IFOOD_CLIENT_SECRET` setados (senão os callbacks **nem se
       registram** — `handlers/__init__.py:324`).
 - [ ] `IFOOD_MERCHANT_ID` setado (usado no polling inbound e no map).
-- [ ] `IFOOD_CANCELLATION_CODE` setado com um código **válido da lista do iFood**
-      (descobrir via `fetch_cancellation_reasons` num pedido real). Sem ele, todo
-      cancelamento de pedido iFood falha alto.
+- [ ] Na homologação, conferir `ifood_callbacks.DEFAULT_REASON_CODES` contra
+      `fetch_cancellation_reasons` num pedido real (a lista do iFood é por pedido).
 - [ ] **Worker de directives rodando no deployment** — ver **Gap G2**. Sem
       `process_directives` ativo, as directives `ifood.status_callback` ficam
       enfileiradas e **nenhum status chega ao iFood**, mesmo com tudo configurado.

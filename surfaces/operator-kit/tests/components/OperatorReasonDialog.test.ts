@@ -30,12 +30,6 @@ afterEach(() => {
 });
 
 const dom = (selector: string) => new DOMWrapper(document.querySelector(selector) as Element);
-const domAll = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)].map((element) => new DOMWrapper(element));
-
-const groups = [
-  { label: "Produto", presets: ["Item indisponível no momento"] },
-  { label: "", presets: ["Pedido em duplicidade"] },
-];
 
 describe("OperatorReasonDialog", () => {
   it("diz a consequência e confirma pelo rótulo de quem chama", async () => {
@@ -46,7 +40,7 @@ describe("OperatorReasonDialog", () => {
     expect(confirm.attributes("disabled")).toBeUndefined();
     await dom("[data-reason-input]").setValue("  Cliente desistiu  ");
     await confirm.trigger("click");
-    expect(w.emitted("confirm")).toEqual([[{ reason: "Cliente desistiu", code: "", key: "" }]]);
+    expect(w.emitted("confirm")).toEqual([[{ reason: "Cliente desistiu", key: "" }]]);
   });
 
   it("motivo exigido: confirmar em branco não sai", async () => {
@@ -68,41 +62,12 @@ describe("OperatorReasonDialog", () => {
     expect(document.querySelector("[data-reason-missing]")).toBeNull();
   });
 
-  it("motivos prontos: um toque escolhe; Outros exige texto e nunca vira o motivo", async () => {
-    const w = await mount({ presets: groups });
-    const chips = domAll("[data-reason-preset]");
-    expect(chips.map((c) => c.text())).toEqual(["Item indisponível no momento", "Pedido em duplicidade"]);
-    await chips[1]!.trigger("click");
-    expect(chips[1]!.attributes("aria-pressed")).toBe("true");
-    await dom("[data-testid='reason-other']").trigger("click");
-    expect(chips[1]!.attributes("aria-pressed")).toBe("false");
-    expect(dom("[data-reason-confirm]").attributes("disabled")).toBeDefined();
-    await dom("[data-reason-input]").setValue("Forno em manutenção hoje");
-    await dom("[data-reason-confirm]").trigger("click");
-    expect(w.emitted("confirm")).toEqual([[{ reason: "Forno em manutenção hoje", code: "", key: "" }]]);
-  });
-
-  it("motivo codificado: escolhe da lista e espelha a descrição no motivo", async () => {
-    const w = await mount({ coded: true, codedReasons: [{ code: "B", description: "Loja fechada" }], presets: groups });
-    expect(document.querySelector("[data-reason-input]")).toBeNull();
-    expect(document.querySelector("[data-reason-preset]")).toBeNull();
-    expect(dom("[data-reason-confirm]").attributes("disabled")).toBeDefined();
-    await dom("[data-reason-code]").trigger("click");
-    const option = domAll('[role="option"]').find((item) => item.text().includes("Loja fechada"))!;
-    option.element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
-    option.element.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0 }));
-    (option.element as HTMLElement).click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await dom("[data-reason-confirm]").trigger("click");
-    expect(w.emitted("confirm")).toEqual([[{ reason: "Loja fechada", code: "B", key: "" }]]);
-  });
-
   it("motivo da lista: escolher é obrigatório, mostra o que o cliente lê e o texto é interno", async () => {
     const keyedReasons = [
       { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou." },
       { key: "other", label: "Outro motivo", customer_text: "Sentimos muito pelo imprevisto." },
     ];
-    const w = await mount({ keyedReasons, presets: groups });
+    const w = await mount({ keyedReasons });
     expect(document.querySelector("[data-reason-preset]")).toBeNull();
     expect(document.querySelector("[data-reason-preview]")).toBeNull();
     // O lugar da frase já está reservado e diz o que falta (PDV2-19/PDV2-21).
@@ -119,7 +84,7 @@ describe("OperatorReasonDialog", () => {
     expect(document.querySelector("[data-reason-preview-pending]")).toBeNull();
     expect(dom("[data-reason-confirm]").attributes("disabled")).toBeUndefined();
     await dom("[data-reason-confirm]").trigger("click");
-    expect(w.emitted("confirm")).toEqual([[{ reason: "Faltou farinha", code: "", key: "out_of_stock" }]]);
+    expect(w.emitted("confirm")).toEqual([[{ reason: "Faltou farinha", key: "out_of_stock" }]]);
   });
 
   // Beta 05/11 (Gestor, Pix vencido): a tela que sabe o porquê abre com o motivo
@@ -135,7 +100,7 @@ describe("OperatorReasonDialog", () => {
     expect(dom("[data-reason-preview]").text()).toContain("Não recebemos o pagamento.");
     expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
     await dom("[data-reason-confirm]").trigger("click");
-    expect(w.emitted("confirm")).toEqual([[{ reason: "", code: "", key: "payment_not_confirmed" }]]);
+    expect(w.emitted("confirm")).toEqual([[{ reason: "", key: "payment_not_confirmed" }]]);
   });
 
   it("fechar com texto digitado pergunta dentro do diálogo, sem window.confirm", async () => {
@@ -162,11 +127,8 @@ describe("OperatorReasonDialog", () => {
     expect(w.emitted("confirm")).toBeUndefined();
   });
 
-  it("erro ao ler os motivos: bloqueia e oferece consultar de novo", async () => {
-    const w = await mount({ error: "Não foi possível consultar os motivos." });
-    expect(document.body.textContent).toContain("Não foi possível consultar os motivos.");
-    expect(dom("[data-reason-confirm]").attributes("disabled")).toBeDefined();
-    await domAll("button").find((button) => button.text() === "Consultar novamente")!.trigger("click");
-    expect(w.emitted("retry")).toHaveLength(1);
+  it("motivo exigido sem lista: o botão apagado diz que falta escrever", async () => {
+    await mount({ required: true });
+    expect(dom("[data-reason-missing]").text()).toBe("Escreva o motivo para confirmar.");
   });
 });

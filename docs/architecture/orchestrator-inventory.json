@@ -2075,7 +2075,6 @@
           "symbols": [
             "ADDRESS_LOCATION_DIVERGENCE_MODE_CHOICES",
             "CALENDAR_DECISION_CHOICES",
-            "CANCELLATION_PRESET_GROUP_SEPARATOR",
             "CalendarDecisionForm",
             "CalendarRemovalForm",
             "DEFAULTS_CLOSED_DATE_ROWS",
@@ -2126,8 +2125,6 @@
             "_adapter_choices",
             "_calendar_decision_entry",
             "_calendar_entry_key",
-            "_cancellation_presets_from_rows",
-            "_cancellation_presets_to_rows",
             "_choice_to_months",
             "_defaults_closed_date_admin_rows",
             "_defaults_closed_date_field",
@@ -6110,7 +6107,6 @@
         {
           "responsibility": "configuração",
           "symbols": [
-            "CANCELLATION_PRESET_TRAILING_PUNCTUATION",
             "LOGO_ALLOWED_EXTENSIONS",
             "LOGO_MAX_SIZE_BYTES",
             "NotificationTemplate",
@@ -6123,10 +6119,7 @@
             "_SOCIAL_PLATFORMS",
             "_WHATSAPP_HOSTS",
             "_resolve_social_link",
-            "cancellation_preset_entries",
-            "cancellation_preset_reason_key",
             "is_whatsapp_link",
-            "validate_cancellation_presets",
             "validate_logo"
           ]
         }
@@ -7102,6 +7095,7 @@
             "_step_was_reached",
             "_store_confirmation_is_deferred",
             "_waitlist_info",
+            "as_customer_sees",
             "build_tracking",
             "build_tracking_status",
             "convenience_pending",
@@ -7387,6 +7381,20 @@
       "out_of_extraction": false,
       "unit_ids": [
         "marketing.public-link"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/ifood_cancel_reasons.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.ifood-cancel-reasons"
       ],
       "responsibilities": [
         "decisão"

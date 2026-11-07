@@ -50,7 +50,8 @@ def test_reject_order_validates_reason(monkeypatch):
         reason="sem estoque",
         actor="operator:ana",
         rejected_by="ana",
-        cancellation_code="",
+        reason_key="",
+        internal_note="",
     )
 
 
@@ -92,7 +93,6 @@ def test_cancel_order_delegates(monkeypatch):
         "order",
         reason="O cliente pediu",
         actor="admin:ana",
-        cancellation_code="",
         reason_key="customer_request",
         internal_note="ligou às 10h",
     )

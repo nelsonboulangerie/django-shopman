@@ -3,7 +3,8 @@
 (a) a linha do tempo dizia "Customer cancellation requested", em inglês: tipo de
     evento sem rótulo caía no fallback que humaniza o código. A trava abaixo lê o
     código e reprova evento de pedido sem rótulo;
-(b) recusar com o motivo pronto "Você pediu o cancelamento" gravava "Outro motivo".
+(b) recusar com o motivo pronto "Você pediu o cancelamento" gravava "Outro motivo";
+    a recusa agora usa a lista única do cancelar, e grava a chave escolhida.
 """
 
 from __future__ import annotations
@@ -151,43 +152,48 @@ def test_courier_status_reads_as_the_ride_step(web_order):
     assert "Corrida da TaOn atualizada" in labels
 
 
-# ── (b) a recusa com motivo pronto grava a chave da lista única ──
-
-
-@pytest.fixture
-def keyed_presets(db):
-    from config.management.commands.seed import CANCELLATION_PRESETS
-
-    shop = Shop.load() or Shop.objects.create(name="Loja")
-    shop.cancellation_presets = CANCELLATION_PRESETS
-    shop.save()
-    return shop
+# ── (b) a recusa usa a lista única de motivos e grava a chave escolhida ──
 
 
 @pytest.fixture
 def new_web_order(db):
+    Shop.load() or Shop.objects.create(name="Loja")
     return Order.objects.create(ref="NB-RECUSA-1", channel_ref="web", status="new", total_q=2000)
 
 
-def test_reject_with_the_customer_asked_records_customer_request(keyed_presets, new_web_order):
+def test_reject_with_the_customer_asked_records_customer_request(new_web_order):
     operator_orders.reject_order(
-        new_web_order, reason="Você pediu o cancelamento", actor="gestor:ana", rejected_by="operator",
+        new_web_order, reason="O cliente pediu", reason_key="customer_request", internal_note="ligou às 9h",
+        actor="gestor:ana", rejected_by="operator",
     )
 
     new_web_order.refresh_from_db()
     assert new_web_order.status == "cancelled"
     assert new_web_order.data["cancellation_reason_key"] == "customer_request"
+    assert new_web_order.data["cancellation_internal_note"] == "ligou às 9h"
     cancelled = [item for item in order_queue._build_timeline(new_web_order) if item.label == "Cancelado"]
-    assert cancelled and cancelled[-1].detail == "O cliente pediu"
+    assert cancelled and cancelled[-1].detail.startswith("O cliente pediu")
 
 
-def test_reject_with_free_text_stays_other(keyed_presets, new_web_order):
-    operator_orders.reject_order(
-        new_web_order, reason="Forno quebrou agora", actor="gestor:ana", rejected_by="operator",
-    )
-
+def test_reject_outside_the_list_is_refused(new_web_order):
+    with pytest.raises(ValueError):
+        operator_orders.reject_order(
+            new_web_order, reason="Forno quebrou agora", actor="gestor:ana", rejected_by="operator",
+        )
     new_web_order.refresh_from_db()
-    assert new_web_order.data["cancellation_reason_key"] == "other"
+    assert new_web_order.status == "new"
+
+
+def test_reject_notice_reads_the_reviewed_sentence(new_web_order):
+    from shopman.shop.services import cancel_reasons
+    from shopman.shop.services.notification import _status_note
+
+    operator_orders.reject_order(
+        new_web_order, reason="Acabou um item", reason_key="out_of_stock", actor="gestor:ana", rejected_by="operator",
+    )
+    new_web_order.refresh_from_db()
+
+    assert _status_note(new_web_order, "order_rejected", "Acabou um item") == cancel_reasons.cancel_reason("out_of_stock").customer_text
 
 
 def test_contact_requested_says_which_door_it_came_from(web_order):

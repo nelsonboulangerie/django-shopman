@@ -773,11 +773,11 @@ def test_house_account_requires_an_identified_customer():
         house_account.require_eligible("")
 
 
-def test_ifood_cancellation_code_honors_the_explicit_fallback(monkeypatch):
+def test_ifood_cancellation_code_comes_from_the_reason_key_only():
     from shopman.shop.services import ifood_callbacks
 
-    monkeypatch.setattr(ifood_callbacks, "_cfg", lambda: {})
-    assert ifood_callbacks.resolve_cancellation_code("unknown", "fallback") == "fallback"
+    assert ifood_callbacks.resolve_cancellation_code("store_closing") == "508"
+    assert ifood_callbacks.resolve_cancellation_code("unknown") == ""
 
 
 def test_only_real_ifood_orders_require_a_remote_cancellation_decision():

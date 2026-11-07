@@ -10,7 +10,6 @@ import { useOrderIntention } from "./useOrderIntention";
 // Writes go through the django proxy (CSRF handled there) and reconcile via refresh.
 // SSE/poll are client-only (EventSource is a browser API).
 import type {
-  CancellationReason,
   OrderQueueResponse,
   TwoZoneQueueProjection,
 } from "~/types/orders";
@@ -30,8 +29,6 @@ import {
   openResilientEventSource,
   type ResilientEventSource,
 } from "../../../operator-kit/app/utils/resilientEventSource";
-
-export type { CancellationReason };
 
 // ── pedido tratável: som (mutável) + aviso mesmo com a aba oculta ─────────
 // ⚠️ Este bloco é DECISÃO DO DONO, tomada ouvindo os candidatos lado a lado
@@ -196,6 +193,8 @@ export function useOrdersBoard() {
     () => queue.value?.equipment_available ?? [],
   );
   const equipmentOut = computed(() => queue.value?.equipment_out ?? []);
+  // Os motivos de recusar: a lista única do backend, a mesma do detalhe.
+  const cancelReasons = computed(() => queue.value?.cancel_reasons ?? []);
   // A impressora desta estação — a DANFE da sacola sai por ela (useDanfePrint).
   const deviceAgent = computed(() => data.value?.device_agent ?? null);
 
@@ -695,10 +694,10 @@ export function useOrdersBoard() {
   const equipmentBack = (ref_: string) => act(ref_, "equipment-back");
   // "Entregador voltou": fecha a saída inteira (entrega, dinheiro, troco e maquininha).
   const courierBack = (ref_: string) => act(ref_, "courier-back");
-  // Marketplace (iFood) rejects carry the operator-picked cancellation code so the
-  // backend calls requestCancellation with a valid code; empty for other channels.
-  const reject = (ref_: string, reason: string, cancellation_code = "") =>
-    act(ref_, "reject", { reason, cancellation_code });
+  // Recusar: a chave da lista única de motivos (`reason_key`, em qualquer canal; no
+  // iFood o código dele sai da chave, no servidor) e a observação interna.
+  const reject = (ref_: string, choice: { reasonKey: string; internalNote: string }) =>
+    act(ref_, "reject", { reason_key: choice.reasonKey, internal_note: choice.internalNote });
   // ``change_back``: o troco que voltou com o entregador (reais, zero vale);
   // obrigatório no servidor quando saiu troco no despacho.
   const settleCash = (
@@ -715,16 +714,6 @@ export function useOrdersBoard() {
       ...(baseRevision ? { base_revision: baseRevision } : {}),
     });
 
-  // Valid cancellation reasons for a ref: for iFood, the live per-order list
-  // ({code, description}); empty for channels without reason codes.
-  async function fetchCancellationReasons(
-    ref_: string,
-  ): Promise<CancellationReason[]> {
-    const res = await $fetch<{ reasons: CancellationReason[] }>(
-      `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/cancellation-reasons/`,
-    );
-    return res.reasons;
-  }
   const assign = (ref_: string) => act(ref_, "assign");
   // Volumes declarados por quem embalou (0 apaga a declaração). ``surface`` diz de onde:
   // o ⋯ do cartão ("orders") ou a coluna/posto Saída ("exit"); o evento guarda as duas.
@@ -794,12 +783,12 @@ export function useOrdersBoard() {
     confirm,
     advance,
     reject,
-    fetchCancellationReasons,
     settleCash,
     equipmentBack,
     courierBack,
     equipmentOut,
     equipmentAvailable,
+    cancelReasons,
     assign,
     unassign,
     declareVolumes,
