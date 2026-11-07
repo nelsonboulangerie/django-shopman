@@ -812,7 +812,7 @@ def _support_url(base: str, order_ref: str, *, copy: CopyCatalog) -> str:
         return base
     support_message = copy.message(
         "TRACKING_SUPPORT_WHATSAPP_MESSAGE",
-        "Oi! Posso ajudar com o pedido {order_ref}?",
+        "Oi! Preciso de ajuda com o pedido {order_ref}.",
     ).format(order_ref=order_ref)
     separator = "&" if "?" in base else "?"
     return f"{base}{separator}{urlencode({'text': support_message})}"

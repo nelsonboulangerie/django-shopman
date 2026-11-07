@@ -148,6 +148,10 @@ useSeoMeta({ title: 'Preferências' })
       <div v-else class="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <UiFieldSet class="rounded-lg border bg-card p-4">
           <UiFieldLegend>Preferências alimentares</UiFieldLegend>
+          <UiFieldDescription class="mb-2">
+            Estas escolhas personalizam os avisos e filtros do cardápio. Não garantem ausência de alérgenos ou de contaminação cruzada.
+            Confira os ingredientes de cada produto e o <NuxtLink to="/faq" class="underline">aviso sobre alérgenos</NuxtLink> antes de pedir.
+          </UiFieldDescription>
           <UiFieldGroup>
             <UiField v-for="pref in summary?.food_preferences || []" :key="pref.key" orientation="horizontal">
               <UiFieldContent>
