@@ -1587,7 +1587,7 @@ useSeoMeta({
             <UiAlertTitle>{{ serverError || 'Ainda não entregamos nesse endereço' }}</UiAlertTitle>
             <UiAlertDescription>
               <p>Mas você pode retirar na loja quando quiser.</p>
-              <UiButton size="sm" icon="lucide:store" class="mt-2" data-focus-control @click="switchToPickup">
+              <UiButton size="sm" icon="lucide:store" class="mt-2" :loading="draftSyncing" :disabled="draftSyncing" data-focus-control @click="switchToPickup">
                 Mudar para retirada
               </UiButton>
             </UiAlertDescription>
