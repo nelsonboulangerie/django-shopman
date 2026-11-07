@@ -119,46 +119,14 @@ class DeletionBlocker:
     topic: str = ""
 
 
-# Os bloqueios que dependem do PEDIDO, e não de um envio que acaba em segundos.
-# São os que a tela confere ANTES de gastar o código de confirmação: um bloqueio
-# conhecido de antemão não pode custar um SMS ao cliente.
-_ORDER_BLOCKERS = frozenset({"active_order", "order_automation_in_flight", "order_obligation_pending"})
-_SETTLED_ORDER_STATUSES = ("completed", "cancelled", "returned")
-
-
 def deletion_blocker_details(customer, reason: str) -> DeletionBlocker:
     """Completa um motivo de recusa com o pedido e a etapa que o causam (só leitura)."""
-    from shopman.orderman.models import Directive, Order
-
-    from shopman.shop.directives import PERSONAL_ORDER_DELIVERY_TOPICS
     from shopman.shop.services import account as account_service
 
-    if reason not in _ORDER_BLOCKERS:
-        return DeletionBlocker(reason=reason)
-    query = account_service.customer_footprint_query(customer.ref, customer.phone or "")
-    if not query.children:
-        return DeletionBlocker(reason=reason)
-    orders = Order.objects.filter(query)
-    if reason == "active_order":
-        order = orders.exclude(status__in=_SETTLED_ORDER_STATUSES).order_by("-created_at").first()
-        return DeletionBlocker(reason=reason, order_ref=order.ref if order else "")
-    refs = list(orders.values_list("ref", flat=True))
-    directive = (
-        Directive.objects.filter(
-            payload__order_ref__in=refs,
-            status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING),
-        )
-        .exclude(topic__in=PERSONAL_ORDER_DELIVERY_TOPICS)
-        .order_by("pk")
-        .first()
+    order_ref, topic = account_service.privacy_order_deletion_subject(
+        customer.ref, customer.phone or "", reason
     )
-    if directive is None:
-        return DeletionBlocker(reason=reason)
-    return DeletionBlocker(
-        reason=reason,
-        order_ref=str((directive.payload or {}).get("order_ref") or ""),
-        topic=directive.topic,
-    )
+    return DeletionBlocker(reason=reason, order_ref=order_ref, topic=topic)
 
 
 def deletion_preflight(customer) -> DeletionBlocker | None:

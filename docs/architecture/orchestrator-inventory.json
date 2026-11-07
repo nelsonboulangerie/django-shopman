@@ -7823,6 +7823,7 @@
         "account.food-preferences",
         "account.notification-consent",
         "account.order-erasure-eligibility",
+        "account.order-erasure-subject",
         "account.otp-erasure-eligibility",
         "account.privacy-erasure",
         "shop.services-account-addresses",
@@ -7833,7 +7834,8 @@
       "responsibilities": [
         "composição",
         "decisão",
-        "infraestrutura"
+        "infraestrutura",
+        "leitura"
       ],
       "support_claims": [
         {

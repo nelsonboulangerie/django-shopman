@@ -5060,6 +5060,43 @@
       "out_of_extraction": false
     },
     {
+      "id": "account.order-erasure-subject",
+      "question": "Qual pedido e qual etapa seguram a exclusão da conta, para a loja nomeá-los ao cliente?",
+      "owner": "account.order-retention",
+      "responsibility": "leitura",
+      "public_entrypoint": "shopman.shop.services.account:privacy_order_deletion_subject",
+      "authoritative_symbols": [
+        "shopman.shop.services.account:privacy_order_deletion_subject"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/account.py",
+          "symbols": [
+            "privacy_order_deletion_subject"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [
+        "PERSONAL_ORDER_DELIVERY_TOPICS"
+      ],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_services_semantic_units_a_m.py::test_order_erasure_subject_names_the_active_order"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": true
+    },
+    {
       "id": "account.otp-erasure-eligibility",
       "question": "Uma verificação OTP pendente ainda impede apagar a identidade do cliente?",
       "owner": "account.otp-retention",

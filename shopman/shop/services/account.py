@@ -883,6 +883,42 @@ def privacy_order_deletion_blocker(customer_ref: str, phone: str) -> str:
     return ""
 
 
+def privacy_order_deletion_subject(customer_ref: str, phone: str, reason: str) -> tuple[str, str]:
+    """Qual pedido e qual etapa causam a recusa da exclusão. Só leitura.
+
+    Devolve ``(order_ref, topic)``; vazio quando o motivo não é de pedido ou o
+    pedido já não aparece. A DECISÃO continua sendo
+    ``privacy_order_deletion_blocker``: aqui só se nomeia o que ela recusou, para a
+    loja dizer "o pedido X ainda tem a nota fiscal em aberto" em vez de "um pedido".
+    """
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import PERSONAL_ORDER_DELIVERY_TOPICS
+
+    orders = _customer_orders(customer_ref, phone)
+    if reason == "active_order":
+        order = (
+            orders.exclude(status__in=("completed", "cancelled", "returned"))
+            .order_by("-created_at")
+            .first()
+        )
+        return (order.ref if order else "", "")
+    if reason not in ("order_automation_in_flight", "order_obligation_pending"):
+        return ("", "")
+    directive = (
+        Directive.objects.filter(
+            payload__order_ref__in=list(orders.values_list("ref", flat=True)),
+            status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING),
+        )
+        .exclude(topic__in=PERSONAL_ORDER_DELIVERY_TOPICS)
+        .order_by("pk")
+        .first()
+    )
+    if directive is None:
+        return ("", "")
+    return (str((directive.payload or {}).get("order_ref") or ""), directive.topic)
+
+
 def privacy_otp_deletion_blocker(customer) -> str:
     """Keep deletion behind every committed, unfinished OTP delivery intent."""
     from django.db.models import Q
