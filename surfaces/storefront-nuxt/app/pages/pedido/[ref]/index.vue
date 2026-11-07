@@ -932,6 +932,12 @@ useSeoMeta({
 
                 <UiTabsContent v-if="showDeliveryTab" value="delivery">
                   <div class="shop-stack-block">
+                    <!-- A retirada responde "quando" antes de "onde": o horário
+                         escolhido no finalizar é o compromisso do pedido. -->
+                    <UiAlert v-if="tracking.pickup_info?.when_display" data-tracking-pickup-when>
+                      <UiAlertTitle>Horário</UiAlertTitle>
+                      <UiAlertDescription>{{ tracking.pickup_info.when_display }}</UiAlertDescription>
+                    </UiAlert>
                     <UiAlert v-if="tracking.pickup_info">
                       <UiAlertTitle>Endereço</UiAlertTitle>
                       <UiAlertDescription>

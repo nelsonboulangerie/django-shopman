@@ -630,7 +630,10 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             min_value=1,
             max_value=240,
             widget=UnfoldAdminIntegerFieldWidget,
-            help_text="Em minutos. Ex.: 30 gera janelas arredondadas a cada meia hora.",
+            help_text=(
+                "Em minutos. A hora em que cada produto costuma ficar pronto é arredondada "
+                "para cima nesse passo. Ex.: com 30, 11:07 vira 11:30."
+            ),
         ),
         "defaults_pickup_history_days": forms.IntegerField(
             label="Histórico usado para sugestão",
@@ -638,12 +641,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             min_value=0,
             max_value=365,
             widget=UnfoldAdminIntegerFieldWidget,
-        ),
-        "defaults_pickup_fallback_slot": forms.CharField(
-            label="Horário de retirada padrão",
-            required=False,
-            widget=UnfoldAdminTextInputWidget,
-            help_text="Ref de um dos horários abaixo. Ex.: slot-09.",
+            help_text="Dias de produção considerados para saber a que horas cada produto fica pronto.",
         ),
         "defaults_season_hot_months": forms.MultipleChoiceField(
             label="Meses quentes",
@@ -1487,7 +1485,6 @@ class ShopForm(forms.ModelForm):
         if self._has("defaults_pickup_rounding_minutes"):
             self.fields["defaults_pickup_rounding_minutes"].initial = pickup_config.get("rounding_minutes", 30)
             self.fields["defaults_pickup_history_days"].initial = pickup_config.get("history_days", 30)
-            self.fields["defaults_pickup_fallback_slot"].initial = pickup_config.get("fallback_slot", "")
         if self._has("defaults_season_hot_months"):
             self.fields["defaults_season_hot_months"].initial = _months_to_choice(seasons.get("hot"))
             self.fields["defaults_season_mild_months"].initial = _months_to_choice(seasons.get("mild"))
@@ -1751,10 +1748,6 @@ class ShopForm(forms.ModelForm):
                     self.add_error(label_field, "Informe o rótulo do slot.")
                 if not starts_at:
                     self.add_error(starts_at_field, "Informe o horário inicial do slot.")
-
-            fallback_slot = (cleaned_data.get("defaults_pickup_fallback_slot") or "").strip()
-            if fallback_slot and fallback_slot not in slot_refs:
-                self.add_error("defaults_pickup_fallback_slot", "Use o ref de um dos slots configurados.")
 
         if self._has(_defaults_closed_date_field(1, "date")):
             for index in range(1, DEFAULTS_CLOSED_DATE_ROWS + 1):
@@ -2058,11 +2051,6 @@ class ShopForm(forms.ModelForm):
             pickup_config = dict(pickup_config)
             pickup_config["rounding_minutes"] = self.cleaned_data.get("defaults_pickup_rounding_minutes") or 30
             pickup_config["history_days"] = self.cleaned_data.get("defaults_pickup_history_days") or 30
-            fallback_slot = (self.cleaned_data.get("defaults_pickup_fallback_slot") or "").strip()
-            if fallback_slot:
-                pickup_config["fallback_slot"] = fallback_slot
-            else:
-                pickup_config.pop("fallback_slot", None)
             defaults["pickup_slot_config"] = pickup_config
 
         if self._has("defaults_max_preorder_days"):
@@ -2581,10 +2569,12 @@ _ORDERING_FIELDSETS = (
         {
             "fields": (
                 ("defaults_max_preorder_days", "defaults_pickup_rounding_minutes", "defaults_pickup_history_days"),
-                "defaults_pickup_fallback_slot",
             )
             + _defaults_pickup_admin_rows(),
-            "description": "Slots padrão de retirada e janela máxima para encomendas.",
+            "description": (
+                "Turnos de retirada das encomendas e janela máxima para encomendar. "
+                "Para hoje, a loja oferece as meias horas do expediente que ainda dão."
+            ),
         },
     ),
     (

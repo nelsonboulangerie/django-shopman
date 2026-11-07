@@ -1735,7 +1735,6 @@ class Command(BaseCommand):
                 "pickup_slot_config": {
                     "rounding_minutes": 30,
                     "history_days": 30,
-                    "fallback_slot": "slot-09",
                 },
                 "max_preorder_days": 30,
                 "closed_dates": closed_dates,

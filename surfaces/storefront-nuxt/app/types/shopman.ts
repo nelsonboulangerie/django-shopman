@@ -914,6 +914,8 @@ export interface CheckoutProjection {
   has_delivery: boolean
   pickup_slots: PickupSlotProjection[]
   earliest_slot_ref: string | null
+  /** Hoje, as meias horas que ainda dão (`half_hour`); encomenda, os turnos da casa (`canonical`). */
+  pickup_grid: 'half_hour' | 'canonical'
   /** Janelas de entrega da data pedida: a grade da concierge, conferida no commit. */
   delivery_windows: PickupSlotProjection[]
   earliest_delivery_window_ref: string | null
@@ -1025,6 +1027,8 @@ export interface PickupInfoProjection {
   opening_hours: string
   directions_label: string
   directions_url: string | null
+  /** O horário combinado ("hoje · 19:30 às 20:00"), ou null sem horário escolhido. */
+  when_display: string | null
 }
 
 export interface TrackingCopyProjection {

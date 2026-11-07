@@ -603,11 +603,32 @@ export function couponAppliedToast (cart: CouponCardInput | null | undefined): {
   return { kind: 'info', message: state.description || 'Este cupom não dá desconto nesta sacola.' }
 }
 
-// Retirada: o motivo de prontidão ("Brioche sai às 15:00.") vale para todos os
-// turnos antes do mais cedo e sai UMA vez acima da lista, como na entrega (beta
-// SMS-10). Embaixo de cada turno fica só o que muda de um para outro.
-export const PICKUP_PER_SLOT_REASONS: readonly string[] = ['Horário já passou', 'Loja fechada hoje']
+// O motivo da janela riscada é um só nas duas grades: o item que segura o
+// pedido ("Brioche sai às 15:00."). Sai UMA vez acima dos horários, como na
+// entrega (beta SMS-10). Horário que já passou não chega aqui: a grade de hoje
+// só traz o que ainda dá.
+export function checkoutWindowsReason (slots: Array<Pick<PickupSlotProjection, 'enabled' | 'reason'>>): string {
+  const reason = slots.find(slot => !slot.enabled && slot.reason)?.reason || ''
+  if (!reason) return ''
+  return slots.some(slot => slot.enabled) ? `${reason} Antes disso, os horários ficam riscados.` : reason
+}
 
-export function pickupReadinessReason (slots: Array<Pick<PickupSlotProjection, 'enabled' | 'reason'>>): string {
-  return slots.find(slot => !slot.enabled && slot.reason && !PICKUP_PER_SLOT_REASONS.includes(slot.reason))?.reason || ''
+/**
+ * Grade compacta de meias horas: a entrega sempre, e a retirada de HOJE (as
+ * meias horas que ainda dão até o fechamento). A retirada de encomenda é lista
+ * de turnos da casa ("A partir das 9h").
+ */
+export function usesWindowGrid (
+  checkout: Pick<CheckoutProjection, 'pickup_grid'> | null | undefined,
+  fulfillmentType: FulfillmentType
+): boolean {
+  if (fulfillmentType === 'delivery') return true
+  return checkout?.pickup_grid === 'half_hour'
+}
+
+/** A frase do dia sem horário nenhum: hoje já acabou, ou a loja não abre. */
+export function noWindowsMessage (fulfillmentType: FulfillmentType): string {
+  return fulfillmentType === 'delivery'
+    ? 'Não há horário de entrega nesse dia. Escolha outra data.'
+    : 'Não há horário de retirada nesse dia. Escolha outra data.'
 }

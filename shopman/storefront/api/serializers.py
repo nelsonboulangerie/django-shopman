@@ -347,6 +347,7 @@ class PickupInfoSerializer(serializers.Serializer):
     opening_hours = serializers.CharField()
     directions_label = serializers.CharField()
     directions_url = serializers.CharField(allow_null=True, required=False)
+    when_display = serializers.CharField(allow_null=True, required=False)
 
 
 class CancellationRequestProjectionSerializer(serializers.Serializer):

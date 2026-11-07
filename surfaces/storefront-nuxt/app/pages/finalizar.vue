@@ -47,7 +47,9 @@ import {
   reconciledWindowRef,
   selectedPickupSlot,
   shouldOfferPickupSwap,
-  pickupReadinessReason,
+  checkoutWindowsReason,
+  noWindowsMessage,
+  usesWindowGrid,
   checkoutNotesCopy,
   couponCardState,
   deliveryZoneRefused,
@@ -475,24 +477,15 @@ const pixProviderTestMessage = computed(() => {
 const submitDisabled = computed(() =>
   !action.value?.enabled || !!cart.value?.is_empty || submitting.value || checkingOrder.value || pixProviderTestExceeded.value
 )
-// Retirada mostra os turnos de retirada; entrega, a grade de entrega (a mesma da
-// concierge). O resto da tela trata as duas do mesmo jeito.
+// Retirada e entrega leem a grade da casa (a mesma da concierge e do PDV): meia
+// hora hoje, turno na encomenda. O resto da tela trata as duas do mesmo jeito.
 const slots = computed(() => checkoutWindows(checkout.value, state.fulfillment_type))
 const isDeliveryWindows = computed(() => state.fulfillment_type === 'delivery')
-// Na grade de entrega o motivo da janela apagada é um só (o item que segura o
-// pedido): sai uma vez acima da grade, não repetido em cada célula.
-const deliveryWindowsReason = computed(() => {
-  if (!isDeliveryWindows.value) return ''
-  const reason = slots.value.find(slot => !slot.enabled && slot.reason)?.reason || ''
-  if (!reason) return ''
-  return slots.value.some(slot => slot.enabled) ? `${reason} Antes disso, os horários ficam riscados.` : reason
-})
-const pickupSlotsReason = computed(() => {
-  if (isDeliveryWindows.value) return ''
-  const reason = pickupReadinessReason(slots.value)
-  if (!reason) return ''
-  return slots.value.some(slot => slot.enabled) ? `${reason} Antes disso, os horários ficam riscados.` : reason
-})
+// Meias horas viram uma grade compacta de células iguais; turnos, uma lista.
+const isWindowGrid = computed(() => usesWindowGrid(checkout.value, state.fulfillment_type))
+// O motivo da janela apagada é um só (o item que segura o pedido): sai uma vez
+// acima dos horários, não repetido em cada um.
+const windowsReason = computed(() => checkoutWindowsReason(slots.value))
 const selectedSlot = computed(() => selectedPickupSlot(slots.value, state.delivery_time_slot))
 const paymentMethodLabel = computed(() => resolvePaymentMethodLabel(checkout.value, state.payment_method))
 const selectedSlotLabel = computed(() => selectedSlot.value?.label || state.delivery_time_slot || '')
@@ -1091,7 +1084,7 @@ function validateWhenStep (): boolean {
   delete errors.delivery_time_slot
   if (!state.delivery_date) errors.delivery_date = checkout.value?.copy.when_required || 'Escolha a data.'
   if (state.delivery_date && isCheckoutDateUnavailable(state.delivery_date, dateBounds.value, closedDateEntries.value, closedWeekdays.value)) errors.delivery_date = 'Escolha uma data disponível.'
-  if (state.delivery_date && isDeliveryWindows.value && !slots.value.length) errors.delivery_time_slot = 'Não há horário de entrega nesse dia. Escolha outra data.'
+  if (state.delivery_date && !slots.value.length) errors.delivery_time_slot = noWindowsMessage(state.fulfillment_type)
   if (slots.value.length && !state.delivery_time_slot) errors.delivery_time_slot = 'Escolha um horário.'
   if (state.delivery_time_slot && slots.value.length && !selectedSlot.value?.enabled) {
     errors.delivery_time_slot = selectedSlot.value?.reason || 'Escolha um horário disponível.'
@@ -1947,18 +1940,18 @@ useSeoMeta({
                   <p v-if="deliveryDateHint" class="shop-meta text-muted-foreground" data-checkout-preorder-hint>{{ deliveryDateHint }}</p>
                 </div>
 
-                <!-- Entrega: o cliente escolhe a janela na grade da casa (a mesma da
-                     concierge, conferida no commit). Meia hora hoje vira uma grade
-                     compacta de células iguais; o motivo da janela apagada sai uma
-                     vez acima dela. -->
-                <div v-if="isDeliveryWindows && state.delivery_date" class="space-y-2" data-checkout-delivery-windows>
-                  <UiLabel>Horário da entrega</UiLabel>
+                <!-- Entrega, e retirada de hoje: o cliente escolhe a janela na grade
+                     da casa (a mesma da concierge, conferida no commit). Meia hora
+                     hoje vira uma grade compacta de células iguais; o motivo da
+                     janela apagada sai uma vez acima dela. -->
+                <div v-if="isWindowGrid && state.delivery_date" class="space-y-2" data-checkout-delivery-windows>
+                  <UiLabel>{{ isDeliveryWindows ? 'Horário da entrega' : 'Horário da retirada' }}</UiLabel>
                   <p v-if="!slots.length" class="shop-meta text-muted-foreground" data-checkout-delivery-windows-empty>
-                    Não há horário de entrega nesse dia. Escolha outra data.
+                    {{ noWindowsMessage(state.fulfillment_type) }}
                   </p>
                   <template v-else>
-                    <p v-if="deliveryWindowsReason" class="shop-meta text-muted-foreground">
-                      {{ deliveryWindowsReason }}
+                    <p v-if="windowsReason" class="shop-meta text-muted-foreground" data-checkout-pickup-readiness>
+                      {{ windowsReason }}
                     </p>
                     <UiRadioGroup v-model="state.delivery_time_slot" class="grid grid-cols-2 gap-2">
                       <UiFieldLabel
@@ -1988,12 +1981,15 @@ useSeoMeta({
                   <UiFieldError v-if="fieldErrors.delivery_time_slot" :errors="fieldErrors.delivery_time_slot" />
                 </div>
 
-                <div v-if="state.fulfillment_type === 'pickup' && slots.length" class="space-y-2">
+                <div v-if="!isWindowGrid && state.delivery_date" class="space-y-2">
                   <UiLabel>Horário</UiLabel>
-                  <p v-if="pickupSlotsReason" class="shop-meta text-muted-foreground" data-checkout-pickup-readiness>
-                    {{ pickupSlotsReason }}
+                  <p v-if="!slots.length" class="shop-meta text-muted-foreground" data-checkout-pickup-slots-empty>
+                    {{ noWindowsMessage(state.fulfillment_type) }}
                   </p>
-                  <UiRadioGroup v-model="state.delivery_time_slot" class="grid gap-2">
+                  <p v-if="windowsReason" class="shop-meta text-muted-foreground" data-checkout-pickup-readiness>
+                    {{ windowsReason }}
+                  </p>
+                  <UiRadioGroup v-if="slots.length" v-model="state.delivery_time_slot" class="grid gap-2">
                     <UiFieldLabel
                       v-for="slot in slots"
                       :key="slot.ref"
@@ -2017,7 +2013,7 @@ useSeoMeta({
                                enxerga via um horário riscado sem saber se lotou, se
                                passou ou se o turno não existe — e a diferença decide
                                entre mudar de horário e mudar de dia. -->
-                          <UiFieldDescription v-if="!slot.enabled && !(pickupSlotsReason && slot.reason && pickupSlotsReason.startsWith(slot.reason))">
+                          <UiFieldDescription v-if="!slot.enabled && !(windowsReason && slot.reason && windowsReason.startsWith(slot.reason))">
                             {{ slot.reason || 'Esgotado para este horário.' }}
                           </UiFieldDescription>
                         </UiFieldContent>

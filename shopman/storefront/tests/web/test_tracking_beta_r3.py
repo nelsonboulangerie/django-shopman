@@ -416,3 +416,42 @@ class TestF6CancelActionContract:
 
         cancel = next(action for action in proj.actions if action.ref == "cancel_order")
         assert cancel.confirmation == {}
+
+
+# ── Beta 06/11: a aba Retirada diz o horário escolhido ──────────────────────
+
+
+class TestPickupTabShowsTheChosenTime:
+    def test_pickup_today_shows_the_half_hour_window(self, order, shop_instance):
+        shop_instance.formatted_address = "Rua das Flores, 100, Londrina"
+        shop_instance.save(update_fields=["formatted_address"])
+        today = timezone.localdate().isoformat()
+        _set(order, fulfillment_type="pickup", delivery_date=today, delivery_time_slot="19:30-20:00")
+
+        pickup = build_order_tracking(order).pickup_info
+
+        assert pickup is not None
+        assert pickup.address == "Rua das Flores, 100, Londrina"
+        assert pickup.when_display == "hoje · 19:30 às 20:00"
+
+    def test_preorder_pickup_shows_the_house_turn(self, order, shop_instance):
+        shop_instance.formatted_address = "Rua das Flores, 100, Londrina"
+        shop_instance.save(update_fields=["formatted_address"])
+        tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
+        _set(order, fulfillment_type="pickup", delivery_date=tomorrow, delivery_time_slot="slot-15")
+
+        pickup = build_order_tracking(order).pickup_info
+
+        assert pickup is not None
+        assert pickup.when_display == "amanhã · A partir das 15h"
+
+    def test_pickup_without_a_chosen_time_does_not_invent_one(self, order, shop_instance):
+        shop_instance.formatted_address = "Rua das Flores, 100, Londrina"
+        shop_instance.save(update_fields=["formatted_address"])
+        today = timezone.localdate().isoformat()
+        _set(order, fulfillment_type="pickup", delivery_date=today, delivery_time_slot="")
+
+        pickup = build_order_tracking(order).pickup_info
+
+        assert pickup is not None
+        assert pickup.when_display is None

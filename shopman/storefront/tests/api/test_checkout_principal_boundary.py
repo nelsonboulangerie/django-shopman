@@ -11,8 +11,8 @@ from shopman.orderman.models import Order, Session
 from shopman.stockman.models import Hold
 
 from shopman.shop.models import Channel
-from shopman.storefront.services.pickup_slots import get_slots
 from shopman.storefront.tests._checkout_baseline import with_baseline
+from shopman.storefront.tests._pickup_today import today_pickup_slot
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 from shopman.storefront.tests.security.conftest import login_as_customer
 
@@ -42,7 +42,7 @@ def checkout_case(client):
             "payment_method": "pix",
             "fulfillment_type": "pickup",
             "delivery_date": timezone.localdate().isoformat(),
-            "delivery_time_slot": get_slots()[-1]["ref"],
+            "delivery_time_slot": today_pickup_slot(),
             "idempotency_key": "checkout-principal-boundary",
         },
     )

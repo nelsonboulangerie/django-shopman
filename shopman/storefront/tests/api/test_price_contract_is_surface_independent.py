@@ -52,9 +52,9 @@ def _payload(**over) -> dict:
 
 
 def _last_slot() -> str:
-    from shopman.storefront.services.pickup_slots import get_slots
+    from shopman.storefront.tests._pickup_today import today_pickup_slot
 
-    return get_slots()[-1]["ref"]
+    return today_pickup_slot()
 
 
 def _post(client, payload: dict):

@@ -6,9 +6,9 @@ from django.utils import timezone
 from shopman.orderman.models import Order, OrderItem
 
 from shopman.shop.services import remote_mutations
-from shopman.storefront.services.pickup_slots import get_slots
 from shopman.storefront.tests._checkout_auth import authenticate_checkout
 from shopman.storefront.tests._checkout_baseline import with_baseline
+from shopman.storefront.tests._pickup_today import today_pickup_slot
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 pytestmark = pytest.mark.django_db
@@ -36,7 +36,7 @@ def test_checkout_response_loss_recovers_same_order(client):
             "name": "Ana",
             "phone": "+5543999990001",
             "fulfillment_type": "pickup",
-            "delivery_time_slot": get_slots()[-1]["ref"],
+            "delivery_time_slot": today_pickup_slot(),
             "delivery_date": timezone.localdate().isoformat(),
             "payment_method": "cash",
             "idempotency_key": "checkout-audit-one",
@@ -89,7 +89,7 @@ def test_post_commit_defaults_failure_is_recoverable(client):
             "name": "Ana",
             "phone": "+5543999990001",
             "fulfillment_type": "pickup",
-            "delivery_time_slot": get_slots()[-1]["ref"],
+            "delivery_time_slot": today_pickup_slot(),
             "delivery_date": timezone.localdate().isoformat(),
             "payment_method": "cash",
             "idempotency_key": "side-effect",
@@ -160,7 +160,7 @@ def test_edit_between_price_check_and_commit_cannot_change_confirmed_total(clien
             "name": "Ana",
             "phone": "+5543999990001",
             "fulfillment_type": "pickup",
-            "delivery_time_slot": get_slots()[-1]["ref"],
+            "delivery_time_slot": today_pickup_slot(),
             "delivery_date": timezone.localdate().isoformat(),
             "payment_method": "cash",
             "idempotency_key": "race-total",
@@ -190,7 +190,7 @@ def _checkout_payload(client, key="operational-test"):
             "name": "Ana",
             "phone": "+5543999990001",
             "fulfillment_type": "pickup",
-            "delivery_time_slot": get_slots()[-1]["ref"],
+            "delivery_time_slot": today_pickup_slot(),
             "delivery_date": timezone.localdate().isoformat(),
             "payment_method": "cash",
             "idempotency_key": key,
