@@ -47,6 +47,13 @@ const {
   lock,
   operator,
 } = useOperatorLock(OPERATOR_PERM);
+// Destravou: toda leitura feita com a tela travada voltou 403 `station_locked`, e
+// a tela ficava nesse erro com alguém já identificado ("Estação travada.
+// Identifique-se…" nas Encomendas) e o rail sem "Encomendas", que leu a recusa
+// como falta de permissão (beta 07/11). Ao destravar, relê tudo o que a tela lê.
+watch(locked, (now, before) => {
+  if (before && !now) void refreshNuxtData();
+});
 // O mesmo portão dos outros apps (beta 05/11, CEN-03). Sem ele, quem não opera o
 // caixa (a Cozinha, digitando o endereço) via a casca do PDV com "Não foi possível
 // ler as comandas agora", sem saída, e o servidor recebia o mesmo 403 em sequência.

@@ -42,6 +42,14 @@ describe("Encomendas na barra lateral do PDV", () => {
     expect(SHELL_SECTIONS).toContain("usePosPreordersRail()");
   });
 
+  it("destravar relê tudo: a recusa da tela travada não vira falta de permissão (beta 07/11)", () => {
+    // Com a tela travada, a lista das Encomendas volta 403 `station_locked`, o rail
+    // marca "sem permissão" e para de ler. Sem reler ao destravar, a Caixa ficava
+    // sem "Encomendas" e com "Estação travada" na tela, já identificada.
+    const SHELL = readFileSync(app("components", "PosOperatorShell.vue"), "utf8");
+    expect(SHELL).toMatch(/watch\(locked, \(now, before\) => \{\s*if \(before && !now\) void refreshNuxtData\(\);/);
+  });
+
   it("Comandas conta as em uso; Caixa acende quando o turno está fechado", () => {
     const sections = posSections({
       tabs: [{ state: "in_use" }, { state: "empty" }, { state: "in_use" }],
