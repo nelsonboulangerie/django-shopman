@@ -627,3 +627,8 @@ describe("barNeedsArmDelay", () => {
     expect(barNeedsArmDelay({ pk: 131, status: "in_progress" }, {})).toBe(false);
   });
 });
+
+it("idades de vários dias não viram centenas de horas", () => {
+  expect(elapsedLabel(1046 * 3600)).toBe("43d 14h");
+  expect(elapsedLabel(24 * 3600)).toBe("1d");
+});

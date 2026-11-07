@@ -42,6 +42,7 @@ import {
   flipDay,
   todayIndicators,
   moneyLine,
+  moneyBadge,
   moneyPieces,
   parsePaymentFilter,
   parseView,
@@ -280,7 +281,7 @@ describe("a linha de dinheiro — saldo primeiro, 'não sei' nunca vira 'pago'",
 
   it("pago · na conta da casa · a conferir", () => {
     expect(moneyLine(card({ balance_q: 0, situation: "paid" }))).toBe("R$ 36,00 pago");
-    expect(moneyLine(card({ balance_q: 0, situation: "on_account" }))).toBe("R$ 36,00 na conta da casa");
+    expect(moneyLine(card({ balance_q: 0, payment_state: "on_account", situation: "on_account" }))).toBe("R$ 36,00 na conta da casa");
     expect(moneyLine(card({ balance_q: null, situation: "check_payment" }))).toBe("R$ 36,00 · pagamento a conferir");
   });
 
@@ -709,10 +710,10 @@ describe("Hoje no celular: só indicadores, e o toque mostra a frase (dono, 03/1
 describe("selos da linha (dono, 03/11/2026)", () => {
   it("o dinheiro vira valor + selo semântico", async () => {
     const { moneyBadge } = await import("../app/presentation/preorders");
-    const base = { total_q: 6000, total_display: "R$ 60,00", balance_display: "R$ 0,00", situation: "to_pay" as const };
+    const base = { total_q: 6000, total_display: "R$ 60,00", balance_display: "R$ 0,00", payment_state: "to_receive" as const };
     expect(moneyBadge({ ...base, balance_q: 6000, balance_display: "R$ 60,00" })).toEqual({ amount: "R$ 60,00", of: "", label: "A Receber", tone: "warning" });
     expect(moneyBadge({ ...base, balance_q: 2000, balance_display: "R$ 20,00" })).toEqual({ amount: "R$ 20,00", of: "de R$ 60,00", label: "A Receber", tone: "warning" });
-    expect(moneyBadge({ ...base, balance_q: 0, situation: "paid" as never })).toMatchObject({ label: "Pago", tone: "success" });
+    expect(moneyBadge({ ...base, balance_q: 0, payment_state: "paid" })).toMatchObject({ label: "Pago", tone: "success" });
     expect(moneyBadge({ ...base, balance_q: null })).toMatchObject({ label: "Conferir Pagamento", tone: "warning" });
   });
 });
@@ -735,4 +736,31 @@ describe("Via Pedido que falta: uma régua só", () => {
     expect(filtered[0]!.orders.map((c) => c.ref)).toEqual(["NB-1", "NB-2"]);
     expect(printPlan({ date_from: HOJE, date_to: HOJE }, [day({ orders: cards })]).refs).toEqual(["NB-1", "NB-2"]);
   });
+});
+
+// A situação da mercadoria não muda o estado do dinheiro.
+it("conta da casa continua explícita depois de entregar (S80/L34)", () => {
+  expect(
+    moneyLine(
+      card({
+        balance_q: 0,
+        payment_state: "on_account",
+        situation: "delivered",
+      }),
+    ),
+  ).toBe("R$ 36,00 na conta da casa");
+  expect(
+    moneyLine(
+      card({ balance_q: 0, payment_state: "paid", situation: "delivered" }),
+    ),
+  ).toBe("R$ 36,00 pago");
+});
+it("o total geral deixa explícito que não acompanha os recortes", () => {
+  expect(periodSummaryLabel("next28d", true)).toBe(
+    "Total do período, sem filtros",
+  );
+});
+
+it("o selo do dinheiro também preserva conta da casa após a entrega", () => {
+  expect(moneyBadge(card({ balance_q: 0, payment_state: "on_account", situation: "delivered" }))).toMatchObject({ label: "Na Conta da Casa", tone: "info" });
 });

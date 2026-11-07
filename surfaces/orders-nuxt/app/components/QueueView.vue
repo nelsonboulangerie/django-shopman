@@ -506,7 +506,7 @@ function switchHint(row: {
                   data-queue-moving
                 />
                 <span class="op-micro text-muted-foreground"
-                  >nada pede você agora</span
+                  >acompanhe o andamento do pedido</span
                 >
               </template>
             </div>
