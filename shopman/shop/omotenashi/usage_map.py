@@ -834,6 +834,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_CARD_CAPTURE_FAILED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_DELIVERED_YOIN": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -978,6 +981,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     ),
     "TRACKING_PROMISE_CARD_ACTION": (
         ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_CARD_DEADLINE_FOOTNOTE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_CARD_DECLINED": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
@@ -1218,6 +1224,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_STATUS_CARD_AUTHORIZED": (
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
+    ),
+    "TRACKING_STATUS_CARD_CAPTURE_FAILED": (
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STATUS_PAYMENT_EXPIRED": (
