@@ -209,3 +209,23 @@ export function appendPinDigit(pin: string, digit: string, max = PIN_MAX_DIGITS)
   if (!/^[0-9]$/.test(digit)) return pin;
   return pin.length >= max ? pin : pin + digit;
 }
+
+/**
+ * A pessoa identificada mudou FORA desta aba?
+ *
+ * A sessão é uma só no navegador (cookie compartilhado entre os apps): quem
+ * destrava o PDV vira quem opera a Cozinha aberta ao lado. A aba da Cozinha
+ * seguia mostrando a Joyce e gravava como a Fran (beta 07/11). Quando a aba volta
+ * ao foco ela relê a sessão, e esta função diz o que avisar: `null` quando é a
+ * mesma pessoa, quando antes não havia ninguém (foi um destrave, não uma troca) ou
+ * quando agora não há ninguém (a trava já cobre a tela).
+ */
+export function operatorChangeNotice(
+  before: OperatorSession | null,
+  after: OperatorSession | null,
+): string | null {
+  const was = before?.locked ? null : before?.operator;
+  const now = after?.locked ? null : after?.operator;
+  if (!was || !now || was.id === now.id) return null;
+  return `Agora quem opera aqui é ${operatorName(after)}. A troca foi feita em outro app deste navegador.`;
+}

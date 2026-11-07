@@ -14,6 +14,7 @@ import {
   isCaptureKey,
   isLikelyBadge,
   isLocked,
+  operatorChangeNotice,
   operatorName,
   pinSlots,
   resolveEnter,
@@ -279,5 +280,25 @@ describe("pinSlots: o campo do PIN tem o número certo de casas", () => {
     expect(pinSlots(6)).toBe(6);
     expect(pinSlots(PIN_MAX_DIGITS)).toBe(PIN_MAX_DIGITS);
     expect(pinSlots(PIN_MAX_DIGITS + 3)).toBe(PIN_MAX_DIGITS);
+  });
+});
+
+describe("operatorChangeNotice: a troca feita em outro app do navegador (beta 07/11)", () => {
+  const joyce = { id: 1, username: "joyce", name: "Joyce" };
+  const fran = { id: 2, username: "fran", name: "Fran" };
+  const as = (operator: typeof joyce | null, locked = false) =>
+    ({ operator, locked } as unknown as Parameters<typeof operatorChangeNotice>[0]);
+
+  it("outra pessoa: avisa com o nome de quem opera agora", () => {
+    expect(operatorChangeNotice(as(joyce), as(fran))).toBe(
+      "Agora quem opera aqui é Fran. A troca foi feita em outro app deste navegador.",
+    );
+  });
+
+  it("a mesma pessoa, um destrave ou uma trava não são troca", () => {
+    expect(operatorChangeNotice(as(joyce), as(joyce))).toBeNull();
+    expect(operatorChangeNotice(as(null, true), as(fran))).toBeNull();
+    expect(operatorChangeNotice(as(joyce), as(null, true))).toBeNull();
+    expect(operatorChangeNotice(null, as(fran))).toBeNull();
   });
 });
