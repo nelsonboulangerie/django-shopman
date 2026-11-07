@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Modelo de navegação</title>
+<style>
+:root{--bg:#faf7f2;--fg:#231d17;--muted:#6b6157;--line:#e3dbd0;--card:#fff;--soft:#f3eee6;--chao:#2f6b4f;--chao-bg:#e6f2ec;--esc:#3b4f8a;--esc-bg:#e8ecf7;--tv:#6b4a8a;--tv-bg:#f0e9f6;--warn:#8a5a12;--warn-bg:#fbf0dc;--ok:#2f6b4f;--danger:#a3322b;--act:#231d17;--act-fg:#faf7f2}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1d1814;--fg:#f1e9df;--muted:#b3a697;--line:#3a322b;--card:#26201b;--soft:#2f2822;--chao:#8fd1ae;--chao-bg:#1f3a2d;--esc:#a9b9ec;--esc-bg:#262f4a;--tv:#cdb3e6;--tv-bg:#36294a;--warn:#e4b465;--warn-bg:#3d3020;--ok:#8fd1ae;--danger:#f08a80;--act:#f1e9df;--act-fg:#1d1814}}
+:root[data-theme="dark"]{--bg:#1d1814;--fg:#f1e9df;--muted:#b3a697;--line:#3a322b;--card:#26201b;--soft:#2f2822;--chao:#8fd1ae;--chao-bg:#1f3a2d;--esc:#a9b9ec;--esc-bg:#262f4a;--tv:#cdb3e6;--tv-bg:#36294a;--warn:#e4b465;--warn-bg:#3d3020;--ok:#8fd1ae;--danger:#f08a80;--act:#f1e9df;--act-fg:#1d1814}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,sans-serif}
+main{max-width:1000px;margin:auto;padding:16px}
+h1{font-size:1.5rem;margin:.2em 0 .1em}
+h2{font-size:1.2rem;margin:1.8em 0 .5em}
+h3{font-size:1.02rem;margin:1.1em 0 .3em}
+p{margin:.45em 0}
+a{color:var(--esc)}
+.lead{color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0}
+ul,ol{padding-left:1.2em;margin:.3em 0}
+li{margin:.35em 0}
+.tag{display:inline-block;font-size:.78rem;font-weight:600;padding:1px 8px;border-radius:99px;white-space:nowrap}
+.chao{color:var(--chao);background:var(--chao-bg)}
+.esc{color:var(--esc);background:var(--esc-bg)}
+.tv{color:var(--tv);background:var(--tv-bg)}
+.q{color:var(--warn);background:var(--warn-bg)}
+.muted{color:var(--muted)}
+.small{font-size:.9rem}
+.row{display:grid;grid-template-columns:1fr;gap:2px;border-top:1px solid var(--line);padding:9px 0}
+.row:first-child{border-top:0}
+.row .k{font-weight:600}
+@media(min-width:720px){.row{grid-template-columns:190px 1fr 1fr;gap:14px}.row.two{grid-template-columns:190px 1fr}}
+.row .h{font-size:.8rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+@media(max-width:719px){.row .cell::before{content:attr(data-l);display:block;font-size:.78rem;font-weight:700;color:var(--muted)}.row.head{display:none}}
+.keep{border-left:3px solid var(--ok);padding-left:10px}
+.gap{border-left:3px solid var(--warn);padding-left:10px}
+
+/* esquemas */
+.shots{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start;margin:12px 0}
+.shot{flex:0 1 auto;max-width:100%}
+.cap{font-size:.85rem;color:var(--muted);margin-top:6px;max-width:320px}
+.dev{background:var(--card);border:2px solid var(--fg);border-radius:22px;overflow:hidden;display:flex;flex-direction:column;font-size:13px;line-height:1.35}
+.phone{width:270px;height:520px}
+.tablet{width:560px;height:380px;border-radius:16px}
+.wide{overflow-x:auto;max-width:100%;padding-bottom:4px}
+.desk{width:760px;height:420px;border-radius:8px}
+.top{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);min-height:52px}
+.seal{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
+.ico{width:32px;height:32px;border-radius:9px;color:#fff;font-weight:700;display:grid;place-items:center;flex:0 0 32px;position:relative;font-size:14px}
+.ico .dot{position:absolute;right:-3px;bottom:-3px;width:12px;height:12px;border-radius:99px;background:#3c9a62;border:2px solid var(--card)}
+.ico .dot.off{background:var(--danger)}
+.seal .t{min-width:0}
+.seal .a{font-size:11px;color:var(--muted);display:block;white-space:nowrap}
+.seal .s{font-weight:700;font-size:14px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seal .chev{color:var(--muted);font-size:12px}
+.btn-i{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);display:grid;place-items:center;font-size:15px;flex:0 0 36px;background:var(--card)}
+.body{flex:1;overflow:hidden;padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--soft)}
+.foc{background:var(--card);border:2px solid var(--fg);border-radius:12px;padding:10px}
+.foc .code{font-size:24px;font-weight:800;letter-spacing:.02em}
+.ln{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:flex;justify-content:space-between;gap:8px}
+.ln b{font-weight:700}
+.mut{color:var(--muted);font-size:12px}
+.action{padding:10px;border-top:1px solid var(--line);background:var(--card)}
+.big{background:var(--act);color:var(--act-fg);border-radius:12px;padding:13px;text-align:center;font-weight:700;font-size:15px}
+.tabs{display:flex;border-top:1px solid var(--line);background:var(--card)}
+.tabs div{flex:1;text-align:center;padding:8px 2px 10px;font-size:11px;color:var(--muted)}
+.tabs div.on{color:var(--fg);font-weight:700}
+.tabs i{display:block;font-style:normal;font-size:16px}
+.seg{display:flex;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:3px}
+.seg span{flex:1;text-align:center;padding:4px 2px;border-radius:7px;font-size:12px;color:var(--muted)}
+.seg span.on{background:var(--fg);color:var(--bg);font-weight:700}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);border-radius:99px;padding:2px 9px;font-size:12px;background:var(--card)}
+.chip.on{border-color:var(--fg);font-weight:700}
+.cols{display:flex;flex:1;min-height:0}
+.side{width:170px;border-right:1px solid var(--line);padding:10px 8px;display:flex;flex-direction:column;gap:3px;background:var(--card);font-size:12.5px}
+.side .it{padding:6px 8px;border-radius:8px;display:flex;justify-content:space-between}
+.side .it.on{background:var(--soft);font-weight:700}
+.side .grp{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:8px 8px 2px}
+.tbl{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:12px}
+.tbl .tr{display:grid;grid-template-columns:24px 1.6fr 1fr 1fr .8fr;padding:6px 8px;border-top:1px solid var(--line);gap:6px}
+.tbl .tr:first-child{border-top:0;color:var(--muted);font-weight:700}
+.panel{width:220px;border-left:1px solid var(--line);background:var(--card);padding:10px;font-size:12px;display:flex;flex-direction:column;gap:6px}
+.field{border:1px solid var(--line);border-radius:8px;padding:5px 8px}
+.field .l{font-size:10.5px;color:var(--muted);display:block}
+.bulk{background:var(--fg);color:var(--bg);border-radius:10px;padding:7px 10px;display:flex;justify-content:space-between;font-size:12px}
+.sheet{background:var(--card);border-top:2px solid var(--fg);border-radius:18px 18px 0 0;padding:12px;margin-top:auto;display:flex;flex-direction:column;gap:6px}
+.sheet .grp{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:4px}
+.apps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.app{text-align:center;font-size:10.5px}
+.app .ico{margin:0 auto 2px;width:30px;height:30px;flex-basis:30px}
+.app .p{display:block;color:var(--warn);font-weight:700;font-size:10px}
+.sec{display:flex;justify-content:space-between;padding:6px 8px;border-radius:8px;border:1px solid var(--line);font-size:12.5px}
+.sec.on{border-color:var(--fg);font-weight:700}
+.who{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:8px;font-size:12px}
+.dim{opacity:.35}
+.auth{background:var(--card);border:2px solid var(--fg);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.or{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px}
+.or::before,.or::after{content:"";flex:1;border-top:1px solid var(--line)}
+.ghost{border:1px solid var(--fg);border-radius:12px;padding:10px;text-align:center;font-weight:700}
+.tv-screen{width:min(560px,100%);height:250px;background:#111;color:#f4efe6;border-radius:10px;border:6px solid #333;padding:14px;display:flex;flex-direction:column;gap:8px;position:relative}
+.tv-screen .codes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;flex:1}
+.tv-screen .codes div{border:1px solid #444;border-radius:8px;display:grid;place-items:center;font-size:22px;font-weight:800}
+.corner{position:absolute;right:8px;top:8px;width:34px;height:34px;border:1px dashed #777;border-radius:8px;display:grid;place-items:center;font-size:11px;color:#aaa}
+</style>
+</head>
+<body>
+<main>
+
+<p class="small"><a href="./">‹ Mapa da suíte</a></p>
+<h1>Modelo de navegação</h1>
+<p class="card"><b>Aprovado pelo dono em 31/10/2026:</b> o modelo (selo com trocador, três formas, lugares que mudam de grupo) e a autorização pelo celular do gerente. Aprovar o modelo não autoriza implementar: o próximo passo são prévias, app por app, na ordem de 03/10 (kit primeiro, Gestor piloto, PDV por último).</p>
+<p class="lead">Proposta para você aprovar antes de qualquer tela. São esquemas, não telas prontas: mostram onde mora cada coisa em cada forma e dispositivo. Nada aqui muda os apps.</p>
+
+<h2>A ideia em três frases</h2>
+<div class="card">
+<ol>
+<li><b>Cada tela declara a sua forma:</b> <span class="tag chao">chão</span>, <span class="tag esc">escritório</span> ou <span class="tag tv">parede</span>. A forma decide o desenho: o chão é uma fila com a ação no polegar; o escritório é lista, filtro e cadastro; a parede é só leitura de longe.</li>
+<li><b>Um selo só, sempre no mesmo canto, une a suíte.</b> Ele diz em que app e em que lugar você está, mostra a conexão e, com um toque, abre o trocador: as seções deste app, os outros apps e quem está operando. Você nunca mais precisa passar pela Central para trocar de app.</li>
+<li><b>O celular é desenhado primeiro.</b> O tablet e o computador ganham espaço para mostrar mais ao mesmo tempo, mas os mesmos gestos, nos mesmos lugares.</li>
+</ol>
+</div>
+
+<h2>1. O selo e o trocador (comum a tudo)</h2>
+<div class="card">
+<div class="shots">
+<div class="shot">
+<div class="dev phone">
+<div class="top"><div class="seal"><div class="ico" style="background:#2E7168">C<span class="dot"></span></div><div class="t"><span class="a">Cozinha</span><span class="s">Cafés ▾</span></div></div><div class="btn-i">⌕</div><div class="btn-i">🔔</div></div>
+<div class="body"><div class="ln dim"><b>…</b></div><div class="ln dim"><b>…</b></div>
+<div class="sheet">
+<div class="grp">Neste app</div>
+<div class="sec on"><span>Cafés</span><span>3</span></div>
+<div class="sec"><span>Lanches</span><span>1</span></div>
+<div class="sec"><span>Painel de retirada <span class="mut">(parede)</span></span><span>↗</span></div>
+<div class="grp">Outros apps</div>
+<div class="apps">
+<div class="app"><div class="ico" style="background:#8B2F4D">G</div>Gestor<span class="p">2 novos</span></div>
+<div class="app"><div class="ico" style="background:#A95032">P</div>PDV</div>
+<div class="app"><div class="ico" style="background:#B9781B">P</div>Produção<span class="p">1 lote</span></div>
+<div class="app"><div class="ico" style="background:#34373B">▦</div>Central</div>
+</div>
+<div class="who"><span>Operando: <b>Joyce</b></span><span>Trocar · Bloquear</span></div>
+</div></div>
+</div>
+<p class="cap">Celular, Cozinha: um toque no selo. Os apps mostram a pendência de cada um, como hoje na Central.</p>
+</div>
+<div class="shot" style="max-width:420px">
+<ul class="small">
+<li><b>O selo diz duas coisas:</b> o app (cor, letra, nome pequeno) e o lugar (a estação, o posto, a seção), em letra grande. "Cozinha · Cafés", "Gestor · Saída", "Compras · Insumos".</li>
+<li><b>O ponto no canto é a conexão:</b> verde ao vivo, vermelho sem conexão. Sem conexão, além do ponto, uma faixa no conteúdo diz de que hora é o que está na tela.</li>
+<li><b>O trocador lista o que se pode abrir:</b> as seções deste app (separadas por forma), os outros apps com a pendência de cada um, e quem está operando, com Trocar e Bloquear.</li>
+<li><b>No computador, o mesmo selo fica no topo da barra lateral</b> e abre o mesmo trocador. A tecla continua: Alt 1 a 9 para as seções.</li>
+<li><b>A Central continua existindo</b> como tela inicial do dispositivo. O trocador é a Central no bolso, em qualquer app.</li>
+</ul>
+</div>
+</div>
+</div>
+
+<h2>2. Forma chão</h2>
+<div class="card">
+<p><b>Para quem está com a mão ocupada ou o cliente na frente.</b> Uma linha em cima, o trabalho no meio, a ação do momento embaixo, no polegar.</p>
+<ul class="small">
+<li><b>Em cima, uma linha só:</b> selo, busca ou leitor de código, avisos. Sem ☰, sem linha de título, sem linha de filtros fixa. (É o que a prévia "compacta" de 30/10 já mostrava; ela entra aqui como a forma chão.)</li>
+<li><b>No meio, o agora em foco e os seguintes em linhas.</b> O que espera outra pessoa (o cliente pagar, o entregador chegar) não ocupa o foco.</li>
+<li><b>Embaixo, a ação do momento</b>, grande, com o nome do pedido nela ("Pronto W07"). Não há barra de seções embaixo: o posto define o lugar, e trocar de lugar é raro, pelo selo.</li>
+<li><b>As etapas do mesmo trabalho são recortes na própria tela</b> (Preparo · Produção · Finalização), não seções.</li>
+<li><b>O item abre por cima</b> (folha no celular, painel ao lado no tablet deitado) e fecha voltando ao mesmo lugar da fila.</li>
+</ul>
+<div class="shots">
+<div class="shot">
+<div class="dev phone">
+<div class="top"><div class="seal"><div class="ico" style="background:#2E7168">C<span class="dot"></span></div><div class="t"><span class="a">Cozinha</span><span class="s">Cafés ▾</span></div></div><div class="btn-i">⌕</div><div class="btn-i">🔔</div></div>
+<div class="body">
+<div class="foc"><div class="mut">Agora · há 4 min</div><div class="code">W07</div><div>2 cappuccino · 1 pão de queijo</div><div class="mut">Retirada · Ana</div></div>
+<div class="ln"><span><b>W08</b> · 1 latte</span><span class="mut">2 min</span></div>
+<div class="ln"><span><b>A11</b> · 3 espresso</span><span class="mut">1 min</span></div>
+<div class="ln"><span class="mut">+4 na fila</span></div>
+</div>
+<div class="action"><div class="big">Pronto W07</div></div>
+</div>
+<p class="cap">Celular, estação pequena (barista). Um gesto, no polegar.</p>
+</div>
+<div class="shot">
+<div class="dev phone">
+<div class="top"><div class="seal"><div class="ico" style="background:#B9781B">P<span class="dot"></span></div><div class="t"><span class="a">Produção</span><span class="s">Bancada ▾</span></div></div><div class="btn-i">⌕</div><div class="btn-i">🔔</div></div>
+<div class="body">
+<div class="seg"><span>Preparo</span><span class="on">Produção</span><span>Finalização</span></div>
+<div class="foc"><div class="mut">Próximo lote · planejado 40</div><div class="code" style="font-size:20px">Baguete tradicional</div><div class="mut">Forno 2 livre</div></div>
+<div class="ln"><span><b>Croissant</b> · 60</span><span class="mut">10:30</span></div>
+<div class="ln"><span><b>Pão de campanha</b> · 12</span><span class="mut">11:00</span></div>
+</div>
+<div class="action"><div class="big">Confirmar 40 baguetes</div></div>
+</div>
+<p class="cap">Celular, padeiro: as etapas do dia são recorte, não seção.</p>
+</div>
+<div class="shot wide">
+<div class="dev tablet">
+<div class="top"><div class="seal"><div class="ico" style="background:#8B2F4D">G<span class="dot"></span></div><div class="t"><span class="a">Gestor</span><span class="s">Saída ▾</span></div></div><div class="btn-i">⌕</div><div class="btn-i">🔔</div></div>
+<div class="cols">
+<div class="body" style="flex:1.2">
+<div class="foc"><div class="mut">Pronto há 6 min · retirada</div><div class="code">G96 · Diego</div><div>2 sacolas · Pagamento não informado</div><div style="display:flex;gap:6px;margin-top:8px"><div class="ghost" style="flex:1;font-size:13px">Ainda não pagou</div><div class="big" style="flex:1.3;font-size:13px">Já pagou, entregar</div></div></div>
+</div>
+<div class="body" style="flex:1;border-left:1px solid var(--line)">
+<div class="mut">Também prontos</div>
+<div class="ln"><span><b>D10</b> · Marta</span><span class="mut">entrega</span></div>
+<div class="ln"><span><b>A05</b> · Clara</span><span class="mut">retirada</span></div>
+<div class="mut">Entregadores</div>
+<div class="ln"><span><b>D03</b> · Luís</span><span class="mut">volta com R$ 100</span></div>
+</div>
+</div>
+</div>
+<p class="cap">Tablet deitado no passe: o mesmo desenho, com a fila ao lado em vez de embaixo.</p>
+</div>
+</div>
+<p class="small"><b>Computador no chão (o Balcão do PDV):</b> fica como está. É o teclado que manda (F2 a F10), e a barra lateral já recolhe. Só ganha o selo com o trocador no topo dela.</p>
+</div>
+
+<h2>3. Forma escritório</h2>
+<div class="card">
+<p><b>Para cadastrar, conferir, comparar, decidir.</b> Aqui trocar de seção é o próprio trabalho, então as seções ficam à vista.</p>
+<ul class="small">
+<li><b>Computador:</b> barra lateral com as seções (como hoje), cabeçalho com título, busca e a ação principal; a lista padrão de cadastro: filtros em chips, tabela, lote embaixo, item num painel ao lado com "N alterações · Salvar".</li>
+<li><b>Celular:</b> a mesma linha de cima do chão, e embaixo as seções (até 4 e "Mais"). A tabela vira linhas; o item abre em tela cheia com "‹ Insumos" para voltar ao mesmo ponto; lote por toque longo; Salvar fixo embaixo quando há alteração.</li>
+<li><b>Tablet:</b> lista e item lado a lado.</li>
+<li><b>A lista de cadastro é uma peça só do kit</b>, a mesma em todos os apps: buscar, filtrar, lote, duplicar, importar e exportar, tabelão. Hoje cada app monta a sua com as peças soltas.</li>
+</ul>
+<div class="shots">
+<div class="shot">
+<div class="dev phone">
+<div class="top"><div class="seal"><div class="ico" style="background:#386F9A">C<span class="dot"></span></div><div class="t"><span class="a">Compras</span><span class="s">Insumos ▾</span></div></div><div class="btn-i">⌕</div><div class="btn-i">🔔</div></div>
+<div class="body">
+<div class="chips"><span class="chip on">Atenção 12</span><span class="chip">Sem fornecedor 4</span><span class="chip">+ Filtro</span></div>
+<div class="ln"><span><b>Farinha T65</b><br><span class="mut">32 kg · cobre 3 dias</span></span><span class="mut">›</span></div>
+<div class="ln"><span><b>Manteiga</b><br><span class="mut">8 kg · abaixo do mínimo</span></span><span class="mut">›</span></div>
+<div class="ln"><span><b>Fermento seco</b><br><span class="mut">1,2 kg</span></span><span class="mut">›</span></div>
+</div>
+<div class="tabs"><div><i>▤</i>Painel</div><div><i>🛒</i>Comprar</div><div class="on"><i>▦</i>Base</div><div><i>⋯</i>Mais</div></div>
+</div>
+<p class="cap">Celular, escritório no bolso: as seções embaixo, porque aqui trocar de seção é o trabalho.</p>
+</div>
+<div class="shot wide">
+<div class="dev desk">
+<div class="cols">
+<div class="side">
+<div style="display:flex;gap:8px;align-items:center;padding:2px 4px 8px"><div class="ico" style="background:#386F9A">C<span class="dot"></span></div><b>Compras ▾</b></div>
+<div class="grp">Escritório</div>
+<div class="it"><span>Painel</span></div>
+<div class="it"><span>Comprar</span><span>3</span></div>
+<div class="it on"><span>Insumos</span></div>
+<div class="it"><span>Fornecedores</span></div>
+<div class="it"><span>Custos</span></div>
+<div class="grp">No posto</div>
+<div class="it"><span>Receber</span><span>2</span></div>
+<div class="it"><span>Contagem</span></div>
+</div>
+<div class="body">
+<div style="display:flex;gap:8px;align-items:center"><b style="font-size:15px;flex:1">Insumos</b><span class="chip">⌕ Buscar</span><span class="chip">Importar</span><span class="chip on">+ Novo insumo</span></div>
+<div class="chips"><span class="chip on">Atenção 12</span><span class="chip">Sem fornecedor 4</span><span class="chip">+ Filtro</span></div>
+<div class="tbl">
+<div class="tr"><span></span><span>Insumo</span><span>Estoque</span><span>Mínimo</span><span>Custo</span></div>
+<div class="tr"><span>☑</span><span>Farinha T65</span><span>32 kg</span><span>50 kg</span><span>R$ 4,10</span></div>
+<div class="tr"><span>☑</span><span>Manteiga</span><span>8 kg</span><span>15 kg</span><span>R$ 38,90</span></div>
+<div class="tr"><span>☐</span><span>Fermento seco</span><span>1,2 kg</span><span>1 kg</span><span>R$ 52,00</span></div>
+</div>
+<div class="bulk"><span>2 selecionados</span><span>Duplicar · Mudar fornecedor · Arquivar</span></div>
+</div>
+<div class="panel">
+<b>Farinha T65</b>
+<div class="field"><span class="l">Mínimo</span>50 kg</div>
+<div class="field"><span class="l">Fornecedor preferido</span>Moinho Sul</div>
+<div class="field"><span class="l">Embalagem</span>Saco 25 kg</div>
+<div class="big" style="margin-top:auto;font-size:13px;padding:9px">1 alteração · Salvar</div>
+</div>
+</div>
+</div>
+<p class="cap">Computador: seções na barra, separadas por forma; lista, lote e painel do item. A Contagem sai do ⋯ e vira lugar próprio, no grupo do posto.</p>
+</div>
+</div>
+</div>
+
+<h2>4. Forma parede</h2>
+<div class="card">
+<div class="shots">
+<div class="shot">
+<div class="tv-screen"><div style="font-weight:700">Retirada no balcão</div><div class="codes"><div>W07</div><div>G96</div><div>A05</div><div>A11</div></div><div class="corner">sair</div></div>
+<p class="cap">Painel de retirada, Letreiro, Tela do cliente: sem selo, sem botões.</p>
+</div>
+<div class="shot" style="max-width:420px">
+<ul class="small">
+<li><b>Nada para tocar no dia a dia:</b> lido de 3 a 6 metros, atualiza sozinho.</li>
+<li><b>Saída declarada:</b> toque longo no canto (ou Esc) pede o PIN e volta ao app de onde veio. Hoje o Painel de retirada não tem saída.</li>
+<li><b>Abre pelo trocador</b>, marcado como "parede", numa janela própria.</li>
+</ul>
+</div>
+</div>
+</div>
+
+<h2>5. Onde mora cada necessidade comum</h2>
+<div class="card">
+<div class="row head"><div class="h">Necessidade</div><div class="h">Chão</div><div class="h">Escritório</div></div>
+<div class="row"><div class="k">Onde estou</div><div class="cell" data-l="Chão">Selo: app e lugar.</div><div class="cell" data-l="Escritório">Selo, seção acesa e título.</div></div>
+<div class="row"><div class="k">Outra seção</div><div class="cell" data-l="Chão">Pelo selo (raro). Etapas do mesmo trabalho: recorte na tela.</div><div class="cell" data-l="Escritório">Barra lateral; no celular, barra de baixo.</div></div>
+<div class="row"><div class="k">Outro app</div><div class="cell" data-l="Chão">Selo → trocador, com a pendência de cada app.</div><div class="cell" data-l="Escritório">O mesmo.</div></div>
+<div class="row"><div class="k">Localizar</div><div class="cell" data-l="Chão">Lupa que também lê código (câmera ou leitor).</div><div class="cell" data-l="Escritório">Busca (/ ou Ctrl K): nesta tela, no app, na suíte.</div></div>
+<div class="row"><div class="k">Filtro</div><div class="cell" data-l="Chão">Só quando muda o trabalho; o filtro ativo aparece numa faixa com Limpar.</div><div class="cell" data-l="Escritório">Chips com contagem, "+ Filtro", tudo no endereço.</div></div>
+<div class="row"><div class="k">Conexão</div><div class="cell" data-l="Chão">Ponto no selo; faixa quando cai.</div><div class="cell" data-l="Escritório">O mesmo.</div></div>
+<div class="row"><div class="k">Avisos</div><div class="cell" data-l="Chão">Sino; o urgente cobre a tela até alguém ver.</div><div class="cell" data-l="Escritório">Sino.</div></div>
+<div class="row"><div class="k">A ação do momento</div><div class="cell" data-l="Chão">Embaixo, no polegar, com o nome do item.</div><div class="cell" data-l="Escritório">No cabeçalho (computador); fixa embaixo no celular só quando há o que salvar.</div></div>
+<div class="row"><div class="k">Voltar</div><div class="cell" data-l="Chão">Fechar a folha volta ao mesmo lugar da fila.</div><div class="cell" data-l="Escritório">"‹ Insumos" volta à lista com filtro, rolagem e foco.</div></div>
+<div class="row"><div class="k">Quem opera</div><div class="cell" data-l="Chão">No trocador: nome, Trocar, Bloquear. PIN ou crachá.</div><div class="cell" data-l="Escritório">O mesmo.</div></div>
+<div class="row"><div class="k">Autorização do gerente</div><div class="cell" data-l="Chão">A mesma peça de hoje, por cima da tela, com o ato e o motivo. Mais uma porta (proposta): "Pedir ao gerente", que manda o pedido ao celular dele.</div><div class="cell" data-l="Escritório">A mesma peça.</div></div>
+<div class="row"><div class="k">Cadastro</div><div class="cell" data-l="Chão">Não mora no chão. Corrigir um dado na hora abre o item do escritório por cima e volta.</div><div class="cell" data-l="Escritório">A lista de cadastro do kit, igual em todos os apps.</div></div>
+</div>
+
+<h3>A autorização à distância, em esquema</h3>
+<div class="card">
+<div class="shots">
+<div class="shot">
+<div class="dev phone" style="height:440px">
+<div class="top"><div class="seal"><div class="ico" style="background:#A95032">P<span class="dot"></span></div><div class="t"><span class="a">PDV</span><span class="s">Balcão</span></div></div></div>
+<div class="body">
+<div class="auth">
+<b>Cancelar a venda #1042?</b>
+<div class="mut">Motivo: cliente desistiu · R$ 38,50</div>
+<div class="ln"><span><b>Joyce</b> (você)</span><span class="mut">PIN ›</span></div>
+<div class="ln"><span><b>Marcos</b></span><span class="mut">PIN ›</span></div>
+<div class="or">ou</div>
+<div class="ghost">Pedir ao gerente pelo celular</div>
+<div class="mut">Aparece no celular do gerente com o ato, o valor e o motivo. Ele aprova com a digital; a venda segue sozinha aqui.</div>
+</div>
+</div>
+</div>
+<p class="cap">A lista e o PIN ficam como estão. A porta nova só aparece quando nenhum gerente está ali.</p>
+</div>
+<div class="shot">
+<div class="dev phone" style="height:440px">
+<div class="top"><div class="seal"><div class="ico" style="background:#A95032">P<span class="dot"></span></div><div class="t"><span class="a">PDV · pedido de autorização</span><span class="s">Cancelar venda</span></div></div></div>
+<div class="body">
+<div class="foc"><div class="mut">Balcão · Ana pede · há 20 s</div><div class="code" style="font-size:20px">Cancelar #1042</div><div>R$ 38,50 · cliente desistiu</div></div>
+</div>
+<div class="action" style="display:flex;gap:8px"><div class="ghost" style="flex:1">Recusar</div><div class="big" style="flex:1.4">Autorizar</div></div>
+</div>
+<p class="cap">No celular do gerente, por aviso. O Marketing já faz assim com a segunda pessoa.</p>
+</div>
+</div>
+</div>
+
+<h2>6. Cada app nas três formas</h2>
+<div class="card">
+<div class="row head"><div class="h">App</div><div class="h">Chão</div><div class="h">Escritório e parede</div></div>
+<div class="row"><div class="k">PDV</div><div class="cell" data-l="Chão">Comandas e Venda · Encomendas · Caixa · Fim do dia</div><div class="cell" data-l="Escritório e parede">Ajustes · <span class="tag tv">parede</span> Tela do cliente</div></div>
+<div class="row"><div class="k">Gestor</div><div class="cell" data-l="Chão">Pedidos (fila) · Saída · Rotinas (sai de Ajustes)</div><div class="cell" data-l="Escritório e parede">Histórico · Catálogo · Clientes · Canais · Postos</div></div>
+<div class="row"><div class="k">Cozinha</div><div class="cell" data-l="Chão">Cada estação</div><div class="cell" data-l="Escritório e parede">Ajustes da estação · <span class="tag tv">parede</span> Painel de retirada</div></div>
+<div class="row"><div class="k">Produção</div><div class="cell" data-l="Chão">Bancada (Preparo · Produção · Finalização, como recorte) · Timers · Qualidade (gerente, celular)</div><div class="cell" data-l="Escritório e parede">Plano · Receitas · Relatórios · <span class="tag tv">parede</span> Letreiro</div></div>
+<div class="row"><div class="k">Compras</div><div class="cell" data-l="Chão">Receber · Contagem (sai do ⋯)</div><div class="cell" data-l="Escritório e parede">Painel · Comprar · Insumos · Fornecedores · Custos</div></div>
+<div class="row"><div class="k">Marketing</div><div class="cell" data-l="Chão">Decisões (gerente, celular)</div><div class="cell" data-l="Escritório e parede">Agendados · Enviados · Ajustes</div></div>
+<div class="row"><div class="k">B.I.</div><div class="cell" data-l="Chão">A olhada: a resposta do dia no celular</div><div class="cell" data-l="Escritório e parede">As nove leituras</div></div>
+<div class="row"><div class="k">Central</div><div class="cell" data-l="Chão">Vira o trocador do selo, em todo app</div><div class="cell" data-l="Escritório e parede">Continua como tela inicial</div></div>
+</div>
+
+<h2>7. O que muda e o que fica</h2>
+<div class="card">
+<p><b>Muda:</b></p>
+<ul class="small">
+<li>O selo passa a abrir o trocador (hoje leva à Central).</li>
+<li>Telas de chão no celular e no tablet perdem o ☰, a linha de título e a barra de seções; embaixo fica só a ação do momento.</li>
+<li>As seções de cada app se agrupam por forma, e alguns lugares mudam de grupo: Rotinas, Contagem, Plano, Qualidade.</li>
+<li>O Painel de retirada ganha saída.</li>
+<li>A lista de cadastro vira uma peça só do kit.</li>
+<li>Proposta à parte: pedir autorização ao gerente pelo celular.</li>
+</ul>
+<p class="keep small"><b>Fica:</b> o esqueleto de hoje no escritório (barra lateral, busca da suíte, sino, trava); o Balcão do PDV com o teclado; e todo o miolo maduro de cada app listado no mapa (fila e cartão do Gestor, bancada da Cozinha, pagamento e encomendas do PDV, recebimento por exceção, plano com "Por quê", fila de decisões do Marketing).</p>
+<p class="gap small"><b>O custo:</b> no chão, trocar de seção passa a custar dois toques (selo, seção) em vez de um. É de propósito: o posto raramente troca de lugar, e o espaço de baixo vale mais para a ação. Onde o chão troca muito (as etapas da Produção), elas viram recorte na própria tela, a um toque.</p>
+</div>
+
+<h2>Para decidir</h2>
+<div class="card">
+<ol>
+<li><b>O modelo:</b> selo com trocador, três formas (chão, escritório, parede) e os lugares que mudam de grupo.</li>
+<li><b>Pedir autorização ao gerente pelo celular:</b> é recurso novo (muda o servidor), além da lista e do PIN de hoje.</li>
+</ol>
+</div>
+
+</main>
+</body>
+</html>

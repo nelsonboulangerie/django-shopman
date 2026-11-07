@@ -1,0 +1,5096 @@
+{
+ "generatedAt": "2026-10-30T15:50:45.759Z",
+ "notes": [],
+ "runs": {
+  "A": {
+   "320x740/comeco": {
+    "vw": 320,
+    "vh": 740,
+    "headerHeight": 116,
+    "contentTop": 116,
+    "firstUsefulTop": 132,
+    "actionBarTop": 563,
+    "actionBarHeight": 112,
+    "quickBarTop": 675,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 447,
+    "scrollClientHeight": 447,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 196
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 234
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 272
+     },
+     {
+      "name": "Com NF",
+      "w": 99,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Sem NF",
+      "w": 97,
+      "h": 32,
+      "x": 119
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32",
+     "Com NF 99x32",
+     "Sem NF 97x32"
+    ],
+    "bell": {
+     "x": 272,
+     "y": 17
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber"
+    ]
+   },
+   "320x740/conferencia": {
+    "vw": 320,
+    "vh": 740,
+    "headerHeight": 89,
+    "contentTop": 89,
+    "firstUsefulTop": 105,
+    "actionBarTop": 559,
+    "actionBarHeight": 116,
+    "quickBarTop": 675,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 470,
+    "scrollClientHeight": 470,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 196
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 234
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 272
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 272,
+     "y": 28
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/comeco": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 116,
+    "contentTop": 116,
+    "firstUsefulTop": 132,
+    "actionBarTop": 391,
+    "actionBarHeight": 112,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 275,
+    "scrollClientHeight": 275,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 196
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 234
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 272
+     },
+     {
+      "name": "Com NF",
+      "w": 99,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Sem NF",
+      "w": 97,
+      "h": 32,
+      "x": 119
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32",
+     "Com NF 99x32",
+     "Sem NF 97x32"
+    ],
+    "bell": {
+     "x": 272,
+     "y": 17
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber"
+    ]
+   },
+   "320x568/conferencia": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 89,
+    "contentTop": 89,
+    "firstUsefulTop": 105,
+    "actionBarTop": 387,
+    "actionBarHeight": 116,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 298,
+    "scrollClientHeight": 298,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 196
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 234
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 272
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 272,
+     "y": 28
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "375x667/comeco": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 116,
+    "contentTop": 116,
+    "firstUsefulTop": 132,
+    "actionBarTop": 490,
+    "actionBarHeight": 112,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 374,
+    "scrollClientHeight": 374,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 251
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 289
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 327
+     },
+     {
+      "name": "Com NF",
+      "w": 99,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Sem NF",
+      "w": 97,
+      "h": 32,
+      "x": 119
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32",
+     "Com NF 99x32",
+     "Sem NF 97x32"
+    ],
+    "bell": {
+     "x": 327,
+     "y": 17
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber"
+    ]
+   },
+   "375x667/conferencia": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 67,
+    "contentTop": 67,
+    "firstUsefulTop": 83,
+    "actionBarTop": 486,
+    "actionBarHeight": 116,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 419,
+    "scrollClientHeight": 419,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 251
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 289
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 327
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 327,
+     "y": 17
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "390x844/comeco": {
+    "vw": 390,
+    "vh": 844,
+    "headerHeight": 116,
+    "contentTop": 116,
+    "firstUsefulTop": 132,
+    "actionBarTop": 667,
+    "actionBarHeight": 112,
+    "quickBarTop": 779,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 551,
+    "scrollClientHeight": 551,
+    "scrollWidth": 390,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 266
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 304
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 342
+     },
+     {
+      "name": "Com NF",
+      "w": 99,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Sem NF",
+      "w": 97,
+      "h": 32,
+      "x": 119
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32",
+     "Com NF 99x32",
+     "Sem NF 97x32"
+    ],
+    "bell": {
+     "x": 342,
+     "y": 17
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber"
+    ]
+   },
+   "390x844/conferencia": {
+    "vw": 390,
+    "vh": 844,
+    "headerHeight": 67,
+    "contentTop": 67,
+    "firstUsefulTop": 83,
+    "actionBarTop": 663,
+    "actionBarHeight": 116,
+    "quickBarTop": 779,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 596,
+    "scrollClientHeight": 596,
+    "scrollWidth": 390,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 266
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 304
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 342
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 342,
+     "y": 17
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "1440x900/comeco": {
+    "vw": 1440,
+    "vh": 900,
+    "headerHeight": 113,
+    "contentTop": 113,
+    "firstUsefulTop": 137,
+    "actionBarTop": null,
+    "actionBarHeight": null,
+    "quickBarTop": null,
+    "quickBarHeight": null,
+    "listUsefulHeight": 787,
+    "scrollClientHeight": 787,
+    "scrollWidth": 1440,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 248
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32,
+      "x": 740
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 1384
+     },
+     {
+      "name": "Com NF",
+      "w": 99,
+      "h": 32,
+      "x": 248
+     },
+     {
+      "name": "Sem NF",
+      "w": 97,
+      "h": 32,
+      "x": 351
+     }
+    ],
+    "under44": [
+     "Compactar a barra lateral 32x32",
+     "Buscar pedido, cliente, produto ou tela 320x32",
+     "Mais ações do Receber 32x32",
+     "Com NF 99x32",
+     "Sem NF 97x32"
+    ],
+    "bell": null,
+    "liveStatus": true,
+    "rail": true,
+    "offlineBand": false,
+    "h1": [
+     "Receber"
+    ]
+   },
+   "1440x900/conferencia": {
+    "vw": 1440,
+    "vh": 900,
+    "headerHeight": 64,
+    "contentTop": 64,
+    "firstUsefulTop": 88,
+    "actionBarTop": null,
+    "actionBarHeight": null,
+    "quickBarTop": null,
+    "quickBarHeight": null,
+    "listUsefulHeight": 836,
+    "scrollClientHeight": 836,
+    "scrollWidth": 1440,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 248
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 222,
+      "h": 32,
+      "x": 977
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 1384
+     }
+    ],
+    "under44": [
+     "Compactar a barra lateral 32x32",
+     "Buscar item da entrada 222x32",
+     "Mais ações do Receber 32x32"
+    ],
+    "bell": null,
+    "liveStatus": true,
+    "rail": true,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/comeco-busca-abriu": true,
+   "320x568/busca-ativa": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 89,
+    "contentTop": 89,
+    "firstUsefulTop": 105,
+    "actionBarTop": 387,
+    "actionBarHeight": 116,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 298,
+    "scrollClientHeight": 298,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 196
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 234
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 272
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 272,
+     "y": 28
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ],
+    "visibleIndicator": {
+     "listVisible": false,
+     "bodyHasTerm": false
+    }
+   },
+   "320x568/busca-limpa": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 89,
+    "contentTop": 89,
+    "firstUsefulTop": 105,
+    "actionBarTop": 387,
+    "actionBarHeight": 116,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 298,
+    "scrollClientHeight": 298,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 196
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 234
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 272
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 272,
+     "y": 28
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/opcoes": [
+    "Lançar item",
+    "Trocar a NF",
+    "Lançar sem NF",
+    "Ressalva geral",
+    "AtualizarR",
+    "Registrar devolução"
+   ],
+   "320x568/gaveta": "Abrir barra lateral Compras Painel Comprar Receber 4 Base Bloquear Compras",
+   "320x568/item-folha": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 89,
+    "contentTop": 89,
+    "firstUsefulTop": 105,
+    "actionBarTop": 387,
+    "actionBarHeight": 116,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 298,
+    "scrollClientHeight": 298,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 196
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 234
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 272
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 272,
+     "y": 28
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/acao-polegar": "Contei 6 volumes",
+   "320x568/erro-escrita": {
+    "toast": "Falha simulada ao gravar a contagem.",
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 119,
+    "contentTop": 119,
+    "firstUsefulTop": 135,
+    "actionBarTop": 348,
+    "actionBarHeight": 155,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 229,
+    "scrollClientHeight": 229,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 196
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 234
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 272
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 272,
+     "y": 43
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/recuperado": {
+    "failedOnce": true,
+    "thumb": "Confirmar entrada"
+   },
+   "320x568/sem-conexao": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 89,
+    "contentTop": 137,
+    "firstUsefulTop": 153,
+    "actionBarTop": 387,
+    "actionBarHeight": 116,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 250,
+    "scrollClientHeight": 250,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 196
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 234
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 272
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 272,
+     "y": 76
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": true,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/leitura-falhou": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 116,
+    "contentTop": 116,
+    "firstUsefulTop": 132,
+    "actionBarTop": 391,
+    "actionBarHeight": 112,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 275,
+    "scrollClientHeight": 275,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 196
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 234
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 272
+     },
+     {
+      "name": "Com NF",
+      "w": 99,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Sem NF",
+      "w": 97,
+      "h": 32,
+      "x": 119
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32",
+     "Com NF 99x32",
+     "Sem NF 97x32"
+    ],
+    "bell": {
+     "x": 272,
+     "y": 17
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber"
+    ]
+   },
+   "320x568/leitura-recuperada": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 89,
+    "contentTop": 89,
+    "firstUsefulTop": 105,
+    "actionBarTop": 387,
+    "actionBarHeight": 116,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 298,
+    "scrollClientHeight": 298,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 196
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 234
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 272
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 272,
+     "y": 28
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "375x667/comeco-busca-abriu": true,
+   "375x667/busca-ativa": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 67,
+    "contentTop": 67,
+    "firstUsefulTop": 83,
+    "actionBarTop": 486,
+    "actionBarHeight": 116,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 419,
+    "scrollClientHeight": 419,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 251
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 289
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 327
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 327,
+     "y": 17
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ],
+    "visibleIndicator": {
+     "listVisible": false,
+     "bodyHasTerm": false
+    }
+   },
+   "375x667/busca-limpa": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 67,
+    "contentTop": 67,
+    "firstUsefulTop": 83,
+    "actionBarTop": 486,
+    "actionBarHeight": 116,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 419,
+    "scrollClientHeight": 419,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 251
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 289
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 327
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 327,
+     "y": 17
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "375x667/opcoes": [
+    "Lançar item",
+    "Trocar a NF",
+    "Lançar sem NF",
+    "Ressalva geral",
+    "AtualizarR",
+    "Registrar devolução"
+   ],
+   "375x667/gaveta": "Abrir barra lateral Compras Painel Comprar Receber 4 Base Bloquear Compras",
+   "375x667/item-folha": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 67,
+    "contentTop": 67,
+    "firstUsefulTop": 83,
+    "actionBarTop": 486,
+    "actionBarHeight": 116,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 419,
+    "scrollClientHeight": 419,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 251
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 289
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 327
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 327,
+     "y": 17
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "375x667/acao-polegar": "Contei 6 volumes",
+   "375x667/erro-escrita": {
+    "toast": "Falha simulada ao gravar a contagem.",
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 97,
+    "contentTop": 97,
+    "firstUsefulTop": 113,
+    "actionBarTop": 447,
+    "actionBarHeight": 155,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 350,
+    "scrollClientHeight": 350,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 251
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 289
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 327
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 327,
+     "y": 32
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "375x667/recuperado": {
+    "failedOnce": true,
+    "thumb": "Confirmar entrada"
+   },
+   "375x667/sem-conexao": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 67,
+    "contentTop": 115,
+    "firstUsefulTop": 131,
+    "actionBarTop": 486,
+    "actionBarHeight": 116,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 371,
+    "scrollClientHeight": 371,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 251
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 289
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 327
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 327,
+     "y": 65
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": true,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "375x667/leitura-falhou": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 116,
+    "contentTop": 116,
+    "firstUsefulTop": 132,
+    "actionBarTop": 490,
+    "actionBarHeight": 112,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 374,
+    "scrollClientHeight": 374,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 251
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 289
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 327
+     },
+     {
+      "name": "Com NF",
+      "w": 99,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Sem NF",
+      "w": 97,
+      "h": 32,
+      "x": 119
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32",
+     "Com NF 99x32",
+     "Sem NF 97x32"
+    ],
+    "bell": {
+     "x": 327,
+     "y": 17
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber"
+    ]
+   },
+   "375x667/leitura-recuperada": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 67,
+    "contentTop": 67,
+    "firstUsefulTop": 83,
+    "actionBarTop": 486,
+    "actionBarHeight": 116,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 419,
+    "scrollClientHeight": 419,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 16
+     },
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 54
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32,
+      "x": 251
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 289
+     },
+     {
+      "name": "Avisos",
+      "w": 32,
+      "h": 32,
+      "x": 327
+     }
+    ],
+    "under44": [
+     "Abrir barra lateral 32x32",
+     "Voltar ao começo do Receber 32x32",
+     "Buscar 32x32",
+     "Mais ações do Receber 32x32",
+     "Avisos 32x32"
+    ],
+    "bell": {
+     "x": 327,
+     "y": 17
+    },
+    "liveStatus": true,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/continuidade": [
+    {
+     "step": "base-insumos",
+     "url": "/base/materials",
+     "vw": 320,
+     "vh": 568,
+     "headerHeight": 393,
+     "contentTop": 393,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 503,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 110,
+     "scrollClientHeight": 110,
+     "scrollWidth": 320,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 196
+      },
+      {
+       "name": "Mais ações da Base",
+       "w": 32,
+       "h": 32,
+       "x": 234
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 272
+      },
+      {
+       "name": "Insumos17",
+       "w": 134,
+       "h": 32,
+       "x": 20
+      },
+      {
+       "name": "Fornecedores5",
+       "w": 162,
+       "h": 32,
+       "x": 154
+      },
+      {
+       "name": "Filtros",
+       "w": 40,
+       "h": 32,
+       "x": 264
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da Base 32x32",
+      "Avisos 32x32",
+      "Insumos17 134x32",
+      "Fornecedores5 162x32",
+      "Filtros 40x32"
+     ],
+     "bell": {
+      "x": 272,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Base"
+     ]
+    },
+    {
+     "step": "receber",
+     "url": "/receive",
+     "vw": 320,
+     "vh": 568,
+     "headerHeight": 89,
+     "contentTop": 89,
+     "firstUsefulTop": 105,
+     "actionBarTop": 387,
+     "actionBarHeight": 116,
+     "quickBarTop": 503,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 298,
+     "scrollClientHeight": 298,
+     "scrollWidth": 320,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Voltar ao começo do Receber",
+       "w": 32,
+       "h": 32,
+       "x": 54
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 196
+      },
+      {
+       "name": "Mais ações do Receber",
+       "w": 32,
+       "h": 32,
+       "x": 234
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 272
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Voltar ao começo do Receber 32x32",
+      "Buscar 32x32",
+      "Mais ações do Receber 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 272,
+      "y": 28
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "ReceberSerra Azul"
+     ]
+    },
+    {
+     "step": "base",
+     "url": "/base/materials",
+     "vw": 320,
+     "vh": 568,
+     "headerHeight": 393,
+     "contentTop": 393,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 503,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 110,
+     "scrollClientHeight": 110,
+     "scrollWidth": 320,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 196
+      },
+      {
+       "name": "Mais ações da Base",
+       "w": 32,
+       "h": 32,
+       "x": 234
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 272
+      },
+      {
+       "name": "Insumos17",
+       "w": 134,
+       "h": 32,
+       "x": 20
+      },
+      {
+       "name": "Fornecedores5",
+       "w": 162,
+       "h": 32,
+       "x": 154
+      },
+      {
+       "name": "Filtros",
+       "w": 40,
+       "h": 32,
+       "x": 264
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da Base 32x32",
+      "Avisos 32x32",
+      "Insumos17 134x32",
+      "Fornecedores5 162x32",
+      "Filtros 40x32"
+     ],
+     "bell": {
+      "x": 272,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Base"
+     ]
+    },
+    {
+     "step": "comprar",
+     "url": "/buy",
+     "vw": 320,
+     "vh": 568,
+     "headerHeight": 67,
+     "contentTop": 67,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 503,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 436,
+     "scrollClientHeight": 436,
+     "scrollWidth": 320,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 196
+      },
+      {
+       "name": "Mais ações de Comprar",
+       "w": 32,
+       "h": 32,
+       "x": 234
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 272
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações de Comprar 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 272,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Comprar"
+     ]
+    },
+    {
+     "step": "painel",
+     "url": "/",
+     "vw": 320,
+     "vh": 568,
+     "headerHeight": 67,
+     "contentTop": 67,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 503,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 436,
+     "scrollClientHeight": 352,
+     "scrollWidth": 320,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 196
+      },
+      {
+       "name": "Mais ações do Painel",
+       "w": 32,
+       "h": 32,
+       "x": 234
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 272
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações do Painel 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 272,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Painel"
+     ]
+    }
+   ],
+   "375x667/continuidade": [
+    {
+     "step": "base-insumos",
+     "url": "/base/materials",
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 373,
+     "contentTop": 373,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 229,
+     "scrollClientHeight": 229,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações da Base",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      },
+      {
+       "name": "Insumos17",
+       "w": 134,
+       "h": 32,
+       "x": 20
+      },
+      {
+       "name": "Fornecedores5",
+       "w": 162,
+       "h": 32,
+       "x": 154
+      },
+      {
+       "name": "Filtros",
+       "w": 40,
+       "h": 32,
+       "x": 319
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da Base 32x32",
+      "Avisos 32x32",
+      "Insumos17 134x32",
+      "Fornecedores5 162x32",
+      "Filtros 40x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Base"
+     ]
+    },
+    {
+     "step": "receber",
+     "url": "/receive",
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 67,
+     "contentTop": 67,
+     "firstUsefulTop": 83,
+     "actionBarTop": 486,
+     "actionBarHeight": 116,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 419,
+     "scrollClientHeight": 419,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Voltar ao começo do Receber",
+       "w": 32,
+       "h": 32,
+       "x": 54
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações do Receber",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Voltar ao começo do Receber 32x32",
+      "Buscar 32x32",
+      "Mais ações do Receber 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "ReceberSerra Azul"
+     ]
+    },
+    {
+     "step": "base",
+     "url": "/base/materials",
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 373,
+     "contentTop": 373,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 229,
+     "scrollClientHeight": 229,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações da Base",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      },
+      {
+       "name": "Insumos17",
+       "w": 134,
+       "h": 32,
+       "x": 20
+      },
+      {
+       "name": "Fornecedores5",
+       "w": 162,
+       "h": 32,
+       "x": 154
+      },
+      {
+       "name": "Filtros",
+       "w": 40,
+       "h": 32,
+       "x": 319
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da Base 32x32",
+      "Avisos 32x32",
+      "Insumos17 134x32",
+      "Fornecedores5 162x32",
+      "Filtros 40x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Base"
+     ]
+    },
+    {
+     "step": "comprar",
+     "url": "/buy",
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 67,
+     "contentTop": 67,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 535,
+     "scrollClientHeight": 535,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações de Comprar",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações de Comprar 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Comprar"
+     ]
+    },
+    {
+     "step": "painel",
+     "url": "/",
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 67,
+     "contentTop": 67,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 535,
+     "scrollClientHeight": 451,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações do Painel",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações do Painel 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Painel"
+     ]
+    }
+   ],
+   "gerencial": {
+    "/": {
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 67,
+     "contentTop": 67,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 535,
+     "scrollClientHeight": 451,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações do Painel",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações do Painel 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Painel"
+     ]
+    },
+    "/buy": {
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 67,
+     "contentTop": 67,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 535,
+     "scrollClientHeight": 535,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações de Comprar",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações de Comprar 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Comprar"
+     ]
+    },
+    "/base/materials": {
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 373,
+     "contentTop": 373,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 229,
+     "scrollClientHeight": 229,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações da Base",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      },
+      {
+       "name": "Insumos17",
+       "w": 134,
+       "h": 32,
+       "x": 20
+      },
+      {
+       "name": "Fornecedores5",
+       "w": 162,
+       "h": 32,
+       "x": 154
+      },
+      {
+       "name": "Filtros",
+       "w": 40,
+       "h": 32,
+       "x": 319
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da Base 32x32",
+      "Avisos 32x32",
+      "Insumos17 134x32",
+      "Fornecedores5 162x32",
+      "Filtros 40x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Base"
+     ]
+    },
+    "/base/suppliers": {
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 157,
+     "contentTop": 157,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 445,
+     "scrollClientHeight": 445,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações da Base",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      },
+      {
+       "name": "Insumos17",
+       "w": 134,
+       "h": 32,
+       "x": 20
+      },
+      {
+       "name": "Fornecedores5",
+       "w": 162,
+       "h": 32,
+       "x": 154
+      },
+      {
+       "name": "Filtros",
+       "w": 40,
+       "h": 32,
+       "x": 319
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da Base 32x32",
+      "Avisos 32x32",
+      "Insumos17 134x32",
+      "Fornecedores5 162x32",
+      "Filtros 40x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Base"
+     ]
+    },
+    "/base/costs": {
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 116,
+     "contentTop": 116,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 486,
+     "scrollClientHeight": 486,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações de custos",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      },
+      {
+       "name": "Voltar aos insumos",
+       "w": 169,
+       "h": 32,
+       "x": 16
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações de custos 32x32",
+      "Avisos 32x32",
+      "Voltar aos insumos 169x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Lançar custos"
+     ]
+    },
+    "/base/count": {
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 149,
+     "contentTop": 149,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 453,
+     "scrollClientHeight": 453,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações da contagem",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      },
+      {
+       "name": "Voltar aos insumos",
+       "w": 169,
+       "h": 32,
+       "x": 16
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da contagem 32x32",
+      "Avisos 32x32",
+      "Voltar aos insumos 169x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Contar estoque"
+     ]
+    }
+   }
+  },
+  "C": {
+   "320x740/comeco": {
+    "vw": 320,
+    "vh": 740,
+    "headerHeight": 59,
+    "contentTop": 59,
+    "firstUsefulTop": 75,
+    "actionBarTop": 563,
+    "actionBarHeight": 112,
+    "quickBarTop": 675,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 504,
+    "scrollClientHeight": 504,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compras: abrir a Central. Conexão: atualização periódica, úl",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar no Compras e na suíte",
+      "w": 158,
+      "h": 44,
+      "x": 59
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 217
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 268
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 268,
+     "y": 7
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "Receber"
+    ]
+   },
+   "320x740/conferencia": {
+    "vw": 320,
+    "vh": 740,
+    "headerHeight": 61,
+    "contentTop": 61,
+    "firstUsefulTop": 77,
+    "actionBarTop": 559,
+    "actionBarHeight": 116,
+    "quickBarTop": 675,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 499,
+    "scrollClientHeight": 499,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 173
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 217
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 268
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 268,
+     "y": 8
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/comeco": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 59,
+    "contentTop": 59,
+    "firstUsefulTop": 75,
+    "actionBarTop": 391,
+    "actionBarHeight": 112,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 332,
+    "scrollClientHeight": 332,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compras: abrir a Central. Conexão: atualização periódica, úl",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar no Compras e na suíte",
+      "w": 158,
+      "h": 44,
+      "x": 59
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 217
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 268
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 268,
+     "y": 7
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "Receber"
+    ]
+   },
+   "320x568/conferencia": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 61,
+    "contentTop": 61,
+    "firstUsefulTop": 77,
+    "actionBarTop": 387,
+    "actionBarHeight": 116,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 327,
+    "scrollClientHeight": 327,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 173
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 217
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 268
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 268,
+     "y": 8
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "375x667/comeco": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 59,
+    "contentTop": 59,
+    "firstUsefulTop": 75,
+    "actionBarTop": 490,
+    "actionBarHeight": 112,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 431,
+    "scrollClientHeight": 431,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compras: abrir a Central. Conexão: atualização periódica, úl",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar no Compras e na suíte",
+      "w": 213,
+      "h": 44,
+      "x": 59
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 272
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 323
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 323,
+     "y": 7
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "Receber"
+    ]
+   },
+   "375x667/conferencia": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 59,
+    "contentTop": 59,
+    "firstUsefulTop": 75,
+    "actionBarTop": 486,
+    "actionBarHeight": 116,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 427,
+    "scrollClientHeight": 427,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 228
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 272
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 323
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 323,
+     "y": 7
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "390x844/comeco": {
+    "vw": 390,
+    "vh": 844,
+    "headerHeight": 59,
+    "contentTop": 59,
+    "firstUsefulTop": 75,
+    "actionBarTop": 667,
+    "actionBarHeight": 112,
+    "quickBarTop": 779,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 608,
+    "scrollClientHeight": 608,
+    "scrollWidth": 390,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compras: abrir a Central. Conexão: atualização periódica, úl",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar no Compras e na suíte",
+      "w": 228,
+      "h": 44,
+      "x": 59
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 287
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 338
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 338,
+     "y": 7
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "Receber"
+    ]
+   },
+   "390x844/conferencia": {
+    "vw": 390,
+    "vh": 844,
+    "headerHeight": 59,
+    "contentTop": 59,
+    "firstUsefulTop": 75,
+    "actionBarTop": 663,
+    "actionBarHeight": 116,
+    "quickBarTop": 779,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 604,
+    "scrollClientHeight": 604,
+    "scrollWidth": 390,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 243
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 287
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 338
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 338,
+     "y": 7
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "1440x900/comeco": {
+    "vw": 1440,
+    "vh": 900,
+    "headerHeight": 113,
+    "contentTop": 113,
+    "firstUsefulTop": 137,
+    "actionBarTop": null,
+    "actionBarHeight": null,
+    "quickBarTop": null,
+    "quickBarHeight": null,
+    "listUsefulHeight": 787,
+    "scrollClientHeight": 787,
+    "scrollWidth": 1440,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 248
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32,
+      "x": 740
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 1384
+     },
+     {
+      "name": "Com NF",
+      "w": 99,
+      "h": 32,
+      "x": 248
+     },
+     {
+      "name": "Sem NF",
+      "w": 97,
+      "h": 32,
+      "x": 351
+     }
+    ],
+    "under44": [
+     "Compactar a barra lateral 32x32",
+     "Buscar pedido, cliente, produto ou tela 320x32",
+     "Mais ações do Receber 32x32",
+     "Com NF 99x32",
+     "Sem NF 97x32"
+    ],
+    "bell": null,
+    "liveStatus": true,
+    "rail": true,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "Receber"
+    ]
+   },
+   "1440x900/conferencia": {
+    "vw": 1440,
+    "vh": 900,
+    "headerHeight": 64,
+    "contentTop": 64,
+    "firstUsefulTop": 88,
+    "actionBarTop": null,
+    "actionBarHeight": null,
+    "quickBarTop": null,
+    "quickBarHeight": null,
+    "listUsefulHeight": 836,
+    "scrollClientHeight": 836,
+    "scrollWidth": 1440,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32,
+      "x": 248
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 222,
+      "h": 32,
+      "x": 979
+     },
+     {
+      "name": "Mais ações do Receber",
+      "w": 32,
+      "h": 32,
+      "x": 1384
+     }
+    ],
+    "under44": [
+     "Compactar a barra lateral 32x32",
+     "Buscar item da entrada 222x32",
+     "Mais ações do Receber 32x32"
+    ],
+    "bell": null,
+    "liveStatus": true,
+    "rail": true,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/comeco-busca-abriu": true,
+   "320x568/busca-ativa": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 114,
+    "contentTop": 114,
+    "firstUsefulTop": 130,
+    "actionBarTop": 387,
+    "actionBarHeight": 116,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 274,
+    "scrollClientHeight": 274,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar. Busca ativa: manteiga",
+      "w": 44,
+      "h": 44,
+      "x": 173
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 217
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 268
+     },
+     {
+      "name": "Limpar busca e filtros",
+      "w": 66,
+      "h": 44,
+      "x": 242
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 268,
+     "y": 8
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ],
+    "visibleIndicator": "Busca manteiga. 1 de 3 itens da entrada. Limpar"
+   },
+   "320x568/busca-limpa": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 61,
+    "contentTop": 61,
+    "firstUsefulTop": 77,
+    "actionBarTop": 387,
+    "actionBarHeight": 116,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 327,
+    "scrollClientHeight": 327,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 173
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 217
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 268
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 268,
+     "y": 8
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/opcoes": [
+    "Leitura ao abrir e em Atualizar. Lida às 12:52.",
+    "Lançar item",
+    "Trocar a NF",
+    "Lançar sem NF",
+    "Ressalva geral",
+    "AtualizarR",
+    "Registrar devolução",
+    "Menu completoSeções, operador e atalhos"
+   ],
+   "320x568/gaveta": "Abrir barra lateral Compras Painel Comprar Receber 4 Base Bloquear Compras",
+   "320x568/item-folha": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 61,
+    "contentTop": 61,
+    "firstUsefulTop": 77,
+    "actionBarTop": 387,
+    "actionBarHeight": 116,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 327,
+    "scrollClientHeight": 327,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 173
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 217
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 268
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 268,
+     "y": 8
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/acao-polegar": "Contei 6 volumes",
+   "320x568/erro-escrita": {
+    "toast": "Falha simulada ao gravar a contagem.",
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 76,
+    "contentTop": 76,
+    "firstUsefulTop": 92,
+    "actionBarTop": 348,
+    "actionBarHeight": 155,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 273,
+    "scrollClientHeight": 273,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 173
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 217
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 268
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 268,
+     "y": 15
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/recuperado": {
+    "failedOnce": true,
+    "thumb": "Confirmar entrada"
+   },
+   "320x568/sem-conexao": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 61,
+    "contentTop": 109,
+    "firstUsefulTop": 125,
+    "actionBarTop": 387,
+    "actionBarHeight": 116,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 279,
+    "scrollClientHeight": 279,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 173
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 217
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 268
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 268,
+     "y": 56
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": true,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/leitura-falhou": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 59,
+    "contentTop": 59,
+    "firstUsefulTop": 75,
+    "actionBarTop": 391,
+    "actionBarHeight": 112,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 332,
+    "scrollClientHeight": 332,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compras: abrir a Central. Conexão: sem conexão.",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar no Compras e na suíte",
+      "w": 158,
+      "h": 44,
+      "x": 59
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 217
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 268
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 268,
+     "y": 7
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "Receber"
+    ]
+   },
+   "320x568/leitura-recuperada": {
+    "vw": 320,
+    "vh": 568,
+    "headerHeight": 61,
+    "contentTop": 61,
+    "firstUsefulTop": 77,
+    "actionBarTop": 387,
+    "actionBarHeight": 116,
+    "quickBarTop": 503,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 327,
+    "scrollClientHeight": 327,
+    "scrollWidth": 320,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 173
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 217
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 268
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 268,
+     "y": 8
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "375x667/comeco-busca-abriu": true,
+   "375x667/busca-ativa": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 112,
+    "contentTop": 112,
+    "firstUsefulTop": 128,
+    "actionBarTop": 486,
+    "actionBarHeight": 116,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 374,
+    "scrollClientHeight": 374,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar. Busca ativa: manteiga",
+      "w": 44,
+      "h": 44,
+      "x": 228
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 272
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 323
+     },
+     {
+      "name": "Limpar busca e filtros",
+      "w": 66,
+      "h": 44,
+      "x": 297
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 323,
+     "y": 7
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ],
+    "visibleIndicator": "Busca manteiga. 1 de 3 itens da entrada. Limpar"
+   },
+   "375x667/busca-limpa": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 59,
+    "contentTop": 59,
+    "firstUsefulTop": 75,
+    "actionBarTop": 486,
+    "actionBarHeight": 116,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 427,
+    "scrollClientHeight": 427,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 228
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 272
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 323
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 323,
+     "y": 7
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "375x667/opcoes": [
+    "Leitura ao abrir e em Atualizar. Lida às 12:53.",
+    "Lançar item",
+    "Trocar a NF",
+    "Lançar sem NF",
+    "Ressalva geral",
+    "AtualizarR",
+    "Registrar devolução",
+    "Menu completoSeções, operador e atalhos"
+   ],
+   "375x667/gaveta": "Abrir barra lateral Compras Painel Comprar Receber 4 Base Bloquear Compras",
+   "375x667/item-folha": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 59,
+    "contentTop": 59,
+    "firstUsefulTop": 75,
+    "actionBarTop": 486,
+    "actionBarHeight": 116,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 427,
+    "scrollClientHeight": 427,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 228
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 272
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 323
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 323,
+     "y": 7
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "375x667/acao-polegar": "Contei 6 volumes",
+   "375x667/erro-escrita": {
+    "toast": "Falha simulada ao gravar a contagem.",
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 61,
+    "contentTop": 61,
+    "firstUsefulTop": 77,
+    "actionBarTop": 447,
+    "actionBarHeight": 155,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 387,
+    "scrollClientHeight": 387,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 228
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 272
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 323
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 323,
+     "y": 8
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "375x667/recuperado": {
+    "failedOnce": true,
+    "thumb": "Confirmar entrada"
+   },
+   "375x667/sem-conexao": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 59,
+    "contentTop": 107,
+    "firstUsefulTop": 123,
+    "actionBarTop": 486,
+    "actionBarHeight": 116,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 379,
+    "scrollClientHeight": 379,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 228
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 272
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 323
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 323,
+     "y": 55
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": true,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "375x667/leitura-falhou": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 59,
+    "contentTop": 59,
+    "firstUsefulTop": 75,
+    "actionBarTop": 490,
+    "actionBarHeight": 112,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 431,
+    "scrollClientHeight": 431,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Compras: abrir a Central. Conexão: sem conexão.",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar no Compras e na suíte",
+      "w": 213,
+      "h": 44,
+      "x": 59
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 272
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 323
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 323,
+     "y": 7
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "Receber"
+    ]
+   },
+   "375x667/leitura-recuperada": {
+    "vw": 375,
+    "vh": 667,
+    "headerHeight": 59,
+    "contentTop": 59,
+    "firstUsefulTop": 75,
+    "actionBarTop": 486,
+    "actionBarHeight": 116,
+    "quickBarTop": 602,
+    "quickBarHeight": 65,
+    "listUsefulHeight": 427,
+    "scrollClientHeight": 427,
+    "scrollWidth": 375,
+    "horizontalOverflow": false,
+    "headerTargets": [
+     {
+      "name": "Voltar ao começo do Receber",
+      "w": 44,
+      "h": 44,
+      "x": 8
+     },
+     {
+      "name": "Buscar item da entrada",
+      "w": 44,
+      "h": 44,
+      "x": 228
+     },
+     {
+      "name": "Opções: Receber",
+      "w": 44,
+      "h": 44,
+      "x": 272
+     },
+     {
+      "name": "Avisos",
+      "w": 44,
+      "h": 44,
+      "x": 323
+     }
+    ],
+    "under44": [],
+    "bell": {
+     "x": 323,
+     "y": 7
+    },
+    "liveStatus": false,
+    "rail": false,
+    "offlineBand": false,
+    "h1": [
+     "Receber",
+     "ReceberSerra Azul"
+    ]
+   },
+   "320x568/continuidade": [
+    {
+     "step": "base-insumos",
+     "url": "/base/materials",
+     "vw": 320,
+     "vh": 568,
+     "headerHeight": 393,
+     "contentTop": 393,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 503,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 110,
+     "scrollClientHeight": 110,
+     "scrollWidth": 320,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 196
+      },
+      {
+       "name": "Mais ações da Base",
+       "w": 32,
+       "h": 32,
+       "x": 234
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 272
+      },
+      {
+       "name": "Insumos17",
+       "w": 134,
+       "h": 32,
+       "x": 20
+      },
+      {
+       "name": "Fornecedores5",
+       "w": 162,
+       "h": 32,
+       "x": 154
+      },
+      {
+       "name": "Filtros",
+       "w": 40,
+       "h": 32,
+       "x": 264
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da Base 32x32",
+      "Avisos 32x32",
+      "Insumos17 134x32",
+      "Fornecedores5 162x32",
+      "Filtros 40x32"
+     ],
+     "bell": {
+      "x": 272,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Base"
+     ]
+    },
+    {
+     "step": "receber",
+     "url": "/receive",
+     "vw": 320,
+     "vh": 568,
+     "headerHeight": 61,
+     "contentTop": 61,
+     "firstUsefulTop": 77,
+     "actionBarTop": 387,
+     "actionBarHeight": 116,
+     "quickBarTop": 503,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 327,
+     "scrollClientHeight": 327,
+     "scrollWidth": 320,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Voltar ao começo do Receber",
+       "w": 44,
+       "h": 44,
+       "x": 8
+      },
+      {
+       "name": "Buscar item da entrada",
+       "w": 44,
+       "h": 44,
+       "x": 173
+      },
+      {
+       "name": "Opções: Receber",
+       "w": 44,
+       "h": 44,
+       "x": 217
+      },
+      {
+       "name": "Avisos",
+       "w": 44,
+       "h": 44,
+       "x": 268
+      }
+     ],
+     "under44": [],
+     "bell": {
+      "x": 268,
+      "y": 8
+     },
+     "liveStatus": false,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Receber",
+      "ReceberSerra Azul"
+     ]
+    },
+    {
+     "step": "base",
+     "url": "/base/materials",
+     "vw": 320,
+     "vh": 568,
+     "headerHeight": 393,
+     "contentTop": 393,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 503,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 110,
+     "scrollClientHeight": 110,
+     "scrollWidth": 320,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 196
+      },
+      {
+       "name": "Mais ações da Base",
+       "w": 32,
+       "h": 32,
+       "x": 234
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 272
+      },
+      {
+       "name": "Insumos17",
+       "w": 134,
+       "h": 32,
+       "x": 20
+      },
+      {
+       "name": "Fornecedores5",
+       "w": 162,
+       "h": 32,
+       "x": 154
+      },
+      {
+       "name": "Filtros",
+       "w": 40,
+       "h": 32,
+       "x": 264
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da Base 32x32",
+      "Avisos 32x32",
+      "Insumos17 134x32",
+      "Fornecedores5 162x32",
+      "Filtros 40x32"
+     ],
+     "bell": {
+      "x": 272,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Base"
+     ]
+    },
+    {
+     "step": "comprar",
+     "url": "/buy",
+     "vw": 320,
+     "vh": 568,
+     "headerHeight": 67,
+     "contentTop": 67,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 503,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 436,
+     "scrollClientHeight": 436,
+     "scrollWidth": 320,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 196
+      },
+      {
+       "name": "Mais ações de Comprar",
+       "w": 32,
+       "h": 32,
+       "x": 234
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 272
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações de Comprar 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 272,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Comprar"
+     ]
+    },
+    {
+     "step": "painel",
+     "url": "/",
+     "vw": 320,
+     "vh": 568,
+     "headerHeight": 67,
+     "contentTop": 67,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 503,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 436,
+     "scrollClientHeight": 352,
+     "scrollWidth": 320,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 196
+      },
+      {
+       "name": "Mais ações do Painel",
+       "w": 32,
+       "h": 32,
+       "x": 234
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 272
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações do Painel 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 272,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Painel"
+     ]
+    }
+   ],
+   "375x667/continuidade": [
+    {
+     "step": "base-insumos",
+     "url": "/base/materials",
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 373,
+     "contentTop": 373,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 229,
+     "scrollClientHeight": 229,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações da Base",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      },
+      {
+       "name": "Insumos17",
+       "w": 134,
+       "h": 32,
+       "x": 20
+      },
+      {
+       "name": "Fornecedores5",
+       "w": 162,
+       "h": 32,
+       "x": 154
+      },
+      {
+       "name": "Filtros",
+       "w": 40,
+       "h": 32,
+       "x": 319
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da Base 32x32",
+      "Avisos 32x32",
+      "Insumos17 134x32",
+      "Fornecedores5 162x32",
+      "Filtros 40x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Base"
+     ]
+    },
+    {
+     "step": "receber",
+     "url": "/receive",
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 59,
+     "contentTop": 59,
+     "firstUsefulTop": 75,
+     "actionBarTop": 486,
+     "actionBarHeight": 116,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 427,
+     "scrollClientHeight": 427,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Voltar ao começo do Receber",
+       "w": 44,
+       "h": 44,
+       "x": 8
+      },
+      {
+       "name": "Buscar item da entrada",
+       "w": 44,
+       "h": 44,
+       "x": 228
+      },
+      {
+       "name": "Opções: Receber",
+       "w": 44,
+       "h": 44,
+       "x": 272
+      },
+      {
+       "name": "Avisos",
+       "w": 44,
+       "h": 44,
+       "x": 323
+      }
+     ],
+     "under44": [],
+     "bell": {
+      "x": 323,
+      "y": 7
+     },
+     "liveStatus": false,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Receber",
+      "ReceberSerra Azul"
+     ]
+    },
+    {
+     "step": "base",
+     "url": "/base/materials",
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 373,
+     "contentTop": 373,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 229,
+     "scrollClientHeight": 229,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações da Base",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      },
+      {
+       "name": "Insumos17",
+       "w": 134,
+       "h": 32,
+       "x": 20
+      },
+      {
+       "name": "Fornecedores5",
+       "w": 162,
+       "h": 32,
+       "x": 154
+      },
+      {
+       "name": "Filtros",
+       "w": 40,
+       "h": 32,
+       "x": 319
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da Base 32x32",
+      "Avisos 32x32",
+      "Insumos17 134x32",
+      "Fornecedores5 162x32",
+      "Filtros 40x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Base"
+     ]
+    },
+    {
+     "step": "comprar",
+     "url": "/buy",
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 67,
+     "contentTop": 67,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 535,
+     "scrollClientHeight": 535,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações de Comprar",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações de Comprar 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Comprar"
+     ]
+    },
+    {
+     "step": "painel",
+     "url": "/",
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 67,
+     "contentTop": 67,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 535,
+     "scrollClientHeight": 451,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações do Painel",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações do Painel 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Painel"
+     ]
+    }
+   ],
+   "gerencial": {
+    "/": {
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 67,
+     "contentTop": 67,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 535,
+     "scrollClientHeight": 451,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações do Painel",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações do Painel 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Painel"
+     ]
+    },
+    "/buy": {
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 67,
+     "contentTop": 67,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 535,
+     "scrollClientHeight": 535,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações de Comprar",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações de Comprar 32x32",
+      "Avisos 32x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Comprar"
+     ]
+    },
+    "/base/materials": {
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 373,
+     "contentTop": 373,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 229,
+     "scrollClientHeight": 229,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações da Base",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      },
+      {
+       "name": "Insumos17",
+       "w": 134,
+       "h": 32,
+       "x": 20
+      },
+      {
+       "name": "Fornecedores5",
+       "w": 162,
+       "h": 32,
+       "x": 154
+      },
+      {
+       "name": "Filtros",
+       "w": 40,
+       "h": 32,
+       "x": 319
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da Base 32x32",
+      "Avisos 32x32",
+      "Insumos17 134x32",
+      "Fornecedores5 162x32",
+      "Filtros 40x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Base"
+     ]
+    },
+    "/base/suppliers": {
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 157,
+     "contentTop": 157,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 445,
+     "scrollClientHeight": 445,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações da Base",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      },
+      {
+       "name": "Insumos17",
+       "w": 134,
+       "h": 32,
+       "x": 20
+      },
+      {
+       "name": "Fornecedores5",
+       "w": 162,
+       "h": 32,
+       "x": 154
+      },
+      {
+       "name": "Filtros",
+       "w": 40,
+       "h": 32,
+       "x": 319
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da Base 32x32",
+      "Avisos 32x32",
+      "Insumos17 134x32",
+      "Fornecedores5 162x32",
+      "Filtros 40x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Base"
+     ]
+    },
+    "/base/costs": {
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 116,
+     "contentTop": 116,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 486,
+     "scrollClientHeight": 486,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações de custos",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      },
+      {
+       "name": "Voltar aos insumos",
+       "w": 169,
+       "h": 32,
+       "x": 16
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações de custos 32x32",
+      "Avisos 32x32",
+      "Voltar aos insumos 169x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Lançar custos"
+     ]
+    },
+    "/base/count": {
+     "vw": 375,
+     "vh": 667,
+     "headerHeight": 149,
+     "contentTop": 149,
+     "firstUsefulTop": null,
+     "actionBarTop": null,
+     "actionBarHeight": null,
+     "quickBarTop": 602,
+     "quickBarHeight": 65,
+     "listUsefulHeight": 453,
+     "scrollClientHeight": 453,
+     "scrollWidth": 375,
+     "horizontalOverflow": false,
+     "headerTargets": [
+      {
+       "name": "Abrir barra lateral",
+       "w": 32,
+       "h": 32,
+       "x": 16
+      },
+      {
+       "name": "Buscar",
+       "w": 32,
+       "h": 32,
+       "x": 251
+      },
+      {
+       "name": "Mais ações da contagem",
+       "w": 32,
+       "h": 32,
+       "x": 289
+      },
+      {
+       "name": "Avisos",
+       "w": 32,
+       "h": 32,
+       "x": 327
+      },
+      {
+       "name": "Voltar aos insumos",
+       "w": 169,
+       "h": 32,
+       "x": 16
+      }
+     ],
+     "under44": [
+      "Abrir barra lateral 32x32",
+      "Buscar 32x32",
+      "Mais ações da contagem 32x32",
+      "Avisos 32x32",
+      "Voltar aos insumos 169x32"
+     ],
+     "bell": {
+      "x": 327,
+      "y": 17
+     },
+     "liveStatus": true,
+     "rail": false,
+     "offlineBand": false,
+     "h1": [
+      "Contar estoque"
+     ]
+    }
+   }
+  }
+ }
+}

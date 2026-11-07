@@ -1,0 +1,4718 @@
+{
+ "generated_at": "2026-10-30T15:56:41.294Z",
+ "note": "Medidas em px CSS. firstContent = topo do 1º conteúdo útil da tela; headerBottom = fim da última faixa de cabeçalho visível; baseTop = topo do que flutua/fixa na base (barra de ação ou barra inferior).",
+ "screens": {
+  "comandas": {
+   "A 320x740": {
+    "header": "kit",
+    "headerBottom": 67,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     }
+    ],
+    "firstContent": 77,
+    "baseTop": 675,
+    "usefulBetween": 598,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 320x568": {
+    "header": "kit",
+    "headerBottom": 67,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     }
+    ],
+    "firstContent": 77,
+    "baseTop": 503,
+    "usefulBetween": 426,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 375x667": {
+    "header": "kit",
+    "headerBottom": 67,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     }
+    ],
+    "firstContent": 77,
+    "baseTop": 602,
+    "usefulBetween": 525,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 390x844": {
+    "header": "kit",
+    "headerBottom": 67,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     }
+    ],
+    "firstContent": 77,
+    "baseTop": 779,
+    "usefulBetween": 702,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 1440x900": {
+    "header": "kit",
+    "headerBottom": 64,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     }
+    ],
+    "firstContent": 74,
+    "baseTop": 900,
+    "usefulBetween": 826,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "C 320x740": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 69,
+    "baseTop": 675,
+    "usefulBetween": 606,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 158,
+      "h": 44
+     },
+     {
+      "name": "Opções: Comandas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 320x568": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 69,
+    "baseTop": 503,
+    "usefulBetween": 434,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 158,
+      "h": 44
+     },
+     {
+      "name": "Opções: Comandas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 375x667": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 69,
+    "baseTop": 602,
+    "usefulBetween": 533,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 213,
+      "h": 44
+     },
+     {
+      "name": "Opções: Comandas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 390x844": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 69,
+    "baseTop": 779,
+    "usefulBetween": 710,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 228,
+      "h": 44
+     },
+     {
+      "name": "Opções: Comandas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 1440x900": {
+    "header": "kit",
+    "headerBottom": 64,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     }
+    ],
+    "firstContent": 74,
+    "baseTop": 900,
+    "usefulBetween": 826,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   }
+  },
+  "venda": {
+   "A 320x740": {
+    "header": "kit",
+    "headerBottom": 120,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 67,
+      "bottom": 120,
+      "height": 53
+     }
+    ],
+    "firstContent": 250,
+    "baseTop": 675,
+    "usefulBetween": 425,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para comandas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para comandas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 320x568": {
+    "header": "kit",
+    "headerBottom": 120,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 67,
+      "bottom": 120,
+      "height": 53
+     }
+    ],
+    "firstContent": 250,
+    "baseTop": 503,
+    "usefulBetween": 253,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para comandas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para comandas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 375x667": {
+    "header": "kit",
+    "headerBottom": 120,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 67,
+      "bottom": 120,
+      "height": 53
+     }
+    ],
+    "firstContent": 250,
+    "baseTop": 602,
+    "usefulBetween": 352,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para comandas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para comandas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 390x844": {
+    "header": "kit",
+    "headerBottom": 120,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 67,
+      "bottom": 120,
+      "height": 53
+     }
+    ],
+    "firstContent": 250,
+    "baseTop": 779,
+    "usefulBetween": 529,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para comandas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para comandas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 1440x900": {
+    "header": "kit",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 64,
+      "bottom": 112,
+      "height": 48
+     }
+    ],
+    "firstContent": 210,
+    "baseTop": 900,
+    "usefulBetween": 690,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para comandas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da comanda",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para comandas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da comanda",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "C 320x740": {
+    "header": "compacto",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 59,
+      "bottom": 112,
+      "height": 53
+     }
+    ],
+    "firstContent": 242,
+    "baseTop": 675,
+    "usefulBetween": 433,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "Voltar para comandas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Opções: Venda",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 320x568": {
+    "header": "compacto",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 59,
+      "bottom": 112,
+      "height": 53
+     }
+    ],
+    "firstContent": 242,
+    "baseTop": 503,
+    "usefulBetween": 261,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "Voltar para comandas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Opções: Venda",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 375x667": {
+    "header": "compacto",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 59,
+      "bottom": 112,
+      "height": 53
+     }
+    ],
+    "firstContent": 242,
+    "baseTop": 602,
+    "usefulBetween": 360,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "Voltar para comandas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Opções: Venda",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 390x844": {
+    "header": "compacto",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 59,
+      "bottom": 112,
+      "height": 53
+     }
+    ],
+    "firstContent": 242,
+    "baseTop": 779,
+    "usefulBetween": 537,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "Voltar para comandas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Opções: Venda",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 1440x900": {
+    "header": "kit",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 64,
+      "bottom": 112,
+      "height": 48
+     }
+    ],
+    "firstContent": 210,
+    "baseTop": 900,
+    "usefulBetween": 690,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para comandas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da comanda",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar para comandas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações da comanda",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   }
+  },
+  "checkout": {
+   "A 320x740": {
+    "header": "kit",
+    "headerBottom": 136,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 83,
+      "height": 83
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 83,
+      "bottom": 136,
+      "height": 53
+     }
+    ],
+    "firstContent": 136,
+    "baseTop": 675,
+    "usefulBetween": 539,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar à comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar à comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 320x568": {
+    "header": "kit",
+    "headerBottom": 136,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 83,
+      "height": 83
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 83,
+      "bottom": 136,
+      "height": 53
+     }
+    ],
+    "firstContent": 136,
+    "baseTop": 503,
+    "usefulBetween": 367,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar à comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar à comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 375x667": {
+    "header": "kit",
+    "headerBottom": 120,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 67,
+      "bottom": 120,
+      "height": 53
+     }
+    ],
+    "firstContent": 120,
+    "baseTop": 602,
+    "usefulBetween": 482,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar à comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar à comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 390x844": {
+    "header": "kit",
+    "headerBottom": 120,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 67,
+      "bottom": 120,
+      "height": 53
+     }
+    ],
+    "firstContent": 120,
+    "baseTop": 779,
+    "usefulBetween": 659,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar à comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar à comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Últimas vendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 1440x900": {
+    "header": "kit",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 64,
+      "bottom": 112,
+      "height": 48
+     }
+    ],
+    "firstContent": 112,
+    "baseTop": 900,
+    "usefulBetween": 788,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar à comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar à comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "C 320x740": {
+    "header": "compacto",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 59,
+      "bottom": 112,
+      "height": 53
+     }
+    ],
+    "firstContent": 112,
+    "baseTop": 675,
+    "usefulBetween": 563,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "Voltar à comanda",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pagamento · #12",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 320x568": {
+    "header": "compacto",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 59,
+      "bottom": 112,
+      "height": 53
+     }
+    ],
+    "firstContent": 112,
+    "baseTop": 503,
+    "usefulBetween": 391,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "Voltar à comanda",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pagamento · #12",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 375x667": {
+    "header": "compacto",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 59,
+      "bottom": 112,
+      "height": 53
+     }
+    ],
+    "firstContent": 112,
+    "baseTop": 602,
+    "usefulBetween": 490,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "Voltar à comanda",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pagamento · #12",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 390x844": {
+    "header": "compacto",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 59,
+      "bottom": 112,
+      "height": 53
+     }
+    ],
+    "firstContent": 112,
+    "baseTop": 779,
+    "usefulBetween": 667,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "Voltar à comanda",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Opções: Pagamento · #12",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 1440x900": {
+    "header": "kit",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-pos-sale-bar",
+      "top": 64,
+      "bottom": 112,
+      "height": 48
+     }
+    ],
+    "firstContent": 112,
+    "baseTop": 900,
+    "usefulBetween": 788,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar à comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Voltar à comanda",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   }
+  },
+  "encomendas": {
+   "A 320x740": {
+    "header": "kit",
+    "headerBottom": 215,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-actions",
+      "top": 72,
+      "bottom": 104,
+      "height": 32
+     },
+     {
+      "sel": "data-slot",
+      "top": 113,
+      "bottom": 162,
+      "height": 49
+     },
+     {
+      "sel": "data-page-header-filters-end",
+      "top": 162,
+      "bottom": 215,
+      "height": 53
+     }
+    ],
+    "firstContent": 271,
+    "baseTop": 675,
+    "usefulBetween": 404,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 320x568": {
+    "header": "kit",
+    "headerBottom": 215,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-actions",
+      "top": 72,
+      "bottom": 104,
+      "height": 32
+     },
+     {
+      "sel": "data-slot",
+      "top": 113,
+      "bottom": 162,
+      "height": 49
+     },
+     {
+      "sel": "data-page-header-filters-end",
+      "top": 162,
+      "bottom": 215,
+      "height": 53
+     }
+    ],
+    "firstContent": 271,
+    "baseTop": 503,
+    "usefulBetween": 232,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 375x667": {
+    "header": "kit",
+    "headerBottom": 215,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-actions",
+      "top": 72,
+      "bottom": 104,
+      "height": 32
+     },
+     {
+      "sel": "data-slot",
+      "top": 113,
+      "bottom": 162,
+      "height": 49
+     },
+     {
+      "sel": "data-page-header-filters-end",
+      "top": 162,
+      "bottom": 215,
+      "height": 53
+     }
+    ],
+    "firstContent": 271,
+    "baseTop": 602,
+    "usefulBetween": 331,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 390x844": {
+    "header": "kit",
+    "headerBottom": 215,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-actions",
+      "top": 72,
+      "bottom": 104,
+      "height": 32
+     },
+     {
+      "sel": "data-slot",
+      "top": 113,
+      "bottom": 162,
+      "height": 49
+     },
+     {
+      "sel": "data-page-header-filters-end",
+      "top": 162,
+      "bottom": 215,
+      "height": 53
+     }
+    ],
+    "firstContent": 271,
+    "baseTop": 779,
+    "usefulBetween": 508,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 1440x900": {
+    "header": "kit",
+    "headerBottom": 251,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-filters",
+      "top": 72,
+      "bottom": 132,
+      "height": 60
+     },
+     {
+      "sel": "data-page-header-alerts",
+      "top": 141,
+      "bottom": 251,
+      "height": 110
+     }
+    ],
+    "firstContent": 380,
+    "baseTop": 900,
+    "usefulBetween": 520,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Procurar encomenda por nome, telefone, CPF ou CNPJ, endereço",
+      "w": 471,
+      "h": 32
+     },
+     {
+      "name": "Nova encomenda",
+      "w": 160,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Procurar encomenda por nome, telefone, CPF ou CNPJ, endereço",
+      "w": 471,
+      "h": 32
+     },
+     {
+      "name": "Nova encomenda",
+      "w": 160,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "C 320x740": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 115,
+    "baseTop": 675,
+    "usefulBetween": 560,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar encomenda: código, nome ou telefone",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Encomendas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 320x568": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 115,
+    "baseTop": 503,
+    "usefulBetween": 388,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar encomenda: código, nome ou telefone",
+      "w": 114,
+      "h": 44
+     },
+     {
+      "name": "Opções: Encomendas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 375x667": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 115,
+    "baseTop": 602,
+    "usefulBetween": 487,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar encomenda: código, nome ou telefone",
+      "w": 169,
+      "h": 44
+     },
+     {
+      "name": "Opções: Encomendas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 390x844": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 115,
+    "baseTop": 779,
+    "usefulBetween": 664,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Filtros",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar encomenda: código, nome ou telefone",
+      "w": 184,
+      "h": 44
+     },
+     {
+      "name": "Opções: Encomendas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 1440x900": {
+    "header": "kit",
+    "headerBottom": 251,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-filters",
+      "top": 72,
+      "bottom": 132,
+      "height": 60
+     },
+     {
+      "sel": "data-page-header-alerts",
+      "top": 141,
+      "bottom": 251,
+      "height": 110
+     }
+    ],
+    "firstContent": 380,
+    "baseTop": 900,
+    "usefulBetween": 520,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Procurar encomenda por nome, telefone, CPF ou CNPJ, endereço",
+      "w": 471,
+      "h": 32
+     },
+     {
+      "name": "Nova encomenda",
+      "w": 160,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Procurar encomenda por nome, telefone, CPF ou CNPJ, endereço",
+      "w": 471,
+      "h": 32
+     },
+     {
+      "name": "Nova encomenda",
+      "w": 160,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   }
+  },
+  "encomenda-detalhe": {
+   "A 320x740": {
+    "header": "kit",
+    "headerBottom": 64,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     }
+    ],
+    "firstContent": 128,
+    "baseTop": 675,
+    "usefulBetween": 547,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 320x568": {
+    "header": "kit",
+    "headerBottom": 64,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     }
+    ],
+    "firstContent": 128,
+    "baseTop": 503,
+    "usefulBetween": 375,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 375x667": {
+    "header": "kit",
+    "headerBottom": 64,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     }
+    ],
+    "firstContent": 128,
+    "baseTop": 602,
+    "usefulBetween": 474,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 390x844": {
+    "header": "kit",
+    "headerBottom": 64,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     }
+    ],
+    "firstContent": 128,
+    "baseTop": 779,
+    "usefulBetween": 651,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 1440x900": {
+    "header": "kit",
+    "headerBottom": 64,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     }
+    ],
+    "firstContent": 136,
+    "baseTop": 900,
+    "usefulBetween": 764,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "C 320x740": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 75,
+    "baseTop": 675,
+    "usefulBetween": 600,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "Voltar às encomendas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar encomenda: código, nome ou telefone",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Opções: Encomenda NB-1042",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 320x568": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 75,
+    "baseTop": 503,
+    "usefulBetween": 428,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "Voltar às encomendas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar encomenda: código, nome ou telefone",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Opções: Encomenda NB-1042",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 375x667": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 75,
+    "baseTop": 602,
+    "usefulBetween": 527,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "Voltar às encomendas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar encomenda: código, nome ou telefone",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Opções: Encomenda NB-1042",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 390x844": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 75,
+    "baseTop": 779,
+    "usefulBetween": 704,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "Voltar às encomendas",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar encomenda: código, nome ou telefone",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Opções: Encomenda NB-1042",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 1440x900": {
+    "header": "kit",
+    "headerBottom": 64,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     }
+    ],
+    "firstContent": 136,
+    "baseTop": 900,
+    "usefulBetween": 764,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações das Encomendas",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   }
+  },
+  "caixa": {
+   "A 320x740": {
+    "header": "kit",
+    "headerBottom": 100,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     },
+     {
+      "sel": "data-page-header-actions",
+      "top": 82,
+      "bottom": 100,
+      "height": 18
+     }
+    ],
+    "firstContent": 132,
+    "baseTop": 675,
+    "usefulBetween": 543,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do caixa",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do caixa",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 320x568": {
+    "header": "kit",
+    "headerBottom": 100,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     },
+     {
+      "sel": "data-page-header-actions",
+      "top": 82,
+      "bottom": 100,
+      "height": 18
+     }
+    ],
+    "firstContent": 132,
+    "baseTop": 503,
+    "usefulBetween": 371,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do caixa",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do caixa",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 375x667": {
+    "header": "kit",
+    "headerBottom": 100,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     },
+     {
+      "sel": "data-page-header-actions",
+      "top": 82,
+      "bottom": 100,
+      "height": 18
+     }
+    ],
+    "firstContent": 132,
+    "baseTop": 602,
+    "usefulBetween": 470,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do caixa",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do caixa",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 390x844": {
+    "header": "kit",
+    "headerBottom": 100,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 67,
+      "height": 67
+     },
+     {
+      "sel": "data-page-header-actions",
+      "top": 82,
+      "bottom": 100,
+      "height": 18
+     }
+    ],
+    "firstContent": 132,
+    "baseTop": 779,
+    "usefulBetween": 647,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do caixa",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do caixa",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 1440x900": {
+    "header": "kit",
+    "headerBottom": 64,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     }
+    ],
+    "firstContent": 96,
+    "baseTop": 900,
+    "usefulBetween": 804,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do caixa",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do caixa",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "C 320x740": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 75,
+    "baseTop": 675,
+    "usefulBetween": 600,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar",
+      "w": 158,
+      "h": 44
+     },
+     {
+      "name": "Opções: Sessão de caixa",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 320x568": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 75,
+    "baseTop": 503,
+    "usefulBetween": 428,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar",
+      "w": 158,
+      "h": 44
+     },
+     {
+      "name": "Opções: Sessão de caixa",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 375x667": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 75,
+    "baseTop": 602,
+    "usefulBetween": 527,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar",
+      "w": 213,
+      "h": 44
+     },
+     {
+      "name": "Opções: Sessão de caixa",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 390x844": {
+    "header": "compacto",
+    "headerBottom": 59,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     }
+    ],
+    "firstContent": 75,
+    "baseTop": 779,
+    "usefulBetween": 704,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar",
+      "w": 228,
+      "h": 44
+     },
+     {
+      "name": "Opções: Sessão de caixa",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 1440x900": {
+    "header": "kit",
+    "headerBottom": 64,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     }
+    ],
+    "firstContent": 96,
+    "baseTop": 900,
+    "usefulBetween": 804,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do caixa",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do caixa",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   }
+  },
+  "ajustes-impressoras": {
+   "A 320x740": {
+    "header": "kit",
+    "headerBottom": 113,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-slot",
+      "top": 64,
+      "bottom": 113,
+      "height": 49
+     }
+    ],
+    "firstContent": 129,
+    "baseTop": 675,
+    "usefulBetween": 546,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações dos Ajustes",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações dos Ajustes",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 320x568": {
+    "header": "kit",
+    "headerBottom": 113,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-slot",
+      "top": 64,
+      "bottom": 113,
+      "height": 49
+     }
+    ],
+    "firstContent": 129,
+    "baseTop": 503,
+    "usefulBetween": 374,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações dos Ajustes",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações dos Ajustes",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 375x667": {
+    "header": "kit",
+    "headerBottom": 113,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-slot",
+      "top": 64,
+      "bottom": 113,
+      "height": 49
+     }
+    ],
+    "firstContent": 129,
+    "baseTop": 602,
+    "usefulBetween": 473,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações dos Ajustes",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações dos Ajustes",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 390x844": {
+    "header": "kit",
+    "headerBottom": 113,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-slot",
+      "top": 64,
+      "bottom": 113,
+      "height": 49
+     }
+    ],
+    "firstContent": 129,
+    "baseTop": 779,
+    "usefulBetween": 650,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações dos Ajustes",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações dos Ajustes",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 1440x900": {
+    "header": "kit",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-filters",
+      "top": 72,
+      "bottom": 112,
+      "height": 40
+     }
+    ],
+    "firstContent": 145,
+    "baseTop": 900,
+    "usefulBetween": 755,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Mais ações dos Ajustes",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Mais ações dos Ajustes",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "C 320x740": {
+    "header": "compacto",
+    "headerBottom": 100,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-compact-settings-tabs",
+      "top": 59,
+      "bottom": 100,
+      "height": 41
+     }
+    ],
+    "firstContent": 116,
+    "baseTop": 675,
+    "usefulBetween": 559,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar",
+      "w": 158,
+      "h": 44
+     },
+     {
+      "name": "Opções: Ajustes, Impressoras",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 320x568": {
+    "header": "compacto",
+    "headerBottom": 100,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-compact-settings-tabs",
+      "top": 59,
+      "bottom": 100,
+      "height": 41
+     }
+    ],
+    "firstContent": 116,
+    "baseTop": 503,
+    "usefulBetween": 387,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar",
+      "w": 158,
+      "h": 44
+     },
+     {
+      "name": "Opções: Ajustes, Impressoras",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 375x667": {
+    "header": "compacto",
+    "headerBottom": 100,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-compact-settings-tabs",
+      "top": 59,
+      "bottom": 100,
+      "height": 41
+     }
+    ],
+    "firstContent": 116,
+    "baseTop": 602,
+    "usefulBetween": 486,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar",
+      "w": 213,
+      "h": 44
+     },
+     {
+      "name": "Opções: Ajustes, Impressoras",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 390x844": {
+    "header": "compacto",
+    "headerBottom": 100,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-compact-settings-tabs",
+      "top": 59,
+      "bottom": 100,
+      "height": 41
+     }
+    ],
+    "firstContent": 116,
+    "baseTop": 779,
+    "usefulBetween": 663,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar",
+      "w": 228,
+      "h": 44
+     },
+     {
+      "name": "Opções: Ajustes, Impressoras",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 1440x900": {
+    "header": "kit",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-filters",
+      "top": 72,
+      "bottom": 112,
+      "height": 40
+     }
+    ],
+    "firstContent": 145,
+    "baseTop": 900,
+    "usefulBetween": 755,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Mais ações dos Ajustes",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Mais ações dos Ajustes",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   }
+  },
+  "ajustes-salao": {
+   "A 320x740": {
+    "header": "kit",
+    "headerBottom": 162,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-actions",
+      "top": 72,
+      "bottom": 104,
+      "height": 32
+     },
+     {
+      "sel": "data-slot",
+      "top": 113,
+      "bottom": 162,
+      "height": 49
+     }
+    ],
+    "firstContent": 178,
+    "baseTop": 675,
+    "usefulBetween": 497,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do Salão",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do Salão",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 320x568": {
+    "header": "kit",
+    "headerBottom": 162,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-actions",
+      "top": 72,
+      "bottom": 104,
+      "height": 32
+     },
+     {
+      "sel": "data-slot",
+      "top": 113,
+      "bottom": 162,
+      "height": 49
+     }
+    ],
+    "firstContent": 178,
+    "baseTop": 503,
+    "usefulBetween": 325,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do Salão",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do Salão",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 375x667": {
+    "header": "kit",
+    "headerBottom": 162,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-actions",
+      "top": 72,
+      "bottom": 104,
+      "height": 32
+     },
+     {
+      "sel": "data-slot",
+      "top": 113,
+      "bottom": 162,
+      "height": 49
+     }
+    ],
+    "firstContent": 178,
+    "baseTop": 602,
+    "usefulBetween": 424,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do Salão",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do Salão",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 390x844": {
+    "header": "kit",
+    "headerBottom": 162,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-actions",
+      "top": 72,
+      "bottom": 104,
+      "height": 32
+     },
+     {
+      "sel": "data-slot",
+      "top": 113,
+      "bottom": 162,
+      "height": 49
+     }
+    ],
+    "firstContent": 178,
+    "baseTop": 779,
+    "usefulBetween": 601,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do Salão",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Abrir barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do Salão",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "A 1440x900": {
+    "header": "kit",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-filters",
+      "top": 72,
+      "bottom": 112,
+      "height": 40
+     }
+    ],
+    "firstContent": null,
+    "baseTop": 900,
+    "usefulBetween": null,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Desfazer (Ctrl Z)",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Refazer (Ctrl Shift Z)",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Menos zoom",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais zoom",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Encaixar na grade",
+      "w": 162,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do Salão",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Desfazer (Ctrl Z)",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Refazer (Ctrl Shift Z)",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Menos zoom",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais zoom",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Encaixar na grade",
+      "w": 162,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do Salão",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   },
+   "C 320x740": {
+    "header": "compacto",
+    "headerBottom": 100,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-compact-settings-tabs",
+      "top": 59,
+      "bottom": 100,
+      "height": 41
+     }
+    ],
+    "firstContent": 100,
+    "baseTop": 675,
+    "usefulBetween": 575,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar",
+      "w": 158,
+      "h": 44
+     },
+     {
+      "name": "Opções: Ajustes, Salão",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 320x568": {
+    "header": "compacto",
+    "headerBottom": 100,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-compact-settings-tabs",
+      "top": 59,
+      "bottom": 100,
+      "height": 41
+     }
+    ],
+    "firstContent": 100,
+    "baseTop": 503,
+    "usefulBetween": 403,
+    "scrollWidth": 320,
+    "clientWidth": 320,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar",
+      "w": 158,
+      "h": 44
+     },
+     {
+      "name": "Opções: Ajustes, Salão",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 375x667": {
+    "header": "compacto",
+    "headerBottom": 100,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-compact-settings-tabs",
+      "top": 59,
+      "bottom": 100,
+      "height": 41
+     }
+    ],
+    "firstContent": 100,
+    "baseTop": 602,
+    "usefulBetween": 502,
+    "scrollWidth": 375,
+    "clientWidth": 375,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar",
+      "w": 213,
+      "h": 44
+     },
+     {
+      "name": "Opções: Ajustes, Salão",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 390x844": {
+    "header": "compacto",
+    "headerBottom": 100,
+    "bands": [
+     {
+      "sel": "data-compact-bar",
+      "top": 0,
+      "bottom": 59,
+      "height": 59
+     },
+     {
+      "sel": "data-compact-settings-tabs",
+      "top": 59,
+      "bottom": 100,
+      "height": 41
+     }
+    ],
+    "firstContent": 100,
+    "baseTop": 779,
+    "usefulBetween": 679,
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "smallTargets": [],
+    "targets": [
+     {
+      "name": "PDV: abrir a Central. Conexão: atualização periódica, última",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Buscar",
+      "w": 228,
+      "h": 44
+     },
+     {
+      "name": "Opções: Ajustes, Salão",
+      "w": 44,
+      "h": 44
+     },
+     {
+      "name": "Avisos (2 pedem sua atenção)",
+      "w": 44,
+      "h": 44
+     }
+    ]
+   },
+   "C 1440x900": {
+    "header": "kit",
+    "headerBottom": 112,
+    "bands": [
+     {
+      "sel": "data-slot",
+      "top": 0,
+      "bottom": 64,
+      "height": 64
+     },
+     {
+      "sel": "data-page-header-filters",
+      "top": 72,
+      "bottom": 112,
+      "height": 40
+     }
+    ],
+    "firstContent": 0,
+    "baseTop": 900,
+    "usefulBetween": 900,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "smallTargets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Desfazer (Ctrl Z)",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Refazer (Ctrl Shift Z)",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Menos zoom",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais zoom",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Encaixar na grade",
+      "w": 162,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do Salão",
+      "w": 32,
+      "h": 32
+     }
+    ],
+    "targets": [
+     {
+      "name": "Compactar a barra lateral",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Buscar pedido, cliente, produto ou tela",
+      "w": 320,
+      "h": 32
+     },
+     {
+      "name": "Desfazer (Ctrl Z)",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Refazer (Ctrl Shift Z)",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Menos zoom",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Mais zoom",
+      "w": 32,
+      "h": 32
+     },
+     {
+      "name": "Encaixar na grade",
+      "w": 162,
+      "h": 32
+     },
+     {
+      "name": "Mais ações do Salão",
+      "w": 32,
+      "h": 32
+     }
+    ]
+   }
+  }
+ },
+ "exercises": {
+  "encomendas: busca ativa e Limpar": {
+   "A": [
+    "url com a busca: ?mode=day&q=Ana",
+    "faixa ativa: (sem faixa compacta)",
+    "1º resultado no topo: {\"headerBottom\":162,\"firstContent\":206}",
+    "A: sem Limpar na linha; limpar é reabrir a busca e apagar o campo."
+   ],
+   "C": [
+    "url com a busca: ?mode=day&q=Ana",
+    "faixa ativa: Busca Ana. 2 encontradas.Limpar",
+    "1º resultado no topo: {\"headerBottom\":112,\"firstContent\":156}",
+    "após Limpar: url=?mode=day faixa=0"
+   ]
+  },
+  "encomendas: filtro (recorte e período)": {
+   "A": [
+    "recorte tocado: A receber 3",
+    "topo: {\"headerBottom\":264,\"firstContent\":320,\"bands\":5}"
+   ],
+   "C": [
+    "recorte tocado: A receber 3",
+    "faixa ativa: Pagamento: A receber. 3 encomendas na tela.Limpar",
+    "botão Filtros: Filtros: Pagamento: A receber",
+    "topo: {\"headerBottom\":112,\"firstContent\":168}"
+   ]
+  },
+  "opções e avisos (Encomendas, Caixa)": {
+   "A": [
+    "/preorders ⋮: Imprimir a Via Pedido de 8 encomendas Impressora não configurada neste terminal. Configure em Terminais do PDV, no gestor. A Via Pedido sai no balcão que tem impressora. Atualizar",
+    "/preorders avisos: Avisos Encomenda NB-1042 mudou de horário Agora às 12h (demonstração). · 11:40 Abrir encomenda Marcar como lida Impressora do Caixa 2 sem pa",
+    "/session ⋮: Atualizar",
+    "/session avisos: Avisos Encomenda NB-1042 mudou de horário Agora às 12h (demonstração). · 11:40 Abrir encomenda Marcar como lida Impressora do Caixa 2 sem pa"
+   ],
+   "C": [
+    "/preorders ⋮: Atualiza sozinho a cada 60 s. Lida às 13:01. Hoje: 9 para entregar, A receber R$ 228,00, 8 sem Via Pedido. Nova encomenda Imprimir a Via Pedido de 8 encomendas Impressora não configurada neste terminal. Configure em Terminais do PDV, no gestor. A Via Pedido sai no balcão que tem impressora. Atualizar",
+    "/preorders avisos: Avisos Encomenda NB-1042 mudou de horário Agora às 12h (demonstração). · 11:40 Abrir encomenda Marcar como lida Impressora do Caixa 2 sem pa",
+    "/session ⋮: Atualiza sozinho a cada 60 s. Lida às 13:01. Caixa 1 · Ana Atualizar",
+    "/session avisos: Avisos Encomenda NB-1042 mudou de horário Agora às 12h (demonstração). · 11:40 Abrir encomenda Marcar como lida Impressora do Caixa 2 sem pa"
+   ]
+  },
+  "sem conexão": {
+   "A": [
+    "selo: (sem selo compacto)",
+    "faixa offline visível: true"
+   ],
+   "C": [
+    "selo: PDV: abrir a Central. Conexão: sem conexão, última leitura 13:01.",
+    "faixa offline visível: true"
+   ]
+  },
+  "erro de escrita e recuperação (Impressoras)": {
+   "A": [
+    "após falha: Falha simulada. Os dados continuam preservados.",
+    "após repetir: PDV · Impressoras | Impressora de Caixa 1 gravada. | Falha simulada. Os dados continuam preservados."
+   ],
+   "C": [
+    "após falha: Falha simulada. Os dados continuam preservados.",
+    "após repetir: PDV · Impressoras | Impressora de Caixa 1 gravada. | Falha simulada. Os dados continuam preservados."
+   ]
+  },
+  "venda: Não salvo continua visível": {
+   "A": [
+    "selo Não salvo visível: false"
+   ],
+   "C": [
+    "selo Não salvo visível: false"
+   ]
+  },
+  "checkout e folha da comanda (maduros, só conferir)": {
+   "A": [
+    "voltar: Voltar à comanda"
+   ],
+   "C": [
+    "voltar: Voltar à comanda"
+   ]
+  }
+ },
+ "httpErrors": [
+  "503 POST /api/v1/backstage/pos/settings/",
+  "503 POST /api/v1/backstage/pos/sale/review/",
+  "503 POST /api/v1/backstage/pos/settings/",
+  "503 POST /api/v1/backstage/pos/sale/review/"
+ ]
+}
