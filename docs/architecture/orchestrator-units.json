@@ -13692,7 +13692,10 @@
             "GATEWAY_RECHECK_SECONDS",
             "record_card_decline",
             "CAPTURE_FAILURE_KEY",
-            "capture_failure"
+            "capture_failure",
+            "REPAYMENT_KEY",
+            "awaiting_repayment",
+            "request_new_payment_after_capture_failure"
           ]
         }
       ],

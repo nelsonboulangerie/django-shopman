@@ -231,6 +231,9 @@ class TrackingPromiseData:
     # reservations that are waiting on production.
     fulfillment_wait_kind: str = ""
     fulfillment_wait_until: str | None = None
+    # A cobrança do cartão não passou depois do aceite e esta é a cobrança NOVA
+    # (``payment.awaiting_repayment``): a frase diz por que pedimos de novo.
+    repayment: bool = False
 
 
 @dataclass(frozen=True)
@@ -924,6 +927,7 @@ def _promise(
     checkout_url: str | None = None,
     fulfillment_wait_kind: str = "",
     fulfillment_wait_until: str | None = None,
+    repayment: bool = False,
 ) -> TrackingPromiseData:
     return TrackingPromiseData(
         state=state,
@@ -946,6 +950,7 @@ def _promise(
         checkout_url=checkout_url,
         fulfillment_wait_kind=fulfillment_wait_kind,
         fulfillment_wait_until=fulfillment_wait_until,
+        repayment=repayment,
     )
 
 
@@ -1175,6 +1180,7 @@ def _build_promise(
                 ),
                 payment_method=method,
                 checkout_url=checkout_url,
+                repayment=payment_service.awaiting_repayment(order) is not None,
             )
         if is_hosted:
             # Sessão hospedada sem URL ainda (o botão do Stripe está nascendo): a

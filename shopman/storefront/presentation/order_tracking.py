@@ -61,6 +61,7 @@ EVENT_LABELS: dict[str, str | None] = {
     "status_changed": None,
     "payment.captured": "Pagamento recebido",
     "payment.capture_failed": "Cobrança do cartão não concluída",
+    "payment.repayment_requested": "Novo pagamento solicitado",
     "payment.refunded": "Pagamento estornado",
     "return_initiated": "Devolução solicitada",
     "refund_processed": "Reembolso processado",
@@ -1024,6 +1025,17 @@ def _promise_copy(
         return _pair(copy, "TRACKING_PAYMENT_EXPIRED",
                      "Pagamento expirado",
                      "O prazo para pagar acabou e cancelamos o pedido.")
+
+    if state == "payment_card_ready" and data.repayment and data.payment_deadline_phrase:
+        # A cobrança do cartão não passou depois do aceite (decisão do dono,
+        # 07/11): o pedido espera, e o cliente paga de novo para seguirmos.
+        return (
+            copy.title("TRACKING_PROMISE_CARD_REPAYMENT_TITLE", "A cobrança no cartão não passou"),
+            copy.message(
+                "TRACKING_PROMISE_CARD_REPAYMENT_MESSAGE",
+                "Nada foi cobrado. Pague com outro cartão até {deadline} para seguirmos com o seu pedido.",
+            ).replace("{deadline}", data.payment_deadline_phrase),
+        )
 
     if state == "payment_card_declined":
         return _pair(copy, "TRACKING_PROMISE_CARD_DECLINED",
