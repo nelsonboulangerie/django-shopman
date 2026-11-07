@@ -160,7 +160,8 @@ const customerHref = computed(() =>
     : "",
 );
 
-// kitchen-note editor (seeded from the projection; saved explicitly). The note —
+// kitchen-note editor (seeded from the projection; saved by "Salvar nota" or along
+// with Aceitar/Avançar, see `flushKitchenNote`). The note:
 // preset tags one-tap-appended + free text — is shown on the KDS ticket.
 const projectedAction = (ref_: string) =>
   order.value?.actions?.find((action) => action.ref === ref_);
@@ -176,9 +177,9 @@ const menuAdvance = computed(() => {
   return action && action.priority === "menu" ? action : undefined;
 });
 const menuOpen = ref(false);
-function onMenuAdvance() {
+async function onMenuAdvance() {
   menuOpen.value = false;
-  advance();
+  if (await flushKitchenNote()) advance();
 }
 // "O sistema fez · desfazer": a mesma linha do card.
 const nowMs = useNowTick();
@@ -237,6 +238,22 @@ async function saveKitchenNote() {
     if (!error.value)
       notesRevision.value = order.value?.revisions?.kitchen_note || "";
   }
+}
+// A nota da cozinha vai JUNTO com o gesto do momento (beta 06/11): o atalho
+// "Bem assado" só preenchia o rascunho, o operador tocava Aceitar sem ver o
+// "Salvar nota" e o ticket da Cozinha saía sem ela. Rascunho pendente se grava
+// ANTES do Aceitar/Avançar; se a gravação falha (ou a nota mudou por outra mão),
+// o gesto para ali e o aviso fica no bloco, com o texto preservado.
+async function flushKitchenNote(): Promise<boolean> {
+  if (!notesDirty.value || !notesEditable.value) return true;
+  if (notesConflict.value) {
+    useSonner.error(
+      "A nota da cozinha mudou enquanto você escrevia. Escolha qual texto fica antes de seguir.",
+    );
+    return false;
+  }
+  await saveKitchenNote();
+  return !notesDirty.value;
 }
 const reasonDirty = ref(false);
 const negotiationDirty = ref(false);
@@ -531,7 +548,8 @@ function onCourierBackDifferent() {
   if (order.value?.can_settle_delivery_cash) void openDialog("settle");
 }
 
-function onAdvance() {
+async function onAdvance() {
+  if (!(await flushKitchenNote())) return;
   if (dispatchAsks.value) openDialog("dispatch");
   else advance();
 }
@@ -836,10 +854,12 @@ const BACK_VARIANTS = [
   { icon: "i-lucide-chevron-left", class: "max-md:hidden" },
 ] as const;
 const thumbReject = computed(() => (primary.value ? rejectThumb.value : undefined));
-function runPrimary() {
+async function runPrimary() {
   const p = primary.value;
   if (!p?.enabled || busy.value) return;
-  if (p.key === "confirm") confirm();
+  if (p.key === "confirm") {
+    if (await flushKitchenNote()) confirm();
+  }
   else if (p.key === "advance") onAdvance();
   else if (p.key === "courier-back") dialog.value = "courier-back";
   else openDialog("settle");
