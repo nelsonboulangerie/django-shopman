@@ -68,6 +68,9 @@ class AdvanceBlock(StrEnum):
     NO_NEXT_STEP = "no_next_step"
     IFOOD_CANCELLATION_PENDING = "ifood_cancellation_pending"
     IFOOD_SCHEDULE_BLOCKED = "ifood_schedule_blocked"
+    # Agendado do iFood com a janela de entrega ainda por abrir: preparar pode,
+    # sair para entrega não (o iFood reprova o despacho antes da janela).
+    IFOOD_WINDOW_NOT_OPEN = "ifood_window_not_open"
     IFOOD_WAITING_PICKUP = "ifood_waiting_pickup"
     IFOOD_DELIVERY_UNKNOWN = "ifood_delivery_unknown"
     PAYMENT_NOT_CAPTURED = "payment_not_captured"
@@ -85,6 +88,9 @@ class AdvanceBlock(StrEnum):
 
 _ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
     AdvanceBlock.IFOOD_SCHEDULE_BLOCKED: "O horário de preparo do iFood ainda não permite avançar. Confira o agendamento deste pedido.",
+    AdvanceBlock.IFOOD_WINDOW_NOT_OPEN: (
+        "Pedido agendado no iFood: a saída para entrega só abre no início da janela que o cliente escolheu."
+    ),
     AdvanceBlock.IFOOD_WAITING_PICKUP: "Aguardando o iFood confirmar a retirada pelo entregador.",
     AdvanceBlock.IFOOD_DELIVERY_UNKNOWN: "O iFood ainda não disse quem leva este pedido. Confira no app do iFood ou chame o gerente.",
     AdvanceBlock.DEVICE_UNAVAILABLE: "Nenhuma maquininha está disponível. Aguarde a devolução para despachar esta entrega.",
@@ -288,6 +294,8 @@ def advance_block(order: Order, *, waitlist_state: str | None = None, payment_re
 
         if ifood_schedule.block_reason(order):
             return AdvanceBlock.IFOOD_SCHEDULE_BLOCKED
+        if next_status == Order.Status.DISPATCHED and ifood_schedule.dispatch_before_window(order):
+            return AdvanceBlock.IFOOD_WINDOW_NOT_OPEN
         if next_status == Order.Status.DISPATCHED and not str(order.external_ref or "").upper().startswith("IFOOD-SIM-"):
             facts = (order.data or {}).get("ifood") or {}
             if not facts.get("remote_dispatched"):
@@ -500,7 +508,13 @@ def advance_order(
             raise ValueError(refusal)
     payment_service.lock_order_payment(order)
     # A maquininha é decidida abaixo, sob lock (reserva ou saída compartilhada).
-    blocked = advance_block_message(gestor_advance_block(order))
+    bloqueio = gestor_advance_block(order)
+    if bloqueio == AdvanceBlock.IFOOD_WINDOW_NOT_OPEN and partner_collects:
+        # A coleta da TaOn é fato físico: a sacola já saiu. A trava da janela é
+        # do gesto do operador; recusar o fato só deixaria o pedido "pronto"
+        # com o entregador na rua.
+        bloqueio = AdvanceBlock.NONE
+    blocked = advance_block_message(bloqueio)
     if blocked:
         raise ValueError(blocked)
     next_status = next_status_for(order)

@@ -110,5 +110,21 @@ def block_reason(order, *, now: datetime | None = None) -> str:
     return ""
 
 
+def dispatch_before_window(order, *, now: datetime | None = None) -> bool:
+    """A saída do agendado ainda não abriu: a janela do cliente começa depois de agora.
+
+    O iFood reprova o despacho de pedido agendado antes do início da janela que o
+    cliente escolheu (homologação de 07/11/2026, cenário "Pedido Despachado
+    Agendado": "O pedido foi despachado antes da janela de entrega agendada").
+    Janela ausente ou ilegível não decide nada aqui: quem barra o agendado sem
+    horário válido é :func:`block_reason`, já no preparo.
+    """
+    start = delivery_start(order)
+    if start is None:
+        return False
+    current = _parse(now) if now is not None else timezone.now()
+    return current is not None and current < start
+
+
 def is_due(order, *, now: datetime | None = None) -> bool:
     return not block_reason(order, now=now)
