@@ -38,6 +38,13 @@ def _disable_request_rate_limits(settings, monkeypatch):
     CapturingSender.last_code = ""
     reset_adapter()
 
+    # Os contadores de limite por IP moram no cache, que não volta com o banco entre
+    # os testes: cada teste deste arquivo pede o CSRF e o código várias vezes, e somados
+    # passavam do limite e devolviam 429 no meio de um teste que não mede limite.
+    from django.core.cache import cache
+
+    cache.clear()
+
     # A portaria de intervalo entre envios (G11) é por NÚMERO e não olha a
     # finalidade: quem acabou de confirmar o número novo espera o intervalo
     # antes de pedir um código de login para ele. É o comportamento certo em
@@ -299,12 +306,36 @@ def _dono_do_numero() -> Customer:
     )
 
 
-def test_numero_de_outro_cadastro_recusa_com_saida(client: Client):
+def test_antes_da_prova_numero_em_uso_e_numero_livre_respondem_igual(client: Client):
+    """Pedir o código não pode dizer se o número já é de alguém (beta 06/11).
+
+    Responder "este número já está em uso" ANTES da prova de posse deixava qualquer
+    cliente logado perguntar à loja quem é cliente, número por número. O código vai
+    para o número nos dois casos, e as duas respostas têm a mesma forma.
+    """
+    livre = "+5543999990077"
     customer = _make_customer()
     _dono_do_numero()
     _login_as_customer(client, customer)
 
-    resposta = _pedir_codigo(client)
+    em_uso = _pedir_codigo(client, NUMERO_NOVO)
+    codigo_em_uso = _last_code()
+    sem_dono = _pedir_codigo(client, livre)
+
+    assert em_uso.status_code == sem_dono.status_code == 200
+    assert codigo_em_uso
+    assert set(em_uso.json()) == set(sem_dono.json())
+    assert em_uso.json()["phone"] == NUMERO_NOVO
+    assert "em uso" not in em_uso.content.decode()
+
+
+def test_numero_de_outro_cadastro_recusa_com_saida_depois_do_codigo(client: Client):
+    customer = _make_customer()
+    _dono_do_numero()
+    _login_as_customer(client, customer)
+
+    assert _pedir_codigo(client).status_code == 200
+    resposta = _confirmar(client, _last_code())
 
     assert resposta.status_code == 409
     corpo = resposta.json()
@@ -314,6 +345,24 @@ def test_numero_de_outro_cadastro_recusa_com_saida(client: Client):
     assert corpo["title"] == "Confira o número"
     # A saída existe: entrar naquela conta prova a posse pelo OTP.
     assert any(a["ref"] == "sign_in_with_phone" for a in corpo["actions"])
+    customer.refresh_from_db()
+    assert customer.phone == NUMERO_ANTIGO
+
+
+def test_codigo_errado_em_numero_de_outro_cadastro_nao_revela_o_dono(client: Client):
+    """Sem a prova, a recusa é a do código, igual à de um número livre."""
+    customer = _make_customer()
+    _dono_do_numero()
+    _login_as_customer(client, customer)
+
+    _pedir_codigo(client)
+    certo = _last_code()
+    errado = "000000" if certo != "000000" else "111111"
+    resposta = _confirmar(client, errado)
+
+    assert resposta.status_code == 400
+    assert resposta.json()["field"] == "code"
+    assert "em uso" not in resposta.content.decode()
 
 
 def test_a_recusa_nao_diz_de_quem_e_o_numero(client: Client):
@@ -325,7 +374,8 @@ def test_a_recusa_nao_diz_de_quem_e_o_numero(client: Client):
     dono = _dono_do_numero()
     _login_as_customer(client, customer)
 
-    corpo = _pedir_codigo(client).content.decode().lower()
+    _pedir_codigo(client)
+    corpo = _confirmar(client, _last_code()).content.decode().lower()
 
     assert "joana" not in corpo
     assert "prado" not in corpo
@@ -493,3 +543,28 @@ def test_o_codigo_nao_serve_duas_vezes(client: Client):
     terceiro = Customer.objects.create(ref="CUS-TEL-TERCEIRO", first_name="Dario")
     _login_as_customer(client, terceiro)
     assert _confirmar(client, codigo).status_code == 400
+
+
+def test_pedir_de_novo_com_o_codigo_valendo_devolve_o_codigo_e_nao_um_erro_seco(
+    client: Client, monkeypatch
+):
+    """Com o código anterior valendo, a tela vai ao passo de digitar (beta 06/11).
+
+    A recusa da espera entre envios leva a validade do código: a tela não abre o
+    passo com um erro vermelho para quem ainda não tentou nada.
+    """
+    from shopman.doorman.conf import doorman_settings
+
+    monkeypatch.setattr(doorman_settings, "ACCESS_CODE_COOLDOWN_SECONDS", 60)
+    customer = _make_customer()
+    _login_as_customer(client, customer)
+
+    assert _pedir_codigo(client).status_code == 200
+    resposta = _pedir_codigo(client)
+
+    assert resposta.status_code == 400
+    corpo = resposta.json()
+    assert corpo["error_code"] == "cooldown"
+    assert corpo["phone"] == NUMERO_NOVO
+    assert corpo["code_expires_at"]
+    assert corpo["retry_after_seconds"] > 0

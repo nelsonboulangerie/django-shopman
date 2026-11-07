@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AccountAccessProjection, AccountAccessResponse, AccountDeviceProjection, AccountDeviceResponse } from '~/types/shopman'
 import { deviceIcon, profileActionIsExternal, profileIssueFrom, type ProfileIssue } from '~/presentation/account'
+import { pendingCodeFromCooldown } from '~/presentation/auth'
 import { authPhonePayload, displayE164Phone, maskPhoneInput } from '~/utils/authPhone'
 import { formatCount } from '~/utils/display'
 
@@ -18,6 +19,8 @@ const privacyIssue = ref('')
 // O título do alerta diz QUAL das duas ações falhou. "Privacidade" sozinho era rótulo de
 // seção servindo de manchete de erro: quem lê não sabe se perdeu o download ou a exclusão.
 const privacyIssueTitle = ref('')
+// O caminho que resolve a recusa (ex.: "Ver o pedido PED-123"), quando o servidor manda.
+const privacyIssueActions = ref<PrivacyIssueAction[]>([])
 const deleteAccountOpen = ref(false)
 const deleteAccountAcknowledged = ref(false)
 const deleteAccountPending = ref(false)
@@ -40,6 +43,8 @@ const stepUpPending = ref(false)
 const stepUpSendPending = ref(false)
 const stepUpSent = ref(false)
 const stepUpIssue = ref('')
+// Aviso NEUTRO: o código pedido há pouco ainda vale. Não é erro, ninguém tentou nada.
+const stepUpNotice = ref('')
 let pendingStepUpAction: null | (() => void | Promise<void>) = null
 const pendingStepUpPurpose = ref<StepUpPurpose>('export')
 // A marca do step-up vale 10 minutos, e quem volta depois disso encontra um 403. UMA
@@ -226,6 +231,42 @@ async function handlePrivacyFailure (
   }
   privacyIssueTitle.value = title
   privacyIssue.value = privacyErrorDetail(body, fallback)
+  privacyIssueActions.value = privacyErrorActions(body)
+}
+
+type PrivacyIssueAction = { ref: string, label: string, href: string, priority?: string }
+
+function privacyErrorActions (body: Record<string, unknown> | null): PrivacyIssueAction[] {
+  const raw = body?.actions
+  if (!Array.isArray(raw)) return []
+  return raw.filter((action): action is PrivacyIssueAction =>
+    !!action && typeof action.href === 'string' && action.href.startsWith('/') && typeof action.label === 'string'
+  )
+}
+
+function clearPrivacyIssue () {
+  privacyIssue.value = ''
+  privacyIssueTitle.value = ''
+  privacyIssueActions.value = []
+}
+
+/** Confere ANTES do código se algo já recusaria a exclusão (pedido em andamento, etapa
+ * do pedido em aberto). Descobrir isso depois de digitar o código era gastar um SMS à
+ * toa (beta 06/11). Se a conferência falhar, a exclusão segue e o servidor decide. */
+async function deletionBlocked (): Promise<boolean> {
+  try {
+    const body = await $fetch<Record<string, unknown>>(apiPath('/api/v1/account/delete/'), {
+      credentials: 'include'
+    })
+    if (body?.blocked !== true) return false
+    privacyIssueTitle.value = 'Ainda não dá para excluir'
+    privacyIssue.value = privacyErrorDetail(body, 'Um pedido seu ainda está em andamento.')
+    privacyIssueActions.value = privacyErrorActions(body)
+    return true
+  } catch {
+    // silêncio-deliberado: a conferência prévia é cortesia; a exclusão confere de novo.
+    return false
+  }
 }
 
 function exportFilename (disposition: string | null): string {
@@ -261,8 +302,7 @@ function saveExportArtifact (artifact: Blob, filename: string) {
 async function exportData () {
   if (!import.meta.client || exportPending.value) return
   exportPending.value = true
-  privacyIssue.value = ''
-  privacyIssueTitle.value = ''
+  clearPrivacyIssue()
   try {
     // POST: cada pedido abre um recibo de privacidade (LGPD), e GET não produz efeito.
     const response = await $fetch.raw<Blob>(apiPath('/api/v1/account/export/'), {
@@ -296,9 +336,9 @@ async function exportData () {
   }
 }
 
-function askDeleteAccount () {
-  privacyIssue.value = ''
-  privacyIssueTitle.value = ''
+async function askDeleteAccount () {
+  clearPrivacyIssue()
+  if (await deletionBlocked()) return
   deleteAccountAcknowledged.value = false
   if (import.meta.client && !deleteAccountIdempotencyKey.value) {
     deleteAccountIdempotencyKey.value = sessionStorage.getItem(deleteIntentStorageKey) || crypto.randomUUID()
@@ -317,8 +357,7 @@ function cancelDeleteAccount () {
 async function deleteAccount () {
   if (!deleteAccountAcknowledged.value || deleteAccountPending.value) return
   deleteAccountPending.value = true
-  privacyIssue.value = ''
-  privacyIssueTitle.value = ''
+  clearPrivacyIssue()
   try {
     await $fetch(apiPath('/api/v1/account/delete/'), {
       method: 'POST',
@@ -444,6 +483,7 @@ async function requireStepUp (purpose: StepUpPurpose, action: () => void | Promi
   pendingStepUpPurpose.value = purpose
   stepUpCode.value = []
   stepUpIssue.value = ''
+  stepUpNotice.value = ''
   stepUpSent.value = false
   stepUpOpen.value = true
   await sendStepUpCode()
@@ -453,6 +493,7 @@ async function sendStepUpCode () {
   if (stepUpSendPending.value) return
   stepUpSendPending.value = true
   stepUpIssue.value = ''
+  stepUpNotice.value = ''
   try {
     await $fetch(apiPath('/api/auth/request-code/'), {
       method: 'POST',
@@ -462,6 +503,14 @@ async function sendStepUpCode () {
     })
     stepUpSent.value = true
   } catch (e) {
+    // O código pedido há pouco ainda vale: é ele que se digita. Abrir o passo com um
+    // erro vermelho, antes de qualquer tentativa, dizia "falhou" a quem não errou nada.
+    const data = httpError(e).data as Record<string, unknown> | null | undefined
+    if (pendingCodeFromCooldown(data, Date.now())) {
+      stepUpSent.value = true
+      stepUpNotice.value = errorDetail(e, 'O código que enviamos há pouco ainda vale.')
+      return
+    }
     stepUpIssue.value = errorDetail(e, 'Não foi possível enviar o código agora.')
   } finally {
     stepUpSendPending.value = false
@@ -472,6 +521,7 @@ async function confirmStepUp () {
   if (stepUpPending.value || stepUpCodeStr.value.length !== 6) return
   stepUpPending.value = true
   stepUpIssue.value = ''
+  stepUpNotice.value = ''
   try {
     await $fetch(apiPath('/api/v1/account/step-up/'), {
       method: 'POST',
@@ -509,6 +559,7 @@ const phoneChangeTarget = ref('')
 const phoneChangeCode = ref<number[]>([])
 const phoneChangePending = ref(false)
 const phoneChangeIssue = ref<ProfileIssue | null>(null)
+const phoneChangeNotice = ref('')
 const phoneChangeCodeStr = computed(() => phoneChangeCode.value.join('').slice(0, 6))
 const currentPhoneDisplay = computed(() => displayE164Phone(session.customerPhone.value || ''))
 
@@ -523,6 +574,7 @@ function showPhoneChange () {
   phoneChangeTarget.value = ''
   phoneChangeCode.value = []
   phoneChangeIssue.value = null
+  phoneChangeNotice.value = ''
   phoneChangeOpen.value = true
 }
 
@@ -535,6 +587,7 @@ async function sendPhoneChangeCode () {
   if (phoneChangePending.value) return
   phoneChangePending.value = true
   phoneChangeIssue.value = null
+  phoneChangeNotice.value = ''
   try {
     const body = await $fetch<{ phone: string }>(apiPath('/api/v1/account/phone/request/'), {
       method: 'POST',
@@ -547,6 +600,16 @@ async function sendPhoneChangeCode () {
     phoneChangeStep.value = 'code'
   } catch (e) {
     if (await resumePhoneChangeAfterStepUp(e, sendPhoneChangeCode)) return
+    // O código pedido há pouco para este número ainda vale: vai ao passo de digitar.
+    const data = httpError(e).data as Record<string, unknown> | null | undefined
+    const pending = pendingCodeFromCooldown(data, Date.now())
+    if (pending) {
+      phoneChangeTarget.value = pending.phone
+      phoneChangeCode.value = []
+      phoneChangeStep.value = 'code'
+      phoneChangeNotice.value = errorDetail(e, 'O código que enviamos há pouco ainda vale.')
+      return
+    }
     // A recusa RICA (número de outra conta) vem com saídas — e nunca com o nome
     // de quem tem o número. Cair no genérico aqui apagaria o motivo.
     phoneChangeIssue.value = profileIssueFrom(
@@ -562,6 +625,7 @@ async function confirmPhoneChange () {
   if (phoneChangePending.value || phoneChangeCodeStr.value.length !== 6) return
   phoneChangePending.value = true
   phoneChangeIssue.value = null
+  phoneChangeNotice.value = ''
   try {
     const body = await $fetch<{ phone: string }>(apiPath('/api/v1/account/phone/confirm/'), {
       method: 'POST',
@@ -604,17 +668,18 @@ async function resumePhoneChangeAfterStepUp (e: unknown, resume: () => Promise<v
 
 // Exportar dados exige step-up antes do download (GET passa pela marca de sessão).
 function startExport () {
-  privacyIssue.value = ''
-  privacyIssueTitle.value = ''
+  clearPrivacyIssue()
   if (!privacyRequestsAvailable.value) return
   stepUpResumed = false
   void requireStepUp('export', exportData)
 }
 
 // Excluir conta: fecha o diálogo de ack e exige step-up antes de anonimizar.
-function confirmDeleteAccount () {
+async function confirmDeleteAccount () {
   if (!privacyRequestsAvailable.value) return
   deleteAccountOpen.value = false
+  // O estado pode ter mudado com o diálogo aberto: confere de novo antes do SMS.
+  if (!privacyIssue.value && await deletionBlocked()) return
   stepUpResumed = false
   // Retomada de uma tentativa que falhou: a marca do step-up pode estar viva (vale 10
   // minutos), e pedir um código novo à toa é atrito. Tenta direto com a MESMA chave de
@@ -661,7 +726,7 @@ useSeoMeta({ title: 'Segurança e dados' })
           <UiItemContent>
             <UiItemTitle>{{ currentPhoneDisplay || 'Número não informado' }}</UiItemTitle>
             <UiItemDescription>
-              Mudou de número? A conta vem junto — seus pedidos, endereços e pontos ficam.
+              Mudou de número? A conta vem junto: seus pedidos, endereços e pontos ficam.
             </UiItemDescription>
           </UiItemContent>
           <UiItemActions>
@@ -908,7 +973,20 @@ useSeoMeta({ title: 'Segurança e dados' })
         </div>
         <UiAlert v-if="privacyIssue" variant="destructive">
           <UiAlertTitle>{{ privacyIssueTitle || 'Não foi possível concluir' }}</UiAlertTitle>
-          <UiAlertDescription>{{ privacyIssue }}</UiAlertDescription>
+          <UiAlertDescription>
+            <p>{{ privacyIssue }}</p>
+            <div v-if="privacyIssueActions.length" class="mt-2 flex flex-wrap gap-2">
+              <UiButton
+                v-for="action in privacyIssueActions"
+                :key="action.ref"
+                size="sm"
+                :variant="action.priority === 'primary' ? 'default' : 'outline'"
+                :to="action.href"
+              >
+                {{ action.label }}
+              </UiButton>
+            </div>
+          </UiAlertDescription>
         </UiAlert>
         <UiAlert v-if="!privacyRequestsAvailable">
           <UiAlertTitle>Solicitações temporariamente indisponíveis</UiAlertTitle>
@@ -934,7 +1012,20 @@ useSeoMeta({ title: 'Segurança e dados' })
           </UiAlertDialogHeader>
           <UiAlert v-if="privacyIssue" variant="destructive">
             <UiAlertTitle>Não foi possível excluir</UiAlertTitle>
-            <UiAlertDescription>{{ privacyIssue }}</UiAlertDescription>
+            <UiAlertDescription>
+              <p>{{ privacyIssue }}</p>
+              <div v-if="privacyIssueActions.length" class="mt-2 flex flex-wrap gap-2">
+                <UiButton
+                  v-for="action in privacyIssueActions"
+                  :key="action.ref"
+                  size="sm"
+                  :variant="action.priority === 'primary' ? 'default' : 'outline'"
+                  :to="action.href"
+                >
+                  {{ action.label }}
+                </UiButton>
+              </div>
+            </UiAlertDescription>
           </UiAlert>
           <UiField orientation="horizontal">
             <UiFieldContent>
@@ -1007,6 +1098,10 @@ useSeoMeta({ title: 'Segurança e dados' })
               </div>
             </UiAlertDescription>
           </UiAlert>
+
+          <p v-if="phoneChangeNotice && !phoneChangeIssue" class="shop-meta" role="status">
+            {{ phoneChangeNotice }}
+          </p>
 
           <div v-if="phoneChangeStep === 'number'" class="space-y-2">
             <UiLabel for="phone-change-input">Número novo</UiLabel>
@@ -1094,6 +1189,9 @@ useSeoMeta({ title: 'Segurança e dados' })
             <UiAlertTitle>Não foi possível confirmar</UiAlertTitle>
             <UiAlertDescription>{{ stepUpIssue }}</UiAlertDescription>
           </UiAlert>
+          <p v-else-if="stepUpNotice" class="shop-meta" role="status">
+            {{ stepUpNotice }}
+          </p>
           <div class="space-y-2">
             <UiPinInput
               v-model="stepUpCode"

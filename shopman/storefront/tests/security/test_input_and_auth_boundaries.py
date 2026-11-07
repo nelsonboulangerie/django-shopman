@@ -61,16 +61,18 @@ def test_control_chars_neutralized_in_name(attacker, customer):
     assert "\n" not in stored and "\t" not in stored and "\r" not in stored
 
 
-def test_html_js_in_name_stored_verbatim_no_500(attacker, customer):
-    """An HTML/JS payload in a text field must not 500 the server; it is stored
-    as inert text (output encoding is the front's responsibility)."""
+def test_html_js_in_name_is_refused_with_the_field_no_500(attacker, customer):
+    """An HTML/JS payload in a name must not 500 the server, and it is not stored:
+    `<` and `>` never belong to a person's name (beta 06/11), so the profile
+    refuses it with the field pointed instead of keeping it as text."""
     login_as_customer(attacker, customer)
     resp = attacker.patch(
         "/api/v1/account/profile/",
         data=json.dumps({"first_name": "<script>alert(1)</script>", "last_name": "<img src=x onerror=1>"}),
         content_type="application/json",
     )
-    assert resp.status_code == 200  # handled, not a 500
+    assert resp.status_code == 400  # handled, not a 500
+    assert resp.json()["field"] == "first_name"
 
 
 def test_oversized_name_rejected_not_crashed(client, cart_session):
