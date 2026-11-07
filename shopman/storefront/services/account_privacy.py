@@ -104,6 +104,80 @@ def privacy_requests_available() -> bool:
     return True
 
 
+@dataclass(frozen=True)
+class DeletionBlocker:
+    """Por que a exclusão está recusada, com o que a tela precisa para NOMEAR o motivo.
+
+    ``reason`` é o código de sempre de ``AccountDeletionBlocked``; ``order_ref`` e
+    ``topic`` dizem qual pedido e qual etapa seguram a exclusão, quando o motivo é
+    um pedido. "Ainda existe um pedido em andamento" sem dizer qual deixava o
+    cliente procurando o pedido na lista (beta 06/11).
+    """
+
+    reason: str
+    order_ref: str = ""
+    topic: str = ""
+
+
+# Os bloqueios que dependem do PEDIDO, e não de um envio que acaba em segundos.
+# São os que a tela confere ANTES de gastar o código de confirmação: um bloqueio
+# conhecido de antemão não pode custar um SMS ao cliente.
+_ORDER_BLOCKERS = frozenset({"active_order", "order_automation_in_flight", "order_obligation_pending"})
+_SETTLED_ORDER_STATUSES = ("completed", "cancelled", "returned")
+
+
+def deletion_blocker_details(customer, reason: str) -> DeletionBlocker:
+    """Completa um motivo de recusa com o pedido e a etapa que o causam (só leitura)."""
+    from shopman.orderman.models import Directive, Order
+
+    from shopman.shop.directives import PERSONAL_ORDER_DELIVERY_TOPICS
+    from shopman.shop.services import account as account_service
+
+    if reason not in _ORDER_BLOCKERS:
+        return DeletionBlocker(reason=reason)
+    query = account_service.customer_footprint_query(customer.ref, customer.phone or "")
+    if not query.children:
+        return DeletionBlocker(reason=reason)
+    orders = Order.objects.filter(query)
+    if reason == "active_order":
+        order = orders.exclude(status__in=_SETTLED_ORDER_STATUSES).order_by("-created_at").first()
+        return DeletionBlocker(reason=reason, order_ref=order.ref if order else "")
+    refs = list(orders.values_list("ref", flat=True))
+    directive = (
+        Directive.objects.filter(
+            payload__order_ref__in=refs,
+            status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING),
+        )
+        .exclude(topic__in=PERSONAL_ORDER_DELIVERY_TOPICS)
+        .order_by("pk")
+        .first()
+    )
+    if directive is None:
+        return DeletionBlocker(reason=reason)
+    return DeletionBlocker(
+        reason=reason,
+        order_ref=str((directive.payload or {}).get("order_ref") or ""),
+        topic=directive.topic,
+    )
+
+
+def deletion_preflight(customer) -> DeletionBlocker | None:
+    """O que já recusaria a exclusão, conferido ANTES do código de confirmação.
+
+    A decisão é a mesma da exclusão (``privacy_order_deletion_blocker``), não um
+    gêmeo que pode divergir; aqui ela roda sem efeito nenhum e só para dizer à
+    tela se vale mandar o SMS. Os bloqueios de envio em curso (aviso, mensagem,
+    código) duram segundos e continuam sendo conferidos só na exclusão.
+    """
+    from shopman.shop.services import account as account_service
+
+    with transaction.atomic():
+        reason = account_service.privacy_order_deletion_blocker(customer.ref, customer.phone or "")
+    if not reason:
+        return None
+    return deletion_blocker_details(customer, reason)
+
+
 def subject_receipt_digests(customer_uuid) -> list[str]:
     """Digests versionados para projetar recibos do próprio titular."""
 

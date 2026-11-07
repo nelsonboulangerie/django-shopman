@@ -32,7 +32,7 @@ describe('beta 06/11: /entrar sobrevive ao recarregamento', () => {
   })
 
   it('SMS-16: a marca sozinha, com sessão sem nome pendente, não tira o logado do login', () => {
-    // "Entrar com outra conta" (/conta/perfil) abre /entrar logado; uma marca
+    // Quem abre /entrar já logado quer ver o login; uma marca
     // velha não pode mandá-lo de volta ao destino. Só o convite `?welcome=1` segue.
     const afterWelcome = mounted.slice(mounted.indexOf('if (auth.requires_welcome)'))
     const nav = afterWelcome.indexOf('await navigateTo(nextUrl.value)')

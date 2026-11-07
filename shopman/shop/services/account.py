@@ -348,8 +348,11 @@ def request_phone_change(customer, raw_phone: str, *, ip_address: str | None = N
                 error_code="phone_unchanged",
             )
 
-        if _phone_belongs_to_someone_else(locked_customer, phone):
-            raise ContactAlreadyTaken(PHONE_TAKEN_DETAIL, field="phone")
+        # ⚠️ Se o número já é de OUTRA conta, isto NÃO é dito aqui. Antes da prova de
+        # posse, responder "este número já está em uso" deixava qualquer cliente logado
+        # perguntar à loja quem é cliente, número por número (beta 06/11). O código vai
+        # para o número de qualquer jeito, e a colisão só aparece depois que ele for
+        # confirmado: a essa altura quem lê é o dono do número.
         customer_uuid = locked_customer.uuid
 
     # Provider I/O is deliberately outside the Customer transaction.  The OTP
@@ -403,7 +406,7 @@ def confirm_phone_change(customer, raw_phone: str, code_input: str) -> str:
                         phone,
                         proof=resultado.delivery_method,
                     )
-            except IntegrityError:
+            except (IntegrityError, ContactAlreadyTaken):
                 # O savepoint reverte somente os contatos. O OTP confirmado
                 # continua consumido quando a transação externa fechar.
                 conflict = True
