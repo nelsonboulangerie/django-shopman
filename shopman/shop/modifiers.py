@@ -1387,7 +1387,7 @@ class DeliveryFeeModifier:
       1. Zona ``exclude`` casa → fora da área (``delivery_zone_error``).
       2. Zona ``override`` casa → taxa fixa da zona (sobrepõe a distância).
       3. Senão, distância loja→endereço casa uma ``DeliveryDistanceBand`` → taxa da faixa.
-      4. Senão (sem faixa/cobertura, ou sem coordenada e sem zona) → fora da área.
+      4. Senão (faixa estourada, ou sem distância e cidade/UF fora das da loja) → fora da área.
 
     Grava ``delivery_fee_q`` (taxa efetiva) ou ``delivery_zone_error``, e
     ``delivery_distance_km`` quando a distância foi calculada (transparência no
@@ -1440,7 +1440,7 @@ class DeliveryFeeModifier:
             return
 
         base_fee_q, distance_km, blocked = self._resolve(
-            postal_code, neighborhood, lat, lng, address_text=_address_text(addr)
+            postal_code, neighborhood, lat, lng, address_text=_address_text(addr), locality=addr
         )
 
         new_data = dict(data)
@@ -1516,7 +1516,7 @@ class DeliveryFeeModifier:
 
     @staticmethod
     def _resolve(
-        postal_code: str, neighborhood: str, lat, lng, address_text: str = ""
+        postal_code: str, neighborhood: str, lat, lng, address_text: str = "", locality=None
     ) -> tuple[int, float | None, bool]:
         """Resolve (taxa_base_q, distância_km, bloqueado) pela ordem zona → faixa → fallback.
 
@@ -1524,9 +1524,8 @@ class DeliveryFeeModifier:
         endereço chega SEM coordenada (ViaCEP/manual), geocodifica o TEXTO do endereço
         aqui (cached) — assim um endereço válido quase sempre entra no cálculo por faixa.
 
-        Só bloqueia quando a distância é CONHECIDA e cai fora de toda faixa (longe demais).
-        Se mesmo o geocode não resolver (raro), NÃO rejeita um endereço válido: cobra a
-        taxa-padrão (``default_delivery_fee_q``) — fallback de último recurso, não regra.
+        Bloqueia a distância CONHECIDA além de toda faixa. Sem ela, a cidade/UF de ``locality``
+        fora das da loja bloqueiam; iguais cobram ``default_delivery_fee_q`` (último recurso).
         """
         from shopman.shop.projections.cart import shop_rule_q
         from shopman.shop.services import delivery_distance
@@ -1557,7 +1556,8 @@ class DeliveryFeeModifier:
             # Distância conhecida e além de toda faixa → genuinamente fora de área.
             return (0, distance_km, True)
 
-        # Nem zona, nem coordenada, nem geocode: fallback de último recurso (taxa-padrão).
+        if delivery_distance.declared_locality_outside_store(locality or {}):
+            return (0, None, True)  # sem distância: cidade/UF declaradas fora das da loja
         return (shop_rule_q("default_delivery_fee_q"), None, False)
 
     @staticmethod
