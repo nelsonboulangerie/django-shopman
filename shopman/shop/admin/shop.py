@@ -72,7 +72,6 @@ from shopman.shop.models import (
     ShopPurchase,
     ShopSearch,
 )
-from shopman.shop.models.shop import cancellation_preset_entries, validate_cancellation_presets
 from shopman.shop.operator_capacity_policy import (
     DEFAULT_ATTENTION_PERCENT,
     DEFAULT_CRITICAL_PERCENT,
@@ -341,36 +340,6 @@ class GoogleMerchantForm(BaseDialogForm):
 
 class GoogleMerchantRegistrationForm(BaseDialogForm):
     """Confirmação do registro do envio no Google: não pede nada além do clique."""
-
-
-#: No Admin, cada motivo é uma linha; o grupo vem antes, separado por esta barra.
-CANCELLATION_PRESET_GROUP_SEPARATOR = "|"
-
-
-def _cancellation_presets_to_rows(raw) -> list[str]:
-    """``Shop.cancellation_presets`` → linhas do ArrayWidget (``"Grupo | Motivo"`` ou ``"Motivo"``)."""
-    rows = []
-    for group, label in cancellation_preset_entries(raw):
-        rows.append(f"{group} {CANCELLATION_PRESET_GROUP_SEPARATOR} {label}" if group else label)
-    return rows
-
-
-def _cancellation_presets_from_rows(rows) -> list:
-    """Linhas do ArrayWidget → ``Shop.cancellation_presets`` (string ou ``{"label", "group"}``)."""
-    presets: list = []
-    for row in rows or []:
-        row = str(row).strip()
-        if not row:
-            continue
-        group, sep, label = row.partition(CANCELLATION_PRESET_GROUP_SEPARATOR)
-        if not sep:
-            presets.append(row)
-            continue
-        group, label = group.strip(), label.strip()
-        if not label:
-            raise forms.ValidationError(f"Falta o motivo depois do grupo em “{row}”.")
-        presets.append({"label": label, "group": group} if group else label)
-    return presets
 
 
 def _opening_field(day: str, suffix: str) -> str:
@@ -1373,7 +1342,6 @@ class ShopForm(forms.ModelForm):
     social_links = forms.Field(label="Redes sociais", required=False, widget=ArrayWidget())
 
     # Justificativas de cancelamento/recusa — mesma edição add/remove (ArrayWidget).
-    cancellation_presets = forms.Field(label="Motivos de cancelamento e recusa", required=False, widget=ArrayWidget())
 
     # Tags de nota da cozinha — mesma edição add/remove (ArrayWidget).
     kitchen_note_tags = forms.Field(label="Tags de nota da cozinha", required=False, widget=ArrayWidget())
@@ -1407,18 +1375,6 @@ class ShopForm(forms.ModelForm):
             self.fields["social_links"].help_text = (
                 "Adicione uma rede por vez (URL completa, ex.: https://instagram.com/sualoja). "
                 "O ícone é detectado automaticamente."
-            )
-
-        if "cancellation_presets" in self.fields:
-            self.fields["cancellation_presets"].required = False
-            self.fields["cancellation_presets"].help_text = (
-                "Um motivo por linha, na ordem da tela. Para mostrar sob um cabeçalho no "
-                f"Gestor, escreva o grupo antes, separado por “{CANCELLATION_PRESET_GROUP_SEPARATOR}” "
-                "(ex.: “Produto | Item indisponível no momento”); sem grupo, só o motivo. "
-                "O cliente lê “Motivo: <motivo>.”: escreva na voz da loja e sem ponto final."
-            )
-            self.initial["cancellation_presets"] = _cancellation_presets_to_rows(
-                self.initial.get("cancellation_presets")
             )
 
         if "kitchen_note_tags" in self.fields:
@@ -1687,18 +1643,11 @@ class ShopForm(forms.ModelForm):
             )
             self.fields[_defaults_closed_date_field(index, "label")].initial = closed_date.get("label", "")
 
-    def clean_cancellation_presets(self):
-        presets = _cancellation_presets_from_rows(self.cleaned_data.get("cancellation_presets"))
-        validate_cancellation_presets(presets)
-        return presets
-
     def clean(self):
         cleaned_data = super().clean()
         # ArrayWidget vazio → None; o campo é NOT NULL (default lista).
         if self._has("social_links") and not cleaned_data.get("social_links"):
             cleaned_data["social_links"] = []
-        if self._has("cancellation_presets") and not cleaned_data.get("cancellation_presets"):
-            cleaned_data["cancellation_presets"] = []
         if self._has("kitchen_note_tags") and not cleaned_data.get("kitchen_note_tags"):
             cleaned_data["kitchen_note_tags"] = []
         if self._has(_opening_field("monday", "status")):
@@ -2584,16 +2533,6 @@ _ORDERING_FIELDSETS = (
             "description": (
                 "Vale até o sistema ter histórico de preparo e de chegada do entregador para chamar "
                 "sozinho, durante o preparo. Depois disso este lembrete sai."
-            ),
-        },
-    ),
-    (
-        "Motivos de cancelamento e recusa",
-        {
-            "fields": ("cancellation_presets",),
-            "description": (
-                "Justificativas prontas para o operador recusar ou cancelar um pedido com um "
-                "toque no gestor. O motivo escolhido é enviado ao cliente na notificação."
             ),
         },
     ),

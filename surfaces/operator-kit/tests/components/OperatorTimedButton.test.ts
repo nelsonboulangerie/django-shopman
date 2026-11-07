@@ -80,6 +80,17 @@ describe("OperatorTimedButton", () => {
     expect(live.text()).toBe("Desfazer: o prazo acabou.");
   });
 
+  it("depois de falar, a região se esvazia: o aviso não fica repetindo a descrição (beta 06/11)", async () => {
+    const button = await mountTimed();
+    const live = button.get("[data-timed-announcement]");
+    vi.advanceTimersByTime(60);
+    await button.vm.$nextTick();
+    expect(live.text()).toMatch(/^Desfazer: disponível até /);
+    vi.advanceTimersByTime(3000);
+    await button.vm.$nextTick();
+    expect(live.text()).toBe("");
+  });
+
   it("toque dentro da janela sai como click; ao fim, `expire` uma vez e o botão some", async () => {
     const button = await mountTimed();
     await button.get("button").trigger("click");

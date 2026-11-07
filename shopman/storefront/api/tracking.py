@@ -138,9 +138,10 @@ def _tracking_payload(order) -> dict:
     # enquanto este for verdadeiro.
     data["payment_due"] = payment_due
     data["placement_secured"] = not (order.status in {"cancelled", "returned"} or payment_due)
-    # Compartilhar não depende do momento: é mais útil com o pedido pronto
-    # do que trinta segundos depois do checkout.
-    data["share_cta"] = _copy_title("CONFIRMATION_SHARE_CTA", "Compartilhar")
+    # Enviar o resumo não depende do momento: é mais útil com o pedido pronto
+    # do que trinta segundos depois do checkout. É texto, não link: o link do
+    # pedido só abre para quem o fez.
+    data["share_cta"] = _copy_title("CONFIRMATION_SHARE_CTA", "Enviar resumo")
     return data
 
 
@@ -538,6 +539,79 @@ class OrderConfirmReceiptView(APIView):
         except remote_mutations.RemoteMutationInProgress:
             return Response(
                 {"detail": "Confirmação já está em andamento.", "error_code": "mutation_in_progress"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(result.response_body, status=result.response_code)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["tracking"],
+        summary="Pay the new payment with Pix instead of another card (card charge refused after acceptance)",
+        responses={
+            200: OrderTrackingSerializer,
+            404: DetailSerializer,
+            409: OpenApiResponse(description="The order is not waiting for a new payment, or Pix is unavailable."),
+        },
+    ),
+)
+class OrderRepaymentPixView(APIView):
+    """POST /api/v1/orders/{ref}/payment/pix/: trocar o novo pagamento para Pix.
+
+    Só vale na espera do novo pagamento depois da cobrança de cartão recusada
+    (decisão do dono, 07/11). O serviço fecha a cobrança de cartão aberta antes
+    de abrir o Pix, pelo mesmo prazo (``payment.switch_repayment_to_pix``).
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = OrderTrackingSerializer
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import payment as payment_service
+
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-order-repayment-pix",
+            rate="10/m",
+            method="POST",
+        ):
+            return _rate_limited_response()
+        try:
+            order = order_service.get_accessible_order(request, ref)
+        except Http404:
+            return Response(
+                {
+                    "detail": _copy_message(
+                        "TRACKING_NOT_FOUND_MESSAGE",
+                        "Confira o link do pedido ou fale com a equipe.",
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        key = remote_mutations.idempotency_key_from_request(request, fallback=f"repayment-pix:{ref}")
+
+        def execute_switch() -> tuple[dict, int]:
+            try:
+                payment_service.switch_repayment_to_pix(order)
+            except payment_service.RepaymentSwitchRefused as refusal:
+                return {"detail": refusal.message, "error_code": refusal.code}, status.HTTP_409_CONFLICT
+            order.refresh_from_db()
+            serializer = OrderTrackingSerializer(_tracking_payload(order))
+            return dict(serializer.data), status.HTTP_200_OK
+
+        try:
+            result = remote_mutations.run_idempotent_mutation(
+                scope=f"order-repayment-pix:{ref}",
+                key=key,
+                execute=execute_switch,
+                cache_response=lambda _body, code: code < 400,
+            )
+        except remote_mutations.RemoteMutationInProgress:
+            return Response(
+                {"detail": "A troca para Pix já está em andamento.", "error_code": "mutation_in_progress"},
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(result.response_body, status=result.response_code)

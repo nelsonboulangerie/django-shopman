@@ -159,6 +159,24 @@ directive, servidor* e os nomes de pacote (*offerman, stockman, craftsman, order
 guestman, doorman, payman, buyman, fiscalman, cashman*). "Projeção" em português fica: é
 a tela de previsão do B.I.
 
+### 2.6 Maiúsculas no selo: nome tem, frase não (dono, 03/11, 04/11 e 07/11/2026)
+
+Selo (o `NuxtBadge` da suíte) que é **nome** leva maiúscula em cada palavra, e artigo,
+preposição e unidade no meio ficam minúsculos. Selo que é **frase** leva só a primeira
+maiúscula, como qualquer frase da casa. É frase a parte do selo que tem **"não"**, que
+tem **vírgula** ou que tem **cinco palavras ou mais**. Cada parte de um selo composto
+(separado por " · ") é julgada sozinha. Marca e sigla ("iFood", "PDV", "NFC-e") e
+palavra com número ficam como são.
+
+| É nome (cada palavra maiúscula) | É frase (só a primeira) |
+|---|---|
+| **Loja Online** · **A Receber** · **Pagar na Retirada** · **Saiu para Entrega** · **Pronto pela Cozinha** | **Falhou em todos os canais** · **Não enviado** · **Não atendida** · **NFC-e não solicitada** · **Aceito pelo provedor, sem comprovante** |
+
+Mora num ponto só: `surfaces/operator-kit/app/presentation/badgeCase.ts`, aplicado pelo
+`NuxtBadge` do kit; nenhum app chama à mão. A trava é
+`surfaces/operator-kit/tests/badgeCase.test.ts`. A frase que não cabe em selo (o
+detalhe, o motivo) vai fora dele, em texto.
+
 ---
 
 ## 3. PDV

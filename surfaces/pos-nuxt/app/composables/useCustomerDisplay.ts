@@ -5,6 +5,7 @@
 // exatamente o que a estação vê, no instante em que ela vê.
 import { onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue";
 
+import { idleCustomerDisplaySnapshot } from "~/presentation/customerDisplay";
 import type { CustomerDisplaySnapshot } from "~/types/customerDisplay";
 
 export const CUSTOMER_DISPLAY_CHANNEL = "pos-customer-display";
@@ -74,6 +75,16 @@ export function useCustomerDisplayPublisher(snapshot: Ref<CustomerDisplaySnapsho
   watch(snapshot, () => publish());
 
   onBeforeUnmount(() => {
+    // Quem publica sai de cena (a venda virou Encomendas, Caixa, Ajustes): a
+    // parede volta às boas-vindas em vez de congelar no último carrinho. Quem
+    // monta depois (outra tela que publica) fala por cima, no mount dele.
+    if (channel) {
+      const message: CustomerDisplayMessage = {
+        kind: "snapshot",
+        snapshot: idleCustomerDisplaySnapshot(snapshot.value.shopName),
+      };
+      channel.postMessage(message);
+    }
     channel?.close();
     channel = null;
   });

@@ -46,6 +46,7 @@ const {
   state: waReturnState,
   waiting: waWaiting,
   checking: waChecking,
+  notArrived: waNotArrived,
   arm: waArm,
   stop: waStop,
   checkNow: waCheckNow
@@ -252,7 +253,7 @@ onMounted(async () => {
       forgetStored(WELCOME_PENDING_STORAGE_KEY)
       // Só o convite (`?welcome=1`) segue direto ao destino. A marca sozinha pode
       // ser de outra visita (o nome veio depois, pelo checkout), e quem chega
-      // logado por "Entrar com outra conta" (/conta/perfil) quer ver o login.
+      // logado direto em /entrar quer ver o login.
       if (welcomeRequested.value) {
         await navigateTo(nextUrl.value)
         return
@@ -707,6 +708,7 @@ useSeoMeta({
             :waiting="waWaiting"
             :return-state="waReturnState"
             :checking="waChecking"
+            :not-arrived="waNotArrived"
             :why="waWhy"
             :steps="waSteps"
             :cta-label="copyTitle(authCopy?.phone_cta_wa, 'Abrir o WhatsApp')"

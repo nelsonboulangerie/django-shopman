@@ -862,12 +862,33 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    # A cobrança do cartão não passou depois do aceite e o cliente paga de novo.
+    "TRACKING_PROMISE_CARD_REPAYMENT_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="A cobrança no cartão falhou")},
+    },
+    "TRACKING_PROMISE_CARD_REPAYMENT_PIX_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Nada foi cobrado. Pague com Pix ou com outro cartão até {deadline} para seguirmos com o seu pedido.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_REPAYMENT_PIX_ACTION": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Pagar com Pix")},
+    },
+    "TRACKING_PROMISE_CARD_REPAYMENT_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Nada foi cobrado. Pague com outro cartão até {deadline} para seguirmos com o seu pedido.",
+            ),
+        },
+    },
     # A cobrança do cartão autorizado foi recusada no aceite.
     "TRACKING_CARD_CAPTURE_FAILED": {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 title="Não conseguimos cobrar o cartão",
-                message="A cobrança no seu cartão não passou, e nada foi cobrado. A loja já foi avisada; acompanhe por aqui.",
+                message="A cobrança no seu cartão falhou, e nada foi cobrado. A loja já foi avisada; acompanhe por aqui.",
             ),
         },
     },
@@ -1173,7 +1194,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
 
     # ── Order confirmation (momento yoin, no acompanhamento) ──────
     "CONFIRMATION_SHARE_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Compartilhar")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Enviar resumo")},
     },
 
     # ── Payment (bloco de Pix/cartão inline no acompanhamento) ────

@@ -75,6 +75,9 @@ registerEndpoint("/api/v1/backstage/closing/", () => ({ closing: servedClosing }
 function openShiftProjection(overrides: Partial<POSProjection["cash_runtime"]> = {}): POSProjection {
   return makeProjection({
     has_open_cash_session: true,
+    // Quem opera aqui fecha o caixa (gerência): sem a régua, o card "Fechar caixa"
+    // nasce apagado com o motivo (beta 07/11).
+    can_close_day: true,
     cash_runtime: {
       has_open_shift: true,
       shift_id: 1,

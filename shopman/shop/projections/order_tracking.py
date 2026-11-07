@@ -231,6 +231,11 @@ class TrackingPromiseData:
     # reservations that are waiting on production.
     fulfillment_wait_kind: str = ""
     fulfillment_wait_until: str | None = None
+    # A cobrança do cartão não passou depois do aceite e esta é a cobrança NOVA
+    # (``payment.awaiting_repayment``): a frase diz por que pedimos de novo.
+    repayment: bool = False
+    # ...e o cliente pode trocar para Pix (ação ``pay_with_pix``).
+    repayment_pix_allowed: bool = False
 
 
 @dataclass(frozen=True)
@@ -308,6 +313,17 @@ class TrackingData:
     # A nota fiscal chega ao cliente pela página do pedido (decisão do dono,
     # 25/09/2026): a loja online não imprime nem pede e-mail.
     fiscal_note: TrackingFiscalNoteData | None = None
+    # A conta e o que o cliente informou no checkout, para o Resumo do pedido
+    # contar o mesmo que a revisão contou (beta 06/11): os descontos selados no
+    # commit (vazio quando o pedido foi editado depois: a conta selada já não é
+    # a que vale), presente, CPF da nota, observação e endereço de entrega.
+    discount_lines: tuple[Any, ...] = ()
+    is_gift: bool = False
+    gift_recipient_name: str = ""
+    gift_message: str = ""
+    tax_id: str = ""
+    customer_notes: str = ""
+    delivery_address: str = ""
 
 
 @dataclass(frozen=True)
@@ -336,10 +352,35 @@ def _slot_label(slot_ref: str | None) -> str | None:
     return window_label(slot_ref) or None
 
 
+def as_customer_sees(order):
+    """O pedido no estado que o CLIENTE pode ler agora.
+
+    O pronto da Cozinha entra em READY na hora, mas o aviso de pronto espera a
+    janela de desfazer (``order_undo.ready_hold``): até ela fechar, o Gestor
+    ainda pode devolver o pedido ao preparo. O cliente não pode ler "Pronto"
+    antes do aviso e ver o pronto sumir depois (beta 06/11): enquanto a janela
+    estiver aberta, ele vê o pedido em preparo. Devolve uma cópia rasa só para
+    leitura; o pedido de verdade não muda.
+    """
+    if order.status != "ready":
+        return order
+    from shopman.shop.services import order_undo
+
+    if not order_undo.ready_hold(order):
+        return order
+    import copy
+
+    held = copy.copy(order)
+    held.status = "preparing"
+    held.ready_held_for_undo = True
+    return held
+
+
 def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     """Build the full tracking data projection for an order."""
     from shopman.shop.services import order_composition
 
+    order = as_customer_sees(order)
     interaction = InteractionContext.from_order(order, surface_ref="tracking")
     server_now = timezone.now()
     payment_expired = _is_payment_timeout_cancelled(order)
@@ -468,11 +509,33 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         is_debug=is_debug,
         last_updated_iso=server_now.isoformat(),
         fiscal_note=_fiscal_note(order_data),
+        discount_lines=_sealed_discount_lines(order),
+        is_gift=bool(order_data.get("is_gift")),
+        gift_recipient_name=str((order_data.get("recipient") or {}).get("name") or "").strip(),
+        gift_message=str(order_data.get("gift_message") or "").strip(),
+        tax_id=str((order_data.get("fiscal") or {}).get("tax_id") or "").strip(),
+        customer_notes=str(order_data.get("order_notes") or "").strip(),
+        delivery_address=str(order_data.get("delivery_address") or "").strip() if is_delivery else "",
         **_waitlist_info(
             order,
             payment_unsettled=payment_pending or payment_status_key in {"card_authorized", "card_capture_failed"},
         ),
     )
+
+
+def _sealed_discount_lines(order) -> tuple[Any, ...]:
+    """Os descontos que o commit selou, na régua da sacola (uma linha por origem).
+
+    Pedido editado depois (``order_composition.adjustment``) não tem conta
+    selada que valha: as linhas do desconto contariam a conta velha.
+    """
+    from shopman.shop.projections.cart import _discount_lines
+    from shopman.shop.services import order_composition
+
+    if order_composition.adjustment(order) is not None:
+        return ()
+    pricing = (order.snapshot or {}).get("pricing") or {}
+    return _discount_lines(pricing.get("discount") or {}, pricing)
 
 
 def _fiscal_note(order_data: dict) -> TrackingFiscalNoteData | None:
@@ -494,6 +557,7 @@ def _fiscal_note(order_data: dict) -> TrackingFiscalNoteData | None:
 
 def build_tracking_status(order) -> TrackingStatusData:
     """Build the polling data projection for tracking status partials."""
+    order = as_customer_sees(order)
     return TrackingStatusData(
         order_ref=order.ref,
         status=order.status,
@@ -518,6 +582,7 @@ def display_status_key(order) -> str:
     aqui, para que nenhuma superfície diga "Aguardando a loja" com o pagamento
     ainda em aberto.
     """
+    order = as_customer_sees(order)
     order_data = order.data or {}
     fulfillment_type = order_data.get("fulfillment_type") or order_data.get("delivery_method", "")
     is_delivery = fulfillment_type == "delivery"
@@ -891,6 +956,8 @@ def _promise(
     checkout_url: str | None = None,
     fulfillment_wait_kind: str = "",
     fulfillment_wait_until: str | None = None,
+    repayment: bool = False,
+    repayment_pix_allowed: bool = False,
 ) -> TrackingPromiseData:
     return TrackingPromiseData(
         state=state,
@@ -913,6 +980,8 @@ def _promise(
         checkout_url=checkout_url,
         fulfillment_wait_kind=fulfillment_wait_kind,
         fulfillment_wait_until=fulfillment_wait_until,
+        repayment=repayment,
+        repayment_pix_allowed=repayment_pix_allowed,
     )
 
 
@@ -1122,6 +1191,21 @@ def _build_promise(
             # acontecido (beta 06/11, F3). A ação é a mesma: a sessão do gateway
             # continua aberta para outro cartão.
             declined = bool(payment.get("last_decline"))
+            repayment = payment_service.awaiting_repayment(order)
+            pix_switch = (
+                (
+                    _action(
+                        ref="pay_with_pix",
+                        kind="mutation",
+                        label=_copy_title("TRACKING_PROMISE_REPAYMENT_PIX_ACTION", "Pagar com Pix"),
+                        href=f"/api/v1/orders/{order.ref}/payment/pix/",
+                        method="POST",
+                        idempotency="required",
+                    ),
+                )
+                if repayment is not None and repayment.get("pix_allowed") and order.status == "accepted"
+                else ()
+            )
             return promise(
                 state="payment_card_declined" if declined else "payment_card_ready",
                 tone="warning" if declined else "info",
@@ -1139,9 +1223,12 @@ def _build_promise(
                         href=checkout_url,
                         idempotency="none",
                     ),
+                    *pix_switch,
                 ),
                 payment_method=method,
                 checkout_url=checkout_url,
+                repayment=repayment is not None,
+                repayment_pix_allowed=bool(pix_switch),
             )
         if is_hosted:
             # Sessão hospedada sem URL ainda (o botão do Stripe está nascendo): a
@@ -1334,10 +1421,15 @@ def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
 
 def _build_timeline(order) -> tuple[TrackingTimelineEventData, ...]:
     raw: list[tuple] = []
+    # Pedido READY lido como em preparo (``as_customer_sees``): a passagem a
+    # pronto ainda está na janela de desfazer, e o histórico não a conta.
+    ready_held = bool(getattr(order, "ready_held_for_undo", False))
 
     for event in order.events.order_by("seq"):
         payload = event.payload or {}
         label_key = payload.get("new_status", "") if event.type == "status_changed" else ""
+        if ready_held and label_key == "ready":
+            continue
         raw.append((event.created_at, event.type, label_key))
 
     for ful in order.fulfillments.all():
@@ -1804,6 +1896,12 @@ def _eta_at(order) -> str | None:
             round_to_5 = True
             event = _event_for_status(order, "dispatched")
             baseline = event.created_at if event else None
+            # Saiu antes da janela escolhida: a chegada prometida não fica antes
+            # dela. "Chega por volta de 19:25" para a janela das 19:30 às 20:00
+            # desdizia o combinado (beta 06/11).
+            from shopman.shop.services import fulfillment_window
+
+            not_before = fulfillment_window.promised_at(order)
         else:
             return None
         if baseline is None:

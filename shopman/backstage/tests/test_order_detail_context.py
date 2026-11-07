@@ -143,28 +143,17 @@ def test_contexto_desconhecido_e_erro_e_nao_um_detalhe_silencioso():
         build_operator_order(order, context="kds")
 
 
-def test_o_cancelar_do_balcao_le_os_mesmos_motivos_prontos_do_gestor(client, caixa_user):
-    """P7 do redesenho das Encomendas: no balcão, os motivos prontos são os do Gestor."""
-    from django.core.cache import cache
-
+def test_o_cancelar_do_balcao_le_os_mesmos_motivos_do_gestor(client, caixa_user):
+    """P7 do redesenho das Encomendas: no balcão, os motivos são os do Gestor, a lista única."""
     from shopman.shop.models import Shop
 
-    Shop.objects.create(
-        name="Loja Teste",
-        cancellation_presets=[
-            {"label": "Cliente desistiu", "group": "Cliente"},
-            "Pedido em duplicidade",
-        ],
-    )
-    cache.clear()  # Shop.load() memoriza o singleton
+    Shop.objects.create(name="Loja Teste")
     _order()
     client.force_login(caixa_user)
 
     no_gestor = client.get("/api/v1/backstage/orders/DET-CTX/").json()["order"]
     no_balcao = client.get("/api/v1/backstage/pos/preorders/DET-CTX/").json()["order"]
 
-    assert no_balcao["cancellation_presets"] == [
-        {"label": "Cliente", "presets": ["Cliente desistiu"]},
-        {"label": "", "presets": ["Pedido em duplicidade"]},
-    ]
-    assert no_balcao["cancellation_presets"] == no_gestor["cancellation_presets"]
+    assert [reason["key"] for reason in no_balcao["cancel_reasons"]][:1] == ["out_of_stock"]
+    assert no_balcao["cancel_reasons"] == no_gestor["cancel_reasons"]
+    assert "cancellation_presets" not in no_gestor

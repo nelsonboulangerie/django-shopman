@@ -15,8 +15,6 @@ são iguais hoje.
 
 from django.db import migrations, models
 
-import shopman.shop.models.shop
-
 APPROVED_PRESETS = [
     {"label": "Item indisponível no momento", "group": "Produto", "reason_key": "out_of_stock"},
     {"label": "Sem um dos ingredientes hoje", "group": "Produto", "reason_key": "out_of_stock"},
@@ -87,7 +85,6 @@ class Migration(migrations.Migration):
                     '  "Fora do horário de atendimento"\n'
                     "]"
                 ),
-                validators=[shopman.shop.models.shop.validate_cancellation_presets],
                 verbose_name="motivos de cancelamento/recusa",
             ),
         ),

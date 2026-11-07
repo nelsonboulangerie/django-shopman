@@ -1,7 +1,11 @@
-// Compartilhar o pedido — uma mensagem, não um link solto.
+// Enviar o resumo do pedido: uma mensagem de texto, sem link.
 //
-// Duas armadilhas moram aqui, e as duas produzem o MESMO sintoma (o cliente
-// abre o WhatsApp e só vê a URL crua, sem a frase):
+// O texto vem pronto do servidor (itens, quando, onde). Link do pedido NÃO vai:
+// ele só abre para quem fez o pedido, e quem o recebia pelo WhatsApp caía em
+// "Não encontramos este pedido" (beta 06/11).
+//
+// Duas armadilhas de compartilhamento moram aqui, e as duas produziam o mesmo
+// sintoma (o destino perde a frase):
 //
 // 1. `https://wa.me/?text=…` tem o telefone VAZIO. `wa.me/<numero>` é o
 //    "click to chat"; sem número a URL cai na página "Continue to Chat" do
@@ -10,31 +14,13 @@
 //    `https://api.whatsapp.com/send?text=`.
 //
 // 2. `navigator.share({ text, url })` — passar os dois faz a maioria dos
-//    destinos (WhatsApp inclusive) usar SÓ o `url` e descartar o `text`. A URL
-//    vai DENTRO do texto; o campo `url` não é preenchido.
-
-/** A mensagem completa: a frase e o link, juntos, como o destinatário vai ler. */
-export function shareMessage (text: string, url: string): string {
-  const frase = text.trim()
-  const link = url.trim()
-  if (!frase) return link
-  if (!link) return frase
-  return `${frase} ${link}`
-}
+//    destinos (WhatsApp inclusive) usar SÓ o `url` e descartar o `text`. Aqui
+//    só vai o `text`.
 
 /** Link de fallback para quando não há Web Share API (desktop). */
 export function whatsAppShareHref (message: string): string {
   if (!message.trim()) return ''
   return `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`
-}
-
-/** A URL canônica do pedido — sem query string da sessão (canal, UTM, etc.).
- *
- *  `window.location.href` carregava o que estivesse na barra de endereço, então
- *  o cliente compartilhava `?channel=…` junto sem querer. */
-export function orderShareUrl (origin: string, ref: string): string {
-  if (!origin || !ref) return ''
-  return `${origin.replace(/\/+$/, '')}/pedido/${encodeURIComponent(ref)}`
 }
 
 /** True quando o compartilhamento nativo do sistema está disponível. */

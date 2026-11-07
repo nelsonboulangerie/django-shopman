@@ -21,8 +21,6 @@ import { orderAccessErrorView } from '~/presentation/orderAccess'
 import { showsPaymentBlock } from '~/presentation/payment'
 import {
   canShareNatively,
-  orderShareUrl,
-  shareMessage,
   shareNatively,
   whatsAppShareHref
 } from '~/utils/share'
@@ -260,18 +258,21 @@ const summaryRows = computed(() => {
   const rows: { icon: string, lines: string[], muted?: string }[] = [
     { icon: t.is_delivery ? 'lucide:bike' : 'lucide:store', lines: [t.is_delivery ? (t.copy.delivery_heading || 'Entrega') : (t.pickup_info?.heading || 'Retirada')] }
   ]
-  // O combinado que a pessoa escolheu no checkout ("sábado, 19/07 · A partir das
-  // 09h") e o horário previsto vinham prontos do servidor e não apareciam em
-  // lugar nenhum: o resumo listava tipo de entrega, taxa e pagamento, mas nunca
-  // QUANDO. `when_display` só vem preenchido em encomenda; `eta_display`, quando
-  // há previsão.
-  if (t.when_display) rows.push({ icon: 'lucide:calendar-clock', lines: [t.when_display] })
+  if (t.delivery_address) rows.push({ icon: 'lucide:map-pin', lines: [t.delivery_address] })
+  // O combinado que a pessoa escolheu no checkout ("hoje · 19:30 às 20:00") e o
+  // horário previsto vinham prontos do servidor e não apareciam em lugar
+  // nenhum: o resumo listava tipo de entrega, taxa e pagamento, mas nunca
+  // QUANDO. `schedule_display` vem sempre que houve janela (a encomenda também
+  // conta); `eta_display`, quando há previsão.
+  const schedule = t.schedule_display || t.when_display
+  if (schedule) rows.push({ icon: 'lucide:calendar-clock', lines: [schedule] })
   if (t.eta_display) rows.push({ icon: 'lucide:timer', lines: [`Previsto para ${t.eta_display}`] })
-  if (t.delivery_fee_display) {
-    rows.push({ icon: 'lucide:coins', lines: [`Taxa ${t.delivery_fee_display}${t.delivery_distance_display ? ` · ${t.delivery_distance_display}` : ''}`] })
-  }
   const paymentLabel = t.payment_status_label
   if (paymentLabel) rows.push({ icon: 'lucide:credit-card', lines: [paymentLabel] })
+  if (t.tax_id_display) rows.push({ icon: 'lucide:file-text', lines: [`CPF na nota ${t.tax_id_display}`] })
+  if (t.gift) {
+    rows.push({ icon: 'lucide:gift', lines: [t.gift.recipient_name ? `Presente para ${t.gift.recipient_name}` : 'Presente'] })
+  }
   return rows
 })
 
@@ -534,15 +535,12 @@ watchEffect(() => {
   yoinCelebrado.value = true
   nextTick(() => dispararConfetti())
 })
-// Compartilhar: folha nativa do sistema quando existe (WhatsApp, Mensagens,
-// Instagram — a escolha é do cliente), com o link do WhatsApp como fallback no
-// desktop. As armadilhas que faziam chegar só a URL crua estão em `utils/share`.
-const shareText = computed(() => {
-  const texto = tracking.value?.share_text
-  if (!texto) return ''
-  const origin = import.meta.client ? window.location.origin : ''
-  return shareMessage(texto, orderShareUrl(origin, orderRef.value))
-})
+// Enviar resumo: folha nativa do sistema quando existe (WhatsApp, Mensagens,
+// a escolha é do cliente), com o link do WhatsApp como fallback no desktop.
+// Vai o TEXTO do pedido (itens, quando, onde), montado no servidor, e nenhum
+// link: o link do pedido só abre para quem o fez, e quem o recebia caía em
+// "Não encontramos este pedido" (beta 06/11).
+const shareText = computed(() => tracking.value?.share_text?.trim() || '')
 const shareHref = computed(() => whatsAppShareHref(shareText.value))
 async function compartilhar (event: MouseEvent) {
   if (!canShareNatively() || !shareText.value) return
@@ -906,25 +904,53 @@ useSeoMeta({
                 </UiTabsContent>
 
                 <UiTabsContent value="summary">
-                  <!-- Mesma diagramação do overlay de revisão: itens (qty + nome),
-                       linhas ícone+valor e Total. Fonte = projeção do pedido. -->
-                  <div class="px-1">
+                  <!-- O Resumo conta o que a revisão do checkout contou: itens com
+                       preço, a conta inteira e o que o cliente informou. Fonte =
+                       projeção do pedido. -->
+                  <div class="px-1" data-tracking-summary>
                     <ul v-if="tracking.items.length" class="space-y-1">
-                      <li v-for="item in tracking.items" :key="item.sku" class="shop-body">
-                        <span class="font-semibold tabular-nums">{{ item.qty }}×</span>
-                        {{ item.name }}
+                      <li v-for="item in tracking.items" :key="item.sku" class="flex items-baseline justify-between gap-3 shop-body">
+                        <span class="min-w-0">
+                          <span class="font-semibold tabular-nums">{{ item.qty }}×</span>
+                          {{ item.name }}
+                        </span>
+                        <span class="shrink-0 tabular-nums">{{ item.total_display }}</span>
                       </li>
                     </ul>
                     <p v-else class="shop-muted">Os itens deste pedido aparecem aqui.</p>
+
+                    <dl class="mt-3 space-y-1 border-t pt-3 text-sm" data-tracking-summary-bill>
+                      <div v-if="tracking.subtotal_display" class="flex items-baseline justify-between gap-3">
+                        <dt class="shop-muted">Subtotal</dt>
+                        <dd class="tabular-nums">{{ tracking.subtotal_display }}</dd>
+                      </div>
+                      <div v-for="discount in tracking.discount_lines || []" :key="discount.label" class="flex items-baseline justify-between gap-3">
+                        <dt class="shop-muted">{{ discount.label }}</dt>
+                        <dd class="tabular-nums text-primary">- {{ discount.amount_display }}</dd>
+                      </div>
+                      <div v-if="tracking.delivery_fee_display" class="flex items-baseline justify-between gap-3">
+                        <dt class="shop-muted">Entrega<span v-if="tracking.delivery_distance_display"> · {{ tracking.delivery_distance_display }}</span></dt>
+                        <dd class="tabular-nums">{{ tracking.delivery_fee_display }}</dd>
+                      </div>
+                      <div class="flex items-baseline justify-between gap-3">
+                        <dt class="shop-body font-semibold">{{ tracking.copy.total_label }}</dt>
+                        <dd class="font-semibold tabular-nums">{{ tracking.total_display }}</dd>
+                      </div>
+                    </dl>
 
                     <UiSeparator class="my-3" />
 
                     <OrderSummaryRows :rows="summaryRows" />
 
-                    <div class="mt-3 flex items-baseline justify-between border-t pt-3">
-                      <span class="shop-body font-semibold">{{ tracking.copy.total_label }}</span>
-                      <span class="font-semibold tabular-nums">{{ tracking.total_display }}</span>
-                    </div>
+                    <!-- Bilhete do presente e observação: a mesma superfície da revisão. -->
+                    <p v-if="tracking.gift?.message" class="mt-3 rounded-lg bg-muted/50 p-3" data-tracking-summary-gift>
+                      <span class="mb-0.5 block shop-kicker">Cartão do presente</span>
+                      <span class="shop-body italic">“{{ tracking.gift.message }}”</span>
+                    </p>
+                    <p v-if="tracking.customer_notes" class="mt-3 rounded-lg bg-muted/50 p-3" data-tracking-summary-notes>
+                      <span class="mb-0.5 block shop-kicker">Observação</span>
+                      <span class="shop-body">{{ tracking.customer_notes }}</span>
+                    </p>
                   </div>
                 </UiTabsContent>
 
@@ -1024,7 +1050,7 @@ useSeoMeta({
             >
               {{ tracking.pickup_info.directions_label }}
             </UiButton>
-            <!-- Compartilhar é permanente: serve mais com o pedido pronto do que
+            <!-- Enviar resumo é permanente: serve mais com o pedido pronto do que
                  logo depois do checkout, onde vivia preso ao banner do yoin. -->
             <UiButton v-if="mounted && shareHref" :href="shareHref" target="_blank" rel="noopener" variant="secondary" icon="lucide:share-2" class="w-full" @click="compartilhar">
               {{ tracking.share_cta }}

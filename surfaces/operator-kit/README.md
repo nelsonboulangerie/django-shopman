@@ -1388,6 +1388,36 @@ ganha o respiro da confortável).
 - Substituiu as cinco tabelas do Gestor (Lista da fila, Histórico, Clientes, Unificações e a
   matriz do Catálogo) e aposentou o `ColumnPicker`.
 
+### Exibir no estreito (`OperatorViewMenu`)
+
+Dono, 07/11/2026: no celular, os controles que mudam COMO uma lista aparece (Grade ou
+Lista, densidade, ocultar indisponíveis) não são gestos primários e roubavam a linha da
+busca e a dos filtros. No estreito eles viram **um botão "Exibir"**, o mesmo gesto do
+`OperatorTableView` das tabelas: só o ícone, que é o estado da vista atual (grade ou
+lista); o menu traz uma seção por escolha, com a opção atual marcada, e as preferências
+de ligar e desligar juntas no fim. O nome do botão diz o estado inteiro ("Exibir: Grade,
+Padrão, indisponíveis ocultos"); preferência ligada deixa o botão `soft`.
+
+```vue
+<OperatorViewMenu v-if="narrow" :groups="[
+  { kind: 'choice', key: 'layout', label: 'Vista', value: layout, options: LAYOUTS, select: setLayout },
+  { kind: 'toggle', key: 'hide', label: 'Ocultar indisponíveis', onLabel: 'indisponíveis ocultos',
+    checked: hide, icon: 'lucide:eye-off', toggle: setHide },
+]" />
+```
+
+- **Quando**: a tela decide pela largura da ÁREA (não da tela). No PDV, área de produtos
+  abaixo de 32rem (`collapseViewControls`), que cobre todo celular em pé. Na mesa e no
+  tablet, os segmentados e o olho continuam à vista: um clique, estado de relance.
+- **Um botão por tela, não um por grupo**: vista, densidade e ocultar vão no mesmo menu,
+  como Linhas e Colunas no "Exibir" da tabela. Dois botões de visualização lado a lado no
+  celular voltariam a disputar a linha.
+- **O que NÃO entra**: filtro (muda O QUE aparece; é do `OperatorFilterPanel`), recorte
+  com contagem e ação. Par único de vista (só Grade | Lista) não precisa de menu: no
+  estreito vira um botão que alterna, dizendo a vista que abre.
+- **Menu aberto depois da escolha**: quem ajusta vê o efeito e ajusta a próxima.
+- Desenho puro em `presentation/viewMenu.ts`. Consumidor: `PosProductGrid` (PDV).
+
 ### Painel de filtros (`OperatorFilterPanel` + `useSavedViews` + `#filter-panel`)
 
 UM painel, igual no celular e na mesa (dono, 09/10/2026, referência: o Odoo), sobre o
@@ -1790,29 +1820,29 @@ montar.
 
 O gesto destrutivo que o cliente vai ler (cancelar, recusar) pergunta o motivo, diz a
 consequência e confirma num diálogo só. Consumidores: o cancelar da encomenda no PDV
-(`PosPreorderCancelDialog`) e o recusar/cancelar do Gestor (`OrderReasonDialog`).
+(`PosPreorderCancelDialog`), o recusar/cancelar do Gestor (`OrderReasonDialog`), a
+ouvidoria resolvida do Gestor e o recusar anúncio do Marketing.
 
 ```html
 <OperatorReasonDialog
   :open="open" title="Cancelar pedido" :description="consequence"
-  confirm-label="Confirmar" :presets="cancellation_presets" :busy="busy"
-  @update:open="open = $event" @confirm="({ reason, code }) => cancelOrder(reason, code)" />
+  confirm-label="Confirmar" :keyed-reasons="cancel_reasons" :busy="busy"
+  @update:open="open = $event" @confirm="({ key, reason }) => cancelOrder(key, reason)" />
 ```
 
 Contrato:
 
 - **A consequência é obrigatória** (`description`): reembolso, para onde vai o motivo.
-- **Motivos prontos** (`presets`, os grupos cadastrados no Admin) são um toque; com
-  eles vem o "Outros", que exige texto. "Outros" nunca é o motivo enviado.
-- **Motivo codificado** (`coded` + `codedReasons`): o iFood exige um código da lista
-  dele; a descrição escolhida vira o texto que o cliente lê.
-- `required` diz se confirmar em branco é permitido (recusar exige; cancelar não).
+- **Motivo da lista** (`keyedReasons`): a lista única do backend, a MESMA para recusar e
+  cancelar (dono, 07/11/2026). Escolher é obrigatório, a tela mostra a frase que o
+  cliente lê, e o texto livre é a observação interna (`{ key, reason }`).
+- **Texto livre** (sem lista): o motivo escrito; `required` exige texto para confirmar.
 - **Fechar com texto digitado pergunta dentro do diálogo**, nunca por
   `window.confirm`. Ocupado (`busy`), o diálogo não fecha nem confirma de novo.
 - A autorização do gerente fica **fora**: o `OperatorManagerAuth` sobe por cima, e o
   motivo digitado continua embaixo.
-- Peças do Nuxt UI, nada do app hospedeiro: `NuxtModal`, `NuxtSelect`, `NuxtFormField`
-  com `NuxtTextarea`, `NuxtAlert` e `NuxtButton`.
+- Peças do Nuxt UI, nada do app hospedeiro: `NuxtModal`, `NuxtRadioGroup`,
+  `NuxtFormField` com `NuxtTextarea`, `NuxtAlert` e `NuxtButton`.
 
 ## Pergunta antes de descartar (`useConfirm`)
 

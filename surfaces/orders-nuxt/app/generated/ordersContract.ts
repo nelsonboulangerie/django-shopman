@@ -309,6 +309,13 @@ export interface OrderItemProjection {
   total_display: string;
 }
 
+/** Uma linha de desconto do detalhe: "Cupom BEMVINDO", "−R$ 5,00". */
+export interface OrderDiscountLineProjection {
+  kind: string;
+  label: string;
+  amount_display: string;
+}
+
 /** A single event in the order timeline. */
 export interface TimelineEventProjection {
   label: string;
@@ -354,17 +361,12 @@ export interface AwaitingWorkOrderProjection {
   progress_pct: number;
 }
 
-/** Um motivo de cancelar da lista única (``shop/services/cancel_reasons.py``). */
+/** Um motivo de recusar ou cancelar da lista única (``shop/services/cancel_reasons.py``). */
 export interface CancelReasonProjection {
   key: string;
   label: string;
   customer_text: string;
-}
-
-/** Motivos de recusa sob um cabeçalho (``label`` vazio = sem cabeçalho). */
-export interface CancellationPresetGroupProjection {
-  label: string;
-  presets: string[];
+  offered_on_ifood: boolean;
 }
 
 /** Uma maquininha que o entregador pode levar no despacho (ref do canal + rótulo). */
@@ -672,6 +674,7 @@ export interface OperatorOrderProjection {
   delivery_instructions: string;
   total_display: string;
   items: OrderItemProjection[];
+  discount_lines: OrderDiscountLineProjection[];
   timeline: TimelineEventProjection[];
   kitchen_note: string;
   customer_note: string;
@@ -698,7 +701,6 @@ export interface OperatorOrderProjection {
   gift_recipient_phone: string;
   gift_message: string;
   gift_hide_values: boolean;
-  cancellation_presets: CancellationPresetGroupProjection[];
   cancel_reasons: CancelReasonProjection[];
   kitchen_note_tags: string[];
   customer_profile: CustomerProfileProjection | null;
@@ -815,6 +817,7 @@ export interface TwoZoneQueueProjection {
   equipment_available: EquipmentOptionProjection[];
   ride_candidates: RideCandidateProjection[];
   ifood_negotiation_orders: OrderCardProjection[];
+  cancel_reasons: CancelReasonProjection[];
   awareness: QueueAwarenessProjection | null;
 }
 

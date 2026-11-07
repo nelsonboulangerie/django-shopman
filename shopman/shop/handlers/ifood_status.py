@@ -197,9 +197,10 @@ def _enqueue_callback(order, actor) -> None:
             "status": order.status,
             **context,
             # cancellation.cancel writes these to order.data before the signal fires.
-            # The operator's chosen iFood code (if any) overrides the default.
+            # O código do iFood vem do motivo da casa (``DEFAULT_REASON_CODES``).
             "cancellation_reason": (order.data or {}).get("cancellation_reason", ""),
-            "cancellation_code": (order.data or {}).get("ifood_cancellation_code", ""),
+            "cancellation_code": (order.data or {}).get("ifood_cancellation_code")
+            or ifood_callbacks.resolve_cancellation_code((order.data or {}).get("cancellation_reason_key", "")),
         },
         dedupe_key=dedupe_key,
     )

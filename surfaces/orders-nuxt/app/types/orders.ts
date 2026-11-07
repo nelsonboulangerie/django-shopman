@@ -24,7 +24,6 @@ export type {
   MenuChannelProjection,
   AwaitingWorkOrderProjection,
   CancelReasonProjection,
-  CancellationPresetGroupProjection,
   OrderItemProjection,
   TimelineEventProjection,
 } from "~/generated/ordersContract";
@@ -38,12 +37,6 @@ export type OrderTimerClass =
 export interface OrderCardProjection extends OrderCardContract {
   timer_class: OrderTimerClass;
   fulfillment_type: "delivery" | "pickup";
-}
-
-/** A coded cancellation reason (marketplace/iFood requires one per order). */
-export interface CancellationReason {
-  code: string;
-  description: string;
 }
 
 /** Courier ride block (Order.data["courier"] → projections._courier_block).

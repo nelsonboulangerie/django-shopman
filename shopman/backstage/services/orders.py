@@ -23,7 +23,7 @@ def confirm_order(order, *, actor: str, expected_revision: str | None = None):
         raise OrderError(str(exc) or "Não foi possível aceitar o pedido.") from exc
 
 
-def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellation_code: str = "", expected_revision=None, prepared_identity=None):
+def reject_order(order, *, reason: str, actor: str, rejected_by: str, reason_key: str = "", internal_note: str = "", expected_revision=None, prepared_identity=None):
     if not reason.strip():
         raise OrderError("Motivo obrigatório")
     try:
@@ -32,7 +32,8 @@ def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellati
             reason=reason.strip(),
             actor=actor,
             rejected_by=rejected_by,
-            cancellation_code=cancellation_code,
+            reason_key=reason_key,
+            internal_note=internal_note,
             **({"expected_revision": expected_revision} if expected_revision is not None else {}),
             **({"prepared_identity": prepared_identity} if prepared_identity is not None else {}),
         )
@@ -98,7 +99,7 @@ class OrderChangeOutRequired(OrderError):
         self.suggested_q = int(suggested_q)
 
 
-def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "", reason_key: str = "", internal_note: str = "", expected_authority_revision: str | None = None, expected_revision=None, prepared_identity=None):
+def cancel_order(order, *, reason: str, actor: str, reason_key: str = "", internal_note: str = "", expected_authority_revision: str | None = None, expected_revision=None, prepared_identity=None):
     """Cancela o pedido, ou levanta ``OrderConflict`` se o estado não permitir.
 
     ``cancellation.cancel`` devolve ``False`` sem levantar quando a máquina de
@@ -112,7 +113,6 @@ def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "",
             order,
             reason=reason,
             actor=actor,
-            cancellation_code=cancellation_code,
             reason_key=reason_key,
             internal_note=internal_note,
             **({"expected_revision": expected_revision} if expected_revision is not None else {}),
@@ -129,13 +129,12 @@ def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "",
     return cancelled
 
 
-def prepare_cancellation(order, code):
-    """Resolve the provider reason before the local mutation transaction."""
+def prepare_cancellation(order, reason_key):
+    """Confere o código do iFood do motivo antes da transação local (só no iFood)."""
+    from shopman.shop.services import ifood_callbacks
+
+    code = ifood_callbacks.resolve_cancellation_code(reason_key) if order.channel_ref == "ifood" else ""
     return operator_orders._validate_operator_cancellation_code(order, code)
-
-
-def cancellation_reasons(order) -> list[dict]:
-    return operator_orders.cancellation_reasons(order)
 
 
 def settle_delivery_cash(

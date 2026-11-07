@@ -175,7 +175,6 @@ from .operations import (
     OrderAdvanceView,
     OrderAssignView,
     OrderBoardLayoutView,
-    OrderCancellationReasonsView,
     OrderCancelView,
     OrderCommentView,
     OrderConfirmView,
@@ -922,11 +921,6 @@ urlpatterns = [
     ),
     path("orders/<str:ref>/reject/", OrderRejectView.as_view(), name="api-backstage-order-reject"),
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-backstage-order-cancel"),
-    path(
-        "orders/<str:ref>/cancellation-reasons/",
-        OrderCancellationReasonsView.as_view(),
-        name="api-backstage-order-cancellation-reasons",
-    ),
     path(
         "orders/<str:ref>/settle-delivery-cash/",
         OrderSettleDeliveryCashView.as_view(),

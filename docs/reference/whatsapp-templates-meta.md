@@ -419,6 +419,22 @@ A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, 
 > ℹ️ O código Pix copia-e-cola **não** viaja no template (é longo e opcional). Fica no
 > SMS/e-mail; aqui a pessoa chega pela tela do pedido, onde o Pix e o cartão estão inline.
 
+### `pagamento_cartao_falhou` — evento `payment_requested_card_repayment` 🆕 · ⏳ a submeter (texto para o dono aprovar)
+Variante do `payment_requested` no NOVO pagamento: a cobrança do cartão não passou
+depois do aceite, a reserva antiga foi anulada e o cliente paga de novo (decisão do
+dono, 07/11/2026). Não é evento emitido: o adapter
+(`notification_manychat._card_repayment_variant`) a escolhe quando o pedido tem
+`payment.repayment`, o canal aceita Pix, o método ainda é cartão e há prazo.
+- Categoria: **Utility** · Idioma: **pt_BR**
+- Corpo: `Oi, {{1}}! A cobrança no cartão do seu pedido {{2}} falhou, e nada foi cobrado. Seu pedido segue reservado: dá para pagar com Pix ou com outro cartão até {{3}}. 💛`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`hoje às 18h30` (`payment_deadline`)
+- Botão URL: `Pagar pedido` → `/pedido/{{1}}` (`order_ref`)
+
+> ⛔ **Falha fechada.** Enquanto o modelo não estiver aprovado e o flow ligado
+> (`MANYCHAT_FLOW_MAP["payment_requested_card_repayment"]` ou o `NotificationTemplate`
+> do evento), o aviso sai pelo `pagamento_solicitado` aprovado, e o adapter registra
+> `manychat.card_repayment_flow_pending` (info). Nunca sai texto que a Meta não aprovou.
+
 ### `link_pagamento_enviado` — evento `payment_link_sent`
 Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e o cliente paga pelo link.
 - Corpo: `Oi, {{1}}! Anotamos seu pedido {{2}} no valor de {{3}}. Pague até {{4}} para garantir. Depois disso liberamos a reserva.`
@@ -692,6 +708,7 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 | `order_rescheduled` | `pedido_nova_data` | Utility |
 | `order_updated` | `pedido_atualizado` | Utility |
 | `payment_requested` | `pagamento_solicitado` | Utility |
+| `payment_requested_card_repayment` (novo pagamento após cartão recusado) | `pagamento_cartao_falhou` | Utility 🆕 |
 | `payment_link_sent` | `link_pagamento_enviado` | Utility |
 | `payment_confirmed` | `pagamento_confirmado` | Utility |
 | `payment_reminder` | `pagamento_lembrete` | Utility |

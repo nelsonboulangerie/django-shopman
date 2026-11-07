@@ -20,10 +20,20 @@ const profileIssueActions = ref<Action[]>([])
 const profileSaved = ref(false)
 const profilePendingSave = ref(false)
 const profileForm = reactive({ first_name: '', last_name: '', email: '', birthday: '' })
-const fieldErrors = reactive<{ first_name?: string, email?: string }>({})
+const fieldErrors = reactive<{ first_name?: string, last_name?: string, email?: string }>({})
+
+// `<` e `>` não existem em nome de gente; o servidor recusa com a mesma frase.
+const NAME_MARKUP = /[<>]/
+const NAME_MARKUP_MESSAGE = 'O nome não pode ter os sinais < ou >.'
 
 function validateFirstName () {
-  fieldErrors.first_name = profileForm.first_name.trim() ? undefined : 'Informe seu primeiro nome.'
+  const value = profileForm.first_name.trim()
+  fieldErrors.first_name = !value
+    ? 'Informe seu primeiro nome.'
+    : NAME_MARKUP.test(value) ? NAME_MARKUP_MESSAGE : undefined
+}
+function validateLastName () {
+  fieldErrors.last_name = NAME_MARKUP.test(profileForm.last_name) ? NAME_MARKUP_MESSAGE : undefined
 }
 function validateEmail () {
   const email = profileForm.email.trim()
@@ -31,8 +41,9 @@ function validateEmail () {
 }
 function validateProfile (): boolean {
   validateFirstName()
+  validateLastName()
   validateEmail()
-  return !fieldErrors.first_name && !fieldErrors.email
+  return !fieldErrors.first_name && !fieldErrors.last_name && !fieldErrors.email
 }
 
 const { data: profile, pending } = await useFetch<AccountProfile>(apiPath('/api/v1/account/profile/'), {
@@ -93,6 +104,7 @@ function startEdit () {
   clearProfileIssue()
   profileSaved.value = false
   fieldErrors.first_name = undefined
+  fieldErrors.last_name = undefined
   fieldErrors.email = undefined
   isEditing.value = true
 }
@@ -222,6 +234,7 @@ async function submitProfile () {
     profileIssueActions.value = issue.actions
     if (issue.field === 'email') fieldErrors.email = issue.message
     if (issue.field === 'first_name') fieldErrors.first_name = issue.message
+    if (issue.field === 'last_name') fieldErrors.last_name = issue.message
     if (import.meta.client) useSonner.error(issue.message)
   } finally {
     profilePendingSave.value = false
@@ -281,15 +294,14 @@ useSeoMeta({ title: 'Perfil' })
 
           <!-- Duas coisas diferentes, e a frase precisa separá-las: ENTRAR com
                outro número abre outra conta; MUDAR o número leva esta conta
-               junto. Enquanto só existia a primeira, a copy honesta parava no
-               aviso. Agora ela aponta a saída. -->
-          <div class="mt-1 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <p class="shop-meta">
-              Mudou de número? <NuxtLink to="/conta/seguranca" class="underline underline-offset-2">Leve a conta junto</NuxtLink>.
-              Entrar com outro número abre outra conta.
-            </p>
-            <UiButton to="/entrar?next=/conta/perfil" variant="ghost" size="sm" class="w-full shrink-0 sm:w-auto">Entrar com outra conta</UiButton>
-          </div>
+               junto. O botão "Entrar com outra conta" que morava aqui saiu (beta
+               06/11): ao lado de "Leve a conta junto", ele era o caminho errado
+               com cara de certo, e na prática abria uma conta nova. Quem quer
+               mesmo trocar de conta sai pela Conta e entra de novo. -->
+          <p class="mt-1 border-t pt-4 shop-meta">
+            Mudou de número? <NuxtLink to="/conta/seguranca" class="underline underline-offset-2">Leve a conta junto</NuxtLink>.
+            Entrar com outro número abre outra conta.
+          </p>
         </div>
       </div>
 
@@ -331,7 +343,8 @@ useSeoMeta({ title: 'Perfil' })
               </UiField>
               <UiField>
                 <UiFieldLabel for="account-last-name">{{ profileCopy.last_name_field }}</UiFieldLabel>
-                <UiInput id="account-last-name" v-model="profileForm.last_name" autocomplete="family-name" />
+                <UiInput id="account-last-name" v-model="profileForm.last_name" autocomplete="family-name" :aria-invalid="!!fieldErrors.last_name" @blur="validateLastName" />
+                <UiFieldError v-if="fieldErrors.last_name" :errors="[fieldErrors.last_name]" />
               </UiField>
             </div>
           </div>
@@ -350,9 +363,7 @@ useSeoMeta({ title: 'Perfil' })
             </UiField>
           </div>
 
-          <!-- No mobile empilha (o label longo do botão esmagava o texto numa
-               coluna de 1 palavra); no desktop volta a ser linha. -->
-          <div class="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center">
+          <div class="flex border-t pt-4">
             <div class="flex min-w-0 flex-1 items-center gap-3">
               <span class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
                 <Icon name="lucide:phone" class="size-4" />
@@ -366,7 +377,6 @@ useSeoMeta({ title: 'Perfil' })
                 </p>
               </div>
             </div>
-            <UiButton to="/entrar?next=/conta/perfil" variant="ghost" size="sm" class="w-full shrink-0 sm:w-auto">Entrar com outra conta</UiButton>
           </div>
         </div>
 

@@ -686,6 +686,8 @@ def capture(order) -> None:
         locked = Order.objects.select_for_update().get(pk=order.pk)
         _capture_once(locked)
         order.data = locked.data
+    if capture_failure(order) is not None:
+        request_new_payment_after_capture_failure(order)
 
 
 def _capture_once(order) -> None:
@@ -776,6 +778,152 @@ def _record_capture_failure(order, *, payment_data: dict, intent_ref: str, metho
             actor="payment.capture",
             payload={"method": method, "intent_ref": intent_ref, "code": code},
         )
+
+
+#: ``order.data["payment"][REPAYMENT_KEY]``: a cobrança do cartão falhou depois
+#: do aceite e o cliente foi chamado a pagar de novo (decisão do dono, 07/11).
+REPAYMENT_KEY = "repayment"
+
+
+def request_new_payment_after_capture_failure(order) -> bool:
+    """A cobrança do cartão não passou depois do aceite: pede um pagamento novo.
+
+    Decisão do dono (07/11/2026): o pedido fica em espera, transparente para a
+    casa, e só segue quando o pagamento for confirmado. A espera é a que o Core
+    já tem para o pedido aceito sem captura: o avanço fica barrado
+    (``PAYMENT_NOT_CAPTURED``), a cozinha não recebe nada, o ``payment.timeout``
+    cancela no prazo e o ``on_paid`` retoma do aceite quando o dinheiro entra.
+
+    Aqui só se troca a cobrança: a autorização velha é anulada no gateway (a
+    reserva sai do cartão do cliente) e uma cobrança nova nasce, com prazo.
+    Se a anulação falhar, nada novo é criado: duas reservas no cartão do cliente
+    é pior que nenhuma, e o pedido segue em "Cobrança recusada" com o alerta.
+
+    Devolve ``True`` quando a cobrança nova foi aberta.
+    """
+    failure = capture_failure(order)
+    if failure is None:
+        return False
+    old_intent_ref = str(failure.get("intent_ref") or "")
+    cancel(order, reason="capture_failed")
+    if (get_payment_status(order) or "").lower() == "authorized":
+        logger.warning("payment.repayment_skipped_hold_still_active order=%s intent=%s", order.ref, old_intent_ref)
+        return False
+
+    payment_data = dict((order.data or {}).get("payment") or {})
+    for key in _INTENT_PRESENTATION_KEYS:
+        payment_data.pop(key, None)
+    payment_data.pop("last_decline", None)
+    payment_data[REPAYMENT_KEY] = {
+        "after_intent_ref": old_intent_ref,
+        "requested_at": timezone.now().isoformat(),
+    }
+    data = dict(order.data or {})
+    data["payment"] = payment_data
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    initiate(order)
+    _stamp_repayment_terms(order)
+    order.emit_event(
+        event_type="payment.repayment_requested",
+        actor="payment.capture",
+        payload={"after_intent_ref": old_intent_ref, "intent_ref": str(((order.data or {}).get("payment") or {}).get("intent_ref") or "")},
+    )
+    return True
+
+
+def _stamp_repayment_terms(order) -> None:
+    """Guarda no ``repayment`` o prazo da cobrança nova e se o canal aceita Pix.
+
+    O prazo é UM só para o novo pagamento: trocar para Pix não estica o relógio
+    (``_adapter_config`` lê ``deadline_at``). ``pix_allowed`` decide se a tela e o
+    aviso podem oferecer o Pix.
+    """
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.services.order_helpers import merge_order_data
+
+    payment_data = (order.data or {}).get("payment") or {}
+    repayment = dict(payment_data.get(REPAYMENT_KEY) or {})
+    if not repayment:
+        return
+    repayment["deadline_at"] = str(payment_data.get("expires_at") or "")
+    repayment["pix_allowed"] = "pix" in ChannelConfig.for_channel(order.channel_ref).payment.available_methods
+    merge_order_data(order, {REPAYMENT_KEY: repayment}, block="payment")
+
+
+#: Por que a troca para Pix foi recusada (a tela mostra ``message``).
+class RepaymentSwitchRefused(Exception):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def switch_repayment_to_pix(order) -> None:
+    """O cliente escolheu pagar o novo pagamento com Pix (decisão do dono, 07/11).
+
+    Só na espera do novo pagamento de cartão, com Pix aceito no canal. A cobrança
+    de cartão aberta é cancelada no gateway ANTES de o Pix nascer: duas cobranças
+    abertas para o mesmo pedido deixariam o cliente pagar duas vezes. O Pix vale
+    até o mesmo prazo (``repayment.deadline_at``); dali em diante o fluxo é o do
+    Pix de sempre (confirmou, ``on_paid`` segue; venceu, ``payment.timeout`` cancela).
+    """
+    from shopman.orderman.models import Order
+
+    repayment = awaiting_repayment(order)
+    payment_data = dict((order.data or {}).get("payment") or {})
+    if order.status != Order.Status.ACCEPTED or repayment is None:
+        raise RepaymentSwitchRefused("not_awaiting_repayment", "Este pedido não está esperando um novo pagamento.")
+    if str(payment_data.get("method") or "").lower() == "pix":
+        return
+    if not repayment.get("pix_allowed"):
+        raise RepaymentSwitchRefused("pix_unavailable", "O Pix não está disponível para este pedido.")
+
+    card_intent_ref = str(payment_data.get("intent_ref") or "")
+    cancel(order, reason="switched_to_pix")
+    if (get_payment_status(order) or "").lower() not in {"cancelled", "failed", ""}:
+        logger.warning("payment.switch_to_pix_card_still_open order=%s intent=%s", order.ref, card_intent_ref)
+        raise RepaymentSwitchRefused(
+            "card_charge_still_open",
+            "Não conseguimos fechar a cobrança do cartão agora. Tente de novo em instantes.",
+        )
+
+    payment_data = dict((order.data or {}).get("payment") or {})
+    for key in _INTENT_PRESENTATION_KEYS:
+        payment_data.pop(key, None)
+    payment_data.pop("last_decline", None)
+    payment_data.pop("error", None)
+    payment_data["method"] = "pix"
+    data = dict(order.data or {})
+    data["payment"] = payment_data
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    initiate(order)
+    order.emit_event(
+        event_type="payment.method_changed",
+        actor="customer",
+        payload={"from": "card", "to": "pix", "cancelled_intent_ref": card_intent_ref},
+    )
+
+
+def awaiting_repayment(order) -> dict | None:
+    """O pedido espera o pagamento NOVO pedido depois da cobrança recusada.
+
+    ``{after_intent_ref, requested_at}`` enquanto a cobrança nova está aberta e o
+    dinheiro não entrou; ``None`` depois da captura (``transaction_id``) ou fora
+    desse caminho.
+    """
+    payment_data = (getattr(order, "data", None) or {}).get("payment") or {}
+    repayment = payment_data.get(REPAYMENT_KEY)
+    if not isinstance(repayment, dict) or payment_data.get("transaction_id"):
+        return None
+    if str(payment_data.get("intent_ref") or "") == str(repayment.get("after_intent_ref") or ""):
+        return None
+    # A captura pode entrar por caminhos que não gravam ``transaction_id`` no
+    # pedido (conferência com o gateway): o Payman é quem diz se pagou.
+    if has_sufficient_captured_payment(order) is True:
+        return None
+    return repayment
 
 
 def capture_failure(order) -> dict | None:
@@ -3169,6 +3317,19 @@ def _schedule_payment_timeout(order, intent: PaymentIntent) -> None:
         logger.warning("payment.timeout_schedule_failed order=%s", order.ref, exc_info=True)
 
 
+def _repayment_minutes_left(order) -> int | None:
+    """Minutos até o prazo do novo pagamento, quando o pedido está nele."""
+    import math
+
+    repayment = ((getattr(order, "data", None) or {}).get("payment") or {}).get(REPAYMENT_KEY)
+    if not isinstance(repayment, dict):
+        return None
+    deadline = parse_datetime(str(repayment.get("deadline_at") or ""))
+    if deadline is None:
+        return None
+    return max(1, math.ceil((deadline - timezone.now()).total_seconds() / 60))
+
+
 def _adapter_config(order, *, method: str) -> dict:
     from shopman.shop.config import ChannelConfig
 
@@ -3177,6 +3338,10 @@ def _adapter_config(order, *, method: str) -> dict:
     config: dict = {}
     if method == "pix":
         config["pix_timeout_minutes"] = cfg.payment.timeout_minutes
+        repayment_minutes = _repayment_minutes_left(order)
+        if repayment_minutes is not None:
+            # O Pix escolhido no lugar do cartão recusado vale até o MESMO prazo.
+            config["pix_timeout_minutes"] = repayment_minutes
         if _is_pos_remote_order(order):
             # Pix de ENCOMENDA anotada no PDV: o cliente paga depois, de casa, e
             # o pedido pode ser para a semana que vem. O prazo do Pix de balcão

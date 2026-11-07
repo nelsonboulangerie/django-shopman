@@ -42,7 +42,6 @@ import type { OperatorActionBarAction } from "../../../operator-kit/app/presenta
 import type { OperatorBulkItem } from "../../../operator-kit/app/presentation/bulkBar";
 import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
 import type { OperatorSwipeAction } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
-import type { CancellationReason } from "~/composables/useOrdersBoard";
 import {
   BOARD_COLUMNS_QUERY,
   BOARD_ZONE_KEYS,
@@ -65,6 +64,7 @@ import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 const {
   readMetadata,
   queue,
+  cancelReasons,
   zones,
   deviceAgent,
   preorders,
@@ -78,7 +78,6 @@ const {
   confirm,
   advance,
   reject,
-  fetchCancellationReasons,
   settleCash,
   equipmentBack,
   courierBack,
@@ -1069,31 +1068,18 @@ function onKeydown(e: KeyboardEvent) {
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
-// reject dialog (needs a reason). For marketplace (iFood) orders the reason is a
-// coded pick from the provider's live list; other channels use free text.
+// reject dialog: o MESMO `OrderReasonDialog` do detalhe (beta 06/11: o quadro tinha
+// um diálogo próprio, com texto livre). Uma lista de motivos em qualquer canal; no
+// iFood o diálogo esconde o que o iFood não oferece.
 const rejectRef = ref<string | null>(null);
-const rejectReason = ref("");
-const rejectReasons = ref<CancellationReason[]>([]);
-const rejectCode = ref("");
-const rejectDirty = computed(
-  () =>
-    rejectRef.value !== null &&
-    Boolean(rejectReason.value.trim() || rejectCode.value),
-);
+// O diálogo diz quando há motivo escolhido ou texto; ele mesmo pede confirmação ao
+// fechar, e a página guarda só a saída por rota e por recarga.
+const rejectDirty = ref(false);
 const confirmDiscard = useConfirm();
-async function closeReject() {
+function closeReject() {
   if (rejectRef.value && isBusy(rejectRef.value)) return;
-  if (
-    rejectDirty.value &&
-    !(await confirmDiscard({
-      title: "Descartar o motivo digitado?",
-      description:
-        "O motivo que você escreveu se perde, e o pedido não é recusado.",
-      cancelLabel: "Continuar escrevendo",
-    }))
-  )
-    return;
   rejectRef.value = null;
+  rejectDirty.value = false;
 }
 onBeforeRouteLeave(
   () =>
@@ -1101,9 +1087,9 @@ onBeforeRouteLeave(
     confirmDiscard({
       title: "Sair sem recusar o pedido?",
       description:
-        "O motivo que você escreveu se perde, e o pedido não é recusado.",
+        "O motivo que você escolheu se perde, e o pedido não é recusado.",
       confirmLabel: "Descartar e sair",
-      cancelLabel: "Continuar escrevendo",
+      cancelLabel: "Continuar escolhendo",
     }),
 );
 function beforeUnload(event: BeforeUnloadEvent) {
@@ -1113,64 +1099,18 @@ function beforeUnload(event: BeforeUnloadEvent) {
 }
 onMounted(() => window.addEventListener("beforeunload", beforeUnload));
 onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload));
-const rejectReasonsLoading = ref(false);
-const rejectReasonsError = ref("");
 const isMarketplaceReject = computed(
   () =>
     allCards.value.find((c) => c.ref === rejectRef.value)?.channel_ref ===
     "ifood",
 );
-const canConfirmReject = computed(
-  () =>
-    !rejectReasonsLoading.value &&
-    !rejectReasonsError.value &&
-    (isMarketplaceReject.value
-      ? rejectReasons.value.some((r) => r.code === rejectCode.value)
-      : rejectReason.value.trim() !== ""),
-);
-async function openReject(ref_: string) {
+function openReject(ref_: string) {
   rejectRef.value = ref_;
-  rejectReason.value = "";
-  rejectCode.value = "";
-  rejectReasons.value = [];
-  // Só o iFood tem códigos a buscar; nos outros canais o carregando falava do iFood
-  // num pedido da Loja online.
-  if (isMarketplaceReject.value) await loadRejectReasons();
 }
-let rejectReasonsRequest = 0;
-async function loadRejectReasons() {
+async function confirmReject(payload: { reasonKey: string; internalNote: string }) {
   const ref_ = rejectRef.value;
-  if (!ref_) return;
-  const request = ++rejectReasonsRequest;
-  rejectReasonsLoading.value = true;
-  rejectReasonsError.value = "";
-  try {
-    const result = await fetchCancellationReasons(ref_);
-    if (request === rejectReasonsRequest && ref_ === rejectRef.value)
-      rejectReasons.value = result;
-  } catch {
-    if (request === rejectReasonsRequest && ref_ === rejectRef.value)
-      rejectReasonsError.value =
-        "Não foi possível consultar os motivos. Nenhuma ação foi aplicada.";
-  } finally {
-    if (request === rejectReasonsRequest) rejectReasonsLoading.value = false;
-  }
-}
-
-function onRejectCodeChange() {
-  // Mirror the picked reason's text into the customer-facing reason.
-  const picked = rejectReasons.value.find((r) => r.code === rejectCode.value);
-  if (picked) rejectReason.value = picked.description;
-}
-async function confirmReject() {
-  const ref_ = rejectRef.value;
-  if (!ref_ || isBusy(ref_) || !canConfirmReject.value) return;
-  const ok = await reject(
-    ref_,
-    rejectReason.value.trim() || "Pedido recusado",
-    rejectCode.value,
-  );
-  if (ok) rejectRef.value = null;
+  if (!ref_ || isBusy(ref_)) return;
+  if (await reject(ref_, payload)) closeReject();
 }
 
 // settle-cash dialog (needs an amount; and, when the courier took change from
@@ -2228,96 +2168,21 @@ function compactClear() {
       data-exit-base-action
     />
 
-    <!-- reject dialog -->
-    <NuxtModal
+    <!-- reject dialog: o mesmo diálogo de motivo do detalhe do pedido -->
+    <OrderReasonDialog
       :open="rejectRef != null"
-      :title="`Recusar pedido ${rejectRef ?? ''}`"
-      :description="
-        isMarketplaceReject
-          ? 'Escolha o motivo que o iFood exige. Ele é enviado ao iFood.'
-          : 'Informe o motivo. O cliente recebe o aviso com ele.'
-      "
+      mode="reject"
+      :marketplace="isMarketplaceReject"
+      :cancel-reasons="cancelReasons"
+      :busy="Boolean(rejectRef && isBusy(rejectRef))"
+      @dirty-change="rejectDirty = $event"
       @update:open="
         (v) => {
           if (!v) closeReject();
         }
       "
-    >
-      <template #body>
-        <div class="grid gap-4">
-          <NuxtEmpty
-            v-if="rejectReasonsLoading"
-            loading
-            size="sm"
-            :title="
-              isMarketplaceReject
-                ? 'Carregando motivos do iFood…'
-                : 'Carregando motivos…'
-            "
-          />
-          <NuxtAlert
-            v-else-if="rejectReasonsError"
-            color="error"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            :description="rejectReasonsError"
-            :actions="alertActions('error', [
-              {
-                label: 'Consultar novamente',
-                onClick: () => loadRejectReasons(),
-              },
-            ])"
-          />
-          <NuxtEmpty
-            v-else-if="isMarketplaceReject && !rejectReasons.length"
-            icon="i-lucide-circle-slash"
-            title="Nenhum motivo disponível"
-            description="O iFood não oferece motivos de cancelamento neste momento."
-          />
-          <!-- Marketplace (iFood): coded reason picker from the provider's live list -->
-          <NuxtSelect
-            v-else-if="isMarketplaceReject"
-            v-model="rejectCode"
-            class="w-full"
-            :items="
-              rejectReasons.map((reason) => ({
-                label: reason.description,
-                value: reason.code,
-              }))
-            "
-            placeholder="Selecione o motivo…"
-            aria-label="Motivo do cancelamento (iFood)"
-            @update:model-value="onRejectCodeChange"
-          />
-          <!-- Other channels: free-text reason -->
-          <NuxtTextarea
-            v-else
-            v-model="rejectReason"
-            class="w-full"
-            :rows="3"
-            placeholder="Motivo da recusa…"
-            aria-label="Motivo da recusa"
-          />
-        </div>
-      </template>
-      <template #footer>
-        <NuxtButton
-          label="Voltar"
-          color="neutral"
-          variant="outline"
-          :disabled="Boolean(rejectRef && isBusy(rejectRef))"
-          @click="closeReject"
-        />
-        <NuxtButton
-          label="Recusar pedido"
-          color="error"
-          :disabled="
-            !canConfirmReject || Boolean(rejectRef && isBusy(rejectRef))
-          "
-          @click="confirmReject"
-        />
-      </template>
-    </NuxtModal>
+      @confirm="confirmReject"
+    />
 
     <!-- o interruptor do canal (coluna da Fila): o mesmo diálogo de Canais -->
     <ChannelSwitchDialog

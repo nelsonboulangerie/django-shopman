@@ -198,20 +198,32 @@ def reject_order(
     reason: str,
     actor: str,
     rejected_by: str,
-    cancellation_code: str = "",
+    reason_key: str = "",
+    internal_note: str = "",
     expected_revision: str | None = None,
     prepared_identity: tuple[str, str] | None = None,
 ) -> None:
     """Reject an order and queue the customer notification directive.
 
-    ``cancellation_code`` is the marketplace (iFood) cancellation code the
-    operator picked; it rides ``order.data`` to the status-callback handler.
+    ``reason_key`` é a chave da lista única de motivos (``services/cancel_reasons``),
+    a MESMA do cancelar, em qualquer canal: o cliente lê o texto revisado dela no
+    aviso ``order_rejected``. Obrigatória (``ValueError`` se ausente ou fora da
+    lista do canal). No iFood, o ``cancellationCode`` sai dela
+    (``ifood_callbacks.DEFAULT_REASON_CODES``) e vai em ``order.data`` para o
+    handler do status. ``internal_note`` é a observação livre do operador e
+    nunca vai ao cliente.
 
     Guard + cancelamento na MESMA transação com lock (ver ``OrderStateConflict``):
     ACCEPTED → CANCELLED é transição válida, então sem o guard na linha travada
     uma recusa atrasada cancelaria um pedido que o aceite automático acabou de
     aceitar.
     """
+    from shopman.shop.services import cancel_reasons, ifood_callbacks
+
+    problem = cancel_reasons.validation_message(reason_key, channel_ref=order.channel_ref)
+    if problem:
+        raise ValueError(problem)
+    cancellation_code = ifood_callbacks.resolve_cancellation_code(reason_key) if order.channel_ref == "ifood" else ""
     reason_identity = prepared_identity if prepared_identity is not None else _validate_operator_cancellation_code(order, cancellation_code)
     with transaction.atomic():
         locked = Order.objects.select_for_update().get(pk=order.pk)
@@ -225,13 +237,9 @@ def reject_order(
                 f"(status atual: {locked.get_status_display()})."
             )
 
-        extra_data = {"rejected_by": rejected_by}
-        # O motivo pronto escolhido ("Você pediu o cancelamento") carrega a chave
-        # da lista única: sem ela, a recusa gravava ``other`` e o histórico dizia
-        # "Cancelado · Outro motivo" (beta 06/11). Texto livre continua ``other``.
-        reason_key = _reject_reason_key(reason)
-        if reason_key:
-            extra_data["cancellation_reason_key"] = reason_key
+        extra_data = {"rejected_by": rejected_by, "cancellation_reason_key": reason_key.strip()}
+        if internal_note.strip():
+            extra_data["cancellation_internal_note"] = internal_note.strip()
         if cancellation_code:
             extra_data["ifood_cancellation_code"] = cancellation_code
         cancel(
@@ -245,15 +253,6 @@ def reject_order(
         if locked.status == Order.Status.CANCELLED:
             notification.send(locked, "order_rejected", reason=reason, rejected_by=rejected_by)
     logger.info("operator_reject order=%s reason=%s", order.ref, reason)
-
-
-def _reject_reason_key(reason: str) -> str:
-    """A chave de ``cancel_reasons`` do motivo pronto da casa com este texto, ou vazio."""
-    from shopman.shop.models import Shop
-    from shopman.shop.models.shop import cancellation_preset_reason_key
-
-    shop = Shop.load()
-    return cancellation_preset_reason_key(shop.cancellation_presets if shop else [], reason)
 
 
 def next_status_for(order: Order) -> str:
@@ -1442,7 +1441,6 @@ def cancel_order(
     *,
     reason: str,
     actor: str,
-    cancellation_code: str = "",
     reason_key: str = "",
     internal_note: str = "",
     expected_authority_revision: str | None = None,
@@ -1451,24 +1449,25 @@ def cancel_order(
 ) -> bool:
     """Cancel an order through the canonical cancellation service.
 
-    ``cancellation_code`` (iFood) rides ``order.data`` to the status-callback handler.
-
     ``reason_key`` é a chave da lista única de motivos (``services/cancel_reasons``),
     gravada em ``order.data["cancellation_reason_key"]``: o cliente lê o texto
-    revisado dela na notificação ``order_cancelled``. Fora da lista levanta
-    ``ValueError``. Vazia só no marketplace (o iFood exige o código dele, e o
-    pedido sai com ``other``). ``internal_note`` é a observação livre do operador:
-    vai para ``order.data["cancellation_internal_note"]`` e nunca ao cliente.
+    revisado dela na notificação ``order_cancelled``. Obrigatória em qualquer
+    canal; fora da lista do canal levanta ``ValueError``. No iFood, o
+    ``cancellationCode`` sai dela (``ifood_callbacks.DEFAULT_REASON_CODES``).
+    ``internal_note`` é a observação livre do operador: vai para
+    ``order.data["cancellation_internal_note"]`` e nunca ao cliente.
 
     Returns:
         True se cancelou ou persistiu solicitação iFood; False se a transição foi recusada.
     """
-    from shopman.shop.services import cancel_reasons
+    from shopman.shop.services import cancel_reasons, ifood_callbacks
 
-    if (reason_key or order.channel_ref != "ifood") and cancel_reasons.validation_message(reason_key):
-        raise ValueError(cancel_reasons.validation_message(reason_key))
+    problem = cancel_reasons.validation_message(reason_key, channel_ref=order.channel_ref)
+    if problem:
+        raise ValueError(problem)
+    cancellation_code = ifood_callbacks.resolve_cancellation_code(reason_key) if order.channel_ref == "ifood" else ""
     reason_identity = prepared_identity if prepared_identity is not None else _validate_operator_cancellation_code(order, cancellation_code)
-    extra_data: dict[str, str] = {"cancellation_reason_key": reason_key.strip() or cancel_reasons.OTHER}
+    extra_data: dict[str, str] = {"cancellation_reason_key": reason_key.strip()}
     if cancellation_code:
         extra_data["ifood_cancellation_code"] = cancellation_code
     if internal_note.strip():

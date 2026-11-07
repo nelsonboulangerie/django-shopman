@@ -287,6 +287,18 @@ function openCancel(sale: RecentSale) {
   cancelDialogOpen.value = true;
 }
 
+// O cancelamento é mutação de dinheiro e o servidor exige `client_request_id`
+// (sem ele, 422 "Identifique a tentativa…", beta 07/11). A MESMA tentativa
+// (pedido + motivo) reusa a chave: o PIN errado que se corrige e o clique duplo
+// não viram dois cancelamentos; mudar o pedido ou o motivo é tentativa nova.
+// Mesmo contrato do cancelamento da tela de resultado (`usePosSale`).
+let cancelAttempt: { orderRef: string; reason: string; id: string } | null = null;
+
+function newClientRequestId(): string {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `pos:${random}`;
+}
+
 async function submitCancel(aprovacao: Record<string, string>) {
   const orderRef = cancelTargetRef.value;
   if (!orderRef || cancelBusy.value) return;
@@ -294,15 +306,20 @@ async function submitCancel(aprovacao: Record<string, string>) {
   cancelError.value = "";
   try {
     const reason = cancelReason.value.trim();
+    if (!cancelAttempt || cancelAttempt.orderRef !== orderRef || cancelAttempt.reason !== reason) {
+      cancelAttempt = { orderRef, reason, id: newClientRequestId() };
+    }
     await $fetch(apiPath("/api/v1/backstage/pos/sale/recent/cancel/"), {
       method: "POST",
       credentials: "include",
       body: {
         order_ref: orderRef,
         manager_approval: aprovacao,
+        client_request_id: cancelAttempt.id,
         ...(reason ? { reason } : {}),
       },
     });
+    cancelAttempt = null;
     cancelDialogOpen.value = false;
     cancelTargetRef.value = "";
     cancelReason.value = "";
@@ -467,12 +484,12 @@ function fiscalChipClass(status: string): string {
                 @click="openEmitFiscal(sale)"
               >
                 <Icon name="lucide:file-plus" class="size-3.5" />
-                <!-- Par do chip "Emissão não estabelecida" (escolha do Pablo).
-                     Reticências: o toque abre a autorização do gerente. Não é
-                     "Tentar novamente" (nunca houve tentativa) nem "Solicitar
-                     autorização" (a mesma tela já pede a autorização do
-                     GERENTE: a palavra teria dois sentidos no mesmo toque). -->
-                Estabelecer emissão…
+                <!-- Par do chip "NFC-e não solicitada" (dono, 07/11/2026): o verbo
+                     claro do que o toque faz. Reticências: o toque abre a
+                     autorização do gerente. Não é "Tentar novamente" (nunca houve
+                     tentativa) nem "Solicitar autorização" (a mesma tela já pede a
+                     autorização do GERENTE). -->
+                Solicitar NFC-e…
               </NuxtButton>
               <!-- Desfazer dentro da janela: exceção auditada, sempre com o
                    desafio gerencial do mesmo diálogo da tela de venda. -->
