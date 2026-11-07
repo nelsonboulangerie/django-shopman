@@ -8448,7 +8448,7 @@ class Command(BaseCommand):
         # (croque, queijo-quente, o pain perdu dos doces); o salgado e o doce
         # de lote, prontos, são separação.
         kds_lanches, _ = KDSInstance.objects.update_or_create(
-            ref="lanches",
+            ref="snacks",
             defaults={
                 "name": "Lanches",
                 "type": "prep",
@@ -8464,7 +8464,7 @@ class Command(BaseCommand):
 
         # KDS Cafés — Prep: bebidas quentes e frias
         kds_cafes, _ = KDSInstance.objects.update_or_create(
-            ref="cafes",
+            ref="coffee",
             defaults={
                 "name": "Cafés",
                 "type": "prep",
@@ -8480,7 +8480,7 @@ class Command(BaseCommand):
 
         # KDS Encomendas — Picking: separação de pedidos de balcão e agendados
         KDSInstance.objects.update_or_create(
-            ref="encomendas",
+            ref="preorders",
             defaults={
                 "name": "Encomendas",
                 "type": "picking",
@@ -8492,10 +8492,11 @@ class Command(BaseCommand):
 
         # KDS Saída — pedidos prontos para entregar no balcão ou despachar.
         # "Expedição" é o fechamento de lote da Produção (decisão do dono,
-        # 26/09/2026); a migração backstage.0076 renomeia a estação de quem já
-        # tinha a antiga.
+        # 26/09/2026). O ref de cada estação é o caminho da bancada no kds-nuxt
+        # (`/<ref>`), e URL de operador é em inglês: a migração backstage.0094
+        # renomeou os refs em português de quem já os tinha.
         KDSInstance.objects.update_or_create(
-            ref="saida",
+            ref="exit",
             defaults={
                 "name": "Saída",
                 "type": "expedition",

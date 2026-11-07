@@ -172,7 +172,7 @@ describe("a grade da estação usa a trava", () => {
       ":class=\"{ 'pointer-events-none': gridSettling }\"",
     );
     expect(page).toMatch(
-      /\.kds-card-leave-active \{\s*z-index: 0;\s*pointer-events: none;/,
+      /\.kds-card-leave-active \{[^}]*z-index: 0;\s*pointer-events: none;/,
     );
   });
 
@@ -189,11 +189,19 @@ describe("a grade da estação usa a trava", () => {
     );
   });
 
-  it("o deslize da grade cabe na trava", () => {
-    const move = page.match(
-      /\.kds-card-move \{\s*transition: transform ([\d.]+)s/,
+  it("nenhum ticket desliza por cima de outro (beta 06/11: o E09 cobria o T69)", () => {
+    expect(page).not.toMatch(/\.kds-card-move\b/);
+    expect(page).toMatch(
+      /\.kds-card-leave-active \{\s*position: absolute;\s*inset-inline: 0;\s*top: 0;/,
     );
-    expect(move).not.toBeNull();
-    expect(Number(move![1]) * 1000).toBeLessThan(KDS_GRID_SETTLE_MS);
+    expect(page).toContain('class="relative grid gap-2.5"');
+  });
+
+  it("o respiro de quem entra e de quem sai cabe na trava", () => {
+    const fade = page.match(
+      /\.kds-card-leave-active \{\s*transition:\s*opacity ([\d.]+)s/,
+    );
+    expect(fade).not.toBeNull();
+    expect(Number(fade![1]) * 1000).toBeLessThan(KDS_GRID_SETTLE_MS);
   });
 });

@@ -1,9 +1,10 @@
 // A grade da estação se reorganiza quando a fila muda: chega um pedido mais urgente e
-// vai para a esquerda, um Pronto sai e o próximo assume o foco. A reorganização é
-// animada (FLIP do `TransitionGroup`), e durante ela os tickets passam uns por cima dos
-// outros. Provado na UI em 06/11/2026 (Encomendas, 800×600): o operador tocou em
-// "Iniciar preparo" do P30 enquanto o P30 deslizava sobre o T69, e o toque caiu no T69,
-// abrindo o detalhe do pedido errado.
+// vai para a esquerda, um Pronto sai e o próximo assume o foco. Provado na UI em
+// 06/11/2026 (Encomendas, 800×600): o operador tocou em "Iniciar preparo" do P30
+// enquanto o P30 deslizava sobre o T69, e o toque caiu no T69, abrindo o detalhe do
+// pedido errado. O deslize saiu (07/11: ninguém passa por cima de ninguém; quem troca
+// de célula aparece direto nela), mas o respiro de quem entra e de quem sai continua
+// animado, e a célula muda de dono no meio do toque.
 //
 // A regra: enquanto a grade está se acomodando, nenhum toque age. O ticket que o
 // operador vê embaixo do dedo pode não ser o que o navegador acha que está ali, e não
@@ -12,8 +13,8 @@
 
 import { onScopeDispose, readonly, ref, watch, type WatchSource } from "vue";
 
-/** O que a grade leva para se acomodar: a maior transição dela (o deslize de 0,35 s)
- *  com folga para o último quadro. Acompanha o CSS da página `[ref].vue`. */
+/** O que a grade leva para se acomodar: a maior transição dela (o respiro de 0,28 s
+ *  de quem entra e de quem sai) com folga. Acompanha o CSS da página `[ref].vue`. */
 export const KDS_GRID_SETTLE_MS = 420;
 
 /** A posição de cada ticket visível, na ordem da fila: muda quando um ticket entra, sai
@@ -41,9 +42,8 @@ function prefersReducedMotion(): boolean {
 export const KDS_GRID_SETTLE_RECHECK_MS = 100;
 export const KDS_GRID_SETTLE_MAX_MS = 3000;
 
-/** As classes que o `TransitionGroup` põe no ticket enquanto ele entra, sai ou desliza. */
-export const KDS_GRID_MOVING_SELECTOR =
-  ".kds-card-move, .kds-card-enter-active, .kds-card-leave-active";
+/** As classes que o `TransitionGroup` põe no ticket enquanto ele entra ou sai. */
+export const KDS_GRID_MOVING_SELECTOR = ".kds-card-enter-active, .kds-card-leave-active";
 
 /** `settling` fica verdadeiro do instante em que a grade muda até ela se acomodar;
  *  `guard(fn)` só deixa o ato passar com a grade parada. `stillMoving` diz se algum
