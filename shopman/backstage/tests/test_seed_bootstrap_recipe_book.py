@@ -138,5 +138,40 @@ def test_the_seed_bootstraps_every_eligible_sheet(monkeypatch):
         assert versao.yield_quantity == "1", f"{ref} não rende uma unidade"
         assert versao.lens.is_bakery is False, f"{ref} acusa lente de padaria"
         assert versao.lens.warnings == (), f"{ref}: {versao.lens.warnings}"
+    # A falha de comparação do beta não se reproduz no catálogo semeado local:
+    # versões existentes, inclusive fórmulas de preparos e de peças, atravessam
+    # a mesma projection da API, em pares e consigo mesmas.
+    from shopman.backstage.projections.recipe_book import build_recipe_compare
+
+    versions = list(RecipeVersion.objects.select_related("entry").order_by("entry__ref", "number"))
+    assert len(versions) >= 29
+    for index, version in enumerate(versions):
+        for other in (version, versions[(index + 1) % len(versions)]):
+            comparison = build_recipe_compare(version.version_ref, other.version_ref)
+            assert comparison.a_title.startswith(version.entry.name)
+            assert comparison.b_title.startswith(other.entry.name)
+
     massa = build_recipe_entry("massa-tradicao")
     assert massa.versions[0].lens.is_bakery is True
+
+
+@pytest.mark.parametrize("ref", ["molho-caramelo", "vinagrete-frances", "creme-chocolate", "salada-da-casa", "chocolate-quente", "preparo-sem-ficha"])
+def test_unknown_preparation_steps_are_not_replaced_with_bread_steps(ref):
+    from config.management.commands.seed import Command
+
+    assert Command()._production_steps_for_recipe(ref) == []
+
+
+def test_chocolate_is_not_a_lamination_instruction():
+    from config.management.commands.seed import Command
+
+    command = Command()
+    assert command._production_steps_for_recipe("brioche-chocolat") == ["Mistura", "Descanso", "Forno"]
+    assert command._production_steps_for_recipe("pain-chocolat") == ["Massa", "Laminação", "Forno"]
+
+
+@pytest.mark.parametrize("ref", ["coelhinho", "ursinho", "porquinho"])
+def test_animal_breads_keep_the_agreed_modeling_step(ref):
+    from config.management.commands.seed import Command
+
+    assert "Modelagem" in Command()._production_steps_for_recipe(ref)

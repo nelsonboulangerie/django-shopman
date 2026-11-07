@@ -95,11 +95,14 @@ const planSpy = vi.fn().mockResolvedValue({ ok: true });
 const boardRefresh = vi.fn();
 const boardInitialDateSpy = vi.fn();
 const routerReplace = vi.fn();
+const productionRail = ref<{ qualityPending: number; viewedDate?: string }>({ qualityPending: 0 });
 const recipeBookCanView = ref(true);
 const kdsCards = ref<Record<string, unknown>[]>([]);
 const kdsActions = new Map<string, Record<string, unknown>>();
 
 function installGlobals() {
+  productionRail.value = { qualityPending: 0 };
+  vi.stubGlobal("useProductionRail", () => productionRail);
   vi.stubGlobal("computed", computed);
   vi.stubGlobal("ref", ref);
   vi.stubGlobal("reactive", reactive);
@@ -403,6 +406,7 @@ describe("ProductionStageGrid — planning authority", () => {
     selectedDate.value = "2026-07-05";
     await flushPromises();
     expect(routerReplace).not.toHaveBeenCalled();
+    expect(productionRail.value.viewedDate).toBe("2026-07-05");
   });
 
   it("lets a suggestion-only persona submit only the exact suggestion", async () => {

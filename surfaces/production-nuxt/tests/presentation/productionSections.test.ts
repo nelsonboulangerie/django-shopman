@@ -27,6 +27,14 @@ describe("seções da Produção no rail", () => {
     ]);
   });
 
+  it("leva o dia consultado ao planejamento sem fixar a URL do tablet", () => {
+    const sections = productionSections({ date: "2026-11-06", qualityPending: 2 });
+    expect(sections.find((section) => section.key === "plan")?.to).toBe("/plan?date=2026-11-06");
+    expect(sections.find((section) => section.key === "quality")?.to).toBe("/quality");
+    expect(sections.find((section) => section.key === "timers")?.to).toBe("/timers");
+    expect(productionSections().find((section) => section.key === "plan")?.to).toBe("/plan");
+  });
+
   it("forma de cada seção: o chão no celular é a barra de baixo, as cinco, sem Mais", () => {
     const sections = productionSections({ canViewRecipes: true, canViewReports: true });
     expect(sections.map((s) => [s.key, s.form])).toEqual([
