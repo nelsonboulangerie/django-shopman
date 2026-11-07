@@ -525,6 +525,8 @@ MIDDLEWARE = [
     # ⇒ expira). Depois de Session/Auth: a resposta dela passa pelo Session, que grava
     # e reemite o cookie. Admin intocado. Ver shopman/backstage/services/operator_session.py.
     "shopman.backstage.middleware.SessionRenewalMiddleware",
+    # Gravação em nome de quem a tela já não mostra → 409 `operator_changed`.
+    "shopman.backstage.middleware.ExpectedOperatorMiddleware",
     # OTP verification state (request.user.is_verified()) — must follow auth.
     "django_otp.middleware.OTPMiddleware",
     "shopman.doorman.middleware.AuthCustomerMiddleware",
