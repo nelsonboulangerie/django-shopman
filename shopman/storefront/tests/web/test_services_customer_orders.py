@@ -183,7 +183,8 @@ def test_payment_is_due_implies_open_status(order_with_payment):
             assert status_value in {"new", "accepted"}
 
 
-def test_customer_cancel_gate_preserves_payment_specific_refusal(order_with_payment):
+def test_customer_cancel_gate_follows_preparation_not_payment(order_with_payment):
+    # Regra do dono (06/11/2026): antes do preparo cancela, pago ou não; depois, não.
     from shopman.payman import PaymentService
 
     intent = PaymentService.create_intent(
@@ -197,6 +198,11 @@ def test_customer_cancel_gate_preserves_payment_specific_refusal(order_with_paym
     PaymentService.authorize(intent.ref, gateway_id="test-gw-cancel")
     PaymentService.capture(intent.ref)
 
+    assert customer_orders.can_cancel(order_with_payment) is True
+    assert payment_status.can_cancel(order_with_payment) is True
+
+    type(order_with_payment).objects.filter(pk=order_with_payment.pk).update(status="preparing")
+    order_with_payment.refresh_from_db()
     assert customer_orders.can_cancel(order_with_payment) is False
     assert payment_status.can_cancel(order_with_payment) is False
 

@@ -73,14 +73,16 @@ const loginHref = computed(() => `/entrar?next=${encodeURIComponent(`/pedido/${o
 const cancelAction = computed(() => paymentLapsed.value
   ? null
   : tracking.value?.actions.find(action => action.ref === 'cancel_order' && action.enabled) || null)
-const cancellationRequestAction = computed(() => tracking.value?.actions.find(action => action.ref === 'request_cancellation' && action.enabled) || null)
-// O diálogo de cancelar diz o que acontece com o dinheiro (a reserva do cartão
-// desfeita, ou nada cobrado) na mesma frase do aviso à loja.
+// Depois que o preparo começou não há cancelar (dono, 06/11/2026): no lugar, o
+// convite para falar com o responsável, pela mesma ouvidoria da avaliação.
+const cancellationContactAction = computed(() => tracking.value?.actions.find(action => action.ref === 'request_cancellation_contact' && action.enabled) || null)
+const cancellationContact = computed(() => tracking.value?.cancellation_contact || null)
+// O diálogo de cancelar diz o que acontece com o dinheiro (o valor que volta, a
+// reserva do cartão desfeita, ou nada cobrado) na mesma frase do aviso à loja.
 const cancelDialogDescription = computed(() => [
   tracking.value?.copy.cancel_dialog_message,
   tracking.value?.cancel_dialog_money_line
 ].filter(Boolean).join(' '))
-const cancellationReason = ref('')
 const rateAction = computed(() => tracking.value?.actions.find(action => action.ref === 'rate_order' && action.enabled) || null)
 // Estado de agradecimento (título/mensagem + se cabe confete) montado a partir da
 // copy e da nota escolhida. A copy é omotenashi (configurável), nunca inventada aqui.
@@ -149,7 +151,7 @@ const sideActionsPrimary = computed(() => {
 })
 const showSideActions = computed(() => Boolean(
   tracking.value &&
-  (cancelAction.value || cancellationRequestAction.value || tracking.value.cancellation_request || showReorderAction.value || showSupportAction.value ||
+  (cancelAction.value || cancellationContact.value || showReorderAction.value || showSupportAction.value ||
     shareHref.value || tracking.value?.pickup_info?.directions_url)
 ))
 const showDeliveryTab = computed(() => Boolean(tracking.value?.pickup_info || tracking.value?.fulfillments.length))
@@ -315,22 +317,15 @@ onBeforeUnmount(() => {
 // tiver copy própria.
 function actionSuccessMessage (action: Action): string {
   if (action.ref === 'cancel_order') return tracking.value?.copy.cancel_success_title || 'Pedido cancelado.'
-  if (action.ref === 'request_cancellation') return 'Solicitação registrada. Guarde o protocolo.'
   if (action.ref === 'confirm_received') return 'Que bom que chegou. Bom apetite!'
   return 'Tudo certo, atualizamos seu pedido.'
 }
 
-async function requestCancellation () {
-  const action = cancellationRequestAction.value
+async function requestCancellationContact () {
+  const action = cancellationContactAction.value
   if (!action) return
-  if (await postAction(action, { reason: cancellationReason.value.trim() })) {
-    cancellationReason.value = ''
-  }
-}
-
-function cancellationConfirmation (key: string, fallback: string): string {
-  const value = cancellationRequestAction.value?.confirmation?.[key]
-  return typeof value === 'string' && value ? value : fallback
+  // Sem toast: o próprio bloco vira "Combinado", e o toast repetiria a frase.
+  await postAction(action, { origin: 'cancellation' }, { silent: true })
 }
 
 async function refreshAfterConfirmedAction () {
@@ -362,6 +357,9 @@ async function postAction (action: Action, body: Record<string, unknown> = {}, {
     return true
   } catch (e) {
     if (import.meta.client) useSonner.error(errorDetail(e, 'Não foi possível concluir. Tente de novo ou fale conosco.'))
+    // O cancelar recusado (o preparo começou no mesmo instante) relê o pedido: a
+    // tela troca o botão pelo convite de falar com o responsável.
+    if (action.ref === 'cancel_order') await refresh().catch(() => {})
     return false
   } finally {
     actionPending.value = omitKey(actionPending.value, action.ref)
@@ -967,20 +965,28 @@ useSeoMeta({
             <UiCardTitle>Ações</UiCardTitle>
           </UiCardHeader>
           <UiCardContent class="space-y-2">
-            <UiAlert
-              v-if="tracking.cancellation_request"
-              variant="warning"
-              icon="lucide:clipboard-check"
-              role="status"
-              data-cancellation-request
+            <div
+              v-if="cancellationContact"
+              class="space-y-2 rounded-lg border border-border p-4"
+              data-cancellation-contact
             >
-              <UiAlertTitle>{{ tracking.cancellation_request.title }}</UiAlertTitle>
-              <UiAlertDescription class="space-y-1">
-                <p>{{ tracking.cancellation_request.message }}</p>
-                <p class="font-semibold">Protocolo {{ tracking.cancellation_request.protocol }}</p>
-                <p class="text-xs">Recebida em {{ tracking.cancellation_request.requested_at_display }}</p>
-              </UiAlertDescription>
-            </UiAlert>
+              <p class="font-semibold">{{ tracking.copy.cancellation_contact_title }}</p>
+              <p v-if="cancellationContact.requested" class="text-sm text-muted-foreground" role="status">
+                {{ tracking.copy.rating_contact_done }}
+              </p>
+              <template v-else-if="cancellationContactAction">
+                <p class="text-sm text-muted-foreground">{{ tracking.copy.cancellation_contact_message }}</p>
+                <UiButton
+                  class="w-full"
+                  variant="secondary"
+                  icon="lucide:message-circle"
+                  :loading="!!actionPending[cancellationContactAction.ref]"
+                  @click="requestCancellationContact"
+                >
+                  {{ cancellationContactAction.label }}
+                </UiButton>
+              </template>
+            </div>
             <!-- Avaliar em destaque (primary); as demais ficam secundárias. -->
             <UiButton v-if="rateAction" class="w-full" icon="lucide:star" @click="ratingOpen = true">
               Avaliar pedido
@@ -1029,33 +1035,6 @@ useSeoMeta({
                 <UiAlertDialogFooter>
                   <UiAlertDialogCancel>{{ tracking.copy.cancel_dialog_back }}</UiAlertDialogCancel>
                   <UiAlertDialogAction @click="postAction(cancelAction)">{{ tracking.copy.cancel_dialog_confirm }}</UiAlertDialogAction>
-                </UiAlertDialogFooter>
-              </UiAlertDialogContent>
-            </UiAlertDialog>
-            <UiAlertDialog v-else-if="cancellationRequestAction">
-              <UiAlertDialogTrigger as-child>
-                <UiButton variant="destructive" class="w-full">{{ cancellationRequestAction.label }}</UiButton>
-              </UiAlertDialogTrigger>
-              <UiAlertDialogContent>
-                <UiAlertDialogHeader>
-                  <UiAlertDialogTitle>{{ cancellationConfirmation('title', 'Solicitar cancelamento') }}</UiAlertDialogTitle>
-                  <UiAlertDialogDescription>{{ cancellationConfirmation('message', 'A equipe confere o pedido e responde por aqui. Você recebe um protocolo agora.') }}</UiAlertDialogDescription>
-                </UiAlertDialogHeader>
-                <UiTextarea
-                  v-model="cancellationReason"
-                  :rows="3"
-                  :maxlength="500"
-                  placeholder="Motivo (opcional)"
-                  aria-label="Motivo da solicitação de cancelamento"
-                />
-                <UiAlertDialogFooter>
-                  <UiAlertDialogCancel>{{ cancellationConfirmation('cancel_label', 'Manter pedido') }}</UiAlertDialogCancel>
-                  <UiAlertDialogAction
-                    :disabled="!!actionPending.request_cancellation"
-                    @click="requestCancellation"
-                  >
-                    {{ cancellationConfirmation('confirm_label', 'Enviar solicitação') }}
-                  </UiAlertDialogAction>
                 </UiAlertDialogFooter>
               </UiAlertDialogContent>
             </UiAlertDialog>

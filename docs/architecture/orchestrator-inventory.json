@@ -2928,7 +2928,6 @@
             "_register_accounting_handler",
             "_register_alert_resolution",
             "_register_campaign",
-            "_register_cancellation_request_signals",
             "_register_catalog_projection_handler",
             "_register_catalog_signals",
             "_register_confirmation_handler",
@@ -3147,28 +3146,6 @@
         "marketing.announcement-publication-handler",
         "marketing.campaign-evaluation-receivers",
         "marketing.campaign-occurrence-handler"
-      ],
-      "responsibilities": [
-        "composição",
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "logger"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/handlers/cancellation_requests.py",
-      "touchpoints": [
-        "handler"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "order.cancellation-request-resolution"
       ],
       "responsibilities": [
         "composição",
@@ -6147,6 +6124,7 @@
             "_WHATSAPP_HOSTS",
             "_resolve_social_link",
             "cancellation_preset_entries",
+            "cancellation_preset_reason_key",
             "is_whatsapp_link",
             "validate_cancellation_presets",
             "validate_logo"
@@ -7053,7 +7031,7 @@
           "symbols": [
             "CARRIER_TRACKING_URLS",
             "TERMINAL_STATUSES",
-            "TrackingCancellationRequestData",
+            "TrackingCancellationContactData",
             "TrackingData",
             "TrackingFiscalNoteData",
             "TrackingFulfillmentData",
@@ -7065,7 +7043,6 @@
             "TrackingRatingFollowupData",
             "TrackingStatusData",
             "TrackingTimelineEventData",
-            "_CANCELLATION_REQUEST_STATUSES",
             "_COURIER_ENDED_STATUSES",
             "_DIGITAL_PAYMENT_METHODS",
             "_WAITLIST_NONE",
@@ -7077,8 +7054,8 @@
             "_build_progress_steps",
             "_build_promise",
             "_build_timeline",
+            "_cancellation_contact",
             "_cancellation_customer_text",
-            "_cancellation_request",
             "_carrier_tracking_url",
             "_commitment_info",
             "_confirmation_deadline",
@@ -7096,6 +7073,7 @@
             "_iso",
             "_mock_confirmation_projection_value",
             "_money_outcome",
+            "_paid_amount_q",
             "_parse_datetime",
             "_payment_confirmed_timestamp",
             "_payment_info",
@@ -7406,6 +7384,21 @@
       "out_of_extraction": false,
       "unit_ids": [
         "marketing.public-link"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/customer_cancellation.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.customer-cancellation",
+        "order.customer-cancellation-contact"
       ],
       "responsibilities": [
         "decisão"
@@ -8303,20 +8296,6 @@
       ]
     },
     {
-      "path": "shopman/shop/services/cancellation_requests.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "shop.services-cancellation-requests"
-      ],
-      "responsibilities": [
-        "composição"
-      ],
-      "support_claims": []
-    },
-    {
       "path": "shopman/shop/services/card_authorization.py",
       "touchpoints": [
         "service"
@@ -8811,6 +8790,7 @@
             "DEFAULT_CHANNEL_REF",
             "MAX_SESSION_ORDER_ACCESS_REFS",
             "ORDER_ACCESS_SESSION_KEY",
+            "SELF_CANCELLED_ALERT_TYPE",
             "_customer_identity_from_info",
             "_customer_identity_from_user",
             "_named_snapshot_items",
@@ -8823,6 +8803,7 @@
             "_same_phone",
             "_sellable_product",
             "_session_can_access_order",
+            "_tell_orders_the_customer_cancelled",
             "active_order_count_for_customer",
             "active_order_count_for_phone",
             "add_reorder_items",
@@ -8849,6 +8830,7 @@
             "resolve_delivery_auto_complete_if_due",
             "resolve_payment_timeout_if_due",
             "save_customer_rating",
+            "self_cancelled_message",
             "user_can_access_order"
           ]
         }

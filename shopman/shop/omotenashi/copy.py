@@ -487,10 +487,14 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_CANCEL_FAILED_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Não foi possível cancelar este pedido agora.")},
     },
-    "TRACKING_CANCEL_KEEP_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Manter pedido")},
+    # Antes de confirmar o cancelamento, o que acontece com o dinheiro. Antes do
+    # preparo o cliente cancela pago ou não, e o valor volta inteiro (dono, 06/11/2026).
+    "TRACKING_CANCEL_MONEY_REFUND_PIX": {
+        WILDCARD: {WILDCARD: CopyEntry(message="O preparo ainda não começou. Cancelamos agora e devolvemos os {amount} do seu Pix para a mesma conta.")},
     },
-    # Antes de confirmar o cancelamento, o que acontece com o dinheiro.
+    "TRACKING_CANCEL_MONEY_REFUND_CARD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="O preparo ainda não começou. Cancelamos agora e estornamos os {amount} no seu cartão.")},
+    },
     "TRACKING_CANCEL_MONEY_CARD_HOLD": {
         WILDCARD: {WILDCARD: CopyEntry(message="A reserva no seu cartão será desfeita, e nada será cobrado.")},
     },
@@ -523,6 +527,16 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "TRACKING_RATING_SUBMIT_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Enviar avaliação")},
+    },
+    # Depois que o preparo começou, no lugar do cancelar: falar com o responsável.
+    "TRACKING_CANCELLATION_CONTACT_CTA": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Falar com o responsável")},
+    },
+    "TRACKING_CANCELLATION_CONTACT_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Quer cancelar?")},
+    },
+    "TRACKING_CANCELLATION_CONTACT_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="O preparo já começou e o pedido é feito para você, então ele não pode mais ser cancelado. Se algo não está certo, fale com o responsável.")},
     },
     "TRACKING_RATING_CONTACT_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Quero falar com o responsável")},
@@ -1716,7 +1730,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
 
     # ── Kintsugi ──────────────────────────────────────────────────
     "KINTSUGI_CANCEL_REFUSED": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Seu pedido já está sendo preparado. Fale conosco para ajustar.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="O preparo acabou de começar, e o pedido não pode mais ser cancelado. Se algo não está certo, fale com o responsável.")},
     },
     "KINTSUGI_SHORTAGE_GENERIC": {
         WILDCARD: {WILDCARD: CopyEntry(title="Ficou indisponível enquanto você escolhia.")},

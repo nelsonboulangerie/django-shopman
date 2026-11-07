@@ -324,13 +324,13 @@ def test_app_sem_url_nao_gera_item(client):
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_aviso_nao_visto_de_pedido_leva_ao_pedido_no_gestor(client):
     alert = OperatorAlert.objects.create(
-        type="customer_cancellation_requested",
+        type="customer_self_cancelled",
         severity="error",
-        message="Cliente pediu para cancelar o pedido WEB-1.",
+        message="O cliente cancelou o pedido WEB-1 antes do preparo.",
         order_ref="WEB-1",
     )
     OperatorAlert.objects.create(
-        type="customer_cancellation_requested",
+        type="customer_self_cancelled",
         severity="error",
         message="Já visto.",
         order_ref="WEB-2",
@@ -344,7 +344,7 @@ def test_aviso_nao_visto_de_pedido_leva_ao_pedido_no_gestor(client):
     assert len(alerts) == 1
     assert alerts[0]["key"] == f"gestor:alert:{alert.pk}"
     assert alerts[0]["url"] == "https://gestor.example.test/WEB-1"
-    assert alerts[0]["title"] == "Cliente solicitou cancelamento"
+    assert alerts[0]["title"] == "Cliente cancelou antes do preparo"
     gestor_tile = next(tile for tile in hub["tiles"] if tile["ref"] == "gestor")
     assert "1 aviso" in gestor_tile["status_attention"]
     # O aviso soma no número do ícone com o que mais o bloco pede (as partes da frase).
@@ -356,9 +356,9 @@ def test_aviso_nao_visto_de_pedido_leva_ao_pedido_no_gestor(client):
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_aviso_de_pedido_nao_chega_a_quem_so_opera_a_producao(client):
     OperatorAlert.objects.create(
-        type="customer_cancellation_requested",
+        type="customer_self_cancelled",
         severity="error",
-        message="Cliente pediu para cancelar.",
+        message="O cliente cancelou o pedido WEB-1 antes do preparo.",
         order_ref="WEB-1",
     )
     padeiro = _operator("hub-q-padeiro", ("backstage", "operate_production"))

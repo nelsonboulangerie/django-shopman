@@ -25,7 +25,6 @@ from shopman.storefront.services import orders as order_service
 from .actions import retry_after_action
 from .projections import projection_data
 from .serializers import (
-    CancellationRequestInputSerializer,
     DetailSerializer,
     OrderTrackingSerializer,
 )
@@ -299,8 +298,11 @@ class OrderCancelView(APIView):
     """
     POST /api/v1/orders/{ref}/cancel/
 
-    Cancels an accessible order only when the canonical customer cancellation
-    policy allows it. Paid or uncertain payment states remain blocked.
+    O cliente cancela sozinho antes do preparo, pago ou não
+    (``policies/customer_cancellation``); o que entrou volta pelo próprio
+    cancelamento. Se a cozinha começou no mesmo instante, a régua decide sob o
+    lock do pedido e responde 409: o cliente volta à tela, que oferece falar com
+    o responsável.
     """
 
     permission_classes = [AllowAny]
@@ -341,9 +343,10 @@ class OrderCancelView(APIView):
             if not order_service.can_cancel(order) or not order_service.cancel(order):
                 return (
                     {
-                        "detail": (
-                            resolve_copy("KINTSUGI_CANCEL_REFUSED", moment="*", audience="*").message
-                            or "Seu pedido já está sendo preparado. Fale conosco para ajustar."
+                        "detail": _copy_message(
+                            "KINTSUGI_CANCEL_REFUSED",
+                            "O preparo acabou de começar, e o pedido não pode mais ser cancelado. "
+                            "Se algo não está certo, fale com o responsável.",
                         ),
                         "error_code": "order_not_cancellable",
                         "payment_status": order_service.payment_status(order),
@@ -365,106 +368,6 @@ class OrderCancelView(APIView):
         except remote_mutations.RemoteMutationInProgress:
             return Response(
                 {"detail": "Cancelamento já está em andamento.", "error_code": "mutation_in_progress"},
-                status=status.HTTP_409_CONFLICT,
-            )
-        return Response(result.response_body, status=result.response_code)
-
-
-@extend_schema_view(
-    post=extend_schema(
-        tags=["tracking"],
-        summary="Request human review of order cancellation",
-        request=CancellationRequestInputSerializer,
-        responses={
-            200: OrderTrackingSerializer,
-            404: DetailSerializer,
-            409: OpenApiResponse(description="Cancellation request is no longer applicable."),
-        },
-    ),
-)
-class OrderCancellationRequestView(APIView):
-    """Record a self-service request without cancelling or refunding implicitly."""
-
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication]
-    serializer_class = CancellationRequestInputSerializer
-    throttle_classes = []
-
-    def post(self, request, ref: str):
-        if _request_is_rate_limited(
-            request,
-            group="storefront-api-order-cancellation-request",
-            rate="10/m",
-            method="POST",
-        ):
-            return _rate_limited_response()
-        try:
-            order = order_service.get_accessible_order(request, ref)
-        except Http404:
-            return Response(
-                {
-                    "detail": _copy_message(
-                        "TRACKING_NOT_FOUND_MESSAGE",
-                        "Confira o link do pedido ou fale com a equipe.",
-                    ),
-                },
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        serializer = CancellationRequestInputSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        reason = serializer.validated_data["reason"]
-        try:
-            key = remote_mutations.idempotency_key_from_request(
-                request,
-                fallback=f"cancellation-request:{ref}",
-            )
-        except remote_mutations.RemoteMutationConflict as exc:
-            return Response(
-                {"detail": str(exc), "error_code": "idempotency_conflict"},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        def execute_request() -> tuple[dict, int]:
-            from shopman.storefront.services import cancellation_requests
-
-            try:
-                cancellation_requests.request_cancellation(order, reason=reason)
-            except cancellation_requests.CancellationRequestUnavailable:
-                return (
-                    {
-                        "detail": "Este pedido já foi cancelado ou devolvido.",
-                        "error_code": "cancellation_request_not_applicable",
-                    },
-                    status.HTTP_409_CONFLICT,
-                )
-            order.refresh_from_db()
-            response = OrderTrackingSerializer(_tracking_payload(order))
-            return dict(response.data), status.HTTP_200_OK
-
-        try:
-            result = remote_mutations.run_idempotent_mutation(
-                scope=remote_mutations.mutation_scope("order-cancellation-request", ref),
-                key=key,
-                fingerprint=remote_mutations.mutation_fingerprint(
-                    {"order_ref": ref, "reason": reason}
-                ),
-                execute=execute_request,
-            )
-        except remote_mutations.RemoteMutationInProgress:
-            return Response(
-                {
-                    "detail": "A solicitação já está sendo registrada.",
-                    "error_code": "mutation_in_progress",
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
-        except remote_mutations.RemoteMutationConflict:
-            return Response(
-                {
-                    "detail": "Esta tentativa pertence a outra solicitação. Atualize e tente novamente.",
-                    "error_code": "idempotency_conflict",
-                },
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(result.response_body, status=result.response_code)
@@ -643,7 +546,7 @@ class OrderConfirmReceiptView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["tracking"],
-        summary="Ask the shop to contact the customer after a low rating",
+        summary="Ask the shop's manager to contact the customer (low rating, or cancel after preparation)",
         responses={
             200: OrderTrackingSerializer,
             404: DetailSerializer,
@@ -652,7 +555,11 @@ class OrderConfirmReceiptView(APIView):
     ),
 )
 class OrderContactRequestView(APIView):
-    """POST /api/v1/orders/{ref}/contact-request/ — a ouvidoria da avaliação."""
+    """POST /api/v1/orders/{ref}/contact-request/: a ouvidoria.
+
+    ``origin``: ``rating`` (padrão, depois da nota baixa) ou ``cancellation`` (quis
+    cancelar com o preparo já começado).
+    """
 
     permission_classes = [AllowAny]
     authentication_classes = [SessionAuthentication]
@@ -678,8 +585,16 @@ class OrderContactRequestView(APIView):
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )
+        from shopman.shop.services import customer_contact
+
+        origin = str(request.data.get("origin") or customer_contact.ORIGIN_RATING).strip()
+        if origin not in customer_contact.ORIGINS:
+            return Response(
+                {"detail": "Origem do pedido de contato inválida.", "field": "origin"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         try:
-            key = remote_mutations.idempotency_key_from_request(request, fallback=f"contact-request:{ref}")
+            key = remote_mutations.idempotency_key_from_request(request, fallback=f"contact-request:{origin}:{ref}")
         except remote_mutations.RemoteMutationConflict as exc:
             return Response(
                 {"detail": str(exc), "error_code": "idempotency_conflict"},
@@ -687,14 +602,16 @@ class OrderContactRequestView(APIView):
             )
 
         def execute_request() -> tuple[dict, int]:
-            from shopman.shop.services import customer_contact
-
             try:
-                customer_contact.request_contact(order)
+                customer_contact.request_contact(order, origin=origin)
             except customer_contact.ContactRequestUnavailable:
                 return (
                     {
-                        "detail": "Este pedido não tem uma avaliação que peça contato.",
+                        "detail": (
+                            "Este pedido não tem uma avaliação que peça contato."
+                            if origin == customer_contact.ORIGIN_RATING
+                            else "Este pedido ainda pode ser cancelado por aqui, ou já foi encerrado."
+                        ),
                         "error_code": "contact_request_not_applicable",
                     },
                     status.HTTP_409_CONFLICT,
@@ -707,7 +624,7 @@ class OrderContactRequestView(APIView):
             result = remote_mutations.run_idempotent_mutation(
                 scope=remote_mutations.mutation_scope("order-contact-request", ref),
                 key=key,
-                fingerprint=remote_mutations.mutation_fingerprint({"order_ref": ref}),
+                fingerprint=remote_mutations.mutation_fingerprint({"order_ref": ref, "origin": origin}),
                 execute=execute_request,
             )
         except remote_mutations.RemoteMutationInProgress:

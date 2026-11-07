@@ -120,7 +120,9 @@ class OperatorAlert(models.Model):
         # switch — e, por não ter dono, ficava invisível até um cliente reclamar.
         ("catalog_hidden_by_inactive_collection", "Produto fora do cardápio: categoria desativada"),
         ("stale_new_order", "Pedido parado aguardando confirmação"),
-        ("customer_cancellation_requested", "Cliente solicitou cancelamento"),
+        # Informativo: o cliente cancelou sozinho antes do preparo, e o aviso diz
+        # o que aconteceu com o dinheiro. Não pede decisão (dono, 06/11/2026).
+        ("customer_self_cancelled", "Cliente cancelou antes do preparo"),
         ("checkout_convenience_pending", "Conveniência do checkout pendente"),
         # Pedido fechado sem dono: nesta loja o telefone É a identidade, e sem
         # o vínculo o cliente fica sem histórico, fidelidade e rastreio.
@@ -249,9 +251,10 @@ class OperatorAlert(models.Model):
         # movimento. O sistema resolve sozinho quando o uso volta a ficar folgado.
         ("operator_capacity_critical", "Apps de operação no limite da capacidade"),
         ("low_rating", "Avaliação baixa recebida"),
-        # Ouvidoria: quem deu nota até 3 pediu para falar com o responsável. Fecha no
-        # "Resolvido" do pedido, com a nota do que foi feito (customer_contact).
-        ("customer_contact_requested", "Cliente pediu contato após avaliar"),
+        # Ouvidoria: o cliente pediu para falar com o responsável, depois de avaliar
+        # com nota até 3 ou porque queria cancelar com o preparo já começado. Fecha
+        # no "Resolvido" do pedido, com a nota do que foi feito (customer_contact).
+        ("customer_contact_requested", "Cliente pediu para falar com o responsável"),
         ("cash_change_requested", "Troco solicitado no PDV"),
         ("cash_shift_open_at_closing", "Caixa aberto no fechamento do dia"),
         # A venda foi criada e cobrada, mas o turno fechou entre o commit do
@@ -395,7 +398,7 @@ class OperatorAlert(models.Model):
         "pos_rejected_unavailable",
         "pos_offline_sale_adjusted",
         "stale_new_order",
-        "customer_cancellation_requested",
+        "customer_self_cancelled",
         "customer_contact_requested",
         "lifecycle_phase_stuck",
         "handoff_refused",

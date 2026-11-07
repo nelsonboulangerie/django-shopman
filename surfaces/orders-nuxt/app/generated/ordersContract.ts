@@ -400,11 +400,12 @@ export interface RideCandidateProjection {
   change_label: string;
 }
 
-/** Ouvidoria aberta: o cliente avaliou mal e pediu para falar com o responsável. */
+/** Ouvidoria aberta: o cliente pediu para falar com o responsável. */
 export interface ContactRequestProjection {
   rating: number;
   comment: string;
   requested_at_display: string;
+  origin: string;
 }
 
 /** Quem é este cliente, para o operador decidir como tratá-lo. */

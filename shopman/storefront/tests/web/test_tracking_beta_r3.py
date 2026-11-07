@@ -392,19 +392,22 @@ class TestSms02PromisedWindow:
 
 
 class TestSms14CompletedOrder:
-    def test_completed_order_has_no_cancellation_request_and_thanks_in_feminine(self, order):
+    def test_completed_order_has_no_cancellation_contact_and_thanks_in_feminine(self, order):
         _set(order, status="completed")
 
         proj = build_order_tracking(order)
 
-        assert "request_cancellation" not in [action.ref for action in proj.actions]
+        assert "request_cancellation_contact" not in [action.ref for action in proj.actions]
+        assert proj.cancellation_contact is None
         assert proj.promise.message == "Obrigada pela preferência!"
         assert proj.copy.rating_thanks_title == "Obrigada!"
 
-    def test_dispatched_order_can_still_request_cancellation(self, order):
+    def test_dispatched_order_offers_talking_to_the_manager_instead_of_cancelling(self, order):
         _set(order, status="dispatched")
 
-        assert "request_cancellation" in [action.ref for action in build_order_tracking(order).actions]
+        refs = [action.ref for action in build_order_tracking(order).actions]
+        assert "request_cancellation_contact" in refs
+        assert "cancel_order" not in refs
 
 
 # ── F6: a ação de cancelar não carrega diálogo morto com jargão ──────────────

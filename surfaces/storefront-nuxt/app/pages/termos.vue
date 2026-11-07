@@ -14,9 +14,8 @@
 //      declarar que é maior de idade e aceitar ESTES termos (`presentation/auth.ts`), e
 //      o servidor carimba isso com IP e versão — mas o documento invocado não tinha a
 //      cláusula que ele materializava;
-//   2. o cancelamento: pedido JÁ PAGO não cancela sozinho, vira solicitação com
-//      protocolo para a loja (`services/cancellation_requests.py`). O texto dizia que
-//      bastava não ter entrado em preparo;
+//   2. o cancelamento seguia o que o código fazia na época (pedido pago virava
+//      solicitação com protocolo). Em 06/11/2026 o dono trocou a regra (abaixo);
 //   3. o iFood: pedido feito lá segue a política do iFood, e o cliente de lá nunca vê
 //      esta página. Dizer isso é mais honesto do que silenciar.
 //
@@ -32,6 +31,13 @@
 // art. 49 do CDC não tem exceção escrita para perecível (a da Lei 14.010/2020 venceu
 // em 30/10/2020); a leitura firmada, a mesma do iFood, aceita o arrependimento do
 // produto intacto. É também o que o Merchant Center declara como política de devolução.
+//
+// 06/11/2026, decisão do dono: "Se for antes [do preparo], cancelamos e
+// reembolsamos. Se for depois, o pedido não pode mais ser cancelado, e no máximo é
+// encaminhado para falar com gerente." Antes do preparo o cliente cancela sozinho na
+// tela, pago ou não, e o valor volta inteiro na hora pelo mesmo meio; a solicitação
+// com protocolo deixou de existir. Depois, não há cancelar: há falar com o
+// responsável (`policies/customer_cancellation.py`).
 import type { LegalProjection } from '~/types/shopman'
 
 const session = useShopSession()
@@ -149,19 +155,16 @@ useSeoMeta({
     <LegalSection id="cancellation">
       <template #title>Cancelamento, troca e devolução</template>
       <p>
-        <strong>Pedido não pago:</strong> você cancela pela tela de acompanhamento, enquanto o botão
-        aparecer.
-      </p>
-      <p>
-        <strong>Pedido pago, antes do preparo:</strong> você pode desistir pela tela de
-        acompanhamento. A desistência vira uma solicitação com número de protocolo, {{ marca }}
-        responde pelo WhatsApp do pedido e devolve o valor inteiro. O dinheiro volta depois que a
-        loja confirma, para que a devolução não aconteça duas vezes.
+        <strong>Antes do preparo:</strong> você cancela na hora, pela tela de acompanhamento, pago
+        ou não. Se já pagou, o valor volta inteiro pelo mesmo meio de pagamento: o Pix para a mesma
+        conta, o cartão estornado na fatura no prazo do seu banco. Cartão só reservado tem a reserva
+        desfeita, e nada é cobrado.
       </p>
       <p>
         <strong>Depois que o preparo começa:</strong> o pedido é alimento perecível, feito para
-        você, e não volta para a prateleira. A partir daí não há desistência sem motivo; produto
-        com problema segue a regra abaixo.
+        você, e não volta para a prateleira. A partir daí ele não pode mais ser cancelado. Se algo
+        não está certo, a tela de acompanhamento oferece falar com o responsável pela casa, que
+        chama você pelo WhatsApp do pedido. Produto com problema segue a regra abaixo.
       </p>
       <p>
         <strong>Item com a embalagem lacrada:</strong> se o lacre e a embalagem estiverem intactos,

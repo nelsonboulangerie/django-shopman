@@ -765,6 +765,15 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_AUTO_CONFIRM_LABEL": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_CANCELLATION_CONTACT_CTA": (
+        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_CANCELLATION_CONTACT_MESSAGE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_CANCELLATION_CONTACT_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_CANCELLED_REASON_TITLE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -783,13 +792,16 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_CANCEL_HEADING": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_CANCEL_KEEP_CTA": (
-        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
     "TRACKING_CANCEL_MONEY_CARD_HOLD": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_CANCEL_MONEY_NOTHING_CHARGED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_CANCEL_MONEY_REFUND_CARD": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_CANCEL_MONEY_REFUND_PIX": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_CANCEL_SUCCESS_MESSAGE": (

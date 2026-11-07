@@ -532,14 +532,6 @@ def test_cancellation_authority_revision_seals_policy_and_payment(monkeypatch):
     assert revision["intent_ref"] == "PI-1"
 
 
-def test_cancellation_request_copy_distinguishes_the_preparation_boundary():
-    from shopman.shop.services import cancellation_requests
-
-    message = cancellation_requests.operational_message(order_ref="ORD-1", protocol="SC-1", before_preparation=True)
-    assert "valor volta inteiro" in message
-    assert "SC-1" in message
-
-
 def test_cart_finalization_abandons_the_exact_session(monkeypatch):
     from shopman.shop.services import cart
 
