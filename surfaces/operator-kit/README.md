@@ -1388,6 +1388,36 @@ ganha o respiro da confortável).
 - Substituiu as cinco tabelas do Gestor (Lista da fila, Histórico, Clientes, Unificações e a
   matriz do Catálogo) e aposentou o `ColumnPicker`.
 
+### Exibir no estreito (`OperatorViewMenu`)
+
+Dono, 07/11/2026: no celular, os controles que mudam COMO uma lista aparece (Grade ou
+Lista, densidade, ocultar indisponíveis) não são gestos primários e roubavam a linha da
+busca e a dos filtros. No estreito eles viram **um botão "Exibir"**, o mesmo gesto do
+`OperatorTableView` das tabelas: só o ícone, que é o estado da vista atual (grade ou
+lista); o menu traz uma seção por escolha, com a opção atual marcada, e as preferências
+de ligar e desligar juntas no fim. O nome do botão diz o estado inteiro ("Exibir: Grade,
+Padrão, indisponíveis ocultos"); preferência ligada deixa o botão `soft`.
+
+```vue
+<OperatorViewMenu v-if="narrow" :groups="[
+  { kind: 'choice', key: 'layout', label: 'Vista', value: layout, options: LAYOUTS, select: setLayout },
+  { kind: 'toggle', key: 'hide', label: 'Ocultar indisponíveis', onLabel: 'indisponíveis ocultos',
+    checked: hide, icon: 'lucide:eye-off', toggle: setHide },
+]" />
+```
+
+- **Quando**: a tela decide pela largura da ÁREA (não da tela). No PDV, área de produtos
+  abaixo de 32rem (`collapseViewControls`), que cobre todo celular em pé. Na mesa e no
+  tablet, os segmentados e o olho continuam à vista: um clique, estado de relance.
+- **Um botão por tela, não um por grupo**: vista, densidade e ocultar vão no mesmo menu,
+  como Linhas e Colunas no "Exibir" da tabela. Dois botões de visualização lado a lado no
+  celular voltariam a disputar a linha.
+- **O que NÃO entra**: filtro (muda O QUE aparece; é do `OperatorFilterPanel`), recorte
+  com contagem e ação. Par único de vista (só Grade | Lista) não precisa de menu: no
+  estreito vira um botão que alterna, dizendo a vista que abre.
+- **Menu aberto depois da escolha**: quem ajusta vê o efeito e ajusta a próxima.
+- Desenho puro em `presentation/viewMenu.ts`. Consumidor: `PosProductGrid` (PDV).
+
 ### Painel de filtros (`OperatorFilterPanel` + `useSavedViews` + `#filter-panel`)
 
 UM painel, igual no celular e na mesa (dono, 09/10/2026, referência: o Odoo), sobre o
