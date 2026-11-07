@@ -152,6 +152,7 @@ from shopman.backstage.services.exceptions import (
 from shopman.backstage.services.production import ProductionOrderShortError, ProductionStockShortError
 from shopman.shop.api_errors import public_error_detail
 from shopman.shop.observability import ServerTimingMixin
+from shopman.shop.policies import ifood_concluded
 from shopman.shop.services import cancellation as cancellation_service
 from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import notification as notification_service
@@ -2748,6 +2749,11 @@ class OrderRejectView(_OrderActionBase):
         prepared = {}
 
         def prepare():
+            # O iFood já concluiu: não há o que recusar lá, e a leitura dos motivos
+            # falharia com um 503 sem sentido. Recusa de antemão, dizendo o porquê.
+            concluded = ifood_concluded.concluded_refusal(order, verb="recusar")
+            if concluded:
+                return Response({"detail": concluded, "error": {"code": "ifood_concluded", "message": concluded}}, status=409)
             try:
                 prepared["identity"] = orders_service.prepare_cancellation(order, reason_key)
             except operator_orders.CancellationReasonsUnavailable as exc:

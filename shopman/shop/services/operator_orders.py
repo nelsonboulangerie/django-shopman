@@ -2300,9 +2300,12 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
             enabled=not reason, reason=reason, method="POST", idempotency="required",
             payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order)},
         ))
+        from shopman.shop.policies.ifood_concluded import concluded_refusal
+
+        reject_reason = (concluded_refusal(order, verb="recusar") or "") if authorized else permission_reason
         actions.append(Action(
             ref="reject", kind="mutation", label="Recusar", priority="danger",
-            enabled=authorized, reason="" if authorized else permission_reason,
+            enabled=not reject_reason, reason=reject_reason,
             method="POST", idempotency="required", payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order)},
             confirmation={"required": True},
         ))

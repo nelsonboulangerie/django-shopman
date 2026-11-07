@@ -7405,6 +7405,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/ifood_concluded.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.ifood-concluded"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/customer_cancellation.py",
       "touchpoints": [
         "outro"
@@ -9559,6 +9573,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_INTERACTIVE_READ_TIMEOUT",
             "_base_url",
             "_cfg",
             "logger"
