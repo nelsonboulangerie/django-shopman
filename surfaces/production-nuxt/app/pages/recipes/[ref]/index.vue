@@ -445,7 +445,7 @@ const publishDiff = computed(() => [
                 icon="i-lucide-clipboard-check"
                 title="Conferência pendente"
                 :description="canEdit ? 'Confira ingredientes, rendimento e modo de preparo. Ao confirmar, você registra que esta versão representa a receita da casa.' : 'Esta versão ainda não foi conferida. Peça ao responsável para conferir ingredientes, rendimento e modo de preparo antes de usar.'"
-                :actions="canEdit ? alertActions('warning', [{ label: 'Marcar como conferida', icon: 'i-lucide-check', onClick: confirmSelected }]) : []"
+                :actions="alertActions('warning', canEdit ? [{ label: 'Marcar como conferida', icon: 'i-lucide-check', onClick: confirmSelected }] : [])"
               />
             </template>
           </div>
