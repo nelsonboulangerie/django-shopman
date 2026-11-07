@@ -571,7 +571,7 @@ def _preorder_accepted_variant(
 
 
 #: Nome do modelo da cobrança de cartão recusada depois do aceite (para o log).
-CARD_REPAYMENT_TEMPLATE_NAME = "pagamento_cartao_nao_passou"
+CARD_REPAYMENT_TEMPLATE_NAME = "pagamento_cartao_falhou"
 
 
 def _card_repayment_variant(

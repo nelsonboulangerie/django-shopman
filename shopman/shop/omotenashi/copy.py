@@ -864,7 +864,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     # A cobrança do cartão não passou depois do aceite e o cliente paga de novo.
     "TRACKING_PROMISE_CARD_REPAYMENT_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="A cobrança no cartão não passou")},
+        WILDCARD: {WILDCARD: CopyEntry(title="A cobrança no cartão falhou")},
     },
     "TRACKING_PROMISE_CARD_REPAYMENT_PIX_MESSAGE": {
         WILDCARD: {
@@ -888,7 +888,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 title="Não conseguimos cobrar o cartão",
-                message="A cobrança no seu cartão não passou, e nada foi cobrado. A loja já foi avisada; acompanhe por aqui.",
+                message="A cobrança no seu cartão falhou, e nada foi cobrado. A loja já foi avisada; acompanhe por aqui.",
             ),
         },
     },

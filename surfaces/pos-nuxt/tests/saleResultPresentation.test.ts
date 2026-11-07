@@ -262,7 +262,7 @@ describe("danfeOffer — a DANFE por existência da nota, não por previsão", (
     expect(fiscalStateLabel("queued")).toBe("NFC-e em emissão");
     expect(fiscalStateLabel("awaiting_payment")).toBe("NFC-e sai quando o pagamento confirmar");
     expect(fiscalStateLabel("failed")).toBe("NFC-e não autorizada");
-    expect(fiscalStateLabel("not_expected")).toBe("NFC-e não pedida");
+    expect(fiscalStateLabel("not_expected")).toBe("NFC-e não solicitada");
   });
   it("encomenda paga antes: a nota sai na saída da mercadoria, e a tela diz qual", () => {
     expect(danfeOffer("awaiting_pickup")).toEqual({ kind: "awaiting_handoff", label: "NFC-e sai na retirada" });

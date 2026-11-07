@@ -3,7 +3,7 @@
 Fora da janela de 24h, o ``payment_requested`` sai pelo modelo aprovado
 ``pagamento_solicitado`` ("Seu pedido está reservado. Falta só o pagamento."), que
 não diz que o cartão falhou. No novo pagamento, o aviso passa a sair pela variante
-``payment_requested_card_repayment`` (modelo ``pagamento_cartao_nao_passou``), com o
+``payment_requested_card_repayment`` (modelo ``pagamento_cartao_falhou``), com o
 prazo no campo ``payment_deadline``. Falha fechada: sem flow ligado (modelo ainda
 em análise na Meta), o aviso segue pelo ``pagamento_solicitado``.
 """
@@ -20,7 +20,7 @@ from shopman.shop.adapters import notification_manychat as mc
 pytestmark = pytest.mark.django_db
 
 OLD_FLOW = "content20260101120000_pagamento_solicitado"
-REPAYMENT_FLOW = "content20261107120000_cartao_nao_passou"
+REPAYMENT_FLOW = "content20261107120000_cartao_falhou"
 
 
 @pytest.fixture(autouse=True)
@@ -111,7 +111,7 @@ def test_enquanto_o_modelo_esta_em_analise_sai_o_pagamento_solicitado(calls, mon
     assert _flow_ns(calls) == OLD_FLOW
     assert "payment_deadline" not in _fields(calls)
     pending = [msg for msg in seen if "card_repayment_flow_pending" in msg]
-    assert len(pending) == 1 and "pagamento_cartao_nao_passou" in pending[0]
+    assert len(pending) == 1 and "pagamento_cartao_falhou" in pending[0]
 
 
 @pytest.mark.parametrize(

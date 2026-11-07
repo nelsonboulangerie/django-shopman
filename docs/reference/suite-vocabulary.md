@@ -170,7 +170,7 @@ palavra com número ficam como são.
 
 | É nome (cada palavra maiúscula) | É frase (só a primeira) |
 |---|---|
-| **Loja Online** · **A Receber** · **Pagar na Retirada** · **Saiu para Entrega** · **Pronto pela Cozinha** | **Falhou em todos os canais** · **Não enviado** · **Não atendida** · **NFC-e não pedida** · **Aceito pelo provedor, sem comprovante** |
+| **Loja Online** · **A Receber** · **Pagar na Retirada** · **Saiu para Entrega** · **Pronto pela Cozinha** | **Falhou em todos os canais** · **Não enviado** · **Não atendida** · **NFC-e não solicitada** · **Aceito pelo provedor, sem comprovante** |
 
 Mora num ponto só: `surfaces/operator-kit/app/presentation/badgeCase.ts`, aplicado pelo
 `NuxtBadge` do kit; nenhum app chama à mão. A trava é

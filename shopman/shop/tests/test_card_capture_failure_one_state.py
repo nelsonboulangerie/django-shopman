@@ -205,7 +205,7 @@ class CardCaptureFailsAfterAcceptTests(TestCase):
         order, _ = self._accepted_with_failed_capture()
         promise = build_order_tracking(order).promise
         self.assertEqual(promise.state, "payment_card_ready")
-        self.assertEqual(promise.title, "A cobrança no cartão não passou")
+        self.assertEqual(promise.title, "A cobrança no cartão falhou")
         self.assertTrue(promise.message.startswith("Nada foi cobrado. Pague com Pix ou com outro cartão até "))
         self.assertTrue(any(action.ref == "pay_with_pix" for action in promise.actions))
         self.assertIn(" às ", promise.message)

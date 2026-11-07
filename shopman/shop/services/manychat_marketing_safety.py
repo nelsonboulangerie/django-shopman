@@ -142,7 +142,7 @@ COURIER_DISPATCH_VARIANT = "order_dispatched_courier"
 PREORDER_ACCEPTED_VARIANT = "order_accepted_preorder"
 #: Evento-variante do ``payment_requested`` quando a cobrança do cartão não passou
 #: depois do aceite e o cliente paga de novo (decisão do dono, 07/11/2026): o modelo
-#: ``pagamento_cartao_nao_passou`` diz o que houve, que nada foi cobrado e até quando.
+#: ``pagamento_cartao_falhou`` diz o que houve, que nada foi cobrado e até quando.
 CARD_REPAYMENT_VARIANT = "payment_requested_card_repayment"
 
 _CUSTOMER = ("customer_name", "customer_name_greeting")
@@ -175,7 +175,7 @@ TRANSACTIONAL_FLOW_FIELDS: dict[str, tuple[str, ...]] = {
     "fiscal_note_ready": _ORDER_BUTTON,
     "payment_requested": (*_CUSTOMER, *_ORDER_BUTTON),
     # Variante do `payment_requested` no novo pagamento depois da cobrança de cartão
-    # recusada (`pagamento_cartao_nao_passou`): `payment_deadline` é o prazo cru
+    # recusada (`pagamento_cartao_falhou`): `payment_deadline` é o prazo cru
     # ("hoje às 18h30"). Escolhida pelo adapter
     # (`notification_manychat._card_repayment_variant`), nunca emitida como evento.
     CARD_REPAYMENT_VARIANT: (*_CUSTOMER, *_ORDER_BUTTON, "payment_deadline"),
