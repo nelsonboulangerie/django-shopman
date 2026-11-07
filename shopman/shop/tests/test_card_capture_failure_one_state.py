@@ -149,3 +149,33 @@ class CardCaptureFailedTests(TestCase):
         self.assertEqual(tracking.cancellation_note, text)
         # A mesma frase não se repete no bloco do dinheiro, logo abaixo.
         self.assertEqual(tracking.cancellation_money_line, "")
+
+    def test_when_the_void_fails_the_customer_is_not_told_the_hold_was_released(self) -> None:
+        """Nunca afirmar falso: o Stripe não anulou, a reserva segue no cartão."""
+        from shopman.backstage.models import OperatorAlert
+        from shopman.shop.services import cancel_reasons, operator_orders
+        from shopman.storefront.presentation.order_tracking import build_order_tracking
+
+        def _cancel_fails(pid, **kwargs):
+            raise RuntimeError("stripe indisponível")
+
+        order = self._accepted_with_failed_capture()
+        self.stripe.PaymentIntent.cancel = staticmethod(_cancel_fails)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertTrue(
+                operator_orders.cancel_order(
+                    order, reason="operator", actor="gestor", reason_key="payment_not_confirmed",
+                )
+            )
+        order.refresh_from_db()
+        self.assertTrue(order.data["payment"].get("hold_release_failed_at"))
+        self.assertTrue(OperatorAlert.objects.filter(order_ref=order.ref, type="card_authorization_release_failed").exists())
+
+        text = cancel_reasons.customer_text(order.data)
+        self.assertIn("Nada foi cobrado", text)
+        self.assertIn("a loja vai liberar a reserva", text)
+        self.assertNotIn("desfeita", text)
+
+        tracking = build_order_tracking(order)
+        self.assertEqual(tracking.cancellation_note, text)
+        self.assertNotIn("desfeita", tracking.cancellation_money_line)
