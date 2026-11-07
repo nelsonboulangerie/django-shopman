@@ -308,6 +308,17 @@ class TrackingData:
     # A nota fiscal chega ao cliente pela página do pedido (decisão do dono,
     # 25/09/2026): a loja online não imprime nem pede e-mail.
     fiscal_note: TrackingFiscalNoteData | None = None
+    # A conta e o que o cliente informou no checkout, para o Resumo do pedido
+    # contar o mesmo que a revisão contou (beta 06/11): os descontos selados no
+    # commit (vazio quando o pedido foi editado depois: a conta selada já não é
+    # a que vale), presente, CPF da nota, observação e endereço de entrega.
+    discount_lines: tuple[Any, ...] = ()
+    is_gift: bool = False
+    gift_recipient_name: str = ""
+    gift_message: str = ""
+    tax_id: str = ""
+    customer_notes: str = ""
+    delivery_address: str = ""
 
 
 @dataclass(frozen=True)
@@ -463,11 +474,33 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         is_debug=is_debug,
         last_updated_iso=server_now.isoformat(),
         fiscal_note=_fiscal_note(order_data),
+        discount_lines=_sealed_discount_lines(order),
+        is_gift=bool(order_data.get("is_gift")),
+        gift_recipient_name=str((order_data.get("recipient") or {}).get("name") or "").strip(),
+        gift_message=str(order_data.get("gift_message") or "").strip(),
+        tax_id=str((order_data.get("fiscal") or {}).get("tax_id") or "").strip(),
+        customer_notes=str(order_data.get("order_notes") or "").strip(),
+        delivery_address=str(order_data.get("delivery_address") or "").strip() if is_delivery else "",
         **_waitlist_info(
             order,
             payment_unsettled=payment_pending or payment_status_key == "card_authorized",
         ),
     )
+
+
+def _sealed_discount_lines(order) -> tuple[Any, ...]:
+    """Os descontos que o commit selou, na régua da sacola (uma linha por origem).
+
+    Pedido editado depois (``order_composition.adjustment``) não tem conta
+    selada que valha: as linhas do desconto contariam a conta velha.
+    """
+    from shopman.shop.projections.cart import _discount_lines
+    from shopman.shop.services import order_composition
+
+    if order_composition.adjustment(order) is not None:
+        return ()
+    pricing = (order.snapshot or {}).get("pricing") or {}
+    return _discount_lines(pricing.get("discount") or {}, pricing)
 
 
 def _fiscal_note(order_data: dict) -> TrackingFiscalNoteData | None:
@@ -1789,6 +1822,12 @@ def _eta_at(order) -> str | None:
             round_to_5 = True
             event = _event_for_status(order, "dispatched")
             baseline = event.created_at if event else None
+            # Saiu antes da janela escolhida: a chegada prometida não fica antes
+            # dela. "Chega por volta de 19:25" para a janela das 19:30 às 20:00
+            # desdizia o combinado (beta 06/11).
+            from shopman.shop.services import fulfillment_window
+
+            not_before = fulfillment_window.promised_at(order)
         else:
             return None
         if baseline is None:

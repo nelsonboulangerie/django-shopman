@@ -1192,6 +1192,16 @@ export interface TrackingResponse {
   /** O pedido deve pagamento agora: a tela pede a conferência (POST payment/check). */
   payment_due?: boolean
   share_cta: string
+  // O Resumo: a conta inteira (subtotal de etiqueta, descontos, entrega, total)
+  // e o que o cliente informou no checkout. `schedule_display` é o combinado
+  // (data e janela) sempre que houve janela, não só na encomenda.
+  subtotal_display?: string
+  discount_lines?: { label: string, amount_display: string }[]
+  schedule_display?: string | null
+  gift?: { recipient_name: string, message: string } | null
+  tax_id_display?: string
+  customer_notes?: string
+  delivery_address?: string
   is_debug: boolean
   last_updated_iso: string
   last_updated_display: string

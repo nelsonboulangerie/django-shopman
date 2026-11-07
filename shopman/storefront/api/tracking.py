@@ -138,9 +138,10 @@ def _tracking_payload(order) -> dict:
     # enquanto este for verdadeiro.
     data["payment_due"] = payment_due
     data["placement_secured"] = not (order.status in {"cancelled", "returned"} or payment_due)
-    # Compartilhar não depende do momento: é mais útil com o pedido pronto
-    # do que trinta segundos depois do checkout.
-    data["share_cta"] = _copy_title("CONFIRMATION_SHARE_CTA", "Compartilhar")
+    # Enviar o resumo não depende do momento: é mais útil com o pedido pronto
+    # do que trinta segundos depois do checkout. É texto, não link: o link do
+    # pedido só abre para quem o fez.
+    data["share_cta"] = _copy_title("CONFIRMATION_SHARE_CTA", "Enviar resumo")
     return data
 
 

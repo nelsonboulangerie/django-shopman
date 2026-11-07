@@ -7092,6 +7092,7 @@
             "_qr_image_src",
             "_rating_followup",
             "_reorder_action",
+            "_sealed_discount_lines",
             "_shop_has_specific_address",
             "_show_payment_confirmed_notice",
             "_slot_label",
