@@ -585,6 +585,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_STATUS_CARD_AUTHORIZED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento autorizado")},
     },
+    "TRACKING_STATUS_CARD_CAPTURE_FAILED": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Cobrança não concluída")},
+    },
     "TRACKING_STATUS_READY_DELIVERY": {
         WILDCARD: {WILDCARD: CopyEntry(title="Aguardando entregador")},
     },
@@ -782,6 +785,15 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_LINK_FOOTNOTE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Se o prazo passar, liberamos a reserva e avisamos você.")},
     },
+    # A mesma consequência quando a frase do estado não diz o prazo (cartão
+    # recusado, encomenda): a nota diz qual, para não apontar um prazo invisível.
+    "TRACKING_PROMISE_CARD_DEADLINE_FOOTNOTE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Se o pagamento não for feito até {deadline}, liberamos a reserva e avisamos você.",
+            ),
+        },
+    },
     "TRACKING_PROMISE_CARD_PREORDER_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
@@ -847,6 +859,36 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 title="Pagamento autorizado",
+            ),
+        },
+    },
+    # A cobrança do cartão não passou depois do aceite e o cliente paga de novo.
+    "TRACKING_PROMISE_CARD_REPAYMENT_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="A cobrança no cartão falhou")},
+    },
+    "TRACKING_PROMISE_CARD_REPAYMENT_PIX_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Nada foi cobrado. Pague com Pix ou com outro cartão até {deadline} para seguirmos com o seu pedido.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_REPAYMENT_PIX_ACTION": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Pagar com Pix")},
+    },
+    "TRACKING_PROMISE_CARD_REPAYMENT_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Nada foi cobrado. Pague com outro cartão até {deadline} para seguirmos com o seu pedido.",
+            ),
+        },
+    },
+    # A cobrança do cartão autorizado foi recusada no aceite.
+    "TRACKING_CARD_CAPTURE_FAILED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Não conseguimos cobrar o cartão",
+                message="A cobrança no seu cartão falhou, e nada foi cobrado. A loja já foi avisada; acompanhe por aqui.",
             ),
         },
     },
@@ -1035,28 +1077,28 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Sua reserva está na fila de espera.",
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido para {when}.",
             ),
         },
     },
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Sua reserva está na fila de espera.",
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido.",
             ),
         },
     },
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+                message="Pedido aceito para {when}. Estamos cobrando o valor reservado no seu cartão.",
             ),
         },
     },
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED_NO_DATE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+                message="Pedido aceito. Estamos cobrando o valor reservado no seu cartão.",
             ),
         },
     },
@@ -1152,7 +1194,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
 
     # ── Order confirmation (momento yoin, no acompanhamento) ──────
     "CONFIRMATION_SHARE_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Compartilhar")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Enviar resumo")},
     },
 
     # ── Payment (bloco de Pix/cartão inline no acompanhamento) ────

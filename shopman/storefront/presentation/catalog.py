@@ -955,11 +955,17 @@ def unit_weight_label(product: Any) -> str | None:
     peso anunciado nunca mente para menos. Quando o nome já traz a medida, o
     peso aproximado repetia o número com um "~" que o rótulo não tem: "Camembert
     125g ~125 g/un." (beta 05/11, LOJA-11).
+
+    Bebida não tem peça: o peso que a ficha deriva (40 g do espresso, 400 g
+    do bule de chá) serve à nutrição e ao substituto, não a quem pede um café
+    (beta 05/11). Quem diz que é bebida é o atributo ``natureza``.
     """
     weight = getattr(product, "unit_weight_g", None)
     if not weight:
         return None
     if _MEASURE_IN_NAME.search(str(getattr(product, "name", "") or "")):
+        return None
+    if catalog_context.is_beverage(product):
         return None
     return f"peça de ~{weight} g"
 

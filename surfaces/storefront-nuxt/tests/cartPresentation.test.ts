@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyLineQty, applySkuQty, cartQtyForSku, plainQtyForSku, cartHoldBanner, cartItemsCount, formatCentavos, holdBannerVariant, holdCountdown, isOptimisticLine, lineHoldState, reviewWaitlist, substituteSwapPlan } from '~/presentation/cart'
+import { applyLineQty, applySkuQty, cartQtyForSku, plainQtyForSku, cartHoldBanner, cartItemsCount, formatCentavos, holdBannerVariant, holdCountdown, isOptimisticLine, lineHoldState, linePrice, reviewWaitlist, substituteSwapPlan } from '~/presentation/cart'
 import type { CartItemProjection, CartProjection, ProductMutationMeta, SubstituteProjection } from '~/types/shopman'
 
 function line (overrides: Partial<CartItemProjection> = {}): CartItemProjection {
@@ -14,6 +14,7 @@ function line (overrides: Partial<CartItemProjection> = {}): CartItemProjection 
     total_display: 'R$ 3,00',
     image_url: null,
     discount_label: null,
+    promo_price_display: null,
     is_available: true,
     availability_warning: null,
     available_qty: null,
@@ -282,5 +283,19 @@ describe('linhas do mesmo SKU', () => {
     expect(cartQtyForSku([comOvo, semOvo], 'CQMO')).toBe(3)
     expect(cartQtyForSku([comOvo, semOvo], 'OUTRO')).toBe(0)
     expect(plainQtyForSku([comOvo, semOvo], 'CQMO')).toBe(1)
+  })
+})
+
+describe('cart presentation — linePrice', () => {
+  it('repete a dupla do cardápio quando a linha tem promoção', () => {
+    expect(linePrice(line({ price_display: 'R$ 6,00', promo_price_display: 'R$ 5,10' })))
+      .toEqual({ original: 'R$ 6,00', current: 'R$ 5,10' })
+  })
+
+  it('fica só com o cheio sem promoção (cupom mora no resumo)', () => {
+    expect(linePrice(line({ price_display: 'R$ 6,00', promo_price_display: null })))
+      .toEqual({ original: null, current: 'R$ 6,00' })
+    expect(linePrice(line({ price_display: 'R$ 6,00', promo_price_display: 'R$ 6,00' })))
+      .toEqual({ original: null, current: 'R$ 6,00' })
   })
 })

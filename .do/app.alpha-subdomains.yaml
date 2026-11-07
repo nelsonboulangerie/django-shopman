@@ -562,10 +562,6 @@ envs:
   scope: RUN_TIME
   value: '1'
   type: GENERAL
-- key: IFOOD_CANCELLATION_CODE
-  scope: RUN_TIME
-  value: '501'
-  type: GENERAL
 - key: SHOPMAN_LOG_CLIENT_IP
   scope: RUN_TIME
   value: 'false'

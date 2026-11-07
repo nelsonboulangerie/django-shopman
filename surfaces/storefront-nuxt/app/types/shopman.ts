@@ -257,6 +257,9 @@ export interface CartItemProjection {
   total_display: string
   image_url: string | null
   discount_label: string | null
+  // Preço por unidade da promoção da linha (o mesmo do cardápio); a linha mostra
+  // price_display riscado e este ao lado. null sem promoção (cupom fica no resumo).
+  promo_price_display: string | null
   is_available: boolean
   availability_warning: string | null
   available_qty: number | null
@@ -439,6 +442,9 @@ export interface ShopStatusProjection {
   is_open: boolean
   label: string
   message: string | null
+  // Loja fechada: a próxima abertura em frase ("amanhã às 9h"); null aberta
+  // ou sem abertura conhecida. Mesmo dado do selo da home.
+  next_opening: string | null
   opens_at: string | null
   closes_at: string | null
 }
@@ -1195,6 +1201,16 @@ export interface TrackingResponse {
   /** O pedido deve pagamento agora: a tela pede a conferência (POST payment/check). */
   payment_due?: boolean
   share_cta: string
+  // O Resumo: a conta inteira (subtotal de etiqueta, descontos, entrega, total)
+  // e o que o cliente informou no checkout. `schedule_display` é o combinado
+  // (data e janela) sempre que houve janela, não só na encomenda.
+  subtotal_display?: string
+  discount_lines?: { label: string, amount_display: string }[]
+  schedule_display?: string | null
+  gift?: { recipient_name: string, message: string } | null
+  tax_id_display?: string
+  customer_notes?: string
+  delivery_address?: string
   is_debug: boolean
   last_updated_iso: string
   last_updated_display: string

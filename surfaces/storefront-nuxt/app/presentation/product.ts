@@ -1,4 +1,4 @@
-import type { CatalogItemProjection, ProductDetailProjection, ProductRecommendationsProjection, ProductNutritionProjection } from '~/types/shopman'
+import type { CatalogItemProjection, ProductDetailProjection, ProductRecommendationsProjection, ProductNutritionProjection, ShopStatusProjection } from '~/types/shopman'
 
 // Transforms puros da PDP: descrição sem eco, tabela nutricional com %VD e
 // a lista "Veja também" (cross_sell por keywords compartilhadas).
@@ -17,9 +17,20 @@ export type NutritionTable = {
 // Disponibilidade na loja física: o Google só mostra "retirada hoje" quando a
 // página do produto diz que o item está na loja. Só para estoque PRONTO hoje;
 // produção planejada ainda não está na prateleira e não promete retirada.
-export function inStorePickupLine (product: Pick<ProductDetailProjection, 'availability' | 'can_add_to_cart'>): string {
+// Loja fechada não diz "hoje": a frase fala da próxima abertura, o mesmo dado
+// (`shop_status.next_opening`) do selo da home (beta 06/11).
+export function inStorePickupLine (
+  product: Pick<ProductDetailProjection, 'availability' | 'can_add_to_cart'>,
+  shopStatus?: Pick<ShopStatusProjection, 'is_open' | 'next_opening'> | null
+): string {
   if (!product.can_add_to_cart) return ''
   if (product.availability !== 'available' && product.availability !== 'low_stock') return ''
+  if (shopStatus && !shopStatus.is_open) {
+    const nextOpening = shopStatus.next_opening?.trim()
+    return nextOpening
+      ? `Retirada grátis na loja quando abrirmos, ${nextOpening}.`
+      : 'Retirada grátis na loja quando abrirmos.'
+  }
   return 'Disponível hoje na loja, com retirada grátis.'
 }
 

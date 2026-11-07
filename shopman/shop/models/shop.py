@@ -33,104 +33,6 @@ def validate_logo(value):
 SHOP_CACHE_TTL = 60  # seconds
 
 
-# ── Motivos de cancelamento/recusa ──
-#
-# ``Shop.cancellation_presets`` é uma lista em que cada item é:
-#   - uma string (o motivo, sem grupo), ou
-#   - ``{"label": "<motivo>", "group": "<grupo>"}`` (o motivo com o cabeçalho
-#     sob o qual o Gestor o mostra), com ``"reason_key"`` opcional: a chave da
-#     lista única de motivos (``services/cancel_reasons``) que a recusa grava em
-#     ``cancellation_reason_key``. Sem ela, a recusa sai como ``other``.
-# A ordem da lista é a ordem na tela; os grupos aparecem na ordem do primeiro
-# motivo de cada um. O motivo vai ao cliente como ``Motivo: <motivo>.``
-# (``services/notification.py``): por isso nunca termina em pontuação.
-
-CANCELLATION_PRESET_TRAILING_PUNCTUATION = ".,;:!?…"
-
-
-def cancellation_preset_entries(raw) -> list[tuple[str, str]]:
-    """Os motivos gravados como pares ``(grupo, motivo)``, na ordem gravada.
-
-    Tolerante: descarta vazio e item de forma desconhecida, nunca levanta. É o
-    leitor de quem só exibe (projeção do Gestor); quem grava passa por
-    :func:`validate_cancellation_presets`.
-    """
-    if not isinstance(raw, (list, tuple)):
-        return []
-    entries: list[tuple[str, str]] = []
-    for item in raw:
-        if isinstance(item, dict):
-            label = str(item.get("label") or "").strip()
-            group = str(item.get("group") or "").strip()
-        elif isinstance(item, str):
-            label, group = item.strip(), ""
-        else:
-            continue
-        if label:
-            entries.append((group, label))
-    return entries
-
-
-def cancellation_preset_reason_key(raw, label: str) -> str:
-    """A chave da lista única (``cancel_reasons``) do motivo pronto com este texto.
-
-    Vazia quando o texto não é de um motivo pronto (o "Outros", ou um motivo
-    editado antes de confirmar) ou quando o motivo não traz chave.
-    """
-    wanted = str(label or "").strip()
-    if not wanted or not isinstance(raw, (list, tuple)):
-        return ""
-    for item in raw:
-        if isinstance(item, dict) and str(item.get("label") or "").strip() == wanted:
-            return str(item.get("reason_key") or "").strip()
-    return ""
-
-
-def validate_cancellation_presets(value) -> None:
-    """Recusa o que a notificação ao cliente não sabe dizer.
-
-    Forma: lista de strings ou de ``{"label", "group"}``. Motivo terminado em
-    pontuação sairia ``Motivo: Item acabou..`` no WhatsApp: é recusado.
-    """
-    if value in (None, ""):
-        return
-    if not isinstance(value, (list, tuple)):
-        raise ValidationError("Os motivos precisam ser uma lista.")
-    for item in value:
-        if isinstance(item, dict):
-            unknown = set(item) - {"label", "group", "reason_key"}
-            if unknown:
-                raise ValidationError(
-                    f"Motivo com campo desconhecido ({', '.join(sorted(unknown))}). "
-                    "Use só “label” (o motivo), “group” (o grupo) e “reason_key” (a chave do motivo)."
-                )
-            label = item.get("label")
-            group = item.get("group", "")
-            if not isinstance(label, str) or not label.strip():
-                raise ValidationError("Todo motivo com grupo precisa do texto do motivo (“label”).")
-            if not isinstance(group, str):
-                raise ValidationError(f"O grupo do motivo “{label.strip()}” precisa ser um texto.")
-            if "reason_key" in item:
-                from shopman.shop.services import cancel_reasons
-
-                key = item["reason_key"] if isinstance(item["reason_key"], str) else ""
-                if cancel_reasons.validation_message(key):
-                    keys = ", ".join(reason.key for reason in cancel_reasons.OPERATOR_CANCEL_REASONS)
-                    raise ValidationError(
-                        f"A chave do motivo “{label.strip()}” precisa ser uma destas: {keys}."
-                    )
-        elif isinstance(item, str):
-            label = item
-        else:
-            raise ValidationError("Cada motivo é um texto, ou um texto com grupo.")
-        label = label.strip()
-        if label and label[-1] in CANCELLATION_PRESET_TRAILING_PUNCTUATION:
-            raise ValidationError(
-                f"Tire a pontuação do fim de “{label}”. O cliente lê “Motivo: {label[:-1]}.”, "
-                "e o ponto final já vem da notificação."
-            )
-
-
 # ── Social link detection ──
 
 _SOCIAL_PLATFORMS = [
@@ -496,31 +398,6 @@ class Shop(models.Model):
         help_text="Só o código da meta tag p:domain_verify.",
     )
 
-    # ── Motivos de cancelamento/recusa (presets do operador) ──
-    cancellation_presets = models.JSONField(
-        "motivos de cancelamento/recusa",
-        default=list,
-        blank=True,
-        validators=[validate_cancellation_presets],
-        help_text=(
-            "Justificativas padrão que o operador injeta com um toque ao recusar "
-            "ou cancelar um pedido no gestor. O texto escolhido é enviado ao "
-            'cliente como "Motivo: <texto>.", então escreva na voz da loja e sem '
-            "pontuação no fim. Cada item é um texto, ou um texto com grupo (o "
-            "cabeçalho sob o qual o Gestor o mostra). A ordem é a da tela. "
-            '"reason_key" (opcional) liga o motivo à lista única de motivos '
-            "(out_of_stock, cannot_deliver, customer_request, payment_not_confirmed, "
-            "store_closing, other): é o motivo que o histórico e o acompanhamento do "
-            "pedido registram.\n"
-            "Exemplo:\n"
-            "[\n"
-            '  {"label": "Item indisponível no momento", "group": "Produto", "reason_key": "out_of_stock"},\n'
-            '  {"label": "Pagamento não aprovado", "group": "Pagamento", "reason_key": "payment_not_confirmed"},\n'
-            '  "Fora do horário de atendimento"\n'
-            "]"
-        ),
-    )
-
     # ── Tags de nota da cozinha (presets do operador) ──
     kitchen_note_tags = models.JSONField(
         "tags de nota da cozinha",
@@ -644,7 +521,10 @@ class Shop(models.Model):
         ]
 
     def __str__(self):
-        return self.name
+        # O Admin escreve ``str(obj)`` na mensagem de sucesso: com o nome fantasia
+        # em branco, salvar o horário dizia "alterado com sucesso" sobre “” (beta
+        # 05/11). A loja tem outros nomes; a mensagem não fica sem nome.
+        return self.name or self.brand_name or self.short_name or self.legal_name or "Loja"
 
     def clean(self):
         super().clean()

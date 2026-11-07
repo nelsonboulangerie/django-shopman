@@ -446,6 +446,8 @@ function goBack() {
           v-model:open="handOverOpen"
           :hand-over="counter.hand_over"
           :customer-name="customerLine(card)"
+          :shop-name="pos?.shop_name || ''"
+          :order-ref="ref_"
           :busy="actions.busy.value"
           @confirm="confirmHandOver"
         />

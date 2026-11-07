@@ -30,12 +30,12 @@ def test_replay_and_receipt_do_not_repeat_provider_preparation(client, context, 
     user, order = context
     url = reverse(f"api-backstage-order-{operation}", args=[order.ref])
     body = {"expected_actor_id": user.pk, "base_revision": operator_orders.operational_revision(order),
-        "reason": "Motivo sintético", "cancellation_code": "SYNTHETIC"}
+        "reason_key": "out_of_stock"}
     key = str(uuid.uuid4())
 
     def reasons(_order):
         assert not connection.in_atomic_block
-        return [{"code": "SYNTHETIC", "description": "Motivo sintético"}]
+        return [{"code": "503", "description": "Item indisponível"}]
 
     with patch.object(operator_orders, "cancellation_reasons", side_effect=reasons) as lookup:
         first = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
@@ -47,7 +47,7 @@ def test_replay_and_receipt_do_not_repeat_provider_preparation(client, context, 
         assert second.json()["replayed"]
         receipt = client.get(url, {"idempotency_key": key})
         assert receipt.json()["outcome"] == "applied"
-        conflict = client.post(url, {**body, "reason": "Outra decisão"}, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+        conflict = client.post(url, {**body, "reason_key": "other"}, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
         assert conflict.status_code == 409
         assert lookup.call_count == 1
     # A receipt records the durable request, not a completed cancellation.
@@ -59,8 +59,8 @@ def test_replay_and_receipt_do_not_repeat_provider_preparation(client, context, 
     assert ifood_cancellation.is_pending(order)
     directive = Directive.objects.get(topic="ifood.status_callback", payload__order_ref=order.ref)
     assert directive.payload["cancellation_request_id"] == initial_request["id"]
-    assert directive.payload["cancellation_code"] == "SYNTHETIC"
-    assert directive.payload["cancellation_reason"] == "Motivo sintético"
+    assert directive.payload["cancellation_code"] == "503"
+    assert directive.payload["cancellation_reason"] == "Acabou um item"
 
 
 def test_paid_cancel_preserves_signature_and_never_retains_pin(client, context):

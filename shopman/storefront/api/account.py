@@ -516,6 +516,19 @@ class ProfileView(ServerTimingMixin, APIView):
             )
 
         last_name = clean_name(payload["last_name"]) if "last_name" in payload else UNSET
+        # `<` e `>` não existem em nome de gente, e um nome com `<img …>` vai para o
+        # ticket da cozinha, para a notificação e para o Admin (beta 06/11). Recusar
+        # com o campo apontado é melhor que limpar calado: a pessoa vê o que mudou.
+        for field_name, value in (("first_name", first_name), ("last_name", last_name)):
+            if isinstance(value, str) and NAME_MARKUP_CHARS.intersection(value):
+                return Response(
+                    {
+                        "detail": NAME_MARKUP_DETAIL,
+                        "field": field_name,
+                        "errors": {field_name: [NAME_MARKUP_DETAIL]},
+                    },
+                    status=400,
+                )
         email = clean_text(payload["email"]) if "email" in payload else UNSET
         # Trocar (ou apagar) o e-mail é trocar um contato da conta: a mesma cerca do
         # telefone. Mandar o MESMO e-mail de volta (o formulário manda todos os campos)
@@ -1405,6 +1418,18 @@ class PhoneChangeRequestView(APIView):
             )
 
         if not resultado.success:
+            if auth_service.auth_error_code(resultado) == "cooldown":
+                # O código pedido há pouco ainda vale: a recusa leva a validade, e a
+                # tela vai ao passo de digitar em vez de abrir com um erro vermelho
+                # para quem ainda não tentou nada (beta 06/11).
+                return Response(
+                    auth_service.code_cooldown_body(
+                        auth_service.request_code_error_message(resultado),
+                        resultado,
+                        phone=phone,
+                    ),
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             return Response(
                 {
                     "detail": auth_service.request_code_error_message(resultado),
@@ -1487,11 +1512,134 @@ class PhoneChangeConfirmView(APIView):
         return Response({"ok": True, "phone": phone})
 
 
+# A etapa que ainda segura a exclusão, dita como o cliente a reconhece, e o que
+# esperar dela. "Uma etapa obrigatória do pedido" sem dizer qual deixava a pessoa
+# sem saber se tinha de fazer algo ou só aguardar (beta 06/11). A chave é o
+# prefixo do tópico da diretiva (``shopman.shop.directives``).
+_DELETION_PENDING_STEPS = {
+    "fiscal": (
+        "a nota fiscal",
+        "Ela é emitida sozinha, em geral em poucos minutos.",
+    ),
+    "payment.refund": (
+        "o estorno do pagamento",
+        "Ele é feito sozinho; assim que for concluído, a exclusão fica liberada.",
+    ),
+    "payment": (
+        "a confirmação do pagamento",
+        "Ela é concluída sozinha, em geral em poucos minutos.",
+    ),
+    "loyalty": (
+        "o registro dos seus pontos",
+        "Ele é concluído sozinho, em geral em poucos minutos.",
+    ),
+    "return": (
+        "a devolução",
+        "A loja conclui a devolução; se tiver dúvida, fale com a padaria.",
+    ),
+    "fulfillment": ("a entrega", "Ela termina quando o pedido for entregue."),
+    "courier": ("a entrega", "Ela termina quando o pedido for entregue."),
+    "delivery": ("a entrega", "Ela termina quando o pedido for entregue."),
+}
+_DELETION_PENDING_STEP_DEFAULT = (
+    "um registro interno da loja",
+    "Ele é concluído sozinho, sem nada a fazer da sua parte.",
+)
+
+_DELETION_BLOCKED_MESSAGES = {
+    "stock_alert_delivery_in_flight": (
+        "Um aviso está sendo enviado neste instante. Aguarde um momento e tente novamente."
+    ),
+    "order_automation_in_flight": (
+        "Uma atualização do pedido está sendo concluída. Aguarde um momento e tente novamente."
+    ),
+    "conversation_delivery_in_flight": (
+        "Uma mensagem está sendo enviada neste instante. Aguarde um momento e tente novamente."
+    ),
+    "otp_delivery_in_flight": (
+        "Um código de acesso está sendo enviado neste instante. "
+        "Aguarde a conclusão e tente excluir a conta novamente."
+    ),
+    "marketing_delivery_in_flight": (
+        "Uma mensagem de marketing está sendo enviada neste instante. Aguarde um momento e tente novamente."
+    ),
+}
+
+
+def _deletion_pending_step(topic: str) -> tuple[str, str]:
+    for prefix in (topic, topic.split(".", 1)[0]):
+        if prefix in _DELETION_PENDING_STEPS:
+            return _DELETION_PENDING_STEPS[prefix]
+    return _DELETION_PENDING_STEP_DEFAULT
+
+
+def _deletion_blocked_message(blocker) -> str:
+    order = f"O pedido {blocker.order_ref}" if blocker.order_ref else "Um pedido seu"
+    if blocker.reason == "active_order":
+        return (
+            f"{order} ainda está em andamento. Quando ele for concluído ou cancelado, "
+            "você pode excluir a conta."
+        )
+    if blocker.reason == "order_obligation_pending":
+        step, expect = _deletion_pending_step(blocker.topic)
+        return (
+            f"{order} ainda tem uma etapa em aberto: {step}. {expect} "
+            "Depois disso, você pode excluir a conta."
+        )
+    return _DELETION_BLOCKED_MESSAGES.get(
+        blocker.reason,
+        "A exclusão está temporariamente bloqueada. Aguarde um momento e tente novamente.",
+    )
+
+
+def _deletion_blocked_body(blocker) -> dict:
+    """A recusa da exclusão no dialeto da casa, com o pedido nomeado e o caminho até ele."""
+    detail = _deletion_blocked_message(blocker)
+    actions = []
+    if blocker.order_ref:
+        actions.append(action_payload(
+            ref="open_order",
+            kind="link",
+            label=f"Ver o pedido {blocker.order_ref}",
+            href=f"/pedido/{blocker.order_ref}",
+            priority="primary",
+            idempotency="none",
+        ))
+    return {
+        "detail": detail,
+        "error": {"code": "account_deletion_blocked", "reason": blocker.reason},
+        "order_ref": blocker.order_ref,
+        "actions": actions,
+    }
+
+
+# Os sinais que um nome nunca tem e que viram marcação em qualquer tela que o mostre.
+NAME_MARKUP_CHARS = frozenset("<>")
+NAME_MARKUP_DETAIL = "O nome não pode ter os sinais < ou >."
+
+
 class AccountDeleteView(APIView):
     """POST /api/v1/account/delete/ — anonymize customer account after explicit ack."""
 
     permission_classes = [AllowAny]
     authentication_classes = [SessionAuthentication]
+
+    def get(self, request):
+        """O que já recusaria a exclusão, conferido ANTES do código de confirmação.
+
+        A tela pergunta aqui antes de pedir o SMS: um pedido em andamento é
+        conhecido de antemão, e descobrir isso depois de digitar o código era
+        gastar a mensagem e a paciência do cliente à toa (beta 06/11).
+        """
+        from shopman.storefront.services import account_privacy
+
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        blocker = account_privacy.deletion_preflight(customer)
+        if blocker is None:
+            return Response({"ok": True, "blocked": False})
+        return Response({"ok": False, "blocked": True, **_deletion_blocked_body(blocker)})
 
     def post(self, request):
         from shopman.storefront.services import account_privacy
@@ -1568,41 +1716,8 @@ class AccountDeleteView(APIView):
                 status=409,
             )
         except account_privacy.AccountDeletionBlocked as exc:
-            messages = {
-                "active_order": (
-                    "Ainda existe um pedido em andamento. Conclua ou cancele esse pedido antes "
-                    "de excluir a conta."
-                ),
-                "stock_alert_delivery_in_flight": (
-                    "Um aviso está sendo enviado neste instante. Aguarde um momento e tente novamente."
-                ),
-                "order_automation_in_flight": (
-                    "Uma atualização do pedido está sendo concluída. Aguarde um momento e tente novamente."
-                ),
-                "order_obligation_pending": (
-                    "Ainda há uma etapa obrigatória do pedido para concluir. Aguarde a conclusão e tente novamente."
-                ),
-                "conversation_delivery_in_flight": (
-                    "Uma mensagem está sendo enviada neste instante. Aguarde um momento e tente novamente."
-                ),
-                "otp_delivery_in_flight": (
-                    "Um código de acesso está sendo enviado neste instante. "
-                    "Aguarde a conclusão e tente excluir a conta novamente."
-                ),
-                "marketing_delivery_in_flight": (
-                    "Uma mensagem de marketing está sendo enviada neste instante. Aguarde um momento e tente novamente."
-                ),
-            }
-            return Response(
-                {
-                    "detail": messages.get(
-                        exc.reason,
-                        "A exclusão está temporariamente bloqueada. Aguarde um momento e tente novamente.",
-                    ),
-                    "error": {"code": "account_deletion_blocked", "reason": exc.reason},
-                },
-                status=409,
-            )
+            blocker = account_privacy.deletion_blocker_details(customer, exc.reason)
+            return Response(_deletion_blocked_body(blocker), status=409)
         except Exception:
             logger.exception("storefront_account_deletion_failed")
             return Response(

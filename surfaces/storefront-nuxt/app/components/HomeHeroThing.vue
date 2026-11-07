@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CopyEntryProjection, HomeProjection, Action } from '~/types/shopman'
+import { closedHeroEyebrow } from '~/presentation/home'
 
 interface HeroSlide {
   ref: string
@@ -143,9 +144,8 @@ const slides = computed<HeroSlide[]>(() => {
   // pedido sem dizer que a loja estava fechada — o cliente só descobria no checkout,
   // com a sacola pronta. O selo de estado existe, mas vive lá embaixo, no card
   // "visite a loja". Aqui ele sobe para o topo, que é o que a pessoa lê.
-  const closedEyebrow = props.statusOpen
-    ? undefined
-    : `${props.statusLabel ? `${props.statusLabel}. ` : ''}Você monta agora e finaliza quando abrirmos.`
+  // E diz a verdade sobre a finalização (ver closedHeroEyebrow).
+  const closedEyebrow = props.statusOpen ? undefined : closedHeroEyebrow(props.statusLabel)
   const handmadeTitle = `${titleOf(copy.handmade_title_prefix, 'Feito à mão,')} ${titleOf(copy.handmade_title_suffix, 'todo dia')}`
   const greetingTitle = sentence(omo.greeting_with_name || handmadeTitle)
   const list: HeroSlide[] = []

@@ -398,8 +398,9 @@ async function submitCoupon () {
     coupon.value = ''
     await refresh()
   } catch (e) {
+    // Um aviso só: o erro mora embaixo do campo (aria-describedby). O toast
+    // repetia a mesma frase em outro canto da tela (beta 06/11).
     couponIssue.value = errorDetail(e, 'Cupom inválido ou indisponível.')
-    if (import.meta.client) useSonner.error(couponIssue.value)
   } finally {
     couponPending.value = false
   }
@@ -1674,17 +1675,20 @@ useSeoMeta({
                   <div v-if="!showNameInput" class="flex items-center gap-3 py-3 first:pt-0">
                     <Icon name="lucide:user-round" class="size-4 shrink-0 text-muted-foreground" />
                     <p class="min-w-0 flex-1 truncate text-sm font-semibold">{{ state.name }}</p>
-                    <UiButton variant="link" size="sm" class="-my-3 -mr-3 h-11 min-w-11 px-3" data-checkout-contact-edit @click="startEditName">Editar</UiButton>
+                    <UiButton variant="link" size="sm" class="-my-3 -mr-3 h-11 min-w-11 px-3" aria-label="Editar nome" data-checkout-contact-edit @click="startEditName">Editar</UiButton>
                   </div>
                   <div class="flex items-center gap-3 py-3 first:pt-0">
-                    <Icon name="lucide:phone" class="size-4 shrink-0 text-muted-foreground" />
-                    <div class="min-w-0 flex-1">
-                      <p class="shop-price">
+                    <Icon name="lucide:phone" class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <!-- O telefone é texto (vem da conta), não campo: o leitor de tela
+                         ouve o rótulo antes do número, e o erro fica ligado a ele. -->
+                    <div class="min-w-0 flex-1" role="group" aria-labelledby="checkout-phone-label" :aria-describedby="fieldErrors.phone ? 'checkout-phone-error' : undefined">
+                      <span id="checkout-phone-label" class="sr-only">Telefone</span>
+                      <p class="shop-price" data-checkout-phone>
                         {{ phoneDisplay || 'Entre por telefone para continuar' }}
                       </p>
-                      <UiFieldError v-if="fieldErrors.phone" class="mt-1" :errors="fieldErrors.phone" />
+                      <UiFieldError v-if="fieldErrors.phone" id="checkout-phone-error" class="mt-1" :errors="fieldErrors.phone" />
                     </div>
-                    <UiButton variant="link" size="sm" class="-my-3 -mr-3 h-11 min-w-11 px-3" data-checkout-contact-edit @click="changePhoneOpen = true">
+                    <UiButton variant="link" size="sm" class="-my-3 -mr-3 h-11 min-w-11 px-3" aria-label="Trocar telefone" data-checkout-contact-edit @click="changePhoneOpen = true">
                       Trocar
                     </UiButton>
                   </div>
@@ -2391,11 +2395,18 @@ useSeoMeta({
             <UiButton v-else-if="confirmationUnknown" variant="outline" to="/conta/pedidos">Ver meus pedidos</UiButton>
               </UiAlert>
 
-              <!-- O quê: itens em linha única (qty + nome). Os valores vivem no resumo. -->
-              <ul class="space-y-1">
+              <!-- O quê: itens com o valor da linha. A revisão é o último lugar antes
+                   de enviar o pedido: a conta inteira aparece sempre, com ou sem
+                   cupom e frete (beta 06/11). -->
+              <ul class="space-y-1" data-review-items>
                 <li v-for="line in cart?.items || []" :key="line.line_id" class="shop-body">
-                  <span class="font-semibold tabular-nums">{{ line.qty }}×</span>
-                  {{ line.name }}
+                  <span class="flex items-baseline justify-between gap-3">
+                    <span class="min-w-0">
+                      <span class="font-semibold tabular-nums">{{ line.qty }}×</span>
+                      {{ line.name }}
+                    </span>
+                    <span class="shrink-0 tabular-nums" data-review-line-total>{{ line.total_display }}</span>
+                  </span>
                   <!-- Lista de espera = história do MESMO dia (fila de espera da produção).
                        Pedido agendado para outra data não tem fila: a reserva nasce na
                        data com prioridade de pedido, e o "Quando" já conta o combinado. -->
@@ -2440,7 +2451,7 @@ useSeoMeta({
               <!-- Resumo de valores: compacto e inline (sem empilhar). O Total vai no rodapé. -->
               <template v-if="cart">
                 <UiSeparator class="my-3" />
-                <dl class="space-y-1 text-sm">
+                <dl class="space-y-1 text-sm" data-review-bill>
                   <div class="flex items-baseline justify-between gap-3">
                     <dt class="shop-muted">Subtotal</dt>
                     <dd class="tabular-nums">{{ cart.has_discount ? (cart.original_subtotal_display || cart.subtotal_display) : cart.subtotal_display }}</dd>

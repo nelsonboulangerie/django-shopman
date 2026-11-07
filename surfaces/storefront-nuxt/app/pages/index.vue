@@ -246,7 +246,7 @@ useHead({
               :reorder-loading="home.last_order_ref ? !!reorderPending[home.last_order_ref] : false"
               :status-open="operationalStatus.isOpen"
               :status-label="operationalStatus.label"
-              closed-cta-label="Montar pedido para depois"
+              closed-cta-label="Fazer pedido"
               @reorder="handleReorder"
             />
 

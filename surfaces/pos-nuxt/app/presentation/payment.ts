@@ -117,6 +117,19 @@ export function nonCashExcessQ(tenders: POSPaymentTenderDraft[], totalQ: number)
   return excess - Math.min(excess, cashTenderSumQ(tenders));
 }
 
+/**
+ * Troco a partir da maior cédula do Real (R$ 200) é, quase sempre, um zero a mais
+ * no recebido: ninguém entrega uma nota de R$ 200 sobrando. O PDV aceitava
+ * "recebido R$ 10.000,00" numa venda de R$ 48,60 e mandava dar R$ 9.951,40 de
+ * troco sem uma palavra (beta 07/11). A tela pede a confirmação, não recusa: a
+ * conta pode estar certa, e quem decide é quem tem o dinheiro na mão.
+ */
+export const IMPLAUSIBLE_CHANGE_Q = 20000;
+
+export function isImplausibleChange(changeQ: number): boolean {
+  return changeQ >= IMPLAUSIBLE_CHANGE_Q;
+}
+
 // ── DIVIDIR A CONTA ──────────────────────────────────────────────────
 //
 // "Somos três, cada um paga o seu." O trilho de tenders já dava conta disso — o

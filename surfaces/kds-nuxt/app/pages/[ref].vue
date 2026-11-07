@@ -701,7 +701,7 @@ function clearSearchAndFilter() {
               <TransitionGroup
                 tag="div"
                 name="kds-card"
-                class="grid gap-2.5"
+                class="relative grid gap-2.5"
                 :class="{ 'pointer-events-none': gridSettling }"
                 :style="gridStyle"
                 :data-kds-settling="gridSettling || undefined"
@@ -811,11 +811,11 @@ function clearSearchAndFilter() {
 </template>
 
 <style scoped>
-/* Transição da grade: no Pronto, o card sai com um respiro e a fila desliza (FLIP),
-   o próximo "assume o foco". Novos pedidos entram com o mesmo respiro. */
-.kds-card-move {
-  transition: transform 0.35s cubic-bezier(0.2, 0, 0, 1);
-}
+/* Transição da grade: no Pronto, o card sai com um respiro e o próximo "assume o
+   foco"; novos pedidos entram com o mesmo respiro. Ninguém DESLIZA de uma célula para
+   outra (a grade não tem classe de movimento): o deslize fazia um ticket passar por cima do botão de
+   outro (beta 06/11, Encomendas 800x600: o E09 cobria o T69). Quem troca de célula
+   aparece direto nela; o respiro de quem entra fica dentro da própria célula. */
 .kds-card-enter-active,
 .kds-card-leave-active {
   transition:
@@ -828,15 +828,18 @@ function clearSearchAndFilter() {
   transform: scale(0.96);
 }
 
-/* O ticket que sai fica ATRÁS de quem entra na célula dele e não recebe toque: a
-   célula já é de outro pedido. */
+/* O ticket que sai fica ATRÁS de quem entra na célula dele, não recebe toque (a
+   célula já é de outro pedido) e sai do fluxo da grade: posto sobre a área da célula
+   (a grade é o bloco de contenção), não alonga a linha nem empurra os vizinhos. */
 .kds-card-leave-active {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
   z-index: 0;
   pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kds-card-move,
   .kds-card-enter-active,
   .kds-card-leave-active {
     transition: none;

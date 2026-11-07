@@ -16,7 +16,7 @@ DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
 def _shop_status() -> dict:
     """Return shop open/closed status based on Shop.opening_hours.
 
-    Returns dict: {is_open, opens_at, closes_at, message}
+    Returns dict: {is_open, label, next_opening, opens_at, closes_at, message}
     """
     from shopman.shop.projections.shop_status import business_state
 
@@ -24,6 +24,9 @@ def _shop_status() -> dict:
     return {
         "is_open": state.is_open,
         "label": _status_label(state),
+        # Só a próxima abertura ("amanhã às 9h"), sem o prefixo do selo: a PDP e
+        # quem mais precisar escrevem a própria frase com o mesmo dado da home.
+        "next_opening": None if state.is_open else (_next_opening_display(state) or None),
         "opens_at": state.opens_at,
         "closes_at": state.closes_at,
         "message": _status_message(state),

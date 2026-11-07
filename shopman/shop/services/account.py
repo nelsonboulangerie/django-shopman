@@ -348,8 +348,11 @@ def request_phone_change(customer, raw_phone: str, *, ip_address: str | None = N
                 error_code="phone_unchanged",
             )
 
-        if _phone_belongs_to_someone_else(locked_customer, phone):
-            raise ContactAlreadyTaken(PHONE_TAKEN_DETAIL, field="phone")
+        # ⚠️ Se o número já é de OUTRA conta, isto NÃO é dito aqui. Antes da prova de
+        # posse, responder "este número já está em uso" deixava qualquer cliente logado
+        # perguntar à loja quem é cliente, número por número (beta 06/11). O código vai
+        # para o número de qualquer jeito, e a colisão só aparece depois que ele for
+        # confirmado: a essa altura quem lê é o dono do número.
         customer_uuid = locked_customer.uuid
 
     # Provider I/O is deliberately outside the Customer transaction.  The OTP
@@ -403,7 +406,7 @@ def confirm_phone_change(customer, raw_phone: str, code_input: str) -> str:
                         phone,
                         proof=resultado.delivery_method,
                     )
-            except IntegrityError:
+            except (IntegrityError, ContactAlreadyTaken):
                 # O savepoint reverte somente os contatos. O OTP confirmado
                 # continua consumido quando a transação externa fechar.
                 conflict = True
@@ -878,6 +881,42 @@ def privacy_order_deletion_blocker(customer_ref: str, phone: str) -> str:
     if any(topic not in PERSONAL_ORDER_DELIVERY_TOPICS for topic, _state in live_directives):
         return "order_obligation_pending"
     return ""
+
+
+def privacy_order_deletion_subject(customer_ref: str, phone: str, reason: str) -> tuple[str, str]:
+    """Qual pedido e qual etapa causam a recusa da exclusão. Só leitura.
+
+    Devolve ``(order_ref, topic)``; vazio quando o motivo não é de pedido ou o
+    pedido já não aparece. A DECISÃO continua sendo
+    ``privacy_order_deletion_blocker``: aqui só se nomeia o que ela recusou, para a
+    loja dizer "o pedido X ainda tem a nota fiscal em aberto" em vez de "um pedido".
+    """
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import PERSONAL_ORDER_DELIVERY_TOPICS
+
+    orders = _customer_orders(customer_ref, phone)
+    if reason == "active_order":
+        order = (
+            orders.exclude(status__in=("completed", "cancelled", "returned"))
+            .order_by("-created_at")
+            .first()
+        )
+        return (order.ref if order else "", "")
+    if reason not in ("order_automation_in_flight", "order_obligation_pending"):
+        return ("", "")
+    directive = (
+        Directive.objects.filter(
+            payload__order_ref__in=list(orders.values_list("ref", flat=True)),
+            status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING),
+        )
+        .exclude(topic__in=PERSONAL_ORDER_DELIVERY_TOPICS)
+        .order_by("pk")
+        .first()
+    )
+    if directive is None:
+        return ("", "")
+    return (str((directive.payload or {}).get("order_ref") or ""), directive.topic)
 
 
 def privacy_otp_deletion_blocker(customer) -> str:

@@ -127,7 +127,12 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
  * casos, e o gerente autorizava sem saber o que estava assinando.
  */
 const REASON_COPY: Record<string, (input: ManagerAuthReasonInput) => string> = {
-  discount_over_threshold: (input) => `Desconto acima de ${formatBRL(input.thresholdQ ?? 0)}.`,
+  // O VALOR primeiro: "Desconto acima de R$ 5,00" fazia o gerente assinar uma
+  // cortesia de R$ 12,00 (ou de R$ 300,00) sem ver o número (beta 07/11).
+  discount_over_threshold: (input) =>
+    typeof input.discountQ === "number" && input.discountQ > 0
+      ? `Desconto de ${formatBRL(input.discountQ)}, acima de ${formatBRL(input.thresholdQ ?? 0)}.`
+      : `Desconto acima de ${formatBRL(input.thresholdQ ?? 0)}.`,
   // Conta na casa com limite (decisão do dono, 14/10/2026): o gerente vê o saldo
   // de hoje, o limite e quanto esta venda passa ANTES de assinar.
   house_account_over_limit: (input) => {
@@ -166,6 +171,8 @@ export interface ManagerAuthReasonInput {
   /** Códigos vindos da review (`approval_reasons`). */
   reasons?: string[];
   thresholdQ?: number;
+  /** Com o motivo `discount_over_threshold`: o desconto manual que a venda leva. */
+  discountQ?: number | null;
   /** Com o motivo `house_account_over_limit`: saldo, limite e quanto passa. */
   houseAccountLimit?: HouseAccountLimitInput | null;
 }

@@ -53,6 +53,13 @@ export function useWhatsappReturn (onDone: (response: WhatsappClaimResponse) => 
 
   const state = ref<WhatsappReturnState>('idle')
   const checking = ref(false)
+  // Resposta ao toque em "Já enviei. Conferir agora": quando a conferência volta sem a
+  // mensagem, a tela DIZ que ainda não chegou. Antes o botão só girava e voltava igual,
+  // e quem tocou não sabia se a loja tinha conferido (beta 05/11).
+  const notArrived = ref(false)
+  // O toque pode cair com uma conferência automática no meio: a resposta dela vale
+  // como resposta ao toque, em vez de o toque se perder.
+  let tapPending = false
   const waiting = computed(() => state.value === 'waiting' || state.value === 'slow' || state.value === 'offline-or-error')
   let active: StoredWait | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -83,8 +90,13 @@ export function useWhatsappReturn (onDone: (response: WhatsappClaimResponse) => 
     timer = setTimeout(() => { void check() }, Math.min(remaining, pollDelay(elapsed, failures)))
   }
 
-  async function check (manual = false) {
-    if (!active || checking.value || state.value === 'idle' || state.value === 'expired') return
+  async function check (manual = false, tapped = false) {
+    if (!active || state.value === 'idle' || state.value === 'expired') return
+    if (tapped) {
+      tapPending = true
+      notArrived.value = false
+    }
+    if (checking.value) return
     if (Date.now() >= active.expiresAt) {
       setExpired()
       return
@@ -95,6 +107,7 @@ export function useWhatsappReturn (onDone: (response: WhatsappClaimResponse) => 
     }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       failures += 1
+      tapPending = false
       state.value = 'offline-or-error'
       schedule()
       return
@@ -114,10 +127,12 @@ export function useWhatsappReturn (onDone: (response: WhatsappClaimResponse) => 
         return
       }
       state.value = Date.now() - active.startedAt >= SLOW_AFTER_MS ? 'slow' : 'waiting'
+      if (tapPending) notArrived.value = true
     } catch {
       failures += 1
       state.value = 'offline-or-error'
     } finally {
+      tapPending = false
       checking.value = false
       schedule()
     }
@@ -154,6 +169,8 @@ export function useWhatsappReturn (onDone: (response: WhatsappClaimResponse) => 
     active = null
     failures = 0
     checking.value = false
+    notArrived.value = false
+    tapPending = false
     state.value = 'idle'
     if (import.meta.client) {
       writeWait(null)
@@ -169,6 +186,7 @@ export function useWhatsappReturn (onDone: (response: WhatsappClaimResponse) => 
     active = { version: 1, startedAt: Date.now(), expiresAt: Date.now() + WAIT_MS }
     writeWait(active)
     failures = 0
+    notArrived.value = false
     state.value = 'waiting'
     listen()
   }
@@ -195,8 +213,9 @@ export function useWhatsappReturn (onDone: (response: WhatsappClaimResponse) => 
     state,
     waiting,
     checking,
+    notArrived,
     arm,
     stop,
-    checkNow: () => check(true)
+    checkNow: () => check(true, true)
   }
 }

@@ -57,6 +57,9 @@ class ShopStatusProjection:
     is_open: bool
     label: str
     message: str | None
+    # Loja fechada: a próxima abertura já em frase ("amanhã às 9h", "quinta às
+    # 9h", "às 9h"); None aberta ou sem abertura conhecida.
+    next_opening: str | None
     opens_at: str | None
     closes_at: str | None
 
@@ -318,6 +321,7 @@ def build_shell(
         is_open=bool(status_dict.get("is_open", False)),
         label=status_dict.get("label") or ("Aberto agora" if status_dict.get("is_open") else "Fechado agora"),
         message=status_dict.get("message"),
+        next_opening=status_dict.get("next_opening"),
         opens_at=status_dict.get("opens_at"),
         closes_at=status_dict.get("closes_at"),
     )

@@ -746,7 +746,12 @@ def _alert_if_card_authorization_held(order) -> None:
     if (payment.get_payment_status(order) or "").lower() != "authorized":
         return
     from shopman.shop.services import card_authorization
+    from shopman.shop.services.order_helpers import merge_order_data
 
+    # O aviso ao cliente sai logo depois e não pode dizer que a reserva foi
+    # desfeita: o carimbo troca a frase por "a loja vai liberar" (nunca afirmar
+    # falso). ``cancel_reasons.reason_key_of`` lê.
+    merge_order_data(order, {"hold_release_failed_at": timezone.now().isoformat()}, block="payment")
     card_authorization.alert_release_failed(
         order, intent_ref=str(payment_data.get("intent_ref") or ""),
     )

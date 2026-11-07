@@ -42,6 +42,9 @@ import {
   sessionActionTiles,
   sessionScreenState,
   stationDevicesNotice,
+  // A gaveta tem qualquer cédula: contar abertura e fechamento pela lista do
+  // troco (sem R$ 50, 100 e 200) deixava dinheiro sem onde ser contado (beta 07/11).
+  DRAWER_DENOMINATIONS,
 } from "~/presentation/cash";
 import type { SessionTile } from "~/presentation/cash";
 import type { ManagerApproval } from "~/composables/usePosCashSession";
@@ -146,6 +149,7 @@ const actionTiles = computed(() => sessionActionTiles({
 }));
 const endOfDay = computed(() => endOfDayTiles({
   shiftOpen: screen.value === "open",
+  canCloseShift: pos.value?.can_close_day === true,
   justClosedShift: justClosedShift.value,
   canAuditCash: canAuditCash.value,
   atCounter: station?.value?.ready !== false,
@@ -881,7 +885,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
           </div>
           <PosDenominationCounter
             v-if="openingCounter"
-            :denominations="changeDenominationOptions"
+            :denominations="DRAWER_DENOMINATIONS"
             :disabled="busy"
             @total-q="openingAmount = formatAmountInput($event)"
           />
@@ -1466,7 +1470,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
           />
           <PosDenominationCounter
             v-if="closingCounter"
-            :denominations="changeDenominationOptions"
+            :denominations="DRAWER_DENOMINATIONS"
             :disabled="busy"
             @total-q="closingAmount = formatAmountInput($event)"
           />

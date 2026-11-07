@@ -44,6 +44,7 @@ function optimisticLine (meta: ProductMutationMeta, qty: number): CartItemProjec
     total_display: formatCentavos(meta.price_q * qty),
     image_url: meta.image_url,
     discount_label: null,
+    promo_price_display: null,
     is_available: true,
     availability_warning: null,
     available_qty: null,
@@ -73,6 +74,16 @@ function withQty (line: CartItemProjection, qty: number): CartItemProjection {
 
 export function cartItemsCount (items: CartItemProjection[]): number {
   return items.reduce((total, line) => total + line.qty, 0)
+}
+
+// Preço por unidade da linha, na mesma dupla do cardápio: com promoção, o cheio
+// riscado (`original`) e o da promoção (`current`); sem promoção, só o cheio.
+// O total da linha segue cheio, para a soma das linhas fechar com o Subtotal.
+export function linePrice (line: Pick<CartItemProjection, 'price_display' | 'promo_price_display'>): { original: string | null, current: string } {
+  const promo = line.promo_price_display?.trim()
+  return promo && promo !== line.price_display
+    ? { original: line.price_display, current: promo }
+    : { original: null, current: line.price_display }
 }
 
 // Planned-hold (AVAILABILITY-PLAN §8): a linha ou aguarda confirmação da

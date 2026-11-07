@@ -33,6 +33,8 @@ class CancelReason:
     customer_text: str
 
 
+#: A lista do operador é UMA só, para recusar e para cancelar, em qualquer canal
+#: (dono, 07/11/2026): nada configurável no Admin. A ordem é a da tela.
 OPERATOR_CANCEL_REASONS: tuple[CancelReason, ...] = (
     CancelReason(
         key="out_of_stock",
@@ -43,6 +45,16 @@ OPERATOR_CANCEL_REASONS: tuple[CancelReason, ...] = (
         key="cannot_deliver",
         label="Não dá para entregar",
         customer_text="Não conseguimos fazer a entrega no endereço e no horário do pedido.",
+    ),
+    CancelReason(
+        key="high_demand",
+        label="Muitos pedidos agora",
+        customer_text="Estamos com muitos pedidos agora e não conseguiríamos preparar o seu no horário.",
+    ),
+    CancelReason(
+        key="duplicate_order",
+        label="Pedido repetido",
+        customer_text="Recebemos este mesmo pedido duas vezes e seguimos só com o outro.",
     ),
     CancelReason(
         key="customer_request",
@@ -97,6 +109,30 @@ AUTOMATIC_CANCEL_REASONS: tuple[CancelReason, ...] = (
             "Se ainda quiser, é só fazer um novo pedido."
         ),
     ),
+    # O operador escolhe "Pagamento não confirmado", mas o que houve foi a
+    # cobrança do cartão autorizado recusada no aceite (``payment.capture_failure``).
+    # "Não recebemos a confirmação do pagamento a tempo" punha a culpa no cliente
+    # e calava a reserva no cartão (beta 06/11). O texto diz o que aconteceu com
+    # o dinheiro: nada foi cobrado e a reserva foi desfeita no cancelamento.
+    CancelReason(
+        key="card_capture_failed",
+        label="A cobrança do cartão foi recusada",
+        customer_text=(
+            "Não conseguimos concluir a cobrança no seu cartão. "
+            "Nada foi cobrado, e a reserva do valor no cartão foi desfeita."
+        ),
+    ),
+    # A mesma situação quando a anulação da autorização no Stripe falhou no
+    # cancelamento (``payment.hold_release_failed_at``): a reserva ainda existe,
+    # e quem a libera é a loja, pelo alerta crítico. Sem prazo que não controlamos.
+    CancelReason(
+        key="card_capture_failed_hold_pending",
+        label="A cobrança do cartão foi recusada",
+        customer_text=(
+            "Não conseguimos concluir a cobrança no seu cartão. "
+            "Nada foi cobrado, e a loja vai liberar a reserva do valor no seu cartão."
+        ),
+    ),
 )
 
 _BY_KEY = {reason.key: reason for reason in (*OPERATOR_CANCEL_REASONS, *AUTOMATIC_CANCEL_REASONS)}
@@ -119,12 +155,14 @@ def cancel_reason(key: str) -> CancelReason | None:
     return _BY_KEY.get(str(key or "").strip())
 
 
-def validation_message(key: str) -> str:
+def validation_message(key: str, *, channel_ref: str = "") -> str:
     """A frase de erro para uma chave inválida, ou vazio quando a chave é da lista."""
     key = str(key or "").strip()
     if not key:
         return MISSING_REASON_MESSAGE
-    if key not in _OPERATOR_KEYS:
+    from shopman.shop.policies.ifood_cancel_reasons import offered_on_ifood
+
+    if key not in _OPERATOR_KEYS or (channel_ref == "ifood" and not offered_on_ifood(key)):
         return UNKNOWN_REASON_MESSAGE
     return ""
 
@@ -135,10 +173,25 @@ def reason_key_for(machine_reason: str) -> str:
 
 
 def reason_key_of(order_data: dict | None) -> str:
-    """A chave do motivo do pedido: a gravada, ou a do código de máquina."""
+    """A chave do motivo do pedido: a gravada, ou a do código de máquina.
+
+    "Pagamento não confirmado" num pedido cuja cobrança do cartão foi recusada
+    vira ``card_capture_failed``: o pagamento não faltou, a cobrança é que não
+    passou, e o cliente lê a frase certa.
+    """
     data = order_data or {}
     reason = cancel_reason(data.get("cancellation_reason_key"))
-    return reason.key if reason else reason_key_for(data.get("cancellation_reason"))
+    key = reason.key if reason else reason_key_for(data.get("cancellation_reason"))
+    payment = data.get("payment") or {}
+    if (
+        key == "payment_not_confirmed"
+        and isinstance(payment, dict)
+        and isinstance(payment.get("capture_failure"), dict)
+        and not payment.get("transaction_id")
+    ):
+        # "Desfeita" só quando o Stripe anulou de fato.
+        return "card_capture_failed_hold_pending" if payment.get("hold_release_failed_at") else "card_capture_failed"
+    return key
 
 
 def payment_deadline_reason_key(method: str) -> str:

@@ -49,6 +49,8 @@ from shopman.storefront.presentation.order_tracking import (
     OrderTrackingPromiseProjection,
     PickupInfoProjection,
     RatingFollowupProjection,
+    TrackingDiscountLineProjection,
+    TrackingGiftProjection,
 )
 from shopman.storefront.presentation.types import (
     FulfillmentProjection,
@@ -79,6 +81,8 @@ MIRROR_CONTRACTS = [
         set(),
     ),
     (api_serializers.FiscalNoteSerializer, FiscalNoteProjection, set()),
+    (api_serializers.TrackingDiscountLineSerializer, TrackingDiscountLineProjection, set()),
+    (api_serializers.TrackingGiftSerializer, TrackingGiftProjection, set()),
     (api_serializers.OrderProgressStepSerializer, OrderProgressStepProjection, set()),
     # O cliente recebe os ISOs crus (dispatched_at/delivered_at); os *_display são internos.
     (

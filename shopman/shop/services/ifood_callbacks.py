@@ -71,29 +71,28 @@ STATUS_ACTION = {
     "cancelled": "requestCancellation",
 }
 
-#: Motivo escolhido no Gestor (diálogo de cancelamento) → cancellationCode do
-#: iFood. A lista oficial é descoberta em homologação via
-#: ``GET /order/v1.0/orders/{id}/cancellationReasons``; o mapeamento real é
-#: config-driven (``SHOPMAN_IFOOD["cancellation_reason_codes"]``). Este
-#: default fica VAZIO de propósito: sem código validado, cai no
-#: ``cancellation_default_code`` — código errado é pior que falhar alto.
-DEFAULT_REASON_CODES: dict[str, str] = {}
+#: Motivo da lista única (``services/cancel_reasons``) → ``cancellationCode`` do
+#: iFood (dono, 07/11/2026). Fixo no código, sem config: o operador escolhe o
+#: motivo da casa e o código sai daqui. Os dois motivos que o iFood não oferece
+#: ("O cliente pediu", "Pagamento não confirmado") ficam de fora do diálogo
+#: (``cancel_reasons.IFOOD_HIDDEN_KEYS``).
+#:
+#: ⚠️ Confirmar na homologação contra ``GET /order/v1.0/orders/{id}/cancellationReasons``:
+#: a lista do iFood é POR PEDIDO, e o recusar/cancelar confere o código do motivo
+#: contra ela antes de mexer no pedido (``operator_orders._validate_operator_cancellation_code``).
+DEFAULT_REASON_CODES: dict[str, str] = {
+    "out_of_stock": "503",
+    "cannot_deliver": "504",
+    "high_demand": "509",
+    "duplicate_order": "502",
+    "store_closing": "508",
+    "other": "501",
+}
 
 
-def resolve_cancellation_code(reason: str, default: str = "") -> str:
-    """Cancellation code for a Gestor reason, falling back to default/config.
-
-    Os códigos oficiais só devem entrar depois da homologação; até lá o
-    fallback garante que o pedido de cancelamento não morre por falta de code
-    (o default configurado em ``SHOPMAN_IFOOD["cancellation_default_code"]``).
-    """
-    codes = dict(DEFAULT_REASON_CODES)
-    codes.update(_cfg().get("cancellation_reason_codes") or {})
-    return (
-        codes.get(str(reason or "").strip())
-        or default
-        or str(_cfg().get("cancellation_default_code") or "")
-    )
+def resolve_cancellation_code(reason_key: str) -> str:
+    """O ``cancellationCode`` do iFood para a chave do motivo, ou vazio."""
+    return DEFAULT_REASON_CODES.get(str(reason_key or "").strip(), "")
 
 
 def _cfg() -> dict:
@@ -223,8 +222,8 @@ def fetch_cancellation_reasons(order_id: str) -> list[dict]:
     """Fetch the cancellation codes iFood accepts for a specific order.
 
     ``GET /order/v1.0/orders/{id}/cancellationReasons`` → list of
-    ``{"cancelCodeId": "...", "description": "..."}``. Use it to discover the
-    valid codes to configure ``cancellation_default_code``.
+    ``{"cancelCodeId": "...", "description": "..."}``. O recusar/cancelar confere
+    o código de :data:`DEFAULT_REASON_CODES` contra esta lista antes de agir.
     """
     # Pelo invólucro com retry, não por ``requests`` cru. Medido em 21/09/2026: uma
     # única recusa de borda do Akamai nesta leitura virou 503 no meio de um
@@ -254,24 +253,15 @@ def fetch_cancellation_reasons(order_id: str) -> list[dict]:
 def request_cancellation(order_id: str, *, code: str = "", description: str = "") -> None:
     """Ask iFood to cancel an order with a valid cancellation code.
 
-    The code must come from iFood's fixed list (see
-    :func:`fetch_cancellation_reasons`). It is config-driven
-    (``cancellation_default_code``) rather than guessed — sending a wrong code
-    is worse than failing loudly.
+    The code comes from :data:`DEFAULT_REASON_CODES` (the operator's reason). No
+    code fails loudly: sending a guessed code is worse than not sending.
     """
-    code = str(code or _cfg().get("cancellation_default_code") or "").strip()
+    code = str(code or "").strip()
     if not code:
-        raise IFoodCallbackError(
-            "no iFood cancellation code: set SHOPMAN_IFOOD['cancellation_default_code'] "
-            "(discover valid codes with fetch_cancellation_reasons)"
-        )
+        raise IFoodCallbackError("no iFood cancellation code for this cancellation reason")
     # iFood rejects requestCancellation with 400 when `reason` is empty
     # (verified live 2026-07-01) — it is required alongside the code.
-    reason = (
-        str(description or "").strip()
-        or str(_cfg().get("cancellation_default_reason") or "").strip()
-        or "Cancelado pela loja"
-    )
+    reason = str(description or "").strip() or "Cancelado pela loja"
     send_action(
         order_id,
         "requestCancellation",
@@ -295,8 +285,7 @@ def send_for_status(
     if not action:
         return False
     if action == "requestCancellation":
-        code = cancellation_code or resolve_cancellation_code(cancellation_reason)
-        request_cancellation(order_id, code=code, description=cancellation_reason)
+        request_cancellation(order_id, code=cancellation_code, description=cancellation_reason)
     else:
         send_action(order_id, action)
     return True

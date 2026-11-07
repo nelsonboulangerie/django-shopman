@@ -101,6 +101,10 @@ describe('surface UX guardrails', () => {
     expect(read('app/pages/index.vue')).not.toContain("label: isOpen ? 'Aberto agora' : 'Fechado agora'")
     expect(read('app/pages/index.vue')).not.toContain('v-if="operationalStatus.message"')
     expect(read('app/components/HomeHeroThing.vue')).not.toContain('omo.shop_hint')
+    // Loja fechada: dá para finalizar agora (a casa confere na abertura), então o
+    // CTA não promete "para depois" (beta 06/11).
+    expect(read('app/pages/index.vue')).toContain('closed-cta-label="Fazer pedido"')
+    expect(read('app/pages/index.vue')).not.toContain('para depois')
     expect(omotenashiType).not.toMatch(/\b(is_open|opens_at|closes_at)\b/)
   })
 
@@ -911,7 +915,10 @@ describe('surface UX guardrails', () => {
     expect(cartPage).toContain(':aria-label="`Remover ${line.name}`"')
     // Lixeira sempre viva: mutações otimistas não bloqueiam remoção.
     expect(cartPage).not.toContain(':disabled="cart.summary_pending"')
-    expect(cartPage).toContain('{{ line.qty }} × {{ line.price_display }} cada')
+    // Preço da linha na dupla do cardápio: cheio riscado + promoção (beta 06/11).
+    expect(cartPage).toContain('data-cart-line-price')
+    expect(cartPage).toContain('<span class="line-through">{{ linePrice(line).original }}</span>')
+    expect(cartPage).toContain('{{ linePrice(line).current }}')
     expect(cartPage).toContain('{{ line.total_display }}')
     expect(cartPage).toContain('<CartUpsellRail v-if="cart.upsell"')
     // Planned-hold transparente: badges por linha + banner com countdown.

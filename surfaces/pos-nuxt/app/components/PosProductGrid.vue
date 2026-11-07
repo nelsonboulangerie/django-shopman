@@ -9,6 +9,7 @@ import type { POSCartItem, POSCollectionProjection, POSProductProjection, POSTab
 import {
   FAVORITES_COLLECTION,
   HIDE_UNAVAILABLE_STORAGE_KEY,
+  collapseViewControls,
   favoriteProducts,
   matchOpenTabs,
   cartQtyForSku,
@@ -23,6 +24,7 @@ import {
   productSearchPlaceholder,
 } from "~/presentation/catalog";
 import { isNumericQuery } from "~/presentation/customerSearch";
+import type { OperatorViewGroup } from "../../../operator-kit/app/presentation/viewMenu";
 
 const props = defineProps<{
   products: POSProductProjection[];
@@ -195,6 +197,44 @@ const visibility = computed(() => hideUnavailableProducts(matchedProducts.value,
 const filteredProducts = computed(() => visibility.value.products);
 const hiddenCount = computed(() => visibility.value.hiddenCount);
 
+// Exibir no estreito (dono, 07/11/2026): na área de produtos de celular, a vista, a
+// densidade e o olho viram UM botão com menu, no fim da faixa das coleções. A busca
+// fica com a linha inteira. Na mesa e no tablet, os segmentados continuam à vista.
+const gridRoot = useTemplateRef<HTMLElement>("gridRoot");
+const { width: gridWidth } = useElementSize(gridRoot);
+const narrowView = computed(() => collapseViewControls(gridWidth.value));
+const viewGroups = computed<OperatorViewGroup[]>(() => [
+  {
+    kind: "choice",
+    key: "layout",
+    label: "Vista",
+    value: layout.value,
+    options: LAYOUTS.map(({ key, label, icon }) => ({ value: key, label, icon })),
+    select: (value) => setLayout(value as ProductLayout),
+  },
+  // A densidade é só da grade e só na mesa (no toque a grade vai pela largura do dedo).
+  ...(layout.value === "grid" && !coarsePointer.value
+    ? [{
+        kind: "choice" as const,
+        key: "density",
+        label: "Densidade",
+        value: density.value,
+        options: DENSITIES.map(({ key, label, icon }) => ({ value: key, label, icon })),
+        select: (value: string) => setDensity(value as Density),
+      }]
+    : []),
+  {
+    kind: "toggle",
+    key: "hide-unavailable",
+    label: "Ocultar indisponíveis",
+    onLabel: "indisponíveis ocultos",
+    checked: hideUnavailable.value,
+    detail: hiddenCount.value ? `${hiddenCount.value} ${hiddenCount.value === 1 ? "oculto" : "ocultos"}` : undefined,
+    icon: "lucide:eye-off",
+    toggle: setHideUnavailable,
+  },
+]);
+
 // Cartão de escolha: sem busca, produtos do mesmo `choice_group` viram um tile só
 // que abre a escolha; com busca, cada produto aparece sozinho (o Enter lança).
 // Oculto, a opção indisponível também sai da escolha.
@@ -249,7 +289,7 @@ function onSearchEscape() {
 </script>
 
 <template>
-  <section class="@container flex h-full min-h-0 flex-col gap-2.5">
+  <section ref="gridRoot" class="@container flex h-full min-h-0 flex-col gap-2.5">
     <!-- Busca + densidade (v4): a busca é o instrumento do balcão (44 px, Enter
          adiciona, F3 ou / focam); a densidade é um seletor segmentado à vista. -->
     <div ref="searchBarRef" class="flex shrink-0 items-center gap-2">
@@ -277,7 +317,7 @@ function onSearchEscape() {
         <Icon name="lucide:scan-barcode" class="size-6" aria-hidden="true" />
         <span class="max-sm:sr-only">Ler código</span>
       </NuxtButton>
-      <NuxtFieldGroup v-else-if="layout === 'grid'" class="shrink-0" role="group" aria-label="Densidade da grade" title="Densidade da grade">
+      <NuxtFieldGroup v-else-if="layout === 'grid' && !narrowView" class="shrink-0" role="group" aria-label="Densidade da grade" title="Densidade da grade">
         <NuxtButton
           v-for="opt in DENSITIES"
           :key="opt.key"
@@ -426,8 +466,17 @@ function onSearchEscape() {
     />
       <!-- No toque a faixa das coleções é estreita: um botão só alterna a vista (o ícone e o
            nome dizem a vista que ele abre). Na mesa, o par Grade | Lista. -->
+      <!-- No celular, a vista, a densidade e o olho são um botão só ("Exibir", o mesmo
+           gesto das tabelas): ícone da vista atual, menu com cada opção marcada. -->
+      <OperatorViewMenu
+        v-if="narrowView"
+        :groups="viewGroups"
+        :size="coarsePointer ? 'xl' : 'md'"
+        class="shrink-0 rounded-full"
+        data-pos-view-menu
+      />
       <NuxtButton
-        v-if="coarsePointer"
+        v-else-if="coarsePointer"
         size="xl"
         color="neutral"
         variant="outline"
@@ -461,6 +510,7 @@ function onSearchEscape() {
         </NuxtButton>
       </NuxtFieldGroup>
       <NuxtButton
+        v-if="!narrowView"
         :size="coarsePointer ? 'xl' : 'md'"
         color="neutral"
         variant="outline"

@@ -5060,6 +5060,43 @@
       "out_of_extraction": false
     },
     {
+      "id": "account.order-erasure-subject",
+      "question": "Qual pedido e qual etapa seguram a exclusão da conta, para a loja nomeá-los ao cliente?",
+      "owner": "account.order-retention",
+      "responsibility": "leitura",
+      "public_entrypoint": "shopman.shop.services.account:privacy_order_deletion_subject",
+      "authoritative_symbols": [
+        "shopman.shop.services.account:privacy_order_deletion_subject"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/account.py",
+          "symbols": [
+            "privacy_order_deletion_subject"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [
+        "PERSONAL_ORDER_DELIVERY_TOPICS"
+      ],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_services_semantic_units_a_m.py::test_order_erasure_subject_names_the_active_order"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": true
+    },
+    {
       "id": "account.otp-erasure-eligibility",
       "question": "Uma verificação OTP pendente ainda impede apagar a identidade do cliente?",
       "owner": "account.otp-retention",
@@ -6978,6 +7015,40 @@
       "out_of_extraction": false,
       "authoritative_symbols": [
         "shopman.shop.policies.rating_contact:can_request_contact"
+      ]
+    },
+    {
+      "id": "order.ifood-cancel-reasons",
+      "question": "O motivo de recusar/cancelar aparece no pedido do iFood?",
+      "owner": "order.ifood-cancel-reasons",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.ifood_cancel_reasons:offered_on_ifood",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/ifood_cancel_reasons.py",
+          "symbols": [
+            "IFOOD_HIDDEN_KEYS",
+            "offered_on_ifood"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_operator_cancellation_reasons.py::test_reason_codes_are_fixed_and_cover_every_reason_offered_on_ifood"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.policies.ifood_cancel_reasons:offered_on_ifood"
       ]
     },
     {
@@ -9769,7 +9840,7 @@
         "SHOPMAN_IFOOD"
       ],
       "tests": [
-        "shopman/shop/tests/test_services_semantic_units_a_m.py::test_ifood_cancellation_code_honors_the_explicit_fallback"
+        "shopman/shop/tests/test_services_semantic_units_a_m.py::test_ifood_cancellation_code_comes_from_the_reason_key_only"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -9812,9 +9883,7 @@
       "directives": [
         "IFOOD_STATUS_CALLBACK"
       ],
-      "config_surface": [
-        "SHOPMAN_IFOOD"
-      ],
+      "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_orchestrator_policy_gaps.py::test_ifood_cancellation_enqueue_keeps_an_existing_request_pending"
       ],
@@ -12935,7 +13004,6 @@
             "_cancellation_identity",
             "_validate_operator_cancellation_code",
             "reject_order",
-            "_reject_reason_key",
             "cancel_order"
           ]
         }
@@ -12953,7 +13021,7 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_house_account.py::test_cancelar_venda_em_conta_mata_a_divida_sem_estorno",
-        "shopman/shop/tests/test_operator_cancellation_reasons.py::test_invalid_code_never_reaches_cancellation"
+        "shopman/shop/tests/test_operator_cancellation_reasons.py::test_reason_outside_the_ifood_list_never_reaches_cancellation"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -13653,7 +13721,16 @@
             "_PAYMENT_GATEWAY_ADAPTER_PATHS",
             "_INTENT_PRESENTATION_KEYS",
             "GATEWAY_RECHECK_SECONDS",
-            "record_card_decline"
+            "record_card_decline",
+            "CAPTURE_FAILURE_KEY",
+            "capture_failure",
+            "REPAYMENT_KEY",
+            "awaiting_repayment",
+            "request_new_payment_after_capture_failure",
+            "RepaymentSwitchRefused",
+            "_repayment_minutes_left",
+            "_stamp_repayment_terms",
+            "switch_repayment_to_pix"
           ]
         }
       ],
@@ -17524,7 +17601,8 @@
             "_CUSTOMER",
             "_ORDER",
             "_ORDER_BUTTON",
-            "TRANSACTIONAL_FLOW_FIELDS"
+            "TRANSACTIONAL_FLOW_FIELDS",
+            "CARD_REPAYMENT_VARIANT"
           ]
         }
       ],

@@ -132,30 +132,6 @@ from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_reci
 # do seed e as funções de alvo abaixo leem daqui.
 PREP_PREFIXES = ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-", "manteiga-")
 
-# Motivos de recusa e cancelamento do Gestor, na ordem e nos grupos que o dono
-# aprovou em 01/10/2026 (D4). O cliente lê cada um como «Motivo: <texto>.»: por
-# isso nenhum termina em ponto (``validate_cancellation_presets`` recusa).
-# Mesma lista em shop/migrations/0085_motivos_de_recusa_aprovados.py, que leva o
-# banco já semeado até ela; ``test_cancellation_presets`` confere que as duas
-# não divergem.
-#
-# ``reason_key`` liga cada motivo à lista única (``shop/services/cancel_reasons``):
-# é o que a recusa grava em ``cancellation_reason_key``. Mesma lista, com as
-# chaves, em shop/migrations/0112_motivos_de_recusa_com_chave.py.
-CANCELLATION_PRESETS = [
-    {"label": "Item indisponível no momento", "group": "Produto", "reason_key": "out_of_stock"},
-    {"label": "Sem um dos ingredientes hoje", "group": "Produto", "reason_key": "out_of_stock"},
-    {"label": "Pagamento não aprovado", "group": "Pagamento", "reason_key": "payment_not_confirmed"},
-    {"label": "Pagamento não confirmado no prazo", "group": "Pagamento", "reason_key": "payment_not_confirmed"},
-    {"label": "Endereço fora da nossa área de entrega", "group": "Endereço e contato", "reason_key": "cannot_deliver"},
-    {"label": "Não conseguimos falar com você", "group": "Endereço e contato", "reason_key": "other"},
-    {"label": "Alta demanda neste horário", "group": "Capacidade", "reason_key": "other"},
-    {"label": "Sem entregador disponível neste horário", "group": "Capacidade", "reason_key": "cannot_deliver"},
-    {"label": "Fora do horário de atendimento", "group": "Horário", "reason_key": "store_closing"},
-    {"label": "Você pediu o cancelamento", "group": "Cliente", "reason_key": "customer_request"},
-    {"label": "Pedido em duplicidade", "group": "Duplicidade", "reason_key": "other"},
-]
-
 # Validades OPERACIONAIS provisórias para o cenário pré-go-live, decididas pelo
 # dono em 10/09/2026. Elas tornam as etiquetas testáveis sem fingir validação
 # sanitária: a readiness de produção só libera quando cada valor tiver sido
@@ -1698,10 +1674,6 @@ class Command(BaseCommand):
                 *BRAND_PROFILES
             ],
             **SEARCH_FIELDS,
-            # A lista aprovada pelo dono (01/10/2026). A mesma lista leva um
-            # banco já semeado ao estado novo sem reseed:
-            # shop/migrations/0085_motivos_de_recusa_aprovados.py.
-            "cancellation_presets": CANCELLATION_PRESETS,
             "kitchen_note_tags": [
                 "Bem assado",
                 "Pouco assado",
@@ -8448,7 +8420,7 @@ class Command(BaseCommand):
         # (croque, queijo-quente, o pain perdu dos doces); o salgado e o doce
         # de lote, prontos, são separação.
         kds_lanches, _ = KDSInstance.objects.update_or_create(
-            ref="lanches",
+            ref="snacks",
             defaults={
                 "name": "Lanches",
                 "type": "prep",
@@ -8464,7 +8436,7 @@ class Command(BaseCommand):
 
         # KDS Cafés — Prep: bebidas quentes e frias
         kds_cafes, _ = KDSInstance.objects.update_or_create(
-            ref="cafes",
+            ref="coffee",
             defaults={
                 "name": "Cafés",
                 "type": "prep",
@@ -8480,7 +8452,7 @@ class Command(BaseCommand):
 
         # KDS Encomendas — Picking: separação de pedidos de balcão e agendados
         KDSInstance.objects.update_or_create(
-            ref="encomendas",
+            ref="preorders",
             defaults={
                 "name": "Encomendas",
                 "type": "picking",
@@ -8492,10 +8464,11 @@ class Command(BaseCommand):
 
         # KDS Saída — pedidos prontos para entregar no balcão ou despachar.
         # "Expedição" é o fechamento de lote da Produção (decisão do dono,
-        # 26/09/2026); a migração backstage.0076 renomeia a estação de quem já
-        # tinha a antiga.
+        # 26/09/2026). O ref de cada estação é o caminho da bancada no kds-nuxt
+        # (`/<ref>`), e URL de operador é em inglês: a migração backstage.0094
+        # renomeou os refs em português de quem já os tinha.
         KDSInstance.objects.update_or_create(
-            ref="saida",
+            ref="exit",
             defaults={
                 "name": "Saída",
                 "type": "expedition",
