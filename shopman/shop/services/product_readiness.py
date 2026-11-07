@@ -173,7 +173,7 @@ def _localize(value):
             from django.utils import timezone as tz
 
             return value.astimezone(tz.get_current_timezone())
-        except Exception:
+        except Exception:  # silêncio-deliberado: sem fuso legível, a hora segue no fuso em que veio
             logger.debug("product_readiness: could not localize finish time", exc_info=True)
     return value
 
@@ -186,30 +186,6 @@ def _round_up_minutes(minutes: float, granularity: int) -> int:
     return int(math.ceil(minutes / granularity) * granularity)
 
 
-def _configured_observation() -> tuple[int, int]:
-    """``(history_days, rounding_minutes)`` da casa, editáveis no Admin.
-
-    Moram em ``Shop.defaults["pickup_slot_config"]`` e valem para TODA superfície
-    (loja, concierge, PDV): a pergunta "a que horas este pão fica pronto" tem uma
-    resposta só. Sem configuração, os padrões do módulo.
-    """
-    config: dict = {}
-    try:
-        from shopman.shop.models import Shop
-
-        shop = Shop.load()
-        raw = (shop.defaults or {}).get("pickup_slot_config") if shop else None
-        config = raw if isinstance(raw, dict) else {}
-    except Exception:
-        logger.warning("product_readiness: could not read pickup_slot_config", exc_info=True)
-    history_days = config.get("history_days")
-    rounding_minutes = config.get("rounding_minutes")
-    return (
-        int(history_days) if isinstance(history_days, int) and history_days >= 0 else DEFAULT_HISTORY_DAYS,
-        int(rounding_minutes) if isinstance(rounding_minutes, int) and rounding_minutes > 0 else DEFAULT_ROUNDING_MINUTES,
-    )
-
-
 def ready_times_for(
     skus: list[str],
     *,
@@ -220,15 +196,32 @@ def ready_times_for(
 
     As duas juntas, a mais TARDE vencendo. Ver o cabeçalho do módulo para o
     porquê da direção. Sem ``history_days``/``rounding_minutes``, vale a
-    configuração da casa (``_configured_observation``).
+    configuração da casa: ``Shop.defaults["pickup_slot_config"]``, editável no
+    Admin e a mesma para toda superfície (loja, concierge, PDV). Sem
+    configuração, os padrões do módulo.
     """
     unique = sorted({str(sku) for sku in (skus or []) if sku})
     if not unique:
         return {}
     if history_days is None or rounding_minutes is None:
-        configured_history, configured_rounding = _configured_observation()
-        history_days = configured_history if history_days is None else history_days
-        rounding_minutes = configured_rounding if rounding_minutes is None else rounding_minutes
+        try:
+            from shopman.shop.models import Shop
+
+            shop = Shop.load()
+            raw = (shop.defaults or {}).get("pickup_slot_config") if shop else None
+        except Exception as exc:
+            # Não ler a régua da casa não vira "régua padrão": a prontidão
+            # medida com outra régua seria uma promessa que ninguém fez.
+            raise ReadinessUnavailable("não deu para ler a configuração de prontidão da loja") from exc
+        config = raw if isinstance(raw, dict) else {}
+        if history_days is None:
+            configured = config.get("history_days")
+            history_days = configured if isinstance(configured, int) and configured >= 0 else DEFAULT_HISTORY_DAYS
+        if rounding_minutes is None:
+            configured = config.get("rounding_minutes")
+            rounding_minutes = (
+                configured if isinstance(configured, int) and configured > 0 else DEFAULT_ROUNDING_MINUTES
+            )
     declared = declared_ready_times(unique)
     observed = observed_ready_times(
         unique, history_days=history_days, rounding_minutes=rounding_minutes
