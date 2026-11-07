@@ -883,6 +883,10 @@ MANYCHAT_FLOW_MAP = {
     # 20/10/2026, Utility; flow "Aviso: encomenda confirmada (order_accepted_preorder)").
     # Pedido do dia segue no `pedido_confirmado`, sem a data.
     "order_accepted_preorder": "content20261020201824_274658",  # pedido_encomenda_confirmada
+    # Variante do `payment_requested` no novo pagamento depois do cartão recusado
+    # (aprovado pela Meta em 07/11/2026, Utility; flow "Aviso: cartão falhou, novo
+    # pagamento (payment_requested_card_repayment)"). Fora dela segue o `pagamento_solicitado`.
+    "payment_requested_card_repayment": "content20261107173252_896774",  # pagamento_cartao_falhou
     # Variante do `order_dispatched` com o botão de rastreio do entregador
     # (`pedido_saiu_entrega_rastreio`): chave "order_dispatched_courier", ligada só
     # depois de aprovado o template. Sem ela o aviso sai pelo `pedido_saiu_entrega`.
