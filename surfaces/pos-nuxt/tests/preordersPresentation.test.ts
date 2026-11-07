@@ -280,7 +280,7 @@ describe("a linha de dinheiro — saldo primeiro, 'não sei' nunca vira 'pago'",
 
   it("pago · na conta da casa · a conferir", () => {
     expect(moneyLine(card({ balance_q: 0, situation: "paid" }))).toBe("R$ 36,00 pago");
-    expect(moneyLine(card({ balance_q: 0, situation: "on_account" }))).toBe("R$ 36,00 na conta da casa");
+    expect(moneyLine(card({ balance_q: 0, payment_state: "on_account", situation: "on_account" }))).toBe("R$ 36,00 na conta da casa");
     expect(moneyLine(card({ balance_q: null, situation: "check_payment" }))).toBe("R$ 36,00 · pagamento a conferir");
   });
 
@@ -735,4 +735,27 @@ describe("Via Pedido que falta: uma régua só", () => {
     expect(filtered[0]!.orders.map((c) => c.ref)).toEqual(["NB-1", "NB-2"]);
     expect(printPlan({ date_from: HOJE, date_to: HOJE }, [day({ orders: cards })]).refs).toEqual(["NB-1", "NB-2"]);
   });
+});
+
+// A situação da mercadoria não muda o estado do dinheiro.
+it("conta da casa continua explícita depois de entregar (S80/L34)", () => {
+  expect(
+    moneyLine(
+      card({
+        balance_q: 0,
+        payment_state: "on_account",
+        situation: "delivered",
+      }),
+    ),
+  ).toBe("R$ 36,00 na conta da casa");
+  expect(
+    moneyLine(
+      card({ balance_q: 0, payment_state: "paid", situation: "delivered" }),
+    ),
+  ).toBe("R$ 36,00 pago");
+});
+it("o total geral deixa explícito que não acompanha os recortes", () => {
+  expect(periodSummaryLabel("next28d", true)).toBe(
+    "Total do período, sem filtros",
+  );
 });

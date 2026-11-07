@@ -111,6 +111,10 @@ const saved = props.surface && props.screen ? useSavedViews<FilterPanelQuery>(pr
 const views = computed(() => saved?.views.value ?? []);
 
 const editable = computed(() => panelDimensions(props.dimensions));
+// A paleta guarda os filhos do submenu num histórico interno. Quando os dados
+// chegam, uma nova instância impede que opções ou contagens antigas continuem
+// selecionáveis. O painel fica aberto e volta à lista de filtros atualizada.
+const paletteKey = computed(() => JSON.stringify(editable.value));
 const query = computed<FilterPanelQuery>(() => ({
   filters: filters.value,
   ...(period.value ? { period: period.value } : {}),
@@ -369,6 +373,7 @@ const canSave = computed(() => Boolean(saved) && activeCount.value > 0);
          filho direto do gatilho). -->
     <DefinePalette>
       <NuxtCommandPalette
+        :key="paletteKey"
         v-model:search-term="term"
         :groups="groups as never"
         placeholder="Buscar um filtro ou digitar um nome"

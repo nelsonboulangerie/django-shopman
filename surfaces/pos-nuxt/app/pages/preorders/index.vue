@@ -75,6 +75,7 @@ import {
   fromActiveFilters,
   fromPanelFilters,
   groupByWindow,
+  hasFilters,
   listSummary,
   moveTargets,
   parseLayout,
@@ -676,7 +677,7 @@ function refreshAll() {
           class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5"
           data-preorders-summary
         >
-          <span class="text-sm font-semibold text-muted">{{ periodSummaryLabel(view.mode) }}</span>
+          <span class="text-sm font-semibold text-muted">{{ periodSummaryLabel(view.mode, hasFilters(filters)) }}</span>
           <p v-if="toReceive" :class="TO_RECEIVE_CLASS" data-preorders-to-receive>{{ toReceive }}</p>
           <p class="text-xs tabular-nums text-muted" data-preorders-total>{{ summary }}</p>
         </div>

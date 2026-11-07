@@ -448,3 +448,16 @@ def test_one_ride_refuses_the_order_with_the_card_machine_by_name(client, operat
     assert response.status_code == 409
     assert "maquininha" in response.json()["detail"]
     assert not Directive.objects.filter(topic=COURIER_DISPATCH).exists()
+
+
+@pytest.mark.parametrize("ride_status", ["F", "C", "N"])
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_ended_ride_keeps_local_status_without_expired_tracking(client, operator, shop, ride_status):
+    order = _delivery_order(status=Order.Status.COMPLETED, courier={"provider": "machine", "id_mch": 123, "status": ride_status, "tracking_url": "https://rastreio.mock/ended"})
+    before = order.data.copy()
+    client.force_login(operator)
+    block = _detail(client, order.ref)["courier"]
+    assert block["tracking_url"] == ""
+    assert block["status_label"]
+    order.refresh_from_db()
+    assert order.data == before
