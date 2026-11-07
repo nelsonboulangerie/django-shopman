@@ -644,7 +644,10 @@ class Shop(models.Model):
         ]
 
     def __str__(self):
-        return self.name
+        # O Admin escreve ``str(obj)`` na mensagem de sucesso: com o nome fantasia
+        # em branco, salvar o horário dizia "alterado com sucesso" sobre “” (beta
+        # 05/11). A loja tem outros nomes; a mensagem não fica sem nome.
+        return self.name or self.brand_name or self.short_name or self.legal_name or "Loja"
 
     def clean(self):
         super().clean()

@@ -61,6 +61,35 @@ describe('useWhatsappReturn — recuperação da volta', () => {
     await mounted.wrapper.unmount()
   })
 
+  it('o toque em conferir que volta sem a mensagem vira "ainda não chegou"', async () => {
+    const mounted = await mountReturn()
+    mounted.result.arm()
+    expect(mounted.result.notArrived.value).toBe(false)
+
+    await mounted.result.checkNow()
+
+    expect(claim).toHaveBeenCalledOnce()
+    expect(mounted.result.notArrived.value).toBe(true)
+    expect(mounted.result.state.value).toBe('waiting')
+
+    // Nova tentativa começa limpa; abrir o WhatsApp de novo também.
+    mounted.result.arm()
+    expect(mounted.result.notArrived.value).toBe(false)
+    await mounted.wrapper.unmount()
+  })
+
+  it('a conferência automática que volta vazia não fala por cima da pessoa', async () => {
+    const now = Date.now()
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, startedAt: now, expiresAt: now + 60_000 }))
+
+    const mounted = await mountReturn()
+    await flushPromises()
+
+    expect(claim).toHaveBeenCalledOnce()
+    expect(mounted.result.notArrived.value).toBe(false)
+    await mounted.wrapper.unmount()
+  })
+
   it('restaura a demora sem pedir que a pessoa envie outra mensagem', async () => {
     const now = Date.now()
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify({

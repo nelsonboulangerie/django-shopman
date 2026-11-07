@@ -4,6 +4,8 @@
 // deve pagamento e não morreu). Fica na aba (sessionStorage): sobrevive à ida
 // ao Stripe e à volta, não vai na URL (link compartilhado não comemora o pedido
 // de outra pessoa) e não repete no refresh.
+import { rememberOrderSecured } from './orderSecured'
+
 const STORAGE_KEY = 'shopman-just-placed'
 
 export function markJustPlaced (orderRef: string): void {
@@ -16,6 +18,8 @@ export function takeJustPlaced (orderRef: string): boolean {
   try {
     if (window.sessionStorage.getItem(STORAGE_KEY) !== orderRef) return false
     window.sessionStorage.removeItem(STORAGE_KEY)
+    // O mesmo instante libera o convite de instalar o app (primeiro pedido concluído).
+    rememberOrderSecured()
     return true
   } catch {
     return false

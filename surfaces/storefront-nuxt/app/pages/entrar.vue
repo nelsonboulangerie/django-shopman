@@ -46,6 +46,7 @@ const {
   state: waReturnState,
   waiting: waWaiting,
   checking: waChecking,
+  notArrived: waNotArrived,
   arm: waArm,
   stop: waStop,
   checkNow: waCheckNow
@@ -707,6 +708,7 @@ useSeoMeta({
             :waiting="waWaiting"
             :return-state="waReturnState"
             :checking="waChecking"
+            :not-arrived="waNotArrived"
             :why="waWhy"
             :steps="waSteps"
             :cta-label="copyTitle(authCopy?.phone_cta_wa, 'Abrir o WhatsApp')"
