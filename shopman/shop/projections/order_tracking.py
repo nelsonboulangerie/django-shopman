@@ -1024,7 +1024,14 @@ def _pending_planned_hold_date(order) -> date | None:
     """Earliest active planned/demand hold still waiting for materialization."""
     from shopman.shop.services.stock import hold_pks as canonical_hold_pks
 
-    hold_pks = canonical_hold_pks((order.data or {}).get("hold_ids"))
+    try:
+        hold_pks = canonical_hold_pks((order.data or {}).get("hold_ids"))
+    except ValueError:
+        # A leitura da previsão não repara nem aceita reservas inválidas. O
+        # contrato de estoque continua estrito; o cliente ainda pode consultar
+        # pagamento, itens e histórico, sem inventar uma promessa de fornada.
+        logger.warning("order_tracking.invalid_hold_reference order=%s", order.ref)
+        return None
     if not hold_pks:
         return None
     try:
