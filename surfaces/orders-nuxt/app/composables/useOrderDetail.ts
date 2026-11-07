@@ -6,7 +6,6 @@ import { useOrderIntention } from "./useOrderIntention";
 // notes, fiscal links) and exposes the full action set. Writes go through the django
 // proxy and reconcile via refresh. Mirrors useOrdersBoard's in-flight guard.
 import type {
-  CancellationReason,
   OperatorOrderProjection,
   OrderDetailResponse,
 } from "~/types/orders";
@@ -236,34 +235,12 @@ export function useOrderDetail(orderRef: string) {
   // Desfazer o que ainda está na janela (a saída tocada; o pronto da Cozinha).
   const undoHandoff = () => act("undo-handoff");
   const undoReady = () => act("undo-ready");
-  // Recusar: a mesma lista única do cancelar (`reason_key`, obrigatória fora do
-  // iFood); o texto é a observação interna. No iFood, `reason` + código do iFood.
-  const reject = (choice: {
-    reasonKey: string;
-    internalNote: string;
-    reason: string;
-    cancellationCode: string;
-  }) =>
-    act("reject", {
-      reason_key: choice.reasonKey,
-      internal_note: choice.internalNote,
-      reason: choice.reason,
-      cancellation_code: choice.cancellationCode,
-    });
-  // Cancelar: o motivo é a chave da lista única (`reason_key`, obrigatória fora do
-  // iFood); o texto é a observação interna. No iFood, `reason` + código do iFood.
-  const cancel = (choice: {
-    reasonKey: string;
-    internalNote: string;
-    reason: string;
-    cancellationCode: string;
-  }) =>
-    act("cancel", {
-      reason_key: choice.reasonKey,
-      internal_note: choice.internalNote,
-      reason: choice.reason,
-      cancellation_code: choice.cancellationCode,
-    });
+  // Recusar e cancelar: a chave da lista única de motivos (`reason_key`, em qualquer
+  // canal; no iFood o código dele sai da chave, no servidor) e a observação interna.
+  const reject = (choice: { reasonKey: string; internalNote: string }) =>
+    act("reject", { reason_key: choice.reasonKey, internal_note: choice.internalNote });
+  const cancel = (choice: { reasonKey: string; internalNote: string }) =>
+    act("cancel", { reason_key: choice.reasonKey, internal_note: choice.internalNote });
   const settleCash = (
     amount: string,
     changeBack?: string,
@@ -304,14 +281,6 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
-  // Valid cancellation reasons for this order: for iFood, the live per-order coded
-  // list ({code, description}); empty for channels without reason codes.
-  async function fetchCancellationReasons(): Promise<CancellationReason[]> {
-    const res = await $fetch<{ reasons: CancellationReason[] }>(
-      `/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/cancellation-reasons/`,
-    );
-    return res.reasons;
-  }
 
   async function saveNotes(
     notes: string,
@@ -428,7 +397,6 @@ export function useOrderDetail(orderRef: string) {
     advance,
     reject,
     cancel,
-    fetchCancellationReasons,
     settleCash,
     equipmentBack,
     courierBack,

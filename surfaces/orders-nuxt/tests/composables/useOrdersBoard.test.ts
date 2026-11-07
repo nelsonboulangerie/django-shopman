@@ -288,22 +288,14 @@ describe("useOrdersBoard — ações (act)", () => {
     expect(env.fetchMock.mock.calls[0]![1].headers["Idempotency-Key"]).toBeTruthy();
   });
 
-  it("reject envia reason + cancellation_code no iFood", async () => {
+  it("reject envia a chave da lista única e a nota interna, em qualquer canal (dono, 07/11)", async () => {
     env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "IFOOD-9", actions: fixtureActions({ can_confirm: true }) }] } };
     env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
     const board = useOrdersBoard();
-    await board.reject("IFOOD-9", { reasonKey: "", internalNote: "", reason: "Sem estoque", cancellationCode: "CODE_2" });
+    await board.reject("IFOOD-9", { reasonKey: "high_demand", internalNote: "" });
     const [path, opts] = env.fetchMock.mock.calls[0]!;
     expect(String(path)).toBe("/api/v1/backstage/orders/IFOOD-9/reject/");
-    expect(opts.body).toMatchObject({ reason: "Sem estoque", cancellation_code: "CODE_2" });
-  });
-
-  it("reject fora do iFood envia a chave da lista única (beta 06/11)", async () => {
-    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-9", actions: fixtureActions({ can_confirm: true }) }] } };
-    env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
-    const board = useOrdersBoard();
-    await board.reject("WEB-9", { reasonKey: "store_closing", internalNote: "", reason: "", cancellationCode: "" });
-    expect(env.fetchMock.mock.calls[0]![1].body).toMatchObject({ reason_key: "store_closing", reason: "", cancellation_code: "" });
+    expect(opts.body).toMatchObject({ reason_key: "high_demand", internal_note: "" });
   });
 
   it("falha na ação acende erro inline por-ref (um lugar só, sem toast), devolve false e reconcilia via refresh", async () => {
@@ -424,14 +416,6 @@ describe("useOrdersBoard — bulk + reasons", () => {
     const board = useOrdersBoard();
     expect(await board.confirmMany(["WEB-1", "WEB-2"])).toBe(2);
     expect(env.sonner.error).toHaveBeenCalledWith("2 pedidos ficaram como estavam. Cada cartão diz por quê.");
-  });
-
-  it("fetchCancellationReasons devolve a lista, propaga indisponibilidade", async () => {
-    env.fetchMock.mockResolvedValueOnce({ reasons: [{ code: "1", description: "Sem estoque" }] });
-    const board = useOrdersBoard();
-    expect(await board.fetchCancellationReasons("IFOOD-1")).toEqual([{ code: "1", description: "Sem estoque" }]);
-    env.fetchMock.mockRejectedValueOnce(new Error("net"));
-    await expect(board.fetchCancellationReasons("IFOOD-2")).rejects.toThrow("net");
   });
 });
 

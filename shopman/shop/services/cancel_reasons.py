@@ -33,6 +33,8 @@ class CancelReason:
     customer_text: str
 
 
+#: A lista do operador é UMA só, para recusar e para cancelar, em qualquer canal
+#: (dono, 07/11/2026): nada configurável no Admin. A ordem é a da tela.
 OPERATOR_CANCEL_REASONS: tuple[CancelReason, ...] = (
     CancelReason(
         key="out_of_stock",
@@ -43,6 +45,16 @@ OPERATOR_CANCEL_REASONS: tuple[CancelReason, ...] = (
         key="cannot_deliver",
         label="Não dá para entregar",
         customer_text="Não conseguimos fazer a entrega no endereço e no horário do pedido.",
+    ),
+    CancelReason(
+        key="high_demand",
+        label="Muitos pedidos agora",
+        customer_text="Estamos com muitos pedidos agora e não conseguiríamos preparar o seu no horário.",
+    ),
+    CancelReason(
+        key="duplicate_order",
+        label="Pedido repetido",
+        customer_text="Recebemos este mesmo pedido duas vezes e seguimos só com o outro.",
     ),
     CancelReason(
         key="customer_request",
@@ -132,12 +144,14 @@ def cancel_reason(key: str) -> CancelReason | None:
     return _BY_KEY.get(str(key or "").strip())
 
 
-def validation_message(key: str) -> str:
+def validation_message(key: str, *, channel_ref: str = "") -> str:
     """A frase de erro para uma chave inválida, ou vazio quando a chave é da lista."""
     key = str(key or "").strip()
     if not key:
         return MISSING_REASON_MESSAGE
-    if key not in _OPERATOR_KEYS:
+    from shopman.shop.policies.ifood_cancel_reasons import offered_on_ifood
+
+    if key not in _OPERATOR_KEYS or (channel_ref == "ifood" and not offered_on_ifood(key)):
         return UNKNOWN_REASON_MESSAGE
     return ""
 

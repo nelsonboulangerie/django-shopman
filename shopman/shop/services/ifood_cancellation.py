@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from shopman.orderman.models import Order
@@ -48,8 +47,14 @@ def enqueue_locked(order, *, reason: str, actor: str, extra_data: dict | None) -
     external_ref = str(order.external_ref or (order.data or {}).get("external_order_code") or "").strip()
     if not external_ref:
         raise ValueError("Referência iFood ausente. Confira a integração deste pedido.")
-    cfg = getattr(settings, "SHOPMAN_IFOOD", {}) or {}
-    code = str((extra_data or {}).get("ifood_cancellation_code") or cfg.get("cancellation_default_code") or "").strip()
+    from shopman.shop.services import ifood_callbacks
+
+    extra = extra_data or {}
+    # O código do iFood sai do motivo da casa (``ifood_callbacks.DEFAULT_REASON_CODES``).
+    code = str(
+        extra.get("ifood_cancellation_code")
+        or ifood_callbacks.resolve_cancellation_code(extra.get("cancellation_reason_key", ""))
+    ).strip()
     if not code:
         raise ValueError("Escolha um motivo permitido pelo iFood antes de solicitar o cancelamento.")
     request_id = uuid4().hex

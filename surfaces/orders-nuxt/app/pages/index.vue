@@ -42,7 +42,6 @@ import type { OperatorActionBarAction } from "../../../operator-kit/app/presenta
 import type { OperatorBulkItem } from "../../../operator-kit/app/presentation/bulkBar";
 import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
 import type { OperatorSwipeAction } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
-import type { CancellationReason } from "~/composables/useOrdersBoard";
 import {
   BOARD_COLUMNS_QUERY,
   BOARD_ZONE_KEYS,
@@ -79,7 +78,6 @@ const {
   confirm,
   advance,
   reject,
-  fetchCancellationReasons,
   settleCash,
   equipmentBack,
   courierBack,
@@ -1071,10 +1069,9 @@ onMounted(() => window.addEventListener("keydown", onKeydown));
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
 // reject dialog: o MESMO `OrderReasonDialog` do detalhe (beta 06/11: o quadro tinha
-// um diálogo próprio, com texto livre). No iFood o motivo é um código da lista viva
-// do pedido; nos outros canais, a lista única de motivos do backend, a do cancelar.
+// um diálogo próprio, com texto livre). Uma lista de motivos em qualquer canal; no
+// iFood o diálogo esconde o que o iFood não oferece.
 const rejectRef = ref<string | null>(null);
-const rejectReasons = ref<CancellationReason[]>([]);
 // O diálogo diz quando há motivo escolhido ou texto; ele mesmo pede confirmação ao
 // fechar, e a página guarda só a saída por rota e por recarga.
 const rejectDirty = ref(false);
@@ -1102,53 +1099,18 @@ function beforeUnload(event: BeforeUnloadEvent) {
 }
 onMounted(() => window.addEventListener("beforeunload", beforeUnload));
 onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload));
-const rejectReasonsLoading = ref(false);
-const rejectReasonsError = ref("");
 const isMarketplaceReject = computed(
   () =>
     allCards.value.find((c) => c.ref === rejectRef.value)?.channel_ref ===
     "ifood",
 );
-async function openReject(ref_: string) {
+function openReject(ref_: string) {
   rejectRef.value = ref_;
-  rejectReasons.value = [];
-  rejectReasonsError.value = "";
-  // Só o iFood tem códigos a buscar; nos outros canais a lista vem com o quadro.
-  if (isMarketplaceReject.value) await loadRejectReasons();
 }
-let rejectReasonsRequest = 0;
-async function loadRejectReasons() {
-  const ref_ = rejectRef.value;
-  if (!ref_) return;
-  const request = ++rejectReasonsRequest;
-  rejectReasonsLoading.value = true;
-  rejectReasonsError.value = "";
-  try {
-    const result = await fetchCancellationReasons(ref_);
-    if (request === rejectReasonsRequest && ref_ === rejectRef.value)
-      rejectReasons.value = result;
-  } catch {
-    if (request === rejectReasonsRequest && ref_ === rejectRef.value)
-      rejectReasonsError.value =
-        "Não foi possível consultar os motivos. Nenhuma ação foi aplicada.";
-  } finally {
-    if (request === rejectReasonsRequest) rejectReasonsLoading.value = false;
-  }
-}
-async function confirmReject(payload: {
-  reason: string;
-  cancellationCode: string;
-  reasonKey: string;
-}) {
+async function confirmReject(payload: { reasonKey: string; internalNote: string }) {
   const ref_ = rejectRef.value;
   if (!ref_ || isBusy(ref_)) return;
-  const ok = await reject(
-    ref_,
-    payload.reasonKey
-      ? { reasonKey: payload.reasonKey, internalNote: payload.reason, reason: "", cancellationCode: "" }
-      : { reasonKey: "", internalNote: "", reason: payload.reason || "Pedido recusado", cancellationCode: payload.cancellationCode },
-  );
-  if (ok) closeReject();
+  if (await reject(ref_, payload)) closeReject();
 }
 
 // settle-cash dialog (needs an amount; and, when the courier took change from
@@ -2210,14 +2172,10 @@ function compactClear() {
     <OrderReasonDialog
       :open="rejectRef != null"
       mode="reject"
-      :loading="rejectReasonsLoading"
-      :error="rejectReasonsError"
       :marketplace="isMarketplaceReject"
-      :reasons="rejectReasons"
       :cancel-reasons="cancelReasons"
       :busy="Boolean(rejectRef && isBusy(rejectRef))"
       @dirty-change="rejectDirty = $event"
-      @retry="loadRejectReasons"
       @update:open="
         (v) => {
           if (!v) closeReject();

@@ -31,7 +31,6 @@ import { COURIER_CALL_HASH } from "~/presentation/courier";
 import { contactRequestNotice } from "~/presentation/contactRequest";
 import { orderTicketMenuItem } from "~/presentation/orderTicket";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
-import type { CancellationReason } from "~/types/orders";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 definePageMeta({ key: (route) => route.path });
@@ -75,7 +74,6 @@ const {
   advance,
   reject,
   cancel,
-  fetchCancellationReasons,
   settleCash,
   equipmentBack,
   courierBack,
@@ -325,10 +323,9 @@ function applyNoteTag(tag: string) {
   notes.value = appendTag(notes.value, tag);
 }
 
-// reject + cancel + settle dialogs. Reject/cancel share OrderReasonDialog, which is
-// marketplace-aware: for an iFood order it shows the provider's required coded reasons
-// (fetched live per order); other channels reject and cancel from the same
-// canonical reason list (`cancel_reasons`).
+// reject + cancel + settle dialogs. Reject/cancel share OrderReasonDialog: one canonical
+// reason list (`cancel_reasons`) in every channel; on iFood orders the server already
+// left out the reasons iFood does not offer, and maps the reason to iFood's code.
 const dialog = ref<
   "" | "reject" | "cancel" | "settle" | "dispatch" | "courier-back"
 >("");
@@ -439,26 +436,6 @@ function updateDispatchEquipment(next: string[]) {
     ? [...next.filter((ref_) => !ref_.startsWith("card_machine:")), added]
     : next;
 }
-const reasons = ref<CancellationReason[]>([]);
-const reasonsLoading = ref(false);
-const reasonsError = ref("");
-let reasonsRequest = 0;
-async function loadReasons() {
-  const request = ++reasonsRequest;
-  reasonsLoading.value = true;
-  reasonsError.value = "";
-  try {
-    const result = await fetchCancellationReasons();
-    if (request === reasonsRequest) reasons.value = result;
-  } catch {
-    if (request === reasonsRequest)
-      reasonsError.value =
-        "Não foi possível consultar os motivos. Nenhuma ação foi aplicada.";
-  } finally {
-    if (request === reasonsRequest) reasonsLoading.value = false;
-  }
-}
-
 // The canonical reject/cancel reasons (one list, in the backend).
 const cancelReasons = computed(() => order.value?.cancel_reasons ?? []);
 
@@ -472,36 +449,14 @@ async function openDialog(
   if (kind === "dispatch")
     cashDrafts.dispatch(orderRef.value, dispatchDraft.value);
   dialog.value = kind;
-  if (kind === "reject" || kind === "cancel") {
-    // Só o iFood tem lista viva de códigos a buscar; os outros canais usam a lista
-    // única que já veio na projeção. Buscar à toa mostrava "Carregando motivos do
-    // iFood…" num pedido da Loja online.
-    reasons.value = [];
-    if (order.value?.channel_ref === "ifood") await loadReasons();
-  }
 }
 
-// OrderReasonDialog emits the chosen (trimmed) reason + code (+ the reason key when
-// cancelling outside iFood, where the text is the internal note); we route to the
+// OrderReasonDialog emits the chosen reason key + the internal note; we route to the
 // right action, then reconcile.
-async function submitReason(payload: {
-  reason: string;
-  cancellationCode: string;
-  reasonKey: string;
-}) {
+async function submitReason(payload: { reasonKey: string; internalNote: string }) {
   let ok = false;
-  if (dialog.value === "reject")
-    ok = await reject(
-      payload.reasonKey
-        ? { reasonKey: payload.reasonKey, internalNote: payload.reason, reason: "", cancellationCode: "" }
-        : { reasonKey: "", internalNote: "", reason: payload.reason || "Pedido recusado", cancellationCode: payload.cancellationCode },
-    );
-  else if (dialog.value === "cancel")
-    ok = await cancel(
-      payload.reasonKey
-        ? { reasonKey: payload.reasonKey, internalNote: payload.reason, reason: "", cancellationCode: "" }
-        : { reasonKey: "", internalNote: "", reason: payload.reason, cancellationCode: payload.cancellationCode },
-    );
+  if (dialog.value === "reject") ok = await reject(payload);
+  else if (dialog.value === "cancel") ok = await cancel(payload);
   if (ok) dialog.value = "";
 }
 
@@ -1571,8 +1526,6 @@ const outside = useOutsideStore(
       data-detail-thumb
     />
 
-    <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons,
-         or the canonical reason list for both reject and cancel) -->
     <OperatorReasonDialog
       v-model:open="contactResolveOpen"
       title="Ouvidoria resolvida"
@@ -1585,19 +1538,16 @@ const outside = useOutsideStore(
       :busy="busy"
       @confirm="onResolveContact"
     />
+    <!-- reject / cancel: the canonical reason list for both -->
     <OrderReasonDialog
       :open="dialog === 'reject' || dialog === 'cancel'"
       :mode="dialog === 'cancel' ? 'cancel' : 'reject'"
-      :loading="reasonsLoading"
-      :error="reasonsError"
       :marketplace="order?.channel_ref === 'ifood'"
-      :reasons="reasons"
       :cancel-reasons="cancelReasons"
       :initial-key="cancelInitialKey"
       :money-effect="order?.cancel_money_effect || ''"
       :busy="busy"
       @dirty-change="reasonDirty = $event"
-      @retry="loadReasons"
       @update:open="
         (v) => {
           if (!v) dialog = '';

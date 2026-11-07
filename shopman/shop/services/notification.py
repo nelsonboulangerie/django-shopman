@@ -1151,10 +1151,10 @@ def _status_note(order, template: str, reason, *, note=None) -> str:
         return str(note or "").strip() or cancel_reasons.customer_text(order.data)
     if template == "order_rejected":
         # A recusa usa a MESMA lista do cancelar: com a chave gravada, o cliente
-        # lê a frase revisada dela. Sem chave da lista (o iFood), o motivo dado.
+        # lê a frase revisada dela.
         from shopman.shop.services import cancel_reasons
 
-        if cancel_reasons.cancel_reason((order.data or {}).get("cancellation_reason_key")) and order.channel_ref != "ifood":
+        if cancel_reasons.cancel_reason((order.data or {}).get("cancellation_reason_key")):
             return cancel_reasons.customer_text(order.data)
         return f"Motivo: {reason}." if reason else "Os detalhes estão no pedido."
     if template == "order_rescheduled":

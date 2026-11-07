@@ -19,7 +19,7 @@ from shopman.shop.handlers.ifood_status import IFoodStatusCallbackHandler
 from shopman.shop.models import Channel
 from shopman.shop.services import cancellation, ifood_callbacks, ifood_cancellation, ifood_events, operator_orders
 
-CFG = {"client_id": "test", "client_secret": "test", "cancellation_default_code": "501"}
+CFG = {"client_id": "test", "client_secret": "test"}
 
 
 def _refused(order_id="ifood-order", event_id="evt-refused", metadata=None):
@@ -41,7 +41,7 @@ class IFoodCancellationRefusedTests(TestCase):
             ref="IFD-RECUSA", channel_ref="ifood", external_ref="ifood-order", status="new",
             data={"payment": {"method": "external", "gateway": "ifood"}, "ifood": {"display_id": "4821"}},
         )
-        cancellation.cancel(self.order, reason="Sem estoque", actor="operator:ana")
+        cancellation.cancel(self.order, reason="Sem estoque", actor="operator:ana", extra_data={"cancellation_reason_key": "out_of_stock"})
         directive = Directive.objects.get(topic="ifood.status_callback", payload__order_ref=self.order.ref)
         with patch.object(ifood_callbacks, "send_for_status", return_value=True):
             IFoodStatusCallbackHandler().handle(message=directive, ctx={})
@@ -162,7 +162,7 @@ class IFoodCancellationRefusedTests(TestCase):
             ref="IFD-RECUSA-ENVIO", channel_ref="ifood", external_ref="ifood-order-2", status="new",
             data={"payment": {"method": "external", "gateway": "ifood"}},
         )
-        cancellation.cancel(order, reason="Sem estoque", actor="operator:ana")
+        cancellation.cancel(order, reason="Sem estoque", actor="operator:ana", extra_data={"cancellation_reason_key": "out_of_stock"})
         directive = Directive.objects.get(topic="ifood.status_callback", payload__order_ref=order.ref)
         with patch.object(ifood_callbacks, "send_for_status",
                           side_effect=ifood_callbacks.IFoodCallbackError("bad code", retryable=False)):

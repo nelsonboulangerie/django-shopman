@@ -205,16 +205,18 @@ class AwaitingWorkOrderProjection:
 
 @dataclass(frozen=True)
 class CancelReasonProjection:
-    """Um motivo de cancelar da lista única (``shop/services/cancel_reasons.py``).
+    """Um motivo de recusar ou cancelar da lista única (``shop/services/cancel_reasons.py``).
 
-    ``key`` é o que a tela devolve no cancelar; ``label`` é o que o operador
-    escolhe; ``customer_text`` é a frase que o cliente vai ler, mostrada na hora
-    da escolha para o operador saber o que sai.
+    ``key`` é o que a tela devolve no recusar/cancelar; ``label`` é o que o
+    operador escolhe; ``customer_text`` é a frase que o cliente vai ler, mostrada
+    na hora da escolha para o operador saber o que sai. ``offered_on_ifood``: o
+    motivo aparece no pedido do iFood (o quadro mistura canais e filtra por ele).
     """
 
     key: str
     label: str
     customer_text: str
+    offered_on_ifood: bool
 
 
 @dataclass(frozen=True)
@@ -1159,7 +1161,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             counter=preorders.build_counter_block(order, user=user),
             # O cancelar do balcão usa os MESMOS motivos do Gestor: a lista é uma
             # só, no backend (``cancel_reasons``).
-            cancel_reasons=_cancel_reasons(),
+            cancel_reasons=_cancel_reasons(order.channel_ref or ""),
         )
 
     bloqueio = operator_orders.gestor_advance_block(order)
@@ -1213,7 +1215,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
-        cancel_reasons=_cancel_reasons(),
+        cancel_reasons=_cancel_reasons(order.channel_ref or ""),
         kitchen_note_tags=_kitchen_note_tags(),
         courier=courier_block,
         **_courier_change_fields(order),
@@ -1551,12 +1553,17 @@ def _courier_block(order: Order) -> dict | None:
         return None
 
 
-def _cancel_reasons() -> tuple[CancelReasonProjection, ...]:
+def _cancel_reasons(channel_ref: str = "") -> tuple[CancelReasonProjection, ...]:
+    """A lista única; no detalhe de um pedido do iFood, só os motivos que ele oferece."""
+    from shopman.shop.policies.ifood_cancel_reasons import offered_on_ifood
     from shopman.shop.services.cancel_reasons import OPERATOR_CANCEL_REASONS
 
     return tuple(
-        CancelReasonProjection(key=r.key, label=r.label, customer_text=r.customer_text)
+        CancelReasonProjection(
+            key=r.key, label=r.label, customer_text=r.customer_text, offered_on_ifood=offered_on_ifood(r.key),
+        )
         for r in OPERATOR_CANCEL_REASONS
+        if channel_ref != "ifood" or offered_on_ifood(r.key)
     )
 
 
@@ -2992,8 +2999,9 @@ _FISCAL_PILL = {
     "awaiting_pickup": ("awaiting_pickup", "NFC-e sai na retirada"),
     "awaiting_delivery": ("awaiting_delivery", "NFC-e sai na entrega"),
     # A regra da casa só emite quando pedem (nota, CPF ou comprovante): a pill diz
-    # o fato em português claro e sem alarme (beta 06/11: "Emissão não
-    # estabelecida" era jargão). Se o cliente pedir depois, a emissão avulsa sai.
+    # o fato em português claro e sem alarme, o MESMO texto do PDV
+    # (`pos-nuxt/app/presentation/saleResult.ts`). Se o cliente pedir depois, o
+    # "Emitir NFC-e…" do PDV sai com o gerente.
     "not_expected": ("not_requested", "NFC-e não pedida"),
 }
 

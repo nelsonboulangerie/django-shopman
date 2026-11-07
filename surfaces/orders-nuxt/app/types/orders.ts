@@ -39,12 +39,6 @@ export interface OrderCardProjection extends OrderCardContract {
   fulfillment_type: "delivery" | "pickup";
 }
 
-/** A coded cancellation reason (marketplace/iFood requires one per order). */
-export interface CancellationReason {
-  code: string;
-  description: string;
-}
-
 /** Courier ride block (Order.data["courier"] → projections._courier_block).
  * `status` is the raw Machine letter (D/G/P/A/S/E/F/N/C/U); labels come from
  * the server, steps/tone are derived client-side (presentation/courier.ts).

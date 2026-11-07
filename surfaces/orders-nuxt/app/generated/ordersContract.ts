@@ -361,11 +361,12 @@ export interface AwaitingWorkOrderProjection {
   progress_pct: number;
 }
 
-/** Um motivo de cancelar da lista única (``shop/services/cancel_reasons.py``). */
+/** Um motivo de recusar ou cancelar da lista única (``shop/services/cancel_reasons.py``). */
 export interface CancelReasonProjection {
   key: string;
   label: string;
   customer_text: string;
+  offered_on_ifood: boolean;
 }
 
 /** Uma maquininha que o entregador pode levar no despacho (ref do canal + rótulo). */

@@ -1484,7 +1484,7 @@ def _pos_actions() -> tuple[Action, ...]:
         Action(
             ref="emit_fiscal",
             kind="mutation",
-            label="Estabelecer emissão da NFC-e",
+            label="Emitir NFC-e",
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/orders/{order_ref}/emit-fiscal/",

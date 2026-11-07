@@ -65,7 +65,7 @@ describe("PosRecentSales — o chip fiscal segue `fiscal_state` quando existe", 
       sale({ order_ref: "D", fiscal_state: "failed" }),
       sale({ order_ref: "E", fiscal_state: "not_expected" }),
     ]);
-    expect(chips()).toEqual(["NFC-e autorizada", "NFC-e em emissão", "NFC-e sai quando o pagamento confirmar", "NFC-e não autorizada", "Emissão não estabelecida"]);
+    expect(chips()).toEqual(["NFC-e autorizada", "NFC-e em emissão", "NFC-e sai quando o pagamento confirmar", "NFC-e não autorizada", "NFC-e não pedida"]);
     w.unmount();
   });
 
@@ -118,7 +118,7 @@ describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
 
   it("o toque pede o gerente; a assinatura vai no corpo do POST", async () => {
     const w = await montar([sale({ fiscal_state: "not_expected", can_emit_fiscal: true })]);
-    expect(emitButton()?.textContent?.trim()).toBe("Estabelecer emissão…");
+    expect(emitButton()?.textContent?.trim()).toBe("Emitir NFC-e…");
     const auth = emitFiscalAuth(w);
     expect(auth.props("open")).toBe(false);
 

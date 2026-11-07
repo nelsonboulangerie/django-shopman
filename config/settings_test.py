@@ -197,8 +197,6 @@ SHOPMAN_IFOOD.update(  # noqa: F405
     timeout=30,
     catalog_category_map={},
     catalog_default_category="",
-    cancellation_default_code="",
-    cancellation_default_reason="Problemas de sistema na loja",
     webhook_hmac_secret="",
 )
 SHOPMAN_MACHINE.update(  # noqa: F405

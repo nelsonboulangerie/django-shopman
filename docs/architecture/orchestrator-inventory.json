@@ -7388,6 +7388,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/ifood_cancel_reasons.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.ifood-cancel-reasons"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/customer_cancellation.py",
       "touchpoints": [
         "outro"
