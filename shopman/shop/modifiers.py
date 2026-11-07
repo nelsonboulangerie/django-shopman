@@ -44,6 +44,7 @@ from shopman.shop.policies.promotion import (
     PromotionContext,
     Shopper,
     coupon_zero_reason,
+    is_birthday_promotion,
     promotion_matches,
     promotion_minimum_eligible,
 )
@@ -564,11 +565,8 @@ class CustomerPricingModifier:
     order = 5
 
     def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
-        # A edição de encomenda reprecifica o PRÓPRIO pedido: o aniversário que
-        # ele já levou não conta contra ele mesmo.
-        ctx.setdefault("editing_order_ref", (((session.data or {}).get("pos_edit") or {}).get("order_ref") or ""))
         if ctx.get("customer") is not None:
-            self._publish_profile(ctx, ctx["customer"])
+            self._publish_profile(ctx, ctx["customer"], session)
             self._publish_groups(ctx, self._customer_tiers(ctx["customer"]))
             return
 
@@ -601,7 +599,7 @@ class CustomerPricingModifier:
         elif session_refs:
             self._publish_groups(ctx, self._load_tiers(session_refs), fallback_refs=session_refs)
         if customer is not None:
-            self._publish_profile(ctx, customer)
+            self._publish_profile(ctx, customer, session)
         elif "customer_segment" not in ctx:
             ctx["customer_segment"] = ""
             ctx.setdefault("is_birthday", False)
@@ -678,7 +676,7 @@ class CustomerPricingModifier:
             ctx["customer"] = SimpleNamespace(listing_ref=best_listing)
 
     @staticmethod
-    def _publish_profile(ctx: dict, customer: Any) -> None:
+    def _publish_profile(ctx: dict, customer: Any, session: Any = None) -> None:
         if "customer_segment" not in ctx:
             try:
                 ctx["customer_segment"] = customer.insight.rfm_segment or ""
@@ -686,14 +684,8 @@ class CustomerPricingModifier:
                 logger.debug("pricing.customer: no insight for customer", exc_info=True)
                 ctx["customer_segment"] = ""
         if "is_birthday" not in ctx:
-            # Aniversário que ainda dá desconto: o dia certo E nenhum outro pedido
-            # do dia já levou o desconto (uma vez por ano; dono, 07/11/2026).
-            from shopman.shop.services.promotions import birthday_benefit_available
-
-            ctx["is_birthday"] = birthday_benefit_available(
-                customer,
-                timezone.localdate(pricing_now(ctx)),
-                exclude_order_ref=str(ctx.get("editing_order_ref") or ""),
+            ctx["is_birthday"] = promotion_service.birthday_benefit_available(
+                customer, timezone.localdate(pricing_now(ctx)), session=session
             )
 
 
@@ -859,7 +851,6 @@ class DiscountModifier:
         # the session; the storefront links the customer (ref + tier) when a
         # segment-gated coupon is applied, and the RFM segment resolves from the
         # customer's ``insight``.
-        ctx.setdefault("editing_order_ref", (((session.data or {}).get("pos_edit") or {}).get("order_ref") or ""))
         self._resolve_customer_ctx(session, ctx)
 
         now = pricing_now(ctx)
@@ -1056,11 +1047,7 @@ class DiscountModifier:
                     "qty": _qty_json(qty),
                     "fulfillment_types": list(getattr(source_promo, "fulfillment_types", None) or []),
                 }
-                # O desconto de aniversário marca o pedido: é por ele que o próximo
-                # pedido do dia sabe que o aniversário já foi celebrado
-                # (`promotions.birthday_benefit_available`).
-                if getattr(source_promo, "birthday_only", False):
-                    record["birthday"] = True
+                record.update({"birthday": True} if is_birthday_promotion(source_promo) else {})
                 if source_kind:
                     record["discount_kind"] = source_kind
                 if source_group:
@@ -1123,8 +1110,7 @@ class DiscountModifier:
                     "qty": 1,
                     "fulfillment_types": list(getattr(fixed_promo, "fulfillment_types", None) or []),
                 }
-                if getattr(fixed_promo, "birthday_only", False):
-                    order_record["birthday"] = True
+                order_record.update({"birthday": True} if is_birthday_promotion(fixed_promo) else {})
                 if src_kind:
                     order_record["discount_kind"] = src_kind
                 if src_group:
@@ -1240,14 +1226,8 @@ class DiscountModifier:
         if needs_birthday and customer.birthday:
             # O aniversário é o do DIA DA VENDA: a venda das 23h50 enviada depois
             # da meia-noite ainda é do dia do aniversário (e a do dia seguinte não).
-            # E vale uma vez: outro pedido do dia que já levou o desconto encerra
-            # o benefício do ano (dono, 07/11/2026).
-            from shopman.shop.services.promotions import birthday_benefit_available
-
-            ctx["is_birthday"] = birthday_benefit_available(
-                customer,
-                timezone.localdate(pricing_now(ctx)),
-                exclude_order_ref=str(ctx.get("editing_order_ref") or ""),
+            ctx["is_birthday"] = promotion_service.birthday_benefit_available(
+                customer, timezone.localdate(pricing_now(ctx)), session=session
             )
 
     @staticmethod

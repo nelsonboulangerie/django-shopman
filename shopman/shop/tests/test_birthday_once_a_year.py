@@ -101,3 +101,18 @@ def test_o_aviso_do_balcao_nao_promete_o_desconto_ja_usado(ana):
     view = _birthday_projection(ana)
     assert view["is_birthday_today"] is True
     assert view["birthday_promo_label"] == ""
+
+
+def test_a_politica_so_conta_o_desconto_marcado_como_aniversario():
+    from types import SimpleNamespace
+
+    from shopman.shop.policies.promotion import birthday_discount_taken, is_birthday_promotion
+
+    birthday = {"pricing": {"discount": {"items": [{"promotion": "ANIV", "birthday": True}]}}}
+    other = {"pricing": {"discount": {"items": [{"promotion": "HAPPY"}]}}}
+    assert birthday_discount_taken([other, birthday]) is True
+    assert birthday_discount_taken([other, None, {}]) is False
+    assert birthday_discount_taken([]) is False
+    assert is_birthday_promotion(SimpleNamespace(birthday_only=True)) is True
+    assert is_birthday_promotion(SimpleNamespace(birthday_only=False)) is False
+    assert is_birthday_promotion(None) is False
