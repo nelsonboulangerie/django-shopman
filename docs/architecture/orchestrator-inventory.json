@@ -6759,6 +6759,7 @@
             "get_published_product",
             "get_sellable_published_product",
             "image_urls_by_sku",
+            "is_beverage",
             "keywords_by_sku",
             "label_attributes",
             "label_attributes_by_sku",

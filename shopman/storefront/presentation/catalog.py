@@ -965,17 +965,9 @@ def unit_weight_label(product: Any) -> str | None:
         return None
     if _MEASURE_IN_NAME.search(str(getattr(product, "name", "") or "")):
         return None
-    if _is_beverage(product):
+    if catalog_context.is_beverage(product):
         return None
     return f"peça de ~{weight} g"
-
-
-def _is_beverage(product: Any) -> bool:
-    from shopman.shop.services import attributes
-
-    if attributes.definition("natureza") is None:
-        return False
-    return attributes.get(product, "natureza") == "bebida"
 
 
 def _search_terms(
