@@ -44,6 +44,7 @@ import {
   firedPreorderBlocksPendingCharge,
   machineTenderLines,
   methodShortcuts,
+  isImplausibleChange,
   nonCashExcessQ,
   paymentConfirmView,
   paymentIcon,
@@ -294,6 +295,8 @@ const approvalBlocking = computed(() =>
   && (!props.managerUsername.trim() || !props.managerPin.trim()),
 );
 const managerThresholdQ = computed(() => props.review?.manager_approval_threshold_q || 0);
+// O desconto MANUAL (linha + venda) que o teto mede: é o número que o gerente assina.
+const manualDiscountQ = computed(() => (props.review?.line_discount_q || 0) + (props.review?.order_discount_q || 0));
 // AVISOS DA REVIEW QUE ESTA TELA NÃO CONSEGUE RENOVAR.
 //
 // A review só é refeita quando muda o CARRINHO (item, desconto, entrega). Mexer
@@ -322,6 +325,9 @@ const STALE_BY_CONSTRUCTION = new Set([
 // sobre o `paymentTotalQ` — com a review em trânsito, o total 0 fazia toda linha
 // digital virar "excedente" por meio segundo.
 const nonCashExcess = computed(() => nonCashExcessQ(props.paymentTenders, props.paymentTotalQ));
+// O troco grande que o operador JÁ conferiu, pelo valor: mudar o recebido pede a
+// conferência de novo (ver `isImplausibleChange`).
+const confirmedBigChangeQ = ref<number | null>(null);
 // Agendado sem cliente: o servidor recusa a encomenda anônima
 // (`customer_required_for_scheduled`) — o botão trava ANTES, com o motivo.
 // A REGRA é a mesma do chip que pulsa na barra do topo, e por isso vem da
@@ -1071,6 +1077,14 @@ const ctaBlock = computed<{
   if (!props.paymentCovered) {
     return { message: `Faltam ${formatBRL(Math.max(0, props.paymentRemainingQ))} para validar.` };
   }
+  if (isImplausibleChange(props.paymentChangeQ) && confirmedBigChangeQ.value !== props.paymentChangeQ) {
+    const changeQ = props.paymentChangeQ;
+    return {
+      message: `Troco de ${formatBRL(changeQ)}.`,
+      hint: "Confira o valor recebido: troco desse tamanho costuma ser um zero a mais.",
+      action: { label: "O troco está certo", run: () => { confirmedBigChangeQ.value = changeQ; } },
+    };
+  }
   return null;
 });
 // ── A FAIXA DE AVISOS ────────────────────────────────────────────────────────
@@ -1132,6 +1146,7 @@ const notices = computed<CheckoutNotice[]>(() => {
       hint: managerAuthReason({
         reasons: props.review?.approval_reasons,
         thresholdQ: managerThresholdQ.value,
+        discountQ: manualDiscountQ.value,
         houseAccountLimit: props.review?.house_account_limit,
       }),
     });
@@ -2570,6 +2585,7 @@ defineExpose({
     v-model:open="managerAuthOpen"
     action="sale_approval"
     :threshold-q="managerThresholdQ"
+    :discount-q="manualDiscountQ"
     :reasons="review?.approval_reasons"
     :house-account-limit="review?.house_account_limit"
     :operator-name="operatorName || ''"

@@ -36,6 +36,13 @@ describe("managerAuth: o gerente lê o valor que assina", () => {
     ).toBe(`Desconto acima de ${formatBRL(500)}.`);
   });
 
+  it("o desconto acima do teto diz QUANTO, antes do teto (beta 07/11)", () => {
+    expect(managerAuthReason({ reasons: ["discount_over_threshold"], thresholdQ: 500, discountQ: 1200 }))
+      .toBe(`Desconto de ${formatBRL(1200)}, acima de ${formatBRL(500)}.`);
+    expect(managerAuthReason({ reasons: ["discount_over_threshold"], thresholdQ: 500, discountQ: 0 }))
+      .toBe(`Desconto acima de ${formatBRL(500)}.`);
+  });
+
   it("fechar o dia com produção aberta nomeia o ato e diz o que segue aberto", () => {
     expect(managerAuthTitle("day_closing_production")).toBe("Autorizar fechar o dia");
     expect(
