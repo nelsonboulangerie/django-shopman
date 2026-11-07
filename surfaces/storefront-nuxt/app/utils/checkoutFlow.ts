@@ -626,8 +626,23 @@ export function usesWindowGrid (
   return checkout?.pickup_grid === 'half_hour'
 }
 
-/** A frase do dia sem horário nenhum: hoje já acabou, ou a loja não abre. */
-export function noWindowsMessage (fulfillmentType: FulfillmentType): string {
+/**
+ * Por que "Hoje" não está entre as datas: a loja abriu hoje, e as retiradas e
+ * entregas de hoje já acabaram (`today_over`, decidido pela grade do servidor).
+ * Sem esta frase, "Hoje" some às 18h e o cliente não sabe se a tela travou.
+ */
+export function todayOverMessage (fulfillmentType: FulfillmentType): string {
+  return fulfillmentType === 'delivery'
+    ? 'Hoje já encerramos as entregas.'
+    : 'Hoje já encerramos as retiradas.'
+}
+
+/**
+ * A frase do dia sem horário nenhum. Hoje: o expediente já não comporta mais
+ * um horário. Outro dia: a loja não abre.
+ */
+export function noWindowsMessage (fulfillmentType: FulfillmentType, isToday = false): string {
+  if (isToday) return `${todayOverMessage(fulfillmentType)} Escolha outra data.`
   return fulfillmentType === 'delivery'
     ? 'Não há horário de entrega nesse dia. Escolha outra data.'
     : 'Não há horário de retirada nesse dia. Escolha outra data.'
