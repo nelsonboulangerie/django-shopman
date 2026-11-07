@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="color-scheme" content="light">
+  <title>Shopman · Estudo de navegação</title>
+  <link rel="stylesheet" href="preview.css?v=20261029-7b">
+  <script defer src="flows.js?v=20261029-7b"></script>
+  <script defer src="flow-engine.js?v=20261029-7b"></script>
+  <script defer src="preview.js?v=20261029-7b"></script>
+</head>
+<body>
+  <a class="skip" href="#workspace">Pular para o conteúdo</a>
+  <header id="lab" class="lab" aria-label="Comparação de navegação"></header>
+  <div id="comparison" hidden></div>
+  <main id="central" class="central-page" hidden></main>
+  <div id="app" class="application">
+    <div id="scrim" class="scrim" hidden></div>
+    <aside id="primary" class="primary" aria-label="Assuntos do aplicativo"></aside>
+    <aside id="secondary" class="secondary" aria-label="Opções do assunto"></aside>
+    <main id="workspace" class="workspace" tabindex="-1">
+      <header id="pagehead" class="pagehead"></header>
+      <div id="toast" class="semantic-alert" role="status" hidden></div>
+      <section id="support-top" class="local-bar" aria-label="Recortes da página" hidden></section>
+      <section id="tools-dock" class="tools-dock" aria-label="Ferramentas da página" hidden></section>
+      <div id="content" class="content"></div>
+      <footer id="support-bottom" class="support-bottom" aria-label="Navegação da lista" hidden></footer>
+      <footer id="action-dock" class="action-dock" aria-label="Ação do momento" hidden></footer>
+      <nav id="quicknav" class="quicknav" aria-label="Navegação rápida" hidden></nav>
+    </main>
+  </div>
+  <div id="options-popover" popover aria-label="Opções" role="dialog"></div>
+  <dialog id="discard-dialog" class="confirmation-dialog" aria-labelledby="discard-title"><div class="dialog-head"><h2 id="discard-title">Descartar alterações?</h2></div><div class="dialog-body"><p>O que você alterou ainda não foi salvo. Você pode continuar editando.</p></div><div class="dialog-foot"><button class="button" id="keep-editing">Continuar editando</button><button class="button danger" id="discard-editing">Descartar alterações</button></div></dialog>
+  <dialog id="action-confirm" class="confirmation-dialog" aria-labelledby="action-confirm-title"><div class="dialog-head"><h2 id="action-confirm-title">Confirmar</h2></div><div class="dialog-body"><p id="action-confirm-description"></p></div><div class="dialog-foot"><button class="button" id="action-confirm-back">Voltar à revisão</button><button class="button gold" id="action-confirm-act">Confirmar</button></div></dialog>
+  <dialog id="detail" aria-labelledby="detail-title"><div id="dialog-content"></div></dialog>
+</body>
+</html>

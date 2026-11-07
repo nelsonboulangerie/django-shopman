@@ -1,0 +1,337 @@
+{
+  "scope": "Reconstruções estáticas por tarefa; sem equivalência funcional completa",
+  "geometry": [
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 1,
+      "rest": 1,
+      "url": "?app=kds&station=cafes",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 1,
+      "rest": 0,
+      "url": "?app=kds&station=lanches",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 1,
+      "rest": 0,
+      "url": "?app=kds&station=encomendas",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&view=queue",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&view=board",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&view=table",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&screen=exit&view=board",
+      "width": 320
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 1,
+      "rest": 1,
+      "url": "?app=kds&station=cafes",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 1,
+      "rest": 0,
+      "url": "?app=kds&station=lanches",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 1,
+      "rest": 0,
+      "url": "?app=kds&station=encomendas",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&view=queue",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&view=board",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&view=table",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&screen=exit&view=board",
+      "width": 390
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 1,
+      "url": "?app=kds&station=cafes",
+      "width": 768
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=kds&station=lanches",
+      "width": 768
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=kds&station=encomendas",
+      "width": 768
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&view=queue",
+      "width": 768
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&view=board",
+      "width": 768
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&view=table",
+      "width": 768
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&screen=exit&view=board",
+      "width": 768
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 1,
+      "url": "?app=kds&station=cafes",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=kds&station=lanches",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=kds&station=encomendas",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 1,
+      "url": "?app=gestor&view=queue",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&view=board",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&view=table",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&screen=exit&view=board",
+      "width": 1024
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 1,
+      "url": "?app=kds&station=cafes",
+      "width": 1440
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=kds&station=lanches",
+      "width": 1440
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=kds&station=encomendas",
+      "width": 1440
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 1,
+      "url": "?app=gestor&view=queue",
+      "width": 1440
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&view=board",
+      "width": 1440
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&view=table",
+      "width": 1440
+    },
+    {
+      "bodyOverflow": false,
+      "contentOverflow": false,
+      "headOverflow": false,
+      "phoneFocus": 0,
+      "rest": 0,
+      "url": "?app=gestor&screen=exit&view=board",
+      "width": 1440
+    }
+  ],
+  "flows": [
+    "N104: Iniciar desarma Pronto; desfazer do Pronto no mesmo botão restaura ação",
+    "Mudança nova prioriza Visto N104",
+    "N109: bloqueio com motivo e botão mobile desabilitado",
+    "Cancelamento de N105 exige ciência e sai da fila",
+    "B42 lendo M18:1/2 mostra duas saídas; conferência não impede retirada",
+    "R7K: João e troco 26 na revisão; voltar preserva campo 26",
+    "Após despacho, retorno de R7K usa 74 e troco levado 26, não valores de outro pedido",
+    "Seleção R7K/B42 aplica responsável somente aos alvos identificados",
+    "Divisória 439/439/439 → 459/419/439; recolher/restaurar Preparo 3→2→3",
+    "Rodapé Saída em 320 px cabe em 255 px, controles de 48 px"
+  ],
+  "limits": [
+    "Sem APIs, permissões, dados ao vivo, impressão, fiscal, som/push ou periféricos",
+    "Gestos em dispositivo e teclado virtual reais ainda não validados",
+    "Modais especializados integrais e políticas do backend não reproduzidos"
+  ]
+}

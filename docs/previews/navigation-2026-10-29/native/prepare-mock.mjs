@@ -1,0 +1,10 @@
+import {readFile,writeFile} from 'node:fs/promises';
+const [source,target]=process.argv.slice(2);
+if(!source||!target)throw new Error('Informe fonte e destino do simulador isolado.');
+let mock=await readFile(source,'utf8');
+const extension=await readFile(new URL('./mock-extension.mjs',import.meta.url),'utf8');
+if(!mock.includes('createServer((req, res) => {'))throw new Error('Fonte diferente: revisar a extensão antes de gerar.');
+mock=mock.replace('createServer((req, res) => {',extension+'\ncreateServer(async (req, res) => {');
+mock=mock.replace('const path = url.pathname;','const path = url.pathname;\n  try { if (await previewHandle(req,res,url)) return; } catch (error) { console.error(error); send(res,500,{detail:"Falha no simulador da prévia.",field:"",errors:[]}); return; }');
+mock=mock.replace('send(res, 200, {});\n}).listen','send(res, 501, {detail: "Este cenário ainda não está coberto pelo simulador.", field: "", errors: []});\n}).listen');
+await writeFile(target,mock);

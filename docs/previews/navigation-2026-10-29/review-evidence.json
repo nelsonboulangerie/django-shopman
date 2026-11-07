@@ -1,0 +1,3039 @@
+{
+  "revision": "20261029-7b",
+  "date": "2026-10-29",
+  "scope": "prototype-geometry-not-product-certification",
+  "mobile320States": [
+    {
+      "view": "queue",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 784,
+      "page": 320,
+      "title": "Em andamento",
+      "width": 320
+    },
+    {
+      "view": "exit",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 367,
+      "page": 320,
+      "title": "Saída",
+      "width": 320
+    },
+    {
+      "view": "history",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 204,
+      "page": 320,
+      "title": "Histórico de pedidos",
+      "width": 320
+    },
+    {
+      "view": "catalog",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 379,
+      "page": 320,
+      "title": "Catálogo",
+      "width": 320
+    },
+    {
+      "view": "collections",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 270,
+      "page": 320,
+      "title": "Coleções",
+      "width": 320
+    },
+    {
+      "view": "customers",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 170,
+      "page": 320,
+      "title": "Clientes",
+      "width": 320
+    },
+    {
+      "view": "groups",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 225,
+      "page": 320,
+      "title": "Grupos de clientes",
+      "width": 320
+    },
+    {
+      "view": "merges",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 117,
+      "page": 320,
+      "title": "Unificações",
+      "width": 320
+    },
+    {
+      "view": "channels",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 225,
+      "page": 320,
+      "title": "Canais de venda",
+      "width": 320
+    },
+    {
+      "view": "channel-catalog",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 459,
+      "page": 320,
+      "title": "Catálogo por canal",
+      "width": 320
+    },
+    {
+      "view": "routines",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 388,
+      "page": 320,
+      "title": "Rotinas da loja",
+      "width": 320
+    },
+    {
+      "view": "stations",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 254,
+      "page": 320,
+      "title": "Postos de trabalho",
+      "width": 320
+    },
+    {
+      "view": "overview",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 554,
+      "page": 320,
+      "title": "Visão geral",
+      "width": 320
+    },
+    {
+      "view": "replenishment",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 440,
+      "page": 320,
+      "title": "Reposição",
+      "width": 320
+    },
+    {
+      "view": "receiving",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 605,
+      "page": 320,
+      "title": "Conferência de recebimento",
+      "width": 320
+    },
+    {
+      "view": "divergences",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 420,
+      "page": 320,
+      "title": "Divergências no recebimento",
+      "width": 320
+    },
+    {
+      "view": "materials",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 443,
+      "page": 320,
+      "title": "Insumos",
+      "width": 320
+    },
+    {
+      "view": "suppliers",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 168,
+      "page": 320,
+      "title": "Fornecedores",
+      "width": 320
+    },
+    {
+      "view": "costs",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 590,
+      "page": 320,
+      "title": "Custos de compra",
+      "width": 320
+    },
+    {
+      "view": "count",
+      "scenario": "ready",
+      "buttons": [],
+      "content": 683,
+      "page": 320,
+      "title": "Contagem de estoque",
+      "width": 320
+    },
+    {
+      "view": "queue",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Em andamento",
+      "width": 320
+    },
+    {
+      "view": "exit",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Saída",
+      "width": 320
+    },
+    {
+      "view": "history",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Histórico de pedidos",
+      "width": 320
+    },
+    {
+      "view": "catalog",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Catálogo",
+      "width": 320
+    },
+    {
+      "view": "collections",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Coleções",
+      "width": 320
+    },
+    {
+      "view": "customers",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Clientes",
+      "width": 320
+    },
+    {
+      "view": "groups",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Grupos de clientes",
+      "width": 320
+    },
+    {
+      "view": "merges",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Unificações",
+      "width": 320
+    },
+    {
+      "view": "channels",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Canais de venda",
+      "width": 320
+    },
+    {
+      "view": "channel-catalog",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Catálogo por canal",
+      "width": 320
+    },
+    {
+      "view": "routines",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Rotinas da loja",
+      "width": 320
+    },
+    {
+      "view": "stations",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Postos de trabalho",
+      "width": 320
+    },
+    {
+      "view": "overview",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Visão geral",
+      "width": 320
+    },
+    {
+      "view": "replenishment",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Reposição",
+      "width": 320
+    },
+    {
+      "view": "receiving",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Conferência de recebimento",
+      "width": 320
+    },
+    {
+      "view": "divergences",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Divergências no recebimento",
+      "width": 320
+    },
+    {
+      "view": "materials",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Insumos",
+      "width": 320
+    },
+    {
+      "view": "suppliers",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Fornecedores",
+      "width": 320
+    },
+    {
+      "view": "costs",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Custos de compra",
+      "width": 320
+    },
+    {
+      "view": "count",
+      "scenario": "loading",
+      "buttons": [],
+      "content": 57,
+      "page": 320,
+      "title": "Contagem de estoque",
+      "width": 320
+    },
+    {
+      "view": "queue",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Em andamento",
+      "width": 320
+    },
+    {
+      "view": "exit",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Saída",
+      "width": 320
+    },
+    {
+      "view": "history",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Histórico de pedidos",
+      "width": 320
+    },
+    {
+      "view": "catalog",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Catálogo",
+      "width": 320
+    },
+    {
+      "view": "collections",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Coleções",
+      "width": 320
+    },
+    {
+      "view": "customers",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Clientes",
+      "width": 320
+    },
+    {
+      "view": "groups",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Grupos de clientes",
+      "width": 320
+    },
+    {
+      "view": "merges",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Unificações",
+      "width": 320
+    },
+    {
+      "view": "channels",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Canais de venda",
+      "width": 320
+    },
+    {
+      "view": "channel-catalog",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Catálogo por canal",
+      "width": 320
+    },
+    {
+      "view": "routines",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Rotinas da loja",
+      "width": 320
+    },
+    {
+      "view": "stations",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Postos de trabalho",
+      "width": 320
+    },
+    {
+      "view": "overview",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Visão geral",
+      "width": 320
+    },
+    {
+      "view": "replenishment",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Reposição",
+      "width": 320
+    },
+    {
+      "view": "receiving",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Conferência de recebimento",
+      "width": 320
+    },
+    {
+      "view": "divergences",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Divergências no recebimento",
+      "width": 320
+    },
+    {
+      "view": "materials",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Insumos",
+      "width": 320
+    },
+    {
+      "view": "suppliers",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Fornecedores",
+      "width": 320
+    },
+    {
+      "view": "costs",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Custos de compra",
+      "width": 320
+    },
+    {
+      "view": "count",
+      "scenario": "empty",
+      "buttons": [],
+      "content": 105,
+      "page": 320,
+      "title": "Contagem de estoque",
+      "width": 320
+    },
+    {
+      "view": "queue",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Em andamento",
+      "width": 320
+    },
+    {
+      "view": "exit",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Saída",
+      "width": 320
+    },
+    {
+      "view": "history",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Histórico de pedidos",
+      "width": 320
+    },
+    {
+      "view": "catalog",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Catálogo",
+      "width": 320
+    },
+    {
+      "view": "collections",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Coleções",
+      "width": 320
+    },
+    {
+      "view": "customers",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Clientes",
+      "width": 320
+    },
+    {
+      "view": "groups",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Grupos de clientes",
+      "width": 320
+    },
+    {
+      "view": "merges",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Unificações",
+      "width": 320
+    },
+    {
+      "view": "channels",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Canais de venda",
+      "width": 320
+    },
+    {
+      "view": "channel-catalog",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Catálogo por canal",
+      "width": 320
+    },
+    {
+      "view": "routines",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Rotinas da loja",
+      "width": 320
+    },
+    {
+      "view": "stations",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Postos de trabalho",
+      "width": 320
+    },
+    {
+      "view": "overview",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Visão geral",
+      "width": 320
+    },
+    {
+      "view": "replenishment",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Reposição",
+      "width": 320
+    },
+    {
+      "view": "receiving",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Conferência de recebimento",
+      "width": 320
+    },
+    {
+      "view": "divergences",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Divergências no recebimento",
+      "width": 320
+    },
+    {
+      "view": "materials",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Insumos",
+      "width": 320
+    },
+    {
+      "view": "suppliers",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Fornecedores",
+      "width": 320
+    },
+    {
+      "view": "costs",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Custos de compra",
+      "width": 320
+    },
+    {
+      "view": "count",
+      "scenario": "error",
+      "buttons": [],
+      "content": 65,
+      "page": 320,
+      "title": "Contagem de estoque",
+      "width": 320
+    },
+    {
+      "view": "queue",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Em andamento",
+      "width": 320
+    },
+    {
+      "view": "exit",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Saída",
+      "width": 320
+    },
+    {
+      "view": "history",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Histórico de pedidos",
+      "width": 320
+    },
+    {
+      "view": "catalog",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Catálogo",
+      "width": 320
+    },
+    {
+      "view": "collections",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Coleções",
+      "width": 320
+    },
+    {
+      "view": "customers",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Clientes",
+      "width": 320
+    },
+    {
+      "view": "groups",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Grupos de clientes",
+      "width": 320
+    },
+    {
+      "view": "merges",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Unificações",
+      "width": 320
+    },
+    {
+      "view": "channels",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Canais de venda",
+      "width": 320
+    },
+    {
+      "view": "channel-catalog",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Catálogo por canal",
+      "width": 320
+    },
+    {
+      "view": "routines",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Rotinas da loja",
+      "width": 320
+    },
+    {
+      "view": "stations",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Postos de trabalho",
+      "width": 320
+    },
+    {
+      "view": "overview",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Visão geral",
+      "width": 320
+    },
+    {
+      "view": "replenishment",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Reposição",
+      "width": 320
+    },
+    {
+      "view": "receiving",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Conferência de recebimento",
+      "width": 320
+    },
+    {
+      "view": "divergences",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Divergências no recebimento",
+      "width": 320
+    },
+    {
+      "view": "materials",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Insumos",
+      "width": 320
+    },
+    {
+      "view": "suppliers",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Fornecedores",
+      "width": 320
+    },
+    {
+      "view": "costs",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Custos de compra",
+      "width": 320
+    },
+    {
+      "view": "count",
+      "scenario": "forbidden",
+      "buttons": [],
+      "content": 86,
+      "page": 320,
+      "title": "Contagem de estoque",
+      "width": 320
+    },
+    {
+      "view": "queue",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 881,
+      "page": 320,
+      "title": "Em andamento",
+      "width": 320
+    },
+    {
+      "view": "exit",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 464,
+      "page": 320,
+      "title": "Saída",
+      "width": 320
+    },
+    {
+      "view": "history",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 301,
+      "page": 320,
+      "title": "Histórico de pedidos",
+      "width": 320
+    },
+    {
+      "view": "catalog",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 476,
+      "page": 320,
+      "title": "Catálogo",
+      "width": 320
+    },
+    {
+      "view": "collections",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 367,
+      "page": 320,
+      "title": "Coleções",
+      "width": 320
+    },
+    {
+      "view": "customers",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 267,
+      "page": 320,
+      "title": "Clientes",
+      "width": 320
+    },
+    {
+      "view": "groups",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 322,
+      "page": 320,
+      "title": "Grupos de clientes",
+      "width": 320
+    },
+    {
+      "view": "merges",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 214,
+      "page": 320,
+      "title": "Unificações",
+      "width": 320
+    },
+    {
+      "view": "channels",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 322,
+      "page": 320,
+      "title": "Canais de venda",
+      "width": 320
+    },
+    {
+      "view": "channel-catalog",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 556,
+      "page": 320,
+      "title": "Catálogo por canal",
+      "width": 320
+    },
+    {
+      "view": "routines",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 485,
+      "page": 320,
+      "title": "Rotinas da loja",
+      "width": 320
+    },
+    {
+      "view": "stations",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 351,
+      "page": 320,
+      "title": "Postos de trabalho",
+      "width": 320
+    },
+    {
+      "view": "overview",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 651,
+      "page": 320,
+      "title": "Visão geral",
+      "width": 320
+    },
+    {
+      "view": "replenishment",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 537,
+      "page": 320,
+      "title": "Reposição",
+      "width": 320
+    },
+    {
+      "view": "receiving",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 702,
+      "page": 320,
+      "title": "Conferência de recebimento",
+      "width": 320
+    },
+    {
+      "view": "divergences",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 517,
+      "page": 320,
+      "title": "Divergências no recebimento",
+      "width": 320
+    },
+    {
+      "view": "materials",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 540,
+      "page": 320,
+      "title": "Insumos",
+      "width": 320
+    },
+    {
+      "view": "suppliers",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 265,
+      "page": 320,
+      "title": "Fornecedores",
+      "width": 320
+    },
+    {
+      "view": "costs",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 687,
+      "page": 320,
+      "title": "Custos de compra",
+      "width": 320
+    },
+    {
+      "view": "count",
+      "scenario": "offline",
+      "buttons": [],
+      "content": 781,
+      "page": 320,
+      "title": "Contagem de estoque",
+      "width": 320
+    },
+    {
+      "view": "queue",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 877,
+      "page": 320,
+      "title": "Em andamento",
+      "width": 320
+    },
+    {
+      "view": "exit",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 460,
+      "page": 320,
+      "title": "Saída",
+      "width": 320
+    },
+    {
+      "view": "history",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 297,
+      "page": 320,
+      "title": "Histórico de pedidos",
+      "width": 320
+    },
+    {
+      "view": "catalog",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 472,
+      "page": 320,
+      "title": "Catálogo",
+      "width": 320
+    },
+    {
+      "view": "collections",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 363,
+      "page": 320,
+      "title": "Coleções",
+      "width": 320
+    },
+    {
+      "view": "customers",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 263,
+      "page": 320,
+      "title": "Clientes",
+      "width": 320
+    },
+    {
+      "view": "groups",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 318,
+      "page": 320,
+      "title": "Grupos de clientes",
+      "width": 320
+    },
+    {
+      "view": "merges",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 210,
+      "page": 320,
+      "title": "Unificações",
+      "width": 320
+    },
+    {
+      "view": "channels",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 318,
+      "page": 320,
+      "title": "Canais de venda",
+      "width": 320
+    },
+    {
+      "view": "channel-catalog",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 552,
+      "page": 320,
+      "title": "Catálogo por canal",
+      "width": 320
+    },
+    {
+      "view": "routines",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 481,
+      "page": 320,
+      "title": "Rotinas da loja",
+      "width": 320
+    },
+    {
+      "view": "stations",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 347,
+      "page": 320,
+      "title": "Postos de trabalho",
+      "width": 320
+    },
+    {
+      "view": "overview",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 647,
+      "page": 320,
+      "title": "Visão geral",
+      "width": 320
+    },
+    {
+      "view": "replenishment",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 533,
+      "page": 320,
+      "title": "Reposição",
+      "width": 320
+    },
+    {
+      "view": "receiving",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 698,
+      "page": 320,
+      "title": "Conferência de recebimento",
+      "width": 320
+    },
+    {
+      "view": "divergences",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 513,
+      "page": 320,
+      "title": "Divergências no recebimento",
+      "width": 320
+    },
+    {
+      "view": "materials",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 536,
+      "page": 320,
+      "title": "Insumos",
+      "width": 320
+    },
+    {
+      "view": "suppliers",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 261,
+      "page": 320,
+      "title": "Fornecedores",
+      "width": 320
+    },
+    {
+      "view": "costs",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 683,
+      "page": 320,
+      "title": "Custos de compra",
+      "width": 320
+    },
+    {
+      "view": "count",
+      "scenario": "conflict",
+      "buttons": [],
+      "content": 777,
+      "page": 320,
+      "title": "Contagem de estoque",
+      "width": 320
+    }
+  ],
+  "mobile320FlowSections": [
+    {
+      "flow": "order-actions",
+      "section": "0",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "order-actions",
+      "section": "1",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "order-actions",
+      "section": "2",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "order-reject",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "order-advance",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "order-undo",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "dispatch",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "courier-return",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "order-pickup",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "order-payment",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "payment-link",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "fiscal-retry",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "order-refund",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "kitchen-note",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "ombudsman",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "product-editor",
+      "section": "0",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "product-editor",
+      "section": "1",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "product-editor",
+      "section": "2",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "product-editor",
+      "section": "3",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "product-editor",
+      "section": "4",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "product-editor",
+      "section": "5",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "product-history",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "permit-purchase",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "catalog-bulk",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "collection-edit",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "customer-editor",
+      "section": "0",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "customer-editor",
+      "section": "1",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "customer-editor",
+      "section": "2",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "customer-editor",
+      "section": "3",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "customer-editor",
+      "section": "4",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "customer-detail",
+      "section": "0",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "customer-detail",
+      "section": "1",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "customer-detail",
+      "section": "2",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "customer-detail",
+      "section": "3",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "customer-detail",
+      "section": "4",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "customer-address",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "customer-tags",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "group-edit",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "group-members",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "group-duplicate",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "merge-customers",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "merge-undo",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "channel-detail",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "channel-switch",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "channel-sync",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "channel-categories",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "routine-evidence",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "routine-double",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "station-edit",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "station-disable",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "purchase-send",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "purchase-cancel",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "receipt-start",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "receipt-key",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "receipt-photo",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "receipt-manual",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "receipt-exception",
+      "section": "0",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "receipt-exception",
+      "section": "1",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "receipt-exception",
+      "section": "2",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "receipt-return",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "receipt-remark",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "receipt-voucher",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "material-editor",
+      "section": "0",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "material-editor",
+      "section": "1",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "material-editor",
+      "section": "2",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "material-editor",
+      "section": "3",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "material-minimum",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "material-duplicate",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "material-opening",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "permit-resale",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "supplier-editor",
+      "section": "0",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "supplier-editor",
+      "section": "1",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "supplier-editor",
+      "section": "2",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "supplier-duplicate",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "cost-quote",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "csv-import",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "csv-export",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    },
+    {
+      "flow": "count-review",
+      "section": "default",
+      "bodyOverflow": false,
+      "footerOverflow": false,
+      "open": true,
+      "pageOverflow": false,
+      "width": 320
+    }
+  ],
+  "mobile390": [
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Em andamento",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=exit&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Saída",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=history&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Histórico de pedidos",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=catalog&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Catálogo",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=collections&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Coleções",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=customers&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Clientes",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=groups&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Grupos de clientes",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=merges&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Unificações",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=channels&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Canais de venda",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=channel-catalog&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Catálogo por canal",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=routines&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Rotinas da loja",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=stations&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Postos de trabalho",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=overview&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Visão geral",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=replenishment&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Reposição",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=receiving&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Conferência de recebimento",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=divergences&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Divergências no recebimento",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Insumos",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=suppliers&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Fornecedores",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=costs&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Custos de compra",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=count&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Contagem de estoque",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1&flow=order-actions",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Ações do pedido",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1&flow=order-reject",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Recusar pedido",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1&flow=order-advance",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Aceitar pedido",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1&flow=order-undo",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Desfazer o avanço",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=exit&layout=adaptive&clean=1&flow=dispatch",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Saída para entrega",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=exit&layout=adaptive&clean=1&flow=courier-return",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Retorno do entregador",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=exit&layout=adaptive&clean=1&flow=order-pickup",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Registrar retirada",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=history&layout=adaptive&clean=1&flow=order-payment",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Pagamento e estorno",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=history&layout=adaptive&clean=1&flow=payment-link",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Reenviar link de pagamento",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=history&layout=adaptive&clean=1&flow=fiscal-retry",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Reprocessar NFC-e",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=history&layout=adaptive&clean=1&flow=order-refund",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Solicitar estorno",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1&flow=kitchen-note",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Nota para a cozinha",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1&flow=ombudsman",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Ouvidoria resolvida",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=catalog&layout=adaptive&clean=1&flow=product-editor",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Editar produto",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=catalog&layout=adaptive&clean=1&flow=product-history",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Histórico do produto",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=catalog&layout=adaptive&clean=1&flow=permit-purchase",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Permitir compra",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=catalog&layout=adaptive&clean=1&flow=catalog-bulk",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Tabelão de preços",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=collections&layout=adaptive&clean=1&flow=collection-edit",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Editar coleção",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=customers&layout=adaptive&clean=1&flow=customer-editor",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Editar cliente",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=customers&layout=adaptive&clean=1&flow=customer-detail",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Ana Lima",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=customers&layout=adaptive&clean=1&flow=customer-address",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Endereço do cliente",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=customers&layout=adaptive&clean=1&flow=customer-tags",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Etiquetas dos clientes",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=groups&layout=adaptive&clean=1&flow=group-edit",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Grupo comercial",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=groups&layout=adaptive&clean=1&flow=group-members",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Clientes do grupo",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=groups&layout=adaptive&clean=1&flow=group-duplicate",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Duplicar grupo",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=customers&layout=adaptive&clean=1&flow=merge-customers",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Unificar cadastros",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=merges&layout=adaptive&clean=1&flow=merge-undo",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Desfazer a unificação?",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=channels&layout=adaptive&clean=1&flow=channel-detail",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Operação do canal",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=channels&layout=adaptive&clean=1&flow=channel-switch",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Pausar o canal",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=channel-catalog&layout=adaptive&clean=1&flow=channel-sync",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Atualizar catálogo no canal",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=channel-catalog&layout=adaptive&clean=1&flow=channel-categories",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Categorias do iFood",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=routines&layout=adaptive&clean=1&flow=routine-evidence",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Concluir tarefa da rotina",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=routines&layout=adaptive&clean=1&flow=routine-double",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Fazer dupla conferência",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=stations&layout=adaptive&clean=1&flow=station-edit",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Configurar posto",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=stations&layout=adaptive&clean=1&flow=station-disable",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Desativar posto?",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=replenishment&layout=adaptive&clean=1&flow=purchase-send",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Pedido de compra",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=replenishment&layout=adaptive&clean=1&flow=purchase-cancel",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Cancelar pedido de compra?",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=receiving&layout=adaptive&clean=1&flow=receipt-start",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Começar recebimento",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=receiving&layout=adaptive&clean=1&flow=receipt-key",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Digitar chave da NF",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=receiving&layout=adaptive&clean=1&flow=receipt-photo",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Leitura da NF",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=receiving&layout=adaptive&clean=1&flow=receipt-manual",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Entrada sem NF",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=divergences&layout=adaptive&clean=1&flow=receipt-exception",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Conferir item da entrada",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=divergences&layout=adaptive&clean=1&flow=receipt-return",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Registrar devolução",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=divergences&layout=adaptive&clean=1&flow=receipt-remark",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Ressalva geral",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=receiving&layout=adaptive&clean=1&flow=receipt-voucher",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Comprovante da entrada",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=material-editor",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Cadastro do insumo",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=material-minimum",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Mínimos de estoque",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=material-duplicate",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Duplicar insumo",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=material-opening",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Embalagem e insumo aberto",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=permit-resale",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Permitir revenda",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=suppliers&layout=adaptive&clean=1&flow=supplier-editor",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Cadastro do fornecedor",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=suppliers&layout=adaptive&clean=1&flow=supplier-duplicate",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Duplicar fornecedor",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=costs&layout=adaptive&clean=1&flow=cost-quote",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Lançar custo",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=csv-import",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Importar CSV",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=csv-export",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Exportar dados do recorte",
+      "width": 390
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=count&layout=adaptive&clean=1&flow=count-review",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Lançar a contagem no estoque?",
+      "width": 390
+    }
+  ],
+  "desktop1440": [
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Em andamento",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=exit&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Saída",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=history&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Histórico de pedidos",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=catalog&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Catálogo",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=collections&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Coleções",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=customers&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Clientes",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=groups&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Grupos de clientes",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=merges&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Unificações",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=channels&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Canais de venda",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=channel-catalog&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Catálogo por canal",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=routines&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Rotinas da loja",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=stations&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Postos de trabalho",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=overview&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Visão geral",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=replenishment&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Reposição",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=receiving&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Conferência de recebimento",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=divergences&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Divergências no recebimento",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Insumos",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=suppliers&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Fornecedores",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=costs&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Custos de compra",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=count&layout=adaptive&clean=1",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Contagem de estoque",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1&flow=order-actions",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Ações do pedido",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1&flow=order-reject",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Recusar pedido",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1&flow=order-advance",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Aceitar pedido",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1&flow=order-undo",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Desfazer o avanço",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=exit&layout=adaptive&clean=1&flow=dispatch",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Saída para entrega",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=exit&layout=adaptive&clean=1&flow=courier-return",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Retorno do entregador",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=exit&layout=adaptive&clean=1&flow=order-pickup",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Registrar retirada",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=history&layout=adaptive&clean=1&flow=order-payment",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Pagamento e estorno",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=history&layout=adaptive&clean=1&flow=payment-link",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Reenviar link de pagamento",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=history&layout=adaptive&clean=1&flow=fiscal-retry",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Reprocessar NFC-e",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=history&layout=adaptive&clean=1&flow=order-refund",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Solicitar estorno",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1&flow=kitchen-note",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Nota para a cozinha",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=queue&layout=adaptive&clean=1&flow=ombudsman",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Ouvidoria resolvida",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=catalog&layout=adaptive&clean=1&flow=product-editor",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Editar produto",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=catalog&layout=adaptive&clean=1&flow=product-history",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Histórico do produto",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=catalog&layout=adaptive&clean=1&flow=permit-purchase",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Permitir compra",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=catalog&layout=adaptive&clean=1&flow=catalog-bulk",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Tabelão de preços",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=collections&layout=adaptive&clean=1&flow=collection-edit",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Editar coleção",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=customers&layout=adaptive&clean=1&flow=customer-editor",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Editar cliente",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=customers&layout=adaptive&clean=1&flow=customer-detail",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Ana Lima",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=customers&layout=adaptive&clean=1&flow=customer-address",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Endereço do cliente",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=customers&layout=adaptive&clean=1&flow=customer-tags",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Etiquetas dos clientes",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=groups&layout=adaptive&clean=1&flow=group-edit",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Grupo comercial",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=groups&layout=adaptive&clean=1&flow=group-members",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Clientes do grupo",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=groups&layout=adaptive&clean=1&flow=group-duplicate",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Duplicar grupo",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=customers&layout=adaptive&clean=1&flow=merge-customers",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Unificar cadastros",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=merges&layout=adaptive&clean=1&flow=merge-undo",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Desfazer a unificação?",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=channels&layout=adaptive&clean=1&flow=channel-detail",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Operação do canal",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=channels&layout=adaptive&clean=1&flow=channel-switch",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Pausar o canal",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=channel-catalog&layout=adaptive&clean=1&flow=channel-sync",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Atualizar catálogo no canal",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=channel-catalog&layout=adaptive&clean=1&flow=channel-categories",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Categorias do iFood",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=routines&layout=adaptive&clean=1&flow=routine-evidence",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Concluir tarefa da rotina",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=routines&layout=adaptive&clean=1&flow=routine-double",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Fazer dupla conferência",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=stations&layout=adaptive&clean=1&flow=station-edit",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Configurar posto",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=gestor&view=stations&layout=adaptive&clean=1&flow=station-disable",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Desativar posto?",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=replenishment&layout=adaptive&clean=1&flow=purchase-send",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Pedido de compra",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=replenishment&layout=adaptive&clean=1&flow=purchase-cancel",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Cancelar pedido de compra?",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=receiving&layout=adaptive&clean=1&flow=receipt-start",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Começar recebimento",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=receiving&layout=adaptive&clean=1&flow=receipt-key",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Digitar chave da NF",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=receiving&layout=adaptive&clean=1&flow=receipt-photo",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Leitura da NF",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=receiving&layout=adaptive&clean=1&flow=receipt-manual",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Entrada sem NF",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=divergences&layout=adaptive&clean=1&flow=receipt-exception",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Conferir item da entrada",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=divergences&layout=adaptive&clean=1&flow=receipt-return",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Registrar devolução",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=divergences&layout=adaptive&clean=1&flow=receipt-remark",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Ressalva geral",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=receiving&layout=adaptive&clean=1&flow=receipt-voucher",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Comprovante da entrada",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=material-editor",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Cadastro do insumo",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=material-minimum",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Mínimos de estoque",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=material-duplicate",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Duplicar insumo",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=material-opening",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Embalagem e insumo aberto",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=permit-resale",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Permitir revenda",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=suppliers&layout=adaptive&clean=1&flow=supplier-editor",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Cadastro do fornecedor",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=suppliers&layout=adaptive&clean=1&flow=supplier-duplicate",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Duplicar fornecedor",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=costs&layout=adaptive&clean=1&flow=cost-quote",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Lançar custo",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=csv-import",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Importar CSV",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=materials&layout=adaptive&clean=1&flow=csv-export",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Exportar dados do recorte",
+      "width": 1440
+    },
+    {
+      "url": "http://127.0.0.1:4186/?app=compras&view=count&layout=adaptive&clean=1&flow=count-review",
+      "bodyOverflow": false,
+      "pageOverflow": false,
+      "title": "Lançar a contagem no estoque?",
+      "width": 1440
+    }
+  ]
+}

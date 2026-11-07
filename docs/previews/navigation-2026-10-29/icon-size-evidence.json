@@ -1,0 +1,42 @@
+[
+  {
+    "buttons": [
+      {
+        "height": 44,
+        "label": "Abrir navegação",
+        "width": 44
+      },
+      {
+        "height": 44,
+        "label": "Gestor: voltar à Central de apps",
+        "width": 44
+      },
+      {
+        "height": 44,
+        "label": "Buscar destino na suíte",
+        "width": 44
+      }
+    ],
+    "width": 390
+  },
+  {
+    "buttons": [
+      {
+        "height": 32,
+        "label": "Compactar barra principal",
+        "width": 32
+      },
+      {
+        "height": 32,
+        "label": "Compras: voltar à Central de apps",
+        "width": 32
+      },
+      {
+        "height": 32,
+        "label": "Buscar destino na suíte",
+        "width": 32
+      }
+    ],
+    "width": 1440
+  }
+]

@@ -1,0 +1,323 @@
+{
+  "mobile390": [
+    {
+      "headingOverflow": false,
+      "tabs": [
+        {
+          "content": 156,
+          "overflowMode": "auto",
+          "width": 156
+        }
+      ],
+      "toolbarOverflow": false,
+      "url": "?app=gestor&view=queue&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [
+        {
+          "content": 156,
+          "overflowMode": "auto",
+          "width": 156
+        }
+      ],
+      "toolbarOverflow": false,
+      "url": "?app=gestor&view=exit&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [],
+      "toolbarOverflow": false,
+      "url": "?app=gestor&view=history&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [
+        {
+          "content": 169,
+          "overflowMode": "auto",
+          "width": 169
+        }
+      ],
+      "toolbarOverflow": false,
+      "url": "?app=gestor&view=catalog&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [],
+      "toolbarOverflow": false,
+      "url": "?app=gestor&view=collections&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [],
+      "toolbarOverflow": false,
+      "url": "?app=gestor&view=customers&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [],
+      "toolbarOverflow": false,
+      "url": "?app=gestor&view=groups&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [],
+      "toolbarOverflow": false,
+      "url": "?app=gestor&view=merges&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [],
+      "toolbarOverflow": false,
+      "url": "?app=gestor&view=channels&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [
+        {
+          "content": 169,
+          "overflowMode": "auto",
+          "width": 169
+        }
+      ],
+      "toolbarOverflow": false,
+      "url": "?app=gestor&view=channel-catalog&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [],
+      "toolbarOverflow": false,
+      "url": "?app=gestor&view=routines&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [],
+      "toolbarOverflow": false,
+      "url": "?app=gestor&view=stations&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [],
+      "toolbarOverflow": false,
+      "url": "?app=compras&view=overview&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [
+        {
+          "content": 176,
+          "overflowMode": "auto",
+          "width": 176
+        }
+      ],
+      "toolbarOverflow": false,
+      "url": "?app=compras&view=replenishment&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [
+        {
+          "content": 232,
+          "overflowMode": "auto",
+          "width": 232
+        }
+      ],
+      "toolbarOverflow": false,
+      "url": "?app=compras&view=receiving&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [
+        {
+          "content": 232,
+          "overflowMode": "auto",
+          "width": 232
+        }
+      ],
+      "toolbarOverflow": false,
+      "url": "?app=compras&view=divergences&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [
+        {
+          "content": 220,
+          "overflowMode": "auto",
+          "width": 220
+        }
+      ],
+      "toolbarOverflow": false,
+      "url": "?app=compras&view=materials&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [],
+      "toolbarOverflow": false,
+      "url": "?app=compras&view=suppliers&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [],
+      "toolbarOverflow": false,
+      "url": "?app=compras&view=costs&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "headingOverflow": false,
+      "tabs": [],
+      "toolbarOverflow": false,
+      "url": "?app=compras&view=count&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    }
+  ],
+  "desktop1024": [
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=gestor&view=queue&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=gestor&view=exit&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=gestor&view=history&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=gestor&view=catalog&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=gestor&view=collections&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=gestor&view=customers&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=gestor&view=groups&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=gestor&view=merges&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=gestor&view=channels&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=gestor&view=channel-catalog&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=gestor&view=routines&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=gestor&view=stations&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=compras&view=overview&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=compras&view=replenishment&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=compras&view=receiving&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=compras&view=divergences&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=compras&view=materials&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=compras&view=suppliers&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=compras&view=costs&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    },
+    {
+      "headingOverflow": false,
+      "toolsOverflow": false,
+      "url": "?app=compras&view=count&layout=adaptive&clean=1&revision=7b",
+      "width": 1024
+    }
+  ],
+  "functional": [
+    "Menu do catálogo só contém tabelão de preços",
+    "Cadastro novo não apresenta histórico ou permitir compra",
+    "Busca Geleia restaurada após navegar Clientes e Produtos",
+    "Erro no preço preserva nome e muda seção para campo inválido",
+    "Cancelar rascunho abre confirmação de descarte",
+    "Decisão de recebimento legível em rádios a 320px"
+  ],
+  "mobileDockHeight": 64.1875
+}

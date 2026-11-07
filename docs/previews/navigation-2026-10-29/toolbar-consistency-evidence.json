@@ -1,0 +1,345 @@
+{
+  "scope": "Somente prévias",
+  "mobile390": [
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [
+        {
+          "border": "1px",
+          "overflow": false,
+          "radius": "10px"
+        }
+      ],
+      "url": "?app=gestor&view=queue&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [
+        {
+          "border": "1px",
+          "overflow": false,
+          "radius": "10px"
+        }
+      ],
+      "url": "?app=gestor&view=exit&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [
+        {
+          "border": "1px",
+          "overflow": false,
+          "radius": "10px"
+        }
+      ],
+      "url": "?app=gestor&view=history&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [
+        {
+          "border": "1px",
+          "overflow": false,
+          "radius": "10px"
+        }
+      ],
+      "url": "?app=gestor&view=catalog&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [],
+      "url": "?app=gestor&view=collections&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [
+        {
+          "border": "1px",
+          "overflow": false,
+          "radius": "10px"
+        }
+      ],
+      "url": "?app=gestor&view=customers&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [],
+      "url": "?app=gestor&view=groups&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [
+        {
+          "border": "1px",
+          "overflow": false,
+          "radius": "10px"
+        }
+      ],
+      "url": "?app=gestor&view=merges&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [],
+      "url": "?app=gestor&view=channels&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [
+        {
+          "border": "1px",
+          "overflow": false,
+          "radius": "10px"
+        }
+      ],
+      "url": "?app=gestor&view=channel-catalog&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [],
+      "url": "?app=gestor&view=routines&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [],
+      "url": "?app=gestor&view=stations&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [],
+      "url": "?app=compras&view=overview&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [
+        {
+          "border": "1px",
+          "overflow": false,
+          "radius": "10px"
+        }
+      ],
+      "url": "?app=compras&view=replenishment&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [
+        {
+          "border": "1px",
+          "overflow": false,
+          "radius": "10px"
+        }
+      ],
+      "url": "?app=compras&view=receiving&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [
+        {
+          "border": "1px",
+          "overflow": false,
+          "radius": "10px"
+        }
+      ],
+      "url": "?app=compras&view=divergences&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [
+        {
+          "border": "1px",
+          "overflow": false,
+          "radius": "10px"
+        }
+      ],
+      "url": "?app=compras&view=materials&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [
+        {
+          "border": "1px",
+          "overflow": false,
+          "radius": "10px"
+        }
+      ],
+      "url": "?app=compras&view=suppliers&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [
+        {
+          "border": "1px",
+          "overflow": false,
+          "radius": "10px"
+        }
+      ],
+      "url": "?app=compras&view=costs&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    },
+    {
+      "fixed": false,
+      "headingOverflow": false,
+      "optionsAtEnd": true,
+      "tools": [],
+      "url": "?app=compras&view=count&layout=adaptive&clean=1&revision=7b",
+      "width": 390
+    }
+  ],
+  "mobile320": [
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "queue"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "exit"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "history"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "catalog"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "collections"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "customers"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "groups"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "merges"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "channels"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "channel-catalog"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "routines"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "stations"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "overview"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "replenishment"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "receiving"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "divergences"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "materials"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "suppliers"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "costs"
+    },
+    {
+      "overflow": false,
+      "toolbarOverflow": false,
+      "view": "count"
+    }
+  ]
+}

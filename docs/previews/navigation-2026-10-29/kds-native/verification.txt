@@ -1,0 +1,10 @@
+PASS cards originais: observações, alergia e estados preservados
+PASS iniciar, pronto, histórico, reabrir e contagens
+PASS reabrir é recusado quando a régua não permite
+PASS Visto global não apaga mudanças individuais
+PASS cancelamento exige ciência e fica no histórico
+PASS tamanho e som persistem por estação
+PASS volumes: gravação, revisão desatualizada e valor inválido
+PASS falha é recuperável; restauração retorna ao estado inicial
+PASS separação tem exemplo e estação vazia continua vazia
+9 cenários passaram.

@@ -172,3 +172,6 @@
 - [`suite-ux-v2/orders/inventario-funcional.md`](suite-ux-v2/orders/inventario-funcional.md)
 - [`suite-ux-v2/orders/laudo-orders-board.md`](suite-ux-v2/orders/laudo-orders-board.md)
 
+
+- [Revisão de produto e UX dos apps Nuxt do Shopman](SHOPMAN-UX-PRODUCT-REVIEW-2026-10-29.md)
+- [Inventário de páginas Nuxt para a revisão de UX](SHOPMAN-UX-ROUTE-INVENTORY-2026-10-29.md)

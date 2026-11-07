@@ -1,0 +1,545 @@
+/* Prévia de interação isolada. Somente dados fictícios e estado em memória. */
+'use strict';
+const $ = (s, root = document) => root.querySelector(s);
+const $$ = (s, root = document) => [...root.querySelectorAll(s)];
+const esc = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = q => (q / 100).toLocaleString('pt-BR', {style:'currency',currency:'BRL'});
+const number = n => Number(n).toLocaleString('pt-BR');
+const paths = {
+  dots:'<circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>',
+  list:'<path d="M8 5h13M8 12h13M8 19h13M3 5h1M3 12h1M3 19h1"/>',
+  grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  orders:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2h6v2M9 9h6M9 13h6M9 17h4"/>',
+  box:'<path d="m3 7 9-5 9 5v10l-9 5-9-5V7ZM3 7l9 5 9-5M12 12v10M7.5 4.5l9 5"/>',
+  users:'<circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 4a3 3 0 0 1 0 6M17 14a5 5 0 0 1 4 5v2"/>',
+  channels:'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 21h8M12 16v5M7 9h2M11 9h6M7 12h10"/>',
+  settings:'<path d="M4 7h16M4 17h16"/><circle cx="8" cy="7" r="3" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="3" fill="currentColor" stroke="none"/>',
+  cart:'<path d="M2 3h3l3 12h11l3-9H6M8 15l-1 3h13"/><circle cx="9" cy="21" r="1"/><circle cx="18" cy="21" r="1"/>',
+  truck:'<path d="M2 5h12v12H2zM14 9h4l4 4v4h-8"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/>',
+  arrow:'<path d="m9 5 7 7-7 7"/>',
+  left:'<path d="m14 5-7 7 7 7"/>',
+  down:'<path d="m6 9 6 6 6-6"/>',
+  panel:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18m5-13-3 4 3 4"/>',
+  menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+  search:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+  bell:'<path d="M5 17h14l-2-4V9a5 5 0 0 0-10 0v4l-2 4ZM10 21h4"/>',
+  plus:'<path d="M12 4v16M4 12h16"/>',
+  check:'<path d="m5 12 4 4L20 5"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
+  bread:'<path d="M6 20C0 19 5 9 11 5s12-3 10 3S12 21 6 20Z"/><path d="m9 8 4 3m0-6 4 3m-12 4 4 3"/>',
+  leaf:'<path d="M4 20C2 8 9 3 21 3c0 13-6 18-14 14M4 20l11-11"/>',
+  warning:'<path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5M12 17v.1"/>',
+  file:'<path d="M5 2h10l5 5v15H5V2ZM15 2v6h5M9 12h7M9 16h7"/>',
+  coins:'<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 4 16 4 16 0V6M4 12v6c0 4 16 4 16 0v-6"/>',
+  scale:'<path d="M12 3v18M5 21h14M3 7h18M5 7l-4 8h8L5 7ZM19 7l-4 8h8l-4-8Z"/>',
+  close:'<path d="m6 6 12 12M6 18 18 6"/>',
+  history:'<path d="M3 11a9 9 0 1 1 3 8M3 4v7h7M12 7v5l3 2"/>',
+  tag:'<path d="M3 3h9l10 10-9 9L3 12V3Z"/><circle cx="8" cy="8" r="1"/>',
+  lock:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/>',
+  compare:'<rect x="2" y="4" width="8" height="16" rx="1.5"/><rect x="14" y="4" width="8" height="16" rx="1.5"/>',
+  link:'<path d="m9 15 6-6M8 16l-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0M16 8l2-2a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0" transform="translate(1 0) scale(.9)"/>',
+};
+const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.file}</svg>`;
+const appMark=app=>`<img class="app-mark" src="assets/${app}-icon.png" alt="" width="40" height="40">`;
+const tag = (label, tone = '', dot = false) => `<span class="tag ${tone} ${dot?'dot':''}">${esc(label)}</span>`;
+const button = (label, action, symbol = '', kind = '') => `<button type="button" class="button ${kind}" data-action="${esc(action)}">${symbol?icon(symbol):''}${esc(label)}</button>`;
+const navLink = (label, view, symbol = '', count = '', extra = '') => `<a class="navitem ${state.view===view?'active':''} ${extra}" href="${href({view,compare:false})}" data-view="${view}" aria-label="${esc(label)}" title="${esc(label)}" ${state.view===view?'aria-current="page"':''}>${symbol?icon(symbol):''}<span class="navlabel">${esc(label)}</span>${count?`<span class="navcount">${count}</span>`:''}</a>`;
+
+const applications = {
+  gestor:{label:'Gestor',symbol:'orders',home:'queue',groups:[
+    {id:'orders',label:'Pedidos',symbol:'orders',count:8,description:'Da entrada até a entrega.',children:[['queue','Em andamento','orders','8'],['exit','Saída','truck','3'],['history','Histórico','history']]},
+    {id:'products',label:'Produtos',symbol:'box',description:'O que a casa vende e como apresenta.',children:[['catalog','Catálogo','box'],['collections','Coleções','grid']]},
+    {id:'customers',label:'Clientes',symbol:'users',description:'Cadastro e relações comerciais.',children:[['customers','Cadastro','users'],['groups','Grupos','tag'],['merges','Unificações','users','1']]},
+    {id:'channels',label:'Canais',symbol:'channels',description:'Por onde vendemos e o que aparece.',children:[['channels','Canais de venda','channels'],['channel-catalog','Catálogo por canal','grid']]},
+    {id:'operation',label:'Operação',symbol:'settings',description:'Rotinas da casa e postos de trabalho.',children:[['routines','Rotinas','check'],['stations','Postos','grid']]},
+  ]},
+  compras:{label:'Compras',symbol:'cart',home:'overview',groups:[
+    {id:'overview',label:'Visão geral',symbol:'grid',description:'O que precisa de atenção hoje.',children:[['overview','Visão geral','grid']]},
+    {id:'purchasing',label:'Compras',symbol:'cart',description:'Repor, escolher fornecedor e conferir custo.',children:[['replenishment','Reposição','cart','2'],['suppliers','Fornecedores','truck'],['costs','Custos de compra','coins']]},
+    {id:'receipts',label:'Recebimentos',symbol:'truck',count:1,description:'Conferir o que chegou antes de dar entrada.',children:[['receiving','Conferência','file'],['divergences','Divergências','warning','1']]},
+    {id:'stock',label:'Estoque',symbol:'box',description:'Conhecer os insumos e conferir o saldo físico.',children:[['materials','Insumos','box'],['count','Contagem','check']]},
+  ]},
+};
+const viewInfo = {
+  queue:['Em andamento','Acompanhe a entrada, o preparo e a saída dos pedidos.'],
+  exit:['Saída','Pedidos prontos para retirar ou despachar.'],
+  history:['Histórico de pedidos','Consulte pedidos concluídos e seus acontecimentos.'],
+  catalog:['Catálogo','Produtos, preços e organização da vitrine.'],
+  collections:['Coleções','Organize como os produtos são apresentados ao cliente.'],
+  customers:['Clientes','Um cadastro por pessoa, com seu histórico e grupo.'],
+  groups:['Grupos de clientes','As condições comerciais de cada grupo.'],
+  merges:['Unificações','Revise possíveis cadastros da mesma pessoa.'],
+  channels:['Canais de venda','Acompanhe a operação de cada porta de entrada.'],
+  'channel-catalog':['Catálogo por canal','Confira onde cada produto pode ser vendido.'],
+  routines:['Rotinas da loja','O que precisa ser feito, por quem e até quando.'],
+  stations:['Postos de trabalho','Onde os dispositivos ficam e qual trabalho atendem.'],
+  overview:['Visão geral','As prioridades de hoje, da reposição ao recebimento.'],
+  replenishment:['Reposição','O que comprar para sustentar os próximos dias.'],
+  suppliers:['Fornecedores','Contatos e insumos oferecidos por cada fornecedor.'],
+  costs:['Custos de compra','Compare custos na unidade de estoque do insumo.'],
+  receiving:['Conferência de recebimento','Confira os itens e resolva as diferenças antes da entrada.'],
+  divergences:['Divergências no recebimento','As diferenças que precisam de uma decisão na conferência.'],
+  materials:['Insumos','Cadastro, unidade e saldo de cada insumo.'],
+  count:['Contagem de estoque','Registre a quantidade encontrada sem consultar o saldo esperado.'],
+};
+const products = [
+  {id:'BGT',name:'Baguette de Tradition',collection:'Pães de fermentação natural',price:1800,stock:24,tone:'green',status:'À venda',icon:'bread'},
+  {id:'CRO',name:'Croissant',collection:'Viennoiseries',price:1300,stock:8,tone:'green',status:'À venda',icon:'bread'},
+  {id:'PAC',name:'Pain au Chocolat',collection:'Viennoiseries',price:1550,stock:0,tone:'amber',status:'Esgotado',icon:'bread'},
+  {id:'CAF',name:'Cappuccino',collection:'Cafés e bebidas',price:1200,stock:null,tone:'green',status:'À venda',icon:'coins'},
+  {id:'GEL',name:'Geleia de frutas vermelhas',collection:'Mercearia',price:3200,stock:12,tone:'green',status:'À venda',icon:'leaf'},
+  {id:'PNI',name:'Pão integral',collection:'Pães de fermentação natural',price:2600,stock:6,tone:'',status:'Pausado',icon:'bread'},
+];
+products.push({id:'FEN',name:'Fendu',collection:'Pães de fermentação natural',price:600,stock:18,tone:'green',status:'À venda',icon:'bread'},{id:'COO',name:'Cookie de chocolate',collection:'Doces',price:900,stock:15,tone:'green',status:'À venda',icon:'bread'},{id:'BRI',name:'Brioche',collection:'Viennoiseries',price:2200,stock:9,tone:'green',status:'À venda',icon:'bread'});
+const materials = [
+  {id:'FAR-T65',name:'Farinha de trigo T65',stock:18,unit:'kg',coverage:'Menos de 1 dia',supplier:'Moinho do Vale',cost:480,suggestion:'4 sacos de 25 kg',urgent:true},
+  {id:'MAN-82',name:'Manteiga sem sal 82%',stock:9,unit:'kg',coverage:'1,2 dia',supplier:'Laticínios da Serra',cost:7800,suggestion:'10 kg',urgent:true},
+  {id:'ACU-REF',name:'Açúcar refinado',stock:48,unit:'kg',coverage:'4,1 dias',supplier:'Distribuidora Aurora',cost:650,suggestion:'8 kg',urgent:false},
+  {id:'CHO-70',name:'Chocolate 70%',stock:12,unit:'kg',coverage:'6 dias',supplier:'Distribuidora Aurora',cost:9600,suggestion:'Não precisa repor',urgent:false},
+  {id:'SAL',name:'Sal marinho',stock:16,unit:'kg',coverage:'12 dias',supplier:'Distribuidora Aurora',cost:390,suggestion:'Não precisa repor',urgent:false},
+  {id:'GEL',name:'Geleia de frutas vermelhas',stock:12,unit:'un.',coverage:'8 dias',supplier:'Distribuidora Aurora',cost:1800,suggestion:'Não precisa repor',urgent:false},
+];
+const customers = [{name:'Ana Lima',phone:'(43) 90000-0101',group:'Varejo',orders:12},{name:'Rafael Costa',phone:'(43) 90000-0102',group:'Varejo',orders:4},{name:'Café da Praça',phone:'(43) 90000-0103',group:'Atacado',orders:28}];
+const orders = [
+  {ref:'N104',name:'Ana Lima',items:'2 Croissants · 1 Cappuccino',channel:'Loja online',delivery:'Retirada',time:'3 min',total:3800,stage:0},
+  {ref:'N105',name:'Rafael Costa',items:'2 Baguettes · 1 Geleia',channel:'iFood',delivery:'Entrega',time:'1 min',total:6800,stage:0},
+  {ref:'N106',name:'Luiza Martins',items:'1 Baguette · 2 Croissants',channel:'Loja online',delivery:'Retirada às 15h',time:'Agora',total:4400,stage:0},
+  {ref:'N102',name:'Marina Alves',items:'2 Cappuccinos · 2 Croissants',channel:'PDV',delivery:'Mesa 04',time:'12 min',total:5000,stage:1},
+  {ref:'N103',name:'Pedro Santos',items:'1 Baguette · 1 Cappuccino',channel:'iFood',delivery:'Entrega',time:'8 min',total:3000,stage:1},
+  {ref:'N099',name:'Camila Rocha',items:'3 Baguettes · 2 Geleias',channel:'Loja online',delivery:'Retirada',time:'24 min',total:11800,stage:2},
+  {ref:'N100',name:'Bruno Almeida',items:'2 Croissants · 2 Cappuccinos',channel:'iFood',delivery:'Entrega',time:'19 min',total:5000,stage:2},
+  {ref:'N101',name:'Isabela Melo',items:'1 Pão integral · 1 Geleia',channel:'Loja online',delivery:'Retirada',time:'15 min',total:5800,stage:2},
+];
+const receipt = [
+  {id:'farinha',name:'Farinha de trigo T65',sku:'FAR-T65',expected:4,received:4,unit:'sacos de 25 kg',cost:12000,resolved:true},
+  {id:'manteiga',name:'Manteiga sem sal 82%',sku:'MAN-82',expected:10,received:8,unit:'kg',cost:7800,resolved:false},
+  {id:'acucar',name:'Açúcar refinado',sku:'ACU-REF',expected:8,received:8,unit:'kg',cost:650,resolved:true},
+];
+const params = new URLSearchParams(location.search);
+const state = {
+  app:params.get('app')==='compras'?'compras':'gestor',
+  adaptive:params.get('layout')==='adaptive'||!params.has('variant')||(params.get('clean')==='1'&&params.get('embedded')!=='1'),
+  display:params.get('display')==='grid'?'grid':'list',density:params.get('density')==='compact'?'compact':'comfortable',
+  variant:params.get('variant')==='double'?'double':'single',
+  view:params.get('view') || (params.get('app')==='compras'?'receiving':'catalog'),
+  toolsFixed:params.get('tools')==='fixed',pageMenu:params.get('pageMenu')==='header'?'header':'title',compareTools:params.get('compareTools')==='1',compareDevice:params.get('device')==='desktop'?'desktop':'mobile',
+  compact:params.has('rail')?params.get('rail')==='compact':params.get('compact')==='1'||matchMedia('(min-width:651px) and (max-width:1100px) and (orientation:landscape)').matches,hidden:params.get('rail')==='hidden',secondary:params.get('options')!=='hidden',
+  clean:params.get('clean')==='1',embedded:params.get('embedded')==='1',compare:params.get('compare')==='1'||params.get('compareTools')==='1',
+  sort:'name',collection:'all',page:1,localPlacement:params.get('local')==='bottom'?'bottom':'top',desktopQuick:params.get('quick')==='1',desktopDock:params.get('dock')==='1',drawer:false,drawerGroup:null,central:params.get('screen')==='central',trail:null,lastViews:{gestor:'catalog',compras:'receiving'},search:'',filter:'all',closed:new Set(),extraCollections:[],mergeUndone:false,done:new Set(),counted:{},countReasons:{},
+};
+if (!applications[state.app].groups.some(g=>g.children.some(c=>c[0]===state.view))) state.view=applications[state.app].home;
+state.lastViews[state.app]=state.view;
+state.closed=new Set(applications[state.app].groups.filter(g=>!g.children.some(c=>c[0]===state.view)).map(g=>g.id));
+let previousFocus=null, optionsTrigger=null;
+function renderMobileGroup(){const group=applications[state.app].groups.find(g=>g.id===state.drawerGroup);return `<button class="drawer-back" data-action="drawer-back">${icon('left')}Todos os assuntos</button><div class="drawer-topic"><strong>${group.label}</strong><p>${group.description}</p></div>${group.children.map(c=>navLink(c[1],c[0],c[2],c[3]||'')).join('')}`;}
+const QUICK_LINKS={
+  gestor:[{label:'Pedidos',view:'queue',symbol:'orders',matches:['queue','exit','history']},{label:'Produtos',view:'catalog',symbol:'box',matches:['catalog','collections']},{label:'Clientes',view:'customers',symbol:'users',matches:['customers','groups','merges']}],
+  compras:[{label:'Visão geral',view:'overview',symbol:'grid',matches:['overview']},{label:'Reposição',view:'replenishment',symbol:'cart',matches:['replenishment','suppliers','costs']},{label:'Receber',view:'receiving',symbol:'truck',matches:['receiving','divergences']}],
+};
+function renderQuick(){const links=QUICK_LINKS[state.app];const outside=!links.some(item=>item.matches.includes(state.view));$('#quicknav').hidden=state.compare||state.central;$('#quicknav').innerHTML=links.map(item=>`<button data-view="${item.view}" class="${item.matches.includes(state.view)?'active':''}" ${item.matches.includes(state.view)?'aria-current="true"':''} aria-label="${item.label}">${icon(item.symbol)}<span>${item.label}</span></button>`).join('')+`<button data-action="drawer" class="${outside?'active':''}" aria-label="Mais assuntos">${icon('menu')}<span>Mais</span></button>`;}
+
+function renderCentral(){const items=[['gestor','Gestor','Pedidos, produtos, clientes e operação','orders'],['compras','Compras','Reposição, recebimentos e estoque','cart']];$('#central').innerHTML=`<header class="central-head"><span class="central-mark">s</span><div><p class="section-label">Shopman · Loja exemplo</p><h1>Central de apps</h1><p>Olá, Maria. Por onde vamos continuar?</p></div><button class="button" data-action="resume">${icon('left')}Voltar a ${applications[state.app].label}</button></header><div class="central-body"><section class="panel"><div class="panel-head"><div><h2>Precisa de você</h2><p>Abra a tarefa no contexto certo.</p></div>${tag('2 tarefas','amber')}</div><div class="list-row"><span class="list-icon">${icon('truck')}</span><div><strong>A retirada N099 está esperando</strong><small>Gestor · Saída dos pedidos</small></div><button class="text-link end" data-action="jump:gestor:exit">Ver saída ${icon('arrow')}</button></div><div class="list-row"><span class="list-icon">${icon('warning')}</span><div><strong>Uma diferença na nota 004821</strong><small>Compras · Conferência de recebimento</small></div><button class="text-link end" data-action="jump:compras:divergences">Conferir ${icon('arrow')}</button></div></section><p><a class="button" href="suite.html?app=hub&amp;view=home">Central das prévias de todos os apps</a></p><h2 class="central-section">Gestor e Compras</h2><div class="central-apps">${items.map(a=>`<button class="central-app-card" data-app="${a[0]}"><span class="list-icon">${icon(a[3])}</span><strong>${a[1]}</strong><p>${a[2]}</p><span class="text-link">Continuar de onde parou ${icon('arrow')}</span></button>`).join('')}</div><p class="subtle">Esta rodada permite explorar Gestor e Compras. Os demais apps continuam fora da prévia.</p></div>`;}
+function crossApp(app,view,query,label,dialog){rememberDestination();state.trail={app:state.app,view:state.view,search:state.search,label,dialog};if($('#detail').open)$('#detail').close();state.lastViews[state.app]=state.view;state.app=app;route(view,true,false);state.search=query;renderContent();renderHead();}
+function currentGroup(){return applications[state.app].groups.find(g=>g.children.some(c=>c[0]===state.view));}
+function href(overrides={}){
+  const next={toolsFixed:state.toolsFixed,pageMenu:state.pageMenu,compareTools:state.compareTools,compareDevice:state.compareDevice,compact:state.compact,hidden:state.hidden,secondary:state.secondary,adaptive:state.adaptive,display:state.display,density:state.density,app:state.app,variant:state.variant,view:state.view,compare:state.compare,clean:state.clean,embedded:state.embedded,central:state.central,local:state.localPlacement,quick:state.desktopQuick,dock:state.desktopDock,...overrides};
+  const q=new URLSearchParams({app:next.app,variant:next.variant,view:next.view,revision:'7b'});
+  const scenario=new URLSearchParams(location.search).get('scenario');if(scenario)q.set('scenario',scenario);
+  if(next.toolsFixed)q.set('tools','fixed');if(next.pageMenu==='header')q.set('pageMenu','header');if(next.compareTools)q.set('compareTools','1');if(next.compareTools&&next.compareDevice==='desktop')q.set('device','desktop');q.set('rail',next.hidden?'hidden':next.compact?'compact':'expanded');if(!next.secondary)q.set('options','hidden');
+  if(next.adaptive)q.set('layout','adaptive');if(next.display==='grid')q.set('display','grid');if(next.density==='compact')q.set('density','compact');
+  if(next.local==='bottom')q.set('local','bottom');if(next.quick)q.set('quick','1');if(next.dock)q.set('dock','1');
+  if(next.clean)q.set('clean','1');if(next.compare)q.set('compare','1');if(next.embedded)q.set('embedded','1');if(next.central)q.set('screen','central');
+  return `?${q}`;
+}
+const destinationStates=new Map();
+const destinationFields=['search','filter','page','collection','sort','display','density'];
+function rememberDestination(){destinationStates.set(state.app+':'+state.view,{...Object.fromEntries(destinationFields.map(k=>[k,state[k]])),scroll:$('#content').scrollTop});}
+function route(view, notify=true, remember=true){
+  if(remember)rememberDestination();
+  $('#toast').hidden=true;
+  if(!applications[state.app].groups.some(g=>g.children.some(c=>c[0]===view)))return;
+  state.central=false;state.view=view;const saved=destinationStates.get(state.app+':'+view);state.search='';state.filter='all';state.page=1;if(saved)destinationFields.forEach(k=>state[k]=saved[k]);state.drawer=false;state.drawerGroup=null;state.lastViews[state.app]=view;
+  state.closed=new Set(applications[state.app].groups.filter(g=>g.id!==currentGroup().id).map(g=>g.id));
+  if(state.compare&&$$('#comparison iframe').length){$('#compare-destination').value=view;$$('#comparison iframe').forEach(f=>f.contentWindow.postMessage({type:'shopman-preview-set-route',view},location.origin));history.replaceState(null,'',href());return;}
+  render();$('#content').scrollTop=saved?.scroll||0;history[notify?'pushState':'replaceState'](null,'',href());
+  if(state.embedded&&notify)parent.postMessage({type:'shopman-preview-route',app:state.app,view:state.view},location.origin);
+}
+function toast(message,tone='success'){
+  const target=$('#detail').open?$('#dialog-feedback'):$('#toast');
+  target.className='semantic-alert '+tone;target.setAttribute('role',tone==='error'?'alert':'status');target.innerHTML=`<span>${esc(message)}</span><button class="icon-button" data-action="dismiss-feedback" aria-label="Fechar mensagem">${icon('close')}</button>`;target.hidden=false;
+}
+
+function renderLab(){
+  if(state.compareTools){$('#lab').innerHTML=`<div class="lab-brand"><span class="mark">s</span><div class="lab-title">Shopman<small>Comparação das ferramentas</small></div></div><div class="segments"><button data-app="gestor" aria-pressed="${state.app==='gestor'}">Gestor</button><button data-app="compras" aria-pressed="${state.app==='compras'}">Compras</button></div><button class="button" data-action="composition">Composição</button>`;return;}
+  $('#lab').innerHTML=`<div class="lab-brand"><span class="mark">s</span><div class="lab-title">Shopman <small>Estudo de navegação</small></div></div><div class="segments" aria-label="Aplicativo"><button data-app="gestor" aria-pressed="${state.app==='gestor'}">Gestor</button><button data-app="compras" aria-pressed="${state.app==='compras'}">Compras</button></div><span class="preview-tag">Prévia local · dados fictícios</span><div class="segments variant" aria-label="Modelo de navegação"><button data-variant="single" aria-pressed="${state.variant==='single'&&!state.compare}">A · Lateral única</button><button data-variant="double" aria-pressed="${state.variant==='double'&&!state.compare}">B · Dois níveis</button></div><a class="button clean-link" href="${href({adaptive:true,compare:false,embedded:false,clean:true})}">Ver proposta responsiva</a><button class="button composition" data-action="composition" aria-label="Composição da página">${icon('settings')}<span class="button-label">Composição</span></button><button class="button" data-action="compare-tools">Comparar faixa</button><button class="button compare ${state.compare?'active':''}" data-action="compare">${icon('compare')}Comparar</button><button class="icon-button" data-action="map" aria-label="Ver organização por assuntos">${icon('grid')}</button><label class="review-state-label">Estado<select id="review-state">${[['ready','Normal'],['loading','Carregando'],['empty','Vazio'],['error','Erro'],['forbidden','Sem permissão'],['offline','Sem conexão'],['conflict','Conflito']].map(([value,label])=>`<option value="${value}" ${new URLSearchParams(location.search).get('scenario')===value?'selected':''}>${label}</option>`).join('')}</select></label>`;
+}
+function renderNavigation(){
+  const app=applications[state.app],group=currentGroup();
+  const isTree=state.variant==='single';
+  const tree=app.groups.map(g=>{
+    if(g.children.length===1)return navLink(g.label,g.children[0][0],g.symbol);
+    const closed=state.closed.has(g.id);
+    return `<section class="navgroup"><button class="group-title ${g.id===group.id?'is-current':''}" data-group-toggle="${g.id}" aria-expanded="${!closed}" aria-controls="group-${g.id}">${icon(g.symbol)}<span>${g.label}</span>${icon('down').replace('<svg ','<svg class="caret" ')}</button><div id="group-${g.id}" ${closed?'hidden':''}>${g.children.map(c=>navLink(c[1],c[0],c[2],c[3]||'','indent')).join('')}</div></section>`;
+  }).join('');
+  const primary=app.groups.map(g=>`<a aria-label="${g.label}" title="${g.label}" class="navitem ${g.id===group.id?'active':''}" href="${href({view:g.children[0][0],compare:false})}" data-view="${g.children[0][0]}" ${g.id===group.id?'aria-current="true"':''}>${icon(g.symbol)}<span class="navlabel">${g.label}</span>${g.count?`<span class="navcount">${g.count}</span>`:''}</a>`).join('');
+  const drawerContent=state.drawer&&state.variant==='double'?(state.drawerGroup?renderMobileGroup():`<div class="nav-caption">Escolha um assunto</div>${app.groups.map(g=>`<button class="mobile-subject" data-drawer-group="${g.id}">${icon(g.symbol)}<span><strong>${g.label}</strong><small>${g.description}</small></span>${icon('arrow')}</button>`).join('')}`):null;
+  $('#primary').innerHTML=`<div class="brand-row"><button class="app-logo" data-action="central" aria-label="${app.label}: voltar à Central de apps" title="${app.label}: Central de apps">${appMark(state.app)}</button><div class="brand-copy"><strong>${app.label}</strong><small>Loja exemplo</small></div><button class="primary-toggle" data-action="compact" aria-label="${state.drawer?'Fechar navegação':'Compactar barra principal'}">${icon(state.drawer?'close':'panel')}</button></div><div class="nav-scroll"><div class="nav-caption">${isTree?'Assuntos e tarefas':'Assuntos'}</div>${drawerContent??(isTree?tree:primary)}</div><div class="nav-footer"><button class="utility" data-action="central" aria-label="Central de apps" title="Central de apps">${icon('grid')}<span>Central de apps</span></button><button class="utility" data-action="alerts" aria-label="Avisos" title="Avisos">${icon('bell')}<span>Avisos</span><span class="navcount">3</span></button><div class="profile"><span class="avatar">ML</span><div class="profile-text">Maria Lopes<small>Gestão da loja</small></div></div></div>`;
+  const showSecondary=state.variant==='double'&&group.children.length>1&&state.secondary;
+  $('#secondary').hidden=!showSecondary;
+  $('#secondary').innerHTML=showSecondary?`<div class="secondary-top"><strong>${group.label}</strong><button data-action="secondary" aria-label="Recolher opções de ${group.label}">${icon('panel')}</button></div><nav class="nav-scroll" aria-label="Destinos de ${group.label}">${group.children.map(c=>navLink(c[1],c[0],c[2],c[3]||'')).join('')}</nav><div class="secondary-note">${icon(group.symbol)}${group.description}</div>`:'';
+  $('#app').dataset.variant=state.variant;$('#app').dataset.compact=String(state.compact);$('#app').dataset.hidden=String(state.hidden);$('#app').dataset.drawer=String(state.drawer);$('#scrim').hidden=!state.drawer;$('#workspace').inert=state.drawer;$('#lab').inert=state.drawer;$('#quicknav').inert=state.drawer;$('#primary').setAttribute('role',state.drawer?'dialog':'complementary');if(state.drawer)$('#primary').setAttribute('aria-modal','true');else $('#primary').removeAttribute('aria-modal');
+}
+function pageActions(){
+  const v=state.view;
+  if(v==='catalog')return button('Novo produto','new-product','plus','gold');
+  if(v==='groups')return button('Criar grupo','new-group','plus','gold');
+  if(v==='collections')return button('Nova coleção','new-collection','plus','gold');
+  if(v==='customers')return button('Novo cliente','new-customer','plus','gold');
+  if(v==='suppliers')return button('Novo fornecedor','new-supplier','plus','gold');
+  if(v==='materials')return button('Novo insumo','new-material','plus','gold');
+  if(v==='receiving')return button('Ler outra nota','scan','file');
+  if(v==='replenishment')return button('Rever critérios','criteria','settings');
+  if(v==='count')return '';
+  return '';
+}
+function currentTask(){
+  if(['receiving','divergences'].includes(state.view)){
+    const pending=receipt.filter(item=>!item.resolved);
+    return pending.length?{label:'Resolver diferença',action:'receipt-item:'+pending[0].id,symbol:'warning',context:'Nota 004821',value:pending.length+' diferença pendente'}:{label:'Confirmar entrada',action:'confirm-receipt',symbol:'check',context:'Nota 004821',value:money(receipt.reduce((sum,item)=>sum+item.received*item.cost,0))};
+  }
+  if(state.view==='count')return {label:'Revisar contagem',action:'finish-count',symbol:'check',context:'Contagem de estoque',value:Object.keys(state.counted).length+' de '+materials.length+' insumos',disabled:!Object.keys(state.counted).length,reason:'Registre ao menos uma quantidade encontrada.'};
+  return null;
+}
+function taskButton(task,kind='',reasonId='task-reason'){
+  return button(task.label,task.action,task.symbol,kind).replace('<button ',`<button ${task.disabled?`disabled aria-describedby="${reasonId}" `:''}`);
+}
+function desktopTaskAction(){const task=currentTask();return task?`<div class="desktop-task">${taskButton(task,'gold task-primary')}${task.disabled?`<small id="task-reason">${task.reason}</small>`:''}</div>`:'';}
+function renderSupportBars(){
+  const top=$('#support-top'),bottom=$('#support-bottom'),dock=$('#action-dock');
+  let filters=$$('.toolbar .filter-chip',$('#content')).map(node=>{const html=node.outerHTML;node.remove();return html;}).join('');
+  if(['receiving','divergences'].includes(state.view))filters=filterButton('Todos os itens','all')+filterButton('Pendentes','pending')+filterButton('Conferidos','checked');
+  if(state.view==='materials')filters=filterButton('Todos os insumos','all')+filterButton('Reposição urgente','urgent');
+  const recuts=filters?`<div class="local-controls"><span class="local-label">Mostrar</span><div class="local-options" role="group" aria-label="Recorte do conteúdo">${filters}</div></div>`:'';
+  top.innerHTML=state.localPlacement==='top'?recuts:'';top.hidden=!top.innerHTML;requestAnimationFrame(()=>{const active=$('[aria-pressed=true]',top);if(active)active.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'});});
+  let summary='';
+  if(['catalog','channel-catalog'].includes(state.view)){
+    const list=catalogList();
+    const pages=Math.max(1,Math.ceil(list.length/6));
+    summary=`<div class="list-navigation"><span>${list.length?((state.page-1)*6+1)+'–'+Math.min(state.page*6,list.length):'0'} de ${list.length} ${list.length===1?'produto':'produtos'}</span><nav class="pagination" aria-label="Páginas do catálogo"><button class="icon-button" data-action="page-prev" aria-label="Página anterior" ${state.page===1?'disabled':''}>${icon('left')}</button><span>${state.page} de ${pages}</span><button class="icon-button" data-action="page-next" aria-label="Próxima página" ${state.page===pages?'disabled':''}>${icon('arrow')}</button></nav></div>`;
+    $('#content .panel-footer')?.remove();
+  }else if(['materials','costs','customers','suppliers','history'].includes(state.view)){
+    const count=$$('#content tbody tr:not(.no-results)').length||$$('#content>.panel>.list-row').length||$$('#content .supplier-record').length;
+    summary=`<div class="list-navigation"><span>${count} ${state.view==='customers'?'clientes':state.view==='suppliers'?'fornecedores':state.view==='history'?'pedidos':'insumos'} neste recorte</span><span class="list-location">${currentGroup().label}</span></div>`;
+  }
+  bottom.innerHTML=(state.localPlacement==='bottom'?recuts:'')+summary;bottom.hidden=!bottom.innerHTML;
+  const task=currentTask();dock.hidden=!task;
+  dock.innerHTML=task?`<div class="floating-surface"><div class="floating-context"><span>${task.context}</span><strong>${task.value}</strong></div>${taskButton(task,'gold','dock-reason')}${task.disabled?`<p id="dock-reason" role="status">${task.reason}</p>`:''}</div>`:'';
+  $('#app').dataset.view=state.view;
+}
+function showComposition(){
+  openDialog('Composição da página',`<p>Cada faixa tem um trabalho. A navegação rápida leva ao mesmo destino em A e B; a troca de assuntos fica na lateral ou gaveta.</p><label class="field">Faixa de filtro, busca e opções<select id="tools-placement" class="button"><option value="scroll" ${!state.toolsFixed?'selected':''}>Rola com o conteúdo</option><option value="fixed" ${state.toolsFixed?'selected':''}>Fixa abaixo das tabs</option></select></label><label class="field">Opções da página<select id="page-menu-placement" class="button"><option value="header" ${state.pageMenu==='header'?'selected':''}>Junto do menu, no cabeçalho</option><option value="title" ${state.pageMenu==='title'?'selected':''}>Linha do título, na extremidade direita</option></select></label><label class="field">Recortes do conteúdo<select id="local-placement" class="button"><option value="top" ${state.localPlacement==='top'?'selected':''}>Barra superior secundária</option><option value="bottom" ${state.localPlacement==='bottom'?'selected':''}>Barra inferior secundária</option></select></label><label class="layout-check"><input id="desktop-shortcuts" type="checkbox" ${state.desktopQuick?'checked':''}>Mostrar também os atalhos inferiores no desktop</label><label class="layout-check"><input id="desktop-dock" type="checkbox" ${state.desktopDock?'checked':''}>Experimentar a ação flutuante também no desktop</label><div class="bar-roles"><p><strong>Cabeçalho</strong>Identidade, localização, Central e troca de app.</p><p><strong>Barra superior secundária</strong>Recortes da página atual, sem repetir os destinos da lateral.</p><p><strong>Barra inferior secundária</strong>Paginação e posição na lista; pode receber os recortes em vez do topo.</p><p><strong>Ação flutuante</strong>A próxima ação da tarefa, com seu contexto. No celular, fica acima dos atalhos, sem cobrir o conteúdo.</p><p><strong>Barra inferior principal</strong>Atalhos estáveis para destinos. Um toque, nas duas variantes.</p></div><p class="preview-warning">A ação flutuante aparece na conferência e na contagem. Navegar pelo catálogo não exige um botão de conclusão.</p>`,button('Cancelar','close')+button('Aplicar à comparação','apply-composition','check','gold'));
+}
+function renderHead(){
+  const group=currentGroup(),app=applications[state.app],info=viewInfo[state.view];
+  const secondaryControl=state.variant==='double'&&group.children.length>1?`<button class="pill-button desktop-control" data-action="secondary" aria-label="${state.secondary?'Recolher':'Mostrar'} opções de ${group.label}">${icon('panel')}${state.secondary?'Recolher opções':`Opções de ${group.label}`}</button>`:'';
+  if(state.adaptive){
+    const hasOptions=(pageActions()&&!pageActions().includes('gold'))||Boolean(pageFlowOptions());
+    const options=hasOptions?`<button class="icon-button mobile-page-options page-flow-options" data-action="page-options" aria-label="Mais opções da página" aria-haspopup="dialog">${icon('dots')}</button>`:'';
+    $('#pagehead').innerHTML=`<div class="head-top suite-header"><button class="icon-button current-app-home" data-action="central" aria-label="${app.label}: voltar à Central de apps" title="${app.label}: Central de apps">${appMark(state.app)}</button><button class="button desktop-control navigation-manager" data-action="nav-controls" aria-label="Ajustar menus laterais" aria-haspopup="dialog">${icon('panel')}Menus laterais</button><div class="head-spacer"></div><button class="icon-button" data-action="search-suite" aria-label="Buscar páginas e apps">${icon('search')}</button><button class="icon-button mobile-menu" data-action="drawer" aria-label="Abrir navegação">${icon('menu')}</button>${state.pageMenu==='header'?options:''}</div><div class="heading-row"><div class="page-title-group"><h1>${info[0]}</h1></div><div class="page-actions">${pageActions()}${desktopTaskAction()}</div>${state.pageMenu==='title'?options:''}</div>${state.trail?`<div class="return-context"><button data-action="return-context">${icon('left')}Voltar a ${esc(state.trail.label)}</button></div>`:''}`;return;
+  }
+  $('#pagehead').innerHTML=`<div class="head-top"><button class="icon-button mobile-menu" data-action="drawer" aria-label="Abrir navegação">${icon('menu')}</button><button class="icon-button desktop-control" data-action="compact" aria-label="${state.compact?'Expandir':'Compactar'} barra principal">${icon('panel')}</button><button class="app-switch" data-action="apps" aria-label="${app.label}: trocar app ou voltar à Central">${icon(app.symbol)}<span>${app.label}</span>${icon('down')}</button><div class="breadcrumb"><span class="desktop-breadcrumb">${app.label}</span>${icon('arrow')}<span>${group.label}</span>${group.children.length>1?icon('arrow')+`<span>${group.children.find(c=>c[0]===state.view)[1]}</span>`:''}</div>${group.children.length>1?`<div class="context-switch"><button class="button" data-action="context-mobile" aria-label="Opções de ${group.label}"><span>${group.label}</span>${icon('down')}</button></div>`:''}<div class="head-spacer"></div><div class="head-utility">${secondaryControl}<button class="icon-button desktop-control" data-action="hide" aria-label="${state.hidden?'Mostrar':'Ocultar'} barra principal">${icon('menu')}</button><button class="icon-button" data-action="search-suite" aria-label="Buscar na suíte">${icon('search')}</button></div></div><div class="heading-row"><div><h1>${info[0]}</h1><p>${info[1]}</p></div><div class="page-actions">${pageActions()}${desktopTaskAction()}</div></div>${state.trail?`<div class="return-context"><button data-action="return-context">${icon('left')}Voltar a ${esc(state.trail.label)}</button><span>Contexto de origem preservado</span></div>`:''}`;
+}
+const kpi=(label,value,note,symbol='grid',attention=false)=>`<div class="kpi ${attention?'attention':''}"><div class="kpi-label">${icon(symbol)}${label}</div><div class="kpi-value">${value}</div><p>${note}</p></div>`;
+const search=(placeholder)=>`<label class="search">${icon('search')}<input type="search" data-search-input placeholder="${placeholder}" aria-label="${placeholder}" value="${esc(state.search)}"></label>`;
+const toolbar=(placeholder,extra='')=>`<div class="toolbar">${search(placeholder)}${extra}</div>`;
+const filterButton=(label,key)=>`<button class="filter-chip ${state.filter===key?'active':''}" data-filter="${key}" aria-pressed="${state.filter===key}">${label}</button>`;
+const table=(heads,rows,label)=>`<div class="table-scroll"><table aria-label="${esc(label)}"><thead><tr>${heads.map(h=>`<th scope="col">${h}</th>`).join('')}</tr></thead><tbody>${rows||`<tr class="no-results"><td colspan="${heads.length}" class="empty">Nenhum registro neste recorte. Tente outra busca.</td></tr>`}</tbody></table></div>`;
+const record=(name,sub,symbol='box',action='')=>`<div class="record-name"><span class="product-icon">${icon(symbol)}</span><button class="record-link" data-action="${action}"><strong>${esc(name)}</strong><small>${esc(sub)}</small></button></div>`;
+const matching=(text)=>text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/\p{Diacritic}/gu,'').includes(state.search.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/\p{Diacritic}/gu,''));
+
+function catalogList(){
+  const list=products.filter(p=>matching(p.name+' '+p.id+' '+p.collection)&&(state.collection==='all'||p.collection===state.collection)&&(state.filter==='all'||state.filter==='available'&&p.status==='À venda'||state.filter==='out'&&p.stock===0));
+  return list.sort((a,b)=>state.sort==='price-asc'?a.price-b.price||a.id.localeCompare(b.id):state.sort==='price-desc'?b.price-a.price||a.id.localeCompare(b.id):a.name.localeCompare(b.name,'pt-BR')||a.id.localeCompare(b.id));
+}
+function catalogTools(channel=false){return button('Filtros'+(state.collection!=='all'?' · 1':''),'catalog-filters','settings').replace('<button ', '<button aria-label="Filtrar e ordenar produtos" ')+`<label class="sort-control">Ordenar<select id="catalog-sort" aria-label="Ordenar produtos"><option value="name" ${state.sort==='name'?'selected':''}>Nome A–Z</option><option value="price-asc" ${state.sort==='price-asc'?'selected':''}>Menor preço</option><option value="price-desc" ${state.sort==='price-desc'?'selected':''}>Maior preço</option></select></label>${channel?'':`<div class="view-toggle" role="group" aria-label="Visualização do catálogo"><button class="icon-button" data-action="display:list" aria-label="Visualização em lista" aria-pressed="${state.display==='list'}">${icon('list')}</button><button class="icon-button" data-action="display:grid" aria-label="Visualização em grade" aria-pressed="${state.display==='grid'}">${icon('grid')}</button></div>`}<button class="icon-button" data-action="list-options" aria-label="Mais opções do catálogo" aria-haspopup="dialog">${icon('dots')}</button>`;}
+function catalogContent(channel=false){
+  const list=catalogList();
+  state.page=Math.min(state.page,Math.max(1,Math.ceil(list.length/6)));
+  const pageList=list.slice((state.page-1)*6,state.page*6);
+  const rows=pageList.map(p=>`<tr><td>${record(p.name,p.id,p.icon,'product:'+p.id)+`<span class="mobile-collection">${esc(p.collection)}</span>`}</td>${channel?`<td>${tag(p.status==='Pausado'?'Pausado':'Ativo',p.status==='Pausado'?'':'green')}</td><td>${tag(p.stock===0?'Esgotado':p.status==='Pausado'?'Pausado':'Ativo',p.stock===0?'amber':p.status==='Pausado'?'':'green')}</td><td>${tag(p.id==='CAF'?'Não publicado':p.status==='Pausado'?'Pausado':'Ativo',p.id==='CAF'||p.status==='Pausado'?'':'green')}</td>`:`<td>${esc(p.collection)}</td><td class="numeric">${money(p.price)}</td><td class="numeric">${p.stock===null?'Na hora':number(p.stock)+' un.'}</td><td>${tag(p.status,p.tone,true)}</td>`}<td class="numeric"><button class="icon-button" data-action="record-options:${p.id}" aria-label="Opções de ${esc(p.name)}" aria-haspopup="dialog">${icon('dots')}</button></td></tr>`).join('');
+  const grid=`<div class="product-grid">${pageList.map(p=>`<article class="product-card"><div class="product-card-top"><span class="product-illustration">${icon(p.icon)}</span><button class="icon-button" data-action="record-options:${p.id}" aria-label="Opções de ${esc(p.name)}" aria-haspopup="dialog">${icon('dots')}</button></div><button class="record-link" data-action="product:${p.id}"><strong>${esc(p.name)}</strong><small>${p.id} · ${esc(p.collection)}</small></button><div class="product-card-bottom"><strong>${money(p.price)}</strong>${tag(p.status,p.tone,true)}</div><span class="subtle">${p.stock===null?'Preparado na hora':number(p.stock)+' un. disponíveis'}</span></article>`).join('')||'<p class="empty">Nenhum produto neste recorte.</p>'}</div>`;
+  return `${toolbar(mobileNavigation()?'Buscar produto':'Buscar produto ou SKU',filterButton('Todos','all')+filterButton('À venda','available')+filterButton('Esgotados','out')+catalogTools(channel))}<p class="count-note">${state.collection!=='all'?`Coleção: ${esc(state.collection)} · `:''}${list.length} ${list.length===1?'produto':'produtos'}<span class="mobile-order-note"> · ${state.sort==='price-asc'?'Menor preço':state.sort==='price-desc'?'Maior preço':'Nome A–Z'}</span><span class="desktop-recut-note"> neste recorte</span></p>${state.display==='grid'&&!channel?grid:`<div class="panel">${table(channel?['Produto','PDV','Loja online','iFood','']:['Produto','Coleção','Preço','Disponível','Situação',''],rows,channel?'Disponibilidade por canal':'Produtos do catálogo')}<div class="panel-footer"><span>Exibindo ${list.length} de ${products.length} produtos da demonstração</span><button class="text-link" data-action="map">Entender a organização</button></div></div>`}${channel?'<p class="subtle">Canal ativo e produto disponível são condições distintas. Um produto esgotado pode continuar publicado.</p>':''}`;
+}
+function orderCard(o){return `<article class="order-card ${o.ref==='N099'?'urgent':''}" data-order="${o.ref}"><div class="order-top"><strong>${o.ref}</strong>${tag(o.channel,o.channel==='iFood'?'blue':'')}<time>${o.time}</time></div><h3>${o.name}</h3><p>${o.items}</p><div class="order-foot"><span>${o.delivery}</span><strong>${money(o.total)}</strong></div>${button(o.stage===2?(o.delivery==='Entrega'?'Ver entrega':'Ver retirada'):'Abrir pedido','order:'+o.ref,o.stage===2?'truck':'arrow',o.stage===2?'gold small':'small')}</article>`;}
+function queueContent(exit=false){
+  const list=orders.filter(o=>matching(o.ref+' '+o.name+' '+o.items)&&(state.filter==='all'||o.delivery.toLowerCase().includes(state.filter)));
+  const tools=toolbar('Buscar pedido, cliente ou item',filterButton('Todos','all')+filterButton('Retirada','retirada')+filterButton('Entrega','entrega'));
+  if(exit)return `${tools}<div class="banner">${icon('clock')}<div><strong>Uma retirada espera há 24 minutos</strong><p>Confira o pedido N099 antes das próximas saídas.</p></div></div><div class="card-grid">${list.filter(o=>o.stage===2).map(orderCard).join('')||'<div class="empty">Nenhum pedido pronto neste recorte.</div>'}</div>`;
+  return `${tools}<div class="board">${['Entrada','Em preparo','Prontos para sair'].map((label,i)=>`<section aria-label="${label}"><div class="column-heading"><span class="stage-dot ${i===1?'blue':i===2?'green':''}"></span>${label}${tag(String(list.filter(o=>o.stage===i).length))}</div>${list.filter(o=>o.stage===i).map(orderCard).join('')||'<div class="empty">Nenhum pedido nesta etapa.</div>'}</section>`).join('')}</div>`;
+}
+function customerContent(){
+  const rows=customers.filter(c=>matching(c.name+' '+c.phone)).map((c,i)=>`<tr><td>${record(c.name,c.phone,'users','customer:'+i)}</td><td>${tag(c.group)}</td><td class="numeric">${c.orders} pedidos</td><td>Hoje</td><td>${button('Abrir','customer:'+i,'arrow','small')}</td></tr>`).join('');
+  return `${toolbar('Buscar nome ou telefone')}<div class="panel">${table(['Cliente','Grupo','Histórico','Última compra',''],rows,'Cadastro de clientes')}</div>`;
+}
+function overviewContent(){
+  return `<div class="kpis">${kpi('Precisam de reposição','2','Farinha e manteiga','cart',true)}${kpi('Em conferência','1','Uma nota com diferença de quantidade','file')}${kpi('Insumos cadastrados','6','Cadastro e saldo de estoque','box')}</div><div class="split"><section class="panel"><div class="panel-head"><div><h2>Precisa de atenção</h2><p>Comece pelo que pode interromper o trabalho.</p></div>${tag('3 tarefas','amber')}</div><div class="list-row"><span class="list-icon">${icon('warning')}</span><div><strong>Farinha para menos de um dia</strong><small>18 kg em estoque · Sugestão: 4 sacos de 25 kg</small></div><button class="text-link end" data-view="replenishment">Ver reposição ${icon('arrow')}</button></div><div class="list-row"><span class="list-icon">${icon('file')}</span><div><strong>Faltam 2 kg de manteiga na entrega</strong><small>Nota 004821 · Distribuidora Aurora · Conferência aberta</small></div><button class="text-link end" data-view="divergences">Resolver ${icon('arrow')}</button></div><div class="list-row"><span class="list-icon">${icon('cart')}</span><div><strong>Manteiga para 1,2 dia</strong><small>9 kg em estoque · Sugestão: 10 kg</small></div><button class="text-link end" data-view="replenishment">Ver reposição ${icon('arrow')}</button></div></section><aside class="panel summary-box"><h2>Receber uma compra</h2><div class="flow-related">${flowButtons(['receipt-photo','receipt-key','receipt-manual'])}</div></aside></div>`;
+}
+function replenishmentContent(){
+  const list=materials.filter(m=>m.suggestion!=='Não precisa repor'&&matching(m.name+' '+m.supplier)&&(state.filter!=='urgent'||m.urgent));
+  const rows=list.map(m=>`<tr><td>${record(m.name,m.id,'box','material:'+m.id)}</td><td class="numeric">${m.stock} ${m.unit}</td><td>${tag(m.coverage,m.urgent?'amber':'')}</td><td><strong>${m.suggestion}</strong><small>${m.supplier}</small></td><td>${button('Revisar','replenish:'+m.id,'arrow','small')}</td></tr>`).join('');
+  return `<div class="banner">${icon('warning')}<div><strong>Farinha e manteiga precisam de reposição primeiro</strong><p>A sugestão considera consumo, prazo de entrega e margem de segurança.</p></div></div>${toolbar('Buscar insumo ou fornecedor',filterButton('Todas as sugestões','all')+filterButton('Urgentes','urgent'))}<div class="panel">${table(['Insumo','Em estoque','Cobertura estimada','Sugestão de compra',''],rows,'Sugestões de reposição')}</div><p class="subtle">Comprar não altera o estoque. A entrada acontece na confirmação do recebimento.</p>`;
+}
+function receiptContent(divergences=false){
+  const pending=receipt.filter(r=>!r.resolved).length;
+  const list=receipt.filter(r=>(!divergences||r.expected!==r.received)&&matching(r.name+' '+r.sku)&&(state.filter==='all'||state.filter==='pending'&&!r.resolved||state.filter==='checked'&&r.resolved));
+  const rows=list.map(r=>`<tr><td>${record(r.name,r.sku,'box','receipt-item:'+r.id)}</td><td>${r.unit}</td><td class="numeric">${r.expected}</td><td class="numeric">${r.received}</td><td>${tag(r.expected===r.received?'Conferido':r.resolved?'Diferença resolvida':`Faltam ${r.expected-r.received} ${r.unit}`,r.expected===r.received?'green':r.resolved?'blue':'amber')}</td><td>${button(r.resolved?'Ver item':'Resolver diferença','receipt-item:'+r.id,'arrow','small')}</td></tr>`).join('');
+  const total=receipt.reduce((s,r)=>s+r.received*r.cost,0);
+  return `<div class="receipt-summary"><span class="list-icon">${icon('file')}</span><div><h2>Nota 004821</h2><p>Distribuidora Aurora · Hoje, 13h40</p></div><div class="end">${tag(pending?'Conferência em aberto':'Conferência concluída',pending?'amber':'green',true)}</div></div>${pending?`<div class="banner">${icon('warning')}<div><strong>Manteiga: faltam 2 kg</strong><p>Nota: 10 kg · Recebido: 8 kg</p></div></div>`:''}<div class="split"><div><div class="toolbar">${search('Buscar item nesta nota')}</div><div class="panel">${table(['Insumo','Unidade de compra','Na nota','Recebido','Conferência',''],rows,divergences?'Divergências da nota':'Itens da nota de recebimento')}</div>${list.some(r=>r.id==='farinha')?'<p class="subtle">Farinha: cada saco de 25 kg recebido representa 25 kg no estoque.</p>':''}</div><aside class="panel summary-box"><h2>Resumo da entrada</h2><div class="fact"><span>Itens na nota</span><strong>3</strong></div><div class="fact"><span>Diferenças pendentes</span><strong>${pending}</strong></div><div class="fact total"><span>Valor recebido</span><strong>${money(total)}</strong></div>${pending?'<p class="subtle">Resolva a diferença antes de confirmar.</p>':''}<p class="subtle">A entrada é confirmada depois da conferência. A nota permanece disponível para consulta.</p></aside></div>`;
+}
+function materialsContent(costs=false){
+  const list=materials.filter(m=>matching(m.name+' '+m.id+' '+m.supplier)&&(state.filter!=='urgent'||m.urgent));
+  const rows=list.map(m=>`<tr><td>${record(m.name,m.id,'box','material:'+m.id)}</td>${costs?`<td>${esc(m.supplier)}</td><td class="numeric">${money(m.cost)} / ${m.unit}</td><td>27 out. 2026</td>`:`<td class="numeric">${m.stock} ${m.unit}</td><td>${tag(m.urgent?'Reposição urgente':'Saldo suficiente',m.urgent?'amber':'green')}</td><td>${esc(m.supplier)}</td>`}<td>${button(costs?'Ver custo':'Abrir','material:'+m.id,'arrow','small')}</td></tr>`).join('');
+  return `${toolbar(costs?'Buscar insumo ou fornecedor':'Buscar insumo ou SKU')}<div class="panel">${table(costs?['Insumo','Fornecedor de referência','Custo por unidade de estoque','Vigência','']:['Insumo','Saldo','Situação','Fornecedor de referência',''],rows,costs?'Custos de compra':'Cadastro de insumos')}</div>${costs?'<p class="subtle">Compare sempre a mesma unidade. O custo de um saco e o custo por kg representam grandezas diferentes.</p>':''}`;
+}
+function suppliersContent(){
+  const list=[['Moinho do Vale','Farinha e insumos de panificação','1 insumo',0],['Laticínios da Serra','Manteiga e laticínios','1 insumo',1],['Distribuidora Aurora','Açúcar, chocolate e mercearia','4 insumos',2]].filter(s=>matching(s.join(' ')));
+  return `${toolbar('Buscar fornecedor ou insumo')}<div class="panel">${list.map(s=>`<button class="supplier-record" data-action="supplier:${s[3]}" aria-label="Abrir fornecedor ${esc(s[0])}"><span class="list-icon">${icon('truck')}</span><span class="supplier-identity"><strong>${s[0]}</strong><small>${s[1]}</small><span class="supplier-count">${tag(s[2])}</span></span>${icon('arrow')}</button>`).join('')||'<div class="empty">Nenhum fornecedor encontrado.</div>'}</div>`;
+}
+function countContent(){
+  const rows=materials.map(m=>`<tr><td>${record(m.name,m.id+' · Sistema: '+m.stock+' '+m.unit,'box','material:'+m.id)}</td><td>${m.unit}</td><td><label><span class="sr-only">Quantidade encontrada de ${m.name}</span><input class="row-input" type="number" min="0" step="0.01" data-count="${m.id}" aria-label="Quantidade encontrada de ${m.name}" value="${state.counted[m.id]??''}" placeholder="Contar"></label></td><td>${countStatus(m)}</td></tr>`).join('');
+  return `<p class="count-note">Registre a quantidade encontrada. Informe o motivo quando houver diferença em relação ao sistema.</p><div class="panel">${table(['Insumo','Unidade de estoque','Quantidade encontrada','Contagem'],rows,'Contagem física de estoque')}</div>`;
+}
+function genericContent(){
+  switch(state.view){
+    case 'collections':return `<div class="card-grid">${[...new Set([...products.map(p=>p.collection),...state.extraCollections])].map(name=>`<article class="subject-card"><span class="list-icon">${icon('bread')}</span><h2>${name}</h2><p>${products.filter(p=>p.collection===name).length} ${products.filter(p=>p.collection===name).length===1?'produto':'produtos'} nesta coleção</p>${button('Ver produtos','collection:'+name,'arrow','small')}</article>`).join('')}</div>`;
+    case 'groups':return `<div class="card-grid">${[['Varejo','Condições padrão para o cliente final.','2 clientes'],['Atacado','Condições comerciais para compras recorrentes.','1 cliente'],['Equipe','Condições para pessoas da casa.','Nenhum cliente nesta amostra']].map(g=>`<article class="subject-card"><span class="list-icon">${icon('users')}</span><h2>${g[0]}</h2><p>${g[1]}</p>${tag(g[2])}${button('Ver grupo','group:'+g[0],'arrow','small')}</article>`).join('')}</div>`;
+    case 'merges':return `${toolbar('Buscar cliente ou unificação')}<div class="panel"><div class="panel-head"><h2>Histórico de unificações</h2></div><div class="list-row"><div><strong>Ana L. → Ana Lima</strong><small>28 out. 2026 · Histórico reunido no cadastro de destino</small></div>${tag(state.mergeUndone?'Desfeita':'Concluída',state.mergeUndone?'':'green')}<button class="button" data-flow="merge-undo" ${state.mergeUndone?'disabled':''}>${state.mergeUndone?'Já desfeita':'Desfazer'}</button></div></div>`;
+    case 'channels':return `<div class="card-grid">${[['PDV','Balcão e salão','Recebendo pedidos','green'],['Loja online','Retirada e entrega','Recebendo pedidos','green'],['iFood','Pedidos do marketplace','Recebendo pedidos','green'],['WhatsApp','Atendimento conversacional','Em pausa','amber']].map((c,i)=>`<article class="subject-card"><span class="list-icon">${icon('channels')}</span><h2>${c[0]}</h2><p>${c[1]}</p>${tag(c[2],c[3],true)}${button('Ver canal','channel:'+i,'arrow','small')}</article>`).join('')}</div>`;
+    case 'routines':return `<div class="panel"><div class="panel-head"><div><h2>Rotinas de hoje</h2><p>Quinta-feira, 29 de outubro · Gestão da loja</p></div>${tag(`${state.done.size} de 4 feitas`,state.done.size===4?'green':'')}</div>${[['Conferir os pedidos agendados','Balcão · antes das 14h'],['Conferir disponibilidade nos canais','Gestão · às 14h'],['Verificar a área de retirada','Expedição · durante o turno'],['Preparar o encerramento do dia','Gestão · antes das 18h']].map((t,i)=>`<div class="task-card"><div><strong>${t[0]}</strong><small>${t[1]}</small></div><button class="button" data-flow="routine-evidence" data-task-index="${i}" ${state.done.has(i)?'disabled':''}>${state.done.has(i)?'Concluída':'Conferir tarefa'}</button>${tag(i===0?'Prioridade':'Rotina',i===0?'amber':'')}</div>`).join('')}</div>`;
+    case 'stations':return `<div class="card-grid">${[['Balcão','PDV · Caixa e atendimento','2 dispositivos'],['Expedição','Gestor · Saída dos pedidos','1 dispositivo'],['Cafés','Cozinha · Estação de preparo','1 dispositivo'],['Recebimento','Compras · Conferência de entrada','1 dispositivo']].map(s=>`<article class="subject-card"><span class="list-icon">${icon('grid')}</span><h2>${s[0]}</h2><p>${s[1]}</p>${tag(s[2])}${button('Ver posto','station:'+s[0],'arrow','small')}</article>`).join('')}</div>`;
+    case 'history':return `${toolbar('Buscar pedido ou cliente')}<div class="panel">${table(['Pedido','Cliente','Conclusão','Valor',''],[['N096','Ana Lima','Retirado às 13h10',3200],['N097','Rafael Costa','Entregue às 13h25',6800],['N098','Café da Praça','Retirado às 13h40',21600]].filter(o=>matching(o[0]+' '+o[1])).map(o=>`<tr><td><strong>${o[0]}</strong><small>29 out. 2026</small></td><td>${o[1]}</td><td>${tag(o[2],'green')}</td><td>${money(o[3])}</td><td>${button('Ver pedido','historical:'+o[0],'arrow','small')}</td></tr>`).join(''),'Histórico de pedidos')}</div>`;
+    default:return '';
+  }
+}
+let mirroringTools=false;
+function navigationControls(){
+ const mode=state.hidden?'hidden':state.compact?'compact':'expanded';
+ const choices=[['expanded','Expandido'],['compact','Só ícones'],['hidden','Oculto']];
+ return `<div class="navigation-settings"><h3>Menu de assuntos</h3><div role="group" aria-label="Estado do menu de assuntos">${choices.map(([value,label])=>`<button data-action="nav-main:${value}" aria-pressed="${mode===value}">${label}${mode===value?' ✓':''}</button>`).join('')}</div><h3>Opções de ${currentGroup().label}</h3>${currentGroup().children.length>1?`<div role="group" aria-label="Estado das opções do assunto"><button data-action="nav-detail:show" aria-pressed="${state.secondary}">Visíveis ${state.secondary?'✓':''}</button><button data-action="nav-detail:hide" aria-pressed="${!state.secondary}">Recolhidas ${!state.secondary?'✓':''}</button></div>`:'<p>Este assunto não tem submenu.</p>'}</div>`;
+}
+function publishToolsState(){
+ if(!state.embedded||parent===window||mirroringTools)return;
+ requestAnimationFrame(publishToolsMetrics);
+ parent.postMessage({type:'shopman-preview-tools-state',app:state.app,view:state.view,search:state.search,filter:state.filter,sort:state.sort,collection:state.collection,page:state.page,display:state.display,density:state.density,compact:state.compact,hidden:state.hidden,secondary:state.secondary},location.origin);
+}
+function publishToolsMetrics(){
+ if(!state.embedded||parent===window)return;
+ const content=$('#content'),toolbar=$('#content .toolbar'),r=content.getBoundingClientRect(),t=toolbar?.getBoundingClientRect();
+ const occupied=t?Math.max(0,Math.min(r.bottom,t.bottom)-Math.max(r.top,t.top)):0;
+ parent.postMessage({type:'shopman-preview-tools-metrics',height:Math.round(content.clientHeight-occupied),has:Boolean(toolbar||$('#tools-dock .toolbar')),visible:!$('#tools-dock').hidden||occupied>0,scroll:Math.round(content.scrollTop)},location.origin);
+}
+$('#content').addEventListener('scroll',()=>requestAnimationFrame(publishToolsMetrics),{passive:true});
+window.addEventListener('message',event=>{
+ if(event.origin!==location.origin||!event.data||typeof event.data!=='object')return;
+ const data=event.data;
+ if(state.compareTools&&state.compare){const frames=$$('iframe'),index=frames.findIndex(f=>f.contentWindow===event.source);if(index<0)return;
+  if(data.type==='shopman-preview-tools-metrics'){if(Number.isFinite(data.height))$(`[data-tools-metric="${index}"]`).textContent=`Conteúdo: ${Math.max(0,data.height)} px · ${data.has?`Ferramentas ${data.visible?'visíveis':'fora da tela'}`:'Esta tela não tem faixa de ferramentas'}`;}
+  if(data.type==='shopman-preview-tools-state'&&data.app===state.app)frames.filter((f,i)=>i!==index).forEach(f=>f.contentWindow.postMessage({...data,type:'shopman-preview-apply-tools-state'},location.origin));
+ }else if(state.embedded&&event.source===parent){
+  if(data.type==='shopman-preview-scroll'&&Number.isFinite(data.top)){$('#content').scrollTop=Math.max(0,data.top);requestAnimationFrame(publishToolsMetrics);}
+  if(data.type==='shopman-preview-apply-tools-state'&&data.app===state.app&&applications[state.app].groups.some(g=>g.children.some(c=>c[0]===data.view))){
+   mirroringTools=true;if(state.view!==data.view){state.view=data.view;state.closed=new Set(applications[state.app].groups.filter(g=>g.id!==currentGroup().id).map(g=>g.id));}state.search=typeof data.search==='string'?data.search.slice(0,200):'';state.filter=typeof data.filter==='string'?data.filter:'all';state.sort=['name','price-asc','price-desc'].includes(data.sort)?data.sort:'name';state.collection=typeof data.collection==='string'?data.collection:'all';state.page=Number.isInteger(data.page)?Math.max(1,data.page):1;state.display=data.display==='grid'?'grid':'list';state.density=data.density==='compact'?'compact':'comfortable';state.compact=Boolean(data.compact);state.hidden=Boolean(data.hidden);state.secondary=Boolean(data.secondary);renderNavigation();renderHead();renderContent();renderQuick();mirroringTools=false;
+  }
+ }
+});
+function renderContent(){
+  $('#tools-dock').replaceChildren();$('#tools-dock').hidden=true;
+  const renderers={queue:()=>queueContent(),exit:()=>queueContent(true),catalog:()=>catalogContent(), 'channel-catalog':()=>catalogContent(true),customers:customerContent,overview:overviewContent,replenishment:replenishmentContent,receiving:()=>receiptContent(),divergences:()=>receiptContent(true),materials:()=>materialsContent(),costs:()=>materialsContent(true),suppliers:suppliersContent,count:countContent};
+  $('#content').dataset.display=state.display;$('#content').dataset.density=state.density;
+  $('#content').innerHTML=(renderers[state.view]||genericContent)();
+  $$('table',$('#content')).forEach(t=>{const labels=$$('thead th',t).map(h=>h.textContent);$$('tbody tr',t).forEach(r=>$$('td',r).forEach((td,i)=>td.dataset.label=labels[i]||''));});
+  if(state.view==='overview'&&$('#content>.kpis'))$('#content').append($('#content>.kpis'));
+  renderSupportBars();
+  renderPreviewScenario();
+  $$('.toolbar').forEach(bar=>{const filter=$('[data-action=catalog-filters]',bar),query=$('.search',bar);if(filter&&query)bar.insertBefore(filter,query);});
+  const tools=$('#content .toolbar');if(state.toolsFixed&&tools){$('#tools-dock').append(tools);$('#tools-dock').hidden=false;}
+  publishToolsState();requestAnimationFrame(publishToolsMetrics);
+}
+let comparisonObserver=null;
+function renderComparison(){
+  comparisonObserver?.disconnect();
+  const models=state.compareTools?[{variant:'double',fixed:true,label:'Faixa fixa abaixo das tabs'},{variant:'double',fixed:false,label:'Faixa rolável com o conteúdo'}]:[{variant:'single',label:'A: lateral única'},{variant:'double',label:'B: navegação em dois níveis'}];
+  $('#comparison').innerHTML=`<div class="comparison-head"><div><h1>${state.compareTools?'Ferramentas sempre acessíveis ou mais espaço ao rolar?':'Mesmos assuntos. Duas formas de encontrar o trabalho.'}</h1><p>${applications[state.app].label} · Mesmos destinos, recortes e dados · Controles externos à proposta</p></div><div class="controls"><select id="compare-destination" class="button" aria-label="Tela para comparar">${applications[state.app].groups.map(g=>`<optgroup label="${g.label}">${g.children.map(c=>`<option value="${c[0]}" ${state.view===c[0]?'selected':''}>${c[1]}</option>`).join('')}</optgroup>`).join('')}</select>${state.compareTools?`<select id="compare-device" class="button" aria-label="Dispositivo da comparação"><option value="mobile" ${state.compareDevice==='mobile'?'selected':''}>Mobile</option><option value="desktop" ${state.compareDevice==='desktop'?'selected':''}>Desktop</option></select><button class="button" data-action="compare-scroll:0">Início</button><button class="button" data-action="compare-scroll:320">Rolar os dois</button>`:''}</div></div><div class="comparison-grid">${models.map((model,i)=>`<section class="comparison-card"><div class="comparison-label"><strong>${model.label}</strong><a class="text-link" href="${href({adaptive:state.compareTools,variant:model.variant,toolsFixed:state.compareTools?model.fixed:state.toolsFixed,embedded:false,compare:false,compareTools:false,clean:true})}" target="_blank" rel="noopener">Abrir ${icon('arrow')}</a></div><div class="compare-viewport"><iframe title="${model.label}" src="${href({adaptive:state.compareTools,variant:model.variant,toolsFixed:state.compareTools?model.fixed:state.toolsFixed,embedded:true,compare:false,compareTools:false,clean:true})}"></iframe></div>${state.compareTools?`<p class="comparison-metric" data-tools-metric="${i}">Medindo área útil…</p>`:''}</section>`).join('')}</div><p class="comparison-notes">${state.compareTools?'Busca, filtros, ordenação e destino sincronizam entre os exemplos. Role o conteúdo ou use Rolar os dois. As medidas mostram a área disponível para conteúdo, descontando a parte visível da faixa rolável. Abra em tamanho real para testar no seu celular.':'Na lateral única, assuntos e destinos dividem a coluna. Em dois níveis, a segunda barra mostra as opções do assunto.'}</p>`;
+  comparisonObserver=new ResizeObserver(entries=>{for(const entry of entries){const narrow=matchMedia('(max-width:650px), (max-width:900px) and (orientation:portrait)').matches;const phone=state.compareTools&&state.compareDevice==='mobile';const target=phone?390:1280;const natural=narrow&&!(state.compareTools&&state.compareDevice==='desktop');const scale=natural?1:entry.contentRect.width/target;const frame=$('iframe',entry.target);frame.style.width=natural?'100%':target+'px';frame.style.transform=`scale(${scale})`;entry.target.style.height=natural?'720px':`${(phone?844:840)*scale}px`;frame.style.height=natural?'720px':(phone?'844px':'840px');}});
+  $$('.compare-viewport').forEach(el=>comparisonObserver.observe(el));
+}
+
+const mobileNavigation=()=>matchMedia('(max-width:650px), (max-width:900px) and (orientation:portrait)').matches;
+function render(){
+  if(state.adaptive)state.variant=mobileNavigation()?'single':'double';
+  document.body.classList.toggle('adaptive',state.adaptive);document.body.classList.toggle('tools-comparison',state.compareTools);document.body.classList.toggle('compare-phone',state.compareDevice==='mobile');
+  document.body.classList.toggle('embedded',state.embedded);document.body.classList.toggle('clean',state.clean);document.body.classList.toggle('desktop-shortcuts',state.desktopQuick);document.body.classList.toggle('desktop-dock',state.desktopDock);
+  document.title=`${applications[state.app].label} · ${viewInfo[state.view][0]} · ${state.compare?'Comparação':state.variant==='single'?'Lateral única':'Dois níveis'} · Prévia Shopman`;
+  renderLab();$('#comparison').hidden=!state.compare;$('#app').hidden=state.compare;
+  $('#central').hidden=!state.central;$('#quicknav').hidden=state.compare||state.central;
+  if(state.central){$('#app').hidden=true;$('#comparison').hidden=true;renderCentral();return;}
+  if(state.compare){renderComparison();return;}
+  renderNavigation();renderHead();renderContent();renderQuick();
+}
+function openOptions(html){
+  const trigger=document.activeElement,popover=$('#options-popover');optionsTrigger=trigger;trigger.setAttribute('aria-expanded','true');trigger.setAttribute('aria-controls','options-popover');
+  popover.innerHTML=html;popover.showPopover();const r=trigger.getBoundingClientRect(),height=popover.getBoundingClientRect().height;
+  popover.style.left=Math.max(12,Math.min(innerWidth-280,r.right-264))+'px';popover.style.top=Math.max(12,Math.min(innerHeight-height-12,r.bottom+8))+'px';
+  $('button',popover)?.focus();
+}
+function openDialog(title,body,footer='',kind='default'){
+  $('#detail').dataset.kind=kind;delete $('#detail').dataset.flowId;
+  previousFocus=document.activeElement;
+  $('#dialog-content').innerHTML=`<div class="dialog-head"><div><span class="section-label">${kind==='search'?'Shopman':applications[state.app].label}</span><h2 id="detail-title">${title}</h2></div><button class="icon-button" data-action="close" aria-label="Fechar detalhe">${icon('close')}</button></div><div id="dialog-feedback" class="semantic-alert" hidden></div><div class="dialog-body">${body}</div><div class="dialog-foot">${footer}</div>`;
+  $$('table',$('#dialog-content')).forEach(t=>{const labels=$$('thead th',t).map(h=>h.textContent);$$('tbody tr',t).forEach(r=>$$('td',r).forEach((td,i)=>td.dataset.label=labels[i]||''));});
+  $('#detail').showModal();trackDialog();
+}
+const previewNote='<p class="preview-warning">Simulação local com dados fictícios. Nenhuma alteração é enviada ao Shopman.</p>';
+function showMap(){
+  openDialog('Organização por assuntos',`<div class="map-header"><p>As duas variantes usam os mesmos destinos. Muda a forma de apresentar a hierarquia.</p></div><div class="map-columns">${applications[state.app].groups.map(g=>`<section class="map-column"><h3>${g.label}</h3><ul>${g.children.map(c=>`<li>${c[1]}</li>`).join('')}</ul></section>`).join('')}</div>${previewNote}`);
+}
+function formDialog(title,fields,action){
+  openDialog(title,fields.map(f=>`<label class="field">${f[0]}<input name="${f[1]}" ${f[2]||''}></label>`).join('')+previewNote,button('Cancelar','close')+button('Salvar na prévia',action,'check','gold'),'form');
+}
+function act(action){
+  const [name,...parts]=action.split(':');const id=parts.join(':');
+  if(interceptPreviewFlow(name,id))return;
+  if(!['list-options','record-options','density','nav-controls','nav-main','nav-detail'].includes(name)&&$('#options-popover').matches(':popover-open'))$('#options-popover').hidePopover();
+  switch(name){
+    case 'nav-controls':if($('#options-popover').matches(':popover-open')&&optionsTrigger?.dataset.action==='nav-controls')$('#options-popover').hidePopover();else openOptions(navigationControls());break;
+    case 'nav-main':state.hidden=id==='hidden';state.compact=id==='compact';renderNavigation();history.replaceState(null,'',href());$('#options-popover').innerHTML=navigationControls();$(`[data-action="nav-main:${id}"]`,$('#options-popover'))?.focus();publishToolsState();break;
+    case 'nav-detail':state.secondary=id==='show';renderNavigation();history.replaceState(null,'',href());$('#options-popover').innerHTML=navigationControls();$(`[data-action="nav-detail:${id}"]`,$('#options-popover'))?.focus();publishToolsState();break;
+    case 'compare-tools':state.compareTools=true;state.compare=true;state.clean=false;history.replaceState(null,'',href());render();break;
+    case 'compare-scroll':$$('iframe').forEach(f=>f.contentWindow.postMessage({type:'shopman-preview-scroll',top:Number(id)},location.origin));break;
+    case 'compact':if(state.drawer){state.drawer=false;}else{state.hidden=false;state.compact=!state.compact;}renderNavigation();renderHead();break;
+    case 'hide':state.hidden=!state.hidden;renderNavigation();renderHead();break;
+    case 'secondary':state.secondary=!state.secondary;renderNavigation();renderHead();break;
+    case 'drawer':state.drawer=!state.drawer;state.drawerGroup=null;renderNavigation();if(state.drawer)$('a,button',$('#primary'))?.focus();break;
+    case 'compare':state.compare=!state.compare;state.embedded=false;history.replaceState(null,'',href());render();break;
+    case 'context-mobile':state.drawer=true;state.drawerGroup=currentGroup().id;renderNavigation();$('a,button',$('#primary'))?.focus();break;
+    case 'drawer-back':state.drawerGroup=null;renderNavigation();break;
+    case 'central':rememberDestination();if($('#detail').open)$('#detail').close();state.drawer=false;state.central=true;state.compare=false;history.pushState(null,'',href());render();break;
+    case 'resume':{state.central=false;history.pushState(null,'',href());render();$('#content').scrollTop=destinationStates.get(state.app+':'+state.view)?.scroll||0;break;}
+    case 'return-context':{const t=state.trail;state.trail=null;state.app=t.app;route(t.view);state.search=t.search;renderContent();if(t.dialog)act(t.dialog);break;}
+    case 'cross-product':crossApp('compras','materials','GEL','Produtos · Geleia de frutas vermelhas','product:GEL');break;
+    case 'cross-material':crossApp('gestor','catalog','GEL','Insumos · Geleia de frutas vermelhas','material:GEL');break;
+    case 'composition':showComposition();break;
+    case 'page-next':state.page++;renderContent();$('#content').scrollTop=0;break;
+    case 'page-prev':state.page=Math.max(1,state.page-1);renderContent();$('#content').scrollTop=0;break;
+    case 'apply-composition':{state.toolsFixed=$('#tools-placement').value==='fixed';state.pageMenu=$('#page-menu-placement').value;state.localPlacement=$('#local-placement').value;state.desktopQuick=$('#desktop-shortcuts').checked;state.desktopDock=$('#desktop-dock').checked;$('#detail').close();history.replaceState(null,'',href());render();break;}
+    case 'map':showMap();break;
+    case 'close':requestDialogClose();break;
+    case 'apps':openDialog('Central e apps',`<p>Abra outro app ou volte à Central. O último destino de cada app fica preservado nesta sessão.</p><div class="stack">${button('Central de apps','central','grid')}${button('Gestor · '+viewInfo[state.lastViews.gestor][0],'switch:gestor','orders')}${button('Compras · '+viewInfo[state.lastViews.compras][0],'switch:compras','cart')}</div>${previewNote}`);break;
+    case 'switch':$('#detail').close();changeApp(id);break;
+    case 'alerts':openDialog('O que pede atenção',`<div class="stack"><button class="button" data-action="jump:gestor:exit">Retirada N099 esperando há 24 minutos ${icon('arrow')}</button><button class="button" data-action="jump:compras:divergences">Diferença no recebimento da nota 004821 ${icon('arrow')}</button><button class="button" data-action="jump:compras:replenishment">Farinha para menos de um dia ${icon('arrow')}</button></div>${previewNote}`);break;
+    case 'jump':rememberDestination();if($('#detail').open)$('#detail').close();state.lastViews[state.app]=state.view;state.app=parts[0];route(parts[1],true,false);break;
+    case 'search-suite':openDialog('Buscar páginas e apps',`<label class="suite-search-field">${icon('search')}<input id="suite-search" type="search" aria-label="Buscar página ou assunto" placeholder="Página, assunto ou app" autocomplete="off"></label><div id="suite-results">${Object.entries(applications).map(([appId,app])=>`<section class="suite-result-group"><h3>${app.label}</h3>${app.groups.flatMap(g=>g.children.map(c=>`<button class="suite-result" data-action="jump:${appId}:${c[0]}"><span class="suite-result-icon">${icon(c[2])}</span><span><strong>${c[1]}</strong><small>${g.label}</small></span>${icon('arrow')}</button>`)).join('')}</section>`).join('')}</div><p id="suite-empty" class="search-empty" hidden>Nenhuma página encontrada. Tente outro assunto.</p>`,'','search');$('#suite-search').focus();break;
+    case 'page-options':activeFlowContext={};openOptions((pageActions().includes('gold')?'':pageActions())+pageFlowOptions());break;
+    case 'display':state.display=id;history.replaceState(null,'',href());renderContent();break;
+    case 'density':state.density=id;$('#options-popover').hidePopover();history.replaceState(null,'',href());renderContent();break;
+    case 'list-options':openOptions(`${state.view==='catalog'?`<div class="mobile-presentation-options"><span class="option-heading">Visualização</span><div class="density-options" role="group" aria-label="Visualização do catálogo"><button data-action="display:list" aria-pressed="${state.display==='list'}">Lista ${state.display==='list'?'✓':''}</button><button data-action="display:grid" aria-pressed="${state.display==='grid'}">Grade ${state.display==='grid'?'✓':''}</button></div><hr></div>`:''}<span class="option-heading">Densidade da visualização</span><div class="density-options" role="group" aria-label="Densidade da visualização"><button data-action="density:comfortable" aria-pressed="${state.density==='comfortable'}">Confortável ${state.density==='comfortable'?'✓':''}</button><button data-action="density:compact" aria-pressed="${state.density==='compact'}">Compacta ${state.density==='compact'?'✓':''}</button></div><hr>${button('Editar preços no tabelão','catalog-grid','grid')}`);break;
+    case 'record-options':{const p=products.find(p=>p.id===id);openOptions(`<span class="option-heading">${esc(p.name)}</span>${button('Editar produto','product:'+id,'file')}${button('Disponibilidade nos canais','product-channels:'+id,'channels')}`);break;}
+    case 'product-channels':{const p=products.find(p=>p.id===id);openDialog('Canais de '+esc(p.name),`<p>O produto pode estar publicado mesmo quando o estoque está esgotado.</p><div class="fact"><span>PDV</span>${tag(p.status==='Pausado'?'Pausado':'Ativo',p.status==='Pausado'?'':'green')}</div><div class="fact"><span>Loja online</span>${tag(p.stock===0?'Esgotado':p.status==='Pausado'?'Pausado':'Disponível',p.stock===0?'amber':'green')}</div>${previewNote}`);break;}
+    case 'dismiss-feedback':$('#toast').hidden=true;if($('#dialog-feedback'))$('#dialog-feedback').hidden=true;break;
+    case 'catalog-filters':openDialog('Filtrar produtos',`<label class="field">Coleção<select id="filter-collection" class="button"><option value="all">Todas as coleções</option>${[...new Set(products.map(p=>p.collection))].map(c=>`<option value="${esc(c)}" ${state.collection===c?'selected':''}>${esc(c)}</option>`).join('')}</select></label><p>Combina com a busca e o recorte selecionado na barra superior.</p><label class="field">Ordenar produtos<select id="filter-sort" class="button"><option value="name" ${state.sort==='name'?'selected':''}>Nome A–Z</option><option value="price-asc" ${state.sort==='price-asc'?'selected':''}>Menor preço</option><option value="price-desc" ${state.sort==='price-desc'?'selected':''}>Maior preço</option></select></label>`,button('Limpar filtros','clear-filters')+button('Aplicar filtros','apply-filters','check','gold'));break;
+    case 'apply-filters':state.sort=$('#filter-sort').value;state.collection=$('#filter-collection').value;state.page=1;$('#detail').close();renderContent();break;
+    case 'clear-filters':state.collection='all';state.page=1;$('#detail').close();renderContent();break;
+    case 'record-step':{const current=products.find(p=>p.id===parts[0]);if($('[name=product-name]').value!==current.name||Number($('[name=price]').value)!==current.price/100){toast('Há alterações neste produto. Salve antes de passar ao próximo registro ou cancele a edição.','warning');break;}const list=catalogList();const index=list.findIndex(p=>p.id===parts[0]);const next=list[index+Number(parts[1])];if(next){$('#detail').close();act('product:'+next.id);}break;}
+    case 'product':{const p=products.find(x=>x.id===id);formDialog(p.name,[['Nome do produto','product-name',`value="${esc(p.name)}"`],['Preço em reais','price',`type="number" step="0.01" min="0.01" value="${p.price/100}"`]],'save-product:'+p.id);const records=catalogList(),index=records.findIndex(item=>item.id===p.id);$('#detail .dialog-foot').insertAdjacentHTML('afterbegin',`<nav class="record-pagination" aria-label="Navegar pelos produtos do recorte"><button class="icon-button" data-action="record-step:${p.id}:-1" aria-label="Produto anterior" ${index<=0?'disabled':''}>${icon('left')}</button><span>${index+1} de ${records.length}</span><button class="icon-button" data-action="record-step:${p.id}:1" aria-label="Próximo produto" ${index<0||index===records.length-1?'disabled':''}>${icon('arrow')}</button></nav>`);if(p.id==='GEL')$('#detail .dialog-body').insertAdjacentHTML('beforeend',button('Abrir insumo em Compras','cross-product','link'));break;}
+    case 'save-product':{const p=products.find(x=>x.id===id);const value=Number($('[name=price]').value);const newName=$('[name=product-name]').value.trim();if(!Number.isFinite(value)||value<=0||!newName){toast('Informe um nome e um preço maior que zero.','error');break;}p.name=newName;p.price=Math.round(value*100);$('#detail').close();renderContent();toast('Produto atualizado somente nesta prévia.');break;}
+    case 'catalog-grid':openDialog('Tabelão do catálogo',`<p>O mesmo cadastro pode ser editado em lote. A navegação proposta mantém esse acesso dentro de Produtos.</p>${table(['Produto','Preço'],products.map(p=>`<tr><td>${p.name}</td><td>${money(p.price)}</td></tr>`).join(''),'Amostra do tabelão')}${previewNote}`);break;
+    case 'new-product':formDialog('Novo produto',[['Nome','name','placeholder="Ex.: Pão de campanha"'],['Preço em reais','price','type="number" min="0.01" step="0.01"']],'simulate-save');break;
+    case 'new-collection':formDialog('Nova coleção',[['Nome da coleção','name','placeholder="Ex.: Pães do dia"']],'simulate-save');break;
+    case 'new-customer':formDialog('Novo cliente',[['Nome','name',''],['Telefone','phone','inputmode="tel"']],'simulate-save');break;
+    case 'new-supplier':formDialog('Novo fornecedor',[['Nome','name',''],['Contato','phone','inputmode="tel"']],'simulate-save');break;
+    case 'new-material':formDialog('Novo insumo',[['Nome','name',''],['SKU','sku',''],['Unidade de estoque','unit','placeholder="Ex.: kg"']],'simulate-save');break;
+    case 'simulate-save':if(!$('[name=name]')?.value.trim()){toast('Preencha o nome antes de continuar.','error');break;}state.extraCollections.push($('[name=name]').value.trim());$('#detail').close();renderContent();toast('Coleção criada na amostra local.');break;
+    case 'collection':route('catalog');state.search=id;renderContent();break;
+    case 'order':{const o=orders.find(x=>x.ref===id);openDialog('Pedido '+o.ref,`<div class="fact"><span>Cliente</span><strong>${o.name}</strong></div><div class="fact"><span>Recebimento</span><strong>${o.delivery}</strong></div><div class="fact"><span>Canal</span><strong>${o.channel}</strong></div><p>${o.items}</p><div class="fact total"><span>Total</span><strong>${money(o.total)}</strong></div>${tag(o.stage===2?'Pronto para sair':o.stage===1?'Em preparo':'Na entrada',o.stage===2?'green':'amber')}${previewNote}`,button('Voltar à lista','close')+(o.stage===2?button('Simular entrega','deliver:'+id,'check','gold'):''));break;}
+    case 'deliver':$('#detail').close();toast('Entrega simulada. O pedido continua na amostra para comparar as variantes.');break;
+    case 'historical':openDialog('Pedido '+id,`<p>Pedido concluído. O histórico e o detalhe ficam em Pedidos, junto da operação.</p><div class="fact"><span>Pagamento</span><strong>Confirmado</strong></div><div class="fact"><span>Atendimento</span><strong>Concluído</strong></div>${previewNote}`);break;
+    case 'customer':{const c=customers[Number(id)];openDialog(c.name,`<div class="fact"><span>Telefone</span><strong>${c.phone}</strong></div><div class="fact"><span>Grupo</span><strong>${c.group}</strong></div><div class="fact"><span>Histórico</span><strong>${c.orders} pedidos</strong></div><p>O cadastro e o histórico ficam juntos. A partir daqui, a pessoa pode entender a relação antes de alterar seus dados.</p>${previewNote}`);break;}
+    case 'group':openDialog('Grupo '+esc(id),`<p>Condições comerciais e clientes pertencentes ao grupo. A entrada fica junto de Clientes.</p>${previewNote}`);break;
+    case 'merge':openDialog('Revisar unificação',`<p>Confirme se Ana Lima e Ana L. são a mesma pessoa. Uma navegação mais curta não elimina essa decisão.</p><div class="fact"><span>Ana Lima</span><strong>12 pedidos</strong></div><div class="fact"><span>Ana L.</span><strong>2 pedidos</strong></div>${previewNote}`,button('Manter separados','close')+button('Simular unificação','simulate-merge','users','gold'));break;
+    case 'simulate-merge':$('#detail').close();toast('Unificação simulada. Nenhum cadastro foi alterado.');break;
+    case 'channel':openDialog(['PDV','Loja online','iFood','WhatsApp'][Number(id)],`<p>A operação do canal e seu catálogo ficam no mesmo assunto, com destinos próprios.</p>${button('Ver catálogo por canal','go-channel-catalog','grid')}${previewNote}`);break;
+    case 'go-channel-catalog':$('#detail').close();route('channel-catalog');break;
+    case 'station':openDialog('Posto '+esc(id),`<p>Dispositivos vinculados e trabalho previsto neste posto. Posto, dispositivo e operador permanecem conceitos distintos.</p>${previewNote}`);break;
+    case 'material':{const m=materials.find(x=>x.id===id);openDialog(m.name,`<div class="fact"><span>SKU</span><strong>${m.id}</strong></div><div class="fact"><span>Unidade de estoque</span><strong>${m.unit}</strong></div><div class="fact"><span>Saldo</span><strong>${m.stock} ${m.unit}</strong></div><div class="fact"><span>Custo de referência</span><strong>${money(m.cost)} / ${m.unit}</strong></div><div class="fact"><span>Fornecedor</span><strong>${m.supplier}</strong></div>${m.id==='GEL'?button('Abrir produto no Gestor','cross-material','link'):button('Ver sugestão de reposição','go-replenishment','cart')}${previewNote}`);break;}
+    case 'go-replenishment':$('#detail').close();route('replenishment');break;
+    case 'replenish':{const m=materials.find(x=>x.id===id);openDialog('Repor '+m.name.toLowerCase(),`<div class="fact"><span>Disponível</span><strong>${m.stock} ${m.unit}</strong></div><div class="fact"><span>Cobertura estimada</span><strong>${m.coverage}</strong></div><div class="fact"><span>Sugestão</span><strong>${m.suggestion}</strong></div><div class="fact"><span>Fornecedor</span><strong>${m.supplier}</strong></div><p>A sugestão de compra pertence a Compras. O saldo só muda quando o recebimento é confirmado.</p>${previewNote}`,button('Voltar às sugestões','close')+button('Ver fornecedores','go-suppliers','truck'));break;}
+    case 'go-suppliers':$('#detail').close();route('suppliers');break;
+    case 'supplier':openDialog(['Moinho do Vale','Laticínios da Serra','Distribuidora Aurora'][Number(id)],`<p>Contato e materiais oferecidos pelo fornecedor, com comparação de custo na unidade correta.</p><div class="fact"><span>Contato fictício</span><strong>(43) 90000-0200</strong></div>${previewNote}`,button('Fechar','close')+button('Ver custos de compra','go-costs','coins'));break;
+    case 'go-costs':$('#detail').close();route('costs');break;
+    case 'criteria':openDialog('Por que repor agora?',`<p>As sugestões consideram consumo previsto, saldo disponível, prazo de entrega e margem de segurança.</p><p>A prévia mostra esses motivos sem criar novas regras de compra.</p>${previewNote}`);break;
+    case 'receiving-all':route('receiving');break;
+    case 'receiving-divergences':route('divergences');break;
+    case 'receipt-item':{const r=receipt.find(x=>x.id===id);activeFlowContext={id:r.id,name:r.name};openDialog(r.name,`<div class="fact"><span>Na nota</span><strong>${r.expected} ${r.unit}</strong></div><div class="fact"><span>Recebido</span><strong>${r.received} ${r.unit}</strong></div>${r.expected!==r.received?`<div class="banner">${icon('warning')}<div><strong>Faltam ${r.expected-r.received} ${r.unit}</strong><p>Confirme o que aconteceu antes de continuar.</p></div></div><fieldset class="decision-options"><legend>Decisão da conferência</legend><label><input type="radio" name="receipt-decision" value="partial" checked><span>Receber ${r.received} ${r.unit} e registrar a falta</span></label><label><input type="radio" name="receipt-decision" value="correct"><span>Corrigir a contagem para ${r.expected} ${r.unit}</span></label></fieldset>`:'<p>A quantidade recebida corresponde à nota.</p>'}<section class="flow-related"><h3>Este item da nota 004821</h3>${flowButtons(['receipt-exception','receipt-return'])}</section>${previewNote}`,button('Voltar à conferência','close')+(r.expected!==r.received?button('Aplicar decisão na prévia','resolve:'+r.id,'check','gold'):''));break;}
+    case 'resolve':{const r=receipt.find(x=>x.id===id);if($('input[name=receipt-decision]:checked').value==='correct')r.received=r.expected;r.resolved=true;$('#detail').close();renderContent();renderHead();toast('Diferença resolvida somente nesta prévia.');break;}
+    case 'confirm-receipt':openDialog('Confirmar a entrada?',`<p>Os itens conferidos dariam entrada no estoque. Esta ação está apenas representada na prévia.</p>${previewNote}`,button('Voltar','close')+button('Simular confirmação','simulate-receipt','check','gold'));break;
+    case 'simulate-receipt':$('#detail').close();toast('Entrada simulada. Nenhum estoque ou recebimento real foi alterado.');break;
+    case 'scan':openDialog('Ler uma nota',`<p>O leitor ou a câmera identifica a nota no fluxo real. Aqui você pode continuar a nota fictícia já aberta.</p>${previewNote}`,button('Voltar à nota 004821','close'));break;
+    case 'finish-count':showCountReview();break;
+    default:toast('Esta etapa está representada para a comparação de navegação.');
+  }
+}
+function changeApp(app){rememberDestination();state.lastViews[state.app]=state.view;state.central=false;state.trail=null;state.app=app;state.view=state.lastViews[app];state.search='';state.filter='all';state.page=1;const saved=destinationStates.get(app+':'+state.view);if(saved)destinationFields.forEach(k=>state[k]=saved[k]);state.closed=new Set(applications[state.app].groups.filter(g=>!g.children.some(c=>c[0]===state.view)).map(g=>g.id));state.drawer=false;history.pushState(null,'',href());render();$('#content').scrollTop=saved?.scroll||0;}
+document.addEventListener('click',event=>{
+  const el=event.target.closest('[data-view],[data-action],[data-app],[data-variant],[data-group-toggle],[data-filter],[data-drawer-group],[data-quick-group]');if(!el)return;
+  if(el.matches('a')&&(event.metaKey||event.ctrlKey||event.shiftKey||event.altKey))return;
+  event.preventDefault();
+  if(el.dataset.drawerGroup){const g=applications[state.app].groups.find(g=>g.id===el.dataset.drawerGroup);if(g.children.length===1)route(g.children[0][0]);else{state.drawerGroup=g.id;renderNavigation();$('.drawer-back')?.focus();}return;}
+
+  if(el.dataset.app){changeApp(el.dataset.app);return;}
+  if(el.dataset.variant){state.adaptive=false;state.variant=el.dataset.variant;state.compare=false;state.compareTools=false;state.drawer=false;history.replaceState(null,'',href());render();return;}
+  if(el.dataset.groupToggle){const key=el.dataset.groupToggle;if(state.compact&&!state.drawer){const g=applications[state.app].groups.find(g=>g.id===key);state.compact=false;state.closed.delete(key);route(g.children[0][0]);}else{state.closed.has(key)?state.closed.delete(key):state.closed.add(key);renderNavigation();}return;}
+  if(el.dataset.filter){state.filter=el.dataset.filter;state.page=1;renderContent();return;}
+  if(el.dataset.view){route(el.dataset.view);return;}
+  if(el.dataset.action)act(el.dataset.action);
+});
+$('#scrim').addEventListener('click',()=>{state.drawer=false;renderNavigation();$('.mobile-menu')?.focus();});
+document.addEventListener('focusin',event=>{document.body.dataset.editing=event.target.matches('input,textarea,select')?'true':'false';});
+document.addEventListener('focusout',()=>{requestAnimationFrame(()=>{document.body.dataset.editing=document.activeElement?.matches('input,textarea,select')?'true':'false';});});
+document.addEventListener('input',event=>{
+  if(event.target.matches('[data-search-input]')){const pos=event.target.selectionStart;state.search=event.target.value;state.page=1;renderContent();const input=$('[data-search-input]');input.focus();input.setSelectionRange(pos,pos);}
+  if(event.target.id==='suite-search'){const normalize=text=>text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/\p{Diacritic}/gu,'');const text=normalize(event.target.value);$$('.suite-result-group').forEach(group=>{const app=$('h3',group).textContent;$$('button',group).forEach(b=>b.hidden=!normalize(app+' '+b.textContent).includes(text));group.hidden=!$$('button',group).some(b=>!b.hidden);});$('#suite-empty').hidden=$$('#suite-results button').some(b=>!b.hidden);}
+  if(event.target.matches('[data-count]')){const key=event.target.dataset.count;const value=event.target.value;if(value==='')delete state.counted[key];else if(Number(value)>=0)state.counted[key]=Number(value);const row=event.target.closest('tr');row.lastElementChild.innerHTML=countStatus(materials.find(m=>m.id===key));renderSupportBars();renderHead();}
+  if(event.target.matches('[data-count-reason]'))state.countReasons[event.target.dataset.countReason]=event.target.value;
+});
+document.addEventListener('change',event=>{
+  if(event.target.id==='compare-device'){state.compareDevice=event.target.value;history.replaceState(null,'',href());render();return;}
+  if(event.target.id==='catalog-sort'){state.sort=event.target.value;state.page=1;renderContent();$('#catalog-sort').focus();return;}
+  if(event.target.id==='mobile-destinations'||event.target.id==='compare-destination'){route(event.target.value);return;}
+  if(event.target.matches('[data-task]')){const id=Number(event.target.dataset.task);event.target.checked?state.done.add(id):state.done.delete(id);renderContent();}
+});
+document.addEventListener('keydown',event=>{
+  if(event.target.closest('.local-options')&&['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){const nodes=$$('button',event.target.closest('.local-options'));let at=nodes.indexOf(event.target);at=event.key==='Home'?0:event.key==='End'?nodes.length-1:(at+(event.key==='ArrowRight'?1:-1)+nodes.length)%nodes.length;event.preventDefault();nodes[at].focus();nodes[at].scrollIntoView({block:'nearest',inline:'nearest'});return;}
+  if(event.key==='Escape'&&$('#detail').open&&!$('#discard-dialog').open&&!$('#action-confirm').open){event.preventDefault();requestDialogClose();return;}
+  if(event.target.id==='suite-search'&&['Enter','ArrowDown'].includes(event.key)){const first=$$('#suite-results button').find(b=>!b.hidden&&!b.closest('section').hidden);if(first){event.preventDefault();if(event.key==='Enter')first.click();else first.focus();}}
+  if(event.key==='Escape'&&state.drawer){event.preventDefault();state.drawer=false;state.drawerGroup=null;renderNavigation();$('.mobile-menu')?.focus();}
+  if(state.drawer&&event.key==='Tab'){const nodes=$$('a,button:not([disabled])',$('#primary'));if(event.shiftKey&&document.activeElement===nodes[0]){event.preventDefault();nodes.at(-1).focus();}else if(!event.shiftKey&&document.activeElement===nodes.at(-1)){event.preventDefault();nodes[0].focus();}}
+});
+$('#options-popover').addEventListener('toggle',event=>{if(event.newState==='closed')optionsTrigger?.setAttribute('aria-expanded','false');});
+$('#detail').addEventListener('close',()=>{if(previousFocus?.isConnected)previousFocus.focus();else if(!$('#action-confirm').open&&!$('#discard-dialog').open)$('#workspace').focus();});
+window.addEventListener('message',event=>{
+  if(event.origin!==location.origin||!event.data||typeof event.data!=='object')return;
+  if(state.compare&&event.data.type==='shopman-preview-route'&&$$('iframe').some(f=>f.contentWindow===event.source)){
+    if(event.data.app!==state.app)return;
+    const view=event.data.view;if(!applications[state.app].groups.some(g=>g.children.some(c=>c[0]===view)))return;
+    state.view=view;history.replaceState(null,'',href());$('#compare-destination').value=view;
+    $$('iframe').filter(f=>f.contentWindow!==event.source).forEach(f=>f.contentWindow.postMessage({type:'shopman-preview-set-route',view},location.origin));
+  }else if(state.embedded&&event.source===parent&&event.data.type==='shopman-preview-set-route'){mirroringTools=true;route(event.data.view,false);mirroringTools=false;}
+});
+let adaptiveMobile=mobileNavigation();
+let narrowLayout=matchMedia('(min-width:651px) and (max-width:1100px) and (orientation:landscape)').matches;
+window.addEventListener('resize',()=>{const mobile=mobileNavigation();if(state.adaptive&&mobile!==adaptiveMobile){adaptiveMobile=mobile;state.drawer=false;state.drawerGroup=null;render();}const next=matchMedia('(min-width:651px) and (max-width:1100px) and (orientation:landscape)').matches;if(next!==narrowLayout){narrowLayout=next;if(!state.compare&&!state.central){renderNavigation();renderHead();}}});
+window.addEventListener('popstate',()=>{if(!state.central)rememberDestination();const q=new URLSearchParams(location.search);state.app=q.get('app')==='compras'?'compras':'gestor';state.variant=q.get('variant')==='double'?'double':'single';state.view=q.get('view')||applications[state.app].home;state.adaptive=q.get('layout')==='adaptive'||!q.has('variant')||(q.get('clean')==='1'&&q.get('embedded')!=='1');state.display=q.get('display')==='grid'?'grid':'list';state.density=q.get('density')==='compact'?'compact':'comfortable';state.clean=q.get('clean')==='1';state.hidden=q.get('rail')==='hidden';state.compact=q.has('rail')?q.get('rail')==='compact':q.get('compact')==='1'||narrowLayout;state.secondary=q.get('options')!=='hidden';state.toolsFixed=q.get('tools')==='fixed';state.pageMenu=q.get('pageMenu')==='header'?'header':'title';state.compareTools=q.get('compareTools')==='1';state.compareDevice=q.get('device')==='desktop'?'desktop':'mobile';state.compare=q.get('compare')==='1'||state.compareTools;state.central=q.get('screen')==='central';state.localPlacement=q.get('local')==='bottom'?'bottom':'top';state.desktopQuick=q.get('quick')==='1';state.desktopDock=q.get('dock')==='1';state.trail=null;state.drawer=false;if(!applications[state.app].groups.some(g=>g.children.some(c=>c[0]===state.view)))state.view=applications[state.app].home;const saved=destinationStates.get(state.app+':'+state.view);if(saved)destinationFields.forEach(k=>state[k]=saved[k]);render();$('#content').scrollTop=saved?.scroll||0;});
+render();
+new ResizeObserver(()=>requestAnimationFrame(publishToolsMetrics)).observe($('#content'));
+
+if(params.get('flow')&&!['forbidden','loading','error'].includes(params.get('scenario')))showFlow(params.get('flow'));
