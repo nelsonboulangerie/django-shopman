@@ -159,3 +159,33 @@ export function buildCustomerDisplaySnapshot(
 
   return snapshot;
 }
+
+/**
+ * As boas-vindas: o que a parede mostra quando o balcão não está cobrando ninguém.
+ * Publicado também quando a tela de venda sai de cena: sem isso, a parede
+ * congelava na última comanda, e a cliente que pagava R$ 13,00 da encomenda lia
+ * "Total R$ 286,00" de outra venda (beta 07/11).
+ */
+export function idleCustomerDisplaySnapshot(shopName: string, nowMs: number = Date.now()): CustomerDisplaySnapshot {
+  return buildCustomerDisplaySnapshot(
+    { shopName, checkoutMode: false, items: [], review: null, result: null, pixStatus: "idle", discountReasons: [] },
+    nowMs,
+  );
+}
+
+/**
+ * A encomenda sendo recebida no balcão ("Receber e entregar"): a parede mostra o
+ * que falta pagar e para quem, como no pagamento da venda.
+ */
+export function handOverCustomerDisplaySnapshot(
+  inputs: { shopName: string; amountDisplay: string; customerName: string; orderRef: string },
+  nowMs: number = Date.now(),
+): CustomerDisplaySnapshot {
+  return {
+    ...idleCustomerDisplaySnapshot(inputs.shopName, nowMs),
+    phase: "payment",
+    totalDisplay: inputs.amountDisplay,
+    customerFirstName: firstName(inputs.customerName),
+    orderRef: inputs.orderRef,
+  };
+}
