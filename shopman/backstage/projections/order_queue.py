@@ -121,6 +121,8 @@ def _order_payment_status_label(order, payment_status: str) -> str:
         return SIMULATED_PAYMENT_LABEL
     if _card_capture_failed(order, payment_status):
         return CARD_CAPTURE_FAILED_LABEL
+    if payment_status not in _PAYMENT_COMPLETE and payment_svc.awaiting_repayment(order) is not None:
+        return AWAITING_REPAYMENT_LABEL
     return payment_status_label(payment_status)
 
 
@@ -2760,6 +2762,10 @@ CARD_CAPTURE_FAILED_REASON = (
     "O cartão estava autorizado, mas a cobrança foi recusada ao aceitar o pedido, e nada foi cobrado. "
     "Confira no painel do Stripe ou cancele o pedido: a reserva no cartão do cliente é desfeita."
 )
+#: A cobrança do cartão não passou depois do aceite e o cliente foi chamado a
+#: pagar de novo (decisão do dono, 07/11): o pedido espera, sem ir para a
+#: cozinha, e segue sozinho quando o pagamento entrar.
+AWAITING_REPAYMENT_LABEL = "Aguardando novo pagamento"
 #: Os rótulos do bloqueio de pagamento que não destrava sozinho: a cobrança
 #: venceu ou foi recusada. A tela oferece cancelar com o motivo já marcado.
 LAPSED_PAYMENT_LABELS = frozenset({PIX_LAPSED_LABEL, PAYMENT_LAPSED_LABEL, CARD_CAPTURE_FAILED_LABEL})
@@ -2836,6 +2842,14 @@ def _advance_block_copy(order: Order, bloqueio, method: str, *, payment_pending:
     if bloqueio == operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED:
         if payment_svc.capture_failure(order) is not None:
             return CARD_CAPTURE_FAILED_LABEL, CARD_CAPTURE_FAILED_REASON
+        if payment_svc.awaiting_repayment(order) is not None:
+            label, times = _payment_wait_copy(order, method)
+            if label in LAPSED_PAYMENT_LABELS:
+                return label, times
+            return AWAITING_REPAYMENT_LABEL, (
+                "A cobrança do cartão não passou e nada foi cobrado. Pedimos ao cliente um novo pagamento: "
+                f"{times}. Sem pagamento no prazo, o pedido cancela sozinho."
+            )
         return _payment_wait_copy(order, method)
     return advance_block_label(bloqueio), operator_orders.advance_block_message(bloqueio)
 
@@ -3364,6 +3378,7 @@ _EVENT_LABELS = {
     "payment.authorized": "Cartão autorizado (ainda não cobrado)",
     "payment.captured": "Pagamento recebido",
     "payment.capture_failed": "Cobrança do cartão recusada (nada foi cobrado)",
+    "payment.repayment_requested": "Novo pagamento pedido ao cliente",
     "payment.refunded": "Pagamento estornado",
     "payment.counter_takeover": "Cobrança online cancelada: o cliente paga no balcão",
 }

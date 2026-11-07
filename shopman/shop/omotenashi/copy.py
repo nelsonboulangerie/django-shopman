@@ -862,6 +862,17 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    # A cobrança do cartão não passou depois do aceite e o cliente paga de novo.
+    "TRACKING_PROMISE_CARD_REPAYMENT_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="A cobrança no cartão não passou")},
+    },
+    "TRACKING_PROMISE_CARD_REPAYMENT_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Nada foi cobrado. Pague com outro cartão até {deadline} para seguirmos com o seu pedido.",
+            ),
+        },
+    },
     # A cobrança do cartão autorizado foi recusada no aceite.
     "TRACKING_CARD_CAPTURE_FAILED": {
         WILDCARD: {

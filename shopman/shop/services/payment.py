@@ -686,6 +686,8 @@ def capture(order) -> None:
         locked = Order.objects.select_for_update().get(pk=order.pk)
         _capture_once(locked)
         order.data = locked.data
+    if capture_failure(order) is not None:
+        request_new_payment_after_capture_failure(order)
 
 
 def _capture_once(order) -> None:
@@ -776,6 +778,77 @@ def _record_capture_failure(order, *, payment_data: dict, intent_ref: str, metho
             actor="payment.capture",
             payload={"method": method, "intent_ref": intent_ref, "code": code},
         )
+
+
+#: ``order.data["payment"][REPAYMENT_KEY]``: a cobrança do cartão falhou depois
+#: do aceite e o cliente foi chamado a pagar de novo (decisão do dono, 07/11).
+REPAYMENT_KEY = "repayment"
+
+
+def request_new_payment_after_capture_failure(order) -> bool:
+    """A cobrança do cartão não passou depois do aceite: pede um pagamento novo.
+
+    Decisão do dono (07/11/2026): o pedido fica em espera, transparente para a
+    casa, e só segue quando o pagamento for confirmado. A espera é a que o Core
+    já tem para o pedido aceito sem captura: o avanço fica barrado
+    (``PAYMENT_NOT_CAPTURED``), a cozinha não recebe nada, o ``payment.timeout``
+    cancela no prazo e o ``on_paid`` retoma do aceite quando o dinheiro entra.
+
+    Aqui só se troca a cobrança: a autorização velha é anulada no gateway (a
+    reserva sai do cartão do cliente) e uma cobrança nova nasce, com prazo.
+    Se a anulação falhar, nada novo é criado: duas reservas no cartão do cliente
+    é pior que nenhuma, e o pedido segue em "Cobrança recusada" com o alerta.
+
+    Devolve ``True`` quando a cobrança nova foi aberta.
+    """
+    failure = capture_failure(order)
+    if failure is None:
+        return False
+    old_intent_ref = str(failure.get("intent_ref") or "")
+    cancel(order, reason="capture_failed")
+    if (get_payment_status(order) or "").lower() == "authorized":
+        logger.warning("payment.repayment_skipped_hold_still_active order=%s intent=%s", order.ref, old_intent_ref)
+        return False
+
+    payment_data = dict((order.data or {}).get("payment") or {})
+    for key in _INTENT_PRESENTATION_KEYS:
+        payment_data.pop(key, None)
+    payment_data.pop("last_decline", None)
+    payment_data[REPAYMENT_KEY] = {
+        "after_intent_ref": old_intent_ref,
+        "requested_at": timezone.now().isoformat(),
+    }
+    data = dict(order.data or {})
+    data["payment"] = payment_data
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    initiate(order)
+    order.emit_event(
+        event_type="payment.repayment_requested",
+        actor="payment.capture",
+        payload={"after_intent_ref": old_intent_ref, "intent_ref": str(((order.data or {}).get("payment") or {}).get("intent_ref") or "")},
+    )
+    return True
+
+
+def awaiting_repayment(order) -> dict | None:
+    """O pedido espera o pagamento NOVO pedido depois da cobrança recusada.
+
+    ``{after_intent_ref, requested_at}`` enquanto a cobrança nova está aberta e o
+    dinheiro não entrou; ``None`` depois da captura (``transaction_id``) ou fora
+    desse caminho.
+    """
+    payment_data = (getattr(order, "data", None) or {}).get("payment") or {}
+    repayment = payment_data.get(REPAYMENT_KEY)
+    if not isinstance(repayment, dict) or payment_data.get("transaction_id"):
+        return None
+    if str(payment_data.get("intent_ref") or "") == str(repayment.get("after_intent_ref") or ""):
+        return None
+    # A captura pode entrar por caminhos que não gravam ``transaction_id`` no
+    # pedido (conferência com o gateway): o Payman é quem diz se pagou.
+    if has_sufficient_captured_payment(order) is True:
+        return None
+    return repayment
 
 
 def capture_failure(order) -> dict | None:
