@@ -141,6 +141,9 @@ class CheckoutProjection:
     # próximas datas em que a loja opera + dias da semana sem expediente.
     available_dates: tuple[str, ...] = ()
     closed_weekdays: tuple[int, ...] = ()
+    # Hoje é dia de loja aberta e as retiradas e entregas de hoje já acabaram:
+    # "Hoje" sai de ``available_dates`` e a tela diz por quê.
+    today_over: bool = False
 
     # Fulfillment contextual hints shown below the pickup/delivery chips
     pickup_hint: str = ""
@@ -242,7 +245,7 @@ def build_checkout(
     requested_date = _delivery_date_from_context(request, delivery_date)
     pickup_slots, earliest_slot_ref, pickup_grid = _pickup_slots(cart, delivery_date=requested_date)
     max_preorder_days, closed_dates, support_whatsapp_url = _shop_config()
-    available_dates, closed_weekdays = checkout_projection.availability_dates(max_preorder_days)
+    available_dates, closed_weekdays, today_over = checkout_projection.availability_dates(max_preorder_days)
 
     is_authenticated = customer_info is not None
     requires_authentication = _requires_authentication(channel_ref)
@@ -315,6 +318,7 @@ def build_checkout(
         closed_dates_json=json.dumps(closed_dates),
         available_dates=available_dates,
         closed_weekdays=closed_weekdays,
+        today_over=today_over,
         is_debug=settings.DEBUG,
         support_whatsapp_url=support_whatsapp_url,
         pickup_hint="Gratuita",

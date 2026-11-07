@@ -935,6 +935,9 @@ export interface CheckoutProjection {
   default_ddd: string
   available_dates: string[]
   closed_weekdays: number[]
+  // Hoje é dia de loja aberta e as retiradas e entregas de hoje já acabaram:
+  // "Hoje" não vem em `available_dates` e a tela diz por quê.
+  today_over?: boolean
   // NOTA DA ENTREGA: toda entrega pede CPF/CNPJ. `prefill_tax_id` é o documento
   // que já vem no campo (do cadastro ou da última entrega); `prefill_tax_id_source`
   // diz de onde (`document` | `last_delivery`). Vazios quando a casa não conhece.

@@ -126,6 +126,16 @@ describe('horário de retirada de hoje (beta 06/11)', () => {
     expect(finalizar).toContain('data-checkout-pickup-slots-empty')
     expect(finalizar).toContain("'Horário da retirada'")
   })
+
+  it('hoje encerrado diz por que "Hoje" saiu das datas, em vez de sumir calado', async () => {
+    const { noWindowsMessage, todayOverMessage } = await import('../app/utils/checkoutFlow')
+    expect(todayOverMessage('pickup')).toBe('Hoje já encerramos as retiradas.')
+    expect(todayOverMessage('delivery')).toBe('Hoje já encerramos as entregas.')
+    expect(noWindowsMessage('pickup', true)).toBe('Hoje já encerramos as retiradas. Escolha outra data.')
+    expect(noWindowsMessage('delivery', true)).toBe('Hoje já encerramos as entregas. Escolha outra data.')
+    expect(finalizar).toContain('data-checkout-today-over')
+    expect(finalizar).toContain('checkout.value?.today_over')
+  })
 })
 
 describe('linha da taxa de entrega (beta SMS-21)', () => {

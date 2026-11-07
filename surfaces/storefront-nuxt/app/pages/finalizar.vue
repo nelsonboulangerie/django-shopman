@@ -49,6 +49,7 @@ import {
   shouldOfferPickupSwap,
   checkoutWindowsReason,
   noWindowsMessage,
+  todayOverMessage,
   usesWindowGrid,
   checkoutNotesCopy,
   couponCardState,
@@ -573,6 +574,9 @@ const quickDateOptions = computed(() => {
   return out
 })
 const isCustomDate = computed(() => isCustomCheckoutDate(state.delivery_date, quickDateOptions.value))
+// "Hoje" fora das opções porque o dia já encerrou: a tela diz, em vez de sumir calado.
+const todayOverNotice = computed(() => (checkout.value?.today_over ? todayOverMessage(state.fulfillment_type) : ''))
+const isTodaySelected = computed(() => state.delivery_date === dateBounds.value.todayValue)
 const contactState = computed<CheckoutSectionState>(() => {
   if (fieldErrors.value.name || fieldErrors.value.phone) return 'error'
   // `nameEditing` entra aqui junto com `contactEditing`, e esta é a METADE
@@ -841,7 +845,10 @@ function initializeDeliveryDate () {
   if (chosenDate.value) return
   if (!checkout.value) return
   const restoredDate = state.delivery_date
-  const value = restoredDate && !isCheckoutDateUnavailable(restoredDate, dateBounds.value, closedDateEntries.value, closedWeekdays.value)
+  // Hoje já encerrado (`today_over`) não volta como data lembrada: o cliente
+  // cairia numa lista de horários vazia em vez de no próximo dia.
+  const restoredIsOver = !!checkout.value.today_over && restoredDate === dateBounds.value.todayValue
+  const value = restoredDate && !restoredIsOver && !isCheckoutDateUnavailable(restoredDate, dateBounds.value, closedDateEntries.value, closedWeekdays.value)
     ? restoredDate
     : checkout.value.available_dates?.[0] || localDateValue(new Date())
   const parsed = parseLocalDate(value)
@@ -1084,7 +1091,7 @@ function validateWhenStep (): boolean {
   delete errors.delivery_time_slot
   if (!state.delivery_date) errors.delivery_date = checkout.value?.copy.when_required || 'Escolha a data.'
   if (state.delivery_date && isCheckoutDateUnavailable(state.delivery_date, dateBounds.value, closedDateEntries.value, closedWeekdays.value)) errors.delivery_date = 'Escolha uma data disponível.'
-  if (state.delivery_date && !slots.value.length) errors.delivery_time_slot = noWindowsMessage(state.fulfillment_type)
+  if (state.delivery_date && !slots.value.length) errors.delivery_time_slot = noWindowsMessage(state.fulfillment_type, isTodaySelected.value)
   if (slots.value.length && !state.delivery_time_slot) errors.delivery_time_slot = 'Escolha um horário.'
   if (state.delivery_time_slot && slots.value.length && !selectedSlot.value?.enabled) {
     errors.delivery_time_slot = selectedSlot.value?.reason || 'Escolha um horário disponível.'
@@ -1879,6 +1886,9 @@ useSeoMeta({
               <div class="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                 <div class="space-y-2">
                   <UiLabel>Data</UiLabel>
+                  <p v-if="todayOverNotice" class="shop-meta text-muted-foreground" data-checkout-today-over>
+                    {{ todayOverNotice }}
+                  </p>
                   <!-- Datas padronizadas como as demais escolhas: caixas verticais
                        com dia da semana + data explícita. "Outra data" abre o
                        calendário e mostra a data escolhida quando ativa. -->
@@ -1947,7 +1957,7 @@ useSeoMeta({
                 <div v-if="isWindowGrid && state.delivery_date" class="space-y-2" data-checkout-delivery-windows>
                   <UiLabel>{{ isDeliveryWindows ? 'Horário da entrega' : 'Horário da retirada' }}</UiLabel>
                   <p v-if="!slots.length" class="shop-meta text-muted-foreground" data-checkout-delivery-windows-empty>
-                    {{ noWindowsMessage(state.fulfillment_type) }}
+                    {{ noWindowsMessage(state.fulfillment_type, isTodaySelected) }}
                   </p>
                   <template v-else>
                     <p v-if="windowsReason" class="shop-meta text-muted-foreground" data-checkout-pickup-readiness>
@@ -1984,7 +1994,7 @@ useSeoMeta({
                 <div v-if="!isWindowGrid && state.delivery_date" class="space-y-2">
                   <UiLabel>Horário</UiLabel>
                   <p v-if="!slots.length" class="shop-meta text-muted-foreground" data-checkout-pickup-slots-empty>
-                    {{ noWindowsMessage(state.fulfillment_type) }}
+                    {{ noWindowsMessage(state.fulfillment_type, isTodaySelected) }}
                   </p>
                   <p v-if="windowsReason" class="shop-meta text-muted-foreground" data-checkout-pickup-readiness>
                     {{ windowsReason }}
