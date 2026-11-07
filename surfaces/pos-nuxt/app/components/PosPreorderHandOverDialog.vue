@@ -14,12 +14,18 @@ import {
   type HandOverBody,
 } from "~/presentation/preorderActions";
 import type { CounterMethod, PreorderHandOver } from "~/types/preorders";
+import { useCustomerDisplayPublisher } from "~/composables/useCustomerDisplay";
+import { handOverCustomerDisplaySnapshot, idleCustomerDisplaySnapshot } from "~/presentation/customerDisplay";
 
 const props = defineProps<{
   open: boolean;
   handOver: PreorderHandOver;
   customerName: string;
   busy?: boolean;
+  /** O nome da loja, para a Tela do cliente (vem da projeção do terminal). */
+  shopName?: string;
+  /** O pedido, para a Tela do cliente. */
+  orderRef?: string;
 }>();
 
 const emit = defineEmits<{
@@ -40,6 +46,21 @@ watch(() => props.open, (open) => {
 
 const check = computed(() => checkReceive(method.value, props.handOver.amount_q, received.value));
 const methodOptions = COUNTER_METHODS.map((option) => ({ value: option.key, label: option.label }));
+
+// A Tela do cliente acompanha o recebimento: com o diálogo aberto e algo a
+// pagar, a parede mostra o valor e para quem; fechado, as boas-vindas. Antes ela
+// seguia no último carrinho da tela de venda (beta 07/11).
+const displaySnapshot = computed(() =>
+  props.open && props.handOver.needs_payment
+    ? handOverCustomerDisplaySnapshot({
+      shopName: props.shopName || "",
+      amountDisplay: props.handOver.amount_display,
+      customerName: props.customerName,
+      orderRef: props.orderRef || "",
+    })
+    : idleCustomerDisplaySnapshot(props.shopName || ""),
+);
+useCustomerDisplayPublisher(displaySnapshot);
 
 function confirm() {
   if (props.busy || !check.value.ok) return;
