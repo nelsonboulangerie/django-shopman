@@ -99,3 +99,44 @@ def test_scheduled_wakeup_waits_without_exhausting_attempts_then_resumes(state, 
     with patch("shopman.shop.lifecycle.activate_preorder") as activate:
         handler.handle(message=message, ctx={})
         activate.assert_called_once()
+
+
+def _scheduled_ready(window_start):
+    prep = window_start - timedelta(hours=5)
+    return make_order(provider="MERCHANT", status="ready", facts={
+        "order_timing": "SCHEDULED",
+        "schedule": {
+            "preparation_start_at": prep.isoformat(),
+            "delivery_start_at": window_start.isoformat(),
+            "delivery_end_at": (window_start + timedelta(hours=1)).isoformat(),
+        },
+    })
+
+
+def test_scheduled_order_cannot_be_dispatched_before_the_delivery_window():
+    """Homologação 07/11/2026: o iFood reprovou o despacho agendado feito antes da janela."""
+    order = _scheduled_ready(timezone.now() + timedelta(hours=4))
+    with patch.object(operator_orders.payment_gate, "payment_blocks_transition", return_value=False), patch(
+        "shopman.shop.adapters.delivery_devices.needs_card_machine", return_value=False,
+    ):
+        assert operator_orders.advance_block(order) == operator_orders.AdvanceBlock.IFOOD_WINDOW_NOT_OPEN
+        with pytest.raises(ValueError, match="janela"):
+            operator_orders.advance_order(order, actor="operator:test")
+    order.refresh_from_db()
+    assert order.status == "ready"
+
+
+def test_scheduled_order_dispatches_once_the_window_opens():
+    order = _scheduled_ready(timezone.now() - timedelta(minutes=1))
+    with patch.object(operator_orders.payment_gate, "payment_blocks_transition", return_value=False), patch(
+        "shopman.shop.adapters.delivery_devices.needs_card_machine", return_value=False,
+    ):
+        assert operator_orders.advance_block(order) == operator_orders.AdvanceBlock.NONE
+
+
+def test_scheduled_order_can_be_prepared_before_the_window():
+    order = _scheduled_ready(timezone.now() + timedelta(hours=4))
+    Order.objects.filter(pk=order.pk).update(status="preparing")
+    order.refresh_from_db()
+    with patch.object(operator_orders.payment_gate, "payment_blocks_transition", return_value=False):
+        assert operator_orders.advance_block(order) == operator_orders.AdvanceBlock.NONE

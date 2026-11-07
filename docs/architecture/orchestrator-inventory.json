@@ -9964,6 +9964,7 @@
             "defer_stock_hold",
             "delivery_date_from_payload",
             "delivery_start",
+            "dispatch_before_window",
             "is_due",
             "is_scheduled",
             "map_schedule",
