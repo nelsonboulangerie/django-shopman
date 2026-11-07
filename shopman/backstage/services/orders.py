@@ -23,7 +23,7 @@ def confirm_order(order, *, actor: str, expected_revision: str | None = None):
         raise OrderError(str(exc) or "Não foi possível aceitar o pedido.") from exc
 
 
-def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellation_code: str = "", expected_revision=None, prepared_identity=None):
+def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellation_code: str = "", reason_key: str = "", internal_note: str = "", expected_revision=None, prepared_identity=None):
     if not reason.strip():
         raise OrderError("Motivo obrigatório")
     try:
@@ -33,6 +33,8 @@ def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellati
             actor=actor,
             rejected_by=rejected_by,
             cancellation_code=cancellation_code,
+            reason_key=reason_key,
+            internal_note=internal_note,
             **({"expected_revision": expected_revision} if expected_revision is not None else {}),
             **({"prepared_identity": prepared_identity} if prepared_identity is not None else {}),
         )

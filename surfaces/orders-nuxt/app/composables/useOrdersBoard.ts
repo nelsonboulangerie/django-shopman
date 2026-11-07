@@ -196,6 +196,8 @@ export function useOrdersBoard() {
     () => queue.value?.equipment_available ?? [],
   );
   const equipmentOut = computed(() => queue.value?.equipment_out ?? []);
+  // Os motivos de recusar: a lista única do backend, a mesma do detalhe.
+  const cancelReasons = computed(() => queue.value?.cancel_reasons ?? []);
   // A impressora desta estação — a DANFE da sacola sai por ela (useDanfePrint).
   const deviceAgent = computed(() => data.value?.device_agent ?? null);
 
@@ -695,10 +697,24 @@ export function useOrdersBoard() {
   const equipmentBack = (ref_: string) => act(ref_, "equipment-back");
   // "Entregador voltou": fecha a saída inteira (entrega, dinheiro, troco e maquininha).
   const courierBack = (ref_: string) => act(ref_, "courier-back");
-  // Marketplace (iFood) rejects carry the operator-picked cancellation code so the
-  // backend calls requestCancellation with a valid code; empty for other channels.
-  const reject = (ref_: string, reason: string, cancellation_code = "") =>
-    act(ref_, "reject", { reason, cancellation_code });
+  // Recusar: a mesma lista única do cancelar (`reason_key`, obrigatória fora do
+  // iFood); o texto é a observação interna. No iFood, `reason` + o código que o
+  // iFood exige no requestCancellation.
+  const reject = (
+    ref_: string,
+    choice: {
+      reasonKey: string;
+      internalNote: string;
+      reason: string;
+      cancellationCode: string;
+    },
+  ) =>
+    act(ref_, "reject", {
+      reason_key: choice.reasonKey,
+      internal_note: choice.internalNote,
+      reason: choice.reason,
+      cancellation_code: choice.cancellationCode,
+    });
   // ``change_back``: o troco que voltou com o entregador (reais, zero vale);
   // obrigatório no servidor quando saiu troco no despacho.
   const settleCash = (
@@ -800,6 +816,7 @@ export function useOrdersBoard() {
     courierBack,
     equipmentOut,
     equipmentAvailable,
+    cancelReasons,
     assign,
     unassign,
     declareVolumes,

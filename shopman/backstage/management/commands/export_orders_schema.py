@@ -94,6 +94,7 @@ from shopman.backstage.projections.order_attention import (
     QueueAwarenessProjection,
     SystemActionProjection,
 )
+from shopman.backstage.projections.order_pricing import OrderDiscountLineProjection
 from shopman.backstage.projections.order_history import (
     HistoryFacet,
     HistoryFacetOption,
@@ -102,7 +103,6 @@ from shopman.backstage.projections.order_history import (
 )
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
-    CancellationPresetGroupProjection,
     CancelReasonProjection,
     ContactRequestProjection,
     CustomerProfileProjection,
@@ -161,12 +161,12 @@ CONTRACT_DATACLASSES = (
     ChannelHealthProjection,
     ChannelHealthBoardProjection,
     OrderItemProjection,
+    OrderDiscountLineProjection,
     TimelineEventProjection,
     NotificationAttemptProjection,
     NotificationReceiptProjection,
     AwaitingWorkOrderProjection,
     CancelReasonProjection,
-    CancellationPresetGroupProjection,
     EquipmentOptionProjection,
     EquipmentOutProjection,
     RideCandidateProjection,

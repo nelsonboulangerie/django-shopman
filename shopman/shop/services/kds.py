@@ -698,7 +698,7 @@ def kitchen_done_session_keys(session_keys) -> set[str]:
     return done - open_
 
 
-def on_all_tickets_done(order, *, actor: str = "kds.all_done", trigger_ticket_id: int | None = None) -> bool:
+def on_all_tickets_done(order, *, actor: str = "kds.all_done", trigger_ticket_id: int | None = None, via: str = "station") -> bool:
     """
     Check if all KDS tickets are done and transition order to READY.
 
@@ -718,6 +718,9 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done", trigger_ticket_id
     fechou o pedido, e o que sai da casa (aviso de pronto, iFood) espera a
     janela (``order_undo``). Com ``auto_ready`` desligado, o pedido fica em
     preparo e o Gestor marca pronto à mão.
+
+    ``via`` é a porta do toque que fechou a última estação (``complete_ticket``):
+    vai para o registro, para a tela dizer quem marcou o pronto.
     """
     if order.session_key not in kitchen_done_session_keys([order.session_key]):
         return False
@@ -737,7 +740,7 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done", trigger_ticket_id
         return False
 
     if not counter:
-        order_undo.record_auto_ready(order, ticket_ids=[trigger_ticket_id], actor=actor)
+        order_undo.record_auto_ready(order, ticket_ids=[trigger_ticket_id], actor=actor, via=via)
     order.transition_status(Order.Status.READY, actor=actor)
     logger.info("kds.on_all_tickets_done: order %s → READY", order.ref)
 
@@ -1001,7 +1004,7 @@ def _complete_ticket_locked(ticket, *, source, actor: str, via: str = "station")
 
     logger.info("kds_done ticket=%d session=%s via=%s", ticket.pk, ticket.session_key, via)
     if order is not None:
-        on_all_tickets_done(order, actor=actor, trigger_ticket_id=ticket.pk)
+        on_all_tickets_done(order, actor=actor, trigger_ticket_id=ticket.pk, via=via)
     return True
 
 

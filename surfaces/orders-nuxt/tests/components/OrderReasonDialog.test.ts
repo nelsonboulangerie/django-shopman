@@ -5,7 +5,7 @@ import { mount } from "@vue/test-utils";
 
 import OperatorReasonDialog from "../../../operator-kit/app/components/OperatorReasonDialog.vue";
 import OrderReasonDialog from "../../app/components/OrderReasonDialog.vue";
-import type { CancelReasonProjection, CancellationPresetGroupProjection, CancellationReason } from "../../app/types/orders";
+import type { CancelReasonProjection, CancellationReason } from "../../app/types/orders";
 
 // Auto-imports do Nuxt que o SFC usa como globais (sem runtime Nuxt aqui).
 vi.stubGlobal("computed", computed);
@@ -75,7 +75,6 @@ function mountDialog(props: Partial<{
   mode: "reject" | "cancel";
   loading: boolean;
   reasons: CancellationReason[];
-  presets: CancellationPresetGroupProjection[];
   cancelReasons: CancelReasonProjection[];
   busy: boolean;
   marketplace: boolean;
@@ -83,7 +82,7 @@ function mountDialog(props: Partial<{
   initialKey: string;
 }> = {}, options: { attachTo?: HTMLElement } = {}) {
   return mount(OrderReasonDialog, {
-    props: { marketplace: Boolean(props.reasons?.length), open: true, mode: "reject", loading: false, reasons: [], presets: [], cancelReasons: [], busy: false, ...props },
+    props: { marketplace: Boolean(props.reasons?.length), open: true, mode: "reject", loading: false, reasons: [], cancelReasons: [], busy: false, ...props },
     global: { stubs, components: { OperatorReasonDialog } },
     ...options,
   });
@@ -98,11 +97,11 @@ describe("OrderReasonDialog — iFood (marketplace)", () => {
     { code: "B", description: "Loja fechada" },
   ];
 
-  it("mostra o seletor de códigos exigido, sem presets nem texto livre", () => {
-    const w = mountDialog({ reasons, presets: [{ label: "", presets: ["Preset ignorado"] }] });
+  it("mostra o seletor de códigos exigido, sem a lista da casa nem texto livre", () => {
+    const w = mountDialog({ reasons, cancelReasons: [{ key: "other", label: "Outro motivo", customer_text: "x" }] });
     expect(w.find("select").exists()).toBe(true);
     expect(w.find("textarea").exists()).toBe(false);
-    expect(w.text()).not.toContain("Preset ignorado");
+    expect(w.text()).not.toContain("Outro motivo");
   });
 
   it("exige um código antes de confirmar e envia o código + descrição espelhada", async () => {
@@ -125,21 +124,28 @@ describe("OrderReasonDialog — iFood (marketplace)", () => {
   });
 });
 
-describe("OrderReasonDialog — canais comuns (presets + texto livre)", () => {
-  it("recusar: presets + textarea; motivo é obrigatório; envia código vazio", async () => {
-    const w = mountDialog({ mode: "reject", reasons: [], presets: [{ label: "", presets: ["Sem estoque", "Fora de área"] }] });
-    expect(w.find("select").exists()).toBe(false);
-    const pills = w.findAll("button").filter((b) => ["Sem estoque", "Fora de área"].includes(b.text()));
-    expect(pills).toHaveLength(2);
+describe("OrderReasonDialog — recusar em canal comum: a MESMA lista do cancelar (beta 06/11)", () => {
+  const cancelReasons: CancelReasonProjection[] = [
+    { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou e não conseguimos preparar o pedido completo." },
+    { key: "customer_request", label: "O cliente pediu", customer_text: "Conforme sua solicitação." },
+  ];
 
+  it("recusar escolhe da lista única, mostra a frase do cliente e envia a chave", async () => {
+    const w = mountDialog({ mode: "reject", cancelReasons }, { attachTo: document.body });
+    expect(w.text()).toContain("O cliente recebe o aviso com a frase do motivo.");
+    expect(w.text()).toContain("Observação interna (opcional)");
     const btn = confirmBtn(w, "Recusar pedido");
     expect(btn.attributes("disabled")).toBeDefined();
-    await pills[0]!.trigger("click");
+    const radios = w.findAll('[data-reason-keyed] [role="radio"]');
+    expect(radios.map((r) => r.attributes("data-reason-key"))).toEqual(["out_of_stock", "customer_request"]);
+    await radios[1]!.trigger("click");
+    await w.vm.$nextTick();
+    expect(w.find("[data-reason-preview]").text()).toContain("Conforme sua solicitação.");
     expect(btn.attributes("disabled")).toBeUndefined();
     await btn.trigger("click");
-    expect(w.emitted("confirm")![0]).toEqual([{ reason: "Sem estoque", cancellationCode: "", reasonKey: "" }]);
+    expect(w.emitted("confirm")![0]).toEqual([{ reason: "", cancellationCode: "", reasonKey: "customer_request" }]);
+    w.unmount();
   });
-
 });
 
 describe("OrderReasonDialog — cancelar em canal comum (lista única, P1-10)", () => {
@@ -149,8 +155,7 @@ describe("OrderReasonDialog — cancelar em canal comum (lista única, P1-10)", 
   ];
 
   it("o motivo é obrigatório: Confirmar só acende com um da lista, nunca com texto", async () => {
-    const w = mountDialog({ mode: "cancel", cancelReasons, presets: [{ label: "", presets: ["Preset da recusa"] }] }, { attachTo: document.body });
-    expect(w.text()).not.toContain("Preset da recusa");
+    const w = mountDialog({ mode: "cancel", cancelReasons }, { attachTo: document.body });
     expect(w.text()).toContain("Observação interna (opcional)");
     const btn = confirmBtn(w, "Cancelar pedido");
     expect(btn.attributes("disabled")).toBeDefined();
@@ -188,67 +193,6 @@ describe("Pix vencido: o cancelar abre com o motivo marcado (beta 05/11: GES-05,
   });
 });
 
-describe("OrderReasonDialog — grupos e Outros", () => {
-  const groups: CancellationPresetGroupProjection[] = [
-    { label: "Produto", presets: ["Item indisponível no momento", "Sem um dos ingredientes hoje"] },
-    { label: "Pagamento", presets: ["Pagamento não aprovado"] },
-    { label: "", presets: ["Pedido em duplicidade"] },
-  ];
-
-  it("mostra cada grupo com o seu cabeçalho, na ordem recebida, e Outros por último", () => {
-    const w = mountDialog({ mode: "reject", reasons: [], presets: groups });
-    const rendered = w.findAll("[data-testid='reason-preset-group']");
-    expect(rendered).toHaveLength(3);
-    expect(rendered[0]!.find("p").text()).toBe("Produto");
-    expect(rendered[0]!.findAll("button").map((b) => b.text())).toEqual([
-      "Item indisponível no momento",
-      "Sem um dos ingredientes hoje",
-    ]);
-    expect(rendered[1]!.find("p").text()).toBe("Pagamento");
-    // Grupo sem rótulo: chips sem cabeçalho.
-    expect(rendered[2]!.find("p").exists()).toBe(false);
-    const chipTexts = w.find("[data-testid='reason-presets']").findAll("button").map((b) => b.text());
-    expect(chipTexts.at(-1)).toBe("Outros");
-  });
-
-  it("Outros limpa o preset, foca o texto e nunca vira o motivo enviado", async () => {
-    const w = mountDialog({ mode: "reject", reasons: [], presets: groups }, { attachTo: document.body });
-    const chip = w.findAll("button").find((b) => b.text() === "Pagamento não aprovado")!;
-    await chip.trigger("click");
-    await w.find("[data-testid='reason-other']").trigger("click");
-    await w.vm.$nextTick();
-    const textarea = w.find("textarea");
-    expect((textarea.element as HTMLTextAreaElement).value).toBe("");
-    expect(document.activeElement).toBe(textarea.element);
-    expect(chip.attributes("aria-pressed")).toBe("false");
-    expect(w.find("[data-testid='reason-other']").attributes("aria-pressed")).toBe("true");
-
-    const btn = confirmBtn(w, "Recusar pedido");
-    expect(btn.attributes("disabled")).toBeDefined();
-    await btn.trigger("click");
-    expect(w.emitted("confirm")).toBeUndefined();
-
-    await textarea.setValue("Forno em manutenção hoje");
-    await btn.trigger("click");
-    expect(w.emitted("confirm")![0]).toEqual([{ reason: "Forno em manutenção hoje", cancellationCode: "", reasonKey: "" }]);
-    w.unmount();
-  });
-
-  it("reabrir desfaz o Outros", async () => {
-    const w = mountDialog({ mode: "reject", reasons: [], presets: groups });
-    await w.find("[data-testid='reason-other']").trigger("click");
-    await w.setProps({ open: false });
-    await w.setProps({ open: true });
-    expect(w.find("[data-testid='reason-other']").attributes("aria-pressed")).toBe("false");
-  });
-
-  it("sem motivos configurados não há chips, nem Outros", () => {
-    const w = mountDialog({ mode: "reject", reasons: [], presets: [] });
-    expect(w.find("[data-testid='reason-other']").exists()).toBe(false);
-    expect(w.find("textarea").exists()).toBe(true);
-  });
-});
-
 describe("OrderReasonDialog — estados", () => {
   it("carregando: mostra aviso e esconde seletor/texto", () => {
     const w = mountDialog({ loading: true, reasons: [{ code: "A", description: "x" }] });
@@ -270,8 +214,8 @@ describe("OrderReasonDialog — estados", () => {
   });
 
   it("reabrir limpa a seleção anterior", async () => {
-    const w = mountDialog({ mode: "reject", reasons: [], presets: [{ label: "", presets: ["P"] }] });
-    await w.findAll("button").find((b) => b.text() === "P")!.trigger("click");
+    const w = mountDialog({ mode: "reject", cancelReasons: [{ key: "other", label: "Outro motivo", customer_text: "Sentimos muito." }] });
+    await w.find('[data-reason-keyed] [role="radio"]').trigger("click");
     expect(confirmBtn(w, "Recusar pedido").attributes("disabled")).toBeUndefined();
     await w.setProps({ open: false });
     await w.setProps({ open: true });

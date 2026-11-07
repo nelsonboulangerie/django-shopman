@@ -327,8 +327,8 @@ function applyNoteTag(tag: string) {
 
 // reject + cancel + settle dialogs. Reject/cancel share OrderReasonDialog, which is
 // marketplace-aware: for an iFood order it shows the provider's required coded reasons
-// (fetched live per order); other channels cancel from the canonical reason list
-// (`cancel_reasons`) and reject from the store presets + free text.
+// (fetched live per order); other channels reject and cancel from the same
+// canonical reason list (`cancel_reasons`).
 const dialog = ref<
   "" | "reject" | "cancel" | "settle" | "dispatch" | "courier-back"
 >("");
@@ -459,9 +459,7 @@ async function loadReasons() {
   }
 }
 
-// Store-configured REJECT presets (Admin/Unfold) for non-marketplace channels.
-const presets = computed(() => order.value?.cancellation_presets ?? []);
-// The canonical cancel reasons (one list, in the backend).
+// The canonical reject/cancel reasons (one list, in the backend).
 const cancelReasons = computed(() => order.value?.cancel_reasons ?? []);
 
 async function openDialog(
@@ -494,8 +492,9 @@ async function submitReason(payload: {
   let ok = false;
   if (dialog.value === "reject")
     ok = await reject(
-      payload.reason || "Pedido recusado",
-      payload.cancellationCode,
+      payload.reasonKey
+        ? { reasonKey: payload.reasonKey, internalNote: payload.reason, reason: "", cancellationCode: "" }
+        : { reasonKey: "", internalNote: "", reason: payload.reason || "Pedido recusado", cancellationCode: payload.cancellationCode },
     );
   else if (dialog.value === "cancel")
     ok = await cancel(
@@ -1573,7 +1572,7 @@ const outside = useOutsideStore(
     />
 
     <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons,
-         the canonical cancel list, or store presets + free text for reject) -->
+         or the canonical reason list for both reject and cancel) -->
     <OperatorReasonDialog
       v-model:open="contactResolveOpen"
       title="Ouvidoria resolvida"
@@ -1593,7 +1592,6 @@ const outside = useOutsideStore(
       :error="reasonsError"
       :marketplace="order?.channel_ref === 'ifood'"
       :reasons="reasons"
-      :presets="presets"
       :cancel-reasons="cancelReasons"
       :initial-key="cancelInitialKey"
       :money-effect="order?.cancel_money_effect || ''"

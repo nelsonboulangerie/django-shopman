@@ -105,7 +105,8 @@ def test_gestor_undo_ready_reopens_the_ticket(client, operator):
     projected = _detail(client, order.ref)
     assert projected["status"] == "ready"
     assert projected["undo"]["kind"] == "auto_ready"
-    assert projected["undo"]["label"] == "Pronto · automático"
+    assert projected["undo"]["label"] == "Pronto pela Cozinha"
+    assert projected["undo"]["detail"].startswith("Cozinha concluiu")
     assert projected["undo"]["held_effect"] == "Aviso de pronto ao cliente"
 
     response = client.post(reverse("api-backstage-order-undo-ready", args=[order.ref]), context_payload(client, order.ref, "undo-ready"), content_type="application/json")
@@ -176,3 +177,18 @@ def test_dispatch_undone_never_touches_the_drawer(client, operator):
     order.refresh_from_db()
     assert order.status == Order.Status.READY
     assert not Entry.objects.filter(order_ref=order.ref).exists()
+
+
+def test_ready_marked_by_hand_on_the_exit_says_so(client, operator):
+    """Beta 06/11: o pronto tocado na Saída aparecia como "Pronto · automático"."""
+    client.force_login(operator)
+    order = _order("UNDO-API-HAND", status=Order.Status.PREPARING)
+    station = KDSInstance.objects.create(ref="balcao-sem-tela", name="Balcão", type="prep")
+    ticket = KDSTicket.objects.create(session_key=order.session_key, kds_instance=station, status="in_progress", items=[{"sku": "PAO", "name": "Pão", "qty": 1}])
+    kds_core.complete_ticket(ticket, actor="gestor:op", via=KDSTicket.COMPLETED_VIA_EXIT)
+
+    projected = _detail(client, order.ref)
+    assert projected["undo"]["kind"] == "auto_ready"
+    assert projected["undo"]["label"] == "Pronto marcado na Saída"
+    assert projected["undo"]["detail"].startswith("Marcado na Saída")
+    assert "automático" not in projected["undo"]["label"]

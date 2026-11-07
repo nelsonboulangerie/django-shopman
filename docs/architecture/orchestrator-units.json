@@ -12935,7 +12935,6 @@
             "_cancellation_identity",
             "_validate_operator_cancellation_code",
             "reject_order",
-            "_reject_reason_key",
             "cancel_order"
           ]
         }

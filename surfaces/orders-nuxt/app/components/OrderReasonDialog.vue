@@ -3,24 +3,18 @@
 // operator-kit, o mesmo do cancelar no PDV; aqui mora só o que é do Gestor:
 //   - Marketplace (iFood): o seletor de códigos da lista viva do pedido. O iFood EXIGE
 //     um dos códigos dele; a descrição escolhida vira o motivo que o cliente lê.
-//   - Cancelar nos outros canais: a lista única de motivos do backend
-//     (`cancel_reasons` da projeção). Escolher é obrigatório; o cliente lê a frase
-//     revisada do motivo, e o texto livre é a observação interna.
-//   - Recusar nos outros canais: os motivos prontos da casa (Admin/Unfold),
-//     agrupados, mais "Outros" e o texto livre, que o cliente lê.
+//   - Recusar e cancelar nos outros canais: a MESMA lista única de motivos do
+//     backend (`cancel_reasons` da projeção; beta 06/11, antes a recusa tinha uma
+//     lista própria). Escolher é obrigatório; o cliente lê a frase revisada do
+//     motivo, e o texto livre é a observação interna.
 import type { ReasonChoice } from "../../../operator-kit/app/types/reason";
-import type {
-  CancelReasonProjection,
-  CancellationPresetGroupProjection,
-  CancellationReason,
-} from "~/types/orders";
+import type { CancelReasonProjection, CancellationReason } from "~/types/orders";
 
 const props = defineProps<{
   open: boolean;
   mode: "reject" | "cancel";
   loading: boolean;
   reasons: CancellationReason[];
-  presets: CancellationPresetGroupProjection[];
   cancelReasons: CancelReasonProjection[];
   busy: boolean;
   marketplace: boolean;
@@ -42,7 +36,7 @@ const emit = defineEmits<{
   confirm: [payload: { reason: string; cancellationCode: string; reasonKey: string }];
 }>();
 
-const keyed = computed(() => props.mode === "cancel" && !props.marketplace);
+const keyed = computed(() => !props.marketplace && props.cancelReasons.length > 0);
 
 const title = computed(() =>
   props.mode === "reject" ? "Recusar pedido" : "Cancelar pedido",
@@ -50,9 +44,7 @@ const title = computed(() =>
 const description = computed(() => {
   const base = props.marketplace
     ? "Escolha o motivo que o iFood exige. Ele é enviado ao iFood."
-    : props.mode === "reject"
-      ? "Informe o motivo. O cliente recebe o aviso com ele."
-      : "Escolha o motivo. O cliente recebe o aviso com a frase do motivo.";
+    : "Escolha o motivo. O cliente recebe o aviso com a frase do motivo.";
   const money = String(props.moneyEffect ?? "").trim();
   return money ? `${money} ${base}` : base;
 });
@@ -64,8 +56,7 @@ const description = computed(() => {
     :title="title"
     :description="description"
     :confirm-label="mode === 'reject' ? 'Recusar pedido' : 'Cancelar pedido'"
-    :required="mode === 'reject'"
-    :presets="keyed ? [] : presets"
+    :required="mode === 'reject' && !keyed"
     :keyed-reasons="keyed ? cancelReasons : []"
     :initial-key="keyed ? (initialKey ?? '') : ''"
     :coded="marketplace"

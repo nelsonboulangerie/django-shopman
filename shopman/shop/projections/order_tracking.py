@@ -347,10 +347,35 @@ def _slot_label(slot_ref: str | None) -> str | None:
     return window_label(slot_ref) or None
 
 
+def as_customer_sees(order):
+    """O pedido no estado que o CLIENTE pode ler agora.
+
+    O pronto da Cozinha entra em READY na hora, mas o aviso de pronto espera a
+    janela de desfazer (``order_undo.ready_hold``): até ela fechar, o Gestor
+    ainda pode devolver o pedido ao preparo. O cliente não pode ler "Pronto"
+    antes do aviso e ver o pronto sumir depois (beta 06/11): enquanto a janela
+    estiver aberta, ele vê o pedido em preparo. Devolve uma cópia rasa só para
+    leitura; o pedido de verdade não muda.
+    """
+    if order.status != "ready":
+        return order
+    from shopman.shop.services import order_undo
+
+    if not order_undo.ready_hold(order):
+        return order
+    import copy
+
+    held = copy.copy(order)
+    held.status = "preparing"
+    held.ready_held_for_undo = True
+    return held
+
+
 def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     """Build the full tracking data projection for an order."""
     from shopman.shop.services import order_composition
 
+    order = as_customer_sees(order)
     interaction = InteractionContext.from_order(order, surface_ref="tracking")
     server_now = timezone.now()
     payment_expired = _is_payment_timeout_cancelled(order)
@@ -527,6 +552,7 @@ def _fiscal_note(order_data: dict) -> TrackingFiscalNoteData | None:
 
 def build_tracking_status(order) -> TrackingStatusData:
     """Build the polling data projection for tracking status partials."""
+    order = as_customer_sees(order)
     return TrackingStatusData(
         order_ref=order.ref,
         status=order.status,
@@ -551,6 +577,7 @@ def display_status_key(order) -> str:
     aqui, para que nenhuma superfície diga "Aguardando a loja" com o pagamento
     ainda em aberto.
     """
+    order = as_customer_sees(order)
     order_data = order.data or {}
     fulfillment_type = order_data.get("fulfillment_type") or order_data.get("delivery_method", "")
     is_delivery = fulfillment_type == "delivery"
@@ -1367,10 +1394,15 @@ def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
 
 def _build_timeline(order) -> tuple[TrackingTimelineEventData, ...]:
     raw: list[tuple] = []
+    # Pedido READY lido como em preparo (``as_customer_sees``): a passagem a
+    # pronto ainda está na janela de desfazer, e o histórico não a conta.
+    ready_held = bool(getattr(order, "ready_held_for_undo", False))
 
     for event in order.events.order_by("seq"):
         payload = event.payload or {}
         label_key = payload.get("new_status", "") if event.type == "status_changed" else ""
+        if ready_held and label_key == "ready":
+            continue
         raw.append((event.created_at, event.type, label_key))
 
     for ful in order.fulfillments.all():

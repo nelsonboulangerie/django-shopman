@@ -236,10 +236,20 @@ export function useOrderDetail(orderRef: string) {
   // Desfazer o que ainda está na janela (a saída tocada; o pronto da Cozinha).
   const undoHandoff = () => act("undo-handoff");
   const undoReady = () => act("undo-ready");
-  // Marketplace (iFood) reject/cancel carry the operator-picked code so the backend
-  // relays a valid reason to the provider; empty string for other channels.
-  const reject = (reason: string, cancellation_code = "") =>
-    act("reject", { reason, cancellation_code });
+  // Recusar: a mesma lista única do cancelar (`reason_key`, obrigatória fora do
+  // iFood); o texto é a observação interna. No iFood, `reason` + código do iFood.
+  const reject = (choice: {
+    reasonKey: string;
+    internalNote: string;
+    reason: string;
+    cancellationCode: string;
+  }) =>
+    act("reject", {
+      reason_key: choice.reasonKey,
+      internal_note: choice.internalNote,
+      reason: choice.reason,
+      cancellation_code: choice.cancellationCode,
+    });
   // Cancelar: o motivo é a chave da lista única (`reason_key`, obrigatória fora do
   // iFood); o texto é a observação interna. No iFood, `reason` + código do iFood.
   const cancel = (choice: {

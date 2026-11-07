@@ -51,6 +51,8 @@ def test_reject_order_validates_reason(monkeypatch):
         actor="operator:ana",
         rejected_by="ana",
         cancellation_code="",
+        reason_key="",
+        internal_note="",
     )
 
 

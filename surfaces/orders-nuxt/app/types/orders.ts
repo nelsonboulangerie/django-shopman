@@ -24,7 +24,6 @@ export type {
   MenuChannelProjection,
   AwaitingWorkOrderProjection,
   CancelReasonProjection,
-  CancellationPresetGroupProjection,
   OrderItemProjection,
   TimelineEventProjection,
 } from "~/generated/ordersContract";

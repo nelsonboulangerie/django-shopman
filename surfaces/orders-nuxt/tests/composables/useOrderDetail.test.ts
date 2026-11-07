@@ -47,18 +47,18 @@ describe("useOrderDetail", () => {
     expect(env.refresh).toHaveBeenCalledTimes(1);
   });
 
-  it("recusar envia reason; cancelar envia a CHAVE do motivo e a observação interna", async () => {
+  it("recusar e cancelar enviam a CHAVE do motivo da lista única e a observação interna", async () => {
     const d = useOrderDetail("WEB-2");
-    await d.reject("sem estoque");
-    expect(env.fetchMock.mock.calls[0]![1].body).toMatchObject({ reason: "sem estoque", cancellation_code: "" });
+    await d.reject({ reasonKey: "out_of_stock", internalNote: "faltou farinha", reason: "", cancellationCode: "" });
+    expect(env.fetchMock.mock.calls[0]![1].body).toMatchObject({ reason_key: "out_of_stock", internal_note: "faltou farinha", reason: "", cancellation_code: "" });
     await d.cancel({ reasonKey: "customer_request", internalNote: "ligou às 10h", reason: "", cancellationCode: "" });
     expect(env.fetchMock.mock.calls[1]![1].body).toMatchObject({ reason_key: "customer_request", internal_note: "ligou às 10h", reason: "", cancellation_code: "" });
   });
 
   it("reject/cancel de iFood repassam o código exigido pelo marketplace", async () => {
     const d = useOrderDetail("IFOOD-2");
-    await d.reject("Item em falta", "IN_STORE_OUT_OF_STOCK");
-    expect(env.fetchMock.mock.calls[0]![1].body).toMatchObject({ reason: "Item em falta", cancellation_code: "IN_STORE_OUT_OF_STOCK" });
+    await d.reject({ reasonKey: "", internalNote: "", reason: "Item em falta", cancellationCode: "IN_STORE_OUT_OF_STOCK" });
+    expect(env.fetchMock.mock.calls[0]![1].body).toMatchObject({ reason_key: "", reason: "Item em falta", cancellation_code: "IN_STORE_OUT_OF_STOCK" });
     await d.cancel({ reasonKey: "", internalNote: "", reason: "Loja fechada", cancellationCode: "STORE_CLOSED" });
     expect(env.fetchMock.mock.calls[1]![1].body).toMatchObject({ reason_key: "", reason: "Loja fechada", cancellation_code: "STORE_CLOSED" });
   });

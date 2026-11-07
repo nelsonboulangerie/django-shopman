@@ -1795,7 +1795,7 @@ consequência e confirma num diálogo só. Consumidores: o cancelar da encomenda
 ```html
 <OperatorReasonDialog
   :open="open" title="Cancelar pedido" :description="consequence"
-  confirm-label="Confirmar" :presets="cancellation_presets" :busy="busy"
+  confirm-label="Confirmar" :keyed-reasons="cancel_reasons" :busy="busy"
   @update:open="open = $event" @confirm="({ reason, code }) => cancelOrder(reason, code)" />
 ```
 

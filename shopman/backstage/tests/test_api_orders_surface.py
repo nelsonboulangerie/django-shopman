@@ -215,7 +215,7 @@ def test_reject_conflicts_when_order_was_auto_confirmed(client, operator, order)
     client.force_login(operator)
     response = client.post(
         reverse("api-backstage-order-reject", args=[order.ref]),
-        data={"reason": "Sem estoque", "expected_actor_id": operator.pk, "base_revision": operational_revision(order), "idempotency_key": "reject-auto-confirmed"},
+        data={"reason_key": "out_of_stock", "expected_actor_id": operator.pk, "base_revision": operational_revision(order), "idempotency_key": "reject-auto-confirmed"},
         content_type="application/json",
     )
     assert response.status_code == 409
