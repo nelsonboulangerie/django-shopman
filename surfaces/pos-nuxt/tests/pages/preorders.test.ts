@@ -200,6 +200,17 @@ afterEach(() => {
 });
 
 describe("Detalhe — só lê e imprime a Via Pedido", () => {
+  it("leva a entrega com saldo ao mesmo pedido no Gestor, sem receber pela navegação", async () => {
+    detail.counter.card.fulfillment_type = "delivery";
+    detail.counter.card.situation = "delivered";
+    detail.counter.hand_over.allowed = false;
+    const wrapper = await mount(DetailPage);
+    const link = wrapper.get("[data-preorder-payment-manager]");
+    expect(link.attributes("href")).toContain("/NB-7");
+    expect(link.text()).toBe("Conferir recebimento no Gestor");
+    expect(call).not.toHaveBeenCalled();
+  });
+
   it("mostra quem, quanto falta, os itens e a observação do cliente", async () => {
     const wrapper = await mount(DetailPage);
     const text = wrapper.text();

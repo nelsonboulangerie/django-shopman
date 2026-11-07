@@ -134,3 +134,13 @@ describe("KdsTicketModal: aberto pelo Histórico de hoje, só leitura", () => {
     expect(w.get("[data-kds-ticket-history-trail]").text()).toContain("Pedido despachado");
   });
 });
+
+
+describe("KdsTicketModal: referência de comanda não é prova de pagamento", () => {
+  it("identifica a comanda anterior sem afirmar quitação", () => {
+    const w = mountModal({ ticket: ticket({ previous_tab_ref: "1008" }) });
+    expect(w.text()).toContain("Comanda 1008");
+    expect(w.text()).toContain("referência anterior");
+    expect(w.text()).not.toContain("após o pagamento");
+  });
+});

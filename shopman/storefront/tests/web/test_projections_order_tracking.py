@@ -1677,7 +1677,7 @@ class TestDispatchedEtaRespectsTheWindow:
 
         proj = build_order_tracking(order)
 
-        assert proj.eta_display == "10:00"
+        assert proj.eta_display == f"10:00 de {tomorrow:%d/%m}"
         assert "10:00" in proj.promise.message
 
 
@@ -1712,3 +1712,22 @@ def test_invalid_stock_reference_does_not_hide_the_order(order_paid, entries, cl
     order_paid.refresh_from_db()
     assert order_paid.data == before
     assert Directive.objects.count() == directives_before
+
+
+def test_previous_day_preparation_does_not_invent_a_new_eta(order):
+    from django.utils import timezone
+
+    from shopman.shop.projections.order_tracking import _eta_at
+
+    order.status = "preparing"
+    order.preparing_at = timezone.now() - timezone.timedelta(days=4)
+    assert _eta_at(order) is None
+
+
+def test_eta_on_another_day_keeps_its_date():
+    from django.utils import timezone
+
+    from shopman.storefront.presentation.order_tracking import _eta_display
+
+    future = timezone.localtime(timezone.now()) + timezone.timedelta(days=2)
+    assert _eta_display(future.isoformat()) == future.strftime("%H:%M de %d/%m")

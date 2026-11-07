@@ -130,7 +130,7 @@ const fill = computed(() =>
               class="mt-1.5 text-sm font-semibold text-muted-foreground"
             >
               <span class="line-through">Comanda {{ ticket.previous_tab_ref }}</span>
-              <span class="ml-1">· já liberada após o pagamento</span>
+              <span class="ml-1">· referência anterior</span>
             </p>
             <p
               v-if="ticket.customer_name"

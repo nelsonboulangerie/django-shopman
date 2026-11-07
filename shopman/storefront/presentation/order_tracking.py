@@ -726,7 +726,8 @@ def _eta_display(eta_at: str | None) -> str | None:
     if dt is None:
         return None
     try:
-        return timezone.localtime(dt).strftime("%H:%M")
+        local = timezone.localtime(dt)
+        return local.strftime("%H:%M" if local.date() == timezone.localdate() else "%H:%M de %d/%m")
     except Exception:
         logger.debug("order_tracking._eta_display degraded", exc_info=True)
         return None
