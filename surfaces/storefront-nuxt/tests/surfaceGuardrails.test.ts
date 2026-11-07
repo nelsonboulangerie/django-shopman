@@ -911,7 +911,10 @@ describe('surface UX guardrails', () => {
     expect(cartPage).toContain(':aria-label="`Remover ${line.name}`"')
     // Lixeira sempre viva: mutações otimistas não bloqueiam remoção.
     expect(cartPage).not.toContain(':disabled="cart.summary_pending"')
-    expect(cartPage).toContain('{{ line.qty }} × {{ line.price_display }} cada')
+    // Preço da linha na dupla do cardápio: cheio riscado + promoção (beta 06/11).
+    expect(cartPage).toContain('data-cart-line-price')
+    expect(cartPage).toContain('<span class="line-through">{{ linePrice(line).original }}</span>')
+    expect(cartPage).toContain('{{ linePrice(line).current }}')
     expect(cartPage).toContain('{{ line.total_display }}')
     expect(cartPage).toContain('<CartUpsellRail v-if="cart.upsell"')
     // Planned-hold transparente: badges por linha + banner com countdown.

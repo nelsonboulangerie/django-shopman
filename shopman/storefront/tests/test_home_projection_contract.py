@@ -169,7 +169,7 @@ def test_home_projection_keeps_operational_status_single_sourced(rf):
     payload = projection_data(build_home(rf.get("/api/v1/storefront/home/")))
 
     assert {"is_open", "opens_at", "closes_at"}.isdisjoint(payload["omotenashi"])
-    assert set(payload["shop_status"]) == {"is_open", "label", "message", "opens_at", "closes_at"}
+    assert set(payload["shop_status"]) == {"is_open", "label", "message", "next_opening", "opens_at", "closes_at"}
     assert payload["shop"]["short_name"] == shop.short_name
     assert payload["pwa_copy"]["install_cta"]["title"] == "Instalar"
     assert payload["pwa_copy"]["offline_message"]["message"].startswith("Sem conexão agora")

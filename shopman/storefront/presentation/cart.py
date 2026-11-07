@@ -68,6 +68,10 @@ class CartItemProjection:
 
     # Pricing transparency — populated when a promo/coupon reduced the line.
     discount_label: str | None
+    # Preço por unidade da PROMOÇÃO da linha, o mesmo que o cardápio mostra.
+    # A linha exibe ``price_display`` riscado e este ao lado; ``None`` quando
+    # não há promoção na linha. Cupom não entra: é do pedido e mora no resumo.
+    promo_price_display: str | None
 
     # Availability snapshot at render-time.
     is_available: bool
@@ -361,6 +365,17 @@ def _present_line(
             f"Cupom {line.discount_name}" if line.discount_is_coupon else line.discount_name
         )
 
+    # O cardápio mostrou "antes R$ 6,00, R$ 5,10"; a linha da sacola repete a
+    # mesma dupla para o preço não mudar no caminho (beta 06/11). O total da
+    # linha segue cheio: a soma das linhas é o Subtotal (MKT-05).
+    promo_price_display: str | None = None
+    if (
+        line.discount_name
+        and not line.discount_is_coupon
+        and line.unit_price_q < line.list_price_q
+    ):
+        promo_price_display = _money(line.unit_price_q)
+
     return CartItemProjection(
         line_id=line.line_id,
         sku=line.sku,
@@ -376,6 +391,7 @@ def _present_line(
         total_display=_money(line.list_total_q),
         image_url=image_by_sku.get(line.sku),
         discount_label=discount_label,
+        promo_price_display=promo_price_display,
         is_available=line.is_available,
         availability_warning=warning,
         available_qty=line.available_qty,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cartHoldBanner, holdBannerVariant, holdCountdown, lineHoldState } from '~/presentation/cart'
+import { cartHoldBanner, holdBannerVariant, holdCountdown, lineHoldState, linePrice } from '~/presentation/cart'
 import { metaForCartLine } from '~/composables/useCartState'
 import type { CartItemProjection } from '~/types/shopman'
 import { formatCount } from '~/utils/display'
@@ -219,8 +219,14 @@ useSeoMeta({
                       @click="removeLine(line)"
                     />
                   </div>
-                  <p class="mt-0.5 shop-meta">
-                    {{ line.qty }} × {{ line.price_display }} cada
+                  <p class="mt-0.5 shop-meta" data-cart-line-price>
+                    {{ line.qty }} ×
+                    <template v-if="linePrice(line).original">
+                      <span class="line-through">{{ linePrice(line).original }}</span>
+                      <span class="font-semibold text-foreground">{{ linePrice(line).current }}</span>
+                    </template>
+                    <template v-else>{{ linePrice(line).current }}</template>
+                    cada
                   </p>
                   <p v-if="line.discount_label" class="mt-0.5 text-xs font-semibold text-primary">{{ line.discount_label }}</p>
                   <p v-if="line.availability_warning && !holdFor(line)" class="mt-0.5 text-xs text-destructive">{{ line.availability_warning }}</p>

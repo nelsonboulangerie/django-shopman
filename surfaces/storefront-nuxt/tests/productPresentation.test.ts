@@ -24,6 +24,16 @@ describe('product presentation', () => {
     expect(inStorePickupLine({ availability: 'planned_ok', can_add_to_cart: true })).toBe('')
     expect(inStorePickupLine({ availability: 'unavailable', can_add_to_cart: false })).toBe('')
     expect(inStorePickupLine({ availability: 'available', can_add_to_cart: false })).toBe('')
+    expect(inStorePickupLine({ availability: 'available', can_add_to_cart: true }, { is_open: true, next_opening: null })).toBe(line)
+  })
+
+  it('with the shop closed, speaks of the next opening instead of "hoje"', () => {
+    const product = { availability: 'available', can_add_to_cart: true } as const
+    expect(inStorePickupLine(product, { is_open: false, next_opening: 'amanhã às 9h' }))
+      .toBe('Retirada grátis na loja quando abrirmos, amanhã às 9h.')
+    expect(inStorePickupLine(product, { is_open: false, next_opening: null }))
+      .toBe('Retirada grátis na loja quando abrirmos.')
+    expect(inStorePickupLine({ availability: 'planned_ok', can_add_to_cart: true }, { is_open: false, next_opening: 'amanhã às 9h' })).toBe('')
   })
 
   it('suppresses the long description when it merely echoes the short one', () => {
