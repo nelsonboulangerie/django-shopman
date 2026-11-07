@@ -1024,6 +1024,30 @@ describe("usePosSale — PIX polling pós-venda", () => {
     h.handles.dispose();
   });
 
+  it("o selo do Pix reabre a tela com o QR, e o Pix pago some do selo e da reabertura (beta 07/11)", async () => {
+    fetchMock.mockResolvedValue({});
+    const actionCall = saleRouter(pixProof);
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    const qr = h.sale.result.value?.payment;
+    h.sale.dismissResult(); // "Nova venda mesmo assim"
+    expect(h.sale.reopenablePixOrderRefs.value).toEqual(["PED-1"]);
+
+    expect(h.sale.reopenPendingPix("PED-1")).toBe(true);
+    expect(h.sale.result.value?.orderRef).toBe("PED-1");
+    expect(h.sale.result.value?.payment).toEqual(qr); // o mesmo QR volta à tela (e à Tela do cliente)
+    expect(h.sale.pixStatus.value).toBe("polling");
+    expect(h.sale.reopenablePixOrderRefs.value).toEqual([]); // está na tela, não no selo
+
+    h.sale.dismissResult();
+    fetchMock.mockResolvedValue({ is_paid: true });
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(h.sale.reopenablePixOrderRefs.value).toEqual([]);
+    expect(h.sale.reopenPendingPix("PED-1")).toBe(false);
+    h.handles.dispose();
+  });
+
   it("resposta PIX tardia não contamina um polling de venda mais nova", async () => {
     let releaseOld!: (value: unknown) => void;
     fetchMock.mockImplementationOnce(() => new Promise((resolve) => { releaseOld = resolve; }));

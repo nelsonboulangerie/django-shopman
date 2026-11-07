@@ -641,8 +641,32 @@ export function usePosSale(deps: PosSaleDeps) {
     savePendingPix([...pendingPix.value, { orderRef, since: new Date().toISOString(), ...validExpiry }]);
   }
   function forgetPendingPix(orderRef: string) {
+    parkPixResult(orderRef, null);
     if (!pendingPix.value.some((entry) => entry.orderRef === orderRef)) return;
     savePendingPix(pendingPix.value.filter((entry) => entry.orderRef !== orderRef));
+  }
+  // A TELA DO PIX que o operador deixou para atender o próximo ("Nova venda mesmo
+  // assim") fica guardada aqui, com o QR, para o selo do cabeçalho reabri-la: o
+  // cliente 1 voltou ao balcão e o QR tem de aparecer de novo, na tela do operador
+  // e na Tela do cliente (beta 07/11: o selo não levava a lugar nenhum). Só na
+  // memória da aba: o `pendingPixStore` não guarda QR, então o Pix que voltou de
+  // um recarregar segue no selo, acompanhado, mas sem tela para reabrir.
+  const parkedPixResults = shallowRef(new Map<string, PosSaleResultSnapshot>());
+  function parkPixResult(orderRef: string, snapshot: PosSaleResultSnapshot | null) {
+    const next = new Map(parkedPixResults.value);
+    if (snapshot) next.set(orderRef, snapshot);
+    else if (!next.delete(orderRef)) return;
+    parkedPixResults.value = next;
+  }
+  /** Reabre a tela de um Pix ainda aberto. `false` = não há tela guardada dele. */
+  function reopenPendingPix(orderRef: string): boolean {
+    const parked = parkedPixResults.value.get(orderRef);
+    if (!parked || !pendingPix.value.some((entry) => entry.orderRef === orderRef)) return false;
+    if (result.value) dismissResult();
+    parkPixResult(orderRef, null);
+    result.value = parked;
+    startPixPolling(orderRef);
+    return true;
   }
   /** Os selos do cabeçalho: os Pix abertos que NÃO estão na tela de resultado. */
   const pendingPixOrderRefs = computed(() => pendingPix.value
@@ -808,6 +832,9 @@ export function usePosSale(deps: PosSaleDeps) {
     // O Pix ainda aguardando NÃO é descartado: segue na lista (já estava nela
     // desde a cobrança), vira selo no cabeçalho e passa ao acompanhamento de
     // fundo. A tela de resultado larga o polling dela.
+    if (pixStatus.value === "polling" && pixOrderRef.value === result.value.orderRef) {
+      parkPixResult(result.value.orderRef, result.value);
+    }
     stopPixPolling();
     pixStatus.value = "idle";
     pixOrderRef.value = "";
@@ -4477,6 +4504,8 @@ export function usePosSale(deps: PosSaleDeps) {
     recheckUncertainClose,
     closeRecheckBusy,
     pendingPixOrderRefs,
+    reopenablePixOrderRefs: computed(() => pendingPixOrderRefs.value.filter((ref) => parkedPixResults.value.has(ref))),
+    reopenPendingPix,
     restorePendingPix,
     checkoutMode,
     showTabs,
