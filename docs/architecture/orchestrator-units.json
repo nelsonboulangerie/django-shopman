@@ -7052,6 +7052,39 @@
       ]
     },
     {
+      "id": "order.ifood-concluded",
+      "question": "O iFood já concluiu o pedido, e por isso recusar/cancelar não segue?",
+      "owner": "order.ifood-concluded",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.ifood_concluded:concluded_refusal",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/ifood_concluded.py",
+          "symbols": [
+            "concluded_refusal"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_ifood_concluded_policy.py::test_concluded_refusal_names_the_time_and_the_verb"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.policies.ifood_concluded:concluded_refusal"
+      ]
+    },
+    {
       "id": "order.customer-cancellation",
       "question": "O cliente pode cancelar sozinho agora, ou o que sobra é falar com o responsável?",
       "owner": "order.customer-cancellation",
