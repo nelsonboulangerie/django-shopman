@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import date, time, timedelta
 from decimal import Decimal
@@ -13,8 +12,7 @@ from django.contrib.admin.utils import flatten_fieldsets
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.html import escape, format_html, format_html_join
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html, format_html_join
 from shopman.utils import unfold_component
 from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin
@@ -2422,8 +2420,7 @@ _APPEARANCE_FIELDSETS = (
         {
             "fields": ("storefront_preview",),
             "description": (
-                "Página inicial embutida (mesma origem). Salve o formulário e clique em "
-                "<strong>Atualizar prévia</strong> para ver cores e tipografia sem sair do admin."
+                "Salve as alterações antes de abrir a loja em nova aba para conferir cores e tipografia."
             ),
         },
     ),
@@ -3019,61 +3016,27 @@ class ShopAppearanceAdmin(_ShopSingletonAdmin):
             **{"class": "gap-3 mt-1"},
         )
 
-    @admin.display(description="Prévia ao vivo")
+    @admin.display(description="Prévia da loja")
     def storefront_preview(self, obj):
-        """Iframe da home — requer X-Frame-Options: SAMEORIGIN na HomeView.
-
-        O texto e o botão saem dos componentes do Unfold, renderizados aqui em vez
-        de terem as classes copiadas à mão: o botão tinha nove classes decalcadas
-        do `button.html`, que envelheceriam sozinhas no primeiro upgrade do pacote.
-        O refresh continua via Alpine (padrão DOM do projeto), agora passado ao
-        componente por ``attrs``.
-
-        Sobra um ``style``: a altura mínima do iframe. É ``min(70vh, 640px)``, um
-        cálculo que classe nenhuma do Unfold expressa, e sem ele a prévia nasce
-        rasteira demais para mostrar a loja.
-        """
+        """A loja Nuxt abre na própria origem, sem depender de iframe no Admin."""
         if not obj or not obj.pk:
             return unfold_component(
                 "unfold/components/text.html",
                 children="Salve a loja para carregar a prévia da loja.",
-                **{"class": "text-base-500"},
             )
 
         from shopman.shop.services.storefront_links import home_url
 
-        # Loja desacoplada (Nuxt): o preview aponta para a loja real, não as páginas
-        # Django legadas. Base via SHOPMAN_STOREFRONT_BASE_URL (vazia ⇒ "/").
-        url = home_url() or "/"
-
-        src = json.dumps(url)
-        x_data = escape(
-            f"{{ src: {src}, bust() {{ const u = {src}; "
-            'this.src = u + (u.includes("?") ? "&" : "?") + "__pv=" + Date.now(); } }'
-        )
-        note = unfold_component(
-            "unfold/components/text.html",
-            children="A home pública permite iframe apenas neste site (SAMEORIGIN).",
-            **{"class": "text-xs text-base-500 mb-2"},
-        )
-        refresh = unfold_component(
+        return unfold_component(
             "unfold/components/button.html",
-            children="Atualizar prévia",
+            children="Abrir loja em nova aba",
+            href=home_url() or "/",
             variant="default",
             size="sm",
-            icon="refresh",
-            attrs={"x-on:click": "bust()"},
-            **{"class": "mb-2"},
+            icon="open_in_new",
+            attrs={"target": "_blank", "rel": "noopener noreferrer"},
         )
-        return mark_safe(
-            f'<div class="storefront-admin-preview max-w-full" x-data="{x_data}">'
-            f"{note}{refresh}"
-            '<iframe x-bind:src="src" title="Loja" '
-            'class="w-full rounded-default border border-base-200 '
-            'dark:border-base-700 bg-white" '
-            'style="min-height:min(70vh,640px)"></iframe>'
-            "</div>"
-        )
+
 
 
 @admin.register(ShopSearch)

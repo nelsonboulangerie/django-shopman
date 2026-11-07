@@ -121,7 +121,7 @@ class TestAdminRegistration:
 
 
 class TestShopAdminStorefrontPreview:
-    """WP-S4 — iframe preview no change do Shop."""
+    """A loja desacoplada abre fora do Admin sem depender de iframe."""
 
     def test_readonly_fields_include_storefront_preview(self, db):
         from shopman.shop.models import ShopAppearance
@@ -129,15 +129,40 @@ class TestShopAdminStorefrontPreview:
         appearance_admin = admin.site._registry[ShopAppearance]
         assert "storefront_preview" in (appearance_admin.readonly_fields or ())
 
-    def test_change_page_contains_preview_iframe(self, db, admin_user, shop):
+    def test_change_page_opens_public_storefront_without_iframe(self, db, admin_user, shop, settings):
+        settings.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.example.com"
         client = Client()
         client.force_login(admin_user)
         url = reverse("admin:shop_shopappearance_change", args=[shop.pk])
         resp = client.get(url)
         assert resp.status_code == 200
-        assert b'title="Loja"' in resp.content
-        assert b'x-bind:src="src"' in resp.content
-        assert "Atualizar prévia".encode() in resp.content
+        body = resp.content.decode()
+        assert 'href="https://loja.example.com/"' in body
+        assert "Abrir loja em nova aba" in body
+        assert 'target="_blank"' in body
+        assert 'rel="noopener noreferrer"' in body
+        assert '<iframe' not in body
+        assert 'x-bind:src' not in body
+        assert 'Página inicial embutida' not in body
+        assert 'Atualizar prévia' not in body
+
+    @pytest.mark.parametrize("station_type,expected", [
+        ("prep", "https://kds.example.com/cafe"),
+        ("picking", "https://kds.example.com/cafe"),
+        ("expedition", "https://gestor.example.com/?columns=expedition"),
+    ])
+    def test_station_operation_matches_the_runtime_destination(self, db, settings, station_type, expected):
+        settings.SHOPMAN_KDS_BASE_URL = "https://kds.example.com/"
+        settings.SHOPMAN_ORDERS_BASE_URL = "https://gestor.example.com/"
+        station = KDSInstance(ref="cafe", type=station_type)
+        html = admin.site._registry[KDSInstance].open_display(station)
+        assert f'href="{expected}"' in html
+
+    def test_exit_has_no_dead_kds_link_when_orders_is_not_connected(self, db, settings):
+        settings.SHOPMAN_KDS_BASE_URL = "https://kds.example.com"
+        settings.SHOPMAN_ORDERS_BASE_URL = ""
+        station = KDSInstance(ref="saida", type="expedition")
+        assert 'href=' not in admin.site._registry[KDSInstance].open_display(station)
 
 
 class TestShopAdminOpeningHours:
