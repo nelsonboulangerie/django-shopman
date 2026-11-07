@@ -2827,7 +2827,7 @@ def _advance_block_copy(order: Order, bloqueio, method: str, *, payment_pending:
             if label in LAPSED_PAYMENT_LABELS:
                 return label, times
             return AWAITING_REPAYMENT_LABEL, (
-                "A cobrança do cartão não passou e nada foi cobrado. Pedimos ao cliente um novo pagamento: "
+                "A cobrança do cartão falhou e nada foi cobrado. Pedimos ao cliente um novo pagamento: "
                 f"{times}. Sem pagamento no prazo, o pedido cancela sozinho."
             )
         return _payment_wait_copy(order, method)
@@ -3015,8 +3015,8 @@ _FISCAL_PILL = {
     # A regra da casa só emite quando pedem (nota, CPF ou comprovante): a pill diz
     # o fato em português claro e sem alarme, o MESMO texto do PDV
     # (`pos-nuxt/app/presentation/saleResult.ts`). Se o cliente pedir depois, o
-    # "Emitir NFC-e…" do PDV sai com o gerente.
-    "not_expected": ("not_requested", "NFC-e não pedida"),
+    # "Solicitar NFC-e…" do PDV sai com o gerente.
+    "not_expected": ("not_requested", "NFC-e não solicitada"),
 }
 
 

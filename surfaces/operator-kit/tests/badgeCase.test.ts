@@ -24,7 +24,7 @@ describe("badgeCase", () => {
   it("frase não é nome: só a primeira maiúscula (beta 06/11)", () => {
     expect(badgeCase("Falhou em todos os canais")).toBe("Falhou em todos os canais");
     expect(badgeCase("não mostrar valores")).toBe("Não mostrar valores");
-    expect(badgeCase("NFC-e não pedida")).toBe("NFC-e não pedida");
+    expect(badgeCase("NFC-e não solicitada")).toBe("NFC-e não solicitada");
     expect(badgeCase("Aceito pelo provedor, sem comprovante")).toBe("Aceito pelo provedor, sem comprovante");
     expect(badgeCase("Pix · não pago")).toBe("Pix · Não pago");
   });

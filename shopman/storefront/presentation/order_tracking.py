@@ -1041,7 +1041,7 @@ def _promise_copy(
                 "Nada foi cobrado. Pague com outro cartão até {deadline} para seguirmos com o seu pedido.",
             )
         return (
-            copy.title("TRACKING_PROMISE_CARD_REPAYMENT_TITLE", "A cobrança no cartão não passou"),
+            copy.title("TRACKING_PROMISE_CARD_REPAYMENT_TITLE", "A cobrança no cartão falhou"),
             message.replace("{deadline}", data.payment_deadline_phrase),
         )
 
@@ -1189,7 +1189,7 @@ def _promise_copy(
     if state == "payment_capture_failed":
         return _pair(copy, "TRACKING_CARD_CAPTURE_FAILED",
                      "Não conseguimos cobrar o cartão",
-                     "A cobrança no seu cartão não passou, e nada foi cobrado. A loja já foi avisada; acompanhe por aqui.")
+                     "A cobrança no seu cartão falhou, e nada foi cobrado. A loja já foi avisada; acompanhe por aqui.")
 
     if state == "payment_authorized":
         if _is_fulfillment_wait(data):
