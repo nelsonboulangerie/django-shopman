@@ -49,6 +49,8 @@ const props = defineProps<{
   /** O ato que está sendo autorizado. A copy inteira sai daqui — ver `managerAuth`. */
   action?: ManagerAction;
   thresholdQ?: number;
+  /** O desconto manual da venda, que o gerente assina (motivo `discount_over_threshold`). */
+  discountQ?: number | null;
   /** O valor que o gerente assina, em centavos (sangria, troco, devolução, estorno). */
   amountQ?: number | null;
   /** O complemento do ato (o motivo da sangria, as ordens abertas). */
@@ -86,6 +88,7 @@ const reason = computed(() =>
     detail: props.detail,
     reasons: props.reasons,
     thresholdQ: props.thresholdQ,
+    discountQ: props.discountQ,
     houseAccountLimit: props.houseAccountLimit,
   }),
 );
