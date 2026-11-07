@@ -440,6 +440,16 @@ class FiscalNoteSerializer(serializers.Serializer):
     note = serializers.CharField(allow_blank=True)
 
 
+class TrackingDiscountLineSerializer(serializers.Serializer):
+    label = serializers.CharField()
+    amount_display = serializers.CharField()
+
+
+class TrackingGiftSerializer(serializers.Serializer):
+    recipient_name = serializers.CharField(allow_blank=True)
+    message = serializers.CharField(allow_blank=True)
+
+
 class OrderTrackingSerializer(serializers.Serializer):
     convenience_pending = serializers.ListField(child=serializers.CharField(), required=False)
     ref = serializers.CharField()
@@ -500,6 +510,14 @@ class OrderTrackingSerializer(serializers.Serializer):
     # O pedido deve pagamento agora: a tela pede ``orders/<ref>/payment/check/``.
     payment_due = serializers.BooleanField(required=False, default=False)
     share_cta = serializers.CharField(allow_blank=True, required=False)
+    # O Resumo: a conta inteira e o que o cliente informou no checkout.
+    subtotal_display = serializers.CharField(allow_blank=True, required=False)
+    discount_lines = TrackingDiscountLineSerializer(many=True, required=False)
+    schedule_display = serializers.CharField(allow_null=True, required=False)
+    gift = TrackingGiftSerializer(allow_null=True, required=False)
+    tax_id_display = serializers.CharField(allow_blank=True, required=False)
+    customer_notes = serializers.CharField(allow_blank=True, required=False)
+    delivery_address = serializers.CharField(allow_blank=True, required=False)
     is_debug = serializers.BooleanField()
     last_updated_iso = serializers.CharField()
     last_updated_display = serializers.CharField()

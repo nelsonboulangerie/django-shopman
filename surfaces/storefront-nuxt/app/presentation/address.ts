@@ -25,13 +25,16 @@ export {
   emptyAddressDraft,
   looksLikeCep,
   maskCepInput,
+  mergeCepLookup,
   mergeReverseGeocode,
   nextFocusAfterSuggestion,
+  stillFailingErrors,
   viaCepSummary
 } from './addressForm'
 export type {
   AddressCoordinatesSource,
   AddressDraft,
+  CepFilledFields,
   GoogleAddressComponent,
   GooglePlaceFields,
   ViaCepPayload

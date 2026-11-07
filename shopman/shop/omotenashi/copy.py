@@ -1173,7 +1173,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
 
     # ── Order confirmation (momento yoin, no acompanhamento) ──────
     "CONFIRMATION_SHARE_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Compartilhar")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Enviar resumo")},
     },
 
     # ── Payment (bloco de Pix/cartão inline no acompanhamento) ────
