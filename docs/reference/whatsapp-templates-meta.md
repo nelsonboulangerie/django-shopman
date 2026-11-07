@@ -419,14 +419,16 @@ A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, 
 > ℹ️ O código Pix copia-e-cola **não** viaja no template (é longo e opcional). Fica no
 > SMS/e-mail; aqui a pessoa chega pela tela do pedido, onde o Pix e o cartão estão inline.
 
-### `pagamento_cartao_falhou` — evento `payment_requested_card_repayment` 🆕 · ⏳ a submeter (texto para o dono aprovar)
+### `pagamento_cartao_falhou` — evento `payment_requested_card_repayment` 🆕 · ⏳ submetido em 07/11/2026, em análise na Meta
 Variante do `payment_requested` no NOVO pagamento: a cobrança do cartão não passou
 depois do aceite, a reserva antiga foi anulada e o cliente paga de novo (decisão do
 dono, 07/11/2026). Não é evento emitido: o adapter
 (`notification_manychat._card_repayment_variant`) a escolhe quando o pedido tem
 `payment.repayment`, o canal aceita Pix, o método ainda é cartão e há prazo.
 - Categoria: **Utility** · Idioma: **pt_BR**
-- Corpo: `Oi, {{1}}! A cobrança no cartão do seu pedido {{2}} falhou, e nada foi cobrado. Seu pedido segue reservado: dá para pagar com Pix ou com outro cartão até {{3}}. 💛`
+- Corpo: `Oi, {{1}}! A cobrança no cartão do seu pedido {{2}} falhou, e nada foi cobrado. Seu pedido segue reservado até {{3}}: dá para pagar com Pix ou com outro cartão. 💛`
+  (o prazo saiu do fim com o sim do dono, 07/11/2026: o ManyChat recusa corpo que termina em
+  variável, e o `. 💛` depois dela não conta como texto, a mesma recusa do `pagamento_falhou`)
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`hoje às 18h30` (`payment_deadline`)
 - Botão URL: `Pagar pedido` → `/pedido/{{1}}` (`order_ref`)
 
