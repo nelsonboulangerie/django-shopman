@@ -554,7 +554,10 @@ const checkoutMinDate = computed(() => dateBounds.value.minDate)
 const checkoutMaxDate = computed(() => dateBounds.value.maxDate)
 const closedDateEntries = computed(() => parseClosedDateEntries(checkout.value?.closed_dates_json))
 const closedWeekdays = computed(() => checkout.value?.closed_weekdays || [])
-const datepickerDisabledDates = computed(() => buildDatepickerDisabledDates(closedDateEntries.value, closedWeekdays.value))
+const datepickerDisabledDates = computed(() => buildDatepickerDisabledDates(
+  closedDateEntries.value, closedWeekdays.value,
+  checkout.value?.today_over ? dateBounds.value.todayValue : ''
+))
 // Opções de data: "Hoje" (se aberto) + "Próxima fornada" (a próxima data em
 // que a loja opera) + "Outra data" (calendário). Vêm do backend, que nunca
 // devolve dia fechado. Fallback local só se a projection não trouxer nada.

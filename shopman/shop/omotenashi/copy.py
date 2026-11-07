@@ -530,7 +530,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     # Depois que o preparo começou, no lugar do cancelar: falar com o responsável.
     "TRACKING_CANCELLATION_CONTACT_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Falar com o responsável")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Pedir contato sobre cancelamento")},
     },
     "TRACKING_CANCELLATION_CONTACT_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Quer cancelar?")},

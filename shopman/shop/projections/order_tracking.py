@@ -851,7 +851,7 @@ def _build_order_actions(
             _action(
                 ref="request_cancellation_contact",
                 kind="mutation",
-                label=_copy_title("TRACKING_CANCELLATION_CONTACT_CTA", "Falar com o responsável"),
+                label=_copy_title("TRACKING_CANCELLATION_CONTACT_CTA", "Pedir contato sobre cancelamento"),
                 priority="secondary",
                 href=f"/api/v1/orders/{order.ref}/contact-request/",
                 method="POST",
@@ -1912,6 +1912,11 @@ def _eta_at(order) -> str | None:
         else:
             return None
         if baseline is None:
+            return None
+        # Preparo antigo não vira uma promessa nova na próxima abertura.
+        # Sem uma previsão atualizada, o acompanhamento conserva o estado,
+        # mas não inventa um horário para o cliente nem para a notificação.
+        if order.status == "preparing" and timezone.localdate(baseline) < timezone.localdate():
             return None
         eta = baseline + timezone.timedelta(minutes=int(round(minutes)))
         if not_before is not None and not_before > eta:
