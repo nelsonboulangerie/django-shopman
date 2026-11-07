@@ -461,6 +461,8 @@ def promotion_shopper(customer) -> Shopper:
     from django.core.exceptions import ObjectDoesNotExist
     from django.utils import timezone as tz
 
+    from shopman.shop.services.promotions import birthday_benefit_available
+
     try:
         rfm_segment = customer.insight.rfm_segment or ""
     except ObjectDoesNotExist:  # silêncio-deliberado: cliente novo ainda sem Insight (RFM roda em lote); casa pelo grupo
@@ -469,7 +471,8 @@ def promotion_shopper(customer) -> Shopper:
     return Shopper(
         segment=rfm_segment,
         tier_refs=frozenset(tier.ref for tier in customer.price_tiers.all()),
-        is_birthday=Shopper.birthday_on(getattr(customer, "birthday", None), tz.localdate()),
+        # Uma vez por ano: o cupom de aniversário segue a mesma régua do desconto.
+        is_birthday=birthday_benefit_available(customer, tz.localdate()),
     )
 
 

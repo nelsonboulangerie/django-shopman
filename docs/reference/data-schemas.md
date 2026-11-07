@@ -692,7 +692,7 @@ O mesmo bloco vive em `Session.pricing` durante o rascunho e é selado em
 | Chave | Tipo | Descrição |
 |-------|------|-----------|
 | `total_discount_q` | `int` | Soma do desconto (centavos) de todos os registros `items`. |
-| `items[]` | `list[dict]` | Um registro por desconto vencedor: `{line_id, sku, type, name, original_price_q, discount_q, qty, discount_kind?, fulfillment_types?}`. `type` `"promotion"` | `"coupon"` | `"manual"`; `discount_kind` (equipe/parceiro/...) só quando o desconto veio do PRÓPRIO grupo do cliente (promoção `grupo-<ref>`); `fulfillment_types` presente quando a promoção é restrita a canal de entrega/retirada (ex.: `["pickup"]`). |
+| `items[]` | `list[dict]` | Um registro por desconto vencedor: `{line_id, sku, type, name, original_price_q, discount_q, qty, discount_kind?, fulfillment_types?, birthday?}`. `type` `"promotion"` | `"coupon"` | `"manual"`; `discount_kind` (equipe/parceiro/...) só quando o desconto veio do PRÓPRIO grupo do cliente (promoção `grupo-<ref>`); `fulfillment_types` presente quando a promoção é restrita a canal de entrega/retirada (ex.: `["pickup"]`); `birthday: true` quando o desconto veio de promoção ou cupom de aniversário (`birthday_only`): é por ele que o próximo pedido do dia sabe que o aniversário já foi celebrado (vale uma vez por ano, `promotions.birthday_benefit_available`). |
 | `savings` | `dict` ou ausente | A economia DO GRUPO consolidada para a mensagem ao cliente: `{amount_q, group, kind, message}` (presente só quando `amount_q > 0`). `message` já vem renderizada do `PriceTier.metadata.savings_message` ou do copy `CHECKOUT_GROUP_SAVINGS`. O comprovante e o checkout leem daqui, do snapshot imutável do pedido. |
 
 ### `pricing.coupon` — o cupom da sacola e, sem desconto, o motivo
