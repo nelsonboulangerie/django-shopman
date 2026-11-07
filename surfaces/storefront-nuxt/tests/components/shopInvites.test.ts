@@ -32,6 +32,8 @@ mockNuxtImport('usePwaInstall', () => () => ({
   install: vi.fn(),
   isStandalone: ref(false),
   isDismissed: mocks.isDismissed,
+  hasOrdered: ref(true),
+  refreshHasOrdered: vi.fn(),
   markShown: vi.fn(),
   // Fechar o convite de instalar adia por dias, como o composable real.
   dismiss: () => { mocks.isDismissed.value = true },

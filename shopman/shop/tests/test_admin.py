@@ -248,6 +248,35 @@ class TestShopAdminOpeningHours:
         assert b'name="opening_hours_wednesday_close"' in resp.content
         assert b'name="opening_hours"' not in resp.content
 
+    @pytest.mark.parametrize(("name", "shown"), [("Test Shop", "Test Shop"), ("", "Test")])
+    def test_saving_operation_page_names_the_shop_in_success_message(self, db, admin_user, shop, name, shown):
+        """Beta 05/11: salvar o horário dizia 'alterado com sucesso' com o nome vazio ("“”").
+
+        A mensagem do Admin é ``str(obj)``; com o nome fantasia em branco ela saía
+        vazia, e a loja tem outros nomes (marca, nome curto) para dizer de quem é.
+        """
+        from django.contrib.messages import get_messages
+
+        Shop.objects.filter(pk=shop.pk).update(name=name)
+        shop.refresh_from_db()
+        client = Client()
+        client.force_login(admin_user)
+        url = reverse("admin:shop_shopoperation_change", args=[shop.pk])
+        form = client.get(url).context["adminform"].form
+        data = {k: v for k, v in _shop_form_data(shop).lists() if k in form.fields}
+        data = {k: (v if len(v) > 1 else v[0]) for k, v in data.items()}
+        data["_save"] = "Salvar"
+
+        resp = client.post(url, data)
+
+        assert resp.status_code == 302, resp.context["adminform"].form.errors if resp.context else resp
+        texts = [str(m) for m in get_messages(resp.wsgi_request)]
+        assert texts, "sem mensagem de sucesso"
+        assert "“”" not in texts[0]
+        assert f">{shown}<" in texts[0]
+        shop.refresh_from_db()
+        assert shop.name == name
+
     def test_form_saves_opening_hours_from_day_fields(self, shop):
         from shopman.shop.admin.shop import ShopForm
 

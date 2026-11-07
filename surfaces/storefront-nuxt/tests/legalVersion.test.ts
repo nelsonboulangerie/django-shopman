@@ -129,6 +129,7 @@ describe('páginas legais — o relógio', () => {
 const CHAVES_DECLARADAS: Record<string, string> = {
   'shopman-checkout-draft': 'RASCUNHO DO CHECKOUT — guarda PII; descrito na política',
   'storefront-pwa-install-dismissed-until': 'só a data em que o convite foi dispensado',
+  'shopman-order-secured': 'marca de que este navegador já concluiu um pedido; não guarda dado pessoal',
   'shopman-intention:': 'chave de idempotência de uma ação; não guarda dado pessoal',
   'shop-marketing-prompt': 'marca de convite já visto; não guarda dado pessoal'
 }

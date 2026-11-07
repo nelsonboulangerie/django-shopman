@@ -14,6 +14,7 @@ const PROMPT: InstallPlan = { kind: 'prompt', invite: true, steps: [], os: 'andr
 
 const mocks = vi.hoisted(() => ({
   path: '/menu',
+  hasOrdered: true,
   plan: undefined as unknown as InstallPlan,
   markShown: vi.fn(),
   dismiss: vi.fn(),
@@ -32,6 +33,11 @@ mockNuxtImport('usePwaInstall', () => () => ({
     get value () { return mocks.plan }
   },
   isDismissed: { __v_isRef: true, value: false },
+  hasOrdered: {
+    __v_isRef: true,
+    get value () { return mocks.hasOrdered }
+  },
+  refreshHasOrdered: vi.fn(),
   markShown: mocks.markShown,
   dismiss: mocks.dismiss,
   dismissAsDone: mocks.dismissAsDone
@@ -69,6 +75,7 @@ async function mountInvite () {
 describe('PwaInstallInvite', () => {
   beforeEach(() => {
     mocks.path = '/menu'
+    mocks.hasOrdered = true
     mocks.plan = PROMPT
     mocks.markShown.mockClear()
     mocks.dismiss.mockClear()
@@ -85,6 +92,15 @@ describe('PwaInstallInvite', () => {
       expect(mocks.markShown).not.toHaveBeenCalled()
     }
   )
+
+  it('antes do primeiro pedido concluído o convite não abre (beta 05/11)', async () => {
+    // Abria no primeiro carregamento, antes de qualquer gesto da pessoa.
+    mocks.hasOrdered = false
+    const wrapper = await mountInvite()
+
+    expect(wrapper.find('[data-testid="pwa-install-invite"]').exists()).toBe(false)
+    expect(mocks.markShown).not.toHaveBeenCalled()
+  })
 
   it('abre em rota elegível e registra a janela de sete dias', async () => {
     const wrapper = await mountInvite()
