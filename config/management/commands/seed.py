@@ -6917,10 +6917,8 @@ class Command(BaseCommand):
         now = timezone.now()
         chave = f"41{now:%y%m}99999999000191650010000012342{'87654321'}0"
         chave = "".join(ch for ch in chave if ch.isdigit())[:44].ljust(44, "0")
-        qr_consulta = (
-            "http://www.fazenda.pr.gov.br/nfce/qrcode?p="
-            f"{chave}|2|2|1|A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0"
-        )
+        # O exemplo não é autorizado na SEFAZ. Não fabrique uma consulta com
+        # hash fictício: só uma emissão real do provedor fornece esse QR.
 
         data = order.data or {}
         data.setdefault("fiscal", {})["issue_document"] = True
@@ -6933,7 +6931,7 @@ class Command(BaseCommand):
             "nfce_protocol": f"141{now:%y}0000012345",
             "nfce_status": "autorizado",
             "nfce_danfe_url": f"https://homologacao.focusnfe.com.br/danfe/nfce/{chave}.pdf",
-            "nfce_qrcode_url": qr_consulta,
+            "nfce_qrcode_url": "",
             "nfce_xml_url": f"https://homologacao.focusnfe.com.br/notas/nfce/{chave}.xml",
         })
         order.data = data
