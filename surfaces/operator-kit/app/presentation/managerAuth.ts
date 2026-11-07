@@ -26,6 +26,7 @@ export type ManagerAction =
   | "cancel_order"
   | "order_edit_refund"
   | "card_machine_refund"
+  | "settle_account"
   | "close_shift_review"
   | "day_closing_production"
   | "sale_approval"
@@ -81,6 +82,12 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
   card_machine_refund: {
     title: "Autorizar o estorno",
     reason: "Volta dinheiro para o cartão do cliente.",
+  },
+  // Conta na casa acertada em Pix, cartão ou "outro": nada passa pela gaveta, e
+  // nada no fim do turno confere que o dinheiro entrou (beta 07/11).
+  settle_account: {
+    title: "Autorizar o acerto",
+    reason: "O acerto não passa pela gaveta.",
   },
   // Venda sem conexão cobrada por um preço que o catálogo não explica: a venda
   // entrou, e o caixa só fecha com o gerente que conferiu.
@@ -177,6 +184,7 @@ const AMOUNT_COPY: Partial<Record<ManagerAction, (amount: string, detail: string
   refund_cash: (amount) => `Devolução de ${amount} em dinheiro.`,
   serve_change: (amount) => `Troco de ${amount}. Atender abre a gaveta.`,
   card_machine_refund: (amount) => `Estorno de ${amount} no cartão do cliente.`,
+  settle_account: (amount, detail) => `Acerto de ${amount}${detail ? ` em ${detail}` : ""}: não passa pela gaveta.`,
   order_edit_refund: (amount) => `Devolução de ${amount}: a encomenda paga ficou mais barata.`,
 };
 
