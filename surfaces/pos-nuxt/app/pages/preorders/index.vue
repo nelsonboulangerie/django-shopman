@@ -148,6 +148,8 @@ const filters = computed<PreorderFilters>({
   get: () => ({ fulfillment: view.value.fulfillment, pay: view.value.pay, print: view.value.print }),
   set: (next) => update(next),
 });
+const hasPeriodFilters = computed(() => hasFilters(filters.value));
+const todaySummaryLabel = computed(() => hasPeriodFilters.value ? "Hoje, sem filtros" : "Hoje");
 const allCards = computed(() => flattenDays(list.value?.days ?? []));
 const days = computed<PreorderDay[]>(() => filterDays(list.value?.days ?? [], filters.value));
 const shownCount = computed(() => flattenDays(days.value).length);
@@ -515,8 +517,8 @@ function refreshAll() {
          uma legenda curta (lê-se sem tocar); o que pede gesto é atalho para o recorte
          dele (A Receber, Sem Via, Conferir), e a seta abre as frases inteiras. -->
     <template v-if="!searching && todayLine.length" #compact-below>
-      <div class="flex items-stretch border-b border-default bg-card md:hidden" role="group" aria-label="Hoje" data-compact-today>
-        <span class="flex items-center px-3 text-sm font-semibold text-primary">Hoje</span>
+      <div class="flex items-stretch border-b border-default bg-card md:hidden" role="group" :aria-label="todaySummaryLabel" data-compact-today>
+        <span class="flex items-center px-3 text-sm font-semibold text-primary">{{ todaySummaryLabel }}</span>
         <component
           :is="indicator.filter ? 'button' : 'span'"
           v-for="indicator in todayIndicators(todayLine)"
@@ -662,7 +664,7 @@ function refreshAll() {
         role="group"
       >
         <p v-if="todayLine.length" class="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm" data-preorders-today>
-          <span class="font-semibold text-primary">Hoje</span>
+          <span class="font-semibold text-primary" data-preorders-today-label>{{ todaySummaryLabel }}</span>
           <span
             v-for="fact in todayLine"
             :key="fact.key"
@@ -677,7 +679,7 @@ function refreshAll() {
           class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5"
           data-preorders-summary
         >
-          <span class="text-sm font-semibold text-muted">{{ periodSummaryLabel(view.mode, hasFilters(filters)) }}</span>
+          <span class="text-sm font-semibold text-muted">{{ periodSummaryLabel(view.mode, hasPeriodFilters) }}</span>
           <p v-if="toReceive" :class="TO_RECEIVE_CLASS" data-preorders-to-receive>{{ toReceive }}</p>
           <p class="text-xs tabular-nums text-muted" data-preorders-total>{{ summary }}</p>
         </div>

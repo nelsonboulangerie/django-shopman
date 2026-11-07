@@ -1035,6 +1035,21 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
     expect(wrapper.findAllComponents({ name: "OperatorFilterPanel" })).toHaveLength(0);
   });
 
+  it("o total de hoje declara o alcance com filtros, mesmo sem resumo de período", async () => {
+    const wrapper = await mount(PreordersPage);
+    route.query = { mode: "day", pay: "to_receive" };
+    await flushPromises();
+    expect(wrapper.find("[data-preorders-summary]").exists()).toBe(false);
+    expect(wrapper.find("[data-preorders-today-label]").text()).toBe("Hoje, sem filtros");
+    expect(wrapper.find("[data-compact-today]").attributes("aria-label")).toBe("Hoje, sem filtros");
+    const facts = wrapper.findAll("[data-preorders-today-fact]").map((fact) => fact.text());
+    route.query = { mode: "day" };
+    await flushPromises();
+    expect(wrapper.find("[data-preorders-today-label]").text()).toBe("Hoje");
+    expect(wrapper.find("[data-compact-today]").attributes("aria-label")).toBe("Hoje");
+    expect(wrapper.findAll("[data-preorders-today-fact]").map((fact) => fact.text())).toEqual(facts);
+  });
+
   it("a linha 'Hoje': para entregar, a receber e as vias que faltam, com o peso do 'A receber'", async () => {
     const wrapper = await mount(PreordersPage);
     const today = wrapper.find("[data-preorders-today]");
