@@ -430,7 +430,7 @@ describe('surface UX guardrails', () => {
     expect(checkout).toContain('paymentMethodLabel')
     expect(checkout).toContain('fulfillmentSummary')
     expect(checkout).toContain('data-checkout-live-summary')
-    expect(checkout).toContain('<CartSummaryBreakdown v-if="cart" :cart="cart" compact />')
+    expect(checkout).toContain('<CartSummaryBreakdown v-if="cart && !draftSyncing && !deliveryDraftFailed" :cart="cart" compact />')
     // O CHECKOUT USA O CARD SUSPENSO — o mesmo da sacola e da página de produto,
     // e o mesmo mecanismo (`.shop-action-dock` + card ink). Duas correções
     // moram nesta linha. A primeira: a barra `fixed bottom-0 z-40` que vivia
@@ -1018,6 +1018,7 @@ describe('surface UX guardrails', () => {
     const product = read('app/pages/produto/[sku].vue')
 
     expect(menu).toContain(':hide-dietary-warnings="dietaryFilterOn"')
+    expect(menu).toContain(':available-only="availableOnly"')
     expect(favorites).toContain('visibleItems')
     expect(favorites).toContain('(item.dietary_warnings || []).length === 0')
     expect(product).toContain('unavailableReason')

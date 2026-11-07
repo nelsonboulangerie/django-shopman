@@ -191,6 +191,10 @@ const identityConfirmOffer = ref(false)
 const { confirm: confirmByWhatsApp, starting: confirming } = useWhatsAppConfirm(() => refresh())
 const quotingZone = ref(false)
 const draftSyncing = ref(false)
+const deliveryDraftFailed = ref(false)
+const checkoutTotalDisplay = computed(() => draftSyncing.value
+  ? 'Atualizando total…'
+  : deliveryDraftFailed.value ? 'Total a confirmar' : cart.value?.grand_total_display || 'R$ 0,00')
 const changePhoneOpen = ref(false)
 const confirmOpen = ref(false)
 const receiptOpen = ref(false)
@@ -477,7 +481,7 @@ const pixProviderTestMessage = computed(() => {
   )
 })
 const submitDisabled = computed(() =>
-  !action.value?.enabled || !!cart.value?.is_empty || submitting.value || checkingOrder.value || pixProviderTestExceeded.value
+  !action.value?.enabled || !!cart.value?.is_empty || submitting.value || checkingOrder.value || pixProviderTestExceeded.value || draftSyncing.value || deliveryDraftFailed.value
 )
 // Retirada e entrega leem a grade da casa (a mesma da concierge e do PDV): meia
 // hora hoje, turno na encomenda. O resto da tela trata as duas do mesmo jeito.
@@ -657,7 +661,7 @@ const primaryAction = computed<CheckoutPrimaryAction>(() => {
       disabled: deliveryBelowMinimum.value || draftSyncing.value,
       reason: deliveryBelowMinimum.value && cart.value?.delivery_minimum_progress
         ? `Faltam ${cart.value.delivery_minimum_progress.remaining_display} para o mínimo de entrega`
-        : '',
+        : deliveryDraftFailed.value ? 'Toque em Continuar para atualizar o total.' : '',
       run: continueFromFulfillment
     }
   }
@@ -893,8 +897,10 @@ watch(addressSelection, selection => {
 let draftSyncTail: Promise<void> = Promise.resolve()
 let draftSyncCount = 0
 let deliverySyncCount = 0
+let draftSyncVersion = 0
 
 function applyDeliveryDraft (): Promise<void> {
+  const version = ++draftSyncVersion
   const isDelivery = state.fulfillment_type === 'delivery'
   const fulfillmentType = state.fulfillment_type
   const structured = { ...(state.delivery_address_structured || {}) }
@@ -907,6 +913,7 @@ function applyDeliveryDraft (): Promise<void> {
 
   const run = async () => {
     try {
+      if (version !== draftSyncVersion || fulfillmentType !== state.fulfillment_type) return
       const response = await $fetch<CartResponse>(apiPath('/api/v1/checkout/draft/'), {
         method: 'PATCH',
         headers: await csrfHeaders(),
@@ -916,11 +923,13 @@ function applyDeliveryDraft (): Promise<void> {
           delivery_address_structured: isDelivery ? structured : {}
         }
       })
+      if (version !== draftSyncVersion || fulfillmentType !== state.fulfillment_type) return
       // O PATCH devolve a revisão que acabou de gravar. Aceitá-la antes do
       // refresh fecha a janela em que um GET anterior poderia reintroduzir a
       // revisão velha; o refresh atualiza o restante da projection.
       acceptCartProjection(response.cart)
       await refresh()
+      deliveryDraftFailed.value = false
       if (isDelivery) {
         const covered = !cart.value?.delivery_zone_error && cart.value?.delivery_fee_q !== null
         if (structured.coordinates_source) {
@@ -931,7 +940,8 @@ function applyDeliveryDraft (): Promise<void> {
         if (covered) serverError.value = ''
       }
     } catch {
-      // Falha no rascunho não bloqueia — o commit ainda valida a zona.
+      // Uma escolha nova não pode continuar exibindo a conta da anterior.
+      if (version === draftSyncVersion && fulfillmentType === state.fulfillment_type) deliveryDraftFailed.value = true
       if (isDelivery) {
         if (structured.coordinates_source) {
           telemetry.addressEvent('address.zone.resolved', { result: 'deferred' })
@@ -1165,6 +1175,7 @@ async function continueFromFulfillment () {
   // Retirada zera a taxa de entrega no total; entrega recalcula ao confirmar
   // o endereço (applyDeliveryDraft no passo seguinte).
   if (state.fulfillment_type === 'pickup') await applyDeliveryDraft()
+  if (deliveryDraftFailed.value) return
   activeStep.value = state.fulfillment_type === 'delivery' ? 'address' : 'when'
 }
 
@@ -1175,6 +1186,7 @@ async function continueFromFulfillment () {
 function onFulfillmentSelected (value: string) {
   if (value !== 'pickup' && value !== 'delivery') return
   state.fulfillment_type = value
+  if (value === 'pickup') void applyDeliveryDraft()
   if (value === 'delivery' && !deliveryBelowMinimum.value) {
     activeStep.value = 'address'
   }
@@ -1192,6 +1204,8 @@ async function continueFromAddress () {
   // a fila garante que taxa, cobertura e revisão usadas adiante são as que o
   // servidor acabou de aceitar.
   await draftSyncTail
+  if (deliveryDraftFailed.value) await applyDeliveryDraft()
+  if (deliveryDraftFailed.value) return
   // Fora da área o passo não avança (beta SMS-06): o aviso de cobertura, com a
   // troca para retirada quando houver, vira o foco da página.
   if (zoneRefused.value) { revealZoneRefusal(); return }
@@ -1503,7 +1517,7 @@ async function submitCheckout () {
   }
 }
 
-function switchToPickup () {
+async function switchToPickup () {
   state.fulfillment_type = 'pickup'
   pickupSwapOffer.value = false
   deliveryUncovered.value = false
@@ -1512,8 +1526,8 @@ function switchToPickup () {
   const errors = { ...fieldErrors.value }
   delete errors.delivery_address
   fieldErrors.value = errors
-  void applyDeliveryDraft()
-  activeStep.value = 'when'
+  await applyDeliveryDraft()
+  activeStep.value = deliveryDraftFailed.value ? 'fulfillment' : 'when'
 }
 
 // Sinal do desconto no resumo compacto da confirmação (espelha CartSummaryBreakdown).
@@ -1945,7 +1959,8 @@ useSeoMeta({
                              que o calendário travou. A legenda diz o que o risco quer
                              dizer e qual é o gesto. -->
                         <p class="border-t px-3 py-2 shop-meta text-muted-foreground" data-checkout-date-legend>
-                          Dias riscados: a loja não abre. Escolha outro dia.
+                          Agendamentos até {{ displayCheckoutDate(dateBounds.maxDateValue) }}.
+                          Datas passadas, sem atendimento ou fora desse prazo ficam desabilitadas.
                         </p>
                       </UiPopoverContent>
                     </UiPopover>
@@ -2361,7 +2376,7 @@ useSeoMeta({
                   <Icon name="lucide:receipt-text" class="size-4 shrink-0" />
                   Total do pedido
                 </span>
-                <span class="shop-price-strong shrink-0">{{ cart?.grand_total_display || 'R$ 0,00' }}</span>
+                <span class="shop-price-strong shrink-0">{{ checkoutTotalDisplay }}</span>
               </span>
             </UiButton>
             <UiButton
@@ -2449,7 +2464,7 @@ useSeoMeta({
               </p>
 
               <!-- Resumo de valores: compacto e inline (sem empilhar). O Total vai no rodapé. -->
-              <template v-if="cart">
+              <template v-if="cart && !draftSyncing && !deliveryDraftFailed">
                 <UiSeparator class="my-3" />
                 <dl class="space-y-1 text-sm" data-review-bill>
                   <div class="flex items-baseline justify-between gap-3">
@@ -2475,7 +2490,7 @@ useSeoMeta({
               <div class="space-y-2">
                 <div class="flex items-baseline justify-between gap-3">
                   <span class="shop-kicker">Total</span>
-                  <span class="shop-price-strong">{{ cart?.grand_total_display || 'R$ 0,00' }}</span>
+                  <span class="shop-price-strong">{{ checkoutTotalDisplay }}</span>
                 </div>
                 <UiButton
                   :loading="submitting"
@@ -2507,7 +2522,8 @@ useSeoMeta({
                   <UiItemActions class="shop-price">{{ line.total_display }}</UiItemActions>
                 </UiItem>
               </UiItemGroup>
-              <CartSummaryBreakdown v-if="cart" :cart="cart" compact />
+              <CartSummaryBreakdown v-if="cart && !draftSyncing && !deliveryDraftFailed" :cart="cart" compact />
+              <p v-else-if="cart" role="status" class="shop-muted">{{ checkoutTotalDisplay }}</p>
             </div>
           </BottomSheet>
 
@@ -2537,7 +2553,7 @@ useSeoMeta({
                 <UiCardTitle>Seu pedido</UiCardTitle>
                 <UiCardDescription>{{ formatCount(cart?.items_count || 0, 'item', 'itens') }}</UiCardDescription>
               </div>
-              <p class="shop-price-strong">{{ cart?.grand_total_display || 'R$ 0,00' }}</p>
+              <p class="shop-price-strong">{{ checkoutTotalDisplay }}</p>
             </div>
             <div class="mt-4 space-y-2 shop-muted" data-checkout-live-summary>
               <div class="flex items-center gap-2">
@@ -2564,7 +2580,8 @@ useSeoMeta({
               </UiItem>
             </UiItemGroup>
 
-            <CartSummaryBreakdown v-if="cart" :cart="cart" compact />
+            <CartSummaryBreakdown v-if="cart && !draftSyncing && !deliveryDraftFailed" :cart="cart" compact />
+            <p v-else-if="cart" role="status" class="shop-muted">{{ checkoutTotalDisplay }}</p>
           </UiCardContent>
         </UiCard>
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CatalogItemProjection } from '~/types/shopman'
+import { orderableItems } from '~/presentation/menu'
 
 // "Seus favoritos" (WP-4): coleção dinâmica client-scoped, buscada à parte do
 // cardápio (que é global/cacheável). Reage às mudanças do coração via overlay
@@ -9,6 +10,7 @@ const props = defineProps<{
   // A página esconde a prateleira quando há filtro ativo.
   active?: boolean
   hideDietaryWarnings?: boolean
+  availableOnly?: boolean
 }>()
 
 const apiPath = useShopmanApiPath()
@@ -32,10 +34,12 @@ watch(isAuthenticated, load, { immediate: import.meta.client })
 // Recarrega após cada mutação CONFIRMADA pelo servidor (evita o race do otimista).
 watch(version, () => { if (isAuthenticated.value) load() })
 
-const visibleItems = computed(() => props.hideDietaryWarnings
-  ? items.value.filter(item => (item.dietary_warnings || []).length === 0)
-  : items.value
-)
+const visibleItems = computed(() => {
+  const available = props.availableOnly ? orderableItems(items.value) : items.value
+  return props.hideDietaryWarnings
+    ? available.filter(item => (item.dietary_warnings || []).length === 0)
+    : available
+})
 const visible = computed(() => props.active !== false && visibleItems.value.length > 0)
 </script>
 

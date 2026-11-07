@@ -26,6 +26,16 @@ from shopman.storefront.presentation.types import OrderProgressStepProjection
 pytestmark = pytest.mark.django_db
 
 
+def test_support_whatsapp_message_is_written_by_the_customer():
+    from urllib.parse import parse_qs, urlparse
+
+    from shopman.shop.projections.copy import build_copy
+    from shopman.storefront.presentation.order_tracking import _support_url
+
+    url = _support_url("https://wa.me/554333331234", "ORD-AJUDA", copy=build_copy("TRACKING"))
+    assert parse_qs(urlparse(url).query)["text"] == ["Oi! Preciso de ajuda com o pedido ORD-AJUDA."]
+
+
 def _attach_pending_planned_hold(order, *, sku: str, target_date=None):
     """Reserva de FORNADA — a que espera o lote sair.
 
