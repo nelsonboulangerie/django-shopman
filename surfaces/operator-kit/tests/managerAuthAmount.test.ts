@@ -36,6 +36,13 @@ describe("managerAuth: o gerente lê o valor que assina", () => {
     ).toBe(`Desconto acima de ${formatBRL(500)}.`);
   });
 
+  it("o acerto da conta na casa fora do dinheiro diz valor e forma", () => {
+    expect(managerAuthTitle("settle_account")).toBe("Autorizar o acerto");
+    expect(managerAuthReason({ action: "settle_account", amountQ: 15600, detail: "Pix" }))
+      .toBe(`Acerto de ${formatBRL(15600)} em Pix: não passa pela gaveta.`);
+    expect(managerAuthReason({ action: "settle_account" })).toBe("O acerto não passa pela gaveta.");
+  });
+
   it("o desconto acima do teto diz QUANTO, antes do teto (beta 07/11)", () => {
     expect(managerAuthReason({ reasons: ["discount_over_threshold"], thresholdQ: 500, discountQ: 1200 }))
       .toBe(`Desconto de ${formatBRL(1200)}, acima de ${formatBRL(500)}.`);
