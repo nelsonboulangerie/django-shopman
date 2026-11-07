@@ -2748,6 +2748,11 @@ class OrderRejectView(_OrderActionBase):
         prepared = {}
 
         def prepare():
+            # O iFood já concluiu: não há o que recusar lá, e a leitura dos motivos
+            # falharia com um 503 sem sentido. Recusa de antemão, dizendo o porquê.
+            concluded = cancellation_service.ifood_concluded_refusal(order, verb="recusar")
+            if concluded:
+                return Response({"detail": concluded, "error": {"code": "ifood_concluded", "message": concluded}}, status=409)
             try:
                 prepared["identity"] = orders_service.prepare_cancellation(order, reason_key)
             except operator_orders.CancellationReasonsUnavailable as exc:

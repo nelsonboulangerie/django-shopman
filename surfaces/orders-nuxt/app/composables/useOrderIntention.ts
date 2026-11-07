@@ -8,6 +8,36 @@ type Intention = {
 };
 type Result = { outcome?: string; detail?: string; count?: number };
 
+/** O que a incerteza é, dito pelo ato: "se o cancelamento foi gravado". */
+const ORDER_OPERATION_SUBJECT: Record<string, string> = {
+  cancel: "o cancelamento foi gravado",
+  reject: "a recusa foi gravada",
+  confirm: "o aceite foi gravado",
+  advance: "o avanço do pedido foi gravado",
+  notes: "a nota foi gravada",
+  comment: "o comentário foi gravado",
+  assign: "a atribuição foi gravada",
+  unassign: "a liberação do pedido foi gravada",
+  "settle-delivery-cash": "o recebimento foi gravado",
+  "resend-payment-link": "o reenvio do link foi gravado",
+  "requeue-fiscal": "o reprocessamento da NFC-e foi gravado",
+  "undo-handoff": "o desfazer da saída foi gravado",
+  "undo-ready": "o desfazer do pronto foi gravado",
+};
+
+/**
+ * A resposta não voltou e o recibo ainda não sabe: diga O QUE ficou incerto e o
+ * que fazer. A frase antiga ("Resultado ainda desconhecido. Verifique esta
+ * intenção…") não dizia nem uma coisa nem outra (dono, 07/11/2026).
+ */
+export function uncertainOutcomeMessage(
+  subject = "a alteração foi gravada",
+  where = "a tela",
+  slow = false,
+): string {
+  return `${slow ? "O sistema demorou a responder. " : ""}Não deu para confirmar se ${subject}. Atualize ${where} para ver o estado atual antes de tentar de novo.`;
+}
+
 /** Session-only, person-bound intentions. Unknown results never create a new key. */
 export function useOrderIntention() {
   const { data: session } = useNuxtData<{ operator?: { id: number } }>(
@@ -77,6 +107,7 @@ export function useOrderIntention() {
       | undefined,
     inputs: Record<string, unknown>,
     approval?: Record<string, string>,
+    uncertainty?: { subject?: string; where?: string },
   ) {
     const owner = session.value?.operator?.id;
     if (!owner) throw new Error("Identifique-se antes de continuar.");
@@ -118,7 +149,7 @@ export function useOrderIntention() {
         "Há uma gravação anterior sem resultado confirmado. Seu novo rascunho foi preservado.",
       );
     }
-    const finish = (result: Result) => {
+    const finish = (result: Result, slow = false) => {
       if (!samePerson())
         throw new Error(
           "A identificação mudou. Confira os dados antes de continuar.",
@@ -129,7 +160,7 @@ export function useOrderIntention() {
       }
       throw new Error(
         result.detail ||
-          "Resultado ainda desconhecido. Verifique esta intenção antes de uma nova ação.",
+          uncertainOutcomeMessage(uncertainty?.subject, uncertainty?.where, slow),
       );
     };
     try {
@@ -173,8 +204,12 @@ export function useOrderIntention() {
         throw error;
       }
       // A resposta pode ter se perdido depois do commit. Consultar não executa efeitos.
+      // É o caminho de toda falha SEM a declaração do servidor: 5xx do BFF (o
+      // Django não respondeu em 25 s: ``upstream_timeout``; a borda respondeu no
+      // lugar dele: ``upstream_unavailable``) ou queda de rede.
+      const slow = httpErrorCode(error) === "upstream_timeout";
       const result = await readReceipt(resource, path, current);
-      return finish(result);
+      return finish(result, slow);
     }
   }
   async function checkPath(resource: string, path: string) {
@@ -203,6 +238,10 @@ export function useOrderIntention() {
       action,
       inputs,
       approval,
+      {
+        subject: ORDER_OPERATION_SUBJECT[operation] ?? "a ação foi gravada",
+        where: "o pedido",
+      },
     );
     return true;
   }

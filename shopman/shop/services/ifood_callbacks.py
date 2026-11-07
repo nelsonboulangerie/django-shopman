@@ -218,6 +218,11 @@ def dispatch(order_id: str) -> None:
     send_action(order_id, "dispatch")
 
 
+# Segundos por tentativa nas leituras que uma pessoa espera na tela (ver
+# ``fetch_cancellation_reasons``).
+_INTERACTIVE_READ_TIMEOUT = 6
+
+
 def fetch_cancellation_reasons(order_id: str) -> list[dict]:
     """Fetch the cancellation codes iFood accepts for a specific order.
 
@@ -231,9 +236,16 @@ def fetch_cancellation_reasons(order_id: str) -> list[dict]:
     # É GET — idempotente —, então também repete em 5xx e queda de transporte.
     from shopman.shop.services import ifood_http
 
+    #
+    # Prazo por tentativa CURTO: esta leitura roda com o operador esperando, atrás
+    # do BFF, que desiste em 25 s (``DJANGO_UPSTREAM_TIMEOUT_MS``). Com os 30 s do
+    # settings (até 3 tentativas), um iFood lento faz o BFF responder 504 antes do
+    # Django; a tela não sabe se o cancelamento foi gravado, consulta o recibo e
+    # ouve "desconhecido". 3 x 6 s mais o backoff cabe nos 25 s, e aí a recusa que
+    # volta é a do Django, carimbada ``not_applied``.
     resp = ifood_http.request(
         "GET", f"/order/v1.0/orders/{order_id}/cancellationReasons",
-        label="cancellation_reasons", idempotent=True,
+        label="cancellation_reasons", idempotent=True, timeout=_INTERACTIVE_READ_TIMEOUT,
     )
     if resp is None:
         raise IFoodCallbackError("iFood cancellationReasons unavailable after retries (edge, transport or no OAuth)")
