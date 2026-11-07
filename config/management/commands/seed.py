@@ -6588,6 +6588,7 @@ class Command(BaseCommand):
                     # todo público comportamental do Marketing resolvia zero.
                     data={
                         "customer_ref": customer.ref,
+                        "fulfillment_type": "pickup",
                         "availability_decision": {"approved": True, "source": "seed", "decisions": []},
                     },
                     # ⚠️ `snapshot["items"]` é o que o HISTÓRICO do cliente lê
@@ -6709,8 +6710,11 @@ class Command(BaseCommand):
                 # `customer_ref`: o elo que o histórico do cliente usa. Ver o gêmeo acima.
                 # `payment`: pedido sem forma de pagamento não existe (dono, 06/11,
                 # GES-03). Em andamento, ninguém pagou ainda: recebe na retirada.
+                # `fulfillment_type`: sem ele, o cartão do PDV dizia "Retirada" e o
+                # painel, "entregar no endereço" (beta 07/11).
                 data={
                     "customer_ref": customer.ref,
+                    "fulfillment_type": "pickup",
                     "availability_decision": {"approved": True, "source": "seed", "decisions": []},
                     "payment": self._live_order_payment(channel.ref, total_q),
                 },

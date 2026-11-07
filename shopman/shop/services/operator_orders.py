@@ -1518,7 +1518,7 @@ def collects_at_handoff(order: Order) -> bool:
     collection = str(payment.get("collection") or "").strip().lower()
     if collection == "on_delivery":
         return method in {"cash", "credit", "debit", "mixed"}
-    if collection or get_fulfillment_type(order) != "pickup":
+    if collection or get_fulfillment_type(order) == "delivery":
         return False
     return (method in _COUNTER_METHODS or not method) and not payment_service.order_intent_refs(order)
 
@@ -1544,7 +1544,10 @@ def counter_hand_over_block(order: Order, *, payment_reads=None, balance_q: int 
     frase para decidir o botão, e :func:`hand_over_at_counter` levanta com ela.
     ``balance_q`` evita reler o Payman quando quem chama já tem o saldo.
     """
-    if get_fulfillment_type(order) != "pickup":
+    # Entrega é só o que diz "delivery", a mesma leitura do cartão da encomenda
+    # (`order_queue._is_delivery`). Com `!= "pickup"`, o pedido sem tipo saía no
+    # cartão como "Retirada" e aqui como "entregar no endereço" (beta 07/11).
+    if get_fulfillment_type(order) == "delivery":
         return "Esta encomenda é para entregar no endereço: a saída é pelo Gestor de pedidos."
     if order.status in {Order.Status.COMPLETED, Order.Status.DELIVERED}:
         return "Esta encomenda já foi entregue."
