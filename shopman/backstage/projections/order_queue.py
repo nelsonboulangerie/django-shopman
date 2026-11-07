@@ -3363,6 +3363,7 @@ _EVENT_LABELS = {
     "payment.captured": "Pagamento recebido",
     "payment.capture_failed": "Cobrança do cartão recusada (nada foi cobrado)",
     "payment.repayment_requested": "Novo pagamento pedido ao cliente",
+    "payment.method_changed": "Cliente trocou o pagamento para Pix",
     "payment.refunded": "Pagamento estornado",
     "payment.counter_takeover": "Cobrança online cancelada: o cliente paga no balcão",
 }

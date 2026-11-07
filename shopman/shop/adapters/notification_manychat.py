@@ -351,6 +351,8 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         )
     elif template == "order_accepted" and not sandbox_flow_override:
         flow_template, flow_ns = _preorder_accepted_variant(template, flow_ns, ctx, mc_config)
+    elif template == "payment_requested" and not sandbox_flow_override:
+        flow_template, flow_ns = _card_repayment_variant(template, flow_ns, ctx, mc_config)
 
     if flow_ns and _flow_lacks_name(template, ctx):
         # O template aprovado diz "Oi, {{1}}!" e a Meta recusa variável vazia; o campo
@@ -566,6 +568,53 @@ def _preorder_accepted_variant(
             )
         return template, flow_ns
     return PREORDER_ACCEPTED_VARIANT, variant_ns
+
+
+#: Nome do modelo da cobrança de cartão recusada depois do aceite (para o log).
+CARD_REPAYMENT_TEMPLATE_NAME = "pagamento_cartao_nao_passou"
+
+
+def _card_repayment_variant(
+    template: str, flow_ns: str | None, ctx: dict, mc_config: dict
+) -> tuple[str, str | None]:
+    """Trocar o flow do ``payment_requested`` pelo do novo pagamento, se der.
+
+    A variante só sai quando o pedido espera o novo pagamento depois da cobrança de
+    cartão recusada (``payment.repayment``), com Pix aceito no canal (o modelo
+    oferece "Pix ou outro cartão") e com prazo (a Meta não aceita variável vazia).
+
+    Falha fechada: ligar é ter o flow da variante
+    (``MANYCHAT_FLOW_MAP["payment_requested_card_repayment"]`` ou o
+    ``NotificationTemplate`` desse evento). Enquanto o modelo não está aprovado na
+    Meta não há flow, e o aviso sai pelo ``pagamento_solicitado`` aprovado, nunca
+    por texto que a Meta não aprovou.
+    """
+    from shopman.shop.services.manychat_marketing_safety import CARD_REPAYMENT_VARIANT
+
+    payment = ctx.get("payment") if isinstance(ctx.get("payment"), dict) else {}
+    repayment = payment.get("repayment") if isinstance(payment.get("repayment"), dict) else None
+    if (
+        repayment is None
+        or not repayment.get("pix_allowed")
+        or str(payment.get("method") or "").lower() != "card"
+        or not str(ctx.get("payment_deadline") or "").strip()
+    ):
+        return template, flow_ns
+    variant_ns = _load_db_flow_ns(CARD_REPAYMENT_VARIANT) or (
+        mc_config.get("flow_map", {}).get(CARD_REPAYMENT_VARIANT)
+    )
+    if not variant_ns:
+        if flow_ns:
+            # Estado esperado enquanto o modelo está em análise: info, não alarme.
+            logger.info(
+                "manychat.card_repayment_flow_pending template=%s: o novo pagamento saiu "
+                "pelo pagamento_solicitado. Ligue o flow do modelo %s em %s.",
+                template,
+                CARD_REPAYMENT_TEMPLATE_NAME,
+                CARD_REPAYMENT_VARIANT,
+            )
+        return template, flow_ns
+    return CARD_REPAYMENT_VARIANT, variant_ns
 
 
 def _reserve_flow_subscriber(subscriber_id, template: str) -> dict | None:
