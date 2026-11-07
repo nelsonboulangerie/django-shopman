@@ -15,7 +15,7 @@ from statistics import median
 from typing import Any
 
 from django.apps import apps
-from django.db.models import Q, Sum
+from django.db.models import Exists, OuterRef, Q, Sum
 from django.utils import timezone
 
 from shopman.shop.purchase_policy import PurchasePolicy, resolve_purchase_policy
@@ -383,8 +383,17 @@ def build_purchase(
     contacts = supplier_filters.get("contact", [])
     if contacts and set(contacts) != {"with", "without"}:
         with_contact = contacts == ["with"]
-        contact_q = Q(contacts__is_active=True, contacts__is_primary=True) | Q(email__gt="") | Q(phone__gt="")
-        supplier_qs = supplier_qs.filter(contact_q if with_contact else ~contact_q).distinct()
+        SupplierContact = apps.get_model("buyman", "SupplierContact")
+        # Mesmo critério de SupplierContact.pick(..., SALES), usado na ficha:
+        # uma pessoa comercial ou geral ativa. A central é fallback de envio,
+        # não uma pessoa comercial; financeiro/qualidade não recebem compras.
+        order_contacts = SupplierContact.objects.filter(
+            supplier_id=OuterRef("pk"), is_active=True,
+            role__in=(SupplierContact.Role.SALES, SupplierContact.Role.GENERAL),
+        )
+        supplier_qs = supplier_qs.alias(has_order_contact=Exists(order_contacts)).filter(
+            has_order_contact=with_contact,
+        )
     supplier_orders = {
         "name": ("name", "ref"),
         "-name": ("-name", "ref"),

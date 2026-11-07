@@ -58,7 +58,7 @@ watch(
 );
 
 function openMaterial(material: EnrichedMaterial) {
-  void navigateTo(materialPath(material.sku));
+  void navigateTo({ path: materialPath(material.sku), query: route.query });
 }
 
 const sorting = ref<{ id: string; desc: boolean }[]>([]);
@@ -219,7 +219,7 @@ const headerActions = [
 
 async function onSubmitMaterial(payload: Record<string, unknown>) {
   const sku = await saveMaterial(payload);
-  if (sku) await navigateTo(materialPath(sku));
+  if (sku) await navigateTo({ path: materialPath(sku), query: route.query });
 }
 
 const materialSavedVersion = ref(0);
