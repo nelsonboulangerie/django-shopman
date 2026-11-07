@@ -193,7 +193,7 @@ QUALITY_GRADES = (
 QUALITY_DEFECTS = (
     ("underproofed", "Fermentou pouco", "Pequeno, denso, rasgou", False, 10),
     ("overproofed", "Fermentou demais", "Esparramado, ácido, colapsou", False, 20),
-    ("underbaked", "Assou pouco", "Pálido, miolo cru", False, 30),
+    ("underbaked", "Assou pouco", "Pálido, mas próprio para consumo", False, 30),
     ("overbaked", "Assou demais", "Escuro, casca amarga", False, 40),
     ("misshapen", "Deformado", "Torto, colado, fora do padrão", False, 50),
     ("scorch_marks", "Marcas de forno", "Fuligem, sujeira de lastro", False, 60),
