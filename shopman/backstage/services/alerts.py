@@ -67,6 +67,7 @@ SYSTEM_TYPES = frozenset({
     "unhandled_exception",
     "webhook_failed",
     "integration_failed",
+    "login_code_volume",
     "integration_config_drift",
     "geoip_database_stale",
     "operator_capacity_critical",

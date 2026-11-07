@@ -7413,6 +7413,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/login_code_ceiling.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "auth.login-code-ip-ceiling"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/rating_contact.py",
       "touchpoints": [
         "outro"

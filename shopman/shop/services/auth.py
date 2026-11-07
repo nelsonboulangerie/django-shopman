@@ -143,11 +143,66 @@ def client_ip(request) -> str:
     return resolved
 
 
-def request_code(*, phone: str, delivery_method: str, ip_address: str | None):
+# Volume global de códigos na última hora acima do qual o operador é avisado.
+# Uma padaria não recebe 60 logins por hora: passar disso é ataque distribuído
+# (muitos IPs, cada um abaixo do teto) ou defeito em loop. O aviso não bloqueia
+# ninguém; ele chama alguém para olhar a conta do provedor.
+LOGIN_CODES_GLOBAL_ALERT_PER_HOUR = 60
+LOGIN_CODE_VOLUME_ALERT_TYPE = "login_code_volume"
+
+
+def _watch_global_code_volume() -> None:
+    """Avisa o operador quando o volume de códigos da última hora passa do limiar.
+
+    Nunca levanta: observabilidade não derruba o login do cliente. O aviso tem
+    texto estável, então o debounce do ``create_operator_alert`` segura um por
+    janela em vez de um por envio.
+    """
+    try:
+        from datetime import timedelta
+
+        from django.utils import timezone
+        from shopman.doorman.models import VerificationCode
+
+        since = timezone.now() - timedelta(hours=1)
+        count = VerificationCode.objects.filter(created_at__gte=since).count()
+        if count <= LOGIN_CODES_GLOBAL_ALERT_PER_HOUR:
+            return
+        from shopman.shop.services.observability import create_operator_alert
+
+        # Crítico: é a TI quem age (conta do provedor, bloqueio na borda), e o
+        # crítico é o que chega por e-mail a ela. Um aviso por hora, no máximo.
+        create_operator_alert(
+            type=LOGIN_CODE_VOLUME_ALERT_TYPE,
+            severity="critical",
+            message=(
+                f"Mais de {LOGIN_CODES_GLOBAL_ALERT_PER_HOUR} códigos de entrada pedidos "
+                "na última hora. Confira na conta do provedor de SMS se é disparo "
+                "automático (SMS pumping)."
+            ),
+            debounce_minutes=60,
+            codes_last_hour=count,
+        )
+    except Exception:
+        logger.exception("login_code.global_volume_watch_failed")
+
+
+def _request_code_guarded(**kwargs):
     from shopman.doorman import get_auth_service
 
-    AuthService = get_auth_service()
-    return AuthService.request_code(
+    from shopman.shop.policies.login_code_ceiling import ip_code_ceiling_refusal
+
+    refusal = ip_code_ceiling_refusal(kwargs.get("ip_address"))
+    if refusal is not None:
+        return refusal
+    result = get_auth_service().request_code(**kwargs)
+    if getattr(result, "success", False):
+        _watch_global_code_volume()
+    return result
+
+
+def request_code(*, phone: str, delivery_method: str, ip_address: str | None):
+    return _request_code_guarded(
         target_value=phone,
         purpose="login",
         delivery_method=delivery_method,
@@ -183,10 +238,7 @@ def request_contact_verification_code(
     `request_code` do doorman só normaliza, checa as portarias de rate limit e
     manda o código. Nenhum `Customer` é tocado. Foi medido.
     """
-    from shopman.doorman import get_auth_service
-
-    AuthService = get_auth_service()
-    return AuthService.request_code(
+    return _request_code_guarded(
         target_value=phone,
         purpose=CONTACT_VERIFICATION_PURPOSE,
         delivery_method=delivery_method,

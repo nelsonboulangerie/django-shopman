@@ -35,6 +35,9 @@ class OperatorAlert(models.Model):
         # webhook é o lado de entrada; este é o de saída — que até aqui morria
         # em `logger.warning` e ninguém ficava sabendo.
         ("integration_failed", "Integração externa falhou"),
+        # Volume global de códigos de entrada (SMS/WhatsApp) acima do limiar da
+        # hora: sinal de disparo automático pago por mensagem (SMS pumping).
+        ("login_code_volume", "Volume alto de códigos de entrada"),
         # Erro de programação (500) que morria no log do App Platform. O
         # traceback sempre existiu; o que faltava era um caminho até alguém que
         # não seja o cliente reclamando. Dedupe por (exceção + arquivo:linha).

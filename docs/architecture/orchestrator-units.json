@@ -5421,6 +5421,44 @@
       ]
     },
     {
+      "id": "auth.login-code-ip-ceiling",
+      "question": "Este IP ainda pode pedir código de entrada nesta hora e neste dia?",
+      "owner": "auth.login-code-ip-ceiling",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.login_code_ceiling:ip_code_ceiling_refusal",
+      "authoritative_symbols": [
+        "shopman.shop.policies.login_code_ceiling:ip_code_ceiling_refusal"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/login_code_ceiling.py",
+          "symbols": [
+            "LOGIN_CODES_PER_IP_PER_HOUR",
+            "LOGIN_CODES_PER_IP_PER_DAY",
+            "ip_code_ceiling_refusal"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [
+        "doorman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/storefront/tests/api/test_teto_de_codigo_por_ip.py::test_ip_no_teto_da_hora_e_recusado_sem_enviar",
+        "shopman/storefront/tests/api/test_teto_de_codigo_por_ip.py::test_ip_paciente_esbarra_no_teto_do_dia"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
       "id": "auth.redirect-safety",
       "question": "Qual destino pós-login pode ser seguido sem abrir redirecionamento externo?",
       "owner": "auth.redirect-safety",
@@ -5473,7 +5511,11 @@
             "code_cooldown_body",
             "_seconds_phrase",
             "request_code_error_message",
-            "CONTACT_VERIFICATION_PURPOSE"
+            "CONTACT_VERIFICATION_PURPOSE",
+            "LOGIN_CODES_GLOBAL_ALERT_PER_HOUR",
+            "LOGIN_CODE_VOLUME_ALERT_TYPE",
+            "_watch_global_code_volume",
+            "_request_code_guarded"
           ]
         }
       ],
