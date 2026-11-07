@@ -579,6 +579,12 @@ export function sessionActionTiles(input: {
  */
 export function endOfDayTiles(input: {
   shiftOpen?: boolean;
+  /**
+   * Quem opera fecha o caixa? A mesma régua do servidor (`can_close_day`). Sem ela,
+   * o card fica, apagado e com o motivo: a Caixa contava a gaveta inteira e só no
+   * último toque ouvia "Fechar o caixa é da gerência" (beta 07/11). Ausente = fecha.
+   */
+  canCloseShift?: boolean;
   justClosedShift?: boolean;
   canAuditCash: boolean;
   /**
@@ -595,8 +601,10 @@ export function endOfDayTiles(input: {
       key: "close_shift",
       icon: "lucide:lock",
       label: "Fechar caixa",
-      description: "Contagem cega · encerra o turno",
-      disabled: false,
+      description: input.canCloseShift === false
+        ? "Fechar o caixa é da gerência. Chame quem fecha o dia."
+        : "Contagem cega · encerra o turno",
+      disabled: input.canCloseShift === false,
       // Destrutivo no ÍCONE, não no card inteiro: é a ação que encerra, e a
       // tela precisa dizer isso sem pintar um quadrado de vermelho na frente
       // do operador o turno todo.
