@@ -116,6 +116,8 @@ class FakeStripe:
 @override_settings(
     SHOPMAN_STRIPE=STRIPE_MANUAL,
     SHOPMAN_PAYMENT_ADAPTERS=PAYMENT_ADAPTERS_STRIPE_CARD,
+    SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=True,
+    SHOPMAN_MOCK_PIX_AUTO_CONFIRM=False,
     DEBUG=False,
 )
 class CardCaptureFailsAfterAcceptTests(TestCase):
@@ -204,7 +206,8 @@ class CardCaptureFailsAfterAcceptTests(TestCase):
         promise = build_order_tracking(order).promise
         self.assertEqual(promise.state, "payment_card_ready")
         self.assertEqual(promise.title, "A cobrança no cartão não passou")
-        self.assertTrue(promise.message.startswith("Nada foi cobrado. Pague com outro cartão até "))
+        self.assertTrue(promise.message.startswith("Nada foi cobrado. Pague com Pix ou com outro cartão até "))
+        self.assertTrue(any(action.ref == "pay_with_pix" for action in promise.actions))
         self.assertIn(" às ", promise.message)
         self.assertEqual(promise.checkout_url, order.data["payment"]["checkout_url"])
         self.assertTrue(any(action.href == promise.checkout_url for action in promise.actions))
@@ -329,3 +332,77 @@ class CardCaptureFailsAfterAcceptTests(TestCase):
         tracking = build_order_tracking(order)
         self.assertEqual(tracking.cancellation_note, text)
         self.assertNotIn("desfeita", tracking.cancellation_money_line)
+
+    # ── o cliente escolhe Pix (decisão do dono, 07/11) ──
+
+    def _switch_to_pix(self, order: Order):
+        from django.contrib.auth import get_user_model
+        from rest_framework.test import APIClient
+
+        staff = get_user_model().objects.create_superuser("caixa", "c@example.com", "x")
+        client = APIClient()
+        client.force_login(staff)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = client.post(f"/api/v1/orders/{order.ref}/payment/pix/", HTTP_X_IDEMPOTENCY_KEY="pix-1")
+        order.refresh_from_db()
+        return response
+
+    def test_switching_to_pix_closes_the_card_charge_and_keeps_the_deadline(self) -> None:
+        from django.contrib.auth import get_user_model
+
+        from shopman.backstage.projections.order_queue import AWAITING_REPAYMENT_LABEL, build_operator_order
+
+        order, _ = self._accepted_with_failed_capture()
+        card_intent = order.data["payment"]["intent_ref"]
+        deadline = order.data["payment"]["repayment"]["deadline_at"]
+
+        response = self._switch_to_pix(order)
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["promise"]["state"], "payment_pix_ready")
+        # A cobrança do cartão fechou antes de o Pix nascer: nunca duas abertas.
+        self.assertEqual(self.stripe.sessions["cs_test_2"].status, "expired")
+        self.assertEqual(PaymentIntent.objects.get(ref=card_intent).status, "cancelled")
+        payment = order.data["payment"]
+        self.assertEqual(payment["method"], "pix")
+        open_intents = PaymentIntent.objects.filter(order_ref=order.ref, status__in=["pending", "authorized"])
+        self.assertEqual([i.ref for i in open_intents], [payment["intent_ref"]])
+        # O mesmo prazo, não um relógio novo.
+        pix_deadline = PaymentIntent.objects.get(ref=payment["intent_ref"]).expires_at
+        card_deadline = timezone.datetime.fromisoformat(deadline)
+        self.assertLess(abs((pix_deadline - card_deadline).total_seconds()), 61)
+        self.assertTrue(order.events.filter(type="payment.method_changed").exists())
+        # O Gestor mostra a forma nova, ainda esperando o pagamento.
+        user = get_user_model().objects.create_superuser("gestor", "g@example.com", "x")
+        detail = build_operator_order(order, user=user)
+        self.assertEqual(detail.payment_method, "pix")
+        self.assertEqual(detail.payment_status_label, AWAITING_REPAYMENT_LABEL)
+
+    def test_the_pix_confirmed_resumes_the_order(self) -> None:
+        from shopman.shop.services import operator_orders
+        from shopman.shop.services import payment as payment_service
+        from shopman.shop.services.pix_confirmation import confirm_pix
+
+        order, _ = self._accepted_with_failed_capture()
+        self._switch_to_pix(order)
+        pix_intent = PaymentIntent.objects.get(ref=order.data["payment"]["intent_ref"])
+
+        with self.captureOnCommitCallbacks(execute=True):
+            confirm_pix(txid=pix_intent.gateway_id, e2e_id="E2E-REPAY-1", amount="10.00")
+        order.refresh_from_db()
+
+        self.assertIs(payment_service.has_sufficient_captured_payment(order), True)
+        self.assertIsNone(payment_service.awaiting_repayment(order))
+        self.assertNotEqual(operator_orders.advance_block(order), operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED)
+        self.assertIn(order.status, {Order.Status.ACCEPTED, Order.Status.PREPARING})
+
+    def test_switching_is_refused_outside_the_new_payment(self) -> None:
+        with self.captureOnCommitCallbacks(execute=True):
+            order = _commit_card_order()
+        order.refresh_from_db()
+
+        response = self._switch_to_pix(order)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error_code"], "not_awaiting_repayment")
+        self.assertEqual(order.data["payment"]["method"], "card")

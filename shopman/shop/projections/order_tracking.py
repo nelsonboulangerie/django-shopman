@@ -234,6 +234,8 @@ class TrackingPromiseData:
     # A cobrança do cartão não passou depois do aceite e esta é a cobrança NOVA
     # (``payment.awaiting_repayment``): a frase diz por que pedimos de novo.
     repayment: bool = False
+    # ...e o cliente pode trocar para Pix (ação ``pay_with_pix``).
+    repayment_pix_allowed: bool = False
 
 
 @dataclass(frozen=True)
@@ -928,6 +930,7 @@ def _promise(
     fulfillment_wait_kind: str = "",
     fulfillment_wait_until: str | None = None,
     repayment: bool = False,
+    repayment_pix_allowed: bool = False,
 ) -> TrackingPromiseData:
     return TrackingPromiseData(
         state=state,
@@ -951,6 +954,7 @@ def _promise(
         fulfillment_wait_kind=fulfillment_wait_kind,
         fulfillment_wait_until=fulfillment_wait_until,
         repayment=repayment,
+        repayment_pix_allowed=repayment_pix_allowed,
     )
 
 
@@ -1160,6 +1164,21 @@ def _build_promise(
             # acontecido (beta 06/11, F3). A ação é a mesma: a sessão do gateway
             # continua aberta para outro cartão.
             declined = bool(payment.get("last_decline"))
+            repayment = payment_service.awaiting_repayment(order)
+            pix_switch = (
+                (
+                    _action(
+                        ref="pay_with_pix",
+                        kind="mutation",
+                        label=_copy_title("TRACKING_PROMISE_REPAYMENT_PIX_ACTION", "Pagar com Pix"),
+                        href=f"/api/v1/orders/{order.ref}/payment/pix/",
+                        method="POST",
+                        idempotency="required",
+                    ),
+                )
+                if repayment is not None and repayment.get("pix_allowed") and order.status == "accepted"
+                else ()
+            )
             return promise(
                 state="payment_card_declined" if declined else "payment_card_ready",
                 tone="warning" if declined else "info",
@@ -1177,10 +1196,12 @@ def _build_promise(
                         href=checkout_url,
                         idempotency="none",
                     ),
+                    *pix_switch,
                 ),
                 payment_method=method,
                 checkout_url=checkout_url,
-                repayment=payment_service.awaiting_repayment(order) is not None,
+                repayment=repayment is not None,
+                repayment_pix_allowed=bool(pix_switch),
             )
         if is_hosted:
             # Sessão hospedada sem URL ainda (o botão do Stripe está nascendo): a

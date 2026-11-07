@@ -866,6 +866,16 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_CARD_REPAYMENT_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="A cobrança no cartão não passou")},
     },
+    "TRACKING_PROMISE_CARD_REPAYMENT_PIX_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Nada foi cobrado. Pague com Pix ou com outro cartão até {deadline} para seguirmos com o seu pedido.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_REPAYMENT_PIX_ACTION": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Pagar com Pix")},
+    },
     "TRACKING_PROMISE_CARD_REPAYMENT_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(

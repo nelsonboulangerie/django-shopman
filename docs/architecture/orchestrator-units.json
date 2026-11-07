@@ -13695,7 +13695,11 @@
             "capture_failure",
             "REPAYMENT_KEY",
             "awaiting_repayment",
-            "request_new_payment_after_capture_failure"
+            "request_new_payment_after_capture_failure",
+            "RepaymentSwitchRefused",
+            "_repayment_minutes_left",
+            "_stamp_repayment_terms",
+            "switch_repayment_to_pix"
           ]
         }
       ],
@@ -17566,7 +17570,8 @@
             "_CUSTOMER",
             "_ORDER",
             "_ORDER_BUTTON",
-            "TRANSACTIONAL_FLOW_FIELDS"
+            "TRANSACTIONAL_FLOW_FIELDS",
+            "CARD_REPAYMENT_VARIANT"
           ]
         }
       ],
