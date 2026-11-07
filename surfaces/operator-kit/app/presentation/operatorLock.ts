@@ -229,3 +229,28 @@ export function operatorChangeNotice(
   if (!was || !now || was.id === now.id) return null;
   return `Agora quem opera aqui é ${operatorName(after)}. A troca foi feita em outro app deste navegador.`;
 }
+
+/**
+ * O operador que a tela mostra, para ir junto de cada GRAVAÇÃO no backstage
+ * (`X-Shopman-Operator`). O servidor recusa com 409 `operator_changed` quando a
+ * sessão já é de outra pessoa: o clique que devolve o foco à aba pode chegar antes
+ * da releitura, e o ato saía no nome de quem a tela não mostrava (beta 07/11).
+ * `""` = não manda: leitura, troca de pessoa (`/operator/`), fora do backstage, ou
+ * ninguém identificado na tela.
+ */
+export function expectedOperatorHeader(
+  url: string,
+  method: string | undefined,
+  session: OperatorSession | null,
+): string {
+  if (["GET", "HEAD", "OPTIONS"].includes((method || "GET").toUpperCase())) return "";
+  if (!url.includes("/api/v1/backstage/") || url.includes("/api/v1/backstage/operator/")) return "";
+  const operator = session?.locked ? null : session?.operator;
+  return operator ? String(operator.id) : "";
+}
+
+/** A recusa do servidor por troca de pessoa (ver `expectedOperatorHeader`). */
+export function isOperatorChanged(status: number | undefined, body: unknown): boolean {
+  const code = (body as { error?: { code?: unknown } } | null)?.error?.code;
+  return status === 409 && code === "operator_changed";
+}
