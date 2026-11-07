@@ -446,10 +446,19 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   // (FIFO) e recusa valor que não cobre nem a mais antiga.
   const accountBalances = computed(() => pos.value?.cash_runtime?.account_balances ?? []);
 
-  function settleAccount(payload: { customerRef: string; amount: string; method: string }): Promise<boolean> {
+  function settleAccount(payload: {
+    customerRef: string;
+    amount: string;
+    method: string;
+    managerApproval?: ManagerApproval | null;
+  }): Promise<boolean> {
+    const body: Record<string, unknown> = { amount: payload.amount, method: payload.method };
+    // Pix/cartão/outro não passam pela gaveta: o servidor pede o gerente
+    // (`manager_approval_required`) e a página abre "Quem autoriza?" (beta 07/11).
+    if (payload.managerApproval) body.manager_approval = payload.managerApproval;
     return run(
       `/api/v1/backstage/pos/accounts/${encodeURIComponent(payload.customerRef)}/settle/`,
-      { amount: payload.amount, method: payload.method },
+      body,
       "O acerto não foi registrado.",
       "Nada entrou na gaveta e o saldo do cliente não mudou. Tente de novo agora: a mesma tentativa não cobra duas vezes.",
     ).then((ok) => {

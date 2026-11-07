@@ -6281,7 +6281,12 @@ class POSAccountSettleView(APIView):
                     amount_raw=str(body.get("amount", "")),
                     method=str(body.get("method", "")),
                     terminal_ref=_terminal_do_pedido(request),
+                    manager_approval=body.get("manager_approval"),
                 )
+            # Pix/cartão/outro sem assinatura: o código chega à tela para ela abrir
+            # "Quem autoriza?" em vez de um toast.
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except POSError as exc:
                 return Response({"detail": str(exc)}, status=400)
             return Response(
