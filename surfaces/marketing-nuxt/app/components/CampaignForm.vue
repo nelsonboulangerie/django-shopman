@@ -1022,7 +1022,7 @@ function submit() {
       />
     </NuxtFormField>
 
-    <NuxtAlert v-if="offerWarning && (currentStep === 0 || currentStep === 2)" color="warning" :description="offerWarning" data-campaign-offer-warning />
+    <NuxtAlert v-if="offerWarning && (currentStep === 0 || currentStep === 2)" color="warning" variant="subtle" :description="offerWarning" data-campaign-offer-warning />
 
     <!-- Sem este bloco, "agendado" era escolhível e insatisfazível: o gestor salvava e
          a campanha nunca disparava. -->
