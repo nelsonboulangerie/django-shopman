@@ -263,3 +263,39 @@ describe("usePosSale — a busca de cliente só aceita a resposta do termo atual
     handles.dispose();
   });
 });
+
+/**
+ * Beta 07/11: a lista de clientes expunha telefone, CPF e e-mail inteiros a partir
+ * de 2 dígitos. Agora o servidor manda os contatos mascarados e a busca por número
+ * pede 4 dígitos; a tela não pode gravar a máscara na venda, nem herdar o CPF do
+ * cliente anterior.
+ */
+describe("usePosSale — a lista de clientes é para reconhecer, não para ler", () => {
+  it("número com menos de 4 dígitos nem vai ao servidor; nome curto vai", async () => {
+    const { sale, handles } = makeSale();
+    dollarFetch.mockReset().mockResolvedValue({ results: [] });
+    await sale.searchCustomers("11");
+    await sale.searchCustomers("(43)");
+    expect(dollarFetch).not.toHaveBeenCalled();
+    await sale.searchCustomers("1111");
+    await sale.searchCustomers("Ma");
+    expect(dollarFetch).toHaveBeenCalledTimes(2);
+    handles.dispose();
+  });
+
+  it("escolher da lista não grava os contatos mascarados; o lookup traz os completos", async () => {
+    const { sale, handles } = makeSale();
+    dollarFetch.mockReset().mockResolvedValue({
+      customer: lookupProjection({ ref: "CUST-M", name: "Maria Santos", phone: "+5543991111111", tax_id: "" }),
+    });
+    sale.cart.customerTaxId = "52998224725"; // do cliente anterior
+    await sale.selectCustomerResult({
+      ref: "CUST-M", name: "Maria Santos", phone: "(43) •••••-1111", document: "•••.•••.•••-44", email: "m•••@example.com",
+    });
+    expect(sale.cart.customerPhone).toBe("+5543991111111");
+    expect(sale.cart.customerTaxId).toBe("");
+    expect(sale.cart.customerEmail).toBe("");
+    expect(JSON.stringify(sale.cart)).not.toContain("•");
+    handles.dispose();
+  });
+});
