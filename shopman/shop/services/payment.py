@@ -1064,7 +1064,7 @@ def cancelled_money(order) -> CancelledMoney | None:
     return CancelledMoney("nothing_charged", method="pix" if method == "pix" else "card")
 
 
-def record_card_decline(order, *, code: str = "") -> None:
+def record_card_decline(order, *, code: str = "", intent_ref: str = "") -> None:
     """Guarda a última recusa do cartão em ``payment.last_decline``.
 
     O acompanhamento lê para dizer "O cartão não foi aprovado" em vez de repetir
@@ -1072,14 +1072,164 @@ def record_card_decline(order, *, code: str = "") -> None:
     Escrevem o webhook ``payment_intent.payment_failed`` e a conferência com o
     gateway (``settle_from_gateway``), que são as duas portas por onde a recusa
     chega.
+
+    ``intent_ref`` é a cobrança recusada, quando quem chama sabe qual foi. A
+    recusa de uma cobrança que já não é a do pedido (o cliente trocou para Pix e
+    o webhook do cartão chegou depois) não se grava: diria "O cartão não foi
+    aprovado" a quem já está pagando com Pix.
     """
     from shopman.shop.services.order_helpers import merge_order_data
 
+    if intent_ref:
+        current = str((((order.data or {}).get("payment") or {}).get("intent_ref")) or "")
+        if current != str(intent_ref):
+            return
     merge_order_data(
         order,
         {"last_decline": {"code": str(code or "declined")[:64], "at": timezone.now().isoformat()}},
         block="payment",
     )
+
+
+# ── Cartão recusado → Pix (beta 06/11, F3) ──
+
+#: Evento na linha do tempo do pedido (Gestor) quando o cliente troca o cartão
+#: recusado por Pix no acompanhamento.
+PAYMENT_SWITCHED_TO_PIX_EVENT = "payment_switched_to_pix"
+
+#: Chaves do bloco ``payment`` que pertencem à cobrança do cartão e morrem com
+#: ela. O Pix nasce sem nenhuma delas (``initiate`` só cria cobrança quando não
+#: há ``intent_ref``; ``_persist_intent`` preservaria o ``checkout_url`` velho).
+_CARD_ATTEMPT_KEYS = (*_INTENT_PRESENTATION_KEYS, "last_decline", "error")
+
+
+def pix_switch_blocker(order) -> str:
+    """Por que este pedido NÃO pode trocar o cartão recusado por Pix ("" = pode).
+
+    Decisão do dono (beta 06/11, F3): com o cartão recusado, o acompanhamento
+    oferece pagar com Pix além de tentar outro cartão. Só se oferece o que dá
+    para cumprir agora:
+
+    - o pedido é de cartão, ainda aberto (``new``/``accepted``), com a cobrança
+      nascida e a última tentativa RECUSADA (``payment.last_decline``);
+    - nada foi autorizado nem capturado (a autorização passa na frente);
+    - o canal aceita Pix e o Pix pode nascer já (``post_commit`` com o pedido
+      ainda novo só cobra depois do aceite);
+    - o teto do Pix de homologação (Efí sandbox) comporta o total.
+    """
+    payment = (order.data or {}).get("payment") or {}
+    if str(payment.get("method") or "").lower() != "card":
+        return "not_card"
+    if order.status not in _CANCELLABLE_STATUSES:
+        return "order_closed"
+    if not payment.get("intent_ref"):
+        return "no_card_charge"
+    if not payment.get("last_decline"):
+        return "not_declined"
+
+    from shopman.shop.config import ChannelConfig
+
+    cfg = ChannelConfig.for_channel(order.channel_ref)
+    if "pix" not in {str(m or "").lower() for m in cfg.payment.available_methods}:
+        return "channel_without_pix"
+    if order.status == "new" and cfg.payment.timing == "post_commit":
+        return "pix_waits_acceptance"
+
+    from shopman.shop.services import pix_policy
+
+    try:
+        pix_policy.enforce_pix_test_amount_limit(order_composition.effective_total_q(order))
+    except pix_policy.PixPaymentPolicyError:
+        return "pix_amount_limit"
+
+    status = (get_payment_status(order) or "").lower()
+    if status in _PAID_STATUSES | _UNCERTAIN_STATUSES | {"authorized", "refunded"}:
+        return "card_not_declined"
+    return ""
+
+
+def switch_declined_card_to_pix(order, *, actor: str = "customer") -> bool:
+    """Troca a cobrança do cartão recusado por um Pix, no mesmo pedido.
+
+    Ordem que importa:
+
+    1. Pedido travado (``select_for_update``) do começo ao fim: dois toques
+       seguidos fazem a troca uma vez só; o segundo encontra o pedido já em Pix
+       e devolve ``True`` sem tocar em nada.
+    2. Pergunta ao gateway antes de matar o cartão: se o cliente concluiu outro
+       cartão noutra aba, a troca não acontece (``settle_from_gateway`` grava a
+       autorização e a tela passa a "pagamento autorizado").
+    3. Mata a cobrança do cartão NO GATEWAY (expira a sessão do Stripe Checkout,
+       ou anula o PaymentIntent). Recusa do gateway = troca recusada, e o cartão
+       segue como estava: nunca há dois meios vivos no mesmo pedido.
+    4. O bloco ``payment`` perde tudo que era do cartão e vira ``method="pix"``;
+       ``payment.switched_from_card`` guarda de onde veio; o Gestor lê o evento
+       ``payment_switched_to_pix`` na linha do tempo.
+    5. ``initiate`` cria o Pix e agenda o prazo DELE (``payment.timeout`` com o
+       ``intent_ref`` do Pix). O prazo do cartão morre sozinho: o handler ignora
+       a directive cujo ``intent_ref`` já não é o do pedido.
+
+    O estoque não é tocado: a reserva é do pedido (backstop longo), não da
+    cobrança. Se o Pix não nascer, o pedido fica em Pix com ``payment.error`` e
+    o acompanhamento mostra "Tentar novamente" (o mesmo ``payment/check``).
+    """
+    from django.db import transaction
+    from shopman.orderman.models import Order
+    from shopman.payman import PaymentError, PaymentService
+
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        order.data = locked.data
+        order.status = locked.status
+        payment = dict((order.data or {}).get("payment") or {})
+        if str(payment.get("method") or "").lower() == "pix" and payment.get("switched_from_card"):
+            return True
+        if pix_switch_blocker(order):
+            return False
+
+        if settle_from_gateway(order) != "unpaid":
+            return False
+
+        card_ref = str(payment.get("intent_ref") or "")
+        adapter = _adapter_for_persisted_intent(card_ref, method="card")
+        if adapter is None or not hasattr(adapter, "cancel"):
+            logger.warning("payment.switch_to_pix_no_card_adapter order=%s", order.ref)
+            return False
+        result = adapter.cancel(card_ref, reason="switched_to_pix", persist_local=False)
+        if not getattr(result, "success", False):
+            logger.warning(
+                "payment.switch_to_pix_card_cancel_refused order=%s intent=%s detail=%s",
+                order.ref, card_ref, getattr(result, "message", "") or getattr(result, "error_code", ""),
+            )
+            return False
+        # A baixa local só depois do sim do gateway. Um intent que o webhook da
+        # recusa já marcou ``failed`` fica como está: é história, não pendência.
+        try:
+            if PaymentService.get(card_ref).status in {"pending", "authorized"}:
+                PaymentService.cancel(card_ref, reason="switched_to_pix")
+        except PaymentError:
+            logger.warning("payment.switch_to_pix_local_cancel_failed intent=%s", card_ref, exc_info=True)
+
+        new_payment = {k: v for k, v in payment.items() if k not in _CARD_ATTEMPT_KEYS}
+        new_payment["method"] = "pix"
+        new_payment["switched_from_card"] = {
+            "intent_ref": card_ref,
+            "at": timezone.now().isoformat(),
+        }
+        data = dict(order.data or {})
+        data["payment"] = new_payment
+        locked.data = data
+        locked.save(update_fields=["data", "updated_at"])
+        order.data = data
+        locked.emit_event(
+            PAYMENT_SWITCHED_TO_PIX_EVENT,
+            actor=actor,
+            payload={"from_intent_ref": card_ref},
+        )
+
+        initiate(order)
+    logger.info("payment.switched_to_pix order=%s from=%s", order.ref, card_ref)
+    return True
 
 
 def _customer_name(data: dict) -> str:

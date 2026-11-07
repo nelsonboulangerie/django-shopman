@@ -256,6 +256,88 @@ class OrderPaymentCheckView(APIView):
         return Response(serializer.data)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=["tracking"],
+        summary="Switch a declined card payment to Pix",
+        responses={
+            200: OrderTrackingSerializer,
+            404: DetailSerializer,
+            409: OpenApiResponse(description="The order cannot switch to Pix now."),
+        },
+    ),
+)
+class OrderPaymentSwitchToPixView(APIView):
+    """POST /api/v1/orders/{ref}/payment/switch-to-pix/ — pagar com Pix depois da recusa.
+
+    O cartão recusado oferece, além de outro cartão, o Pix (decisão do dono,
+    beta 06/11, F3). A troca mata a cobrança do cartão no gateway e cria o Pix
+    no mesmo pedido (``payment.switch_declined_card_to_pix``). O cabeçalho
+    ``Idempotency-Key`` repetido devolve a mesma resposta; o pedido travado
+    garante que dois toques com chaves diferentes também troquem uma vez só.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = OrderTrackingSerializer
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-order-payment-switch",
+            rate="10/m",
+            method="POST",
+        ):
+            return _rate_limited_response()
+        try:
+            order = order_service.get_accessible_order(request, ref)
+        except Http404:
+            return Response(
+                {
+                    "detail": _copy_message(
+                        "TRACKING_NOT_FOUND_MESSAGE",
+                        "Confira o link do pedido ou fale com a equipe.",
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        key = remote_mutations.idempotency_key_from_request(
+            request,
+            fallback=f"switch-to-pix:{ref}",
+        )
+
+        def execute_switch() -> tuple[dict, int]:
+            if not order_service.switch_declined_card_to_pix(order):
+                return (
+                    {
+                        "detail": _copy_message(
+                            "TRACKING_PIX_SWITCH_REFUSED",
+                            "Não deu para trocar para Pix agora. Atualize a página e confira o pagamento.",
+                        ),
+                        "error_code": "pix_switch_unavailable",
+                    },
+                    status.HTTP_409_CONFLICT,
+                )
+            order.refresh_from_db()
+            return dict(OrderTrackingSerializer(_tracking_payload(order)).data), status.HTTP_200_OK
+
+        try:
+            result = remote_mutations.run_idempotent_mutation(
+                scope=f"order-payment-switch-to-pix:{ref}",
+                key=key,
+                execute=execute_switch,
+                cache_response=lambda _body, code: code < 400,
+            )
+        except remote_mutations.RemoteMutationInProgress:
+            return Response(
+                {"detail": "A troca para Pix já está em andamento.", "error_code": "mutation_in_progress"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(result.response_body, status=result.response_code)
+
+
 def order_events_view(request, ref: str):
     """SSE stream for the tracking page — channel ``order-<ref>``.
 

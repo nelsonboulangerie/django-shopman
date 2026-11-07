@@ -13517,7 +13517,8 @@
         {
           "path": "shopman/shop/services/customer_orders.py",
           "symbols": [
-            "can_cancel"
+            "can_cancel",
+            "switch_declined_card_to_pix"
           ]
         },
         {
@@ -13653,7 +13654,11 @@
             "_PAYMENT_GATEWAY_ADAPTER_PATHS",
             "_INTENT_PRESENTATION_KEYS",
             "GATEWAY_RECHECK_SECONDS",
-            "record_card_decline"
+            "record_card_decline",
+            "PAYMENT_SWITCHED_TO_PIX_EVENT",
+            "_CARD_ATTEMPT_KEYS",
+            "pix_switch_blocker",
+            "switch_declined_card_to_pix"
           ]
         }
       ],

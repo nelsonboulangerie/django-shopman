@@ -89,6 +89,7 @@ from .tracking import (
     OrderConfirmReceiptView,
     OrderContactRequestView,
     OrderPaymentCheckView,
+    OrderPaymentSwitchToPixView,
     OrderRateView,
     OrderTrackingView,
     OrderWaitlistConfirmView,
@@ -213,6 +214,11 @@ urlpatterns = [
         name="api-order-contact-request",
     ),
     path("orders/<str:ref>/payment/check/", OrderPaymentCheckView.as_view(), name="api-order-payment-check"),
+    path(
+        "orders/<str:ref>/payment/switch-to-pix/",
+        OrderPaymentSwitchToPixView.as_view(),
+        name="api-order-payment-switch-to-pix",
+    ),
     path("orders/<str:ref>/conversation/", OrderConversationView.as_view(), name="api-order-conversation"),
     # A tela de pagamento sumiu (PAYMENT-TRACKING-MERGE): o GET/status foram
     # absorvidos por /tracking/{ref}/ + SSE. Só o gatilho de captura simulada fica.
