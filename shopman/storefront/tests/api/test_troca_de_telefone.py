@@ -38,6 +38,13 @@ def _disable_request_rate_limits(settings, monkeypatch):
     CapturingSender.last_code = ""
     reset_adapter()
 
+    # Os contadores de limite por IP moram no cache, que não volta com o banco entre
+    # os testes: cada teste deste arquivo pede o CSRF e o código várias vezes, e somados
+    # passavam do limite e devolviam 429 no meio de um teste que não mede limite.
+    from django.core.cache import cache
+
+    cache.clear()
+
     # A portaria de intervalo entre envios (G11) é por NÚMERO e não olha a
     # finalidade: quem acabou de confirmar o número novo espera o intervalo
     # antes de pedir um código de login para ele. É o comportamento certo em
