@@ -110,6 +110,17 @@ AUTOMATIC_CANCEL_REASONS: tuple[CancelReason, ...] = (
             "Nada foi cobrado, e a reserva do valor no cartão foi desfeita."
         ),
     ),
+    # A mesma situação quando a anulação da autorização no Stripe falhou no
+    # cancelamento (``payment.hold_release_failed_at``): a reserva ainda existe,
+    # e quem a libera é a loja, pelo alerta crítico. Sem prazo que não controlamos.
+    CancelReason(
+        key="card_capture_failed_hold_pending",
+        label="A cobrança do cartão foi recusada",
+        customer_text=(
+            "Não conseguimos concluir a cobrança no seu cartão. "
+            "Nada foi cobrado, e a loja vai liberar a reserva do valor no seu cartão."
+        ),
+    ),
 )
 
 _BY_KEY = {reason.key: reason for reason in (*OPERATOR_CANCEL_REASONS, *AUTOMATIC_CANCEL_REASONS)}
@@ -164,7 +175,8 @@ def reason_key_of(order_data: dict | None) -> str:
         and isinstance(payment.get("capture_failure"), dict)
         and not payment.get("transaction_id")
     ):
-        return "card_capture_failed"
+        # "Desfeita" só quando o Stripe anulou de fato.
+        return "card_capture_failed_hold_pending" if payment.get("hold_release_failed_at") else "card_capture_failed"
     return key
 
 
