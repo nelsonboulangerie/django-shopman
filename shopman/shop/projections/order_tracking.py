@@ -370,6 +370,11 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     # inventa motivo; no Pix vencido quem explica é a promessa da tela.
     cancellation_note = "" if _is_payment_timeout_cancelled(order) else _cancellation_customer_text(order_data)
     money_outcome = _money_outcome(order)
+    if _note_says_card_hold_released(order_data, money_outcome):
+        # A frase do motivo já diz que nada foi cobrado e a reserva foi desfeita
+        # (é a mesma do aviso, que não tem bloco de dinheiro): repetir abaixo é
+        # ler duas vezes a mesma coisa.
+        money_outcome = None
     cancellation_contact = _cancellation_contact(order)
     rating_followup = _rating_followup(order)
     progress_steps = _build_progress_steps(
@@ -465,7 +470,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         fiscal_note=_fiscal_note(order_data),
         **_waitlist_info(
             order,
-            payment_unsettled=payment_pending or payment_status_key == "card_authorized",
+            payment_unsettled=payment_pending or payment_status_key in {"card_authorized", "card_capture_failed"},
         ),
     )
 
@@ -534,6 +539,8 @@ def display_status_key(order) -> str:
         and live_payment_status == "authorized"
         and order.status in {"new", "accepted"}
     ):
+        if payment_service.capture_failure(order):
+            return "card_capture_failed"
         return "card_authorized"
     if (
         order.status == "accepted"
@@ -582,6 +589,8 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
     if payment_status.has_sufficient_captured_payment(order):
         return False, True, "payment_confirmed", payment.get("expires_at") or None
     if status == "authorized" and method in payment_service.HOSTED_CHECKOUT_METHODS:
+        if payment_service.capture_failure(order):
+            return False, False, "card_capture_failed", payment.get("expires_at") or None
         return False, False, "card_authorized", payment.get("expires_at") or None
     if not (payment.get("intent_ref") or payment.get("status")) and order.status == "new":
         return False, False, None, None
@@ -1142,6 +1151,12 @@ def _build_promise(
 
     # ── 4. BOLA DO GATEWAY — cartão autorizado, capturando ──────────
     if card_authorized:
+        # A cobrança no aceite foi recusada (autorização vencida ou negada pelo
+        # emissor): "Cartão autorizado" mentiria. A loja já tem o alerta e o
+        # Gestor diz "Cobrança recusada"; aqui a mesma verdade, sem pedir nada
+        # ao cliente que ele não possa fazer (beta 06/11).
+        if payment_service.capture_failure(order):
+            return promise(state="payment_capture_failed", tone="warning", payment_method=method)
         return promise(state="payment_authorized", tone="info", payment_method=method)
 
     # ── 5. BOLA DA LOJA — o cliente só espera ───────────────────────
@@ -1950,10 +1965,22 @@ def _waitlist_info(order, *, payment_unsettled: bool) -> dict:
 def _cancellation_customer_text(order_data: dict) -> str:
     from shopman.shop.services import cancel_reasons
 
-    reason = cancel_reasons.cancel_reason(order_data.get("cancellation_reason_key"))
+    if cancel_reasons.cancel_reason(order_data.get("cancellation_reason_key")) is None:
+        return ""
+    reason = cancel_reasons.cancel_reason(cancel_reasons.reason_key_of(order_data))
     if reason is None or reason.key == cancel_reasons.OTHER:
         return ""
     return reason.customer_text
+
+
+def _note_says_card_hold_released(order_data: dict, money_outcome) -> bool:
+    from shopman.shop.services import cancel_reasons
+
+    return (
+        money_outcome is not None
+        and money_outcome.outcome == "card_hold_released"
+        and cancel_reasons.reason_key_of(order_data) == "card_capture_failed"
+    )
 
 
 def _is_payment_timeout_cancelled(order) -> bool:

@@ -1391,7 +1391,11 @@ class TestStatusColours:
         assert proj.promise.state == "payment_authorized"
         assert proj.promise.fulfillment_wait_kind == "planned_batch"
         assert proj.promise.fulfillment_wait_until == timezone.localdate().isoformat()
-        assert proj.promise.message == "Sua reserva está na fila de espera."
+        # O que existe é dinheiro reservado no cartão, não produto em lista de espera.
+        assert proj.promise.message.startswith(
+            "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido"
+        )
+        assert "fila de espera" not in proj.promise.message
         assert "disponibilidade" not in proj.promise.message.lower()
         assert "confirmação do estabelecimento" not in proj.promise.message.lower()
 
@@ -1423,7 +1427,8 @@ class TestStatusColours:
         assert proj.promise.state == "payment_authorized"
         assert proj.promise.fulfillment_wait_kind == "planned_batch"
         assert proj.promise.fulfillment_wait_until == timezone.localdate().isoformat()
-        assert proj.promise.message == "Sua reserva está na fila de espera. Avisamos quando estiver pronto."
+        assert proj.promise.message.startswith("Pedido aceito")
+        assert "Estamos cobrando o valor reservado no seu cartão." in proj.promise.message
         assert "confirmação do estabelecimento" not in proj.promise.message.lower()
 
     def test_paid_waitlisted_order_stays_in_waitlist_not_immediate_preparation(

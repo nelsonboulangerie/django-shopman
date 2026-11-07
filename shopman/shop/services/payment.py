@@ -709,6 +709,9 @@ def _capture_once(order) -> None:
     result = adapter.capture(intent_ref)
     if result.success:
         payment_data["transaction_id"] = result.transaction_id
+        # A cobrança que passou apaga a recusa anterior: a tela deixa de dizer
+        # que o cartão não foi cobrado.
+        payment_data.pop(CAPTURE_FAILURE_KEY, None)
         if isinstance(getattr(result, "card_funding", None), str):
             payment_data["card_funding"] = result.card_funding
         data["payment"] = payment_data
@@ -742,7 +745,52 @@ def _capture_once(order) -> None:
         method,
         result.error_code,
     )
+    _record_capture_failure(order, payment_data=payment_data, intent_ref=intent_ref, method=method, result=result)
     _alert_capture_failed(order, intent_ref=intent_ref, method=method, result=result)
+
+
+#: ``order.data["payment"][CAPTURE_FAILURE_KEY]``: a cobrança do cartão autorizado
+#: foi recusada no aceite. É o fato que o acompanhamento e o Gestor leem para
+#: dizer a mesma coisa (beta 06/11): sem ele, o cliente lia "Cartão autorizado"
+#: e o Gestor "Aguardando pagamento", com o dinheiro que não entrou.
+CAPTURE_FAILURE_KEY = "capture_failure"
+
+
+def _record_capture_failure(order, *, payment_data: dict, intent_ref: str, method: str, result) -> None:
+    """Grava ``{code, at, intent_ref}`` da captura recusada e o fato no histórico."""
+    code = str(getattr(result, "error_code", "") or "capture_failed")[:64]
+    payment_data[CAPTURE_FAILURE_KEY] = {
+        "code": code,
+        "at": timezone.now().isoformat(),
+        "intent_ref": intent_ref,
+    }
+    data = dict(order.data or {})
+    data["payment"] = payment_data
+    order.data = data
+    if not hasattr(order, "save"):
+        return
+    order.save(update_fields=["data", "updated_at"])
+    if hasattr(order, "emit_event"):
+        order.emit_event(
+            event_type="payment.capture_failed",
+            actor="payment.capture",
+            payload={"method": method, "intent_ref": intent_ref, "code": code},
+        )
+
+
+def capture_failure(order) -> dict | None:
+    """A recusa da cobrança ainda de pé: ``{code, at, intent_ref}`` ou ``None``.
+
+    Só vale enquanto o pagamento não entrou e a recusa é do intent atual: uma
+    cobrança nova (outro intent) não herda a recusa da anterior.
+    """
+    payment_data = (getattr(order, "data", None) or {}).get("payment") or {}
+    failure = payment_data.get(CAPTURE_FAILURE_KEY)
+    if not isinstance(failure, dict) or payment_data.get("transaction_id"):
+        return None
+    if str(failure.get("intent_ref") or "") != str(payment_data.get("intent_ref") or ""):
+        return None
+    return failure
 
 
 def _alert_capture_failed(order, *, intent_ref: str, method: str, result) -> None:
@@ -764,7 +812,7 @@ def _alert_capture_failed(order, *, intent_ref: str, method: str, result) -> Non
         message=(
             f"Não foi possível capturar o pagamento {method.upper()} do pedido "
             f"{order.ref} ({intent_ref}). O cliente autorizou e o dinheiro NÃO "
-            "entrou; o pedido segue barrado em 'Aguardando pagamento'. Confira "
+            "entrou; o pedido segue barrado em 'Cobrança recusada'. Confira "
             f"no painel do gateway antes de entregar. Erro: {detail}"
         ),
         order_ref=order.ref,

@@ -421,3 +421,105 @@ def test_card_with_deadline_says_until_when(make_order, patch_payment):
     assert promise.message.endswith(" para garantir o pedido.")
     assert "{deadline}" not in promise.message
     assert promise.footnote == "Se o prazo passar, liberamos a reserva e avisamos você."
+
+
+# ── Cartão: prazo à vista, reserva no cartão, cobrança recusada (beta 06/11) ──
+
+
+def test_declined_card_footnote_names_the_deadline(make_order, patch_payment):
+    """A frase do cartão recusado não diz o prazo: a nota não pode dizer "Se o
+    prazo passar" como se ele estivesse na tela. Ela diz qual é."""
+    from shopman.storefront.presentation.order_tracking import build_order_tracking
+
+    patch_payment()
+    expires_at = (timezone.now() + timedelta(minutes=30)).isoformat()
+    order = make_order(
+        status="new",
+        payment={
+            "method": "card",
+            "intent_ref": "PAY-CARD-DECLINED",
+            "checkout_url": "https://pay",
+            "expires_at": expires_at,
+            "last_decline": {"code": "card_declined", "at": timezone.now().isoformat()},
+        },
+    )
+    promise = build_order_tracking(order).promise
+    assert promise.state == "payment_card_declined"
+    assert "prazo" not in promise.message
+    assert promise.footnote.startswith("Se o pagamento não for feito até ")
+    assert " às " in promise.footnote
+    assert "{deadline}" not in promise.footnote
+
+
+def _authorized_wait_data():
+    from shopman.shop.projections.order_tracking import TrackingPromiseData
+
+    return TrackingPromiseData(
+        state="payment_authorized",
+        tone="info",
+        deadline_at=None,
+        deadline_kind=None,
+        timer_mode="none",
+        deadline_action="none",
+        requires_active_notification=False,
+        notification_topic=None,
+        payment_method="card",
+        fulfillment_wait_kind="preorder",
+    )
+
+
+@pytest.mark.parametrize("status", ["new", "accepted"])
+@pytest.mark.parametrize("when", ["sábado, 19/07", None])
+def test_authorized_card_waiting_says_money_is_reserved_not_a_waitlist(status, when):
+    """"Sua reserva está na fila de espera" soava como produto em lista de espera.
+    O que existe é o valor reservado no cartão, cobrado quando a loja aceita."""
+    from shopman.shop.projections.copy import build_copy
+    from shopman.storefront.presentation.order_tracking import _promise_copy
+
+    _title, message = _promise_copy(
+        _authorized_wait_data(),
+        status=status,
+        is_delivery=False,
+        copy=build_copy("TRACKING"),
+        when_display=when,
+    )
+    assert "fila de espera" not in message
+    assert "cartão" in message
+    assert "{when}" not in message
+    if when:
+        assert when in message
+    if status == "new":
+        assert "só é cobrado quando a loja aceitar" in message
+
+
+def test_state_payment_capture_failed(make_order, patch_payment):
+    """A cobrança no aceite foi recusada: nada de "Cartão autorizado"."""
+    from shopman.storefront.presentation.order_tracking import build_order_tracking
+
+    patch_payment(live_status="authorized")
+    order = make_order(
+        status="accepted",
+        payment={
+            "method": "card",
+            "intent_ref": "PAY-CAP-FAIL",
+            "capture_failure": {"code": "stripe_error", "at": timezone.now().isoformat(), "intent_ref": "PAY-CAP-FAIL"},
+        },
+    )
+    tracking = build_order_tracking(order)
+    assert tracking.promise.state == "payment_capture_failed"
+    assert tracking.promise.title == "Não conseguimos cobrar o cartão"
+    assert tracking.payment_status_label == "Cobrança não concluída"
+    assert tracking.status_label == "Cobrança não concluída"
+
+
+def test_capture_failure_of_an_older_intent_does_not_leak(make_order, patch_payment):
+    patch_payment(live_status="authorized")
+    order = make_order(
+        status="accepted",
+        payment={
+            "method": "card",
+            "intent_ref": "PAY-NEW",
+            "capture_failure": {"code": "stripe_error", "at": timezone.now().isoformat(), "intent_ref": "PAY-OLD"},
+        },
+    )
+    assert _promise_state(order) == "payment_authorized"

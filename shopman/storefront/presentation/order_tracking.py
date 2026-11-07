@@ -60,6 +60,7 @@ EVENT_LABELS: dict[str, str | None] = {
     "created": "Pedido recebido",
     "status_changed": None,
     "payment.captured": "Pagamento recebido",
+    "payment.capture_failed": "Cobrança do cartão não concluída",
     "payment.refunded": "Pagamento estornado",
     "return_initiated": "Devolução solicitada",
     "refund_processed": "Reembolso processado",
@@ -83,6 +84,7 @@ PAYMENT_STATUS_LABELS: dict[str, str] = {
     "payment_expired": "Pagamento expirado",
     "payment_confirmed": "Pagamento recebido",
     "card_authorized": "Pagamento autorizado",
+    "card_capture_failed": "Cobrança não concluída",
     "payment_pending": "Aguardando pagamento",
 }
 
@@ -588,7 +590,7 @@ def _cancel_dialog_money_line(data: TrackingData, copy: CopyCatalog) -> str:
                 "O preparo ainda não começou. Cancelamos agora e estornamos os {amount} no seu cartão.",
             )
         return line.replace("{amount}", amount)
-    if data.payment_status_key == "card_authorized":
+    if data.payment_status_key in {"card_authorized", "card_capture_failed"}:
         return copy.message(
             "TRACKING_CANCEL_MONEY_CARD_HOLD",
             "A reserva no seu cartão será desfeita, e nada será cobrado.",
@@ -765,6 +767,9 @@ _PROMISE_COVERS: dict[str, frozenset[str]] = {
     "payment_preparing": frozenset({NOTIFICATION}),
     # Bola do gateway: cartão autorizado, capturando.
     "payment_authorized": frozenset(),
+    # A cobrança do cartão autorizado foi recusada no aceite: a loja tem o
+    # alerta, o cliente não tem gesto a fazer, e a frase diz só o fato.
+    "payment_capture_failed": frozenset(),
     "payment_confirmed": frozenset(),
     "payment_expired": frozenset({CONSEQUENCE}),
     "preparing": frozenset({NOTIFICATION}),
@@ -812,7 +817,7 @@ def _present_promise(
         when_phrase=when_phrase,
         payment_confirmed=payment_confirmed,
     )
-    footnote = _promise_footnote(data, copy=copy)
+    footnote = _promise_footnote(data, copy=copy, message=message)
     return OrderTrackingPromiseProjection(
         state=data.state,
         title=title,
@@ -859,15 +864,23 @@ _PROMISE_FOOTNOTE: dict[str, tuple[str, str]] = {
 }
 
 
-def _promise_footnote(data: TrackingPromiseData, *, copy: CopyCatalog) -> str:
+def _promise_footnote(data: TrackingPromiseData, *, copy: CopyCatalog, message: str = "") -> str:
     """Complemento opcional do estado — vazio na maioria deles, de propósito."""
     spec = _PROMISE_FOOTNOTE.get(data.state)
     if not spec:
         return ""
-    if data.state in {"payment_card_ready", "payment_card_declined"} and data.deadline_action in {"", "none"}:
-        # Sessão hospedada sem prazo: prometer consequência sem prazo seria
-        # informação solta.
-        return ""
+    if data.state in {"payment_card_ready", "payment_card_declined"}:
+        # A consequência nunca aponta para um prazo que a tela não mostra (beta
+        # 06/11): "Se o prazo passar" só ao lado de uma frase que diz o prazo;
+        # quando a frase não diz (cartão recusado, encomenda), a nota diz qual.
+        deadline = data.payment_deadline_phrase
+        if data.deadline_action in {"", "none"} or not deadline:
+            return ""
+        if deadline not in message:
+            return copy.message(
+                "TRACKING_PROMISE_CARD_DEADLINE_FOOTNOTE",
+                "Se o pagamento não for feito até {deadline}, liberamos a reserva e avisamos você.",
+            ).replace("{deadline}", deadline)
     key, fallback = spec
     return copy.message(key, fallback)
 
@@ -1056,30 +1069,38 @@ def _promise_copy(
             )
         return copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"), message
 
+    if state == "payment_capture_failed":
+        return _pair(copy, "TRACKING_CARD_CAPTURE_FAILED",
+                     "Não conseguimos cobrar o cartão",
+                     "A cobrança no seu cartão não passou, e nada foi cobrado. A loja já foi avisada; acompanhe por aqui.")
+
     if state == "payment_authorized":
         if _is_fulfillment_wait(data):
+            # O que existe é dinheiro reservado no cartão, cobrado quando a loja
+            # aceitar. "Sua reserva está na fila de espera" soava como produto em
+            # lista de espera (beta 06/11).
             if wait_display:
                 if status == "new":
                     message = copy.message(
                         "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE",
-                        "Sua reserva está na fila de espera.",
+                        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido para {when}.",
                     )
                 else:
                     message = copy.message(
                         "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED",
-                        "Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+                        "Pedido aceito para {when}. Estamos cobrando o valor reservado no seu cartão.",
                     )
                 message = message.replace("{when}", wait_display)
             else:
                 if status == "new":
                     message = copy.message(
                         "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE",
-                        "Sua reserva está na fila de espera.",
+                        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido.",
                     )
                 else:
                     message = copy.message(
                         "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED_NO_DATE",
-                        "Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+                        "Pedido aceito. Estamos cobrando o valor reservado no seu cartão.",
                     )
             return copy.title("TRACKING_CARD_AUTHORIZED", "Pagamento autorizado"), message
         message = (

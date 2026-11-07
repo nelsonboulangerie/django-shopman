@@ -119,7 +119,21 @@ def _order_payment_status_label(order, payment_status: str) -> str:
 
     if payment_status in _PAYMENT_COMPLETE and is_simulated_order_payment(order):
         return SIMULATED_PAYMENT_LABEL
+    if _card_capture_failed(order, payment_status):
+        return CARD_CAPTURE_FAILED_LABEL
     return payment_status_label(payment_status)
+
+
+def _card_capture_failed(order, payment_status: str) -> bool:
+    """O cartão está autorizado, mas a cobrança no aceite foi recusada.
+
+    Um estado só (beta 06/11): a pílula, o bloqueio do avanço e o aviso da ficha
+    dizem "Cobrança recusada", em vez de "Autorizado" ao lado de "Aguardando
+    pagamento · link gerado".
+    """
+    if str(payment_status or "").lower() != "authorized":
+        return False
+    return payment_svc.capture_failure(order) is not None
 
 
 #: Quem registra dinheiro fora da cobrança do pedido: o Pix que caiu numa
@@ -1174,6 +1188,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     from shopman.shop.services import ifood_accept_sync
 
     accept = ifood_accept_sync.state_for(order)
+    detail_deadline = _detail_deadline(order, accept)
     extra_actions.extend(_ifood_accept_actions(order, accept, user))
     if method == "link":
         from shopman.shop.services import notification as notification_svc
@@ -1203,9 +1218,15 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         **_courier_change_fields(order),
         **_equipment_fields(order),
         **_payment_link_fields(order, method),
-        **_detail_deadline(order, accept),
+        **detail_deadline,
         **_ifood_accept_fields(order, accept),
-        card_authorization_expires_iso=_card_authorization_expires_iso(order, method, payment_status),
+        card_authorization_expires_iso=_card_authorization_expires_iso(
+            order, method, payment_status,
+            acceptance_deadline=(
+                detail_deadline.get("confirmation_deadline_iso", ""),
+                detail_deadline.get("confirmation_action", ""),
+            ),
+        ),
         store_location=_store_location(),
         **_cancel_money_effect(order, method, payment_status),
     )
@@ -1280,8 +1301,20 @@ def _store_location() -> dict[str, float] | None:
     return {"lat": float(shop.latitude), "lng": float(shop.longitude), "radius_m": float(STORE_RADIUS_METERS)}
 
 
-def _card_authorization_expires_iso(order: Order, method: str, payment_status: str) -> str:
-    """Quando vence a autorização do cartão do pedido novo; vazio sem uma de pé."""
+def _card_authorization_expires_iso(
+    order: Order,
+    method: str,
+    payment_status: str,
+    *,
+    acceptance_deadline: tuple[str, str] | None = None,
+) -> str:
+    """Quando vence a autorização do cartão do pedido novo; vazio sem uma de pé.
+
+    Um prazo só na tela, o que vem primeiro (beta 06/11): se o pedido cancela
+    sozinho por falta de aceite antes de a autorização vencer, é esse relógio
+    que manda, e "o cartão vence em 6 dias" ao lado de "cancela sozinho em
+    15h27" só fazia o operador conciliar dois prazos.
+    """
     if order.status != Order.Status.NEW or str(method or "").lower() != "card":
         return ""
     if str(payment_status or "").lower() != "authorized":
@@ -1289,7 +1322,15 @@ def _card_authorization_expires_iso(order: Order, method: str, payment_status: s
     from shopman.shop.services import card_authorization
 
     deadline = card_authorization.expires_at(order)
-    return deadline.isoformat() if deadline else ""
+    if deadline is None:
+        return ""
+    if acceptance_deadline and acceptance_deadline[1] == "cancel" and acceptance_deadline[0]:
+        cancels_at = datetime.fromisoformat(acceptance_deadline[0])
+        if timezone.is_naive(cancels_at):
+            cancels_at = timezone.make_aware(cancels_at)
+        if cancels_at <= deadline:
+            return ""
+    return deadline.isoformat()
 
 
 def _courier_actions(order: Order, user, courier_block: dict | None, *, authorized: bool, refs=None) -> list[Action]:
@@ -2263,7 +2304,9 @@ def _build_card(
         # conta um prazo só, porque para quem opera a pergunta é uma só — quanto falta.
         confirmation_deadline_iso=(deadline or external_deadline or ("", ""))[0],
         confirmation_action=(deadline or external_deadline or ("", ""))[1],
-        card_authorization_expires_iso=_card_authorization_expires_iso(order, method, payment_status),
+        card_authorization_expires_iso=_card_authorization_expires_iso(
+            order, method, payment_status, acceptance_deadline=deadline or external_deadline,
+        ),
         channel_display_id=_channel_display_id(order),
         courier_status=_card_courier_status(order),
         courier_status_label=_card_courier_label(order),
@@ -2690,6 +2733,8 @@ def _payment_tone(order: Order, method: str, payment_status: str, payment_data: 
         if _offline_payment_settled(payment_data):
             return "success"
         return "neutral"
+    if _card_capture_failed(order, payment_status):
+        return "danger"
     if _is_payment_pending(order, method, payment_status):
         return "warning"
     return "neutral"
@@ -2708,8 +2753,16 @@ _ADVANCE_BLOCK_LABELS: dict[operator_orders.AdvanceBlock, str] = {
 
 PIX_LAPSED_LABEL = "Pix expirado"
 PAYMENT_LAPSED_LABEL = "Pagamento vencido"
-#: Os rótulos do bloqueio de pagamento VENCIDO (nunca destrava sozinho).
-LAPSED_PAYMENT_LABELS = frozenset({PIX_LAPSED_LABEL, PAYMENT_LAPSED_LABEL})
+#: A cobrança do cartão autorizado foi recusada no aceite: o dinheiro não entrou
+#: e não vai entrar sem alguém da casa agir.
+CARD_CAPTURE_FAILED_LABEL = "Cobrança recusada"
+CARD_CAPTURE_FAILED_REASON = (
+    "O cartão estava autorizado, mas a cobrança foi recusada ao aceitar o pedido, e nada foi cobrado. "
+    "Confira no painel do Stripe ou cancele o pedido: a reserva no cartão do cliente é desfeita."
+)
+#: Os rótulos do bloqueio de pagamento que não destrava sozinho: a cobrança
+#: venceu ou foi recusada. A tela oferece cancelar com o motivo já marcado.
+LAPSED_PAYMENT_LABELS = frozenset({PIX_LAPSED_LABEL, PAYMENT_LAPSED_LABEL, CARD_CAPTURE_FAILED_LABEL})
 
 
 def _payment_wait_copy(order: Order, method: str, *, awaiting_acceptance: bool = False) -> tuple[str, str]:
@@ -2781,6 +2834,8 @@ def _advance_block_copy(order: Order, bloqueio, method: str, *, payment_pending:
     if not bloqueio or bloqueio == operator_orders.AdvanceBlock.NO_NEXT_STEP:
         return "", ""
     if bloqueio == operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED:
+        if payment_svc.capture_failure(order) is not None:
+            return CARD_CAPTURE_FAILED_LABEL, CARD_CAPTURE_FAILED_REASON
         return _payment_wait_copy(order, method)
     return advance_block_label(bloqueio), operator_orders.advance_block_message(bloqueio)
 
@@ -3308,6 +3363,7 @@ _EVENT_LABELS = {
     # só reservado (beta 06/11, F4).
     "payment.authorized": "Cartão autorizado (ainda não cobrado)",
     "payment.captured": "Pagamento recebido",
+    "payment.capture_failed": "Cobrança do cartão recusada (nada foi cobrado)",
     "payment.refunded": "Pagamento estornado",
     "payment.counter_takeover": "Cobrança online cancelada: o cliente paga no balcão",
 }

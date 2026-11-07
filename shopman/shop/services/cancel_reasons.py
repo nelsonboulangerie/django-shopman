@@ -97,6 +97,19 @@ AUTOMATIC_CANCEL_REASONS: tuple[CancelReason, ...] = (
             "Se ainda quiser, é só fazer um novo pedido."
         ),
     ),
+    # O operador escolhe "Pagamento não confirmado", mas o que houve foi a
+    # cobrança do cartão autorizado recusada no aceite (``payment.capture_failure``).
+    # "Não recebemos a confirmação do pagamento a tempo" punha a culpa no cliente
+    # e calava a reserva no cartão (beta 06/11). O texto diz o que aconteceu com
+    # o dinheiro: nada foi cobrado e a reserva foi desfeita no cancelamento.
+    CancelReason(
+        key="card_capture_failed",
+        label="A cobrança do cartão foi recusada",
+        customer_text=(
+            "Não conseguimos concluir a cobrança no seu cartão. "
+            "Nada foi cobrado, e a reserva do valor no cartão foi desfeita."
+        ),
+    ),
 )
 
 _BY_KEY = {reason.key: reason for reason in (*OPERATOR_CANCEL_REASONS, *AUTOMATIC_CANCEL_REASONS)}
@@ -135,10 +148,24 @@ def reason_key_for(machine_reason: str) -> str:
 
 
 def reason_key_of(order_data: dict | None) -> str:
-    """A chave do motivo do pedido: a gravada, ou a do código de máquina."""
+    """A chave do motivo do pedido: a gravada, ou a do código de máquina.
+
+    "Pagamento não confirmado" num pedido cuja cobrança do cartão foi recusada
+    vira ``card_capture_failed``: o pagamento não faltou, a cobrança é que não
+    passou, e o cliente lê a frase certa.
+    """
     data = order_data or {}
     reason = cancel_reason(data.get("cancellation_reason_key"))
-    return reason.key if reason else reason_key_for(data.get("cancellation_reason"))
+    key = reason.key if reason else reason_key_for(data.get("cancellation_reason"))
+    payment = data.get("payment") or {}
+    if (
+        key == "payment_not_confirmed"
+        and isinstance(payment, dict)
+        and isinstance(payment.get("capture_failure"), dict)
+        and not payment.get("transaction_id")
+    ):
+        return "card_capture_failed"
+    return key
 
 
 def payment_deadline_reason_key(method: str) -> str:

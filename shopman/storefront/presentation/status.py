@@ -95,6 +95,7 @@ STATUS_LABEL_COPY: dict[str, tuple[str, str]] = {
     "waiting_store_confirmation": ("TRACKING_STATUS_WAITING_STORE_CONFIRMATION", "Aguardando a loja"),
     "payment_pending": ("TRACKING_STATUS_PAYMENT_PENDING", "Aguardando pagamento"),
     "card_authorized": ("TRACKING_STATUS_CARD_AUTHORIZED", "Pagamento autorizado"),
+    "card_capture_failed": ("TRACKING_STATUS_CARD_CAPTURE_FAILED", "Cobrança não concluída"),
     "ready_delivery": ("TRACKING_STATUS_READY_DELIVERY", "Aguardando entregador"),
     "ready_pickup": ("TRACKING_STATUS_READY_PICKUP", "Pronto para retirada"),
     "preorder_scheduled": ("TRACKING_STATUS_PREORDER_SCHEDULED", "Encomenda confirmada"),
