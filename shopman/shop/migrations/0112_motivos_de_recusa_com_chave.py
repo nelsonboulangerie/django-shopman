@@ -15,7 +15,6 @@ são iguais hoje.
 
 from django.db import migrations, models
 
-
 APPROVED_PRESETS = [
     {"label": "Item indisponível no momento", "group": "Produto", "reason_key": "out_of_stock"},
     {"label": "Sem um dos ingredientes hoje", "group": "Produto", "reason_key": "out_of_stock"},

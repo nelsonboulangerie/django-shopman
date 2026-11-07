@@ -17,7 +17,6 @@ migração é história e não pode mudar quando o ``seed`` mudar. O teste
 
 from django.db import migrations, models
 
-
 PREVIOUS_SEED_PRESETS = [
     "Item indisponível no momento",
     "Sem um dos ingredientes hoje",

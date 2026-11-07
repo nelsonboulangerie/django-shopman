@@ -94,13 +94,13 @@ from shopman.backstage.projections.order_attention import (
     QueueAwarenessProjection,
     SystemActionProjection,
 )
-from shopman.backstage.projections.order_pricing import OrderDiscountLineProjection
 from shopman.backstage.projections.order_history import (
     HistoryFacet,
     HistoryFacetOption,
     OrderHistoryProjection,
     OrderHistoryRowProjection,
 )
+from shopman.backstage.projections.order_pricing import OrderDiscountLineProjection
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
     CancelReasonProjection,
