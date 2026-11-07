@@ -20,6 +20,7 @@ const apiPath = useShopmanApiPath()
 const requestUrl = useRequestURL()
 const sku = computed(() => String(route.params.sku || ''))
 const { setFromServer, qtyForSku } = useCartState()
+const session = useShopSession()
 
 const { data, pending, error, refresh } = await useFetch<ProductResponse>(
   () => apiPath(`/api/v1/storefront/products/${encodeURIComponent(sku.value)}/`),
@@ -72,7 +73,7 @@ const similarItemsTo = computed(() => {
   return ref ? `/menu?secao=${encodeURIComponent(ref)}` : '/menu'
 })
 const longDescription = computed(() => product.value ? detailDescription(product.value) : '')
-const pickupLine = computed(() => product.value ? inStorePickupLine(product.value) : '')
+const pickupLine = computed(() => product.value ? inStorePickupLine(product.value, session.shopStatus.value) : '')
 // Carrossel: lista vazia = foto única (moldura estática de sempre). A principal
 // (image_url) abre o carrossel; o índice segue o scroll real do slider.
 const carouselImages = computed(() => product.value ? galleryImages(product.value) : [])
@@ -289,7 +290,7 @@ useHead({
 
             <div v-if="(badge && product.availability !== 'unavailable') || product.quote.adjustments.length" class="mb-2 flex flex-wrap gap-2">
               <UiBadge v-if="badge && product.availability !== 'unavailable'" :variant="badge.variant" class="font-normal">{{ badge.label }}</UiBadge>
-              <UiBadge v-for="adjustment in product.quote.adjustments" :key="adjustment.code" variant="default" class="font-normal">{{ adjustmentLabel(adjustment) }}</UiBadge>
+              <UiBadge v-for="adjustment in product.quote.adjustments" :key="adjustment.code" variant="default" class="max-w-full truncate font-normal" :title="adjustmentLabel(adjustment)">{{ adjustmentLabel(adjustment) }}</UiBadge>
             </div>
 
             <div class="flex items-start justify-between gap-3">
