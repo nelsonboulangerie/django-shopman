@@ -453,7 +453,7 @@ pronto e "Saiu para entrega" só depois da coleta (`shop/projections/order_track
 | Pedido editado em `new` antes do Pix | o Pix sai com o total selado antigo | `payment.py:111` | **LACUNA a provar (P0-6)**, resolvida #1736 |
 | Pix venceu | cancela; um aviso só (`order_cancelled` com a frase do prazo, `cancel_reasons.pix_expired`) | `handlers/payment_timeout.py`; `customer_orders.resolve_payment_timeout_if_due` | OK (P1-9), resolvido #1773 (eram dois avisos) |
 | Pago depois de cancelado | estorno + alerta; o cliente não é avisado do estorno | `lifecycle.py:554-557` | ATRITO (P1-9), resolvido #1720 |
-| Cliente quer cancelar | sozinho em `new`/`accepted` sem captura; pago vira solicitação ao gerente | `payment.py:1582-1595`; `cancellation_requests.py` | OK |
+| Cliente quer cancelar | antes do preparo (`new`/`accepted`) cancela sozinho, pago ou não, e o valor volta pelo próprio cancelamento (Gestor recebe aviso informativo `customer_self_cancelled`); depois do preparo não cancela, fala com o responsável (ouvidoria, origem `cancellation`) | `policies/customer_cancellation.py`; `customer_orders.cancel`; `customer_contact.request_contact` | OK |
 | Xepa | só no balcão (decisão de 14/10, Pergunta 3 = 1): fora do WhatsApp, do site e do iFood, e a loja não anuncia | `rules/pricing.py` (`channels_required`); migração `shop.0093` | OK (P1-14), resolvido #1760 |
 | `bootstrap_whatsapp_channel` | recria o canal com `auto_confirm`, contra a decisão da migração 0054 | `bootstrap_whatsapp_channel.py:32` | LACUNA (P1-15), resolvida #1718 |
 | Pagar na entrega pelo site | não existe, por decisão (Pergunta 2 = 1, 14/10) | ADR-036 | OK |

@@ -1893,9 +1893,7 @@ def cancel(order, *, reason: str = "order_cancelled") -> None:
 
 # ── facades ──
 
-_CANCELLABLE_STATUSES = {"new", "accepted"}
 _PAID_STATUSES = {"captured", "paid"}
-_UNCERTAIN_STATUSES = {"unknown"}
 
 
 def cancel_stale_intents(
@@ -2208,19 +2206,17 @@ def has_sufficient_captured_payment(order, *, payment_reads=None) -> bool:
 
 
 def can_cancel(order) -> bool:
-    """
-    True se o pedido pode ser cancelado pelo cliente.
+    """True se o cliente pode cancelar sozinho (``policies/customer_cancellation``).
 
-    Requer: status in {new, confirmed} e pagamento comprovadamente não capturado.
-    Estados incertos bloqueiam cancelamento para não cancelar um pedido que pode
-    já estar pago.
+    Antes do preparo, pago ou não: o dinheiro capturado volta pelo próprio
+    cancelamento (``lifecycle._on_cancelled``), e o cartão só autorizado tem a
+    reserva desfeita. O pagamento ilegível (``unknown``) continua bloqueando.
     """
-    if order.status not in _CANCELLABLE_STATUSES:
+    from shopman.shop.policies import customer_cancellation
+
+    if order.status not in customer_cancellation.BEFORE_PREPARATION_STATUSES:
         return False
-    status = (get_payment_status(order) or "").lower()
-    if status in _UNCERTAIN_STATUSES or has_sufficient_captured_payment(order):
-        return False
-    return True
+    return customer_cancellation.can_self_cancel(order.status, payment_status=get_payment_status(order) or "")
 
 
 def _record_gateway_authorization(order, *, intent_ref: str) -> str:

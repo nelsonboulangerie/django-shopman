@@ -1188,7 +1188,6 @@
     ],
     "shop.services-payment-cancellation-eligibility": [
       "shopman/shop/services/customer_orders.py:can_cancel",
-      "shopman/shop/services/payment.py:_CANCELLABLE_STATUSES",
       "shopman/shop/services/payment.py:can_cancel",
       "shopman/shop/services/payment_status.py:can_cancel"
     ],

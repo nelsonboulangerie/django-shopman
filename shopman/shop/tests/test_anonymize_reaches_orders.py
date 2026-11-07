@@ -262,10 +262,9 @@ def test_exclusao_limpa_texto_pessoal_das_tres_copias_do_meta_do_item():
     assert _sweep(tuple(sentinels.values())) == []
 
 
-def test_exportacao_e_exclusao_alinham_eventos_e_alerta_de_cancelamento():
+def test_exportacao_e_exclusao_alinham_eventos_do_pedido():
     import json
 
-    from shopman.backstage.models import OperatorAlert
     from shopman.storefront.services.account_export import build_account_export
 
     customer = _customer()
@@ -278,17 +277,15 @@ def test_exportacao_e_exclusao_alinham_eventos_e_alerta_de_cancelamento():
         "session_to": "PII-SESSION-TO-REF",
         "session_text": "PII-SESSION-FREE-TEXT",
     }
-    protocol = "SC-20260916-KEEP1234"
-
     note_event = order.emit_event(
         "operator_comment",
         actor="operator:test",
         payload={"note": sentinels["order_note"], "operational_code": "handover"},
     )
     reason_event = order.emit_event(
-        "customer_cancellation_requested",
+        "order_rescheduled",
         actor="customer:self-service",
-        payload={"protocol": protocol, "reason": sentinels["order_reason"]},
+        payload={"to_date": "2026-11-10", "reason": sentinels["order_reason"]},
     )
     renamed_event = session.emit_event(
         "tab_renamed",
@@ -310,26 +307,8 @@ def test_exportacao_e_exclusao_alinham_eventos_e_alerta_de_cancelamento():
             "sku": "CROIS-01",
         },
     )
-    alert = OperatorAlert.objects.create(
-        type="customer_cancellation_requested",
-        severity="warning",
-        audience="orders",
-        order_ref=order.ref,
-        message=(
-            f"O cliente solicitou análise de cancelamento do pedido {order.ref}. "
-            f"Protocolo {protocol}. Abra o pedido para decidir o cancelamento e eventual estorno. "
-            f"Motivo informado: {sentinels['order_reason']}"
-        ),
-    )
-    OperatorAlert.objects.create(
-        type="payment_failed",
-        severity="error",
-        order_ref=order.ref,
-        message="alerta operacional fora do footprint de cancelamento",
-    )
     before = _sweep((sentinels["order_reason"],))
     assert any("orderman_orderevent.payload" in hit for hit in before)
-    assert any("backstage_operatoralert.message" in hit for hit in before)
 
     artifact = build_account_export(customer)
     exported = json.load(artifact)
@@ -337,10 +316,7 @@ def test_exportacao_e_exclusao_alinham_eventos_e_alerta_de_cancelamento():
     order_events = {row["type"]: row for row in exported["order_events"]}
     session_events = {row["type"]: row for row in exported["order_session_events"]}
     assert order_events["operator_comment"]["payload"] == {"note": sentinels["order_note"]}
-    assert order_events["customer_cancellation_requested"]["payload"] == {
-        "protocol": protocol,
-        "reason": sentinels["order_reason"],
-    }
+    assert order_events["order_rescheduled"]["payload"] == {"reason": sentinels["order_reason"]}
     assert session_events["tab_renamed"]["payload"] == {
         "from_ref": sentinels["session_from"],
         "to_ref": sentinels["session_to"],
@@ -353,11 +329,6 @@ def test_exportacao_e_exclusao_alinham_eventos_e_alerta_de_cancelamento():
         "text": sentinels["session_text"],
         "message": sentinels["session_text"],
     }
-    assert len(exported["order_cancellation_alerts"]) == 1
-    exported_alert = exported["order_cancellation_alerts"][0]
-    assert exported_alert["protocol"] == protocol
-    assert exported_alert["reason"] == sentinels["order_reason"]
-    assert "message" not in exported_alert
 
     anonymize_customer(customer)
 
@@ -365,13 +336,10 @@ def test_exportacao_e_exclusao_alinham_eventos_e_alerta_de_cancelamento():
     reason_event.refresh_from_db()
     renamed_event.refresh_from_db()
     free_text_event.refresh_from_db()
-    alert.refresh_from_db()
     assert note_event.payload == {"operational_code": "handover"}
-    assert reason_event.payload == {"protocol": protocol}
+    assert reason_event.payload == {"to_date": "2026-11-10"}
     assert renamed_event.payload == {"count": 2}
     assert free_text_event.payload == {"sku": "CROIS-01"}
-    assert protocol in alert.message
-    assert "Motivo informado:" not in alert.message
     assert _sweep(tuple(sentinels.values())) == []
 
 

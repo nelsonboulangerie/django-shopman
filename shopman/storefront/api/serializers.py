@@ -350,11 +350,8 @@ class PickupInfoSerializer(serializers.Serializer):
     when_display = serializers.CharField(allow_null=True, required=False)
 
 
-class CancellationRequestProjectionSerializer(serializers.Serializer):
-    protocol = serializers.CharField()
-    requested_at_display = serializers.CharField()
-    title = serializers.CharField()
-    message = serializers.CharField()
+class CancellationContactProjectionSerializer(serializers.Serializer):
+    requested = serializers.BooleanField()
 
 
 class RatingFollowupProjectionSerializer(serializers.Serializer):
@@ -362,16 +359,6 @@ class RatingFollowupProjectionSerializer(serializers.Serializer):
     google_review_url = serializers.CharField(allow_blank=True)
     contact_offered = serializers.BooleanField()
     contact_requested = serializers.BooleanField()
-
-
-class CancellationRequestInputSerializer(serializers.Serializer):
-    reason = serializers.CharField(
-        allow_blank=True,
-        required=False,
-        default="",
-        max_length=500,
-        trim_whitespace=True,
-    )
 
 
 class OrderTrackingCopySerializer(serializers.Serializer):
@@ -415,6 +402,8 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     rating_contact_title = serializers.CharField()
     rating_contact_message = serializers.CharField()
     rating_contact_done = serializers.CharField()
+    cancellation_contact_title = serializers.CharField()
+    cancellation_contact_message = serializers.CharField()
     rating_google_title = serializers.CharField()
     rating_google_share_title = serializers.CharField()
     rating_google_message = serializers.CharField()
@@ -485,7 +474,7 @@ class OrderTrackingSerializer(serializers.Serializer):
     cancellation_money_line = serializers.CharField(allow_blank=True, required=False)
     # Antes de cancelar: o que acontece com o dinheiro (reserva do cartão, nada cobrado).
     cancel_dialog_money_line = serializers.CharField(allow_blank=True, required=False)
-    cancellation_request = CancellationRequestProjectionSerializer(allow_null=True, required=False)
+    cancellation_contact = CancellationContactProjectionSerializer(allow_null=True, required=False)
     rating_followup = RatingFollowupProjectionSerializer(allow_null=True, required=False)
     # A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem
     # pede e-mail). ``None`` enquanto não há nota.

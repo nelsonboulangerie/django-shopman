@@ -1257,45 +1257,6 @@
       "out_of_extraction": false
     },
     {
-      "id": "order.cancellation-request-resolution",
-      "question": "Como pedidos concluídos ou cancelados encerram solicitações de cancelamento pendentes?",
-      "owner": "order.cancellation-request-resolution",
-      "responsibility": "composição",
-      "public_entrypoint": "shopman.shop.handlers.cancellation_requests:on_order_changed",
-      "authoritative_symbols": [
-        "shopman.shop.handlers.cancellation_requests:on_order_changed"
-      ],
-      "entrypoint_kind": "symbol",
-      "sources": [
-        {
-          "path": "shopman/shop/handlers/cancellation_requests.py",
-          "symbols": [
-            "_resolve",
-            "on_order_changed",
-            "connect"
-          ]
-        }
-      ],
-      "touchpoints": [
-        "handler"
-      ],
-      "domains": [
-        "orderman"
-      ],
-      "ports": [],
-      "events": [
-        "order_changed"
-      ],
-      "directives": [],
-      "config_surface": [],
-      "tests": [
-        "shopman/shop/tests/test_handler_entrypoints.py::test_cancellation_receiver_ignores_non_terminal_status_changes"
-      ],
-      "test_gap_reason": null,
-      "policy": false,
-      "out_of_extraction": false
-    },
-    {
       "id": "payment.card-authorization-watch-handler",
       "question": "Como uma autorização de cartão pendente é reavaliada até resolução ou expiração?",
       "owner": "payment.card-authorization-watch-handler",
@@ -6894,49 +6855,6 @@
       ]
     },
     {
-      "id": "shop.services-cancellation-requests",
-      "question": "Solicitação eletrônica de cancelamento pelo titular do pedido?",
-      "owner": "order.cancellation.requests",
-      "responsibility": "composição",
-      "public_entrypoint": "shopman.shop.services.cancellation_requests:operational_message",
-      "entrypoint_kind": "symbol",
-      "sources": [
-        {
-          "path": "shopman/shop/services/cancellation_requests.py",
-          "symbols": [
-            "operational_message",
-            "CancellationRequestUnavailable",
-            "CancellationRequest",
-            "current",
-            "request_cancellation",
-            "EVENT_TYPE",
-            "ALERT_TYPE",
-            "TERMINAL_STATUSES",
-            "BEFORE_PREPARATION_STATUSES"
-          ]
-        }
-      ],
-      "touchpoints": [
-        "service"
-      ],
-      "domains": [
-        "orderman"
-      ],
-      "ports": [],
-      "events": [],
-      "directives": [],
-      "config_surface": [],
-      "tests": [
-        "shopman/shop/tests/test_services_semantic_units_a_m.py::test_cancellation_request_copy_distinguishes_the_preparation_boundary"
-      ],
-      "test_gap_reason": null,
-      "policy": false,
-      "out_of_extraction": false,
-      "authoritative_symbols": [
-        "shopman.shop.services.cancellation_requests:operational_message"
-      ]
-    },
-    {
       "id": "shop.services-customer-contact",
       "question": "Ouvidoria da avaliação: o cliente que avaliou mal pede que a loja fale com ele?",
       "owner": "order.rating.contact",
@@ -6959,6 +6877,13 @@
             "open_request",
             "operational_message",
             "request_contact",
+            "cancellation_operational_message",
+            "cancellation_contact_offered",
+            "_request_cancellation_contact",
+            "_origin",
+            "ORIGIN_RATING",
+            "ORIGIN_CANCELLATION",
+            "ORIGINS",
             "resolve",
             "_rating",
             "contact_offered"
@@ -7053,6 +6978,74 @@
       "out_of_extraction": false,
       "authoritative_symbols": [
         "shopman.shop.policies.rating_contact:can_request_contact"
+      ]
+    },
+    {
+      "id": "order.customer-cancellation",
+      "question": "O cliente pode cancelar sozinho agora, ou o que sobra é falar com o responsável?",
+      "owner": "order.customer-cancellation",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.customer_cancellation:can_self_cancel",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/customer_cancellation.py",
+          "symbols": [
+            "BEFORE_PREPARATION_STATUSES",
+            "can_self_cancel"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "scripts/tests/test_customer_cancellation_policy.py::test_customer_self_cancel_truth_table"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.policies.customer_cancellation:can_self_cancel"
+      ]
+    },
+    {
+      "id": "order.customer-cancellation-contact",
+      "question": "O preparo começou e o cancelar dá lugar a falar com o responsável?",
+      "owner": "order.customer-cancellation-contact",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.customer_cancellation:offers_contact_instead",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/customer_cancellation.py",
+          "symbols": [
+            "AFTER_PREPARATION_STATUSES",
+            "offers_contact_instead"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "scripts/tests/test_customer_cancellation_policy.py::test_contact_replaces_cancel_after_preparation"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.policies.customer_cancellation:offers_contact_instead"
       ]
     },
     {
@@ -12942,6 +12935,7 @@
             "_cancellation_identity",
             "_validate_operator_cancellation_code",
             "reject_order",
+            "_reject_reason_key",
             "cancel_order"
           ]
         }
@@ -13517,8 +13511,7 @@
         {
           "path": "shopman/shop/services/payment.py",
           "symbols": [
-            "can_cancel",
-            "_CANCELLABLE_STATUSES"
+            "can_cancel"
           ]
         },
         {
@@ -13544,7 +13537,7 @@
       "directives": [],
       "config_surface": [],
       "tests": [
-        "shopman/storefront/tests/web/test_services_customer_orders.py::test_customer_cancel_gate_preserves_payment_specific_refusal"
+        "shopman/storefront/tests/web/test_services_customer_orders.py::test_customer_cancel_gate_follows_preparation_not_payment"
       ],
       "test_gap_reason": null,
       "policy": true,
@@ -13883,7 +13876,6 @@
             "balance_due_q",
             "has_sufficient_captured_payment",
             "_PAID_STATUSES",
-            "_UNCERTAIN_STATUSES",
             "cancelled_money",
             "CancelledMoney",
             "_HOSTED_CARD_METHODS"

@@ -13,10 +13,16 @@ from django.apps import apps
 from django.core.exceptions import ValidationError
 
 from shopman.shop.models import Shop
-from shopman.shop.models.shop import cancellation_preset_entries, validate_cancellation_presets
+from shopman.shop.models.shop import (
+    cancellation_preset_entries,
+    cancellation_preset_reason_key,
+    validate_cancellation_presets,
+)
+from shopman.shop.services import cancel_reasons
 from shopman.shop.services.notification import _status_note
 
 migration = importlib.import_module("shopman.shop.migrations.0085_motivos_de_recusa_aprovados")
+keyed_migration = importlib.import_module("shopman.shop.migrations.0112_motivos_de_recusa_com_chave")
 
 APPROVED_ORDER = [
     "Item indisponível no momento",
@@ -39,6 +45,16 @@ class TestValidator:
 
     def test_grouped_items_are_valid(self):
         validate_cancellation_presets([{"label": "Pagamento não aprovado", "group": "Pagamento"}])
+
+    def test_reason_key_from_the_single_list_is_valid(self):
+        validate_cancellation_presets(
+            [{"label": "Você pediu o cancelamento", "group": "Cliente", "reason_key": "customer_request"}]
+        )
+
+    @pytest.mark.parametrize("key", ["", "customer_requested", "pix_expired", 3])
+    def test_reason_key_outside_the_operator_list_is_refused(self, key):
+        with pytest.raises(ValidationError, match="chave do motivo"):
+            validate_cancellation_presets([{"label": "Item", "group": "Produto", "reason_key": key}])
 
     @pytest.mark.parametrize("label", ["Item acabou.", "Item acabou. ", "Acabou!", "Acabou…"])
     def test_trailing_punctuation_is_refused(self, label):
@@ -78,7 +94,23 @@ class TestApprovedList:
     def test_seed_and_migration_carry_the_same_list(self):
         from config.management.commands.seed import CANCELLATION_PRESETS
 
-        assert migration.APPROVED_PRESETS == CANCELLATION_PRESETS
+        assert keyed_migration.APPROVED_PRESETS == CANCELLATION_PRESETS
+        # A lista de 01/10 (0085) é a mesma, sem as chaves.
+        assert migration.APPROVED_PRESETS == [
+            {"label": item["label"], "group": item["group"]} for item in CANCELLATION_PRESETS
+        ]
+
+    def test_every_approved_reason_has_a_key_of_the_single_list(self):
+        from config.management.commands.seed import CANCELLATION_PRESETS
+
+        for item in CANCELLATION_PRESETS:
+            assert cancel_reasons.validation_message(item["reason_key"]) == "", item
+
+    def test_the_customer_asked_maps_to_customer_request(self):
+        from config.management.commands.seed import CANCELLATION_PRESETS
+
+        assert cancellation_preset_reason_key(CANCELLATION_PRESETS, "Você pediu o cancelamento") == "customer_request"
+        assert cancellation_preset_reason_key(CANCELLATION_PRESETS, "Texto que o operador escreveu") == ""
 
     def test_groups_follow_the_owner_split(self):
         groups = [group for group, _label in cancellation_preset_entries(migration.APPROVED_PRESETS)]
@@ -135,3 +167,32 @@ class TestDataMigration:
         Shop.objects.all().delete()
         self._run()
         assert not Shop.objects.exists()
+
+
+class TestKeyedDataMigration:
+    def _run(self):
+        keyed_migration.add_reason_keys(apps, None)
+
+    def test_approved_list_without_keys_gets_the_keys(self, db):
+        shop = Shop.objects.create(name="Loja", cancellation_presets=list(migration.APPROVED_PRESETS))
+        self._run()
+        shop.refresh_from_db()
+        assert shop.cancellation_presets == keyed_migration.APPROVED_PRESETS
+
+    def test_operator_reason_is_left_alone_and_known_text_gets_its_key(self, db):
+        edited = ["Forno em manutenção hoje", "Você pediu o cancelamento", {"label": "Outro", "group": "X"}]
+        shop = Shop.objects.create(name="Loja", cancellation_presets=edited)
+        self._run()
+        shop.refresh_from_db()
+        assert shop.cancellation_presets == [
+            "Forno em manutenção hoje",
+            {"label": "Você pediu o cancelamento", "reason_key": "customer_request"},
+            {"label": "Outro", "group": "X"},
+        ]
+
+    def test_existing_key_is_kept(self, db):
+        chosen = [{"label": "Você pediu o cancelamento", "group": "Cliente", "reason_key": "other"}]
+        shop = Shop.objects.create(name="Loja", cancellation_presets=chosen)
+        self._run()
+        shop.refresh_from_db()
+        assert shop.cancellation_presets == chosen

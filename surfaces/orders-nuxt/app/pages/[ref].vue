@@ -28,6 +28,7 @@ import { onMounted, onBeforeUnmount } from "vue";
 import { settledRefresh } from "~/utils/settledRefresh";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { COURIER_CALL_HASH } from "~/presentation/courier";
+import { contactRequestNotice } from "~/presentation/contactRequest";
 import { orderTicketMenuItem } from "~/presentation/orderTicket";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 import type { CancellationReason } from "~/types/orders";
@@ -921,6 +922,9 @@ const deadlineText = computed(() => {
 // a causa muda (a chave leva a grandeza): a regra do kit (`useAlertDismissals`).
 const notices = useAlertDismissals();
 const contactKey = computed(() => `contact:${order.value?.contact_request?.requested_at_display ?? ""}`);
+const contactNotice = computed(() =>
+  order.value?.contact_request ? contactRequestNotice(order.value.contact_request) : null,
+);
 const cardAuthKey = computed(() => `card-auth:${cardAuth.value?.title ?? ""}`);
 const cardAuth = computed(() =>
   cardAuthorizationNotice(
@@ -1216,9 +1220,7 @@ const outside = useOutsideStore(
         color="warning"
         variant="subtle"
         icon="i-lucide-message-circle-heart"
-        :description="order.contact_request.comment
-          ? `O cliente pediu para falar com o responsável (${order.contact_request.requested_at_display}). Comentário: ${order.contact_request.comment}`
-          : `O cliente pediu para falar com o responsável (${order.contact_request.requested_at_display}). Não deixou comentário.`"
+        :description="contactNotice?.description"
         :actions="alertActions('warning', [
           // O aviso manda chamar o cliente: o botão já leva à conversa.
           !!order.customer_whatsapp_url && {
@@ -1238,15 +1240,17 @@ const outside = useOutsideStore(
         <!-- As estrelas dizem a nota de relance; o texto continua para o leitor de tela.
              Glifo e não ícone: o modo CSS dos ícones é máscara, e máscara não preenche. -->
         <template #title>
-          Ouvidoria aberta
-          <span class="ms-1 tracking-wider" aria-hidden="true">
-            <span
-              v-for="n in 5"
-              :key="n"
-              :class="n <= order.contact_request.rating ? 'text-warning' : 'text-muted opacity-50'"
-            >★</span>
-          </span>
-          <span class="sr-only">: nota {{ order.contact_request.rating }} de 5</span>
+          {{ contactNotice?.title }}
+          <template v-if="contactNotice?.showsRating">
+            <span class="ms-1 tracking-wider" aria-hidden="true">
+              <span
+                v-for="n in 5"
+                :key="n"
+                :class="n <= order.contact_request.rating ? 'text-warning' : 'text-muted opacity-50'"
+              >★</span>
+            </span>
+            <span class="sr-only">: nota {{ order.contact_request.rating }} de 5</span>
+          </template>
         </template>
       </NuxtAlert>
       <NuxtAlert

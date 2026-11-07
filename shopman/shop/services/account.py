@@ -1113,7 +1113,6 @@ def _scrub_gateway_pii(value):
 
 def _anonymize_order_trail(*, customer_ref: str, phone: str, pseudonym: str) -> dict[str, int]:
     """Apaga o PII do titular dos pedidos e das sessões dele. Idempotente."""
-    from django.apps import apps
     from django.db import IntegrityError
     from shopman.orderman.models import Directive, Order, OrderEvent, Session, SessionEvent
     from shopman.payman.models import PaymentIntent
@@ -1125,44 +1124,12 @@ def _anonymize_order_trail(*, customer_ref: str, phone: str, pseudonym: str) -> 
         "sessions": 0,
         "order_events": 0,
         "session_events": 0,
-        "operator_alerts": 0,
         "payment_intents": 0,
         "directives": 0,
     }
 
     matching_orders = _customer_orders(customer_ref, phone)
     matching_order_refs = tuple(matching_orders.values_list("ref", flat=True))
-    from shopman.shop.services.cancellation_requests import (
-        operational_message as cancellation_operational_message,
-    )
-
-    cancellation_requests = {
-        order_ref: (protocol, bool(before_preparation))
-        for order_ref, protocol, before_preparation in OrderEvent.objects.filter(
-            order__ref__in=matching_order_refs,
-            type="customer_cancellation_requested",
-        ).values_list("order__ref", "payload__protocol", "payload__before_preparation")
-    }
-
-    # Só este tipo de alerta carrega texto escrito pelo titular. O prefixo é
-    # evidência operacional (pedido + protocolo) e é reconstruído a partir do
-    # evento estruturado, sem tentar recortar uma mensagem livre histórica.
-    OperatorAlert = apps.get_model("backstage.OperatorAlert")
-    cancellation_alerts = OperatorAlert.objects.filter(
-        type="customer_cancellation_requested",
-        order_ref__in=matching_order_refs,
-    )
-    for alert in cancellation_alerts.only("pk", "order_ref", "message").iterator():
-        protocol, before_preparation = cancellation_requests.get(alert.order_ref, ("", False))
-        message = cancellation_operational_message(
-            order_ref=alert.order_ref,
-            protocol=str(protocol or ""),
-            before_preparation=before_preparation,
-        )
-        if alert.message != message:
-            OperatorAlert.objects.filter(pk=alert.pk).update(message=message)
-            counts["operator_alerts"] += 1
-
     payment_intents = PaymentIntent.objects.filter(order_ref__in=matching_order_refs)
     for payment_intent in payment_intents.only("pk", "gateway_data").iterator():
         gateway_data, changed = _scrub_gateway_pii(payment_intent.gateway_data)

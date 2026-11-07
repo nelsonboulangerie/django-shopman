@@ -226,6 +226,12 @@ def reject_order(
             )
 
         extra_data = {"rejected_by": rejected_by}
+        # O motivo pronto escolhido ("Você pediu o cancelamento") carrega a chave
+        # da lista única: sem ela, a recusa gravava ``other`` e o histórico dizia
+        # "Cancelado · Outro motivo" (beta 06/11). Texto livre continua ``other``.
+        reason_key = _reject_reason_key(reason)
+        if reason_key:
+            extra_data["cancellation_reason_key"] = reason_key
         if cancellation_code:
             extra_data["ifood_cancellation_code"] = cancellation_code
         cancel(
@@ -239,6 +245,15 @@ def reject_order(
         if locked.status == Order.Status.CANCELLED:
             notification.send(locked, "order_rejected", reason=reason, rejected_by=rejected_by)
     logger.info("operator_reject order=%s reason=%s", order.ref, reason)
+
+
+def _reject_reason_key(reason: str) -> str:
+    """A chave de ``cancel_reasons`` do motivo pronto da casa com este texto, ou vazio."""
+    from shopman.shop.models import Shop
+    from shopman.shop.models.shop import cancellation_preset_reason_key
+
+    shop = Shop.load()
+    return cancellation_preset_reason_key(shop.cancellation_presets if shop else [], reason)
 
 
 def next_status_for(order: Order) -> str:

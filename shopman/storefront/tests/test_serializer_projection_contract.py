@@ -42,7 +42,7 @@ from shopman.shop.projections.types import (
 from shopman.shop.services.conversation import RemoteConversationProjection
 from shopman.storefront.api import serializers as api_serializers
 from shopman.storefront.presentation.order_tracking import (
-    CancellationRequestProjection,
+    CancellationContactProjection,
     FiscalNoteProjection,
     OrderTrackingCopyProjection,
     OrderTrackingProjection,
@@ -69,8 +69,8 @@ MIRROR_CONTRACTS = [
     (api_serializers.OrderItemSerializer, OrderItemProjection, set()),
     (api_serializers.PickupInfoSerializer, PickupInfoProjection, set()),
     (
-        api_serializers.CancellationRequestProjectionSerializer,
-        CancellationRequestProjection,
+        api_serializers.CancellationContactProjectionSerializer,
+        CancellationContactProjection,
         set(),
     ),
     (
@@ -108,7 +108,6 @@ NON_MIRROR = {
     "StockAlertSubscriptionRefSerializer",
     "StockAlertSubscriptionControlRequestSerializer",
     "StockAlertManagementActionSerializer",
-    "CancellationRequestInputSerializer",
     # Envelope de erro canônico ({detail, ...}).
     "DetailSerializer",
     # Respostas montadas como dict ad-hoc no view (não há dataclass fonte).

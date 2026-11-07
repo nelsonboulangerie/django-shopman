@@ -129,12 +129,13 @@ class TrackingPickupData:
 
 
 @dataclass(frozen=True)
-class TrackingCancellationRequestData:
-    """Customer request awaiting a human cancellation/refund decision."""
+class TrackingCancellationContactData:
+    """O preparo começou: no lugar do cancelar, o contato com o responsável.
 
-    protocol: str
-    requested_at: str
-    before_preparation: bool = False
+    ``requested``: o cliente já pediu, e a tela diz que o responsável vai chamar.
+    """
+
+    requested: bool
 
 
 @dataclass(frozen=True)
@@ -280,7 +281,10 @@ class TrackingData:
     # página não depende da notificação para contar a história.
     cancellation_note: str = ""
     money_outcome: TrackingMoneyOutcomeData | None = None
-    cancellation_request: TrackingCancellationRequestData | None = None
+    cancellation_contact: TrackingCancellationContactData | None = None
+    # O que entrou de dinheiro, para o diálogo de cancelar dizer quanto volta.
+    paid_amount_q: int = 0
+    paid_method: str = ""  # pix | card
     rating_followup: TrackingRatingFollowupData | None = None
     # Fila de espera (WP-P2E): o acompanhamento é a superfície que SEMPRE
     # existe. A notificação pode não chegar (janela do WhatsApp, número
@@ -366,7 +370,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     # inventa motivo; no Pix vencido quem explica é a promessa da tela.
     cancellation_note = "" if _is_payment_timeout_cancelled(order) else _cancellation_customer_text(order_data)
     money_outcome = _money_outcome(order)
-    cancellation_request = _cancellation_request(order)
+    cancellation_contact = _cancellation_contact(order)
     rating_followup = _rating_followup(order)
     progress_steps = _build_progress_steps(
         order,
@@ -403,7 +407,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     actions = _build_order_actions(
         order,
         can_cancel=can_cancel,
-        cancellation_requested=cancellation_request is not None,
+        cancellation_contact_offered=bool(cancellation_contact and not cancellation_contact.requested),
         can_rate=customer_orders.can_rate(order),
         can_request_contact=bool(rating_followup and rating_followup.contact_offered),
         can_mock_confirm_payment=can_mock_confirm_payment,
@@ -415,7 +419,9 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         stale_after_seconds=_stale_after_seconds(),
         cancellation_note=cancellation_note,
         money_outcome=money_outcome,
-        cancellation_request=cancellation_request,
+        cancellation_contact=cancellation_contact,
+        paid_amount_q=_paid_amount_q(order) if can_cancel and payment_confirmed else 0,
+        paid_method="pix" if str(((order_data.get("payment") or {}).get("method")) or "").lower() == "pix" else "card",
         rating_followup=rating_followup,
         order_ref=interaction.order_ref,
         status=order.status,
@@ -602,21 +608,23 @@ def _money_outcome(order) -> TrackingMoneyOutcomeData | None:
     )
 
 
-def _cancellation_request(order) -> TrackingCancellationRequestData | None:
-    from shopman.shop.services import cancellation_requests
+def _cancellation_contact(order) -> TrackingCancellationContactData | None:
+    """O contato no lugar do cancelar: só depois que o preparo começou."""
+    from shopman.shop.policies import customer_cancellation
+    from shopman.shop.services import customer_contact
 
-    # Pedido cancelado (ou devolvido) é a solicitação resolvida: quem fala é o
-    # desfecho (``cancellation_money_line``), não o "vamos analisar" de antes.
-    if order.status in cancellation_requests.TERMINAL_STATUSES:
+    if not customer_cancellation.offers_contact_instead(order.status):
         return None
-    request = cancellation_requests.current(order)
-    if request is None:
-        return None
-    return TrackingCancellationRequestData(
-        protocol=request.protocol,
-        requested_at=request.requested_at.isoformat(),
-        before_preparation=request.before_preparation,
-    )
+    requested = customer_contact.current(order, origin=customer_contact.ORIGIN_CANCELLATION) is not None
+    return TrackingCancellationContactData(requested=requested)
+
+
+def _paid_amount_q(order) -> int:
+    try:
+        return int(payment_service.captured_balance_q(order) or 0)
+    except Exception:
+        logger.warning("tracking.paid_amount_unreadable order=%s", order.ref, exc_info=True)
+        return 0
 
 
 def _rating_followup(order) -> TrackingRatingFollowupData | None:
@@ -630,7 +638,7 @@ def _rating_followup(order) -> TrackingRatingFollowupData | None:
         comment=str(rating.get("comment") or ""),
         google_review_url=customer_contact.google_review_url(),
         contact_offered=customer_contact.contact_offered(order),
-        contact_requested=customer_contact.current(order) is not None,
+        contact_requested=customer_contact.current(order, origin=customer_contact.ORIGIN_RATING) is not None,
     )
 
 
@@ -728,22 +736,15 @@ def _reorder_action(order, *, priority: str = "secondary") -> Action:
     )
 
 
-#: Onde o cliente ainda pode PEDIR cancelamento (o pedido avançou além do
-#: autocancelamento, mas ainda não chegou a ele).
-_CANCELLATION_REQUEST_STATUSES = frozenset({"new", "accepted", "preparing", "ready", "dispatched"})
-
-
 def _build_order_actions(
     order,
     *,
     can_cancel: bool,
-    cancellation_requested: bool,
+    cancellation_contact_offered: bool,
     can_rate: bool,
     can_mock_confirm_payment: bool,
     can_request_contact: bool = False,
 ) -> tuple[Action, ...]:
-    from shopman.shop.services import cancellation_requests
-
     actions: list[Action] = []
     if can_cancel:
         actions.append(
@@ -768,55 +769,27 @@ def _build_order_actions(
                 # desenhava, e carregava jargão de gateway (beta 06/11, F6).
             )
         )
-    elif order.status in _CANCELLATION_REQUEST_STATUSES and not cancellation_requested:
-        # Pedir cancelamento só faz sentido ANTES de o pedido chegar ao cliente.
-        # Depois da entrega o assunto é outro (problema com o pedido), e um botão
-        # vermelho de cancelar num pedido concluído lia como ameaça (SMS-14).
+    elif cancellation_contact_offered:
+        # Depois que o preparo começou o pedido não se cancela mais (dono,
+        # 06/11/2026): no lugar do cancelar, falar com o responsável, pela mesma
+        # ouvidoria da avaliação baixa.
         actions.append(
             _action(
-                ref="request_cancellation",
+                ref="request_cancellation_contact",
                 kind="mutation",
-                label=_copy_title("TRACKING_ACTION_REQUEST_CANCELLATION", "Solicitar cancelamento"),
-                priority="danger",
-                href=f"/api/v1/orders/{order.ref}/cancellation-request/",
+                label=_copy_title("TRACKING_CANCELLATION_CONTACT_CTA", "Falar com o responsável"),
+                priority="secondary",
+                href=f"/api/v1/orders/{order.ref}/contact-request/",
                 method="POST",
                 payload_schema={
                     "type": "object",
-                    "required": ["idempotency_key"],
+                    "required": ["origin", "idempotency_key"],
                     "properties": {
-                        "reason": {"type": "string", "maxLength": 500},
+                        "origin": {"type": "string", "enum": ["cancellation"]},
                         "idempotency_key": {"type": "string"},
                     },
                 },
                 idempotency="required",
-                confirmation={
-                    "title": _copy_title(
-                        "TRACKING_REQUEST_CANCELLATION_TITLE",
-                        "Solicitar cancelamento",
-                    ),
-                    # A frase segue a MESMA régua do alerta do Gestor: antes do
-                    # preparo os Termos (§7) garantem o valor inteiro; depois,
-                    # a equipe analisa (beta 06/11).
-                    "message": (
-                        _copy_message(
-                            "TRACKING_REQUEST_CANCELLATION_MESSAGE_BEFORE_PREPARATION",
-                            "Ainda não começamos a preparar: se a equipe confirmar o "
-                            "cancelamento, o valor volta inteiro. Você recebe um protocolo agora.",
-                        )
-                        if order.status in cancellation_requests.BEFORE_PREPARATION_STATUSES
-                        else _copy_message(
-                            "TRACKING_REQUEST_CANCELLATION_MESSAGE",
-                            "Como o pedido já avançou, a equipe precisa analisar o cancelamento "
-                            "e um possível estorno. Você recebe um protocolo agora.",
-                        )
-                    ),
-                    "confirm_label": _copy_title(
-                        "TRACKING_REQUEST_CANCELLATION_CONFIRM_CTA",
-                        "Enviar solicitação",
-                    ),
-                    "cancel_label": _copy_title("TRACKING_CANCEL_KEEP_CTA", "Manter pedido"),
-                    "severity": "danger",
-                },
             )
         )
     if can_rate:

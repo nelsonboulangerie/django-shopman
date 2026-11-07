@@ -1072,6 +1072,8 @@ export interface TrackingCopyProjection {
   rating_contact_title: string
   rating_contact_message: string
   rating_contact_done: string
+  cancellation_contact_title: string
+  cancellation_contact_message: string
   rating_google_title: string
   rating_google_share_title: string
   rating_google_message: string
@@ -1157,11 +1159,10 @@ export interface TrackingResponse {
   cancellation_money_line?: string
   // Antes de confirmar o cancelamento: o que acontece com o dinheiro.
   cancel_dialog_money_line?: string
-  cancellation_request: {
-    protocol: string
-    requested_at_display: string
-    title: string
-    message: string
+  // O preparo começou: no lugar do cancelar, falar com o responsável.
+  // `requested`: o cliente já pediu. `null` antes do preparo e no fim.
+  cancellation_contact: {
+    requested: boolean
   } | null
   // Depois de avaliar: a ouvidoria (nota até 3) e o convite do Google (toda nota;
   // a política do Google proíbe convidar só quem gostou). `comment` é o que o

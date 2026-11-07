@@ -667,7 +667,7 @@ RULES: tuple[HouseRule, ...] = (
         stages=(ENTRY,),
         when=(
             "reclamação, reação alérgica ou mal-estar, cancelamento de pedido que o cliente não poderia "
-            "cancelar pelo site (em preparo, pago, de outra pessoa, ou mais de um pedido sem dizer qual), "
+            "cancelar pelo site (preparo já começado, de outra pessoa, ou mais de um pedido sem dizer qual), "
             "Pix ou link que não funcionou, desistência pela taxa de entrega, pedido de pessoa"
         ),
         demands=(

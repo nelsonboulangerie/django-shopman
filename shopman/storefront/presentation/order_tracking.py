@@ -63,7 +63,6 @@ EVENT_LABELS: dict[str, str | None] = {
     "payment.refunded": "Pagamento estornado",
     "return_initiated": "Devolução solicitada",
     "refund_processed": "Reembolso processado",
-    "customer_cancellation_requested": "Cancelamento solicitado",
     "customer_contact_requested": "Contato solicitado",
     "customer_contact_resolved": "Atendimento concluído",
     "fiscal_cancelled": "Nota fiscal cancelada",
@@ -182,6 +181,8 @@ class OrderTrackingCopyProjection:
     rating_contact_title: str
     rating_contact_message: str
     rating_contact_done: str
+    cancellation_contact_title: str
+    cancellation_contact_message: str
     rating_google_title: str
     rating_google_share_title: str
     rating_google_message: str
@@ -251,11 +252,13 @@ class OrderTrackingPromiseProjection:
 
 
 @dataclass(frozen=True)
-class CancellationRequestProjection:
-    protocol: str
-    requested_at_display: str
-    title: str
-    message: str
+class CancellationContactProjection:
+    """O preparo começou: o cliente não cancela mais, fala com o responsável.
+
+    ``requested``: já pediu; a tela troca o convite pelo "Combinado".
+    """
+
+    requested: bool
 
 
 @dataclass(frozen=True)
@@ -343,7 +346,7 @@ class OrderTrackingProjection:
     # Antes de o cliente confirmar o cancelamento: o que acontece com o dinheiro
     # ("A reserva no seu cartão será desfeita, e nada será cobrado.").
     cancel_dialog_money_line: str = ""
-    cancellation_request: CancellationRequestProjection | None = None
+    cancellation_contact: CancellationContactProjection | None = None
     rating_followup: RatingFollowupProjection | None = None
     fiscal_note: FiscalNoteProjection | None = None
 
@@ -427,20 +430,9 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         cancellation_note=data.cancellation_note,
         cancellation_money_line=_money_outcome_line(data.money_outcome, copy),
         cancel_dialog_money_line=_cancel_dialog_money_line(data, copy),
-        cancellation_request=(
-            CancellationRequestProjection(
-                protocol=data.cancellation_request.protocol,
-                requested_at_display=_fmt_timestamp(data.cancellation_request.requested_at),
-                title="Solicitação recebida",
-                message=(
-                    "Ainda não começamos a preparar: se a equipe confirmar o cancelamento, "
-                    "o valor volta inteiro. Acompanhe a resposta por aqui."
-                    if data.cancellation_request.before_preparation
-                    else "A equipe vai analisar o cancelamento e um possível estorno. "
-                    "Acompanhe a resposta por aqui."
-                ),
-            )
-            if data.cancellation_request
+        cancellation_contact=(
+            CancellationContactProjection(requested=data.cancellation_contact.requested)
+            if data.cancellation_contact
             else None
         ),
         rating_followup=(
@@ -579,9 +571,23 @@ def _money_outcome_line(money: TrackingMoneyOutcomeData | None, copy: CopyCatalo
 def _cancel_dialog_money_line(data: TrackingData, copy: CopyCatalog) -> str:
     """Antes de cancelar: o que vai acontecer com o dinheiro.
 
-    O cliente só cancela sozinho o que não foi capturado (``can_cancel``), então
-    as duas respostas possíveis são a reserva do cartão ou "nada foi cobrado".
+    O cliente cancela sozinho antes do preparo, pago ou não
+    (``policies/customer_cancellation``): o que entrou volta inteiro pelo mesmo
+    meio, a reserva do cartão é desfeita, ou nada foi cobrado.
     """
+    if data.paid_amount_q > 0:
+        amount = f"R$ {format_money(data.paid_amount_q)}"
+        if data.paid_method == "pix":
+            line = copy.message(
+                "TRACKING_CANCEL_MONEY_REFUND_PIX",
+                "O preparo ainda não começou. Cancelamos agora e devolvemos os {amount} do seu Pix para a mesma conta.",
+            )
+        else:
+            line = copy.message(
+                "TRACKING_CANCEL_MONEY_REFUND_CARD",
+                "O preparo ainda não começou. Cancelamos agora e estornamos os {amount} no seu cartão.",
+            )
+        return line.replace("{amount}", amount)
     if data.payment_status_key == "card_authorized":
         return copy.message(
             "TRACKING_CANCEL_MONEY_CARD_HOLD",
@@ -1614,6 +1620,15 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         rating_contact_done=copy.message(
             "TRACKING_RATING_CONTACT_DONE",
             "Combinado. O responsável pela casa vai te chamar no WhatsApp.",
+        ),
+        cancellation_contact_title=copy.title(
+            "TRACKING_CANCELLATION_CONTACT_TITLE",
+            "Quer cancelar?",
+        ),
+        cancellation_contact_message=copy.message(
+            "TRACKING_CANCELLATION_CONTACT_MESSAGE",
+            "O preparo já começou e o pedido é feito para você, então ele não pode mais ser "
+            "cancelado. Se algo não está certo, fale com o responsável.",
         ),
         rating_google_title=copy.title("TRACKING_RATING_GOOGLE_TITLE", "Quer contar no Google também?"),
         rating_google_share_title=copy.title("TRACKING_RATING_GOOGLE_SHARE_TITLE", "Coisa boa é pra compartilhar"),

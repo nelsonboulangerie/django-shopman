@@ -14,7 +14,6 @@ from shopman.orderman.models import Directive
 from shopman.shop import directives
 from shopman.shop.handlers import (
     alert_resolution,
-    cancellation_requests,
     catalog_projection,
     kds_alerts,
     production_alerts,
@@ -203,15 +202,6 @@ def test_announcement_notify_handler_accepts_a_durable_delivery():
     message = SimpleNamespace(payload={"outbox_ref": "OUT-42"})
     with patch("shopman.shop.handlers.campaign._stage_durable_delivery", return_value=True):
         AnnouncementNotifyHandler().handle(message=message, ctx={})
-
-
-def test_cancellation_receiver_ignores_non_terminal_status_changes():
-    cancellation_requests.on_order_changed(
-        sender=object(),
-        order=SimpleNamespace(status="accepted", ref="ORD-42"),
-        event_type="status_changed",
-        actor="operator",
-    )
 
 
 def test_card_authorization_watch_ignores_a_missing_order():

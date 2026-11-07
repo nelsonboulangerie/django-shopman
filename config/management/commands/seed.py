@@ -138,18 +138,22 @@ PREP_PREFIXES = ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete
 # Mesma lista em shop/migrations/0085_motivos_de_recusa_aprovados.py, que leva o
 # banco já semeado até ela; ``test_cancellation_presets`` confere que as duas
 # não divergem.
+#
+# ``reason_key`` liga cada motivo à lista única (``shop/services/cancel_reasons``):
+# é o que a recusa grava em ``cancellation_reason_key``. Mesma lista, com as
+# chaves, em shop/migrations/0112_motivos_de_recusa_com_chave.py.
 CANCELLATION_PRESETS = [
-    {"label": "Item indisponível no momento", "group": "Produto"},
-    {"label": "Sem um dos ingredientes hoje", "group": "Produto"},
-    {"label": "Pagamento não aprovado", "group": "Pagamento"},
-    {"label": "Pagamento não confirmado no prazo", "group": "Pagamento"},
-    {"label": "Endereço fora da nossa área de entrega", "group": "Endereço e contato"},
-    {"label": "Não conseguimos falar com você", "group": "Endereço e contato"},
-    {"label": "Alta demanda neste horário", "group": "Capacidade"},
-    {"label": "Sem entregador disponível neste horário", "group": "Capacidade"},
-    {"label": "Fora do horário de atendimento", "group": "Horário"},
-    {"label": "Você pediu o cancelamento", "group": "Cliente"},
-    {"label": "Pedido em duplicidade", "group": "Duplicidade"},
+    {"label": "Item indisponível no momento", "group": "Produto", "reason_key": "out_of_stock"},
+    {"label": "Sem um dos ingredientes hoje", "group": "Produto", "reason_key": "out_of_stock"},
+    {"label": "Pagamento não aprovado", "group": "Pagamento", "reason_key": "payment_not_confirmed"},
+    {"label": "Pagamento não confirmado no prazo", "group": "Pagamento", "reason_key": "payment_not_confirmed"},
+    {"label": "Endereço fora da nossa área de entrega", "group": "Endereço e contato", "reason_key": "cannot_deliver"},
+    {"label": "Não conseguimos falar com você", "group": "Endereço e contato", "reason_key": "other"},
+    {"label": "Alta demanda neste horário", "group": "Capacidade", "reason_key": "other"},
+    {"label": "Sem entregador disponível neste horário", "group": "Capacidade", "reason_key": "cannot_deliver"},
+    {"label": "Fora do horário de atendimento", "group": "Horário", "reason_key": "store_closing"},
+    {"label": "Você pediu o cancelamento", "group": "Cliente", "reason_key": "customer_request"},
+    {"label": "Pedido em duplicidade", "group": "Duplicidade", "reason_key": "other"},
 ]
 
 # Validades OPERACIONAIS provisórias para o cenário pré-go-live, decididas pelo

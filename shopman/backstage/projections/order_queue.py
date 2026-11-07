@@ -621,8 +621,10 @@ class CustomerProfileProjection:
 
 @dataclass(frozen=True)
 class ContactRequestProjection:
-    """Ouvidoria aberta: o cliente avaliou mal e pediu para falar com o responsável.
+    """Ouvidoria aberta: o cliente pediu para falar com o responsável.
 
+    ``origin``: ``rating`` (avaliou mal; ``rating`` e ``comment`` dizem como) ou
+    ``cancellation`` (quis cancelar com o preparo já começado; ``rating`` é 0).
     Só existe enquanto o caso está aberto; o "Resolvido" (com a nota do que foi
     feito) o fecha. Ver ``shop/services/customer_contact.py``.
     """
@@ -630,6 +632,7 @@ class ContactRequestProjection:
     rating: int
     comment: str
     requested_at_display: str
+    origin: str
 
 
 @dataclass(frozen=True)
@@ -3034,6 +3037,7 @@ def _contact_request(order: Order) -> ContactRequestProjection | None:
         rating=request.rating,
         comment=request.comment,
         requested_at_display=_format_datetime(request.requested_at),
+        origin=request.origin,
     )
 
 
@@ -3296,6 +3300,9 @@ _EVENT_LABELS = {
     "concierge_cancelled": "Cancelado pela Concierge a pedido do cliente",
     "customer_contact_requested": "Cliente avaliou mal e pediu para falar com o responsável",
     "customer_contact_resolved": "Ouvidoria resolvida",
+    # A letra da corrida vira a frase do Gestor (``COURIER_STATUS_LABELS``) em
+    # ``_build_timeline``; este é o rótulo da letra que ninguém nomeou.
+    "courier_status": "Corrida da TaOn atualizada",
     # O dinheiro, nos três fatos que o Payman distingue. Autorizar NÃO é cobrar:
     # o Gestor dizia "Payment.authorized · Pagamento confirmado" para um cartão
     # só reservado (beta 06/11, F4).
@@ -3439,6 +3446,10 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             label = _EDIT_SOURCE_LABELS[payload["source"]]
         elif event.type == "payment.captured" and payload.get("outside_charge"):
             label = _OUTSIDE_CHARGE_CAPTURE_LABEL
+        elif event.type == "customer_contact_requested" and payload.get("origin") == "cancellation":
+            label = "Cliente quis cancelar com o preparo começado e pediu para falar com o responsável"
+        elif event.type == "courier_status" and payload.get("status") in COURIER_STATUS_LABELS:
+            label = f"TaOn: {COURIER_STATUS_LABELS[payload['status']]}"
         elif event.type in _EVENT_LABELS:
             label = _EVENT_LABELS[event.type]
         else:
