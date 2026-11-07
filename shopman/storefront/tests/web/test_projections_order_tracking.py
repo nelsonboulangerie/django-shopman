@@ -1669,3 +1669,36 @@ class TestDispatchedEtaRespectsTheWindow:
 
         assert proj.eta_display == "10:00"
         assert "10:00" in proj.promise.message
+
+
+@pytest.mark.parametrize("entries", [
+    [{"sku": "PAO", "hold_id": "7", "qty": 1}],
+    [{"sku": "PAO", "hold_id": None, "qty": 0, "untracked": True}],
+    [7],
+])
+def test_invalid_stock_reference_does_not_hide_the_order(order_paid, entries, client):
+    """Z35/N96: reserva inválida não derruba a consulta nem é normalizada no GET."""
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.services.stock import hold_pks
+
+    order_paid.data = {**order_paid.data, "hold_ids": entries}
+    order_paid.save(update_fields=["data"])
+    before = dict(order_paid.data)
+    directives_before = Directive.objects.count()
+
+    with pytest.raises(ValueError):
+        hold_pks(entries)  # O contrato da escrita continua recusando o formato.
+
+    projection = build_order_tracking(order_paid)
+    status = build_order_tracking_status(order_paid)
+
+    assert projection.order_ref == status.order_ref == order_paid.ref
+    assert projection.total_display == "R$ 25,00"
+    assert projection.promise.fulfillment_wait_kind != "planned_batch"
+    response = client.get(f"/api/v1/tracking/{order_paid.ref}/")
+    assert response.status_code == 200
+    assert response.json()["ref"] == order_paid.ref
+    order_paid.refresh_from_db()
+    assert order_paid.data == before
+    assert Directive.objects.count() == directives_before
