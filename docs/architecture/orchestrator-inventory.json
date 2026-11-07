@@ -7367,6 +7367,7 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "promotion.birthday-discount-taken",
         "promotion.eligibility",
         "promotion.minimum-order-eligibility"
       ],
@@ -12569,6 +12570,7 @@
       "out_of_extraction": false,
       "unit_ids": [
         "promotion.active-scope",
+        "promotion.birthday-once-a-year",
         "promotion.coupon-resolution",
         "promotion.customer-group-advantage",
         "promotion.delivery-geography",

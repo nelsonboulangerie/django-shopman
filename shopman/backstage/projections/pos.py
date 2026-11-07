@@ -1065,7 +1065,11 @@ def _birthday_projection(customer) -> dict:
     today = timezone.localdate()
     is_today = (birthday.day, birthday.month) == (today.day, today.month)
     promo_label = ""
-    if is_today:
+    # O desconto de aniversário vale UMA vez no dia (uma vez por ano; dono,
+    # 07/11/2026): já celebrado em outro pedido, o aviso fica só no parabéns.
+    from shopman.shop.services.promotions import birthday_benefit_available
+
+    if is_today and birthday_benefit_available(customer, today):
         # Só promete o que o reprice vai APLICAR, perguntado a quem decide (A3-2):
         # as promoções que o motor lê (``get_active_promotions``: ativas, no canal
         # do PDV, sem cupom) e, delas, a que o ANIVERSÁRIO destrava pela política
