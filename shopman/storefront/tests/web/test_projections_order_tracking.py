@@ -1477,6 +1477,8 @@ class TestStatusColours:
         from django.utils import timezone
         from shopman.orderman.models import Order as _Order
 
+        # Hora do DIA LOCAL: `now().replace(hour=10)` em UTC cai no dia seguinte local
+        # entre 00h e 03h UTC, e o ETA passa a trazer a data ("07:30 de 08/11").
         preparing_at = timezone.localtime().replace(hour=10, minute=0, second=0, microsecond=0)
         created_at = preparing_at - timezone.timedelta(minutes=20)
         _Order.objects.filter(pk=order.pk).update(

@@ -131,6 +131,8 @@ const {
   recheckUncertainClose,
   closeRecheckBusy,
   pendingPixOrderRefs,
+  reopenablePixOrderRefs,
+  reopenPendingPix,
   restorePendingPix,
   pixStatus,
   checkoutMode,
@@ -1294,15 +1296,13 @@ onBeforeUnmount(() => {
               :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não foi salva. Tentando de novo.'"
               data-compact-unsaved
             />
-            <NuxtBadge
+            <PosPendingPixBadge
               v-if="pixBadge"
-              color="info"
-              icon="i-lucide-loader-circle"
-              role="status"
-              :title="pixBadge.title"
-              class="whitespace-normal"
+              :badge="pixBadge"
+              :reopenable="reopenablePixOrderRefs"
               data-compact-pix
-            >{{ pixBadge.label }}</NuxtBadge>
+              @reopen="reopenPendingPix"
+            />
           </div>
         </template>
       </PosCompactBar>
@@ -1352,14 +1352,13 @@ onBeforeUnmount(() => {
           <!-- PIX abertos fora da tela de resultado (um ou vários, e também depois de
                recarregar): o selo segue, com o acompanhamento por baixo até cada um
                resolver ou expirar (aí vira aviso passageiro). -->
-          <NuxtBadge
+          <PosPendingPixBadge
             v-if="pixBadge"
-            color="info"
-            icon="i-lucide-loader-circle"
-            role="status"
-            :title="pixBadge.title"
+            :badge="pixBadge"
+            :reopenable="reopenablePixOrderRefs"
             data-pos-pix-pending
-          >{{ pixBadge.label }}</NuxtBadge>
+            @reopen="reopenPendingPix"
+          />
         </template>
         <!-- A BARRA DA VENDA (carta branca do PDV, WP-FASE2 §7): cliente, recebimento e
              quando, os fatos do PEDIDO, no lugar da toolbar enquanto a comanda está aberta,
