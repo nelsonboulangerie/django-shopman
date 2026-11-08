@@ -13618,8 +13618,7 @@
         {
           "path": "shopman/shop/services/customer_orders.py",
           "symbols": [
-            "can_cancel",
-            "switch_declined_card_to_pix"
+            "can_cancel"
           ]
         },
         {
