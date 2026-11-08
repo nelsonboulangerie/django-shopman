@@ -44,8 +44,7 @@
       "dir": "kds-nuxt",
       "kind": "operator",
       "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
-      "capabilities": { "pwa": true, "visual": "test:visual" },
-      "exceptions": [{ "capability": "browser", "reason": "E2E funcional existente aguarda fixtures canônicas.", "owner": "engineering", "expires": "2026-11-14" }]
+      "capabilities": { "pwa": true, "visual": "test:visual", "browser": "test:e2e" }
     },
     "orders": {
       "dir": "orders-nuxt",
@@ -84,20 +83,19 @@
       "dir": "bi-nuxt",
       "kind": "operator",
       "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
-      "capabilities": { "pwa": true, "visual": "test:visual" }
+      "capabilities": { "pwa": true, "visual": "test:visual", "browser": "test:e2e" }
     },
     "purchase": {
       "dir": "purchase-nuxt",
       "kind": "operator",
       "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
-      "capabilities": { "pwa": true, "visual": "test:visual" },
-      "exceptions": [{ "capability": "browser", "reason": "A matriz visual cobre o fluxo atual; separação funcional será feita antes da expiração.", "owner": "engineering", "expires": "2026-11-14" }]
+      "capabilities": { "pwa": true, "visual": "test:visual", "browser": "test:e2e" }
     },
     "kitchensink": {
       "dir": "kitchensink-nuxt",
       "kind": "internal",
       "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
-      "capabilities": { "visual": "test:visual" }
+      "capabilities": { "visual": "test:visual", "browser": "test:e2e" }
     },
     "status": {
       "dir": "status-nuxt",

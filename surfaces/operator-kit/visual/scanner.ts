@@ -79,10 +79,16 @@ export async function scanOperatorGeometry(
       "[tabindex]:not([tabindex='-1'])",
     ].join(",");
 
+    // `checkVisibility` pega o que o CSS sozinho não diz: o conteúdo de um `<details>`
+    // fechado (o Chromium o põe em `content-visibility: hidden`) mantém caixa com tamanho
+    // e "colidia" com a seção de baixo na edição da receita da Produção (07/11/2026).
+    const rendered = (element: Element) =>
+      typeof element.checkVisibility !== "function" || element.checkVisibility();
     function visible(element: Element): element is HTMLElement {
       const style = getComputedStyle(element);
       const rect = element.getBoundingClientRect();
       return (
+        rendered(element) &&
         style.display !== "none" &&
         style.visibility !== "hidden" &&
         Number(style.opacity) > 0 &&
@@ -537,12 +543,15 @@ export async function scanOperatorGeometry(
     // ("Ace…") sem que nenhum controle tocasse outro. Aqui cada TRECHO de texto visível
     // fora de controle (a caixa das próprias letras, linha a linha, pelo `Range`) entra
     // na conta: texto contra controle e texto contra texto, na mesma camada.
-    // Fora da conta: o que mora em overlay aberto ou atrás de modal, o chip sobre ícone
-    // (`[data-slot="chip"]`, a camada empilhada de propósito do Nuxt UI) e o que a tela
-    // declarar `[data-operator-overlap-allowed]`.
+    // Fora da conta: o que mora em overlay aberto ou atrás de modal, o número do chip no
+    // canto do ícone (o `NuxtChip` empilhado de propósito: o contador do sino, do filtro,
+    // do ⋮; dono, 04/11/2026, "contador no canto superior direito") e o que a tela
+    // declarar `[data-operator-overlap-allowed]`. O chip do Nuxt UI 4 não tem slot
+    // próprio: é `[data-slot="root"] > [data-slot="base"]`, e só o que está em
+    // `position: absolute` está empilhado (o `standalone` fica no fluxo e entra na conta).
     if (input.contentOverlap) {
       const layerExempt =
-        "[role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox'], [role='tooltip'], [inert], [data-operator-overlap-allowed], [data-slot='chip'], script, style, noscript, template, svg";
+        "[role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox'], [role='tooltip'], [inert], [data-operator-overlap-allowed], script, style, noscript, template, svg";
       const controlSet = new Set<Element>(flat);
       const opacityCache = new Map<Element, boolean>();
       const shownThrough = (element: Element): boolean => {
@@ -554,7 +563,9 @@ export async function scanOperatorGeometry(
           style.visibility !== "hidden" &&
           (style.opacity === "" || Number(style.opacity) > 0);
         const result =
-          own && (element.parentElement ? shownThrough(element.parentElement) : true);
+          own &&
+          rendered(element) &&
+          (element.parentElement ? shownThrough(element.parentElement) : true);
         opacityCache.set(element, result);
         return result;
       };
@@ -613,6 +624,8 @@ export async function scanOperatorGeometry(
         const owner = node.parentElement;
         if (!text || !owner) continue;
         if (owner.closest(layerExempt) || behindModal(owner)) continue;
+        const chipBadge = owner.closest("[data-slot='root'] > [data-slot='base']");
+        if (chipBadge && getComputedStyle(chipBadge).position === "absolute") continue;
         // Texto dentro de controle é do controle (o `control-text-overflow` cuida dele).
         let inControl = false;
         for (let up: Element | null = owner; up; up = up.parentElement) {

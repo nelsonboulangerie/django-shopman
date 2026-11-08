@@ -287,6 +287,30 @@ describe("scanner geométrico", () => {
         expect(findings.some(({ kind }) => kind === "content-overlap")).toBe(false);
       });
 
+      it("não conta o número do chip no canto do ícone (o sino), mas conta o chip no fluxo", async () => {
+        // O NuxtChip do Nuxt UI 4: `[data-slot="root"] > [data-slot="base"]`, sem slot
+        // `chip`. O contador do sino em 7×9 px sobre o canto reprovava a Marketing inteira.
+        function chip(position: "absolute" | "static", box: DOMRect) {
+          const root = document.createElement("div");
+          root.dataset.slot = "root";
+          const base = loose("2", box, { "data-slot": "base" });
+          base.style.position = position;
+          root.append(base);
+          document.body.append(root);
+        }
+        setup();
+        textRects();
+        control("Avisos (2 pedem sua atenção)", rect(10, 10, 44, 44), { scroll: 0, client: 0 });
+        chip("absolute", rect(44, 6, 16, 16));
+        let findings = await scanOperatorGeometry(page as never, { contentOverlap: true });
+        expect(findings.some(({ kind }) => kind === "content-overlap")).toBe(false);
+        document.body.innerHTML = "";
+        control("Avisos (2 pedem sua atenção)", rect(10, 10, 44, 44), { scroll: 0, client: 0 });
+        chip("static", rect(44, 6, 16, 16));
+        findings = await scanOperatorGeometry(page as never, { contentOverlap: true });
+        expect(findings.some(({ kind }) => kind === "content-overlap")).toBe(true);
+      });
+
       it("fica desligada sem o opt-in", async () => {
         setup();
         textRects();
