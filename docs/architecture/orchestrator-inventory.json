@@ -8861,6 +8861,7 @@
             "resolve_payment_timeout_if_due",
             "save_customer_rating",
             "self_cancelled_message",
+            "switch_declined_card_to_pix",
             "user_can_access_order"
           ]
         }

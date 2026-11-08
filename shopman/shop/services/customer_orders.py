@@ -551,6 +551,11 @@ def _payment_can_start(order) -> bool:
     return cfg.payment.timing != "post_commit"
 
 
+def switch_declined_card_to_pix(order) -> bool:
+    """O cliente troca o cartão recusado por Pix no acompanhamento (beta 06/11, F3)."""
+    return payment_service.switch_declined_card_to_pix(order, actor="customer")
+
+
 def mock_confirm_payment(order) -> bool:
     """Drive the local mock payment confirmation flow."""
     return payment_service.mock_confirm(order)

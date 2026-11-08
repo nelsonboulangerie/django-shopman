@@ -89,6 +89,7 @@ from .tracking import (
     OrderConfirmReceiptView,
     OrderContactRequestView,
     OrderPaymentCheckView,
+    OrderPaymentSwitchToPixView,
     OrderRateView,
     OrderRepaymentPixView,
     OrderTrackingView,
@@ -214,6 +215,11 @@ urlpatterns = [
         name="api-order-contact-request",
     ),
     path("orders/<str:ref>/payment/check/", OrderPaymentCheckView.as_view(), name="api-order-payment-check"),
+    path(
+        "orders/<str:ref>/payment/switch-to-pix/",
+        OrderPaymentSwitchToPixView.as_view(),
+        name="api-order-payment-switch-to-pix",
+    ),
     path("orders/<str:ref>/payment/pix/", OrderRepaymentPixView.as_view(), name="api-order-repayment-pix"),
     path("orders/<str:ref>/conversation/", OrderConversationView.as_view(), name="api-order-conversation"),
     # A tela de pagamento sumiu (PAYMENT-TRACKING-MERGE): o GET/status foram

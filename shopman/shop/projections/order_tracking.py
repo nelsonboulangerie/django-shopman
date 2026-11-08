@@ -1199,20 +1199,35 @@ def _build_promise(
             # continua aberta para outro cartão.
             declined = bool(payment.get("last_decline"))
             repayment = payment_service.awaiting_repayment(order)
-            pix_switch = (
-                (
+            pix_switch: tuple = ()
+            if repayment is not None:
+                # Captura recusada depois do aceite (main, 07/11): o Pix sai pelo
+                # mesmo prazo do novo pagamento (``switch_repayment_to_pix``).
+                if repayment.get("pix_allowed") and order.status == "accepted":
+                    pix_switch = (
+                        _action(
+                            ref="pay_with_pix",
+                            kind="mutation",
+                            label=_copy_title("TRACKING_PROMISE_REPAYMENT_PIX_ACTION", "Pagar com Pix"),
+                            href=f"/api/v1/orders/{order.ref}/payment/pix/",
+                            method="POST",
+                            idempotency="required",
+                        ),
+                    )
+            elif declined and not payment_service.pix_switch_blocker(order):
+                # Recusado, o Pix entra como saída ao lado de outro cartão, quando o
+                # canal aceita Pix e ele pode nascer agora (decisão do dono, F3).
+                pix_switch = (
                     _action(
                         ref="pay_with_pix",
                         kind="mutation",
-                        label=_copy_title("TRACKING_PROMISE_REPAYMENT_PIX_ACTION", "Pagar com Pix"),
-                        href=f"/api/v1/orders/{order.ref}/payment/pix/",
+                        label=_copy_title("TRACKING_PROMISE_PIX_SWITCH_ACTION", "Pagar com Pix"),
+                        priority="secondary",
+                        href=f"/api/v1/orders/{order.ref}/payment/switch-to-pix/",
                         method="POST",
                         idempotency="required",
                     ),
                 )
-                if repayment is not None and repayment.get("pix_allowed") and order.status == "accepted"
-                else ()
-            )
             return promise(
                 state="payment_card_declined" if declined else "payment_card_ready",
                 tone="warning" if declined else "info",
@@ -1235,7 +1250,7 @@ def _build_promise(
                 payment_method=method,
                 checkout_url=checkout_url,
                 repayment=repayment is not None,
-                repayment_pix_allowed=bool(pix_switch),
+                repayment_pix_allowed=repayment is not None and bool(pix_switch),
             )
         if is_hosted:
             # Sessão hospedada sem URL ainda (o botão do Stripe está nascendo): a

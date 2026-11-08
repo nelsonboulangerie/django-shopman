@@ -1047,6 +1047,10 @@ def _promise_copy(
         )
 
     if state == "payment_card_declined":
+        if any(action.ref == "pay_with_pix" for action in data.actions):
+            return _pair(copy, "TRACKING_PROMISE_CARD_DECLINED_PIX",
+                         "O cartão não foi aprovado",
+                         "Nada foi cobrado. Tente outro cartão no ambiente seguro ou pague com Pix.")
         return _pair(copy, "TRACKING_PROMISE_CARD_DECLINED",
                      "O cartão não foi aprovado",
                      "Nada foi cobrado. Tente de novo com outro cartão no ambiente seguro.")

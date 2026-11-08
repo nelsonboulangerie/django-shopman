@@ -1003,6 +1003,25 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    # Recusado, com o Pix como saída (decisão do dono, beta 06/11, F3).
+    "TRACKING_PROMISE_CARD_DECLINED_PIX": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="O cartão não foi aprovado",
+                message="Nada foi cobrado. Tente outro cartão no ambiente seguro ou pague com Pix.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PIX_SWITCH_ACTION": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Pagar com Pix")},
+    },
+    "TRACKING_PIX_SWITCH_REFUSED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Não deu para trocar para Pix agora. Atualize a página e confira o pagamento.",
+            ),
+        },
+    },
     # Preparo é o estado mais longo do pedido: a mensagem diz quando fica pronto e
     # promete o aviso, sem rótulo "Previsão:" no meio da frase.
     "TRACKING_PROMISE_PREPARING_MESSAGE_PICKUP": {
