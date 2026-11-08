@@ -100,13 +100,14 @@ def test_terminal_form_writes_its_own_cash_tolerance_over_the_shop():
         "station_mode": "attended", "cash_tolerance_percent": "", "cash_tolerance_min": "",
         "cash_tolerance_max": "12.50",
     }
-    form = TerminalForm(data=data, instance=terminal)
+    form_class = type("DonoTerminalForm", (TerminalForm,), {"cash_tolerance_editable": True})
+    form = form_class(data=data, instance=terminal)
     assert form.is_valid(), form.errors
     saved = form.save()
     assert saved.metadata["cash_tolerance"] == {"max_q": 1250}
 
     data["cash_tolerance_max"] = ""
-    saved = TerminalForm(data=data, instance=saved).save()
+    saved = form_class(data=data, instance=saved).save()
     assert "cash_tolerance" not in saved.metadata
 
 
