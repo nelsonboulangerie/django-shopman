@@ -124,3 +124,45 @@ Nenhuma configuração viva, credencial, termo ou UI foi alterado.
 12 instalações reais com cada npm (`--ignore-scripts`, sem dry-run), lint dos
 12 apps e geração do Status passaram em Node 22. As versões já travadas não
 mudaram, e o único minimatch 10 continua sob o plugin de lint.
+
+## Revisão de 07/11/2026: correção upstream
+
+Fonte: `origin/main` em `cda1fdbfb`. O registro npm passou a ter
+eslint-plugin-import-x **4.18.0**, publicado em 06/11/2026 às 19:26Z por GitHub
+Actions com atestado de proveniência SLSA. A faixa declarada virou
+`minimatch: ^9.0.3 || ^10.1.2 || ^11.0.1`. O tarball foi lido antes da troca:
+nenhum arquivo de `lib/` menciona `makeRe`, e `no-internal-modules` importa só
+`Minimatch`, que minimatch 11 exporta.
+
+O que mudou:
+
+- os 12 manifests perderam o override aninhado
+  `"eslint-plugin-import-x": { "minimatch": "10.2.6" }`. Os overrides gerais
+  (`glob ^14.0.3`, `minimatch ^11.0.4`) continuam;
+- `npm update eslint-plugin-import-x --package-lock-only` nos 11 locks que têm
+  o plugin (o do operator-kit não o instala): 4.17.1 vira 4.18.0, o minimatch
+  aninhado 10.2.6 sai, o plugin passa a usar o minimatch 11.0.4 da raiz e entram
+  `cjs-module-lexer` 2.3.0 e `es-module-lexer` 3.0.4, ambos `dev: true`.
+  Nenhum outro pacote do lock mudou.
+
+Prova, saída de comando de 07/11/2026:
+
+| Verificação | Resultado |
+|---|---|
+| `npm audit --package-lock-only` no lock do kds-nuxt do `main` | 2 moderados (`minimatch` aninhado, GHSA-g3hv-75wg-m249, e o plugin que depende dele) e 7 baixos |
+| o mesmo audit nos 12 locks do branch | 0 moderados em todos, nenhuma entrada `minimatch`; restam os baixos já conhecidos (7 ou 10 por superfície) |
+| `npm ls minimatch` no kds-nuxt | `eslint-plugin-import-x@4.18.0` com `minimatch@11.0.4 deduped` |
+| kds-nuxt `eslint .` e `vitest run` | lint sem erro; 19 arquivos, 231 testes passando |
+| storefront-nuxt `eslint .` e `vitest run` | lint sem erro; 1218 passando. Os 8 que falharam (`justPlaced`, `usePwaInstall`) quebram por `localStorage.clear` no Node 26 local, que tem Web Storage nativo; com `--no-experimental-webstorage` os 12 testes dos dois arquivos passam. A CI roda Node 22 |
+
+A 4.18.0 também reescreve o núcleo de análise de módulos do plugin. O changelog
+diz que nenhuma regra deveria mudar o que relata; o lint das duas superfícies
+não trouxe relato novo, e a CI do PR roda o lint das 12.
+
+O PR #2086 do Dependabot não resolveria este item: ele só sobe minimatch
+`^10.2.5` para `^10.2.6` em subárvores e não toca no eslint-plugin-import-x.
+O congelamento da issue #574 continua; esta é uma troca pontual e analisada,
+não a integração do grupo.
+
+Pendência que sobra: conferir no Dependabot, depois do merge, que os 11
+alertas moderados fecharam.
