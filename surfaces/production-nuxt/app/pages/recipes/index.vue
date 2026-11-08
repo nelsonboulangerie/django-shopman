@@ -313,72 +313,91 @@ watch(
           :class="!entry.is_active ? 'opacity-70' : ''"
           data-recipe-card
         >
-          <NuxtLink
-            :to="`/recipes/${entry.ref}`"
-            class="grid min-w-0 grid-cols-1 content-start gap-2 p-3 transition hover:bg-accent/30"
-          >
-            <div class="flex items-start justify-between gap-2 pr-10">
-              <div class="min-w-0">
-                <p class="truncate font-bold">{{ entry.name }}</p>
-                <p class="truncate font-mono text-xs text-muted-foreground">{{ entry.ref }}</p>
+          <!-- A estrela mora AO LADO do link, na mesma faixa: nenhuma parte do link fica sob ela. -->
+          <div class="flex min-w-0 items-start">
+            <NuxtLink
+              :to="`/recipes/${entry.ref}`"
+              class="grid min-w-0 flex-1 grid-cols-1 content-start gap-2 self-stretch p-3 transition hover:bg-accent/30"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="truncate font-bold">{{ entry.name }}</p>
+                  <p class="truncate font-mono text-xs text-muted-foreground">{{ entry.ref }}</p>
+                </div>
+                <NuxtBadge color="neutral" class="shrink-0" :label="entry.kind_label" />
               </div>
-              <NuxtBadge color="neutral" class="shrink-0" :label="entry.kind_label" />
-            </div>
 
-            <p class="flex items-center gap-1.5 text-sm">
-              <Icon name="lucide:tag" class="size-3.5 shrink-0 text-muted-foreground" />
-              <template v-if="entry.output_sku">
-                <span class="truncate">{{ entry.output_name || entry.output_sku }}</span>
-                <span v-if="entry.output_name" class="hidden truncate font-mono text-xs text-muted-foreground sm:inline">{{
-                  entry.output_sku
-                }}</span>
-              </template>
-              <span v-else class="text-warning">Sem SKU</span>
-            </p>
+              <p class="flex items-center gap-1.5 text-sm">
+                <Icon name="lucide:tag" class="size-3.5 shrink-0 text-muted-foreground" />
+                <template v-if="entry.output_sku">
+                  <span class="truncate">{{ entry.output_name || entry.output_sku }}</span>
+                  <span v-if="entry.output_name" class="hidden truncate font-mono text-xs text-muted-foreground sm:inline">{{
+                    entry.output_sku
+                  }}</span>
+                </template>
+                <span v-else class="text-warning">Sem SKU</span>
+              </p>
 
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-              <span v-if="entry.current_version_number" class="tabular-nums">
-                Versão atual <b class="text-foreground">{{ entry.current_version_number }}</b>
-                <span v-if="entry.version_count > 1"> de {{ entry.version_count }}</span>
-              </span>
-              <span v-else>Sem versão publicada</span>
-              <span v-if="entry.hydration_display" class="tabular-nums">
-                Hidratação <b class="text-foreground">{{ entry.hydration_display }}</b>
-              </span>
-              <span
-                v-if="entry.rating_display"
-                class="tabular-nums"
-                :title="entry.rating_count === 1 ? '1 avaliação da versão atual' : `${entry.rating_count} avaliações da versão atual`"
-              >
-                Nota <b class="text-foreground">{{ entry.rating_display }}</b> de 5
-              </span>
-              <NuxtBadge
-                v-if="entry.draft_count > 0"
-                color="warning"
-                :label="entry.draft_count === 1 ? 'Rascunho' : `${entry.draft_count} rascunhos`"
-              />
-              <NuxtBadge
-                v-if="entry.production_mode === PRODUCTION_MODE_MADE_TO_ORDER"
-                color="primary"
-                icon="i-lucide-coffee"
-                :label="entry.production_mode_label"
-              />
-              <NuxtBadge v-if="!entry.is_active" color="neutral" label="Arquivada" />
-              <!-- O selo é curto (sai em iniciais maiúsculas); quem tomou o SKU vai na frase ao lado. -->
-              <NuxtBadge v-if="entry.ficha_status_label" color="neutral" :label="entry.ficha_status_label" />
-              <span v-if="entry.ficha_status_detail" data-recipe-ficha-detail>{{ entry.ficha_status_detail }}</span>
-              <NuxtBadge
-                v-if="needsReview(entry.review_status)"
-                :color="entry.review_status === 'changed' ? 'warning' : 'neutral'"
-                :label="entry.review_label"
-                :title="entry.provenance_label"
-              />
-            </div>
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span v-if="entry.current_version_number" class="tabular-nums">
+                  Versão atual <b class="text-foreground">{{ entry.current_version_number }}</b>
+                  <span v-if="entry.version_count > 1"> de {{ entry.version_count }}</span>
+                </span>
+                <span v-else>Sem versão publicada</span>
+                <span v-if="entry.hydration_display" class="tabular-nums">
+                  Hidratação <b class="text-foreground">{{ entry.hydration_display }}</b>
+                </span>
+                <span
+                  v-if="entry.rating_display"
+                  class="tabular-nums"
+                  :title="entry.rating_count === 1 ? '1 avaliação da versão atual' : `${entry.rating_count} avaliações da versão atual`"
+                >
+                  Nota <b class="text-foreground">{{ entry.rating_display }}</b> de 5
+                </span>
+                <NuxtBadge
+                  v-if="entry.draft_count > 0"
+                  color="warning"
+                  :label="entry.draft_count === 1 ? 'Rascunho' : `${entry.draft_count} rascunhos`"
+                />
+                <NuxtBadge
+                  v-if="entry.production_mode === PRODUCTION_MODE_MADE_TO_ORDER"
+                  color="primary"
+                  icon="i-lucide-coffee"
+                  :label="entry.production_mode_label"
+                />
+                <NuxtBadge v-if="!entry.is_active" color="neutral" label="Arquivada" />
+                <!-- O selo é curto (sai em iniciais maiúsculas); quem tomou o SKU vai na frase ao lado. -->
+                <NuxtBadge v-if="entry.ficha_status_label" color="neutral" :label="entry.ficha_status_label" />
+                <span v-if="entry.ficha_status_detail" data-recipe-ficha-detail>{{ entry.ficha_status_detail }}</span>
+                <NuxtBadge
+                  v-if="needsReview(entry.review_status)"
+                  :color="entry.review_status === 'changed' ? 'warning' : 'neutral'"
+                  :label="entry.review_label"
+                  :title="entry.provenance_label"
+                />
+              </div>
 
-            <p v-if="entry.updated_at_display" class="text-xs text-muted-foreground">
-              Atualizada {{ entry.updated_at_display }}
-            </p>
-          </NuxtLink>
+              <p v-if="entry.updated_at_display" class="text-xs text-muted-foreground">
+                Atualizada {{ entry.updated_at_display }}
+              </p>
+            </NuxtLink>
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              square
+              :active="entry.is_favorite"
+              active-color="primary"
+              active-variant="ghost"
+              class="mr-1 mt-1 shrink-0 pointer-coarse:size-control pointer-coarse:justify-center"
+              :aria-pressed="entry.is_favorite"
+              :aria-label="favoriteToggleLabel(entry.name)"
+              :title="favoriteActionHint(entry.is_favorite)"
+              :disabled="isFavoriteBusy(entry.ref)"
+              @click="toggleFavorite(entry.ref, !entry.is_favorite)"
+            >
+              <Icon name="lucide:star" class="size-5" :class="entry.is_favorite ? 'fill-current' : ''" />
+            </NuxtButton>
+          </div>
           <div v-if="canEdit && entry.is_active" class="flex justify-end border-t border-border px-2 py-1.5">
             <NuxtButton
               :to="`/recipes/${entry.ref}/edit`"
@@ -390,22 +409,6 @@ watch(
               data-recipe-edit
             />
           </div>
-          <NuxtButton
-            color="neutral"
-            variant="ghost"
-            square
-            :active="entry.is_favorite"
-            active-color="primary"
-            active-variant="ghost"
-            class="absolute right-1 top-1 pointer-coarse:size-control pointer-coarse:justify-center"
-            :aria-pressed="entry.is_favorite"
-            :aria-label="favoriteToggleLabel(entry.name)"
-            :title="favoriteActionHint(entry.is_favorite)"
-            :disabled="isFavoriteBusy(entry.ref)"
-            @click="toggleFavorite(entry.ref, !entry.is_favorite)"
-          >
-            <Icon name="lucide:star" class="size-5" :class="entry.is_favorite ? 'fill-current' : ''" />
-          </NuxtButton>
         </div>
       </div>
 

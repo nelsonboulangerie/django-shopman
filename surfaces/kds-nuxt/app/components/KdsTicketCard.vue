@@ -226,7 +226,9 @@ const d = computed(() => ({
     :data-next="next || undefined"
   >
     <!-- ÁREA DE LEITURA: identidade + itens. Um toque aqui abre o detalhe — o gesto
-         seguro fica com a área grande, o gesto que sai da cozinha fica no botão. -->
+         seguro fica com a área grande, o gesto que sai da cozinha fica no botão.
+         O botão sem texto fica POR BAIXO da leitura de propósito (camada empilhada,
+         `data-operator-overlap-allowed`): o texto por cima não tem toque e cai nele. -->
     <div class="relative flex flex-1 flex-col" v-bind="longPress" data-kds-hold>
       <NuxtButton
         v-if="!finishing && !cancelled"
@@ -235,6 +237,7 @@ const d = computed(() => ({
         class="absolute inset-0 z-0 rounded-b-none"
         :aria-label="`Ver o detalhe do pedido ${code}`"
         data-kds-open
+        data-operator-overlap-allowed
         @click="emit('open')"
       />
 

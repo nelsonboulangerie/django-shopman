@@ -2019,7 +2019,8 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
         <ul>
           <!-- A CAIXA DE MARCAR mora na margem esquerda da linha (w-7, o lugar que antes era
                o recuo de 14 px), em posição ABSOLUTA: aparecer ou sumir nunca empurra a
-               quantidade, o nome ou o preço. No mouse ela aparece no hover e no foco da
+               quantidade, o nome ou o preço. A margem é dela: o botão da linha começa depois
+               (ml-7, não pl-7), e os dois alvos de toque nunca se empilham. No mouse ela aparece no hover e no foco da
                linha; com marcadas, fica em todas. No toque, com a linha aberta (sem hover)
                ou pelo toque longo. -->
           <li
@@ -2051,7 +2052,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             <NuxtButton
               color="neutral"
               variant="ghost"
-              class="grid min-h-12 min-w-0 flex-1 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-none py-1.5 pr-3.5 pl-7 text-left font-normal hover:bg-transparent focus-visible:outline-none"
+              class="grid min-h-12 min-w-0 flex-1 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-none py-1.5 pr-3.5 ml-7 pl-0 text-left font-normal hover:bg-transparent focus-visible:outline-none"
               :data-item-select="item.line_id"
               :aria-label="`Editar ${item.name}`"
               :aria-pressed="isSelected(item.line_id)"
