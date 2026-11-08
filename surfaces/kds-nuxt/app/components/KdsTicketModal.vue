@@ -103,8 +103,8 @@ const fill = computed(() =>
     <div v-if="ticket" class="flex min-h-0 flex-1 flex-col overflow-hidden" data-kds-ticket-modal>
       <!-- header -->
       <div class="border-b">
-        <div class="flex items-start justify-between gap-3 p-5">
-          <div class="min-w-0">
+        <div class="relative flex flex-wrap items-start justify-between gap-3 p-5 pr-14 sm:flex-nowrap sm:pr-5">
+          <div class="min-w-0 w-full sm:w-auto sm:flex-1">
             <p
               class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"
             >
@@ -180,7 +180,7 @@ const fill = computed(() =>
             color="neutral"
             variant="ghost"
             icon="i-lucide-x"
-            class="-mt-1 -mr-2 shrink-0"
+            class="absolute top-4 right-4 shrink-0 sm:static sm:-mt-1 sm:-mr-2"
             aria-label="Fechar o detalhe"
             data-kds-ticket-close
             @click="$emit('update:open', false)"
