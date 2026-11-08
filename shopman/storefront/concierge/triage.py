@@ -512,7 +512,7 @@ def decide(
         and classify_handoff_request(text) == "order_cancel"
     ):
         # Regra da casa R4: cancelar pedido que o cliente não poderia cancelar
-        # pelo site (em preparo, pago, de outra pessoa) é com a equipe.
+        # pelo site (preparo já começado, de outra pessoa) é com a equipe.
         intent, destination, urgency, escalated_by = "order", TEAM, NOW, "cancel_order"
     elif (
         intent == "order"

@@ -1,53 +1,54 @@
 <script setup lang="ts">
 // Recusar ou cancelar um pedido no Gestor. O diálogo é o `OperatorReasonDialog` do
-// operator-kit, o mesmo do cancelar no PDV; aqui mora só o que é do Gestor:
-//   - Marketplace (iFood): o seletor de códigos da lista viva do pedido. O iFood EXIGE
-//     um dos códigos dele; a descrição escolhida vira o motivo que o cliente lê.
-//   - Cancelar nos outros canais: a lista única de motivos do backend
-//     (`cancel_reasons` da projeção). Escolher é obrigatório; o cliente lê a frase
-//     revisada do motivo, e o texto livre é a observação interna.
-//   - Recusar nos outros canais: os motivos prontos da casa (Admin/Unfold),
-//     agrupados, mais "Outros" e o texto livre, que o cliente lê.
+// operator-kit, o mesmo do cancelar no PDV. UMA lista de motivos para os dois gestos,
+// em qualquer canal (dono, 07/11/2026): a lista única do backend (`cancel_reasons`
+// da projeção). Escolher é obrigatório; o cliente lê a frase revisada do motivo, e o
+// texto livre é a observação interna.
+//
+// No pedido do iFood, a lista esconde o que o iFood não oferece ("O cliente pediu",
+// "Pagamento não confirmado": `offered_on_ifood`), e o código que o iFood exige sai
+// do motivo, no servidor (`ifood_callbacks.DEFAULT_REASON_CODES`).
 import type { ReasonChoice } from "../../../operator-kit/app/types/reason";
-import type {
-  CancelReasonProjection,
-  CancellationPresetGroupProjection,
-  CancellationReason,
-} from "~/types/orders";
+import type { CancelReasonProjection } from "~/types/orders";
 
 const props = defineProps<{
   open: boolean;
   mode: "reject" | "cancel";
-  loading: boolean;
-  reasons: CancellationReason[];
-  presets: CancellationPresetGroupProjection[];
   cancelReasons: CancelReasonProjection[];
   busy: boolean;
   marketplace: boolean;
-  error?: string;
   /** Motivo já marcado ao abrir (cancelar o Pix vencido: "Pagamento não confirmado"). */
   initialKey?: string;
+  /**
+   * O que acontece com o dinheiro ("R$ 5,10 serão estornados no cartão do
+   * cliente."), da projeção do pedido. O diálogo falava só do motivo, e o
+   * operador cancelava sem saber o destino do dinheiro (beta 06/11, F5).
+   */
+  moneyEffect?: string;
 }>();
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
   "dirty-change": [value: boolean];
-  retry: [];
-  confirm: [payload: { reason: string; cancellationCode: string; reasonKey: string }];
+  confirm: [payload: { reasonKey: string; internalNote: string }];
 }>();
 
-const keyed = computed(() => props.mode === "cancel" && !props.marketplace);
+const reasons = computed(() =>
+  props.marketplace
+    ? props.cancelReasons.filter((reason) => reason.offered_on_ifood)
+    : props.cancelReasons,
+);
 
 const title = computed(() =>
   props.mode === "reject" ? "Recusar pedido" : "Cancelar pedido",
 );
-const description = computed(() =>
-  props.marketplace
-    ? "Escolha o motivo que o iFood exige. Ele é enviado ao iFood."
-    : props.mode === "reject"
-      ? "Informe o motivo. O cliente recebe o aviso com ele."
-      : "Escolha o motivo. O cliente recebe o aviso com a frase do motivo.",
-);
+const description = computed(() => {
+  const base = props.marketplace
+    ? "Escolha o motivo. O iFood e o cliente recebem o aviso com ele."
+    : "Escolha o motivo. O cliente recebe o aviso com a frase do motivo.";
+  const money = String(props.moneyEffect ?? "").trim();
+  return money ? `${money} ${base}` : base;
+});
 </script>
 
 <template>
@@ -56,29 +57,14 @@ const description = computed(() =>
     :title="title"
     :description="description"
     :confirm-label="mode === 'reject' ? 'Recusar pedido' : 'Cancelar pedido'"
-    :required="mode === 'reject'"
-    :presets="keyed ? [] : presets"
-    :keyed-reasons="keyed ? cancelReasons : []"
-    :initial-key="keyed ? (initialKey ?? '') : ''"
-    :coded="marketplace"
-    :coded-reasons="reasons"
-    coded-label="Motivo exigido pelo iFood"
-    coded-empty-text="O iFood não oferece motivos de cancelamento neste momento."
-    :loading="loading"
-    :loading-text="marketplace ? 'Carregando motivos do iFood…' : 'Carregando motivos…'"
-    :error="error"
+    :keyed-reasons="reasons"
+    :initial-key="initialKey ?? ''"
     :busy="busy"
-    placeholder="Motivo da recusa…"
     @update:open="(value: boolean) => emit('update:open', value)"
     @dirty-change="(value: boolean) => emit('dirty-change', value)"
-    @retry="emit('retry')"
     @confirm="
       (choice: ReasonChoice) =>
-        emit('confirm', {
-          reason: choice.reason,
-          cancellationCode: choice.code,
-          reasonKey: choice.key,
-        })
+        emit('confirm', { reasonKey: choice.key, internalNote: choice.reason })
     "
   />
 </template>

@@ -132,26 +132,6 @@ from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_reci
 # do seed e as funções de alvo abaixo leem daqui.
 PREP_PREFIXES = ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-", "manteiga-")
 
-# Motivos de recusa e cancelamento do Gestor, na ordem e nos grupos que o dono
-# aprovou em 01/10/2026 (D4). O cliente lê cada um como «Motivo: <texto>.»: por
-# isso nenhum termina em ponto (``validate_cancellation_presets`` recusa).
-# Mesma lista em shop/migrations/0085_motivos_de_recusa_aprovados.py, que leva o
-# banco já semeado até ela; ``test_cancellation_presets`` confere que as duas
-# não divergem.
-CANCELLATION_PRESETS = [
-    {"label": "Item indisponível no momento", "group": "Produto"},
-    {"label": "Sem um dos ingredientes hoje", "group": "Produto"},
-    {"label": "Pagamento não aprovado", "group": "Pagamento"},
-    {"label": "Pagamento não confirmado no prazo", "group": "Pagamento"},
-    {"label": "Endereço fora da nossa área de entrega", "group": "Endereço e contato"},
-    {"label": "Não conseguimos falar com você", "group": "Endereço e contato"},
-    {"label": "Alta demanda neste horário", "group": "Capacidade"},
-    {"label": "Sem entregador disponível neste horário", "group": "Capacidade"},
-    {"label": "Fora do horário de atendimento", "group": "Horário"},
-    {"label": "Você pediu o cancelamento", "group": "Cliente"},
-    {"label": "Pedido em duplicidade", "group": "Duplicidade"},
-]
-
 # Validades OPERACIONAIS provisórias para o cenário pré-go-live, decididas pelo
 # dono em 10/09/2026. Elas tornam as etiquetas testáveis sem fingir validação
 # sanitária: a readiness de produção só libera quando cada valor tiver sido
@@ -213,7 +193,7 @@ QUALITY_GRADES = (
 QUALITY_DEFECTS = (
     ("underproofed", "Fermentou pouco", "Pequeno, denso, rasgou", False, 10),
     ("overproofed", "Fermentou demais", "Esparramado, ácido, colapsou", False, 20),
-    ("underbaked", "Assou pouco", "Pálido, miolo cru", False, 30),
+    ("underbaked", "Assou pouco", "Pálido, mas próprio para consumo", False, 30),
     ("overbaked", "Assou demais", "Escuro, casca amarga", False, 40),
     ("misshapen", "Deformado", "Torto, colado, fora do padrão", False, 50),
     ("scorch_marks", "Marcas de forno", "Fuligem, sujeira de lastro", False, 60),
@@ -1694,10 +1674,6 @@ class Command(BaseCommand):
                 *BRAND_PROFILES
             ],
             **SEARCH_FIELDS,
-            # A lista aprovada pelo dono (01/10/2026). A mesma lista leva um
-            # banco já semeado ao estado novo sem reseed:
-            # shop/migrations/0085_motivos_de_recusa_aprovados.py.
-            "cancellation_presets": CANCELLATION_PRESETS,
             "kitchen_note_tags": [
                 "Bem assado",
                 "Pouco assado",
@@ -1735,7 +1711,6 @@ class Command(BaseCommand):
                 "pickup_slot_config": {
                     "rounding_minutes": 30,
                     "history_days": 30,
-                    "fallback_slot": "slot-09",
                 },
                 "max_preorder_days": 30,
                 "closed_dates": closed_dates,
@@ -6250,7 +6225,11 @@ class Command(BaseCommand):
         )
 
     def _production_steps_for_recipe(self, ref: str) -> list[str]:
-        if "croissant" in ref or "chocolat" in ref or "folhado" in ref:
+        # Não inventar um modo de preparo para cremes, molhos e preparações.
+        # Etapas conhecidas vêm de rd["steps"]; sem elas a ficha pede cadastro.
+        if ref.startswith(("creme-", "molho-", "salada-", "vinagrete-")):
+            return []
+        if "croissant" in ref or ref == "pain-chocolat" or "folhado" in ref:
             return ["Massa", "Laminação", "Forno"]
         if "focaccia" in ref:
             return ["Mistura", "Fermentação", "Cobertura", "Forno"]
@@ -6267,7 +6246,9 @@ class Command(BaseCommand):
             return ["Pesagem", "Cocção", "Resfriamento"]
         if ref.startswith("manteiga-"):
             return ["Pesagem", "Mistura", "Resfriamento"]
-        return ["Mistura", "Fermentação", "Modelagem", "Forno"]
+        if ref in ("coelhinho", "ursinho", "porquinho"):
+            return ["Mistura", "Fermentação", "Modelagem", "Forno"]
+        return []
 
     def _max_started_minutes_for_recipe(self, ref: str) -> int:
         if "croissant" in ref or "chocolat" in ref or "folhado" in ref:
@@ -6613,6 +6594,7 @@ class Command(BaseCommand):
                     # todo público comportamental do Marketing resolvia zero.
                     data={
                         "customer_ref": customer.ref,
+                        "fulfillment_type": "pickup",
                         "availability_decision": {"approved": True, "source": "seed", "decisions": []},
                     },
                     # ⚠️ `snapshot["items"]` é o que o HISTÓRICO do cliente lê
@@ -6734,8 +6716,11 @@ class Command(BaseCommand):
                 # `customer_ref`: o elo que o histórico do cliente usa. Ver o gêmeo acima.
                 # `payment`: pedido sem forma de pagamento não existe (dono, 06/11,
                 # GES-03). Em andamento, ninguém pagou ainda: recebe na retirada.
+                # `fulfillment_type`: sem ele, o cartão do PDV dizia "Retirada" e o
+                # painel, "entregar no endereço" (beta 07/11).
                 data={
                     "customer_ref": customer.ref,
+                    "fulfillment_type": "pickup",
                     "availability_decision": {"approved": True, "source": "seed", "decisions": []},
                     "payment": self._live_order_payment(channel.ref, total_q),
                 },
@@ -6938,10 +6923,8 @@ class Command(BaseCommand):
         now = timezone.now()
         chave = f"41{now:%y%m}99999999000191650010000012342{'87654321'}0"
         chave = "".join(ch for ch in chave if ch.isdigit())[:44].ljust(44, "0")
-        qr_consulta = (
-            "http://www.fazenda.pr.gov.br/nfce/qrcode?p="
-            f"{chave}|2|2|1|A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0"
-        )
+        # O exemplo não é autorizado na SEFAZ. Não fabrique uma consulta com
+        # hash fictício: só uma emissão real do provedor fornece esse QR.
 
         data = order.data or {}
         data.setdefault("fiscal", {})["issue_document"] = True
@@ -6954,7 +6937,7 @@ class Command(BaseCommand):
             "nfce_protocol": f"141{now:%y}0000012345",
             "nfce_status": "autorizado",
             "nfce_danfe_url": f"https://homologacao.focusnfe.com.br/danfe/nfce/{chave}.pdf",
-            "nfce_qrcode_url": qr_consulta,
+            "nfce_qrcode_url": "",
             "nfce_xml_url": f"https://homologacao.focusnfe.com.br/notas/nfce/{chave}.xml",
         })
         order.data = data
@@ -8445,7 +8428,7 @@ class Command(BaseCommand):
         # (croque, queijo-quente, o pain perdu dos doces); o salgado e o doce
         # de lote, prontos, são separação.
         kds_lanches, _ = KDSInstance.objects.update_or_create(
-            ref="lanches",
+            ref="snacks",
             defaults={
                 "name": "Lanches",
                 "type": "prep",
@@ -8461,7 +8444,7 @@ class Command(BaseCommand):
 
         # KDS Cafés — Prep: bebidas quentes e frias
         kds_cafes, _ = KDSInstance.objects.update_or_create(
-            ref="cafes",
+            ref="coffee",
             defaults={
                 "name": "Cafés",
                 "type": "prep",
@@ -8477,7 +8460,7 @@ class Command(BaseCommand):
 
         # KDS Encomendas — Picking: separação de pedidos de balcão e agendados
         KDSInstance.objects.update_or_create(
-            ref="encomendas",
+            ref="preorders",
             defaults={
                 "name": "Encomendas",
                 "type": "picking",
@@ -8489,10 +8472,11 @@ class Command(BaseCommand):
 
         # KDS Saída — pedidos prontos para entregar no balcão ou despachar.
         # "Expedição" é o fechamento de lote da Produção (decisão do dono,
-        # 26/09/2026); a migração backstage.0076 renomeia a estação de quem já
-        # tinha a antiga.
+        # 26/09/2026). O ref de cada estação é o caminho da bancada no kds-nuxt
+        # (`/<ref>`), e URL de operador é em inglês: a migração backstage.0094
+        # renomeou os refs em português de quem já os tinha.
         KDSInstance.objects.update_or_create(
-            ref="saida",
+            ref="exit",
             defaults={
                 "name": "Saída",
                 "type": "expedition",

@@ -107,6 +107,32 @@ def test_reorder_service_uses_listing_price(order_items, listing_item):
     assert name_by_sku[listing_item.product.sku] == listing_item.product.name
 
 
+def test_reorder_skips_delivery_fee_line_and_names_unsellable_items(order_items, listing_item):
+    """SMS-03: a linha de taxa não é item; o que ficou de fora sai pelo nome."""
+    from shopman.orderman.models import OrderItem
+
+    OrderItem.objects.create(
+        order=order_items, line_id="fee", sku="__DELIVERY_FEE__", name="__DELIVERY_FEE__",
+        qty=1, unit_price_q=800, line_total_q=800, meta={"type": "delivery_fee"},
+    )
+    OrderItem.objects.create(
+        order=order_items, line_id="gone", sku="FORMA-SAIU", name="Pão de forma",
+        qty=1, unit_price_q=900, line_total_q=900,
+    )
+    request = RequestFactory().post("/")
+    StubCartService.calls = []
+
+    skipped = customer_orders.add_reorder_items(
+        request,
+        order_items,
+        cart_service=StubCartService,
+        channel_ref=listing_item.listing.ref,
+    )
+
+    assert skipped == ["Pão de forma"]
+    assert "__DELIVERY_FEE__" not in {call["sku"] for call in StubCartService.calls}
+
+
 def test_payment_status_invalid_expiry_degrades_to_pending(order_with_payment):
     order_with_payment.data["payment"]["expires_at"] = "not-a-datetime"
     order_with_payment.save(update_fields=["data"])
@@ -157,7 +183,8 @@ def test_payment_is_due_implies_open_status(order_with_payment):
             assert status_value in {"new", "accepted"}
 
 
-def test_customer_cancel_gate_preserves_payment_specific_refusal(order_with_payment):
+def test_customer_cancel_gate_follows_preparation_not_payment(order_with_payment):
+    # Regra do dono (06/11/2026): antes do preparo cancela, pago ou não; depois, não.
     from shopman.payman import PaymentService
 
     intent = PaymentService.create_intent(
@@ -171,6 +198,11 @@ def test_customer_cancel_gate_preserves_payment_specific_refusal(order_with_paym
     PaymentService.authorize(intent.ref, gateway_id="test-gw-cancel")
     PaymentService.capture(intent.ref)
 
+    assert customer_orders.can_cancel(order_with_payment) is True
+    assert payment_status.can_cancel(order_with_payment) is True
+
+    type(order_with_payment).objects.filter(pk=order_with_payment.pk).update(status="preparing")
+    order_with_payment.refresh_from_db()
     assert customer_orders.can_cancel(order_with_payment) is False
     assert payment_status.can_cancel(order_with_payment) is False
 
@@ -219,3 +251,50 @@ def test_customer_cancel_cancels_pending_payment_intent(order_with_payment, djan
     assert order_with_payment.data["cancelled_by"] == "customer.self_cancel"
     assert intent.status == "cancelled"
     assert intent.cancel_reason == "customer_requested"
+
+
+def test_edited_order_has_the_same_total_and_items_in_history_and_tracking(customer):
+    """G20: o total selado não é o total vigente depois da edição."""
+    from shopman.orderman.models import Order, OrderItem
+
+    from shopman.shop.projections.order_tracking import build_tracking
+    from shopman.shop.services import order_composition
+    from shopman.storefront.presentation.account import build_account, order_history_for_customer
+    from shopman.storefront.presentation.order_history import build_order_history
+
+    order = Order.objects.create(
+        ref="ORD-HIST-EDITED", channel_ref="web", status="preparing", total_q=800,
+        handle_type="phone", handle_ref=customer.phone,
+        data={"customer_ref": customer.ref},
+    )
+    OrderItem.objects.create(
+        order=order, line_id="coffee", sku="ESP", name="Espresso",
+        qty=1, unit_price_q=800, line_total_q=800,
+    )
+    adjustment = order_composition.record(
+        order,
+        items=[
+            {"line_id": "coffee", "sku": "ESP", "name": "Espresso", "qty": 1,
+             "unit_price_q": 800, "line_total_q": 800},
+            {"line_id": "bread", "sku": "PAO", "name": "Pão", "qty": 1,
+             "unit_price_q": 900, "line_total_q": 900},
+        ],
+        total_q=1700,
+        source="pos", event_id="edit-history-regression",
+    )
+    order.data = {**order.data, order_composition.KEY: adjustment}
+    order.save(update_fields=["data"])
+    order.refresh_from_db()
+
+    summary, = customer_projection.history_summaries_for_customer(customer_ref=customer.ref)
+    history = build_order_history(customer)
+    tracking = build_tracking(order)
+
+    assert summary.total_q == tracking.total_q == 1700
+    assert summary.item_count == len(tracking.items) == 2
+    assert history.orders[0].total_display == "R$ 17,00"
+    assert build_account(customer).recent_orders[0].total_display == "R$ 17,00"
+    [active_row] = order_history_for_customer(customer_ref=customer.ref, filter_param="ativos")
+    assert active_row["total_display"] == "R$ 17,00"
+    assert order.total_q == 800
+    assert order.items.count() == 1

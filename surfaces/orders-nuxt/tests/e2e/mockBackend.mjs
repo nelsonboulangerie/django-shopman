@@ -75,7 +75,7 @@ const QUEUE = {
     preparing_count: 3,
     prep: [CARD, {
       ...CARD,
-      ref: "WEB-BLOCKED",
+      ref: "WEB-20260625-0008",
       customer_name: "Pagamento pendente",
       items_summary: "0.5× Pesado",
       total_display: "R$ 3,00",
@@ -89,7 +89,7 @@ const QUEUE = {
       attention_since_iso: new Date(Date.now() - 8 * 60_000).toISOString(),
     }, {
       ...CARD,
-      ref: "IFOOD-SCHEDULED",
+      ref: "IFOOD-260914-1515",
       channel_ref: "ifood",
       fulfillment_type: "delivery",
       fulfillment_label: "Entrega",
@@ -117,7 +117,7 @@ const QUEUE = {
       // Em preparo de verdade: o único que conta em "Seguem sozinhos: 1 na cozinha".
       // O iFood agendado acima espera o horário e NÃO foi para a cozinha (GES-13).
       ...CARD,
-      ref: "WEB-IN-KITCHEN",
+      ref: "WEB-20260625-0009",
       status: "preparing",
       status_label: "Em preparo",
       customer_name: "Bia",
@@ -157,16 +157,18 @@ const DETAIL_EXTRA = {
   delivery_address: "", delivery_instructions: "",
   items: [{ sku: "PAO", name: "Pão", qty: "1", unit_price_display: "R$ 16,00", total_display: "R$ 16,00" }],
   timeline: [], kitchen_note: "", customer_note: "", fiscal_links: [], equipment_options: [], equipment_out: [],
-  cancellation_presets: [], kitchen_note_tags: [], customer_profile: null,
+  kitchen_note_tags: [], customer_profile: null,
   can_cancel: true, cancel_requires_approval: false,
-  // A lista única de motivos de cancelar (`shop/services/cancel_reasons.py`).
+  // A lista única de motivos de recusar e cancelar (`shop/services/cancel_reasons.py`).
   cancel_reasons: [
-    { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou e não conseguimos preparar o pedido completo." },
-    { key: "cannot_deliver", label: "Não dá para entregar", customer_text: "Não conseguimos fazer a entrega no endereço e no horário do pedido." },
-    { key: "customer_request", label: "O cliente pediu", customer_text: "Cancelamos conforme você nos pediu." },
-    { key: "payment_not_confirmed", label: "Pagamento não confirmado", customer_text: "Não recebemos a confirmação do pagamento a tempo." },
-    { key: "store_closing", label: "A loja vai fechar", customer_text: "Precisamos encerrar o atendimento antes do horário do seu pedido." },
-    { key: "other", label: "Outro motivo", customer_text: "Sentimos muito pelo imprevisto." },
+    { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou e não conseguimos preparar o pedido completo.", offered_on_ifood: true },
+    { key: "cannot_deliver", label: "Não dá para entregar", customer_text: "Não conseguimos fazer a entrega no endereço e no horário do pedido.", offered_on_ifood: true },
+    { key: "high_demand", label: "Muitos pedidos agora", customer_text: "Estamos com muitos pedidos agora e não conseguiríamos preparar o seu no horário.", offered_on_ifood: true },
+    { key: "duplicate_order", label: "Pedido repetido", customer_text: "Recebemos este mesmo pedido duas vezes e seguimos só com o outro.", offered_on_ifood: true },
+    { key: "customer_request", label: "O cliente pediu", customer_text: "Conforme sua solicitação.", offered_on_ifood: false },
+    { key: "payment_not_confirmed", label: "Pagamento não confirmado", customer_text: "Não recebemos a confirmação do pagamento a tempo.", offered_on_ifood: false },
+    { key: "store_closing", label: "A loja vai fechar", customer_text: "Precisamos encerrar o atendimento antes do horário do seu pedido.", offered_on_ifood: true },
+    { key: "other", label: "Outro motivo", customer_text: "Sentimos muito pelo imprevisto.", offered_on_ifood: true },
   ],
 };
 

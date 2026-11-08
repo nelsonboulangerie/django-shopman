@@ -36,8 +36,9 @@ function projection (overrides: Partial<CheckoutProjection> = {}): CheckoutProje
     fulfillment_options: ['pickup', 'delivery'],
     has_pickup: true,
     has_delivery: true,
-    pickup_slots: [],
-    earliest_slot_ref: null,
+    pickup_slots: [{ ref: '19:30-20:00', label: '19:30 às 20:00', starts_at: '19:30', enabled: true, reason: '', is_earliest: true }],
+    earliest_slot_ref: '19:30-20:00',
+    pickup_grid: 'half_hour',
     loyalty_balance_q: 0,
     loyalty_value_display: null,
     max_preorder_days: 7,
@@ -210,4 +211,50 @@ describe('checkout: na retirada, CPF na nota é o do balcão, opcional', () => {
     expect(page.find('[data-checkout-tax-id]').exists()).toBe(false)
     page.unmount()
   })
+})
+
+
+describe('checkout: presente começa sem valores, como a descrição promete', () => {
+  it('ativa ocultar valores ao ligar presente e permite mudar depois', async () => {
+    store.set(DRAFT_KEY, JSON.stringify({ version: 2, context: 'ctx-entrega', attemptKey: null, state: { fulfillment_type: 'pickup' }, activeStep: 'payment', savedAt: Date.now() }))
+    const page = await abrirCheckout(projection())
+    const toggle = page.find('#checkout-gift-toggle')
+    await toggle.trigger('click')
+    await vi.waitFor(() => expect(page.find('#gift-hide-values').exists()).toBe(true))
+    expect(page.find('#gift-hide-values').attributes('aria-checked')).toBe('true')
+    await page.find('#gift-hide-values').trigger('click')
+    expect(page.find('#gift-hide-values').attributes('aria-checked')).toBe('false')
+    await toggle.trigger('click')
+    expect(page.find('#gift-hide-values').exists()).toBe(false)
+    await toggle.trigger('click')
+    expect(page.find('#gift-hide-values').attributes('aria-checked')).toBe('true')
+    page.unmount()
+  })
+
+  it('na retirada não promete nota sem valores: a nota fica com quem compra', async () => {
+    store.set(DRAFT_KEY, JSON.stringify({ version: 2, context: 'ctx-entrega', attemptKey: null, state: { fulfillment_type: 'pickup', is_gift: true }, activeStep: 'payment', savedAt: Date.now() }))
+    const page = await abrirCheckout(projection())
+    await vi.waitFor(() => expect(page.find('[data-gift-hide-values-description]').exists()).toBe(true))
+    const texto = page.find('[data-gift-hide-values-description]').text()
+    expect(texto).toBe('A etiqueta e o cartão saem sem preços. A nota fiscal sai com os valores e fica com você.')
+    expect(page.text()).not.toContain('sem valores na nota')
+    page.unmount()
+  })
+
+  it('na entrega diz que a nota vai junto com os valores', async () => {
+    store.set(DRAFT_KEY, JSON.stringify({ version: 2, context: 'ctx-entrega', attemptKey: null, state: { fulfillment_type: 'delivery', is_gift: true }, activeStep: 'payment', savedAt: Date.now() }))
+    const page = await abrirCheckout(projection())
+    await vi.waitFor(() => expect(page.find('[data-gift-hide-values-description]').exists()).toBe(true))
+    expect(page.find('[data-gift-hide-values-description]').text()).toContain('A nota fiscal vai junto com o pedido e mostra os valores.')
+    page.unmount()
+  })
+})
+
+
+it('restaurar um presente respeita a escolha explícita de mostrar valores', async () => {
+  store.set(DRAFT_KEY, JSON.stringify({ version: 2, context: 'ctx-entrega', attemptKey: null, state: { fulfillment_type: 'pickup', is_gift: true, gift_hide_values: false }, activeStep: 'payment', savedAt: Date.now() }))
+  const page = await abrirCheckout(projection())
+  await vi.waitFor(() => expect(page.find('#gift-hide-values').exists()).toBe(true))
+  expect(page.find('#gift-hide-values').attributes('aria-checked')).toBe('false')
+  page.unmount()
 })

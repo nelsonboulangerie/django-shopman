@@ -1,4 +1,11 @@
-"""Ouvidoria da avaliação: o cliente que não gostou pede que a casa fale com ele.
+"""Ouvidoria: o cliente pede que o responsável da casa fale com ele.
+
+Duas portas, o mesmo caso (``origin``):
+
+- ``rating``: depois de avaliar com nota baixa (o resto deste texto);
+- ``cancellation``: quis cancelar, mas o preparo já começou. Pela régua do dono
+  (``policies/customer_cancellation``) o pedido não se cancela mais, e o que
+  sobra é falar com o responsável (06/11/2026).
 
 Depois de avaliar, quem deu nota baixa vê a oferta de contato (a régua mora em
 ``policies/rating_contact.py``); aceita, ela vira um caso no app de Pedidos (evento no pedido + aviso ``orders``) que
@@ -8,7 +15,7 @@ O convite para publicar a opinião no Google é outra coisa e vale para TODA not
 (decisão do dono, 27/10/2026): a política do Google proíbe convidar só quem gostou.
 A ouvidoria vem primeiro para quem não gostou; o convite continua lá para todos.
 
-O caso mora nos eventos do pedido, como a solicitação de cancelamento: a abertura
+O caso mora nos eventos do pedido: a abertura
 é ``customer_contact_requested``, o fechamento é ``customer_contact_resolved``.
 Não altera status, pagamento nem a avaliação.
 
@@ -27,9 +34,12 @@ from django.db import transaction
 from shopman.orderman.models import Order
 
 from shopman.shop.adapters import alert as alert_adapter
-from shopman.shop.policies import rating_contact
+from shopman.shop.policies import customer_cancellation, rating_contact
 
 REQUESTED_EVENT = "customer_contact_requested"
+ORIGIN_RATING = "rating"
+ORIGIN_CANCELLATION = "cancellation"
+ORIGINS = frozenset({ORIGIN_RATING, ORIGIN_CANCELLATION})
 RESOLVED_EVENT = "customer_contact_resolved"
 ALERT_TYPE = "customer_contact_requested"
 
@@ -51,6 +61,7 @@ class ContactRequest:
     requested_at: datetime
     resolved: bool
     resolution_note: str = ""
+    origin: str = ORIGIN_RATING
 
 
 def google_review_url() -> str:
@@ -70,8 +81,21 @@ def _rating(order: Order) -> dict:
     return rating if isinstance(rating, dict) and rating.get("rating") else {}
 
 
-def current(order: Order) -> ContactRequest | None:
-    requested = order.events.filter(type=REQUESTED_EVENT).order_by("-seq").first()
+def _origin(payload: dict) -> str:
+    return ORIGIN_CANCELLATION if payload.get("origin") == ORIGIN_CANCELLATION else ORIGIN_RATING
+
+
+def current(order: Order, *, origin: str | None = None) -> ContactRequest | None:
+    """O último pedido de contato do pedido; com ``origin``, só o daquela porta."""
+    requests = order.events.filter(type=REQUESTED_EVENT).order_by("-seq")
+    requested = next(
+        (
+            event
+            for event in requests
+            if origin is None or _origin(event.payload if isinstance(event.payload, dict) else {}) == origin
+        ),
+        None,
+    )
     if requested is None:
         return None
     resolved = order.events.filter(type=RESOLVED_EVENT, seq__gt=requested.seq).order_by("-seq").first()
@@ -83,6 +107,7 @@ def current(order: Order) -> ContactRequest | None:
         requested_at=requested.created_at,
         resolved=resolved is not None,
         resolution_note=str(resolved_payload.get("note") or ""),
+        origin=_origin(payload),
     )
 
 
@@ -95,7 +120,14 @@ def contact_offered(order: Order) -> bool:
     """A avaliação deste pedido oferece o contato, e ele ainda não foi aceito."""
     return rating_contact.can_request_contact(
         _rating(order).get("rating"),
-        already_requested=current(order) is not None,
+        already_requested=current(order, origin=ORIGIN_RATING) is not None,
+    )
+
+
+def cancellation_contact_offered(order: Order) -> bool:
+    """O preparo começou: no lugar do cancelar, falar com o responsável, uma vez."""
+    return customer_cancellation.offers_contact_instead(order.status) and (
+        current(order, origin=ORIGIN_CANCELLATION) is None
     )
 
 
@@ -106,13 +138,24 @@ def operational_message(*, order_ref: str, rating: int) -> str:
     )
 
 
+def cancellation_operational_message(*, order_ref: str) -> str:
+    return (
+        f"O cliente do pedido {order_ref} queria cancelar, mas o preparo já começou, e pediu para "
+        "falar com o responsável. Chame no WhatsApp e marque Resolvido com o que foi feito."
+    )
+
+
 @transaction.atomic
-def request_contact(order: Order) -> ContactRequest:
-    """Record the customer's request once and route it durably to Orders."""
+def request_contact(order: Order, *, origin: str = ORIGIN_RATING) -> ContactRequest:
+    """Record the customer's request once per origin and route it durably to Orders."""
+    if origin not in ORIGINS:
+        raise ContactRequestUnavailable
     locked = Order.objects.select_for_update().get(pk=order.pk)
-    existing = current(locked)
+    existing = current(locked, origin=origin)
     if existing is not None:
         return existing
+    if origin == ORIGIN_CANCELLATION:
+        return _request_cancellation_contact(locked)
     if not contact_offered(locked):
         raise ContactRequestUnavailable
     rating = _rating(locked)
@@ -135,6 +178,30 @@ def request_contact(order: Order) -> ContactRequest:
     return ContactRequest(rating=score, comment=comment, requested_at=event.created_at, resolved=False)
 
 
+def _request_cancellation_contact(locked: Order) -> ContactRequest:
+    if not cancellation_contact_offered(locked):
+        raise ContactRequestUnavailable
+    event = locked.emit_event(
+        REQUESTED_EVENT,
+        actor="customer:self-service",
+        payload={"origin": ORIGIN_CANCELLATION},
+    )
+    alert_adapter.create(
+        ALERT_TYPE,
+        "warning",
+        cancellation_operational_message(order_ref=locked.ref),
+        order_ref=locked.ref,
+        audience="orders",
+    )
+    return ContactRequest(
+        rating=0,
+        comment="",
+        requested_at=event.created_at,
+        resolved=False,
+        origin=ORIGIN_CANCELLATION,
+    )
+
+
 @transaction.atomic
 def resolve(order: Order, *, note: str, actor: str) -> ContactRequest:
     """Close the open request with what the team did, and clear its alert."""
@@ -151,4 +218,5 @@ def resolve(order: Order, *, note: str, actor: str) -> ContactRequest:
         requested_at=request.requested_at,
         resolved=True,
         resolution_note=clean_note,
+        origin=request.origin,
     )

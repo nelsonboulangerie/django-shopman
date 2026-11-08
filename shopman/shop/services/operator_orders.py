@@ -68,6 +68,9 @@ class AdvanceBlock(StrEnum):
     NO_NEXT_STEP = "no_next_step"
     IFOOD_CANCELLATION_PENDING = "ifood_cancellation_pending"
     IFOOD_SCHEDULE_BLOCKED = "ifood_schedule_blocked"
+    # Agendado do iFood com a janela de entrega ainda por abrir: preparar pode,
+    # sair para entrega não (o iFood reprova o despacho antes da janela).
+    IFOOD_WINDOW_NOT_OPEN = "ifood_window_not_open"
     IFOOD_WAITING_PICKUP = "ifood_waiting_pickup"
     IFOOD_DELIVERY_UNKNOWN = "ifood_delivery_unknown"
     PAYMENT_NOT_CAPTURED = "payment_not_captured"
@@ -85,6 +88,9 @@ class AdvanceBlock(StrEnum):
 
 _ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
     AdvanceBlock.IFOOD_SCHEDULE_BLOCKED: "O horário de preparo do iFood ainda não permite avançar. Confira o agendamento deste pedido.",
+    AdvanceBlock.IFOOD_WINDOW_NOT_OPEN: (
+        "Pedido agendado no iFood: a saída para entrega só abre no início da janela que o cliente escolheu."
+    ),
     AdvanceBlock.IFOOD_WAITING_PICKUP: "Aguardando o iFood confirmar a retirada pelo entregador.",
     AdvanceBlock.IFOOD_DELIVERY_UNKNOWN: "O iFood ainda não disse quem leva este pedido. Confira no app do iFood ou chame o gerente.",
     AdvanceBlock.DEVICE_UNAVAILABLE: "Nenhuma maquininha está disponível. Aguarde a devolução para despachar esta entrega.",
@@ -198,20 +204,32 @@ def reject_order(
     reason: str,
     actor: str,
     rejected_by: str,
-    cancellation_code: str = "",
+    reason_key: str = "",
+    internal_note: str = "",
     expected_revision: str | None = None,
     prepared_identity: tuple[str, str] | None = None,
 ) -> None:
     """Reject an order and queue the customer notification directive.
 
-    ``cancellation_code`` is the marketplace (iFood) cancellation code the
-    operator picked; it rides ``order.data`` to the status-callback handler.
+    ``reason_key`` é a chave da lista única de motivos (``services/cancel_reasons``),
+    a MESMA do cancelar, em qualquer canal: o cliente lê o texto revisado dela no
+    aviso ``order_rejected``. Obrigatória (``ValueError`` se ausente ou fora da
+    lista do canal). No iFood, o ``cancellationCode`` sai dela
+    (``ifood_callbacks.DEFAULT_REASON_CODES``) e vai em ``order.data`` para o
+    handler do status. ``internal_note`` é a observação livre do operador e
+    nunca vai ao cliente.
 
     Guard + cancelamento na MESMA transação com lock (ver ``OrderStateConflict``):
     ACCEPTED → CANCELLED é transição válida, então sem o guard na linha travada
     uma recusa atrasada cancelaria um pedido que o aceite automático acabou de
     aceitar.
     """
+    from shopman.shop.services import cancel_reasons, ifood_callbacks
+
+    problem = cancel_reasons.validation_message(reason_key, channel_ref=order.channel_ref)
+    if problem:
+        raise ValueError(problem)
+    cancellation_code = ifood_callbacks.resolve_cancellation_code(reason_key) if order.channel_ref == "ifood" else ""
     reason_identity = prepared_identity if prepared_identity is not None else _validate_operator_cancellation_code(order, cancellation_code)
     with transaction.atomic():
         locked = Order.objects.select_for_update().get(pk=order.pk)
@@ -225,7 +243,9 @@ def reject_order(
                 f"(status atual: {locked.get_status_display()})."
             )
 
-        extra_data = {"rejected_by": rejected_by}
+        extra_data = {"rejected_by": rejected_by, "cancellation_reason_key": reason_key.strip()}
+        if internal_note.strip():
+            extra_data["cancellation_internal_note"] = internal_note.strip()
         if cancellation_code:
             extra_data["ifood_cancellation_code"] = cancellation_code
         cancel(
@@ -274,6 +294,8 @@ def advance_block(order: Order, *, waitlist_state: str | None = None, payment_re
 
         if ifood_schedule.block_reason(order):
             return AdvanceBlock.IFOOD_SCHEDULE_BLOCKED
+        if next_status == Order.Status.DISPATCHED and ifood_schedule.dispatch_before_window(order):
+            return AdvanceBlock.IFOOD_WINDOW_NOT_OPEN
         if next_status == Order.Status.DISPATCHED and not str(order.external_ref or "").upper().startswith("IFOOD-SIM-"):
             facts = (order.data or {}).get("ifood") or {}
             if not facts.get("remote_dispatched"):
@@ -486,7 +508,13 @@ def advance_order(
             raise ValueError(refusal)
     payment_service.lock_order_payment(order)
     # A maquininha é decidida abaixo, sob lock (reserva ou saída compartilhada).
-    blocked = advance_block_message(gestor_advance_block(order))
+    bloqueio = gestor_advance_block(order)
+    if bloqueio == AdvanceBlock.IFOOD_WINDOW_NOT_OPEN and partner_collects:
+        # A coleta da TaOn é fato físico: a sacola já saiu. A trava da janela é
+        # do gesto do operador; recusar o fato só deixaria o pedido "pronto"
+        # com o entregador na rua.
+        bloqueio = AdvanceBlock.NONE
+    blocked = advance_block_message(bloqueio)
     if blocked:
         raise ValueError(blocked)
     next_status = next_status_for(order)
@@ -1427,7 +1455,6 @@ def cancel_order(
     *,
     reason: str,
     actor: str,
-    cancellation_code: str = "",
     reason_key: str = "",
     internal_note: str = "",
     expected_authority_revision: str | None = None,
@@ -1436,24 +1463,25 @@ def cancel_order(
 ) -> bool:
     """Cancel an order through the canonical cancellation service.
 
-    ``cancellation_code`` (iFood) rides ``order.data`` to the status-callback handler.
-
     ``reason_key`` é a chave da lista única de motivos (``services/cancel_reasons``),
     gravada em ``order.data["cancellation_reason_key"]``: o cliente lê o texto
-    revisado dela na notificação ``order_cancelled``. Fora da lista levanta
-    ``ValueError``. Vazia só no marketplace (o iFood exige o código dele, e o
-    pedido sai com ``other``). ``internal_note`` é a observação livre do operador:
-    vai para ``order.data["cancellation_internal_note"]`` e nunca ao cliente.
+    revisado dela na notificação ``order_cancelled``. Obrigatória em qualquer
+    canal; fora da lista do canal levanta ``ValueError``. No iFood, o
+    ``cancellationCode`` sai dela (``ifood_callbacks.DEFAULT_REASON_CODES``).
+    ``internal_note`` é a observação livre do operador: vai para
+    ``order.data["cancellation_internal_note"]`` e nunca ao cliente.
 
     Returns:
         True se cancelou ou persistiu solicitação iFood; False se a transição foi recusada.
     """
-    from shopman.shop.services import cancel_reasons
+    from shopman.shop.services import cancel_reasons, ifood_callbacks
 
-    if (reason_key or order.channel_ref != "ifood") and cancel_reasons.validation_message(reason_key):
-        raise ValueError(cancel_reasons.validation_message(reason_key))
+    problem = cancel_reasons.validation_message(reason_key, channel_ref=order.channel_ref)
+    if problem:
+        raise ValueError(problem)
+    cancellation_code = ifood_callbacks.resolve_cancellation_code(reason_key) if order.channel_ref == "ifood" else ""
     reason_identity = prepared_identity if prepared_identity is not None else _validate_operator_cancellation_code(order, cancellation_code)
-    extra_data: dict[str, str] = {"cancellation_reason_key": reason_key.strip() or cancel_reasons.OTHER}
+    extra_data: dict[str, str] = {"cancellation_reason_key": reason_key.strip()}
     if cancellation_code:
         extra_data["ifood_cancellation_code"] = cancellation_code
     if internal_note.strip():
@@ -1504,7 +1532,7 @@ def collects_at_handoff(order: Order) -> bool:
     collection = str(payment.get("collection") or "").strip().lower()
     if collection == "on_delivery":
         return method in {"cash", "credit", "debit", "mixed"}
-    if collection or get_fulfillment_type(order) != "pickup":
+    if collection or get_fulfillment_type(order) == "delivery":
         return False
     return (method in _COUNTER_METHODS or not method) and not payment_service.order_intent_refs(order)
 
@@ -1530,7 +1558,10 @@ def counter_hand_over_block(order: Order, *, payment_reads=None, balance_q: int 
     frase para decidir o botão, e :func:`hand_over_at_counter` levanta com ela.
     ``balance_q`` evita reler o Payman quando quem chama já tem o saldo.
     """
-    if get_fulfillment_type(order) != "pickup":
+    # Entrega é só o que diz "delivery", a mesma leitura do cartão da encomenda
+    # (`order_queue._is_delivery`). Com `!= "pickup"`, o pedido sem tipo saía no
+    # cartão como "Retirada" e aqui como "entregar no endereço" (beta 07/11).
+    if get_fulfillment_type(order) == "delivery":
         return "Esta encomenda é para entregar no endereço: a saída é pelo Gestor de pedidos."
     if order.status in {Order.Status.COMPLETED, Order.Status.DELIVERED}:
         return "Esta encomenda já foi entregue."
@@ -2269,9 +2300,12 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
             enabled=not reason, reason=reason, method="POST", idempotency="required",
             payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order)},
         ))
+        from shopman.shop.policies.ifood_concluded import concluded_refusal
+
+        reject_reason = (concluded_refusal(order, verb="recusar") or "") if authorized else permission_reason
         actions.append(Action(
             ref="reject", kind="mutation", label="Recusar", priority="danger",
-            enabled=authorized, reason="" if authorized else permission_reason,
+            enabled=not reject_reason, reason=reject_reason,
             method="POST", idempotency="required", payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order)},
             confirmation={"required": True},
         ))

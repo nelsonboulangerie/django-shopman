@@ -114,6 +114,9 @@ class CheckoutProjection:
     # Pickup slots
     pickup_slots: tuple[PickupSlotProjection, ...]
     earliest_slot_ref: str | None
+    # "half_hour" (hoje: as meias horas que ainda dão) ou "canonical" (encomenda:
+    # os turnos da casa). A tela desenha a grade compacta numa e a lista na outra.
+    pickup_grid: str
 
     # Loyalty
     loyalty_balance_q: int
@@ -138,6 +141,9 @@ class CheckoutProjection:
     # próximas datas em que a loja opera + dias da semana sem expediente.
     available_dates: tuple[str, ...] = ()
     closed_weekdays: tuple[int, ...] = ()
+    # Hoje é dia de loja aberta e as retiradas e entregas de hoje já acabaram:
+    # "Hoje" sai de ``available_dates`` e a tela diz por quê.
+    today_over: bool = False
 
     # Fulfillment contextual hints shown below the pickup/delivery chips
     pickup_hint: str = ""
@@ -237,9 +243,9 @@ def build_checkout(
     policy = channel_capabilities(interaction.channel_ref)
     payment_methods = _payment_methods(channel_ref)
     requested_date = _delivery_date_from_context(request, delivery_date)
-    pickup_slots, earliest_slot_ref = _pickup_slots(cart, delivery_date=requested_date)
+    pickup_slots, earliest_slot_ref, pickup_grid = _pickup_slots(cart, delivery_date=requested_date)
     max_preorder_days, closed_dates, support_whatsapp_url = _shop_config()
-    available_dates, closed_weekdays = checkout_projection.availability_dates(max_preorder_days)
+    available_dates, closed_weekdays, today_over = checkout_projection.availability_dates(max_preorder_days)
 
     is_authenticated = customer_info is not None
     requires_authentication = _requires_authentication(channel_ref)
@@ -305,12 +311,14 @@ def build_checkout(
         has_delivery="delivery" in fulfillment_options,
         pickup_slots=pickup_slots,
         earliest_slot_ref=earliest_slot_ref,
+        pickup_grid=pickup_grid,
         loyalty_balance_q=loyalty_balance_q,
         loyalty_value_display=loyalty_value_display,
         max_preorder_days=max_preorder_days,
         closed_dates_json=json.dumps(closed_dates),
         available_dates=available_dates,
         closed_weekdays=closed_weekdays,
+        today_over=today_over,
         is_debug=settings.DEBUG,
         support_whatsapp_url=support_whatsapp_url,
         pickup_hint="Gratuita",
@@ -556,30 +564,32 @@ def _pickup_slots(
     cart: CartProjection,
     *,
     delivery_date: str = "",
-) -> tuple[tuple[PickupSlotProjection, ...], str | None]:
-    """Resolve pickup slots and earliest available slot for the cart."""
+) -> tuple[tuple[PickupSlotProjection, ...], str | None, str]:
+    """Os horários de retirada da data pedida, anotados para o carrinho.
+
+    A grade é a de ``fulfillment_window`` (meia hora hoje, turno na encomenda),
+    a mesma da entrega, conferida no commit por ``validate_pickup_slot_selection``.
+    """
     try:
         from shopman.storefront.services.pickup_slots import annotate_slots_for_checkout
 
-        cart_skus = [item.sku for item in cart.items]
-        ctx = annotate_slots_for_checkout(cart_skus, delivery_date=delivery_date)
-        raw_slots = ctx.get("pickup_slots") or []
-        slots = tuple(
-            PickupSlotProjection(
-                ref=str(s.get("ref") or ""),
-                label=str(s.get("label") or ""),
-                starts_at=str(s.get("starts_at") or ""),
-                enabled=bool(s.get("enabled", True)),
-                reason=str(s.get("reason") or ""),
-                is_earliest=bool(s.get("is_earliest", False)),
-            )
-            for s in raw_slots
-        )
-        earliest = ctx.get("earliest_slot_ref")
-        return slots, earliest
+        ctx = annotate_slots_for_checkout([item.sku for item in cart.items], delivery_date=delivery_date)
     except Exception:
-        logger.debug("checkout_projection_slots_failed", exc_info=True)
-        return (), None
+        # Sem grade não há horário a escolher, e o servidor recusaria qualquer um.
+        logger.warning("checkout_projection_slots_failed", exc_info=True)
+        return (), None, "canonical"
+    slots = tuple(
+        PickupSlotProjection(
+            ref=str(s.get("ref") or ""),
+            label=str(s.get("label") or ""),
+            starts_at=str(s.get("starts_at") or ""),
+            enabled=bool(s.get("enabled", True)),
+            reason=str(s.get("reason") or ""),
+            is_earliest=bool(s.get("is_earliest", False)),
+        )
+        for s in ctx.get("pickup_slots") or []
+    )
+    return slots, ctx.get("earliest_slot_ref"), str(ctx.get("grid") or "canonical")
 
 
 def _delivery_windows(

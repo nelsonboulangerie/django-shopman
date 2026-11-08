@@ -152,6 +152,7 @@ from shopman.backstage.services.exceptions import (
 from shopman.backstage.services.production import ProductionOrderShortError, ProductionStockShortError
 from shopman.shop.api_errors import public_error_detail
 from shopman.shop.observability import ServerTimingMixin
+from shopman.shop.policies import ifood_concluded
 from shopman.shop.services import cancellation as cancellation_service
 from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import notification as notification_service
@@ -651,8 +652,7 @@ def _pos_sale_review_payload(review) -> dict:
         "delivery_earliest_slot": review.delivery_earliest_slot,
         # O que cada linha cobra e o desconto que a venceu ("Aliança Francesa
         # −10%"), no formato do eco do salvar da comanda, com o aviso de desconto
-        # manual descartado. Sem comanda vêm todas as linhas; com comanda, as que
-        # o motor reviu com desconto manual (o resto, quem diz é o salvar).
+        # manual descartado. Todas as linhas voltam também ao remover o desconto.
         "line_prices": review_line_prices(getattr(review, "priced_lines", ())),
     }
 
@@ -2735,15 +2735,27 @@ class OrderRejectView(_OrderActionBase):
         order, err = self._get_order(ref)
         if err:
             return err
-        reason = str(request.data.get("reason") or "").strip()
-        if not reason:
-            return Response({"detail": "Motivo da recusa é obrigatório."}, status=400)
-        code = str(request.data.get("cancellation_code") or "").strip()
+        from shopman.shop.services import cancel_reasons
+
+        # A MESMA lista do cancelar (``cancel_reasons``), em qualquer canal: o motivo
+        # é a chave, o cliente lê o texto revisado dela, e a observação livre é
+        # interna. No iFood, o código dele sai da chave (``DEFAULT_REASON_CODES``).
+        reason_key = str(request.data.get("reason_key") or "").strip()
+        internal_note = str(request.data.get("internal_note") or "").strip()
+        problem = cancel_reasons.validation_message(reason_key, channel_ref=order.channel_ref)
+        if problem:
+            return Response({"detail": problem, "field": "reason_key", "errors": {"reason_key": [problem]}}, status=400)
+        reason = cancel_reasons.cancel_reason(reason_key).label
         prepared = {}
 
         def prepare():
+            # O iFood já concluiu: não há o que recusar lá, e a leitura dos motivos
+            # falharia com um 503 sem sentido. Recusa de antemão, dizendo o porquê.
+            concluded = ifood_concluded.concluded_refusal(order, verb="recusar")
+            if concluded:
+                return Response({"detail": concluded, "error": {"code": "ifood_concluded", "message": concluded}}, status=409)
             try:
-                prepared["identity"] = orders_service.prepare_cancellation(order, code)
+                prepared["identity"] = orders_service.prepare_cancellation(order, reason_key)
             except operator_orders.CancellationReasonsUnavailable as exc:
                 return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
             except ValueError as exc:
@@ -2751,10 +2763,15 @@ class OrderRejectView(_OrderActionBase):
 
         def execute(base):
             orders_service.reject_order(order, reason=reason, actor=_actor(request),
-                rejected_by="operator", cancellation_code=code, expected_revision=base,
+                rejected_by="operator", reason_key=reason_key,
+                internal_note=internal_note, expected_revision=base,
                 prepared_identity=prepared["identity"])
 
-        return self._context_response(request, order, "reject", {"reason": reason, "cancellation_code": code}, execute, prepare=prepare)
+        return self._context_response(
+            request, order, "reject",
+            {"reason_key": reason_key, "internal_note": internal_note},
+            execute, prepare=prepare,
+        )
 
 
 class OrderIFoodEvidenceView(OperationalObservationMixin, APIView):
@@ -2842,21 +2859,16 @@ class OrderCancelView(_OrderActionBase):
             return err
         from shopman.shop.services import cancel_reasons
 
-        # O motivo é OBRIGATÓRIO e vem da lista única (``cancel_reasons``): o
-        # cliente lê o texto revisado da chave, nunca o que o operador digitou.
-        # A observação livre é interna. No iFood o motivo é o código dele
-        # (``cancellation_code`` + a descrição em ``reason``), e a chave é opcional.
+        # O motivo é OBRIGATÓRIO e vem da lista única (``cancel_reasons``), em
+        # qualquer canal: o cliente lê o texto revisado da chave, nunca o que o
+        # operador digitou. A observação livre é interna. No iFood, o código dele
+        # sai da chave (``ifood_callbacks.DEFAULT_REASON_CODES``).
         reason_key = str(request.data.get("reason_key") or "").strip()
         internal_note = str(request.data.get("internal_note") or "").strip()
-        code = str(request.data.get("cancellation_code") or "").strip()
-        marketplace = order.channel_ref == "ifood"
-        problem = cancel_reasons.validation_message(reason_key) if (reason_key or not marketplace) else ""
+        problem = cancel_reasons.validation_message(reason_key, channel_ref=order.channel_ref)
         if problem:
             return Response({"detail": problem, "field": "reason_key", "errors": {"reason_key": [problem]}}, status=400)
-        if marketplace:
-            reason = str(request.data.get("reason") or "").strip() or "Cancelado pelo operador"
-        else:
-            reason = cancel_reasons.cancel_reason(reason_key).label
+        reason = cancel_reasons.cancel_reason(reason_key).label
         prepared = {}
 
         def prepare():
@@ -2890,7 +2902,7 @@ class OrderCancelView(_OrderActionBase):
                     return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
 
             try:
-                prepared["identity"] = orders_service.prepare_cancellation(order, code)
+                prepared["identity"] = orders_service.prepare_cancellation(order, reason_key)
             except operator_orders.CancellationReasonsUnavailable as exc:
                 return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
             except ValueError as exc:
@@ -2898,34 +2910,15 @@ class OrderCancelView(_OrderActionBase):
 
         def execute(base):
             orders_service.cancel_order(order, reason=reason, actor=_actor(request),
-                cancellation_code=code, reason_key=reason_key, internal_note=internal_note, expected_revision=base,
+                reason_key=reason_key, internal_note=internal_note, expected_revision=base,
                 expected_authority_revision=prepared["authority"], prepared_identity=prepared["identity"])
 
         # Credentials are validated transiently; they are never fingerprinted or retained.
         return self._context_response(
             request, order, "cancel",
-            {"reason_key": reason_key, "internal_note": internal_note, "reason": reason, "cancellation_code": code},
+            {"reason_key": reason_key, "internal_note": internal_note},
             execute, prepare=prepare,
         )
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=["backstage"],
-        summary="Valid cancellation reasons for an order (marketplace-aware)",
-        responses={200: OpenApiResponse(description="Reason list.")},
-    ),
-)
-class OrderCancellationReasonsView(_OrderActionBase):
-    def get(self, request, ref: str):
-        order, err = self._get_order(ref)
-        if err:
-            return err
-        try:
-            reasons = orders_service.cancellation_reasons(order)
-        except operator_orders.CancellationReasonsUnavailable as exc:
-            return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
-        return Response({"reasons": reasons})
 
 
 @extend_schema_view(
@@ -6282,7 +6275,12 @@ class POSAccountSettleView(APIView):
                     amount_raw=str(body.get("amount", "")),
                     method=str(body.get("method", "")),
                     terminal_ref=_terminal_do_pedido(request),
+                    manager_approval=body.get("manager_approval"),
                 )
+            # Pix/cartão/outro sem assinatura: o código chega à tela para ela abrir
+            # "Quem autoriza?" em vez de um toast.
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except POSError as exc:
                 return Response({"detail": str(exc)}, status=400)
             return Response(

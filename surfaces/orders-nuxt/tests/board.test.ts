@@ -715,6 +715,29 @@ describe("confirmationRemainingLabel", () => {
       "0:00",
     );
   });
+  // Beta 06/11 (F8, PIXEXP-11, SMS-18): o aceite que vence 30 min depois da
+  // abertura saía "cancela sozinho em 252:11". M:SS só na última hora.
+  it("de uma hora para cima, horas e minutos, nunca minutos:segundos", () => {
+    const now = Date.parse("2026-11-06T05:17:49Z");
+    expect(confirmationRemainingLabel("2026-11-06T09:30:00Z", now)).toBe(
+      "4h12",
+    );
+    expect(confirmationRemainingLabel("2026-11-06T06:17:49Z", now)).toBe(
+      "1h00",
+    );
+    expect(confirmationRemainingLabel("2026-11-06T06:17:48Z", now)).toBe(
+      "59:59",
+    );
+  });
+  it("prazo de dias diz os dias", () => {
+    const now = Date.parse("2026-11-06T05:00:00Z");
+    expect(confirmationRemainingLabel("2026-11-07T09:30:00Z", now)).toBe(
+      "28h30",
+    );
+    expect(confirmationRemainingLabel("2026-11-09T06:00:00Z", now)).toBe(
+      "3 dias",
+    );
+  });
 });
 
 describe("realtimeIndicator — honestidade do tempo-real", () => {

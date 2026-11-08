@@ -206,3 +206,30 @@ def test_ordered_basis_counts_by_the_day_the_order_was_made(client, manager, sho
     assert "H-PRE" not in _refs(closed)
     assert _refs(ordered) == ["H-PRE"]
     assert _get(client, manager, date_basis="sideways").json()["field"] == "date_basis"
+
+
+def test_history_and_detail_show_the_edited_total(client, manager, orders):
+    """G20: o histórico fechado não volta ao total selado antes da edição."""
+    from shopman.shop.projections.order_tracking import build_tracking
+    from shopman.shop.services import order_composition
+
+    order = Order.objects.create(
+        ref="H-EDITED", channel_ref="web", status="completed", total_q=800,
+        completed_at=timezone.now(), data={"fulfillment_type": "pickup"},
+    )
+    adjustment = order_composition.record(
+        order, items=[{"line_id": "bread", "sku": "PAO", "name": "Pão",
+                       "qty": 1, "unit_price_q": 1700, "line_total_q": 1700}],
+        total_q=1700, source="pos", event_id="edit-history-regression",
+    )
+    order.data = {**order.data, order_composition.KEY: adjustment}
+    order.save(update_fields=["data"])
+
+    response = _get(client, manager, q=order.ref)
+
+    assert response.status_code == 200
+    [row] = response.json()["history"]["items"]
+    assert row["total_q"] == build_tracking(order).total_q == 1700
+    assert row["total_display"] == "R$ 17,00"
+    order.refresh_from_db()
+    assert order.total_q == 800

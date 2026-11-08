@@ -2,7 +2,14 @@
 import { markPwaUpdateApplied } from "../utils/pwaUpdateReport";
 import { alertActions } from "../utils/alertActions";
 
+const emit = defineEmits<{ visibility: [visible: boolean] }>();
 const pwa = usePwaUpdate();
+const dismissed = ref(false);
+const visible = computed(() => pwa.needRefresh.value && !dismissed.value);
+watch(pwa.needRefresh, (value) => {
+  if (!value) dismissed.value = false;
+});
+watch(visible, (value) => emit("visibility", value), { immediate: true });
 const updating = ref(false);
 const config = useRuntimeConfig().public as {
   operatorPwa?: { app?: string };
@@ -25,6 +32,11 @@ async function update() {
 
 const actions = computed(() => [
   {
+    label: "Agora não",
+    secondary: true,
+    onClick: () => { dismissed.value = true; },
+  },
+  {
     label: updating.value ? "Atualizando…" : "Atualizar agora",
     loading: updating.value,
     onClick: update,
@@ -34,7 +46,7 @@ const actions = computed(() => [
 
 <template>
   <NuxtAlert
-    v-if="pwa.needRefresh.value"
+    v-if="visible"
     color="info"
     variant="subtle"
     icon="i-lucide-refresh-cw"

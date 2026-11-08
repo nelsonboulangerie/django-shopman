@@ -1,303 +1,104 @@
-"""Pickup slot service — casa os produtos do carrinho com as janelas da loja.
+"""Horários de retirada da loja: a grade da casa, anotada para o carrinho.
 
-Cada produto tem uma hora de prontidão (declarada pela casa em
-``Product.metadata["ready_from"]`` e/ou observada nas WorkOrders recentes — ver
-``shop/services/product_readiness``). Escolhida a data, a janela de retirada mais
-cedo é a que cobre a MAIOR prontidão entre os itens e, só para hoje, o relógio.
+A grade NÃO é desta superfície. Ela sai de ``shop/services/fulfillment_window``,
+a mesma que a entrega da loja, a concierge e o PDV leem, e a DATA escolhe qual:
 
-Configuration lives in Shop.defaults["pickup_slots"] (admin-editable):
+- **HOJE** → as meias horas do expediente que ainda dão: de agora mais a
+  antecedência (``business_calendar.DELIVERY_SLOT_LEAD_MINUTES``) até o
+  fechamento. O "mais cedo" de hoje é sempre um horário que ainda vem, e o
+  pedido nunca grava um começo que já passou (o "A partir das 15h" escolhido às
+  18:36 entrava na Cozinha atrasado e no PDV com hora vencida). Sem meia hora
+  sobrando, hoje não tem horário: a lista vem vazia e a tela manda escolher
+  outra data.
+- **OUTRO DIA (encomenda)** → os turnos canônicos da casa
+  (``Shop.defaults["pickup_slots"]``, editáveis no Admin) que cabem no
+  expediente daquele dia. Encomenda é turno de fornada, não hora marcada.
 
-    [
-        {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
-        {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
-        {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"},
-    ]
+A prontidão dos itens corta as duas grades do mesmo jeito (``fulfillment_window
+.annotate``): a janela que começa antes de o item ficar pronto aparece riscada,
+com o produto e a hora no motivo.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
 logger = logging.getLogger(__name__)
 
 
-def _wall_clock() -> time:
-    try:
-        from django.utils import timezone
-
-        return timezone.localtime().time().replace(second=0, microsecond=0)
-    except Exception:
-        logger.debug("pickup_slots: could not read Django local time", exc_info=True)
-        return datetime.now().time().replace(second=0, microsecond=0)
-
-
-def _local_date() -> date:
-    try:
-        from django.utils import timezone
-
-        return timezone.localtime().date()
-    except Exception:
-        logger.debug("pickup_slots: could not read Django local date", exc_info=True)
-        return date.today()
-
-
-def _today_closes_at() -> time | None:
-    """Hoje fecha às (hora local), ou ``None`` se sem janela/agenda.
-
-    Fonte da verdade do expediente é o ``business_calendar``. Um slot de
-    retirada "A partir das HH" só vale enquanto a loja está aberta — depois do
-    fechamento NÃO há retirada hoje, por mais que o último slot fique "ativo".
-    """
-    try:
-        from shopman.shop.services import business_calendar
-
-        state = business_calendar.current_business_state()
-        if state.closes_at:
-            return _parse_time(state.closes_at)
-    except Exception:
-        logger.debug("pickup_slots: could not read today's closing time", exc_info=True)
-    return None
-
-
-# ── Defaults ─────────────────────────────────────────────────────────
-
-DEFAULT_SLOTS = [
-    {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
-    {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
-    {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"},
-]
-
-DEFAULT_ROUNDING_MINUTES = 30
-DEFAULT_HISTORY_DAYS = 30
-DEFAULT_FALLBACK_SLOT = "slot-09"
-
-
-def _parse_time(t: str) -> time:
-    """Parse 'HH:MM' into time object."""
-    parts = t.split(":")
-    return time(int(parts[0]), int(parts[1]))
-
-
-def _sorted_slots(slots: list[dict]) -> list[dict]:
-    return sorted(slots, key=lambda s: _parse_time(s["starts_at"]))
-
-
-def _slot_at_or_after(slots: list[dict], threshold: time) -> dict:
-    """Return first slot that starts at/after ``threshold``, or the last slot."""
-    ordered = _sorted_slots(slots)
-    chosen = ordered[-1]
-    for slot in ordered:
-        if _parse_time(slot["starts_at"]) >= threshold:
-            chosen = slot
-            break
-    return chosen
-
-
-def _current_or_next_slot(slots: list[dict], clock: time) -> dict:
-    """Return the currently active "a partir" slot, or the first future slot."""
-    ordered = _sorted_slots(slots)
-    current = ordered[0]
-    for slot in ordered:
-        if _parse_time(slot["starts_at"]) <= clock:
-            current = slot
-        else:
-            break
-    return current
-
-
-def _later_slot(slots: list[dict], *candidates: dict) -> dict:
-    ordered = _sorted_slots(slots)
-    rank = {slot["ref"]: i for i, slot in enumerate(ordered)}
-    return max(candidates, key=lambda slot: rank.get(slot["ref"], -1))
-
-
-def _slot_rank(slots: list[dict]) -> dict[str, int]:
-    return {
-        str(slot.get("ref") or ""): i
-        for i, slot in enumerate(_sorted_slots(slots))
-    }
-
-
-def _slot_label(slots: list[dict], slot_ref: str | None) -> str:
-    if not slot_ref:
-        return ""
-    slot = _find_slot_by_ref(slots, slot_ref)
-    return str(slot.get("label") or slot_ref) if slot else slot_ref
-
-
-def _slot_is_at_or_after(slots: list[dict], slot_ref: str, earliest_ref: str | None) -> bool:
-    if not earliest_ref:
-        return True
-    rank = _slot_rank(slots)
-    return rank.get(slot_ref, -1) >= rank.get(earliest_ref, -1)
-
-
-def _delivery_date_is_today(delivery_date: str) -> bool:
-    if not delivery_date:
-        return True
-    try:
-        return date.fromisoformat(delivery_date) == _local_date()
-    except ValueError:
-        return True
-
-
-_CLOSED_SENTINEL = object()
-
-
-def is_slot_available_for_today(
-    slots: list[dict],
-    slot_ref: str,
-    *,
-    now: time | None = None,
-    closes_at: time | None | object = _CLOSED_SENTINEL,
-) -> bool:
-    """Return whether a pickup slot is still selectable today.
-
-    Slot labels are "A partir das HHh": a slot stays available after its start
-    until a later configured slot starts. BUT a slot is bounded by the store's
-    closing time — once the shop has closed (``clock >= closes_at``) there is no
-    pickup today, and a slot whose window only starts at/after closing is never
-    reachable today. ``closes_at`` is read from the business calendar by default;
-    pass it explicitly (incl. ``None`` for "no schedule") to keep this pure in tests.
-    """
-    slot = _find_slot_by_ref(slots, slot_ref)
-    if slot is None:
-        return False
-    clock = now or _wall_clock()
-    if closes_at is _CLOSED_SENTINEL:
-        closes_at = _today_closes_at()
-    slot_start = _parse_time(slot["starts_at"])
-    if isinstance(closes_at, time):
-        # Loja já fechou hoje → nada de retirada hoje.
-        if clock >= closes_at:
-            return False
-        # Janela do slot começa no/depois do fechamento → inalcançável hoje.
-        if slot_start >= closes_at:
-            return False
-    current = _current_or_next_slot(slots, clock)
-    return slot_start > clock or slot["ref"] == current["ref"]
-
-
-# ── Public API ───────────────────────────────────────────────────────
+PICKUP_SLOT_REQUIRED = "Selecione um horário de retirada."
+PICKUP_SLOT_PASSED = "Este horário já passou. Selecione um horário futuro."
+PICKUP_TODAY_OVER = "Não há mais horário de retirada hoje. Escolha outra data."
+PICKUP_SLOT_UNKNOWN = "Esse horário não está na lista de retirada desse dia. Escolha um dos horários da lista."
 
 
 def get_slots() -> list[dict]:
-    """Os slots de encomenda da casa — UMA fonte, lida do orquestrador.
+    """Os turnos de encomenda da casa: UMA fonte, lida do orquestrador.
 
     Delegado a ``shop/services/fulfillment_window.canonical_slots`` porque o PDV
-    faz a MESMA pergunta e não pode importar o storefront. Duas leituras da mesma
-    configuração acabariam divergindo, e a divergência apareceria como o cliente
-    ouvindo um horário no telefone e lendo outro no acompanhamento.
+    faz a MESMA pergunta e não pode importar o storefront.
     """
     from shopman.shop.services.fulfillment_window import canonical_slots
 
     return canonical_slots()
 
 
-def get_slot_config() -> dict:
-    """Return pickup slot configuration from Shop.defaults."""
+def _day_from(delivery_date: str, *, now: datetime | None = None) -> date | None:
+    """A data pedida; em branco é hoje. ``None`` quando a data não se lê."""
+    from shopman.shop.services.fulfillment_window import _local_today
+
+    if not delivery_date:
+        return _local_today(now=now)
     try:
-        from shopman.shop.models import Shop
-        shop = Shop.load()
-        if shop:
-            return (shop.defaults or {}).get("pickup_slot_config", {})
-    except Exception:
-        logger.debug("pickup_slots: could not load slot config", exc_info=True)
-    return {}
+        return date.fromisoformat(delivery_date)
+    except ValueError:
+        return None
 
 
-def get_typical_ready_times(
-    skus: list[str],
+def annotate_slots_for_checkout(
+    cart_skus: list[str],
     *,
-    history_days: int | None = None,
-    rounding_minutes: int | None = None,
-) -> dict[str, time]:
-    """A que horas cada SKU fica pronto — declarado pela casa e/ou observado.
-
-    A conta em si mora em ``shop/services/product_readiness``, porque o PDV faz
-    a MESMA pergunta e não pode importar o storefront. Aqui fica só a leitura da
-    configuração da loja (``pickup_slot_config``), que é vocabulário desta
-    superfície.
-
-    Devolve ``{sku: time}`` para os SKUs com hora conhecida. SKU sem declaração
-    E sem histórico é omitido — quem chama decide o que fazer com o silêncio.
-    """
-    from shopman.shop.services import product_readiness
-
-    config = get_slot_config()
-    if history_days is None:
-        history_days = config.get("history_days", DEFAULT_HISTORY_DAYS)
-    if rounding_minutes is None:
-        rounding_minutes = config.get("rounding_minutes", DEFAULT_ROUNDING_MINUTES)
-
-    return product_readiness.ready_times_for(
-        skus, history_days=history_days, rounding_minutes=rounding_minutes
-    )
-
-
-def get_earliest_slot_for_skus(
-    skus: list[str],
-    *,
-    include_current_time: bool = True,
+    delivery_date: str = "",
+    now: datetime | None = None,
 ) -> dict:
-    """Determine the earliest pickup slot that covers all given SKUs.
+    """Os horários de retirada da data pedida, anotados para este carrinho.
 
-    Returns::
+    Devolve::
 
         {
-            "slot": {"ref": "slot-12", "label": "...", "starts_at": "12:00"},
-            "slot_ref": "slot-12",
-            "ready_times": {"PAO-FRANCES": "05:30", "BOLO-CHOCOLATE": "11:30"},
-            "bottleneck_sku": "BOLO-CHOCOLATE",
+            "pickup_slots": [{"ref", "label", "starts_at", "enabled", "reason", "is_earliest"}, …],
+            "earliest_slot_ref": "19:30-20:00",  # o primeiro oferecível, ou None
+            "grid": "half_hour" | "canonical",
         }
 
-    If no production data exists for any SKU, returns the fallback slot.
-    ``include_current_time`` applies today's wall clock on top of SKU
-    readiness. Keep it false when validating a future preorder date.
+    Lista vazia: não há retirada nesse dia (fechado, feriado, ou o expediente de
+    hoje já não comporta a antecedência). Nada de horário morto oferecido.
     """
-    slots = get_slots()
-    if not slots:
-        return {"slot": None, "slot_ref": None, "ready_times": {}, "bottleneck_sku": None}
+    from shopman.shop.services import fulfillment_window
+    from shopman.shop.services.product_readiness import format_clock
 
-    config = get_slot_config()
-    fallback_ref = config.get("fallback_slot", DEFAULT_FALLBACK_SLOT)
-
-    ready_times = get_typical_ready_times(skus)
-
-    if not ready_times:
-        # No production data — use the configured fallback, but never select
-        # a slot whose "a partir" window has already been superseded today.
-        fallback = _find_slot_by_ref(slots, fallback_ref) or _sorted_slots(slots)[0]
-        chosen = fallback
-        if include_current_time:
-            chosen = _later_slot(slots, fallback, _current_or_next_slot(slots, _wall_clock()))
-        return {
-            "slot": chosen,
-            "slot_ref": chosen["ref"],
-            "ready_times": {},
-            "bottleneck_sku": None,
-        }
-
-    # Find the latest ready time among all cart items
-    latest_time = time(0, 0)
-    bottleneck_sku = None
-    for sku, t in ready_times.items():
-        if t > latest_time:
-            latest_time = t
-            bottleneck_sku = sku
-
-    readiness_slot = _slot_at_or_after(slots, latest_time)
-    chosen = readiness_slot
-    if include_current_time:
-        clock_slot = _current_or_next_slot(slots, _wall_clock())
-        chosen = _later_slot(slots, readiness_slot, clock_slot)
-
+    day = _day_from(delivery_date, now=now) or fulfillment_window._local_today(now=now)
+    context = fulfillment_window.annotate(day, list(cart_skus or []), now=now)
+    earliest = context.get("earliest_ref") or None
+    slots = []
+    for window in context.get("windows") or []:
+        ref = str(window.get("ref") or "")
+        start = fulfillment_window._window_start(window)
+        slots.append(
+            {
+                "ref": ref,
+                "label": str(window.get("label") or "").strip() or ref,
+                "starts_at": format_clock(start) if start else "",
+                "enabled": bool(window.get("enabled")),
+                "reason": str(window.get("reason") or ""),
+                "is_earliest": ref == earliest,
+            }
+        )
     return {
-        "slot": chosen,
-        "slot_ref": chosen["ref"],
-        "ready_times": {sku: t.strftime("%H:%M") for sku, t in ready_times.items()},
-        "bottleneck_sku": bottleneck_sku,
+        "pickup_slots": slots,
+        "earliest_slot_ref": earliest,
+        "grid": context.get("grid") or "canonical",
     }
 
 
@@ -306,121 +107,53 @@ def validate_pickup_slot_selection(
     *,
     delivery_date: str = "",
     cart_skus: list[str] | None = None,
-    now: time | None = None,
-    closes_at: time | None | object = _CLOSED_SENTINEL,
+    now: datetime | None = None,
 ) -> str | None:
-    """Return a customer-facing error when a pickup slot cannot be selected."""
-    if not delivery_time_slot:
-        return "Selecione um horário de retirada."
+    """Erro ao cliente quando o horário de retirada não pode ser aceito.
 
-    slots = get_slots()
-    slot = _find_slot_by_ref(slots, delivery_time_slot)
-    if slot is None:
-        return "Horário de retirada inválido."
-
-    is_today = _delivery_date_is_today(delivery_date)
-    if is_today and not is_slot_available_for_today(slots, delivery_time_slot, now=now, closes_at=closes_at):
-        clock = now or _wall_clock()
-        effective_close = _today_closes_at() if closes_at is _CLOSED_SENTINEL else closes_at
-        if isinstance(effective_close, time) and clock >= effective_close:
-            return "A loja já fechou hoje. Escolha outra data para retirar."
-        return "Este horário já passou. Selecione um horário futuro."
-
-    if cart_skus:
-        result = get_earliest_slot_for_skus(cart_skus, include_current_time=False)
-        earliest_ref = result.get("slot_ref")
-        if not _slot_is_at_or_after(slots, delivery_time_slot, earliest_ref):
-            label = _slot_label(slots, earliest_ref)
-            if label:
-                return f"Sem tempo de preparo. Escolha {label} ou mais tarde."
-            return "Sem tempo de preparo para este horário."
-
-    return None
-
-
-def annotate_slots_for_checkout(cart_skus: list[str], *, delivery_date: str = "") -> dict:
-    """Build full context for checkout template.
-
-    Returns::
-
-        {
-            "pickup_slots": [...],        # slots annotated for this cart/date
-            "earliest_slot_ref": "...",   # earliest available for this cart/date
-            "bottleneck_sku": "...",       # the SKU that pushes the slot
-            "ready_times": {...},          # {sku: "HH:MM"}
-        }
+    O cliente escolhe sozinho, sem a dona do lado, e por isso o horário tem de
+    estar na grade que a loja oferece para o dia (como na entrega). Depois, a
+    prontidão dos itens (``fulfillment_window.validate``).
     """
-    slots = get_slots()
-    cart_result = get_earliest_slot_for_skus(cart_skus, include_current_time=False)
-    is_today = _delivery_date_is_today(delivery_date)
-    effective_result = get_earliest_slot_for_skus(cart_skus, include_current_time=is_today)
-    cart_earliest_ref = cart_result["slot_ref"]
-    effective_earliest_ref = effective_result["slot_ref"]
+    from shopman.shop.services import business_calendar, fulfillment_window
 
-    # Para hoje, o expediente limita a oferta: depois do fechamento NÃO há
-    # retirada hoje, por mais que o último slot continue "ativo" pela hora.
-    clock = _wall_clock() if is_today else None
-    closes_at = _today_closes_at() if is_today else None
-    store_closed_today = is_today and isinstance(closes_at, time) and clock is not None and clock >= closes_at
+    ref = str(delivery_time_slot or "").strip()
+    if not ref:
+        return PICKUP_SLOT_REQUIRED
+    day = _day_from(delivery_date, now=now)
+    if day is None:
+        return PICKUP_SLOT_UNKNOWN
 
-    annotated_slots = []
-    for slot in slots:
-        slot_ref = str(slot.get("ref") or "")
-        enabled = _slot_is_at_or_after(slots, slot_ref, effective_earliest_ref)
-        if is_today and enabled:
-            enabled = is_slot_available_for_today(slots, slot_ref, now=clock, closes_at=closes_at)
-        reason = ""
-        if not _slot_is_at_or_after(slots, slot_ref, cart_earliest_ref):
-            reason = "Sem tempo de preparo"
-        elif store_closed_today:
-            reason = "Loja fechada hoje"
-        elif not enabled:
-            reason = "Horário já passou"
-        annotated_slots.append(
-            {
-                **slot,
-                "enabled": enabled,
-                "reason": reason,
-                "is_earliest": enabled and slot_ref == effective_earliest_ref,
-            }
-        )
+    grid = fulfillment_window.delivery_windows_for(day, now=now)
+    if ref not in {window["ref"] for window in grid}:
+        if day != fulfillment_window._local_today(now=now):
+            return PICKUP_SLOT_UNKNOWN
+        if not grid:
+            return PICKUP_TODAY_OVER
+        # As meias horas do dia INTEIRO, lidas da véspera (o relógio não corta
+        # nada): se o ref está nelas e não na grade de agora, foi o relógio que
+        # o tirou.
+        from django.utils import timezone
 
-    return {
-        "pickup_slots": annotated_slots,
-        "earliest_slot_ref": effective_result["slot_ref"],
-        "bottleneck_sku": cart_result["bottleneck_sku"],
-        "ready_times": cart_result["ready_times"],
-    }
+        eve = datetime.combine(day - timedelta(days=1), time(12, 0))
+        if timezone.is_naive(eve):
+            eve = timezone.make_aware(eve)
+        whole_day = {w.get("ref") for w in business_calendar.delivery_slots_for(day, now=eve)}
+        if ref in whole_day:
+            return PICKUP_SLOT_PASSED
+        return PICKUP_SLOT_UNKNOWN
+
+    return fulfillment_window.validate(day, ref, list(cart_skus or []), now=now)
 
 
 def annotate_delivery_windows_for_checkout(cart_skus: list[str], *, delivery_date: str = "") -> dict:
     """As janelas de ENTREGA da data pedida (hoje, sem data), anotadas para o carrinho.
 
     A grade é ``fulfillment_window.delivery_windows_for`` (meia hora hoje, turno
-    na encomenda), a mesma da concierge e a que o commit confere com
+    na encomenda), a mesma da retirada, da concierge e a que o commit confere com
     ``delivery_window_error``. Devolve o contexto de ``fulfillment_window.annotate``.
     """
     from shopman.shop.services import fulfillment_window
 
-    try:
-        day = date.fromisoformat(delivery_date) if delivery_date else _local_date()
-    except ValueError:
-        day = _local_date()
+    day = _day_from(delivery_date) or fulfillment_window._local_today()
     return fulfillment_window.annotate(day, list(cart_skus or []))
-
-
-def _find_slot_by_ref(slots: list[dict], ref: str) -> dict | None:
-    for s in slots:
-        if s["ref"] == ref:
-            return s
-    return None
-
-
-def slot_label(slot_ref: str | None) -> str:
-    """Customer-facing label of a configured slot ("A partir das 9h").
-
-    Resolves against ``Shop.defaults["pickup_slots"]`` (or the defaults);
-    an unknown ref falls back to the ref itself so the surface never goes
-    blank on config drift.
-    """
-    return _slot_label(get_slots(), slot_ref)

@@ -139,10 +139,8 @@ def _login_via_access_link(client: Client, customer: Customer, *, metadata: dict
 
 def _checkout_today(client: Client, *, phone: str = "+5543999990001"):
     """Checkout de retirada com a data de HOJE (a data JÁ EXISTE no checkout)."""
-    from shopman.storefront.services.pickup_slots import get_slots
+    from shopman.storefront.tests._pickup_today import today_pickup_slot
 
-    slots = get_slots()
-    assert slots, "esperava slots de retirada configurados por padrão"
     return client.post(
         "/api/v1/checkout/",
         data=json.dumps(
@@ -151,7 +149,7 @@ def _checkout_today(client: Client, *, phone: str = "+5543999990001"):
                 "phone": phone,
                 "fulfillment_type": "pickup",
                 "delivery_date": timezone.localdate().isoformat(),
-                "delivery_time_slot": slots[-1]["ref"],
+                "delivery_time_slot": today_pickup_slot(),
                 "payment_method": "cash",
             })
         ),
@@ -270,7 +268,7 @@ def test_second_round_same_phone_not_blocked_by_abandoned_session_ghost_holds(cl
     ghost_ids = _active_hold_ids(round1_key)
     assert ghost_ids
 
-    from shopman.storefront.services.pickup_slots import get_slots
+    from shopman.storefront.tests._pickup_today import today_pickup_slot
 
     resp = round1.post(
         "/api/v1/checkout/",
@@ -280,7 +278,7 @@ def test_second_round_same_phone_not_blocked_by_abandoned_session_ghost_holds(cl
                 "phone": "+5543999990001",
                 "fulfillment_type": "pickup",
                 "delivery_date": timezone.localdate().isoformat(),
-                "delivery_time_slot": get_slots()[-1]["ref"],
+                "delivery_time_slot": today_pickup_slot(),
                 "payment_method": "cash",
                 "expected_total_q": 1,
                 "expected_revision": round1.get("/api/v1/storefront/cart/").json()["cart"]["revision"],

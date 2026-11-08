@@ -381,6 +381,8 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/order_history.py",
             # Comprovante de entrega dos avisos ao cliente, no detalhe do pedido.
             ROOT / "shopman/backstage/projections/notification_receipts.py",
+            # Itens a preço de tabela e o desconto (cupom) em linha própria, no detalhe do pedido.
+            ROOT / "shopman/backstage/projections/order_pricing.py",
             ROOT / "shopman/backstage/projections/ifood.py",
             ROOT / "shopman/backstage/projections/ifood_handshake.py",
             ROOT / "shopman/backstage/projections/ifood_store.py",

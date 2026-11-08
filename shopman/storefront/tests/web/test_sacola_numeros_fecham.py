@@ -89,3 +89,33 @@ def test_promocao_por_item_tambem_fecha(client, channel, croissant):
     assert cart.items[0].price_display == "R$ 16,00"
     assert cart.grand_total_q == 2720
     _assert_fecha(cart)
+
+
+def test_linha_com_promocao_mostra_o_preco_do_cardapio(client, channel, croissant):
+    """Beta 06/11: o cardápio dizia R$ 5,10 (-15%) e a linha só "1 × R$ 6,00".
+
+    A linha repete a dupla do cardápio (cheio riscado, promoção ao lado) e o
+    total da linha continua cheio, para a soma seguir fechando com o Subtotal.
+    """
+    _seed_stock_for_product_sku(croissant.sku)
+    _ensure_listing_item(channel, croissant, price_q=600)
+    _promo(croissant.sku, type_=Promotion.PERCENT, value=15)
+
+    cart = _cart(client, croissant.sku, 1)
+
+    item = cart.items[0]
+    assert item.price_display == "R$ 6,00"
+    assert item.promo_price_display == "R$ 5,10"
+    assert item.discount_label == "Oferta do Croissant"
+    assert item.total_display == "R$ 6,00"
+    _assert_fecha(cart)
+
+
+def test_oferta_de_valor_fixo_nao_vira_preco_de_linha(client, channel, croissant):
+    _seed_stock_for_product_sku(croissant.sku)
+    _ensure_listing_item(channel, croissant, price_q=1300)
+    _promo(croissant.sku, type_=Promotion.FIXED, value=1000)
+
+    cart = _cart(client, croissant.sku, 2)
+
+    assert cart.items[0].promo_price_display is None

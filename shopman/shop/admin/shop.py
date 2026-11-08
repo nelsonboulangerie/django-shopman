@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import date, time, timedelta
 from decimal import Decimal
@@ -13,8 +12,7 @@ from django.contrib.admin.utils import flatten_fieldsets
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.html import escape, format_html, format_html_join
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html, format_html_join
 from shopman.utils import unfold_component
 from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin
@@ -72,7 +70,6 @@ from shopman.shop.models import (
     ShopPurchase,
     ShopSearch,
 )
-from shopman.shop.models.shop import cancellation_preset_entries, validate_cancellation_presets
 from shopman.shop.operator_capacity_policy import (
     DEFAULT_ATTENTION_PERCENT,
     DEFAULT_CRITICAL_PERCENT,
@@ -343,36 +340,6 @@ class GoogleMerchantRegistrationForm(BaseDialogForm):
     """Confirmação do registro do envio no Google: não pede nada além do clique."""
 
 
-#: No Admin, cada motivo é uma linha; o grupo vem antes, separado por esta barra.
-CANCELLATION_PRESET_GROUP_SEPARATOR = "|"
-
-
-def _cancellation_presets_to_rows(raw) -> list[str]:
-    """``Shop.cancellation_presets`` → linhas do ArrayWidget (``"Grupo | Motivo"`` ou ``"Motivo"``)."""
-    rows = []
-    for group, label in cancellation_preset_entries(raw):
-        rows.append(f"{group} {CANCELLATION_PRESET_GROUP_SEPARATOR} {label}" if group else label)
-    return rows
-
-
-def _cancellation_presets_from_rows(rows) -> list:
-    """Linhas do ArrayWidget → ``Shop.cancellation_presets`` (string ou ``{"label", "group"}``)."""
-    presets: list = []
-    for row in rows or []:
-        row = str(row).strip()
-        if not row:
-            continue
-        group, sep, label = row.partition(CANCELLATION_PRESET_GROUP_SEPARATOR)
-        if not sep:
-            presets.append(row)
-            continue
-        group, label = group.strip(), label.strip()
-        if not label:
-            raise forms.ValidationError(f"Falta o motivo depois do grupo em “{row}”.")
-        presets.append({"label": label, "group": group} if group else label)
-    return presets
-
-
 def _opening_field(day: str, suffix: str) -> str:
     return f"opening_hours_{day}_{suffix}"
 
@@ -630,7 +597,10 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             min_value=1,
             max_value=240,
             widget=UnfoldAdminIntegerFieldWidget,
-            help_text="Em minutos. Ex.: 30 gera janelas arredondadas a cada meia hora.",
+            help_text=(
+                "Em minutos. A hora em que cada produto costuma ficar pronto é arredondada "
+                "para cima nesse passo. Ex.: com 30, 11:07 vira 11:30."
+            ),
         ),
         "defaults_pickup_history_days": forms.IntegerField(
             label="Histórico usado para sugestão",
@@ -638,12 +608,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             min_value=0,
             max_value=365,
             widget=UnfoldAdminIntegerFieldWidget,
-        ),
-        "defaults_pickup_fallback_slot": forms.CharField(
-            label="Horário de retirada padrão",
-            required=False,
-            widget=UnfoldAdminTextInputWidget,
-            help_text="Ref de um dos horários abaixo. Ex.: slot-09.",
+            help_text="Dias de produção considerados para saber a que horas cada produto fica pronto.",
         ),
         "defaults_season_hot_months": forms.MultipleChoiceField(
             label="Meses quentes",
@@ -1375,7 +1340,6 @@ class ShopForm(forms.ModelForm):
     social_links = forms.Field(label="Redes sociais", required=False, widget=ArrayWidget())
 
     # Justificativas de cancelamento/recusa — mesma edição add/remove (ArrayWidget).
-    cancellation_presets = forms.Field(label="Motivos de cancelamento e recusa", required=False, widget=ArrayWidget())
 
     # Tags de nota da cozinha — mesma edição add/remove (ArrayWidget).
     kitchen_note_tags = forms.Field(label="Tags de nota da cozinha", required=False, widget=ArrayWidget())
@@ -1409,18 +1373,6 @@ class ShopForm(forms.ModelForm):
             self.fields["social_links"].help_text = (
                 "Adicione uma rede por vez (URL completa, ex.: https://instagram.com/sualoja). "
                 "O ícone é detectado automaticamente."
-            )
-
-        if "cancellation_presets" in self.fields:
-            self.fields["cancellation_presets"].required = False
-            self.fields["cancellation_presets"].help_text = (
-                "Um motivo por linha, na ordem da tela. Para mostrar sob um cabeçalho no "
-                f"Gestor, escreva o grupo antes, separado por “{CANCELLATION_PRESET_GROUP_SEPARATOR}” "
-                "(ex.: “Produto | Item indisponível no momento”); sem grupo, só o motivo. "
-                "O cliente lê “Motivo: <motivo>.”: escreva na voz da loja e sem ponto final."
-            )
-            self.initial["cancellation_presets"] = _cancellation_presets_to_rows(
-                self.initial.get("cancellation_presets")
             )
 
         if "kitchen_note_tags" in self.fields:
@@ -1487,7 +1439,6 @@ class ShopForm(forms.ModelForm):
         if self._has("defaults_pickup_rounding_minutes"):
             self.fields["defaults_pickup_rounding_minutes"].initial = pickup_config.get("rounding_minutes", 30)
             self.fields["defaults_pickup_history_days"].initial = pickup_config.get("history_days", 30)
-            self.fields["defaults_pickup_fallback_slot"].initial = pickup_config.get("fallback_slot", "")
         if self._has("defaults_season_hot_months"):
             self.fields["defaults_season_hot_months"].initial = _months_to_choice(seasons.get("hot"))
             self.fields["defaults_season_mild_months"].initial = _months_to_choice(seasons.get("mild"))
@@ -1690,18 +1641,11 @@ class ShopForm(forms.ModelForm):
             )
             self.fields[_defaults_closed_date_field(index, "label")].initial = closed_date.get("label", "")
 
-    def clean_cancellation_presets(self):
-        presets = _cancellation_presets_from_rows(self.cleaned_data.get("cancellation_presets"))
-        validate_cancellation_presets(presets)
-        return presets
-
     def clean(self):
         cleaned_data = super().clean()
         # ArrayWidget vazio → None; o campo é NOT NULL (default lista).
         if self._has("social_links") and not cleaned_data.get("social_links"):
             cleaned_data["social_links"] = []
-        if self._has("cancellation_presets") and not cleaned_data.get("cancellation_presets"):
-            cleaned_data["cancellation_presets"] = []
         if self._has("kitchen_note_tags") and not cleaned_data.get("kitchen_note_tags"):
             cleaned_data["kitchen_note_tags"] = []
         if self._has(_opening_field("monday", "status")):
@@ -1751,10 +1695,6 @@ class ShopForm(forms.ModelForm):
                     self.add_error(label_field, "Informe o rótulo do slot.")
                 if not starts_at:
                     self.add_error(starts_at_field, "Informe o horário inicial do slot.")
-
-            fallback_slot = (cleaned_data.get("defaults_pickup_fallback_slot") or "").strip()
-            if fallback_slot and fallback_slot not in slot_refs:
-                self.add_error("defaults_pickup_fallback_slot", "Use o ref de um dos slots configurados.")
 
         if self._has(_defaults_closed_date_field(1, "date")):
             for index in range(1, DEFAULTS_CLOSED_DATE_ROWS + 1):
@@ -2058,11 +1998,6 @@ class ShopForm(forms.ModelForm):
             pickup_config = dict(pickup_config)
             pickup_config["rounding_minutes"] = self.cleaned_data.get("defaults_pickup_rounding_minutes") or 30
             pickup_config["history_days"] = self.cleaned_data.get("defaults_pickup_history_days") or 30
-            fallback_slot = (self.cleaned_data.get("defaults_pickup_fallback_slot") or "").strip()
-            if fallback_slot:
-                pickup_config["fallback_slot"] = fallback_slot
-            else:
-                pickup_config.pop("fallback_slot", None)
             defaults["pickup_slot_config"] = pickup_config
 
         if self._has("defaults_max_preorder_days"):
@@ -2485,8 +2420,7 @@ _APPEARANCE_FIELDSETS = (
         {
             "fields": ("storefront_preview",),
             "description": (
-                "Página inicial embutida (mesma origem). Salve o formulário e clique em "
-                "<strong>Atualizar prévia</strong> para ver cores e tipografia sem sair do admin."
+                "Salve as alterações antes de abrir a loja em nova aba para conferir cores e tipografia."
             ),
         },
     ),
@@ -2581,10 +2515,12 @@ _ORDERING_FIELDSETS = (
         {
             "fields": (
                 ("defaults_max_preorder_days", "defaults_pickup_rounding_minutes", "defaults_pickup_history_days"),
-                "defaults_pickup_fallback_slot",
             )
             + _defaults_pickup_admin_rows(),
-            "description": "Slots padrão de retirada e janela máxima para encomendas.",
+            "description": (
+                "Turnos de retirada das encomendas e janela máxima para encomendar. "
+                "Para hoje, a loja oferece as meias horas do expediente que ainda dão."
+            ),
         },
     ),
     (
@@ -2594,16 +2530,6 @@ _ORDERING_FIELDSETS = (
             "description": (
                 "Vale até o sistema ter histórico de preparo e de chegada do entregador para chamar "
                 "sozinho, durante o preparo. Depois disso este lembrete sai."
-            ),
-        },
-    ),
-    (
-        "Motivos de cancelamento e recusa",
-        {
-            "fields": ("cancellation_presets",),
-            "description": (
-                "Justificativas prontas para o operador recusar ou cancelar um pedido com um "
-                "toque no gestor. O motivo escolhido é enviado ao cliente na notificação."
             ),
         },
     ),
@@ -3090,61 +3016,27 @@ class ShopAppearanceAdmin(_ShopSingletonAdmin):
             **{"class": "gap-3 mt-1"},
         )
 
-    @admin.display(description="Prévia ao vivo")
+    @admin.display(description="Prévia da loja")
     def storefront_preview(self, obj):
-        """Iframe da home — requer X-Frame-Options: SAMEORIGIN na HomeView.
-
-        O texto e o botão saem dos componentes do Unfold, renderizados aqui em vez
-        de terem as classes copiadas à mão: o botão tinha nove classes decalcadas
-        do `button.html`, que envelheceriam sozinhas no primeiro upgrade do pacote.
-        O refresh continua via Alpine (padrão DOM do projeto), agora passado ao
-        componente por ``attrs``.
-
-        Sobra um ``style``: a altura mínima do iframe. É ``min(70vh, 640px)``, um
-        cálculo que classe nenhuma do Unfold expressa, e sem ele a prévia nasce
-        rasteira demais para mostrar a loja.
-        """
+        """A loja Nuxt abre na própria origem, sem depender de iframe no Admin."""
         if not obj or not obj.pk:
             return unfold_component(
                 "unfold/components/text.html",
                 children="Salve a loja para carregar a prévia da loja.",
-                **{"class": "text-base-500"},
             )
 
         from shopman.shop.services.storefront_links import home_url
 
-        # Loja desacoplada (Nuxt): o preview aponta para a loja real, não as páginas
-        # Django legadas. Base via SHOPMAN_STOREFRONT_BASE_URL (vazia ⇒ "/").
-        url = home_url() or "/"
-
-        src = json.dumps(url)
-        x_data = escape(
-            f"{{ src: {src}, bust() {{ const u = {src}; "
-            'this.src = u + (u.includes("?") ? "&" : "?") + "__pv=" + Date.now(); } }'
-        )
-        note = unfold_component(
-            "unfold/components/text.html",
-            children="A home pública permite iframe apenas neste site (SAMEORIGIN).",
-            **{"class": "text-xs text-base-500 mb-2"},
-        )
-        refresh = unfold_component(
+        return unfold_component(
             "unfold/components/button.html",
-            children="Atualizar prévia",
+            children="Abrir loja em nova aba",
+            href=home_url() or "/",
             variant="default",
             size="sm",
-            icon="refresh",
-            attrs={"x-on:click": "bust()"},
-            **{"class": "mb-2"},
+            icon="open_in_new",
+            attrs={"target": "_blank", "rel": "noopener noreferrer"},
         )
-        return mark_safe(
-            f'<div class="storefront-admin-preview max-w-full" x-data="{x_data}">'
-            f"{note}{refresh}"
-            '<iframe x-bind:src="src" title="Loja" '
-            'class="w-full rounded-default border border-base-200 '
-            'dark:border-base-700 bg-white" '
-            'style="min-height:min(70vh,640px)"></iframe>'
-            "</div>"
-        )
+
 
 
 @admin.register(ShopSearch)

@@ -373,7 +373,9 @@ class TestSms02PromisedWindow:
         proj = build_order_tracking(order)
 
         assert proj.promise.message == "Entrega combinada para amanhã, 15:00 às 15:30. Avisamos quando sair."
-        assert proj.eta_display == "15:00"
+        # Este teste prova o limite da janela; a data acompanha o horário
+        # quando a apresentação distingue uma previsão de outro dia.
+        assert proj.eta_display.split(" de ")[0] == "15:00"
 
     def test_ready_pickup_before_the_window_says_when_to_come(self, order):
         tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
@@ -392,19 +394,22 @@ class TestSms02PromisedWindow:
 
 
 class TestSms14CompletedOrder:
-    def test_completed_order_has_no_cancellation_request_and_thanks_in_feminine(self, order):
+    def test_completed_order_has_no_cancellation_contact_and_thanks_in_feminine(self, order):
         _set(order, status="completed")
 
         proj = build_order_tracking(order)
 
-        assert "request_cancellation" not in [action.ref for action in proj.actions]
+        assert "request_cancellation_contact" not in [action.ref for action in proj.actions]
+        assert proj.cancellation_contact is None
         assert proj.promise.message == "Obrigada pela preferência!"
         assert proj.copy.rating_thanks_title == "Obrigada!"
 
-    def test_dispatched_order_can_still_request_cancellation(self, order):
+    def test_dispatched_order_offers_talking_to_the_manager_instead_of_cancelling(self, order):
         _set(order, status="dispatched")
 
-        assert "request_cancellation" in [action.ref for action in build_order_tracking(order).actions]
+        refs = [action.ref for action in build_order_tracking(order).actions]
+        assert "request_cancellation_contact" in refs
+        assert "cancel_order" not in refs
 
 
 # ── F6: a ação de cancelar não carrega diálogo morto com jargão ──────────────
@@ -416,3 +421,42 @@ class TestF6CancelActionContract:
 
         cancel = next(action for action in proj.actions if action.ref == "cancel_order")
         assert cancel.confirmation == {}
+
+
+# ── Beta 06/11: a aba Retirada diz o horário escolhido ──────────────────────
+
+
+class TestPickupTabShowsTheChosenTime:
+    def test_pickup_today_shows_the_half_hour_window(self, order, shop_instance):
+        shop_instance.formatted_address = "Rua das Flores, 100, Londrina"
+        shop_instance.save(update_fields=["formatted_address"])
+        today = timezone.localdate().isoformat()
+        _set(order, fulfillment_type="pickup", delivery_date=today, delivery_time_slot="19:30-20:00")
+
+        pickup = build_order_tracking(order).pickup_info
+
+        assert pickup is not None
+        assert pickup.address == "Rua das Flores, 100, Londrina"
+        assert pickup.when_display == "hoje · 19:30 às 20:00"
+
+    def test_preorder_pickup_shows_the_house_turn(self, order, shop_instance):
+        shop_instance.formatted_address = "Rua das Flores, 100, Londrina"
+        shop_instance.save(update_fields=["formatted_address"])
+        tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
+        _set(order, fulfillment_type="pickup", delivery_date=tomorrow, delivery_time_slot="slot-15")
+
+        pickup = build_order_tracking(order).pickup_info
+
+        assert pickup is not None
+        assert pickup.when_display == "amanhã · A partir das 15h"
+
+    def test_pickup_without_a_chosen_time_does_not_invent_one(self, order, shop_instance):
+        shop_instance.formatted_address = "Rua das Flores, 100, Londrina"
+        shop_instance.save(update_fields=["formatted_address"])
+        today = timezone.localdate().isoformat()
+        _set(order, fulfillment_type="pickup", delivery_date=today, delivery_time_slot="")
+
+        pickup = build_order_tracking(order).pickup_info
+
+        assert pickup is not None
+        assert pickup.when_display is None

@@ -22,6 +22,8 @@ const resendPaymentLink = vi.fn();
 const requeueFiscal = vi.fn();
 const equipmentBack = vi.fn();
 const saveNotes = vi.fn();
+const confirmFn = vi.fn();
+const advanceFn = vi.fn();
 const fetchCancellationReasons = vi.fn(async () => []);
 const readError = ref<unknown>(null);
 // A impressora desta estação (a Via Pedido sai por ela; P2-19).
@@ -63,8 +65,8 @@ vi.stubGlobal("useOrderDetail", () => ({
   error: readError,
   refresh: vi.fn(),
   busy: ref(false),
-  confirm: vi.fn(),
-  advance: vi.fn(),
+  confirm: confirmFn,
+  advance: advanceFn,
   reject: vi.fn(),
   cancel: vi.fn(),
   fetchCancellationReasons,
@@ -127,7 +129,7 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     gift_recipient_phone: "",
     gift_message: "",
     gift_hide_values: false,
-    cancellation_presets: [],
+    cancel_reasons: [],
     kitchen_note_tags: [],
     equipment_options: [],
     equipment_out: [],
@@ -335,9 +337,9 @@ describe("detalhe do pedido — presente", () => {
     expect(w.find("[data-gift-phone]").exists()).toBe(false);
   });
 
-  it("gift_hide_values vira instrução visível: 'Não mostrar valores'", () => {
+  it("gift_hide_values vira instrução visível: 'Sem preços no papel'", () => {
     const w = abrir(order({ is_gift: true, gift_hide_values: true }));
-    expect(w.find("[data-gift-hide-values]").text()).toContain("Não mostrar valores");
+    expect(w.find("[data-gift-hide-values]").text()).toContain("Sem preços no papel");
   });
 
   it("sem hide_values o selo não aparece", () => {
@@ -641,6 +643,69 @@ it("keeps a confirmed note when the following useful read fails", async () => {
     await flushPromises();
     expect((note.element as HTMLTextAreaElement).value).toBe("Nota nova confirmada");
   } finally { readError.value = null; w.unmount(); }
+});
+
+// Beta 06/11: o atalho "Bem assado" só preenchia o rascunho; o operador tocou
+// Aceitar sem ver o "Salvar nota" e o ticket da Cozinha saiu sem a nota.
+describe("nota da cozinha vai junto com o gesto do momento", () => {
+  beforeEach(() => {
+    saveNotes.mockReset();
+    confirmFn.mockReset();
+    advanceFn.mockReset();
+  });
+  const tocarAtalho = async (w: ReturnType<typeof abrir>, tag: string) =>
+    w.findAll("button").find((button) => button.text() === tag)!.trigger("click");
+
+  it("Aceitar com o atalho no rascunho grava a nota ANTES de aceitar", async () => {
+    const calls: string[] = [];
+    saveNotes.mockImplementation(async (text: string) => {
+      calls.push(`notes:${text}`);
+      detalhe.value = { ...detalhe.value!, kitchen_note: text };
+      return true;
+    });
+    confirmFn.mockImplementation(() => { calls.push("confirm"); });
+    const w = abrir(order({ kitchen_note_tags: ["Bem assado"] }));
+    await tocarAtalho(w, "Bem assado");
+    await w.get('[data-action="confirm"]').trigger("click");
+    await flushPromises();
+    expect(calls).toEqual(["notes:Bem assado", "confirm"]);
+    expect(w.findAll("button").some((button) => button.text() === "Salvar nota")).toBe(false);
+    w.unmount();
+  });
+
+  it("Avançar também leva o texto digitado", async () => {
+    saveNotes.mockImplementation(async (text: string) => {
+      detalhe.value = { ...detalhe.value!, kitchen_note: text };
+      return true;
+    });
+    const w = abrir(order({ status: "accepted", can_confirm: false, can_advance: true, next_action_label: "Iniciar preparo" }));
+    await w.get("#order-notes").setValue("Sem gergelim");
+    await w.get('[data-action="advance"]').trigger("click");
+    await flushPromises();
+    expect(saveNotes).toHaveBeenCalledWith("Sem gergelim", "");
+    expect(advanceFn).toHaveBeenCalledTimes(1);
+    w.unmount();
+  });
+
+  it("se a nota não grava, o pedido NÃO é aceito e o rascunho fica", async () => {
+    saveNotes.mockImplementation(async () => false);
+    const w = abrir(order({ kitchen_note_tags: ["Bem assado"] }));
+    await tocarAtalho(w, "Bem assado");
+    await w.get('[data-action="confirm"]').trigger("click");
+    await flushPromises();
+    expect(confirmFn).not.toHaveBeenCalled();
+    expect((w.get("#order-notes").element as HTMLTextAreaElement).value).toBe("Bem assado");
+    w.unmount();
+  });
+
+  it("sem rascunho, Aceitar não grava nota nenhuma", async () => {
+    const w = abrir(order({ kitchen_note: "Bem assado" }));
+    await w.get('[data-action="confirm"]').trigger("click");
+    await flushPromises();
+    expect(saveNotes).not.toHaveBeenCalled();
+    expect(confirmFn).toHaveBeenCalledTimes(1);
+    w.unmount();
+  });
 });
 
 describe("detalhe iFood", () => {

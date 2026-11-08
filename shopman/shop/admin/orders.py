@@ -66,7 +66,7 @@ def _order_data_rows(data: dict):
         add("Presente para", " · ".join(p for p in (rname, rphone) if p) or "Sim")
         add("Mensagem do presente", data.get("gift_message"))
         if data.get("gift_hide_values"):
-            add("Presente", "Ocultar valores na nota/etiqueta")
+            add("Presente", "Sem preços no papel")
 
     return rows
 

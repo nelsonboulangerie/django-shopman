@@ -1305,6 +1305,34 @@ class POSHeadlessSurfaceContractTests(TestCase):
         # too short → no results (avoid scanning on a single character)
         self.assertEqual(self.client.get("/api/v1/backstage/pos/customer/search/?q=b").json()["results"], [])
 
+    def test_api_customer_search_masks_contacts_and_needs_four_digits(self) -> None:
+        """Beta 07/11: "11" devolvia telefone, CPF e e-mail inteiros de 8 clientes
+        por vez. A lista é para reconhecer: contatos mascarados, e número só com
+        4 dígitos. O cadastro completo vem no lookup por ref."""
+        Customer.objects.create(
+            ref="CUST-MASK-1", first_name="Maria", last_name="Santos",
+            phone="+5543991111111", email="maria.santos@example.com", document="11122233344",
+        )
+
+        def search(query: str) -> list[dict]:
+            response = self.client.get("/api/v1/backstage/pos/customer/search/", {"q": query})
+            self.assertEqual(response.status_code, 200)
+            return response.json()["results"]
+
+        self.assertEqual(search("11"), [])
+        self.assertEqual(search("111"), [])
+        self.assertEqual(search("(43)"), [])
+        (row,) = [r for r in search("1111") if r["ref"] == "CUST-MASK-1"]
+        self.assertEqual(row["phone"], "(43) •••••-1111")
+        self.assertEqual(row["document"], "•••.•••.•••-44")
+        self.assertEqual(row["email"], "m•••@example.com")
+        self.assertIn("CUST-MASK-1", [r["ref"] for r in search("Ma")])  # nome curto segue valendo
+
+        lookup = self.client.post(
+            "/api/v1/backstage/pos/customer/lookup/", {"ref": "CUST-MASK-1"}, content_type="application/json",
+        ).json()["customer"]
+        self.assertEqual(lookup["phone"], "+5543991111111")
+
     def test_api_customer_resolve_creates_just_in_time_and_is_idempotent(self) -> None:
         before = Customer.objects.count()
         # A fresh name+phone → created NOW (not deferred to order commit).

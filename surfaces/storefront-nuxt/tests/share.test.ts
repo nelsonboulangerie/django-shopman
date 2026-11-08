@@ -1,37 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import {
-  orderShareUrl,
-  shareMessage,
-  whatsAppShareHref
-} from '../app/utils/share'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { whatsAppShareHref } from '../app/utils/share'
 
-describe('mensagem de compartilhamento', () => {
-  it('junta a frase e o link numa mensagem só', () => {
-    expect(shareMessage('Meu pedido WEB-1 na Nelson Boulangerie', 'https://nelson/pedido/WEB-1'))
-      .toBe('Meu pedido WEB-1 na Nelson Boulangerie https://nelson/pedido/WEB-1')
-  })
-
-  it('degrada para o que existir', () => {
-    expect(shareMessage('', 'https://nelson/pedido/WEB-1')).toBe('https://nelson/pedido/WEB-1')
-    expect(shareMessage('Meu pedido', '')).toBe('Meu pedido')
-  })
-})
+const SUMMARY = 'Pedido WEB-1 na Nelson Boulangerie\n2× Croissant\nRetirada: hoje · 15:00 às 15:30'
 
 describe('link de fallback do WhatsApp', () => {
   it('usa o endpoint de envio, nao o click-to-chat sem telefone', () => {
     // `wa.me/?text=` tem o telefone VAZIO e cai na pagina "Continue to Chat",
     // que perde o texto — era por isso que so o link cru chegava.
-    const href = whatsAppShareHref('Meu pedido WEB-1 https://nelson/pedido/WEB-1')
+    const href = whatsAppShareHref(SUMMARY)
 
     expect(href).toContain('api.whatsapp.com/send')
     expect(href).not.toContain('wa.me/?')
   })
 
-  it('leva a frase inteira, nao so o link', () => {
-    const href = whatsAppShareHref('Meu pedido WEB-1 https://nelson/pedido/WEB-1')
+  it('leva o resumo inteiro, com as quebras de linha', () => {
+    const href = whatsAppShareHref(SUMMARY)
 
     expect(new URL(href).searchParams.get('text'))
-      .toBe('Meu pedido WEB-1 https://nelson/pedido/WEB-1')
+      .toBe(SUMMARY)
   })
 
   it('sem mensagem nao oferece link', () => {
@@ -39,19 +27,14 @@ describe('link de fallback do WhatsApp', () => {
   })
 })
 
-describe('URL compartilhada do pedido', () => {
-  it('e canonica: sem a query string da sessao', () => {
-    // `window.location.href` levava `?channel=…` junto — o cliente compartilhava
-    // o proprio contexto de navegacao sem querer.
-    expect(orderShareUrl('https://nelson.com.br', 'WEB-260801-A86'))
-      .toBe('https://nelson.com.br/pedido/WEB-260801-A86')
-  })
+describe('Enviar resumo do pedido', () => {
+  it('manda o texto do servidor e nenhum link do pedido', () => {
+    // O link do pedido so abre para quem o fez: quem o recebia via
+    // "Nao encontramos este pedido" (beta 06/11).
+    const page = readFileSync(resolve(__dirname, '../app/pages/pedido/[ref]/index.vue'), 'utf8')
 
-  it('nao duplica a barra da origem', () => {
-    expect(orderShareUrl('https://nelson.com.br/', 'WEB-1')).toBe('https://nelson.com.br/pedido/WEB-1')
-  })
-
-  it('sem origem (SSR) nao inventa link', () => {
-    expect(orderShareUrl('', 'WEB-1')).toBe('')
+    expect(page).toContain("tracking.value?.share_text?.trim()")
+    expect(page).not.toContain('orderShareUrl')
+    expect(page).not.toContain('window.location.origin')
   })
 })

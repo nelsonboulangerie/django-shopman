@@ -16,6 +16,8 @@ const {
   install,
   isStandalone,
   isDismissed,
+  hasOrdered,
+  refreshHasOrdered,
   markShown,
   dismiss,
   dismissAsDone
@@ -30,6 +32,9 @@ const eligible = computed(() => Boolean(props.copy)
   && !excluded.value
   && !isStandalone.value
   && !isDismissed.value
+  // Depois do primeiro pedido concluído, nunca no primeiro carregamento: quem
+  // ainda não comprou ainda não sabe se quer a loja na Tela de Início.
+  && hasOrdered.value
   // `invite` é falso onde não há caminho honesto (Firefox de computador, Safari antigo)
   // e onde o caminho existe mas subir sozinho seria adivinhação (Chromium já instalado).
   && plan.value.invite
@@ -41,7 +46,11 @@ watch(open, value => {
   if (value) invite.claim('pwa-install', route.path)
   else invite.release('pwa-install', route.path)
 }, { flush: 'sync' })
-watch(() => route.path, path => invite.leavePage(path))
+watch(() => route.path, (path) => {
+  invite.leavePage(path)
+  // O pedido se conclui no acompanhamento (rota sem convite); a próxima página já pode convidar.
+  refreshHasOrdered()
+})
 
 watch(eligible, (value) => {
   if (!value || open.value) return

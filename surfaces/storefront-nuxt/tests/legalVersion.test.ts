@@ -81,9 +81,13 @@ function resumo (): string {
  *
  * 2026-11-05: a frase do aviso de volta na política ("e para se você desligar as
  * mensagens", beta 05/11, LOJA-08) virou frase inteira. Palavra nova, versão nova.
+ *
+ * 2026-11-06: §7 dos termos com a regra do dono para cancelar. Antes do preparo o
+ * cliente cancela na tela, pago ou não, e o valor volta inteiro; depois, não cancela
+ * e fala com o responsável. A solicitação com protocolo deixou de existir.
  */
-const RESUMO_PUBLICADO = '926c7033999d75e4'
-const VERSAO_PUBLICADA = '2026-11-05'
+const RESUMO_PUBLICADO = '5474a59ea5b890e1'
+const VERSAO_PUBLICADA = '2026-11-06'
 
 describe('páginas legais — o relógio', () => {
   it('a versão declarada no servidor é a mesma que esta trava conhece', () => {
@@ -125,6 +129,7 @@ describe('páginas legais — o relógio', () => {
 const CHAVES_DECLARADAS: Record<string, string> = {
   'shopman-checkout-draft': 'RASCUNHO DO CHECKOUT — guarda PII; descrito na política',
   'storefront-pwa-install-dismissed-until': 'só a data em que o convite foi dispensado',
+  'shopman-order-secured': 'marca de que este navegador já concluiu um pedido; não guarda dado pessoal',
   'shopman-intention:': 'chave de idempotência de uma ação; não guarda dado pessoal',
   'shop-marketing-prompt': 'marca de convite já visto; não guarda dado pessoal'
 }

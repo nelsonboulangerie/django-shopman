@@ -85,13 +85,13 @@ from .surface import (
 )
 from .telemetry import AddressEventView, ClientErrorView
 from .tracking import (
-    OrderCancellationRequestView,
     OrderCancelView,
     OrderConfirmReceiptView,
     OrderContactRequestView,
     OrderPaymentCheckView,
     OrderPaymentSwitchToPixView,
     OrderRateView,
+    OrderRepaymentPixView,
     OrderTrackingView,
     OrderWaitlistConfirmView,
     order_events_view,
@@ -203,11 +203,6 @@ urlpatterns = [
     path("tracking/<str:ref>/events/", order_events_view, name="api-tracking-events"),
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-order-cancel"),
     path(
-        "orders/<str:ref>/cancellation-request/",
-        OrderCancellationRequestView.as_view(),
-        name="api-order-cancellation-request",
-    ),
-    path(
         "orders/<str:ref>/waitlist-confirm/",
         OrderWaitlistConfirmView.as_view(),
         name="api-order-waitlist-confirm",
@@ -225,6 +220,7 @@ urlpatterns = [
         OrderPaymentSwitchToPixView.as_view(),
         name="api-order-payment-switch-to-pix",
     ),
+    path("orders/<str:ref>/payment/pix/", OrderRepaymentPixView.as_view(), name="api-order-repayment-pix"),
     path("orders/<str:ref>/conversation/", OrderConversationView.as_view(), name="api-order-conversation"),
     # A tela de pagamento sumiu (PAYMENT-TRACKING-MERGE): o GET/status foram
     # absorvidos por /tracking/{ref}/ + SSE. Só o gatilho de captura simulada fica.

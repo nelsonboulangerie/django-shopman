@@ -30,6 +30,7 @@ import { toast } from "vue-sonner";
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import type { HandOverBody } from "~/presentation/preorderActions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
+import { orderUrl } from "~/presentation/crossAppLinks";
 import { PREORDERS_HOME, preorderBackTarget } from "~/presentation/preorderDetail";
 import { handOverCta, redoNotice } from "~/presentation/preorderActions";
 import { customerLine, moneyLine, rowShowsSituation, situationTone } from "~/presentation/preorders";
@@ -48,6 +49,8 @@ const { pos, pending: posPending, refresh: refreshPos } = await usePosTerminal()
 const { detail, pending, error, refresh } = usePosPreorderDetail(ref_);
 const counter = computed(() => detail.value?.counter ?? null);
 const card = computed(() => counter.value?.card ?? null);
+const runtimeConfig = useRuntimeConfig();
+const ordersUrl = computed(() => orderUrl(String(runtimeConfig.public.ordersUrl || ""), ref_.value));
 const notFound = computed(() => !!error.value && httpError(error.value).status === 404);
 
 const tickets = usePosOrderTickets(pos);
@@ -322,6 +325,16 @@ function goBack() {
               data-preorder-hand-over-blocked
             />
 
+            <NuxtButton
+              v-if="card.fulfillment_type === 'delivery' && card.payment_state === 'to_receive' && ordersUrl"
+              :to="ordersUrl"
+              external
+              variant="outline"
+              icon="i-lucide-arrow-up-right"
+              label="Conferir recebimento no Gestor"
+              data-preorder-payment-manager
+            />
+
             <!-- O ENTREGADOR (TaOn), na encomenda de entrega da casa: o estado da
                  corrida, Chamar, Cancelar a corrida e Entregador voltou, com o bloco e as
                  ações do Gestor (dono, 13/10 e 14/10). -->
@@ -446,6 +459,8 @@ function goBack() {
           v-model:open="handOverOpen"
           :hand-over="counter.hand_over"
           :customer-name="customerLine(card)"
+          :shop-name="pos?.shop_name || ''"
+          :order-ref="ref_"
           :busy="actions.busy.value"
           @confirm="confirmHandOver"
         />

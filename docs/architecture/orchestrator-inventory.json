@@ -1087,6 +1087,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "CARD_REPAYMENT_TEMPLATE_NAME",
             "COURIER_TRACKING_TEMPLATE_NAME",
             "MESSAGE_TEMPLATES",
             "PREORDER_ACCEPTED_TEMPLATE_NAME",
@@ -1096,6 +1097,7 @@
             "_PUBLIC_SUFFIX",
             "_api_call",
             "_build_message",
+            "_card_repayment_variant",
             "_courier_tracking_path",
             "_courier_tracking_variant",
             "_declared_marketing_fields",
@@ -2075,7 +2077,6 @@
           "symbols": [
             "ADDRESS_LOCATION_DIVERGENCE_MODE_CHOICES",
             "CALENDAR_DECISION_CHOICES",
-            "CANCELLATION_PRESET_GROUP_SEPARATOR",
             "CalendarDecisionForm",
             "CalendarRemovalForm",
             "DEFAULTS_CLOSED_DATE_ROWS",
@@ -2126,8 +2127,6 @@
             "_adapter_choices",
             "_calendar_decision_entry",
             "_calendar_entry_key",
-            "_cancellation_presets_from_rows",
-            "_cancellation_presets_to_rows",
             "_choice_to_months",
             "_defaults_closed_date_admin_rows",
             "_defaults_closed_date_field",
@@ -2928,7 +2927,6 @@
             "_register_accounting_handler",
             "_register_alert_resolution",
             "_register_campaign",
-            "_register_cancellation_request_signals",
             "_register_catalog_projection_handler",
             "_register_catalog_signals",
             "_register_confirmation_handler",
@@ -3147,28 +3145,6 @@
         "marketing.announcement-publication-handler",
         "marketing.campaign-evaluation-receivers",
         "marketing.campaign-occurrence-handler"
-      ],
-      "responsibilities": [
-        "composição",
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "logger"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/handlers/cancellation_requests.py",
-      "touchpoints": [
-        "handler"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "order.cancellation-request-resolution"
       ],
       "responsibilities": [
         "composição",
@@ -3647,10 +3623,15 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_CHANNEL_NAMES",
+            "_EXTRA_NOTICE_LABELS",
+            "_ORDER_FAILURE_CAUSES",
             "_enrich_system_context",
             "_stock_alert_context",
             "_system_backends",
-            "logger"
+            "logger",
+            "notice_label",
+            "order_failure_cause"
           ]
         }
       ]
@@ -4212,6 +4193,7 @@
           "symbols": [
             "Command",
             "QUEUE_HEALTH_ALERT_TYPES",
+            "_tasks",
             "logger"
           ]
         }
@@ -6127,7 +6109,6 @@
         {
           "responsibility": "configuração",
           "symbols": [
-            "CANCELLATION_PRESET_TRAILING_PUNCTUATION",
             "LOGO_ALLOWED_EXTENSIONS",
             "LOGO_MAX_SIZE_BYTES",
             "NotificationTemplate",
@@ -6140,9 +6121,7 @@
             "_SOCIAL_PLATFORMS",
             "_WHATSAPP_HOSTS",
             "_resolve_social_link",
-            "cancellation_preset_entries",
             "is_whatsapp_link",
-            "validate_cancellation_presets",
             "validate_logo"
           ]
         }
@@ -6238,10 +6217,12 @@
             "ACCESS_BUTTON_COPY",
             "ACCESS_BUTTON_MAX_CHARS",
             "CUSTOMER_COPY",
+            "_GENERIC_TEMPLATE_LABELS",
             "_gsm_ascii",
             "plain_bodies",
             "sms_bodies",
-            "subjects"
+            "subjects",
+            "template_label"
           ]
         }
       ]
@@ -6773,6 +6754,7 @@
             "get_published_product",
             "get_sellable_published_product",
             "image_urls_by_sku",
+            "is_beverage",
             "keywords_by_sku",
             "label_attributes",
             "label_attributes_by_sku",
@@ -7045,7 +7027,7 @@
           "symbols": [
             "CARRIER_TRACKING_URLS",
             "TERMINAL_STATUSES",
-            "TrackingCancellationRequestData",
+            "TrackingCancellationContactData",
             "TrackingData",
             "TrackingFiscalNoteData",
             "TrackingFulfillmentData",
@@ -7057,7 +7039,6 @@
             "TrackingRatingFollowupData",
             "TrackingStatusData",
             "TrackingTimelineEventData",
-            "_CANCELLATION_REQUEST_STATUSES",
             "_COURIER_ENDED_STATUSES",
             "_DIGITAL_PAYMENT_METHODS",
             "_WAITLIST_NONE",
@@ -7069,8 +7050,8 @@
             "_build_progress_steps",
             "_build_promise",
             "_build_timeline",
+            "_cancellation_contact",
             "_cancellation_customer_text",
-            "_cancellation_request",
             "_carrier_tracking_url",
             "_commitment_info",
             "_confirmation_deadline",
@@ -7079,7 +7060,6 @@
             "_copy_message",
             "_copy_title",
             "_courier_tracking_url",
-            "_display_status_key",
             "_eta_at",
             "_eta_not_before",
             "_event_for_status",
@@ -7089,6 +7069,8 @@
             "_iso",
             "_mock_confirmation_projection_value",
             "_money_outcome",
+            "_note_says_card_hold_released",
+            "_paid_amount_q",
             "_parse_datetime",
             "_payment_confirmed_timestamp",
             "_payment_info",
@@ -7107,6 +7089,7 @@
             "_qr_image_src",
             "_rating_followup",
             "_reorder_action",
+            "_sealed_discount_lines",
             "_shop_has_specific_address",
             "_show_payment_confirmed_notice",
             "_slot_label",
@@ -7114,9 +7097,11 @@
             "_step_was_reached",
             "_store_confirmation_is_deferred",
             "_waitlist_info",
+            "as_customer_sees",
             "build_tracking",
             "build_tracking_status",
             "convenience_pending",
+            "display_status_key",
             "logger"
           ]
         }
@@ -7382,6 +7367,7 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "promotion.birthday-discount-taken",
         "promotion.eligibility",
         "promotion.minimum-order-eligibility"
       ],
@@ -7398,6 +7384,63 @@
       "out_of_extraction": false,
       "unit_ids": [
         "marketing.public-link"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/ifood_cancel_reasons.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.ifood-cancel-reasons"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/ifood_concluded.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.ifood-concluded"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/customer_cancellation.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.customer-cancellation",
+        "order.customer-cancellation-contact"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/login_code_ceiling.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "auth.login-code-ip-ceiling"
       ],
       "responsibilities": [
         "decisão"
@@ -7808,6 +7851,7 @@
         "account.food-preferences",
         "account.notification-consent",
         "account.order-erasure-eligibility",
+        "account.order-erasure-subject",
         "account.otp-erasure-eligibility",
         "account.privacy-erasure",
         "shop.services-account-addresses",
@@ -7818,7 +7862,8 @@
       "responsibilities": [
         "composição",
         "decisão",
-        "infraestrutura"
+        "infraestrutura",
+        "leitura"
       ],
       "support_claims": [
         {
@@ -8279,20 +8324,6 @@
           ]
         }
       ]
-    },
-    {
-      "path": "shopman/shop/services/cancellation_requests.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "shop.services-cancellation-requests"
-      ],
-      "responsibilities": [
-        "composição"
-      ],
-      "support_claims": []
     },
     {
       "path": "shopman/shop/services/card_authorization.py",
@@ -8789,6 +8820,7 @@
             "DEFAULT_CHANNEL_REF",
             "MAX_SESSION_ORDER_ACCESS_REFS",
             "ORDER_ACCESS_SESSION_KEY",
+            "SELF_CANCELLED_ALERT_TYPE",
             "_customer_identity_from_info",
             "_customer_identity_from_user",
             "_named_snapshot_items",
@@ -8801,6 +8833,7 @@
             "_same_phone",
             "_sellable_product",
             "_session_can_access_order",
+            "_tell_orders_the_customer_cancelled",
             "active_order_count_for_customer",
             "active_order_count_for_phone",
             "add_reorder_items",
@@ -8827,6 +8860,7 @@
             "resolve_delivery_auto_complete_if_due",
             "resolve_payment_timeout_if_due",
             "save_customer_rating",
+            "self_cancelled_message",
             "user_can_access_order"
           ]
         }
@@ -9539,6 +9573,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_INTERACTIVE_READ_TIMEOUT",
             "_base_url",
             "_cfg",
             "logger"
@@ -9944,6 +9979,7 @@
             "defer_stock_hold",
             "delivery_date_from_payload",
             "delivery_start",
+            "dispatch_before_window",
             "is_due",
             "is_scheduled",
             "map_schedule",
@@ -11797,8 +11833,10 @@
             "_persist_tender_intents",
             "_pix_confirmation",
             "_pix_intent_needs_creation_resume",
+            "_record_capture_failure",
             "_record_gateway_authorization",
             "_record_initiate_error",
+            "_record_refund_event",
             "_refund_gateway_intents",
             "_refund_intent",
             "_refund_without_gateway",
@@ -11932,6 +11970,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_CHARGE_STATUS_LABELS",
             "_ack_alerts",
             "_alert",
             "_alert_insufficient",
@@ -12045,6 +12084,7 @@
             "_ensure_resolved_prices",
             "_existing_sale_by_client_request_id",
             "_find_customer_identifier",
+            "_fiscal_toggle_in_defaults",
             "_get_open_pos_tab_session",
             "_get_open_pos_tab_session_by_key",
             "_guard_receipt_contact_owner",
@@ -12546,6 +12586,7 @@
       "out_of_extraction": false,
       "unit_ids": [
         "promotion.active-scope",
+        "promotion.birthday-once-a-year",
         "promotion.coupon-resolution",
         "promotion.customer-group-advantage",
         "promotion.delivery-geography",

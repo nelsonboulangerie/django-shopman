@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   checkoutDateBounds,
+  datepickerDisabledDates,
   checkoutStepForField,
   checkoutStepState,
   checkoutSteps,
@@ -54,6 +55,14 @@ describe('checkout flow view model', () => {
       { label: 'Hoje', value: '2026-05-20', disabled: true },
       { label: 'Amanhã', value: '2026-05-21', disabled: false }
     ])
+  })
+
+  it('takes the preorder window only from the projection, never from a local number', () => {
+    // Beta 06/11: a home prometia 7 dias e o calendário deixou escolher 22. O teto
+    // é o `max_preorder_days` que o servidor manda; sem ele, só hoje.
+    expect(checkoutDateBounds({ max_preorder_days: 7 }, now).maxDateValue).toBe('2026-05-27')
+    expect(checkoutDateBounds({ max_preorder_days: 30 }, now).maxDateValue).toBe('2026-06-19')
+    expect(checkoutDateBounds(null, now).maxDateValue).toBe('2026-05-20')
   })
 
   it('disables the quick date shortcuts on a weekday the shop does not open', () => {
@@ -244,5 +253,13 @@ describe('janela de entrega (P2-30a)', () => {
     expect(canContinueCheckoutWhen(form, [], null, bounds, [])).toBe(false)
     // Retirada sem turnos configurados continua livre, como antes.
     expect(canContinueCheckoutWhen({ ...form, fulfillment_type: 'pickup' }, [], null, bounds, [])).toBe(true)
+  })
+})
+
+
+describe('calendário depois do encerramento', () => {
+  it('desabilita hoje sem fechar os próximos dias de atendimento', () => {
+    expect(datepickerDisabledDates([], [], '2026-05-20')).toEqual([new Date(2026, 4, 20)])
+    expect(datepickerDisabledDates([], [], '')).toEqual([])
   })
 })

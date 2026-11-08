@@ -173,7 +173,7 @@ def _localize(value):
             from django.utils import timezone as tz
 
             return value.astimezone(tz.get_current_timezone())
-        except Exception:
+        except Exception:  # silêncio-deliberado: sem fuso legível, a hora segue no fuso em que veio
             logger.debug("product_readiness: could not localize finish time", exc_info=True)
     return value
 
@@ -189,17 +189,39 @@ def _round_up_minutes(minutes: float, granularity: int) -> int:
 def ready_times_for(
     skus: list[str],
     *,
-    history_days: int = DEFAULT_HISTORY_DAYS,
-    rounding_minutes: int = DEFAULT_ROUNDING_MINUTES,
+    history_days: int | None = None,
+    rounding_minutes: int | None = None,
 ) -> dict[str, time]:
     """A hora de prontidão que VALE, por SKU — declarada e observada reunidas.
 
     As duas juntas, a mais TARDE vencendo. Ver o cabeçalho do módulo para o
-    porquê da direção.
+    porquê da direção. Sem ``history_days``/``rounding_minutes``, vale a
+    configuração da casa: ``Shop.defaults["pickup_slot_config"]``, editável no
+    Admin e a mesma para toda superfície (loja, concierge, PDV). Sem
+    configuração, os padrões do módulo.
     """
     unique = sorted({str(sku) for sku in (skus or []) if sku})
     if not unique:
         return {}
+    if history_days is None or rounding_minutes is None:
+        try:
+            from shopman.shop.models import Shop
+
+            shop = Shop.load()
+            raw = (shop.defaults or {}).get("pickup_slot_config") if shop else None
+        except Exception as exc:
+            # Não ler a régua da casa não vira "régua padrão": a prontidão
+            # medida com outra régua seria uma promessa que ninguém fez.
+            raise ReadinessUnavailable("não deu para ler a configuração de prontidão da loja") from exc
+        config = raw if isinstance(raw, dict) else {}
+        if history_days is None:
+            configured = config.get("history_days")
+            history_days = configured if isinstance(configured, int) and configured >= 0 else DEFAULT_HISTORY_DAYS
+        if rounding_minutes is None:
+            configured = config.get("rounding_minutes")
+            rounding_minutes = (
+                configured if isinstance(configured, int) and configured > 0 else DEFAULT_ROUNDING_MINUTES
+            )
     declared = declared_ready_times(unique)
     observed = observed_ready_times(
         unique, history_days=history_days, rounding_minutes=rounding_minutes

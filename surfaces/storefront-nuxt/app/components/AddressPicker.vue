@@ -7,6 +7,8 @@ import {
   ADDRESS_LABEL_OPTIONS,
   BR_STATES,
   addressDraftErrors,
+  cepDigits,
+  cepSearchIssue,
   composedAddressLine,
   draftFromGooglePlace,
   draftFromSavedAddress,
@@ -17,13 +19,17 @@ import {
   labelPatchPayload,
   looksLikeCep,
   maskCepInput,
+  mergeCepLookup,
   mergeReverseGeocode,
   nextFocusAfterSuggestion,
+  pickerDraftPending,
   resolvePreselectedAddress,
   savedAddressDisplayLabel,
   selectionFromDraft,
   selectionFromSavedAddress,
+  stillFailingErrors,
   type AddressDraft,
+  type CepFilledFields,
   type AddressLabelKey,
   type AddressSelection,
   type ViaCepPayload
@@ -84,6 +90,8 @@ const emit = defineEmits<{
   done: []
   // Checkout: um endereço salvo foi editado in-loco — o pai re-busca a lista.
   'addresses-changed': []
+  // Checkout: o formulário tem algo que o pai ainda não recebeu.
+  'draft-pending': [pending: boolean]
 }>()
 
 const apiPath = useShopmanApiPath()
@@ -176,6 +184,18 @@ const mapConfirmationEnabled = computed(() => (
   && !!session.publicConfig.value?.address_map_confirmation_enabled
 ))
 const draftLine = computed(() => draftSummaryLine(draft as AddressDraft))
+const draftPending = computed(() => pickerDraftPending({
+  context: props.context,
+  mode: mode.value,
+  editingSaved: editingSavedId.value != null,
+  draft: draft as AddressDraft,
+  selection: props.selection
+}))
+watch(draftPending, pending => emit('draft-pending', pending), { immediate: true })
+onBeforeUnmount(() => emit('draft-pending', false))
+// Na edição de um salvo, a linha de cima é o que está gravado, não o que se
+// digita: o rótulo diz isso enquanto os dois divergem.
+const acceptedLineIsStale = computed(() => editingSavedId.value != null && draftLine.value !== acceptedLine.value)
 const mapAccuracyText = computed(() => accuracyMessage(mapAccuracyM.value))
 const mapAccuracyKind = computed(() => accuracyBucket(mapAccuracyM.value))
 const locationConfig = computed<AddressLocationDivergenceConfig>(() => {
@@ -290,6 +310,7 @@ function backToSaved () {
 function startEditSaved (address: SavedAddressProjection) {
   editingSavedId.value = address.id
   Object.assign(draft, draftFromSavedAddress(address))
+  forgetCepLookup()
   accountLabel.value = (address.label_key as AddressLabelKey) || 'home'
   accountLabelCustom.value = address.label_custom || ''
   isDefault.value = !!address.is_default
@@ -315,6 +336,7 @@ function dismissForm () {
 
 function resetDraft () {
   Object.assign(draft, emptyAddressDraft())
+  forgetCepLookup()
   fieldErrors.value = {}
   acceptedLine.value = ''
   saveIssue.value = ''
@@ -370,12 +392,14 @@ async function runSearch (value: string) {
   searching.value = true
   searchIssue.value = ''
   let results: PickerSuggestion[] = []
+  let cepUnavailable = false
   try {
     if (maps.enabled.value && !isCep) results = await placesSuggestions(trimmed)
     if (maps.enabled.value && isCep && !results.length) results = await placesSuggestions(trimmed)
     if (isCep && !results.length) {
-      const cepSuggestion = await viaCepSuggestion(trimmed)
-      if (cepSuggestion) results = [cepSuggestion]
+      const cepLookup = await viaCepSuggestion(trimmed)
+      if (cepLookup.suggestion) results = [cepLookup.suggestion]
+      cepUnavailable = cepLookup.unavailable
     }
   } finally {
     if (seq === searchSeq) {
@@ -384,7 +408,7 @@ async function runSearch (value: string) {
       searchIssue.value = results.length
         ? ''
         : isCep
-          ? 'Não achamos esse CEP. Confira os números — ou toque em "Preencher manualmente" e escreva o endereço.'
+          ? cepSearchIssue(cepUnavailable)
           : 'Nenhum endereço com esse nome. Tente a rua com o número, ou o CEP. Se preferir, preencha manualmente.'
       searching.value = false
     }
@@ -420,21 +444,28 @@ async function placesSuggestions (input: string): Promise<PickerSuggestion[]> {
   }
 }
 
-async function viaCepSuggestion (value: string): Promise<PickerSuggestion | null> {
+// "Não achamos esse CEP" só quando a ViaCEP respondeu que ele não existe. Falha
+// de consulta (rede, bloqueio, serviço fora) é nossa, e a frase não pode mandar o
+// cliente conferir números que estão certos (beta SMS-01).
+async function viaCepSuggestion (value: string): Promise<{ suggestion: PickerSuggestion | null, unavailable: boolean }> {
+  const cep = value.replace(/\D/g, '')
+  let payload: ViaCepPayload
   try {
-    const cep = value.replace(/\D/g, '')
-    const payload = await $fetch<ViaCepPayload>(`https://viacep.com.br/ws/${cep}/json/`)
-    const partial = draftFromViaCep(payload, cep)
-    if (!partial) return null
-    return {
+    payload = await $fetch<ViaCepPayload>(`https://viacep.com.br/ws/${cep}/json/`)
+  } catch {
+    return { suggestion: null, unavailable: true }
+  }
+  const partial = draftFromViaCep(payload, cep)
+  if (!partial) return { suggestion: null, unavailable: false }
+  return {
+    suggestion: {
       id: `cep-${cep}`,
       kind: 'cep',
       main: partial.formatted_address || maskCepInput(cep),
       secondary: `CEP ${maskCepInput(cep)}`,
       cepPartial: partial
-    }
-  } catch {
-    return null
+    },
+    unavailable: false
   }
 }
 
@@ -488,6 +519,7 @@ function replaceDraft (partial: Partial<AddressDraft>) {
   const preserved = { complement: draft.complement, delivery_instructions: draft.delivery_instructions }
   Object.assign(draft, emptyAddressDraft(), preserved, partial)
   draft.postal_code = maskCepInput(draft.postal_code)
+  forgetCepLookup()
   acceptedLine.value = draftLine.value
   fieldErrors.value = {}
   geoCandidate.value = null
@@ -503,7 +535,7 @@ async function startManualEntry () {
   resetDraft()
   mode.value = 'form'
   await nextTick()
-  focusUiInput(routeInput.value)
+  focusUiInput(cepInput.value)
 }
 
 function backToSearch () {
@@ -869,8 +901,52 @@ function latencyBucket (milliseconds: number): 'fast' | 'normal' | 'slow' {
 
 // ── Salvar + etiqueta DEPOIS ───────────────────────────────────────────
 
+// O erro que a pessoa já corrigiu sai na hora (o "Escolha a UF" ficava na tela
+// com a UF escolhida até o próximo "Confirmar"; beta 06/11).
+watch(draft, () => {
+  if (!Object.keys(fieldErrors.value).length) return
+  fieldErrors.value = stillFailingErrors(fieldErrors.value, draft as AddressDraft)
+}, { deep: true })
+
+// CEP primeiro: com os 8 dígitos, a mesma consulta da busca (ViaCEP) preenche
+// rua, bairro, cidade e UF, e o foco vai para o que falta. Falhou a consulta,
+// os campos seguem abertos para digitar: o CEP é ajuda, não portão.
+const cepLookupPending = ref(false)
+let cepLookupFor = ''
+let cepLookupFill: CepFilledFields | null = null
+
+// Rascunho novo (manual, sugestão, salvo): a consulta anterior não é dele.
+function forgetCepLookup () {
+  cepLookupFor = cepDigits(draft.postal_code)
+  cepLookupFill = null
+}
+
 function onCepInput () {
   draft.postal_code = maskCepInput(draft.postal_code)
+  const cep = cepDigits(draft.postal_code)
+  if (cep.length === 8 && cep !== cepLookupFor) void lookupCep(cep)
+}
+
+async function lookupCep (cep: string) {
+  cepLookupFor = cep
+  cepLookupPending.value = true
+  let payload: ViaCepPayload | null = null
+  try {
+    payload = await $fetch<ViaCepPayload>(`https://viacep.com.br/ws/${cep}/json/`)
+  } catch {
+    payload = null
+  } finally {
+    cepLookupPending.value = false
+  }
+  // O CEP mudou durante a consulta: a resposta é de outro lugar.
+  if (cepDigits(draft.postal_code) !== cep) return
+  const partial = draftFromViaCep(payload, cep)
+  if (!partial) return
+  const merged = mergeCepLookup(draft as AddressDraft, partial, cepLookupFill)
+  cepLookupFill = merged.filled
+  Object.assign(draft, merged.draft)
+  await nextTick()
+  focusUiInput(draft.route.trim() ? numberInput.value : routeInput.value)
 }
 
 function addressApiPayload (): Record<string, unknown> {
@@ -1153,7 +1229,10 @@ function onLabelResolved () {
       <div v-if="acceptedLine" class="space-y-1" data-address-accepted>
         <div class="flex items-start gap-2">
           <Icon name="lucide:map-pin" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <p class="min-w-0 flex-1 text-sm font-semibold">{{ acceptedLine }}</p>
+          <p class="min-w-0 flex-1 text-sm font-semibold">
+            <span v-if="acceptedLineIsStale" class="block text-xs font-normal text-muted-foreground" data-address-accepted-stale>Endereço salvo</span>
+            {{ acceptedLine }}
+          </p>
         </div>
         <UiButton
           v-if="canAdjustOnMap"
@@ -1187,6 +1266,25 @@ function onLabelResolved () {
       </UiAlert>
 
       <div class="grid grid-cols-1 gap-4">
+        <!-- CEP primeiro: ele preenche rua, bairro, cidade e UF. -->
+        <div class="space-y-2" data-address-cep-first>
+          <UiLabel for="address-cep">CEP</UiLabel>
+          <UiInput
+            id="address-cep"
+            ref="cepInput"
+            v-model="draft.postal_code"
+            inputmode="numeric"
+            autocomplete="postal-code"
+            enterkeyhint="next"
+            class="h-11 max-w-48"
+            placeholder="00000-000"
+            :aria-describedby="cepLookupPending ? 'address-cep-status' : undefined"
+            @input="onCepInput"
+            @keydown.enter.prevent="focusNextInput(routeInput)"
+          />
+          <p v-if="cepLookupPending" id="address-cep-status" class="shop-meta" role="status">Buscando o endereço deste CEP…</p>
+          <UiFieldError v-if="fieldErrors.postal_code" :errors="fieldErrors.postal_code" />
+        </div>
         <div class="space-y-2">
           <UiLabel for="address-route">Rua</UiLabel>
           <UiInput
@@ -1226,36 +1324,18 @@ function onLabelResolved () {
             />
           </div>
         </div>
-        <div class="grid grid-cols-[minmax(0,1fr)_8rem] gap-4">
-          <div class="space-y-2">
-            <UiLabel for="address-neighborhood">Bairro</UiLabel>
-            <UiInput
-              id="address-neighborhood"
-              ref="neighborhoodInput"
-              v-model="draft.neighborhood"
-              autocomplete="address-level3"
-              enterkeyhint="next"
-              class="h-11"
-              @keydown.enter.prevent="focusNextInput(cepInput)"
-            />
-            <UiFieldError v-if="fieldErrors.neighborhood" :errors="fieldErrors.neighborhood" />
-          </div>
-          <div class="space-y-2">
-            <UiLabel for="address-cep">CEP</UiLabel>
-            <UiInput
-              id="address-cep"
-              ref="cepInput"
-              v-model="draft.postal_code"
-              inputmode="numeric"
-              autocomplete="postal-code"
-              enterkeyhint="next"
-              class="h-11"
-              placeholder="00000-000"
-              @input="onCepInput"
-              @keydown.enter.prevent="focusNextInput(cityInput)"
-            />
-            <UiFieldError v-if="fieldErrors.postal_code" :errors="fieldErrors.postal_code" />
-          </div>
+        <div class="space-y-2">
+          <UiLabel for="address-neighborhood">Bairro</UiLabel>
+          <UiInput
+            id="address-neighborhood"
+            ref="neighborhoodInput"
+            v-model="draft.neighborhood"
+            autocomplete="address-level3"
+            enterkeyhint="next"
+            class="h-11"
+            @keydown.enter.prevent="focusNextInput(cityInput)"
+          />
+          <UiFieldError v-if="fieldErrors.neighborhood" :errors="fieldErrors.neighborhood" />
         </div>
         <div class="grid grid-cols-[minmax(0,1fr)_6rem] gap-4">
           <div class="space-y-2">

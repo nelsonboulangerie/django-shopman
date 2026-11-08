@@ -12,10 +12,12 @@ import {
   labelPatchPayload,
   looksLikeCep,
   maskCepInput,
+  mergeCepLookup,
   mergeReverseGeocode,
   parseStoredAddressSelection,
   nextFocusAfterSuggestion,
   resolvePreselectedAddress,
+  stillFailingErrors,
   savedAddressDisplayLabel,
   selectionFromDraft,
   selectionFromSavedAddress,
@@ -359,5 +361,37 @@ describe('reidratação do rascunho do checkout', () => {
       complement: '',
       deliveryInstructions: ''
     })
+  })
+})
+
+describe('address form: erro que limpa e CEP que preenche (beta 06/11)', () => {
+  it('diz a UF por extenso, não só "UF."', () => {
+    expect(addressDraftErrors(filledDraft({ state_code: '' })).state_code).toBe('Escolha a UF (o estado).')
+  })
+
+  it('tira o erro do campo corrigido e mantém o que segue faltando', () => {
+    const errors = addressDraftErrors(filledDraft({ state_code: '', neighborhood: '' }))
+    const fixed = stillFailingErrors(errors, filledDraft({ neighborhood: '' }))
+    expect(fixed).toEqual({ neighborhood: 'Informe o bairro.' })
+  })
+
+  it('não acusa campo que ainda não tinha erro', () => {
+    expect(stillFailingErrors({ route: 'Informe a rua.' }, emptyAddressDraft())).toEqual({ route: 'Informe a rua.' })
+  })
+
+  it('o CEP preenche rua, bairro, cidade e UF vazios', () => {
+    const lookup = { route: 'Rua Pará', neighborhood: 'Centro', city: 'Londrina', state_code: 'PR' }
+    const { draft, filled } = mergeCepLookup({ ...emptyAddressDraft(), postal_code: '86010-000' }, lookup, null)
+    expect(draft).toMatchObject(lookup)
+    expect(filled).toEqual(lookup)
+  })
+
+  it('não sobrescreve o que a pessoa digitou, mas troca o que a consulta anterior escreveu', () => {
+    const first = { route: 'Rua Pará', neighborhood: 'Centro', city: 'Londrina', state_code: 'PR' }
+    const typed = { ...emptyAddressDraft(), ...first, route: 'Rua digitada' }
+    const second = { route: 'Av. Higienópolis', neighborhood: 'Higienópolis', city: 'Londrina', state_code: 'PR' }
+    const { draft } = mergeCepLookup(typed, second, first)
+    expect(draft.route).toBe('Rua digitada')
+    expect(draft.neighborhood).toBe('Higienópolis')
   })
 })

@@ -23,8 +23,10 @@ export type ManagerAction =
   | "serve_change"
   | "refund_cash"
   | "cancel_sale"
+  | "cancel_order"
   | "order_edit_refund"
   | "card_machine_refund"
+  | "settle_account"
   | "close_shift_review"
   | "day_closing_production"
   | "sale_approval"
@@ -66,6 +68,13 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
     title: "Autorizar cancelamento",
     reason: "A venda já foi fechada.",
   },
+  // Cancelar pedido pago no Gestor. O "A venda já foi fechada." do PDV mentia
+  // para um pedido só autorizado; o motivo é o que acontece com o dinheiro, e
+  // ele vem da projeção do pedido em `detail` (beta 06/11, F5).
+  cancel_order: {
+    title: "Autorizar cancelamento",
+    reason: "O pedido já foi pago.",
+  },
   order_edit_refund: {
     title: "Autorizar a devolução",
     reason: "A encomenda paga ficou mais barata.",
@@ -73,6 +82,12 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
   card_machine_refund: {
     title: "Autorizar o estorno",
     reason: "Volta dinheiro para o cartão do cliente.",
+  },
+  // Conta na casa acertada em Pix, cartão ou "outro": nada passa pela gaveta, e
+  // nada no fim do turno confere que o dinheiro entrou (beta 07/11).
+  settle_account: {
+    title: "Autorizar o acerto",
+    reason: "O acerto não passa pela gaveta.",
   },
   // Venda sem conexão cobrada por um preço que o catálogo não explica: a venda
   // entrou, e o caixa só fecha com o gerente que conferiu.
@@ -112,7 +127,12 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
  * casos, e o gerente autorizava sem saber o que estava assinando.
  */
 const REASON_COPY: Record<string, (input: ManagerAuthReasonInput) => string> = {
-  discount_over_threshold: (input) => `Desconto acima de ${formatBRL(input.thresholdQ ?? 0)}.`,
+  // O VALOR primeiro: "Desconto acima de R$ 5,00" fazia o gerente assinar uma
+  // cortesia de R$ 12,00 (ou de R$ 300,00) sem ver o número (beta 07/11).
+  discount_over_threshold: (input) =>
+    typeof input.discountQ === "number" && input.discountQ > 0
+      ? `Desconto de ${formatBRL(input.discountQ)}, acima de ${formatBRL(input.thresholdQ ?? 0)}.`
+      : `Desconto acima de ${formatBRL(input.thresholdQ ?? 0)}.`,
   // Conta na casa com limite (decisão do dono, 14/10/2026): o gerente vê o saldo
   // de hoje, o limite e quanto esta venda passa ANTES de assinar.
   house_account_over_limit: (input) => {
@@ -151,6 +171,8 @@ export interface ManagerAuthReasonInput {
   /** Códigos vindos da review (`approval_reasons`). */
   reasons?: string[];
   thresholdQ?: number;
+  /** Com o motivo `discount_over_threshold`: o desconto manual que a venda leva. */
+  discountQ?: number | null;
   /** Com o motivo `house_account_over_limit`: saldo, limite e quanto passa. */
   houseAccountLimit?: HouseAccountLimitInput | null;
 }
@@ -169,6 +191,7 @@ const AMOUNT_COPY: Partial<Record<ManagerAction, (amount: string, detail: string
   refund_cash: (amount) => `Devolução de ${amount} em dinheiro.`,
   serve_change: (amount) => `Troco de ${amount}. Atender abre a gaveta.`,
   card_machine_refund: (amount) => `Estorno de ${amount} no cartão do cliente.`,
+  settle_account: (amount, detail) => `Acerto de ${amount}${detail ? ` em ${detail}` : ""}: não passa pela gaveta.`,
   order_edit_refund: (amount) => `Devolução de ${amount}: a encomenda paga ficou mais barata.`,
 };
 
@@ -182,7 +205,7 @@ export function managerAuthReason(input: ManagerAuthReasonInput): string {
   if (withAmount && typeof input.amountQ === "number" && input.amountQ > 0) {
     return withAmount(formatBRL(input.amountQ), detail);
   }
-  if (detail && input.action === "day_closing_production") return detail;
+  if (detail && (input.action === "day_closing_production" || input.action === "cancel_order")) return detail;
   const fixa = input.action && MANAGER_ACTIONS[input.action]?.reason;
   if (fixa) return fixa;
   // Genérico é a última linha, nunca a primeira: dizer pouco é melhor que dizer

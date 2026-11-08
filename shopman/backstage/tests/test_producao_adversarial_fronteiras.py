@@ -186,6 +186,50 @@ def _qty(sku, position):
 
 
 @pytest.mark.django_db
+def test_falta_real_no_consumo_desfaz_conclusao_e_credito_na_vitrine(
+    receita_com_insumo, vitrine, despensa, monkeypatch,
+):
+    from shopman.craftsman import craft
+    from shopman.craftsman.models import WorkOrderEvent, WorkOrderItem
+    from shopman.stockman.models import Move
+    from shopman.stockman.services.movements import StockMovements
+
+    wo = craft.plan(receita_com_insumo, Decimal("40"), date=timezone.localdate())
+    craft.start(wo, quantity=Decimal("40"), actor="test")
+    wo.refresh_from_db()
+    # A validação prévia pode ter observado saldo antes de outro consumo.
+    # A perna real precisa recusar e desfazer até o consumo parcial disponível.
+    StockMovements.issue(
+        quantity=Decimal("90"),
+        quant=Quant.objects.get(sku=FARINHA, position=despensa),
+        reason="Outro consumo após a conferência",
+    )
+    monkeypatch.setattr(production_service, "check_finish_materials", lambda work_order: [])
+    moves_before = Move.objects.count()
+    revision_before = wo.rev
+
+    with pytest.raises(production_service.ProductionError):
+        production_service.apply_finish(
+            work_order_id=wo.pk,
+            quantity="40",
+            actor="test",
+            expected_rev=wo.rev,
+            idempotency_key="front-finish-ingredient-short",
+        )
+
+    wo.refresh_from_db()
+    assert wo.status == WorkOrder.Status.STARTED
+    assert wo.rev == revision_before
+    assert not wo.events.filter(kind=WorkOrderEvent.Kind.FINISHED).exists()
+    assert not wo.items.filter(kind=WorkOrderItem.Kind.CONSUMPTION).exists()
+    assert not (wo.meta or {}).get("stock_consumed_at")
+    assert not (wo.meta or {}).get("stock_realized_at")
+    assert _qty(SKU, vitrine) == 0
+    assert _qty(FARINHA, despensa) == Decimal("10")
+    assert Move.objects.count() == moves_before
+
+
+@pytest.mark.django_db
 def test_replay_do_finish_nao_repete_saida_nem_consumo(
     receita_com_insumo,
     vitrine,

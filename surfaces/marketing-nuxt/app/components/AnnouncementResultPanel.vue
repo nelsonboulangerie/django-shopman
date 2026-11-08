@@ -64,6 +64,7 @@ const result = computed(() =>
   deliveryStatePresentation(
     props.announcement.delivery.state,
     props.announcement.state,
+    props.announcement.delivery.counts,
   ),
 );
 /**

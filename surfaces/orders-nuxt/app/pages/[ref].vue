@@ -28,9 +28,9 @@ import { onMounted, onBeforeUnmount } from "vue";
 import { settledRefresh } from "~/utils/settledRefresh";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { COURIER_CALL_HASH } from "~/presentation/courier";
+import { contactRequestNotice } from "~/presentation/contactRequest";
 import { orderTicketMenuItem } from "~/presentation/orderTicket";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
-import type { CancellationReason } from "~/types/orders";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 definePageMeta({ key: (route) => route.path });
@@ -74,7 +74,6 @@ const {
   advance,
   reject,
   cancel,
-  fetchCancellationReasons,
   settleCash,
   equipmentBack,
   courierBack,
@@ -160,7 +159,8 @@ const customerHref = computed(() =>
     : "",
 );
 
-// kitchen-note editor (seeded from the projection; saved explicitly). The note —
+// kitchen-note editor (seeded from the projection; saved by "Salvar nota" or along
+// with Aceitar/Avançar, see `flushKitchenNote`). The note:
 // preset tags one-tap-appended + free text — is shown on the KDS ticket.
 const projectedAction = (ref_: string) =>
   order.value?.actions?.find((action) => action.ref === ref_);
@@ -176,9 +176,9 @@ const menuAdvance = computed(() => {
   return action && action.priority === "menu" ? action : undefined;
 });
 const menuOpen = ref(false);
-function onMenuAdvance() {
+async function onMenuAdvance() {
   menuOpen.value = false;
-  advance();
+  if (await flushKitchenNote()) advance();
 }
 // "O sistema fez · desfazer": a mesma linha do card.
 const nowMs = useNowTick();
@@ -237,6 +237,22 @@ async function saveKitchenNote() {
     if (!error.value)
       notesRevision.value = order.value?.revisions?.kitchen_note || "";
   }
+}
+// A nota da cozinha vai JUNTO com o gesto do momento (beta 06/11): o atalho
+// "Bem assado" só preenchia o rascunho, o operador tocava Aceitar sem ver o
+// "Salvar nota" e o ticket da Cozinha saía sem ela. Rascunho pendente se grava
+// ANTES do Aceitar/Avançar; se a gravação falha (ou a nota mudou por outra mão),
+// o gesto para ali e o aviso fica no bloco, com o texto preservado.
+async function flushKitchenNote(): Promise<boolean> {
+  if (!notesDirty.value || !notesEditable.value) return true;
+  if (notesConflict.value) {
+    useSonner.error(
+      "A nota da cozinha mudou enquanto você escrevia. Escolha qual texto fica antes de seguir.",
+    );
+    return false;
+  }
+  await saveKitchenNote();
+  return !notesDirty.value;
 }
 const reasonDirty = ref(false);
 const negotiationDirty = ref(false);
@@ -307,10 +323,9 @@ function applyNoteTag(tag: string) {
   notes.value = appendTag(notes.value, tag);
 }
 
-// reject + cancel + settle dialogs. Reject/cancel share OrderReasonDialog, which is
-// marketplace-aware: for an iFood order it shows the provider's required coded reasons
-// (fetched live per order); other channels cancel from the canonical reason list
-// (`cancel_reasons`) and reject from the store presets + free text.
+// reject + cancel + settle dialogs. Reject/cancel share OrderReasonDialog: one canonical
+// reason list (`cancel_reasons`) in every channel; on iFood orders the server already
+// left out the reasons iFood does not offer, and maps the reason to iFood's code.
 const dialog = ref<
   "" | "reject" | "cancel" | "settle" | "dispatch" | "courier-back"
 >("");
@@ -421,29 +436,7 @@ function updateDispatchEquipment(next: string[]) {
     ? [...next.filter((ref_) => !ref_.startsWith("card_machine:")), added]
     : next;
 }
-const reasons = ref<CancellationReason[]>([]);
-const reasonsLoading = ref(false);
-const reasonsError = ref("");
-let reasonsRequest = 0;
-async function loadReasons() {
-  const request = ++reasonsRequest;
-  reasonsLoading.value = true;
-  reasonsError.value = "";
-  try {
-    const result = await fetchCancellationReasons();
-    if (request === reasonsRequest) reasons.value = result;
-  } catch {
-    if (request === reasonsRequest)
-      reasonsError.value =
-        "Não foi possível consultar os motivos. Nenhuma ação foi aplicada.";
-  } finally {
-    if (request === reasonsRequest) reasonsLoading.value = false;
-  }
-}
-
-// Store-configured REJECT presets (Admin/Unfold) for non-marketplace channels.
-const presets = computed(() => order.value?.cancellation_presets ?? []);
-// The canonical cancel reasons (one list, in the backend).
+// The canonical reject/cancel reasons (one list, in the backend).
 const cancelReasons = computed(() => order.value?.cancel_reasons ?? []);
 
 async function openDialog(
@@ -456,35 +449,14 @@ async function openDialog(
   if (kind === "dispatch")
     cashDrafts.dispatch(orderRef.value, dispatchDraft.value);
   dialog.value = kind;
-  if (kind === "reject" || kind === "cancel") {
-    // Só o iFood tem lista viva de códigos a buscar; os outros canais usam a lista
-    // única que já veio na projeção. Buscar à toa mostrava "Carregando motivos do
-    // iFood…" num pedido da Loja online.
-    reasons.value = [];
-    if (order.value?.channel_ref === "ifood") await loadReasons();
-  }
 }
 
-// OrderReasonDialog emits the chosen (trimmed) reason + code (+ the reason key when
-// cancelling outside iFood, where the text is the internal note); we route to the
+// OrderReasonDialog emits the chosen reason key + the internal note; we route to the
 // right action, then reconcile.
-async function submitReason(payload: {
-  reason: string;
-  cancellationCode: string;
-  reasonKey: string;
-}) {
+async function submitReason(payload: { reasonKey: string; internalNote: string }) {
   let ok = false;
-  if (dialog.value === "reject")
-    ok = await reject(
-      payload.reason || "Pedido recusado",
-      payload.cancellationCode,
-    );
-  else if (dialog.value === "cancel")
-    ok = await cancel(
-      payload.reasonKey
-        ? { reasonKey: payload.reasonKey, internalNote: payload.reason, reason: "", cancellationCode: "" }
-        : { reasonKey: "", internalNote: "", reason: payload.reason, cancellationCode: payload.cancellationCode },
-    );
+  if (dialog.value === "reject") ok = await reject(payload);
+  else if (dialog.value === "cancel") ok = await cancel(payload);
   if (ok) dialog.value = "";
 }
 
@@ -531,7 +503,8 @@ function onCourierBackDifferent() {
   if (order.value?.can_settle_delivery_cash) void openDialog("settle");
 }
 
-function onAdvance() {
+async function onAdvance() {
+  if (!(await flushKitchenNote())) return;
   if (dispatchAsks.value) openDialog("dispatch");
   else advance();
 }
@@ -809,15 +782,26 @@ watch(
   },
   { immediate: true },
 );
+// O trinco escrito na tela: o avanço travado ou o Aceitar travado pelo pagamento
+// (pedido novo esperando o Pix, com a hora do vencimento). O motivo do Aceitar
+// morava só no `title` do botão, que tablet e celular não mostram (beta 06/11,
+// PIXEXP-05).
+const lockShown = computed(() => {
+  const o = order.value;
+  if (!o?.advance_block_reason) return false;
+  const confirm = projectedAction("confirm");
+  return Boolean(
+    (advanceAction.value && !advanceAction.value.enabled) ||
+      (confirm && !confirm.enabled),
+  );
+});
 const stateInEveryWidth = computed(() =>
   Boolean(
     custodyLines.value.length ||
     acceptNotice.value ||
     deadlineText.value ||
       undo.value ||
-      (advanceAction.value &&
-        !advanceAction.value.enabled &&
-        order.value?.advance_block_reason),
+      lockShown.value,
   ),
 );
 const BACK_VARIANTS = [
@@ -825,10 +809,12 @@ const BACK_VARIANTS = [
   { icon: "i-lucide-chevron-left", class: "max-md:hidden" },
 ] as const;
 const thumbReject = computed(() => (primary.value ? rejectThumb.value : undefined));
-function runPrimary() {
+async function runPrimary() {
   const p = primary.value;
   if (!p?.enabled || busy.value) return;
-  if (p.key === "confirm") confirm();
+  if (p.key === "confirm") {
+    if (await flushKitchenNote()) confirm();
+  }
   else if (p.key === "advance") onAdvance();
   else if (p.key === "courier-back") dialog.value = "courier-back";
   else openDialog("settle");
@@ -890,6 +876,9 @@ const deadlineText = computed(() => {
 // a causa muda (a chave leva a grandeza): a regra do kit (`useAlertDismissals`).
 const notices = useAlertDismissals();
 const contactKey = computed(() => `contact:${order.value?.contact_request?.requested_at_display ?? ""}`);
+const contactNotice = computed(() =>
+  order.value?.contact_request ? contactRequestNotice(order.value.contact_request) : null,
+);
 const cardAuthKey = computed(() => `card-auth:${cardAuth.value?.title ?? ""}`);
 const cardAuth = computed(() =>
   cardAuthorizationNotice(
@@ -1185,9 +1174,7 @@ const outside = useOutsideStore(
         color="warning"
         variant="subtle"
         icon="i-lucide-message-circle-heart"
-        :description="order.contact_request.comment
-          ? `O cliente pediu para falar com o responsável (${order.contact_request.requested_at_display}). Comentário: ${order.contact_request.comment}`
-          : `O cliente pediu para falar com o responsável (${order.contact_request.requested_at_display}). Não deixou comentário.`"
+        :description="contactNotice?.description"
         :actions="alertActions('warning', [
           // O aviso manda chamar o cliente: o botão já leva à conversa.
           !!order.customer_whatsapp_url && {
@@ -1207,15 +1194,17 @@ const outside = useOutsideStore(
         <!-- As estrelas dizem a nota de relance; o texto continua para o leitor de tela.
              Glifo e não ícone: o modo CSS dos ícones é máscara, e máscara não preenche. -->
         <template #title>
-          Ouvidoria aberta
-          <span class="ms-1 tracking-wider" aria-hidden="true">
-            <span
-              v-for="n in 5"
-              :key="n"
-              :class="n <= order.contact_request.rating ? 'text-warning' : 'text-muted opacity-50'"
-            >★</span>
-          </span>
-          <span class="sr-only">: nota {{ order.contact_request.rating }} de 5</span>
+          {{ contactNotice?.title }}
+          <template v-if="contactNotice?.showsRating">
+            <span class="ms-1 tracking-wider" aria-hidden="true">
+              <span
+                v-for="n in 5"
+                :key="n"
+                :class="n <= order.contact_request.rating ? 'text-warning' : 'text-muted opacity-50'"
+              >★</span>
+            </span>
+            <span class="sr-only">: nota {{ order.contact_request.rating }} de 5</span>
+          </template>
         </template>
       </NuxtAlert>
       <NuxtAlert
@@ -1377,11 +1366,7 @@ const outside = useOutsideStore(
                    fez (o primário do cabeçalho, a ação na base no celular). -->
             </NuxtAlert>
             <NuxtAlert
-              v-if="
-                advanceAction &&
-                !advanceAction.enabled &&
-                order.advance_block_reason
-              "
+              v-if="lockShown"
               color="error"
               variant="subtle"
               icon="i-lucide-lock"
@@ -1541,8 +1526,6 @@ const outside = useOutsideStore(
       data-detail-thumb
     />
 
-    <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons,
-         the canonical cancel list, or store presets + free text for reject) -->
     <OperatorReasonDialog
       v-model:open="contactResolveOpen"
       title="Ouvidoria resolvida"
@@ -1555,19 +1538,16 @@ const outside = useOutsideStore(
       :busy="busy"
       @confirm="onResolveContact"
     />
+    <!-- reject / cancel: the canonical reason list for both -->
     <OrderReasonDialog
       :open="dialog === 'reject' || dialog === 'cancel'"
       :mode="dialog === 'cancel' ? 'cancel' : 'reject'"
-      :loading="reasonsLoading"
-      :error="reasonsError"
       :marketplace="order?.channel_ref === 'ifood'"
-      :reasons="reasons"
-      :presets="presets"
       :cancel-reasons="cancelReasons"
       :initial-key="cancelInitialKey"
+      :money-effect="order?.cancel_money_effect || ''"
       :busy="busy"
       @dirty-change="reasonDirty = $event"
-      @retry="loadReasons"
       @update:open="
         (v) => {
           if (!v) dialog = '';
@@ -1743,9 +1723,15 @@ const outside = useOutsideStore(
          há outro gerente e deixa o crachá valendo; nunca vira campo de nome. -->
     <OperatorManagerAuth
       :open="!!managerChallenge"
-      action="cancel_sale"
+      action="cancel_order"
+      :detail="order?.cancel_money_effect || ''"
       :managers="order?.managers || []"
       :busy="busy"
+      :busy-text="
+        order?.cancel_waits_for_gateway
+          ? 'Cancelando e falando com o meio de pagamento. Leva alguns segundos.'
+          : ''
+      "
       :error="
         managerChallenge?.code === 'manager_approval_invalid'
           ? managerChallenge.message

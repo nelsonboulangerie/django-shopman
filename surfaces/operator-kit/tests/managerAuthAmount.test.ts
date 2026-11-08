@@ -36,11 +36,40 @@ describe("managerAuth: o gerente lê o valor que assina", () => {
     ).toBe(`Desconto acima de ${formatBRL(500)}.`);
   });
 
+  it("o acerto da conta na casa fora do dinheiro diz valor e forma", () => {
+    expect(managerAuthTitle("settle_account")).toBe("Autorizar o acerto");
+    expect(managerAuthReason({ action: "settle_account", amountQ: 15600, detail: "Pix" }))
+      .toBe(`Acerto de ${formatBRL(15600)} em Pix: não passa pela gaveta.`);
+    expect(managerAuthReason({ action: "settle_account" })).toBe("O acerto não passa pela gaveta.");
+  });
+
+  it("o desconto acima do teto diz QUANTO, antes do teto (beta 07/11)", () => {
+    expect(managerAuthReason({ reasons: ["discount_over_threshold"], thresholdQ: 500, discountQ: 1200 }))
+      .toBe(`Desconto de ${formatBRL(1200)}, acima de ${formatBRL(500)}.`);
+    expect(managerAuthReason({ reasons: ["discount_over_threshold"], thresholdQ: 500, discountQ: 0 }))
+      .toBe(`Desconto acima de ${formatBRL(500)}.`);
+  });
+
   it("fechar o dia com produção aberta nomeia o ato e diz o que segue aberto", () => {
     expect(managerAuthTitle("day_closing_production")).toBe("Autorizar fechar o dia");
     expect(
       managerAuthReason({ action: "day_closing_production", detail: "3 ordens de produção seguem abertas." }),
     ).toBe("3 ordens de produção seguem abertas.");
     expect(managerAuthReason({ action: "day_closing_production" })).toBe("Há produção aberta.");
+  });
+});
+
+// Beta 06/11 (F5): o Gestor usava a chave do PDV ("A venda já foi fechada."),
+// falsa para um pedido só autorizado. O cancelamento de pedido diz o dinheiro.
+describe("managerAuth: cancelar pedido no Gestor", () => {
+  it("o motivo é o efeito no dinheiro, vindo da projeção", () => {
+    expect(managerAuthTitle("cancel_order")).toBe("Autorizar cancelamento");
+    expect(
+      managerAuthReason({ action: "cancel_order", detail: "R$ 5,10 serão estornados no cartão do cliente." }),
+    ).toBe("R$ 5,10 serão estornados no cartão do cliente.");
+  });
+
+  it("sem o efeito, a frase fixa não fala em venda fechada", () => {
+    expect(managerAuthReason({ action: "cancel_order" })).toBe("O pedido já foi pago.");
   });
 });

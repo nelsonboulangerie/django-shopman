@@ -7,6 +7,7 @@ intent before the Orderman/cashman services expand it into domain writes.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 
 POS_SALE_INTENT_VERSION = "pos.sale-intent.v1"
 
@@ -692,6 +693,16 @@ def _manual_discount(raw) -> dict | None:
         discount_type = "percent"
     value = raw.get("value", "")
     value_text = _text(value, limit=40)
+    if discount_type == "percent" and value_text:
+        try:
+            percent = Decimal(value_text.replace(",", "."))
+        except InvalidOperation:
+            percent = Decimal("NaN")
+        if not percent.is_finite() or percent < 0 or percent > 100:
+            raise PosIntentError(
+                "invalid_discount", "Informe um percentual de desconto entre 0 e 100.",
+                field="manual_discount.value", focus="payment",
+            )
     if discount_q <= 0 and not value_text:
         return None
     return {

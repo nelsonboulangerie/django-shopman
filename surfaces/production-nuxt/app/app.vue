@@ -112,7 +112,7 @@ useOperatorWindowTitle();
       <OperatorLogin v-if="surface.showLogin" :expired="sessionState === 'expired'" />
       <OperatorLock v-else-if="surface.showLock" :perm="OPERATOR_PERM" />
       <OperatorSonner />
-      <OperatorPwaRuntime />
+      <OperatorPwaRuntime :show-prompts="!isKiosk" />
     </div>
   </OperatorAppRoot>
 </template>

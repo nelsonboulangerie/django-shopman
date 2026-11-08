@@ -24,6 +24,7 @@ import {
   readinessByPlatform,
   readinessStatusClass,
 } from "~/presentation/platformReadiness";
+import { campaignOfferLabel, campaignOfferWarning } from "~/presentation/offers";
 import type { PlatformReadiness } from "~/presentation/platformReadiness";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import {
@@ -716,6 +717,11 @@ const draft = useMarketingDraft({
   apply: applyCampaignDraft,
 });
 
+async function discardCampaignDraft() {
+  await draft.discard();
+  currentStep.value = 0;
+}
+
 /** O texto do modelo escolhido — é ele que a prévia resolve. */
 const chosenBody = computed(
   () => props.templates.find((t) => t.pk === templateId.value)?.body ?? "",
@@ -794,11 +800,8 @@ const selectedTriggerLabel = computed(
     props.triggers.find((item) => item.value === trigger.value)?.label ??
     trigger.value,
 );
-const selectedOfferLabel = computed(
-  () =>
-    props.offers.find((item) => item.value === promotionRef.value)?.label ??
-    "Sem oferta",
-);
+const selectedOfferLabel = computed(() => campaignOfferLabel(promotionRef.value, props.offers));
+const offerWarning = computed(() => campaignOfferWarning(promotionRef.value, props.offers));
 const reviewAudience = computed(() =>
   platforms.value.includes("whatsapp")
     ? audienceRulesSummary(
@@ -896,7 +899,7 @@ function submit() {
       :describe="describeDraftValue"
       @keep-local="draft.keepLocal()"
       @keep-server="draft.keepServer()"
-      @discard="draft.discard()"
+      @discard="discardCampaignDraft()"
     />
 
     <!-- As cinco etapas. O título carrega o número para o leitor de tela ("2. Destinos")
@@ -1003,7 +1006,7 @@ function submit() {
          para a oferta e o clique monta a sacola com o preço resolvido NA HORA, e não no
          envio, que é quando o preço envelheceria. -->
     <NuxtFormField
-      v-if="offers.length"
+      v-if="offers.length || promotionRef"
       v-show="currentStep === 2"
       label="Anunciar a oferta"
       description="Com oferta, quem toca no link já recebe a sacola montada."
@@ -1018,6 +1021,8 @@ function submit() {
         @update:model-value="chooseOffer"
       />
     </NuxtFormField>
+
+    <NuxtAlert v-if="offerWarning && (currentStep === 0 || currentStep === 2)" color="warning" variant="subtle" :description="offerWarning" data-campaign-offer-warning />
 
     <!-- Sem este bloco, "agendado" era escolhível e insatisfazível: o gestor salvava e
          a campanha nunca disparava. -->
@@ -1459,6 +1464,7 @@ function submit() {
           <div>
             <dt class="text-xs text-muted-foreground">Oferta</dt>
             <dd class="font-medium">{{ selectedOfferLabel }}</dd>
+            <dd v-if="offerWarning" class="text-warning">{{ offerWarning }}</dd>
           </div>
           <div class="sm:col-span-2">
             <dt class="text-xs text-muted-foreground">Público</dt>

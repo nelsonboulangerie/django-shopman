@@ -127,23 +127,16 @@ def read_sales(window) -> tuple[list[CanonicalSale], int]:
 
 def read_lines(window) -> list[CanonicalSaleLine]:
     """As linhas dos pedidos que contam como venda (cancelado/devolvido fora)."""
-    # The helper targets Order fields; apply the same exact predicate through
-    # the relation for line reads so simulated test baskets cannot leak into
-    # product/revenue consumers.
-    from django.db.models import Q
     from shopman.orderman.models import Order, OrderItem
 
     from shopman.shop.services import order_composition
-    from shopman.shop.services.payment_provenance import PROVIDER_SIMULATED_CONFIRMATION_MODE
+    from shopman.shop.services.order_helpers import exclude_test_orders
+    from shopman.shop.services.payment_provenance import exclude_provider_simulated_orders
 
-    eligible = (
-        Order.objects.filter(created_at__range=window)
-        .exclude(status__in=_excluded_statuses())
-        .filter(
-            Q(data__payment__confirmation_mode__isnull=True)
-            | ~Q(data__payment__confirmation_mode=PROVIDER_SIMULATED_CONFIRMATION_MODE)
-        )
-    )
+    # Totais e ranking leem o mesmo conjunto de vendas reais.
+    eligible = exclude_test_orders(exclude_provider_simulated_orders(
+        Order.objects.filter(created_at__range=window).exclude(status__in=_excluded_statuses())
+    ))
     # Pedido + ajustes: o pedido que o cliente alterou tem as linhas dele lidas
     # do ajuste. Ler as duas fontes somaria o item removido ao item que ficou.
     adjusted = order_composition.adjusted_order_ids(eligible.values_list("pk", flat=True))

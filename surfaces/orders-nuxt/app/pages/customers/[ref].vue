@@ -362,8 +362,8 @@ const phoneHeaderActions = computed(() => [
                   <dd>{{ customer.email || "Sem e-mail" }}</dd>
                 </div>
                 <div class="flex gap-2">
-                  <dt class="text-muted-foreground">CPF</dt>
-                  <dd>{{ customer.document_display || "Sem CPF" }}</dd>
+                  <dt class="text-muted-foreground">CPF/CNPJ</dt>
+                  <dd>{{ customer.document_display || "Sem CPF/CNPJ" }}</dd>
                 </div>
                 <div v-if="customer.birthday_display" class="flex gap-2">
                   <dt class="text-muted-foreground">Aniversário</dt>

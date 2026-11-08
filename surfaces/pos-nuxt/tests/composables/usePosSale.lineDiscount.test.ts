@@ -1,3 +1,4 @@
+import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { toast } from "vue-sonner";
@@ -7,7 +8,9 @@ import type { POSCartItem } from "~/types/pos";
 
 import { makeProjection, makeSale } from "./_posSaleHarness";
 
-vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
+const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn().mockResolvedValue({}) }));
+mockNuxtImport("$fetch", () => fetchMock);
+vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
 // Relato do dono (13/10/2026, no alpha): R$ 1,00 de desconto numa linha de 3
 // cafés, e o total da linha só mudou quando ele recarregou a página. A correção de
@@ -95,6 +98,27 @@ describe("usePosSale — o desconto na linha: o motor decide, a tela espera", ()
     await vi.advanceTimersByTimeAsync(450);
     expect(line(h).price_pending).toBe(false);
     expect(lineTotalQ(line(h))).toBe(2100);
+    h.handles.dispose();
+  });
+
+  it("remover o último desconto restaura o preço devolvido na revisão", async () => {
+    const h = saleWithCafe(undefined, (body) => ({
+      L1: {
+        charged_price_q: body.items?.[0]?.discount ? 0 : 800,
+        list_price_q: 800,
+        pricing_discount: null,
+      },
+    }));
+    await nextTick();
+    h.sale.setLineDiscount("L1", 100, "cortesia", "percent");
+    await vi.advanceTimersByTimeAsync(450);
+    expect(lineTotalQ(line(h))).toBe(0);
+    h.sale.setLineDiscount("L1", 0, "cortesia", "percent");
+    expect(line(h).price_pending).toBe(true);
+    await vi.advanceTimersByTimeAsync(450);
+    expect(lineTotalQ(line(h))).toBe(2400);
+    expect(line(h).pricing_discount).toBeNull();
+    expect(line(h).price_pending).toBe(false);
     h.handles.dispose();
   });
 

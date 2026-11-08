@@ -686,6 +686,8 @@ def capture(order) -> None:
         locked = Order.objects.select_for_update().get(pk=order.pk)
         _capture_once(locked)
         order.data = locked.data
+    if capture_failure(order) is not None:
+        request_new_payment_after_capture_failure(order)
 
 
 def _capture_once(order) -> None:
@@ -709,6 +711,9 @@ def _capture_once(order) -> None:
     result = adapter.capture(intent_ref)
     if result.success:
         payment_data["transaction_id"] = result.transaction_id
+        # A cobrança que passou apaga a recusa anterior: a tela deixa de dizer
+        # que o cartão não foi cobrado.
+        payment_data.pop(CAPTURE_FAILURE_KEY, None)
         if isinstance(getattr(result, "card_funding", None), str):
             payment_data["card_funding"] = result.card_funding
         data["payment"] = payment_data
@@ -716,6 +721,20 @@ def _capture_once(order) -> None:
         order.save(update_fields=["data", "updated_at"])
         _ack_payment_failed_alerts(order)
         cancel_stale_intents(order, keep_intent_ref=intent_ref)
+        # A cobrança no aceite é um fato do histórico: sem esta linha, o Gestor
+        # mostrava a autorização e nada mais, como se o cartão nunca tivesse
+        # sido cobrado (beta 06/11, F4). O protocolo leve dos adapters (sem
+        # histórico) fica de fora.
+        if hasattr(order, "emit_event"):
+            order.emit_event(
+                event_type="payment.captured",
+                actor="payment.capture",
+                payload={
+                    "method": method,
+                    "amount_q": int(getattr(result, "amount_q", None) or order.total_q or 0),
+                    "intent_ref": intent_ref,
+                },
+            )
 
         logger.info("payment.capture: captured %s for order %s", intent_ref, order.ref)
         return
@@ -728,7 +747,198 @@ def _capture_once(order) -> None:
         method,
         result.error_code,
     )
+    _record_capture_failure(order, payment_data=payment_data, intent_ref=intent_ref, method=method, result=result)
     _alert_capture_failed(order, intent_ref=intent_ref, method=method, result=result)
+
+
+#: ``order.data["payment"][CAPTURE_FAILURE_KEY]``: a cobrança do cartão autorizado
+#: foi recusada no aceite. É o fato que o acompanhamento e o Gestor leem para
+#: dizer a mesma coisa (beta 06/11): sem ele, o cliente lia "Cartão autorizado"
+#: e o Gestor "Aguardando pagamento", com o dinheiro que não entrou.
+CAPTURE_FAILURE_KEY = "capture_failure"
+
+
+def _record_capture_failure(order, *, payment_data: dict, intent_ref: str, method: str, result) -> None:
+    """Grava ``{code, at, intent_ref}`` da captura recusada e o fato no histórico."""
+    code = str(getattr(result, "error_code", "") or "capture_failed")[:64]
+    payment_data[CAPTURE_FAILURE_KEY] = {
+        "code": code,
+        "at": timezone.now().isoformat(),
+        "intent_ref": intent_ref,
+    }
+    data = dict(order.data or {})
+    data["payment"] = payment_data
+    order.data = data
+    if not hasattr(order, "save"):
+        return
+    order.save(update_fields=["data", "updated_at"])
+    if hasattr(order, "emit_event"):
+        order.emit_event(
+            event_type="payment.capture_failed",
+            actor="payment.capture",
+            payload={"method": method, "intent_ref": intent_ref, "code": code},
+        )
+
+
+#: ``order.data["payment"][REPAYMENT_KEY]``: a cobrança do cartão falhou depois
+#: do aceite e o cliente foi chamado a pagar de novo (decisão do dono, 07/11).
+REPAYMENT_KEY = "repayment"
+
+
+def request_new_payment_after_capture_failure(order) -> bool:
+    """A cobrança do cartão não passou depois do aceite: pede um pagamento novo.
+
+    Decisão do dono (07/11/2026): o pedido fica em espera, transparente para a
+    casa, e só segue quando o pagamento for confirmado. A espera é a que o Core
+    já tem para o pedido aceito sem captura: o avanço fica barrado
+    (``PAYMENT_NOT_CAPTURED``), a cozinha não recebe nada, o ``payment.timeout``
+    cancela no prazo e o ``on_paid`` retoma do aceite quando o dinheiro entra.
+
+    Aqui só se troca a cobrança: a autorização velha é anulada no gateway (a
+    reserva sai do cartão do cliente) e uma cobrança nova nasce, com prazo.
+    Se a anulação falhar, nada novo é criado: duas reservas no cartão do cliente
+    é pior que nenhuma, e o pedido segue em "Cobrança recusada" com o alerta.
+
+    Devolve ``True`` quando a cobrança nova foi aberta.
+    """
+    failure = capture_failure(order)
+    if failure is None:
+        return False
+    old_intent_ref = str(failure.get("intent_ref") or "")
+    cancel(order, reason="capture_failed")
+    if (get_payment_status(order) or "").lower() == "authorized":
+        logger.warning("payment.repayment_skipped_hold_still_active order=%s intent=%s", order.ref, old_intent_ref)
+        return False
+
+    payment_data = dict((order.data or {}).get("payment") or {})
+    for key in _INTENT_PRESENTATION_KEYS:
+        payment_data.pop(key, None)
+    payment_data.pop("last_decline", None)
+    payment_data[REPAYMENT_KEY] = {
+        "after_intent_ref": old_intent_ref,
+        "requested_at": timezone.now().isoformat(),
+    }
+    data = dict(order.data or {})
+    data["payment"] = payment_data
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    initiate(order)
+    _stamp_repayment_terms(order)
+    order.emit_event(
+        event_type="payment.repayment_requested",
+        actor="payment.capture",
+        payload={"after_intent_ref": old_intent_ref, "intent_ref": str(((order.data or {}).get("payment") or {}).get("intent_ref") or "")},
+    )
+    return True
+
+
+def _stamp_repayment_terms(order) -> None:
+    """Guarda no ``repayment`` o prazo da cobrança nova e se o canal aceita Pix.
+
+    O prazo é UM só para o novo pagamento: trocar para Pix não estica o relógio
+    (``_adapter_config`` lê ``deadline_at``). ``pix_allowed`` decide se a tela e o
+    aviso podem oferecer o Pix.
+    """
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.services.order_helpers import merge_order_data
+
+    payment_data = (order.data or {}).get("payment") or {}
+    repayment = dict(payment_data.get(REPAYMENT_KEY) or {})
+    if not repayment:
+        return
+    repayment["deadline_at"] = str(payment_data.get("expires_at") or "")
+    repayment["pix_allowed"] = "pix" in ChannelConfig.for_channel(order.channel_ref).payment.available_methods
+    merge_order_data(order, {REPAYMENT_KEY: repayment}, block="payment")
+
+
+#: Por que a troca para Pix foi recusada (a tela mostra ``message``).
+class RepaymentSwitchRefused(Exception):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def switch_repayment_to_pix(order) -> None:
+    """O cliente escolheu pagar o novo pagamento com Pix (decisão do dono, 07/11).
+
+    Só na espera do novo pagamento de cartão, com Pix aceito no canal. A cobrança
+    de cartão aberta é cancelada no gateway ANTES de o Pix nascer: duas cobranças
+    abertas para o mesmo pedido deixariam o cliente pagar duas vezes. O Pix vale
+    até o mesmo prazo (``repayment.deadline_at``); dali em diante o fluxo é o do
+    Pix de sempre (confirmou, ``on_paid`` segue; venceu, ``payment.timeout`` cancela).
+    """
+    from shopman.orderman.models import Order
+
+    repayment = awaiting_repayment(order)
+    payment_data = dict((order.data or {}).get("payment") or {})
+    if order.status != Order.Status.ACCEPTED or repayment is None:
+        raise RepaymentSwitchRefused("not_awaiting_repayment", "Este pedido não está esperando um novo pagamento.")
+    if str(payment_data.get("method") or "").lower() == "pix":
+        return
+    if not repayment.get("pix_allowed"):
+        raise RepaymentSwitchRefused("pix_unavailable", "O Pix não está disponível para este pedido.")
+
+    card_intent_ref = str(payment_data.get("intent_ref") or "")
+    cancel(order, reason="switched_to_pix")
+    if (get_payment_status(order) or "").lower() not in {"cancelled", "failed", ""}:
+        logger.warning("payment.switch_to_pix_card_still_open order=%s intent=%s", order.ref, card_intent_ref)
+        raise RepaymentSwitchRefused(
+            "card_charge_still_open",
+            "Não conseguimos fechar a cobrança do cartão agora. Tente de novo em instantes.",
+        )
+
+    payment_data = dict((order.data or {}).get("payment") or {})
+    for key in _INTENT_PRESENTATION_KEYS:
+        payment_data.pop(key, None)
+    payment_data.pop("last_decline", None)
+    payment_data.pop("error", None)
+    payment_data["method"] = "pix"
+    data = dict(order.data or {})
+    data["payment"] = payment_data
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    initiate(order)
+    order.emit_event(
+        event_type="payment.method_changed",
+        actor="customer",
+        payload={"from": "card", "to": "pix", "cancelled_intent_ref": card_intent_ref},
+    )
+
+
+def awaiting_repayment(order) -> dict | None:
+    """O pedido espera o pagamento NOVO pedido depois da cobrança recusada.
+
+    ``{after_intent_ref, requested_at}`` enquanto a cobrança nova está aberta e o
+    dinheiro não entrou; ``None`` depois da captura (``transaction_id``) ou fora
+    desse caminho.
+    """
+    payment_data = (getattr(order, "data", None) or {}).get("payment") or {}
+    repayment = payment_data.get(REPAYMENT_KEY)
+    if not isinstance(repayment, dict) or payment_data.get("transaction_id"):
+        return None
+    if str(payment_data.get("intent_ref") or "") == str(repayment.get("after_intent_ref") or ""):
+        return None
+    # A captura pode entrar por caminhos que não gravam ``transaction_id`` no
+    # pedido (conferência com o gateway): o Payman é quem diz se pagou.
+    if has_sufficient_captured_payment(order) is True:
+        return None
+    return repayment
+
+
+def capture_failure(order) -> dict | None:
+    """A recusa da cobrança ainda de pé: ``{code, at, intent_ref}`` ou ``None``.
+
+    Só vale enquanto o pagamento não entrou e a recusa é do intent atual: uma
+    cobrança nova (outro intent) não herda a recusa da anterior.
+    """
+    payment_data = (getattr(order, "data", None) or {}).get("payment") or {}
+    failure = payment_data.get(CAPTURE_FAILURE_KEY)
+    if not isinstance(failure, dict) or payment_data.get("transaction_id"):
+        return None
+    if str(failure.get("intent_ref") or "") != str(payment_data.get("intent_ref") or ""):
+        return None
+    return failure
 
 
 def _alert_capture_failed(order, *, intent_ref: str, method: str, result) -> None:
@@ -750,7 +960,7 @@ def _alert_capture_failed(order, *, intent_ref: str, method: str, result) -> Non
         message=(
             f"Não foi possível capturar o pagamento {method.upper()} do pedido "
             f"{order.ref} ({intent_ref}). O cliente autorizou e o dinheiro NÃO "
-            "entrou; o pedido segue barrado em 'Aguardando pagamento'. Confira "
+            "entrou; o pedido segue barrado em 'Cobrança recusada'. Confira "
             f"no painel do gateway antes de entregar. Erro: {detail}"
         ),
         order_ref=order.ref,
@@ -1106,12 +1316,16 @@ def pix_switch_blocker(order) -> str:
     payment = (order.data or {}).get("payment") or {}
     if str(payment.get("method") or "").lower() != "card":
         return "not_card"
-    if order.status not in _CANCELLABLE_STATUSES:
+    if order.status not in {"new", "accepted"}:
         return "order_closed"
     if not payment.get("intent_ref"):
         return "no_card_charge"
     if not payment.get("last_decline"):
         return "not_declined"
+    # Cobrança nova depois da captura recusada: a troca para Pix é a do
+    # ``switch_repayment_to_pix``, que mantém o prazo único do novo pagamento.
+    if awaiting_repayment(order) is not None:
+        return "repayment_flow"
 
     from shopman.shop.config import ChannelConfig
 
@@ -1129,7 +1343,7 @@ def pix_switch_blocker(order) -> str:
         return "pix_amount_limit"
 
     status = (get_payment_status(order) or "").lower()
-    if status in _PAID_STATUSES | _UNCERTAIN_STATUSES | {"authorized", "refunded"}:
+    if status in _PAID_STATUSES | {"unknown", "authorized", "refunded"}:
         return "card_not_declined"
     return ""
 
@@ -1721,6 +1935,10 @@ def _refund_intent(
 
     if result.success:
         logger.info("payment.refund: refunded %s for order %s", intent_ref, order.ref)
+        # O estorno entra no histórico do pedido com valor e meio: o Gestor
+        # mostrava "Pix · Cancelado" para um Pix que entrou e voltou, e o único
+        # rastro era a linha do aviso ao cliente (beta 06/11, PIXEXP-03).
+        _record_refund_event(order, method=method, intent_ref=intent_ref, amount_q=requested_q, result=result)
         if adapter is not None:
             _notify_refund(
                 order,
@@ -1735,6 +1953,22 @@ def _refund_intent(
     logger.error("payment.refund: adapter recusou o estorno do pedido %s: %s", order.ref, detail)
     alert_refund_failed(order, intent_ref, requested_q, detail)
     return 0
+
+
+def _record_refund_event(order, *, method: str, intent_ref: str, amount_q, result) -> None:
+    """``payment.refunded`` no histórico. Nunca derruba o estorno que já saiu."""
+    try:
+        order.emit_event(
+            event_type="payment.refunded",
+            actor="payment.refund",
+            payload={
+                "method": method,
+                "amount_q": int(getattr(result, "amount_q", None) or amount_q or 0),
+                "intent_ref": intent_ref,
+            },
+        )
+    except Exception:
+        logger.warning("payment.refund_event_failed order=%s intent=%s", order.ref, intent_ref, exc_info=True)
 
 
 def _notify_refund(order, *, method: str, amount_q: int, idempotency_key: str) -> None:
@@ -2009,9 +2243,7 @@ def cancel(order, *, reason: str = "order_cancelled") -> None:
 
 # ── facades ──
 
-_CANCELLABLE_STATUSES = {"new", "accepted"}
 _PAID_STATUSES = {"captured", "paid"}
-_UNCERTAIN_STATUSES = {"unknown"}
 
 
 def cancel_stale_intents(
@@ -2324,19 +2556,17 @@ def has_sufficient_captured_payment(order, *, payment_reads=None) -> bool:
 
 
 def can_cancel(order) -> bool:
-    """
-    True se o pedido pode ser cancelado pelo cliente.
+    """True se o cliente pode cancelar sozinho (``policies/customer_cancellation``).
 
-    Requer: status in {new, confirmed} e pagamento comprovadamente não capturado.
-    Estados incertos bloqueiam cancelamento para não cancelar um pedido que pode
-    já estar pago.
+    Antes do preparo, pago ou não: o dinheiro capturado volta pelo próprio
+    cancelamento (``lifecycle._on_cancelled``), e o cartão só autorizado tem a
+    reserva desfeita. O pagamento ilegível (``unknown``) continua bloqueando.
     """
-    if order.status not in _CANCELLABLE_STATUSES:
+    from shopman.shop.policies import customer_cancellation
+
+    if order.status not in customer_cancellation.BEFORE_PREPARATION_STATUSES:
         return False
-    status = (get_payment_status(order) or "").lower()
-    if status in _UNCERTAIN_STATUSES or has_sufficient_captured_payment(order):
-        return False
-    return True
+    return customer_cancellation.can_self_cancel(order.status, payment_status=get_payment_status(order) or "")
 
 
 def _record_gateway_authorization(order, *, intent_ref: str) -> str:
@@ -3241,6 +3471,19 @@ def _schedule_payment_timeout(order, intent: PaymentIntent) -> None:
         logger.warning("payment.timeout_schedule_failed order=%s", order.ref, exc_info=True)
 
 
+def _repayment_minutes_left(order) -> int | None:
+    """Minutos até o prazo do novo pagamento, quando o pedido está nele."""
+    import math
+
+    repayment = ((getattr(order, "data", None) or {}).get("payment") or {}).get(REPAYMENT_KEY)
+    if not isinstance(repayment, dict):
+        return None
+    deadline = parse_datetime(str(repayment.get("deadline_at") or ""))
+    if deadline is None:
+        return None
+    return max(1, math.ceil((deadline - timezone.now()).total_seconds() / 60))
+
+
 def _adapter_config(order, *, method: str) -> dict:
     from shopman.shop.config import ChannelConfig
 
@@ -3249,6 +3492,10 @@ def _adapter_config(order, *, method: str) -> dict:
     config: dict = {}
     if method == "pix":
         config["pix_timeout_minutes"] = cfg.payment.timeout_minutes
+        repayment_minutes = _repayment_minutes_left(order)
+        if repayment_minutes is not None:
+            # O Pix escolhido no lugar do cartão recusado vale até o MESMO prazo.
+            config["pix_timeout_minutes"] = repayment_minutes
         if _is_pos_remote_order(order):
             # Pix de ENCOMENDA anotada no PDV: o cliente paga depois, de casa, e
             # o pedido pode ser para a semana que vem. O prazo do Pix de balcão

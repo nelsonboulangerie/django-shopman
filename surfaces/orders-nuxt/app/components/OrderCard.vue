@@ -6,7 +6,7 @@
 //   etiquetas cheias (Retirada · 3 itens …)
 //   itens
 //   andamento numa frase, sem barra ("Produção de Croissant: não começou")
-//   "Pronto · automático · desfazer" (o sistema fez)
+//   "Pronto pela Cozinha · desfazer" (a última estação fechou o pedido)
 //   bloqueio escrito no cartão
 //   pagamento ······························ total
 //   [ botão largo com o verbo e o nome: "Entregar a Ana" ]  [⋯]
@@ -745,7 +745,7 @@ function nuxtIcon(icon: string): string {
           </li>
         </ul>
 
-        <!-- o sistema fez: "Pronto · automático · desfazer" -->
+        <!-- a última estação fechou o pedido: "Pronto pela Cozinha · desfazer" -->
         <div
           v-if="undo && undo.kind === 'auto_ready'"
           class="flex flex-wrap items-center gap-2"

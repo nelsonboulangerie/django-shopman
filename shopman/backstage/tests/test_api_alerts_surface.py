@@ -226,12 +226,12 @@ def test_production_alert_projects_server_owned_recovery_context(client, shop):
 
 
 @pytest.mark.django_db
-def test_cancellation_request_alert_opens_the_exact_order(client, operator):
+def test_order_alert_opens_the_exact_order(client, operator):
     alert = OperatorAlert.objects.create(
-        type="customer_cancellation_requested",
+        type="customer_self_cancelled",
         audience="orders",
         severity="warning",
-        message="Cliente pediu análise de cancelamento",
+        message="O cliente cancelou o pedido WEB-42 antes do preparo.",
         order_ref="WEB-42",
     )
     client.force_login(operator)
@@ -240,7 +240,7 @@ def test_cancellation_request_alert_opens_the_exact_order(client, operator):
     row = next(item for item in projected["alerts"] if item["pk"] == alert.pk)
     context = next(action for action in row["actions"] if action["kind"] == "open_alert_context")
 
-    assert row["type_label"] == "Cliente solicitou cancelamento"
+    assert row["type_label"] == "Cliente cancelou antes do preparo"
     assert context["label"] == "Abrir o pedido"
     assert context["href"] == "/WEB-42"
 

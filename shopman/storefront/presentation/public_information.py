@@ -61,7 +61,14 @@ def _payment_faq(channel_ref: str) -> FAQItemProjection | None:
     )
 
 
-def _preorder_faq(channel_ref: str) -> FAQItemProjection | None:
+def preorder_window(channel_ref: str) -> str | None:
+    """A janela de encomenda do canal em palavras ("30 dias"), ou ``None``.
+
+    Fonte única do número que a loja promete ao cliente (FAQ, home): o mesmo
+    ``Shop.defaults["max_preorder_days"]`` que limita o calendário do checkout e
+    que o servidor confere no commit. ``None`` quando o canal não aceita
+    encomenda ou a janela é zero, e aí a promessa não aparece.
+    """
     from shopman.shop.config import ChannelConfig
     from shopman.shop.projections.checkout_context import preorder_config
 
@@ -70,7 +77,13 @@ def _preorder_faq(channel_ref: str) -> FAQItemProjection | None:
     days = preorder_config()[0]
     if days <= 0:
         return None
-    window = "1 dia" if days == 1 else f"{days} dias"
+    return "1 dia" if days == 1 else f"{days} dias"
+
+
+def _preorder_faq(channel_ref: str) -> FAQItemProjection | None:
+    window = preorder_window(channel_ref)
+    if window is None:
+        return None
     return FAQItemProjection(
         ref="preorder",
         question="Posso encomendar para outro dia?",

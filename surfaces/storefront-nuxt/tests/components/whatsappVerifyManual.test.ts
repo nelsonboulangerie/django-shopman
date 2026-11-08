@@ -45,6 +45,17 @@ describe('WhatsappVerifyPanel — envio manual', () => {
     expect(wrapper.find('[data-login-whatsapp-reopen]').exists()).toBe(true)
   })
 
+  it('conferiu e não chegou: a tela diz, em vez de só girar o botão (beta 05/11)', async () => {
+    const quiet = await mountSuspended(WhatsappVerifyPanel, { props: base })
+    expect(quiet.find('[data-login-whatsapp-not-arrived]').exists()).toBe(false)
+
+    const wrapper = await mountSuspended(WhatsappVerifyPanel, { props: { ...base, notArrived: true } })
+    expect(wrapper.find('[data-login-whatsapp-not-arrived]').text()).toContain('ainda não chegou')
+
+    const busy = await mountSuspended(WhatsappVerifyPanel, { props: { ...base, notArrived: true, checking: true } })
+    expect(busy.find('[data-login-whatsapp-not-arrived]').exists()).toBe(false)
+  })
+
   it('na demora explica que não é para reenviar e permite conferir agora', async () => {
     const wrapper = await mountSuspended(WhatsappVerifyPanel, {
       props: { ...base, returnState: 'slow' }

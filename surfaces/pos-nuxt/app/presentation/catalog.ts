@@ -153,6 +153,20 @@ export function hiddenUnavailableLabel(count: number): string {
   return count === 1 ? "1 indisponível oculto" : `${count} indisponíveis ocultos`;
 }
 
+// ── Exibir no estreito ─────────────────────────────────────────────────
+// Dono, 07/11/2026: no celular, a densidade, a vista (Grade ou Lista) e o olho não
+// são gestos primários e roubavam a linha da busca e a das coleções. Abaixo desta
+// largura da ÁREA de produtos (não da tela: a comanda ao lado também estreita), os
+// três viram um botão "Exibir" com menu (`OperatorViewMenu` do kit). 32rem cobre
+// todo celular em pé (até ~430 px) e deixa o tablet com os segmentados à vista.
+export const VIEW_MENU_MAX_WIDTH = 512;
+
+/** A área de produtos é estreita a ponto de juntar os controles de visualização? */
+export function collapseViewControls(width: number): boolean {
+  // Sem medida (servidor, antes de montar) fica o desenho da mesa.
+  return width > 0 && width < VIEW_MENU_MAX_WIDTH;
+}
+
 /** Só "1" liga; qualquer outra coisa (vazio, storage bloqueado) é o padrão: mostrar. */
 export function parseHideUnavailable(raw: unknown): boolean {
   return raw === "1";

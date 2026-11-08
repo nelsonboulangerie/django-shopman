@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick, ref } from "vue";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
-import { useOrderIntention } from "../../app/composables/useOrderIntention";
+import { uncertainOutcomeMessage, useOrderIntention } from "../../app/composables/useOrderIntention";
 import { fixtureActions } from "../support/orderActions";
 
 const env = installNuxtGlobals();
@@ -148,5 +148,47 @@ describe("recusa declarada pelo servidor não prende a intenção", () => {
     env.fetchMock.mockRejectedValueOnce({ status: 503 }).mockResolvedValueOnce({ outcome: "applied" });
     expect(await useOrderIntention().execute("ORDER", "cancel", action, {})).toBe(true);
     expect(env.fetchMock.mock.calls[1]![1].query.idempotency_key).toBeTruthy();
+  });
+});
+
+describe("o que a tela diz quando o resultado fica incerto", () => {
+  // Alpha, 07/11/2026: cancelar um pedido que o iFood já tinha concluído terminou
+  // em "Resultado ainda desconhecido. Verifique esta intenção antes de uma nova
+  // ação." O operador não sabia o que estava incerto nem o que fazer.
+  it("recusa declarada (409 not_applied) chega com a frase do servidor e não lê recibo", async () => {
+    const detail = "O iFood já concluiu este pedido às 13:00. Não dá mais para cancelar.";
+    const refusal = { status: 409, data: { outcome: "not_applied", detail } };
+    env.fetchMock.mockRejectedValueOnce(refusal);
+    await expect(useOrderIntention().execute("ORDER", "cancel", action, { reason_key: "other" })).rejects.toBe(refusal);
+    expect(env.fetchMock).toHaveBeenCalledTimes(1);
+    expect(env.states.get("orders-local-intentions")?.value["ORDER:cancel"]).toBeUndefined();
+  });
+
+  it("503 not_applied também chega com a frase do servidor, sem recibo", async () => {
+    const refusal = { status: 503, data: { outcome: "not_applied", detail: "Não foi possível consultar os motivos do iFood." } };
+    env.fetchMock.mockRejectedValueOnce(refusal);
+    await expect(useOrderIntention().execute("ORDER", "cancel", action, {})).rejects.toBe(refusal);
+    expect(env.fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("recibo desconhecido diz QUAL ato ficou incerto e o que fazer", async () => {
+    env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "unknown" });
+    await expect(useOrderIntention().execute("ORDER", "cancel", action, {})).rejects.toThrow(
+      "Não deu para confirmar se o cancelamento foi gravado. Atualize o pedido para ver o estado atual antes de tentar de novo.",
+    );
+  });
+
+  it("BFF que desistiu por demora (upstream_timeout) diz que foi demora", async () => {
+    env.fetchMock
+      .mockRejectedValueOnce({ status: 504, data: { detail: "A resposta demorou demais.", error: { code: "upstream_timeout" } } })
+      .mockResolvedValueOnce({ outcome: "unknown" });
+    await expect(useOrderIntention().execute("ORDER", "reject", action, {})).rejects.toThrow(
+      "O sistema demorou a responder. Não deu para confirmar se a recusa foi gravada.",
+    );
+  });
+
+  it("a frase antiga não volta", () => {
+    expect(uncertainOutcomeMessage()).not.toMatch(/desconhecido|intenção/);
+    expect(uncertainOutcomeMessage()).not.toContain("—");
   });
 });

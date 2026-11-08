@@ -192,7 +192,7 @@ def test_card_checkout_on_web_succeeds(client):
         "/api/v1/checkout/",
         data=json.dumps(with_baseline(client, {
             "name": "Maria", "phone": J.DEFAULT_PHONE, "fulfillment_type": "pickup",
-            "payment_method": "card", "delivery_time_slot": J.last_pickup_slot(),
+            "payment_method": "card", "delivery_time_slot": J.today_pickup_slot(),
             "delivery_date": timezone.localdate().isoformat(),
         })),
         content_type="application/json",

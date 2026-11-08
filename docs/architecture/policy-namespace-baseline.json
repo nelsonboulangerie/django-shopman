@@ -933,7 +933,6 @@
       "shopman/shop/rules/validation.py:DeliveryZoneRule",
       "shopman/shop/rules/validation.py:_coordinates_match_claimed_address",
       "shopman/shop/rules/validation.py:_delivery_minimum_q",
-      "shopman/shop/rules/validation.py:_normalize_city",
       "shopman/shop/rules/validation.py:delivery_minimum_message"
     ],
     "shop.rules-validation-priced-items": [
@@ -1189,7 +1188,6 @@
     ],
     "shop.services-payment-cancellation-eligibility": [
       "shopman/shop/services/customer_orders.py:can_cancel",
-      "shopman/shop/services/payment.py:_CANCELLABLE_STATUSES",
       "shopman/shop/services/payment.py:can_cancel",
       "shopman/shop/services/payment_status.py:can_cancel"
     ],

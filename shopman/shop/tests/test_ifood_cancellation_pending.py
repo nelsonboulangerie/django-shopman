@@ -10,7 +10,7 @@ from shopman.orderman.models import Directive, Order
 from shopman.shop.handlers.ifood_status import IFoodStatusCallbackHandler
 from shopman.shop.services import cancellation, ifood_callbacks, ifood_cancellation, operator_orders
 
-CFG = {"client_id": "test", "client_secret": "test", "cancellation_default_code": "501"}
+CFG = {"client_id": "test", "client_secret": "test"}
 
 
 @override_settings(SHOPMAN_IFOOD=CFG)
@@ -22,7 +22,7 @@ class IFoodCancellationPendingTests(TestCase):
         )
 
     def request(self):
-        return cancellation.cancel(self.order, reason="Sem estoque", actor="operator:ana")
+        return cancellation.cancel(self.order, reason="Sem estoque", actor="operator:ana", extra_data={"cancellation_reason_key": "out_of_stock"})
 
     def directive(self):
         return Directive.objects.get(topic="ifood.status_callback", payload__order_ref=self.order.ref)
@@ -37,19 +37,20 @@ class IFoodCancellationPendingTests(TestCase):
         self.assertNotIn("cancellation_reason", self.order.data)
         self.assertEqual(self.order.data["hold_ids"], ["hold-a"])
         self.assertEqual(self.order.data[ifood_cancellation.KEY]["state"], "queued")
-        self.assertEqual(self.directive().payload["cancellation_code"], "501")
+        # O código do iFood sai do motivo da casa (DEFAULT_REASON_CODES: out_of_stock → 503).
+        self.assertEqual(self.directive().payload["cancellation_code"], "503")
 
     def test_stale_second_request_dedupes_and_preserves_first_decision(self):
         stale = Order.objects.get(pk=self.order.pk)
         self.request()
-        cancellation.cancel(stale, reason="Outro motivo", actor="operator:b")
+        cancellation.cancel(stale, reason="Outro motivo", actor="operator:b", extra_data={"cancellation_reason_key": "other"})
         self.assertEqual(Directive.objects.filter(topic="ifood.status_callback").count(), 1)
         stale.refresh_from_db()
         self.assertEqual(stale.data[ifood_cancellation.KEY]["reason"], "Sem estoque")
 
     def test_reject_does_not_notify_customer_before_can(self):
         with patch.object(operator_orders, "_validate_operator_cancellation_code", return_value=("ifood", "ifood-order")):
-            operator_orders.reject_order(self.order, reason="Sem estoque", actor="operator:a", rejected_by="a", cancellation_code="501")
+            operator_orders.reject_order(self.order, reason="Sem estoque", actor="operator:a", rejected_by="a", reason_key="out_of_stock")
         self.assertFalse(Directive.objects.filter(topic="notification.send").exists())
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, "new")
@@ -132,7 +133,7 @@ class IFoodCancellationPendingTests(TestCase):
     @override_settings(SHOPMAN_IFOOD={})
     def test_missing_credentials_and_reason_do_not_cancel_real_order_locally(self):
         with self.assertRaisesMessage(ValueError, "Escolha um motivo"):
-            self.request()
+            cancellation.cancel(self.order, reason="Sem estoque", actor="operator:ana")
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, "new")
         self.assertEqual(self.order.data["hold_ids"], ["hold-a"])

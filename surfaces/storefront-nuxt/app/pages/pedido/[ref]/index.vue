@@ -21,8 +21,6 @@ import { orderAccessErrorView } from '~/presentation/orderAccess'
 import { showsPaymentBlock } from '~/presentation/payment'
 import {
   canShareNatively,
-  orderShareUrl,
-  shareMessage,
   shareNatively,
   whatsAppShareHref
 } from '~/utils/share'
@@ -73,14 +71,16 @@ const loginHref = computed(() => `/entrar?next=${encodeURIComponent(`/pedido/${o
 const cancelAction = computed(() => paymentLapsed.value
   ? null
   : tracking.value?.actions.find(action => action.ref === 'cancel_order' && action.enabled) || null)
-const cancellationRequestAction = computed(() => tracking.value?.actions.find(action => action.ref === 'request_cancellation' && action.enabled) || null)
-// O diálogo de cancelar diz o que acontece com o dinheiro (a reserva do cartão
-// desfeita, ou nada cobrado) na mesma frase do aviso à loja.
+// Depois que o preparo começou não há cancelar (dono, 06/11/2026): no lugar, o
+// convite para falar com o responsável, pela mesma ouvidoria da avaliação.
+const cancellationContactAction = computed(() => tracking.value?.actions.find(action => action.ref === 'request_cancellation_contact' && action.enabled) || null)
+const cancellationContact = computed(() => tracking.value?.cancellation_contact || null)
+// O diálogo de cancelar diz o que acontece com o dinheiro (o valor que volta, a
+// reserva do cartão desfeita, ou nada cobrado) na mesma frase do aviso à loja.
 const cancelDialogDescription = computed(() => [
   tracking.value?.copy.cancel_dialog_message,
   tracking.value?.cancel_dialog_money_line
 ].filter(Boolean).join(' '))
-const cancellationReason = ref('')
 const rateAction = computed(() => tracking.value?.actions.find(action => action.ref === 'rate_order' && action.enabled) || null)
 // Estado de agradecimento (título/mensagem + se cabe confete) montado a partir da
 // copy e da nota escolhida. A copy é omotenashi (configurável), nunca inventada aqui.
@@ -149,7 +149,7 @@ const sideActionsPrimary = computed(() => {
 })
 const showSideActions = computed(() => Boolean(
   tracking.value &&
-  (cancelAction.value || cancellationRequestAction.value || tracking.value.cancellation_request || showReorderAction.value || showSupportAction.value ||
+  (cancelAction.value || cancellationContact.value || showReorderAction.value || showSupportAction.value ||
     shareHref.value || tracking.value?.pickup_info?.directions_url)
 ))
 const showDeliveryTab = computed(() => Boolean(tracking.value?.pickup_info || tracking.value?.fulfillments.length))
@@ -258,18 +258,21 @@ const summaryRows = computed(() => {
   const rows: { icon: string, lines: string[], muted?: string }[] = [
     { icon: t.is_delivery ? 'lucide:bike' : 'lucide:store', lines: [t.is_delivery ? (t.copy.delivery_heading || 'Entrega') : (t.pickup_info?.heading || 'Retirada')] }
   ]
-  // O combinado que a pessoa escolheu no checkout ("sábado, 19/07 · A partir das
-  // 09h") e o horário previsto vinham prontos do servidor e não apareciam em
-  // lugar nenhum: o resumo listava tipo de entrega, taxa e pagamento, mas nunca
-  // QUANDO. `when_display` só vem preenchido em encomenda; `eta_display`, quando
-  // há previsão.
-  if (t.when_display) rows.push({ icon: 'lucide:calendar-clock', lines: [t.when_display] })
+  if (t.delivery_address) rows.push({ icon: 'lucide:map-pin', lines: [t.delivery_address] })
+  // O combinado que a pessoa escolheu no checkout ("hoje · 19:30 às 20:00") e o
+  // horário previsto vinham prontos do servidor e não apareciam em lugar
+  // nenhum: o resumo listava tipo de entrega, taxa e pagamento, mas nunca
+  // QUANDO. `schedule_display` vem sempre que houve janela (a encomenda também
+  // conta); `eta_display`, quando há previsão.
+  const schedule = t.schedule_display || t.when_display
+  if (schedule) rows.push({ icon: 'lucide:calendar-clock', lines: [schedule] })
   if (t.eta_display) rows.push({ icon: 'lucide:timer', lines: [`Previsto para ${t.eta_display}`] })
-  if (t.delivery_fee_display) {
-    rows.push({ icon: 'lucide:coins', lines: [`Taxa ${t.delivery_fee_display}${t.delivery_distance_display ? ` · ${t.delivery_distance_display}` : ''}`] })
-  }
   const paymentLabel = t.payment_status_label
   if (paymentLabel) rows.push({ icon: 'lucide:credit-card', lines: [paymentLabel] })
+  if (t.tax_id_display) rows.push({ icon: 'lucide:file-text', lines: [`CPF na nota ${t.tax_id_display}`] })
+  if (t.gift) {
+    rows.push({ icon: 'lucide:gift', lines: [t.gift.recipient_name ? `Presente para ${t.gift.recipient_name}` : 'Presente'] })
+  }
   return rows
 })
 
@@ -315,22 +318,15 @@ onBeforeUnmount(() => {
 // tiver copy própria.
 function actionSuccessMessage (action: Action): string {
   if (action.ref === 'cancel_order') return tracking.value?.copy.cancel_success_title || 'Pedido cancelado.'
-  if (action.ref === 'request_cancellation') return 'Solicitação registrada. Guarde o protocolo.'
   if (action.ref === 'confirm_received') return 'Que bom que chegou. Bom apetite!'
   return 'Tudo certo, atualizamos seu pedido.'
 }
 
-async function requestCancellation () {
-  const action = cancellationRequestAction.value
+async function requestCancellationContact () {
+  const action = cancellationContactAction.value
   if (!action) return
-  if (await postAction(action, { reason: cancellationReason.value.trim() })) {
-    cancellationReason.value = ''
-  }
-}
-
-function cancellationConfirmation (key: string, fallback: string): string {
-  const value = cancellationRequestAction.value?.confirmation?.[key]
-  return typeof value === 'string' && value ? value : fallback
+  // Sem toast: o próprio bloco vira "Combinado", e o toast repetiria a frase.
+  await postAction(action, { origin: 'cancellation' }, { silent: true })
 }
 
 async function refreshAfterConfirmedAction () {
@@ -362,6 +358,9 @@ async function postAction (action: Action, body: Record<string, unknown> = {}, {
     return true
   } catch (e) {
     if (import.meta.client) useSonner.error(errorDetail(e, 'Não foi possível concluir. Tente de novo ou fale conosco.'))
+    // O cancelar recusado (o preparo começou no mesmo instante) relê o pedido: a
+    // tela troca o botão pelo convite de falar com o responsável.
+    if (action.ref === 'cancel_order') await refresh().catch(() => {})
     return false
   } finally {
     actionPending.value = omitKey(actionPending.value, action.ref)
@@ -536,15 +535,12 @@ watchEffect(() => {
   yoinCelebrado.value = true
   nextTick(() => dispararConfetti())
 })
-// Compartilhar: folha nativa do sistema quando existe (WhatsApp, Mensagens,
-// Instagram — a escolha é do cliente), com o link do WhatsApp como fallback no
-// desktop. As armadilhas que faziam chegar só a URL crua estão em `utils/share`.
-const shareText = computed(() => {
-  const texto = tracking.value?.share_text
-  if (!texto) return ''
-  const origin = import.meta.client ? window.location.origin : ''
-  return shareMessage(texto, orderShareUrl(origin, orderRef.value))
-})
+// Enviar resumo: folha nativa do sistema quando existe (WhatsApp, Mensagens,
+// a escolha é do cliente), com o link do WhatsApp como fallback no desktop.
+// Vai o TEXTO do pedido (itens, quando, onde), montado no servidor, e nenhum
+// link: o link do pedido só abre para quem o fez, e quem o recebia caía em
+// "Não encontramos este pedido" (beta 06/11).
+const shareText = computed(() => tracking.value?.share_text?.trim() || '')
 const shareHref = computed(() => whatsAppShareHref(shareText.value))
 async function compartilhar (event: MouseEvent) {
   if (!canShareNatively() || !shareText.value) return
@@ -908,30 +904,64 @@ useSeoMeta({
                 </UiTabsContent>
 
                 <UiTabsContent value="summary">
-                  <!-- Mesma diagramação do overlay de revisão: itens (qty + nome),
-                       linhas ícone+valor e Total. Fonte = projeção do pedido. -->
-                  <div class="px-1">
+                  <!-- O Resumo conta o que a revisão do checkout contou: itens com
+                       preço, a conta inteira e o que o cliente informou. Fonte =
+                       projeção do pedido. -->
+                  <div class="px-1" data-tracking-summary>
                     <ul v-if="tracking.items.length" class="space-y-1">
-                      <li v-for="item in tracking.items" :key="item.sku" class="shop-body">
-                        <span class="font-semibold tabular-nums">{{ item.qty }}×</span>
-                        {{ item.name }}
+                      <li v-for="item in tracking.items" :key="item.sku" class="flex items-baseline justify-between gap-3 shop-body">
+                        <span class="min-w-0">
+                          <span class="font-semibold tabular-nums">{{ item.qty }}×</span>
+                          {{ item.name }}
+                        </span>
+                        <span class="shrink-0 tabular-nums">{{ item.total_display }}</span>
                       </li>
                     </ul>
                     <p v-else class="shop-muted">Os itens deste pedido aparecem aqui.</p>
+
+                    <dl class="mt-3 space-y-1 border-t pt-3 text-sm" data-tracking-summary-bill>
+                      <div v-if="tracking.subtotal_display" class="flex items-baseline justify-between gap-3">
+                        <dt class="shop-muted">Subtotal</dt>
+                        <dd class="tabular-nums">{{ tracking.subtotal_display }}</dd>
+                      </div>
+                      <div v-for="discount in tracking.discount_lines || []" :key="discount.label" class="flex items-baseline justify-between gap-3">
+                        <dt class="shop-muted">{{ discount.label }}</dt>
+                        <dd class="tabular-nums text-primary">- {{ discount.amount_display }}</dd>
+                      </div>
+                      <div v-if="tracking.delivery_fee_display" class="flex items-baseline justify-between gap-3">
+                        <dt class="shop-muted">Entrega<span v-if="tracking.delivery_distance_display"> · {{ tracking.delivery_distance_display }}</span></dt>
+                        <dd class="tabular-nums">{{ tracking.delivery_fee_display }}</dd>
+                      </div>
+                      <div class="flex items-baseline justify-between gap-3">
+                        <dt class="shop-body font-semibold">{{ tracking.copy.total_label }}</dt>
+                        <dd class="font-semibold tabular-nums">{{ tracking.total_display }}</dd>
+                      </div>
+                    </dl>
 
                     <UiSeparator class="my-3" />
 
                     <OrderSummaryRows :rows="summaryRows" />
 
-                    <div class="mt-3 flex items-baseline justify-between border-t pt-3">
-                      <span class="shop-body font-semibold">{{ tracking.copy.total_label }}</span>
-                      <span class="font-semibold tabular-nums">{{ tracking.total_display }}</span>
-                    </div>
+                    <!-- Bilhete do presente e observação: a mesma superfície da revisão. -->
+                    <p v-if="tracking.gift?.message" class="mt-3 rounded-lg bg-muted/50 p-3" data-tracking-summary-gift>
+                      <span class="mb-0.5 block shop-kicker">Cartão do presente</span>
+                      <span class="shop-body italic">“{{ tracking.gift.message }}”</span>
+                    </p>
+                    <p v-if="tracking.customer_notes" class="mt-3 rounded-lg bg-muted/50 p-3" data-tracking-summary-notes>
+                      <span class="mb-0.5 block shop-kicker">Observação</span>
+                      <span class="shop-body">{{ tracking.customer_notes }}</span>
+                    </p>
                   </div>
                 </UiTabsContent>
 
                 <UiTabsContent v-if="showDeliveryTab" value="delivery">
                   <div class="shop-stack-block">
+                    <!-- A retirada responde "quando" antes de "onde": o horário
+                         escolhido no finalizar é o compromisso do pedido. -->
+                    <UiAlert v-if="tracking.pickup_info?.when_display" data-tracking-pickup-when>
+                      <UiAlertTitle>Horário</UiAlertTitle>
+                      <UiAlertDescription>{{ tracking.pickup_info.when_display }}</UiAlertDescription>
+                    </UiAlert>
                     <UiAlert v-if="tracking.pickup_info">
                       <UiAlertTitle>Endereço</UiAlertTitle>
                       <UiAlertDescription>
@@ -967,20 +997,28 @@ useSeoMeta({
             <UiCardTitle>Ações</UiCardTitle>
           </UiCardHeader>
           <UiCardContent class="space-y-2">
-            <UiAlert
-              v-if="tracking.cancellation_request"
-              variant="warning"
-              icon="lucide:clipboard-check"
-              role="status"
-              data-cancellation-request
+            <div
+              v-if="cancellationContact"
+              class="space-y-2 rounded-lg border border-border p-4"
+              data-cancellation-contact
             >
-              <UiAlertTitle>{{ tracking.cancellation_request.title }}</UiAlertTitle>
-              <UiAlertDescription class="space-y-1">
-                <p>{{ tracking.cancellation_request.message }}</p>
-                <p class="font-semibold">Protocolo {{ tracking.cancellation_request.protocol }}</p>
-                <p class="text-xs">Recebida em {{ tracking.cancellation_request.requested_at_display }}</p>
-              </UiAlertDescription>
-            </UiAlert>
+              <p class="font-semibold">{{ tracking.copy.cancellation_contact_title }}</p>
+              <p v-if="cancellationContact.requested" class="text-sm text-muted-foreground" role="status">
+                {{ tracking.copy.rating_contact_done }}
+              </p>
+              <template v-else-if="cancellationContactAction">
+                <p class="text-sm text-muted-foreground">{{ tracking.copy.cancellation_contact_message }}</p>
+                <UiButton
+                  class="w-full"
+                  variant="secondary"
+                  icon="lucide:message-circle"
+                  :loading="!!actionPending[cancellationContactAction.ref]"
+                  @click="requestCancellationContact"
+                >
+                  {{ cancellationContactAction.label }}
+                </UiButton>
+              </template>
+            </div>
             <!-- Avaliar em destaque (primary); as demais ficam secundárias. -->
             <UiButton v-if="rateAction" class="w-full" icon="lucide:star" @click="ratingOpen = true">
               Avaliar pedido
@@ -1012,7 +1050,7 @@ useSeoMeta({
             >
               {{ tracking.pickup_info.directions_label }}
             </UiButton>
-            <!-- Compartilhar é permanente: serve mais com o pedido pronto do que
+            <!-- Enviar resumo é permanente: serve mais com o pedido pronto do que
                  logo depois do checkout, onde vivia preso ao banner do yoin. -->
             <UiButton v-if="mounted && shareHref" :href="shareHref" target="_blank" rel="noopener" variant="secondary" icon="lucide:share-2" class="w-full" @click="compartilhar">
               {{ tracking.share_cta }}
@@ -1029,33 +1067,6 @@ useSeoMeta({
                 <UiAlertDialogFooter>
                   <UiAlertDialogCancel>{{ tracking.copy.cancel_dialog_back }}</UiAlertDialogCancel>
                   <UiAlertDialogAction @click="postAction(cancelAction)">{{ tracking.copy.cancel_dialog_confirm }}</UiAlertDialogAction>
-                </UiAlertDialogFooter>
-              </UiAlertDialogContent>
-            </UiAlertDialog>
-            <UiAlertDialog v-else-if="cancellationRequestAction">
-              <UiAlertDialogTrigger as-child>
-                <UiButton variant="destructive" class="w-full">{{ cancellationRequestAction.label }}</UiButton>
-              </UiAlertDialogTrigger>
-              <UiAlertDialogContent>
-                <UiAlertDialogHeader>
-                  <UiAlertDialogTitle>{{ cancellationConfirmation('title', 'Solicitar cancelamento') }}</UiAlertDialogTitle>
-                  <UiAlertDialogDescription>{{ cancellationConfirmation('message', 'A equipe vai analisar o cancelamento e um possível estorno. Você recebe um protocolo agora.') }}</UiAlertDialogDescription>
-                </UiAlertDialogHeader>
-                <UiTextarea
-                  v-model="cancellationReason"
-                  :rows="3"
-                  :maxlength="500"
-                  placeholder="Motivo (opcional)"
-                  aria-label="Motivo da solicitação de cancelamento"
-                />
-                <UiAlertDialogFooter>
-                  <UiAlertDialogCancel>{{ cancellationConfirmation('cancel_label', 'Manter pedido') }}</UiAlertDialogCancel>
-                  <UiAlertDialogAction
-                    :disabled="!!actionPending.request_cancellation"
-                    @click="requestCancellation"
-                  >
-                    {{ cancellationConfirmation('confirm_label', 'Enviar solicitação') }}
-                  </UiAlertDialogAction>
                 </UiAlertDialogFooter>
               </UiAlertDialogContent>
             </UiAlertDialog>

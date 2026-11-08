@@ -55,7 +55,7 @@ def _shop_form_data(shop):
 
     initial_form = ShopForm(instance=shop)
     data = {}
-    list_fields = {"social_links", "kitchen_note_tags", "cancellation_presets"}  # ArrayWidget → lista de valores
+    list_fields = {"social_links", "kitchen_note_tags"}  # ArrayWidget → lista de valores
     json_object_fields = {"tracking_copy", "integrations"}
 
     for name, field in initial_form.fields.items():
@@ -121,7 +121,7 @@ class TestAdminRegistration:
 
 
 class TestShopAdminStorefrontPreview:
-    """WP-S4 — iframe preview no change do Shop."""
+    """A loja desacoplada abre fora do Admin sem depender de iframe."""
 
     def test_readonly_fields_include_storefront_preview(self, db):
         from shopman.shop.models import ShopAppearance
@@ -129,111 +129,40 @@ class TestShopAdminStorefrontPreview:
         appearance_admin = admin.site._registry[ShopAppearance]
         assert "storefront_preview" in (appearance_admin.readonly_fields or ())
 
-    def test_change_page_contains_preview_iframe(self, db, admin_user, shop):
+    def test_change_page_opens_public_storefront_without_iframe(self, db, admin_user, shop, settings):
+        settings.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.example.com"
         client = Client()
         client.force_login(admin_user)
         url = reverse("admin:shop_shopappearance_change", args=[shop.pk])
         resp = client.get(url)
         assert resp.status_code == 200
-        assert b'title="Loja"' in resp.content
-        assert b'x-bind:src="src"' in resp.content
-        assert "Atualizar prévia".encode() in resp.content
+        body = resp.content.decode()
+        assert 'href="https://loja.example.com/"' in body
+        assert "Abrir loja em nova aba" in body
+        assert 'target="_blank"' in body
+        assert 'rel="noopener noreferrer"' in body
+        assert '<iframe' not in body
+        assert 'x-bind:src' not in body
+        assert 'Página inicial embutida' not in body
+        assert 'Atualizar prévia' not in body
 
+    @pytest.mark.parametrize("station_type,expected", [
+        ("prep", "https://kds.example.com/cafe"),
+        ("picking", "https://kds.example.com/cafe"),
+        ("expedition", "https://gestor.example.com/?columns=expedition"),
+    ])
+    def test_station_operation_matches_the_runtime_destination(self, db, settings, station_type, expected):
+        settings.SHOPMAN_KDS_BASE_URL = "https://kds.example.com/"
+        settings.SHOPMAN_ORDERS_BASE_URL = "https://gestor.example.com/"
+        station = KDSInstance(ref="cafe", type=station_type)
+        html = admin.site._registry[KDSInstance].open_display(station)
+        assert f'href="{expected}"' in html
 
-class TestShopAdminCancellationPresets:
-    """Admin → Loja → Motivos de cancelamento e recusa: uma linha por motivo, grupo antes da barra."""
-
-    def test_rows_show_group_before_the_bar(self, shop):
-        from shopman.shop.admin.shop import ShopForm
-
-        shop.cancellation_presets = [
-            {"label": "Item indisponível no momento", "group": "Produto"},
-            "Pedido em duplicidade",
-        ]
-        shop.save(update_fields=["cancellation_presets"])
-
-        form = ShopForm(instance=shop)
-
-        assert form.initial["cancellation_presets"] == [
-            "Produto | Item indisponível no momento",
-            "Pedido em duplicidade",
-        ]
-
-    def test_form_saves_grouped_and_plain_rows(self, shop):
-        from shopman.shop.admin.shop import ShopForm
-
-        data = _shop_form_data(shop)
-        data.setlist(
-            "cancellation_presets",
-            [
-                "Produto | Item indisponível no momento",
-                "  Pagamento |  Pagamento não aprovado ",
-                "Pedido em duplicidade",
-                " | Você pediu o cancelamento",
-                "",
-            ],
-        )
-
-        form = ShopForm(data=data, instance=shop)
-        assert form.is_valid(), form.errors
-        saved = form.save()
-        saved.refresh_from_db()
-
-        assert saved.cancellation_presets == [
-            {"label": "Item indisponível no momento", "group": "Produto"},
-            {"label": "Pagamento não aprovado", "group": "Pagamento"},
-            "Pedido em duplicidade",
-            "Você pediu o cancelamento",
-        ]
-
-    def test_form_refuses_preset_ending_in_period(self, shop):
-        from shopman.shop.admin.shop import ShopForm
-
-        data = _shop_form_data(shop)
-        data.setlist("cancellation_presets", ["Produto | Item acabou."])
-
-        form = ShopForm(data=data, instance=shop)
-
-        assert not form.is_valid()
-        message = " ".join(form.errors["cancellation_presets"])
-        assert "Tire a pontuação do fim de “Item acabou.”" in message
-        assert "Motivo: Item acabou.”" in message
-
-    def test_form_refuses_group_without_reason(self, shop):
-        from shopman.shop.admin.shop import ShopForm
-
-        data = _shop_form_data(shop)
-        data.setlist("cancellation_presets", ["Produto | "])
-
-        form = ShopForm(data=data, instance=shop)
-
-        assert not form.is_valid()
-        assert "Falta o motivo depois do grupo" in " ".join(form.errors["cancellation_presets"])
-
-    def test_empty_list_saves_empty(self, shop):
-        from shopman.shop.admin.shop import ShopForm
-
-        shop.cancellation_presets = ["Pedido em duplicidade"]
-        shop.save(update_fields=["cancellation_presets"])
-        data = _shop_form_data(shop)
-        data.setlist("cancellation_presets", [""])
-
-        form = ShopForm(data=data, instance=shop)
-        assert form.is_valid(), form.errors
-        assert form.save().cancellation_presets == []
-
-    def test_ordering_page_renders_rows_and_saves_through_the_admin(self, db, admin_user, shop):
-        shop.cancellation_presets = [{"label": "Pagamento não aprovado", "group": "Pagamento"}]
-        shop.save(update_fields=["cancellation_presets"])
-        client = Client()
-        client.force_login(admin_user)
-        url = reverse("admin:shop_shopordering_change", args=[shop.pk])
-
-        resp = client.get(url)
-
-        assert resp.status_code == 200
-        assert 'value="Pagamento | Pagamento não aprovado"'.encode() in resp.content
-        assert b"Motivos de cancelamento e recusa" in resp.content
+    def test_exit_has_no_dead_kds_link_when_orders_is_not_connected(self, db, settings):
+        settings.SHOPMAN_KDS_BASE_URL = "https://kds.example.com"
+        settings.SHOPMAN_ORDERS_BASE_URL = ""
+        station = KDSInstance(ref="saida", type="expedition")
+        assert 'href=' not in admin.site._registry[KDSInstance].open_display(station)
 
 
 class TestShopAdminOpeningHours:
@@ -247,6 +176,35 @@ class TestShopAdminOpeningHours:
         assert b'name="opening_hours_wednesday_open"' in resp.content
         assert b'name="opening_hours_wednesday_close"' in resp.content
         assert b'name="opening_hours"' not in resp.content
+
+    @pytest.mark.parametrize(("name", "shown"), [("Test Shop", "Test Shop"), ("", "Test")])
+    def test_saving_operation_page_names_the_shop_in_success_message(self, db, admin_user, shop, name, shown):
+        """Beta 05/11: salvar o horário dizia 'alterado com sucesso' com o nome vazio ("“”").
+
+        A mensagem do Admin é ``str(obj)``; com o nome fantasia em branco ela saía
+        vazia, e a loja tem outros nomes (marca, nome curto) para dizer de quem é.
+        """
+        from django.contrib.messages import get_messages
+
+        Shop.objects.filter(pk=shop.pk).update(name=name)
+        shop.refresh_from_db()
+        client = Client()
+        client.force_login(admin_user)
+        url = reverse("admin:shop_shopoperation_change", args=[shop.pk])
+        form = client.get(url).context["adminform"].form
+        data = {k: v for k, v in _shop_form_data(shop).lists() if k in form.fields}
+        data = {k: (v if len(v) > 1 else v[0]) for k, v in data.items()}
+        data["_save"] = "Salvar"
+
+        resp = client.post(url, data)
+
+        assert resp.status_code == 302, resp.context["adminform"].form.errors if resp.context else resp
+        texts = [str(m) for m in get_messages(resp.wsgi_request)]
+        assert texts, "sem mensagem de sucesso"
+        assert "“”" not in texts[0]
+        assert f">{shown}<" in texts[0]
+        shop.refresh_from_db()
+        assert shop.name == name
 
     def test_form_saves_opening_hours_from_day_fields(self, shop):
         from shopman.shop.admin.shop import ShopForm
@@ -474,7 +432,6 @@ class TestShopAdminCalendar:
         data["defaults_max_preorder_days"] = "21"
         data["defaults_pickup_rounding_minutes"] = "30"
         data["defaults_pickup_history_days"] = "45"
-        data["defaults_pickup_fallback_slot"] = "slot-09"
         data["defaults_pickup_slot_1_ref"] = "slot-09"
         data["defaults_pickup_slot_1_label"] = "A partir das 9h"
         data["defaults_pickup_slot_1_starts_at"] = "09:00"
@@ -514,7 +471,6 @@ class TestShopAdminCalendar:
             "rounding_minutes": 30,
             "history_days": 45,
             "other": "kept",
-            "fallback_slot": "slot-09",
         }
         assert saved.defaults["closed_dates"] == [
             {"date": "2026-12-25", "label": "Natal"},

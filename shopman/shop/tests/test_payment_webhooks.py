@@ -1585,10 +1585,40 @@ class EfiPixWebhookMoneyTests(WebhookTestBase):
 
         order.refresh_from_db()
         self.assertNotIn("captured_at", order.data["payment"])
-        alert = OperatorAlert.objects.get(
-            type="payment_reconciliation_failed", order_ref=order.ref,
+        # Financeiro de UM pedido: é do gerente (público ``orders``), não do
+        # panorâmico do dono (beta 06/11, PIXEXP-03).
+        alert = OperatorAlert.objects.get(type="pix_on_closed_charge", order_ref=order.ref)
+        self.assertEqual(alert.audience, "orders")
+        self.assertIn("caiu numa cobrança já cancelada.", alert.message)
+        self.assertNotIn("(", alert.message)
+        self.assertFalse(
+            OperatorAlert.objects.filter(type="payment_reconciliation_failed", order_ref=order.ref).exists()
         )
-        self.assertIn("cobrança já encerrada (cancelada)", alert.message)
+
+    def test_cancelling_the_live_order_refunds_the_booked_pix_and_resolves_the_alert(self) -> None:
+        """O alerta mandava "devolva pelo gateway" depois de o cancelamento já ter
+        devolvido sozinho, e ficava aberto para sempre (beta 06/11, PIXEXP-01/03)."""
+        from shopman.shop.services.cancellation import cancel
+
+        order = _create_order_with_payment("web", "pix")
+        intent = _create_pix_intent(order)
+        PaymentService.cancel(intent.ref, reason="superseded_by_captured_payment")
+        self._post_pix(txid=intent.gateway_id, endToEndId="E_WH_DEAD_LIVE_CANCEL", valor="10.00")
+        alert = OperatorAlert.objects.get(type="pix_on_closed_charge", order_ref=order.ref)
+        self.assertIsNone(alert.resolved_at)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            cancel(order, reason="operator_cancel", actor="gestor:ana")
+
+        alert.refresh_from_db()
+        self.assertIsNotNone(alert.resolved_at)
+
+    def test_charge_status_never_leaks_raw_english(self) -> None:
+        from shopman.shop.services.pix_confirmation import _charge_status_label
+
+        self.assertEqual(_charge_status_label("cancelled"), "cancelada")
+        self.assertEqual(_charge_status_label("pending"), "vencida")
+        self.assertEqual(_charge_status_label(""), "fora do prazo")
 
 
 # ══════════════════════════════════════════════════════════════

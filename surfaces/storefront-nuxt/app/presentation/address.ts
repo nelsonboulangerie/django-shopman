@@ -25,13 +25,16 @@ export {
   emptyAddressDraft,
   looksLikeCep,
   maskCepInput,
+  mergeCepLookup,
   mergeReverseGeocode,
   nextFocusAfterSuggestion,
+  stillFailingErrors,
   viaCepSummary
 } from './addressForm'
 export type {
   AddressCoordinatesSource,
   AddressDraft,
+  CepFilledFields,
   GoogleAddressComponent,
   GooglePlaceFields,
   ViaCepPayload
@@ -186,4 +189,35 @@ export function addressLabelDisplay (key: AddressLabelKey, custom = ''): string 
 export function savedAddressDisplayLabel (address: Pick<SavedAddressProjection, 'label' | 'label_key' | 'label_custom'>): string {
   if (address.label_key === 'other' && address.label_custom) return address.label_custom
   return address.label || 'Endereço'
+}
+
+// A frase da busca por CEP sem resultado (beta SMS-01). "Não achamos" só quando o
+// serviço disse que o CEP não existe; quando a consulta nem aconteceu, a falha é
+// da loja e a frase não manda conferir números que estão certos.
+export function cepSearchIssue (unavailable: boolean): string {
+  return unavailable
+    ? 'Não conseguimos consultar o CEP agora. Toque em "Preencher manualmente" e escreva o endereço.'
+    : 'Não achamos esse CEP. Confira os números ou toque em "Preencher manualmente" e escreva o endereço.'
+}
+
+// O formulário do picker aberto com algo que o checkout ainda não recebeu (beta
+// SMS-15). Enquanto isso, o "Continuar" do card não pode seguir com o endereço
+// ANTIGO: a edição sumia sem aviso. Editar um salvo conta como pendente até
+// salvar ou fechar; endereço novo, quando difere da seleção em vigor.
+export interface PickerDraftPendingInput {
+  context: 'checkout' | 'account'
+  mode: 'saved' | 'search' | 'form'
+  editingSaved: boolean
+  draft: AddressDraft
+  selection: AddressSelection | null | undefined
+}
+
+export function pickerDraftPending ({ context, mode, editingSaved, draft, selection }: PickerDraftPendingInput): boolean {
+  if (context !== 'checkout' || mode !== 'form') return false
+  if (editingSaved) return true
+  if (!selection) return false
+  const next = selectionFromDraft(draft, selection.savedAddressId)
+  return next.formattedAddress !== selection.formattedAddress ||
+    next.complement !== selection.complement ||
+    next.deliveryInstructions !== selection.deliveryInstructions
 }

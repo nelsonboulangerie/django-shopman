@@ -330,7 +330,7 @@ class TestPickupSlots:
                         "label": "A partir das 9h",
                         "starts_at": "09:00",
                         "enabled": False,
-                        "reason": "Sem tempo de preparo",
+                        "reason": "SKU sai às 11:30.",
                         "is_earliest": False,
                     },
                     {
@@ -361,7 +361,7 @@ class TestPickupSlots:
         assert seen_dates == ["2026-05-17"]
         assert proj.earliest_slot_ref == "slot-12"
         assert proj.pickup_slots[0].enabled is False
-        assert proj.pickup_slots[0].reason == "Sem tempo de preparo"
+        assert proj.pickup_slots[0].reason == "SKU sai às 11:30."
 
 
 # ──────────────────────────────────────────────────────────────────────

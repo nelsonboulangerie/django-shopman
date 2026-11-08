@@ -208,8 +208,10 @@ function ring(field: ReceiptFieldAnchor): string {
 
 /** Conferir fecha a gaveta; desmarcar mantém aberta, porque ainda há o que ver. */
 function onCheck(checked: boolean) {
-  emit("check", checked);
-  if (!checked) return;
+  if (!checked) {
+    emit("check", false);
+    return;
+  }
   // Com o que ainda trava o item (a validade, o insumo), conferir NÃO fecha: a
   // gaveta fechava, a linha ficava "Pendente" e o motivo só aparecia no painel ao
   // lado. Fica aberta, com o foco no campo que falta (beta 05/11, CMP-16).
@@ -220,6 +222,7 @@ function onCheck(checked: boolean) {
     (field?.querySelector<HTMLElement>("input, button, textarea") ?? field)?.focus?.();
     return;
   }
+  emit("check", true);
   emit("update:open", false);
 }
 </script>

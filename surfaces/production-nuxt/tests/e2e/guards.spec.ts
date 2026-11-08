@@ -121,7 +121,7 @@ test.describe("Produção — gate de operador", () => {
   }, testInfo) => {
     test.skip(testInfo.project.name !== "chromium-desktop");
     await context.addCookies([authed]);
-    await page.goto("/");
+    await page.goto("/?date=2026-11-06");
     for (const [shortcut, path] of [
       ["Alt+1", "/plan"],
       ["Alt+2", "/mise-en-place"],
@@ -130,7 +130,10 @@ test.describe("Produção — gate de operador", () => {
       ["Alt+3", "/"],
     ] as const) {
       await page.keyboard.press(shortcut);
-      await expect(page).toHaveURL(new RegExp(`${path === "/" ? "\\/$" : `${path}$`}`));
+      await expect(page).toHaveURL((url) => url.pathname === path);
+      if (path === "/plan") {
+        expect(new URL(page.url()).searchParams.get("date")).toBe("2026-11-06");
+      }
     }
   });
 });

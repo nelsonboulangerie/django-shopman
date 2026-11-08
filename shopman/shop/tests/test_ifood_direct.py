@@ -577,49 +577,36 @@ def test_send_action_non_2xx_raises(fake_headers):
             ifood_callbacks.dispatch("o1")
 
 
-@override_settings(SHOPMAN_IFOOD={**IFOOD_CFG, "cancellation_default_code": "501"})
-def test_send_for_status_cancellation_uses_configured_code(fake_headers):
+@override_settings(SHOPMAN_IFOOD=IFOOD_CFG)
+def test_send_for_status_cancellation_sends_the_reason_code(fake_headers):
     from shopman.shop.services import ifood_callbacks
 
     with patch("requests.post") as mock_post:
         mock_post.return_value = MagicMock(status_code=202)
-        sent = ifood_callbacks.send_for_status("o1", "cancelled", cancellation_reason="sem estoque")
+        sent = ifood_callbacks.send_for_status("o1", "cancelled", cancellation_reason="sem estoque", cancellation_code="503")
         assert sent is True
         assert mock_post.call_args[0][0].endswith("/requestCancellation")
         body = mock_post.call_args[1]["json"]
-        assert body["cancellationCode"] == "501"
+        assert body["cancellationCode"] == "503"
         assert body["reason"] == "sem estoque"
 
 
-@override_settings(SHOPMAN_IFOOD={**IFOOD_CFG, "cancellation_default_code": "501"})
+@override_settings(SHOPMAN_IFOOD=IFOOD_CFG)
 def test_cancellation_reason_never_empty(fake_headers):
     """iFood 400s when `reason` is empty (caught live 2026-07-01): with no
-    reason and no configured default, fall back to a non-empty text.
+    reason, fall back to a non-empty text.
     """
     from shopman.shop.services import ifood_callbacks
 
     with patch("requests.post") as mock_post:
         mock_post.return_value = MagicMock(status_code=202)
-        ifood_callbacks.request_cancellation("o1")  # no description
+        ifood_callbacks.request_cancellation("o1", code="501")  # no description
         assert mock_post.call_args[1]["json"]["reason"] == "Cancelado pela loja"
 
 
-@override_settings(SHOPMAN_IFOOD={
-    **IFOOD_CFG, "cancellation_default_code": "501",
-    "cancellation_default_reason": "Loja fechada",
-})
-def test_cancellation_reason_uses_configured_default(fake_headers):
-    from shopman.shop.services import ifood_callbacks
-
-    with patch("requests.post") as mock_post:
-        mock_post.return_value = MagicMock(status_code=202)
-        ifood_callbacks.request_cancellation("o1")
-        assert mock_post.call_args[1]["json"]["reason"] == "Loja fechada"
-
-
-@override_settings(SHOPMAN_IFOOD={**IFOOD_CFG, "cancellation_default_code": "501"})
+@override_settings(SHOPMAN_IFOOD=IFOOD_CFG)
 def test_send_for_status_uses_operator_chosen_code(fake_headers):
-    """The operator's picked code overrides the default."""
+    """The code of the operator's reason goes as is."""
     from shopman.shop.services import ifood_callbacks
 
     with patch("requests.post") as mock_post:
@@ -628,7 +615,7 @@ def test_send_for_status_uses_operator_chosen_code(fake_headers):
             "o1", "cancelled", cancellation_reason="Sem entregador", cancellation_code="504"
         )
         body = mock_post.call_args[1]["json"]
-        assert body["cancellationCode"] == "504"  # chosen, not the 501 default
+        assert body["cancellationCode"] == "504"
         assert body["reason"] == "Sem entregador"
 
 
@@ -654,13 +641,13 @@ def test_signal_receiver_carries_operator_cancellation_code(db):
 def test_cancellation_reasons_service(db, fake_headers):
     from shopman.orderman.models import Order
 
-    from shopman.backstage.services import orders as orders_service
     from shopman.shop.models import Channel
+    from shopman.shop.services import operator_orders
 
     Channel.objects.get_or_create(ref="ifood", defaults={"name": "iFood", "is_active": True})
     # non-iFood order → empty
     web = Order.objects.create(ref="ORD-WEB", channel_ref="web", status="new")
-    assert orders_service.cancellation_reasons(web) == []
+    assert operator_orders.cancellation_reasons(web) == []
     # iFood order → mapped {code, description}
     ifd = Order.objects.create(
         ref="ORD-IFD", channel_ref="ifood", status="new", external_ref="ifd-x"
@@ -670,7 +657,7 @@ def test_cancellation_reasons_service(db, fake_headers):
         "shopman.shop.services.ifood_callbacks.fetch_cancellation_reasons",
         return_value=reasons,
     ):
-        out = orders_service.cancellation_reasons(ifd)
+        out = operator_orders.cancellation_reasons(ifd)
     assert out == [{"code": "503", "description": "Item indisponível"}]
 
 
@@ -1114,39 +1101,14 @@ def test_action_for_status_maps_lifecycle():
     assert ifood_callbacks.action_for_status("new") is None
 
 
-def test_resolve_cancellation_code_reason_mapping_and_fallback():
-    """Motivo do Gestor → cancellationCode configurado; sem mapeamento, default."""
+def test_resolve_cancellation_code_maps_the_reason_key():
+    """Motivo da casa → cancellationCode fixo; motivo sem código no iFood → vazio."""
     from shopman.shop.services import ifood_callbacks
 
-    with override_settings(SHOPMAN_IFOOD={
-        **IFOOD_CFG,
-        "cancellation_reason_codes": {"Item indisponível no momento": "300"},
-        "cancellation_default_code": "999",
-    }):
-        assert ifood_callbacks.resolve_cancellation_code("Item indisponível no momento") == "300"
-        assert ifood_callbacks.resolve_cancellation_code("Fora do horário de atendimento") == "999"
-        assert ifood_callbacks.resolve_cancellation_code("") == "999"
-
-
-def test_send_for_status_cancellation_uses_resolved_code():
-    """requestCancellation leva o code resolvido do motivo (não o default cego)."""
-    from shopman.shop.services import ifood_callbacks
-
-    with override_settings(SHOPMAN_IFOOD={
-        **IFOOD_CFG,
-        "cancellation_reason_codes": {"Sem um dos ingredientes hoje": "301"},
-        "cancellation_default_code": "999",
-    }):
-        with patch.object(ifood_callbacks, "request_cancellation") as rc:
-            sent = ifood_callbacks.send_for_status(
-                "ifd-uuid",
-                "cancelled",
-                cancellation_reason="Sem um dos ingredientes hoje",
-            )
-        assert sent is True
-        rc.assert_called_once_with(
-            "ifd-uuid", code="301", description="Sem um dos ingredientes hoje"
-        )
+    assert ifood_callbacks.resolve_cancellation_code("out_of_stock") == "503"
+    assert ifood_callbacks.resolve_cancellation_code("high_demand") == "509"
+    assert ifood_callbacks.resolve_cancellation_code("customer_request") == ""
+    assert ifood_callbacks.resolve_cancellation_code("") == ""
 
 
 def test_status_handler_enqueues_confirm_callback():

@@ -1061,6 +1061,7 @@
             "RESOLVED_BY_LEAVING_NEW",
             "COURIER_TYPES",
             "RESOLVED_BY_DELIVERY",
+            "RESOLVED_BY_REFUND",
             "RESOLVED_BY_UNDO"
           ]
         }
@@ -1250,45 +1251,6 @@
       ],
       "tests": [
         "shopman/shop/tests/test_handler_entrypoints.py::test_announcement_notify_handler_accepts_a_durable_delivery"
-      ],
-      "test_gap_reason": null,
-      "policy": false,
-      "out_of_extraction": false
-    },
-    {
-      "id": "order.cancellation-request-resolution",
-      "question": "Como pedidos concluídos ou cancelados encerram solicitações de cancelamento pendentes?",
-      "owner": "order.cancellation-request-resolution",
-      "responsibility": "composição",
-      "public_entrypoint": "shopman.shop.handlers.cancellation_requests:on_order_changed",
-      "authoritative_symbols": [
-        "shopman.shop.handlers.cancellation_requests:on_order_changed"
-      ],
-      "entrypoint_kind": "symbol",
-      "sources": [
-        {
-          "path": "shopman/shop/handlers/cancellation_requests.py",
-          "symbols": [
-            "_resolve",
-            "on_order_changed",
-            "connect"
-          ]
-        }
-      ],
-      "touchpoints": [
-        "handler"
-      ],
-      "domains": [
-        "orderman"
-      ],
-      "ports": [],
-      "events": [
-        "order_changed"
-      ],
-      "directives": [],
-      "config_surface": [],
-      "tests": [
-        "shopman/shop/tests/test_handler_entrypoints.py::test_cancellation_receiver_ignores_non_terminal_status_changes"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -4294,7 +4256,14 @@
           "symbols": [
             "PromotionContext",
             "Shopper",
-            "promotion_matches"
+            "UNMET_CUSTOMER",
+            "UNMET_FULFILLMENT",
+            "UNMET_ITEMS",
+            "UNMET_MINIMUM",
+            "coupon_zero_reason",
+            "promotion_matches",
+            "promotion_minimum_missing_q",
+            "promotion_unmet_condition"
           ]
         }
       ],
@@ -4674,7 +4643,6 @@
             "DeliveryZoneRule",
             "delivery_minimum_message",
             "_delivery_minimum_q",
-            "_normalize_city",
             "_coordinates_match_claimed_address"
           ]
         }
@@ -5092,6 +5060,43 @@
       "out_of_extraction": false
     },
     {
+      "id": "account.order-erasure-subject",
+      "question": "Qual pedido e qual etapa seguram a exclusão da conta, para a loja nomeá-los ao cliente?",
+      "owner": "account.order-retention",
+      "responsibility": "leitura",
+      "public_entrypoint": "shopman.shop.services.account:privacy_order_deletion_subject",
+      "authoritative_symbols": [
+        "shopman.shop.services.account:privacy_order_deletion_subject"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/account.py",
+          "symbols": [
+            "privacy_order_deletion_subject"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [
+        "PERSONAL_ORDER_DELIVERY_TOPICS"
+      ],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_services_semantic_units_a_m.py::test_order_erasure_subject_names_the_active_order"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": true
+    },
+    {
       "id": "account.otp-erasure-eligibility",
       "question": "Uma verificação OTP pendente ainda impede apagar a identidade do cliente?",
       "owner": "account.otp-retention",
@@ -5413,6 +5418,44 @@
       ]
     },
     {
+      "id": "auth.login-code-ip-ceiling",
+      "question": "Este IP ainda pode pedir código de entrada nesta hora e neste dia?",
+      "owner": "auth.login-code-ip-ceiling",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.login_code_ceiling:ip_code_ceiling_refusal",
+      "authoritative_symbols": [
+        "shopman.shop.policies.login_code_ceiling:ip_code_ceiling_refusal"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/login_code_ceiling.py",
+          "symbols": [
+            "LOGIN_CODES_PER_IP_PER_HOUR",
+            "LOGIN_CODES_PER_IP_PER_DAY",
+            "ip_code_ceiling_refusal"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [
+        "doorman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/storefront/tests/api/test_teto_de_codigo_por_ip.py::test_ip_no_teto_da_hora_e_recusado_sem_enviar",
+        "shopman/storefront/tests/api/test_teto_de_codigo_por_ip.py::test_ip_paciente_esbarra_no_teto_do_dia"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
       "id": "auth.redirect-safety",
       "question": "Qual destino pós-login pode ser seguido sem abrir redirecionamento externo?",
       "owner": "auth.redirect-safety",
@@ -5465,7 +5508,11 @@
             "code_cooldown_body",
             "_seconds_phrase",
             "request_code_error_message",
-            "CONTACT_VERIFICATION_PURPOSE"
+            "CONTACT_VERIFICATION_PURPOSE",
+            "LOGIN_CODES_GLOBAL_ALERT_PER_HOUR",
+            "LOGIN_CODE_VOLUME_ALERT_TYPE",
+            "_watch_global_code_volume",
+            "_request_code_guarded"
           ]
         }
       ],
@@ -6845,49 +6892,6 @@
       ]
     },
     {
-      "id": "shop.services-cancellation-requests",
-      "question": "Solicitação eletrônica de cancelamento pelo titular do pedido?",
-      "owner": "order.cancellation.requests",
-      "responsibility": "composição",
-      "public_entrypoint": "shopman.shop.services.cancellation_requests:operational_message",
-      "entrypoint_kind": "symbol",
-      "sources": [
-        {
-          "path": "shopman/shop/services/cancellation_requests.py",
-          "symbols": [
-            "operational_message",
-            "CancellationRequestUnavailable",
-            "CancellationRequest",
-            "current",
-            "request_cancellation",
-            "EVENT_TYPE",
-            "ALERT_TYPE",
-            "TERMINAL_STATUSES",
-            "BEFORE_PREPARATION_STATUSES"
-          ]
-        }
-      ],
-      "touchpoints": [
-        "service"
-      ],
-      "domains": [
-        "orderman"
-      ],
-      "ports": [],
-      "events": [],
-      "directives": [],
-      "config_surface": [],
-      "tests": [
-        "shopman/shop/tests/test_services_semantic_units_a_m.py::test_cancellation_request_copy_distinguishes_the_preparation_boundary"
-      ],
-      "test_gap_reason": null,
-      "policy": false,
-      "out_of_extraction": false,
-      "authoritative_symbols": [
-        "shopman.shop.services.cancellation_requests:operational_message"
-      ]
-    },
-    {
       "id": "shop.services-customer-contact",
       "question": "Ouvidoria da avaliação: o cliente que avaliou mal pede que a loja fale com ele?",
       "owner": "order.rating.contact",
@@ -6910,6 +6914,13 @@
             "open_request",
             "operational_message",
             "request_contact",
+            "cancellation_operational_message",
+            "cancellation_contact_offered",
+            "_request_cancellation_contact",
+            "_origin",
+            "ORIGIN_RATING",
+            "ORIGIN_CANCELLATION",
+            "ORIGINS",
             "resolve",
             "_rating",
             "contact_offered"
@@ -7004,6 +7015,141 @@
       "out_of_extraction": false,
       "authoritative_symbols": [
         "shopman.shop.policies.rating_contact:can_request_contact"
+      ]
+    },
+    {
+      "id": "order.ifood-cancel-reasons",
+      "question": "O motivo de recusar/cancelar aparece no pedido do iFood?",
+      "owner": "order.ifood-cancel-reasons",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.ifood_cancel_reasons:offered_on_ifood",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/ifood_cancel_reasons.py",
+          "symbols": [
+            "IFOOD_HIDDEN_KEYS",
+            "offered_on_ifood"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_operator_cancellation_reasons.py::test_reason_codes_are_fixed_and_cover_every_reason_offered_on_ifood"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.policies.ifood_cancel_reasons:offered_on_ifood"
+      ]
+    },
+    {
+      "id": "order.ifood-concluded",
+      "question": "O iFood já concluiu o pedido, e por isso recusar/cancelar não segue?",
+      "owner": "order.ifood-concluded",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.ifood_concluded:concluded_refusal",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/ifood_concluded.py",
+          "symbols": [
+            "concluded_refusal"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_ifood_concluded_policy.py::test_concluded_refusal_names_the_time_and_the_verb"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.policies.ifood_concluded:concluded_refusal"
+      ]
+    },
+    {
+      "id": "order.customer-cancellation",
+      "question": "O cliente pode cancelar sozinho agora, ou o que sobra é falar com o responsável?",
+      "owner": "order.customer-cancellation",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.customer_cancellation:can_self_cancel",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/customer_cancellation.py",
+          "symbols": [
+            "BEFORE_PREPARATION_STATUSES",
+            "can_self_cancel"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "scripts/tests/test_customer_cancellation_policy.py::test_customer_self_cancel_truth_table"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.policies.customer_cancellation:can_self_cancel"
+      ]
+    },
+    {
+      "id": "order.customer-cancellation-contact",
+      "question": "O preparo começou e o cancelar dá lugar a falar com o responsável?",
+      "owner": "order.customer-cancellation-contact",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.customer_cancellation:offers_contact_instead",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/customer_cancellation.py",
+          "symbols": [
+            "AFTER_PREPARATION_STATUSES",
+            "offers_contact_instead"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "scripts/tests/test_customer_cancellation_policy.py::test_contact_replaces_cancel_after_preparation"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.policies.customer_cancellation:offers_contact_instead"
       ]
     },
     {
@@ -7859,7 +8005,8 @@
           "symbols": [
             "recover_committed_checkout",
             "checkout_receipt_scope",
-            "recover_checkout_response"
+            "recover_checkout_response",
+            "checkout_attempt_in_flight"
           ]
         }
       ],
@@ -8725,7 +8872,10 @@
           "symbols": [
             "haversine_km",
             "_to_float",
-            "store_distance_km"
+            "store_distance_km",
+            "normalize_locality",
+            "declared_locality_outside_store",
+            "session_address_outside_store_area"
           ]
         }
       ],
@@ -9723,7 +9873,7 @@
         "SHOPMAN_IFOOD"
       ],
       "tests": [
-        "shopman/shop/tests/test_services_semantic_units_a_m.py::test_ifood_cancellation_code_honors_the_explicit_fallback"
+        "shopman/shop/tests/test_services_semantic_units_a_m.py::test_ifood_cancellation_code_comes_from_the_reason_key_only"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -9766,9 +9916,7 @@
       "directives": [
         "IFOOD_STATUS_CALLBACK"
       ],
-      "config_surface": [
-        "SHOPMAN_IFOOD"
-      ],
+      "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_orchestrator_policy_gaps.py::test_ifood_cancellation_enqueue_keeps_an_existing_request_pending"
       ],
@@ -12906,7 +13054,7 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_house_account.py::test_cancelar_venda_em_conta_mata_a_divida_sem_estorno",
-        "shopman/shop/tests/test_operator_cancellation_reasons.py::test_invalid_code_never_reaches_cancellation"
+        "shopman/shop/tests/test_operator_cancellation_reasons.py::test_reason_outside_the_ifood_list_never_reaches_cancellation"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -13464,8 +13612,7 @@
         {
           "path": "shopman/shop/services/payment.py",
           "symbols": [
-            "can_cancel",
-            "_CANCELLABLE_STATUSES"
+            "can_cancel"
           ]
         },
         {
@@ -13492,7 +13639,7 @@
       "directives": [],
       "config_surface": [],
       "tests": [
-        "shopman/storefront/tests/web/test_services_customer_orders.py::test_customer_cancel_gate_preserves_payment_specific_refusal"
+        "shopman/storefront/tests/web/test_services_customer_orders.py::test_customer_cancel_gate_follows_preparation_not_payment"
       ],
       "test_gap_reason": null,
       "policy": true,
@@ -13612,7 +13759,16 @@
             "PAYMENT_SWITCHED_TO_PIX_EVENT",
             "_CARD_ATTEMPT_KEYS",
             "pix_switch_blocker",
-            "switch_declined_card_to_pix"
+            "switch_declined_card_to_pix",
+            "CAPTURE_FAILURE_KEY",
+            "capture_failure",
+            "REPAYMENT_KEY",
+            "awaiting_repayment",
+            "request_new_payment_after_capture_failure",
+            "RepaymentSwitchRefused",
+            "_repayment_minutes_left",
+            "_stamp_repayment_terms",
+            "switch_repayment_to_pix"
           ]
         }
       ],
@@ -13835,7 +13991,6 @@
             "balance_due_q",
             "has_sufficient_captured_payment",
             "_PAID_STATUSES",
-            "_UNCERTAIN_STATUSES",
             "cancelled_money",
             "CancelledMoney",
             "_HOSTED_CARD_METHODS"
@@ -14047,7 +14202,8 @@
           "symbols": [
             "confirm_pix",
             "_DEAD_CHARGE_STATUSES",
-            "_ALERT_DEBOUNCE"
+            "_ALERT_DEBOUNCE",
+            "_record_pix_event"
           ]
         }
       ],
@@ -15485,6 +15641,75 @@
       ],
       "test_gap_reason": null,
       "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "promotion.birthday-discount-taken",
+      "question": "Algum pedido do dia já levou o desconto de aniversário?",
+      "owner": "promotion.birthday-discount-taken",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.promotion:birthday_discount_taken",
+      "authoritative_symbols": [
+        "shopman.shop.policies.promotion:birthday_discount_taken"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/promotion.py",
+          "symbols": [
+            "birthday_discount_taken",
+            "is_birthday_promotion"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_birthday_once_a_year.py::test_a_politica_so_conta_o_desconto_marcado_como_aniversario"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "promotion.birthday-once-a-year",
+      "question": "Como juntar os pedidos do dia para saber se o aniversário ainda dá desconto?",
+      "owner": "promotion.birthday-once-a-year",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.promotions:birthday_benefit_available",
+      "authoritative_symbols": [
+        "shopman.shop.services.promotions:birthday_benefit_available"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/promotions.py",
+          "symbols": [
+            "birthday_benefit_available"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_birthday_once_a_year.py::test_a_segunda_venda_do_dia_nao_leva_de_novo"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
       "out_of_extraction": false
     },
     {
@@ -17483,7 +17708,8 @@
             "_CUSTOMER",
             "_ORDER",
             "_ORDER_BUTTON",
-            "TRANSACTIONAL_FLOW_FIELDS"
+            "TRANSACTIONAL_FLOW_FIELDS",
+            "CARD_REPAYMENT_VARIANT"
           ]
         }
       ],

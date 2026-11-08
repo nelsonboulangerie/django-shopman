@@ -232,6 +232,71 @@ describe("scanner geométrico", () => {
       expect(findings.some(({ kind }) => kind === "control-text-overflow")).toBe(false);
     });
 
+    describe("sobreposição de conteúdo (dono, 07/11/2026)", () => {
+      // O happy-dom não faz layout: a caixa de cada trecho de texto vem do elemento dono.
+      function textRects() {
+        vi.spyOn(Range.prototype, "getClientRects").mockImplementation(function (this: Range) {
+          const owner = this.startContainer.parentElement;
+          return (owner ? [owner.getBoundingClientRect()] : []) as unknown as DOMRectList;
+        });
+      }
+      function loose(text: string, box: DOMRect, attrs: Record<string, string> = {}) {
+        const span = document.createElement("span");
+        span.style.opacity = "1";
+        span.textContent = text;
+        span.getBoundingClientRect = () => box;
+        for (const [name, value] of Object.entries(attrs)) span.setAttribute(name, value);
+        document.body.append(span);
+        return span;
+      }
+
+      it("reprova a hora do selo por baixo da seta (o cabeçalho do pedido no Gestor)", async () => {
+        setup();
+        textRects();
+        loose("13:12", rect(586, 14, 33, 20));
+        control("Pedido anterior", rect(594, 8, 40, 32), { scroll: 0, client: 0 });
+        const findings = await scanOperatorGeometry(page as never, { contentOverlap: true });
+        expect(findings.find(({ kind }) => kind === "content-overlap")?.message).toContain("13:12");
+      });
+
+      it("reprova texto sobre texto, e aceita peças lado a lado", async () => {
+        setup();
+        textRects();
+        loose("Pedido 3761", rect(405, 10, 72, 24));
+        loose("Cancelado", rect(470, 10, 95, 24));
+        let findings = await scanOperatorGeometry(page as never, { contentOverlap: true });
+        expect(findings.some(({ kind }) => kind === "content-overlap")).toBe(true);
+        document.body.innerHTML = "";
+        loose("Pedido 3761", rect(405, 10, 72, 24));
+        loose("Cancelado", rect(484, 10, 95, 24));
+        findings = await scanOperatorGeometry(page as never, { contentOverlap: true });
+        expect(findings.some(({ kind }) => kind === "content-overlap")).toBe(false);
+      });
+
+      it("não conta linhas empilhadas que só se tocam, nem a camada declarada", async () => {
+        setup();
+        textRects();
+        loose("Pedido 3761", rect(10, 10, 120, 24));
+        loose("Loja online", rect(10, 31, 120, 20));
+        let findings = await scanOperatorGeometry(page as never, { contentOverlap: true });
+        expect(findings.some(({ kind }) => kind === "content-overlap")).toBe(false);
+        document.body.innerHTML = "";
+        control("Avisos", rect(10, 10, 32, 32), { scroll: 0, client: 0 });
+        loose("6", rect(30, 6, 16, 16), { "data-operator-overlap-allowed": "" });
+        findings = await scanOperatorGeometry(page as never, { contentOverlap: true });
+        expect(findings.some(({ kind }) => kind === "content-overlap")).toBe(false);
+      });
+
+      it("fica desligada sem o opt-in", async () => {
+        setup();
+        textRects();
+        loose("13:12", rect(586, 14, 33, 20));
+        control("Pedido anterior", rect(594, 8, 40, 32), { scroll: 0, client: 0 });
+        const findings = await scanOperatorGeometry(page as never);
+        expect(findings.some(({ kind }) => kind === "content-overlap")).toBe(false);
+      });
+    });
+
     it("texto de peça fixa reserva as duas linhas e leva o completo quando corta", async () => {
       setup();
       const name = document.createElement("p");

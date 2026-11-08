@@ -41,6 +41,7 @@ from shopman.shop.projections.types import (
     TimelineEventProjection,
 )
 from shopman.storefront.presentation.status import (
+    customer_status_label,
     order_status_label,
     payment_method_label,
     status_color,
@@ -59,10 +60,12 @@ EVENT_LABELS: dict[str, str | None] = {
     "created": "Pedido recebido",
     "status_changed": None,
     "payment.captured": "Pagamento recebido",
+    "payment.capture_failed": "Cobrança do cartão não concluída",
+    "payment.repayment_requested": "Novo pagamento solicitado",
+    "payment.method_changed": "Forma de pagamento trocada para Pix",
     "payment.refunded": "Pagamento estornado",
     "return_initiated": "Devolução solicitada",
     "refund_processed": "Reembolso processado",
-    "customer_cancellation_requested": "Cancelamento solicitado",
     "customer_contact_requested": "Contato solicitado",
     "customer_contact_resolved": "Atendimento concluído",
     "fiscal_cancelled": "Nota fiscal cancelada",
@@ -78,23 +81,12 @@ FULFILLMENT_STATUS_LABELS: dict[str, str] = {
     "cancelled": "Cancelado",
 }
 
-# display_status_key → (copy key, fallback). Keys absent here fall back to the
-# canonical order status labels.
-STATUS_LABEL_COPY: dict[str, tuple[str, str]] = {
-    "payment_expired": ("TRACKING_STATUS_PAYMENT_EXPIRED", "Pagamento expirado"),
-    "waiting_store_confirmation": ("TRACKING_STATUS_WAITING_STORE_CONFIRMATION", "Aguardando a loja"),
-    "payment_pending": ("TRACKING_STATUS_PAYMENT_PENDING", "Aguardando pagamento"),
-    "card_authorized": ("TRACKING_STATUS_CARD_AUTHORIZED", "Pagamento autorizado"),
-    "ready_delivery": ("TRACKING_STATUS_READY_DELIVERY", "Aguardando entregador"),
-    "ready_pickup": ("TRACKING_STATUS_READY_PICKUP", "Pronto para retirada"),
-    "preorder_scheduled": ("TRACKING_STATUS_PREORDER_SCHEDULED", "Encomenda confirmada"),
-}
-
 # Semantic payment status descriptor → customer-facing label.
 PAYMENT_STATUS_LABELS: dict[str, str] = {
     "payment_expired": "Pagamento expirado",
     "payment_confirmed": "Pagamento recebido",
     "card_authorized": "Pagamento autorizado",
+    "card_capture_failed": "Cobrança não concluída",
     "payment_pending": "Aguardando pagamento",
 }
 
@@ -144,6 +136,9 @@ class PickupInfoProjection:
     opening_hours: str
     directions_label: str
     directions_url: str | None
+    # O horário combinado ("hoje · 19:30 às 20:00"), ou None quando não houve
+    # horário escolhido. A aba Retirada responde "onde" E "quando".
+    when_display: str | None
 
 
 @dataclass(frozen=True)
@@ -190,6 +185,8 @@ class OrderTrackingCopyProjection:
     rating_contact_title: str
     rating_contact_message: str
     rating_contact_done: str
+    cancellation_contact_title: str
+    cancellation_contact_message: str
     rating_google_title: str
     rating_google_share_title: str
     rating_google_message: str
@@ -259,11 +256,13 @@ class OrderTrackingPromiseProjection:
 
 
 @dataclass(frozen=True)
-class CancellationRequestProjection:
-    protocol: str
-    requested_at_display: str
-    title: str
-    message: str
+class CancellationContactProjection:
+    """O preparo começou: o cliente não cancela mais, fala com o responsável.
+
+    ``requested``: já pediu; a tela troca o convite pelo "Combinado".
+    """
+
+    requested: bool
 
 
 @dataclass(frozen=True)
@@ -289,6 +288,22 @@ class FiscalNoteProjection:
     url: str
     link_label: str
     note: str
+
+
+@dataclass(frozen=True)
+class TrackingDiscountLineProjection:
+    """Uma linha de desconto da conta do pedido ("Cupom BEMVINDO", "- R$ 3,00")."""
+
+    label: str
+    amount_display: str
+
+
+@dataclass(frozen=True)
+class TrackingGiftProjection:
+    """O presente como o cliente informou: para quem e o bilhete."""
+
+    recipient_name: str
+    message: str
 
 
 @dataclass(frozen=True)
@@ -351,9 +366,20 @@ class OrderTrackingProjection:
     # Antes de o cliente confirmar o cancelamento: o que acontece com o dinheiro
     # ("A reserva no seu cartão será desfeita, e nada será cobrado.").
     cancel_dialog_money_line: str = ""
-    cancellation_request: CancellationRequestProjection | None = None
+    cancellation_contact: CancellationContactProjection | None = None
     rating_followup: RatingFollowupProjection | None = None
     fiscal_note: FiscalNoteProjection | None = None
+    # O Resumo conta o que a revisão do checkout contou (beta 06/11): a conta
+    # inteira (subtotal de etiqueta, descontos, entrega, total) e o que o
+    # cliente informou. ``schedule_display`` é o combinado (data e janela)
+    # sempre que houve janela, e não só na encomenda como ``when_display``.
+    subtotal_display: str = ""
+    discount_lines: tuple[TrackingDiscountLineProjection, ...] = ()
+    schedule_display: str | None = None
+    gift: TrackingGiftProjection | None = None
+    tax_id_display: str = ""
+    customer_notes: str = ""
+    delivery_address: str = ""
 
 
 @dataclass(frozen=True)
@@ -390,6 +416,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
     copy = build_copy("TRACKING")
     last_updated_display = copy.title("TRACKING_PROMISE_UPDATED_NOW", "Atualizado agora")
     when_display = _when_display(data.commitment_date, data.commitment_slot_label)
+    schedule_display = _schedule_display(data, when_display)
     promise = _present_promise(
         data.promise,
         status=data.status,
@@ -403,7 +430,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         convenience_pending=data.convenience_pending,
         order_ref=data.order_ref,
         status=data.status,
-        status_label=_status_label(data.display_status_key, data.status, copy),
+        status_label=customer_status_label(data.display_status_key, data.status, copy=copy),
         status_color=status_color(data.display_status_key, data.status),
         is_preorder=data.is_preorder,
         when_display=when_display if data.is_preorder else None,
@@ -419,7 +446,12 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         is_delivery=data.is_delivery,
         delivery_fulfillments=_present_fulfillments(data.delivery_fulfillments, copy=copy),
         pickup_fulfillments=_present_fulfillments(data.pickup_fulfillments, copy=copy, is_pickup=True),
-        pickup_info=_present_pickup(data.pickup, copy=copy),
+        pickup_info=_present_pickup(
+            data.pickup,
+            copy=copy,
+            # Só a data não é horário combinado: sem janela, a aba não inventa um.
+            when_display=when_display if data.commitment_slot_label else None,
+        ),
         actions=data.actions,
         is_active=data.is_active,
         server_now_iso=data.server_now_iso,
@@ -430,17 +462,9 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         cancellation_note=data.cancellation_note,
         cancellation_money_line=_money_outcome_line(data.money_outcome, copy),
         cancel_dialog_money_line=_cancel_dialog_money_line(data, copy),
-        cancellation_request=(
-            CancellationRequestProjection(
-                protocol=data.cancellation_request.protocol,
-                requested_at_display=_fmt_timestamp(data.cancellation_request.requested_at),
-                title="Solicitação recebida",
-                message=(
-                    "A equipe vai analisar o cancelamento e um possível estorno. "
-                    "Acompanhe a resposta por aqui."
-                ),
-            )
-            if data.cancellation_request
+        cancellation_contact=(
+            CancellationContactProjection(requested=data.cancellation_contact.requested)
+            if data.cancellation_contact
             else None
         ),
         rating_followup=(
@@ -459,7 +483,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         eta_display=_eta_display(data.eta_at),
         whatsapp_url=data.whatsapp_url,
         support_url=_support_url(data.support_url, data.order_ref, copy=copy),
-        share_text=f"Meu pedido {data.order_ref} na {data.shop_name}",
+        share_text=_share_summary(data, schedule_display=schedule_display, copy=copy),
         is_debug=data.is_debug,
         last_updated_iso=data.last_updated_iso,
         last_updated_display=last_updated_display,
@@ -469,7 +493,76 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         waitlist_planned_for_display=_waitlist_planned_for_display(data.waitlist_planned_for),
         mock_payment_enabled=data.can_mock_confirm_payment,
         fiscal_note=_present_fiscal_note(data.fiscal_note),
+        subtotal_display=f"R$ {format_money(_list_subtotal_q(data))}",
+        discount_lines=tuple(
+            TrackingDiscountLineProjection(
+                label=f"Cupom {line.name}" if line.is_coupon else line.name,
+                amount_display=f"R$ {format_money(line.amount_q)}",
+            )
+            for line in data.discount_lines
+        ),
+        schedule_display=schedule_display,
+        gift=(
+            TrackingGiftProjection(recipient_name=data.gift_recipient_name, message=data.gift_message)
+            if data.is_gift
+            else None
+        ),
+        tax_id_display=_masked_tax_id(data.tax_id),
+        customer_notes=data.customer_notes,
+        delivery_address=data.delivery_address,
     )
+
+
+def _list_subtotal_q(data: TrackingData) -> int:
+    """Os itens pelo preço de etiqueta: o que vem antes dos descontos na conta."""
+    return sum(item.line_total_q for item in data.items) + sum(line.amount_q for line in data.discount_lines)
+
+
+def _schedule_display(data: TrackingData, when_display: str | None) -> str | None:
+    """O combinado do checkout, data e janela, para o Resumo e o resumo enviado.
+
+    A encomenda já tinha o ``when_display``; o pedido do dia com janela escolhida
+    ("19:30 às 20:00") não aparecia em lugar nenhum do Resumo.
+    """
+    if data.commitment_slot_label:
+        return when_display or data.commitment_slot_label
+    return when_display if data.is_preorder else None
+
+
+def _masked_tax_id(tax_id: str) -> str:
+    """CPF com os extremos escondidos (``***.456.789-**``), como os documentos públicos.
+
+    A tela do pedido vai para captura e para a mão de quem está do lado; o
+    cliente reconhece o número pelo meio. CNPJ não é dado pessoal: sai inteiro.
+    """
+    digits = "".join(ch for ch in tax_id if ch.isdigit())
+    if len(digits) == 11:
+        return f"***.{digits[3:6]}.{digits[6:9]}-**"
+    if len(digits) == 14:
+        return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
+    return ""
+
+
+def _share_summary(data: TrackingData, *, schedule_display: str | None, copy: CopyCatalog) -> str:
+    """O texto do "Enviar resumo": o pedido contado, sem link.
+
+    O link do pedido é privado (só abre para quem fez o pedido), e quem o recebia
+    pelo WhatsApp caía em "Não encontramos este pedido" (beta 06/11). O resumo
+    diz o que interessa a quem vai buscar ou receber: itens, quando e onde.
+    """
+    lines = [f"Pedido {data.order_ref} na {data.shop_name}"]
+    lines.extend(f"{item.qty}× {item.name}" for item in data.items)
+    heading = (
+        copy.title("TRACKING_DELIVERY_HEADING", "Entrega")
+        if data.is_delivery
+        else copy.title("TRACKING_PICKUP_HEADING", "Retirada")
+    )
+    when = schedule_display or _eta_display(data.eta_at)
+    lines.append(f"{heading}: {when}" if when else heading)
+    where = data.delivery_address if data.is_delivery else (data.pickup.address if data.pickup else "")
+    if where:
+        lines.append(f"Endereço: {where}")
+    return "\n".join(lines)
 
 
 def _present_fiscal_note(note) -> FiscalNoteProjection | None:
@@ -508,7 +601,7 @@ def present_tracking_status(data: TrackingStatusData) -> OrderTrackingStatusProj
     return OrderTrackingStatusProjection(
         order_ref=data.order_ref,
         status=data.status,
-        status_label=_status_label(data.display_status_key, data.status, copy),
+        status_label=customer_status_label(data.display_status_key, data.status, copy=copy),
         status_color=status_color(data.display_status_key, data.status),
         progress_steps=_present_progress_steps_from(data.progress_steps, is_pickup=False, copy=copy),
         timeline=_present_timeline(data),
@@ -519,13 +612,6 @@ def present_tracking_status(data: TrackingStatusData) -> OrderTrackingStatusProj
 # ──────────────────────────────────────────────────────────────────────
 # Status, payment, money, ETA
 # ──────────────────────────────────────────────────────────────────────
-
-
-def _status_label(display_status_key: str, status: str, copy: CopyCatalog) -> str:
-    spec = STATUS_LABEL_COPY.get(display_status_key)
-    if spec:
-        return copy.title(spec[0], spec[1])
-    return order_status_label(display_status_key, "") or order_status_label(status, "") or status
 
 
 def _money_outcome_line(money: TrackingMoneyOutcomeData | None, copy: CopyCatalog) -> str:
@@ -586,10 +672,24 @@ def _money_outcome_line(money: TrackingMoneyOutcomeData | None, copy: CopyCatalo
 def _cancel_dialog_money_line(data: TrackingData, copy: CopyCatalog) -> str:
     """Antes de cancelar: o que vai acontecer com o dinheiro.
 
-    O cliente só cancela sozinho o que não foi capturado (``can_cancel``), então
-    as duas respostas possíveis são a reserva do cartão ou "nada foi cobrado".
+    O cliente cancela sozinho antes do preparo, pago ou não
+    (``policies/customer_cancellation``): o que entrou volta inteiro pelo mesmo
+    meio, a reserva do cartão é desfeita, ou nada foi cobrado.
     """
-    if data.payment_status_key == "card_authorized":
+    if data.paid_amount_q > 0:
+        amount = f"R$ {format_money(data.paid_amount_q)}"
+        if data.paid_method == "pix":
+            line = copy.message(
+                "TRACKING_CANCEL_MONEY_REFUND_PIX",
+                "O preparo ainda não começou. Cancelamos agora e devolvemos os {amount} do seu Pix para a mesma conta.",
+            )
+        else:
+            line = copy.message(
+                "TRACKING_CANCEL_MONEY_REFUND_CARD",
+                "O preparo ainda não começou. Cancelamos agora e estornamos os {amount} no seu cartão.",
+            )
+        return line.replace("{amount}", amount)
+    if data.payment_status_key in {"card_authorized", "card_capture_failed"}:
         return copy.message(
             "TRACKING_CANCEL_MONEY_CARD_HOLD",
             "A reserva no seu cartão será desfeita, e nada será cobrado.",
@@ -626,7 +726,8 @@ def _eta_display(eta_at: str | None) -> str | None:
     if dt is None:
         return None
     try:
-        return timezone.localtime(dt).strftime("%H:%M")
+        local = timezone.localtime(dt)
+        return local.strftime("%H:%M" if local.date() == timezone.localdate() else "%H:%M de %d/%m")
     except Exception:
         logger.debug("order_tracking._eta_display degraded", exc_info=True)
         return None
@@ -712,7 +813,7 @@ def _support_url(base: str, order_ref: str, *, copy: CopyCatalog) -> str:
         return base
     support_message = copy.message(
         "TRACKING_SUPPORT_WHATSAPP_MESSAGE",
-        "Oi! Posso ajudar com o pedido {order_ref}?",
+        "Oi! Preciso de ajuda com o pedido {order_ref}.",
     ).format(order_ref=order_ref)
     separator = "&" if "?" in base else "?"
     return f"{base}{separator}{urlencode({'text': support_message})}"
@@ -766,6 +867,9 @@ _PROMISE_COVERS: dict[str, frozenset[str]] = {
     "payment_preparing": frozenset({NOTIFICATION}),
     # Bola do gateway: cartão autorizado, capturando.
     "payment_authorized": frozenset(),
+    # A cobrança do cartão autorizado foi recusada no aceite: a loja tem o
+    # alerta, o cliente não tem gesto a fazer, e a frase diz só o fato.
+    "payment_capture_failed": frozenset(),
     "payment_confirmed": frozenset(),
     "payment_expired": frozenset({CONSEQUENCE}),
     "preparing": frozenset({NOTIFICATION}),
@@ -813,7 +917,7 @@ def _present_promise(
         when_phrase=when_phrase,
         payment_confirmed=payment_confirmed,
     )
-    footnote = _promise_footnote(data, copy=copy)
+    footnote = _promise_footnote(data, copy=copy, message=message)
     return OrderTrackingPromiseProjection(
         state=data.state,
         title=title,
@@ -860,15 +964,23 @@ _PROMISE_FOOTNOTE: dict[str, tuple[str, str]] = {
 }
 
 
-def _promise_footnote(data: TrackingPromiseData, *, copy: CopyCatalog) -> str:
+def _promise_footnote(data: TrackingPromiseData, *, copy: CopyCatalog, message: str = "") -> str:
     """Complemento opcional do estado — vazio na maioria deles, de propósito."""
     spec = _PROMISE_FOOTNOTE.get(data.state)
     if not spec:
         return ""
-    if data.state in {"payment_card_ready", "payment_card_declined"} and data.deadline_action in {"", "none"}:
-        # Sessão hospedada sem prazo: prometer consequência sem prazo seria
-        # informação solta.
-        return ""
+    if data.state in {"payment_card_ready", "payment_card_declined"}:
+        # A consequência nunca aponta para um prazo que a tela não mostra (beta
+        # 06/11): "Se o prazo passar" só ao lado de uma frase que diz o prazo;
+        # quando a frase não diz (cartão recusado, encomenda), a nota diz qual.
+        deadline = data.payment_deadline_phrase
+        if data.deadline_action in {"", "none"} or not deadline:
+            return ""
+        if deadline not in message:
+            return copy.message(
+                "TRACKING_PROMISE_CARD_DEADLINE_FOOTNOTE",
+                "Se o pagamento não for feito até {deadline}, liberamos a reserva e avisamos você.",
+            ).replace("{deadline}", deadline)
     key, fallback = spec
     return copy.message(key, fallback)
 
@@ -916,6 +1028,24 @@ def _promise_copy(
                      "Pagamento expirado",
                      "O prazo para pagar acabou e cancelamos o pedido.")
 
+    if state == "payment_card_ready" and data.repayment and data.payment_deadline_phrase:
+        # A cobrança do cartão não passou depois do aceite (decisão do dono,
+        # 07/11): o pedido espera, e o cliente paga de novo para seguirmos.
+        if data.repayment_pix_allowed:
+            message = copy.message(
+                "TRACKING_PROMISE_CARD_REPAYMENT_PIX_MESSAGE",
+                "Nada foi cobrado. Pague com Pix ou com outro cartão até {deadline} para seguirmos com o seu pedido.",
+            )
+        else:
+            message = copy.message(
+                "TRACKING_PROMISE_CARD_REPAYMENT_MESSAGE",
+                "Nada foi cobrado. Pague com outro cartão até {deadline} para seguirmos com o seu pedido.",
+            )
+        return (
+            copy.title("TRACKING_PROMISE_CARD_REPAYMENT_TITLE", "A cobrança no cartão falhou"),
+            message.replace("{deadline}", data.payment_deadline_phrase),
+        )
+
     if state == "payment_card_declined":
         if any(action.ref == "pay_with_pix" for action in data.actions):
             return _pair(copy, "TRACKING_PROMISE_CARD_DECLINED_PIX",
@@ -937,7 +1067,7 @@ def _promise_copy(
                 wait_display=wait_display,
                 method="pix",
             )
-            return copy.title("TRACKING_PAYMENT_REQUESTED", "Pague com Pix"), message
+            return copy.title("TRACKING_PAYMENT_REQUESTED", "Falta só o pagamento"), message
         message = (
             copy.message(
                 "TRACKING_PAYMENT_PIX_READY_MESSAGE_NEW",
@@ -949,7 +1079,7 @@ def _promise_copy(
                 "Pedido aceito. Pague com o Pix abaixo. A confirmação do Pix é automática; acompanhe os próximos passos por aqui.",
             )
         )
-        return copy.title("TRACKING_PAYMENT_REQUESTED", "Pague com Pix"), message
+        return copy.title("TRACKING_PAYMENT_REQUESTED", "Falta só o pagamento"), message
 
     if state == "payment_card_ready":
         if data.payment_method == "link":
@@ -1061,30 +1191,38 @@ def _promise_copy(
             )
         return copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"), message
 
+    if state == "payment_capture_failed":
+        return _pair(copy, "TRACKING_CARD_CAPTURE_FAILED",
+                     "Não conseguimos cobrar o cartão",
+                     "A cobrança no seu cartão falhou, e nada foi cobrado. A loja já foi avisada; acompanhe por aqui.")
+
     if state == "payment_authorized":
         if _is_fulfillment_wait(data):
+            # O que existe é dinheiro reservado no cartão, cobrado quando a loja
+            # aceitar. "Sua reserva está na fila de espera" soava como produto em
+            # lista de espera (beta 06/11).
             if wait_display:
                 if status == "new":
                     message = copy.message(
                         "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE",
-                        "Sua reserva está na fila de espera.",
+                        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido para {when}.",
                     )
                 else:
                     message = copy.message(
                         "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED",
-                        "Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+                        "Pedido aceito para {when}. Estamos cobrando o valor reservado no seu cartão.",
                     )
                 message = message.replace("{when}", wait_display)
             else:
                 if status == "new":
                     message = copy.message(
                         "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE",
-                        "Sua reserva está na fila de espera.",
+                        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido.",
                     )
                 else:
                     message = copy.message(
                         "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED_NO_DATE",
-                        "Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+                        "Pedido aceito. Estamos cobrando o valor reservado no seu cartão.",
                     )
             return copy.title("TRACKING_CARD_AUTHORIZED", "Pagamento autorizado"), message
         message = (
@@ -1191,8 +1329,8 @@ def _promise_copy(
 
     if state == "ready_delivery":
         return _pair(copy, "TRACKING_DELIVERY_WAITING_COURIER",
-                     "Pronto para coleta",
-                     "Estamos aguardando um entregador.")
+                     "Pronto, esperando o entregador",
+                     "Assim que ele chegar, seu pedido sai para entrega.")
 
     if state == "ready_pickup":
         title = copy.title("TRACKING_PROMISE_READY_PICKUP_TITLE", "Pronto para retirada")
@@ -1488,7 +1626,12 @@ def _present_fulfillments(
     )
 
 
-def _present_pickup(pickup: TrackingPickupData | None, *, copy: CopyCatalog) -> PickupInfoProjection | None:
+def _present_pickup(
+    pickup: TrackingPickupData | None,
+    *,
+    copy: CopyCatalog,
+    when_display: str | None = None,
+) -> PickupInfoProjection | None:
     if pickup is None:
         return None
     return PickupInfoProjection(
@@ -1497,6 +1640,7 @@ def _present_pickup(pickup: TrackingPickupData | None, *, copy: CopyCatalog) -> 
         opening_hours=_format_opening_hours(pickup.opening_hours),
         directions_label=copy.title("TRACKING_PICKUP_DIRECTIONS_CTA", "Como chegar"),
         directions_url=pickup.directions_url,
+        when_display=when_display,
     )
 
 
@@ -1619,6 +1763,15 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         rating_contact_done=copy.message(
             "TRACKING_RATING_CONTACT_DONE",
             "Combinado. O responsável pela casa vai te chamar no WhatsApp.",
+        ),
+        cancellation_contact_title=copy.title(
+            "TRACKING_CANCELLATION_CONTACT_TITLE",
+            "Quer cancelar?",
+        ),
+        cancellation_contact_message=copy.message(
+            "TRACKING_CANCELLATION_CONTACT_MESSAGE",
+            "O preparo já começou e o pedido é feito para você, então ele não pode mais ser "
+            "cancelado. Se algo não está certo, fale com o responsável.",
         ),
         rating_google_title=copy.title("TRACKING_RATING_GOOGLE_TITLE", "Quer contar no Google também?"),
         rating_google_share_title=copy.title("TRACKING_RATING_GOOGLE_SHARE_TITLE", "Coisa boa é pra compartilhar"),

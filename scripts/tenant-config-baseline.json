@@ -14,7 +14,7 @@
   "totals": {
     "settings": 312,
     "env": 24,
-    "settings_env": 174
+    "settings_env": 172
   },
   "files": {
     "config/asgi.py": {
@@ -40,7 +40,7 @@
       "env": 1
     },
     "config/settings.py": {
-      "settings_env": 173
+      "settings_env": 171
     },
     "config/settings_test.py": {
       "settings_env": 1
@@ -94,6 +94,9 @@
       "settings": 1
     },
     "shopman/backstage/middleware_2fa.py": {
+      "settings": 1
+    },
+    "shopman/backstage/projections/bi_profiles.py": {
       "settings": 1
     },
     "shopman/backstage/projections/bi_sales.py": {
@@ -359,9 +362,6 @@
       "settings": 1
     },
     "shopman/shop/services/ifood_callbacks.py": {
-      "settings": 1
-    },
-    "shopman/shop/services/ifood_cancellation.py": {
       "settings": 1
     },
     "shopman/shop/services/ifood_catalog_capture.py": {

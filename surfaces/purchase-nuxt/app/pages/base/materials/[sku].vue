@@ -6,6 +6,7 @@ import { recordTrailCount, recordTrailPosition } from "../../../../../operator-k
 import { MATERIALS_TRAIL, baseSectionPath, materialPath } from "~/presentation/purchaseSections";
 
 const route = useRoute();
+const router = useRouter();
 const { findMaterial, backendReady, openMaterialEdit, openMaterialDuplicate } = usePurchaseDesk();
 const sku = computed(() => String(route.params.sku ?? ""));
 // Pelo SKU, na base inteira: o link direto e a recarga abrem o insumo de qualquer
@@ -18,19 +19,19 @@ const previousAction = computed(() => ({
   label: "Insumo anterior",
   shortLabel: "Anterior",
   icon: "i-lucide-chevron-left",
-  to: position.value?.previous ? materialPath(position.value.previous) : undefined,
+  to: position.value?.previous ? router.resolve({ path: materialPath(position.value.previous), query: route.query }).fullPath : undefined,
   disabled: !position.value?.previous,
 }));
 const nextAction = computed(() => ({
   label: "Próximo insumo",
   shortLabel: "Próximo",
   icon: "i-lucide-chevron-right",
-  to: position.value?.next ? materialPath(position.value.next) : undefined,
+  to: position.value?.next ? router.resolve({ path: materialPath(position.value.next), query: route.query }).fullPath : undefined,
   disabled: !position.value?.next,
 }));
 
 function close() {
-  void navigateTo(baseSectionPath("materials"));
+  void navigateTo({ path: baseSectionPath("materials"), query: route.query });
 }
 </script>
 

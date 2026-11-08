@@ -370,3 +370,34 @@ def test_listing_item_unpublish_emits_listing_changed(
     ]
     assert listing_calls, "expected listing-changed emit"
     assert listing_calls[0].args[2] == {"sku": "BAGUETE"}
+
+
+@pytest.mark.django_db
+@patch("django_eventstream.send_event")
+def test_pickup_handed_over_tells_the_tracking_page(
+    mock_send, web_channel, django_capture_on_commit_callbacks,
+):
+    """Retirada entregue (READY para COMPLETED) avisa o canal do pedido.
+
+    O "Concluído" da retirada só apareceu no recarregar (beta 06/11): a
+    gravação da entrega vem da directive ``order.handoff_commit``, no processo
+    do worker, e o aviso dela só atravessa até o web pelo Redis do
+    ``EVENTSTREAM_REDIS``. Este teste prende a outra metade: a transição emite.
+    """
+    order = Order.objects.create(
+        ref="PICKUP-SSE-1",
+        channel_ref=web_channel.ref,
+        status=Order.Status.READY,
+        total_q=1000,
+        data={"fulfillment_type": "pickup"},
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        order.transition_status(Order.Status.COMPLETED, actor="test")
+
+    assert any(
+        call.args[0] == "order-PICKUP-SSE-1"
+        and call.args[1] == "order-update"
+        and call.args[2]["status"] == "completed"
+        for call in mock_send.call_args_list
+    )

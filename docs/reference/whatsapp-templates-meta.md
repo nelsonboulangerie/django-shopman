@@ -142,7 +142,7 @@ Eles não gravam nada em lugar nenhum.
 9. **Nada auto-suprimível atravessa.** A Meta não aceita parâmetro vazio, então todo pedaço
    que o código apaga sozinho quando não há dado **não pode virar variável**: `{eta_note}`,
    `{courier_tracking_suffix}`, `{reserve_note}`, `{deadline_note}`, `{pix_suffix}`,
-   `{reason_note}`, `{tracking_suffix}`, `{reorder_suffix}`, `{commitment_suffix}`. Eles continuam saindo inteiros
+   `{reason_note}`, `{tracking_suffix}`, `{reorder_suffix}`, `{commitment_suffix}`, `{cancellation_reason_suffix}`. Eles continuam saindo inteiros
    por SMS e e-mail, que interpolam na hora. No template, ou a informação é fixa no texto,
    ou fica de fora.
 
@@ -419,6 +419,28 @@ A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, 
 > ℹ️ O código Pix copia-e-cola **não** viaja no template (é longo e opcional). Fica no
 > SMS/e-mail; aqui a pessoa chega pela tela do pedido, onde o Pix e o cartão estão inline.
 
+### `pagamento_cartao_falhou` — evento `payment_requested_card_repayment` 🆕 · ✅ aprovado pela Meta em 07/11/2026 (Utility), flow `content20261107173252_896774`
+Variante do `payment_requested` no NOVO pagamento: a cobrança do cartão não passou
+depois do aceite, a reserva antiga foi anulada e o cliente paga de novo (decisão do
+dono, 07/11/2026). Não é evento emitido: o adapter
+(`notification_manychat._card_repayment_variant`) a escolhe quando o pedido tem
+`payment.repayment`, o canal aceita Pix, o método ainda é cartão e há prazo.
+- Categoria: **Utility** · Idioma: **pt_BR**
+- Corpo: `Oi, {{1}}! A cobrança no cartão do seu pedido {{2}} falhou, e nada foi cobrado. Seu pedido segue reservado até {{3}}: dá para pagar com Pix ou com outro cartão. 💛`
+  (o prazo saiu do fim com o sim do dono, 07/11/2026: o ManyChat recusa corpo que termina em
+  variável, e o `. 💛` depois dela não conta como texto, a mesma recusa do `pagamento_falhou`)
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`hoje às 18h30` (`payment_deadline`)
+- Botão URL: `Pagar pedido` → `/pedido/{{1}}` (`order_ref`)
+
+> ✅ **Ligado em 07/11/2026.** O flow "Aviso: cartão falhou, novo pagamento
+> (payment_requested_card_repayment)" (`content20261107173252_896774`) está em
+> `MANYCHAT_FLOW_MAP["payment_requested_card_repayment"]` (`config/settings.py`).
+>
+> ⛔ **Falha fechada.** Enquanto o modelo não estiver aprovado e o flow ligado
+> (`MANYCHAT_FLOW_MAP["payment_requested_card_repayment"]` ou o `NotificationTemplate`
+> do evento), o aviso sai pelo `pagamento_solicitado` aprovado, e o adapter registra
+> `manychat.card_repayment_flow_pending` (info). Nunca sai texto que a Meta não aprovou.
+
 ### `link_pagamento_enviado` — evento `payment_link_sent`
 Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e o cliente paga pelo link.
 - Corpo: `Oi, {{1}}! Anotamos seu pedido {{2}} no valor de {{3}}. Pague até {{4}} para garantir. Depois disso liberamos a reserva.`
@@ -692,6 +714,7 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 | `order_rescheduled` | `pedido_nova_data` | Utility |
 | `order_updated` | `pedido_atualizado` | Utility |
 | `payment_requested` | `pagamento_solicitado` | Utility |
+| `payment_requested_card_repayment` (novo pagamento após cartão recusado) | `pagamento_cartao_falhou` | Utility 🆕 (aprovado 07/11/2026, flow `content20261107173252_896774`) |
 | `payment_link_sent` | `link_pagamento_enviado` | Utility |
 | `payment_confirmed` | `pagamento_confirmado` | Utility |
 | `payment_reminder` | `pagamento_lembrete` | Utility |
@@ -801,3 +824,12 @@ fallback). Inverter antes troca "SMS que chega em 76%" por "WhatsApp que não ch
 - [WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN](../plans/completed/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md)
 - Meta: [template fundamentals](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/overview)
 - ManyChat: [usar Message Templates](https://help.manychat.com/hc/en-us/articles/14281326740124-How-to-use-WhatsApp-Messages-Templates-in-Manychat)
+
+### Cancelamento solicitado pelo cliente (revisão de 06/11/2026)
+
+O texto livre passa a dizer "Seu pedido V55 foi cancelado, conforme sua solicitação.".
+`{cancellation_reason_suffix}` une o motivo à frase do cancelamento no texto livre;
+nos outros motivos, preserva a frase completa de `{status_note}`. O modelo já aprovado
+na Meta mantém sua pontuação fixa e recebe "Conforme sua solicitação." em `status_note`,
+sem repetir "Cancelamos". A unificação da frase também nesse modelo depende de uma
+nova aprovação da Meta; o deploy não altera modelos externos aprovados.

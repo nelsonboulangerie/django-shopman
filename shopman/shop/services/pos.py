@@ -939,7 +939,7 @@ def review_sale(
         # motor, para a tela mostrar o total que o fechamento vai cobrar (P0-1).
         priced = _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
     else:
-        _stamp_tab_engine_prices(
+        priced = _stamp_tab_engine_prices(
             payload, session, channel=channel, config=config, operator_username=operator_username,
         )
     _ensure_resolved_prices(payload)
@@ -1194,18 +1194,15 @@ def _review_priced_lines(
 ) -> tuple[dict, ...]:
     """As linhas da venda como o motor as cobra, no formato da linha da comanda.
 
-    ``priced`` é a linha do motor sem os descontos manuais (só na venda sem
-    comanda); ``with_manual``, com eles (vazio quando a venda não tem desconto
-    manual). Nenhuma das duas é conta do PDV: quando o desconto manual vence a
-    linha, o motor carimba ``_disc`` do tipo ``manual`` com o valor por unidade,
+    ``priced`` é a linha do motor sem os descontos manuais; ``with_manual``,
+    com eles (vazio quando a venda não tem desconto manual). Nenhuma das duas
+    é conta do PDV: quando o desconto manual vence a linha, o motor carimba ``_disc`` do tipo ``manual`` com o valor por unidade,
     e é esse o preço que a linha cobra; quando perde, a linha cobra o automático
     e mostra o rótulo dele. O desconto de PEDIDO não entra no preço da linha: a
     tela o mostra à parte.
 
-    Com comanda, o preço sem desconto manual é o da gravação (o eco do salvar), e
-    a revisão só responde pelas linhas que o motor reviu com o desconto manual:
-    é o que a tela espera depois de o operador aplicar ou trocar um desconto, e
-    o que a prévia do editor de desconto pergunta antes do Aplicar.
+    A revisão responde por todas as linhas, inclusive quando o último desconto
+    manual foi removido. O total e o preço da linha voltam juntos.
 
     ``meta.manual_discount`` volta quando o motor decidiu o desconto pedido: é por
     ele que o eco diz se o desconto do operador valeu ou foi descartado por um
@@ -1223,6 +1220,8 @@ def _review_priced_lines(
         charged_q = _int_q(engine_line.get("unit_price_q"))
         list_q = _int_q(meta.get("_list_q")) or charged_q
         disc = dict(meta.get("_disc") or {})
+        if disc.get("scope") == "order":
+            disc = {}
         manual_meta = (with_manual.get(index) or {}).get("meta") or {}
         manual_disc = manual_meta.get("_disc") or {}
         if manual_disc.get("type") == "manual":
@@ -3878,7 +3877,7 @@ def _stamp_engine_prices(
 
 def _stamp_tab_engine_prices(
     payload: dict, session, *, channel: Channel, config: ChannelConfig, operator_username: str,
-) -> None:
+) -> dict[int, dict]:
     """Comanda: o preço de cada linha é o do MOTOR, nunca o que o corpo declarou.
 
     Duas contas dependem disso, e as duas erravam quando o preço vinha do navegador.
@@ -3903,10 +3902,19 @@ def _stamp_tab_engine_prices(
     10/10/2026).
     """
     if session is None:
-        return
+        return {}
     if _session_prices_payload(session, payload) and _stamp_tab_prices_from_engine_lines(payload, session):
-        return
-    _stamp_engine_prices(
+        # A revisão também restaura a linha quando o último desconto foi removido.
+        lines = {str(line.get("line_id") or ""): line for line in (session.items or [])}
+        return {
+            index: {
+                **copy.deepcopy(lines[str(item.get("line_id") or "")]),
+                "unit_price_q": item["unit_price_q"],
+            }
+            for index, item in enumerate(payload.get("items") or [])
+            if isinstance(item, dict) and not _is_delivery_fee_item(item)
+        }
+    return _stamp_engine_prices(
         payload, channel=channel, config=config, operator_username=operator_username,
         pricing_policy=getattr(session, "pricing_policy", "") or "",
     )
@@ -4506,6 +4514,12 @@ def discount_approval_threshold_q() -> int:
     return max(0, int(getattr(settings, "SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", 0) or 0))
 
 
+def _fiscal_toggle_in_defaults(defaults) -> bool:
+    """A resposta de ``fiscal_toggle_enabled`` a partir do ``Shop.defaults`` já lido."""
+    pos_cfg = defaults.get("pos") if isinstance(defaults, dict) else {}
+    return bool((pos_cfg or {}).get("fiscal_toggle", False))
+
+
 def fiscal_toggle_enabled() -> bool:
     """A loja OFERECE emissão de NFC-e no balcão?
 
@@ -4524,9 +4538,7 @@ def fiscal_toggle_enabled() -> bool:
         from shopman.shop.models import Shop
 
         shop = Shop.load()
-        defaults = (getattr(shop, "defaults", None) or {}) if shop else {}
-        pos_cfg = defaults.get("pos") if isinstance(defaults, dict) else {}
-        return bool((pos_cfg or {}).get("fiscal_toggle", False))
+        return _fiscal_toggle_in_defaults(getattr(shop, "defaults", None) if shop else None)
     # Irmão do teto de desconto logo acima, e pela mesma razão: cair para
     # `False` porque a leitura falhou faz o toggle "Nota fiscal" SUMIR do balcão
     # numa loja que oferece NFC-e — o operador não tem como pedir a nota e não

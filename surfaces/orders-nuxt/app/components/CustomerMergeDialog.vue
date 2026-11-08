@@ -222,7 +222,7 @@ async function confirm() {
               class="w-full"
               type="search"
               autocomplete="off"
-              placeholder="Nome, telefone, CPF, e-mail ou código"
+              placeholder="Nome, telefone, CPF/CNPJ, e-mail ou código"
             />
           </NuxtFormField>
           <NuxtAlert

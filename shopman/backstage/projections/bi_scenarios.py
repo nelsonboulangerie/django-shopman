@@ -69,7 +69,10 @@ def report_view(report) -> BIScenarioReportView:
             )
             for item in (report.scenarios or [])
         ),
-        error=report.error,
+        error=(
+            f"Tente gerar novamente. Se a falha continuar, informe a rodada {report.pk} ao suporte."
+            if report.status == "failed" else ""
+        ),
     )
 
 

@@ -42,10 +42,6 @@ ALERT_SPECS: dict[str, AlertSpec] = {
     "card_authorization_expiring": AlertSpec(
         "Loja online", "i-lucide-credit-card", "Cartão autorizado esperando aceite", 60,
     ),
-    # Loja própria: até a cozinha começar ainda dá para cancelar sem desperdício.
-    "customer_cancellation_requested": AlertSpec(
-        "Loja online", "i-lucide-store", "Cliente pediu cancelamento", 10,
-    ),
     # WhatsApp: régua de atendimento de 5 minutos (dono, 08/10/2026).
     "concierge_handoff": AlertSpec("WhatsApp", "i-lucide-message-circle", "Cliente esperando atendente", 5),
     # Marketing: disparo com problema antes da hora marcada.

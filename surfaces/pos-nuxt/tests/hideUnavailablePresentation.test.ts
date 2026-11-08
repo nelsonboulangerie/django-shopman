@@ -108,3 +108,14 @@ describe("productsForOrderDate — a grade da encomenda lê o saldo do dia combi
     expect(productsForOrderDate(produtos, amanha, "")).toBe(produtos);
   });
 });
+
+describe("Exibir no estreito (dono, 07/11/2026)", () => {
+  it("só a área de produtos de celular junta vista, densidade e olho num botão", async () => {
+    const { collapseViewControls, VIEW_MENU_MAX_WIDTH } = await import("../app/presentation/catalog");
+    expect(collapseViewControls(0)).toBe(false);
+    expect(collapseViewControls(333)).toBe(true);
+    expect(collapseViewControls(430)).toBe(true);
+    expect(collapseViewControls(VIEW_MENU_MAX_WIDTH)).toBe(false);
+    expect(collapseViewControls(768)).toBe(false);
+  });
+});

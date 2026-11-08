@@ -838,7 +838,7 @@ class TestOnCancelled:
         mock_loyalty.restore.assert_called_once_with(order, reason="cancelled")
         mock_notification.send.assert_called_once_with(
             order, "order_cancelled",
-            status_note="Cancelamos conforme você nos pediu.", reason_key="customer_request",
+            status_note="Conforme sua solicitação.", reason_key="customer_request",
         )
 
 

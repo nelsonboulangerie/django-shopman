@@ -44,6 +44,7 @@ export function platformResultLabel(platformRef: string): string {
 export function deliveryStatePresentation(
   state: DeliveryAggregateProjectionV2["state"],
   announcementState?: AnnouncementProjectionV2["state"],
+  counts?: DeliveryCountsProjectionV2,
 ): { label: string; detail: string; tone: ResultTone; icon: string } {
   if (announcementState === "rejected") {
     return {
@@ -60,6 +61,14 @@ export function deliveryStatePresentation(
       detail: "O anúncio expirou sem aprovação e não foi enviado.",
       tone: "attention",
       icon: "lucide:timer-off",
+    };
+  }
+  if (state === "succeeded" && Number(counts?.accepted || 0) > 0) {
+    return {
+      label: "Aguardando confirmação de entrega",
+      detail: "O provedor aceitou o envio. A entrega ainda não foi confirmada; não reenvie.",
+      tone: "attention",
+      icon: "lucide:clock-3",
     };
   }
   const values: Record<
@@ -92,9 +101,9 @@ export function deliveryStatePresentation(
       icon: "lucide:send",
     },
     succeeded: {
-      label: "Entrega concluída",
+      label: counts && counts.confirmed > 0 ? "Entrega confirmada" : "Envio encerrado",
       detail:
-        "Confira abaixo o que foi confirmado e o que só foi aceito pela plataforma.",
+        "Confira abaixo o resultado de cada plataforma.",
       tone: "ok",
       icon: "lucide:check-circle-2",
     },
@@ -184,7 +193,7 @@ export function platformDeliveryLabel(
   if (switchedOff && Number(platform.counts.queued || 0) > 0) {
     return "Aguardando a plataforma ligar";
   }
-  return deliveryStatePresentation(platform.state).label;
+  return deliveryStatePresentation(platform.state, undefined, platform.counts).label;
 }
 
 export function platformSwitchedOffNote(platformRef: string): string {

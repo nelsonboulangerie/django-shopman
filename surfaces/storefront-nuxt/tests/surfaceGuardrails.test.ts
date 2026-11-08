@@ -101,6 +101,10 @@ describe('surface UX guardrails', () => {
     expect(read('app/pages/index.vue')).not.toContain("label: isOpen ? 'Aberto agora' : 'Fechado agora'")
     expect(read('app/pages/index.vue')).not.toContain('v-if="operationalStatus.message"')
     expect(read('app/components/HomeHeroThing.vue')).not.toContain('omo.shop_hint')
+    // Loja fechada: dá para finalizar agora (a casa confere na abertura), então o
+    // CTA não promete "para depois" (beta 06/11).
+    expect(read('app/pages/index.vue')).toContain('closed-cta-label="Fazer pedido"')
+    expect(read('app/pages/index.vue')).not.toContain('para depois')
     expect(omotenashiType).not.toMatch(/\b(is_open|opens_at|closes_at)\b/)
   })
 
@@ -426,7 +430,7 @@ describe('surface UX guardrails', () => {
     expect(checkout).toContain('paymentMethodLabel')
     expect(checkout).toContain('fulfillmentSummary')
     expect(checkout).toContain('data-checkout-live-summary')
-    expect(checkout).toContain('<CartSummaryBreakdown v-if="cart" :cart="cart" compact />')
+    expect(checkout).toContain('<CartSummaryBreakdown v-if="cart && !draftSyncing && !deliveryDraftFailed" :cart="cart" compact />')
     // O CHECKOUT USA O CARD SUSPENSO — o mesmo da sacola e da página de produto,
     // e o mesmo mecanismo (`.shop-action-dock` + card ink). Duas correções
     // moram nesta linha. A primeira: a barra `fixed bottom-0 z-40` que vivia
@@ -911,7 +915,10 @@ describe('surface UX guardrails', () => {
     expect(cartPage).toContain(':aria-label="`Remover ${line.name}`"')
     // Lixeira sempre viva: mutações otimistas não bloqueiam remoção.
     expect(cartPage).not.toContain(':disabled="cart.summary_pending"')
-    expect(cartPage).toContain('{{ line.qty }} × {{ line.price_display }} cada')
+    // Preço da linha na dupla do cardápio: cheio riscado + promoção (beta 06/11).
+    expect(cartPage).toContain('data-cart-line-price')
+    expect(cartPage).toContain('<span class="line-through">{{ linePrice(line).original }}</span>')
+    expect(cartPage).toContain('{{ linePrice(line).current }}')
     expect(cartPage).toContain('{{ line.total_display }}')
     expect(cartPage).toContain('<CartUpsellRail v-if="cart.upsell"')
     // Planned-hold transparente: badges por linha + banner com countdown.
@@ -1011,6 +1018,7 @@ describe('surface UX guardrails', () => {
     const product = read('app/pages/produto/[sku].vue')
 
     expect(menu).toContain(':hide-dietary-warnings="dietaryFilterOn"')
+    expect(menu).toContain(':available-only="availableOnly"')
     expect(favorites).toContain('visibleItems')
     expect(favorites).toContain('(item.dietary_warnings || []).length === 0')
     expect(product).toContain('unavailableReason')

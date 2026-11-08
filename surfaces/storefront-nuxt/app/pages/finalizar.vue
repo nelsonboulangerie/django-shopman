@@ -7,7 +7,7 @@ import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentat
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
-import { startCheckoutRecovery, type CheckoutRecoveryLoop } from '~/utils/checkoutRecovery'
+import { CHECKOUT_RECOVERY_DELAYS_MS, startCheckoutRecovery, type CheckoutRecoveryLoop, type CheckoutRecoveryOutcome } from '~/utils/checkoutRecovery'
 import { buildCheckoutPayload, checkoutBaseline, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
 import { formatCount } from '~/utils/display'
 import { markJustPlaced } from '~/utils/justPlaced'
@@ -47,6 +47,15 @@ import {
   reconciledWindowRef,
   selectedPickupSlot,
   shouldOfferPickupSwap,
+  checkoutWindowsReason,
+  noWindowsMessage,
+  todayOverMessage,
+  usesWindowGrid,
+  checkoutNotesCopy,
+  couponCardState,
+  deliveryZoneRefused,
+  DELIVERY_ZONE_REFUSAL_SELECTOR,
+  rememberChoicesDescription,
   whenSummary as buildWhenSummary,
   type CheckoutSectionState,
   type CheckoutStep
@@ -160,11 +169,21 @@ function clearFieldErrors (keys: string[]) {
 const deliveryDateHint = ref('')
 const attemptKey = ref(createCheckoutAttemptKey())
 const addressSelection = ref<AddressSelection | null>(null)
+// Formulário do picker aberto com edição que o checkout ainda não recebeu
+// (beta SMS-15): o "Continuar" espera a confirmação, em vez de seguir com o
+// endereço antigo e perder a edição.
+const addressDraftPending = ref(false)
 const pickupSwapOffer = ref(false)
 // Fora da área numa loja SEM retirada: `pickupSwapOffer` fica falso, o `v-else-if` da
 // cobertura também, e nenhuma linha era renderizada — o cliente atravessava o resto do
 // checkout e tomava o erro no commit. A recusa precisa de ramo próprio.
 const deliveryUncovered = ref(false)
+const zoneRefused = computed(() => deliveryZoneRefused({
+  fulfillmentType: state.fulfillment_type,
+  pickupSwapOffer: pickupSwapOffer.value,
+  deliveryUncovered: deliveryUncovered.value,
+  zoneError: cart.value?.delivery_zone_error
+}))
 // ⚠️ Aparece numa combinação só: pontos + entrega em endereço NOVO, em sessão que conhece o
 // número e não as mãos (chegou por link de campanha). É a única rota que converteria o saldo
 // de alguém em pão entregue em outro lugar. Endereço salvo e balcão nunca passam por aqui.
@@ -172,6 +191,10 @@ const identityConfirmOffer = ref(false)
 const { confirm: confirmByWhatsApp, starting: confirming } = useWhatsAppConfirm(() => refresh())
 const quotingZone = ref(false)
 const draftSyncing = ref(false)
+const deliveryDraftFailed = ref(false)
+const checkoutTotalDisplay = computed(() => draftSyncing.value
+  ? 'Atualizando total…'
+  : deliveryDraftFailed.value ? 'Total a confirmar' : cart.value?.grand_total_display || 'R$ 0,00')
 const changePhoneOpen = ref(false)
 const confirmOpen = ref(false)
 const receiptOpen = ref(false)
@@ -250,15 +273,29 @@ watch(() => state.fiscal_tax_id_on_pickup, on => {
   if (!on && state.fulfillment_type === 'pickup') clearFieldError('fiscal_tax_id')
 })
 
-// Presente (GIFT-UX). Em ENTREGA: destinatário + mensagem + ocultar valores.
-// Em RETIRADA: "embalar para presente" — só mensagem + ocultar valores (o
+// Presente (GIFT-UX). Em ENTREGA: destinatário + mensagem + sem preços no papel.
+// Em RETIRADA: "embalar para presente" — só mensagem + sem preços no papel (o
 // comprador leva; sem destinatário). Desligar descarta os dados do presente.
 const isPickup = computed(() => state.fulfillment_type === 'pickup')
 const giftTitle = computed(() => (isPickup.value ? 'Embalar para presente' : 'É para presente?'))
+const notesCopy = computed(() => checkoutNotesCopy(isPickup.value))
+const rememberDescription = computed(() => rememberChoicesDescription(isPickup.value))
+const couponCard = computed(() => couponCardState(cart.value))
 const giftDescription = computed(() => (isPickup.value
   ? 'Embalagem especial e um cartão com sua mensagem.'
-  : 'Entregamos para outra pessoa, com cartão e sem valores na nota.'))
+  : 'Entregamos para outra pessoa, com um cartão com sua mensagem.'))
+// "Sem preços no papel" esconde preço só nos papéis da casa (etiqueta, via e
+// cartão; `backstage.services.order_documents._values_are_hidden`). A NFC-e
+// sai sempre com os valores: na retirada ela fica com quem compra; na entrega
+// a DANFE vai dentro da sacola. Com cobrança na porta, o valor a cobrar e o
+// troco saem no papel do entregador. A cópia diz isso, e nada além disso.
+const giftHideValuesDescription = computed(() => {
+  if (isPickup.value) return 'A etiqueta e o cartão saem sem preços. A nota fiscal sai com os valores e fica com você.'
+  const base = 'A etiqueta e o cartão saem sem preços. A nota fiscal vai junto com o pedido e mostra os valores.'
+  return state.payment_method === 'cash' ? `${base} Pagando na entrega, o valor a cobrar aparece no papel.` : base
+})
 watch(() => state.is_gift, (on) => {
+  if (on) state.gift_hide_values = true
   if (!on) {
     state.recipient_name = ''
     state.recipient_phone = ''
@@ -266,7 +303,9 @@ watch(() => state.is_gift, (on) => {
     state.gift_hide_values = false
     clearFieldErrors(['recipient_name', 'recipient_phone'])
   }
-})
+// Na restauração, os campos do rascunho vêm depois do toggle. A escolha salva
+// prevalece sobre o padrão aplicado ao gesto de ativar presente.
+}, { flush: 'sync' })
 watch(() => state.recipient_name, value => {
   if (value.trim()) clearFieldError('recipient_name')
 })
@@ -363,8 +402,9 @@ async function submitCoupon () {
     coupon.value = ''
     await refresh()
   } catch (e) {
+    // Um aviso só: o erro mora embaixo do campo (aria-describedby). O toast
+    // repetia a mesma frase em outro canto da tela (beta 06/11).
     couponIssue.value = errorDetail(e, 'Cupom inválido ou indisponível.')
-    if (import.meta.client) useSonner.error(couponIssue.value)
   } finally {
     couponPending.value = false
   }
@@ -441,20 +481,17 @@ const pixProviderTestMessage = computed(() => {
   )
 })
 const submitDisabled = computed(() =>
-  !action.value?.enabled || !!cart.value?.is_empty || submitting.value || checkingOrder.value || pixProviderTestExceeded.value
+  !action.value?.enabled || !!cart.value?.is_empty || submitting.value || checkingOrder.value || pixProviderTestExceeded.value || draftSyncing.value || deliveryDraftFailed.value
 )
-// Retirada mostra os turnos de retirada; entrega, a grade de entrega (a mesma da
-// concierge). O resto da tela trata as duas do mesmo jeito.
+// Retirada e entrega leem a grade da casa (a mesma da concierge e do PDV): meia
+// hora hoje, turno na encomenda. O resto da tela trata as duas do mesmo jeito.
 const slots = computed(() => checkoutWindows(checkout.value, state.fulfillment_type))
 const isDeliveryWindows = computed(() => state.fulfillment_type === 'delivery')
-// Na grade de entrega o motivo da janela apagada é um só (o item que segura o
-// pedido): sai uma vez acima da grade, não repetido em cada célula.
-const deliveryWindowsReason = computed(() => {
-  if (!isDeliveryWindows.value) return ''
-  const reason = slots.value.find(slot => !slot.enabled && slot.reason)?.reason || ''
-  if (!reason) return ''
-  return slots.value.some(slot => slot.enabled) ? `${reason} Antes disso, os horários ficam riscados.` : reason
-})
+// Meias horas viram uma grade compacta de células iguais; turnos, uma lista.
+const isWindowGrid = computed(() => usesWindowGrid(checkout.value, state.fulfillment_type))
+// O motivo da janela apagada é um só (o item que segura o pedido): sai uma vez
+// acima dos horários, não repetido em cada um.
+const windowsReason = computed(() => checkoutWindowsReason(slots.value))
 const selectedSlot = computed(() => selectedPickupSlot(slots.value, state.delivery_time_slot))
 const paymentMethodLabel = computed(() => resolvePaymentMethodLabel(checkout.value, state.payment_method))
 const selectedSlotLabel = computed(() => selectedSlot.value?.label || state.delivery_time_slot || '')
@@ -517,7 +554,10 @@ const checkoutMinDate = computed(() => dateBounds.value.minDate)
 const checkoutMaxDate = computed(() => dateBounds.value.maxDate)
 const closedDateEntries = computed(() => parseClosedDateEntries(checkout.value?.closed_dates_json))
 const closedWeekdays = computed(() => checkout.value?.closed_weekdays || [])
-const datepickerDisabledDates = computed(() => buildDatepickerDisabledDates(closedDateEntries.value, closedWeekdays.value))
+const datepickerDisabledDates = computed(() => buildDatepickerDisabledDates(
+  closedDateEntries.value, closedWeekdays.value,
+  checkout.value?.today_over ? dateBounds.value.todayValue : ''
+))
 // Opções de data: "Hoje" (se aberto) + "Próxima fornada" (a próxima data em
 // que a loja opera) + "Outra data" (calendário). Vêm do backend, que nunca
 // devolve dia fechado. Fallback local só se a projection não trouxer nada.
@@ -542,6 +582,9 @@ const quickDateOptions = computed(() => {
   return out
 })
 const isCustomDate = computed(() => isCustomCheckoutDate(state.delivery_date, quickDateOptions.value))
+// "Hoje" fora das opções porque o dia já encerrou: a tela diz, em vez de sumir calado.
+const todayOverNotice = computed(() => (checkout.value?.today_over ? todayOverMessage(state.fulfillment_type) : ''))
+const isTodaySelected = computed(() => state.delivery_date === dateBounds.value.todayValue)
 const contactState = computed<CheckoutSectionState>(() => {
   if (fieldErrors.value.name || fieldErrors.value.phone) return 'error'
   // `nameEditing` entra aqui junto com `contactEditing`, e esta é a METADE
@@ -621,7 +664,7 @@ const primaryAction = computed<CheckoutPrimaryAction>(() => {
       disabled: deliveryBelowMinimum.value || draftSyncing.value,
       reason: deliveryBelowMinimum.value && cart.value?.delivery_minimum_progress
         ? `Faltam ${cart.value.delivery_minimum_progress.remaining_display} para o mínimo de entrega`
-        : '',
+        : deliveryDraftFailed.value ? 'Toque em Continuar para atualizar o total.' : '',
       run: continueFromFulfillment
     }
   }
@@ -630,10 +673,12 @@ const primaryAction = computed<CheckoutPrimaryAction>(() => {
       label: 'Continuar',
       icon: 'lucide:arrow-right',
       loading: draftSyncing.value,
-      disabled: draftSyncing.value || !addressSelection.value || deliveryUncovered.value,
+      disabled: draftSyncing.value || !addressSelection.value || zoneRefused.value || addressDraftPending.value,
       reason: !addressSelection.value
         ? 'Escolha ou informe o endereço de entrega.'
-        : deliveryUncovered.value
+        : addressDraftPending.value
+          ? 'Confirme o endereço que você está editando.'
+          : zoneRefused.value
           ? 'Ainda não entregamos nesse endereço.'
           : '',
       run: continueFromAddress
@@ -676,9 +721,14 @@ let hasRestoredCheckoutDraft = false
 function clearCheckoutDraft () {
   if (import.meta.client) { try { localStorage.removeItem(CHECKOUT_DRAFT_KEY) } catch { /* noop */ } }
 }
-// No SSR/hydration o checkout já existe e isto continua síncrono. Em navegação
-// cliente a projeção é lazy: esperamos o draft_context verdadeiro antes de
-// validar o rascunho, sem manter a página anterior presa à requisição.
+// O rascunho mora no localStorage, que o servidor não vê. Aplicá-lo durante a
+// hidratação fazia o primeiro render do cliente divergir do HTML do servidor
+// ("Hydration completed but contains mismatches", beta SMS-22). Na carga direta
+// ele entra depois de montar; em navegação cliente a projeção é lazy e esperamos
+// o draft_context verdadeiro antes de validar o rascunho.
+// O AddressPicker lê a seleção só ao montar: a chave o remonta com a seleção
+// restaurada, em vez de deixar o rádio no endereço pré-selecionado.
+const addressPickerKey = ref(0)
 function restoreCheckoutDraft () {
   if (!import.meta.client || draftRestored) return
   if (!checkout.value) return
@@ -693,7 +743,10 @@ function restoreCheckoutDraft () {
       // A seleção de endereço restaurada alimenta o AddressPicker (prop
       // `selection`): salvo re-marca o rádio; novo reabre o form preenchido.
       // Sem ela, o preselect do picker SOBRESCREVIA o endereço do rascunho.
-      if (draft.addressSelection) addressSelection.value = draft.addressSelection
+      if (draft.addressSelection) {
+        addressSelection.value = draft.addressSelection
+        addressPickerKey.value += 1
+      }
       // Observação restaurada reabre o toggle — texto nunca viaja escondido.
       if (draft.notesOpen) notesOpen.value = true
     } else if (stale) {
@@ -702,7 +755,11 @@ function restoreCheckoutDraft () {
   } catch { /* rascunho corrompido: ignora */ }
   draftRestored = true
 }
-watch(checkout, restoreCheckoutDraft, { immediate: true })
+if (import.meta.client && useNuxtApp().isHydrating) {
+  onMounted(() => { watch(checkout, restoreCheckoutDraft, { immediate: true }) })
+} else {
+  watch(checkout, restoreCheckoutDraft, { immediate: true })
+}
 function saveCheckoutDraft () {
   if (!import.meta.client || !draftRestored) return
   try {
@@ -796,7 +853,10 @@ function initializeDeliveryDate () {
   if (chosenDate.value) return
   if (!checkout.value) return
   const restoredDate = state.delivery_date
-  const value = restoredDate && !isCheckoutDateUnavailable(restoredDate, dateBounds.value, closedDateEntries.value, closedWeekdays.value)
+  // Hoje já encerrado (`today_over`) não volta como data lembrada: o cliente
+  // cairia numa lista de horários vazia em vez de no próximo dia.
+  const restoredIsOver = !!checkout.value.today_over && restoredDate === dateBounds.value.todayValue
+  const value = restoredDate && !restoredIsOver && !isCheckoutDateUnavailable(restoredDate, dateBounds.value, closedDateEntries.value, closedWeekdays.value)
     ? restoredDate
     : checkout.value.available_dates?.[0] || localDateValue(new Date())
   const parsed = parseLocalDate(value)
@@ -840,8 +900,10 @@ watch(addressSelection, selection => {
 let draftSyncTail: Promise<void> = Promise.resolve()
 let draftSyncCount = 0
 let deliverySyncCount = 0
+let draftSyncVersion = 0
 
 function applyDeliveryDraft (): Promise<void> {
+  const version = ++draftSyncVersion
   const isDelivery = state.fulfillment_type === 'delivery'
   const fulfillmentType = state.fulfillment_type
   const structured = { ...(state.delivery_address_structured || {}) }
@@ -854,6 +916,7 @@ function applyDeliveryDraft (): Promise<void> {
 
   const run = async () => {
     try {
+      if (version !== draftSyncVersion || fulfillmentType !== state.fulfillment_type) return
       const response = await $fetch<CartResponse>(apiPath('/api/v1/checkout/draft/'), {
         method: 'PATCH',
         headers: await csrfHeaders(),
@@ -863,11 +926,13 @@ function applyDeliveryDraft (): Promise<void> {
           delivery_address_structured: isDelivery ? structured : {}
         }
       })
+      if (version !== draftSyncVersion || fulfillmentType !== state.fulfillment_type) return
       // O PATCH devolve a revisão que acabou de gravar. Aceitá-la antes do
       // refresh fecha a janela em que um GET anterior poderia reintroduzir a
       // revisão velha; o refresh atualiza o restante da projection.
       acceptCartProjection(response.cart)
       await refresh()
+      deliveryDraftFailed.value = false
       if (isDelivery) {
         const covered = !cart.value?.delivery_zone_error && cart.value?.delivery_fee_q !== null
         if (structured.coordinates_source) {
@@ -878,7 +943,8 @@ function applyDeliveryDraft (): Promise<void> {
         if (covered) serverError.value = ''
       }
     } catch {
-      // Falha no rascunho não bloqueia — o commit ainda valida a zona.
+      // Uma escolha nova não pode continuar exibindo a conta da anterior.
+      if (version === draftSyncVersion && fulfillmentType === state.fulfillment_type) deliveryDraftFailed.value = true
       if (isDelivery) {
         if (structured.coordinates_source) {
           telemetry.addressEvent('address.zone.resolved', { result: 'deferred' })
@@ -1039,7 +1105,7 @@ function validateWhenStep (): boolean {
   delete errors.delivery_time_slot
   if (!state.delivery_date) errors.delivery_date = checkout.value?.copy.when_required || 'Escolha a data.'
   if (state.delivery_date && isCheckoutDateUnavailable(state.delivery_date, dateBounds.value, closedDateEntries.value, closedWeekdays.value)) errors.delivery_date = 'Escolha uma data disponível.'
-  if (state.delivery_date && isDeliveryWindows.value && !slots.value.length) errors.delivery_time_slot = 'Não há horário de entrega nesse dia. Escolha outra data.'
+  if (state.delivery_date && !slots.value.length) errors.delivery_time_slot = noWindowsMessage(state.fulfillment_type, isTodaySelected.value)
   if (slots.value.length && !state.delivery_time_slot) errors.delivery_time_slot = 'Escolha um horário.'
   if (state.delivery_time_slot && slots.value.length && !selectedSlot.value?.enabled) {
     errors.delivery_time_slot = selectedSlot.value?.reason || 'Escolha um horário disponível.'
@@ -1112,6 +1178,7 @@ async function continueFromFulfillment () {
   // Retirada zera a taxa de entrega no total; entrega recalcula ao confirmar
   // o endereço (applyDeliveryDraft no passo seguinte).
   if (state.fulfillment_type === 'pickup') await applyDeliveryDraft()
+  if (deliveryDraftFailed.value) return
   activeStep.value = state.fulfillment_type === 'delivery' ? 'address' : 'when'
 }
 
@@ -1122,6 +1189,7 @@ async function continueFromFulfillment () {
 function onFulfillmentSelected (value: string) {
   if (value !== 'pickup' && value !== 'delivery') return
   state.fulfillment_type = value
+  if (value === 'pickup') void applyDeliveryDraft()
   if (value === 'delivery' && !deliveryBelowMinimum.value) {
     activeStep.value = 'address'
   }
@@ -1139,7 +1207,20 @@ async function continueFromAddress () {
   // a fila garante que taxa, cobertura e revisão usadas adiante são as que o
   // servidor acabou de aceitar.
   await draftSyncTail
+  if (deliveryDraftFailed.value) await applyDeliveryDraft()
+  if (deliveryDraftFailed.value) return
+  // Fora da área o passo não avança (beta SMS-06): o aviso de cobertura, com a
+  // troca para retirada quando houver, vira o foco da página.
+  if (zoneRefused.value) { revealZoneRefusal(); return }
   activeStep.value = 'when'
+}
+
+// O aviso de cobertura mora no topo do fluxo (fora da seção de endereço, para
+// não remontar o picker). Quem recusa leva a página até ele e põe o foco no
+// gesto que resolve ("Mudar para retirada"), em vez de deixar o cliente olhando
+// para a seção onde estava (beta SMS-05).
+function revealZoneRefusal () {
+  reveal(() => document.querySelector(DELIVERY_ZONE_REFUSAL_SELECTOR), { align: 'start', focus: true })
 }
 
 function continueFromWhen () {
@@ -1154,6 +1235,17 @@ function continueFromPayment () {
 
 function openConfirmSheet () {
   if (!validate()) { revealFirstError(); return }
+  // Defesa em profundidade: entrega numa zona recusada nunca chega à revisão
+  // com o envio liberado e total sem taxa (beta SMS-06).
+  if (zoneRefused.value) {
+    if (!pickupSwapOffer.value && !deliveryUncovered.value) {
+      pickupSwapOffer.value = availableFulfillment.value.includes('pickup')
+      deliveryUncovered.value = !pickupSwapOffer.value
+    }
+    activeStep.value = 'address'
+    revealZoneRefusal()
+    return
+  }
   if (submitDisabled.value) {
     serverError.value = action.value?.reason || 'Pedido não pode ser confirmado agora.'
     return
@@ -1188,6 +1280,11 @@ async function goToAuthRoute () {
 }
 
 async function recoverCheckout (key = '') {
+  return (await checkCheckoutRecovery(key)) === true
+}
+// `not_received`: o servidor nunca recebeu esta tentativa (ou ela falhou). Não
+// vai virar pedido sozinha, e o reenvio com a mesma chave é seguro (beta SMS-17).
+async function checkCheckoutRecovery (key = ''): Promise<CheckoutRecoveryOutcome> {
   try {
     // POST: recuperar dá a este navegador o acesso ao pedido e refaz o que ficou
     // pendente depois do commit. GET não produz efeito.
@@ -1202,14 +1299,28 @@ async function recoverCheckout (key = '') {
     clearCart()
     await navigateTo(receipt.next_url || `/pedido/${encodeURIComponent(receipt.order_ref)}`)
     return true
-  } catch {
+  } catch (e) {
     if (confirmedTrackingUrl.value) {
       serverError.value = 'Pedido confirmado. Continue no acompanhamento.'
       confirmOpen.value = false
       return true
     }
+    if (httpError(e).data?.error_code === 'checkout_attempt_not_received') return 'not_received'
     return false
   }
+}
+// A conferência seguinte não espera o degrau inteiro quando a rede volta: é
+// justamente quando o servidor já pode responder se a tentativa chegou.
+function waitOrOnline (ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer)
+      window.removeEventListener('online', done)
+      resolve()
+    }
+    const timer = setTimeout(done, ms)
+    window.addEventListener('online', done)
+  })
 }
 function onDraftRemoved (event: StorageEvent) {
   if (event.key === CHECKOUT_DRAFT_KEY && event.newValue === null) window.location.reload()
@@ -1246,7 +1357,7 @@ function startUncertainCheck () {
   checkingOrder.value = true
   serverError.value = UNCERTAIN_CHECKING
   const key = attemptKey.value
-  const loop = startCheckoutRecovery(() => recoverCheckout(key))
+  const loop = startCheckoutRecovery(() => checkCheckoutRecovery(key), CHECKOUT_RECOVERY_DELAYS_MS, waitOrOnline)
   recoveryLoop = loop
   void loop.done.then((found) => {
     if (recoveryLoop !== loop) return
@@ -1389,8 +1500,10 @@ async function submitCheckout () {
         // marcar fieldError nem reabrir o passo: o erro poria a seção de
         // endereço em estado de erro, remontando o picker — que
         // re-selecionaria o salvo e apagaria o endereço fora de área e a
-        // própria oferta. Fecha só o sheet de revisão.
+        // própria oferta. Fecha o sheet de revisão e leva a página até o
+        // aviso: sem isso a recusa ficava fora da tela (beta SMS-05).
         confirmOpen.value = false
+        revealZoneRefusal()
       } else {
         fieldErrors.value = { ...fieldErrors.value, [field]: serverError.value }
         // O CPF da retirada mora no passo do pagamento, não no do endereço.
@@ -1407,7 +1520,7 @@ async function submitCheckout () {
   }
 }
 
-function switchToPickup () {
+async function switchToPickup () {
   state.fulfillment_type = 'pickup'
   pickupSwapOffer.value = false
   deliveryUncovered.value = false
@@ -1416,8 +1529,8 @@ function switchToPickup () {
   const errors = { ...fieldErrors.value }
   delete errors.delivery_address
   fieldErrors.value = errors
-  void applyDeliveryDraft()
-  activeStep.value = 'when'
+  await applyDeliveryDraft()
+  activeStep.value = deliveryDraftFailed.value ? 'fulfillment' : 'when'
 }
 
 // Sinal do desconto no resumo compacto da confirmação (espelha CartSummaryBreakdown).
@@ -1477,7 +1590,7 @@ useSeoMeta({
             <UiAlertTitle>{{ serverError || 'Ainda não entregamos nesse endereço' }}</UiAlertTitle>
             <UiAlertDescription>
               <p>Mas você pode retirar na loja quando quiser.</p>
-              <UiButton size="sm" icon="lucide:store" class="mt-2" @click="switchToPickup">
+              <UiButton size="sm" icon="lucide:store" class="mt-2" :loading="draftSyncing" :disabled="draftSyncing" data-focus-control @click="switchToPickup">
                 Mudar para retirada
               </UiButton>
             </UiAlertDescription>
@@ -1579,17 +1692,20 @@ useSeoMeta({
                   <div v-if="!showNameInput" class="flex items-center gap-3 py-3 first:pt-0">
                     <Icon name="lucide:user-round" class="size-4 shrink-0 text-muted-foreground" />
                     <p class="min-w-0 flex-1 truncate text-sm font-semibold">{{ state.name }}</p>
-                    <UiButton variant="link" size="sm" class="-my-3 -mr-3 h-11 min-w-11 px-3" data-checkout-contact-edit @click="startEditName">Editar</UiButton>
+                    <UiButton variant="link" size="sm" class="-my-3 -mr-3 h-11 min-w-11 px-3" aria-label="Editar nome" data-checkout-contact-edit @click="startEditName">Editar</UiButton>
                   </div>
                   <div class="flex items-center gap-3 py-3 first:pt-0">
-                    <Icon name="lucide:phone" class="size-4 shrink-0 text-muted-foreground" />
-                    <div class="min-w-0 flex-1">
-                      <p class="shop-price">
+                    <Icon name="lucide:phone" class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <!-- O telefone é texto (vem da conta), não campo: o leitor de tela
+                         ouve o rótulo antes do número, e o erro fica ligado a ele. -->
+                    <div class="min-w-0 flex-1" role="group" aria-labelledby="checkout-phone-label" :aria-describedby="fieldErrors.phone ? 'checkout-phone-error' : undefined">
+                      <span id="checkout-phone-label" class="sr-only">Telefone</span>
+                      <p class="shop-price" data-checkout-phone>
                         {{ phoneDisplay || 'Entre por telefone para continuar' }}
                       </p>
-                      <UiFieldError v-if="fieldErrors.phone" class="mt-1" :errors="fieldErrors.phone" />
+                      <UiFieldError v-if="fieldErrors.phone" id="checkout-phone-error" class="mt-1" :errors="fieldErrors.phone" />
                     </div>
-                    <UiButton variant="link" size="sm" class="-my-3 -mr-3 h-11 min-w-11 px-3" data-checkout-contact-edit @click="changePhoneOpen = true">
+                    <UiButton variant="link" size="sm" class="-my-3 -mr-3 h-11 min-w-11 px-3" aria-label="Trocar telefone" data-checkout-contact-edit @click="changePhoneOpen = true">
                       Trocar
                     </UiButton>
                   </div>
@@ -1691,11 +1807,13 @@ useSeoMeta({
               @edit="goToStep('address')"
             >
               <AddressPicker
+                :key="addressPickerKey"
                 v-model:selection="addressSelection"
                 context="checkout"
                 :saved-addresses="savedAddresses"
                 :preselected-id="checkout.preselected_address_id"
                 @confirmed="onAddressConfirmed"
+                @draft-pending="addressDraftPending = $event"
                 @addresses-changed="refresh"
               />
               <UiFieldError v-if="fieldErrors.delivery_address" :errors="fieldErrors.delivery_address" />
@@ -1722,7 +1840,7 @@ useSeoMeta({
                 <!-- A única pergunta de quem informa o endereço é quanto custa entregar,
                      e esta linha só existe quando a taxa ACABOU de ser calculada. A
                      distância é complemento; o número é a resposta. -->
-                Entregamos no seu endereço<span v-if="cart.delivery_fee_display" class="font-normal shop-muted">&nbsp;· taxa de {{ cart.delivery_fee_display }}</span><span v-if="cart.delivery_distance_display" class="font-normal shop-muted">&nbsp;· a {{ cart.delivery_distance_display }}</span>
+                Entregamos no seu endereço<span v-if="cart.delivery_fee_display" class="font-normal shop-muted" data-checkout-delivery-fee-line>: taxa de {{ cart.delivery_fee_display }}</span><span v-if="cart.delivery_distance_display" class="font-normal shop-muted"> (a {{ cart.delivery_distance_display }})</span>
               </p>
               <div v-if="freeDeliveryUpsell" class="mt-3" data-checkout-free-delivery>
                 <div class="mb-2 flex items-center justify-between gap-3 text-sm font-semibold">
@@ -1789,6 +1907,9 @@ useSeoMeta({
               <div class="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                 <div class="space-y-2">
                   <UiLabel>Data</UiLabel>
+                  <p v-if="todayOverNotice" class="shop-meta text-muted-foreground" data-checkout-today-over>
+                    {{ todayOverNotice }}
+                  </p>
                   <!-- Datas padronizadas como as demais escolhas: caixas verticais
                        com dia da semana + data explícita. "Outra data" abre o
                        calendário e mostra a data escolhida quando ativa. -->
@@ -1841,7 +1962,8 @@ useSeoMeta({
                              que o calendário travou. A legenda diz o que o risco quer
                              dizer e qual é o gesto. -->
                         <p class="border-t px-3 py-2 shop-meta text-muted-foreground" data-checkout-date-legend>
-                          Dias riscados: a loja não abre. Escolha outro dia.
+                          Agendamentos até {{ displayCheckoutDate(dateBounds.maxDateValue) }}.
+                          Datas passadas, sem atendimento ou fora desse prazo ficam desabilitadas.
                         </p>
                       </UiPopoverContent>
                     </UiPopover>
@@ -1850,18 +1972,18 @@ useSeoMeta({
                   <p v-if="deliveryDateHint" class="shop-meta text-muted-foreground" data-checkout-preorder-hint>{{ deliveryDateHint }}</p>
                 </div>
 
-                <!-- Entrega: o cliente escolhe a janela na grade da casa (a mesma da
-                     concierge, conferida no commit). Meia hora hoje vira uma grade
-                     compacta de células iguais; o motivo da janela apagada sai uma
-                     vez acima dela. -->
-                <div v-if="isDeliveryWindows && state.delivery_date" class="space-y-2" data-checkout-delivery-windows>
-                  <UiLabel>Horário da entrega</UiLabel>
+                <!-- Entrega, e retirada de hoje: o cliente escolhe a janela na grade
+                     da casa (a mesma da concierge, conferida no commit). Meia hora
+                     hoje vira uma grade compacta de células iguais; o motivo da
+                     janela apagada sai uma vez acima dela. -->
+                <div v-if="isWindowGrid && state.delivery_date" class="space-y-2" data-checkout-delivery-windows>
+                  <UiLabel>{{ isDeliveryWindows ? 'Horário da entrega' : 'Horário da retirada' }}</UiLabel>
                   <p v-if="!slots.length" class="shop-meta text-muted-foreground" data-checkout-delivery-windows-empty>
-                    Não há horário de entrega nesse dia. Escolha outra data.
+                    {{ noWindowsMessage(state.fulfillment_type, isTodaySelected) }}
                   </p>
                   <template v-else>
-                    <p v-if="deliveryWindowsReason" class="shop-meta text-muted-foreground">
-                      {{ deliveryWindowsReason }}
+                    <p v-if="windowsReason" class="shop-meta text-muted-foreground" data-checkout-pickup-readiness>
+                      {{ windowsReason }}
                     </p>
                     <UiRadioGroup v-model="state.delivery_time_slot" class="grid grid-cols-2 gap-2">
                       <UiFieldLabel
@@ -1891,9 +2013,15 @@ useSeoMeta({
                   <UiFieldError v-if="fieldErrors.delivery_time_slot" :errors="fieldErrors.delivery_time_slot" />
                 </div>
 
-                <div v-if="state.fulfillment_type === 'pickup' && slots.length" class="space-y-2">
+                <div v-if="!isWindowGrid && state.delivery_date" class="space-y-2">
                   <UiLabel>Horário</UiLabel>
-                  <UiRadioGroup v-model="state.delivery_time_slot" class="grid gap-2">
+                  <p v-if="!slots.length" class="shop-meta text-muted-foreground" data-checkout-pickup-slots-empty>
+                    {{ noWindowsMessage(state.fulfillment_type, isTodaySelected) }}
+                  </p>
+                  <p v-if="windowsReason" class="shop-meta text-muted-foreground" data-checkout-pickup-readiness>
+                    {{ windowsReason }}
+                  </p>
+                  <UiRadioGroup v-if="slots.length" v-model="state.delivery_time_slot" class="grid gap-2">
                     <UiFieldLabel
                       v-for="slot in slots"
                       :key="slot.ref"
@@ -1917,7 +2045,7 @@ useSeoMeta({
                                enxerga via um horário riscado sem saber se lotou, se
                                passou ou se o turno não existe — e a diferença decide
                                entre mudar de horário e mudar de dia. -->
-                          <UiFieldDescription v-if="!slot.enabled">
+                          <UiFieldDescription v-if="!slot.enabled && !(windowsReason && slot.reason && windowsReason.startsWith(slot.reason))">
                             {{ slot.reason || 'Esgotado para este horário.' }}
                           </UiFieldDescription>
                         </UiFieldContent>
@@ -2092,11 +2220,11 @@ useSeoMeta({
                   <UiFieldContent class="gap-1">
                     <UiFieldTitle>
                       <template v-if="cart?.coupon_code">
-                        <span class="font-normal text-muted-foreground">Cupom</span> {{ cart.coupon_code }} <span class="font-normal text-muted-foreground">aplicado</span>
+                        <span class="font-normal text-muted-foreground">Cupom</span> {{ cart.coupon_code }} <span class="font-normal text-muted-foreground">{{ couponCard.status === 'applied' ? 'aplicado' : 'sem desconto' }}</span>
                       </template>
                       <template v-else>Cupom de desconto?</template>
                     </UiFieldTitle>
-                    <UiFieldDescription v-if="cart?.coupon_code && cart.coupon_discount_display">Desconto de {{ cart.coupon_discount_display }}</UiFieldDescription>
+                    <UiFieldDescription v-if="couponCard.description" :data-checkout-coupon-status="couponCard.status">{{ couponCard.description }}</UiFieldDescription>
                   </UiFieldContent>
                   <UiSwitch id="checkout-coupon-toggle" :model-value="couponSwitchOn" @update:model-value="onCouponToggle" />
                 </UiField>
@@ -2154,8 +2282,8 @@ useSeoMeta({
                   </UiField>
                   <UiField orientation="horizontal">
                     <UiFieldContent class="gap-1">
-                      <UiFieldTitle>Ocultar valores</UiFieldTitle>
-                      <UiFieldDescription>Não mostrar preços na nota nem na etiqueta.</UiFieldDescription>
+                      <UiFieldTitle>Sem preços no papel</UiFieldTitle>
+                      <UiFieldDescription data-gift-hide-values-description>{{ giftHideValuesDescription }}</UiFieldDescription>
                     </UiFieldContent>
                     <UiSwitch id="gift-hide-values" v-model="state.gift_hide_values" />
                   </UiField>
@@ -2169,7 +2297,7 @@ useSeoMeta({
                 <UiField orientation="horizontal">
                   <UiFieldContent class="gap-1">
                     <UiFieldTitle>Adicionar observação</UiFieldTitle>
-                    <UiFieldDescription>Ponto de referência, interfone, troco…</UiFieldDescription>
+                    <UiFieldDescription>{{ notesCopy.description }}</UiFieldDescription>
                   </UiFieldContent>
                   <UiSwitch id="checkout-notes-toggle" v-model="notesOpen" />
                 </UiField>
@@ -2178,7 +2306,7 @@ useSeoMeta({
                     id="checkout-notes"
                     v-model="state.notes"
                     :rows="2"
-                    placeholder="Ex: tocar o interfone, ponto de referência…"
+                    :placeholder="notesCopy.placeholder"
                     @click.stop
                   />
                 </div>
@@ -2195,7 +2323,7 @@ useSeoMeta({
                 <UiField orientation="horizontal">
                   <UiFieldContent class="gap-1">
                     <UiFieldTitle>Lembrar destas escolhas</UiFieldTitle>
-                    <UiFieldDescription>Endereço, pagamento e horário.</UiFieldDescription>
+                    <UiFieldDescription>{{ rememberDescription }}</UiFieldDescription>
                   </UiFieldContent>
                   <UiSwitch id="checkout-save-default" v-model="state.save_as_default" />
                 </UiField>
@@ -2251,7 +2379,7 @@ useSeoMeta({
                   <Icon name="lucide:receipt-text" class="size-4 shrink-0" />
                   Total do pedido
                 </span>
-                <span class="shop-price-strong shrink-0">{{ cart?.grand_total_display || 'R$ 0,00' }}</span>
+                <span class="shop-price-strong shrink-0">{{ checkoutTotalDisplay }}</span>
               </span>
             </UiButton>
             <UiButton
@@ -2285,11 +2413,18 @@ useSeoMeta({
             <UiButton v-else-if="confirmationUnknown" variant="outline" to="/conta/pedidos">Ver meus pedidos</UiButton>
               </UiAlert>
 
-              <!-- O quê: itens em linha única (qty + nome). Os valores vivem no resumo. -->
-              <ul class="space-y-1">
+              <!-- O quê: itens com o valor da linha. A revisão é o último lugar antes
+                   de enviar o pedido: a conta inteira aparece sempre, com ou sem
+                   cupom e frete (beta 06/11). -->
+              <ul class="space-y-1" data-review-items>
                 <li v-for="line in cart?.items || []" :key="line.line_id" class="shop-body">
-                  <span class="font-semibold tabular-nums">{{ line.qty }}×</span>
-                  {{ line.name }}
+                  <span class="flex items-baseline justify-between gap-3">
+                    <span class="min-w-0">
+                      <span class="font-semibold tabular-nums">{{ line.qty }}×</span>
+                      {{ line.name }}
+                    </span>
+                    <span class="shrink-0 tabular-nums" data-review-line-total>{{ line.total_display }}</span>
+                  </span>
                   <!-- Lista de espera = história do MESMO dia (fila de espera da produção).
                        Pedido agendado para outra data não tem fila: a reserva nasce na
                        data com prioridade de pedido, e o "Quando" já conta o combinado. -->
@@ -2332,9 +2467,9 @@ useSeoMeta({
               </p>
 
               <!-- Resumo de valores: compacto e inline (sem empilhar). O Total vai no rodapé. -->
-              <template v-if="cart">
+              <template v-if="cart && !draftSyncing && !deliveryDraftFailed">
                 <UiSeparator class="my-3" />
-                <dl class="space-y-1 text-sm">
+                <dl class="space-y-1 text-sm" data-review-bill>
                   <div class="flex items-baseline justify-between gap-3">
                     <dt class="shop-muted">Subtotal</dt>
                     <dd class="tabular-nums">{{ cart.has_discount ? (cart.original_subtotal_display || cart.subtotal_display) : cart.subtotal_display }}</dd>
@@ -2358,7 +2493,7 @@ useSeoMeta({
               <div class="space-y-2">
                 <div class="flex items-baseline justify-between gap-3">
                   <span class="shop-kicker">Total</span>
-                  <span class="shop-price-strong">{{ cart?.grand_total_display || 'R$ 0,00' }}</span>
+                  <span class="shop-price-strong">{{ checkoutTotalDisplay }}</span>
                 </div>
                 <UiButton
                   :loading="submitting"
@@ -2390,7 +2525,8 @@ useSeoMeta({
                   <UiItemActions class="shop-price">{{ line.total_display }}</UiItemActions>
                 </UiItem>
               </UiItemGroup>
-              <CartSummaryBreakdown v-if="cart" :cart="cart" compact />
+              <CartSummaryBreakdown v-if="cart && !draftSyncing && !deliveryDraftFailed" :cart="cart" compact />
+              <p v-else-if="cart" role="status" class="shop-muted">{{ checkoutTotalDisplay }}</p>
             </div>
           </BottomSheet>
 
@@ -2420,7 +2556,7 @@ useSeoMeta({
                 <UiCardTitle>Seu pedido</UiCardTitle>
                 <UiCardDescription>{{ formatCount(cart?.items_count || 0, 'item', 'itens') }}</UiCardDescription>
               </div>
-              <p class="shop-price-strong">{{ cart?.grand_total_display || 'R$ 0,00' }}</p>
+              <p class="shop-price-strong">{{ checkoutTotalDisplay }}</p>
             </div>
             <div class="mt-4 space-y-2 shop-muted" data-checkout-live-summary>
               <div class="flex items-center gap-2">
@@ -2447,7 +2583,8 @@ useSeoMeta({
               </UiItem>
             </UiItemGroup>
 
-            <CartSummaryBreakdown v-if="cart" :cart="cart" compact />
+            <CartSummaryBreakdown v-if="cart && !draftSyncing && !deliveryDraftFailed" :cart="cart" compact />
+            <p v-else-if="cart" role="status" class="shop-muted">{{ checkoutTotalDisplay }}</p>
           </UiCardContent>
         </UiCard>
 

@@ -257,6 +257,9 @@ export interface CartItemProjection {
   total_display: string
   image_url: string | null
   discount_label: string | null
+  // Preço por unidade da promoção da linha (o mesmo do cardápio); a linha mostra
+  // price_display riscado e este ao lado. null sem promoção (cupom fica no resumo).
+  promo_price_display: string | null
   is_available: boolean
   availability_warning: string | null
   available_qty: number | null
@@ -319,6 +322,11 @@ export interface CartProjection {
   coupon_code: string | null
   coupon_discount_q: number | null
   coupon_discount_display: string | null
+  // Cupom com desconto zero: o motivo vem do servidor (pricing.coupon.reason).
+  coupon_zero_reason: '' | 'unavailable' | 'customer' | 'fulfillment' | 'minimum' | 'items' | 'already_discounted'
+  coupon_missing_q: number
+  coupon_missing_display: string | null
+  coupon_fulfillment_types: string[]
   has_unavailable_items: boolean
   has_awaiting_confirmation_items: boolean
   has_ready_for_confirmation_items: boolean
@@ -434,6 +442,9 @@ export interface ShopStatusProjection {
   is_open: boolean
   label: string
   message: string | null
+  // Loja fechada: a próxima abertura em frase ("amanhã às 9h"); null aberta
+  // ou sem abertura conhecida. Mesmo dado do selo da home.
+  next_opening: string | null
   opens_at: string | null
   closes_at: string | null
 }
@@ -909,6 +920,8 @@ export interface CheckoutProjection {
   has_delivery: boolean
   pickup_slots: PickupSlotProjection[]
   earliest_slot_ref: string | null
+  /** Hoje, as meias horas que ainda dão (`half_hour`); encomenda, os turnos da casa (`canonical`). */
+  pickup_grid: 'half_hour' | 'canonical'
   /** Janelas de entrega da data pedida: a grade da concierge, conferida no commit. */
   delivery_windows: PickupSlotProjection[]
   earliest_delivery_window_ref: string | null
@@ -928,6 +941,9 @@ export interface CheckoutProjection {
   default_ddd: string
   available_dates: string[]
   closed_weekdays: number[]
+  // Hoje é dia de loja aberta e as retiradas e entregas de hoje já acabaram:
+  // "Hoje" não vem em `available_dates` e a tela diz por quê.
+  today_over?: boolean
   // NOTA DA ENTREGA: toda entrega pede CPF/CNPJ. `prefill_tax_id` é o documento
   // que já vem no campo (do cadastro ou da última entrega); `prefill_tax_id_source`
   // diz de onde (`document` | `last_delivery`). Vazios quando a casa não conhece.
@@ -1020,6 +1036,8 @@ export interface PickupInfoProjection {
   opening_hours: string
   directions_label: string
   directions_url: string | null
+  /** O horário combinado ("hoje · 19:30 às 20:00"), ou null sem horário escolhido. */
+  when_display: string | null
 }
 
 export interface TrackingCopyProjection {
@@ -1063,6 +1081,8 @@ export interface TrackingCopyProjection {
   rating_contact_title: string
   rating_contact_message: string
   rating_contact_done: string
+  cancellation_contact_title: string
+  cancellation_contact_message: string
   rating_google_title: string
   rating_google_share_title: string
   rating_google_message: string
@@ -1148,11 +1168,10 @@ export interface TrackingResponse {
   cancellation_money_line?: string
   // Antes de confirmar o cancelamento: o que acontece com o dinheiro.
   cancel_dialog_money_line?: string
-  cancellation_request: {
-    protocol: string
-    requested_at_display: string
-    title: string
-    message: string
+  // O preparo começou: no lugar do cancelar, falar com o responsável.
+  // `requested`: o cliente já pediu. `null` antes do preparo e no fim.
+  cancellation_contact: {
+    requested: boolean
   } | null
   // Depois de avaliar: a ouvidoria (nota até 3) e o convite do Google (toda nota;
   // a política do Google proíbe convidar só quem gostou). `comment` é o que o
@@ -1182,6 +1201,16 @@ export interface TrackingResponse {
   /** O pedido deve pagamento agora: a tela pede a conferência (POST payment/check). */
   payment_due?: boolean
   share_cta: string
+  // O Resumo: a conta inteira (subtotal de etiqueta, descontos, entrega, total)
+  // e o que o cliente informou no checkout. `schedule_display` é o combinado
+  // (data e janela) sempre que houve janela, não só na encomenda.
+  subtotal_display?: string
+  discount_lines?: { label: string, amount_display: string }[]
+  schedule_display?: string | null
+  gift?: { recipient_name: string, message: string } | null
+  tax_id_display?: string
+  customer_notes?: string
+  delivery_address?: string
   is_debug: boolean
   last_updated_iso: string
   last_updated_display: string
@@ -1249,6 +1278,7 @@ export interface AccountNotificationPreference {
   label: string
   description: string
   enabled: boolean
+  order_notifications_enabled: boolean | null
 }
 
 export interface AccountStockAlertSubscription {

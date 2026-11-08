@@ -205,7 +205,7 @@ def test_07_checkout_rejected_date_is_actionable(client):
         client,
         fulfillment_type="pickup",
         delivery_date=J.days_ahead_iso(-1),  # yesterday
-        delivery_time_slot=J.last_pickup_slot(),
+        delivery_time_slot=J.today_pickup_slot(),
     )
     assert status == 400, body
     assert body["field"] == "delivery_date"
@@ -249,7 +249,7 @@ def test_07b_checkout_closed_day_surfaces_reopening_and_preorder(client):
         client,
         fulfillment_type="pickup",
         delivery_date=closed_date.isoformat(),
-        delivery_time_slot=J.last_pickup_slot(),
+        delivery_time_slot=J.today_pickup_slot(),
     )
     assert status == 400, body
     assert body["field"] == "delivery_date"
@@ -557,7 +557,9 @@ def test_16_reorder_readds_previous_order_in_one_call(client):
     # The available item lands in the cart…
     assert body["cart"]["items_count"] == 2
     # …and the unavailable one is reported (not silently dropped, not a hard failure).
-    assert "GHOST-SKU" in body.get("skipped", [])
+    # O cliente lê o nome do que pediu, nunca o SKU (beta SMS-03).
+    assert body.get("skipped", []) == ["Item Saído de Linha"]
+    assert "GHOST-SKU" not in str(body.get("skipped_items"))
     assert body["skipped_items"][0]["reason"]
 
 

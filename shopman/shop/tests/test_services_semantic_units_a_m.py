@@ -72,6 +72,25 @@ def test_order_erasure_is_blocked_by_an_active_order(monkeypatch):
     assert account.privacy_order_deletion_blocker("CUS-1", "+5543999999999") == "active_order"
 
 
+def test_order_erasure_subject_names_the_active_order(monkeypatch):
+    from shopman.shop.services import account
+
+    class Orders:
+        def exclude(self, **_kwargs):
+            return self
+
+        def order_by(self, _field):
+            return self
+
+        def first(self):
+            return SimpleNamespace(ref="ORD-7", status="preparing")
+
+    monkeypatch.setattr(account, "_customer_orders", lambda _ref, _phone: Orders())
+
+    assert account.privacy_order_deletion_subject("CUS-1", "", "active_order") == ("ORD-7", "")
+    assert account.privacy_order_deletion_subject("CUS-1", "", "otp_delivery_in_flight") == ("", "")
+
+
 def test_otp_erasure_is_blocked_by_a_committed_pending_delivery(monkeypatch):
     from shopman.doorman.models import VerificationCode
 
@@ -532,14 +551,6 @@ def test_cancellation_authority_revision_seals_policy_and_payment(monkeypatch):
     assert revision["intent_ref"] == "PI-1"
 
 
-def test_cancellation_request_copy_distinguishes_the_preparation_boundary():
-    from shopman.shop.services import cancellation_requests
-
-    message = cancellation_requests.operational_message(order_ref="ORD-1", protocol="SC-1", before_preparation=True)
-    assert "valor volta inteiro" in message
-    assert "SC-1" in message
-
-
 def test_cart_finalization_abandons_the_exact_session(monkeypatch):
     from shopman.shop.services import cart
 
@@ -762,11 +773,11 @@ def test_house_account_requires_an_identified_customer():
         house_account.require_eligible("")
 
 
-def test_ifood_cancellation_code_honors_the_explicit_fallback(monkeypatch):
+def test_ifood_cancellation_code_comes_from_the_reason_key_only():
     from shopman.shop.services import ifood_callbacks
 
-    monkeypatch.setattr(ifood_callbacks, "_cfg", lambda: {})
-    assert ifood_callbacks.resolve_cancellation_code("unknown", "fallback") == "fallback"
+    assert ifood_callbacks.resolve_cancellation_code("store_closing") == "508"
+    assert ifood_callbacks.resolve_cancellation_code("unknown") == ""
 
 
 def test_only_real_ifood_orders_require_a_remote_cancellation_decision():

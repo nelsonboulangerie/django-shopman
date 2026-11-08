@@ -8,6 +8,8 @@ import {
   displayItemView,
   displayPhase,
   firstName,
+  handOverCustomerDisplaySnapshot,
+  idleCustomerDisplaySnapshot,
 } from "~/presentation/customerDisplay";
 import { applyLinePrices, lineDiscountBadge, lineTotalQ, manualDiscountLabel, pricingDiscountBadge } from "~/presentation/lineDiscounts";
 import type { PaymentProofView } from "~/presentation/payment";
@@ -413,5 +415,32 @@ describe("lineDiscounts — o descarte do desconto manual é o que o MOTOR disse
       .toBe("Cortesia −10%");
     expect(manualDiscountLabel(tabatiere({ value: 2.5, reason: "cortesia", type: "fixed" }), reasons))
       .toBe(`Cortesia −${formatBRL(250)}`);
+  });
+});
+
+/**
+ * Beta 07/11: a cliente pagava R$ 13,00 da encomenda e a parede mostrava "Total
+ * R$ 286,00" da última comanda. Fora da venda, a parede volta às boas-vindas; no
+ * "Receber e entregar", ela mostra o que falta pagar e para quem.
+ */
+describe("Tela do cliente fora da tela de venda", () => {
+  it("as boas-vindas não carregam carrinho nem total", () => {
+    const idle = idleCustomerDisplaySnapshot("Nelson Boulangerie", 1);
+    expect(idle).toMatchObject({ phase: "idle", shopName: "Nelson Boulangerie", items: [], totalDisplay: "", pix: null });
+  });
+
+  it("o recebimento da encomenda mostra o valor e o primeiro nome", () => {
+    const snap = handOverCustomerDisplaySnapshot(
+      { shopName: "Nelson", amountDisplay: "R$ 13,00", customerName: "Maria Santos", orderRef: "WEB-261107-D13" },
+      1,
+    );
+    expect(snap).toMatchObject({
+      phase: "payment",
+      totalDisplay: "R$ 13,00",
+      customerFirstName: "Maria",
+      orderRef: "WEB-261107-D13",
+      items: [],
+      totalPending: false,
+    });
   });
 });

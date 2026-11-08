@@ -3048,7 +3048,10 @@ export function usePosSale(deps: PosSaleDeps) {
   async function searchCustomers(query: string) {
     const q = (query || "").trim();
     const seq = ++customerSearchSeq;
-    if (q.length < 2) {
+    // Só número (telefone, CPF) pede 4 dígitos, a mesma régua do servidor
+    // (`CUSTOMER_SEARCH_MIN_DIGITS`): com "11" a lista varria a base (beta 07/11).
+    const onlyNumber = !/\p{L}/u.test(q);
+    if (q.length < 2 || (onlyNumber && q.replace(/\D/g, "").length < 4)) {
       customerSearchResults.value = [];
       customerSearchBusy.value = false;
       return;
@@ -3077,11 +3080,15 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
   async function selectCustomerResult(result: POSCustomerSearchResult) {
+    // A lista traz telefone, CPF e e-mail MASCARADOS (é para reconhecer, não
+    // para ler): nada dela vai para a venda além do ref e do nome. Os contatos
+    // do cliente anterior também saem, e o lookup por ref, logo abaixo, traz o
+    // cadastro completo (beta 07/11).
     cart.customerRef = result.ref;
     cart.customerName = result.name;
-    cart.customerPhone = result.phone || cart.customerPhone;
-    cart.customerEmail = result.email || cart.customerEmail;
-    cart.customerTaxId = result.document || cart.customerTaxId;
+    cart.customerPhone = "";
+    cart.customerEmail = "";
+    cart.customerTaxId = "";
     customerSearchResults.value = [];
     customerResolvedNew.value = false; // escolhido da lista = cadastro existente
     // Load memory + saved address for the chosen customer — pelo ref, que é a

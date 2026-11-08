@@ -295,6 +295,12 @@ const positions = computed(() => {
     .forEach((card, index) => map.set(card.pk, queuePositionLabel(index)));
   return map;
 });
+// Enquanto a grade se acomoda (um pedido entrou, saiu ou trocou de célula), nenhum
+// toque age: os tickets deslizam uns sobre os outros e o toque cairia no pedido errado.
+const { settling: gridSettling, guard: whenSettled } = useKdsGridSettle(
+  () => placementSignature(slice.value.visible, slice.value.placements),
+  { stillMoving: () => Boolean(gridBox.value?.querySelector(KDS_GRID_MOVING_SELECTOR)) },
+);
 function placementStyle(pk: number) {
   const place = slice.value.placements.get(pk);
   if (!place) return {};
@@ -692,12 +698,21 @@ function clearSearchAndFilter() {
           <!-- tablet e desktop: a fila em foco -->
           <div v-if="deskVariant" class="flex min-h-0 flex-1 flex-col gap-2 max-md:hidden">
             <div ref="gridBox" class="min-h-0 flex-1 overflow-y-auto" data-kds-grid-box>
-              <TransitionGroup tag="div" name="kds-card" class="grid gap-2.5" :style="gridStyle" data-kds-grid>
+              <TransitionGroup
+                tag="div"
+                name="kds-card"
+                class="relative grid gap-2.5"
+                :class="{ 'pointer-events-none': gridSettling }"
+                :style="gridStyle"
+                :data-kds-settling="gridSettling || undefined"
+                data-kds-grid
+              >
                 <div
                   v-for="card in slice.visible"
                   :key="card.pk"
-                  class="flex self-start"
+                  class="relative isolate z-[1] flex self-start"
                   :style="placementStyle(card.pk)"
+                  :data-kds-grid-pk="card.pk"
                   data-kds-grid-cell
                 >
                   <KdsTicketCard
@@ -708,12 +723,12 @@ function clearSearchAndFilter() {
                     :addition="view.additionPks.has(card.pk)"
                     :finishing="view.finishingPks.has(card.pk)"
                     :finish-until="finishUntil.get(card.pk)"
-                    @open="openTicketPk = card.pk"
-                    @start="start(card.pk)"
-                    @finish="finish(card.pk)"
-                    @undo="undoFinish(card.pk)"
-                    @seen="acknowledgeChange(card.pk)"
-                    @locked="warnLocked(card.pk)"
+                    @open="whenSettled(() => (openTicketPk = card.pk))"
+                    @start="whenSettled(() => start(card.pk))"
+                    @finish="whenSettled(() => finish(card.pk))"
+                    @undo="whenSettled(() => undoFinish(card.pk))"
+                    @seen="whenSettled(() => acknowledgeChange(card.pk))"
+                    @locked="whenSettled(() => warnLocked(card.pk))"
                   />
                 </div>
               </TransitionGroup>
@@ -796,11 +811,11 @@ function clearSearchAndFilter() {
 </template>
 
 <style scoped>
-/* Transição da grade: no Pronto, o card sai com um respiro e a fila desliza (FLIP),
-   o próximo "assume o foco". Novos pedidos entram com o mesmo respiro. */
-.kds-card-move {
-  transition: transform 0.35s cubic-bezier(0.2, 0, 0, 1);
-}
+/* Transição da grade: no Pronto, o card sai com um respiro e o próximo "assume o
+   foco"; novos pedidos entram com o mesmo respiro. Ninguém DESLIZA de uma célula para
+   outra (a grade não tem classe de movimento): o deslize fazia um ticket passar por cima do botão de
+   outro (beta 06/11, Encomendas 800x600: o E09 cobria o T69). Quem troca de célula
+   aparece direto nela; o respiro de quem entra fica dentro da própria célula. */
 .kds-card-enter-active,
 .kds-card-leave-active {
   transition:
@@ -813,8 +828,18 @@ function clearSearchAndFilter() {
   transform: scale(0.96);
 }
 
+/* O ticket que sai fica ATRÁS de quem entra na célula dele, não recebe toque (a
+   célula já é de outro pedido) e sai do fluxo da grade: posto sobre a área da célula
+   (a grade é o bloco de contenção), não alonga a linha nem empurra os vizinhos. */
+.kds-card-leave-active {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .kds-card-move,
   .kds-card-enter-active,
   .kds-card-leave-active {
     transition: none;

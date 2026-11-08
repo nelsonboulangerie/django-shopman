@@ -15,7 +15,7 @@ from typing import Any, BinaryIO
 from django.apps import apps
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import connection, transaction
-from django.db.models import OuterRef, Q, QuerySet, Subquery
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 SCHEMA_VERSION = "account_export.v1"
@@ -258,7 +258,7 @@ SNAPSHOT_ITEM_FIELDS = (
     "unit_price_q",
     "line_total_q",
 )
-ORDER_EVENT_PAYLOAD_FIELDS = ("protocol", "note", "reason")
+ORDER_EVENT_PAYLOAD_FIELDS = ("note", "reason")
 SESSION_EVENT_PAYLOAD_FIELDS = (
     "sku",
     "name",
@@ -1124,39 +1124,6 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
             "created_at",
         ),
         transform=_project_order_event_row,
-    )
-    cancellation_event = (
-        apps.get_model("orderman.OrderEvent")
-        .objects.filter(
-            order__ref=OuterRef("order_ref"),
-            type="customer_cancellation_requested",
-        )
-        .order_by("-seq")
-    )
-    writer.array(
-        "order_cancellation_alerts",
-        apps.get_model("backstage.OperatorAlert")
-        .objects.filter(
-            type="customer_cancellation_requested",
-            order_ref__in=order_refs,
-        )
-        .annotate(
-            protocol=Subquery(cancellation_event.values("payload__protocol")[:1]),
-            reason=Subquery(cancellation_event.values("payload__reason")[:1]),
-        )
-        .order_by("created_at", "pk")
-        .values(
-            "type",
-            "severity",
-            "audience",
-            "order_ref",
-            "protocol",
-            "reason",
-            "acknowledged",
-            "acknowledged_at",
-            "resolved_at",
-            "created_at",
-        ),
     )
     fulfillments = apps.get_model("orderman.Fulfillment").objects.filter(order_id__in=orders.values("pk"))
     writer.array(

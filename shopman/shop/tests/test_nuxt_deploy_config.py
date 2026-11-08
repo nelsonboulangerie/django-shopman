@@ -359,3 +359,16 @@ def test_every_nuxt_surface_serves_a_liveness_route_without_django():
         assert not (ROOT / "surfaces" / surface / "server" / "routes" / "health").exists(), (
             f"{surface} sombreia a rota de health da layer com uma cópia local"
         )
+
+
+def test_bi_cross_surface_links_use_the_deployment_hosts():
+    """O B.I. não pode herdar os atalhos localhost do kit no deployment."""
+    import yaml
+
+    for path in DEPLOY_SPECS:
+        spec = yaml.safe_load(path.read_text())
+        office = next(service for service in spec["services"] if service["name"] == "operator-office")
+        envs = _env_map(office)
+        domain = "boulangerie.com.br" if path.name.startswith("app.alpha") else "STORE_DOMAIN"
+        assert envs["BI__NUXT_PUBLIC_PRODUCTION_URL"] == f"https://prod.{domain}/"
+        assert envs["BI__NUXT_PUBLIC_ORDERS_URL"] == f"https://gestor.{domain}/"

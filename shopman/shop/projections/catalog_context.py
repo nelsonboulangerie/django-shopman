@@ -1336,3 +1336,16 @@ def label_attributes_by_sku(products) -> dict[str, dict]:
 def label_attributes(product) -> dict:
     """A rotulagem de UM produto — a forma singular de :func:`label_attributes_by_sku`."""
     return label_attributes_by_sku([product])[product.sku]
+
+
+def is_beverage(product) -> bool:
+    """O produto é bebida (atributo ``natureza``)? Lado de leitura para a vitrine.
+
+    Bebida não tem peça: o peso que a ficha deriva serve à nutrição e ao
+    substituto, não ao rótulo de quem pede um café (beta 05/11).
+    """
+    from shopman.shop.services import attributes
+
+    if attributes.definition("natureza") is None:
+        return False
+    return attributes.get(product, "natureza") == "bebida"

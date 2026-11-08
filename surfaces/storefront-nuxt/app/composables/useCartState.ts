@@ -1,3 +1,4 @@
+import { couponAppliedToast } from '~/utils/checkoutFlow'
 import { applyLineQty, applySkuQty, cartQtyForSku, isOptimisticLine, substituteSwapPlan } from '~/presentation/cart'
 import type { CartItemProjection, CartMutationResponse, CartProjection, ProductMutationMeta, ProductOptionSelection, Action, SubstituteProjection } from '~/types/shopman'
 
@@ -92,6 +93,10 @@ function emptyCart (): CartProjection {
     coupon_code: null,
     coupon_discount_q: null,
     coupon_discount_display: null,
+    coupon_zero_reason: '',
+    coupon_missing_q: 0,
+    coupon_missing_display: null,
+    coupon_fulfillment_types: [],
     has_unavailable_items: false,
     has_awaiting_confirmation_items: false,
     has_ready_for_confirmation_items: false,
@@ -487,7 +492,12 @@ export function useCartState () {
 
   async function applyCoupon (coupon_code: string) {
     const nextCart = await mutateCoupon('POST', { code: coupon_code })
-    if (import.meta.client) useSonner.success('Cupom aplicado.')
+    // "Cupom aplicado" só quando o total caiu (beta SMS-04).
+    if (import.meta.client) {
+      const toast = couponAppliedToast(nextCart)
+      if (toast.kind === 'success') useSonner.success(toast.message)
+      else useSonner.info(toast.message)
+    }
     return nextCart
   }
 

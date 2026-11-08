@@ -347,13 +347,11 @@ class PickupInfoSerializer(serializers.Serializer):
     opening_hours = serializers.CharField()
     directions_label = serializers.CharField()
     directions_url = serializers.CharField(allow_null=True, required=False)
+    when_display = serializers.CharField(allow_null=True, required=False)
 
 
-class CancellationRequestProjectionSerializer(serializers.Serializer):
-    protocol = serializers.CharField()
-    requested_at_display = serializers.CharField()
-    title = serializers.CharField()
-    message = serializers.CharField()
+class CancellationContactProjectionSerializer(serializers.Serializer):
+    requested = serializers.BooleanField()
 
 
 class RatingFollowupProjectionSerializer(serializers.Serializer):
@@ -361,16 +359,6 @@ class RatingFollowupProjectionSerializer(serializers.Serializer):
     google_review_url = serializers.CharField(allow_blank=True)
     contact_offered = serializers.BooleanField()
     contact_requested = serializers.BooleanField()
-
-
-class CancellationRequestInputSerializer(serializers.Serializer):
-    reason = serializers.CharField(
-        allow_blank=True,
-        required=False,
-        default="",
-        max_length=500,
-        trim_whitespace=True,
-    )
 
 
 class OrderTrackingCopySerializer(serializers.Serializer):
@@ -414,6 +402,8 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     rating_contact_title = serializers.CharField()
     rating_contact_message = serializers.CharField()
     rating_contact_done = serializers.CharField()
+    cancellation_contact_title = serializers.CharField()
+    cancellation_contact_message = serializers.CharField()
     rating_google_title = serializers.CharField()
     rating_google_share_title = serializers.CharField()
     rating_google_message = serializers.CharField()
@@ -450,6 +440,16 @@ class FiscalNoteSerializer(serializers.Serializer):
     note = serializers.CharField(allow_blank=True)
 
 
+class TrackingDiscountLineSerializer(serializers.Serializer):
+    label = serializers.CharField()
+    amount_display = serializers.CharField()
+
+
+class TrackingGiftSerializer(serializers.Serializer):
+    recipient_name = serializers.CharField(allow_blank=True)
+    message = serializers.CharField(allow_blank=True)
+
+
 class OrderTrackingSerializer(serializers.Serializer):
     convenience_pending = serializers.ListField(child=serializers.CharField(), required=False)
     ref = serializers.CharField()
@@ -484,7 +484,7 @@ class OrderTrackingSerializer(serializers.Serializer):
     cancellation_money_line = serializers.CharField(allow_blank=True, required=False)
     # Antes de cancelar: o que acontece com o dinheiro (reserva do cartão, nada cobrado).
     cancel_dialog_money_line = serializers.CharField(allow_blank=True, required=False)
-    cancellation_request = CancellationRequestProjectionSerializer(allow_null=True, required=False)
+    cancellation_contact = CancellationContactProjectionSerializer(allow_null=True, required=False)
     rating_followup = RatingFollowupProjectionSerializer(allow_null=True, required=False)
     # A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem
     # pede e-mail). ``None`` enquanto não há nota.
@@ -510,6 +510,14 @@ class OrderTrackingSerializer(serializers.Serializer):
     # O pedido deve pagamento agora: a tela pede ``orders/<ref>/payment/check/``.
     payment_due = serializers.BooleanField(required=False, default=False)
     share_cta = serializers.CharField(allow_blank=True, required=False)
+    # O Resumo: a conta inteira e o que o cliente informou no checkout.
+    subtotal_display = serializers.CharField(allow_blank=True, required=False)
+    discount_lines = TrackingDiscountLineSerializer(many=True, required=False)
+    schedule_display = serializers.CharField(allow_null=True, required=False)
+    gift = TrackingGiftSerializer(allow_null=True, required=False)
+    tax_id_display = serializers.CharField(allow_blank=True, required=False)
+    customer_notes = serializers.CharField(allow_blank=True, required=False)
+    delivery_address = serializers.CharField(allow_blank=True, required=False)
     is_debug = serializers.BooleanField()
     last_updated_iso = serializers.CharField()
     last_updated_display = serializers.CharField()

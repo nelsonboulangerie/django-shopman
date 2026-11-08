@@ -1,328 +1,206 @@
-"""
-Tests for pickup slot service — production-based slot assignment.
+"""Horários de retirada da loja: o expediente e o agora mandam (beta 06/11/2026).
 
-Covers:
-- get_slots() reads from Shop.defaults, falls back to defaults
-- get_typical_ready_times() computes median from WorkOrder history
-- get_earliest_slot_for_skus() maps cart items to correct slot
-- annotate_slots_for_checkout() returns full template context
+Provado pela UI: às 18:36, com a loja aberta até 22h, o único horário de
+retirada era "A partir das 15h" (marcado "Mais cedo"); o pedido entrou na
+Cozinha já atrasado e o PDV mostrou "Retirada hoje às 15:00". Às 17:54, com a
+loja fechando às 18h, o mesmo turno deixava 6 minutos reais. A entrega, no mesmo
+checkout, já oferecia meias horas do expediente.
+
+Agora a retirada lê a MESMA grade (``fulfillment_window``): hoje, as meias horas
+que ainda dão (agora + antecedência até o fechamento); encomenda, os turnos da
+casa que cabem no expediente do dia. Aqui se prova com o relógio parado.
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
-from decimal import Decimal
-from unittest.mock import patch
+from datetime import datetime, time, timedelta
 
-from django.test import TestCase
+import pytest
 from django.utils import timezone
+from shopman.offerman.models import Product
 
 from shopman.shop.models import Shop
 from shopman.storefront.services.pickup_slots import (
-    DEFAULT_SLOTS,
+    PICKUP_SLOT_PASSED,
+    PICKUP_SLOT_REQUIRED,
+    PICKUP_SLOT_UNKNOWN,
+    PICKUP_TODAY_OVER,
     annotate_slots_for_checkout,
-    get_earliest_slot_for_skus,
     get_slots,
-    get_typical_ready_times,
-    is_slot_available_for_today,
     validate_pickup_slot_selection,
 )
 
+pytestmark = pytest.mark.django_db
 
-class GetSlotsTests(TestCase):
-    def setUp(self):
+EVERY_DAY = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+
+def _shop(open_at: str = "07:00", close_at: str = "22:00") -> Shop:
+    return Shop.objects.create(
+        name="Test Shop",
+        brand_name="Test",
+        opening_hours={day: {"open": open_at, "close": close_at} for day in EVERY_DAY},
+    )
+
+
+def _at(hour: int, minute: int = 0, *, days: int = 0) -> datetime:
+    day = timezone.localdate() + timedelta(days=days)
+    return timezone.make_aware(datetime.combine(day, time(hour, minute)))
+
+
+def _refs(ctx: dict) -> list[str]:
+    return [slot["ref"] for slot in ctx["pickup_slots"]]
+
+
+class TestGradeDeHoje:
+    def test_manha_comeca_depois_de_agora_mais_a_antecedencia(self):
+        _shop("07:00", "12:00")
+
+        ctx = annotate_slots_for_checkout([], now=_at(9, 10))
+
+        assert ctx["grid"] == "half_hour"
+        assert _refs(ctx) == ["10:00-10:30", "10:30-11:00", "11:00-11:30", "11:30-12:00"]
+        assert ctx["earliest_slot_ref"] == "10:00-10:30"
+        first = ctx["pickup_slots"][0]
+        assert first == {
+            "ref": "10:00-10:30",
+            "label": "10:00 às 10:30",
+            "starts_at": "10:00",
+            "enabled": True,
+            "reason": "",
+            "is_earliest": True,
+        }
+
+    def test_fim_de_tarde_nunca_oferece_um_comeco_que_ja_passou(self):
+        """O caso do beta: 18:36, loja até 22h. Nada de "A partir das 15h"."""
+        _shop("07:00", "22:00")
+
+        ctx = annotate_slots_for_checkout([], now=_at(18, 36))
+
+        assert _refs(ctx)[0] == "19:30-20:00"
+        assert _refs(ctx)[-1] == "21:30-22:00"
+        assert ctx["earliest_slot_ref"] == "19:30-20:00"
+        assert all(slot["starts_at"] >= "19:06" for slot in ctx["pickup_slots"])
+        assert not any(slot["ref"].startswith("slot-") for slot in ctx["pickup_slots"])
+
+    def test_perto_do_fechamento_hoje_nao_tem_horario_morto(self):
+        """O caso do beta: 17:54, loja fechando às 18h. Hoje fica sem horário."""
+        _shop("07:00", "18:00")
+
+        ctx = annotate_slots_for_checkout([], now=_at(17, 54))
+
+        assert ctx["pickup_slots"] == []
+        assert ctx["earliest_slot_ref"] is None
+
+    def test_loja_fechada_hoje_nao_tem_horario(self):
         Shop.objects.create(
             name="Test Shop",
             brand_name="Test",
-            defaults={
-                "pickup_slots": [
-                    {"ref": "s1", "label": "Slot 1", "starts_at": "08:00"},
-                    {"ref": "s2", "label": "Slot 2", "starts_at": "14:00"},
-                ],
-            },
+            opening_hours={day: {"closed": True} for day in EVERY_DAY},
         )
 
-    def test_reads_from_shop_defaults(self):
-        slots = get_slots()
-        self.assertEqual(len(slots), 2)
-        self.assertEqual(slots[0]["ref"], "s1")
-        self.assertEqual(slots[1]["starts_at"], "14:00")
+        ctx = annotate_slots_for_checkout([], now=_at(10))
 
-    def test_falls_back_to_defaults_when_no_shop(self):
-        Shop.objects.all().delete()
-        slots = get_slots()
-        self.assertEqual(slots, list(DEFAULT_SLOTS))
+        assert ctx["pickup_slots"] == []
+        assert ctx["earliest_slot_ref"] is None
 
+    def test_prontidao_risca_com_o_produto_e_a_hora(self):
+        _shop("07:00", "18:00")
+        Product.objects.create(sku="FEN", name="Fendu", base_price_q=900, metadata={"ready_from": "15:00"})
 
-class GetTypicalReadyTimesTests(TestCase):
-    def setUp(self):
-        from shopman.craftsman.models import Recipe, WorkOrder
+        ctx = annotate_slots_for_checkout(["FEN"], now=_at(13, 0))
 
-        Shop.objects.create(name="Test", brand_name="Test")
-        self.recipe = Recipe.objects.create(
-            ref="test-bread",
-            name="Test Bread",
-            output_sku="BREAD-SKU",
-            batch_size=Decimal("50"),
-        )
-        # Create 5 days of history with finished_at around 6:00 AM
-        tz_info = timezone.get_current_timezone()
-        today = date.today()
-        for days_ago in range(1, 6):
-            d = today - timedelta(days=days_ago)
-            WorkOrder.objects.create(
-                recipe=self.recipe,
-                output_sku="BREAD-SKU",
-                quantity=Decimal("50"),
-                finished=Decimal("48"),
-                status="finished",
-                target_date=d,
-                started_at=datetime.combine(d, time(4, 0), tzinfo=tz_info),
-                finished_at=datetime.combine(d, time(6, 0), tzinfo=tz_info),
-            )
-
-    def test_computes_typical_time(self):
-        result = get_typical_ready_times(["BREAD-SKU"])
-        self.assertIn("BREAD-SKU", result)
-        # Median of 6:00 AM each day = 6:00, rounded to 30min = 6:00
-        self.assertEqual(result["BREAD-SKU"], time(6, 0))
-
-    def test_unknown_sku_omitted(self):
-        result = get_typical_ready_times(["UNKNOWN-SKU"])
-        self.assertNotIn("UNKNOWN-SKU", result)
-
-    def test_rounds_up_correctly(self):
-        """If median is 6:15, should round up to 6:30."""
-        from shopman.craftsman.models import WorkOrder
-
-        tz_info = timezone.get_current_timezone()
-        today = date.today()
-        # Add one more WO at 6:30 to shift median
-        d = today - timedelta(days=6)
-        WorkOrder.objects.create(
-            recipe=self.recipe,
-            output_sku="BREAD-SKU",
-            quantity=Decimal("50"),
-            finished=Decimal("48"),
-            status="finished",
-            target_date=d,
-            started_at=datetime.combine(d, time(4, 0), tzinfo=tz_info),
-            finished_at=datetime.combine(d, time(6, 30), tzinfo=tz_info),
-        )
-        result = get_typical_ready_times(["BREAD-SKU"], rounding_minutes=30)
-        # 5 at 360min + 1 at 390min → median = 360 → rounded = 360 = 6:00
-        self.assertEqual(result["BREAD-SKU"], time(6, 0))
-
-
-class GetEarliestSlotTests(TestCase):
-    def setUp(self):
-        from shopman.craftsman.models import Recipe, WorkOrder
-
-        Shop.objects.create(
-            name="Test",
-            brand_name="Test",
-            defaults={
-                "pickup_slots": [
-                    {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
-                    {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
-                    {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"},
-                ],
-                "pickup_slot_config": {"rounding_minutes": 30, "history_days": 30},
-            },
-        )
-        tz_info = timezone.get_current_timezone()
-        today = date.today()
-
-        # Bread: finishes at 5:30 → slot-09
-        self.bread_recipe = Recipe.objects.create(
-            ref="bread", name="Bread", output_sku="BREAD", batch_size=Decimal("50"),
-        )
-        for days_ago in range(1, 4):
-            d = today - timedelta(days=days_ago)
-            WorkOrder.objects.create(
-                recipe=self.bread_recipe, output_sku="BREAD",
-                quantity=Decimal("50"), finished=Decimal("48"), status="finished",
-                target_date=d,
-                started_at=datetime.combine(d, time(4, 0), tzinfo=tz_info),
-                finished_at=datetime.combine(d, time(5, 30), tzinfo=tz_info),
-            )
-
-        # Cake: finishes at 11:30 → slot-12
-        self.cake_recipe = Recipe.objects.create(
-            ref="cake", name="Cake", output_sku="CAKE", batch_size=Decimal("10"),
-        )
-        for days_ago in range(1, 4):
-            d = today - timedelta(days=days_ago)
-            WorkOrder.objects.create(
-                recipe=self.cake_recipe, output_sku="CAKE",
-                quantity=Decimal("10"), finished=Decimal("9"), status="finished",
-                target_date=d,
-                started_at=datetime.combine(d, time(8, 0), tzinfo=tz_info),
-                finished_at=datetime.combine(d, time(11, 30), tzinfo=tz_info),
-            )
-
-        # Brigadeiro: finishes at 13:30 → slot-15
-        self.brig_recipe = Recipe.objects.create(
-            ref="brigadeiro", name="Brigadeiro", output_sku="BRIGADEIRO", batch_size=Decimal("100"),
-        )
-        for days_ago in range(1, 4):
-            d = today - timedelta(days=days_ago)
-            WorkOrder.objects.create(
-                recipe=self.brig_recipe, output_sku="BRIGADEIRO",
-                quantity=Decimal("100"), finished=Decimal("95"), status="finished",
-                target_date=d,
-                started_at=datetime.combine(d, time(10, 0), tzinfo=tz_info),
-                finished_at=datetime.combine(d, time(13, 30), tzinfo=tz_info),
-            )
-
-        # Freeze wall clock at 07:00 so slot comparisons are deterministic
-        self._dt_patcher = patch(
-            "shopman.storefront.services.pickup_slots._wall_clock",
-            return_value=time(7, 0),
-        )
-        self._dt_patcher.start()
-
-    def tearDown(self):
-        self._dt_patcher.stop()
-        super().tearDown()
-
-    def test_bread_only_gets_first_slot(self):
-        result = get_earliest_slot_for_skus(["BREAD"])
-        self.assertEqual(result["slot_ref"], "slot-09")
-
-    def test_cake_pushes_to_slot_12(self):
-        result = get_earliest_slot_for_skus(["BREAD", "CAKE"])
-        self.assertEqual(result["slot_ref"], "slot-12")
-        self.assertEqual(result["bottleneck_sku"], "CAKE")
-
-    def test_brigadeiro_pushes_to_slot_15(self):
-        result = get_earliest_slot_for_skus(["BREAD", "BRIGADEIRO"])
-        self.assertEqual(result["slot_ref"], "slot-15")
-        self.assertEqual(result["bottleneck_sku"], "BRIGADEIRO")
-
-    def test_all_three_pushes_to_slot_15(self):
-        """Cart with bread + cake + brigadeiro → slot-15 (brigadeiro is bottleneck)."""
-        result = get_earliest_slot_for_skus(["BREAD", "CAKE", "BRIGADEIRO"])
-        self.assertEqual(result["slot_ref"], "slot-15")
-        self.assertEqual(result["bottleneck_sku"], "BRIGADEIRO")
-
-    def test_unknown_sku_gets_fallback(self):
-        result = get_earliest_slot_for_skus(["UNKNOWN-SKU"])
-        self.assertEqual(result["slot_ref"], "slot-09")  # fallback
-        self.assertIsNone(result["bottleneck_sku"])
-
-    def test_unknown_sku_uses_current_slot_after_fallback_is_superseded(self):
-        with patch("shopman.storefront.services.pickup_slots._wall_clock", return_value=time(13, 0)):
-            result = get_earliest_slot_for_skus(["UNKNOWN-SKU"])
-
-        self.assertEqual(result["slot_ref"], "slot-12")
-        self.assertIsNone(result["bottleneck_sku"])
-
-    def test_unknown_sku_keeps_last_slot_after_it_starts(self):
-        with patch("shopman.storefront.services.pickup_slots._wall_clock", return_value=time(15, 1)):
-            result = get_earliest_slot_for_skus(["UNKNOWN-SKU"])
-
-        self.assertEqual(result["slot_ref"], "slot-15")
-        self.assertIsNone(result["bottleneck_sku"])
-
-    def test_ready_early_item_uses_current_slot_after_noon(self):
-        with patch("shopman.storefront.services.pickup_slots._wall_clock", return_value=time(13, 0)):
-            result = get_earliest_slot_for_skus(["BREAD"])
-
-        self.assertEqual(result["slot_ref"], "slot-12")
-
-    def test_ready_early_item_keeps_first_slot_for_future_date_context(self):
-        with patch("shopman.storefront.services.pickup_slots._wall_clock", return_value=time(13, 0)):
-            result = get_earliest_slot_for_skus(["BREAD"], include_current_time=False)
-
-        self.assertEqual(result["slot_ref"], "slot-09")
-
-    def test_checkout_annotation_is_date_specific(self):
-        future = (_local_test_date() + timedelta(days=1)).isoformat()
-        with patch("shopman.storefront.services.pickup_slots._wall_clock", return_value=time(13, 0)):
-            today_ctx = annotate_slots_for_checkout(["BREAD"])
-            future_ctx = annotate_slots_for_checkout(["BREAD"], delivery_date=future)
-
-        today_by_ref = {slot["ref"]: slot for slot in today_ctx["pickup_slots"]}
-        future_by_ref = {slot["ref"]: slot for slot in future_ctx["pickup_slots"]}
-        self.assertEqual(today_ctx["earliest_slot_ref"], "slot-12")
-        self.assertFalse(today_by_ref["slot-09"]["enabled"])
-        self.assertEqual(future_ctx["earliest_slot_ref"], "slot-09")
-        self.assertTrue(future_by_ref["slot-09"]["enabled"])
-
-    def test_checkout_annotation_blocks_slots_before_sku_ready_time(self):
-        future = (_local_test_date() + timedelta(days=1)).isoformat()
-        ctx = annotate_slots_for_checkout(["BRIGADEIRO"], delivery_date=future)
         by_ref = {slot["ref"]: slot for slot in ctx["pickup_slots"]}
+        assert by_ref["14:00-14:30"]["enabled"] is False
+        assert by_ref["14:00-14:30"]["reason"] == "Fendu sai às 15:00."
+        assert by_ref["15:00-15:30"]["enabled"] is True
+        assert ctx["earliest_slot_ref"] == "15:00-15:30"
 
-        self.assertEqual(ctx["earliest_slot_ref"], "slot-15")
-        self.assertFalse(by_ref["slot-09"]["enabled"])
-        self.assertFalse(by_ref["slot-12"]["enabled"])
-        self.assertTrue(by_ref["slot-15"]["enabled"])
-        self.assertEqual(by_ref["slot-09"]["reason"], "Sem tempo de preparo")
+    def test_horario_passado_nao_aparece_com_o_motivo_do_produto(self):
+        """Antes: às 18:36 o turno das 9h saía riscado com "Fendu sai às 15:00",
+        quando o motivo real era o relógio. Agora o que passou nem aparece."""
+        _shop("07:00", "22:00")
+        Product.objects.create(sku="FEN", name="Fendu", base_price_q=900, metadata={"ready_from": "15:00"})
 
-    def test_ready_early_item_keeps_slot_15_at_and_after_15h(self):
-        for clock in (time(15, 0), time(16, 0)):
-            with patch("shopman.storefront.services.pickup_slots._wall_clock", return_value=clock):
-                result = get_earliest_slot_for_skus(["BREAD"])
+        ctx = annotate_slots_for_checkout(["FEN"], now=_at(18, 36))
 
-            self.assertEqual(result["slot_ref"], "slot-15")
-
-    def test_pickup_slots_are_available_from_start_until_next_slot(self):
-        slots = get_slots()
-
-        self.assertTrue(is_slot_available_for_today(slots, "slot-09", now=time(10, 0)))
-        self.assertFalse(is_slot_available_for_today(slots, "slot-09", now=time(12, 0)))
-        self.assertTrue(is_slot_available_for_today(slots, "slot-12", now=time(12, 0)))
-        self.assertFalse(is_slot_available_for_today(slots, "slot-12", now=time(15, 0)))
-        self.assertTrue(is_slot_available_for_today(slots, "slot-15", now=time(15, 0)))
-        self.assertTrue(is_slot_available_for_today(slots, "slot-15", now=time(16, 0)))
-
-    def test_closing_time_bounds_today_slots(self):
-        """Regressão GRAVE: loja fechada (18h) NÃO oferece retirada hoje, mesmo
-        o último slot 'A partir das 15h' estando tecnicamente 'ativo'."""
-        slots = get_slots()
-        # Aberta (fecha 18h): às 17:55 o slot-15 ainda vale (retira até fechar).
-        self.assertTrue(is_slot_available_for_today(slots, "slot-15", now=time(17, 55), closes_at=time(18, 0)))
-        # Fechada: 18:00 / 18:30 → nenhum slot de hoje disponível.
-        self.assertFalse(is_slot_available_for_today(slots, "slot-15", now=time(18, 0), closes_at=time(18, 0)))
-        self.assertFalse(is_slot_available_for_today(slots, "slot-09", now=time(18, 30), closes_at=time(18, 0)))
-        # Slot cuja janela só abre no/depois do fechamento é inalcançável hoje.
-        self.assertFalse(is_slot_available_for_today(slots, "slot-15", now=time(14, 0), closes_at=time(15, 0)))
-
-    def test_validate_blocks_pickup_today_after_closing(self):
-        from datetime import date
-
-        error = validate_pickup_slot_selection(
-            "slot-15",
-            delivery_date=date.today().isoformat(),
-            now=time(18, 0),
-            closes_at=time(18, 0),
-        )
-        self.assertIsNotNone(error)
-        self.assertIn("fechou", error)
+        assert all(slot["enabled"] for slot in ctx["pickup_slots"])
+        assert all(slot["reason"] == "" for slot in ctx["pickup_slots"])
 
 
-class AnnotateSlotsTests(TestCase):
-    def setUp(self):
+class TestEncomenda:
+    def test_outro_dia_usa_os_turnos_da_casa_dentro_do_expediente(self):
+        _shop("07:00", "13:00")
+        tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
+
+        ctx = annotate_slots_for_checkout([], delivery_date=tomorrow, now=_at(18, 36))
+
+        assert ctx["grid"] == "canonical"
+        # O turno das 15h não cabe numa loja que fecha às 13h.
+        assert _refs(ctx) == ["slot-09", "slot-12"]
+        assert ctx["pickup_slots"][0]["starts_at"] == "09:00"
+        assert ctx["earliest_slot_ref"] == "slot-09"
+
+    def test_encomenda_tambem_respeita_a_prontidao(self):
+        _shop("07:00", "22:00")
+        Product.objects.create(sku="FEN", name="Fendu", base_price_q=900, metadata={"ready_from": "11:37"})
+        tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
+
+        ctx = annotate_slots_for_checkout(["FEN"], delivery_date=tomorrow, now=_at(10))
+
+        by_ref = {slot["ref"]: slot for slot in ctx["pickup_slots"]}
+        assert by_ref["slot-09"]["enabled"] is False
+        assert by_ref["slot-09"]["reason"] == "Fendu sai às 11:37."
+        assert ctx["earliest_slot_ref"] == "slot-12"
+
+    def test_turnos_vem_da_configuracao_da_casa(self):
         Shop.objects.create(
-            name="Test", brand_name="Test",
-            defaults={
-                "pickup_slots": [
-                    {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
-                    {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
-                ],
-            },
+            name="Test Shop",
+            defaults={"pickup_slots": [{"ref": "slot-10", "label": "A partir das 10h", "starts_at": "10:00"}]},
         )
 
-    def test_returns_all_required_keys(self):
-        result = annotate_slots_for_checkout(["SOME-SKU"])
-        self.assertIn("pickup_slots", result)
-        self.assertIn("earliest_slot_ref", result)
-        self.assertIn("bottleneck_sku", result)
-        self.assertIn("ready_times", result)
-        self.assertEqual(len(result["pickup_slots"]), 2)
+        assert get_slots() == [{"ref": "slot-10", "label": "A partir das 10h", "starts_at": "10:00"}]
 
 
-def _local_test_date():
-    return timezone.localtime().date()
+class TestConferencia:
+    def test_em_branco_pede_horario(self):
+        _shop()
+        assert validate_pickup_slot_selection("", now=_at(10)) == PICKUP_SLOT_REQUIRED
+
+    def test_aceita_o_que_a_grade_de_hoje_oferece(self):
+        _shop("07:00", "22:00")
+        assert validate_pickup_slot_selection("19:30-20:00", now=_at(18, 36)) is None
+
+    def test_recusa_o_turno_do_meio_dia_gravado_no_fim_de_tarde(self):
+        """O "A partir das 15h" às 18:36 não é mais aceito para hoje."""
+        _shop("07:00", "22:00")
+        today = timezone.localdate().isoformat()
+
+        assert validate_pickup_slot_selection("slot-15", delivery_date=today, now=_at(18, 36)) == PICKUP_SLOT_UNKNOWN
+
+    def test_meia_hora_que_o_relogio_ja_tirou_e_passada(self):
+        _shop("07:00", "22:00")
+        assert validate_pickup_slot_selection("15:00-15:30", now=_at(18, 36)) == PICKUP_SLOT_PASSED
+
+    def test_perto_do_fechamento_hoje_acabou(self):
+        _shop("07:00", "18:00")
+        assert validate_pickup_slot_selection("17:30-18:00", now=_at(17, 54)) == PICKUP_TODAY_OVER
+
+    def test_encomenda_aceita_turno_e_recusa_meia_hora(self):
+        _shop("07:00", "22:00")
+        tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
+
+        assert validate_pickup_slot_selection("slot-15", delivery_date=tomorrow, now=_at(18, 36)) is None
+        assert (
+            validate_pickup_slot_selection("19:30-20:00", delivery_date=tomorrow, now=_at(18, 36))
+            == PICKUP_SLOT_UNKNOWN
+        )
+
+    def test_prontidao_fecha_a_porta(self):
+        _shop("07:00", "18:00")
+        Product.objects.create(sku="FEN", name="Fendu", base_price_q=900, metadata={"ready_from": "15:00"})
+
+        error = validate_pickup_slot_selection("14:00-14:30", cart_skus=["FEN"], now=_at(13, 0))
+
+        assert error == "Fendu sai às 15:00. Escolha 15:00 às 15:30 ou mais tarde."
+        assert validate_pickup_slot_selection("15:00-15:30", cart_skus=["FEN"], now=_at(13, 0)) is None

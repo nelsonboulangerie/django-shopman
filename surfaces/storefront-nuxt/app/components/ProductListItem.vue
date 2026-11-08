@@ -3,7 +3,7 @@ import { tileBadge } from '~/presentation/menu'
 import { hasOptionGroups } from '~/presentation/productOptions'
 import type { CatalogItemProjection, ProductMutationMeta } from '~/types/shopman'
 import { compactUnitWeightLabel, formatCount } from '~/utils/display'
-import { quoteOriginalPriceDisplay, quotePriceDisplay } from '~/presentation/priceQuote'
+import { adjustmentLabel, quoteOriginalPriceDisplay, quotePriceDisplay } from '~/presentation/priceQuote'
 
 const props = withDefaults(defineProps<{
   item: CatalogItemProjection
@@ -54,6 +54,7 @@ const badge = computed(() => tileBadge(props.item))
       <p v-else class="mt-2 flex flex-wrap items-baseline gap-x-2">
         <span v-if="quoteOriginalPriceDisplay(item.quote)" class="shop-meta">antes <span class="line-through">{{ quoteOriginalPriceDisplay(item.quote) }}</span></span>
         <span class="shop-price">{{ quotePriceDisplay(item.quote) }}</span>
+        <span v-for="adjustment in item.quote.adjustments" :key="adjustment.code" class="min-w-0 max-w-full truncate text-xs font-semibold text-primary" :title="adjustmentLabel(adjustment)" data-product-promotion>{{ adjustmentLabel(adjustment) }}</span>
         <span v-if="item.unit_weight_label" class="shop-meta">{{ compactUnitWeightLabel(item.unit_weight_label) }}</span>
         <span v-if="withOptions && currentQty" class="shop-meta" data-product-options-in-cart>{{ formatCount(currentQty, 'na sacola', 'na sacola') }}</span>
       </p>

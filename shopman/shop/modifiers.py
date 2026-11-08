@@ -43,6 +43,8 @@ from shopman.shop.policies.group_advantage import free_shipping_minimum_q, group
 from shopman.shop.policies.promotion import (
     PromotionContext,
     Shopper,
+    coupon_zero_reason,
+    is_birthday_promotion,
     promotion_matches,
     promotion_minimum_eligible,
 )
@@ -465,7 +467,8 @@ def _reverse_prior_pricing(pricing: dict, item: dict) -> None:
         disc["total_discount_q"] = sum(_record_total_q(d) for d in kept)
         pricing["discount"] = disc
         if t == "coupon" and pricing.get("coupon"):
-            pricing["coupon"]["discount_q"] = sum(_record_total_q(d) for d in kept if d.get("type") == "coupon")
+            coupon_q = pricing["coupon"]["discount_q"] = sum(_record_total_q(d) for d in kept if d.get("type") == "coupon")
+            pricing["coupon"].update({} if coupon_q > 0 else {"reason": "already_discounted"})  # maior desconto venceu
     elif t in ("lot_discount", "happy_hour"):
         entry = pricing.get(t)
         if entry:
@@ -563,7 +566,7 @@ class CustomerPricingModifier:
 
     def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
         if ctx.get("customer") is not None:
-            self._publish_profile(ctx, ctx["customer"])
+            self._publish_profile(ctx, ctx["customer"], session)
             self._publish_groups(ctx, self._customer_tiers(ctx["customer"]))
             return
 
@@ -596,7 +599,7 @@ class CustomerPricingModifier:
         elif session_refs:
             self._publish_groups(ctx, self._load_tiers(session_refs), fallback_refs=session_refs)
         if customer is not None:
-            self._publish_profile(ctx, customer)
+            self._publish_profile(ctx, customer, session)
         elif "customer_segment" not in ctx:
             ctx["customer_segment"] = ""
             ctx.setdefault("is_birthday", False)
@@ -673,7 +676,7 @@ class CustomerPricingModifier:
             ctx["customer"] = SimpleNamespace(listing_ref=best_listing)
 
     @staticmethod
-    def _publish_profile(ctx: dict, customer: Any) -> None:
+    def _publish_profile(ctx: dict, customer: Any, session: Any = None) -> None:
         if "customer_segment" not in ctx:
             try:
                 ctx["customer_segment"] = customer.insight.rfm_segment or ""
@@ -681,12 +684,9 @@ class CustomerPricingModifier:
                 logger.debug("pricing.customer: no insight for customer", exc_info=True)
                 ctx["customer_segment"] = ""
         if "is_birthday" not in ctx:
-            birthday = getattr(customer, "birthday", None)
-            if birthday:
-                today = timezone.localdate(pricing_now(ctx))
-                ctx["is_birthday"] = birthday.month == today.month and birthday.day == today.day
-            else:
-                ctx["is_birthday"] = False
+            ctx["is_birthday"] = promotion_service.birthday_benefit_available(
+                customer, timezone.localdate(pricing_now(ctx)), session=session
+            )
 
 
 class LotDiscountModifier:
@@ -1047,6 +1047,7 @@ class DiscountModifier:
                     "qty": _qty_json(qty),
                     "fulfillment_types": list(getattr(source_promo, "fulfillment_types", None) or []),
                 }
+                record.update({"birthday": True} if is_birthday_promotion(source_promo) else {})
                 if source_kind:
                     record["discount_kind"] = source_kind
                 if source_group:
@@ -1055,11 +1056,19 @@ class DiscountModifier:
                 if source_type == "coupon":
                     total_coupon_discount_q += monetary_mult(qty, best_discount_q)
 
-        # Order-level FIXED discount (fixed promo / fixed coupon). A fixed value
-        # like "R$5 off" is a single per-ORDER discount, never per unit — 6 units
-        # of a R$5 coupon is R$5 off the order, not R$30. Applied once to the
-        # eligible merchandise subtotal, distributed across lines that don't
-        # already carry a per-line discount (no stacking on the same line).
+        # Order-level FIXED discount (fixed promo / fixed coupon): "R$5 off" is one per-ORDER discount,
+        # never per unit (6 units of a R$5 coupon is R$5 off, not R$30). Applied once to the eligible
+        # merchandise subtotal, spread across lines without a per-line discount (no stacking).
+        def _fixed_eligible_lines(promo) -> list[dict]:
+            return [
+                item
+                for item in items
+                if not _is_non_merchandise_line(item)
+                # Linha com desconto por-linha (``meta._disc``) não recebe o fixo de pedido: não empilha.
+                and not (item.get("meta") or {}).get("_disc")
+                and int(item.get("line_total_q", 0)) > 0
+                and promotion_matches(promo, promotion_context(ctx, sku=item.get("sku", "")))
+            ]
         fixed = self._best_fixed_discount(
             promotions,
             coupon_promo,
@@ -1067,19 +1076,11 @@ class DiscountModifier:
             session_total,
             group_refs=group_refs,
             group_meta=_winning_group_meta,
+            applicable_q=lambda promo: sum(int(i.get("line_total_q", 0)) for i in _fixed_eligible_lines(promo)),
         )
         if fixed is not None:
             fixed_value, fixed_source, fixed_promo = fixed
-            eligible = [
-                item
-                for item in items
-                if not _is_non_merchandise_line(item)
-                # Linha sem desconto por-linha (durável em ``meta._disc``): um fixo
-                # de pedido não empilha sobre promo/cupom/manual já aplicados.
-                and not (item.get("meta") or {}).get("_disc")
-                and int(item.get("line_total_q", 0)) > 0
-                and promotion_matches(fixed_promo, promotion_context(ctx, sku=item.get("sku", "")))
-            ]
+            eligible = _fixed_eligible_lines(fixed_promo)
             eligible_subtotal = sum(int(item.get("line_total_q", 0)) for item in eligible)
             target_q = min(fixed_value, eligible_subtotal)
             src_type, src_name, src_kind, src_group = fixed_source
@@ -1109,6 +1110,7 @@ class DiscountModifier:
                     "qty": 1,
                     "fulfillment_types": list(getattr(fixed_promo, "fulfillment_types", None) or []),
                 }
+                order_record.update({"birthday": True} if is_birthday_promotion(fixed_promo) else {})
                 if src_kind:
                     order_record["discount_kind"] = src_kind
                 if src_group:
@@ -1121,8 +1123,6 @@ class DiscountModifier:
             session.update_items(items)
 
         # Persist discount info in session.pricing (items lose extra fields on save)
-        if not session.pricing:
-            session.pricing = {}
         discount_block = {
             "total_discount_q": sum(_record_total_q(d) for d in discounts_applied),
             "items": discounts_applied,
@@ -1146,10 +1146,10 @@ class DiscountModifier:
             }
         session.pricing["discount"] = discount_block
         if coupon_code:
-            session.pricing["coupon"] = {
-                "code": coupon_code,
-                "discount_q": total_coupon_discount_q,
-            }
+            session.pricing["coupon"] = {"code": coupon_code, "discount_q": total_coupon_discount_q}
+            if total_coupon_discount_q <= 0:  # o motivo é do servidor, o navegador não adivinha (beta 06/11)
+                lines = [promotion_context(ctx, sku=i.get("sku", "")) for i in items if not _is_non_merchandise_line(i)]
+                session.pricing["coupon"].update(coupon_zero_reason(coupon_promo, promotion_context(ctx, sku="", merchandise_subtotal_q=session_total), lines))
         else:
             session.pricing.pop("coupon", None)
 
@@ -1226,8 +1226,8 @@ class DiscountModifier:
         if needs_birthday and customer.birthday:
             # O aniversário é o do DIA DA VENDA: a venda das 23h50 enviada depois
             # da meia-noite ainda é do dia do aniversário (e a do dia seguinte não).
-            ctx["is_birthday"] = Shopper.birthday_on(
-                customer.birthday, timezone.localdate(pricing_now(ctx))
+            ctx["is_birthday"] = promotion_service.birthday_benefit_available(
+                customer, timezone.localdate(pricing_now(ctx)), session=session
             )
 
     @staticmethod
@@ -1248,16 +1248,16 @@ class DiscountModifier:
         *,
         group_refs: set[str] = frozenset(),
         group_meta=None,
+        applicable_q=None,
     ) -> tuple[int, tuple[str, str, str | None, str], Any] | None:
         """Largest applicable FIXED discount, as a single order-level candidate.
 
         Fixed promotions and the fixed coupon compete on value (best wins, no
         stacking of two fixed discounts). min_order_q is gated against the gross
-        order subtotal; SKU/collection scope is enforced later when picking the
-        eligible lines. A fixed discount of the customer's own group carries its
-        (discount_kind, group_ref) per the WINNING group, not the primary one.
-        Returns (value_q, source, promo) where source is
-        (type, name, discount_kind, group_ref), or None.
+        order subtotal. Compete o que aplica, ``min(valor, applicable_q(promo))`` (subtotal que o
+        escopo alcança): fixo sem linha não vence o cupom (beta SMS-04). A fixed discount of the
+        customer's own group carries its (discount_kind, group_ref) per the WINNING group, not the
+        primary one. Returns (value_q, source, promo), source = (type, name, discount_kind, group_ref), or None.
         """
         best: tuple[int, tuple[str, str, str | None, str], Any] | None = None
         for promo in promotions:
@@ -1268,7 +1268,7 @@ class DiscountModifier:
                 merchandise_subtotal_q=session_total,
             ):
                 continue
-            value = max(0, int(promo.value or 0))
+            value = min(max(0, int(promo.value or 0)), applicable_q(promo) if applicable_q else 1 << 62)
             if value > 0 and (best is None or value > best[0]):
                 kind, group_ref = None, ""
                 if getattr(promo, "ref", "") in group_refs and group_meta is not None:
@@ -1279,7 +1279,7 @@ class DiscountModifier:
                 min_order_q=coupon_promo.min_order_q,
                 merchandise_subtotal_q=session_total,
             ):
-                value = max(0, int(coupon_promo.value or 0))
+                value = min(max(0, int(coupon_promo.value or 0)), applicable_q(coupon_promo) if applicable_q else 1 << 62)
                 if value > 0 and (best is None or value >= best[0]):
                     best = (value, ("coupon", coupon_code or "", None, ""), coupon_promo)
         return best
@@ -1387,7 +1387,7 @@ class DeliveryFeeModifier:
       1. Zona ``exclude`` casa → fora da área (``delivery_zone_error``).
       2. Zona ``override`` casa → taxa fixa da zona (sobrepõe a distância).
       3. Senão, distância loja→endereço casa uma ``DeliveryDistanceBand`` → taxa da faixa.
-      4. Senão (sem faixa/cobertura, ou sem coordenada e sem zona) → fora da área.
+      4. Senão (faixa estourada, ou sem distância e cidade/UF fora das da loja) → fora da área.
 
     Grava ``delivery_fee_q`` (taxa efetiva) ou ``delivery_zone_error``, e
     ``delivery_distance_km`` quando a distância foi calculada (transparência no
@@ -1440,7 +1440,7 @@ class DeliveryFeeModifier:
             return
 
         base_fee_q, distance_km, blocked = self._resolve(
-            postal_code, neighborhood, lat, lng, address_text=_address_text(addr)
+            postal_code, neighborhood, lat, lng, address_text=_address_text(addr), locality=addr
         )
 
         new_data = dict(data)
@@ -1516,7 +1516,7 @@ class DeliveryFeeModifier:
 
     @staticmethod
     def _resolve(
-        postal_code: str, neighborhood: str, lat, lng, address_text: str = ""
+        postal_code: str, neighborhood: str, lat, lng, address_text: str = "", locality=None
     ) -> tuple[int, float | None, bool]:
         """Resolve (taxa_base_q, distância_km, bloqueado) pela ordem zona → faixa → fallback.
 
@@ -1524,9 +1524,8 @@ class DeliveryFeeModifier:
         endereço chega SEM coordenada (ViaCEP/manual), geocodifica o TEXTO do endereço
         aqui (cached) — assim um endereço válido quase sempre entra no cálculo por faixa.
 
-        Só bloqueia quando a distância é CONHECIDA e cai fora de toda faixa (longe demais).
-        Se mesmo o geocode não resolver (raro), NÃO rejeita um endereço válido: cobra a
-        taxa-padrão (``default_delivery_fee_q``) — fallback de último recurso, não regra.
+        Bloqueia a distância CONHECIDA além de toda faixa. Sem ela, a cidade/UF de ``locality``
+        fora das da loja bloqueiam; iguais cobram ``default_delivery_fee_q`` (último recurso).
         """
         from shopman.shop.projections.cart import shop_rule_q
         from shopman.shop.services import delivery_distance
@@ -1557,7 +1556,8 @@ class DeliveryFeeModifier:
             # Distância conhecida e além de toda faixa → genuinamente fora de área.
             return (0, distance_km, True)
 
-        # Nem zona, nem coordenada, nem geocode: fallback de último recurso (taxa-padrão).
+        if delivery_distance.declared_locality_outside_store(locality or {}):
+            return (0, None, True)  # sem distância: cidade/UF declaradas fora das da loja
         return (shop_rule_q("default_delivery_fee_q"), None, False)
 
     @staticmethod

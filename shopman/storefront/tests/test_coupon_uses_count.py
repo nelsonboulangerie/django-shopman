@@ -80,6 +80,19 @@ def test_exhausted_coupon_stops_discounting(coupon, django_capture_on_commit_cal
     assert coupon.uses_count == coupon.max_uses
 
 
+def test_coupon_without_discount_is_not_consumed(coupon, django_capture_on_commit_callbacks):
+    """Cupom que ficou na sacola sem descontar (pedido mínimo não atingido) não
+    gasta o uso: o cupom de uso único continua valendo (beta 06/11)."""
+    coupon.max_uses = 1
+    coupon.save(update_fields=["max_uses"])
+    coupon.promotion.min_order_q = 3000  # sacola de R$ 25,00
+    coupon.promotion.save(update_fields=["min_order_q"])
+
+    _commit("BEMVINDO", django_capture_on_commit_callbacks)
+    coupon.refresh_from_db()
+    assert coupon.uses_count == 0
+
+
 def test_coupon_use_released_on_cancel(coupon, django_capture_on_commit_callbacks):
     """Pedido cancelado devolve o uso do cupom (não queima single-use à toa)."""
     from shopman.orderman.models import Order

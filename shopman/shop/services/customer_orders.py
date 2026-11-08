@@ -317,11 +317,12 @@ def resolve_payment_timeout_if_due(order) -> bool:
             order.refresh_from_db()
         return False
 
-    payment_service.cancel(order, reason="payment_timeout")
-
     from shopman.shop.services import cancel_reasons
     from shopman.shop.services.cancellation import cancel
 
+    # O pedido cancela antes da cobrança: a cobrança morre no ``on_cancelled``.
+    # A ordem inversa deixava o Pix pago no limite sem dono (o porquê está em
+    # ``handlers/payment_timeout``).
     # Um aviso só ao cliente: o ``order_cancelled`` do lifecycle, com a frase do
     # prazo vencido (mesmo caminho de ``handlers/payment_timeout``).
     cancelled = cancel(
@@ -580,12 +581,64 @@ def cancel(order, *, actor: str = "customer.self_cancel") -> bool:
 
     from shopman.shop.services.cancellation import cancel as cancel_order
 
+    # A régua decide sob o lock da linha do pedido: se a cozinha começou o
+    # preparo no mesmo instante, quem chegou primeiro vence, e o cancelamento
+    # recusado não cobra, não devolve e não cancela pela metade.
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
     payment_service.lock_order_payment(order)
     if not payment_service.can_cancel(order):
         return False
-    return cancel_order(order, reason="customer_requested", actor=actor)
+    # ``customer_requested`` vira o motivo ``customer_request`` (``cancel_reasons``).
+    cancelled = cancel_order(order, reason="customer_requested", actor=actor)
+    if cancelled:
+        # Depois do commit: o estorno do lifecycle já rodou e o aviso diz o que
+        # aconteceu com o dinheiro, não o que vai acontecer.
+        transaction.on_commit(lambda: _tell_orders_the_customer_cancelled(order.ref))
+    return cancelled
+
+
+#: Aviso informativo ao Gestor: o cliente cancelou sozinho antes do preparo.
+SELF_CANCELLED_ALERT_TYPE = "customer_self_cancelled"
+
+
+def self_cancelled_message(order_ref: str, money) -> str:
+    """"Cliente cancelou NB-… antes do preparo. Devolução de R$ X feita no Pix."
+
+    Só dado operacional: nada que o cliente escreveu entra no aviso.
+    """
+    from shopman.utils.monetary import format_money
+
+    head = f"O cliente cancelou o pedido {order_ref} antes do preparo."
+    if money is None:
+        return head
+    amount = f"R$ {format_money(money.amount_q)}"
+    where = "no Pix" if money.method == "pix" else "no cartão"
+    if money.outcome == "refunded":
+        return f"{head} Devolução de {amount} feita {where}."
+    if money.outcome == "refund_requested":
+        return f"{head} Devolução de {amount} pedida {where}; confira no pedido se ela fechou."
+    if money.outcome == "card_hold_released":
+        return f"{head} A reserva do cartão foi desfeita; nada foi cobrado."
+    return f"{head} Nada tinha sido cobrado."
+
+
+def _tell_orders_the_customer_cancelled(order_ref: str) -> None:
+    from shopman.orderman.models import Order
+
+    from shopman.shop.adapters import alert as alert_adapter
+
+    try:
+        order = Order.objects.get(ref=order_ref)
+        alert_adapter.create(
+            SELF_CANCELLED_ALERT_TYPE,
+            "info",
+            self_cancelled_message(order.ref, payment_service.cancelled_money(order)),
+            order_ref=order.ref,
+            audience="orders",
+        )
+    except Exception:
+        logger.exception("customer_orders.self_cancel_alert_failed order=%s", order_ref)
 
 
 def confirm_received(order) -> bool:
@@ -614,9 +667,14 @@ def add_reorder_items(
     skipped: list[str] = []
 
     for item in order.items.all():
+        # A taxa de entrega é cobrança gravada como linha do pedido, não
+        # mercadoria: não se repete e não vira "ficou de fora" para o cliente.
+        if item.sku == "__DELIVERY_FEE__" or (item.meta or {}).get("type") == "delivery_fee":
+            continue
         product = _sellable_product(item.sku)
         if product is None:
-            skipped.append(item.sku)
+            # O cliente lê o nome do que pediu, nunca o SKU.
+            skipped.append(item.name or item.sku)
             continue
 
         price_q = _price_q(product, channel_ref=channel_ref, qty=item.qty)

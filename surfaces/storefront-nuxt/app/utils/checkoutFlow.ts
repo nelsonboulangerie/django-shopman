@@ -110,7 +110,10 @@ export function startOfCheckoutDay (now = new Date()): Date {
 export function checkoutDateBounds (checkout: Pick<CheckoutProjection, 'max_preorder_days'> | null | undefined, now = new Date()): CheckoutDateBounds {
   const minDate = startOfCheckoutDay(now)
   const maxDate = new Date(minDate)
-  maxDate.setDate(maxDate.getDate() + (checkout?.max_preorder_days ?? 30))
+  // A janela é a da casa (`max_preorder_days`, o mesmo teto que o servidor
+  // confere no commit e que a home promete). Sem a projection, o calendário não
+  // inventa número: só o dia de hoje.
+  maxDate.setDate(maxDate.getDate() + (checkout?.max_preorder_days ?? 0))
 
   const tomorrowDate = new Date(minDate)
   tomorrowDate.setDate(tomorrowDate.getDate() + 1)
@@ -142,7 +145,8 @@ export function parseClosedDateEntries (closedDatesJson: string | null | undefin
 
 export function datepickerDisabledDates (
   entries: ClosedDateEntry[],
-  closedWeekdays: number[] | readonly number[] = []
+  closedWeekdays: number[] | readonly number[] = [],
+  endedDate = ''
 ): Array<DatepickerDisabledDate | { repeat: { weekdays: number[] } }> {
   const out: Array<DatepickerDisabledDate | { repeat: { weekdays: number[] } }> = entries
     .map(entry => {
@@ -157,6 +161,8 @@ export function datepickerDisabledDates (
       return null
     })
     .filter((entry): entry is DatepickerDisabledDate => !!entry)
+  const ended = parseLocalDate(endedDate)
+  if (ended) out.push(ended)
   // v-calendar usa 1=domingo…7=sábado; converte do índice Python (0=seg…6=dom).
   if (closedWeekdays.length) {
     out.push({ repeat: { weekdays: closedWeekdays.map(index => (index + 1) % 7 + 1) } })
@@ -487,4 +493,160 @@ export function notesToggleState (open: boolean, notes: string, stashed: string)
   const kept = notes.trim() ? notes : stashed
   if (open) return { notes: kept, stashed: '' }
   return { notes: '', stashed: kept }
+}
+
+// Recusa de zona (beta SMS-05/06). Entrega num endereço que a loja ainda não
+// atende não sai do passo do endereço: nem pelo `confirmed` do picker, nem pelo
+// "Continuar", nem pela revisão. O aviso (com "Mudar para retirada" quando a
+// loja tem retirada) é o próximo foco, nunca um texto no topo que ninguém vê.
+export interface DeliveryZoneRefusalInput {
+  fulfillmentType: FulfillmentType | string
+  pickupSwapOffer: boolean
+  deliveryUncovered: boolean
+  zoneError?: boolean | null
+}
+
+export function deliveryZoneRefused ({ fulfillmentType, pickupSwapOffer, deliveryUncovered, zoneError }: DeliveryZoneRefusalInput): boolean {
+  return fulfillmentType === 'delivery' && (pickupSwapOffer || deliveryUncovered || !!zoneError)
+}
+
+export const DELIVERY_ZONE_REFUSAL_SELECTOR = '[data-checkout-pickup-swap], [data-checkout-zone-uncovered]'
+
+// Observação e "Lembrar destas escolhas" falam do pedido que a pessoa está
+// fazendo (beta PIXEXP-12, SMS-21). Na retirada não há interfone nem endereço;
+// troco tem campo próprio no pagamento em dinheiro e não entra em nenhum dos dois.
+export interface CheckoutNotesCopy {
+  description: string
+  placeholder: string
+}
+
+export function checkoutNotesCopy (isPickup: boolean): CheckoutNotesCopy {
+  if (isPickup) {
+    return {
+      description: 'Algum recado para quem vai preparar.',
+      placeholder: 'Ex: quem vai retirar é outra pessoa, sem sacola…'
+    }
+  }
+  return {
+    description: 'Ponto de referência, interfone…',
+    placeholder: 'Ex: tocar o interfone, ponto de referência…'
+  }
+}
+
+export function rememberChoicesDescription (isPickup: boolean): string {
+  return isPickup ? 'Pagamento e horário.' : 'Endereço, pagamento e horário.'
+}
+
+// Cupom que ficou na sacola mas não descontou nada (beta SMS-04): o cartão não
+// pode dizer "aplicado" ao lado de um total que não mudou. O MOTIVO vem do
+// servidor (beta 06/11): adivinhar aqui dizia "nenhum item recebe" a quem só
+// não tinha chegado ao pedido mínimo.
+export type CouponZeroReason =
+  | ''
+  | 'unavailable'
+  | 'customer'
+  | 'fulfillment'
+  | 'minimum'
+  | 'items'
+  | 'already_discounted'
+
+export interface CouponCardInput {
+  coupon_code?: string | null
+  coupon_discount_q?: number | null
+  coupon_discount_display?: string | null
+  coupon_zero_reason?: CouponZeroReason | string | null
+  coupon_missing_display?: string | null
+  coupon_fulfillment_types?: readonly string[] | null
+}
+
+export interface CouponCardState {
+  status: 'none' | 'applied' | 'no_discount'
+  description: string
+}
+
+function couponFulfillmentCopy (types: readonly string[] | null | undefined): string {
+  const only = types?.length === 1 ? types[0] : ''
+  if (only === 'delivery') return 'Este cupom vale só para entrega.'
+  if (only === 'pickup') return 'Este cupom vale só para retirada.'
+  return 'Este cupom não vale para esta forma de receber o pedido.'
+}
+
+export function couponZeroDescription (cart: CouponCardInput): string {
+  switch (cart.coupon_zero_reason) {
+    case 'minimum':
+      return cart.coupon_missing_display
+        ? `Faltam ${cart.coupon_missing_display} para usar este cupom.`
+        : 'Esta sacola ainda não chegou ao pedido mínimo deste cupom.'
+    case 'fulfillment':
+      return couponFulfillmentCopy(cart.coupon_fulfillment_types)
+    case 'customer':
+      return 'Este cupom não vale para esta conta.'
+    case 'items':
+      return 'Nenhum item desta sacola recebe o desconto dele.'
+    case 'already_discounted':
+      return 'Os itens deste cupom já têm um desconto igual ou maior, e os descontos não se somam.'
+    case 'unavailable':
+      return 'Este cupom não está mais disponível.'
+    default:
+      return ''
+  }
+}
+
+export function couponCardState (cart: CouponCardInput | null | undefined): CouponCardState {
+  if (!cart?.coupon_code) return { status: 'none', description: '' }
+  if ((cart.coupon_discount_q ?? 0) > 0) {
+    return { status: 'applied', description: cart.coupon_discount_display ? `Desconto de ${cart.coupon_discount_display}` : '' }
+  }
+  return { status: 'no_discount', description: couponZeroDescription(cart) }
+}
+
+export function couponAppliedToast (cart: CouponCardInput | null | undefined): { kind: 'success' | 'info', message: string } {
+  const state = couponCardState(cart)
+  if (state.status === 'applied') return { kind: 'success', message: 'Cupom aplicado.' }
+  return { kind: 'info', message: state.description || 'Este cupom não dá desconto nesta sacola.' }
+}
+
+// O motivo da janela riscada é um só nas duas grades: o item que segura o
+// pedido ("Brioche sai às 15:00."). Sai UMA vez acima dos horários, como na
+// entrega (beta SMS-10). Horário que já passou não chega aqui: a grade de hoje
+// só traz o que ainda dá.
+export function checkoutWindowsReason (slots: Array<Pick<PickupSlotProjection, 'enabled' | 'reason'>>): string {
+  const reason = slots.find(slot => !slot.enabled && slot.reason)?.reason || ''
+  if (!reason) return ''
+  return slots.some(slot => slot.enabled) ? `${reason} Antes disso, os horários ficam riscados.` : reason
+}
+
+/**
+ * Grade compacta de meias horas: a entrega sempre, e a retirada de HOJE (as
+ * meias horas que ainda dão até o fechamento). A retirada de encomenda é lista
+ * de turnos da casa ("A partir das 9h").
+ */
+export function usesWindowGrid (
+  checkout: Pick<CheckoutProjection, 'pickup_grid'> | null | undefined,
+  fulfillmentType: FulfillmentType
+): boolean {
+  if (fulfillmentType === 'delivery') return true
+  return checkout?.pickup_grid === 'half_hour'
+}
+
+/**
+ * Por que "Hoje" não está entre as datas: a loja abriu hoje, e as retiradas e
+ * entregas de hoje já acabaram (`today_over`, decidido pela grade do servidor).
+ * Sem esta frase, "Hoje" some às 18h e o cliente não sabe se a tela travou.
+ */
+export function todayOverMessage (fulfillmentType: FulfillmentType): string {
+  return fulfillmentType === 'delivery'
+    ? 'Hoje já encerramos as entregas.'
+    : 'Hoje já encerramos as retiradas.'
+}
+
+/**
+ * A frase do dia sem horário nenhum. Hoje: o expediente já não comporta mais
+ * um horário. Outro dia: a loja não abre.
+ */
+export function noWindowsMessage (fulfillmentType: FulfillmentType, isToday = false): string {
+  if (isToday) return `${todayOverMessage(fulfillmentType)} Escolha outra data.`
+  return fulfillmentType === 'delivery'
+    ? 'Não há horário de entrega nesse dia. Escolha outra data.'
+    : 'Não há horário de retirada nesse dia. Escolha outra data.'
 }

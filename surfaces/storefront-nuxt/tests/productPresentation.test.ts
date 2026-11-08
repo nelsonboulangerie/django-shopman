@@ -6,11 +6,12 @@ function nutrition (overrides: Partial<ProductNutritionProjection> = {}): Produc
   return {
     serving_size_display: '50 g (1 unidade)',
     servings_per_container: 1,
-    energy_kcal_display: '180 kcal',
+    energy_kcal_display: '180',
     energy_pdv: 9,
     rows: [
-      { field: 'carbs', label: 'Carboidratos', value_display: '23 g', unit: 'g', percent_daily_value: 8 },
-      { field: 'protein', label: 'Proteínas', value_display: '4 g', unit: 'g', percent_daily_value: null }
+      { field: 'carbs', label: 'Carboidratos', value_display: '23', unit: 'g', percent_daily_value: 8 },
+      { field: 'protein', label: 'Proteínas', value_display: '4', unit: 'g', percent_daily_value: null },
+      { field: 'sodium_mg', label: 'Sódio', value_display: '240', unit: 'mg', percent_daily_value: 12 }
     ],
     ...overrides
   }
@@ -24,6 +25,16 @@ describe('product presentation', () => {
     expect(inStorePickupLine({ availability: 'planned_ok', can_add_to_cart: true })).toBe('')
     expect(inStorePickupLine({ availability: 'unavailable', can_add_to_cart: false })).toBe('')
     expect(inStorePickupLine({ availability: 'available', can_add_to_cart: false })).toBe('')
+    expect(inStorePickupLine({ availability: 'available', can_add_to_cart: true }, { is_open: true, next_opening: null })).toBe(line)
+  })
+
+  it('with the shop closed, speaks of the next opening instead of "hoje"', () => {
+    const product = { availability: 'available', can_add_to_cart: true } as const
+    expect(inStorePickupLine(product, { is_open: false, next_opening: 'amanhã às 9h' }))
+      .toBe('Retirada grátis na loja quando abrirmos, amanhã às 9h.')
+    expect(inStorePickupLine(product, { is_open: false, next_opening: null }))
+      .toBe('Retirada grátis na loja quando abrirmos.')
+    expect(inStorePickupLine({ availability: 'planned_ok', can_add_to_cart: true }, { is_open: false, next_opening: 'amanhã às 9h' })).toBe('')
   })
 
   it('suppresses the long description when it merely echoes the short one', () => {
@@ -38,6 +49,7 @@ describe('product presentation', () => {
     expect(table?.rows[0]).toEqual({ label: 'Valor energético', value: '180 kcal', pdv: 9 })
     expect(table?.rows[1]).toEqual({ label: 'Carboidratos', value: '23 g', pdv: 8 })
     expect(table?.rows[2]!.pdv).toBeNull()
+    expect(table?.rows[3]).toEqual({ label: 'Sódio', value: '240 mg', pdv: 12 })
   })
 
   it('returns null when there is nothing nutritional to show', () => {

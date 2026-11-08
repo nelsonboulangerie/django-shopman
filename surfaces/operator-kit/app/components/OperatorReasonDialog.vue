@@ -1,39 +1,28 @@
 <script setup lang="ts">
 // O diálogo que pergunta o MOTIVO de um gesto destrutivo que o cliente vai ler
-// (cancelar, recusar), diz a consequência e confirma. Uma peça só para o PDV e o
-// Gestor: antes eram dois diálogos com duas regras para o mesmo ato.
+// (cancelar, recusar), diz a consequência e confirma. Uma peça só para o PDV, o
+// Gestor e o Marketing: antes eram dois diálogos com duas regras para o mesmo ato.
 //
-// Três formas, decididas por quem chama:
-//   - Motivo codificado (`coded`): o marketplace (iFood) EXIGE um dos códigos dele.
-//     A descrição escolhida vira o texto que o cliente lê.
-//   - Motivo da lista (`keyedReasons`, cancelar pedido): a lista única do backend,
-//     cada motivo com a frase revisada que o cliente lê. Escolher é obrigatório; a
-//     tela mostra a frase que vai sair, e o texto livre vira a OBSERVAÇÃO INTERNA
-//     (opcional, nunca vai ao cliente).
-//   - Texto da casa: motivos prontos (um toque), agrupados sob os cabeçalhos da casa,
-//     mais o "Outros", que entrega o motivo ao texto livre.
-//
-// "Outros" NÃO é motivo: o cliente lê "Motivo: <texto>.", e "Motivo: Outros." não diz
-// nada. Escolher "Outros" limpa o motivo pronto e foca o texto; com "Outros", texto
-// vazio nunca sai.
+// Duas formas, decididas por quem chama:
+//   - Motivo da lista (`keyedReasons`, recusar e cancelar pedido): a lista única do
+//     backend, cada motivo com a frase revisada que o cliente lê. Escolher é
+//     obrigatório; a tela mostra a frase que vai sair, e o texto livre vira a
+//     OBSERVAÇÃO INTERNA (opcional, nunca vai ao cliente).
+//   - Texto livre (sem lista): o motivo escrito, opcional (recusar um anúncio) ou
+//     exigido com `required` (a ouvidoria resolvida).
 //
 // Fechar com texto digitado pede confirmação DENTRO do diálogo (não `window.confirm`,
 // que foge do contrato de modal da casa): o motivo escrito não some por um toque fora.
 //
-// Apresentacional: quem chama busca os motivos e grava; esta peça guarda só o que está
-// sendo escolhido e entrega `{ reason, code }`. A autorização do gerente fica FORA
+// Apresentacional: quem chama traz os motivos e grava; esta peça guarda só o que está
+// sendo escolhido e entrega `{ reason, key }`. A autorização do gerente fica FORA
 // (`OperatorManagerAuth` sobe por cima, e o motivo digitado continua aqui embaixo).
 //
-// A anatomia inteira usa os componentes oficiais de Modal, Select, Textarea, Alert e
-// Button do Nuxt UI; os apps consumidores só passam conteúdo e estado.
-import { computed, nextTick, ref, watch } from "vue";
+// A anatomia inteira usa os componentes oficiais de Modal, RadioGroup, Textarea, Alert
+// e Button do Nuxt UI; os apps consumidores só passam conteúdo e estado.
+import { computed, ref, watch } from "vue";
 
-import type {
-  CodedReason,
-  KeyedReason,
-  ReasonChoice,
-  ReasonPresetGroup,
-} from "../types/reason";
+import type { KeyedReason, ReasonChoice } from "../types/reason";
 
 const props = withDefaults(
   defineProps<{
@@ -42,24 +31,13 @@ const props = withDefaults(
     /** A consequência, dita antes de confirmar (reembolso, para onde vai o motivo). */
     description: string;
     confirmLabel: string;
-    /** Motivo exigido para confirmar. Sem ele, confirmar em branco é permitido. */
+    /** Texto livre exigido para confirmar (só sem lista). */
     required?: boolean;
-    /** Motivos prontos da casa. Vazio: só o texto livre, sem "Outros". */
-    presets?: ReasonPresetGroup[];
-    /** Liga o seletor de motivo codificado do marketplace no lugar do texto. */
-    coded?: boolean;
-    codedReasons?: CodedReason[];
-    codedLabel?: string;
-    codedEmptyText?: string;
     /** Motivos da lista única do backend: escolher um é obrigatório; o texto é interno. */
     keyedReasons?: KeyedReason[];
     /** Motivo da lista já marcado ao abrir, quando a tela sabe o porquê (Pix
      *  vencido abre com "Pagamento não confirmado"). O operador pode trocar. */
     initialKey?: string;
-    loading?: boolean;
-    loadingText?: string;
-    /** Falha ao ler os motivos: bloqueia confirmar e oferece consultar de novo. */
-    error?: string;
     busy?: boolean;
     reasonLabel?: string;
     placeholder?: string;
@@ -67,16 +45,8 @@ const props = withDefaults(
   }>(),
   {
     required: false,
-    presets: () => [],
-    coded: false,
-    codedReasons: () => [],
-    codedLabel: "Motivo exigido",
-    codedEmptyText: "Não há motivos disponíveis neste momento.",
     keyedReasons: () => [],
     initialKey: "",
-    loading: false,
-    loadingText: "Carregando motivos…",
-    error: "",
     busy: false,
     reasonLabel: "Motivo",
     placeholder: "",
@@ -87,16 +57,12 @@ const props = withDefaults(
 const emit = defineEmits<{
   "update:open": [value: boolean];
   "dirty-change": [value: boolean];
-  retry: [];
   confirm: [payload: ReasonChoice];
 }>();
 
 const reason = ref("");
-const code = ref("");
 const key = ref("");
-const other = ref(false);
 const discarding = ref(false);
-const reasonInput = ref<{ $el?: HTMLElement } | HTMLElement | null>(null);
 
 // Estado limpo a cada abertura: um pedido reaberto não herda a escolha anterior.
 watch(
@@ -104,14 +70,12 @@ watch(
   (open) => {
     if (!open) return;
     reason.value = "";
-    code.value = "";
     key.value = props.initialKey;
-    other.value = false;
     discarding.value = false;
   },
 );
 
-const keyed = computed(() => !props.coded && props.keyedReasons.length > 0);
+const keyed = computed(() => props.keyedReasons.length > 0);
 const keyedItems = computed(() =>
   props.keyedReasons.map((item) => ({
     value: item.key,
@@ -123,14 +87,10 @@ const pickedKeyed = computed(() =>
   props.keyedReasons.find((item) => item.key === key.value),
 );
 
-const presetGroups = computed(() =>
-  props.presets.filter((group) => group.presets.length),
-);
-
 const dirty = computed(
   () =>
     props.open &&
-    Boolean(reason.value.trim() || code.value || key.value !== props.initialKey),
+    Boolean(reason.value.trim() || key.value !== props.initialKey),
 );
 watch(dirty, (value) => emit("dirty-change", value), { immediate: true });
 
@@ -156,56 +116,22 @@ function discard() {
   emit("update:open", false);
 }
 
-const canConfirm = computed(() => {
-  if (props.loading || props.error) return false;
-  if (props.coded) return props.codedReasons.some((r) => r.code === code.value);
-  if (keyed.value) return Boolean(pickedKeyed.value);
-  if (other.value || props.required) return reason.value.trim() !== "";
-  return true;
-});
+const canConfirm = computed(() =>
+  keyed.value ? Boolean(pickedKeyed.value) : !props.required || reason.value.trim() !== "",
+);
 
-// O Cancelar fica apagado até haver motivo, e apagado sozinho não diz por quê: o
+// O Confirmar fica apagado até haver motivo, e apagado sozinho não diz por quê: o
 // toque não fazia nada e a pessoa não sabia o que faltava (beta 05/11, GES-14).
-// A linha diz, ao lado do botão. O "Outros" sem texto já tem a dica dele.
+// A linha diz, ao lado do botão.
 const missingHint = computed(() => {
-  if (canConfirm.value || props.loading || props.error) return "";
-  if (props.coded) return "Selecione o motivo na lista para confirmar.";
-  if (keyed.value) return "Escolha um motivo para confirmar.";
-  if (other.value) return "";
-  return "Escreva o motivo para confirmar.";
+  if (canConfirm.value) return "";
+  return keyed.value ? "Escolha um motivo para confirmar." : "Escreva o motivo para confirmar.";
 });
-
-function onCodeChange() {
-  const picked = props.codedReasons.find((r) => r.code === code.value);
-  if (picked) reason.value = picked.description;
-}
-
-function applyPreset(text: string) {
-  other.value = false;
-  reason.value = text;
-}
-
-function focusReason() {
-  const target = reasonInput.value;
-  const el = target instanceof HTMLElement ? target : target?.$el;
-  const field =
-    el?.tagName === "TEXTAREA" ? el : el?.querySelector?.("textarea");
-  (field as HTMLTextAreaElement | null | undefined)?.focus();
-}
-
-function chooseOther() {
-  other.value = true;
-  reason.value = "";
-  void nextTick(focusReason);
-}
-
-const presetPressed = (text: string) => !other.value && reason.value === text;
 
 function submit() {
   if (!canConfirm.value || props.busy) return;
   emit("confirm", {
     reason: reason.value.trim(),
-    code: code.value,
     key: keyed.value ? key.value : "",
   });
 }
@@ -220,47 +146,7 @@ function submit() {
   >
     <template #body>
       <div class="grid gap-3" data-reason-dialog>
-        <NuxtEmpty
-          v-if="loading"
-          loading
-          size="sm"
-          :title="loadingText"
-        />
-
-        <NuxtAlert
-          v-else-if="error"
-          color="error"
-          variant="subtle"
-          :title="error"
-        >
-          <template #actions
-            ><NuxtButton
-              color="error"
-              variant="outline"
-              label="Consultar novamente"
-              @click="emit('retry')"
-          /></template>
-        </NuxtAlert>
-
-        <NuxtEmpty
-          v-else-if="coded && !codedReasons.length"
-          icon="i-lucide-list-x"
-          :title="codedEmptyText"
-        />
-
-        <NuxtSelect
-          v-else-if="coded"
-          v-model="code"
-          :items="codedReasons"
-          value-key="code"
-          label-key="description"
-          placeholder="Selecione o motivo…"
-          :aria-label="codedLabel"
-          data-reason-code
-          @update:model-value="onCodeChange"
-        />
-
-        <template v-else-if="keyed">
+        <template v-if="keyed">
           <NuxtRadioGroup
             v-model="key"
             :items="keyedItems"
@@ -294,69 +180,16 @@ function submit() {
           </NuxtFormField>
         </template>
 
-        <template v-else>
-          <div
-            v-if="presetGroups.length"
-            class="space-y-2.5"
-            data-testid="reason-presets"
-          >
-            <div
-              v-for="(group, gi) in presetGroups"
-              :key="gi"
-              role="group"
-              :aria-label="group.label || undefined"
-              data-testid="reason-preset-group"
-            >
-              <p
-                v-if="group.label"
-                class="mb-1 text-xs font-semibold text-muted-foreground"
-              >
-                {{ group.label }}
-              </p>
-              <div class="flex flex-wrap gap-1.5">
-                <NuxtButton
-                  v-for="(preset, i) in group.presets"
-                  :key="i"
-                  :aria-pressed="presetPressed(preset)"
-                  color="neutral"
-                  :variant="presetPressed(preset) ? 'soft' : 'outline'"
-                  :label="preset"
-                  data-reason-preset
-                  @click="applyPreset(preset)"
-                />
-              </div>
-            </div>
-            <div class="flex flex-wrap gap-1.5">
-              <NuxtButton
-                :aria-pressed="other"
-                color="neutral"
-                :variant="other ? 'soft' : 'outline'"
-                label="Outros"
-                data-testid="reason-other"
-                @click="chooseOther"
-              />
-            </div>
-          </div>
-
-          <NuxtFormField :label="reasonLabel">
-            <NuxtTextarea
-              ref="reasonInput"
-              v-model="reason"
-              class="w-full"
-              :rows="3"
-              :maxlength="maxlength"
-              :placeholder="
-                other ? 'Escreva o motivo que o cliente vai ler…' : placeholder
-              "
-              data-reason-input
-            />
-            <template v-if="other && !reason.trim()" #description>
-              <span data-testid="reason-other-hint"
-                >Com “Outros”, escreva o motivo antes de confirmar.</span
-              >
-            </template>
-          </NuxtFormField>
-        </template>
+        <NuxtFormField v-else :label="reasonLabel">
+          <NuxtTextarea
+            v-model="reason"
+            class="w-full"
+            :rows="3"
+            :maxlength="maxlength"
+            :placeholder="placeholder"
+            data-reason-input
+          />
+        </NuxtFormField>
 
         <NuxtAlert
           v-if="discarding"

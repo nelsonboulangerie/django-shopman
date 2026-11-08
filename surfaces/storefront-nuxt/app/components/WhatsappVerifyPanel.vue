@@ -24,6 +24,7 @@ const props = withDefaults(defineProps<{
   waiting?: boolean
   returnState?: WhatsappReturnState
   checking?: boolean
+  notArrived?: boolean
   helpHref?: string
   why?: string
   steps?: string[]
@@ -41,6 +42,7 @@ const props = withDefaults(defineProps<{
   waiting: false,
   returnState: 'idle',
   checking: false,
+  notArrived: false,
   helpHref: '/faq',
   why: '',
   steps: () => [],
@@ -203,6 +205,16 @@ async function copyMessage () {
       >
         Já enviei. Conferir agora
       </UiButton>
+      <!-- A resposta ao toque: conferiu e a mensagem ainda não chegou. Sem isto o botão
+           só girava e voltava igual (beta 05/11). -->
+      <p
+        v-if="notArrived && !checking && returnState !== 'offline-or-error'"
+        class="shop-meta text-center"
+        role="status"
+        data-login-whatsapp-not-arrived
+      >
+        Conferimos agora e sua mensagem ainda não chegou. Se você já enviou, espere alguns segundos: seguimos conferindo por aqui.
+      </p>
 
       <div v-if="manualMessage" class="shop-surface-faubourg rounded-md border p-4 shop-stack-micro" data-login-whatsapp-manual>
         <p v-if="manualTitle" class="shop-body font-semibold" data-login-whatsapp-manual-title>{{ manualTitle }}</p>

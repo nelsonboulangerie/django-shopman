@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { reviewCapabilityBlock } from "~/presentation/marketingResult";
-import { offerCampaignNote } from "~/presentation/offers";
+import { campaignOfferLabel, campaignOfferWarning, offerCampaignNote } from "~/presentation/offers";
 import { quietHoursOutlastDeadline } from "~/utils/marketingSchedule";
 import type { MarketingActionProjectionV2 } from "~/types/campaign";
 
@@ -169,5 +169,18 @@ describe("ge:MKT-04: nome com limite no campo", () => {
     expect(source("components/AnnouncementTemplateForm.vue")).toMatch(
       /id="tpl-name"[\s\S]{0,80}:maxlength="100"/,
     );
+  });
+});
+
+
+describe("campanha ligada não implica oferta pronta", () => {
+  const offers = [{ value: "live", label: "Oferta vigente" }];
+  it("separa ausência de oferta de referência indisponível sem alterar o cadastro", () => {
+    expect(campaignOfferLabel("", offers)).toBe("Sem oferta");
+    expect(campaignOfferLabel("live", offers)).toBe("Oferta vigente");
+    expect(campaignOfferLabel("old", offers)).toBe("Oferta indisponível (old)");
+    expect(campaignOfferWarning("live", offers)).toBe("");
+    expect(campaignOfferWarning("", offers)).toBe("");
+    expect(campaignOfferWarning("old", offers)).toContain("Revise em Ofertas");
   });
 });

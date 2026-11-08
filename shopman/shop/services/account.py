@@ -348,8 +348,11 @@ def request_phone_change(customer, raw_phone: str, *, ip_address: str | None = N
                 error_code="phone_unchanged",
             )
 
-        if _phone_belongs_to_someone_else(locked_customer, phone):
-            raise ContactAlreadyTaken(PHONE_TAKEN_DETAIL, field="phone")
+        # ⚠️ Se o número já é de OUTRA conta, isto NÃO é dito aqui. Antes da prova de
+        # posse, responder "este número já está em uso" deixava qualquer cliente logado
+        # perguntar à loja quem é cliente, número por número (beta 06/11). O código vai
+        # para o número de qualquer jeito, e a colisão só aparece depois que ele for
+        # confirmado: a essa altura quem lê é o dono do número.
         customer_uuid = locked_customer.uuid
 
     # Provider I/O is deliberately outside the Customer transaction.  The OTP
@@ -403,7 +406,7 @@ def confirm_phone_change(customer, raw_phone: str, code_input: str) -> str:
                         phone,
                         proof=resultado.delivery_method,
                     )
-            except IntegrityError:
+            except (IntegrityError, ContactAlreadyTaken):
                 # O savepoint reverte somente os contatos. O OTP confirmado
                 # continua consumido quando a transação externa fechar.
                 conflict = True
@@ -880,6 +883,42 @@ def privacy_order_deletion_blocker(customer_ref: str, phone: str) -> str:
     return ""
 
 
+def privacy_order_deletion_subject(customer_ref: str, phone: str, reason: str) -> tuple[str, str]:
+    """Qual pedido e qual etapa causam a recusa da exclusão. Só leitura.
+
+    Devolve ``(order_ref, topic)``; vazio quando o motivo não é de pedido ou o
+    pedido já não aparece. A DECISÃO continua sendo
+    ``privacy_order_deletion_blocker``: aqui só se nomeia o que ela recusou, para a
+    loja dizer "o pedido X ainda tem a nota fiscal em aberto" em vez de "um pedido".
+    """
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import PERSONAL_ORDER_DELIVERY_TOPICS
+
+    orders = _customer_orders(customer_ref, phone)
+    if reason == "active_order":
+        order = (
+            orders.exclude(status__in=("completed", "cancelled", "returned"))
+            .order_by("-created_at")
+            .first()
+        )
+        return (order.ref if order else "", "")
+    if reason not in ("order_automation_in_flight", "order_obligation_pending"):
+        return ("", "")
+    directive = (
+        Directive.objects.filter(
+            payload__order_ref__in=list(orders.values_list("ref", flat=True)),
+            status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING),
+        )
+        .exclude(topic__in=PERSONAL_ORDER_DELIVERY_TOPICS)
+        .order_by("pk")
+        .first()
+    )
+    if directive is None:
+        return ("", "")
+    return (str((directive.payload or {}).get("order_ref") or ""), directive.topic)
+
+
 def privacy_otp_deletion_blocker(customer) -> str:
     """Keep deletion behind every committed, unfinished OTP delivery intent."""
     from django.db.models import Q
@@ -1113,7 +1152,6 @@ def _scrub_gateway_pii(value):
 
 def _anonymize_order_trail(*, customer_ref: str, phone: str, pseudonym: str) -> dict[str, int]:
     """Apaga o PII do titular dos pedidos e das sessões dele. Idempotente."""
-    from django.apps import apps
     from django.db import IntegrityError
     from shopman.orderman.models import Directive, Order, OrderEvent, Session, SessionEvent
     from shopman.payman.models import PaymentIntent
@@ -1125,44 +1163,12 @@ def _anonymize_order_trail(*, customer_ref: str, phone: str, pseudonym: str) -> 
         "sessions": 0,
         "order_events": 0,
         "session_events": 0,
-        "operator_alerts": 0,
         "payment_intents": 0,
         "directives": 0,
     }
 
     matching_orders = _customer_orders(customer_ref, phone)
     matching_order_refs = tuple(matching_orders.values_list("ref", flat=True))
-    from shopman.shop.services.cancellation_requests import (
-        operational_message as cancellation_operational_message,
-    )
-
-    cancellation_requests = {
-        order_ref: (protocol, bool(before_preparation))
-        for order_ref, protocol, before_preparation in OrderEvent.objects.filter(
-            order__ref__in=matching_order_refs,
-            type="customer_cancellation_requested",
-        ).values_list("order__ref", "payload__protocol", "payload__before_preparation")
-    }
-
-    # Só este tipo de alerta carrega texto escrito pelo titular. O prefixo é
-    # evidência operacional (pedido + protocolo) e é reconstruído a partir do
-    # evento estruturado, sem tentar recortar uma mensagem livre histórica.
-    OperatorAlert = apps.get_model("backstage.OperatorAlert")
-    cancellation_alerts = OperatorAlert.objects.filter(
-        type="customer_cancellation_requested",
-        order_ref__in=matching_order_refs,
-    )
-    for alert in cancellation_alerts.only("pk", "order_ref", "message").iterator():
-        protocol, before_preparation = cancellation_requests.get(alert.order_ref, ("", False))
-        message = cancellation_operational_message(
-            order_ref=alert.order_ref,
-            protocol=str(protocol or ""),
-            before_preparation=before_preparation,
-        )
-        if alert.message != message:
-            OperatorAlert.objects.filter(pk=alert.pk).update(message=message)
-            counts["operator_alerts"] += 1
-
     payment_intents = PaymentIntent.objects.filter(order_ref__in=matching_order_refs)
     for payment_intent in payment_intents.only("pk", "gateway_data").iterator():
         gateway_data, changed = _scrub_gateway_pii(payment_intent.gateway_data)

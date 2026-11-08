@@ -64,6 +64,8 @@ export interface QueueItem {
 export function minutesLabel(seconds: number): string {
   const m = Math.floor(Math.max(0, seconds) / 60);
   if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  if (h >= 24) return h % 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${Math.floor(h / 24)}d`;
   const rest = m % 60;
   return rest ? `${Math.floor(m / 60)}h ${rest} min` : `${Math.floor(m / 60)}h`;
 }

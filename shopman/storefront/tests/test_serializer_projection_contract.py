@@ -42,13 +42,15 @@ from shopman.shop.projections.types import (
 from shopman.shop.services.conversation import RemoteConversationProjection
 from shopman.storefront.api import serializers as api_serializers
 from shopman.storefront.presentation.order_tracking import (
-    CancellationRequestProjection,
+    CancellationContactProjection,
     FiscalNoteProjection,
     OrderTrackingCopyProjection,
     OrderTrackingProjection,
     OrderTrackingPromiseProjection,
     PickupInfoProjection,
     RatingFollowupProjection,
+    TrackingDiscountLineProjection,
+    TrackingGiftProjection,
 )
 from shopman.storefront.presentation.types import (
     FulfillmentProjection,
@@ -69,8 +71,8 @@ MIRROR_CONTRACTS = [
     (api_serializers.OrderItemSerializer, OrderItemProjection, set()),
     (api_serializers.PickupInfoSerializer, PickupInfoProjection, set()),
     (
-        api_serializers.CancellationRequestProjectionSerializer,
-        CancellationRequestProjection,
+        api_serializers.CancellationContactProjectionSerializer,
+        CancellationContactProjection,
         set(),
     ),
     (
@@ -79,6 +81,8 @@ MIRROR_CONTRACTS = [
         set(),
     ),
     (api_serializers.FiscalNoteSerializer, FiscalNoteProjection, set()),
+    (api_serializers.TrackingDiscountLineSerializer, TrackingDiscountLineProjection, set()),
+    (api_serializers.TrackingGiftSerializer, TrackingGiftProjection, set()),
     (api_serializers.OrderProgressStepSerializer, OrderProgressStepProjection, set()),
     # O cliente recebe os ISOs crus (dispatched_at/delivered_at); os *_display são internos.
     (
@@ -108,7 +112,6 @@ NON_MIRROR = {
     "StockAlertSubscriptionRefSerializer",
     "StockAlertSubscriptionControlRequestSerializer",
     "StockAlertManagementActionSerializer",
-    "CancellationRequestInputSerializer",
     # Envelope de erro canônico ({detail, ...}).
     "DetailSerializer",
     # Respostas montadas como dict ad-hoc no view (não há dataclass fonte).

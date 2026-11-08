@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  STEP_TEMPERATURE_RANGE,
+  readStepMinutes,
+  readStepTemperature,
+  yieldNumberFromServed,
+  yieldPayload,
   PRODUCTION_MODE_ALL,
   PRODUCTION_MODE_FILTER_OPTIONS,
   addItem,
@@ -555,5 +560,35 @@ describe("recipeBook: modo de produção", () => {
     ] as never[];
     expect(filterEntries(entries, "", "", false, false, false, false, "made_to_order").map((e: { ref: string }) => e.ref)).toEqual(["espresso"]);
     expect(filterEntries(entries, "", "", false, false, false, false, PRODUCTION_MODE_ALL)).toHaveLength(2);
+  });
+});
+
+describe("rendimento digitado (beta 05/11/2026, PROD-03)", () => {
+  it("travels in machine format: 1500 is 1500, never 1,5", () => {
+    expect(yieldPayload(1500)).toBe("1500");
+    expect(yieldPayload(1.5)).toBe("1.5");
+    expect(yieldPayload(null)).toBe("1");
+    expect(yieldPayload(0)).toBe("1");
+    expect(yieldNumberFromServed("1500")).toBe(1500);
+    expect(yieldNumberFromServed("1.5")).toBe(1.5);
+    expect(yieldNumberFromServed("")).toBeNull();
+  });
+});
+
+describe("tempo e temperatura da etapa (beta 05/11/2026, PROD-19)", () => {
+  it("says why a time is refused instead of dropping it", () => {
+    expect(readStepMinutes("-15")).toEqual({ seconds: null, error: "O tempo precisa ser maior que zero." });
+    expect(readStepMinutes("abc").error).toBe("Use só números, em minutos.");
+    expect(readStepMinutes("1,5")).toEqual({ seconds: 90, error: "" });
+    expect(readStepMinutes("")).toEqual({ seconds: null, error: "" });
+  });
+
+  it("refuses an oven no kitchen has", () => {
+    expect(readStepTemperature("9999").error).toBe(
+      `Use uma temperatura entre ${STEP_TEMPERATURE_RANGE.min} e ${STEP_TEMPERATURE_RANGE.max} °C.`,
+    );
+    expect(readStepTemperature("230")).toEqual({ celsius: 230, error: "" });
+    expect(readStepTemperature("-18")).toEqual({ celsius: -18, error: "" });
+    expect(readStepTemperature("26,55")).toEqual({ celsius: 26.6, error: "" });
   });
 });

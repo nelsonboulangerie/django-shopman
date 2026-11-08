@@ -438,14 +438,14 @@ const publishDiff = computed(() => [
               </NuxtCard>
               <p v-if="selected.notes" class="mt-3 whitespace-pre-line text-sm text-muted-foreground">{{ selected.notes }}</p>
               <NuxtAlert
-                v-if="canEdit && isCurrent && entry.is_active && needsReview(selected.review_status)"
+                v-if="isCurrent && entry.is_active && needsReview(selected.review_status)"
                 class="mt-4"
                 color="warning"
                 variant="subtle"
                 icon="i-lucide-clipboard-check"
                 title="Conferência pendente"
-                description="Confira ingredientes, rendimento e modo de preparo. Ao confirmar, você registra que esta versão representa a receita da casa."
-                :actions="alertActions('warning', [{ label: 'Marcar como conferida', icon: 'i-lucide-check', onClick: confirmSelected }])"
+                :description="canEdit ? 'Confira ingredientes, rendimento e modo de preparo. Ao confirmar, você registra que esta versão representa a receita da casa.' : 'Esta versão ainda não foi conferida. Peça ao responsável para conferir ingredientes, rendimento e modo de preparo antes de usar.'"
+                :actions="alertActions('warning', canEdit ? [{ label: 'Marcar como conferida', icon: 'i-lucide-check', onClick: confirmSelected }] : [])"
               />
             </template>
           </div>

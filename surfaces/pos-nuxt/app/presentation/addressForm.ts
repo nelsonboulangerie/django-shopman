@@ -206,9 +206,52 @@ export function addressDraftErrors (draft: AddressDraft): Record<string, string>
   if (!draft.street_number.trim()) errors.street_number = 'Informe o número (ou "s/n").'
   if (!draft.neighborhood.trim()) errors.neighborhood = 'Informe o bairro.'
   if (!draft.city.trim()) errors.city = 'Informe a cidade.'
-  if (!draft.state_code.trim()) errors.state_code = 'UF.'
-  if (cepDigits(draft.postal_code).length !== 8) errors.postal_code = 'CEP com 8 dígitos.'
+  if (!draft.state_code.trim()) errors.state_code = 'Escolha a UF (o estado).'
+  if (cepDigits(draft.postal_code).length !== 8) errors.postal_code = 'Informe o CEP com 8 dígitos.'
   return errors as Record<string, string>
+}
+
+// O erro que a pessoa já corrigiu sai na hora; os que seguem valendo ficam com o
+// texto de agora. Só os campos que JÁ tinham erro: quem ainda não chegou num
+// campo não leva bronca antes de tentar confirmar.
+export function stillFailingErrors (errors: Record<string, string>, draft: AddressDraft): Record<string, string> {
+  const current = addressDraftErrors(draft)
+  const kept: Record<string, string> = {}
+  for (const field of Object.keys(errors)) {
+    if (current[field]) kept[field] = current[field]
+  }
+  return kept
+}
+
+// ── CEP digitado no formulário ─────────────────────────────────────────
+
+export type CepFilledFields = Partial<Pick<AddressDraft, 'route' | 'neighborhood' | 'city' | 'state_code'>>
+
+const CEP_FILLED_FIELDS = ['route', 'neighborhood', 'city', 'state_code'] as const
+
+/**
+ * O CEP digitado preenche rua, bairro, cidade e UF. Escreve só no campo vazio
+ * ou no que ainda guarda o que a consulta anterior escreveu (o CEP trocado
+ * troca o lugar); o que a pessoa digitou à mão não é sobrescrito. Devolve o que
+ * foi escrito, para a próxima consulta saber o que é dela.
+ */
+export function mergeCepLookup (
+  draft: AddressDraft,
+  lookup: Partial<AddressDraft>,
+  previousFill: CepFilledFields | null
+): { draft: AddressDraft, filled: CepFilledFields } {
+  const next: AddressDraft = { ...draft }
+  const filled: CepFilledFields = {}
+  for (const field of CEP_FILLED_FIELDS) {
+    const value = (lookup[field] || '').trim()
+    if (!value) continue
+    const current = draft[field].trim()
+    if (!current || current === (previousFill?.[field] || '').trim()) {
+      next[field] = value
+      filled[field] = value
+    }
+  }
+  return { draft: next, filled }
 }
 
 export function composedAddressLine (draft: AddressDraft): string {

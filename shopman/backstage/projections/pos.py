@@ -1065,7 +1065,11 @@ def _birthday_projection(customer) -> dict:
     today = timezone.localdate()
     is_today = (birthday.day, birthday.month) == (today.day, today.month)
     promo_label = ""
-    if is_today:
+    # O desconto de aniversário vale UMA vez no dia (uma vez por ano; dono,
+    # 07/11/2026): já celebrado em outro pedido, o aviso fica só no parabéns.
+    from shopman.shop.services.promotions import birthday_benefit_available
+
+    if is_today and birthday_benefit_available(customer, today):
         # Só promete o que o reprice vai APLICAR, perguntado a quem decide (A3-2):
         # as promoções que o motor lê (``get_active_promotions``: ativas, no canal
         # do PDV, sem cupom) e, delas, a que o ANIVERSÁRIO destrava pela política
@@ -1186,12 +1190,54 @@ def _group_discount_label(customer) -> str:
     return promotion_service.group_discount_label(promo)
 
 
+#: Busca por NÚMERO (telefone, CPF) só a partir de 4 dígitos: com 2 ("11"), a
+#: lista varria a base de 8 em 8 (beta adversarial do PDV, 07/11/2026; dono: "sim").
+CUSTOMER_SEARCH_MIN_DIGITS = 4
+
+
+def mask_phone(phone: str) -> str:
+    """"+5543991111111" → "(43) •••••-1111": o DDD e os 4 últimos bastam para o
+    operador distinguir duas Marias sem a lista expor o número inteiro."""
+    digits = re.sub(r"\D", "", phone or "")
+    if not digits:
+        return ""
+    if digits.startswith("55") and len(digits) in (12, 13):
+        return f"({digits[2:4]}) •••••-{digits[-4:]}"
+    return f"••••{digits[-4:]}"
+
+
+def mask_document(document: str) -> str:
+    """CPF "•••.•••.•••-44", CNPJ "••.•••.•••/••••-90": só os dígitos verificadores."""
+    digits = re.sub(r"\D", "", document or "")
+    if not digits:
+        return ""
+    if len(digits) == 14:
+        return f"••.•••.•••/••••-{digits[-2:]}"
+    return f"•••.•••.•••-{digits[-2:]}"
+
+
+def mask_email(email: str) -> str:
+    """"maria.santos@gmail.com" → "m•••@gmail.com"."""
+    email = (email or "").strip()
+    local, at, domain = email.partition("@")
+    if not at or not local:
+        return ""
+    return f"{local[0]}•••@{domain}"
+
+
 def build_pos_customer_search(query: str, limit: int = 8) -> tuple[POSCustomerSearchResult, ...]:
     """Search customers by any unique key (name/phone/CPF/email) for the POS
     customer modal. Light projection (identity only) — the full lookup loads
-    memory/addresses once a result is chosen."""
+    memory/addresses once a result is chosen.
+
+    A lista é para RECONHECER, não para ler o cadastro: telefone, CPF e e-mail
+    saem mascarados, e o dado completo vem no lookup por ``ref`` do escolhido.
+    Antes, "11" devolvia telefone, CPF e e-mail inteiros de 8 clientes por vez
+    (beta 07/11). Busca só por número pede ``CUSTOMER_SEARCH_MIN_DIGITS``."""
     query = (query or "").strip()
     if len(query) < 2:
+        return ()
+    if not re.search(r"[^\W\d_]", query) and len(re.sub(r"\D", "", query)) < CUSTOMER_SEARCH_MIN_DIGITS:
         return ()
     from shopman.guestman.services import customer as customer_service
 
@@ -1215,9 +1261,9 @@ def build_pos_customer_search(query: str, limit: int = 8) -> tuple[POSCustomerSe
         results.append(POSCustomerSearchResult(
             ref=getattr(customer, "ref", ""),
             name=name,
-            phone=getattr(customer, "phone", "") or "",
-            document=getattr(customer, "document", "") or "",
-            email=getattr(customer, "email", "") or "",
+            phone=mask_phone(getattr(customer, "phone", "") or ""),
+            document=mask_document(getattr(customer, "document", "") or ""),
+            email=mask_email(getattr(customer, "email", "") or ""),
         ))
     return tuple(results)
 
@@ -1484,7 +1530,7 @@ def _pos_actions() -> tuple[Action, ...]:
         Action(
             ref="emit_fiscal",
             kind="mutation",
-            label="Estabelecer emissão da NFC-e",
+            label="Solicitar NFC-e",
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/orders/{order_ref}/emit-fiscal/",
@@ -3076,7 +3122,7 @@ def review_line_prices(priced_lines) -> dict[str, dict]:
     Mesmo formato do eco do salvar (:func:`tab_line_prices`): as linhas que a
     revisão devolve (``PosSaleReview.priced_lines``) já têm o feitio da linha da
     comanda, e o desconto manual já foi decidido contra o automático ali. Sem
-    comanda vêm todas; com comanda, as que o motor reviu com desconto manual.
+    comanda ou com ela, vêm todas, inclusive ao remover o último desconto.
     """
     return {
         line["line_id"]: _tab_line_price_fields(line, {})

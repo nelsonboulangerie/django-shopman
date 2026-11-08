@@ -171,7 +171,7 @@ beforeEach(() => {
     },
     managers: [{ username: "gerente", name: "Gerente" }],
     cancel_reasons: [
-      { key: "customer_request", label: "O cliente pediu", customer_text: "Cancelamos conforme você nos pediu." },
+      { key: "customer_request", label: "O cliente pediu", customer_text: "Conforme sua solicitação." },
       { key: "other", label: "Outro motivo", customer_text: "Sentimos muito pelo imprevisto." },
     ],
   };
@@ -200,6 +200,17 @@ afterEach(() => {
 });
 
 describe("Detalhe — só lê e imprime a Via Pedido", () => {
+  it("leva a entrega com saldo ao mesmo pedido no Gestor, sem receber pela navegação", async () => {
+    detail.counter.card.fulfillment_type = "delivery";
+    detail.counter.card.situation = "delivered";
+    detail.counter.hand_over.allowed = false;
+    const wrapper = await mount(DetailPage);
+    const link = wrapper.get("[data-preorder-payment-manager]");
+    expect(link.attributes("href")).toContain("/NB-7");
+    expect(link.text()).toBe("Conferir recebimento no Gestor");
+    expect(call).not.toHaveBeenCalled();
+  });
+
   it("mostra quem, quanto falta, os itens e a observação do cliente", async () => {
     const wrapper = await mount(DetailPage);
     const text = wrapper.text();
@@ -486,7 +497,7 @@ describe("Detalhe — cancelar", () => {
     expect(body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.disabled).toBe(true);
     pickCancelReason("O cliente pediu");
     await settle();
-    expect(body().querySelector("[data-reason-preview]")?.textContent).toContain("Cancelamos conforme você nos pediu.");
+    expect(body().querySelector("[data-reason-preview]")?.textContent).toContain("Conforme sua solicitação.");
     body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
     await settle();
 
@@ -1033,6 +1044,21 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
     await typeSearch(wrapper, "Ana");
     expect(wrapper.find("[data-period-picker]").exists()).toBe(false);
     expect(wrapper.findAllComponents({ name: "OperatorFilterPanel" })).toHaveLength(0);
+  });
+
+  it("o total de hoje declara o alcance com filtros, mesmo sem resumo de período", async () => {
+    const wrapper = await mount(PreordersPage);
+    route.query = { mode: "day", pay: "to_receive" };
+    await flushPromises();
+    expect(wrapper.find("[data-preorders-summary]").exists()).toBe(false);
+    expect(wrapper.find("[data-preorders-today-label]").text()).toBe("Hoje, sem filtros");
+    expect(wrapper.find("[data-compact-today]").attributes("aria-label")).toBe("Hoje, sem filtros");
+    const facts = wrapper.findAll("[data-preorders-today-fact]").map((fact) => fact.text());
+    route.query = { mode: "day" };
+    await flushPromises();
+    expect(wrapper.find("[data-preorders-today-label]").text()).toBe("Hoje");
+    expect(wrapper.find("[data-compact-today]").attributes("aria-label")).toBe("Hoje");
+    expect(wrapper.findAll("[data-preorders-today-fact]").map((fact) => fact.text())).toEqual(facts);
   });
 
   it("a linha 'Hoje': para entregar, a receber e as vias que faltam, com o peso do 'A receber'", async () => {
