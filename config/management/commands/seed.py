@@ -193,7 +193,7 @@ QUALITY_GRADES = (
 QUALITY_DEFECTS = (
     ("underproofed", "Fermentou pouco", "Pequeno, denso, rasgou", False, 10),
     ("overproofed", "Fermentou demais", "Esparramado, ácido, colapsou", False, 20),
-    ("underbaked", "Assou pouco", "Pálido, miolo cru", False, 30),
+    ("underbaked", "Assou pouco", "Pálido, mas próprio para consumo", False, 30),
     ("overbaked", "Assou demais", "Escuro, casca amarga", False, 40),
     ("misshapen", "Deformado", "Torto, colado, fora do padrão", False, 50),
     ("scorch_marks", "Marcas de forno", "Fuligem, sujeira de lastro", False, 60),
@@ -6225,7 +6225,11 @@ class Command(BaseCommand):
         )
 
     def _production_steps_for_recipe(self, ref: str) -> list[str]:
-        if "croissant" in ref or "chocolat" in ref or "folhado" in ref:
+        # Não inventar um modo de preparo para cremes, molhos e preparações.
+        # Etapas conhecidas vêm de rd["steps"]; sem elas a ficha pede cadastro.
+        if ref.startswith(("creme-", "molho-", "salada-", "vinagrete-")):
+            return []
+        if "croissant" in ref or ref == "pain-chocolat" or "folhado" in ref:
             return ["Massa", "Laminação", "Forno"]
         if "focaccia" in ref:
             return ["Mistura", "Fermentação", "Cobertura", "Forno"]
@@ -6242,7 +6246,9 @@ class Command(BaseCommand):
             return ["Pesagem", "Cocção", "Resfriamento"]
         if ref.startswith("manteiga-"):
             return ["Pesagem", "Mistura", "Resfriamento"]
-        return ["Mistura", "Fermentação", "Modelagem", "Forno"]
+        if ref in ("coelhinho", "ursinho", "porquinho"):
+            return ["Mistura", "Fermentação", "Modelagem", "Forno"]
+        return []
 
     def _max_started_minutes_for_recipe(self, ref: str) -> int:
         if "croissant" in ref or "chocolat" in ref or "folhado" in ref:
@@ -6588,6 +6594,7 @@ class Command(BaseCommand):
                     # todo público comportamental do Marketing resolvia zero.
                     data={
                         "customer_ref": customer.ref,
+                        "fulfillment_type": "pickup",
                         "availability_decision": {"approved": True, "source": "seed", "decisions": []},
                     },
                     # ⚠️ `snapshot["items"]` é o que o HISTÓRICO do cliente lê
@@ -6709,8 +6716,11 @@ class Command(BaseCommand):
                 # `customer_ref`: o elo que o histórico do cliente usa. Ver o gêmeo acima.
                 # `payment`: pedido sem forma de pagamento não existe (dono, 06/11,
                 # GES-03). Em andamento, ninguém pagou ainda: recebe na retirada.
+                # `fulfillment_type`: sem ele, o cartão do PDV dizia "Retirada" e o
+                # painel, "entregar no endereço" (beta 07/11).
                 data={
                     "customer_ref": customer.ref,
+                    "fulfillment_type": "pickup",
                     "availability_decision": {"approved": True, "source": "seed", "decisions": []},
                     "payment": self._live_order_payment(channel.ref, total_q),
                 },
@@ -6913,10 +6923,8 @@ class Command(BaseCommand):
         now = timezone.now()
         chave = f"41{now:%y%m}99999999000191650010000012342{'87654321'}0"
         chave = "".join(ch for ch in chave if ch.isdigit())[:44].ljust(44, "0")
-        qr_consulta = (
-            "http://www.fazenda.pr.gov.br/nfce/qrcode?p="
-            f"{chave}|2|2|1|A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0"
-        )
+        # O exemplo não é autorizado na SEFAZ. Não fabrique uma consulta com
+        # hash fictício: só uma emissão real do provedor fornece esse QR.
 
         data = order.data or {}
         data.setdefault("fiscal", {})["issue_document"] = True
@@ -6929,7 +6937,7 @@ class Command(BaseCommand):
             "nfce_protocol": f"141{now:%y}0000012345",
             "nfce_status": "autorizado",
             "nfce_danfe_url": f"https://homologacao.focusnfe.com.br/danfe/nfce/{chave}.pdf",
-            "nfce_qrcode_url": qr_consulta,
+            "nfce_qrcode_url": "",
             "nfce_xml_url": f"https://homologacao.focusnfe.com.br/notas/nfce/{chave}.xml",
         })
         order.data = data

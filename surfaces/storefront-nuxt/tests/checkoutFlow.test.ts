@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   checkoutDateBounds,
+  datepickerDisabledDates,
   checkoutStepForField,
   checkoutStepState,
   checkoutSteps,
@@ -252,5 +253,13 @@ describe('janela de entrega (P2-30a)', () => {
     expect(canContinueCheckoutWhen(form, [], null, bounds, [])).toBe(false)
     // Retirada sem turnos configurados continua livre, como antes.
     expect(canContinueCheckoutWhen({ ...form, fulfillment_type: 'pickup' }, [], null, bounds, [])).toBe(true)
+  })
+})
+
+
+describe('calendário depois do encerramento', () => {
+  it('desabilita hoje sem fechar os próximos dias de atendimento', () => {
+    expect(datepickerDisabledDates([], [], '2026-05-20')).toEqual([new Date(2026, 4, 20)])
+    expect(datepickerDisabledDates([], [], '')).toEqual([])
   })
 })

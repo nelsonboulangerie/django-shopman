@@ -36,7 +36,10 @@ describe("seletor de Cenário", () => {
       [{ label: "Nenhum (corte livre)", value: FREE_SCENARIO }],
       [
         { type: "label", label: "Exemplos" },
-        { label: "Faturamento por hora", value: "example:Faturamento por hora" },
+        {
+          label: "Faturamento por hora",
+          value: "example:Faturamento por hora",
+        },
       ],
     ]);
   });
@@ -58,7 +61,10 @@ describe("seletor de Cenário", () => {
   });
 
   it("nenhum item tem valor vazio (o Select do Nuxt UI recusa)", () => {
-    const values = scenarioMenuItems([{ id: 1, name: "A", pinned: false }], [{ name: "B" }])
+    const values = scenarioMenuItems(
+      [{ id: 1, name: "A", pinned: false }],
+      [{ name: "B" }],
+    )
       .flat()
       .filter((item) => item.type !== "label")
       .map((item) => item.value);
@@ -94,6 +100,19 @@ describe("legenda do resultado", () => {
     );
   });
 
+  it("explica a soma por produto/canal e a base observada da proporção", () => {
+    expect(
+      exploreResultDescription({ ...report, metric: "unavailable_hours" }),
+    ).toContain(
+      "Bloqueios simultâneos de produtos ou canais diferentes são somados",
+    );
+    expect(
+      exploreResultDescription({ ...report, metric: "unavailable_share" }),
+    ).toContain(
+      "Produtos, canais e dias sem registro de indisponibilidade não entram na base.",
+    );
+  });
+
   it("o eixo da série diz o grão do balde", () => {
     expect(exploreAxisLabel("day")).toBe("Dia");
     expect(exploreAxisLabel("week")).toBe("Semana");
@@ -106,7 +125,9 @@ describe("CSV do quadro", () => {
     expect(exploreCsvValue("q", 123456)).toBe("1234,56");
     expect(exploreCsvValue("qty", 12.5)).toBe(12.5);
     expect(exploreValueHeader(report)).toBe("Faturamento (R$)");
-    expect(exploreValueHeader({ unit: "qty", metric_label: "Quantidade vendida" })).toBe("Quantidade vendida");
+    expect(
+      exploreValueHeader({ unit: "qty", metric_label: "Quantidade vendida" }),
+    ).toBe("Quantidade vendida");
   });
 
   it("ranking: dimensão e valor", () => {
@@ -126,7 +147,15 @@ describe("CSV do quadro", () => {
       metric_label: "Pedidos",
       dimension2: "weekday",
       dimension2_label: "Dia da semana",
-      rows: [{ key: "balcao", label: "Balcão", key2: "sat", label2: "Sábado", value: 40 }],
+      rows: [
+        {
+          key: "balcao",
+          label: "Balcão",
+          key2: "sat",
+          label2: "Sábado",
+          value: 40,
+        },
+      ],
     };
     expect(exploreCsv(cross)).toEqual({
       header: ["Canal", "Dia da semana", "Pedidos"],

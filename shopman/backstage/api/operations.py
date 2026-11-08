@@ -152,6 +152,7 @@ from shopman.backstage.services.exceptions import (
 from shopman.backstage.services.production import ProductionOrderShortError, ProductionStockShortError
 from shopman.shop.api_errors import public_error_detail
 from shopman.shop.observability import ServerTimingMixin
+from shopman.shop.policies import ifood_concluded
 from shopman.shop.services import cancellation as cancellation_service
 from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import notification as notification_service
@@ -2748,6 +2749,11 @@ class OrderRejectView(_OrderActionBase):
         prepared = {}
 
         def prepare():
+            # O iFood já concluiu: não há o que recusar lá, e a leitura dos motivos
+            # falharia com um 503 sem sentido. Recusa de antemão, dizendo o porquê.
+            concluded = ifood_concluded.concluded_refusal(order, verb="recusar")
+            if concluded:
+                return Response({"detail": concluded, "error": {"code": "ifood_concluded", "message": concluded}}, status=409)
             try:
                 prepared["identity"] = orders_service.prepare_cancellation(order, reason_key)
             except operator_orders.CancellationReasonsUnavailable as exc:
@@ -6269,7 +6275,12 @@ class POSAccountSettleView(APIView):
                     amount_raw=str(body.get("amount", "")),
                     method=str(body.get("method", "")),
                     terminal_ref=_terminal_do_pedido(request),
+                    manager_approval=body.get("manager_approval"),
                 )
+            # Pix/cartão/outro sem assinatura: o código chega à tela para ela abrir
+            # "Quem autoriza?" em vez de um toast.
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except POSError as exc:
                 return Response({"detail": str(exc)}, status=400)
             return Response(

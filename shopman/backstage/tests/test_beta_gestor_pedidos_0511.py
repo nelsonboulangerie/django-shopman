@@ -204,3 +204,13 @@ def test_preorder_not_due_block_says_what_it_waits_for():
 
     label = advance_block_label(operator_orders.AdvanceBlock.PREORDER_NOT_DUE)
     assert label == "Aguardando o dia da encomenda…"
+
+
+def test_completion_actor_does_not_claim_counter_pickup_for_delivery():
+    order = _order("B-COURIER-HISTORY", status="completed")
+    order.data["fulfillment_type"] = "delivery"
+    order.save(update_fields=["data"])
+    order.emit_event(event_type="status_changed", actor="system:post_handoff", payload={"new_status": "completed"})
+    event = build_operator_order(order).timeline[-1]
+    assert event.actor == "Conclusão após a entrega"
+    assert event.label == "Concluído"

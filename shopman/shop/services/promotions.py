@@ -326,3 +326,41 @@ def match_distance_band(distance_km: float) -> Any | None:
     from shopman.shop.models import DeliveryDistanceBand
 
     return DeliveryDistanceBand.match(distance_km)
+
+
+def birthday_benefit_available(customer, day, *, exclude_order_ref: str = "", session=None) -> bool:
+    """O aniversário de ``customer`` em ``day`` ainda dá o desconto de aniversário?
+
+    É o aniversário (dia e mês) E nenhum pedido dele, nesse dia, levou o desconto
+    de aniversário (registro ``birthday`` em ``snapshot.pricing.discount.items``).
+    Uma vez no dia é uma vez no ano (dono, 07/11/2026). Antes, toda venda do dia
+    com a aniversariante vinculada levava 10%, em qualquer canal e quantas vezes
+    quisessem, sem passar pelo teto de desconto do gerente (beta 07/11).
+
+    Pedido cancelado devolve o benefício (o desconto não foi usufruído). O pedido
+    em edição (``exclude_order_ref``, ou o ``pos_edit`` da ``session`` que o
+    reprecifica) não conta contra ele mesmo. A marca ``birthday`` no registro do
+    desconto é escrita pelo ``DiscountModifier``.
+    """
+    from datetime import datetime, time, timedelta
+
+    from django.utils import timezone
+    from shopman.orderman.models import Order
+
+    from shopman.shop.policies.promotion import Shopper, birthday_discount_taken
+
+    if customer is None or not Shopper.birthday_on(getattr(customer, "birthday", None), day):
+        return False
+    ref = str(getattr(customer, "ref", "") or "").strip()
+    if not ref:
+        return True
+    if session is not None and not exclude_order_ref:
+        exclude_order_ref = str((((session.data or {}).get("pos_edit") or {}).get("order_ref")) or "")
+    start = timezone.make_aware(datetime.combine(day, time.min))
+    snapshots = (
+        Order.objects.filter(data__customer_ref=ref, created_at__gte=start, created_at__lt=start + timedelta(days=1))
+        .exclude(status=Order.Status.CANCELLED)
+        .exclude(ref=exclude_order_ref or None)
+        .values_list("snapshot", flat=True)
+    )
+    return not birthday_discount_taken(snapshots)

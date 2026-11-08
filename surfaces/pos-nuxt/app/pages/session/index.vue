@@ -418,6 +418,7 @@ type ManagerIntent =
   | { action: "serve_change"; ref: string }
   | { action: "refund_cash"; orderRef: string }
   | { action: "card_machine_refund"; orderRef: string }
+  | { action: "settle_account" }
   | { action: "close_shift" };
 const managerIntent = ref<ManagerIntent>({ action: "movement" });
 const managerAuthOpen = ref(false);
@@ -428,6 +429,7 @@ const managerAuthAction = computed<ManagerAction>(() => {
   if (managerIntent.value.action === "serve_change") return "serve_change";
   if (managerIntent.value.action === "refund_cash") return "refund_cash";
   if (managerIntent.value.action === "card_machine_refund") return "card_machine_refund";
+  if (managerIntent.value.action === "settle_account") return "settle_account";
   if (managerIntent.value.action === "close_shift") return "close_shift_review";
   return "cash_out";
 });
@@ -448,9 +450,16 @@ const managerAuthAmountQ = computed<number | null>(() => {
   if (intent.action === "card_machine_refund") {
     return runtime?.pending_card_machine_refunds?.find((row) => row.order_ref === intent.orderRef)?.amount_q ?? null;
   }
+  if (intent.action === "settle_account") return amountToQ(settleAmount.value);
   return null;
 });
-const managerAuthDetail = computed(() => (managerIntent.value.action === "movement" ? movementReason.value : ""));
+const managerAuthDetail = computed(() => {
+  if (managerIntent.value.action === "movement") return movementReason.value;
+  if (managerIntent.value.action === "settle_account") {
+    return SETTLE_METHODS.find((m) => m.value === settleMethod.value)?.label ?? "";
+  }
+  return "";
+});
 
 function onManagerAuthorize(username: string, pin: string) {
   autorizar({ username, pin });
@@ -470,6 +479,7 @@ function autorizar(aprovacao: { username?: string; pin?: string; badge?: string 
   if (intent.action === "serve_change") serveChange(intent.ref, aprovacao);
   else if (intent.action === "refund_cash") refundPending(intent.orderRef, aprovacao);
   else if (intent.action === "card_machine_refund") recordMachineRefund(intent.orderRef, aprovacao);
+  else if (intent.action === "settle_account") void submitSettle(aprovacao);
   else if (intent.action === "close_shift") confirmClose(aprovacao);
   else submitMovement(aprovacao);
 }
@@ -498,8 +508,9 @@ async function recordMachineRefund(orderRef: string, managerApproval: ManagerApp
 }
 
 // Conta na casa: o cliente veio acertar. Valor + método; em dinheiro entra neste
-// turno (a gaveta abre para guardar), pix/cartão é atestado no balcão. Sem PIN:
-// entrada não exige segunda assinatura (suprimento também não).
+// turno (a gaveta abre para guardar) e não pede PIN (suprimento também não). Pix,
+// cartão e "outro" não passam pela gaveta: o servidor pede o gerente, e a recusa
+// abre "Quem autoriza?" com o valor e a forma (beta 07/11).
 const settleCustomerRef = ref<string | null>(null);
 const settleAmount = ref("");
 type SettleMethod = "cash" | "pix" | "credit" | "debit" | "external";
@@ -516,11 +527,21 @@ function openSettle(customerRef: string, balanceQ: number) {
   settleAmount.value = (balanceQ / 100).toFixed(2).replace(".", ",");
   settleMethod.value = "cash";
 }
-async function submitSettle() {
+async function submitSettle(managerApproval: ManagerApproval | null = null) {
   const customerRef = settleCustomerRef.value;
   if (!customerRef || !settleAmount.value.trim()) return;
-  const ok = await settleAccount({ customerRef, amount: settleAmount.value.trim(), method: settleMethod.value });
-  if (ok) settleCustomerRef.value = null;
+  managerIntent.value = { action: "settle_account" };
+  const amount = settleAmount.value.trim();
+  const method = SETTLE_METHODS.find((m) => m.value === settleMethod.value)?.label ?? "";
+  const name = accountBalances.value.find((row) => row.customer_ref === customerRef)?.customer_name || "";
+  const ok = await settleAccount({ customerRef, amount, method: settleMethod.value, managerApproval });
+  if (ok) {
+    managerChallenge.value = null;
+    managerAuthOpen.value = false;
+    settleCustomerRef.value = null;
+    // A conta sumia da lista sem uma palavra: o operador não sabia se tinha dado.
+    toast.success(`Acerto de R$ ${amount} recebido${name ? ` de ${name}` : ""}${method ? ` em ${method}` : ""}.`);
+  }
 }
 
 async function submitMovement(managerApproval: ManagerApproval | null = null) {
@@ -1074,7 +1095,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
                       placeholder="0,00"
                       :ui="{ base: 'text-right tabular-nums' }"
                       aria-label="Valor recebido no acerto"
-                      @keydown.enter="submitSettle"
+                      @keydown.enter="submitSettle()"
                     />
                   </NuxtFormField>
                   <!-- Lista curta e fixa: `NuxtSelect`. -->
@@ -1103,7 +1124,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
                     label="Receber"
                     :disabled="busy || !settleAmount.trim()"
                     :loading="busy"
-                    @click="submitSettle"
+                    @click="submitSettle()"
                   />
                 </div>
                 <p class="text-xs text-muted-foreground">

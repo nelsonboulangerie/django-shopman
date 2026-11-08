@@ -851,7 +851,7 @@ def _build_order_actions(
             _action(
                 ref="request_cancellation_contact",
                 kind="mutation",
-                label=_copy_title("TRACKING_CANCELLATION_CONTACT_CTA", "Falar com o responsável"),
+                label=_copy_title("TRACKING_CANCELLATION_CONTACT_CTA", "Pedir contato sobre cancelamento"),
                 priority="secondary",
                 href=f"/api/v1/orders/{order.ref}/contact-request/",
                 method="POST",
@@ -1024,7 +1024,14 @@ def _pending_planned_hold_date(order) -> date | None:
     """Earliest active planned/demand hold still waiting for materialization."""
     from shopman.shop.services.stock import hold_pks as canonical_hold_pks
 
-    hold_pks = canonical_hold_pks((order.data or {}).get("hold_ids"))
+    try:
+        hold_pks = canonical_hold_pks((order.data or {}).get("hold_ids"))
+    except ValueError:
+        # A leitura da previsão não repara nem aceita reservas inválidas. O
+        # contrato de estoque continua estrito; o cliente ainda pode consultar
+        # pagamento, itens e histórico, sem inventar uma promessa de fornada.
+        logger.warning("order_tracking.invalid_hold_reference order=%s", order.ref)
+        return None
     if not hold_pks:
         return None
     try:
@@ -1905,6 +1912,11 @@ def _eta_at(order) -> str | None:
         else:
             return None
         if baseline is None:
+            return None
+        # Preparo antigo não vira uma promessa nova na próxima abertura.
+        # Sem uma previsão atualizada, o acompanhamento conserva o estado,
+        # mas não inventa um horário para o cliente nem para a notificação.
+        if order.status == "preparing" and timezone.localdate(baseline) < timezone.localdate():
             return None
         eta = baseline + timezone.timedelta(minutes=int(round(minutes)))
         if not_before is not None and not_before > eta:

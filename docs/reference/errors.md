@@ -99,6 +99,7 @@ quando ela tem nome:
 |---|---|---|
 | `not_authenticated` | A sessão do operador caiu (ex.: 7 dias sem uso) ou nunca existiu | Login |
 | `station_locked` | O operador ativo saiu; a estação está travada | O PIN, ali mesmo |
+| `operator_changed` (409) | A gravação levou um operador (`X-Shopman-Operator`) e a sessão já é de outra pessoa: a troca foi feita em outro app do mesmo navegador. Nada foi gravado (`ExpectedOperatorMiddleware`) | A tela relê quem opera; a pessoa confere e refaz |
 | *(ausente)* | Falta de permissão comum | Nada que a tela possa oferecer |
 
 ⚠️ **O backstage nunca devolve 401.** `DEFAULT_AUTHENTICATION_CLASSES` tem uma

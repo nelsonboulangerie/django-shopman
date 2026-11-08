@@ -145,7 +145,8 @@ export function parseClosedDateEntries (closedDatesJson: string | null | undefin
 
 export function datepickerDisabledDates (
   entries: ClosedDateEntry[],
-  closedWeekdays: number[] | readonly number[] = []
+  closedWeekdays: number[] | readonly number[] = [],
+  endedDate = ''
 ): Array<DatepickerDisabledDate | { repeat: { weekdays: number[] } }> {
   const out: Array<DatepickerDisabledDate | { repeat: { weekdays: number[] } }> = entries
     .map(entry => {
@@ -160,6 +161,8 @@ export function datepickerDisabledDates (
       return null
     })
     .filter((entry): entry is DatepickerDisabledDate => !!entry)
+  const ended = parseLocalDate(endedDate)
+  if (ended) out.push(ended)
   // v-calendar usa 1=domingo…7=sábado; converte do índice Python (0=seg…6=dom).
   if (closedWeekdays.length) {
     out.push({ repeat: { weekdays: closedWeekdays.map(index => (index + 1) % 7 + 1) } })

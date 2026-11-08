@@ -533,19 +533,40 @@ def record_card_machine_refund(*, operator, order_ref: str, manager_approval: di
 
 
 def settle_account(
-    *, operator, customer_ref: str, amount_raw: str, method: str, terminal_ref: str = ""
+    *,
+    operator,
+    customer_ref: str,
+    amount_raw: str,
+    method: str,
+    terminal_ref: str = "",
+    manager_approval: dict | None = None,
 ):
     """O cliente acertou (parte d)a conta. Em dinheiro, entra no turno ABERTO de quem recebeu.
 
-    Entrada não exige PIN (suprimento também não). O shop captura os intents
-    ``account`` mais antigos inteiros até o valor e, em dinheiro, grava
-    ``account_settled`` no livro na mesma transação; pix/cartão/external são
-    atestados no balcão (``gateway_data.settled_with``).
+    Em dinheiro não exige PIN (suprimento também não): a nota entra na gaveta e a
+    contagem do fim do turno confere. O shop captura os intents ``account`` mais
+    antigos inteiros até o valor e grava ``account_settled`` no livro na mesma
+    transação.
+
+    Pix, cartão e "outro" NÃO passam pela gaveta: nada no fim do turno confere
+    que o dinheiro entrou. Sem segunda assinatura, a Caixa zerava a conta de
+    qualquer cliente tocando "Pix" (beta 07/11: R$ 156,00 quitados sem cobrança
+    nenhuma). Fora do dinheiro, o gerente assina, como na devolução e no estorno.
     """
 
     from shopman.shop.services import house_account
+    from shopman.shop.services.pos import validate_manager_override
 
     method = str(method or "").strip().lower()
+    approved_by = None
+    if method and method != "cash":
+        approved_by = validate_manager_override(
+            manager_approval or {},
+            operator_username=operator.get_username(),
+            action="settle_account",
+            message="Acerto fora do dinheiro precisa de um gerente.",
+            recovery_required="Confira o Pix ou o comprovante da maquininha e chame um gerente para aprovar.",
+        )
     # Em dinheiro isto GRAVA no livro da gaveta, então vale a mesma recusa das outras
     # mutações. Nos outros meios não há gaveta envolvida, e não há o que desambiguar.
     shift = current_shift(terminal_ref, strict=True) if method == "cash" else None
@@ -556,6 +577,7 @@ def settle_account(
             method,
             shift=shift,
             actor=operator,
+            approved_by=approved_by,
         )
     except house_account.HouseAccountError as exc:
         raise POSError(str(exc)) from exc

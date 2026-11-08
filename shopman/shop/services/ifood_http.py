@@ -85,6 +85,7 @@ def request(
     extra_headers: dict | None = None,
     idempotent: bool = False,
     attempts: int | None = None,
+    timeout: float | None = None,
     **kwargs,
 ) -> requests.Response | None:
     """Chama a API do iFood com retry de recusa de edge. ``None`` sem token/desistência.
@@ -92,6 +93,8 @@ def request(
     ``label`` identifica a operação no log (ex.: ``"poll"``, ``"acknowledge"``).
     ``idempotent=True`` autoriza também o retry de ``5xx``/transporte, que são
     ambíguos para chamadas de efeito — ver o cabeçalho do módulo.
+    ``timeout`` (segundos, por tentativa) substitui o do settings quando quem chama
+    tem uma pessoa esperando do outro lado e um prazo menor que o do BFF.
     """
     total = attempts if attempts is not None else _attempts()
     url = f"{base_url()}{path}"
@@ -114,7 +117,7 @@ def request(
             # ``requests.request``: é assim que a suíte intercepta as chamadas
             # ao iFood, e trocar o ponto de entrada cegaria os testes existentes.
             send = getattr(requests, method.lower())
-            resp = send(url, headers=headers, timeout=_timeout(), **kwargs)
+            resp = send(url, headers=headers, timeout=timeout or _timeout(), **kwargs)
         except requests.RequestException as exc:
             # Transporte: só retenta quando a chamada é idempotente, porque a
             # origem pode ter processado antes de a conexão cair.

@@ -20,6 +20,8 @@
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
 export interface ProductionSectionsInput {
+  /** Dia consultado na grade: acompanha a navegação, sem fixar a URL do tablet. */
+  date?: string;
   /** Timers ativos neste dispositivo (o servidor não os conhece). */
   timersActive?: number;
   /** Timers tocando agora: vira o ponto de atenção do item Timers. */
@@ -39,11 +41,13 @@ export const PRODUCTION_STAGES: readonly OperatorSection[] = [
   { key: "quality", label: "Qualidade", icon: "lucide:badge-check", to: "/quality", shortcut: "Alt+5", form: "floor", quick: true },
 ];
 
-export function stageSections({ qualityPending }: ProductionSectionsInput = {}): OperatorSection[] {
+export function stageSections({ qualityPending, date }: ProductionSectionsInput = {}): OperatorSection[] {
   return PRODUCTION_STAGES.map((stage) => {
-    if (stage.key !== "quality" || !qualityPending) return { ...stage };
+    const to = stage.key === "plan" && date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${stage.to}?date=${date}` : stage.to;
+    if (stage.key !== "quality" || !qualityPending) return { ...stage, to };
     return {
       ...stage,
+      to,
       badge: String(qualityPending),
     };
   });

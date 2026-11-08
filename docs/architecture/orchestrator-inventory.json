@@ -7367,6 +7367,7 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "promotion.birthday-discount-taken",
         "promotion.eligibility",
         "promotion.minimum-order-eligibility"
       ],
@@ -7397,6 +7398,20 @@
       "out_of_extraction": false,
       "unit_ids": [
         "order.ifood-cancel-reasons"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/ifood_concluded.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.ifood-concluded"
       ],
       "responsibilities": [
         "decisão"
@@ -9558,6 +9573,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_INTERACTIVE_READ_TIMEOUT",
             "_base_url",
             "_cfg",
             "logger"
@@ -9963,6 +9979,7 @@
             "defer_stock_hold",
             "delivery_date_from_payload",
             "delivery_start",
+            "dispatch_before_window",
             "is_due",
             "is_scheduled",
             "map_schedule",
@@ -12569,6 +12586,7 @@
       "out_of_extraction": false,
       "unit_ids": [
         "promotion.active-scope",
+        "promotion.birthday-once-a-year",
         "promotion.coupon-resolution",
         "promotion.customer-group-advantage",
         "promotion.delivery-geography",

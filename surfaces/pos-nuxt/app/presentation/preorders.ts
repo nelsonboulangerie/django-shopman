@@ -226,14 +226,14 @@ function periodPhrase(mode: PreordersMode): string {
  * vem primeiro quando existe. "Não sei" nunca vira "pago": sem leitura do
  * pagamento, a linha manda conferir.
  */
-export function moneyLine(card: Pick<PreorderCard, "balance_q" | "balance_display" | "total_q" | "total_display" | "situation">): string {
+export function moneyLine(card: Pick<PreorderCard, "balance_q" | "balance_display" | "total_q" | "total_display" | "payment_state">): string {
   if (card.balance_q === null) return `${card.total_display} · pagamento a conferir`;
   if (card.balance_q > 0) {
     return card.balance_q >= card.total_q
       ? toReceiveLabel(card.total_display)
       : `${toReceiveLabel(card.balance_display)} de ${card.total_display}`;
   }
-  if (card.situation === "on_account") return `${card.total_display} na conta da casa`;
+  if (card.payment_state === "on_account") return `${card.total_display} na conta da casa`;
   return `${card.total_display} pago`;
 }
 
@@ -777,7 +777,8 @@ export function periodIsToday(view: Pick<PreordersView, "mode" | "date">, today:
 }
 
 /** O rótulo do resumo do período. */
-export function periodSummaryLabel(mode: PreordersMode): string {
+export function periodSummaryLabel(mode: PreordersMode, filtered = false): string {
+  if (filtered) return "Total do período, sem filtros";
   if (mode === "day") return "No dia";
   if (mode === "next7d") return "Nos 7 dias";
   if (mode === "month") return "No mês";
@@ -981,13 +982,13 @@ export interface MoneyBadge {
  * O dinheiro da linha em duas peças: o valor e o selo semântico do estado (dono,
  * 03/11/2026: "A receber" e "Pago" viram selos). Amarelo só para o que pede gesto.
  */
-export function moneyBadge(card: Pick<PreorderCard, "balance_q" | "balance_display" | "total_q" | "total_display" | "situation">): MoneyBadge {
+export function moneyBadge(card: Pick<PreorderCard, "balance_q" | "balance_display" | "total_q" | "total_display" | "payment_state">): MoneyBadge {
   if (card.balance_q === null) return { amount: card.total_display, of: "", label: "Conferir Pagamento", tone: "warning" };
   if (card.balance_q > 0) {
     const partial = card.balance_q < card.total_q;
     return { amount: partial ? card.balance_display : card.total_display, of: partial ? `de ${card.total_display}` : "", label: "A Receber", tone: "warning" };
   }
-  if (card.situation === "on_account") return { amount: card.total_display, of: "", label: "Na Conta da Casa", tone: "info" };
+  if (card.payment_state === "on_account") return { amount: card.total_display, of: "", label: "Na Conta da Casa", tone: "info" };
   return { amount: card.total_display, of: "", label: "Pago", tone: "success" };
 }
 

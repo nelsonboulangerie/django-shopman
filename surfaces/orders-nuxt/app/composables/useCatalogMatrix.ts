@@ -806,7 +806,7 @@ export function useCatalogMatrix(
       );
       if (result.outcome !== "applied") {
         errorMsg.value =
-          "Resultado ainda desconhecido. O arraste foi mantido; consulte novamente.";
+          "Ainda não deu para confirmar se a nova ordem foi gravada. O arraste foi mantido; consulte de novo em instantes.";
         return false;
       }
       await refreshAfterCommit();

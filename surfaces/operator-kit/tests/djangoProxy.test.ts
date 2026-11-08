@@ -314,6 +314,7 @@ describe("BFF — intenção e precondição", () => {
       "idempotency-key": "same-intention",
       "if-match": '"revision-1"',
       "x-correlation-id": "trace-1",
+      "x-shopman-operator": "7",
       "x-operator-id": "other-user",
       authorization: "Bearer forged",
     };
@@ -321,6 +322,8 @@ describe("BFF — intenção e precondição", () => {
       "idempotency-key": "same-intention",
       "if-match": '"revision-1"',
       "x-correlation-id": "trace-1",
+      // Expectativa que só pode RECUSAR (409 `operator_changed`), nunca identidade.
+      "x-shopman-operator": "7",
     });
     expect(mutationHeaders(() => undefined)).toEqual({});
   });

@@ -317,7 +317,7 @@ describe("Receitas: a lista grava a trilha que a receita percorre", () => {
 });
 
 describe("Receita: anterior e próxima no cabeçalho", () => {
-  function installEntry(over: Record<string, unknown> = {}, canEdit = true) {
+  function installEntry(over: Record<string, unknown> = {}, canEdit = true, versionOver: Record<string, unknown> = {}) {
     const version = {
       id: 1,
       number: 1,
@@ -349,6 +349,7 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
       formula: {},
       yield_quantity: "1",
       yield_unit: "kg",
+      ...versionOver,
     };
     const entry = ref({
       ref: "pao-b",
@@ -371,7 +372,7 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
       entry,
       canEdit: computed(() => canEdit),
       versions: computed(() => [version]),
-      currentVersion: computed(() => null),
+      currentVersion: computed(() => entry.value.current_version_number === version.number ? version : null),
       versionByNumber: () => null,
       notFound: computed(() => false),
       forbidden: computed(() => false),
@@ -397,6 +398,19 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
       error: ref(null),
     }));
   }
+
+  it("avisa quem só lê que a versão em uso ainda precisa de conferência", async () => {
+    routeParams = { ref: "pao-b" };
+    installEntry({ current_version_number: 1 }, false, {
+      status: "published", review_status: "pending", review_label: "Não conferida",
+    });
+    const wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+
+    const warning = wrapper.findAll('[role="alert"]').find((item) => item.text().includes("Conferência pendente"));
+    expect(warning?.text()).toContain("Peça ao responsável para conferir ingredientes, rendimento e modo de preparo antes de usar.");
+    expect(warning?.findAll("button")).toHaveLength(0);
+  });
 
   it("puts OperatorRecordNav in the header status with the recipe trail and recipe addresses", async () => {
     routeParams = { ref: "pao-b" };

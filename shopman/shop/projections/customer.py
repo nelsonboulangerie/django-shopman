@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from shopman.shop.projections.order_tracking import display_status_key
+from shopman.shop.services import order_composition
 from shopman.shop.services.customer_orders import (
     ACTIVE_STATUSES,
     customer_identity_filter,
@@ -115,9 +116,9 @@ def _summaries_from_orders(orders) -> tuple[CustomerOrderSummary, ...]:
         CustomerOrderSummary(
             ref=order.ref,
             created_at=order.created_at,
-            total_q=order.total_q,
+            total_q=order_composition.effective_total_q(order),
             status=order.status,
-            item_count=order.items.count(),
+            item_count=len(order_composition.effective_items(order)),
             display_status_key=display_status_key(order),
         )
         for order in orders

@@ -644,12 +644,13 @@ useHead({
               <div class="min-w-0">
                 <p class="shop-body font-semibold">Só compatível com minhas preferências</p>
                 <p class="shop-meta">{{ dietaryFilterHint }}</p>
+                <p class="shop-meta">O filtro usa os ingredientes informados. Não garante ausência de alérgenos ou contaminação cruzada.</p>
               </div>
               <UiSwitch v-model="dietaryFilterOn" aria-label="Só compatível com minhas preferências" />
             </div>
 
             <!-- "Seus favoritos": prateleira pessoal no topo, só logado e sem filtro ativo. -->
-            <MenuFavoritesShelf :active="!hasAppliedFilters" :hide-dietary-warnings="dietaryFilterOn" />
+            <MenuFavoritesShelf :active="!hasAppliedFilters" :hide-dietary-warnings="dietaryFilterOn" :available-only="availableOnly" />
 
             <div v-if="activeSections.length" class="shop-stack-section">
               <div
