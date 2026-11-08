@@ -14,6 +14,9 @@ import {
   isCaptureKey,
   isLikelyBadge,
   isLocked,
+  expectedOperatorHeader,
+  isOperatorChanged,
+  operatorChangeNotice,
   operatorName,
   pinSlots,
   resolveEnter,
@@ -279,5 +282,50 @@ describe("pinSlots: o campo do PIN tem o número certo de casas", () => {
     expect(pinSlots(6)).toBe(6);
     expect(pinSlots(PIN_MAX_DIGITS)).toBe(PIN_MAX_DIGITS);
     expect(pinSlots(PIN_MAX_DIGITS + 3)).toBe(PIN_MAX_DIGITS);
+  });
+});
+
+describe("operatorChangeNotice: a troca feita em outro app do navegador (beta 07/11)", () => {
+  const joyce = { id: 1, username: "joyce", name: "Joyce" };
+  const fran = { id: 2, username: "fran", name: "Fran" };
+  const as = (operator: typeof joyce | null, locked = false) =>
+    ({ operator, locked } as unknown as Parameters<typeof operatorChangeNotice>[0]);
+
+  it("outra pessoa: avisa com o nome de quem opera agora", () => {
+    expect(operatorChangeNotice(as(joyce), as(fran))).toBe(
+      "Agora quem opera aqui é Fran. A troca foi feita em outro app deste navegador.",
+    );
+  });
+
+  it("a mesma pessoa, um destrave ou uma trava não são troca", () => {
+    expect(operatorChangeNotice(as(joyce), as(joyce))).toBeNull();
+    expect(operatorChangeNotice(as(null, true), as(fran))).toBeNull();
+    expect(operatorChangeNotice(as(joyce), as(null, true))).toBeNull();
+    expect(operatorChangeNotice(null, as(fran))).toBeNull();
+  });
+});
+
+describe("expectedOperatorHeader / isOperatorChanged: a gravação leva quem a tela mostra", () => {
+  const joyce = { operator: { id: 1, username: "joyce", name: "Joyce" }, locked: false } as unknown as Parameters<typeof expectedOperatorHeader>[2];
+  const KDS = "/api/v1/backstage/kds/tickets/1/done/";
+
+  it("gravação no backstage com alguém na tela manda o id", () => {
+    expect(expectedOperatorHeader(KDS, "POST", joyce)).toBe("1");
+    expect(expectedOperatorHeader(`https://pdv.example${KDS}`, "patch", joyce)).toBe("1");
+  });
+
+  it("leitura, troca de pessoa, fora do backstage e tela travada não mandam", () => {
+    expect(expectedOperatorHeader(KDS, "GET", joyce)).toBe("");
+    expect(expectedOperatorHeader(KDS, undefined, joyce)).toBe("");
+    expect(expectedOperatorHeader("/api/v1/backstage/operator/unlock/", "POST", joyce)).toBe("");
+    expect(expectedOperatorHeader("/api/v1/storefront/cart/", "POST", joyce)).toBe("");
+    expect(expectedOperatorHeader(KDS, "POST", { ...joyce!, locked: true })).toBe("");
+    expect(expectedOperatorHeader(KDS, "POST", null)).toBe("");
+  });
+
+  it("a recusa é o 409 com o código, e só ele", () => {
+    expect(isOperatorChanged(409, { error: { code: "operator_changed" } })).toBe(true);
+    expect(isOperatorChanged(409, { detail: "conflito de versão" })).toBe(false);
+    expect(isOperatorChanged(403, { error: { code: "operator_changed" } })).toBe(false);
   });
 });

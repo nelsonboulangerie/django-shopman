@@ -35,6 +35,25 @@ def promotion_minimum_eligible(
     return not minimum_q or subtotal_q >= minimum_q
 
 
+
+def is_birthday_promotion(promotion: Any) -> bool:
+    """A promoção é a de aniversário (marca o desconto como benefício do ano)?"""
+    return bool(getattr(promotion, "birthday_only", False))
+
+
+def birthday_discount_taken(snapshots: Iterable[Any]) -> bool:
+    """Algum destes pedidos já levou o desconto de aniversário?
+
+    Lê o registro ``birthday`` em ``snapshot.pricing.discount.items``. Uma vez no
+    dia é uma vez no ano (dono, 07/11/2026): quem junta os pedidos do dia é
+    ``services.promotions.birthday_benefit_available``; a decisão é esta.
+    """
+    for snapshot in snapshots:
+        items = (((snapshot or {}).get("pricing") or {}).get("discount") or {}).get("items") or []
+        if any(isinstance(item, dict) and item.get("birthday") for item in items):
+            return True
+    return False
+
 @dataclass(frozen=True)
 class Shopper:
     """Quem compra, nos eixos que uma promoção pode exigir.

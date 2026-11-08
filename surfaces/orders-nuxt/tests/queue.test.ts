@@ -106,3 +106,8 @@ describe("queueGesture", () => {
     expect(queueWho(card(), "PDV")).toEqual({ name: "João Oliveira", rest: "Entrega · Rua Paranaguá, 800 · PDV" });
   });
 });
+
+it("duração antiga usa dias sem perder as horas restantes", () => {
+  expect(minutesLabel(1046 * 3600)).toBe("43d 14h");
+  expect(minutesLabel(24 * 3600)).toBe("1d");
+});

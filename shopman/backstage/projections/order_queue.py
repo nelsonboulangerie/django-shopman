@@ -1519,7 +1519,7 @@ def _courier_block(order: Order) -> dict | None:
             **progress,
             "active": active,
             "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
-            "tracking_url": str(block.get("tracking_url") or ""),
+            "tracking_url": str(block.get("tracking_url") or "") if active else "",
             "confirmation_code": str(block.get("confirmation_code") or ""),
             "estimate_display": estimate_display,
             "final_value_display": (
@@ -2724,6 +2724,7 @@ def _payment_tone(order: Order, method: str, payment_status: str, payment_data: 
 
 _ADVANCE_BLOCK_LABELS: dict[operator_orders.AdvanceBlock, str] = {
     operator_orders.AdvanceBlock.IFOOD_SCHEDULE_BLOCKED: "Aguardando horário do iFood…",
+    operator_orders.AdvanceBlock.IFOOD_WINDOW_NOT_OPEN: "Aguardando a janela do iFood…",
     operator_orders.AdvanceBlock.IFOOD_WAITING_PICKUP: "Aguardando entregador iFood…",
     operator_orders.AdvanceBlock.IFOOD_DELIVERY_UNKNOWN: "Quem leva ainda não definido",
     operator_orders.AdvanceBlock.IFOOD_CANCELLATION_PENDING: "Aguardando cancelamento pelo iFood…",
@@ -3396,8 +3397,8 @@ _SYSTEM_ACTOR_LABELS = {
     "auto_confirm": "Confirmação automática",
     "system:counter_handoff": "Entrega no balcão",
     "system:counter_kds_handoff": "Entrega no balcão",
-    "system:handoff": "Entrega no balcão",
-    "system:post_handoff": "Entrega no balcão",
+    "system:handoff": "Entrega ao cliente",
+    "system:post_handoff": "Conclusão após a entrega",
     "system:kds_dispatch": "Cozinha",
     "system:payment": "Pagamento confirmado",
     "system:pix-confirmation": "Pagamento confirmado",

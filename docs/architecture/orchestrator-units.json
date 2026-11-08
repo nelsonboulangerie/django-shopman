@@ -7052,6 +7052,39 @@
       ]
     },
     {
+      "id": "order.ifood-concluded",
+      "question": "O iFood já concluiu o pedido, e por isso recusar/cancelar não segue?",
+      "owner": "order.ifood-concluded",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.ifood_concluded:concluded_refusal",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/ifood_concluded.py",
+          "symbols": [
+            "concluded_refusal"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_ifood_concluded_policy.py::test_concluded_refusal_names_the_time_and_the_verb"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.policies.ifood_concluded:concluded_refusal"
+      ]
+    },
+    {
       "id": "order.customer-cancellation",
       "question": "O cliente pode cancelar sozinho agora, ou o que sobra é falar com o responsável?",
       "owner": "order.customer-cancellation",
@@ -15603,6 +15636,75 @@
       ],
       "test_gap_reason": null,
       "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "promotion.birthday-discount-taken",
+      "question": "Algum pedido do dia já levou o desconto de aniversário?",
+      "owner": "promotion.birthday-discount-taken",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.promotion:birthday_discount_taken",
+      "authoritative_symbols": [
+        "shopman.shop.policies.promotion:birthday_discount_taken"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/promotion.py",
+          "symbols": [
+            "birthday_discount_taken",
+            "is_birthday_promotion"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_birthday_once_a_year.py::test_a_politica_so_conta_o_desconto_marcado_como_aniversario"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "promotion.birthday-once-a-year",
+      "question": "Como juntar os pedidos do dia para saber se o aniversário ainda dá desconto?",
+      "owner": "promotion.birthday-once-a-year",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.promotions:birthday_benefit_available",
+      "authoritative_symbols": [
+        "shopman.shop.services.promotions:birthday_benefit_available"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/promotions.py",
+          "symbols": [
+            "birthday_benefit_available"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_birthday_once_a_year.py::test_a_segunda_venda_do_dia_nao_leva_de_novo"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
       "out_of_extraction": false
     },
     {

@@ -251,3 +251,50 @@ def test_customer_cancel_cancels_pending_payment_intent(order_with_payment, djan
     assert order_with_payment.data["cancelled_by"] == "customer.self_cancel"
     assert intent.status == "cancelled"
     assert intent.cancel_reason == "customer_requested"
+
+
+def test_edited_order_has_the_same_total_and_items_in_history_and_tracking(customer):
+    """G20: o total selado não é o total vigente depois da edição."""
+    from shopman.orderman.models import Order, OrderItem
+
+    from shopman.shop.projections.order_tracking import build_tracking
+    from shopman.shop.services import order_composition
+    from shopman.storefront.presentation.account import build_account, order_history_for_customer
+    from shopman.storefront.presentation.order_history import build_order_history
+
+    order = Order.objects.create(
+        ref="ORD-HIST-EDITED", channel_ref="web", status="preparing", total_q=800,
+        handle_type="phone", handle_ref=customer.phone,
+        data={"customer_ref": customer.ref},
+    )
+    OrderItem.objects.create(
+        order=order, line_id="coffee", sku="ESP", name="Espresso",
+        qty=1, unit_price_q=800, line_total_q=800,
+    )
+    adjustment = order_composition.record(
+        order,
+        items=[
+            {"line_id": "coffee", "sku": "ESP", "name": "Espresso", "qty": 1,
+             "unit_price_q": 800, "line_total_q": 800},
+            {"line_id": "bread", "sku": "PAO", "name": "Pão", "qty": 1,
+             "unit_price_q": 900, "line_total_q": 900},
+        ],
+        total_q=1700,
+        source="pos", event_id="edit-history-regression",
+    )
+    order.data = {**order.data, order_composition.KEY: adjustment}
+    order.save(update_fields=["data"])
+    order.refresh_from_db()
+
+    summary, = customer_projection.history_summaries_for_customer(customer_ref=customer.ref)
+    history = build_order_history(customer)
+    tracking = build_tracking(order)
+
+    assert summary.total_q == tracking.total_q == 1700
+    assert summary.item_count == len(tracking.items) == 2
+    assert history.orders[0].total_display == "R$ 17,00"
+    assert build_account(customer).recent_orders[0].total_display == "R$ 17,00"
+    [active_row] = order_history_for_customer(customer_ref=customer.ref, filter_param="ativos")
+    assert active_row["total_display"] == "R$ 17,00"
+    assert order.total_q == 800
+    assert order.items.count() == 1

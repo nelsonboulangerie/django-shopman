@@ -7,6 +7,7 @@ export type OperatorGeometryFindingKind =
   | "text-clipping"
   | "control-text-overflow"
   | "control-overlap"
+  | "content-overlap"
   | "fixed-text"
   | "focus-clipping"
   | "overlay-layer"
@@ -30,7 +31,20 @@ export interface OperatorGeometryOptions {
   touch?: boolean;
   minTouchTarget?: number;
   minTargetSpacing?: number;
+  /** Liga a sobreposição de CONTEÚDO (`content-overlap`): texto solto (título, selo,
+   *  hora, contagem) contra controle e contra outro texto. Opt-in enquanto as matrizes
+   *  de cada app não passam por ela; `expectNoOperatorOverlap` liga. */
+  contentOverlap?: boolean;
 }
+
+/** A trava da sobreposição (dono, 07/11/2026, "não pode acontecer, nem nessa tela nem
+ *  em nenhuma"): nada visível se desenha por cima de outra coisa visível. Controle sobre
+ *  controle (`control-overlap`) e texto solto sobre controle ou sobre outro texto
+ *  (`content-overlap`). */
+export const OPERATOR_OVERLAP_FINDINGS: readonly OperatorGeometryFindingKind[] = [
+  "control-overlap",
+  "content-overlap",
+];
 
 /** A trava do rótulo que cabe (dono, 10/10/2026): texto de controle que vaza ou corta,
  *  controles sobrepostos e texto de peça fixa que não reserva as linhas. */
@@ -513,6 +527,141 @@ export async function scanOperatorGeometry(
             b,
             `Controles “${name(a)}” e “${name(b)}” se sobrepõem em ${Math.round(ix)}×${Math.round(iy)}px.`,
           );
+        }
+      }
+    }
+
+    // Sobreposição de conteúdo (dono, 07/11/2026). O `control-overlap` acima só olha
+    // controle contra controle; o cabeçalho do pedido no Gestor desenhava a hora do
+    // selo de atualização por baixo da seta "Pedido anterior" e o selo de status cortado
+    // ("Ace…") sem que nenhum controle tocasse outro. Aqui cada TRECHO de texto visível
+    // fora de controle (a caixa das próprias letras, linha a linha, pelo `Range`) entra
+    // na conta: texto contra controle e texto contra texto, na mesma camada.
+    // Fora da conta: o que mora em overlay aberto ou atrás de modal, o chip sobre ícone
+    // (`[data-slot="chip"]`, a camada empilhada de propósito do Nuxt UI) e o que a tela
+    // declarar `[data-operator-overlap-allowed]`.
+    if (input.contentOverlap) {
+      const layerExempt =
+        "[role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox'], [role='tooltip'], [inert], [data-operator-overlap-allowed], [data-slot='chip'], script, style, noscript, template, svg";
+      const controlSet = new Set<Element>(flat);
+      const opacityCache = new Map<Element, boolean>();
+      const shownThrough = (element: Element): boolean => {
+        const cached = opacityCache.get(element);
+        if (cached !== undefined) return cached;
+        const style = getComputedStyle(element);
+        const own =
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          (style.opacity === "" || Number(style.opacity) > 0);
+        const result =
+          own && (element.parentElement ? shownThrough(element.parentElement) : true);
+        opacityCache.set(element, result);
+        return result;
+      };
+      // O fundo de um modal aberto (o Reka marca os irmãos do portal com aria-hidden).
+      const behindModal = (element: Element) => {
+        const hidden = element.closest("[aria-hidden='true']");
+        return Boolean(hidden && hidden.parentElement === document.body);
+      };
+      // O retângulo que aparece, recortado por todo ancestral que corta (a partir do
+      // próprio elemento: o texto que passa de um `overflow: hidden` não aparece).
+      const clipFrom = (element: Element, box: { left: number; top: number; right: number; bottom: number }) => {
+        let { left, top, right, bottom } = box;
+        for (let node: Element | null = element; node && node !== document.documentElement; node = node.parentElement) {
+          const style = getComputedStyle(node);
+          const clipsX = !["", "visible"].includes(style.overflowX);
+          const clipsY = !["", "visible"].includes(style.overflowY);
+          if (!clipsX && !clipsY) continue;
+          const clip = node.getBoundingClientRect();
+          if (clipsX) {
+            left = Math.max(left, clip.left);
+            right = Math.min(right, clip.right);
+          }
+          if (clipsY) {
+            top = Math.max(top, clip.top);
+            bottom = Math.min(bottom, clip.bottom);
+          }
+        }
+        return { left, top, right, bottom };
+      };
+      type Piece = {
+        owner: HTMLElement;
+        layer: HTMLElement | null;
+        box: { left: number; top: number; right: number; bottom: number };
+        name: string;
+        control: boolean;
+      };
+      const pieces: Piece[] = [];
+      for (const control of flat) {
+        const box = shown.get(control)!;
+        if (box.right <= 0 || box.left >= innerWidth || box.bottom <= 0 || box.top >= innerHeight) continue;
+        pieces.push({
+          owner: control,
+          layer: layers.get(control) ?? null,
+          box,
+          control: true,
+          name:
+            control.getAttribute("aria-label") ||
+            control.textContent?.trim().replace(/\s+/g, " ").slice(0, 40) ||
+            control.tagName.toLowerCase(),
+        });
+      }
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      const range = document.createRange();
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node.textContent?.trim();
+        const owner = node.parentElement;
+        if (!text || !owner) continue;
+        if (owner.closest(layerExempt) || behindModal(owner)) continue;
+        // Texto dentro de controle é do controle (o `control-text-overflow` cuida dele).
+        let inControl = false;
+        for (let up: Element | null = owner; up; up = up.parentElement) {
+          if (controlSet.has(up) || up.matches(labelControlSelector)) {
+            inControl = true;
+            break;
+          }
+        }
+        if (inControl || !shownThrough(owner)) continue;
+        range.selectNodeContents(node);
+        const layer = layerOf(owner);
+        for (const line of range.getClientRects()) {
+          if (line.width < 1 || line.height < 1) continue;
+          // A caixa da fonte é mais alta que a linha (`leading-tight`): duas linhas
+          // empilhadas se tocam em 1–3 px sem que uma letra encoste na outra. Conta só
+          // o miolo, 20% para dentro em cima e embaixo.
+          const inset = line.height * 0.2;
+          const box = clipFrom(owner, {
+            left: line.left,
+            right: line.right,
+            top: line.top + inset,
+            bottom: line.bottom - inset,
+          });
+          if (box.right - box.left < 1 || box.bottom - box.top < 1) continue;
+          if (box.right <= 0 || box.left >= innerWidth || box.bottom <= 0 || box.top >= innerHeight) continue;
+          pieces.push({ owner, layer, box, control: false, name: text.replace(/\s+/g, " ").slice(0, 40) });
+        }
+      }
+      const reported = new Set<string>();
+      for (let index = 0; index < pieces.length; index += 1) {
+        const a = pieces[index]!;
+        for (let other = index + 1; other < pieces.length; other += 1) {
+          const b = pieces[other]!;
+          if (a.control && b.control) continue; // é o `control-overlap`
+          if (a.owner === b.owner) continue;
+          if (a.owner.contains(b.owner) || b.owner.contains(a.owner)) continue;
+          if (a.layer !== b.layer) continue;
+          const ix = Math.min(a.box.right, b.box.right) - Math.max(a.box.left, b.box.left);
+          const iy = Math.min(a.box.bottom, b.box.bottom) - Math.max(a.box.top, b.box.top);
+          if (ix > 2 && iy > 2) {
+            const key = `${a.name}|${b.name}`;
+            if (reported.has(key)) continue;
+            reported.add(key);
+            add(
+              "content-overlap",
+              b.owner,
+              `“${a.name}” e “${b.name}” se sobrepõem em ${Math.round(ix)}×${Math.round(iy)}px.`,
+            );
+          }
         }
       }
     }

@@ -278,3 +278,59 @@ describe("OperatorFilterPanel", () => {
     ]);
   });
 });
+
+describe("opções atualizadas enquanto o painel está aberto", () => {
+  it("descarta o submenu antigo quando chegam dados de outro período", async () => {
+    const live = ref<FilterDimension[]>([
+      {
+        id: "pay",
+        label: "Pagamento",
+        type: "single-select",
+        options: [{ value: "paid", label: "Pagas", count: 3 }],
+      },
+    ]);
+    const filters = ref<ActiveFilters>({});
+    mounted = await mountSuspended(
+      defineComponent({
+        setup: () => () =>
+          h(OperatorFilterPanel, {
+            dimensions: live.value,
+            modelValue: filters.value,
+            "onUpdate:modelValue": (next: ActiveFilters) => {
+              filters.value = next;
+            },
+          }),
+      }),
+      { attachTo: document.body },
+    );
+    await settle();
+    openButton().click();
+    await settle();
+    itemByText("Pagamento").click();
+    await settle();
+    expect(itemByText("Pagas").textContent).toContain("3");
+    const unchanged = panel();
+    live.value = JSON.parse(JSON.stringify(live.value));
+    await settle();
+    expect(panel()).toBe(unchanged);
+    live.value = [
+      {
+        id: "pay",
+        label: "Pagamento",
+        type: "single-select",
+        options: [
+          { value: "paid", label: "Pagas", count: 4 },
+          { value: "on_account", label: "Na conta da casa", count: 2 },
+        ],
+      },
+    ];
+    await settle();
+    expect(panel()).not.toBeNull();
+    itemByText("Pagamento").click();
+    await settle();
+    expect(itemByText("Pagas").textContent).toContain("4");
+    itemByText("Na conta da casa").click();
+    await settle();
+    expect(filters.value).toEqual({ pay: ["on_account"] });
+  });
+});

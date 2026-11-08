@@ -117,7 +117,10 @@ export function mutationHeaders(
   read: (name: string) => string | undefined,
 ): Record<string, string> {
   const headers: Record<string, string> = {};
-  for (const name of ["idempotency-key", "if-match", "x-correlation-id"]) {
+  // `x-shopman-operator` é EXPECTATIVA, não identidade: o Django só compara com
+  // a sessão e recusa a gravação que diverge (`ExpectedOperatorMiddleware`, 409
+  // `operator_changed`). Não concede nada; quem é a pessoa continua sendo a sessão.
+  for (const name of ["idempotency-key", "if-match", "x-correlation-id", "x-shopman-operator"]) {
     const value = read(name);
     if (value) headers[name] = value;
   }

@@ -4,7 +4,12 @@ import { fileURLToPath } from "node:url";
 import type { Locator, Page, PlaywrightTestConfig, TestInfo } from "@playwright/test";
 
 import { selectedOperatorViewports, type OperatorVisualViewport } from "./matrix";
-import { OPERATOR_LABEL_FINDINGS, scanOperatorGeometry, type OperatorGeometryFinding } from "./scanner";
+import {
+  OPERATOR_LABEL_FINDINGS,
+  OPERATOR_OVERLAP_FINDINGS,
+  scanOperatorGeometry,
+  type OperatorGeometryFinding,
+} from "./scanner";
 
 const visualRoot = dirname(fileURLToPath(import.meta.url));
 
@@ -169,6 +174,24 @@ export async function expectOperatorLabelsFit(page: Page, context = "") {
   if (findings.length) {
     throw new Error(
       `${context ? `${context}: ` : ""}rótulo que não cabe\n` +
+        findings.map((finding) => `${finding.kind} ${finding.selector}: ${finding.message}`).join("\n"),
+    );
+  }
+}
+
+/**
+ * A trava da sobreposição (dono, 07/11/2026: "parece coisa de amador; não pode
+ * acontecer, nem nessa tela nem em nenhuma"). Nada visível se desenha por cima de
+ * outra coisa visível na mesma camada: controle sobre controle e texto solto (título,
+ * selo, hora, contagem) sobre controle ou sobre outro texto. Reprova com a lista.
+ * Camada empilhada de propósito se declara com `data-operator-overlap-allowed`.
+ */
+export async function expectNoOperatorOverlap(page: Page, context = "") {
+  await page.evaluate(() => document.fonts.ready);
+  const findings = await scanOperatorGeometry(page, { only: OPERATOR_OVERLAP_FINDINGS, contentOverlap: true });
+  if (findings.length) {
+    throw new Error(
+      `${context ? `${context}: ` : ""}peças sobrepostas\n` +
         findings.map((finding) => `${finding.kind} ${finding.selector}: ${finding.message}`).join("\n"),
     );
   }

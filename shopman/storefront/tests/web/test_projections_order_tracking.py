@@ -26,6 +26,16 @@ from shopman.storefront.presentation.types import OrderProgressStepProjection
 pytestmark = pytest.mark.django_db
 
 
+def test_support_whatsapp_message_is_written_by_the_customer():
+    from urllib.parse import parse_qs, urlparse
+
+    from shopman.shop.projections.copy import build_copy
+    from shopman.storefront.presentation.order_tracking import _support_url
+
+    url = _support_url("https://wa.me/554333331234", "ORD-AJUDA", copy=build_copy("TRACKING"))
+    assert parse_qs(urlparse(url).query)["text"] == ["Oi! Preciso de ajuda com o pedido ORD-AJUDA."]
+
+
 def _attach_pending_planned_hold(order, *, sku: str, target_date=None):
     """Reserva de FORNADA — a que espera o lote sair.
 
@@ -1667,5 +1677,57 @@ class TestDispatchedEtaRespectsTheWindow:
 
         proj = build_order_tracking(order)
 
-        assert proj.eta_display == "10:00"
+        assert proj.eta_display == f"10:00 de {tomorrow:%d/%m}"
         assert "10:00" in proj.promise.message
+
+
+@pytest.mark.parametrize("entries", [
+    [{"sku": "PAO", "hold_id": "7", "qty": 1}],
+    [{"sku": "PAO", "hold_id": None, "qty": 0, "untracked": True}],
+    [7],
+])
+def test_invalid_stock_reference_does_not_hide_the_order(order_paid, entries, client):
+    """Z35/N96: reserva inválida não derruba a consulta nem é normalizada no GET."""
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.services.stock import hold_pks
+
+    order_paid.data = {**order_paid.data, "hold_ids": entries}
+    order_paid.save(update_fields=["data"])
+    before = dict(order_paid.data)
+    directives_before = Directive.objects.count()
+
+    with pytest.raises(ValueError):
+        hold_pks(entries)  # O contrato da escrita continua recusando o formato.
+
+    projection = build_order_tracking(order_paid)
+    status = build_order_tracking_status(order_paid)
+
+    assert projection.order_ref == status.order_ref == order_paid.ref
+    assert projection.total_display == "R$ 25,00"
+    assert projection.promise.fulfillment_wait_kind != "planned_batch"
+    response = client.get(f"/api/v1/tracking/{order_paid.ref}/")
+    assert response.status_code == 200
+    assert response.json()["ref"] == order_paid.ref
+    order_paid.refresh_from_db()
+    assert order_paid.data == before
+    assert Directive.objects.count() == directives_before
+
+
+def test_previous_day_preparation_does_not_invent_a_new_eta(order):
+    from django.utils import timezone
+
+    from shopman.shop.projections.order_tracking import _eta_at
+
+    order.status = "preparing"
+    order.preparing_at = timezone.now() - timezone.timedelta(days=4)
+    assert _eta_at(order) is None
+
+
+def test_eta_on_another_day_keeps_its_date():
+    from django.utils import timezone
+
+    from shopman.storefront.presentation.order_tracking import _eta_display
+
+    future = timezone.localtime(timezone.now()) + timezone.timedelta(days=2)
+    assert _eta_display(future.isoformat()) == future.strftime("%H:%M de %d/%m")

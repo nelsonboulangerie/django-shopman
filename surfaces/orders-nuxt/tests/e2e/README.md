@@ -14,6 +14,11 @@ confere que a recusa NÃO aparece).
 - **`board.spec.ts`** — o mock devolve sessão de operador autenticada (sem lock) + uma
   fila com um card; o Gestor passa dos gates (login/lock) e renderiza o card com cliente,
   itens e total.
+- **`overlap.spec.ts`**: a trava da sobreposição (dono, 07/11/2026). Todas as telas do
+  Gestor, e o detalhe do pedido aberto da fila (com anterior e próximo), em 1440, 1360,
+  1280, 1024, 768 e 390 px: nada visível se desenha por cima de outra coisa visível
+  (`expectNoOperatorOverlap` do kit). Os refs do mock têm a forma real (`WEB-20260625-0008`,
+  `IFOOD-260914-1515`): o "BLOCKED" de antes passava da coluna de 80 px da fila.
 - **`resilience.spec.ts`** — `<OfflineBanner>` (kit) aparece ao cair a rede e some ao voltar.
 
 ## Fora daqui (Django real — reviewer local)

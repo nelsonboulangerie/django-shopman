@@ -193,3 +193,16 @@ def test_native_payment_split_and_change_travel_with_the_sale():
     (sale,) = read_sales(_at(2).date(), _at(0).date()).sales
     assert [(p.method, p.amount_q) for p in sale.payments] == [("cash", 500), ("pix", 500)]
     assert sale.is_cash is True and sale.payment_known is True and sale.change_q == 100
+
+
+@pytest.mark.django_db
+def test_marketplace_test_lines_do_not_leak_into_the_real_sales_ranking():
+    _native(1, items=[("REAL", "Pão", 1)])
+    simulated = _native(1, items=[("TEST", "Produto de teste", 10)])
+    simulated.data["ifood"] = {"is_test": True}
+    simulated.save(update_fields=["data"])
+
+    report = build_bi_sales(date_from=_at(2).date(), date_to=_at(0).date())
+
+    assert report.orders_total == 1
+    assert [item.sku for item in report.top_skus] == ["REAL"]

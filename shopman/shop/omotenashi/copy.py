@@ -530,7 +530,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     # Depois que o preparo começou, no lugar do cancelar: falar com o responsável.
     "TRACKING_CANCELLATION_CONTACT_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Falar com o responsável")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Pedir contato sobre cancelamento")},
     },
     "TRACKING_CANCELLATION_CONTACT_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Quer cancelar?")},
@@ -566,7 +566,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Ao tocar, copiamos seu comentário. No Google, toque no campo de texto e cole.")},
     },
     "TRACKING_SUPPORT_WHATSAPP_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Oi! Posso ajudar com o pedido {order_ref}?")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Oi! Preciso de ajuda com o pedido {order_ref}.")},
     },
     # Rótulo enxuto do countdown quando o prazo é a loja conferir disponibilidade
     # (deadline_kind="availability"). Consolidou o antigo par prefix/suffix num rótulo.

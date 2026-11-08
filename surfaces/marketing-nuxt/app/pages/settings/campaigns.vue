@@ -15,6 +15,7 @@ import {
   fireAvailability,
   fireDispatchRoute,
 } from "~/presentation/campaignFire";
+import { campaignOfferWarning } from "~/presentation/offers";
 import { campaignEditAvailability } from "~/presentation/campaignActions";
 import type {
   Campaign,
@@ -725,6 +726,9 @@ useHead({ title: "Campanhas" });
                 label="Nova"
               />
             </span>
+            <p v-if="campaignOfferWarning(row.original.promotion_ref, offers)" class="mt-1 text-sm text-warning" data-campaign-offer-warning>
+              {{ campaignOfferWarning(row.original.promotion_ref, offers) }}
+            </p>
             <!-- Desempenho onde dá para agir: a causa da falha ao lado da campanha que
                  falhou, não numa lista cronológica onde ela é só lamento. -->
             <span class="mt-0.5 block text-xs text-muted-foreground">

@@ -925,3 +925,16 @@ describe("CampaignForm — campanha exclusiva do grupo", () => {
     expect(wrapper.emitted("submit")).toBeUndefined();
   });
 });
+
+
+describe("oferta indisponível de campanha existente", () => {
+  it("mantém a referência e explica a pendência na revisão, sem chamar de Sem oferta", async () => {
+    const wrapper = form(makeRule({ promotion_ref: "oferta-expirada" }));
+    await wrapper.find('button[aria-label="5. Revisar"]').trigger("mousedown", {
+      button: 0, ctrlKey: false,
+    });
+    expect(wrapper.text()).toContain("Oferta indisponível (oferta-expirada)");
+    expect(wrapper.text()).toContain("não está disponível para campanha");
+    expect(wrapper.text()).not.toContain("Sem oferta");
+  });
+});

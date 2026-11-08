@@ -3,7 +3,7 @@
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
-from shopman.buyman.models import Material, Supplier
+from shopman.buyman.models import Material, Supplier, SupplierContact
 
 from shopman.backstage.projections.purchase import build_purchase
 
@@ -131,7 +131,10 @@ def test_material_category_and_supplier_contact_filters_run_before_pagination():
         unit="kg",
         metadata={"purchase": {"category": "Farinhas"}},
     )
-    Supplier.objects.create(ref="com-contato", name="Com contato", email="compras@example.test")
+    commercial = Supplier.objects.create(ref="com-contato", name="Com contato")
+    SupplierContact.objects.create(
+        supplier=commercial, name="Ana", role="sales", email="compras@example.test",
+    )
     Supplier.objects.create(ref="sem-contato", name="Sem contato")
 
     result = build_purchase(
@@ -145,3 +148,30 @@ def test_material_category_and_supplier_contact_filters_run_before_pagination():
     assert result.materials.items[0].sku == "CACAU"
     assert result.suppliers.total == 1
     assert result.suppliers.items[0].ref == "sem-contato"
+
+
+def test_commercial_filter_matches_the_contact_shown_in_the_supplier_card():
+    for ref, role, active, primary in (
+        ("sales", "sales", True, False),
+        ("general", "general", True, False),
+        ("finance", "finance", True, True),
+        ("inactive", "sales", False, False),
+    ):
+        supplier = Supplier.objects.create(ref=ref, name=ref)
+        SupplierContact.objects.create(
+            supplier=supplier, name=ref, role=role, is_active=active,
+            is_primary=primary, email=f"{ref}@example.test",
+        )
+    Supplier.objects.create(ref="central", name="Central", email="central@example.test")
+    Supplier.objects.create(ref="empty", name="Empty")
+
+    all_suppliers = build_purchase().suppliers
+    expected = {item.ref for item in all_suppliers if item.orderContactName}
+    assert expected == {"sales", "general"}
+    for value, refs in (("with", expected), ("without", {"central", "empty", "finance", "inactive"})):
+        result = build_purchase(paginate=True, supplier_filters={"contact": [value]})
+        assert result.suppliers.total == len(refs)
+        assert {item.ref for item in result.suppliers.items} == refs
+
+    both = build_purchase(paginate=True, supplier_filters={"contact": ["with", "without"]})
+    assert both.suppliers.total == 6

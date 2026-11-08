@@ -14,15 +14,15 @@ test("agendamento e entrega iFood ficam legíveis no celular", async ({ page }, 
     .then(() => start.click())
     .catch(() => {});
   await page.getByRole("button", { name: "Buscar por código, cliente ou item", exact: true }).click();
-  await page.getByRole("textbox", { name: "Buscar pedido, cliente ou item" }).fill("IFOOD-SCHEDULED");
-  await page.getByRole("option", { name: "Filtrar o quadro por “IFOOD-SCHEDULED”" }).click();
+  await page.getByRole("textbox", { name: "Buscar pedido, cliente ou item" }).fill("IFOOD-260914-1515");
+  await page.getByRole("option", { name: "Filtrar o quadro por “IFOOD-260914-1515”" }).click();
   // O quadro filtrado mostra só o pedido agendado, com o avanço travado e o motivo.
   const card = page.locator("article").filter({ hasText: "Pedido iFood agendado" });
   await expect(card).toBeVisible();
   await expect(page.locator("article").filter({ hasText: "Ana · " })).toHaveCount(0);
   // O resumo do iFood (entrega, preparo, janela) mora no detalhe do pedido.
-  await card.getByRole("link", { name: "Abrir pedido IFOOD-SCHEDULED" }).click();
-  await expect(page).toHaveURL(/\/IFOOD-SCHEDULED$/);
+  await card.getByRole("link", { name: "Abrir pedido IFOOD-260914-1515" }).click();
+  await expect(page).toHaveURL(/\/IFOOD-260914-1515$/);
   await expect(page.getByText("Entrega por entregador iFood", { exact: true })).toBeVisible();
   await expect(page.getByText("Início do preparo: 14/09/2026 às 15:15", { exact: true })).toBeVisible();
   await expect(page.getByText("Fim da janela: 14/09/2026 às 16:30", { exact: true })).toBeVisible();

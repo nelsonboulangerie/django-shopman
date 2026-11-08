@@ -31,6 +31,7 @@ from shopman.utils.monetary import format_money
 
 from shopman.backstage.presentation.status import order_status_label, payment_method_label
 from shopman.backstage.projections.order_queue import _format_customer_display
+from shopman.shop.services import order_composition
 
 PAGE_SIZE = 30
 
@@ -277,6 +278,7 @@ def _row(order, channel_labels: dict[str, str]) -> OrderHistoryRowProjection:
     )
     method = order.payment_method or ""
     closed_local = timezone.localtime(order.closed_at)
+    total_q = order_composition.effective_total_q(order)
     return OrderHistoryRowProjection(
         ref=order.ref,
         status=order.status,
@@ -289,8 +291,8 @@ def _row(order, channel_labels: dict[str, str]) -> OrderHistoryRowProjection:
         fulfillment_label=FULFILLMENT_LABELS.get(order.fulfillment or "", ""),
         payment_method=method,
         payment_label=payment_method_label(method) if method else NO_PAYMENT_LABEL,
-        total_q=int(order.total_q or 0),
-        total_display=f"R$ {format_money(int(order.total_q or 0))}",
+        total_q=total_q,
+        total_display=f"R$ {format_money(total_q)}",
         closed_at=closed_local.isoformat(),
         closed_display=closed_local.strftime("%d/%m %H:%M"),
     )

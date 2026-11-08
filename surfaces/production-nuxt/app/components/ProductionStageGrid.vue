@@ -116,6 +116,10 @@ watch(
 // Planejamento: o tablet do chão fica dias aberto, e recarregar (atualização do
 // app) tem de voltar para hoje, nunca para o dia que alguém espiou.
 const router = useRouter();
+const rail = useProductionRail();
+// O dia acompanha o gesto de trocar de etapa. A URL do chão continua sem o
+// dia espiado, para uma atualização do tablet voltar para hoje.
+watch(selectedDate, (date) => { rail.value.viewedDate = date; }, { immediate: true });
 watch(selectedDate, (date) => {
   if (props.stage !== "plan") return;
   if (route.query.date === date) return;

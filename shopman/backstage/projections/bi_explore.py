@@ -1141,10 +1141,10 @@ def _outage_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
     totals: dict[tuple, float] = defaultdict(float)
     denominators: dict[tuple, float] = defaultdict(float)
     labels: dict[tuple, tuple[str, str]] = {}
-    seen_days: dict[tuple, set] = defaultdict(set)
+    intervals: dict[tuple, dict[tuple, list]] = defaultdict(lambda: defaultdict(list))
 
     for outage in outages:
-        for day, minutes in _outage_minutes_by_day(outage, date_from, date_to, open_minutes, contexts):
+        for day, start, end in _outage_intervals_by_day(outage, date_from, date_to, open_minutes, contexts):
             parts = []
             for dim in (by, by2):
                 if not dim:
@@ -1169,11 +1169,22 @@ def _outage_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
             if any(part is None for part in parts):
                 continue
             key = (parts[0][0], parts[1][0])
-            totals[key] += minutes / 60
             labels[key] = (parts[0][1], parts[1][1])
-            if day not in seen_days[key]:
-                seen_days[key].add(day)
-                denominators[key] += open_minutes.get(day, 0) / 60
+            intervals[key][(day, outage.sku, outage.channel_ref)].append((start, end))
+
+    for key, exposures in intervals.items():
+        for (day, _sku, _channel), spans in exposures.items():
+            # Mesmo produto/canal pode ter vários trechos no dia. Une os
+            # intervalos antes de somar para não contar sobreposição duas vezes.
+            merged_end = None
+            for start, end in sorted(spans):
+                effective_start = max(start, merged_end) if merged_end else start
+                if end > effective_start:
+                    totals[key] += (end - effective_start).total_seconds() / 3600
+                merged_end = max(end, merged_end) if merged_end else end
+            # Horas de produto × canal exigem a mesma unidade na base.
+            # Dois produtos bloqueados o dia inteiro são 100%, não 200%.
+            denominators[key] += open_minutes.get(day, 0) / 60
 
     keep_zeros = by in ORDINAL_DIMENSIONS
 
@@ -1193,8 +1204,8 @@ def _outage_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
     ]
 
 
-def _outage_minutes_by_day(outage, date_from: date, date_to: date, open_minutes, contexts):
-    """Minutos de bloqueio por dia, recortados pelo expediente CONGELADO do dia.
+def _outage_intervals_by_day(outage, date_from: date, date_to: date, open_minutes, contexts):
+    """Intervalos de bloqueio por dia, recortados pelo expediente CONGELADO do dia.
 
     Dia sem carimbo de expediente não entra: sem saber quando a casa esteve
     aberta, contar horas seria inventar o denominador.
@@ -1222,5 +1233,5 @@ def _outage_minutes_by_day(outage, date_from: date, date_to: date, open_minutes,
             start = max(began, open_dt)
             end = min(finished, close_dt)
             if end > start:
-                yield day, (end - start).total_seconds() / 60
+                yield day, start, end
         day += timedelta(days=1)

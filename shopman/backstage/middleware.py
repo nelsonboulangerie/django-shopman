@@ -5,9 +5,11 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
+from django.http import JsonResponse
 from django.shortcuts import redirect
 
 from shopman.backstage.services import admin_session, operator_session
+from shopman.backstage.services.operator import operator_card
 from shopman.shop.models import Shop
 
 logger = logging.getLogger(__name__)
@@ -129,3 +131,48 @@ class SessionRenewalMiddleware:
             return response
         operator_session.renew_if_due(request)
         return response
+
+
+class ExpectedOperatorMiddleware:
+    """Recusa a gravação feita em nome de quem a tela já não é.
+
+    A identidade é uma só no navegador (D1-B): quem destrava o PDV vira quem opera
+    a Cozinha aberta ao lado. A aba da Cozinha relê a sessão ao voltar ao foco
+    (``operator-kit/useOperatorLock``), mas o clique que devolve o foco pode chegar
+    antes da releitura, e o "pronto" saía no nome de quem a tela não mostrava
+    (beta 07/11). Os apps de operador mandam em toda gravação o operador que a tela
+    mostra (``X-Shopman-Operator``); se a sessão é de outra pessoa, nada é gravado
+    e a tela relê quem opera.
+
+    Sem o cabeçalho, segue (Admin, loja, integrações). As rotas de
+    ``/operator/`` ficam de fora: destravar e travar SÃO a troca de pessoa.
+    """
+
+    HEADER = "HTTP_X_SHOPMAN_OPERATOR"
+    PREFIX = "/api/v1/backstage/"
+    IDENTITY_PREFIX = "/api/v1/backstage/operator/"
+    SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        expected = request.META.get(self.HEADER, "").strip()
+        if (
+            expected
+            and request.method not in self.SAFE_METHODS
+            and request.path.startswith(self.PREFIX)
+            and not request.path.startswith(self.IDENTITY_PREFIX)
+        ):
+            user = getattr(request, "user", None)
+            if user is not None and user.is_authenticated and str(user.pk) != expected:
+                current = operator_card(user)["name"]
+                detail = (
+                    f"Quem opera agora é {current}: a troca foi feita em outro app deste navegador. "
+                    "Nada foi gravado. Confira e faça de novo."
+                )
+                return JsonResponse(
+                    {"detail": detail, "error": {"code": "operator_changed", "message": detail}},
+                    status=409,
+                )
+        return self.get_response(request)

@@ -419,7 +419,7 @@ A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, 
 > ℹ️ O código Pix copia-e-cola **não** viaja no template (é longo e opcional). Fica no
 > SMS/e-mail; aqui a pessoa chega pela tela do pedido, onde o Pix e o cartão estão inline.
 
-### `pagamento_cartao_falhou` — evento `payment_requested_card_repayment` 🆕 · ⏳ submetido em 07/11/2026, em análise na Meta
+### `pagamento_cartao_falhou` — evento `payment_requested_card_repayment` 🆕 · ✅ aprovado pela Meta em 07/11/2026 (Utility), flow `content20261107173252_896774`
 Variante do `payment_requested` no NOVO pagamento: a cobrança do cartão não passou
 depois do aceite, a reserva antiga foi anulada e o cliente paga de novo (decisão do
 dono, 07/11/2026). Não é evento emitido: o adapter
@@ -432,6 +432,10 @@ dono, 07/11/2026). Não é evento emitido: o adapter
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`hoje às 18h30` (`payment_deadline`)
 - Botão URL: `Pagar pedido` → `/pedido/{{1}}` (`order_ref`)
 
+> ✅ **Ligado em 07/11/2026.** O flow "Aviso: cartão falhou, novo pagamento
+> (payment_requested_card_repayment)" (`content20261107173252_896774`) está em
+> `MANYCHAT_FLOW_MAP["payment_requested_card_repayment"]` (`config/settings.py`).
+>
 > ⛔ **Falha fechada.** Enquanto o modelo não estiver aprovado e o flow ligado
 > (`MANYCHAT_FLOW_MAP["payment_requested_card_repayment"]` ou o `NotificationTemplate`
 > do evento), o aviso sai pelo `pagamento_solicitado` aprovado, e o adapter registra
@@ -710,7 +714,7 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 | `order_rescheduled` | `pedido_nova_data` | Utility |
 | `order_updated` | `pedido_atualizado` | Utility |
 | `payment_requested` | `pagamento_solicitado` | Utility |
-| `payment_requested_card_repayment` (novo pagamento após cartão recusado) | `pagamento_cartao_falhou` | Utility 🆕 |
+| `payment_requested_card_repayment` (novo pagamento após cartão recusado) | `pagamento_cartao_falhou` | Utility 🆕 (aprovado 07/11/2026, flow `content20261107173252_896774`) |
 | `payment_link_sent` | `link_pagamento_enviado` | Utility |
 | `payment_confirmed` | `pagamento_confirmado` | Utility |
 | `payment_reminder` | `pagamento_lembrete` | Utility |

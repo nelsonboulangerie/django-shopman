@@ -584,6 +584,7 @@ export function elapsedLabel(seconds: number): string {
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
+  if (h >= 24) return h % 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${Math.floor(h / 24)}d`;
   return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
 }
 

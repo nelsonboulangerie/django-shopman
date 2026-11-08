@@ -13,6 +13,7 @@ import type {
 import {
   buildUnlockPayload,
   isLocked,
+  operatorChangeNotice,
   type UnlockInput,
 } from "../presentation/operatorLock";
 import {
@@ -53,6 +54,7 @@ export function useOperatorLock(perm: string) {
   const operatorSession = useOperatorSession();
 
   const session = computed<OperatorSession | null>(() => data.value ?? null);
+  followOperatorAcrossApps();
   // Alguém identificado nesta carga do app: a partir daqui um 401 é sessão que
   // TERMINOU (e o login diz isso). Antes, é só a primeira visita.
   watch(
@@ -261,4 +263,35 @@ export function useOperatorLock(perm: string) {
     refresh,
     busy,
   };
+}
+
+/**
+ * A aba que volta ao foco relê quem opera. Uma vez por app (o `nuxtApp` guarda a
+ * marca), por mais componentes que chamem `useOperatorLock`: os ouvintes vivem o
+ * tempo do app, e o aviso sai uma vez só. Ver `operatorChangeNotice`.
+ */
+function followOperatorAcrossApps(): void {
+  if (!import.meta.client) return;
+  const nuxtApp = useNuxtApp() as ReturnType<typeof useNuxtApp> & { _operatorFollow?: boolean };
+  if (nuxtApp._operatorFollow) return;
+  nuxtApp._operatorFollow = true;
+  const { data } = useNuxtData<OperatorSession>("operator-session");
+  let inFlight = false;
+  async function reread(): Promise<void> {
+    if (inFlight || document.visibilityState !== "visible") return;
+    inFlight = true;
+    try {
+      const before = data.value ?? null;
+      await nuxtApp.runWithContext(() => refreshNuxtData("operator-session"));
+      const notice = operatorChangeNotice(before, data.value ?? null);
+      if (!notice) return;
+      useSonner.info(notice);
+      // O que está na tela foi lido por outra pessoa (fila, permissões, rascunho).
+      await nuxtApp.runWithContext(() => refreshNuxtData());
+    } finally {
+      inFlight = false;
+    }
+  }
+  window.addEventListener("focus", () => void reread());
+  document.addEventListener("visibilitychange", () => void reread());
 }

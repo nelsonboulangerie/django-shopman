@@ -45,10 +45,10 @@ export function nutritionTable (nutrition: ProductNutritionProjection | null): N
   }
   const rows: NutritionTableRow[] = []
   if (nutrition?.energy_kcal_display) {
-    rows.push({ label: 'Valor energético', value: nutrition.energy_kcal_display, pdv: nutrition.energy_pdv })
+    rows.push({ label: 'Valor energético', value: `${nutrition.energy_kcal_display} kcal`, pdv: nutrition.energy_pdv })
   }
   for (const row of nutrition?.rows || []) {
-    rows.push({ label: row.label, value: row.value_display, pdv: row.percent_daily_value })
+    rows.push({ label: row.label, value: `${row.value_display} ${row.unit}`, pdv: row.percent_daily_value })
   }
   if (!rows.length) return null
   return { serving: nutrition?.serving_size_display || '', rows }

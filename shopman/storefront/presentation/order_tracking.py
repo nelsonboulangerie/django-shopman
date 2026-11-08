@@ -726,7 +726,8 @@ def _eta_display(eta_at: str | None) -> str | None:
     if dt is None:
         return None
     try:
-        return timezone.localtime(dt).strftime("%H:%M")
+        local = timezone.localtime(dt)
+        return local.strftime("%H:%M" if local.date() == timezone.localdate() else "%H:%M de %d/%m")
     except Exception:
         logger.debug("order_tracking._eta_display degraded", exc_info=True)
         return None
@@ -812,7 +813,7 @@ def _support_url(base: str, order_ref: str, *, copy: CopyCatalog) -> str:
         return base
     support_message = copy.message(
         "TRACKING_SUPPORT_WHATSAPP_MESSAGE",
-        "Oi! Posso ajudar com o pedido {order_ref}?",
+        "Oi! Preciso de ajuda com o pedido {order_ref}.",
     ).format(order_ref=order_ref)
     separator = "&" if "?" in base else "?"
     return f"{base}{separator}{urlencode({'text': support_message})}"
