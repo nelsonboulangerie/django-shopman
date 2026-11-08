@@ -1009,7 +1009,7 @@ useSeoMeta({
               <template v-else-if="cancellationContactAction">
                 <p class="text-sm text-muted-foreground">{{ tracking.copy.cancellation_contact_message }}</p>
                 <UiButton
-                  class="w-full"
+                  class="h-auto min-h-9 w-full whitespace-normal py-2 text-center"
                   variant="secondary"
                   icon="lucide:message-circle"
                   :loading="!!actionPending[cancellationContactAction.ref]"

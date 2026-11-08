@@ -1477,7 +1477,7 @@ class TestStatusColours:
         from django.utils import timezone
         from shopman.orderman.models import Order as _Order
 
-        preparing_at = timezone.now().replace(hour=10, minute=0, second=0, microsecond=0)
+        preparing_at = timezone.localtime().replace(hour=10, minute=0, second=0, microsecond=0)
         created_at = preparing_at - timezone.timedelta(minutes=20)
         _Order.objects.filter(pk=order.pk).update(
             status="preparing",
