@@ -161,7 +161,9 @@ a fila está na tela. O push continua abrindo `/announcements/:id#review`, que �
 "Revisar" do cartão daquele anúncio.
 
 Seções de operação: **Decisões** (`/`), **Agendados** (`/scheduled`) e **Enviados**
-(`/history`); **Ajustes** (`/settings`) entra por um item só, no pé da barra lateral, e é
+(`/history`). O título canônico Enviados reúne envios, tentativas e encerramentos
+sem envio; a página explicita esse alcance antes da lista, inclusive para anúncios
+expirados sem publicação. **Ajustes** (`/settings`) entra por um item só, no pé da barra lateral, e é
 a página que lista as quatro sub-seções, cada uma com rota própria embaixo dela:
 Campanhas (`/settings/campaigns`), Modelos (`/settings/templates`), Ofertas e cupons
 (`/settings/offers`) e Plataformas (`/settings/platforms`). Dentro de uma sub-seção, a

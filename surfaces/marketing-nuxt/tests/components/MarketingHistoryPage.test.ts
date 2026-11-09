@@ -106,6 +106,14 @@ function render() {
 }
 
 describe("Enviados", () => {
+  it("explica os encerramentos sem envio sem renomear a seção canônica", () => {
+    announcements.value = [{ ...announcement, state: "expired", published_at: null, settled_at: null, delivery: { ...announcement.delivery, state: "expired", platforms: [] } }];
+    const wrapper = render();
+    expect(wrapper.getComponent(HeaderStub).props("title")).toBe("Enviados");
+    expect(wrapper.get('[data-history-scope]').text()).toContain("encerramentos sem envio");
+    expect(wrapper.find('[data-history-row]').exists()).toBe(true);
+  });
+
   it("põe os quatro recortes no painel de filtros, com os favoritos de Enviados", async () => {
     filters.value = { period: "7d", platform: "instagram" };
     const wrapper = render();

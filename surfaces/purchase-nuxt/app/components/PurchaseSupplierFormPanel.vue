@@ -2,7 +2,6 @@
 // O cadastro do fornecedor no casco da suíte: criar, editar e duplicar, com os
 // contatos como parte do cadastro (antes eles só existiam no Admin). A cópia
 // traz contatos e termos comerciais, e não o CNPJ: identidade não se duplica.
-import { nextTick } from "vue";
 
 import type { PurchaseFormMode, Supplier, SupplierContact } from "~/types/purchase";
 import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
@@ -89,6 +88,7 @@ function resetContact() {
   contact.notes = "";
   contact.isPrimary = false;
   contact.isActive = true;
+  captureContact();
 }
 
 function reset() {
@@ -130,10 +130,20 @@ function reset() {
   resetContact();
 }
 
-const { dirty, changedKeys, capture } = useDirtyForm(() => ({
-  ...form,
-  contact: { ...contact },
+// Empresa e contato têm salvamentos independentes. Abrir um contato apenas
+// estabelece o ponto de comparação dele, sem apagar mudanças da empresa.
+const { dirty: companyDirty, changedKeys: companyChangedKeys, capture } = useDirtyForm(() => ({ ...form }));
+const { dirty: contactDirty, capture: captureContact } = useDirtyForm(() => ({
+  name: contact.name,
+  role: contact.role,
+  email: contact.email,
+  phone: contact.phone,
+  notes: contact.notes,
+  isPrimary: contact.isPrimary,
+  isActive: contact.isActive,
 }));
+const dirty = computed(() => companyDirty.value || contactDirty.value);
+const changedKeys = computed(() => [...companyChangedKeys.value, ...(contactDirty.value ? ["contact"] : [])]);
 const activeSection = ref<string | null>("identity");
 
 watch(
@@ -209,6 +219,7 @@ function newContact() {
   resetContact();
   contact.open = true;
   contact.isPrimary = contacts.value.length === 0;
+  captureContact();
   activeSection.value = "contacts";
 }
 function editContact(person: SupplierContact) {
@@ -221,6 +232,7 @@ function editContact(person: SupplierContact) {
   contact.notes = person.notes;
   contact.isPrimary = person.isPrimary;
   contact.isActive = person.isActive;
+  captureContact();
   activeSection.value = "contacts";
 }
 const contactValid = computed(() => contact.name.trim() !== "" && (contact.email.trim() !== "" || contact.phone.trim() !== ""));
@@ -248,11 +260,9 @@ function roleLabel(role: string): string {
 
 watch(
   () => props.savedVersion,
-  async (_next, previous) => {
+  (_next, previous) => {
     if (previous === undefined || !props.open) return;
     resetContact();
-    await nextTick();
-    capture();
   },
 );
 </script>

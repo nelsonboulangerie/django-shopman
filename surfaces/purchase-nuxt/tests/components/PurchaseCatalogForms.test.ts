@@ -207,6 +207,37 @@ describe("PurchaseMaterialFormPanel", () => {
 });
 
 describe("PurchaseSupplierFormPanel", () => {
+  it("abrir e cancelar contato sem edição não cria alteração pendente", async () => {
+    const wrapper = mountSupplier({ mode: "edit", source: moinho });
+    const edit = wrapper.findAll("button").find((button) => button.text() === "Editar");
+    await edit!.trigger("click");
+    expect(wrapper.findComponent(ShellStub).props("dirty")).toBe(false);
+    const cancel = wrapper.get('[data-testid="contact-form"]').findAll("button").find((button) => button.text() === "Cancelar");
+    await cancel!.trigger("click");
+    expect(wrapper.findComponent(ShellStub).props("dirty")).toBe(false);
+    expect(wrapper.emitted("save-contact")).toBeUndefined();
+  });
+
+  it("cancelar ou salvar contato não apaga a alteração pendente da empresa", async () => {
+    const wrapper = mountSupplier({ mode: "edit", source: moinho, savedVersion: 0 });
+    await wrapper.find('[data-testid="supplier-name"]').setValue("Moinho com nome novo");
+    const edit = wrapper.findAll("button").find((button) => button.text() === "Editar");
+    await edit!.trigger("click");
+    expect(wrapper.findComponent(ShellStub).props("dirtyCount")).toBe(1);
+    await wrapper.find('[data-testid="contact-email"]').setValue("novo@moinho.example");
+    expect(wrapper.findComponent(ShellStub).props("dirtyCount")).toBe(2);
+    const cancel = wrapper.get('[data-testid="contact-form"]').findAll("button").find((button) => button.text() === "Cancelar");
+    await cancel!.trigger("click");
+    expect(wrapper.findComponent(ShellStub).props("dirtyCount")).toBe(1);
+    await edit!.trigger("click");
+    await wrapper.find('[data-testid="contact-email"]').setValue("novo@moinho.example");
+    await wrapper.find('[data-testid="contact-form"]').trigger("submit");
+    await wrapper.setProps({ savedVersion: 1 });
+    expect(wrapper.findComponent(ShellStub).props("dirty")).toBe(true);
+    expect(wrapper.findComponent(ShellStub).props("dirtyCount")).toBe(1);
+    expect((wrapper.find('[data-testid="supplier-name"]').element as HTMLInputElement).value).toBe("Moinho com nome novo");
+  });
+
   it("criar: exige a razão social", async () => {
     const wrapper = mountSupplier({ mode: "create" });
     expect(wrapper.find('[data-testid="save-reason"]').text()).toBe("Informe a razão social para salvar.");

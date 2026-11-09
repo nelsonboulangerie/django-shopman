@@ -136,6 +136,12 @@ const activeFilters = computed(() =>
     supplierFilters.value = next;
   }),
 );
+const supplierEmptyTitle = computed(() => {
+  const term = search.value.trim();
+  if (term) return `Nenhum fornecedor com “${term}”.`;
+  if (activeFilters.value.length) return "Nenhum fornecedor combina com os filtros.";
+  return supplierList.value.total === 0 ? "Nenhum fornecedor cadastrado ainda." : "Nenhum fornecedor nesta página.";
+});
 const SORT_VALUE: Record<string, (row: SupplierRow) => number | string> = {
   name: (row) => row.supplier.displayName,
   materials: (row) => row.materialsCovered,
@@ -291,7 +297,7 @@ const { tone: sealTone, time: sealTime } = usePurchaseReadSeal();
             view-key="purchase-suppliers"
             caption="Fornecedores da Base"
             empty-icon="i-lucide-truck"
-            :empty-title="!suppliers.length ? 'Nenhum fornecedor cadastrado ainda.' : `Nenhum fornecedor com “${search.trim()}”.`"
+            :empty-title="supplierEmptyTitle"
             data-base-suppliers-table
           >
             <template v-if="supplierList.page > 1 || supplierList.has_next" #footer>
