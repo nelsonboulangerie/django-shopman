@@ -352,6 +352,36 @@ def session_holds_after(session_key: str, day: date) -> list[tuple[str, str, dat
     return [(f"hold:{pk}", sku, batch_date) for pk, sku, batch_date in rows]
 
 
+def session_holds_on_batch(session_key: str, day: date) -> set[str]:
+    """Reservas vivas da sessão presas à fornada DE ``day`` (ids ``hold:N``).
+
+    Par de :func:`session_holds_after`: a vaga que a fila já guardou para a
+    sacola no lote planejado desse dia. É o que o pedido para ``day`` adota no
+    fechamento, em vez de disputar o lote com a própria reserva.
+    """
+    if not session_key or day is None:
+        return set()
+    try:
+        from django.db.models import Q
+        from django.utils import timezone
+        from shopman.stockman import Hold, HoldStatus
+    except Exception:
+        logger.debug("availability.session_holds_on_batch degraded; returning empty", exc_info=True)
+        return set()
+
+    pks = (
+        Hold.objects.filter(
+            metadata__reference=session_key,
+            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            quant__isnull=False,
+            quant__target_date=day,
+        )
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
+        .values_list("pk", flat=True)
+    )
+    return {f"hold:{pk}" for pk in pks}
+
+
 def session_hold_dates(session_key: str) -> set[date]:
     """Datas que as reservas vivas da sessão já prometem (a data da sacola).
 

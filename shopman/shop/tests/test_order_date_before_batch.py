@@ -47,9 +47,9 @@ def _world() -> Position:
     return position
 
 
-def _quant(position: Position, *, target_date=None, qty="10") -> Quant:
+def _quant(position: Position, *, target_date=None, qty="10", sku=SKU) -> Quant:
     return Quant.objects.create(
-        sku=SKU,
+        sku=sku,
         position=position,
         target_date=target_date,
         _quantity=Decimal(qty),
@@ -59,7 +59,7 @@ def _quant(position: Position, *, target_date=None, qty="10") -> Quant:
 def _session_hold(quant: Quant, qty="1") -> Hold:
     """A reserva que a sacola deixou: presa ao quant (planejado ou físico)."""
     return Hold.objects.create(
-        sku=SKU,
+        sku=quant.sku,
         quant=quant,
         quantity=Decimal(qty),
         target_date=quant.target_date or timezone.localdate(),
@@ -69,7 +69,7 @@ def _session_hold(quant: Quant, qty="1") -> Hold:
     )
 
 
-def _order(*, delivery_date=None, session_key=SESSION_KEY, ref="ORD-KURO", qty=1):
+def _order(*, delivery_date=None, session_key=SESSION_KEY, ref="ORD-KURO", qty=1, items=None):
     data = {}
     if delivery_date is not None:
         data["delivery_date"] = delivery_date.isoformat()
@@ -77,7 +77,7 @@ def _order(*, delivery_date=None, session_key=SESSION_KEY, ref="ORD-KURO", qty=1
         ref=ref,
         channel_ref=CHANNEL_REF,
         session_key=session_key,
-        snapshot={"items": [{"sku": SKU, "name": "Kuro Pan", "qty": qty}], "data": {}},
+        snapshot={"items": items or [{"sku": SKU, "name": "Kuro Pan", "qty": qty}], "data": {}},
         data=data,
         save=lambda update_fields=None: None,
     )
@@ -130,6 +130,72 @@ class TestSacolaPresaAFornadaFutura:
         held = Hold.objects.get(pk=int(entries[0]["hold_id"].split(":")[1]))
         assert held.quant.target_date == wednesday
 
+    def test_pedido_para_o_dia_da_fornada_cheia_fica_com_a_vaga_da_sacola(self):
+        """A fornada só tem a unidade que a sacola já guardou: o pedido a adota.
+
+        Reservar de novo disputaria o lote com a própria reserva, cairia em
+        demanda sem lote e soltaria a vaga para o próximo cliente (revisão do
+        P0, pedido NB-261109-F93).
+        """
+        today = timezone.localdate()
+        wednesday = today + timedelta(days=2)
+        position = _world()
+        quant = _quant(position, target_date=wednesday, qty="1")
+        hold = _session_hold(quant)
+        order = _order(delivery_date=wednesday)
+
+        stock_service.hold(order, require_all=True)
+
+        assert order.data["hold_ids"] == [{"sku": SKU, "hold_id": hold.hold_id, "qty": 1.0}]
+        hold.refresh_from_db()
+        assert hold.status == HoldStatus.PENDING
+        assert hold.quant_id == quant.pk
+        assert hold.metadata["reference"] == f"order:{order.ref}"
+        assert Hold.objects.filter(sku=SKU).count() == 1
+
+    def test_encomenda_nao_adota_a_reserva_de_pao_pronto_de_hoje(self):
+        """Só a reserva presa à fornada do dia do pedido é adotada na encomenda."""
+        today = timezone.localdate()
+        wednesday = today + timedelta(days=2)
+        position = _world()
+        physical = _session_hold(_quant(position))
+        _quant(position, target_date=wednesday)
+        order = _order(delivery_date=wednesday)
+
+        stock_service.hold(order, require_all=True)
+
+        [entry] = order.data["hold_ids"]
+        assert entry["hold_id"] != physical.hold_id
+        physical.refresh_from_db()
+        assert physical.status == HoldStatus.RELEASED
+
+    def test_reserva_tardia_de_item_fora_do_pedido_nao_recusa(self):
+        """Sobra não reconciliada (item tirado da sacola) não barra o pedido de hoje."""
+        today = timezone.localdate()
+        position = _world()
+        Product.objects.create(
+            sku="BAGUETTE-T", name="Baguette", base_price_q=900, is_published=True, is_sellable=True,
+        )
+        ready = _session_hold(_quant(position, sku="BAGUETTE-T"))
+        orphan = _session_hold(_quant(position, target_date=today + timedelta(days=2)))
+        order = _order(items=[{"sku": "BAGUETTE-T", "name": "Baguette", "qty": 1}])
+
+        stock_service.hold(order, require_all=True)
+
+        assert order.data["hold_ids"] == [{"sku": "BAGUETTE-T", "hold_id": ready.hold_id, "qty": 1.0}]
+        orphan.refresh_from_db()
+        assert orphan.status == HoldStatus.RELEASED
+
+    def test_recusa_usa_o_nome_do_catalogo_quando_a_linha_nao_traz_nome(self):
+        today = timezone.localdate()
+        position = _world()
+        _session_hold(_quant(position, target_date=today + timedelta(days=2)))
+
+        with pytest.raises(ValidationError) as caught:
+            stock_service.hold(_order(items=[{"sku": SKU, "qty": 1}]), require_all=True)
+
+        assert caught.value.message.startswith("Kuro Pan sai ")
+
     def test_fornada_de_hoje_mais_tarde_continua_passando(self):
         today = timezone.localdate()
         position = _world()
@@ -176,6 +242,53 @@ class TestSacolaPresaAFornadaFutura:
         assert all(entry["hold_id"] != future.hold_id for entry in order.data["hold_ids"])
         future.refresh_from_db()
         assert future.status == HoldStatus.RELEASED
+
+
+class TestRecusaAntesDoFechamento:
+    """A mesma pergunta do gate, para quem valida a data antes (a concierge)."""
+
+    def test_data_anterior_a_fornada_devolve_a_recusa_com_item_e_dia(self):
+        today = timezone.localdate()
+        wednesday = today + timedelta(days=2)
+        position = _world()
+        _session_hold(_quant(position, target_date=wednesday))
+        lines = [{"sku": SKU, "qty": 1}]
+
+        refusal = stock_service.order_date_before_batch_refusal(SESSION_KEY, today, lines)
+
+        assert refusal.code == stock_service.ORDER_DATE_BEFORE_BATCH
+        assert refusal.message == (
+            f"Kuro Pan sai {stock_service.batch_day_phrase(wednesday)}. "
+            "Escolha essa data ou uma depois dela."
+        )
+        assert stock_service.order_date_before_batch_refusal(SESSION_KEY, wednesday, lines) is None
+        assert stock_service.order_date_before_batch_refusal("", today, lines) is None
+
+    def test_validacao_de_data_da_concierge_recusa_antes_da_fornada(self):
+        from shopman.shop.models import Shop
+        from shopman.storefront.intents.checkout import _validate_preorder
+
+        Shop.objects.get_or_create(name="Casa", defaults={"brand_name": "Casa"})
+        today = timezone.localdate()
+        wednesday = today + timedelta(days=2)
+        position = _world()
+        _session_hold(_quant(position, target_date=wednesday))
+        lines = [{"sku": SKU, "qty": 1}]
+
+        errors = _validate_preorder(
+            (today + timedelta(days=1)).isoformat(),
+            cart_lines=lines, channel_ref=CHANNEL_REF, session_key=SESSION_KEY,
+        )
+        on_the_day = _validate_preorder(
+            wednesday.isoformat(), cart_lines=lines, channel_ref=CHANNEL_REF, session_key=SESSION_KEY,
+        )
+
+        # Dia fechado responde antes pela régua de datas; aberto, responde a fornada.
+        if "Kuro Pan" in errors.get("delivery_date", ""):
+            assert wednesday.strftime("%d/%m") in errors["delivery_date"]
+        else:
+            assert errors.get("delivery_date")
+        assert "Kuro Pan" not in on_the_day.get("delivery_date", "")
 
 
 class TestRecusaNoDialetoDoCheckout:

@@ -1911,7 +1911,7 @@ useSeoMeta({
                   <p v-if="todayOverNotice" class="shop-meta text-muted-foreground" data-checkout-today-over>
                     {{ todayOverNotice }}
                   </p>
-                  <p v-if="batchFloorNotice" class="shop-meta text-muted-foreground" data-checkout-batch-floor>
+                  <p v-if="batchFloorNotice" id="checkout-batch-floor" class="shop-meta text-muted-foreground" data-checkout-batch-floor>
                     {{ batchFloorNotice }}
                   </p>
                   <!-- Datas padronizadas como as demais escolhas: caixas verticais
@@ -1920,6 +1920,7 @@ useSeoMeta({
                   <UiRadioGroup
                     :model-value="state.delivery_date"
                     class="grid gap-2"
+                    :aria-describedby="batchFloorNotice ? 'checkout-batch-floor' : undefined"
                     @update:model-value="pickDeliveryDate(String($event))"
                   >
                     <UiFieldLabel

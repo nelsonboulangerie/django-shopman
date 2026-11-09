@@ -2220,3 +2220,83 @@ def test_run_turn_answers_media_and_daily_limit_without_the_model(conversation, 
     _receive(conversation, "oi", "a2")
     result = service.run_turn(conversation.pk, binding.pk, client=ScriptedClient())
     assert result.fallback == "turn_limit" and outbox.sent[-1] == "[CONCIERGE_TURN_LIMIT]"
+
+
+# ── Um pedido, uma data: a sacola presa a uma fornada futura ─────────
+
+
+def _move_cart_hold_to_batch(conversation, batch_date) -> None:
+    """A reserva da sacola passa a esperar a fornada de ``batch_date`` (fila)."""
+    from shopman.stockman.models import Hold, Position, Quant
+
+    conversation.refresh_from_db()
+    planned = Quant.objects.create(
+        sku=SKU, position=Position.objects.get(ref="loja"), target_date=batch_date, _quantity=Decimal("10"),
+    )
+    moved = Hold.objects.filter(metadata__reference=conversation.session_key, sku=SKU).update(
+        quant=planned, target_date=batch_date, expires_at=None,
+    )
+    assert moved == 1
+
+
+def test_set_fulfillment_refuses_a_date_before_the_batch_the_cart_waits_for(ctx, conversation):
+    from shopman.shop.services.stock import batch_day_phrase
+
+    assert tools.set_item(ctx, SKU, 1)["ok"]
+    batch_date = date.today() + timedelta(days=3)
+    _move_cart_hold_to_batch(conversation, batch_date)
+
+    refused = tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-12", "")
+
+    assert refused["ok"] is False and refused["error"] == "validation"
+    assert refused["errors"]["delivery_date"] == (
+        f"Pão Francês sai {batch_day_phrase(batch_date)}. Escolha essa data ou uma depois dela."
+    )
+    accepted = tools.set_fulfillment(ctx, "pickup", batch_date.isoformat(), "slot-12", "")
+    assert "Pão Francês sai" not in str(accepted.get("errors") or "")
+
+
+def test_place_order_names_the_item_and_the_batch_day_when_the_date_is_before_the_batch(ctx, conversation):
+    from shopman.shop.services.stock import batch_day_phrase
+
+    review = _pickup_ready(ctx)
+    _accept_review(ctx, review)
+    batch_date = date.today() + timedelta(days=3)
+    # A sacola entrou na fila da fornada depois de a retirada de amanhã estar combinada.
+    _move_cart_hold_to_batch(conversation, batch_date)
+
+    refused = tools.place_order(ctx, review["quote_token"], "pix", "")
+
+    assert refused["ok"] is False and refused["error"] == "revision_conflict", refused
+    assert refused["errors"]["delivery_date"] == (
+        f"Pão Francês sai {batch_day_phrase(batch_date)}. Escolha essa data ou uma depois dela."
+    )
+    assert not Order.objects.exists()
+
+
+def test_place_order_relays_the_commit_gate_refusal_instead_of_a_generic_failure(ctx, monkeypatch):
+    """A recusa do gate de commit (corrida depois da revalidação) chega com item e dia."""
+    from shopman.orderman.exceptions import ValidationError
+
+    from shopman.shop.services import checkout as checkout_service
+    from shopman.shop.services.stock import ORDER_DATE_BEFORE_BATCH
+
+    review = _pickup_ready(ctx)
+    _accept_review(ctx, review)
+    message = "Pão Francês sai na quarta, 11/11. Escolha essa data ou uma depois dela."
+
+    def refuse(*args, **kwargs):
+        raise ValidationError(
+            code=ORDER_DATE_BEFORE_BATCH, message=message,
+            context={"field": "delivery_date", "batch_date": "2026-11-11"},
+        )
+
+    monkeypatch.setattr(checkout_service, "process", refuse)
+
+    refused = tools.place_order(ctx, review["quote_token"], "pix", "")
+
+    assert refused["ok"] is False and refused["error"] == ORDER_DATE_BEFORE_BATCH, refused
+    assert refused["message"].startswith(message)
+    assert "set_fulfillment" in refused["message"]
+    assert refused["facts"]["batch_date"] == "2026-11-11"
+    assert not Order.objects.exists()

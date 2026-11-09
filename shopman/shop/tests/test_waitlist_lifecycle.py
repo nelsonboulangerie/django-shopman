@@ -594,7 +594,8 @@ class TestWaitlistReservationIntegrity:
             snapshot={"items": [{"sku": sku, "qty": "1", "price_q": 1000}]},
             # Um pedido, uma data: o pedido da fila é para o dia da fornada. Sem
             # data ele seria um pedido de hoje, e o gate de commit recusa levar
-            # a reserva de amanhã para hoje (beta 09/11).
+            # a reserva de amanhã para hoje (beta 09/11). Para o dia da fornada
+            # o pedido ADOTA a reserva da sacola: a vaga na fila é a mesma.
             data={"delivery_date": tomorrow.isoformat()},
         )
         result = availability.reserve(
@@ -604,13 +605,12 @@ class TestWaitlistReservationIntegrity:
             target_date=tomorrow,
         )
         assert result["ok"] is True
-        session_hold = Hold.objects.get(pk=int(result["hold_ids"][0].split(":")[1]))
-        assert session_hold.metadata[QUALITY_GRADE_POLICY_VERSION_METADATA_KEY] == QUALITY_GRADE_POLICY_VERSION
+        hold = Hold.objects.get(pk=int(result["hold_ids"][0].split(":")[1]))
+        assert hold.metadata[QUALITY_GRADE_POLICY_VERSION_METADATA_KEY] == QUALITY_GRADE_POLICY_VERSION
 
         stock_service.hold(order, require_all=True)
-        hold = Hold.objects.get(pk=stock_service.hold_pks(order.data["hold_ids"])[0])
+        hold.refresh_from_db()
         assert hold.metadata["reference"] == f"order:{order.ref}"
-        assert hold.metadata[QUALITY_GRADE_POLICY_VERSION_METADATA_KEY] == QUALITY_GRADE_POLICY_VERSION
         assert order.data["hold_ids"] == [
             {"sku": sku, "hold_id": hold.hold_id, "qty": 1.0},
         ]
@@ -625,9 +625,6 @@ class TestWaitlistReservationIntegrity:
             to_position=storefront,
             from_position=production,
             to_batch="PAO-FILA-REALIZE-LOTE",
-            # A reserva do pedido nasce com a fronteira de qualidade do canal
-            # remoto (Ótimo/Normal): o lote que a fornada produz tem grau.
-            to_quality_grade_ref="standard",
         )
         hold.refresh_from_db()
         assert hold.quant.target_date is None

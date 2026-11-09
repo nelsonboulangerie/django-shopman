@@ -387,6 +387,9 @@ describe('surface UX guardrails', () => {
     expect(checkout).toContain('if (!checkout.value) return')
     expect(checkout).toContain('initialCheckoutDate(')
     expect(checkout).toContain('checkout.value.available_dates || []')
+    // O motivo do "Hoje" apagado é lido junto com as caixas de data.
+    expect(checkout).toContain('id="checkout-batch-floor"')
+    expect(checkout).toContain(":aria-describedby=\"batchFloorNotice ? 'checkout-batch-floor' : undefined\"")
     expect(checkout).toContain("watch(checkout, initializeDeliveryDate, { flush: 'post' })")
     expect(checkout).toContain('closed_weekdays')
     expect(checkout).not.toContain("type Step = 'identity'")

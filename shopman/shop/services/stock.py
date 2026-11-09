@@ -137,9 +137,16 @@ def hold(order, *, require_all: bool = False) -> None:
 
     E um gate da sacola, "um pedido, uma data": reserva da sessão presa a um
     Quant planejado de data POSTERIOR à data do pedido (o Kuro Pan de quarta
-    num pedido para retirar hoje) recusa no ``require_all``
-    (``order_date_before_batch``, com o item e o dia da fornada) e, no caminho
-    brando, não é adotada. Sem sessão (PDV, iFood) o gate nem olha.
+    num pedido para retirar hoje), de um item QUE ESTÁ no pedido, recusa no
+    ``require_all`` (``order_date_before_batch``, com o item e o dia da
+    fornada) e, no caminho brando, não é adotada. Reserva tardia de item que
+    não está no pedido (sobra não reconciliada) só é solta no fim, como toda
+    sobra. Sem sessão (PDV, iFood) o gate nem olha.
+
+    O pedido para o DIA da fornada adota a reserva que a sacola já tem nesse
+    lote: é a vaga do próprio cliente. Reservar de novo disputaria o lote com
+    a reserva dele mesmo, e com a fornada cheia o pedido cairia em demanda sem
+    lote enquanto a vaga era solta para o próximo.
     """
     # Pedido de teste de marketplace (homologação) não reserva: a reserva sai
     # do estoque de venda da padaria e pode derrubar o cliente real que compra
@@ -159,11 +166,13 @@ def hold(order, *, require_all: bool = False) -> None:
 
     target_date = get_commitment_date(order)
     adopt_session_holds = target_date in (None, timezone.localdate())
-    # Encomenda: pedido para data FUTURA não adota os holds da sacola (eles
-    # miram a produção de HOJE) — reserva na data-alvo, e quando não há plano
-    # para ela o canal com preorder REGISTRA A DEMANDA (hold quant=None) em
-    # vez de recusar. Os holds de hoje da sessão caem no leftover-release no
-    # fim desta função. Produto pausado continua recusando (gate do Stockman).
+    # Encomenda: pedido para data FUTURA não adota os holds da sacola que miram
+    # a produção de HOJE: reserva na data-alvo, e quando não há plano para ela
+    # o canal com preorder REGISTRA A DEMANDA (hold quant=None) em vez de
+    # recusar. Os holds de hoje da sessão caem no leftover-release no fim desta
+    # função. Produto pausado continua recusando (gate do Stockman). A exceção
+    # é a reserva da sacola presa à fornada DA data do pedido: essa é adotada
+    # (``batch_holds_by_sku`` abaixo).
     allow_demand = (
         not adopt_session_holds
         and target_date is not None
@@ -182,7 +191,7 @@ def hold(order, *, require_all: bool = False) -> None:
     # não é adotada e volta para a fornada dela.
     if session_key:
         order_day = target_date or timezone.localdate()
-        too_late = _session_holds_after(session_key, order_day)
+        too_late = _late_holds_of_order(session_key, order_day, items)
         if too_late:
             if require_all:
                 raise _order_date_before_batch_error(items, too_late, order_day)
@@ -190,6 +199,21 @@ def hold(order, *, require_all: bool = False) -> None:
             for sku_key, pairs in list(session_holds_by_sku.items()):
                 session_holds_by_sku[sku_key] = [pair for pair in pairs if pair[0] not in late_ids]
             adapter.release_holds(sorted(late_ids))
+    # O que o pedido pode adotar da sacola. Pedido de hoje: tudo o que sobrou
+    # acima. Encomenda: só a reserva presa à fornada do dia do pedido (a vaga
+    # que a fila já guardou para esse cliente); o resto segue para a sobra.
+    if adopt_session_holds:
+        adoptable_by_sku = session_holds_by_sku
+    else:
+        batch_ids = _session_holds_on_batch(session_key, target_date) if session_key else set()
+        adoptable_by_sku = {
+            sku_key: [pair for pair in pairs if pair[0] in batch_ids]
+            for sku_key, pairs in session_holds_by_sku.items()
+        }
+        session_holds_by_sku = {
+            sku_key: [pair for pair in pairs if pair[0] not in batch_ids]
+            for sku_key, pairs in session_holds_by_sku.items()
+        }
     hold_ids: list[dict] = []
     # Só a venda já consumada fora (``payment.timing == "external"``: balcão,
     # marketplace pago) e só para hoje: encomenda não tirou pão de ninguém.
@@ -251,16 +275,13 @@ def hold(order, *, require_all: bool = False) -> None:
                 continue
 
             # 1) Adopt session holds by quantity until comp_qty is met.
-            if adopt_session_holds:
-                adopted_pairs, unmet_qty, overshoot_ids = _adopt_holds_for_qty(
-                    session_holds_by_sku, comp_sku, comp_qty,
-                )
-                # Release surplus holds (holds beyond the one that covered
-                # the requirement).
-                if overshoot_ids:
-                    adapter.release_holds(overshoot_ids)
-            else:
-                adopted_pairs, unmet_qty = [], comp_qty
+            adopted_pairs, unmet_qty, overshoot_ids = _adopt_holds_for_qty(
+                adoptable_by_sku, comp_sku, comp_qty,
+            )
+            # Release surplus holds (holds beyond the one that covered
+            # the requirement).
+            if overshoot_ids:
+                adapter.release_holds(overshoot_ids)
             for hid, hqty in adopted_pairs:
                 if not _retag_hold_for_order(hid, order.ref, target_date=target_date):
                     # A reserva deixou de valer entre a leitura da sacola e a
@@ -411,9 +432,12 @@ def hold(order, *, require_all: bool = False) -> None:
 
     # Any session holds left over (e.g. items removed before checkout without
     # calling availability.reconcile) — release.
-    leftover_ids = [
-        hid for pairs in session_holds_by_sku.values() for hid, _ in pairs
-    ]
+    leftover_ids = sorted({
+        hid
+        for bucket in (session_holds_by_sku, adoptable_by_sku)
+        for pairs in bucket.values()
+        for hid, _ in pairs
+    })
     if leftover_ids:
         adapter.release_holds(leftover_ids)
 
@@ -938,12 +962,63 @@ def _session_holds_after(session_key: str, day) -> list[tuple[str, str, object]]
     return availability.session_holds_after(session_key, day)
 
 
+def _session_holds_on_batch(session_key: str, day) -> set[str]:
+    """Reservas da sacola presas à fornada DE ``day`` (ver ``availability``)."""
+    from shopman.shop.services import availability
+
+    return availability.session_holds_on_batch(session_key, day)
+
+
+def _line_value(line, key: str):
+    """Linha de pedido (dict do snapshot) ou de sacola (dict ou objeto)."""
+    if isinstance(line, dict):
+        return line.get(key)
+    return getattr(line, key, None)
+
+
+def _late_holds_of_order(session_key: str, order_day, items) -> list[tuple[str, str, object]]:
+    """As reservas tardias da sacola que são de itens DESTE pedido.
+
+    Reserva tardia de SKU que não está no pedido é sobra não reconciliada (item
+    tirado da sacola cuja reserva escapou): não é promessa deste pedido, não o
+    recusa, e segue para a liberação de sobras.
+    """
+    too_late = _session_holds_after(session_key, order_day)
+    if not too_late:
+        return []
+    order_skus: set[str] = set()
+    for item in items or ():
+        sku = _line_value(item, "sku")
+        if not sku:
+            continue
+        order_skus.add(sku)
+        order_skus.update(comp["sku"] for comp in _expand_if_bundle(sku, Decimal("1")))
+    return [row for row in too_late if row[1] in order_skus]
+
+
+def order_date_before_batch_refusal(session_key: str, order_day, items):
+    """A recusa "um pedido, uma data" para ``order_day``, ou ``None``.
+
+    A mesma pergunta do gate de commit, para quem valida a data ANTES de fechar
+    (a concierge, ao gravar retirada/entrega): a sacola guarda algum item deste
+    pedido numa fornada que só sai depois de ``order_day``? Devolve o
+    ``ValidationError`` pronto (item, dia da fornada, campo da data).
+    """
+    if not session_key or order_day is None:
+        return None
+    too_late = _late_holds_of_order(session_key, order_day, items)
+    if not too_late:
+        return None
+    return _order_date_before_batch_error(items, too_late, order_day)
+
+
 def batch_day_phrase(batch_date, *, today=None) -> str:
-    """"amanhã, 10/11" / "na quarta, 11/11" / "no sábado, 14/11": quando a fornada sai."""
+    """"amanhã, 10/11" / "na quarta, 11/11" / "no sábado, 14/11": quando a fornada sai.
+
+    Só se fala de fornada que sai DEPOIS do dia do pedido: não há frase de "hoje".
+    """
     today = today or timezone.localdate()
     stamp = batch_date.strftime("%d/%m")
-    if batch_date == today:
-        return f"hoje, {stamp}"
     if (batch_date - today).days == 1:
         return f"amanhã, {stamp}"
     weekday = _WEEKDAYS[batch_date.weekday()]
@@ -965,11 +1040,11 @@ def _order_date_before_batch_error(items: list[dict], too_late: list, order_day)
     _hold_id, late_sku, batch_date = max(too_late, key=lambda row: row[2])
     display = late_sku
     for item in items:
-        sku = item.get("sku")
+        sku = _line_value(item, "sku")
         if not sku:
             continue
         if sku == late_sku or any(comp["sku"] == late_sku for comp in _expand_if_bundle(sku, Decimal("1"))):
-            display = item.get("name") or sku
+            display = _line_value(item, "name") or _product_name(sku) or sku
             break
     return ValidationError(
         code=ORDER_DATE_BEFORE_BATCH,
@@ -1087,6 +1162,17 @@ def _alert_hold_gap(order, sku: str, qty, error_code) -> None:
         order_ref=order.ref,
         dedupe_key=f"stock_hold_gap:{order.ref}:{sku}",
     )
+
+
+def _product_name(sku: str) -> str:
+    """Nome de catálogo do SKU, para a mensagem ao cliente (vazio se não houver)."""
+    try:
+        from shopman.offerman.models import Product
+
+        return str(Product.objects.filter(sku=sku).values_list("name", flat=True).first() or "")
+    except Exception:
+        logger.debug("stock._product_name degraded sku=%s", sku, exc_info=True)
+        return ""
 
 
 def _expand_if_bundle(sku: str, qty: Decimal) -> list[dict]:

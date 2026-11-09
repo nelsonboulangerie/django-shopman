@@ -1457,6 +1457,16 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
             )
         if getattr(exc, "code", "") == "total_changed":
             return _error("revision_conflict", "O total mudou. Confira a diferença antes de confirmar.", facts=getattr(exc, "context", {}))
+        from shopman.shop.services.stock import ORDER_DATE_BEFORE_BATCH
+
+        if getattr(exc, "code", "") == ORDER_DATE_BEFORE_BATCH:
+            # Um pedido, uma data: a sacola espera uma fornada que sai depois da
+            # data combinada. A mensagem já traz o item e o dia; o conserto é a data.
+            return _error(
+                exc.code,
+                f"{exc.message} Combine a nova data com o cliente (set_fulfillment) e confira o resumo de novo.",
+                facts=getattr(exc, "context", {}),
+            )
         return _error("checkout_unavailable", "Não consegui concluir a confirmação. Consulte o resultado usando esta mesma confirmação.")
     if not receipt.response_body.get("ok"):
         return receipt.response_body
