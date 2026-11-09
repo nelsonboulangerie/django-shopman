@@ -118,12 +118,14 @@ export function lineHoldState (line: HoldFields): CartLineHold | null {
 }
 
 /** Lista de espera na REVISÃO do pedido: a história inteira (badge + data
- *  prevista + "avisamos quando ficarem prontos") só vale quando o pedido é
- *  para o MESMO dia da fornada que o hold da sacola espera. Pedido AGENDADO
- *  para outra data não tem fila: o commit re-ancora a reserva na data com
- *  prioridade de pedido (WP-C) — badge de espera ali contradiria o "Quando".
- *  Retorna null (sem história de espera) ou o notice da fornada (pode ser
- *  string vazia quando não há data prevista a mostrar). */
+ *  prevista + "avisamos quando ficarem prontos") vale quando o pedido é para o
+ *  MESMO dia da fornada que o hold da sacola espera. Pedido agendado para
+ *  DEPOIS da fornada não tem fila: o commit re-ancora a reserva na data com
+ *  prioridade de pedido (WP-C), e o badge de espera contradiria o "Quando".
+ *  Pedido para ANTES da fornada (retirar hoje o pão de quarta) não cala: a
+ *  data prevista fica à vista, porque é ela que diz que o "Quando" está errado
+ *  (o servidor recusa esse pedido). Retorna null (sem história de espera) ou o
+ *  notice da fornada (pode ser string vazia quando não há data a mostrar). */
 export function reviewWaitlist (
   line: Pick<CartItemProjection, 'is_awaiting_confirmation' | 'planned_for_date' | 'planned_for_notice'>,
   deliveryDate: string,
@@ -134,8 +136,53 @@ export function reviewWaitlist (
   // para decidir. Quem manda calar aqui é a DATA, não a natureza do item.
   if (!line.is_awaiting_confirmation) return null
   const batchDate = line.planned_for_date || today
-  if (deliveryDate && deliveryDate !== batchDate) return null
+  if (deliveryDate && deliveryDate > batchDate) return null
   return { notice: line.planned_for_notice || '' }
+}
+
+/** A fornada mais tardia que a sacola espera, com o item que a espera.
+ *  Um pedido, uma data: o pedido não pode ser para antes dela. `null` quando
+ *  nenhuma linha espera fornada depois de hoje. */
+export function cartBatchFloor (
+  items: Array<Pick<CartItemProjection, 'name' | 'planned_for_date'>>,
+  today: string = new Date().toLocaleDateString('en-CA')
+): { date: string, name: string } | null {
+  let floor: { date: string, name: string } | null = null
+  for (const item of items) {
+    const date = item.planned_for_date || ''
+    if (date > today && (!floor || date > floor.date)) floor = { date, name: item.name }
+  }
+  return floor
+}
+
+const BATCH_WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado']
+
+/** "amanhã, 10/11" / "na quarta, 11/11" / "no sábado, 14/11". */
+export function batchDayPhrase (date: string, today: string = new Date().toLocaleDateString('en-CA')): string {
+  const [year, month, day] = date.split('-').map(Number)
+  if (!year || !month || !day) return ''
+  const stamp = `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`
+  const value = new Date(year, month - 1, day)
+  const [ty, tm, td] = today.split('-').map(Number)
+  const tomorrow = new Date(ty || year, (tm || month) - 1, (td || day) + 1)
+  if (value.getTime() === tomorrow.getTime()) return `amanhã, ${stamp}`
+  const weekday = value.getDay()
+  const article = weekday === 0 || weekday === 6 ? 'no' : 'na'
+  return `${article} ${BATCH_WEEKDAYS[weekday]}, ${stamp}`
+}
+
+/** Por que as datas antes da fornada estão desabilitadas, numa frase:
+ *  "Kuro Pan sai na quarta, 11/11. Antes disso, não dá para retirar." */
+export function cartBatchFloorReason (
+  floor: { date: string, name: string } | null,
+  fulfillmentType: string,
+  today: string = new Date().toLocaleDateString('en-CA')
+): string {
+  if (!floor || floor.date <= today) return ''
+  const when = batchDayPhrase(floor.date, today)
+  if (!when) return ''
+  const verb = fulfillmentType === 'delivery' ? 'receber' : 'retirar'
+  return `${floor.name} sai ${when}. Antes disso, não dá para ${verb}.`
 }
 
 export function holdCountdown (deadlineIso: string | null | undefined, nowMs: number): { totalSeconds: number, display: string } | null {

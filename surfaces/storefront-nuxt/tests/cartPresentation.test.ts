@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyLineQty, applySkuQty, cartQtyForSku, plainQtyForSku, cartHoldBanner, cartItemsCount, formatCentavos, holdBannerVariant, holdCountdown, isOptimisticLine, lineHoldState, linePrice, reviewWaitlist, substituteSwapPlan } from '~/presentation/cart'
+import { applyLineQty, applySkuQty, batchDayPhrase, cartBatchFloor, cartBatchFloorReason, cartQtyForSku, plainQtyForSku, cartHoldBanner, cartItemsCount, formatCentavos, holdBannerVariant, holdCountdown, isOptimisticLine, lineHoldState, linePrice, reviewWaitlist, substituteSwapPlan } from '~/presentation/cart'
 import type { CartItemProjection, CartProjection, ProductMutationMeta, SubstituteProjection } from '~/types/shopman'
 
 function line (overrides: Partial<CartItemProjection> = {}): CartItemProjection {
@@ -211,6 +211,49 @@ describe('cart presentation — planned hold', () => {
     const noBatch = line({ is_awaiting_confirmation: true, planned_for_date: null, planned_for_notice: null })
     expect(reviewWaitlist(noBatch, today, today)).toEqual({ notice: '' })
     expect(reviewWaitlist(noBatch, tomorrow, today)).toBeNull()
+  })
+
+  it('review keeps the batch date in sight when the order is for BEFORE the batch', () => {
+    // Beta 09/11: Kuro Pan na fila da quarta, pedido para retirar HOJE (segunda).
+    // A revisão calava o selo ("data diferente") e o pedido saía sem espera à
+    // vista. Antes da fornada a data prevista continua aparecendo: é ela que
+    // denuncia o "Quando" errado (o servidor recusa esse pedido).
+    const today = '2026-11-09'
+    const wednesday = '2026-11-11'
+    const kuro = line({ is_awaiting_confirmation: true, planned_for_date: wednesday, planned_for_notice: 'Previsto para quarta-feira, 11/11' })
+
+    expect(reviewWaitlist(kuro, today, today)).toEqual({ notice: 'Previsto para quarta-feira, 11/11' })
+    expect(reviewWaitlist(kuro, '2026-11-10', today)).toEqual({ notice: 'Previsto para quarta-feira, 11/11' })
+    expect(reviewWaitlist(kuro, wednesday, today)).toEqual({ notice: 'Previsto para quarta-feira, 11/11' })
+    // Depois da fornada: pedido agendado, sem fila.
+    expect(reviewWaitlist(kuro, '2026-11-12', today)).toBeNull()
+  })
+
+  it('finds the latest batch the cart waits for, with the item that waits', () => {
+    const today = '2026-11-09'
+    const items = [
+      line({ name: 'Baguette', planned_for_date: today }),
+      line({ name: 'Kuro Pan', planned_for_date: '2026-11-11' }),
+      line({ name: 'Croissant', planned_for_date: null })
+    ]
+
+    expect(cartBatchFloor(items, today)).toEqual({ date: '2026-11-11', name: 'Kuro Pan' })
+    // Fornada de hoje (mesmo mais tarde) não é piso: hoje continua valendo.
+    expect(cartBatchFloor([line({ name: 'Baguette', planned_for_date: today })], today)).toBeNull()
+    expect(cartBatchFloor([line()], today)).toBeNull()
+  })
+
+  it('says in one sentence why the days before the batch are off', () => {
+    const today = '2026-11-09'
+
+    expect(cartBatchFloorReason({ date: '2026-11-11', name: 'Kuro Pan' }, 'pickup', today))
+      .toBe('Kuro Pan sai na quarta, 11/11. Antes disso, não dá para retirar.')
+    expect(cartBatchFloorReason({ date: '2026-11-10', name: 'Kuro Pan' }, 'delivery', today))
+      .toBe('Kuro Pan sai amanhã, 10/11. Antes disso, não dá para receber.')
+    expect(cartBatchFloorReason(null, 'pickup', today)).toBe('')
+    expect(cartBatchFloorReason({ date: today, name: 'Baguette' }, 'pickup', today)).toBe('')
+    expect(batchDayPhrase('2026-11-14', today)).toBe('no sábado, 14/11')
+    expect(batchDayPhrase('2026-11-15', today)).toBe('no domingo, 15/11')
   })
 
   it('carries the expected-batch notice on awaiting lines only', () => {

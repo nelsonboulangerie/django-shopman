@@ -2,7 +2,7 @@
 import { navigateTo } from '#app'
 import type { CartProjection, CartResponse, CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman'
 import type { AddressSelection } from '~/presentation/address'
-import { reviewWaitlist } from '~/presentation/cart'
+import { cartBatchFloor, cartBatchFloorReason, reviewWaitlist } from '~/presentation/cart'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
@@ -16,6 +16,7 @@ import {
   availableFulfillmentOptions,
   canContinueCheckoutWhen,
   checkoutDateBounds,
+  checkoutDateChoices,
   checkoutStepForField,
   checkoutStepHeaderSummary,
   checkoutStepIcons,
@@ -31,6 +32,7 @@ import {
   fulfillmentIcon as resolveFulfillmentIcon,
   fulfillmentLabel as resolveFulfillmentLabel,
   fulfillmentSummary as buildFulfillmentSummary,
+  initialCheckoutDate,
   isCheckoutDateUnavailable,
   localDateValue,
   isCustomCheckoutDate,
@@ -549,7 +551,11 @@ const addressSummary = computed(() => buildAddressSummary(state))
 // Endereço quebrado em linhas (mesmo padrão do rodapé) — leitura bonita na revisão.
 const deliveryAddressLines = computed(() => addressLines(state.delivery_address))
 const confirmSheetDescription = computed(() => buildConfirmSheetDescription(checkout.value))
-const dateBounds = computed(() => checkoutDateBounds(checkout.value))
+// Um pedido, uma data: a sacola que espera uma fornada de outro dia não vira
+// pedido de antes dela. O piso entra nos limites (calendário, caixas, "Continuar").
+const batchFloor = computed(() => cartBatchFloor(checkout.value?.cart?.items || []))
+const dateBounds = computed(() => checkoutDateBounds(checkout.value, new Date(), batchFloor.value?.date || ''))
+const batchFloorNotice = computed(() => cartBatchFloorReason(batchFloor.value, state.fulfillment_type))
 const checkoutMinDate = computed(() => dateBounds.value.minDate)
 const checkoutMaxDate = computed(() => dateBounds.value.maxDate)
 const closedDateEntries = computed(() => parseClosedDateEntries(checkout.value?.closed_dates_json))
@@ -567,19 +573,7 @@ const quickDateOptions = computed(() => {
     return quickCheckoutDateOptions(dateBounds.value, closedDateEntries.value, closedWeekdays.value)
       .map(option => ({ value: option.value, title: option.label, disabled: option.disabled }))
   }
-  const today = dateBounds.value.todayValue
-  const [firstDate, secondDate] = available
-  const out: Array<{ value: string, title: string, disabled: boolean }> = []
-  if (!firstDate) return out
-  if (firstDate === today) {
-    out.push({ value: firstDate, title: 'Hoje', disabled: false })
-    if (secondDate) out.push({ value: secondDate, title: nextDateTitle(secondDate), disabled: false })
-  } else {
-    // Hoje está fechado → a opção mais próxima JÁ é a próxima data disponível
-    // ("Amanhã" se for o dia seguinte; senão "Próxima fornada").
-    out.push({ value: firstDate, title: nextDateTitle(firstDate), disabled: false })
-  }
-  return out
+  return checkoutDateChoices(available, dateBounds.value, nextDateTitle)
 })
 const isCustomDate = computed(() => isCustomCheckoutDate(state.delivery_date, quickDateOptions.value))
 // "Hoje" fora das opções porque o dia já encerrou: a tela diz, em vez de sumir calado.
@@ -850,15 +844,22 @@ watch(() => checkout.value, value => {
 // ainda está pendente escolheria "hoje" mesmo num dia fechado e deixaria todos
 // os horários desabilitados. O watch cobre essa chegada tardia sem segurar a rota.
 function initializeDeliveryDate () {
-  if (chosenDate.value) return
   if (!checkout.value) return
   const restoredDate = state.delivery_date
+  const restoredUsable = !!restoredDate && !isCheckoutDateUnavailable(restoredDate, dateBounds.value, closedDateEntries.value, closedWeekdays.value)
+  // Já escolhida e ainda válida: a escolha é do cliente. Inválida (a sacola
+  // passou a esperar uma fornada depois dela) volta para o piso.
+  if (chosenDate.value && restoredUsable) return
   // Hoje já encerrado (`today_over`) não volta como data lembrada: o cliente
   // cairia numa lista de horários vazia em vez de no próximo dia.
   const restoredIsOver = !!checkout.value.today_over && restoredDate === dateBounds.value.todayValue
-  const value = restoredDate && !restoredIsOver && !isCheckoutDateUnavailable(restoredDate, dateBounds.value, closedDateEntries.value, closedWeekdays.value)
-    ? restoredDate
-    : checkout.value.available_dates?.[0] || localDateValue(new Date())
+  const value = initialCheckoutDate(
+    restoredDate,
+    restoredUsable && !restoredIsOver,
+    checkout.value.available_dates || [],
+    dateBounds.value,
+    localDateValue(new Date())
+  )
   const parsed = parseLocalDate(value)
   if (!parsed) return
   chosenDate.value = parsed
@@ -1909,6 +1910,9 @@ useSeoMeta({
                   <UiLabel>Data</UiLabel>
                   <p v-if="todayOverNotice" class="shop-meta text-muted-foreground" data-checkout-today-over>
                     {{ todayOverNotice }}
+                  </p>
+                  <p v-if="batchFloorNotice" class="shop-meta text-muted-foreground" data-checkout-batch-floor>
+                    {{ batchFloorNotice }}
                   </p>
                   <!-- Datas padronizadas como as demais escolhas: caixas verticais
                        com dia da semana + data explícita. "Outra data" abre o

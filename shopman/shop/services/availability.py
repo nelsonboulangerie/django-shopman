@@ -318,6 +318,40 @@ def session_hold_dates_around(session_key: str, first_new_hold_id: str | None) -
     return before, new
 
 
+def session_holds_after(session_key: str, day: date) -> list[tuple[str, str, date]]:
+    """Reservas vivas da sessão presas a uma fornada DEPOIS de ``day``.
+
+    ``[(hold_id, sku, data da fornada)]``. Só reserva ancorada num quant
+    planejado (``Quant.target_date``) cuja data vem depois de ``day``: o pão
+    que ainda vai ser assado nesse dia. Pronto de hoje (quant físico), fornada
+    do próprio dia e reserva de demanda (sem quant) não entram. É a pergunta do
+    fechamento: "o pedido para ``day`` está levando uma reserva de um pão que só
+    existe depois?" (um pedido, uma data).
+    """
+    if not session_key or day is None:
+        return []
+    try:
+        from django.db.models import Q
+        from django.utils import timezone
+        from shopman.stockman import Hold, HoldStatus
+    except Exception:
+        logger.debug("availability.session_holds_after degraded; returning empty", exc_info=True)
+        return []
+
+    rows = (
+        Hold.objects.filter(
+            metadata__reference=session_key,
+            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            quant__isnull=False,
+            quant__target_date__gt=day,
+        )
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
+        .order_by("pk")
+        .values_list("pk", "sku", "quant__target_date")
+    )
+    return [(f"hold:{pk}", sku, batch_date) for pk, sku, batch_date in rows]
+
+
 def session_hold_dates(session_key: str) -> set[date]:
     """Datas que as reservas vivas da sessão já prometem (a data da sacola).
 

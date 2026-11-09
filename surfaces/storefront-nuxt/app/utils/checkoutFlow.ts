@@ -42,6 +42,9 @@ export interface CheckoutDateBounds {
   todayValue: string
   tomorrowValue: string
   maxDateValue: string
+  /** Primeira data que o pedido pode ter: hoje, ou a fornada da sacola quando
+   *  ela sai depois de hoje (um pedido, uma data). */
+  floorValue: string
 }
 
 export interface CheckoutQuickDateOption {
@@ -107,23 +110,34 @@ export function startOfCheckoutDay (now = new Date()): Date {
   return date
 }
 
-export function checkoutDateBounds (checkout: Pick<CheckoutProjection, 'max_preorder_days'> | null | undefined, now = new Date()): CheckoutDateBounds {
-  const minDate = startOfCheckoutDay(now)
-  const maxDate = new Date(minDate)
+export function checkoutDateBounds (
+  checkout: Pick<CheckoutProjection, 'max_preorder_days'> | null | undefined,
+  now = new Date(),
+  cartFloorValue = ''
+): CheckoutDateBounds {
+  const today = startOfCheckoutDay(now)
+  const todayValue = localDateValue(today)
+  // A sacola presa a uma fornada futura não vira pedido de antes dela: o
+  // calendário começa no dia da fornada. Piso no passado (ou ilegível) não
+  // conta: hoje continua sendo o começo.
+  const floorDate = cartFloorValue > todayValue ? parseLocalDate(cartFloorValue) : null
+  const minDate = floorDate || today
+  const maxDate = new Date(today)
   // A janela é a da casa (`max_preorder_days`, o mesmo teto que o servidor
   // confere no commit e que a home promete). Sem a projection, o calendário não
   // inventa número: só o dia de hoje.
   maxDate.setDate(maxDate.getDate() + (checkout?.max_preorder_days ?? 0))
 
-  const tomorrowDate = new Date(minDate)
+  const tomorrowDate = new Date(today)
   tomorrowDate.setDate(tomorrowDate.getDate() + 1)
 
   return {
     minDate,
     maxDate,
-    todayValue: localDateValue(minDate),
+    todayValue,
     tomorrowValue: localDateValue(tomorrowDate),
-    maxDateValue: localDateValue(maxDate)
+    maxDateValue: localDateValue(maxDate),
+    floorValue: floorDate ? localDateValue(floorDate) : todayValue
   }
 }
 
@@ -170,8 +184,11 @@ export function datepickerDisabledDates (
   return out
 }
 
-export function isDateWithinPreorderRange (value: string, bounds: Pick<CheckoutDateBounds, 'todayValue' | 'maxDateValue'>): boolean {
-  return value >= bounds.todayValue && value <= bounds.maxDateValue
+type DateRangeBounds = Pick<CheckoutDateBounds, 'todayValue' | 'maxDateValue'> & Partial<Pick<CheckoutDateBounds, 'floorValue'>>
+
+export function isDateWithinPreorderRange (value: string, bounds: DateRangeBounds): boolean {
+  const floor = bounds.floorValue && bounds.floorValue > bounds.todayValue ? bounds.floorValue : bounds.todayValue
+  return value >= floor && value <= bounds.maxDateValue
 }
 
 export function isClosedDateValue (value: string, entries: ClosedDateEntry[]): boolean {
@@ -197,7 +214,7 @@ export function isClosedWeekday (value: string, closedWeekdays: number[] | reado
 
 export function isCheckoutDateUnavailable (
   value: string,
-  bounds: Pick<CheckoutDateBounds, 'todayValue' | 'maxDateValue'>,
+  bounds: DateRangeBounds,
   entries: ClosedDateEntry[],
   closedWeekdays: number[] | readonly number[] = []
 ): boolean {
@@ -207,7 +224,7 @@ export function isCheckoutDateUnavailable (
 }
 
 export function quickCheckoutDateOptions (
-  bounds: Pick<CheckoutDateBounds, 'todayValue' | 'tomorrowValue' | 'maxDateValue'>,
+  bounds: Pick<CheckoutDateBounds, 'todayValue' | 'tomorrowValue' | 'maxDateValue'> & Partial<Pick<CheckoutDateBounds, 'floorValue'>>,
   entries: ClosedDateEntry[],
   closedWeekdays: number[] | readonly number[] = []
 ): CheckoutQuickDateOption[] {
@@ -218,6 +235,62 @@ export function quickCheckoutDateOptions (
     ...option,
     disabled: isCheckoutDateUnavailable(option.value, bounds, entries, closedWeekdays)
   }))
+}
+
+export interface CheckoutDateChoice {
+  value: string
+  title: string
+  disabled: boolean
+}
+
+/**
+ * As caixas de data a partir das datas que a casa opera (`available_dates`):
+ * "Hoje" (quando hoje opera) + a próxima data. Com a sacola presa a uma
+ * fornada futura (`bounds.floorValue`), o que vem antes dela aparece
+ * DESABILITADO, nunca some calado (a frase do motivo sai acima das caixas), e
+ * o dia da fornada entra como caixa própria quando não for uma delas.
+ */
+export function checkoutDateChoices (
+  available: string[],
+  bounds: Pick<CheckoutDateBounds, 'todayValue' | 'floorValue'>,
+  titleFor: (value: string) => string
+): CheckoutDateChoice[] {
+  const [firstDate, secondDate] = available
+  const out: CheckoutDateChoice[] = []
+  if (!firstDate) return out
+  const floor = bounds.floorValue > bounds.todayValue ? bounds.floorValue : bounds.todayValue
+  const push = (value: string, title: string) => out.push({ value, title, disabled: value < floor })
+  if (firstDate === bounds.todayValue) {
+    push(firstDate, 'Hoje')
+    if (secondDate) push(secondDate, titleFor(secondDate))
+  } else {
+    // Hoje está fechado → a opção mais próxima JÁ é a próxima data disponível
+    // ("Amanhã" se for o dia seguinte; senão "Próxima fornada").
+    push(firstDate, titleFor(firstDate))
+  }
+  if (floor > bounds.todayValue && !out.some(option => option.value === floor)) {
+    const floorOption = available.find(value => value >= floor) || floor
+    if (!out.some(option => option.value === floorOption)) push(floorOption, titleFor(floorOption))
+  }
+  return out
+}
+
+/**
+ * A data com que o Quando abre: a lembrada, se ainda vale; senão a primeira
+ * que a casa opera a partir do piso (nunca "Hoje" quando a sacola espera uma
+ * fornada de outro dia).
+ */
+export function initialCheckoutDate (
+  restored: string,
+  restoredValid: boolean,
+  available: string[],
+  bounds: Pick<CheckoutDateBounds, 'todayValue' | 'floorValue'>,
+  fallback: string
+): string {
+  if (restored && restoredValid) return restored
+  const floor = bounds.floorValue > bounds.todayValue ? bounds.floorValue : ''
+  if (floor) return available.find(value => value >= floor) || floor
+  return available[0] || fallback
 }
 
 export function displayCheckoutDate (value: string, now = new Date(), long = false): string {

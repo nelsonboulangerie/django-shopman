@@ -459,6 +459,7 @@ pronto e "Saiu para entrega" só depois da coleta (`shop/projections/order_track
 | Pagar na entrega pelo site | não existe, por decisão (Pergunta 2 = 1, 14/10) | ADR-036 | OK |
 | Horário de entrega do site | só confere "já passou", não a grade | `views.py:273-285` | ATRITO (P2-30), resolvido #1767 |
 | Link do entregador na página do pedido | não aparece (só no aviso) | `order_tracking.py:1477-1482` | LACUNA (P1-11), resolvida #1718 |
+| Sacola na fila de uma fornada futura, pedido para antes dela (Kuro Pan de quarta para retirar hoje, beta 09/11) | o Quando abre no dia da fornada; os dias antes aparecem desabilitados com a frase "Kuro Pan sai na quarta, 11/11. Antes disso, não dá para retirar."; o commit recusa (`order_date_before_batch`, campo `delivery_date`) e nunca adota a reserva da fornada num pedido de antes dela | `stock.hold`; `availability.session_holds_after`; `checkoutFlow.ts` (`checkoutDateChoices`, `initialCheckoutDate`); `presentation/cart.ts` (`cartBatchFloor`) | OK (P0 de 09/11) |
 | Texto residual "CPF obrigatório na entrega" | comentário e prompt da concierge | `checkoutPayload.ts:30`; `concierge/tools.py:1374` | ATRITO (P2-30), resolvido #1745 |
 
 ### 5.5 Matriz

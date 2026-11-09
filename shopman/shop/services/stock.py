@@ -134,6 +134,12 @@ def hold(order, *, require_all: bool = False) -> None:
       planejada) para data mais cedo que ``lead_time.earliest_allowed_date``.
       Encomenda com Quant planejado da data segue valendo (o hold ancora no
       plano e o gate nem dispara); venda imediata de estoque de hoje idem.
+
+    E um gate da sacola, "um pedido, uma data": reserva da sessão presa a um
+    Quant planejado de data POSTERIOR à data do pedido (o Kuro Pan de quarta
+    num pedido para retirar hoje) recusa no ``require_all``
+    (``order_date_before_batch``, com o item e o dia da fornada) e, no caminho
+    brando, não é adotada. Sem sessão (PDV, iFood) o gate nem olha.
     """
     # Pedido de teste de marketplace (homologação) não reserva: a reserva sai
     # do estoque de venda da padaria e pode derrubar o cliente real que compra
@@ -168,6 +174,22 @@ def hold(order, *, require_all: bool = False) -> None:
     session_holds_by_sku = _load_session_holds(session_key) if session_key else {}
 
     adapter = get_adapter("stock")
+
+    # Um pedido, uma data: a reserva da sacola presa a uma fornada que só sai
+    # DEPOIS da data do pedido não cobre esse pedido (Kuro Pan de quarta num
+    # pedido para retirar hoje, beta 09/11). No gate de commit é recusa limpa,
+    # com o item e a data; no caminho brando (pedido que já existe) a reserva
+    # não é adotada e volta para a fornada dela.
+    if session_key:
+        order_day = target_date or timezone.localdate()
+        too_late = _session_holds_after(session_key, order_day)
+        if too_late:
+            if require_all:
+                raise _order_date_before_batch_error(items, too_late, order_day)
+            late_ids = {hold_id for hold_id, _sku, _batch_date in too_late}
+            for sku_key, pairs in list(session_holds_by_sku.items()):
+                session_holds_by_sku[sku_key] = [pair for pair in pairs if pair[0] not in late_ids]
+            adapter.release_holds(sorted(late_ids))
     hold_ids: list[dict] = []
     # Só a venda já consumada fora (``payment.timing == "external"``: balcão,
     # marketplace pago) e só para hoje: encomenda não tirou pão de ninguém.
@@ -900,6 +922,63 @@ def _insufficient_supply_error(item: dict, comp_sku: str, qty, error_code):
             "component_sku": comp_sku,
             "requested_qty": str(qty),
             "error_code": error_code or "",
+        },
+    )
+
+
+ORDER_DATE_BEFORE_BATCH = "order_date_before_batch"
+
+_WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
+
+
+def _session_holds_after(session_key: str, day) -> list[tuple[str, str, object]]:
+    """Reservas da sacola presas a uma fornada depois de ``day`` (ver ``availability``)."""
+    from shopman.shop.services import availability
+
+    return availability.session_holds_after(session_key, day)
+
+
+def batch_day_phrase(batch_date, *, today=None) -> str:
+    """"amanhã, 10/11" / "na quarta, 11/11" / "no sábado, 14/11": quando a fornada sai."""
+    today = today or timezone.localdate()
+    stamp = batch_date.strftime("%d/%m")
+    if batch_date == today:
+        return f"hoje, {stamp}"
+    if (batch_date - today).days == 1:
+        return f"amanhã, {stamp}"
+    weekday = _WEEKDAYS[batch_date.weekday()]
+    article = "no" if batch_date.weekday() >= 5 else "na"
+    return f"{article} {weekday}, {stamp}"
+
+
+def _order_date_before_batch_error(items: list[dict], too_late: list, order_day):
+    """ValidationError do gate "um pedido, uma data": o pedido é para antes da fornada.
+
+    A sacola guarda o item numa fornada que só sai depois da data escolhida; o
+    pedido daquela data seria uma promessa impossível (retirar hoje o pão de
+    quarta). Nomeia o item e o dia da fornada, e aponta o campo da data. Mesmo
+    dialeto das outras recusas do gate; ``checkout.map_checkout_error`` usa o
+    ``field`` do contexto.
+    """
+    from shopman.orderman.exceptions import ValidationError
+
+    _hold_id, late_sku, batch_date = max(too_late, key=lambda row: row[2])
+    display = late_sku
+    for item in items:
+        sku = item.get("sku")
+        if not sku:
+            continue
+        if sku == late_sku or any(comp["sku"] == late_sku for comp in _expand_if_bundle(sku, Decimal("1"))):
+            display = item.get("name") or sku
+            break
+    return ValidationError(
+        code=ORDER_DATE_BEFORE_BATCH,
+        message=f"{display} sai {batch_day_phrase(batch_date)}. Escolha essa data ou uma depois dela.",
+        context={
+            "sku": late_sku,
+            "field": "delivery_date",
+            "order_date": order_day.isoformat(),
+            "batch_date": batch_date.isoformat(),
         },
     )
 

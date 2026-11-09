@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   checkoutDateBounds,
+  checkoutDateChoices,
   datepickerDisabledDates,
+  initialCheckoutDate,
   checkoutStepForField,
   checkoutStepState,
   checkoutSteps,
@@ -258,6 +260,58 @@ describe('janela de entrega (P2-30a)', () => {
 
 
 describe('calendário depois do encerramento', () => {
+  it('não abre o pedido antes da fornada que a sacola espera (um pedido, uma data)', () => {
+    // Beta 09/11: sacola com Kuro Pan da fornada de quarta (22/05 aqui), e o
+    // Quando abria em "Hoje", oferecendo hoje e amanhã.
+    const bounds = checkoutDateBounds({ max_preorder_days: 7 }, now, '2026-05-22')
+    const titleFor = (value: string) => (value === '2026-05-21' ? 'Amanhã' : 'Próxima fornada')
+
+    expect(bounds.todayValue).toBe('2026-05-20')
+    expect(bounds.floorValue).toBe('2026-05-22')
+    expect(bounds.minDate).toEqual(new Date(2026, 4, 22))
+    expect(isCheckoutDateUnavailable('2026-05-20', bounds, [])).toBe(true)
+    expect(isCheckoutDateUnavailable('2026-05-21', bounds, [])).toBe(true)
+    expect(isCheckoutDateUnavailable('2026-05-22', bounds, [])).toBe(false)
+    expect(canContinueCheckoutWhen(
+      { delivery_date: '2026-05-20', delivery_time_slot: '', fulfillment_type: 'pickup' }, [], null, bounds, []
+    )).toBe(false)
+
+    // "Hoje" e "Amanhã" aparecem DESABILITADOS (a frase do motivo sai acima),
+    // e o dia da fornada entra como caixa própria.
+    expect(checkoutDateChoices(['2026-05-20', '2026-05-21', '2026-05-22'], bounds, titleFor)).toEqual([
+      { value: '2026-05-20', title: 'Hoje', disabled: true },
+      { value: '2026-05-21', title: 'Amanhã', disabled: true },
+      { value: '2026-05-22', title: 'Próxima fornada', disabled: false }
+    ])
+    // Abre na data da fornada, nunca em "Hoje"; a data lembrada só vale se válida.
+    expect(initialCheckoutDate('', false, ['2026-05-20', '2026-05-21', '2026-05-22'], bounds, '2026-05-20')).toBe('2026-05-22')
+    expect(initialCheckoutDate('2026-05-20', false, ['2026-05-20', '2026-05-22'], bounds, '2026-05-20')).toBe('2026-05-22')
+    expect(initialCheckoutDate('2026-05-25', true, ['2026-05-20', '2026-05-22'], bounds, '2026-05-20')).toBe('2026-05-25')
+    // Fornada num dia sem `available_dates` carregadas: o piso mesmo.
+    expect(initialCheckoutDate('', false, [], bounds, '2026-05-20')).toBe('2026-05-22')
+  })
+
+  it('sem fornada futura na sacola, o Quando segue como sempre', () => {
+    const titleFor = (value: string) => (value === '2026-05-21' ? 'Amanhã' : 'Próxima fornada')
+    const plain = checkoutDateBounds({ max_preorder_days: 7 }, now)
+    // Piso no passado (ou hoje) não muda nada.
+    const stale = checkoutDateBounds({ max_preorder_days: 7 }, now, '2026-05-19')
+
+    for (const bounds of [plain, stale]) {
+      expect(bounds.floorValue).toBe('2026-05-20')
+      expect(bounds.minDate).toEqual(new Date(2026, 4, 20))
+      expect(checkoutDateChoices(['2026-05-20', '2026-05-21'], bounds, titleFor)).toEqual([
+        { value: '2026-05-20', title: 'Hoje', disabled: false },
+        { value: '2026-05-21', title: 'Amanhã', disabled: false }
+      ])
+      expect(initialCheckoutDate('', false, ['2026-05-20', '2026-05-21'], bounds, '2026-05-20')).toBe('2026-05-20')
+    }
+    // Hoje fechado: a primeira caixa já é a próxima data.
+    expect(checkoutDateChoices(['2026-05-21'], plain, titleFor)).toEqual([
+      { value: '2026-05-21', title: 'Amanhã', disabled: false }
+    ])
+  })
+
   it('desabilita hoje sem fechar os próximos dias de atendimento', () => {
     expect(datepickerDisabledDates([], [], '2026-05-20')).toEqual([new Date(2026, 4, 20)])
     expect(datepickerDisabledDates([], [], '')).toEqual([])
