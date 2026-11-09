@@ -156,7 +156,9 @@ preserve secrets e configuração atual.
 5. Relacionar manifesto, deployment e smoke na matriz.
 
 O fluxo normal é `main → Deploy Images (publica e cria UM deployment,
-`deploy_mode: single_deployment`) → Pre-go-live Smoke`. Um deploy manual excepcional precisa de registro e da mesma
+`deploy_mode: single_deployment`) → Pre-go-live Smoke`. Quando o app de produção
+estiver nas tags `-prod`, o push deixa de implantar nele, e o caminho é o
+[Promote Release](promover-release.md) do mesmo digest verde no alpha. Um deploy manual excepcional precisa de registro e da mesma
 rastreabilidade; não pode produzir uma segunda fonte de verdade.
 
 ## 4. Canário autorizado

@@ -1,7 +1,9 @@
 # WP-RELEASE-01 — Novas versões dos apps sem quebrar a operação ativa
 
 **Estado:** em execução. R0 e R1 entregues em 02/11/2026 (contrato vivo em
-`docs/reference/release-contract.md`, ADR-043); R2 em diante aberto.  
+`docs/reference/release-contract.md`, ADR-043); R2 entregue em 09/11/2026 no código
+(`promote-release.yml`, runbook `docs/runbooks/promover-release.md`), esperando os passos
+do dono para ter um ambiente de produção onde chegar; R3 em diante aberto.  
 **Prioridade:** P0 antes do primeiro ambiente de produção com operação real  
 **Dono:** Plataforma Shopman  
 **Piloto:** Marketing V2  
