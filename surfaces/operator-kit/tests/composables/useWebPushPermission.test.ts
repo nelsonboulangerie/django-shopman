@@ -1,6 +1,6 @@
 import { defineComponent, h } from "vue";
-import { flushPromises } from "@vue/test-utils";
-import { mountSuspended, registerEndpoint } from "@nuxt/test-utils/runtime";
+import { flushPromises, mount } from "@vue/test-utils";
+import { registerEndpoint } from "@nuxt/test-utils/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useWebPush } from "../../app/composables/useWebPush";
 
@@ -71,7 +71,7 @@ async function setupPush() {
   };
   runtime.vapidPublicKey = "local-fixture";
   let push!: ReturnType<typeof useWebPush>;
-  const w = await mountSuspended(
+  const w = mount(
     defineComponent({
       setup() {
         push = useWebPush();
