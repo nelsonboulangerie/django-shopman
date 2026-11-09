@@ -4,21 +4,23 @@ from __future__ import annotations
 
 import logging
 
-# O Doorman já segura o número (5 por 15 min, 60 s entre envios) e o IP em 20
-# por hora (G10). O que faltava era o robô que troca de número a cada pedido:
-# cada número novo passa pelos limites do número, e a conta do provedor de SMS
-# é paga por mensagem. Estes dois tetos contam os códigos que este IP já pediu,
-# em TODAS as finalidades (login, step-up da Conta e troca de número), na mesma
-# tabela que o G10 já conta.
+# O Doorman já segura o número (5 por 15 min, 60 s entre envios) e o IP no
+# G10 (DOORMAN.IP_RATE_LIMIT_MAX). O que faltava era o robô que troca de número
+# a cada pedido: cada número novo passa pelos limites do número, e a conta do
+# provedor de SMS é paga por mensagem. Estes dois tetos contam os códigos que
+# este IP já pediu, em TODAS as finalidades (login, step-up da Conta e troca de
+# número), na mesma tabela que o G10 já conta.
 #
-# Por que estes números: um cliente de verdade pede 1 código, às vezes 2 ou 3
-# (não chegou, errou o número). 15 por hora deixa uma família inteira atrás do
-# mesmo Wi-Fi (ou alguns clientes atrás do mesmo CGNAT de operadora) entrar
-# sem tropeçar, e corta o robô em 15 mensagens por hora em vez de 20. 40 por
-# dia fecha o robô paciente, que respeitaria o teto da hora o dia todo
-# (15 x 24 = 360 mensagens). Mudar é editar a constante e o teste ao lado.
-LOGIN_CODES_PER_IP_PER_HOUR = 15
-LOGIN_CODES_PER_IP_PER_DAY = 40
+# Por que estes números (decisão do dono, 09/11/2026, depois do beta de
+# encomendas): no 4G, muitos clientes saem pelo MESMO IP da operadora (CGNAT).
+# Com 15 por hora, o 16º cliente do bairro ficava sem código e sem compra.
+# 100 por hora deixa o IP compartilhado entrar; 300 por dia fecha o robô
+# paciente que respeitaria o teto da hora o dia todo (100 x 24 = 2.400). O
+# disparo concentrado é visto pelo aviso de volume global
+# (LOGIN_CODES_GLOBAL_ALERT_PER_HOUR em services/auth.py), que chama a TI.
+# Mudar é editar a constante e o teste ao lado.
+LOGIN_CODES_PER_IP_PER_HOUR = 100
+LOGIN_CODES_PER_IP_PER_DAY = 300
 
 
 def ip_code_ceiling_refusal(ip_address: str | None):

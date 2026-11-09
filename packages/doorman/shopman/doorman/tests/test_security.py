@@ -635,6 +635,32 @@ class TestVerificationCodeLifecycle:
         with pytest.raises(GateError):
             Gates.ip_rate_limit(ip, max_requests=20, window_minutes=60)
 
+    def test_ip_limit_default_is_100_per_hour(self, db):
+        """O teto padrão por IP é 100/h: IP compartilhado do 4G (CGNAT) não pode travar o bairro."""
+        from shopman.doorman.conf import doorman_settings
+
+        assert doorman_settings.IP_RATE_LIMIT_MAX == 100
+        assert doorman_settings.IP_RATE_LIMIT_WINDOW_MINUTES == 60
+        ip = "203.0.113.50"
+        for i in range(99):
+            VerificationCode.objects.create(
+                target_value=f"+554398{i:07d}",
+                purpose=VerificationCode.Purpose.LOGIN,
+                ip_address=ip,
+            )
+        limits = {
+            "max_requests": doorman_settings.IP_RATE_LIMIT_MAX,
+            "window_minutes": doorman_settings.IP_RATE_LIMIT_WINDOW_MINUTES,
+        }
+        assert Gates.ip_rate_limit(ip, **limits).passed
+        VerificationCode.objects.create(
+            target_value="+5543980000999",
+            purpose=VerificationCode.Purpose.LOGIN,
+            ip_address=ip,
+        )
+        with pytest.raises(GateError):
+            Gates.ip_rate_limit(ip, **limits)
+
 
 # ===================================================
 # H03: Customer Auto-Creation
@@ -779,7 +805,7 @@ class TestGates:
         assert result.passed
 
     def test_g10_no_ip_passes(self, db):
-        result = Gates.ip_rate_limit("")
+        result = Gates.ip_rate_limit("", max_requests=100, window_minutes=60)
         assert result.passed
 
     def test_g12_access_link_rate_limit_passes(self, db):

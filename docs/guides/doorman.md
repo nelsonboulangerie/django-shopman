@@ -241,6 +241,8 @@ Chave Django settings: `DOORMAN`
 | `ACCESS_CODE_RATE_LIMIT_MAX` | 5 | Máx. códigos por janela |
 | `ACCESS_CODE_RATE_LIMIT_WINDOW_MINUTES` | 15 | Janela de rate limit |
 | `ACCESS_CODE_COOLDOWN_SECONDS` | 60 | Cooldown entre códigos |
+| `IP_RATE_LIMIT_MAX` | 100 | Máx. códigos e access links por IP por janela (G10) |
+| `IP_RATE_LIMIT_WINDOW_MINUTES` | 60 | Janela do teto por IP |
 | `MESSAGE_SENDER_CLASS` | ConsoleSender | Classe de envio |
 | `IDENTITY_RESOLVER_CLASS` | `shopman.doorman.resolvers.NoopIdentityResolver` | Porto de identidade (com Guestman: `shopman.guestman.adapters.auth.IdentityResolver`) |
 | `MANYCHAT_IDENTITY_BRIDGE_CLASS` | `""` | Bridge opcional e tipada para enriquecimento ManyChat |
