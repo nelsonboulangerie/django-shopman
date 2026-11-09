@@ -52,8 +52,8 @@ describe('PIXEXP-04: Pix vencido sai da tela antes de o servidor cancelar', () =
 
 describe('PIXEXP-10: leitor de tela não repete "cancelado"', () => {
   it('passo cancelado não ganha sufixo de estado', () => {
-    expect(timelineStepSrSuffix({ state: 'cancelled' })).toBe('')
-    expect(timelineStepSrSuffix({ state: 'completed' })).toBe(', concluído')
+    expect(timelineStepSrSuffix({ key: 'cancelled', state: 'cancelled' })).toBe('')
+    expect(timelineStepSrSuffix({ key: 'received', state: 'completed' })).toBe(', concluído')
   })
 })
 
@@ -67,5 +67,15 @@ describe('PIXEXP-02 e F5: o dinheiro vem antes do convite para pedir de novo', (
   it('o diálogo de cancelar diz o que acontece com o dinheiro', () => {
     expect(page).toContain('cancel_dialog_money_line')
     expect(page).toContain('<UiAlertDialogDescription>{{ cancelDialogDescription }}</UiAlertDialogDescription>')
+  })
+})
+
+
+describe('Concluído não é anunciado como em andamento', () => {
+  it('o passo terminal já nomeia sua conclusão, mesmo sendo o status atual da projeção', () => {
+    expect(timelineStepSrSuffix({ key: 'completed', state: 'current' })).toBe('')
+    expect(timelineStepSrSuffix({ key: 'completed', state: 'pending' })).toBe(', ainda não')
+    expect(timelineStepSrSuffix({ key: 'completed', state: 'completed' })).toBe('')
+    expect(timelineStepSrSuffix({ key: 'preparing', state: 'current' })).toBe(', em andamento')
   })
 })
