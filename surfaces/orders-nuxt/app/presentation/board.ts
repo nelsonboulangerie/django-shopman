@@ -117,7 +117,7 @@ export function confirmationRemainingLabel(
   if (Number.isNaN(deadlineMs)) return "";
   const left = Math.max(0, Math.round((deadlineMs - nowMs) / 1000));
   // M:SS é instrumento de contagem curta (o prazo do iFood, a janela de
-  // desfazer). Prazo de horas (o aceite que vence 30 min depois da abertura)
+  // desfazer). Prazo de horas (o aceite que vence 5 ou 60 min depois da abertura)
   // saía "cancela sozinho em 252:11", e o operador tinha de fazer a conta
   // (beta 06/11, F8/PIXEXP-11/SMS-18). De uma hora para cima, horas e minutos.
   if (left < 3600) {

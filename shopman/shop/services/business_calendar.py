@@ -119,6 +119,11 @@ def current_business_state(*, now: datetime | None = None, shop=None) -> Busines
     )
 
 
+#: Quantos expedientes um prazo pode atravessar antes de a conta desistir. Prazo de
+#: aceite cabe num expediente; o teto só impede um laço sem fim com agenda torta.
+_MAX_DEADLINE_WINDOWS = 14
+
+
 def next_operational_deadline(
     *,
     timeout: timedelta,
@@ -127,16 +132,41 @@ def next_operational_deadline(
 ) -> tuple[datetime | None, BusinessCalendarState]:
     """Return the truthful deadline for an operator timeout.
 
-    When the shop is closed, the timeout starts at the next known opening. If
-    there is no configured future opening, no automated deadline is returned.
+    O prazo gasta só tempo de LOJA ABERTA. Com a loja fechada, começa na próxima
+    abertura; com a loja aberta, o que não couber até o fechamento continua na
+    abertura seguinte (60 min pedidos às 19:30 com a casa fechando às 20:00
+    vencem 30 min depois de ela reabrir, e não às 20:30 com a casa fechada).
+    If there is no configured future opening, no automated deadline is returned.
+
+    O estado devolvido é o de ``now`` (quem agenda precisa saber se o pedido
+    chegou com a loja fechada), não o do instante em que o prazo vence.
     """
     local_now = now or timezone.now()
     state = current_business_state(now=local_now, shop=shop)
-    if state.is_open:
-        return local_now + timeout, state
-    if state.next_open_at:
-        return state.next_open_at + timeout, state
+    cursor = local_now if state.is_open else state.next_open_at
+    window = state
+    remaining = timeout
+    for _ in range(_MAX_DEADLINE_WINDOWS):
+        if cursor is None:
+            return None, state
+        if window.is_closed:
+            window = current_business_state(now=cursor, shop=shop)
+        closes = _closing_moment(window)
+        if closes is None or cursor + remaining <= closes:
+            # Sem hora de fechar (casa sem grade): o relógio corre direto.
+            return cursor + remaining, state
+        remaining -= closes - cursor
+        window = current_business_state(now=closes, shop=shop)
+        cursor = closes if window.is_open else window.next_open_at
     return None, state
+
+
+def _closing_moment(state: BusinessCalendarState) -> datetime | None:
+    """A hora em que o expediente aberto de ``state`` fecha; ``None`` sem grade."""
+    if not state.is_open or not state.closes_at or state.resolved_at is None:
+        return None
+    resolved = state.resolved_at
+    return datetime.combine(resolved.date(), time.fromisoformat(state.closes_at), tzinfo=resolved.tzinfo)
 
 
 def store_review_deferred_state(

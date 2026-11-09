@@ -793,6 +793,7 @@ Write-back: `holds` (list de hold objects do backend)
 |-------|------|-------------|----------|
 | `order_ref` | `string` | hooks._on_order_created | ConfirmationTimeoutHandler |
 | `expires_at` | `string` | hooks._on_order_created | ConfirmationTimeoutHandler |
+| `timeout_minutes` | `int` | `lifecycle._schedule_confirmation_timeout` | `order_queue._confirmation_deadlines` → `order_attention._timer_goal`: o prazo que o timer conta (5 no pedido do dia, 60 na encomenda da loja online), gravado na hora de agendar. A meta do pedido novo no Gestor sai daqui, e o "desde" é `expires_at` menos esse prazo |
 | `action` | `string` | `lifecycle._schedule_confirmation_timeout` | ConfirmationTimeoutHandler: `"confirm"` (`auto_confirm`) ou `"cancel"` (`auto_cancel`). No `cancel` o pedido ainda `new` sai por `cancellation.cancel` com `cancellation_reason="confirmation_timeout"` (chave `store_did_not_confirm`): o dinheiro volta (Pix estornado, cartão anulado no Stripe) |
 
 #### `order.stale_new_alert`
@@ -1363,7 +1364,7 @@ Chave ausente no override = herda. Chave presente (mesmo None) = sobreescreve.
 | Campo | Tipo | Default | Descrição |
 |-------|------|---------|-----------|
 | `mode` | `string` | `"immediate"` | `"immediate"` (auto-confirma), `"auto_confirm"` (auto-confirma após timeout), `"auto_cancel"` (cancela após timeout), `"manual"` (aguarda) |
-| `timeout_minutes` | `int` | `5` | Timeout para modes auto_confirm/auto_cancel, em minutos de loja aberta. Loja online: 5 (emenda de 09/11/2026 à ADR-036) |
+| `timeout_minutes` | `int` | `5` | Timeout para modes auto_confirm/auto_cancel, em minutos de loja aberta (começa na abertura quando a loja está fechada; o que não cabe até o fechamento continua na abertura seguinte: `business_calendar.next_operational_deadline`). Loja online: 5 (emenda de 09/11/2026 à ADR-036) |
 | `preorder_timeout_minutes` | `int \| null` | `null` | Prazo da ENCOMENDA (data combinada posterior a hoje) nos modes auto_confirm/auto_cancel; sem chave, vale o `timeout_minutes`. Recusado em outro modo e quando não é inteiro > 0. Loja online: 60. Lido por `lifecycle.acceptance_timeout_minutes` (prazo e meta do pedido novo no Gestor) |
 | `stale_new_alert_minutes` | `int` | `0` | Opt-in para `mode="manual"`: após X minutos em NEW sem decisão, dispara `OperatorAlert("stale_new_order")`. Recusado no `auto_cancel`: lá o aviso sai a 1/3 do prazo de aceite do próprio pedido (`lifecycle.STALE_ALERT_FRACTION_OF_DEADLINE`) e diz até quando. No iFood tem de ser MENOR que `external_sla_minutes`, senão o alerta toca com o pedido já cancelado (estava 20 contra 8 até 19/09/2026) |
 | `external_sla_minutes` | `int` | `0` | Prazo que o MARKETPLACE impõe para confirmar, contado do `createdAt` dele. Vencido, quem cancela é o marketplace. Gravado no pedido como `ifood.confirm_by` e contado no card. `0` = sem SLA externo (todo canal da casa). iFood: 8 (documentado; medido a 8min10s em 19/09/2026) |

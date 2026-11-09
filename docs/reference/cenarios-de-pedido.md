@@ -49,7 +49,7 @@ na §8.
 
 | Canal | Confirmação | Pagamento | Preparo começa | Avisos ao cliente |
 |---|---|---|---|---|
-| `pdv` | `immediate` (encomenda vira manual: `lifecycle.py:776`) | `external`; formas do PDV: R dinheiro, P Pix, C crédito, D débito, L link, E em conta | sozinho (`prep_start` padrão) | ManyChat → e-mail → SMS |
+| `pdv` | `immediate` (a encomenda também: quem registrou é o operador) | `external`; formas do PDV: R dinheiro, P Pix, C crédito, D débito, L link, E em conta | sozinho (`prep_start` padrão) | ManyChat → e-mail → SMS |
 | `web` (loja online) | `auto_cancel` (ADR-036): prazo de aceite de 5 min de loja aberta no pedido do dia e 60 min na encomenda (emenda de 09/11); aviso de pedido parado a 1/3 do prazo | Pix e cartão, `at_commit`, prazo 10 min | o ticket nasce no aceite e espera **o operador** dar "Iniciar preparo" na Cozinha (ou o atalho do Gestor, mesmo ato; `prep_start=operator`) | ManyChat → SMS → e-mail |
 | `whatsapp` | `manual`, alerta em 10 min | Pix e cartão, `at_commit`, prazo 10 min | sozinho | ManyChat → SMS → e-mail |
 | `ifood` | `manual`, alerta em 5 min, SLA do iFood 8 min | `external` | sozinho | nenhum (o telefone é a central do iFood) |

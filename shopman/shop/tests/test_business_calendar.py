@@ -166,3 +166,55 @@ def test_operational_deadline_starts_at_next_opening_when_closed():
 
     assert state.is_closed is True
     assert deadline == datetime(2026, 5, 4, 9, 5, tzinfo=tz)
+
+
+# ── O prazo gasta só tempo de loja aberta, também quando atravessa o fechamento ──
+
+
+def _timer_shop():
+    Shop.objects.create(name="Timer", timezone="America/Sao_Paulo", opening_hours=OPEN_MONDAY_TO_SATURDAY)
+    return ZoneInfo("America/Sao_Paulo")
+
+
+def test_operational_deadline_that_fits_before_closing_runs_on_the_clock():
+    tz = _timer_shop()
+
+    deadline, state = next_operational_deadline(
+        timeout=timedelta(minutes=60), now=datetime(2026, 5, 4, 12, 0, tzinfo=tz),
+    )
+
+    assert state.is_open is True
+    assert deadline == datetime(2026, 5, 4, 13, 0, tzinfo=tz)
+
+
+def test_operational_deadline_carries_the_rest_to_the_next_opening():
+    """60 min pedidos às 17:30 com a casa fechando às 18:00: 30 hoje, 30 amanhã."""
+    tz = _timer_shop()
+
+    deadline, state = next_operational_deadline(
+        timeout=timedelta(minutes=60), now=datetime(2026, 5, 4, 17, 30, tzinfo=tz),
+    )
+
+    assert state.is_open is True
+    assert deadline == datetime(2026, 5, 5, 9, 30, tzinfo=tz)
+
+
+def test_operational_deadline_ending_exactly_at_closing_stays_today():
+    tz = _timer_shop()
+
+    deadline, _ = next_operational_deadline(
+        timeout=timedelta(minutes=30), now=datetime(2026, 5, 4, 17, 30, tzinfo=tz),
+    )
+
+    assert deadline == datetime(2026, 5, 4, 18, 0, tzinfo=tz)
+
+
+def test_operational_deadline_skips_the_closed_day_when_carrying_over():
+    """Sábado 17:58 + 5 min: 2 no sábado, 3 na segunda (domingo fechado)."""
+    tz = _timer_shop()
+
+    deadline, _ = next_operational_deadline(
+        timeout=timedelta(minutes=5), now=datetime(2026, 5, 2, 17, 58, tzinfo=tz),
+    )
+
+    assert deadline == datetime(2026, 5, 4, 9, 3, tzinfo=tz)

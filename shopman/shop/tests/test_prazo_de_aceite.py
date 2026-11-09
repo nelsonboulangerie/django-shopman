@@ -282,3 +282,134 @@ def test_migracao_nao_esmaga_prazo_ajustado_a_mao():
 
     web.refresh_from_db()
     assert web.config == before
+
+
+# ── Loja aberta nas duas pontas: o prazo não vence com a casa fechada ───────
+
+
+def _shop_7_to_19():
+    hours = {"open": "07:00", "close": "19:00"}
+    Shop.objects.create(
+        name="Loja",
+        timezone="America/Sao_Paulo",
+        opening_hours=dict.fromkeys(
+            ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"), hours,
+        ),
+    )
+    return ZoneInfo("America/Sao_Paulo")
+
+
+def _alert_at(order: Order):
+    return Directive.objects.get(topic="order.stale_new_alert", payload__order_ref=order.ref).available_at
+
+
+def test_encomenda_paga_na_ultima_hora_nao_vence_com_a_loja_fechada():
+    """18:30 + 60 min com a casa fechando às 19:00: 30 hoje, 30 depois de abrir."""
+    tz = _shop_7_to_19()
+    _web_channel()
+    evening = datetime(2026, 11, 9, 18, 30, tzinfo=tz)
+    order = _order("WEB-ENC-7", delivery_date=evening.date() + timedelta(days=2))
+
+    with patch("django.utils.timezone.now", return_value=evening):
+        timer = _schedule(order)
+
+    assert datetime.fromisoformat(timer.payload["expires_at"]) == datetime(2026, 11, 10, 7, 30, tzinfo=tz)
+    # O aviso de 1/3 (20 min de loja aberta) ainda cabe no mesmo dia.
+    assert _alert_at(order) == datetime(2026, 11, 9, 18, 50, tzinfo=tz)
+    # Às 19:30, com a casa fechada, o pedido NÃO é cancelado.
+    assert _run_timer_at(order, datetime(2026, 11, 9, 19, 30, tzinfo=tz)).status == Order.Status.NEW
+
+
+def test_aviso_da_encomenda_tambem_espera_a_abertura():
+    """18:50 + 60: sobram 10 min hoje. O aviso (20 min) sai 10 min depois de abrir, não às 19:10."""
+    tz = _shop_7_to_19()
+    _web_channel()
+    evening = datetime(2026, 11, 9, 18, 50, tzinfo=tz)
+    order = _order("WEB-ENC-8", delivery_date=evening.date() + timedelta(days=2))
+
+    with patch("django.utils.timezone.now", return_value=evening):
+        timer = _schedule(order)
+
+    assert datetime.fromisoformat(timer.payload["expires_at"]) == datetime(2026, 11, 10, 7, 50, tzinfo=tz)
+    assert _alert_at(order) == datetime(2026, 11, 10, 7, 10, tzinfo=tz)
+
+
+def test_pedido_do_dia_pago_a_dois_minutos_de_fechar_continua_na_abertura():
+    tz = _shop_7_to_19()
+    _web_channel()
+    closing = datetime(2026, 11, 9, 18, 58, tzinfo=tz)
+    order = _order("WEB-DIA-5")
+
+    with patch("django.utils.timezone.now", return_value=closing):
+        timer = _schedule(order)
+
+    assert datetime.fromisoformat(timer.payload["expires_at"]) == datetime(2026, 11, 10, 7, 3, tzinfo=tz)
+    assert _alert_at(order) == datetime(2026, 11, 9, 18, 59, 40, tzinfo=tz)
+
+
+# ── As entradas reais do prazo ──────────────────────────────────────────────
+
+
+def test_timer_grava_o_prazo_que_conta():
+    _web_channel()
+
+    assert _schedule(_order("WEB-DIA-6")).payload["timeout_minutes"] == 5
+    assert _schedule(_order("WEB-ENC-9", delivery_date=_tomorrow())).payload["timeout_minutes"] == 60
+
+
+def test_cartao_autorizado_de_encomenda_comeca_o_prazo_de_60():
+    from shopman.shop.lifecycle import start_acceptance_deadline
+
+    _web_channel()
+    order = _order("WEB-ENC-10", delivery_date=_tomorrow())
+    before = timezone.now()
+
+    start_acceptance_deadline(order)
+
+    timer = Directive.objects.get(topic="confirmation.timeout", payload__order_ref=order.ref)
+    assert timer.payload["source"] == "card_authorized"
+    assert timer.payload["timeout_minutes"] == 60
+    assert before + timedelta(minutes=60) <= timer.available_at <= timezone.now() + timedelta(minutes=60)
+
+
+def test_auto_confirm_com_prazo_de_encomenda_aceita_sozinho_aos_60_sem_aviso():
+    from shopman.shop.lifecycle import _schedule_confirmation_timeout
+
+    _web_channel({
+        "confirmation": {"mode": "auto_confirm", "timeout_minutes": 5, "preorder_timeout_minutes": 60},
+        "payment": WEB["payment"],
+    })
+    order = _order("WEB-ENC-11", delivery_date=_tomorrow())
+    before = timezone.now()
+
+    timer = _schedule_confirmation_timeout(
+        order, ChannelConfig.for_channel("web"), action="confirm", source="order_created",
+    )
+
+    assert timer.payload["timeout_minutes"] == 60
+    assert before + timedelta(minutes=60) <= timer.available_at <= timezone.now() + timedelta(minutes=60)
+    assert not Directive.objects.filter(topic="order.stale_new_alert", payload__order_ref=order.ref).exists()
+
+
+# ── O padrão da loja não derruba o canal ────────────────────────────────────
+
+
+def test_aviso_padrao_da_loja_nao_desce_para_o_canal_auto_cancel():
+    """``Shop.defaults`` com o aviso dos canais manuais não pode derrubar a loja online."""
+    Shop.objects.create(name="Loja", defaults={"confirmation": {"stale_new_alert_minutes": 10}})
+    _web_channel()
+    Channel.objects.update_or_create(
+        ref="whatsapp",
+        defaults={"name": "WhatsApp", "is_active": True, "config": {"confirmation": {"mode": "manual"}}},
+    )
+
+    assert ChannelConfig.for_channel("web").confirmation.stale_new_alert_minutes == 0
+    assert ChannelConfig.for_channel("whatsapp").confirmation.stale_new_alert_minutes == 10
+
+
+def test_aviso_declarado_no_proprio_canal_auto_cancel_continua_recusado():
+    Shop.objects.create(name="Loja", defaults={"confirmation": {"stale_new_alert_minutes": 10}})
+    _web_channel({**WEB, "confirmation": {**WEB["confirmation"], "stale_new_alert_minutes": 10}})
+
+    with pytest.raises(ValueError, match="stale_new_alert_minutes"):
+        ChannelConfig.for_channel("web")

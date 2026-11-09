@@ -33,6 +33,7 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import NamedTuple
 
 from django.utils import timezone
 from shopman.orderman.models import Order
@@ -102,8 +103,36 @@ def stage_goal(kind: str, channel_config=None) -> int:
     return value
 
 
+class AcceptanceTimer(NamedTuple):
+    """O timer de aceite agendado para um pedido novo (``confirmation.timeout``)."""
+
+    expires_at_iso: str
+    action: str
+    #: O prazo que o timer conta, gravado na hora de agendar; 0 quando não há.
+    timeout_minutes: int = 0
+
+
+def _timer_goal(timer: AcceptanceTimer | None) -> tuple[int, datetime] | None:
+    """A meta e o "desde" tirados do timer agendado, ou ``None`` sem timer.
+
+    A meta é o prazo que o timer conta e o "desde" é o fim dele menos o prazo:
+    o número do card chega à meta no mesmo instante em que o relógio "cancela
+    sozinho em" zera. Contar da criação do pedido deixava o Pix pago aos 7 min
+    nascer atrasado numa meta de 5, com o prazo recém-começado; reler a data do
+    pedido na hora da leitura trocava a meta da encomenda de 60 para 5 na virada
+    do dia, com o timer ainda contando 60.
+    """
+    if timer is None or timer.timeout_minutes <= 0 or not timer.expires_at_iso:
+        return None
+    try:
+        expires = datetime.fromisoformat(timer.expires_at_iso)
+    except ValueError:
+        return None
+    return timer.timeout_minutes, expires - timedelta(minutes=timer.timeout_minutes)
+
+
 def _confirmation_goal(order: Order, channel_config) -> int:
-    """O prazo do pedido novo: o de aceite deste pedido (a encomenda tem o dela) ou o do marketplace."""
+    """O prazo do pedido novo SEM timer agendado: o de aceite deste pedido ou o do marketplace."""
     goal = CONFIRM_GOAL_MINUTES
     if channel_config is None:
         return goal
@@ -159,8 +188,14 @@ def attention_kind(order: Order, card) -> str:
     return ""
 
 
-def card_attention(order: Order, card, channel_config=None) -> dict:
-    """Os campos de atenção do cartão: o fato, desde quando conta e a meta."""
+def card_attention(
+    order: Order, card, channel_config=None, *, acceptance_timer: AcceptanceTimer | None = None,
+) -> dict:
+    """Os campos de atenção do cartão: o fato, desde quando conta e a meta.
+
+    ``acceptance_timer`` é o prazo de aceite já agendado para o pedido novo: com
+    ele, a meta e o "desde" saem do próprio timer (``_timer_goal``).
+    """
     kind = attention_kind(order, card)
     if not kind:
         return {}
@@ -195,7 +230,9 @@ def card_attention(order: Order, card, channel_config=None) -> dict:
             "goal_label": f"meta {CONFIRM_GOAL_MINUTES}",
         }
     if kind in ("confirm",) or (kind == "blocked" and order.status == Order.Status.NEW):
-        goal, since = _confirmation_goal(order, channel_config), order.created_at
+        goal, since = _timer_goal(acceptance_timer) or (
+            _confirmation_goal(order, channel_config), order.created_at,
+        )
     else:
         goal = stage_goal(kind, channel_config)
         since = {

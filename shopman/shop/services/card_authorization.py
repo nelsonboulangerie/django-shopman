@@ -40,7 +40,7 @@ AUTHORIZATION_WINDOW = timedelta(days=7)
 LAST_CALL_BEFORE = timedelta(hours=24)
 
 #: O primeiro aviso do cartão vem DEPOIS do aviso normal de pedido parado
-#: (``stale_new_order``, 10 min na loja online): se nem ele resolveu em uma hora,
+#: (``stale_new_order``, a 1/3 do prazo de aceite na loja online): se nem ele resolveu em uma hora,
 #: o Gestor passa a ver o prazo da autorização e o que se perde com ele.
 STUCK_AFTER = timedelta(hours=1)
 

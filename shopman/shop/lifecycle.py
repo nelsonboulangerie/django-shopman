@@ -1148,9 +1148,9 @@ def _schedule_confirmation_timeout(
     (``confirmation.preorder_timeout_minutes``), o pedido do dia o do canal.
     """
     timeout_minutes = acceptance_timeout_minutes(order, config)
-    expires_at, calendar_state = next_operational_deadline(
-        timeout=timedelta(minutes=timeout_minutes),
-    )
+    timeout = timedelta(minutes=timeout_minutes)
+    scheduled_at = timezone.now()
+    expires_at, calendar_state = next_operational_deadline(timeout=timeout, now=scheduled_at)
     if expires_at is None:
         logger.warning(
             "confirmation_timeout_not_scheduled_no_next_opening order=%s action=%s source=%s",
@@ -1163,6 +1163,9 @@ def _schedule_confirmation_timeout(
         "order_ref": order.ref,
         "action": action,
         "expires_at": expires_at.isoformat(),
+        # O prazo que este timer conta, gravado na hora de agendar: a meta do
+        # pedido no Gestor sai daqui, não de uma segunda leitura da data.
+        "timeout_minutes": timeout_minutes,
         "source": source,
     }
     if calendar_state.is_closed:
@@ -1203,8 +1206,13 @@ def _schedule_confirmation_timeout(
             payload=payload,
             available_at=expires_at,
         )
-    if action == "cancel":
-        _schedule_stale_alert_before_deadline(order, timeout_minutes=timeout_minutes, deadline=expires_at)
+    if action == "cancel" and timeout_minutes > 0:
+        # A mesma régua do prazo (tempo de loja aberta), a partir do mesmo instante.
+        alert_at, _ = next_operational_deadline(
+            timeout=timeout / STALE_ALERT_FRACTION_OF_DEADLINE, now=scheduled_at,
+        )
+        if alert_at is not None:
+            _schedule_stale_alert_before_deadline(order, alert_at=alert_at, deadline=expires_at)
     return timer
 
 
@@ -1225,18 +1233,15 @@ def acceptance_timeout_minutes(order, config: ChannelConfig) -> int:
 STALE_ALERT_FRACTION_OF_DEADLINE = 3
 
 
-def _schedule_stale_alert_before_deadline(order, *, timeout_minutes: int, deadline) -> None:
+def _schedule_stale_alert_before_deadline(order, *, alert_at, deadline) -> None:
     """O aviso de pedido parado DENTRO do prazo de aceite, dizendo até quando.
 
     No ``auto_cancel`` o pedido some sozinho no fim do prazo (e o dinheiro volta
     ao cliente): o Gestor precisa saber antes. O aviso sai a 1/3 do prazo deste
-    pedido (``STALE_ALERT_FRACTION_OF_DEADLINE``), na mesma régua dele, e anda
-    junto quando o prazo é reagendado (o pagamento chegou).
+    pedido (``STALE_ALERT_FRACTION_OF_DEADLINE``), na mesma régua dele (tempo de
+    loja aberta: quem calcula ``alert_at`` é ``next_operational_deadline``), e
+    anda junto quando o prazo é reagendado (o pagamento chegou).
     """
-    if timeout_minutes <= 0:
-        return
-    timeout = timedelta(minutes=timeout_minutes)
-    alert_at = deadline - (timeout - timeout / STALE_ALERT_FRACTION_OF_DEADLINE)
     payload = {
         "order_ref": order.ref,
         "alert_at": alert_at.isoformat(),

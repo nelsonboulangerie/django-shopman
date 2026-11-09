@@ -26,7 +26,8 @@ O WhatsApp já cobrava no pedido (`at_commit`).
    com a loja fechada começa a contar na abertura). O Pix pago reinicia o prazo. Aos 10 minutos
    (`stale_new_alert_minutes`) o Gestor recebe o aviso "Se ninguém aceitar até HH:MM, ele é
    cancelado sozinho e o que o cliente pagou é devolvido"; o card do quadro mostra "cancela
-   sozinho em".
+   sozinho em". (Emendado em 09/11/2026: 5 minutos no pedido do dia, 60 na encomenda, aviso a
+   1/3 do prazo do pedido. Ver a emenda no fim.)
 4. **Recusou ou venceu, o dinheiro volta sozinho.** Os dois saem por `cancellation.cancel` e pelo
    `lifecycle._on_cancelled`: o Pix capturado é estornado e o cartão autorizado é anulado no
    Stripe (o caminho do #1732, que grita se o Stripe recusar). O cliente recebe o aviso do
@@ -40,7 +41,8 @@ O WhatsApp já cobrava no pedido (`at_commit`).
 
 O seed cobre bancos novos. O alpha recebe a migração de dados `shop.0094_loja_online_paga_ao_pedir`
 no deploy: troca `post_commit` → `at_commit` e `manual` → `auto_cancel` (30 min) no canal `web`,
-só se ainda estiverem no valor de fábrica; outras chaves e ajustes feitos no Admin ficam.
+só se ainda estiverem no valor de fábrica; outras chaves e ajustes feitos no Admin ficam. (Os 30
+viram 5 e 60 pela `shop.0114`: ver a emenda de 09/11/2026.)
 
 ## Consequências
 
@@ -65,7 +67,11 @@ a depender de quando o pedido é para:
   casa precisa de tempo para olhar a produção daquele dia. Canal sem a chave usa o
   `timeout_minutes` também na encomenda.
 
-A contagem continua em minutos de loja aberta, e o Pix pago continua reiniciando o prazo.
+A contagem continua em minutos de loja aberta, e o Pix pago continua reiniciando o prazo. Loja
+aberta vale nas duas pontas: pedido feito com a casa fechada começa a contar na abertura, e o
+prazo que não cabe até o fechamento continua na abertura seguinte (encomenda paga às 19:30 com
+a casa fechando às 20:00 vence 30 minutos depois de ela reabrir, não às 20:30 com a casa
+fechada). O aviso de 1/3 anda na mesma conta.
 
 O aviso de pedido parado deixa de ser um número do canal (`stale_new_alert_minutes`, recusado no
 `auto_cancel`) e passa a sair a **1/3 do prazo do próprio pedido**, a mesma proporção dos 10 de 30:
@@ -76,3 +82,14 @@ pedido em `respond_by`, em vez da régua de 5 minutos da casa.
 Banco vivo: migração `shop.0114_prazo_de_aceite_5_no_dia_60_na_encomenda` (30 → 5 só se ainda
 estiver no valor de fábrica; acrescenta o 60 da encomenda; tira o `stale_new_alert_minutes` dos
 canais `auto_cancel`). O WhatsApp segue `manual`, como dito acima.
+
+No Gestor, a meta do pedido novo com prazo agendado sai do próprio timer (o prazo gravado em
+`timeout_minutes` no `confirmation.timeout`, contado para trás a partir do vencimento): o número
+do card chega à meta no instante em que o "cancela sozinho em" zera. Antes a meta contava da
+criação do pedido, e o Pix pago aos 7 minutos nascia atrasado numa meta de 5.
+
+**Em aberto, esperando o dono.** O pedido PARA HOJE pago com a casa fechada (de madrugada, antes
+de abrir) vence 5 minutos depois da abertura; o mesmo pedido pago na véspera, antes da meia-noite,
+é encomenda e tem 60. É consequência direta de "5 minutos de loja aberta", e quem pediu de
+madrugada também não está na tela esperando. Dar a esse pedido o prazo longo é decisão de
+negócio: até ela vir, vale a regra escrita (5 minutos depois de abrir, aviso com 1min40s).

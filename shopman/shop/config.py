@@ -531,6 +531,7 @@ class ChannelConfig:
 
         if channel.config:
             base = deep_merge(base, copy.deepcopy(channel.config))
+        _drop_inherited_keys_of_another_mode(base, channel.config or {})
 
         config = cls.from_dict(base)
         config.validate()
@@ -745,3 +746,30 @@ def deep_merge(base: dict, override: dict) -> dict:
         else:
             result[key] = value
     return result
+
+
+#: Chaves de ``confirmation`` que só fazem sentido em alguns modos de aceite.
+_CONFIRMATION_KEYS_BY_MODE = {
+    "stale_new_alert_minutes": ("immediate", "auto_confirm", "manual"),
+    "preorder_timeout_minutes": ("auto_confirm", "auto_cancel"),
+}
+
+
+def _drop_inherited_keys_of_another_mode(base: dict, channel_config: dict) -> None:
+    """Padrão da LOJA que não vale no modo de aceite deste canal não desce para ele.
+
+    ``Shop.defaults`` é escrito pensando no modo padrão; um canal troca o modo e
+    herdaria uma chave que o ``validate`` recusa nele (o ``stale_new_alert_minutes``
+    da loja derrubava todo ``for_channel`` do canal ``auto_cancel``, onde o aviso
+    sai a 1/3 do prazo do pedido). A chave que o PRÓPRIO canal declara fica, e o
+    ``validate`` continua recusando: ali é erro de quem configurou o canal.
+    """
+    confirmation = base.get("confirmation")
+    if not isinstance(confirmation, dict):
+        return
+    own = channel_config.get("confirmation")
+    own = own if isinstance(own, dict) else {}
+    mode = confirmation.get("mode")
+    for key, modes in _CONFIRMATION_KEYS_BY_MODE.items():
+        if key in confirmation and key not in own and mode not in modes:
+            del confirmation[key]
