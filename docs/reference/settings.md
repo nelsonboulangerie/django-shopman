@@ -178,6 +178,8 @@ de compra todo dia, em silêncio.
 | `ACCESS_CODE_TTL_MINUTES` | int | `10` | TTL do código OTP |
 | `ACCESS_CODE_MAX_ATTEMPTS` | int | `5` | Máx. tentativas de verificação |
 | `ACCESS_CODE_COOLDOWN_SECONDS` | int | `60` | Cooldown entre pedidos de código |
+| `IP_RATE_LIMIT_MAX` | int | `100` | Máx. códigos e access links por IP na janela (G10); alto por causa do IP compartilhado do 4G |
+| `IP_RATE_LIMIT_WINDOW_MINUTES` | int | `60` | Janela do teto por IP |
 | `ACCESS_CODE_RATE_LIMIT_MAX` | int | `5` | Máx. códigos por janela |
 | `ACCESS_CODE_RATE_LIMIT_WINDOW_MINUTES` | int | `15` | Janela de rate limit |
 | `ACCESS_CODE_MAX_FAILURES_PER_TARGET` | int | `15` | Máx. códigos errados por telefone/e-mail na janela, somados entre códigos — o reenvio não zera (G13) |

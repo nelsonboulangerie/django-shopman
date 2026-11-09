@@ -29,6 +29,12 @@ class DoormanSettings:
     ACCESS_CODE_RATE_LIMIT_WINDOW_MINUTES: int = 15
     ACCESS_CODE_RATE_LIMIT_MAX: int = 5
     ACCESS_CODE_COOLDOWN_SECONDS: int = 60
+    # Códigos e access links por IP (G10). Alto de propósito: no 4G, muitos
+    # clientes saem pelo mesmo IP da operadora (CGNAT), e 20/h barrava o bairro
+    # inteiro. Quem segura abuso é o teto por telefone/e-mail (G9/G12), o
+    # cooldown (G11) e o teto de códigos errados (G13). Decisão do dono, 09/11/2026.
+    IP_RATE_LIMIT_MAX: int = 100
+    IP_RATE_LIMIT_WINDOW_MINUTES: int = 60
     # Wrong codes per target, summed across codes (G13). ``MAX_ATTEMPTS`` is per
     # code and a resend starts a fresh one; this budget is what a resend can't reset.
     ACCESS_CODE_MAX_FAILURES_PER_TARGET: int = 15
@@ -185,6 +191,10 @@ def validate_settings() -> list[str]:
         errors.append("DOORMAN.ACCESS_CODE_MAX_ATTEMPTS must be > 0")
     if s.ACCESS_CODE_RATE_LIMIT_MAX <= 0:
         errors.append("DOORMAN.ACCESS_CODE_RATE_LIMIT_MAX must be > 0")
+    if s.IP_RATE_LIMIT_MAX <= 0:
+        errors.append("DOORMAN.IP_RATE_LIMIT_MAX must be > 0")
+    if s.IP_RATE_LIMIT_WINDOW_MINUTES <= 0:
+        errors.append("DOORMAN.IP_RATE_LIMIT_WINDOW_MINUTES must be > 0")
     if s.ACCESS_CODE_MAX_FAILURES_PER_TARGET <= 0:
         errors.append("DOORMAN.ACCESS_CODE_MAX_FAILURES_PER_TARGET must be > 0")
     if s.ACCESS_CODE_FAILURE_WINDOW_HOURS <= 0:

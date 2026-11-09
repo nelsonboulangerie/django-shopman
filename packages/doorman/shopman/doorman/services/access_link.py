@@ -374,7 +374,11 @@ class AccessLinkService:
         # G10: Rate limit by IP (reuse existing gate)
         if ip_address:
             try:
-                Gates.ip_rate_limit(ip_address)
+                Gates.ip_rate_limit(
+                    ip_address,
+                    max_requests=settings.IP_RATE_LIMIT_MAX,
+                    window_minutes=settings.IP_RATE_LIMIT_WINDOW_MINUTES,
+                )
             except GateError:
                 return AccessLinkEmailResult(
                     success=False,

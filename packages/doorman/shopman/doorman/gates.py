@@ -173,8 +173,8 @@ class Gates:
     def ip_rate_limit(
         cls,
         ip_address: str,
-        max_requests: int = 20,
-        window_minutes: int = 60,
+        max_requests: int,
+        window_minutes: int,
     ) -> GateResult:
         """
         G10: Rate limiting by IP address.

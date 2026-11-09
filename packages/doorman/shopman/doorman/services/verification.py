@@ -217,7 +217,11 @@ class AuthService:
             # G10: Rate limit by IP
             if ip_address:
                 try:
-                    Gates.ip_rate_limit(ip_address)
+                    Gates.ip_rate_limit(
+                        ip_address,
+                        max_requests=doorman_settings.IP_RATE_LIMIT_MAX,
+                        window_minutes=doorman_settings.IP_RATE_LIMIT_WINDOW_MINUTES,
+                    )
                 except GateError:
                     return CodeRequestResult(
                         success=False,
