@@ -1,0 +1,235 @@
+name: Promote Release
+
+# Promove para PRODUÇÃO um release que já esteve ativo e verde no alpha, sem
+# reconstruir nada (WP-RELEASE-01 R2, ADR-043, docs/reference/release-contract.md).
+#
+# A ordem é o contrato, e cada passo para a promoção se falhar:
+#   1. valida ancestralidade e digests (job `plan`, sem escrever nada);
+#   2. retaggeia os MESMOS manifests para `<tag>-prod` (bytes lidos pelo digest,
+#      sha256 conferido, tag relida depois);
+#   3. registra o GitHub Deployment do environment `production`;
+#   4. cria o deployment no app de produção e espera ACTIVE, e prova pelo
+#      `/health/release` de cada componente que o commit no ar é o promovido;
+#   5. roda o smoke de produção.
+#
+# ⚠️ Rebuild aqui é impossível por construção, e há teste que lê este arquivo e
+# cobra (shopman/shop/tests/test_release_promotion.py): nenhum passo de build,
+# buildx, docker ou login de registry; o checkout é ESPARSO e só traz os scripts
+# da promoção (os Dockerfiles nem chegam ao runner); e o cliente de registry
+# não tem caminho de upload de camada.
+#
+# ⚠️ Push no `main` nunca chega aqui: o único gatilho é o dispatch manual, o job
+# que escreve exige o environment `production` (revisor obrigatório, só `main`),
+# e o Deploy Images nunca escreve tag `-prod`.
+#
+# Modos:
+#   · dry-run (padrão): só o `plan`. Valida tudo e diz o que mudaria.
+#   · retag-only: plan + retag + Deployment registrado, sem deployment na DO.
+#     É o primeiro passo da virada: as tags `-prod` precisam existir ANTES de o
+#     spec da produção apontar para elas (docs/runbooks/promover-release.md).
+#   · promote: tudo, e o app de produção TEM de estar nas tags `-prod`.
+
+"on":
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: "Release ID verde no alpha (AAAAMMDD-HHMM-<sha7>)"
+        required: true
+        type: string
+      mode:
+        description: "dry-run valida; retag-only cria as tags -prod; promote implanta"
+        required: true
+        type: choice
+        options: ["dry-run", "retag-only", "promote"]
+        default: "dry-run"
+
+# Uma promoção por vez, e nenhuma cancela a outra no meio de um retag.
+concurrency:
+  group: promote-release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  plan:
+    name: Validar o release
+    # Dispatch de outro branch traria OUTRA versão deste arquivo. Só o `main`.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.locate.outputs.sha }}
+      run_id: ${{ steps.locate.outputs.run_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Ancestralidade e Release ID se calculam pelo histórico inteiro.
+          fetch-depth: 0
+
+      - name: Release ID → commit → run do Deploy Images
+        id: locate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/promote_release.py locate \
+            --release-id "${{ inputs.release_id }}" --main-ref origin/main
+
+      # ⚠️ Manifesto ausente para aqui, fechado. Release anterior à R2 não tem
+      # `release-manifest` e não é promovível: o release set dele nunca foi
+      # registrado, e reconstituí-lo agora seria adivinhar.
+      - name: Baixar o manifesto do release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "${{ steps.locate.outputs.run_id }}" \
+            --repo "${{ github.repository }}" \
+            --name release-manifest --dir manifesto
+          cat manifesto/published.json
+
+      - name: Validar (ancestralidade, alpha verde, digests, proteção)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: |
+          extra=""
+          if [ "${{ inputs.mode }}" != "dry-run" ]; then extra="--require-protection"; fi
+          python3 scripts/promote_release.py plan \
+            --release-id "${{ inputs.release_id }}" \
+            --manifest manifesto/published.json \
+            --deploy-run "${{ steps.locate.outputs.run_id }}" \
+            --main-ref origin/main --out plan.json ${extra}
+
+      - name: Resumo
+        run: |
+          {
+            echo "### Release ${{ inputs.release_id }} (${{ inputs.mode }})"
+            echo
+            echo "| Componente | Digest | Tag de produção | Ação |"
+            echo "| --- | --- | --- | --- |"
+            jq -r '.components | to_entries[] | "| \(.key) | `\(.value.digest)` | `\(.value.production_tag)` | \(.value.action) |"' plan.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Subir o plano
+        uses: actions/upload-artifact@v7
+        with:
+          name: promotion-plan
+          path: plan.json
+          retention-days: 90
+
+  promote:
+    name: Promover para produção
+    needs: plan
+    if: inputs.mode != 'dry-run' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Espera do deployment (900 s) + prova de identidade (até 300 s) + smoke.
+    timeout-minutes: 30
+    environment:
+      name: production
+    permissions:
+      contents: read
+      actions: read
+      deployments: write
+    env:
+      DEPLOY_WAIT_MAX_SECONDS: "900"
+    steps:
+      # Só os scripts da promoção. Sem Dockerfile, sem `surfaces/`, sem
+      # `packages/`: não há o que construir mesmo que alguém quisesse.
+      - name: Checkout (só os scripts da promoção)
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts/promote_release.py
+            scripts/release_manifest.py
+            scripts/release_inventory.py
+            scripts/deploy_components.py
+            scripts/check_menu_smoke.py
+            surfaces/operator-router/groups.json
+            surfaces/registry.json
+          sparse-checkout-cone-mode: false
+
+      - name: Baixar o plano validado
+        uses: actions/download-artifact@v8
+        with:
+          name: promotion-plan
+
+      - name: O app de produção está nas tags -prod
+        id: app
+        if: inputs.mode == 'promote'
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: |
+          if [ -z "${{ vars.PRODUCTION_DO_APP_NAME }}" ]; then
+            echo "::error::a variável PRODUCTION_DO_APP_NAME do environment production não existe."
+            exit 1
+          fi
+          python3 scripts/promote_release.py check-app --app-name "${{ vars.PRODUCTION_DO_APP_NAME }}"
+
+      - name: Retag dos mesmos manifests para produção
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: python3 scripts/promote_release.py retag --plan plan.json
+
+      - name: Registrar o GitHub Deployment
+        id: ghdeploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq -n --arg ref "${{ needs.plan.outputs.sha }}" \
+                --arg rid "${{ inputs.release_id }}" \
+                --arg mode "${{ inputs.mode }}" \
+                --slurpfile plan plan.json \
+            '{ref: $ref, environment: "production", auto_merge: false,
+              required_contexts: [], production_environment: true,
+              transient_environment: false,
+              task: (if $mode == "promote" then "deploy" else "deploy:retag-only" end),
+              description: ("Release " + $rid),
+              payload: $plan[0]}' > deployment.json
+          id=$(gh api -X POST "repos/${{ github.repository }}/deployments" --input deployment.json --jq .id)
+          echo "id=${id}" >> "$GITHUB_OUTPUT"
+          gh api -X POST "repos/${{ github.repository }}/deployments/${id}/statuses" \
+            -f state=in_progress -f description="retag feito: ${{ inputs.release_id }}" >/dev/null
+          echo "GitHub Deployment ${id} para ${{ inputs.release_id }}"
+
+      - name: Deployment na produção (espera ACTIVE)
+        if: inputs.mode == 'promote'
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          DO_DEPLOY_TOKEN: ${{ secrets.DIGITALOCEAN_APP_DEPLOY_TOKEN }}
+        run: python3 scripts/promote_release.py deploy --app-id "${{ steps.app.outputs.app_id }}"
+
+      - name: O que está no ar é o que foi promovido
+        if: inputs.mode == 'promote'
+        run: |
+          python3 scripts/promote_release.py verify --plan plan.json \
+            --url "web=${{ vars.PRODUCTION_RELEASE_URL_WEB }}" \
+            --url "storefront-nuxt=${{ vars.PRODUCTION_RELEASE_URL_STOREFRONT }}" \
+            --url "operator-floor=${{ vars.PRODUCTION_RELEASE_URL_OPERATOR_FLOOR }}" \
+            --url "operator-office=${{ vars.PRODUCTION_RELEASE_URL_OPERATOR_OFFICE }}"
+
+      - name: Smoke de produção
+        if: inputs.mode == 'promote'
+        env:
+          MENU_MIN_SKUS: ${{ vars.MENU_MIN_SKUS || '30' }}
+        run: |
+          python3 scripts/promote_release.py smoke \
+            --api-url "${{ vars.PRODUCTION_API_URL }}" \
+            --storefront-url "${{ vars.PRODUCTION_STOREFRONT_URL }}"
+
+      - name: Fechar o GitHub Deployment
+        if: always() && steps.ghdeploy.outputs.id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            if [ "${{ inputs.mode }}" = "promote" ]; then estado=success; else estado=inactive; fi
+          else
+            estado=failure
+          fi
+          gh api -X POST "repos/${{ github.repository }}/deployments/${{ steps.ghdeploy.outputs.id }}/statuses" \
+            -f state="${estado}" -f description="${{ inputs.release_id }}: ${estado}" >/dev/null
+          echo "GitHub Deployment ${{ steps.ghdeploy.outputs.id }}: ${estado}"

@@ -278,6 +278,12 @@ jobs:
     # teto de 15 min dentro do passo.
     timeout-minutes: 25
     steps:
+      # Os scripts do release set e do papel do app (WP-RELEASE-01 R2), e as
+      # migrations para o hash do grafo. Raso basta: nada aqui pergunta ao
+      # histórico.
+      - name: Checkout
+        uses: actions/checkout@v7
+
       - name: Baixar os manifestos dos componentes
         uses: actions/download-artifact@v8
         with:
@@ -328,6 +334,20 @@ jobs:
           pathlib.Path("published.json").write_text(json.dumps(manifesto, indent=2))
           print(json.dumps(manifesto, indent=2))
           EOF
+
+      # O candidato imutável (WP-RELEASE-01 R2). O build é seletivo, mas o que
+      # vai ao ar é SEMPRE um conjunto de quatro imagens: o manifesto passa a
+      # dizer o release set inteiro, com os componentes que este run não
+      # construiu lidos do registry pela tag móvel (a mesma que o deployment do
+      # alpha resolve logo abaixo). É esse conjunto, e só ele, que o
+      # `promote-release.yml` aceita levar para produção.
+      #
+      # ⚠️ Não reprova o run. Registry instável aqui vira `release_set_error`
+      # no manifesto e um aviso: o alpha segue, e quem recusa é a promoção.
+      - name: Release set completo
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: python3 scripts/release_manifest.py release-set --manifest published.json
 
       # ⚠️ UM deployment por run, e não um por tag. Com `deploy_on_push` ligado,
       # cada tag móvel publicada (`web`, `storefront`, `operator-floor`,
@@ -411,6 +431,29 @@ jobs:
                   (por_push if ligado else sem_push).append(comp["name"])
           print(f"deploy_on_push ligado: {por_push or '-'} | desligado: {sem_push or '-'}")
 
+          # ⚠️ Push no `main` nunca altera produção (WP-RELEASE-01 R2). Um app
+          # nas tags `-prod` É produção: só o promote-release.yml o implanta,
+          # e este passo não cria deployment nele. Misturado (parte alpha,
+          # parte -prod, ou tag fixada à mão) reprova: nenhum dos dois fluxos
+          # seria verdade.
+          import sys
+          sys.path.insert(0, "scripts")
+          from release_manifest import app_role
+          papel = app_role(spec)
+          print(f"papel do app '{nome}': {papel.role}")
+          if papel.role == "mixed":
+              raise SystemExit(
+                  f"::error::o app '{nome}' mistura tags: alpha={papel.alpha} "
+                  f"prod={papel.production} outras={papel.other}."
+              )
+          if papel.role == "production":
+              print(
+                  f"::notice::'{nome}' está nas tags de produção: o push publicou o "
+                  "candidato e NÃO implanta. Produção só pelo promote-release.yml."
+              )
+              gravar(deploy_mode="production_pinned")
+              raise SystemExit(0)
+
           if por_push and sem_push:
               raise SystemExit(
                   "::error::o spec vivo tem deploy_on_push ligado em parte dos "
@@ -467,6 +510,17 @@ jobs:
           name: published-components
           path: published.json
           retention-days: 7
+
+      # O mesmo arquivo, com nome e prazo de RELEASE: é o que o
+      # promote-release.yml baixa. 90 dias (o teto do repositório) até a R3
+      # dar ao manifesto de produção um lugar durável de verdade. Só sobe
+      # quando o job deu certo: manifesto de run vermelho não é candidato.
+      - name: Subir o manifesto do release
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-manifest
+          path: published.json
+          retention-days: 90
 
   drift:
     name: Nada ficou para trás
