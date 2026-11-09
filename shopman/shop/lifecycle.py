@@ -1142,9 +1142,14 @@ def _schedule_confirmation_timeout(
     action: str,
     source: str,
 ) -> Directive | None:
-    """Schedule or rebase the store-decision timer for a NEW order."""
+    """Schedule or rebase the store-decision timer for a NEW order.
+
+    O prazo é do PEDIDO: a encomenda para outro dia tem o dela
+    (``confirmation.preorder_timeout_minutes``), o pedido do dia o do canal.
+    """
+    timeout_minutes = acceptance_timeout_minutes(order, config)
     expires_at, calendar_state = next_operational_deadline(
-        timeout=timedelta(minutes=config.confirmation.timeout_minutes),
+        timeout=timedelta(minutes=timeout_minutes),
     )
     if expires_at is None:
         logger.warning(
@@ -1199,23 +1204,39 @@ def _schedule_confirmation_timeout(
             available_at=expires_at,
         )
     if action == "cancel":
-        _schedule_stale_alert_before_deadline(order, config, deadline=expires_at)
+        _schedule_stale_alert_before_deadline(order, timeout_minutes=timeout_minutes, deadline=expires_at)
     return timer
 
 
-def _schedule_stale_alert_before_deadline(order, config: ChannelConfig, *, deadline) -> None:
+def acceptance_timeout_minutes(order, config: ChannelConfig) -> int:
+    """Minutos de loja aberta que a casa tem para aceitar ESTE pedido.
+
+    Encomenda (data combinada posterior a hoje) usa o prazo da encomenda do canal;
+    o resto, o ``timeout_minutes``. Uma régua só para quem agenda o prazo e para
+    quem mostra a meta do pedido novo no Gestor.
+    """
+    target = get_commitment_date(order)
+    preorder = target is not None and target > timezone.localdate()
+    return config.confirmation.acceptance_timeout_minutes(preorder=preorder)
+
+
+#: O aviso de pedido parado sai a 1/3 do prazo de aceite do próprio pedido (a ADR-036
+#: fazia 10 de 30): no pedido do dia de 5 min, 1min40s; na encomenda de 60, aos 20.
+STALE_ALERT_FRACTION_OF_DEADLINE = 3
+
+
+def _schedule_stale_alert_before_deadline(order, *, timeout_minutes: int, deadline) -> None:
     """O aviso de pedido parado DENTRO do prazo de aceite, dizendo até quando.
 
     No ``auto_cancel`` o pedido some sozinho no fim do prazo (e o dinheiro volta
-    ao cliente): o Gestor precisa saber antes. O aviso sai ``stale_new_alert_minutes``
-    depois do início do prazo (em horário de loja aberta, como o próprio prazo) e
-    anda junto quando o prazo é reagendado (o pagamento chegou).
+    ao cliente): o Gestor precisa saber antes. O aviso sai a 1/3 do prazo deste
+    pedido (``STALE_ALERT_FRACTION_OF_DEADLINE``), na mesma régua dele, e anda
+    junto quando o prazo é reagendado (o pagamento chegou).
     """
-    stale_minutes = int(getattr(config.confirmation, "stale_new_alert_minutes", 0) or 0)
-    timeout_minutes = int(config.confirmation.timeout_minutes or 0)
-    if stale_minutes <= 0 or stale_minutes >= timeout_minutes:
+    if timeout_minutes <= 0:
         return
-    alert_at = deadline - timedelta(minutes=timeout_minutes - stale_minutes)
+    timeout = timedelta(minutes=timeout_minutes)
+    alert_at = deadline - (timeout - timeout / STALE_ALERT_FRACTION_OF_DEADLINE)
     payload = {
         "order_ref": order.ref,
         "alert_at": alert_at.isoformat(),

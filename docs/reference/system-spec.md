@@ -342,7 +342,7 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 
 | # | Aspecto | Campos |
 |---|---------|--------|
-| 1 | **Confirmation** | `mode∈{immediate,auto_confirm,auto_cancel,manual}`, `timeout_minutes=5`, `stale_new_alert_minutes=0` |
+| 1 | **Confirmation** | `mode∈{immediate,auto_confirm,auto_cancel,manual}`, `timeout_minutes=5`, `preorder_timeout_minutes=None`, `stale_new_alert_minutes=0` |
 | 2 | **Payment** | `method∈{counter,pix,card,external}\|list`, `timing∈{post_commit,at_commit,external}`, `timeout_minutes=15` |
 | 3 | **Fulfillment** | `timing∈{at_commit,post_commit,external}`, `auto_sync=True` |
 | 4 | **Stock** | `hold_ttl_minutes`, `safety_margin=0`, `planned_hold_ttl_hours=48`, `allowed_positions`, `excluded_positions`, `check_on_commit=False`, `low_stock_threshold=5` |

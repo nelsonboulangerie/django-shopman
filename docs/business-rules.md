@@ -244,6 +244,7 @@ confirmation:
     # auto_cancel:  auto-cancela após timeout se operador não confirma
     # manual:       aguarda aprovação explícita do operador
   timeout_minutes: int  # Só para mode=auto_confirm ou auto_cancel (default: 5)
+  preorder_timeout_minutes: int | null  # Prazo da encomenda para outro dia; sem chave = timeout_minutes
 ```
 
 ### 4.2 Pagamento

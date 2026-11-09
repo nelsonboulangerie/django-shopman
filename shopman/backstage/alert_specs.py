@@ -35,7 +35,9 @@ ALERT_SPECS: dict[str, AlertSpec] = {
     # O aceite saiu daqui e não chegou ao iFood: no fim do prazo dele (``respond_by``)
     # o iFood cancela sozinho, com a cozinha já trabalhando.
     "ifood_accept_not_delivered": AlertSpec("iFood", "i-lucide-bike", "O aceite não chegou ao iFood", 8),
-    # Pedido novo parado sem aceite: no iFood, o próprio iFood cancela.
+    # Pedido novo parado sem aceite: no iFood, o próprio iFood cancela. Com prazo de
+    # aceite da casa (``auto_cancel``), o aviso traz ``respond_by`` = o prazo do pedido,
+    # e esta régua só vale para o canal sem prazo (``manual``).
     "stale_new_order": AlertSpec("Pedidos", "i-lucide-clipboard-list", "Pedido novo sem aceite", 5),
     # Cartão autorizado: o Stripe decide sozinho no fim (o aviso traz ``respond_by``
     # nas últimas 24 h; antes disso, fica na caixa de Avisos).

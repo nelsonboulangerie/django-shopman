@@ -102,15 +102,19 @@ def stage_goal(kind: str, channel_config=None) -> int:
     return value
 
 
-def _confirmation_goal(channel_config) -> int:
-    """O prazo do pedido novo: o do canal (confirmação automática ou o do marketplace)."""
+def _confirmation_goal(order: Order, channel_config) -> int:
+    """O prazo do pedido novo: o de aceite deste pedido (a encomenda tem o dela) ou o do marketplace."""
     goal = CONFIRM_GOAL_MINUTES
     if channel_config is None:
         return goal
+    from shopman.shop.lifecycle import acceptance_timeout_minutes
+
     confirmation = channel_config.confirmation
     candidates = []
-    if confirmation.mode in ("auto_confirm", "auto_cancel") and confirmation.timeout_minutes > 0:
-        candidates.append(confirmation.timeout_minutes)
+    if confirmation.mode in ("auto_confirm", "auto_cancel"):
+        timeout = acceptance_timeout_minutes(order, channel_config)
+        if timeout > 0:
+            candidates.append(timeout)
     if confirmation.external_sla_minutes > 0:
         candidates.append(confirmation.external_sla_minutes)
     return min(candidates) if candidates else goal
@@ -191,7 +195,7 @@ def card_attention(order: Order, card, channel_config=None) -> dict:
             "goal_label": f"meta {CONFIRM_GOAL_MINUTES}",
         }
     if kind in ("confirm",) or (kind == "blocked" and order.status == Order.Status.NEW):
-        goal, since = _confirmation_goal(channel_config), order.created_at
+        goal, since = _confirmation_goal(order, channel_config), order.created_at
     else:
         goal = stage_goal(kind, channel_config)
         since = {

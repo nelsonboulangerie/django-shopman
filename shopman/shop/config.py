@@ -96,10 +96,18 @@ class ChannelConfig:
         # "auto_cancel"  — auto-CANCELA após timeout se operador não confirma
         # "manual"       — aguarda aprovação explícita, sem timeout
         timeout_minutes: int = 5  # para mode=auto_confirm ou auto_cancel
+        preorder_timeout_minutes: int | None = None
+        # Prazo da ENCOMENDA (data combinada posterior a hoje), em minutos de loja
+        # aberta, para mode=auto_confirm ou auto_cancel. Quem pede para outro dia
+        # não espera a resposta na tela, e a casa tem mais tempo para olhar a
+        # produção (dono, 09/11/2026: 5 min no dia, 60 na encomenda). Sem chave,
+        # a encomenda segue o ``timeout_minutes``.
         stale_new_alert_minutes: int = 0
         # Opt-in para mode=manual: após X minutos em NEW sem decisão do operador,
         # dispara OperatorAlert("stale_new_order"). 0 (default) desabilita.
         # Usado em canais marketplace (iFood) para escalar pedidos esquecidos.
+        # Não vale no auto_cancel: lá o aviso sai a 1/3 do prazo do próprio pedido
+        # (``lifecycle._schedule_stale_alert_before_deadline``), e o validate recusa.
         external_sla_minutes: int = 0
         # Prazo que o MARKETPLACE impõe para confirmar, contado da criação do pedido
         # lá. Não é timer nosso: vencido, quem cancela é o marketplace, e o pedido
@@ -107,6 +115,12 @@ class ChannelConfig:
         # visível, em vez de ser conta de cabeça do operador. 0 = o canal não tem SLA
         # externo (todo canal da casa). iFood documenta 8 minutos para DELIVERY e
         # TAKEOUT; medido em 19/09/2026, cancelou seis pedidos a 8min10s da criação.
+
+        def acceptance_timeout_minutes(self, *, preorder: bool) -> int:
+            """O prazo de aceite do pedido: o da encomenda quando ela é para outro dia."""
+            if preorder and self.preorder_timeout_minutes:
+                return self.preorder_timeout_minutes
+            return self.timeout_minutes
 
     # ── 2. Pagamento ──
 
@@ -531,6 +545,19 @@ class ChannelConfig:
         if self.confirmation.mode in ("auto_confirm", "auto_cancel") and self.confirmation.timeout_minutes <= 0:
             raise ValueError(
                 f"timeout_minutes deve ser > 0 para mode={self.confirmation.mode}",
+            )
+        preorder_timeout = self.confirmation.preorder_timeout_minutes
+        if preorder_timeout is not None:
+            if self.confirmation.mode not in ("auto_confirm", "auto_cancel"):
+                raise ValueError(
+                    "confirmation.preorder_timeout_minutes só vale para mode=auto_confirm ou auto_cancel",
+                )
+            if isinstance(preorder_timeout, bool) or not isinstance(preorder_timeout, int) or preorder_timeout <= 0:
+                raise ValueError("confirmation.preorder_timeout_minutes deve ser um inteiro > 0")
+        if self.confirmation.mode == "auto_cancel" and self.confirmation.stale_new_alert_minutes:
+            raise ValueError(
+                "confirmation.stale_new_alert_minutes não vale para mode=auto_cancel: "
+                "o aviso sai a 1/3 do prazo de aceite do próprio pedido",
             )
         # Os métodos que o PDV e os adapters conhecem (``services/pos.py``,
         # ``payment_gate``). ``mixed`` fica de fora: é o resultado de uma venda
