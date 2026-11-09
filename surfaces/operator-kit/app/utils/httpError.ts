@@ -110,3 +110,11 @@ export function httpErrorCode(error: unknown): string {
 export function isStationLockedError(error: unknown): boolean {
   return httpError(error).status === 403 && httpErrorCode(error) === "station_locked";
 }
+
+/** Consulta recusada por PIN não é falha de conexão; preserve a saída do servidor. */
+export function httpErrorRetryMessage(error: unknown): string {
+  const message = httpErrorMessage(error, "");
+  if (isStationLockedError(error))
+    return message || "Identifique-se com PIN ou crachá para continuar.";
+  return `${message} Confira a conexão e tente de novo.`.trim();
+}
