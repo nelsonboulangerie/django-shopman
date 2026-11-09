@@ -701,7 +701,7 @@ function refreshAll() {
         v-else-if="search.error.value && !result"
         state="error"
         what="a busca das encomendas"
-        :description="`${httpErrorMessage(search.error.value, '')} Confira a conexão e tente de novo.`.trim()"
+        :description="httpErrorRetryMessage(search.error.value)"
         data-preorders-search-error
         @retry="search.refresh()"
       />
@@ -793,7 +793,7 @@ function refreshAll() {
         v-if="period.error.value && !list"
         state="error"
         what="as encomendas"
-        :description="`${httpErrorMessage(period.error.value, '')} Confira a conexão e tente de novo.`.trim()"
+        :description="httpErrorRetryMessage(period.error.value)"
         data-preorders-period-error
         @retry="period.refresh()"
       />

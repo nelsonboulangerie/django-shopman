@@ -1,3 +1,4 @@
+import { setResponseStatus } from "h3";
 import { mockNuxtImport, mountSuspended, registerEndpoint } from "@nuxt/test-utils/runtime";
 import { flushPromises, type VueWrapper } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -68,6 +69,7 @@ function card(partial: Partial<PreorderCard> = {}): PreorderCard {
   };
 }
 
+let readFailure: { detail: string; error: { code: string } } | null = null;
 let week: PreorderListResponse;
 let detail: PreorderDetail;
 let found: PreorderSearchResponse;
@@ -82,6 +84,7 @@ registerEndpoint("/api/v1/backstage/saved-views/", () => ({
 }));
 registerEndpoint("/api/v1/backstage/pos/preorders/", (event) => {
   listed(event.path);
+  if (readFailure) { setResponseStatus(event, 403); return readFailure; }
   return week;
 });
 registerEndpoint("/api/v1/backstage/pos/preorders/search/", (event) => {
@@ -90,12 +93,14 @@ registerEndpoint("/api/v1/backstage/pos/preorders/search/", (event) => {
 });
 let paymentCheckDue = false;
 const paymentChecked = vi.fn();
-registerEndpoint("/api/v1/backstage/pos/preorders/NB-7/", () => ({
-  order: detail,
+registerEndpoint("/api/v1/backstage/pos/preorders/NB-7/", (event) => {
+  if (readFailure) { setResponseStatus(event, 403); return readFailure; }
+  return { order: detail,
   payment_check_due: paymentCheckDue,
   generated_at: "2026-09-26T12:00:00Z",
   contract_version: 1,
-}));
+  };
+});
 // A conferência do cartão é comando (A8-1): o detalhe só lê.
 registerEndpoint("/api/v1/backstage/pos/preorders/NB-7/payment/check/", (event) => {
   paymentChecked(event.method);
@@ -126,6 +131,7 @@ async function mount(page: unknown) {
 }
 
 beforeEach(() => {
+  readFailure = null;
   // Os dias virados na grade vivem no estado do app (sobrevivem à volta do detalhe):
   // cada teste começa com só hoje aberto.
   useState<string[]>("pos-preorders-flipped-days").value = [];
@@ -1383,5 +1389,22 @@ describe("Semana: a hora 'A combinar' não invade o nome (dono, 03/11/2026)", ()
     expect(time.text()).toBe("A combinar");
     expect(time.classes()).toContain("whitespace-nowrap");
     expect(wrapper.find('[data-week-grid] [data-preorder="NB-7"]').classes().join(" ")).toContain("minmax(4.5rem,auto)");
+  });
+});
+
+describe("identificação pendente nas encomendas", () => {
+  it.each([
+    ["lista", PreordersPage],
+    ["detalhe", DetailPage],
+  ] as const)("%s orienta PIN sem culpar a conexão", async (_name, page) => {
+    readFailure = {
+      detail: "Estação travada. Identifique-se com PIN ou crachá.",
+      error: { code: "station_locked" },
+    };
+    const wrapper = await mount(page);
+    await vi.waitFor(() =>
+      expect(wrapper.text()).toContain("Identifique-se com PIN ou crachá"),
+    );
+    expect(wrapper.text()).not.toContain("Confira a conexão");
   });
 });

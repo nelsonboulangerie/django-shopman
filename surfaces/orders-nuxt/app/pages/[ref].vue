@@ -1453,6 +1453,9 @@ const outside = useOutsideStore(
           <NuxtCard as="section">
             <div class="flex flex-col gap-2">
               <!-- one-tap tags (configuráveis no Admin) — anexam ao texto, sem duplicar -->
+              <p v-if="noteTags.length" class="text-sm text-muted-foreground" data-kitchen-note-tags-scope>
+                Atalhos gerais do pedido. Use apenas os que se aplicam aos itens.
+              </p>
               <div v-if="noteTags.length" class="flex flex-wrap gap-1.5">
                 <NuxtButton
                   v-for="(tag, i) in noteTags"

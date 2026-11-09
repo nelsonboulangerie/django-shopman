@@ -34,7 +34,7 @@ const props = defineProps<{
   finishUntil?: ReadonlyMap<number, number>;
   allDay: KDSAllDayCount[];
   density: KDSDensity;
-  /** O aviso no bolso está ligado: o pedido novo toca e vibra com a tela apagada. */
+  /** Os avisos estão ligados neste dispositivo; o navegador e o sistema controlam som e vibração. */
   pushOn?: boolean;
 }>();
 const emit = defineEmits<{
@@ -184,7 +184,7 @@ function onRowPointerdown(pk: number, event: PointerEvent) {
       Deslize uma linha para a direita: Pronto. Toque longo: ver o pedido, desfazer, reabrir.
     </p>
     <p v-if="pushOn" class="text-center op-micro text-muted-foreground" data-kds-push-on>
-      Este celular toca e vibra com pedido novo mesmo com a tela apagada.
+      Avisos ligados neste dispositivo. Som e vibração dependem dos ajustes do navegador e do sistema.
     </p>
   </div>
 </template>

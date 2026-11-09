@@ -260,7 +260,7 @@ function goBack() {
         v-else-if="error"
         state="error"
         what="a encomenda"
-        :description="`${httpErrorMessage(error, '')} Confira a conexão e tente de novo.`.trim()"
+        :description="httpErrorRetryMessage(error)"
         @retry="refresh()"
       />
 

@@ -867,3 +867,21 @@ describe("detalhe do pedido: achados do beta 05/11", () => {
     w.unmount();
   });
 });
+
+
+describe("atalhos gerais da nota do pedido", () => {
+  it("explica o escopo sem inferir etiquetas pelo produto nem alterar o cadastro", () => {
+    const tags = ["Bem assado", "Pouco assado"];
+    const w = abrir(order({ kitchen_note_tags: tags }));
+    expect(w.get("[data-kitchen-note-tags-scope]").text()).toContain("Atalhos gerais do pedido");
+    expect(w.get("[data-kitchen-note-tags-scope]").text()).toContain("Use apenas os que se aplicam aos itens");
+    expect(w.findAll("button").some(b => b.text() === "Bem assado")).toBe(true);
+    expect(detalhe.value?.kitchen_note_tags).toEqual(tags);
+    w.unmount();
+  });
+  it("sem atalhos cadastrados, não explica uma lista inexistente", () => {
+    const w = abrir(order({ kitchen_note_tags: [] }));
+    expect(w.find("[data-kitchen-note-tags-scope]").exists()).toBe(false);
+    w.unmount();
+  });
+});

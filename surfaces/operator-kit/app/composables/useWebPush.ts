@@ -79,7 +79,12 @@ export function useWebPush() {
     return registration.pushManager.getSubscription();
   }
 
+  function refreshPermission(): void {
+    if (import.meta.client && "Notification" in window) permission.value = Notification.permission;
+  }
+
   async function refresh(): Promise<void> {
+    refreshPermission();
     if (!config) return;
     try {
       const [response, subscription] = await Promise.all([
@@ -171,6 +176,13 @@ export function useWebPush() {
     }
   }
 
-  onMounted(() => void syncExisting());
+  onMounted(() => {
+    refreshPermission();
+    window.addEventListener("focus", refreshPermission);
+    void syncExisting();
+  });
+  onBeforeUnmount(() => {
+    if (import.meta.client) window.removeEventListener("focus", refreshPermission);
+  });
   return { supported, unavailableReason, active, permission, loading, error, devices, categories, currentDevice, refresh, activate, updateCategories, removeDevice };
 }
