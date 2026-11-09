@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Enviados: o que já saiu (ou tentou sair), do mais novo ao mais antigo, com o resultado
+// Enviados: envios, tentativas e encerramentos sem envio, do mais novo ao mais antigo, com o resultado
 // por plataforma. Os quatro recortes (Situação, Plataforma, Criado em, Origem da decisão)
 // moram no painel de filtros único da suíte (`OperatorFilterPanel`, com os favoritos da
 // pessoa): na mesa, chips ao lado do botão; no celular, os chips do cabeçalho. Os valores
@@ -221,6 +221,9 @@ useHead({ title: "Enviados" });
 
     <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
       <div class="mx-auto w-full max-w-5xl">
+        <p class="mb-4 text-sm text-muted-foreground" data-history-scope>
+          Histórico de envios, tentativas e encerramentos sem envio.
+        </p>
         <template v-if="error && announcements.length === 0">
           <OperatorScreenState
             v-if="loadFailure.canRetry"

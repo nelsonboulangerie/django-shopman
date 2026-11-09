@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Ajustes › Ofertas e cupons: um lugar, um nome (`depois-navegacao.jpg`). Oferta dá o
-// benefício sozinha; cupom pede o código na sacola e nasce com a regra dele, sem mexer
+// benefício sozinha; cupom pede o código na etapa Pagamento e nasce com a regra dele, sem mexer
 // em oferta que já está no ar.
 import { offerCampaignNote } from "~/presentation/offers";
 
@@ -165,7 +165,7 @@ useHead({ title: "Ofertas e cupons" });
     <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
       <div class="mx-auto flex w-full max-w-5xl flex-col gap-4">
         <p class="max-w-2xl text-sm text-muted-foreground">
-          Oferta dá o benefício sozinha. Cupom pede o código na sacola e nasce
+          Oferta dá o benefício sozinha. Cupom pede o código na etapa Pagamento e nasce
           com a regra dele, sem mexer em oferta que já está no ar.
         </p>
 
