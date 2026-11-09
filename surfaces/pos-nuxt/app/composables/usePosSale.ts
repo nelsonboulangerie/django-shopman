@@ -238,6 +238,7 @@ interface PosSaleDeps {
 export function usePosSale(deps: PosSaleDeps) {
   const { pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl } = deps;
   const refreshTabs = deps.refreshTabs ?? refresh;
+  const confirmNewOrder = useConfirm();
 
   // O momento mais comum de abrir a gaveta é dar troco. Antes o único jeito era
   // a chave física — ou o gancho "abrir ao imprimir" do driver, que só dispara
@@ -2255,25 +2256,31 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
-  /**
-   * "Nova encomenda" (seção Encomendas): a próxima comanda LIVRE, a mesma do
-   * "Próxima livre" do quadro, aberta já no modo Encomendas. Nunca a comanda de
-   * uma venda em andamento: essa fica no quadro, como estava. A trava da gaveta
-   * vale, como em qualquer venda que começa (`openTab`).
-   */
+  /** A próxima comanda livre só entra em uso depois da confirmação explícita. */
+  let openingNewOrder = false;
   async function openNewOrder() {
-    // A encomenda que o assistente abriu e ninguém usou ainda É a nova: abrir
-    // outra deixava esta "Em uso" com 0 itens no quadro (beta test de
-    // 05/11/2026, PDV2-13).
+    if (openingNewOrder || busy.value) return;
+    // Reabrir a encomenda vazia existente não cria outra comanda.
     if (isAbandonedOrderTab()) {
-      // Pedida do quadro, a encomenda reaproveitada tem de voltar para a tela:
-      // retornar calado deixava o operador no quadro, com o toque sem efeito.
       showTabs.value = false;
       return;
     }
-    const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
-    if (!tabRef) return;
-    await openTab(tabRef, { salesMode: "order" });
+    openingNewOrder = true;
+    try {
+      if (!(await confirmNewOrder({
+        tone: "primary",
+        title: "Iniciar nova encomenda?",
+        description: "A próxima comanda livre ficará em uso para montar esta encomenda. O pedido só será registrado ao finalizar.",
+        confirmLabel: "Iniciar encomenda",
+        cancelLabel: "Voltar sem iniciar",
+      }))) return;
+      // A fila pode mudar enquanto o operador decide. Escolhe pela leitura atual.
+      const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
+      if (!tabRef) return;
+      await openTab(tabRef, { salesMode: "order" });
+    } finally {
+      openingNewOrder = false;
+    }
   }
 
   async function openTabFromDialog(tab: POSTabProjection | string) {

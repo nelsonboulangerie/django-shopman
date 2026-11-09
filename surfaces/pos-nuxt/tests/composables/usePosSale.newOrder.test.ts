@@ -1,10 +1,17 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 
 import { NEW_ORDER_ROUTE, wantsNewOrder } from "~/presentation/orderSetup";
 import type { POSTabProjection } from "~/types/pos";
 
 import { makeSale, makeTabPayload } from "./_posSaleHarness";
+
+const { confirmNewOrder } = vi.hoisted(() => ({ confirmNewOrder: vi.fn() }));
+vi.mock("../../../operator-kit/app/composables/useConfirm", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../operator-kit/app/composables/useConfirm")>(),
+  useConfirm: () => confirmNewOrder,
+}));
+beforeEach(() => confirmNewOrder.mockReset().mockResolvedValue(true));
 
 vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
@@ -45,6 +52,27 @@ describe("Nova encomenda: a URL da venda", () => {
 });
 
 describe("usePosSale.openNewOrder", () => {
+  it("não abre comanda enquanto a confirmação está pendente nem ao desistir", async () => {
+    let answer!: (confirmed: boolean) => void;
+    confirmNewOrder.mockImplementationOnce(() => new Promise<boolean>((resolve) => { answer = resolve; }));
+    const h = sale([tab("2", "empty")], { tab_ref: "2", session_key: "sess-2" });
+    const opening = h.sale.openNewOrder();
+    expect(confirmNewOrder).toHaveBeenCalledWith(expect.objectContaining({
+      tone: "primary", confirmLabel: "Iniciar encomenda", cancelLabel: "Voltar sem iniciar",
+    }));
+    expect(h.handles.actionCall).not.toHaveBeenCalled();
+    await h.sale.openNewOrder();
+    expect(confirmNewOrder).toHaveBeenCalledTimes(1);
+    answer(false);
+    await opening;
+    expect(h.handles.actionCall).not.toHaveBeenCalled();
+    expect(h.sale.cart.tabSessionKey).toBe("");
+    expect(h.sale.showTabs.value).toBe(true);
+    // Desistir não trava uma nova tentativa. Só a confirmação abre a comanda.
+    await h.sale.openNewOrder();
+    expect(h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/open/"))).toHaveLength(1);
+  });
+
   it("abre a próxima comanda livre, não a que tem venda em andamento, já no modo Encomendas", async () => {
     const h = sale([tab("1", "in_use"), tab("2", "empty")], {
       tab_ref: "2", tab_display: "2", session_key: "sess-2", tab_session_key: "sess-2",
