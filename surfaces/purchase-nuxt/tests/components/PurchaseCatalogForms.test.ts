@@ -232,10 +232,26 @@ describe("PurchaseSupplierFormPanel", () => {
     await edit!.trigger("click");
     await wrapper.find('[data-testid="contact-email"]').setValue("novo@moinho.example");
     await wrapper.find('[data-testid="contact-form"]').trigger("submit");
-    await wrapper.setProps({ savedVersion: 1 });
+    await wrapper.setProps({
+      source: { ...moinho, contacts: moinho.contacts.map((person) => ({ ...person, email: "novo@moinho.example" })) },
+      savedVersion: 1,
+    });
     expect(wrapper.findComponent(ShellStub).props("dirty")).toBe(true);
     expect(wrapper.findComponent(ShellStub).props("dirtyCount")).toBe(1);
     expect((wrapper.find('[data-testid="supplier-name"]').element as HTMLInputElement).value).toBe("Moinho com nome novo");
+  });
+
+  it("salvar a empresa fecha a edição e reabrir compara com o cadastro confirmado", async () => {
+    const wrapper = mountSupplier({ mode: "edit", source: moinho });
+    const name = "Moinho com nome confirmado";
+    await wrapper.find('[data-testid="supplier-name"]').setValue(name);
+    await wrapper.find('[data-testid="shell-save"]').trigger("click");
+    expect(wrapper.emitted("save")![0]![0]).toMatchObject({ name });
+    // saveSupplier fecha a gaveta no sucesso; savedVersion é exclusivo do contato.
+    await wrapper.setProps({ open: false, source: { ...moinho, name } });
+    await wrapper.setProps({ open: true });
+    expect(wrapper.findComponent(ShellStub).props("dirty")).toBe(false);
+    expect((wrapper.find('[data-testid="supplier-name"]').element as HTMLInputElement).value).toBe(name);
   });
 
   it("criar: exige a razão social", async () => {

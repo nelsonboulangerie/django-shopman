@@ -147,7 +147,7 @@ const changedKeys = computed(() => [...companyChangedKeys.value, ...(contactDirt
 const activeSection = ref<string | null>("identity");
 
 watch(
-  () => [props.open, props.mode, props.source?.ref],
+  [() => props.open, () => props.mode, () => props.source?.ref],
   () => {
     if (!props.open) return;
     reset();
