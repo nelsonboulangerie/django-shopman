@@ -67,6 +67,7 @@ EVENT_LABELS: dict[str, str | None] = {
     "return_initiated": "Devolução solicitada",
     "refund_processed": "Reembolso processado",
     "customer_contact_requested": "Contato solicitado",
+    "customer_cancellation_requested": "Cancelamento solicitado",
     "customer_contact_resolved": "Atendimento concluído",
     "fiscal_cancelled": "Nota fiscal cancelada",
     "fulfillment.dispatched": "Saiu para entrega",

@@ -63,10 +63,11 @@ export function timelineStepStateLabel (state: string): string {
   return 'ainda não'
 }
 
-// Sufixo do passo para o leitor de tela. O passo cancelado já se chama
-// "Cancelado": repetir o estado lia "Cancelado, cancelado" (beta 06/11, PIXEXP-10).
-export function timelineStepSrSuffix (step: Pick<OrderProgressStepProjection, 'state'>): string {
-  if (step.state === 'cancelled') return ''
+// Sufixo do passo para o leitor de tela. "Cancelado" e "Concluído"
+// já nomeiam o desfecho. O último passo pode continuar sendo o status atual
+// da projeção; se ainda estiver pendente, o leitor precisa ouvir a diferença.
+export function timelineStepSrSuffix (step: Pick<OrderProgressStepProjection, 'state' | 'key'>): string {
+  if (step.state === 'cancelled' || (step.key === 'completed' && (step.state === 'current' || step.state === 'completed'))) return ''
   return `, ${timelineStepStateLabel(step.state)}`
 }
 

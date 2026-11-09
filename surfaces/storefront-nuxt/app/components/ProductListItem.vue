@@ -48,6 +48,9 @@ const badge = computed(() => tileBadge(props.item))
       </p>
       <UiBadge v-if="!pending && badge && item.availability !== 'unavailable'" :variant="badge.variant" class="mt-2 font-normal">{{ badge.label }}</UiBadge>
       <DietaryWarningBadges v-if="!pending" :warnings="item.dietary_warnings" class="mt-2" />
+      <p v-if="!pending && item.is_notifiable" class="mt-2 shop-meta text-muted-foreground" data-stock-notify-recurrence>
+        Avisos recorrentes pelo WhatsApp
+      </p>
       <div v-if="pending" class="mt-2" aria-label="Confirmando preço e disponibilidade">
         <UiSkeleton class="h-5 w-24" />
       </div>

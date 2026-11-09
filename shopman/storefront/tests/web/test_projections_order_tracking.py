@@ -1733,3 +1733,17 @@ def test_eta_on_another_day_keeps_its_date():
 
     future = timezone.localtime(timezone.now()) + timezone.timedelta(days=2)
     assert _eta_display(future.isoformat()) == future.strftime("%H:%M de %d/%m")
+
+
+def test_historical_customer_cancellation_event_is_read_in_portuguese_without_rewriting(order):
+    from shopman.backstage.projections.order_queue import _build_timeline
+
+    order.emit_event("customer_cancellation_requested", actor="customer:self-service", payload={"reason": "Mudei de ideia"})
+    before = list(order.events.values("id", "type", "payload"))
+
+    customer = build_order_tracking(order)
+    operator = _build_timeline(order)
+
+    assert any(item.label == "Cancelamento solicitado" for item in customer.timeline)
+    assert any(item.label == "Cliente solicitou o cancelamento" for item in operator)
+    assert list(order.events.values("id", "type", "payload")) == before

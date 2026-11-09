@@ -3354,6 +3354,7 @@ _EVENT_LABELS = {
     "concierge_discount": "Desconto da Concierge",
     "concierge_cancelled": "Cancelado pela Concierge a pedido do cliente",
     "customer_contact_requested": "Cliente avaliou mal e pediu para falar com o responsável",
+    "customer_cancellation_requested": "Cliente solicitou o cancelamento",
     "customer_contact_resolved": "Ouvidoria resolvida",
     # A letra da corrida vira a frase do Gestor (``COURIER_STATUS_LABELS``) em
     # ``_build_timeline``; este é o rótulo da letra que ninguém nomeou.

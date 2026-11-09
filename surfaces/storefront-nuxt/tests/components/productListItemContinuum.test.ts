@@ -41,6 +41,25 @@ const item: CatalogItemProjection = {
 }
 
 describe('ProductListItem com quadro estrutural Continuum', () => {
+  it('explica a recorrência do aviso na listagem, antes de abrir o consentimento', async () => {
+    const wrapper = await mountSuspended(ProductListItem, {
+      props: { item: { ...item, availability: 'unavailable', is_notifiable: true } },
+      global: { stubs: { StockNotifyButton: true } }
+    })
+
+    expect(wrapper.get('[data-stock-notify-recurrence]').text()).toBe('Avisos recorrentes pelo WhatsApp')
+    expect(wrapper.get('stock-notify-button-stub').attributes('pill')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('não promete aviso antes de confirmar a disponibilidade nem para item não notificável', async () => {
+    for (const props of [{ item, pending: false }, { item: { ...item, is_notifiable: true }, pending: true }]) {
+      const wrapper = await mountSuspended(ProductListItem, { props, global: { stubs: { StockNotifyButton: true, CartQuantityAction: true } } })
+      expect(wrapper.find('[data-stock-notify-recurrence]').exists()).toBe(false)
+      wrapper.unmount()
+    }
+  })
+
   it('mostra o produto sem inventar preço, estoque ou gesto de compra', async () => {
     const wrapper = await mountSuspended(ProductListItem, {
       props: { item, pending: true }
