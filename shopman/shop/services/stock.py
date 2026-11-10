@@ -32,6 +32,7 @@ from decimal import Decimal
 from django.utils import timezone
 
 from shopman.shop.adapters import get_adapter
+from shopman.shop.policies import order_date_before_batch as batch_gate
 from shopman.shop.protocols import ReserveRefusal
 from shopman.shop.services import lead_time as lead_time_service
 from shopman.shop.services.order_helpers import get_commitment_date, is_test_order
@@ -191,10 +192,10 @@ def hold(order, *, require_all: bool = False) -> None:
     # não é adotada e volta para a fornada dela.
     if session_key:
         order_day = target_date or timezone.localdate()
-        too_late = _late_holds_of_order(session_key, order_day, items)
+        too_late = batch_gate.late_holds_of_order(session_key, order_day, items)
         if too_late:
             if require_all:
-                raise _order_date_before_batch_error(items, too_late, order_day)
+                raise batch_gate.refusal_error(items, too_late, order_day)
             late_ids = {hold_id for hold_id, _sku, _batch_date in too_late}
             for sku_key, pairs in list(session_holds_by_sku.items()):
                 session_holds_by_sku[sku_key] = [pair for pair in pairs if pair[0] not in late_ids]
@@ -950,112 +951,11 @@ def _insufficient_supply_error(item: dict, comp_sku: str, qty, error_code):
     )
 
 
-ORDER_DATE_BEFORE_BATCH = "order_date_before_batch"
-
-_WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
-
-
-def _session_holds_after(session_key: str, day) -> list[tuple[str, str, object]]:
-    """Reservas da sacola presas a uma fornada depois de ``day`` (ver ``availability``)."""
-    from shopman.shop.services import availability
-
-    return availability.session_holds_after(session_key, day)
-
-
 def _session_holds_on_batch(session_key: str, day) -> set[str]:
     """Reservas da sacola presas à fornada DE ``day`` (ver ``availability``)."""
     from shopman.shop.services import availability
 
     return availability.session_holds_on_batch(session_key, day)
-
-
-def _line_value(line, key: str):
-    """Linha de pedido (dict do snapshot) ou de sacola (dict ou objeto)."""
-    if isinstance(line, dict):
-        return line.get(key)
-    return getattr(line, key, None)
-
-
-def _late_holds_of_order(session_key: str, order_day, items) -> list[tuple[str, str, object]]:
-    """As reservas tardias da sacola que são de itens DESTE pedido.
-
-    Reserva tardia de SKU que não está no pedido é sobra não reconciliada (item
-    tirado da sacola cuja reserva escapou): não é promessa deste pedido, não o
-    recusa, e segue para a liberação de sobras.
-    """
-    too_late = _session_holds_after(session_key, order_day)
-    if not too_late:
-        return []
-    order_skus: set[str] = set()
-    for item in items or ():
-        sku = _line_value(item, "sku")
-        if not sku:
-            continue
-        order_skus.add(sku)
-        order_skus.update(comp["sku"] for comp in _expand_if_bundle(sku, Decimal("1")))
-    return [row for row in too_late if row[1] in order_skus]
-
-
-def order_date_before_batch_refusal(session_key: str, order_day, items):
-    """A recusa "um pedido, uma data" para ``order_day``, ou ``None``.
-
-    A mesma pergunta do gate de commit, para quem valida a data ANTES de fechar
-    (a concierge, ao gravar retirada/entrega): a sacola guarda algum item deste
-    pedido numa fornada que só sai depois de ``order_day``? Devolve o
-    ``ValidationError`` pronto (item, dia da fornada, campo da data).
-    """
-    if not session_key or order_day is None:
-        return None
-    too_late = _late_holds_of_order(session_key, order_day, items)
-    if not too_late:
-        return None
-    return _order_date_before_batch_error(items, too_late, order_day)
-
-
-def batch_day_phrase(batch_date, *, today=None) -> str:
-    """"amanhã, 10/11" / "na quarta, 11/11" / "no sábado, 14/11": quando a fornada sai.
-
-    Só se fala de fornada que sai DEPOIS do dia do pedido: não há frase de "hoje".
-    """
-    today = today or timezone.localdate()
-    stamp = batch_date.strftime("%d/%m")
-    if (batch_date - today).days == 1:
-        return f"amanhã, {stamp}"
-    weekday = _WEEKDAYS[batch_date.weekday()]
-    article = "no" if batch_date.weekday() >= 5 else "na"
-    return f"{article} {weekday}, {stamp}"
-
-
-def _order_date_before_batch_error(items: list[dict], too_late: list, order_day):
-    """ValidationError do gate "um pedido, uma data": o pedido é para antes da fornada.
-
-    A sacola guarda o item numa fornada que só sai depois da data escolhida; o
-    pedido daquela data seria uma promessa impossível (retirar hoje o pão de
-    quarta). Nomeia o item e o dia da fornada, e aponta o campo da data. Mesmo
-    dialeto das outras recusas do gate; ``checkout.map_checkout_error`` usa o
-    ``field`` do contexto.
-    """
-    from shopman.orderman.exceptions import ValidationError
-
-    _hold_id, late_sku, batch_date = max(too_late, key=lambda row: row[2])
-    display = late_sku
-    for item in items:
-        sku = _line_value(item, "sku")
-        if not sku:
-            continue
-        if sku == late_sku or any(comp["sku"] == late_sku for comp in _expand_if_bundle(sku, Decimal("1"))):
-            display = _line_value(item, "name") or _product_name(sku) or sku
-            break
-    return ValidationError(
-        code=ORDER_DATE_BEFORE_BATCH,
-        message=f"{display} sai {batch_day_phrase(batch_date)}. Escolha essa data ou uma depois dela.",
-        context={
-            "sku": late_sku,
-            "field": "delivery_date",
-            "order_date": order_day.isoformat(),
-            "batch_date": batch_date.isoformat(),
-        },
-    )
 
 
 def _unknown_sku_error(item: dict, comp_sku: str):
@@ -1162,17 +1062,6 @@ def _alert_hold_gap(order, sku: str, qty, error_code) -> None:
         order_ref=order.ref,
         dedupe_key=f"stock_hold_gap:{order.ref}:{sku}",
     )
-
-
-def _product_name(sku: str) -> str:
-    """Nome de catálogo do SKU, para a mensagem ao cliente (vazio se não houver)."""
-    try:
-        from shopman.offerman.models import Product
-
-        return str(Product.objects.filter(sku=sku).values_list("name", flat=True).first() or "")
-    except Exception:
-        logger.debug("stock._product_name degraded sku=%s", sku, exc_info=True)
-        return ""
 
 
 def _expand_if_bundle(sku: str, qty: Decimal) -> list[dict]:

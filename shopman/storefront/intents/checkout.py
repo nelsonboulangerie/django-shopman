@@ -59,9 +59,9 @@ def _validate_preorder(
     # data escolhida. O gate de commit recusa de qualquer jeito; dizer aqui é
     # dizer antes da cotação, com o item e o dia.
     if session_key:
-        from shopman.shop.services import stock as stock_service
+        from shopman.shop.policies.order_date_before_batch import order_date_before_batch_refusal
 
-        batch_refusal = stock_service.order_date_before_batch_refusal(
+        batch_refusal = order_date_before_batch_refusal(
             session_key, chosen_date, list(cart_lines or []),
         )
         if batch_refusal is not None:

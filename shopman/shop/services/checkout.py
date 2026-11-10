@@ -219,8 +219,8 @@ def map_checkout_error(exc: Exception) -> dict[str, str] | None:
         address_codes = {"delivery_zone_not_covered", "delivery_zone_unverified"}
         field = "delivery_address" if exc.code in address_codes else "checkout"
         # A trava da nota de entrega diz QUAL campo consertar (CPF ou endereço).
+        from shopman.shop.policies.order_date_before_batch import ORDER_DATE_BEFORE_BATCH
         from shopman.shop.services.delivery_fiscal_identity import REFUSAL_CODES
-        from shopman.shop.services.stock import ORDER_DATE_BEFORE_BATCH
 
         context_field_codes = {"payment_method_missing", "house_account_not_allowed", ORDER_DATE_BEFORE_BATCH}
         if exc.code in REFUSAL_CODES or exc.code in context_field_codes:

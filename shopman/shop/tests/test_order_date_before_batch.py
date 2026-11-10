@@ -21,6 +21,7 @@ from shopman.stockman import HoldStatus, PositionKind
 from shopman.stockman.models import Hold, Position, Quant
 
 from shopman.shop.models import Channel
+from shopman.shop.policies import order_date_before_batch as batch_gate
 from shopman.shop.services import checkout as checkout_service
 from shopman.shop.services import stock as stock_service
 
@@ -94,9 +95,9 @@ class TestSacolaPresaAFornadaFutura:
             stock_service.hold(_order(), require_all=True)
 
         error = caught.value
-        assert error.code == stock_service.ORDER_DATE_BEFORE_BATCH
+        assert error.code == batch_gate.ORDER_DATE_BEFORE_BATCH
         assert error.message == (
-            f"Kuro Pan sai {stock_service.batch_day_phrase(wednesday)}. "
+            f"Kuro Pan sai {batch_gate.batch_day_phrase(wednesday)}. "
             "Escolha essa data ou uma depois dela."
         )
         assert wednesday.strftime("%d/%m") in error.message
@@ -114,7 +115,7 @@ class TestSacolaPresaAFornadaFutura:
         with pytest.raises(ValidationError) as caught:
             stock_service.hold(_order(delivery_date=today + timedelta(days=1)), require_all=True)
 
-        assert caught.value.code == stock_service.ORDER_DATE_BEFORE_BATCH
+        assert caught.value.code == batch_gate.ORDER_DATE_BEFORE_BATCH
 
     def test_pedido_para_o_dia_da_fornada_passa(self):
         today = timezone.localdate()
@@ -254,15 +255,15 @@ class TestRecusaAntesDoFechamento:
         _session_hold(_quant(position, target_date=wednesday))
         lines = [{"sku": SKU, "qty": 1}]
 
-        refusal = stock_service.order_date_before_batch_refusal(SESSION_KEY, today, lines)
+        refusal = batch_gate.order_date_before_batch_refusal(SESSION_KEY, today, lines)
 
-        assert refusal.code == stock_service.ORDER_DATE_BEFORE_BATCH
+        assert refusal.code == batch_gate.ORDER_DATE_BEFORE_BATCH
         assert refusal.message == (
-            f"Kuro Pan sai {stock_service.batch_day_phrase(wednesday)}. "
+            f"Kuro Pan sai {batch_gate.batch_day_phrase(wednesday)}. "
             "Escolha essa data ou uma depois dela."
         )
-        assert stock_service.order_date_before_batch_refusal(SESSION_KEY, wednesday, lines) is None
-        assert stock_service.order_date_before_batch_refusal("", today, lines) is None
+        assert batch_gate.order_date_before_batch_refusal(SESSION_KEY, wednesday, lines) is None
+        assert batch_gate.order_date_before_batch_refusal("", today, lines) is None
 
     def test_validacao_de_data_da_concierge_recusa_antes_da_fornada(self):
         from shopman.shop.models import Shop
@@ -294,7 +295,7 @@ class TestRecusaAntesDoFechamento:
 class TestRecusaNoDialetoDoCheckout:
     def test_recusa_aponta_o_campo_da_data(self):
         error = ValidationError(
-            code=stock_service.ORDER_DATE_BEFORE_BATCH,
+            code=batch_gate.ORDER_DATE_BEFORE_BATCH,
             message="Kuro Pan sai na quarta, 11/11. Escolha essa data ou uma depois dela.",
             context={"field": "delivery_date"},
         )
@@ -307,6 +308,6 @@ class TestRecusaNoDialetoDoCheckout:
         from datetime import date
 
         monday = date(2026, 11, 9)
-        assert stock_service.batch_day_phrase(date(2026, 11, 10), today=monday) == "amanhã, 10/11"
-        assert stock_service.batch_day_phrase(date(2026, 11, 11), today=monday) == "na quarta, 11/11"
-        assert stock_service.batch_day_phrase(date(2026, 11, 14), today=monday) == "no sábado, 14/11"
+        assert batch_gate.batch_day_phrase(date(2026, 11, 10), today=monday) == "amanhã, 10/11"
+        assert batch_gate.batch_day_phrase(date(2026, 11, 11), today=monday) == "na quarta, 11/11"
+        assert batch_gate.batch_day_phrase(date(2026, 11, 14), today=monday) == "no sábado, 14/11"

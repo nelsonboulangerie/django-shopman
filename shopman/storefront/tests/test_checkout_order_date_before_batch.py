@@ -88,7 +88,7 @@ def test_pedido_de_hoje_com_a_sacola_presa_a_fornada_futura_e_recusado_no_campo_
     from shopman.orderman.models import Order
     from shopman.stockman.models import Hold
 
-    from shopman.shop.services.stock import batch_day_phrase
+    from shopman.shop.policies.order_date_before_batch import batch_day_phrase
     from shopman.storefront.tests._pickup_today import today_pickup_slot
 
     today = timezone.localdate()

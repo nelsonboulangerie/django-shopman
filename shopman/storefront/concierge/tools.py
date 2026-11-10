@@ -1457,7 +1457,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
             )
         if getattr(exc, "code", "") == "total_changed":
             return _error("revision_conflict", "O total mudou. Confira a diferença antes de confirmar.", facts=getattr(exc, "context", {}))
-        from shopman.shop.services.stock import ORDER_DATE_BEFORE_BATCH
+        from shopman.shop.policies.order_date_before_batch import ORDER_DATE_BEFORE_BATCH
 
         if getattr(exc, "code", "") == ORDER_DATE_BEFORE_BATCH:
             # Um pedido, uma data: a sacola espera uma fornada que sai depois da

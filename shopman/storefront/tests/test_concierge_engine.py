@@ -2240,7 +2240,7 @@ def _move_cart_hold_to_batch(conversation, batch_date) -> None:
 
 
 def test_set_fulfillment_refuses_a_date_before_the_batch_the_cart_waits_for(ctx, conversation):
-    from shopman.shop.services.stock import batch_day_phrase
+    from shopman.shop.policies.order_date_before_batch import batch_day_phrase
 
     assert tools.set_item(ctx, SKU, 1)["ok"]
     batch_date = date.today() + timedelta(days=3)
@@ -2257,7 +2257,7 @@ def test_set_fulfillment_refuses_a_date_before_the_batch_the_cart_waits_for(ctx,
 
 
 def test_place_order_names_the_item_and_the_batch_day_when_the_date_is_before_the_batch(ctx, conversation):
-    from shopman.shop.services.stock import batch_day_phrase
+    from shopman.shop.policies.order_date_before_batch import batch_day_phrase
 
     review = _pickup_ready(ctx)
     _accept_review(ctx, review)
@@ -2278,8 +2278,8 @@ def test_place_order_relays_the_commit_gate_refusal_instead_of_a_generic_failure
     """A recusa do gate de commit (corrida depois da revalidação) chega com item e dia."""
     from shopman.orderman.exceptions import ValidationError
 
+    from shopman.shop.policies.order_date_before_batch import ORDER_DATE_BEFORE_BATCH
     from shopman.shop.services import checkout as checkout_service
-    from shopman.shop.services.stock import ORDER_DATE_BEFORE_BATCH
 
     review = _pickup_ready(ctx)
     _accept_review(ctx, review)
