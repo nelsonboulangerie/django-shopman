@@ -689,13 +689,6 @@ def _listing_gate_decision(
     return None
 
 
-def _stock_decision(_adapter, sku: str, qty_d: Decimal, info: dict, *, target_date: date | None) -> dict:
-    """Sem chamador desde o cutover para ``decision_from_availability``; sai no próximo commit."""
-    from shopman.stockman.services.availability import decision_from_availability
-
-    return _promise_payload(decision_from_availability(sku, qty_d, info, target_date=target_date))
-
-
 def _promise_payload(decision) -> dict:
     """A ``PromiseDecision`` do Stockman na forma do dict de ``decide``.
 

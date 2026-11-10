@@ -5,8 +5,7 @@ Para cada caso do corpus (rastreado com e sem saldo, sem ledger, ``demand_ok``,
 segurança do canal), o mesmo mundo é perguntado por todas as portas:
 
 - ``promise_for_sku`` do Stockman, com o recorte do canal (a autoridade);
-- ``availability.decide`` e ``availability.decide_many`` do orquestrador;
-- ``_stock_decision``, a tradução que o orquestrador fazia da leitura.
+- ``availability.decide`` e ``availability.decide_many`` do orquestrador.
 
 Os campos da decisão têm que bater um a um. O que o orquestrador ACRESCENTA
 (portão da vitrine, forma do dict, ``source``, ``failed_sku``) é composição em
@@ -156,14 +155,8 @@ def test_every_door_returns_stockmans_promise_field_by_field(case: Case):
     decided = availability.decide(sku, qty, channel_ref=case.channel, target_date=target)
     [decided_many] = availability.decide_many([(sku, qty)], channel_ref=case.channel, target_date=target)
 
-    adapter = get_adapter("stock")
-    scope = adapter.get_channel_scope(case.channel)
-    info = adapter.get_availability(sku, target_date=target, **availability._availability_kwargs(scope))
-    translated = availability._stock_decision(adapter, sku, qty, info, target_date=target)
-
     assert _shop_view(decided) == kernel
     assert _shop_view(decided_many) == kernel
-    assert _shop_view(translated) == kernel
     assert decided["source"] == decided_many["source"] == "stock.promise_decision"
 
 
