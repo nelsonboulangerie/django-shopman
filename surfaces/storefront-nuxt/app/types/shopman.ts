@@ -281,6 +281,9 @@ export interface CartItemProjection {
   confirmation_deadline_display: string | null
   planned_for_date: string | null
   planned_for_notice: string | null
+  // Data anterior à fornada prevista em que a linha inteira já tem saldo
+  // (fornada extra, pão pronto); null = o pedido começa na fornada prevista.
+  earlier_available_date: string | null
   // Observação deste item para a cozinha (`meta.notes` da linha); '' = nenhuma.
   notes: string
   // Escolhas da linha. O `name` já vem com o resumo ("Croque (+ Ovo frito)");

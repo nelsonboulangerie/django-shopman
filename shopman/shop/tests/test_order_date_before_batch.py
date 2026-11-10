@@ -311,3 +311,85 @@ class TestRecusaNoDialetoDoCheckout:
         assert batch_gate.batch_day_phrase(date(2026, 11, 10), today=monday) == "amanhã, 10/11"
         assert batch_gate.batch_day_phrase(date(2026, 11, 11), today=monday) == "na quarta, 11/11"
         assert batch_gate.batch_day_phrase(date(2026, 11, 14), today=monday) == "no sábado, 14/11"
+
+
+class TestFornadaAnteriorComSaldo:
+    """A fornada da sacola não é piso absoluto (dono, 10/11/2026).
+
+    Surgiu saldo de verdade numa data anterior (fornada extra, pão pronto): o
+    pedido para essa data vale e a reserva muda para lá.
+    """
+
+    def test_fornada_extra_antes_da_que_a_sacola_espera_aceita_o_pedido(self):
+        today = timezone.localdate()
+        wednesday, friday = today + timedelta(days=2), today + timedelta(days=4)
+        position = _world()
+        waiting = _session_hold(_quant(position, target_date=friday))
+        _quant(position, target_date=wednesday, qty="3")
+        order = _order(delivery_date=wednesday)
+
+        stock_service.hold(order, require_all=True)
+
+        entries = order.data["hold_ids"]
+        held = Hold.objects.get(pk=int(entries[0]["hold_id"].split(":")[1]))
+        assert held.quant.target_date == wednesday
+        assert held.metadata["reference"] == "order:ORD-KURO"
+        # A vaga da sexta volta para a fila.
+        waiting.refresh_from_db()
+        assert waiting.status == HoldStatus.RELEASED
+
+    def test_pao_pronto_hoje_aceita_o_pedido_de_hoje(self):
+        today = timezone.localdate()
+        position = _world()
+        waiting = _session_hold(_quant(position, target_date=today + timedelta(days=2)))
+        _quant(position, qty="2")
+        order = _order()
+
+        stock_service.hold(order, require_all=True)
+
+        held = Hold.objects.get(pk=int(order.data["hold_ids"][0]["hold_id"].split(":")[1]))
+        assert held.quant.target_date is None
+        waiting.refresh_from_db()
+        assert waiting.status == HoldStatus.RELEASED
+
+    def test_fornada_anterior_sem_saldo_para_a_quantidade_continua_recusando(self):
+        today = timezone.localdate()
+        wednesday, friday = today + timedelta(days=2), today + timedelta(days=4)
+        position = _world()
+        waiting = _session_hold(_quant(position, target_date=friday), qty="3")
+        _quant(position, target_date=wednesday, qty="2")
+
+        with pytest.raises(ValidationError) as caught:
+            stock_service.hold(_order(delivery_date=wednesday, qty=3), require_all=True)
+
+        assert caught.value.code == batch_gate.ORDER_DATE_BEFORE_BATCH
+        assert caught.value.context["batch_date"] == friday.isoformat()
+        waiting.refresh_from_db()
+        assert waiting.status == HoldStatus.PENDING
+
+    def test_validacao_antecipada_libera_a_data_com_saldo_e_recusa_a_sem_saldo(self):
+        today = timezone.localdate()
+        tuesday, wednesday, friday = (today + timedelta(days=n) for n in (1, 2, 4))
+        position = _world()
+        _session_hold(_quant(position, target_date=friday))
+        _quant(position, target_date=wednesday, qty="3")
+        lines = [{"sku": SKU, "qty": 1}]
+
+        def refusal(day):
+            return batch_gate.order_date_before_batch_refusal(SESSION_KEY, day, lines, channel_ref=CHANNEL_REF)
+
+        assert refusal(wednesday) is None
+        assert refusal(tuesday).code == batch_gate.ORDER_DATE_BEFORE_BATCH
+
+    def test_data_mais_cedo_da_linha(self):
+        today = timezone.localdate()
+        wednesday, friday = today + timedelta(days=2), today + timedelta(days=4)
+        position = _world()
+        _session_hold(_quant(position, target_date=friday))
+        _quant(position, target_date=wednesday, qty="3")
+
+        def earliest(qty):
+            return batch_gate.earliest_day_with_room(SKU, qty, friday, channel_ref=CHANNEL_REF)
+
+        assert earliest(1) == wednesday
+        assert earliest(5) is None

@@ -16460,9 +16460,13 @@
             "ORDER_DATE_BEFORE_BATCH",
             "_WEEKDAYS",
             "_component_skus",
+            "_components",
             "_line_value",
+            "_needed_by_sku",
             "_product_name",
             "batch_day_phrase",
+            "day_has_room",
+            "earliest_day_with_room",
             "late_holds_of_order",
             "logger",
             "order_date_before_batch_refusal",
@@ -16475,7 +16479,8 @@
       ],
       "domains": [
         "offerman",
-        "orderman"
+        "orderman",
+        "stockman"
       ],
       "ports": [
         "adapter:catalog"

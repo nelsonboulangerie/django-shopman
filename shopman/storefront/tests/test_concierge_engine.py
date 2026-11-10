@@ -2237,6 +2237,12 @@ def _move_cart_hold_to_batch(conversation, batch_date) -> None:
         quant=planned, target_date=batch_date, expires_at=None,
     )
     assert moved == 1
+    # Sem pão antes da fornada: com saldo numa data anterior o pedido para ela vale
+    # (dono, 10/11/2026), e não haveria o que recusar.
+    from shopman.stockman.service import Stock
+
+    for ready in Quant.objects.filter(sku=SKU, _quantity__gt=0).exclude(pk=planned.pk):
+        Stock.issue(ready._quantity, ready, reason="concierge test: vendeu tudo")
 
 
 def test_set_fulfillment_refuses_a_date_before_the_batch_the_cart_waits_for(ctx, conversation):

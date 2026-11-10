@@ -62,7 +62,7 @@ def _validate_preorder(
         from shopman.shop.policies.order_date_before_batch import order_date_before_batch_refusal
 
         batch_refusal = order_date_before_batch_refusal(
-            session_key, chosen_date, list(cart_lines or []),
+            session_key, chosen_date, list(cart_lines or []), channel_ref=channel_ref,
         )
         if batch_refusal is not None:
             errors["delivery_date"] = batch_refusal.message

@@ -95,6 +95,7 @@ class CartItemProjection:
     confirmation_deadline_display: str | None   # pre-formatted HH:MM for badge copy / toast
     planned_for_date: str | None                # ISO date da fornada que a linha espera
     planned_for_notice: str | None              # "Previsto para amanhã" (copy omotenashi + data)
+    earlier_available_date: str | None          # ISO date anterior à fornada em que a linha já tem saldo
 
     # Preparado na hora: promessa declarada da casa
     # (``Product.metadata["made_to_order"]``) — café, Jambon-Beurre, croque,
@@ -406,6 +407,7 @@ def _present_line(
         confirmation_deadline_iso=line.confirmation_deadline_iso,
         confirmation_deadline_display=_deadline_display(line.confirmation_deadline_iso),
         planned_for_date=line.planned_for_date,
+        earlier_available_date=line.earlier_available_date,
         planned_for_notice=_planned_for_notice(line, planned_notice_template),
         notes=line.notes,
         options_summary=line.options_summary,

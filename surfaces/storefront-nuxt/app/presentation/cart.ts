@@ -59,6 +59,7 @@ function optimisticLine (meta: ProductMutationMeta, qty: number): CartItemProjec
     confirmation_deadline_display: null,
     planned_for_date: null,
     planned_for_notice: null,
+    earlier_available_date: null,
     notes: ''
   }
 }
@@ -124,10 +125,13 @@ export function lineHoldState (line: HoldFields): CartLineHold | null {
  *  prioridade de pedido (WP-C), e o badge de espera contradiria o "Quando".
  *  Pedido para ANTES da fornada (retirar hoje o pão de quarta) não cala: a
  *  data prevista fica à vista, porque é ela que diz que o "Quando" está errado
- *  (o servidor recusa esse pedido). Retorna null (sem história de espera) ou o
+ *  (o servidor recusa esse pedido). A exceção é a data anterior que já tem
+ *  saldo para a linha (`earlier_available_date`): aí o pedido leva o pão dessa
+ *  data, sem fila. Retorna null (sem história de espera) ou o
  *  notice da fornada (pode ser string vazia quando não há data a mostrar). */
 export function reviewWaitlist (
-  line: Pick<CartItemProjection, 'is_awaiting_confirmation' | 'planned_for_date' | 'planned_for_notice'>,
+  line: Pick<CartItemProjection, 'is_awaiting_confirmation' | 'planned_for_date' | 'planned_for_notice'>
+    & Partial<Pick<CartItemProjection, 'earlier_available_date'>>,
   deliveryDate: string,
   today: string = new Date().toLocaleDateString('en-CA')
 ): { notice: string } | null {
@@ -137,19 +141,23 @@ export function reviewWaitlist (
   if (!line.is_awaiting_confirmation) return null
   const batchDate = line.planned_for_date || today
   if (deliveryDate && deliveryDate > batchDate) return null
+  const earlier = line.earlier_available_date || ''
+  if (earlier && (deliveryDate || today) >= earlier && (deliveryDate || today) < batchDate) return null
   return { notice: line.planned_for_notice || '' }
 }
 
-/** A fornada mais tardia que a sacola espera, com o item que a espera.
- *  Um pedido, uma data: o pedido não pode ser para antes dela. `null` quando
- *  nenhuma linha espera fornada depois de hoje. */
+/** A primeira data em que a sacola inteira pode sair, com o item que a segura.
+ *  Um pedido, uma data: o pedido não pode ser para antes dela. Por linha vale
+ *  a fornada que ela espera, ou a data anterior que já tem saldo para ela
+ *  (`earlier_available_date`). `null` quando nenhuma linha segura o pedido
+ *  para depois de hoje. */
 export function cartBatchFloor (
-  items: Array<Pick<CartItemProjection, 'name' | 'planned_for_date'>>,
+  items: Array<Pick<CartItemProjection, 'name' | 'planned_for_date'> & Partial<Pick<CartItemProjection, 'earlier_available_date'>>>,
   today: string = new Date().toLocaleDateString('en-CA')
 ): { date: string, name: string } | null {
   let floor: { date: string, name: string } | null = null
   for (const item of items) {
-    const date = item.planned_for_date || ''
+    const date = item.earlier_available_date || item.planned_for_date || ''
     if (date > today && (!floor || date > floor.date)) floor = { date, name: item.name }
   }
   return floor

@@ -6667,6 +6667,7 @@
             "_checkout_eligibility",
             "_coupon",
             "_discount_lines",
+            "_earlier_available_dates",
             "_earliest_fulfillable_date",
             "_empty_cart",
             "_line_availability",
@@ -12926,6 +12927,7 @@
             "_component_quantities",
             "_expand_if_bundle",
             "_hold_across_quants_or_nothing",
+            "_hold_anchored_by",
             "_is_fermata_hold",
             "_is_untracked",
             "_items_to_hold",
@@ -13178,6 +13180,7 @@
           "symbols": [
             "_parse_iso",
             "_write_state",
+            "batch_dates_until",
             "logger"
           ]
         }

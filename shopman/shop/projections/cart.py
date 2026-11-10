@@ -105,6 +105,11 @@ class CartLineProjection:
     confirmation_deadline_iso: str | None
     # Batch date the waitlisted line is planned against (None = no plan yet).
     planned_for_date: str | None
+    # Data ANTERIOR à fornada prevista em que a linha inteira já tem saldo
+    # (fornada extra planejada depois, pão pronto). None = não há; o pedido
+    # começa na fornada prevista. O fechamento move a reserva para a data
+    # escolhida (``policies.order_date_before_batch``).
+    earlier_available_date: str | None
 
     # Preço de LISTA da linha (``meta._list_q``, carimbado pelo ItemPricingModifier
     # antes de qualquer desconto) e o total a esse preço. A sacola mostra a linha
@@ -285,6 +290,7 @@ def build_cart(
     upsell = _upsell(set(skus), channel_ref=channel_ref)
     avail_map, own_holds = _availability(skus, session_key, channel_ref)
     planned_by_sku = _planned_holds(session_key, skus)
+    earlier_by_sku = _earlier_available_dates(raw_items, planned_by_sku, channel_ref)
 
     pricing = session.pricing or {}
     discount_data = pricing.get("discount", {})
@@ -294,6 +300,7 @@ def build_cart(
         _build_line(
             item, names_by_sku, avail_map, own_holds, discount_items,
             planned_by_sku=planned_by_sku,
+            earlier_by_sku=earlier_by_sku,
             made_to_order_skus=made_to_order,
             sellable_skus=sellable,
         )
@@ -474,6 +481,7 @@ def _build_line(
     discount_items: dict[str, dict],
     *,
     planned_by_sku: dict[str, tuple[bool, bool, str | None, str | None]],
+    earlier_by_sku: dict[str, str] | None = None,
     made_to_order_skus: frozenset[str] = frozenset(),
     sellable_skus: frozenset[str] = frozenset(),
 ) -> CartLineProjection:
@@ -556,6 +564,7 @@ def _build_line(
         is_ready_for_confirmation=is_ready,
         confirmation_deadline_iso=deadline_iso,
         planned_for_date=planned_for_date,
+        earlier_available_date=(earlier_by_sku or {}).get(sku),
         list_price_q=list_price_q,
         list_total_q=list_total_q,
         discount_name=discount_name or None,
@@ -601,6 +610,50 @@ def _planned_holds(
             deadline.isoformat() if deadline is not None else None,
             planned_for.isoformat() if planned_for is not None else None,
         )
+    return out
+
+
+def _earlier_available_dates(
+    raw_items: list[dict],
+    planned_by_sku: dict[str, tuple[bool, bool, str | None, str | None]],
+    channel_ref: str,
+) -> dict[str, str]:
+    """Por SKU que espera fornada futura, a data anterior em que a linha já tem saldo.
+
+    Só olha linha com data prevista depois do primeiro dia em que a casa
+    atende: sacola sem fila não paga leitura nenhuma. Degrada para vazio (a
+    data prevista segue sendo o piso).
+    """
+    from datetime import date as date_type
+
+    waiting = {
+        sku: date_type.fromisoformat(state[3])
+        for sku, state in planned_by_sku.items()
+        if state[3]
+    }
+    if not waiting or not channel_ref:
+        return {}
+    first_day = _earliest_fulfillable_date()
+    out: dict[str, str] = {}
+    try:
+        from shopman.shop.policies.order_date_before_batch import earliest_day_with_room
+
+        qty_by_sku: dict[str, Decimal] = {}
+        for item in raw_items:
+            sku = item.get("sku", "")
+            if sku in waiting:
+                qty_by_sku[sku] = qty_by_sku.get(sku, Decimal("0")) + Decimal(str(item.get("qty", 0) or 0))
+        for sku, qty in qty_by_sku.items():
+            if waiting[sku] <= first_day or qty <= 0:
+                continue
+            day = earliest_day_with_room(
+                sku, qty, waiting[sku], channel_ref=channel_ref, first_day=first_day,
+            )
+            if day is not None:
+                out[sku] = day.isoformat()
+    except Exception:
+        logger.debug("cart._earlier_available_dates degraded", exc_info=True)
+        return {}
     return out
 
 

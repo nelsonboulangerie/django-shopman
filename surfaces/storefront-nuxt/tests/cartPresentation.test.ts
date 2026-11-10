@@ -256,6 +256,27 @@ describe('cart presentation — planned hold', () => {
     expect(batchDayPhrase('2026-11-15', today)).toBe('no domingo, 15/11')
   })
 
+  it('libera a data anterior que já tem saldo para a linha (fornada extra)', () => {
+    const today = '2026-11-09'
+    const kuro = line({
+      name: 'Kuro Pan',
+      is_awaiting_confirmation: true,
+      planned_for_date: '2026-11-13',
+      planned_for_notice: 'Previsto para sexta-feira, 13/11',
+      earlier_available_date: '2026-11-11'
+    })
+    // O piso do pedido é a data com saldo, não a fornada que a sacola esperava.
+    expect(cartBatchFloor([kuro], today)).toEqual({ date: '2026-11-11', name: 'Kuro Pan' })
+    // Com pão pronto hoje, nada segura o pedido.
+    expect(cartBatchFloor([line({ planned_for_date: '2026-11-13', earlier_available_date: today })], today)).toBeNull()
+    // Antes da data com saldo, a espera segue à vista; a partir dela, sem fila.
+    expect(reviewWaitlist(kuro, '2026-11-10', today)).toEqual({ notice: 'Previsto para sexta-feira, 13/11' })
+    expect(reviewWaitlist(kuro, '2026-11-11', today)).toBeNull()
+    expect(reviewWaitlist(kuro, '2026-11-12', today)).toBeNull()
+    // No dia da fornada que a sacola esperava, a história da fila continua.
+    expect(reviewWaitlist(kuro, '2026-11-13', today)).toEqual({ notice: 'Previsto para sexta-feira, 13/11' })
+  })
+
   it('carries the expected-batch notice on awaiting lines only', () => {
     const awaiting = line({ is_awaiting_confirmation: true, planned_for_date: '2026-07-17', planned_for_notice: 'Previsto para amanhã' })
     expect(lineHoldState(awaiting)?.plannedForNotice).toBe('Previsto para amanhã')

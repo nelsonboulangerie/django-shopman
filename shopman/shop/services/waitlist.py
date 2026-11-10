@@ -196,6 +196,26 @@ def candidate_batch_dates(skus: list[str], *, channel_ref: str | None = None) ->
         return []
 
 
+def batch_dates_until(skus: list[str], horizon: date) -> list[date]:
+    """Datas de fornada com saldo entre amanhã e ``horizon``, com a fila ligada ou não.
+
+    Para quem pergunta por uma data ANTERIOR à fornada que a sacola já espera
+    (``policies.order_date_before_batch``): a reserva já existe, então a pergunta
+    não depende do horizonte da fila. Degrada para vazio.
+    """
+    from django.utils import timezone
+
+    unique_skus = list(dict.fromkeys(sku for sku in skus if sku))
+    today = timezone.localdate()
+    if not unique_skus or horizon <= today:
+        return []
+    try:
+        return _candidate_batch_dates(unique_skus, today=today, horizon=horizon)
+    except Exception:
+        logger.debug("waitlist.batch_dates_until degraded; returning empty", exc_info=True)
+        return []
+
+
 def first_batch_with_planned(
     skus: list[str],
     candidate_dates: list[date],

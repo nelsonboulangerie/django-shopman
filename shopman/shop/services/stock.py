@@ -138,9 +138,12 @@ def hold(order, *, require_all: bool = False) -> None:
 
     E um gate da sacola, "um pedido, uma data": reserva da sessão presa a um
     Quant planejado de data POSTERIOR à data do pedido (o Kuro Pan de quarta
-    num pedido para retirar hoje), de um item QUE ESTÁ no pedido, recusa no
-    ``require_all`` (``order_date_before_batch``, com o item e o dia da
-    fornada) e, no caminho brando, não é adotada. Reserva tardia de item que
+    num pedido para retirar hoje), de um item QUE ESTÁ no pedido, não é
+    adotada. No ``require_all`` o pedido reserva de novo na data dele, sem
+    registro de demanda: com saldo de verdade nessa data (fornada extra, pão
+    pronto) o pedido vale e a reserva tardia é solta; sem saldo, recusa
+    (``order_date_before_batch``, com o item e o dia da fornada). No caminho
+    brando a reserva tardia só é solta. Reserva tardia de item que
     não está no pedido (sobra não reconciliada) só é solta no fim, como toda
     sobra. Sem sessão (PDV, iFood) o gate nem olha.
 
@@ -190,16 +193,30 @@ def hold(order, *, require_all: bool = False) -> None:
     # pedido para retirar hoje, beta 09/11). No gate de commit é recusa limpa,
     # com o item e a data; no caminho brando (pedido que já existe) a reserva
     # não é adotada e volta para a fornada dela.
+    #
+    # A fornada da sacola não é piso absoluto (dono, 10/11/2026): se a data do
+    # pedido tem saldo de verdade (fornada extra planejada depois, pão pronto),
+    # o pedido vale e a reserva MUDA para lá. Por isso o gate de commit não
+    # recusa de saída: tira a reserva tardia do que pode ser adotado, reserva
+    # de novo na data do pedido SEM registro de demanda, e só recusa (com o
+    # item e o dia da fornada) se essa reserva não couber. A reserva tardia é
+    # solta no fim, quando o pedido já tem a dele; se o commit falhar, a
+    # transação a devolve.
+    too_late: list = []
+    late_skus: set[str] = set()
+    late_ids: set[str] = set()
+    order_day = target_date or timezone.localdate()
     if session_key:
-        order_day = target_date or timezone.localdate()
         too_late = batch_gate.late_holds_of_order(session_key, order_day, items)
         if too_late:
-            if require_all:
-                raise batch_gate.refusal_error(items, too_late, order_day)
             late_ids = {hold_id for hold_id, _sku, _batch_date in too_late}
             for sku_key, pairs in list(session_holds_by_sku.items()):
                 session_holds_by_sku[sku_key] = [pair for pair in pairs if pair[0] not in late_ids]
-            adapter.release_holds(sorted(late_ids))
+            if require_all:
+                late_skus = {sku for _hold_id, sku, _batch_date in too_late}
+            else:
+                adapter.release_holds(sorted(late_ids))
+                late_ids = set()
     # O que o pedido pode adotar da sacola. Pedido de hoje: tudo o que sobrou
     # acima. Encomenda: só a reserva presa à fornada do dia do pedido (a vaga
     # que a fila já guardou para esse cliente); o resto segue para a sobra.
@@ -308,9 +325,9 @@ def hold(order, *, require_all: bool = False) -> None:
             # da antecedência do produto/canal. O plano da data segue valendo:
             # com Quant planejado o create_hold ancora nele e sucede — o gate
             # só morde quando a reserva viraria demanda (quant=None).
-            comp_allow_demand = allow_demand
+            comp_allow_demand = allow_demand and comp_sku not in late_skus
             lead_time_earliest = None
-            if allow_demand and target_date is not None:
+            if comp_allow_demand and target_date is not None:
                 channel_ref = getattr(order, "channel_ref", None)
                 earliest = lead_time_service.earliest_allowed_date(comp_sku, channel_ref)
                 if target_date < earliest:
@@ -366,6 +383,10 @@ def hold(order, *, require_all: bool = False) -> None:
                     comp_sku, unmet_qty, result.get("error_code"),
                 )
                 if require_all:
+                    if comp_sku in late_skus:
+                        # A data do pedido não tem saldo para o item que a
+                        # sacola guardava na fornada posterior: um pedido, uma data.
+                        raise batch_gate.refusal_error(items, too_late, order_day)
                     if lead_time_earliest is not None and _sku_known_to_catalog(comp_sku):
                         # Sem plano para a data E demanda barrada por lead time:
                         # recusa limpa com a primeira data possível.
@@ -425,6 +446,11 @@ def hold(order, *, require_all: bool = False) -> None:
                     )
                 continue
 
+            if comp_sku in late_skus and not _hold_anchored_by(result["hold_id"], order_day):
+                # Reserva sem lote (produto que aprova venda sem saldo): não é
+                # saldo de verdade na data do pedido. A fornada da sacola segue
+                # valendo, e a transação desfaz esta reserva.
+                raise batch_gate.refusal_error(items, too_late, order_day)
             hold_ids.append({
                 "sku": comp_sku,
                 "hold_id": result["hold_id"],
@@ -441,6 +467,10 @@ def hold(order, *, require_all: bool = False) -> None:
     })
     if leftover_ids:
         adapter.release_holds(leftover_ids)
+    if late_ids:
+        # O pedido já tem a reserva dele na data escolhida: a vaga da fornada
+        # posterior volta para a fila.
+        adapter.release_holds(sorted(late_ids))
 
     order.data["hold_ids"] = hold_ids
     if ceded_holds:
@@ -948,6 +978,21 @@ def _insufficient_supply_error(item: dict, comp_sku: str, qty, error_code):
             "requested_qty": str(qty),
             "error_code": error_code or "",
         },
+    )
+
+
+def _hold_anchored_by(hold_id: str, day) -> bool:
+    """A reserva está presa a um saldo que existe até ``day`` (pronto, ou fornada até o dia)?"""
+    from django.db.models import Q
+    from shopman.stockman import Hold
+
+    pk = str(hold_id).rpartition(":")[2]
+    if not pk.isdigit():
+        return False
+    return (
+        Hold.objects.filter(pk=int(pk), quant__isnull=False)
+        .filter(Q(quant__target_date__isnull=True) | Q(quant__target_date__lte=day))
+        .exists()
     )
 
 
