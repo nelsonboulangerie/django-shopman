@@ -683,7 +683,7 @@ que fecha o botão por construção) tem de acontecer ANTES da virada, junto da 
 
 ## D-017 · Escopo do go-live: fora só Marketing e B.I.
 
-- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-10-01 · **revisar_em:** 2026-10-15
+- **Estado:** `SUPERSEDIDA` por D-035 (só no ponto do Concierge; o resto do escopo foi repetido lá) · **Dono:** Pablo (produto) · **Data:** 2026-10-01
 
 **Decisão do dono.** A proposta de corte (#1336, D28), que deixava fora entrega própria, WhatsApp
 conversacional, catálogos externos e media persistente, foi **recusada**. Ficam fora do go-live só
@@ -997,3 +997,84 @@ desarquivar devolve os dois estados exatamente como estavam. `offerman.Product` 
 
 **Prova.** Execução iniciada no PR #1945, Frente A da ordem arquivada em
 `docs/coordination/ORDERS/2026-10-19-arquivar.md`.
+
+---
+
+## D-035 · Escopo do go-live: o Concierge pode ficar para depois
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-10 · **revisar_em:** 2026-11-24
+
+**Decisão do dono.** Perguntado se o Concierge entra no go-live (D-017) ou vem depois (premissa
+da auditoria do reset arquitetural), respondeu: *"Pode ser depois."* O Concierge deixa de ser
+linha que segura a tag `go-live-v1`. O resto do escopo da D-017 segue igual: ficam fora
+**Marketing**, **B.I.** e agora o **Concierge**; entram iFood, entrega por parceiro
+(TaOn/Machine) e fiscal.
+
+**O que isto não muda.** O código do Concierge fica no `main` como está, e o modo `assist`
+liberado para um contato (D-018) não é desligado por esta decisão. O ManyChat continua no
+go-live como canal de OTP e de avisos, que usam o mesmo resolvedor
+(`packages/guestman/shopman/guestman/contrib/manychat/resolver.py`).
+
+**Fonte.** `docs/reports/2026-11-10-auditoria-reset-arquitetural.md`, seção 16 (decisões do dono).
+
+---
+
+## D-036 · Trocar kernel por sistema externo: propriedade desejável, sem prazo
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-10 · **revisar_em:** quando existir um segundo provider real contratado para estoque, pedido, caixa ou pagamento
+
+**Decisão do dono.** Substituir um kernel de `packages/*` por ERP, planilha ou outro sistema é
+propriedade que o desenho quer preservar, **sem prazo**. Não é objetivo datado.
+
+**Consequência.** Não nasce Protocol na frente de estoque, pedido, caixa ou pagamento enquanto
+não houver segunda implementação real (ADR-001). O que se faz agora é o pré-requisito de
+qualquer troca futura: toda escrita em model de kernel passa pelos services do kernel
+(fachada fechada, garantida por lint) e as garantias viram suíte de contrato em Postgres.
+Ports de borda (pagamento, fiscal, entregador, notificação, catálogo) e os pontos em que o
+kernel chama para fora seguem como estão.
+
+**Fonte.** `docs/reports/2026-11-10-auditoria-reset-arquitetural.md`, seções 7 e 17.
+
+---
+
+## D-037 · `FiscalDocument` nasce antes da primeira NFC-e real
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · execução: engenharia · **Data:** 2026-11-10 · **revisar_em:** 2026-11-24
+
+**Decisão do dono.** *"Antes, claro."* O documento fiscal ganha tabela própria no `fiscalman`
+como registro de autoridade antes da tag `go-live-v1`. Hoje ele são chaves `nfce_*` em
+`Order.data` (`shopman/shop/handlers/fiscal.py`), e o `fiscalman` não tem model.
+
+**Por quê.** Antes da tag não há backfill: os pedidos do ambiente vivo são sintéticos e são
+apagados na virada (D-029). Depois da tag seria backfill de nota fiscal real, em produção e
+sem ensaio (ADR-043).
+
+**Fonte.** `docs/reports/2026-11-10-auditoria-reset-arquitetural.md`, seções 5 e 12 (item 11).
+
+---
+
+## D-038 · Reparos estruturais que seguram a tag: só três, pelo menor tempo
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto), que delegou o corte à coordenação da auditoria · **Data:** 2026-11-10 · **revisar_em:** 2026-11-24
+
+**Decisão.** O dono quer o go-live *"no menor tempo possível"* e delegou a escolha do que
+bloqueia. Entram na [matriz canônica](../plans/GO-LIVE-READINESS-PLAN.md) como linhas que
+seguram a tag só os três reparos que não se recuperam depois dela:
+
+1. **Pacote de dias** (até 5 dias): recibo de compra com idempotência permanente, catracas de
+   nascimento, reserva com validade no lugar do lock de sessão do ManyChat, fidelidade e
+   fechamento lendo o total vigente, timeout na captura Stripe, remoção dos três ports mortos.
+2. **`FiscalDocument`** (D-037).
+3. **Carimbo dos fatos, só as colunas:** ator tipado, dispositivo, correlação e causa em
+   `OrderEvent`, `Move`, `PaymentTransaction`, `WorkOrderEvent` e `Directive`, anuláveis e
+   sem trocar leitores.
+
+**Não seguram a tag** e entram se der tempo: os 12 pontos que gravam `Order.data` sem trava,
+o índice das decisões que vivem em comentário e a suíte dos 8 cenários de dinheiro e estoque.
+Risco aceito: esses 12 pontos entram em produção como estão; a perda provável é de evidência
+no JSON, não de dinheiro, e isso é leitura de código, não foi reproduzido.
+
+**Fora antes da tag:** mudança de `app_label` ou de permissão, movimento de símbolo que teste
+intercepta por caminho, `lock_timeout` global, corte do histórico de migrations.
+
+**Fonte.** `docs/reports/2026-11-10-auditoria-reset-arquitetural.md`, seções 12 a 14 e 16.
