@@ -54,7 +54,10 @@ from shopman.shop.services import (
     payment_gate,
     stock,
 )
-from shopman.shop.services.business_calendar import next_operational_deadline
+from shopman.shop.services.business_calendar import (
+    current_business_state,
+    next_operational_deadline,
+)
 from shopman.shop.services.order_helpers import customer_holds_the_goods, get_commitment_date, is_counter_takeaway
 
 logger = logging.getLogger(__name__)
@@ -1145,11 +1148,12 @@ def _schedule_confirmation_timeout(
     """Schedule or rebase the store-decision timer for a NEW order.
 
     O prazo é do PEDIDO: a encomenda para outro dia tem o dela
-    (``confirmation.preorder_timeout_minutes``), o pedido do dia o do canal.
+    (``confirmation.preorder_timeout_minutes``), e o pedido que chega com a casa
+    fechada também; o pedido do dia feito com a casa aberta, o do canal.
     """
-    timeout_minutes = acceptance_timeout_minutes(order, config)
-    timeout = timedelta(minutes=timeout_minutes)
     scheduled_at = timezone.now()
+    timeout_minutes = acceptance_timeout_minutes(order, config, now=scheduled_at)
+    timeout = timedelta(minutes=timeout_minutes)
     expires_at, calendar_state = next_operational_deadline(timeout=timeout, now=scheduled_at)
     if expires_at is None:
         logger.warning(
@@ -1216,16 +1220,22 @@ def _schedule_confirmation_timeout(
     return timer
 
 
-def acceptance_timeout_minutes(order, config: ChannelConfig) -> int:
+def acceptance_timeout_minutes(order, config: ChannelConfig, *, now=None) -> int:
     """Minutos de loja aberta que a casa tem para aceitar ESTE pedido.
 
-    Encomenda (data combinada posterior a hoje) usa o prazo da encomenda do canal;
-    o resto, o ``timeout_minutes``. Uma régua só para quem agenda o prazo e para
-    quem mostra a meta do pedido novo no Gestor.
+    O prazo curto (``timeout_minutes``) é só do pedido para o MESMO dia que chega
+    com a casa ABERTA: é quando o cliente está esperando a resposta e a equipe
+    está na tela. Fora disso vale o prazo longo do canal
+    (``preorder_timeout_minutes``): encomenda para outro dia, e pedido que chega
+    com a casa fechada, mesmo sendo para hoje (dono, 09/11/2026). ``now`` é o
+    instante em que o prazo começa a contar. Uma régua só para quem agenda o
+    prazo e para quem mostra a meta do pedido novo no Gestor.
     """
+    moment = now or timezone.now()
     target = get_commitment_date(order)
-    preorder = target is not None and target > timezone.localdate()
-    return config.confirmation.acceptance_timeout_minutes(preorder=preorder)
+    preorder = target is not None and target > timezone.localdate(moment)
+    long_deadline = preorder or current_business_state(now=moment).is_closed
+    return config.confirmation.acceptance_timeout_minutes(long_deadline=long_deadline)
 
 
 #: O aviso de pedido parado sai a 1/3 do prazo de aceite do próprio pedido (a ADR-036

@@ -61,11 +61,14 @@ Os 30 minutos do item 3 eram "tempo demais" para quem pagou e espera a resposta 
 o iFood, que dá 8 minutos: `shopman/shop/services/ifood_accept_sync.py`). O prazo de aceite passa
 a depender de quando o pedido é para:
 
-- **Pedido do dia: 5 minutos** de loja aberta (`confirmation.timeout_minutes = 5`).
-- **Encomenda para outro dia** (data combinada posterior a hoje): **60 minutos** de loja aberta
-  (`confirmation.preorder_timeout_minutes = 60`). Quem encomenda não está na tela esperando, e a
-  casa precisa de tempo para olhar a produção daquele dia. Canal sem a chave usa o
-  `timeout_minutes` também na encomenda.
+- **Pedido para o mesmo dia, feito com a casa aberta: 5 minutos** de loja aberta
+  (`confirmation.timeout_minutes = 5`). É o único caso em que o cliente espera a resposta na hora
+  e a equipe está na tela.
+- **Todo o resto: 60 minutos** de loja aberta (`confirmation.preorder_timeout_minutes = 60`):
+  a encomenda para outro dia (data combinada posterior a hoje) e o pedido que chega com a casa
+  fechada, mesmo sendo para hoje. Quem encomenda ou pede de madrugada não está na tela esperando,
+  e a casa precisa de tempo para olhar a produção. Canal sem a chave usa o `timeout_minutes`
+  em todos os casos.
 
 A contagem continua em minutos de loja aberta, e o Pix pago continua reiniciando o prazo. Loja
 aberta vale nas duas pontas: pedido feito com a casa fechada começa a contar na abertura, e o
@@ -88,8 +91,6 @@ No Gestor, a meta do pedido novo com prazo agendado sai do próprio timer (o pra
 do card chega à meta no instante em que o "cancela sozinho em" zera. Antes a meta contava da
 criação do pedido, e o Pix pago aos 7 minutos nascia atrasado numa meta de 5.
 
-**Em aberto, esperando o dono.** O pedido PARA HOJE pago com a casa fechada (de madrugada, antes
-de abrir) vence 5 minutos depois da abertura; o mesmo pedido pago na véspera, antes da meia-noite,
-é encomenda e tem 60. É consequência direta de "5 minutos de loja aberta", e quem pediu de
-madrugada também não está na tela esperando. Dar a esse pedido o prazo longo é decisão de
-negócio: até ela vir, vale a regra escrita (5 minutos depois de abrir, aviso com 1min40s).
+**Decidido pelo dono em 09/11/2026.** O pedido PARA HOJE pago com a casa fechada (de madrugada,
+antes de abrir) tem o prazo longo: 60 minutos contados da abertura, com aviso aos 20. Antes vencia
+5 minutos depois de abrir, com a equipe ainda chegando.

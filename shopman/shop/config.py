@@ -116,9 +116,13 @@ class ChannelConfig:
         # externo (todo canal da casa). iFood documenta 8 minutos para DELIVERY e
         # TAKEOUT; medido em 19/09/2026, cancelou seis pedidos a 8min10s da criação.
 
-        def acceptance_timeout_minutes(self, *, preorder: bool) -> int:
-            """O prazo de aceite do pedido: o da encomenda quando ela é para outro dia."""
-            if preorder and self.preorder_timeout_minutes:
+        def acceptance_timeout_minutes(self, *, long_deadline: bool) -> int:
+            """O prazo de aceite do pedido: o longo quando ninguém espera a resposta na hora.
+
+            Prazo longo é o da encomenda para outro dia e o do pedido que chega com a
+            casa fechada; o curto, o do pedido do dia feito com a casa aberta.
+            """
+            if long_deadline and self.preorder_timeout_minutes:
                 return self.preorder_timeout_minutes
             return self.timeout_minutes
 

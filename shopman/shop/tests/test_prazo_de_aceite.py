@@ -347,6 +347,49 @@ def test_pedido_do_dia_pago_a_dois_minutos_de_fechar_continua_na_abertura():
     assert _alert_at(order) == datetime(2026, 11, 9, 18, 59, 40, tzinfo=tz)
 
 
+def test_pedido_para_hoje_pago_com_a_casa_fechada_tem_60_minutos_desde_a_abertura():
+    """5 min é só com a casa aberta: de madrugada ninguém espera a resposta na hora."""
+    tz = _shop_7_to_19()
+    _web_channel()
+    dawn = datetime(2026, 11, 9, 5, 30, tzinfo=tz)
+    order = _order("WEB-DIA-6", delivery_date=dawn.date())
+
+    with patch("django.utils.timezone.now", return_value=dawn):
+        timer = _schedule(order)
+
+    assert timer.payload["timeout_minutes"] == 60
+    assert datetime.fromisoformat(timer.payload["expires_at"]) == datetime(2026, 11, 9, 8, 0, tzinfo=tz)
+    assert _alert_at(order) == datetime(2026, 11, 9, 7, 20, tzinfo=tz)
+    # Às 07:06, 5 minutos depois de abrir, o pedido NÃO é cancelado.
+    assert _run_timer_at(order, datetime(2026, 11, 9, 7, 6, tzinfo=tz)).status == Order.Status.NEW
+
+
+def test_pedido_sem_data_pago_com_a_casa_fechada_tambem_tem_60():
+    tz = _shop_7_to_19()
+    _web_channel()
+    night = datetime(2026, 11, 9, 21, 0, tzinfo=tz)
+    order = _order("WEB-DIA-7")
+
+    with patch("django.utils.timezone.now", return_value=night):
+        timer = _schedule(order)
+
+    assert timer.payload["timeout_minutes"] == 60
+    assert datetime.fromisoformat(timer.payload["expires_at"]) == datetime(2026, 11, 10, 8, 0, tzinfo=tz)
+
+
+def test_pedido_para_hoje_com_a_casa_aberta_segue_em_5():
+    tz = _shop_7_to_19()
+    _web_channel()
+    morning = datetime(2026, 11, 9, 10, 0, tzinfo=tz)
+    order = _order("WEB-DIA-8", delivery_date=morning.date())
+
+    with patch("django.utils.timezone.now", return_value=morning):
+        timer = _schedule(order)
+
+    assert timer.payload["timeout_minutes"] == 5
+    assert datetime.fromisoformat(timer.payload["expires_at"]) == datetime(2026, 11, 9, 10, 5, tzinfo=tz)
+
+
 # ── As entradas reais do prazo ──────────────────────────────────────────────
 
 

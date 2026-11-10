@@ -141,7 +141,7 @@ def _confirmation_goal(order: Order, channel_config) -> int:
     confirmation = channel_config.confirmation
     candidates = []
     if confirmation.mode in ("auto_confirm", "auto_cancel"):
-        timeout = acceptance_timeout_minutes(order, channel_config)
+        timeout = acceptance_timeout_minutes(order, channel_config, now=order.created_at)
         if timeout > 0:
             candidates.append(timeout)
     if confirmation.external_sla_minutes > 0:

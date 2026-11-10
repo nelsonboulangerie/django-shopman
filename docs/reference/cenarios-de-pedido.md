@@ -419,8 +419,8 @@ antecipada pelos marcos invertidos (horário − tempo de chegada) é pós-go-li
    (`checkout.py:174-189`). O cliente vai a `/pedido/<ref>` (SSE).
 6. **Gestor:** som insistente, card na Entrada com "cancela sozinho em"; o operador **Aceita**
    (`confirm_order`). Prazo de aceite (`auto_cancel`, emenda de 09/11 à ADR-036): 5 min de loja
-   aberta no pedido do dia, 60 min na encomenda para outro dia
-   (`confirmation.preorder_timeout_minutes`). A 1/3 do prazo do pedido (1min40s no do dia, 20 min
+   aberta no pedido do dia feito com a casa aberta, 60 min na encomenda para outro dia e no
+   pedido que chega com a casa fechada (`confirmation.preorder_timeout_minutes`). A 1/3 do prazo do pedido (1min40s no do dia, 20 min
    na encomenda) sai o aviso "se ninguém aceitar até HH:MM, ele é cancelado sozinho e o que o
    cliente pagou é devolvido", e a janela do aviso conta até a mesma hora.
    Recusou ou venceu: cancelado, Pix estornado ou cartão anulado, cliente avisado dos dois.
