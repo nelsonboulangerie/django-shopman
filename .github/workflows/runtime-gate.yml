@@ -114,6 +114,15 @@ jobs:
           .venv/bin/python scripts/check_tenant_config.py
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_tenant_config.py -q
 
+      # Cláusulas pétreas da Constituição como máquina (docs/reference/guard-map.md):
+      # C2, C3, C5, C6, C7, C10, C11 e ADR-025, AST e stdlib-only, contra a baseline
+      # versionada scripts/constitution-baseline.json. Achado novo reprova; entrada
+      # que deixou de acontecer também, até ser apagada no PR que consertou.
+      - name: "Constituição: cláusulas pétreas + mapa de guardas"
+        run: |
+          .venv/bin/python scripts/constitution_guards.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_constitution_guards.py -q
+
       # ADR-015 como máquina: pós-tag, (1) o diff do PR/merge group só pode
       # ADICIONAR arquivos em */migrations/ e (2) todo marcador DEPRECATED
       # precisa do prazo "remove by YYYY-MM-DD" válido e não vencido. Pré-tag:

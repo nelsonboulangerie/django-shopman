@@ -1,25 +1,34 @@
 # Mapa de Guardas — índice das portas invariantes
 
-> Status: canônico. (Ponteiro a partir da Constituição: pendente, frente F1.) O *check_guard_map.py* confere que este mapa é completo e que cada guarda existe.
+> Status: canônico. A [Constituição](../constitution.md) aponta para cá. O *check_guard_map.py* confere que este mapa é completo, que cada guarda existe e que este documento cita todas elas.
 
 Leia assim: cada linha é uma *porta invariante* (o que nunca pode quebrar), a *guarda* que a cobre e o *comando* que a roda. Porta sem guarda explícita está na seção 9.
 
-## 1. Fronteira dos kernels (C1)
+As guardas das cláusulas pétreas (C2, C3, C5, C6, C7, C10, C11 e ADR-025) são AST, sem Django, e reprovam fechado contra uma baseline única, `scripts/constitution-baseline.json`: cada entrada diz se é **violação** (com a frente que conserta) ou **exceção** decidida (com o motivo). Achado novo reprova; entrada que deixou de acontecer também, até ser apagada no PR que consertou. `python scripts/check_<guarda>.py --strict` mostra o estado bruto, sem baseline. Todas rodam juntas em `make constitution-guards`, no job Quality do CI.
+
+## 1. Fronteira e identidade dos kernels (C1, C3)
 
 | Porta | Guarda | Comando |
 |---|---|---|
 | Kernel não importa host/orquestrador/superfície | test_import_boundaries.py::test_kernel_packages_do_not_import_host_layers | make test-framework |
 | Kernel não importa outro kernel fora de bridge | test_import_boundaries.py::test_domain_kernels_do_not_import_each_other_outside_bridges | make test-framework |
 | Kernel não alcança outro app via apps.get_model | test_import_boundaries.py::test_kernels_do_not_reach_other_apps_through_the_registry | make test-framework |
+| Kernel referencia outro kernel por ref, nunca FK (alvo string ou importado) (C3) | check_cross_kernel_refs.py | make constitution-guards |
 
-## 2. Orquestrador (C4, C5)
+## 2. Orquestrador, decisão, ciclo e fato (C2, C4, C5, C6, C7, C11, ADR-025)
 
 | Porta | Guarda | Comando |
 |---|---|---|
 | Inventário físico e unidades semânticas do orquestrador | check_orchestrator_units.py | make orchestrator-governance |
 | Preço de lista com autoridade única no Offerman | test_offerman_is_the_only_list_tier_price_owner | make test-framework |
+| Decisão canônica definida só no kernel dono; duplicação conhecida não volta (C5) | check_decision_authority.py | make constitution-guards |
+| Estado/transição de Order só no Orderman (C6) | check_order_lifecycle_owner.py | make constitution-guards |
+| Lifecycle sem classe nem herança (C7) | check_lifecycle_functional.py | make constitution-guards |
+| Dinheiro em campo de modelo é inteiro `_q` (C2) | check_money_integer.py | make constitution-guards |
+| Ledger escrito só pelo dono; dentro do dono, sem reescrita (C11) | check_ledger_immutability.py | make constitution-guards |
+| Anúncio por signal sai por on_commit; escrita acoplada declarada (ADR-025) | check_signal_on_commit.py | make constitution-guards |
 
-## 3. Superfícies headless (C8) e Admin/Unfold
+## 3. Superfícies headless (C8), read-side (C10) e Admin/Unfold
 
 | Porta | Guarda | Comando |
 |---|---|---|
@@ -28,6 +37,8 @@ Leia assim: cada linha é uma *porta invariante* (o que nunca pode quebrar), a *
 | Framework não importa internals de kernel (models.x/contrib.x) | test_framework_does_not_import_protected_kernel_internals | make test-framework |
 | Superfície não importa orderman write primitives | test_surfaces_do_not_import_orderman_write_primitives | make test-framework |
 | View do backstage não dirige lifecycle diretamente | test_backstage_views_do_not_drive_order_lifecycle_directly | make test-framework |
+| Projection/presentation não grava, direta ou transitivamente (C10) | test_read_side_does_not_write + test_read_side_never_writes | make test-framework |
+| B.I. e backstage/presentation não escrevem em modelo de kernel (C10) | check_read_side_immutability.py | make constitution-guards |
 | Admin/Unfold × superfícies de operador | check_admin_surface_boundary.py | make admin |
 | Templates Admin usam Unfold canônico | check_unfold_canonical.py | make unfold |
 
@@ -49,6 +60,7 @@ Leia assim: cada linha é uma *porta invariante* (o que nunca pode quebrar), a *
 | Mapa semântico dos pacotes + referências da Constituição | check_semantic_docs.py | make canonical-docs |
 | Versão legal arquivada é imutável | check_legal_archive.py | make docs-governance |
 | Docs/rotas/probes do Marketing não derivam | check_marketing_docs.py | make marketing-docs |
+| Este mapa é completo e cita toda guarda que existe | check_guard_map.py | make constitution-guards |
 
 ## 6. Superfícies Nuxt (registry, versão, operador, copy)
 
@@ -61,7 +73,7 @@ Leia assim: cada linha é uma *porta invariante* (o que nunca pode quebrar), a *
 | Sem listener global/colisão de atalho | check_operator_shortcuts.py | make test-operator-ux |
 | Tema compartilhado casado com baselines | check_theme_baseline_contract.py | make theme-baselines |
 | Vocabulário de tela (dispositivo/aparelho) no Django | test_vocabulario_de_tela.py + test_vocabulario_abertura_fechamento.py + test_vocabulario_etapa_da_receita.py | make test-backstage |
-| Vocabulário/copy/UX nos apps Nuxt (noEmDash, jargon, copyNeverTruncates, identifiers, a11y…) | surfaces/operator-kit/tests/guardrails.*.test.ts (~30) | make test-operator-ux |
+| Vocabulário/copy/UX nos apps Nuxt (noEmDash, jargon, copyNeverTruncates, identifiers, a11y…) | surfaces/operator-kit/tests/guardrails.*.test.ts (~30, entre eles guardrails.vocabulary.test.ts) | make test-operator-ux |
 | Audit de dependências npm | check_npm_audit_gate.mjs | CI surfaces-gate |
 
 ## 7. Qualidade de código
@@ -85,20 +97,15 @@ Leia assim: cada linha é uma *porta invariante* (o que nunca pode quebrar), a *
 | Descritores de instância (schema, ownership) | check_instance_descriptors.py | make test-instance-descriptors |
 | Configuração de loja não cresce por env/settings (ADR-042) | check_tenant_config.py | make test-instance-contracts |
 
-## 9. ÁREAS NÃO COBERTAS (sem guarda explícita) — o ponto de decisão
+## 9. ÁREAS NÃO COBERTAS (sem guarda explícita): o ponto de decisão
 
-Estas portas têm lei (Constituição/ADR) mas ainda não têm check dedicado. É aqui que a decisão de travar ou assumir precisa ser tomada.
+Estas portas têm lei (Constituição/ADR), mas ainda não têm check dedicado. É aqui que a decisão de travar ou assumir precisa ser tomada.
 
 | Porta | Evidência de que está aberta | Risco se morder |
 |---|---|---|
-| Duplicação de autoridade de decisão (geral) | a promessa de estoque já tem autoridade única (`promise_for_sku`/`decision_from_availability` no Stockman; `_stock_decision` apagado, caracterização em `shopman/shop/tests/test_promise_for_sku_characterization.py`); fora a promessa, só há guarda para o preço de lista | outra decisão duplicada diverge em produção |
+| Duplicação de autoridade de decisão (geral) | a promessa de estoque já tem autoridade única (`promise_for_sku`/`decision_from_availability` no Stockman; `_stock_decision` apagado, caracterização em `shopman/shop/tests/test_promise_for_sku_characterization.py`), travada por check_decision_authority.py; fora a promessa e o preço de lista, a guarda só conhece o que está registrado em `CANONICAL`/`FORBIDDEN`, e duplicação nova com outro nome passa | outra decisão duplicada diverge em produção |
 | Cadeia de custo write-only (ADR-023/024) | COST_BACKEND em settings, mas nenhum leitor em runtime (grep no repo: só offerman+settings+docs) | margem/custo de receita mentem no BI |
-| ADR-025 (signal on_commit) | Status Proposto; P1 do Payman diagnosticado mas sem gate que reprove signal.send fora de on_commit | efeito fantasma sob rollback |
-| C2 (dinheiro em _q) | sem lint que impeça float em campo monetário | arredondamento de dinheiro |
-| C3 (identidade por ref, nunca FK/pk de outro kernel) | convenção; sem check por tipo | acoplamento cross-kernel por pk |
-| C6 (ciclo de Order só no Orderman) | convenção + ADR-006; sem check de transição fora do dono | segundo ciclo paralelo |
-| C7 (lifecycle funcional, sem subclasse) | convenção; sem check que reprove classe de lifecycle | decisão de instância escondida |
-| C10 (read-side não é fonte do fato) | convenção; sem check que reprove escrita em projection | projection vira autoridade |
-| C11 (ledger imutável no dono do fato) | precedente Cashman não virou check genérico | reescrita de história |
+
+O que as guardas da seção 2 ainda não enxergam, por limite do AST e não por decisão: escrita de ledger por related manager (`order.events.create`) ou por `instancia.save()` (C11; valem as travas de runtime dos próprios modelos); FK de modelo do orquestrador para kernel (C3 vale entre kernels; o orquestrador é o encontro, C4); `send` de signal sem `sender=` (ADR-025).
 
 > O check_guard_map.py imprime esta seção 9. Cada linha é uma decisão do dono: travar agora (virar guarda) ou assumir convenção (e registrar o porquê).

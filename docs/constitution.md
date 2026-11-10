@@ -26,7 +26,9 @@ sem copiá-la.
 ### 1.3 Guias e referências
 
 Descrevem como trabalhar e o estado observável do sistema: comandos, schemas, inventários,
-playbooks e exemplos. Não criam lei e precisam acompanhar Constituição e ADRs.
+playbooks e exemplos. Não criam lei e precisam acompanhar Constituição e ADRs. A guarda que
+trava cada cláusula, e a lista do que ainda não tem guarda, estão no
+[mapa de guardas](reference/guard-map.md).
 
 Em caso de conflito: **Constituição > ADR aceita mais recente > guia/referência > código
 acidental**. Divergência entre código e lei é dívida explícita, não mudança silenciosa da lei.
