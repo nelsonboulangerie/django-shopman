@@ -370,6 +370,12 @@ para banco restaurado · dados reais do Dia 1 · GO/NO-GO.
 > T14 #2077/#2078/#2079, T15 (28 checks obrigatórios), Doorman (2) a (5) #2082/#2084 e
 > WP-RELEASE-01 R0/R1 (#2076, #2080). Segue aberto só o WP-RELEASE-01 de R2 em diante.
 
+> **Atualização de 10/11/2026:** a [auditoria do reset arquitetural](../reports/2026-11-10-auditoria-reset-arquitetural.md)
+> (veredito: aprova com reparos) abriu três linhas de código na matriz, por decisão do
+> dono (D-037, D-038): o pacote de reparos de dias, o `FiscalDocument` e as colunas do
+> carimbo dos fatos. O Concierge saiu do escopo que segura a tag (D-035), e trocar kernel
+> por sistema externo ficou sem prazo (D-036). O parágrafo abaixo vale para a data dele.
+
 **Nenhum bloqueio de código conhecido nesta reauditoria.** A lista de 19/10 foi
 fechada por entregas já no `main`: drift Watchman e fallbacks (#1894, #1898, #1906,
 #1909, #1918); grupos (#1899, #1912, #1913, #1916, #1919); encomenda (#1902,
