@@ -4,6 +4,7 @@ Sem importar Django. Confere: (1) toda guarda citada existe; (2) o mapa é compl
 scripts/check_* está citado); (3) imprime as áreas não cobertas (seção 9/10).
 """
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
