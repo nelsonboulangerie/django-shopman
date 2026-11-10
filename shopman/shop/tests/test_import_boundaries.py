@@ -563,6 +563,54 @@ def test_doorman_identity_port_has_no_legacy_contract_residue():
     assert not violations, "Legacy Doorman identity contract residue:\n" + "\n".join(violations)
 
 
+def _dynamic_imports(path: Path) -> Iterable[tuple[int, str]]:
+    """``(linha, módulo)`` de ``import_module("...")``/``import_string("...")`` literais."""
+    for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+        first = node.args[0]
+        if name in {"import_module", "import_string", "__import__"} and isinstance(first, ast.Constant):
+            if isinstance(first.value, str):
+                yield node.lineno, first.value
+
+
+def test_doorman_imports_no_other_kernel_not_even_through_bridges():
+    """O Doorman é soberano: nem ponte ``adapters/``/``contrib/`` para outro kernel.
+
+    A regra geral (acima) deixa ``adapters``/``contrib`` importarem outro kernel
+    como ponte opt-in. O Doorman abriu mão disso no corte do porto de identidade
+    (17/10, ``a522f21cc``): a ligação identidade verificada → cliente é o verbo
+    ``bind_verified_handle`` do ``IdentityResolverProtocol``, e quem o implementa
+    é o Guestman (``guestman/adapters/auth.py``), escolhido pelo host em
+    ``DOORMAN["IDENTITY_RESOLVER_CLASS"]``. O antigo ``_link_verified_identifier``
+    importava o Guestman dentro do service e engolia a falha; esta trava impede a
+    volta, inclusive por import dinâmico e por ``apps.get_model``.
+    """
+    package_root = PACKAGES_ROOT / "doorman"
+    foreign = DOMAIN_KERNEL_PACKAGES - {"doorman"}
+    violations = []
+    for path in _py_files(package_root, skip_parts={"tests", "migrations"}):
+        if path.name in {"conftest.py", "doorman_test_settings.py"}:
+            continue
+        found = [*_imports(path), *_dynamic_imports(path)]
+        for line, module in found:
+            parts = module.split(".")
+            if len(parts) >= 2 and parts[0] == "shopman" and parts[1] in foreign:
+                violations.append((path, line, module))
+        for line, label in _registry_lookups(path.read_text()):
+            if label in foreign:
+                violations.append((path, line, f'get_model("{label}", ...)'))
+
+    assert not violations, (
+        "Doorman reached another kernel:\n"
+        f"{_format_violations(violations)}\n\n"
+        "Identity binding belongs to the identity port implemented by the host "
+        "(IdentityResolverProtocol), never to a Doorman import."
+    )
+
+
 def test_concierge_identity_paths_import_only_host_composition():
     """WP-4 identity paths in the storefront cannot import Guestman directly."""
     guarded = (

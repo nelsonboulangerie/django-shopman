@@ -1,8 +1,10 @@
 """
-User bridge — get or create Django User for a Customer.
+Ponte identidade → ``User`` do Django, compartilhada pelos caminhos de login.
 
-Extracted from AccessLinkService for reuse by PhoneOTPBackend and other
-authentication paths.
+OTP (``AuthService.verify_for_login`` e ``PhoneOTPBackend``) e link de acesso
+(``AccessLinkService.exchange``) chegam aqui cada um por conta própria: nenhum
+dos dois passa pelo outro para abrir sessão. Este módulo é o único ponto que
+cria ou acha o ``User`` de um sujeito verificado, e o que o esquece (LGPD).
 """
 
 from __future__ import annotations
