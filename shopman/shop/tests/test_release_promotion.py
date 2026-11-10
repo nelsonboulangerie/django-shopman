@@ -1,4 +1,8 @@
-"""WP-RELEASE-01 R2: candidato, alpha e produção separados.
+"""WP-RELEASE-01 R2: candidato e produção separados, promoção direto do `main`.
+
+Não há alpha depois do go-live (decisão do dono, 10/11/2026): a promoção não
+consulta smoke de alpha nenhum; o ensaio é o `plan` e a prova é o smoke de
+produção depois do deployment.
 
 Os quatro gates de aceite da R2, cada um com o seu bloco de teste:
 
@@ -244,7 +248,8 @@ def test_manifesto_valido_serve():
         (lambda m: m["release_set"].pop("operator-floor"), "componentes faltando"),
         (lambda m: m["release_set"]["web"].update(digest="sha256:abc"), "digest ilegível"),
         (lambda m: m["release_set"]["web"].update(immutable_tag="web"), "immutable_tag"),
-        (lambda m: m.update(deploy_mode="production_pinned"), "o alpha não rodou"),
+        (lambda m: m.update(deploy_mode="cancelled"), "não fechou este manifesto"),
+        (lambda m: m.pop("deploy_mode"), "não fechou este manifesto"),
         (lambda m: m.update(release_id="20261109-1200-fffffff"), "não é do commit"),
         (lambda m: m.pop("release_set"), "sem release_set"),
         (lambda m: m.update(schema_version=1), "schema_version"),
@@ -254,6 +259,14 @@ def test_manifesto_estragado_e_recusado(estragar, motivo):
     m = _manifesto_valido()
     estragar(m)
     assert any(motivo in e for e in RM.validate(m)), RM.validate(m)
+
+
+def test_manifesto_de_app_ja_em_producao_e_promovivel():
+    """Sem alpha, o push com o app nas tags `-prod` só constrói, e é ESSE
+    candidato que vai à produção."""
+    m = _manifesto_valido()
+    m["deploy_mode"] = "production_pinned"
+    assert RM.validate(m) == []
 
 
 def test_cli_validate_falha_fechado_sem_manifesto(tmp_path):
@@ -300,7 +313,7 @@ def repo(tmp_path):
     return {"root": r, "a": a, "b": b, "c": c}
 
 
-def _cenario(repo, *, smoke="success", protegido=True):
+def _cenario(repo, *, protegido=True):
     reg = _alpha_registry()
     # As imagens do cenário nascem dos commits reais do repositório de teste.
     a, b = repo["a"], repo["b"]
@@ -316,9 +329,6 @@ def _cenario(repo, *, smoke="success", protegido=True):
     manifest["release_id"] = PR.release_id_of(b, repo["root"])
     deploy_run = {"id": 42, "head_sha": b, "updated_at": "2026-11-09T12:10:00Z"}
     respostas = {
-        "alpha-smoke.yml": {"workflow_runs": [
-            {"id": 7, "head_sha": b, "created_at": "2026-11-09T12:10:05Z", "conclusion": smoke, "status": "completed"}
-        ] if smoke else []},
         "environments/production": {
             "protection_rules": [{"type": "required_reviewers", "reviewers": [{"type": "User"}]}],
             "deployment_branch_policy": {"protected_branches": False, "custom_branch_policies": True},
@@ -326,6 +336,7 @@ def _cenario(repo, *, smoke="success", protegido=True):
     }
 
     def gh(path):
+        gh.paths.append(path)
         for chave, valor in respostas.items():
             if chave in path:
                 if valor is None:
@@ -333,6 +344,7 @@ def _cenario(repo, *, smoke="success", protegido=True):
                 return valor
         raise AssertionError(path)
 
+    gh.paths = []
     return reg2, manifest, deploy_run, gh
 
 
@@ -359,7 +371,6 @@ def test_plano_verde_lista_o_retag_de_cada_componente(repo):
     reg, manifest, run, gh = _cenario(repo)
     plan = _plan(repo, reg, manifest, run, gh, require_protection=True)
     assert plan["git_sha"] == repo["b"]
-    assert plan["alpha_smoke_run"] == 7
     assert plan["environment_protection_gaps"] == []
     for component in COMPONENTS:
         linha = plan["components"][component]
@@ -376,18 +387,15 @@ def test_componente_faltando_para_antes_de_escrever(repo):
     assert reg.puts == []
 
 
-@pytest.mark.parametrize("smoke, motivo", [("failure", "não passou"), (None, "não rodou")])
-def test_alpha_sem_smoke_verde_nao_promove(repo, smoke, motivo):
-    reg, manifest, run, gh = _cenario(repo, smoke=smoke)
-    with pytest.raises(PR.Recusa, match=motivo):
-        _plan(repo, reg, manifest, run, gh)
-
-
-def test_smoke_de_deploy_anterior_do_mesmo_commit_nao_conta(repo):
+def test_promocao_sai_do_main_sem_consultar_alpha(repo):
+    """O plano não pergunta por smoke de alpha: ele não existe depois do go-live,
+    e o smoke que roda contra o app vivo prova o release ANTERIOR, não este."""
     reg, manifest, run, gh = _cenario(repo)
-    run["updated_at"] = "2026-11-09T13:00:00Z"  # um deploy depois do smoke verde
-    with pytest.raises(PR.Recusa, match="não rodou depois"):
-        _plan(repo, reg, manifest, run, gh)
+    manifest["deploy_mode"] = "production_pinned"
+    plan = _plan(repo, reg, manifest, run, gh, require_protection=True)
+    assert "alpha_smoke_run" not in plan
+    assert not any("alpha-smoke" in p for p in gh.paths), gh.paths
+    assert "alpha_green" not in vars(PR)
 
 
 def test_componente_de_commit_fora_da_linha_do_release_e_recusado(repo):

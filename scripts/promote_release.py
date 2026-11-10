@@ -1,8 +1,12 @@
 #!/usr/bin/env python
-"""Promove um release já verde no alpha para produção, sem reconstruir nada.
+"""Promove um release do ``main`` para produção, sem reconstruir nada.
 
-WP-RELEASE-01 R2. Quem chama é ``.github/workflows/promote-release.yml``, passo
-a passo, e a ordem é o contrato (``docs/reference/release-contract.md``):
+WP-RELEASE-01 R2. Não há alpha depois do go-live (decisão do dono, 10/11/2026):
+o ensaio é o ``plan`` (o dry-run, que roda antes de toda promoção) e a prova é
+a verificação depois (``verify`` + ``smoke`` contra a produção).
+
+Quem chama é ``.github/workflows/promote-release.yml``, passo a passo, e a
+ordem é o contrato (``docs/reference/release-contract.md``):
 
 ``locate --release-id ID``
     Release ID → commit (pelo git, que recalcula o ID) → o run de PUSH do Deploy
@@ -12,8 +16,7 @@ a passo, e a ordem é o contrato (``docs/reference/release-contract.md``):
 ``plan --release-id ID --manifest release-manifest.json --deploy-run N``
     Valida, sem escrever nada: manifesto completo (os quatro componentes, com
     digest), ancestralidade (o commit está no ``main``; cada componente vem de
-    um ancestral dele), o alpha verde (smoke pós-deploy daquele commit), os
-    digests presentes no registry com os bytes conferidos, e a proteção do
+    um ancestral dele), os digests presentes no registry com os bytes conferidos, e a proteção do
     GitHub Environment ``production``. Escreve ``plan.json``.
 
 ``retag --plan plan.json``
@@ -72,7 +75,6 @@ RM = _load("promote_release_manifest", "release_manifest.py")
 API = "https://api.digitalocean.com/v2"
 ENVIRONMENT = "production"
 DEPLOY_WORKFLOW = "deploy-images.yml"
-SMOKE_WORKFLOW = "alpha-smoke.yml"
 USER_AGENT = "shopman-promote-release/1"
 
 Gh = Callable[[str], object]
@@ -150,30 +152,6 @@ def find_deploy_run(repo: str, sha: str, gh: Gh = gh_api) -> dict:
     return max(runs, key=lambda r: r.get("run_attempt") or 0)
 
 
-def alpha_green(repo: str, sha: str, deploy_run: dict, gh: Gh = gh_api) -> dict:
-    """O Pre-go-live Smoke disparado pelo deploy deste commit passou.
-
-    É o smoke que espera o deployment do alpha pelo digest (ou pelo id do
-    deployment único) antes de perguntar à loja. Rodar depois do fim do deploy
-    é o que o amarra a ESTE deploy, e não ao anterior do mesmo commit.
-    """
-    payload = gh(
-        f"repos/{repo}/actions/workflows/{SMOKE_WORKFLOW}/runs?head_sha={sha}&event=workflow_run&per_page=20"
-    )
-    fim = deploy_run.get("updated_at") or ""
-    runs = [
-        r for r in (payload or {}).get("workflow_runs") or []
-        if r.get("head_sha") == sha and (r.get("created_at") or "") >= fim
-    ]
-    verdes = [r for r in runs if r.get("conclusion") == "success"]
-    if verdes:
-        return min(verdes, key=lambda r: r.get("created_at") or "")
-    if runs:
-        estados = ", ".join(f"{r.get('id')}={r.get('conclusion') or r.get('status')}" for r in runs)
-        raise Recusa(f"o smoke do alpha para {sha[:7]} não passou ({estados})")
-    raise Recusa(f"o smoke do alpha para {sha[:7]} não rodou depois do deploy {deploy_run.get('id')}")
-
-
 def environment_protection(repo: str, gh: Gh = gh_api) -> list[str]:
     """O que falta no Environment `production` para a promoção ser protegida."""
     try:
@@ -218,11 +196,6 @@ def build_plan(
     if erros:
         raise Recusa("; ".join(erros))
     erros = check_ancestry(manifest, root)
-    smoke = None
-    try:
-        smoke = alpha_green(repo, sha, deploy_run, gh)
-    except Recusa as exc:
-        erros.append(str(exc))
 
     componentes = {}
     for component in RM.RELEASE_COMPONENTS:
@@ -256,7 +229,6 @@ def build_plan(
         "release_id": release_id,
         "git_sha": sha,
         "source_run": deploy_run.get("id"),
-        "alpha_smoke_run": (smoke or {}).get("id"),
         "migration_graph_hash": manifest.get("migration_graph_hash"),
         "registry_checked": registry is not None,
         "environment_protection_gaps": protecao,

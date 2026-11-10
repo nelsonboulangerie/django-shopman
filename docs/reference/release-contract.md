@@ -63,14 +63,19 @@ do cliente: a tela pergunta ao próprio servidor (abaixo), e é o servidor que e
 O manifesto do run (`published.json`) ganhou `release_id`, `git_sha` e `source_run` ao
 lado de `sha`/`components`/`deployment`, que seguem sendo o contrato do alpha-smoke.
 
-## Candidato, alpha e produção (R2)
+## Candidato e produção (R2)
+
+**Sem alpha depois do go-live** (decisão do dono, 10/11/2026; emenda à ADR-043): o app
+vivo vira a produção e a promoção sai direto do `main`. Até o go-live ele é o alpha nas
+tags móveis; no go-live o dono troca o spec para as tags `-prod`, e a partir daí o push só
+constrói o candidato (`production_pinned`).
 
 Três estados de uma imagem, três tipos de tag:
 
 | Tag | Quem escreve | Quem lê |
 | --- | --- | --- |
 | `<tag>-<sha>` (imutável) | Deploy Images, no build | manifesto, promoção, drift |
-| `<tag>` (móvel do alpha) | Deploy Images, no build | o app alpha (spec vivo) |
+| `<tag>` (móvel) | Deploy Images, no build | o app vivo até o go-live (alpha) |
 | `<tag>-prod` | **só** o Promote Release, por retag | o app de produção |
 
 **Manifesto do release** (`scripts/release_manifest.py release-set`, no job `manifest` do
@@ -107,9 +112,12 @@ implanta em app que não seja `production` nem tenha `deploy_on_push`.
 **Promoção** (`.github/workflows/promote-release.yml` + `scripts/promote_release.py`):
 dispatch manual no `main`, `dry-run` por padrão; o job que escreve exige o GitHub
 Environment `production` com revisor obrigatório e só `main`. Ordem: valida (ancestralidade,
-manifesto, smoke do alpha verde depois daquele deploy, digests no registry, proteção) →
+manifesto, digests no registry, proteção) →
 retag pelo digest, sem build → GitHub Deployment → deployment na DO até `ACTIVE` e
 `/health/release` de cada componente igual ao `build_sha` promovido → smoke de produção.
+`deploy_mode` aceito: `single_deployment`, `deploy_on_push`, `nothing_published` e
+`production_pinned`; ausente ou outro, recusa. A promoção não consulta o Pre-go-live Smoke:
+depois do go-live ele roda contra a produção, que ainda serve o release anterior.
 Procedimento e o que falta ligar: [promover-release.md](../runbooks/promover-release.md).
 
 ## Endereço de versão

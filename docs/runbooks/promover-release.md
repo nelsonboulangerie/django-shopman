@@ -7,27 +7,34 @@
 
 ## O caminho
 
+**Não há alpha depois do go-live** (decisão do dono, 10/11/2026): o app vivo
+`shopman-nelson` vira a produção, e a promoção sai direto do `main`. O ensaio é o
+dry-run; a prova é a verificação depois.
+
 ```text
-push no main ──→ Deploy Images ──→ candidato imutável (<tag>-<sha>) + release-manifest
-                       │
-                       └──→ alpha (tags móveis) ──→ Pre-go-live Smoke verde
+push no main ──→ fila de merge (gates do PR) ──→ Deploy Images
+                       ──→ candidato imutável (<tag>-<sha>) + release-manifest
                                                           │
 Promote Release (dispatch manual, environment production) ←┘
-   1. valida ancestralidade, alpha verde e digests
+   1. dry-run: valida ancestralidade, manifesto e digests (roda antes de TODO modo)
    2. retag dos MESMOS manifests para <tag>-prod
    3. GitHub Deployment
    4. deployment no app de produção, ACTIVE, /health/release = commit promovido
    5. smoke de produção
 ```
 
-Push no `main` nunca chega na produção: o Deploy Images só escreve a tag móvel do
-alpha e a imutável, nunca `-prod`; e se o app para onde ele implanta já estiver nas
+Até o go-live o app vivo continua sendo o alpha nas tags móveis, e o push segue
+implantando nele.
+
+Push no `main` nunca chega na produção: o Deploy Images só escreve a tag móvel e a
+imutável, nunca `-prod`; e se o app para onde ele implanta já estiver nas
 tags `-prod`, ele não cria deployment (`deploy_mode: production_pinned`).
 
 ## Promover
 
-1. Escolha o Release ID. Está no topo do run do Deploy Images (passo `Release ID`),
-   no `/health/release` do alpha e na linha "Versão do serviço" dos apps.
+1. Escolha o Release ID: o do commit do `main` que vai ao ar. Está no topo do run do
+   Deploy Images daquele commit (passo `Release ID`). O que está no ar hoje aparece no
+   `/health/release` do app vivo e na linha "Versão do serviço" dos apps.
 2. Actions → **Promote Release** → *Run workflow*, branch `main`:
    - `mode: dry-run` primeiro. Só valida e mostra, no resumo do run, a tabela
      componente → digest → tag de produção → ação. Não escreve nada.
@@ -43,9 +50,8 @@ O que recusa, antes de escrever qualquer coisa:
 | Release ID que o git não recalcula igual, ou commit fora do `main` | só release do `main` é promovível |
 | Sem `release-manifest` no run do Deploy Images | release anterior à R2, ou run que não terminou: o release set nunca foi registrado |
 | Manifesto sem um dos quatro componentes, digest ilegível, `release_set_error` | o conjunto não está provado |
-| `deploy_mode` fora de `single_deployment`, `deploy_on_push`, `nothing_published` | o alpha não rodou esse conjunto |
+| `deploy_mode` ausente ou fora de `single_deployment`, `deploy_on_push`, `nothing_published`, `production_pinned` | o Deploy Images não fechou o manifesto |
 | Componente construído num commit que não é ancestral do release | mistura de linhas |
-| Smoke do alpha vermelho, ou ausente depois daquele deploy | não esteve verde no alpha |
 | Tag imutável que não aponta mais para o digest, manifest que não é imagem | candidato adulterado |
 | Environment `production` sem revisor obrigatório ou aberto a qualquer branch | promoção sem trava (só no `dry-run` vira aviso) |
 
@@ -60,9 +66,10 @@ a tag e cobra o mesmo digest. Não existe caminho de upload de camada no código
 
 ## O que falta para ligar (ação do dono)
 
-Hoje o app vivo `shopman-nelson` é o alpha e, pela D-029, será a produção. A R2
-deixa a promoção pronta, mas ela só tem onde chegar depois destes passos, nesta
-ordem. Nenhum agente aplica spec vivo (D-009).
+Hoje o app vivo `shopman-nelson` é o alpha e, pela D-029, vira a produção, sem
+alpha separado depois (decisão do dono, 10/11/2026). A R2 deixa a promoção pronta;
+ela só tem onde chegar depois destes passos, nesta ordem, e o passo 3 é o gesto do
+go-live. Nenhum agente aplica spec vivo (D-009).
 
 ### 1. Environment `production` no GitHub
 
@@ -88,7 +95,7 @@ Sem revisor e sem a trava de branch, o `plan` recusa os modos que escrevem.
 
 Promote Release com `mode: retag-only` no último release verde. Cria `web-prod`,
 `storefront-prod`, `operator-floor-prod` e `operator-office-prod` apontando para os
-digests do alpha, e registra o GitHub Deployment como `inactive`. Não mexe em app
+digests do release escolhido (o que já está no ar), e registra o GitHub Deployment como `inactive`. Não mexe em app
 nenhum. As tags precisam existir **antes** do passo 3, senão o deployment não acha a
 imagem.
 
@@ -142,26 +149,18 @@ No painel da DigitalOcean: app `shopman-nelson` → **Settings** → **App Spec*
 
 `deploy_on_push` fica desligado em todos (como já está). Salvar cria um deployment;
 ele sobe as mesmas imagens que já estavam no ar, porque o passo 2 apontou as tags
-`-prod` para os digests do alpha. Conferir `/health/release` nos quatro endereços.
+`-prod` para esses digests. Conferir `/health/release` nos quatro endereços.
 
 No mesmo dia, um PR troca as nove tags também em `.do/app.alpha-subdomains.yaml`
 (senão o `make deploy-spec-drift` acusa o vivo) e ajusta os testes que hoje cobram
 o app nas tags móveis (`test_nuxt_deploy_config.py` e
 `test_spec_versionado_do_app_vivo_e_alpha_hoje`).
 
-### ⚠️ Antes do passo 3: onde fica o alpha depois
+### Depois do passo 3
 
-Com o passo 3 aplicado no app vivo, o push no `main` deixa de implantar nele
-(`production_pinned`): o candidato continua sendo construído, mas **não há mais
-alpha**, e a promoção recusa todo release que não esteve num alpha verde. Isto é
-decisão sua, não mecânica:
-
-1. **Um app alpha separado** (recomendado): um app pequeno da DO nas tags móveis,
-   recebendo o push como hoje. É componente novo e tem custo mensal; precisa da sua
-   palavra e de um banco próprio (alpha não escreve no banco da loja).
-2. **Sem alpha**: produção recebe o candidato só com a CI. Viola a invariante 2 do
-   WP-RELEASE-01 ("produção só recebe digest que esteve ativo e verde no alpha") e
-   exige mudar a ADR-043.
-
-Até essa decisão, não aplique o passo 3: o app vivo segue como alpha contínuo, e a
-promoção fica pronta para o dia em que houver dois ambientes.
+O push no `main` deixa de implantar no app (`production_pinned`): ele constrói o
+candidato e o `release-manifest`, e só. Toda ida à produção passa pelo Promote
+Release: `dry-run` para ler o plano, `promote` para valer. O Pre-go-live Smoke segue
+rodando a cada push e a cada 15 minutos contra o app vivo, como vigia da produção;
+ele prova o release que está no ar, não o candidato, e por isso a promoção não o
+consulta.
