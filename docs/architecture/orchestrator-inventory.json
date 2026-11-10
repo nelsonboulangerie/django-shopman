@@ -2600,6 +2600,8 @@
             "QUALITY_OK_GRADE_REFS",
             "SHOP_RULE_POLICY_KEYS",
             "STAGE_GOAL_DEFAULTS",
+            "_CONFIRMATION_KEYS_BY_MODE",
+            "_drop_inherited_keys_of_another_mode",
             "_section",
             "deep_merge",
             "quality_grade_refs_for_channel"
@@ -3870,6 +3872,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "STALE_ALERT_FRACTION_OF_DEADLINE",
             "_alert_coupon_over_redeemed",
             "_alert_if_card_authorization_held",
             "_card_authorization_is_held",
@@ -3905,6 +3908,7 @@
             "_schedule_stale_alert_before_deadline",
             "_settle_cancelled_payment",
             "_verify_holds",
+            "acceptance_timeout_minutes",
             "logger"
           ]
         }
@@ -8164,6 +8168,8 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_MAX_DEADLINE_WINDOWS",
+            "_closing_moment",
             "_load_shop",
             "logger"
           ]

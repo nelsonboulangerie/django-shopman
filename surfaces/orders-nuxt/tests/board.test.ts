@@ -715,8 +715,8 @@ describe("confirmationRemainingLabel", () => {
       "0:00",
     );
   });
-  // Beta 06/11 (F8, PIXEXP-11, SMS-18): o aceite que vence 30 min depois da
-  // abertura saía "cancela sozinho em 252:11". M:SS só na última hora.
+  // Beta 06/11 (F8, PIXEXP-11, SMS-18): o aceite que vence 5 ou 60 min depois
+  // da abertura saía "cancela sozinho em 252:11". M:SS só na última hora.
   it("de uma hora para cima, horas e minutos, nunca minutos:segundos", () => {
     const now = Date.parse("2026-11-06T05:17:49Z");
     expect(confirmationRemainingLabel("2026-11-06T09:30:00Z", now)).toBe(

@@ -96,10 +96,18 @@ class ChannelConfig:
         # "auto_cancel"  — auto-CANCELA após timeout se operador não confirma
         # "manual"       — aguarda aprovação explícita, sem timeout
         timeout_minutes: int = 5  # para mode=auto_confirm ou auto_cancel
+        preorder_timeout_minutes: int | None = None
+        # Prazo da ENCOMENDA (data combinada posterior a hoje), em minutos de loja
+        # aberta, para mode=auto_confirm ou auto_cancel. Quem pede para outro dia
+        # não espera a resposta na tela, e a casa tem mais tempo para olhar a
+        # produção (dono, 09/11/2026: 5 min no dia, 60 na encomenda). Sem chave,
+        # a encomenda segue o ``timeout_minutes``.
         stale_new_alert_minutes: int = 0
         # Opt-in para mode=manual: após X minutos em NEW sem decisão do operador,
         # dispara OperatorAlert("stale_new_order"). 0 (default) desabilita.
         # Usado em canais marketplace (iFood) para escalar pedidos esquecidos.
+        # Não vale no auto_cancel: lá o aviso sai a 1/3 do prazo do próprio pedido
+        # (``lifecycle._schedule_stale_alert_before_deadline``), e o validate recusa.
         external_sla_minutes: int = 0
         # Prazo que o MARKETPLACE impõe para confirmar, contado da criação do pedido
         # lá. Não é timer nosso: vencido, quem cancela é o marketplace, e o pedido
@@ -107,6 +115,16 @@ class ChannelConfig:
         # visível, em vez de ser conta de cabeça do operador. 0 = o canal não tem SLA
         # externo (todo canal da casa). iFood documenta 8 minutos para DELIVERY e
         # TAKEOUT; medido em 19/09/2026, cancelou seis pedidos a 8min10s da criação.
+
+        def acceptance_timeout_minutes(self, *, long_deadline: bool) -> int:
+            """O prazo de aceite do pedido: o longo quando ninguém espera a resposta na hora.
+
+            Prazo longo é o da encomenda para outro dia e o do pedido que chega com a
+            casa fechada; o curto, o do pedido do dia feito com a casa aberta.
+            """
+            if long_deadline and self.preorder_timeout_minutes:
+                return self.preorder_timeout_minutes
+            return self.timeout_minutes
 
     # ── 2. Pagamento ──
 
@@ -517,6 +535,7 @@ class ChannelConfig:
 
         if channel.config:
             base = deep_merge(base, copy.deepcopy(channel.config))
+        _drop_inherited_keys_of_another_mode(base, channel.config or {})
 
         config = cls.from_dict(base)
         config.validate()
@@ -531,6 +550,19 @@ class ChannelConfig:
         if self.confirmation.mode in ("auto_confirm", "auto_cancel") and self.confirmation.timeout_minutes <= 0:
             raise ValueError(
                 f"timeout_minutes deve ser > 0 para mode={self.confirmation.mode}",
+            )
+        preorder_timeout = self.confirmation.preorder_timeout_minutes
+        if preorder_timeout is not None:
+            if self.confirmation.mode not in ("auto_confirm", "auto_cancel"):
+                raise ValueError(
+                    "confirmation.preorder_timeout_minutes só vale para mode=auto_confirm ou auto_cancel",
+                )
+            if isinstance(preorder_timeout, bool) or not isinstance(preorder_timeout, int) or preorder_timeout <= 0:
+                raise ValueError("confirmation.preorder_timeout_minutes deve ser um inteiro > 0")
+        if self.confirmation.mode == "auto_cancel" and self.confirmation.stale_new_alert_minutes:
+            raise ValueError(
+                "confirmation.stale_new_alert_minutes não vale para mode=auto_cancel: "
+                "o aviso sai a 1/3 do prazo de aceite do próprio pedido",
             )
         # Os métodos que o PDV e os adapters conhecem (``services/pos.py``,
         # ``payment_gate``). ``mixed`` fica de fora: é o resultado de uma venda
@@ -718,3 +750,30 @@ def deep_merge(base: dict, override: dict) -> dict:
         else:
             result[key] = value
     return result
+
+
+#: Chaves de ``confirmation`` que só fazem sentido em alguns modos de aceite.
+_CONFIRMATION_KEYS_BY_MODE = {
+    "stale_new_alert_minutes": ("immediate", "auto_confirm", "manual"),
+    "preorder_timeout_minutes": ("auto_confirm", "auto_cancel"),
+}
+
+
+def _drop_inherited_keys_of_another_mode(base: dict, channel_config: dict) -> None:
+    """Padrão da LOJA que não vale no modo de aceite deste canal não desce para ele.
+
+    ``Shop.defaults`` é escrito pensando no modo padrão; um canal troca o modo e
+    herdaria uma chave que o ``validate`` recusa nele (o ``stale_new_alert_minutes``
+    da loja derrubava todo ``for_channel`` do canal ``auto_cancel``, onde o aviso
+    sai a 1/3 do prazo do pedido). A chave que o PRÓPRIO canal declara fica, e o
+    ``validate`` continua recusando: ali é erro de quem configurou o canal.
+    """
+    confirmation = base.get("confirmation")
+    if not isinstance(confirmation, dict):
+        return
+    own = channel_config.get("confirmation")
+    own = own if isinstance(own, dict) else {}
+    mode = confirmation.get("mode")
+    for key, modes in _CONFIRMATION_KEYS_BY_MODE.items():
+        if key in confirmation and key not in own and mode not in modes:
+            del confirmation[key]

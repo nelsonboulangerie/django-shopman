@@ -38,7 +38,7 @@ from shopman.shop.tests.test_stripe_checkout_session import (
 )
 
 WEB_PAYS_AT_ORDER = {
-    "confirmation": {"mode": "auto_cancel", "timeout_minutes": 30, "stale_new_alert_minutes": 10},
+    "confirmation": {"mode": "auto_cancel", "timeout_minutes": 5, "preorder_timeout_minutes": 60},
     "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
 }
 
@@ -61,9 +61,10 @@ def test_seed_a_loja_online_cobra_no_pedido_com_prazo_de_aceite():
     # L2=1: sem "pagar na entrega" no site.
     assert web.payment.available_methods == ["pix", "card"]
     assert web.confirmation.mode == "auto_cancel"
-    assert web.confirmation.timeout_minutes == 30
-    assert web.confirmation.stale_new_alert_minutes == 10
-    assert web.confirmation.stale_new_alert_minutes < web.confirmation.timeout_minutes
+    # Emenda de 09/11/2026: 5 min no pedido do dia, 60 na encomenda.
+    assert web.confirmation.timeout_minutes == 5
+    assert web.confirmation.preorder_timeout_minutes == 60
+    assert web.confirmation.stale_new_alert_minutes == 0
 
 
 @pytest.mark.django_db
@@ -325,7 +326,8 @@ def test_pago_e_esperando_aceite_avisa_o_gestor_antes_do_prazo():
     alert = Directive.objects.get(topic="order.stale_new_alert", payload__order_ref=order.ref)
     assert alert.available_at < timer.available_at
     assert alert.payload["deadline_at"] == timer.payload["expires_at"]
-    assert timer.available_at - alert.available_at == timedelta(minutes=20)
+    # Pedido do dia, prazo de 5 min: o aviso sai a 1/3 dele (faltando 3min20s).
+    assert timer.available_at - alert.available_at == timedelta(minutes=5) * 2 / 3
 
     # Reagendar (o pagamento chegou) move o aviso junto, sem duplicar.
     _schedule_confirmation_timeout(order, config, action="cancel", source="order_commit")

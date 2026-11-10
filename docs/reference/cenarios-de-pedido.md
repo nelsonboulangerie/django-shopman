@@ -49,8 +49,8 @@ na §8.
 
 | Canal | Confirmação | Pagamento | Preparo começa | Avisos ao cliente |
 |---|---|---|---|---|
-| `pdv` | `immediate` (encomenda vira manual: `lifecycle.py:776`) | `external`; formas do PDV: R dinheiro, P Pix, C crédito, D débito, L link, E em conta | sozinho (`prep_start` padrão) | ManyChat → e-mail → SMS |
-| `web` (loja online) | `manual`, alerta de pedido parado em 10 min | Pix e cartão, `post_commit`, prazo 10 min | o ticket nasce no aceite e espera **o operador** dar "Iniciar preparo" na Cozinha (ou o atalho do Gestor, mesmo ato; `prep_start=operator`) | ManyChat → SMS → e-mail |
+| `pdv` | `immediate` (a encomenda também: quem registrou é o operador) | `external`; formas do PDV: R dinheiro, P Pix, C crédito, D débito, L link, E em conta | sozinho (`prep_start` padrão) | ManyChat → e-mail → SMS |
+| `web` (loja online) | `auto_cancel` (ADR-036): prazo de aceite de 5 min de loja aberta no pedido do dia e 60 min na encomenda (emenda de 09/11); aviso de pedido parado a 1/3 do prazo | Pix e cartão, `at_commit`, prazo 10 min | o ticket nasce no aceite e espera **o operador** dar "Iniciar preparo" na Cozinha (ou o atalho do Gestor, mesmo ato; `prep_start=operator`) | ManyChat → SMS → e-mail |
 | `whatsapp` | `manual`, alerta em 10 min | Pix e cartão, `at_commit`, prazo 10 min | sozinho | ManyChat → SMS → e-mail |
 | `ifood` | `manual`, alerta em 5 min, SLA do iFood 8 min | `external` | sozinho | nenhum (o telefone é a central do iFood) |
 
@@ -418,8 +418,11 @@ antecipada pelos marcos invertidos (horário − tempo de chegada) é pós-go-li
 5. **Pedido criado** (`new`), aviso `order_received`; o total visto é travado
    (`checkout.py:174-189`). O cliente vai a `/pedido/<ref>` (SSE).
 6. **Gestor:** som insistente, card na Entrada com "cancela sozinho em"; o operador **Aceita**
-   (`confirm_order`). Prazo de aceite: 30 min de loja aberta (`auto_cancel`); aos 10, o aviso
-   "se ninguém aceitar até HH:MM, ele é cancelado sozinho e o que o cliente pagou é devolvido".
+   (`confirm_order`). Prazo de aceite (`auto_cancel`, emenda de 09/11 à ADR-036): 5 min de loja
+   aberta no pedido do dia feito com a casa aberta, 60 min na encomenda para outro dia e no
+   pedido que chega com a casa fechada (`confirmation.preorder_timeout_minutes`). A 1/3 do prazo do pedido (1min40s no do dia, 20 min
+   na encomenda) sai o aviso "se ninguém aceitar até HH:MM, ele é cancelado sozinho e o que o
+   cliente pagou é devolvido", e a janela do aviso conta até a mesma hora.
    Recusou ou venceu: cancelado, Pix estornado ou cartão anulado, cliente avisado dos dois.
 7. **No aceite:** o cartão é capturado; o Pix já entrou.
 8. **Pago:** o ticket já está na Cozinha, esperando; o operador do posto dá **Iniciar preparo** (o
@@ -595,7 +598,7 @@ andamento da corrida no Gestor e no PDV (#1729), PDV do entregador (#1726).
 |---|---|---|---|---|
 | P1-3 · **resolvido #1733** | Aceite do iFood que não chegou é invisível; o iFood cancela em 8 min com a cozinha trabalhando | `handlers/ifood_status.py:74`; `order_queue.py:1673` | Card diz "O iFood ainda não recebeu o aceite" com **Tentar de novo**, até o sinal confirmar; o prazo continua contando no card | S |
 | P1-4 · **resolvido #1732** | Cartão autorizado sem aceite fica preso; a autorização vence no Stripe | `payment_timeout.py:62-63` | Alerta ao operador antes de a autorização vencer, com Aceitar/Recusar; ao recusar, a autorização é liberada | S |
-| P1-5 · **resolvido #1769** | Loja online: Pix nasce no aceite e vence em 10 min sem lembrete; pedido noturno morre | `lifecycle.py:477-491`; `payment_reminder` nunca agendado | Pergunta 1 = 1 (14/10): paga ao pedir, prazo de aceite de 30 min de loja aberta, estorno automático (ADR-036) | S |
+| P1-5 · **resolvido #1769** | Loja online: Pix nasce no aceite e vence em 10 min sem lembrete; pedido noturno morre | `lifecycle.py:477-491`; `payment_reminder` nunca agendado | Pergunta 1 = 1 (14/10): paga ao pedir, prazo de aceite de loja aberta (30 min na ADR-036; 5 no dia e 60 na encomenda desde a emenda de 09/11), estorno automático | S |
 | P1-6 · **resolvido #1723** | PDV, entrega fora da área: a revisão diz que não bloqueia, o fechamento recusa, a taxa manual não resolve | `pos.py:898-910`; `validation.py:270` | A regra respeita a taxa manual do PDV (o combinado da porta é do operador, como a própria revisão diz) | S |
 | P1-7 · **resolvido #1734** | Encomenda no dia vai à cozinha com Pix/link pendente; Pix em pagamento misto liquida pela palavra do operador | `pos.py:2199-2296`; `pos.py:3967-3971` | "Enviar à cozinha" pergunta antes de mandar pedido não pago; Pix no misto espera a confirmação do Pix (ou é recusado no misto, como no modo de teste) | S |
 | P1-8 · **resolvido #1727** | Encomenda de retirada: "Entregar" no PDV exige `ready`, que o PDV não marca | `operator_orders.py:1419-1427` | "Entregar" aceita pedido aceito/em preparo e conclui (fecha os tickets abertos com alarde no KDS) | S |

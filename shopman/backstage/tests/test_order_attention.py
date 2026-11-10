@@ -270,3 +270,91 @@ def test_answered_ifood_negotiation_waits_nobody(operator):
     queue = build_two_zone_queue(user=operator)
     card = next(card for card in queue.ifood_negotiation_orders if card.ref == order.ref)
     assert card.attention != "negotiation"
+
+
+# ── Prazo de aceite: 5 min no dia, 60 na encomenda (dono, 09/11/2026) ───────
+
+
+_WEB_PAYS_AT_ORDER = {
+    "confirmation": {"mode": "auto_cancel", "timeout_minutes": 5, "preorder_timeout_minutes": 60},
+    "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
+}
+
+
+def _accept_deadline_order(ref: str, *, delivery_date=None) -> Order:
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.lifecycle import _schedule_confirmation_timeout
+
+    Channel.objects.filter(ref="web").update(config=_WEB_PAYS_AT_ORDER)
+    order = _order(ref, payment={"method": "pix"})
+    if delivery_date is not None:
+        order.data["delivery_date"] = delivery_date.isoformat()
+        order.save(update_fields=["data"])
+    _schedule_confirmation_timeout(order, ChannelConfig.for_channel("web"), action="cancel", source="payment_confirmed")
+    return order
+
+
+def test_relogio_do_pedido_do_dia_conta_5_minutos(operator):
+    before = timezone.now()
+    order = _accept_deadline_order("ATT-DIA")
+    _, cards = _cards(operator)
+    card = cards[order.ref]
+
+    assert card.confirmation_action == "cancel"
+    deadline = datetime.fromisoformat(card.confirmation_deadline_iso)
+    assert before + timedelta(minutes=5) <= deadline <= timezone.now() + timedelta(minutes=5)
+    assert card.goal_minutes == 5
+
+
+def test_relogio_da_encomenda_conta_60_minutos(operator):
+    before = timezone.now()
+    order = _accept_deadline_order("ATT-ENC", delivery_date=timezone.localdate() + timedelta(days=1))
+    queue = build_two_zone_queue(user=operator)
+    card = next(card for card in queue.preorders if card.ref == order.ref)
+
+    assert card.confirmation_action == "cancel"
+    deadline = datetime.fromisoformat(card.confirmation_deadline_iso)
+    assert before + timedelta(minutes=60) <= deadline <= timezone.now() + timedelta(minutes=60)
+    assert card.attention == "confirm"
+    assert card.goal_minutes == 60
+
+
+def test_pix_pago_aos_7_minutos_nao_nasce_atrasado(operator):
+    """A meta conta do prazo agendado, não da criação: o prazo acabou de começar."""
+    Channel.objects.filter(ref="web").update(config=_WEB_PAYS_AT_ORDER)
+    order = _order("ATT-PIX7", payment={"method": "pix"})
+    Order.objects.filter(pk=order.pk).update(created_at=timezone.now() - timedelta(minutes=7))
+    order.refresh_from_db()
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.lifecycle import _schedule_confirmation_timeout
+
+    paid_at = timezone.now()
+    _schedule_confirmation_timeout(order, ChannelConfig.for_channel("web"), action="cancel", source="payment_confirmed")
+    _, cards = _cards(operator)
+    card = cards[order.ref]
+
+    since = datetime.fromisoformat(card.attention_since_iso)
+    assert card.goal_minutes == 5
+    assert since >= paid_at
+    # O número do card chega à meta junto com o "cancela sozinho em".
+    assert since + timedelta(minutes=card.goal_minutes) == datetime.fromisoformat(card.confirmation_deadline_iso)
+    elapsed = (timezone.now() - since).total_seconds()
+    assert elapsed / (card.goal_minutes * 60) < 0.8
+
+
+def test_meta_da_encomenda_agendada_na_vespera_continua_60_no_dia(operator):
+    """O timer contou 60 na véspera; lido no dia combinado, o card não vira "meta 5"."""
+    from unittest.mock import patch
+
+    yesterday_night = timezone.now() - timedelta(days=1)
+    with patch("django.utils.timezone.now", return_value=yesterday_night):
+        order = _accept_deadline_order("ATT-VESP", delivery_date=timezone.localdate() + timedelta(days=1))
+    assert order.data["delivery_date"] == timezone.localdate().isoformat()
+
+    _, cards = _cards(operator)
+    card = cards[order.ref]
+
+    assert card.goal_minutes == 60
+    assert card.goal_label == "meta 60"
+    deadline = datetime.fromisoformat(card.confirmation_deadline_iso)
+    assert datetime.fromisoformat(card.attention_since_iso) == deadline - timedelta(minutes=60)

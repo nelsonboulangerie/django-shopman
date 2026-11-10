@@ -249,8 +249,8 @@
           "overrides": {
             "confirmation": {
               "mode": "auto_cancel",
-              "timeout_minutes": 30,
-              "stale_new_alert_minutes": 10
+              "timeout_minutes": 5,
+              "preorder_timeout_minutes": 60
             },
             "payment": {
               "method": [

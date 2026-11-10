@@ -36,6 +36,7 @@ from shopman.backstage.projections.notification_receipts import (
     build_notification_receipts,
 )
 from shopman.backstage.projections.order_attention import (
+    AcceptanceTimer,
     PrepExpectation,
     QueueAwarenessProjection,
     build_queue_awareness,
@@ -1995,8 +1996,8 @@ def _ifood_accept_actions(order, sync, user) -> tuple[Action, ...]:
     ),)
 
 
-def _confirmation_deadlines(refs: list[str]) -> dict[str, tuple[str, str]]:
-    """{order_ref: (expires_at_iso, action)} dos timers de confirmação pendentes.
+def _confirmation_deadlines(refs: list[str]) -> dict[str, AcceptanceTimer]:
+    """{order_ref: (expires_at_iso, action, timeout_minutes)} dos timers de confirmação pendentes.
 
     Batch (sem N+1): busca os directives confirmation.timeout queued uma vez e
     filtra em Python (normalmente há poucos pendentes)."""
@@ -2004,7 +2005,7 @@ def _confirmation_deadlines(refs: list[str]) -> dict[str, tuple[str, str]]:
         return {}
     from shopman.orderman.models import Directive
 
-    out: dict[str, tuple[str, str]] = {}
+    out: dict[str, AcceptanceTimer] = {}
     # Filtra no DB pelos refs em questão (não traz TODOS os timers queued) — casa
     # a query ao conjunto pequeno de pedidos NEW mesmo se a fila acumular.
     directives = (
@@ -2016,7 +2017,13 @@ def _confirmation_deadlines(refs: list[str]) -> dict[str, tuple[str, str]]:
     for d in directives:
         ref = (d.payload or {}).get("order_ref")
         if ref and ref not in out:
-            out[ref] = (str((d.payload or {}).get("expires_at") or ""), str((d.payload or {}).get("action") or ""))
+            payload = d.payload or {}
+            minutes = payload.get("timeout_minutes")
+            out[ref] = AcceptanceTimer(
+                str(payload.get("expires_at") or ""),
+                str(payload.get("action") or ""),
+                minutes if isinstance(minutes, int) and not isinstance(minutes, bool) and minutes > 0 else 0,
+            )
     return out
 
 
@@ -2307,7 +2314,10 @@ def _build_card(
         kitchen=_kitchen_progress(order, (kitchen_chips or {}).get(order.ref)),
         courier_reminder=courier_reminder(order) if order.status == Order.Status.PREPARING else None,
     )
-    attention = card_attention(order, card, channel_config)
+    attention = card_attention(
+        order, card, channel_config,
+        acceptance_timer=deadline if isinstance(deadline, AcceptanceTimer) else None,
+    )
     if expectation is not None:
         eta = ready_eta(order, expectation, channel_config, now=now)
         if eta is not None:

@@ -202,11 +202,15 @@ class StaleNewOrderAlertHandler:
         try:
             from shopman.shop.adapters import alert as alert_adapter
 
+            # Com prazo de aceite, o título da janela ("Responda em…") conta até a
+            # MESMA hora do corpo: o ``respond_by`` é o prazo do pedido, não a régua
+            # da casa (``alert_specs``), que contava 5 min da criação do aviso.
             alert_adapter.create(
                 "stale_new_order",
                 "warning",
                 message,
                 order_ref=order.ref,
+                respond_by=deadline,
             )
         except Exception as exc:
             raise DirectiveTransientError(str(exc)) from exc

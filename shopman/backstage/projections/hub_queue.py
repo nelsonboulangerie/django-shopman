@@ -213,7 +213,7 @@ def _orders(user, base: str, label: str, now: datetime, out: _Collected) -> None
     for order in to_accept:
         elapsed = (now - order.created_at).total_seconds()
         slack = ACCEPT_TARGET_SECONDS - elapsed
-        deadline_iso, deadline_action = deadlines.get(order.ref) or order_queue._external_deadline(order) or ("", "")
+        deadline_iso, deadline_action = (deadlines.get(order.ref) or order_queue._external_deadline(order) or ("", ""))[:2]
         deadline = _parse_iso(deadline_iso)
         due_label = ""
         if deadline is not None:
