@@ -72,10 +72,14 @@ SCHEMA_VERSION = 2
 #: Deploy Images nunca (há teste que lê o workflow e cobra isso).
 PRODUCTION_SUFFIX = "-prod"
 
-#: Modos em que o manifesto prova que o alpha rodou este release set. Fora
-#: deles (`production_pinned`: o app é produção e o push não implantou nada) o
-#: release não esteve no alpha e não pode ser promovido.
-ALPHA_DEPLOY_MODES = frozenset({"single_deployment", "deploy_on_push", "nothing_published"})
+#: Os modos que o Deploy Images grava quando o run chegou ao fim do job
+#: `manifest`. Não existe alpha depois do go-live (decisão do dono, 10/11/2026):
+#: com o app nas tags `-prod` o push só constrói (`production_pinned`) e o
+#: candidato vai à produção pela promoção. Modo ausente ou desconhecido é um
+#: manifesto que ninguém sabe ler, e falha fechado.
+PROMOTABLE_DEPLOY_MODES = frozenset(
+    {"single_deployment", "deploy_on_push", "nothing_published", "production_pinned"}
+)
 
 REGISTRY = "nelsonboulangerie"
 REPOSITORY = "shopman"
@@ -385,8 +389,8 @@ def validate(manifest: dict) -> list[str]:
     if manifest.get("release_set_error"):
         erros.append(f"release set incompleto no build: {manifest['release_set_error']}")
     mode = manifest.get("deploy_mode")
-    if mode not in ALPHA_DEPLOY_MODES:
-        erros.append(f"deploy_mode={mode!r}: o alpha não rodou este release set")
+    if mode not in PROMOTABLE_DEPLOY_MODES:
+        erros.append(f"deploy_mode={mode!r}: o Deploy Images não fechou este manifesto")
     release_set = manifest.get("release_set")
     if not isinstance(release_set, dict):
         erros.append("manifesto sem release_set")

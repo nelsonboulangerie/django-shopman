@@ -3,12 +3,15 @@
 **Estado:** em execução. R0 e R1 entregues em 02/11/2026 (contrato vivo em
 `docs/reference/release-contract.md`, ADR-043); R2 entregue em 09/11/2026 no código
 (`promote-release.yml`, runbook `docs/runbooks/promover-release.md`), esperando os passos
-do dono para ter um ambiente de produção onde chegar; R3 em diante aberto.  
+do dono para ter um ambiente de produção onde chegar; R3 em diante aberto. **Sem alpha
+depois do go-live** (decisão do dono, 10/11/2026): o app vivo vira a produção e a promoção
+sai direto do `main`, com dry-run antes e verificação depois (invariante 2, D1, D2 e ADR-043
+emendados).  
 **Prioridade:** P0 antes do primeiro ambiente de produção com operação real  
 **Dono:** Plataforma Shopman  
 **Piloto:** Marketing V2  
 **Escopo:** nove surfaces Nuxt, `operator-kit`, `operator-router`, Django/BFF,
-workers, migrations, imagens e promoção alpha → produção
+workers, migrations, imagens e promoção `main` → produção
 
 ## 1. Objetivo
 
@@ -26,9 +29,9 @@ PR + gates do componente afetado
       ↓
 build único e imutável no main
       ↓
-alpha automático + smoke do artefato exato
+dry-run da promoção (plano do release set, sem escrever)
       ↓
-promoção do MESMO digest para produção
+promoção do MESMO digest para produção + smoke do artefato exato
       ↓
 coorte interna → coorte operacional → padrão
       ↓
@@ -85,7 +88,7 @@ O gap é de promoção e convivência segura:
 
 ### D1 — construir uma vez, promover sem reconstruir
 
-O artefato que passou no alpha é o artefato que chega à produção. Promoção deve
+O artefato que a CI construiu é o artefato que chega à produção. Promoção deve
 retaggear o manifest OCI/digest já existente; nunca rodar outro `docker build`
 para “a mesma” versão.
 
@@ -93,19 +96,24 @@ Para cada componente publicado:
 
 ```text
 <componente>-<sha>  ── digest imutável, candidato
-<componente>        ── alias móvel atual do alpha, durante a transição
+<componente>        ── alias móvel do app vivo até o go-live (o alpha de hoje)
 <componente>-prod   ── alias móvel de produção, atualizado só por promoção
 ```
 
 O nome final das tags pode mudar na implementação, mas a separação
-candidato/alpha/produção é obrigatória.
+candidato/produção é obrigatória.
 
 ### D2 — `main` produz candidato; produção exige promoção explícita
 
-- Merge em `main` continua implantando automaticamente no alpha.
-- Produção não acompanha `main` automaticamente.
-- Produção recebe uma promoção de release já verde no alpha, por workflow com
-  GitHub Environment protegido e aprovação do responsável.
+- Até o go-live, merge em `main` continua implantando automaticamente no app vivo
+  (o alpha de hoje). Depois do go-live não há alpha (decisão do dono, 10/11/2026):
+  o app vivo é a produção.
+- Produção não acompanha `main` automaticamente: o push só constrói o candidato.
+- Produção recebe a promoção de um release do `main` (fila de merge com os gates do
+  PR, Deploy Images verde, release set completo), por workflow com GitHub
+  Environment protegido e aprovação do responsável. O dry-run roda antes de toda
+  promoção; a verificação depois (`/health/release` + smoke de produção) decide se
+  ela ficou.
 - Uma correção urgente segue o mesmo caminho, apenas com gates e janela
   proporcionais ao risco; “urgente” não autoriza rebuild diferente.
 
@@ -181,7 +189,11 @@ Para pagamento, estoque, impressão, notificações e publicação em plataforma
 
 1. O checkout principal nunca é área de escrita; uma frente = worktree = branch
    = PR.
-2. Produção só recebe digest que esteve ativo e verde no alpha.
+2. Produção só recebe digest construído uma vez pelo Deploy Images a partir de um
+   commit do `main`, com release set completo e dry-run limpo; e a promoção só
+   termina verde com o mesmo digest no ar e o smoke de produção passando. (Até
+   10/11/2026 dizia "verde no alpha"; o dono decidiu que não há alpha depois do
+   go-live.)
 3. O release manifest é condição de promoção; ausência ou digest ilegível falha
    fechado.
 4. V1 continua funcionando com backend novo durante toda a janela de canário.
@@ -209,7 +221,7 @@ Para pagamento, estoque, impressão, notificações e publicação em plataforma
 
 | Classe de mudança | Exemplo | Caminho mínimo | Rollback primário |
 | --- | --- | --- | --- |
-| UI local | layout, copy, fluxo sem contrato novo | gates da surface → alpha → coorte | flag V1/V2 |
+| UI local | layout, copy, fluxo sem contrato novo | gates da surface → promoção → coorte | flag V1/V2 |
 | Projection/API aditiva | campo ou Action nova | backend compatível primeiro → V2 depois | V1 continua lendo contrato antigo |
 | Mutation/efeito externo | publicar, cobrar, imprimir, baixar estoque | idempotência + receipt/outbox + canário nominal | kill switch + reconciliação |
 | Schema expand/backfill | campo/índice/dado novo | ADR-015 + staging com dado representativo | código anterior; coluna fica órfã |
@@ -277,27 +289,28 @@ versão e piloto funcional num PR gigante.
 - O manifest referencia somente digests imutáveis existentes no registry.
 - Não há segredo, nome de token ou configuração sensível na resposta.
 
-### Fase R2 — separar candidato, alpha e produção
+### Fase R2 — separar candidato e produção
 
 **Entregas**
 
 - evoluir `deploy-images.yml` para sempre produzir candidato imutável e o
   manifesto completo do release set;
-- manter alpha contínuo com os mecanismos atuais de digest, drift e smoke;
+- manter o alpha contínuo até o go-live com os mecanismos atuais de digest, drift e
+  smoke (depois dele não há alpha: o app vivo é a produção);
 - criar workflow `promote-release.yml`, manual e protegido, que:
-  1. recebe um Release ID verde;
+  1. recebe um Release ID do `main`;
   2. valida ancestralidade e presença dos digests;
   3. retaggeia os mesmos manifests para as tags de produção;
   4. registra GitHub Deployment/Release;
   5. espera o deployment correto pelo digest;
   6. roda smoke de produção;
-- produção usa tags próprias e nunca `deploy_on_push` das tags do alpha;
+- produção usa tags próprias e nunca `deploy_on_push` das tags móveis;
 - o spec vivo é migrado com `propose`, preservando secrets, antes de habilitar
   qualquer tag nova.
 
 **Gate de aceite**
 
-- Digest no alpha = digest promovido para produção.
+- Digest construído pelo `main` = digest promovido para produção.
 - Rebuild no workflow de promoção é tecnicamente impossível.
 - Promoção com manifest ausente, componente faltando ou smoke vermelho para.
 - Push comum em `main` não altera produção.
@@ -317,7 +330,8 @@ versão e piloto funcional num PR gigante.
 
 **Gate de aceite**
 
-- Drill em alpha reverte para o release anterior sem build.
+- Drill reverte para o release anterior sem build (sem alpha, o drill é em
+  produção numa janela calma, ou o dry-run do rollback).
 - Depois do rollback, endpoint de versão e registry exibem os digests esperados.
 - Recovery time medido e registrado: meta ≤ 2 min para flag e ≤ 10 min para
   rollback de componente, sem contar restore de banco.
@@ -361,7 +375,7 @@ versão e piloto funcional num PR gigante.
 - nenhum aumento de backlog stuck ou efeito externo `unknown`;
 - zero restart inesperado dos grupos;
 - uma jornada crítica concluída por app afetado;
-- soak mínimo: 24 h no alpha e, para apps do chão, pelo menos um pico operacional
+- soak mínimo: 24 h em produção na coorte `internal` e, para apps do chão, pelo menos um pico operacional
   representativo.
 
 ### Fase R6 — piloto Marketing V2
@@ -442,7 +456,8 @@ sobreposição com PRs/worktrees ativos.
 11. Side effect não duplica em retry, troca de variante ou rollback.
 12. Migration contract bloqueia rollback incompatível.
 13. Spec change usa snapshot vivo/propose e preserva secrets.
-14. Smoke falho bloqueia promoção e deixa alpha/produção identificáveis.
+14. Smoke falho fecha a promoção como falha e deixa release anterior e promovido
+    identificáveis.
 
 ## 9. Fora de escopo
 
@@ -457,8 +472,9 @@ sobreposição com PRs/worktrees ativos.
 
 ## 10. Definição de pronto do WP completo
 
-- [ ] Merge em `main` implanta alpha, mas não produção.
-- [ ] Produção recebe somente promoção de digest previamente verde no alpha.
+- [ ] Merge em `main` constrói o candidato, mas não altera produção.
+- [ ] Produção recebe somente promoção de digest construído pelo `main`, com dry-run
+      antes e verificação depois.
 - [ ] Cada ambiente informa Release ID, SHA e digests ativos.
 - [ ] Release set anterior é recuperável por um workflow sem rebuild.
 - [ ] Coorte e kill switch funcionam sem deploy.
@@ -466,7 +482,7 @@ sobreposição com PRs/worktrees ativos.
 - [ ] Gates reconhecem o raio de explosão dos dois grupos de operador.
 - [ ] Smokes cobrem jornada mínima dos nove apps, não apenas liveness.
 - [ ] Marketing V2 concluiu dark launch, piloto, default e retirada de V1.
-- [ ] Um drill documentado prova promoção e rollback ponta a ponta no alpha.
+- [ ] Um drill documentado prova promoção e rollback ponta a ponta.
 - [ ] Runbooks, ADRs e contratos refletem o mecanismo real.
 
 ## 11. Referências obrigatórias para cada executor

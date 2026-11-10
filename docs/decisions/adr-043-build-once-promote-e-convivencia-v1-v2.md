@@ -2,6 +2,7 @@
 
 **Data:** 2026-11-02
 **Status:** Aceito
+**Emenda:** 2026-11-10, item 4 (sem alpha depois do go-live, decisão do dono)
 **Escopo:** `.github/workflows/deploy-images.yml`, Dockerfiles, superfícies Nuxt, `operator-kit`, Watchman
 **Origem:** WP-RELEASE-01 (`docs/plans/WP-RELEASE-01-versoes-de-apps-sem-quebra.md`), R0. Decisão do dono de 23/10/2026 (COORDENACAO-GO-LIVE §6): R0+R1 entram antes do go-live.
 
@@ -29,7 +30,17 @@ quebrar a versão estável.
 3. **Release ID é nome de composição, não SemVer.** `AAAAMMDD-HHMM-<sha curto>`, hora do
    commit em UTC: determinístico por commit, ordenável, legível ao telefone.
 4. **Main produz candidato; produção exige promoção explícita** (R2): workflow manual,
-   GitHub Environment protegido, mesmo digest do alpha. Push comum nunca altera produção.
+   GitHub Environment protegido, o mesmo digest que o `main` construiu. Push comum nunca
+   altera produção.
+   - **Emenda de 10/11/2026 (decisão do dono: "Sem alpha").** Depois do go-live não existe
+     app alpha: o app vivo vira a produção e a promoção sai direto do `main`. O que antes
+     era "verde no alpha" passa a ser: commit no `main` (só entra pela fila de merge, com
+     os gates do PR), Deploy Images verde com o release set completo, digests conferidos
+     no registry. O ensaio é o dry-run (o job `plan`, que roda antes de toda promoção); a
+     prova é depois: `/health/release` de cada componente com o commit promovido e o
+     smoke de produção. Até o go-live o app vivo segue sendo o alpha nas tags móveis.
+     Alternativa recusada: um app alpha separado, com banco próprio e custo mensal (a DO
+     tem teto de custo, e cada componente novo é custo fixo).
 5. **V1/V2 de interface nasce dentro da superfície existente**, em rota/árvore própria,
    consumindo os mesmos contratos canônicos. Segunda surface ou segundo processo só com
    incompatibilidade técnica provada, ADR própria, custo medido e data para apagar a
@@ -52,6 +63,11 @@ quebrar a versão estável.
   entre os dois), nunca igualdade; a tabela de caminhos é a do `deploy_components.py`.
 - Imagem construída fora do workflow fica sem identidade e a sonda reprova: é o sinal de
   que algo foi ao ar por fora da esteira.
+- Sem alpha, nenhum release é ensaiado sob tráfego antes da produção. O que protege a
+  operação é o tamanho do passo: build único (o que vai ao ar é byte a byte o que a CI
+  construiu), coorte e kill switch de V2 sem deploy (R4), e rollback por release set sem
+  rebuild (R3). O smoke que o push dispara contra o app vivo depois do go-live prova o
+  release ANTERIOR, e por isso a promoção não o consulta.
 - V1/V2 permanente é dívida: toda flag de versão carrega `remove_after`, e a R4 faz a CI
   reprovar flag vencida.
 
@@ -60,5 +76,8 @@ quebrar a versão estável.
 - **SemVer do monorepo.** Esconderia que os quatro componentes andam em commits diferentes.
 - **Identidade no bundle do cliente (build arg no `nuxt build`).** Custaria o cache dos
   grupos de operador a cada push; e o que importa ao suporte é o servidor que respondeu.
-- **Rebuild na promoção.** Produziria um artefato que nunca passou pelo alpha.
+- **Rebuild na promoção.** Produziria um artefato que nunca passou pela CI.
+- **App alpha separado depois do go-live** (10/11/2026). Ensaiaria cada release sob
+  tráfego sintético, ao custo de um segundo app com banco próprio. O dono escolheu a
+  promoção direto do `main`.
 - **Segunda surface por versão.** Duplica auth, BFF, deploy e custo; vira exceção com ADR.

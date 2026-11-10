@@ -1,7 +1,12 @@
 name: Promote Release
 
-# Promove para PRODUÇÃO um release que já esteve ativo e verde no alpha, sem
-# reconstruir nada (WP-RELEASE-01 R2, ADR-043, docs/reference/release-contract.md).
+# Promove para PRODUÇÃO um release do `main`, sem reconstruir nada
+# (WP-RELEASE-01 R2, ADR-043, docs/reference/release-contract.md).
+#
+# Não há alpha depois do go-live (decisão do dono, 10/11/2026): o app atual vira
+# a produção e a promoção sai direto do `main`. O ensaio é o job `plan` (o
+# dry-run, que roda antes de TODA promoção, em qualquer modo); a prova é a
+# verificação depois (identidade pelo `/health/release` + smoke de produção).
 #
 # A ordem é o contrato, e cada passo para a promoção se falhar:
 #   1. valida ancestralidade e digests (job `plan`, sem escrever nada);
@@ -33,7 +38,7 @@ name: Promote Release
   workflow_dispatch:
     inputs:
       release_id:
-        description: "Release ID verde no alpha (AAAAMMDD-HHMM-<sha7>)"
+        description: "Release ID do main (AAAAMMDD-HHMM-<sha7>)"
         required: true
         type: string
       mode:
@@ -90,7 +95,7 @@ jobs:
             --name release-manifest --dir manifesto
           cat manifesto/published.json
 
-      - name: Validar (ancestralidade, alpha verde, digests, proteção)
+      - name: Validar (ancestralidade, digests, proteção)
         env:
           GH_TOKEN: ${{ github.token }}
           DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
