@@ -132,3 +132,41 @@ def test_pedido_para_o_dia_da_fornada_fecha_e_fica_com_a_vaga_da_sacola():
     hold = Hold.objects.get(pk=int(hold_id.split(":")[1]))
     assert hold.is_active and hold.quant.target_date == batch_date
     assert hold.metadata["reference"] == f"order:{order.ref}"
+
+
+def test_fornada_extra_antes_da_que_a_sacola_espera_libera_a_data_e_o_pedido_muda_de_fornada():
+    """Dono, 10/11/2026: a fornada da sacola não é piso absoluto."""
+    from shopman.offerman.models import Product
+    from shopman.orderman.models import Order
+    from shopman.stockman.models import Hold
+    from shopman.stockman.service import Stock
+
+    from shopman.storefront.tests._pickup_today import today_pickup_slot
+
+    today = timezone.localdate()
+    waited, extra = today + timedelta(days=3), today + timedelta(days=2)
+    _world(waited)
+    client, hold_id = _client_with_kuro_pan_waiting(waited)
+    today_pickup_slot()
+    # Depois de a sacola entrar na fila, a produção planeja uma fornada antes.
+    Stock.plan(Decimal("4"), Product.objects.get(sku=SKU), extra)
+
+    cart = client.get("/api/v1/storefront/cart/").json()
+    [line] = cart["cart"]["items"]
+    assert line["planned_for_date"] == waited.isoformat()
+    assert line["earlier_available_date"] == extra.isoformat()
+
+    # Um dia antes da fornada extra continua fechado.
+    refused = _checkout(client, delivery_date=today + timedelta(days=1), slot="slot-12")
+    assert refused.status_code == 400, refused.content[:600]
+    assert refused.json()["field"] == "delivery_date"
+
+    resp = _checkout(client, delivery_date=extra, slot="slot-12")
+
+    assert resp.status_code == 201, resp.content[:600]
+    order = Order.objects.get()
+    [entry] = order.data["hold_ids"]
+    held = Hold.objects.get(pk=int(entry["hold_id"].split(":")[1]))
+    assert held.quant.target_date == extra
+    # A vaga da fornada que a sacola esperava volta para a fila.
+    assert not Hold.objects.get(pk=int(hold_id.split(":")[1])).is_active

@@ -7,6 +7,12 @@ nomeia o item e o dia da fornada, e aponta o campo da data.
 
 Só contam reservas de itens DESTE pedido: reserva tardia de SKU que já saiu da
 sacola é sobra não reconciliada, e não recusa nada.
+
+A fornada da sacola não é piso absoluto (dono, 10/11/2026): se depois de o item
+entrar na fila surgir saldo de verdade numa data anterior (fornada extra, pão
+pronto), o pedido para essa data vale, e a reserva muda para lá no fechamento.
+Saldo de verdade é quantidade reservável naquele dia; registro de demanda sem
+lote não conta.
 """
 
 from __future__ import annotations
@@ -42,19 +48,88 @@ def late_holds_of_order(session_key: str, order_day, items) -> list[tuple[str, s
     return [row for row in too_late if row[1] in order_skus]
 
 
-def order_date_before_batch_refusal(session_key: str, order_day, items):
+def order_date_before_batch_refusal(session_key: str, order_day, items, *, channel_ref: str | None = None):
     """A recusa para ``order_day``, ou ``None`` quando a data serve.
 
     A mesma pergunta do gate de commit, para quem valida a data ANTES de fechar
     (a concierge, ao gravar retirada ou entrega). Devolve o ``ValidationError``
-    pronto (item, dia da fornada, campo da data).
+    pronto (item, dia da fornada, campo da data). Com ``channel_ref``, a data
+    anterior à fornada da sacola serve quando o dia tem saldo para os itens que
+    esperavam (o fechamento move a reserva para lá).
     """
     if not session_key or order_day is None:
         return None
     too_late = late_holds_of_order(session_key, order_day, items)
     if not too_late:
         return None
+    if channel_ref and day_has_room({sku for _hold, sku, _date in too_late}, order_day, items, channel_ref):
+        return None
     return refusal_error(items, too_late, order_day)
+
+
+def day_has_room(skus, day, items, channel_ref: str) -> bool:
+    """``day`` tem saldo reservável para TODA a quantidade destes SKUs no pedido?
+
+    Lê o estoque do dia no recorte do canal, a mesma leitura da fila de espera.
+    A reserva que a sessão tem na fornada posterior não pesa nesse dia. Qualquer
+    dúvida (leitura falhou, item pausado, sem saldo) é "não": a data segue fechada.
+    """
+    needed = _needed_by_sku(items, set(skus))
+    if not needed:
+        return False
+    try:
+        from shopman.shop.services import availability, waitlist
+
+        readings = availability.stock_on_dates(
+            list(needed), [day], **waitlist.scope_kwargs(channel_ref),
+        ).get(day) or {}
+    except Exception:
+        logger.debug("order_date_before_batch.day_has_room degraded day=%s", day, exc_info=True)
+        return False
+    for sku, qty in needed.items():
+        reading = readings.get(sku) or {}
+        if reading.get("is_paused"):
+            return False
+        if Decimal(str(reading.get("total_promisable") or 0)) < qty:
+            return False
+    return True
+
+
+def earliest_day_with_room(sku: str, qty, batch_day, *, channel_ref: str, first_day=None):
+    """A data mais cedo, antes de ``batch_day``, em que a linha inteira tem saldo; ou ``None``.
+
+    Candidatas: ``first_day`` (o primeiro dia em que a casa atende) e as fornadas
+    planejadas do SKU antes da que a sacola espera.
+    """
+    try:
+        from shopman.shop.services import waitlist
+
+        first_day = first_day or timezone.localdate()
+        candidates = sorted(
+            {first_day, *waitlist.batch_dates_until([sku], batch_day)}
+        )
+    except Exception:
+        logger.debug("order_date_before_batch.earliest_day_with_room degraded sku=%s", sku, exc_info=True)
+        return None
+    line = [{"sku": sku, "qty": qty}]
+    for day in candidates:
+        if first_day <= day < batch_day and day_has_room({sku}, day, line, channel_ref):
+            return day
+    return None
+
+
+def _needed_by_sku(items, skus: set[str]) -> dict[str, Decimal]:
+    """Quanto o pedido precisa de cada um destes SKUs, abrindo os combos."""
+    needed: dict[str, Decimal] = {}
+    for item in items or ():
+        sku = _line_value(item, "sku")
+        if not sku:
+            continue
+        qty = Decimal(str(_line_value(item, "qty") or 0))
+        for comp_sku, comp_qty in _components(sku, qty):
+            if comp_sku in skus:
+                needed[comp_sku] = needed.get(comp_sku, Decimal("0")) + comp_qty
+    return needed
 
 
 def batch_day_phrase(batch_date, *, today=None) -> str:
@@ -108,12 +183,20 @@ def _line_value(line, key: str):
 
 def _component_skus(sku: str) -> set[str]:
     """Os SKUs que um combo reserva (o próprio SKU quando não é combo)."""
+    return {comp_sku for comp_sku, _qty in _components(sku, Decimal("1"))}
+
+
+def _components(sku: str, qty: Decimal) -> list[tuple[str, Decimal]]:
+    """``(SKU, quantidade)`` do que a linha reserva (a própria linha quando não é combo)."""
     try:
-        return {comp["sku"] for comp in get_adapter("catalog").expand_bundle(sku, Decimal("1"))}
+        return [
+            (comp["sku"], Decimal(str(comp["qty"])))
+            for comp in get_adapter("catalog").expand_bundle(sku, qty)
+        ]
     except Exception as exc:
         if getattr(exc, "code", "") != "NOT_A_BUNDLE":
             logger.exception("order_date_before_batch: erro ao abrir o combo sku=%s", sku)
-        return {sku}
+        return [(sku, qty)]
 
 
 def _product_name(sku: str) -> str:
