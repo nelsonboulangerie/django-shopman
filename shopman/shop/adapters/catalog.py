@@ -1,7 +1,8 @@
 """
 Internal catalog adapter — delegates to Offerman (Core).
 
-Core: CatalogService (pricing, bundle expansion), Product, Listing, ListingItem, CollectionItem
+Core: CatalogService (bundle expansion), Product, Listing, ListingItem, CollectionItem.
+Preço não passa por aqui: lista e faixa são ``CatalogService.unit_prices``.
 """
 
 from __future__ import annotations
@@ -9,15 +10,6 @@ from __future__ import annotations
 import logging
 
 logger = logging.getLogger(__name__)
-
-
-def get_price(sku: str, qty: int = 1, channel: str | None = None) -> int:
-    """Preço em centavos. Delega para CatalogService.price()."""
-    from decimal import Decimal
-
-    from shopman.offerman.service import CatalogService
-
-    return CatalogService.price(sku, qty=Decimal(str(qty)), channel=channel)
 
 
 def expand_bundle(sku: str, qty) -> list[dict]:

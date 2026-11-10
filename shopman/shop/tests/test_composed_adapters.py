@@ -8,8 +8,6 @@ availability. (CATALOG_BACKEND is wired live; SKU_VALIDATOR stays Noop until B5.
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 import pytest
 from shopman.buyman.models import Material
 from shopman.offerman.models import Product
@@ -47,13 +45,16 @@ class TestComposedCatalogBackend:
 
         assert backend.get_product("NOPE") is None
 
-    def test_delegates_other_methods_to_offerman(self, croissant):
+    def test_contract_is_only_get_product(self):
+        """Contrato fechado: nada de delegação implícita (preço não passa por aqui)."""
+        from shopman.offerman.protocols import CatalogBackend
+
         from shopman.shop.adapters.catalog_backend import ComposedCatalogBackend
 
         backend = ComposedCatalogBackend()
-        # get_price is an Offerman/sellable concern reached via __getattr__ delegation.
-        price = backend.get_price("CROISSANT", qty=Decimal("1"))
-        assert price.total_price_q == 800
+        assert isinstance(backend, CatalogBackend)
+        assert not hasattr(backend, "get_price")
+        assert not hasattr(backend, "expand_bundle")
 
 
 class TestComposedSkuValidator:
