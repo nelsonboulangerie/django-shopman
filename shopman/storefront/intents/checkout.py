@@ -55,6 +55,19 @@ def _validate_preorder(
         errors["delivery_date"] = refusal
         return errors
 
+    # Um pedido, uma data: a sacola presa a uma fornada que só sai depois da
+    # data escolhida. O gate de commit recusa de qualquer jeito; dizer aqui é
+    # dizer antes da cotação, com o item e o dia.
+    if session_key:
+        from shopman.shop.policies.order_date_before_batch import order_date_before_batch_refusal
+
+        batch_refusal = order_date_before_batch_refusal(
+            session_key, chosen_date, list(cart_lines or []),
+        )
+        if batch_refusal is not None:
+            errors["delivery_date"] = batch_refusal.message
+            return errors
+
     lead_time_error = _validate_lead_time(
         chosen_date,
         today=today,

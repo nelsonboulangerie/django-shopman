@@ -592,6 +592,11 @@ class TestWaitlistReservationIntegrity:
             status="new",
             total_q=1000,
             snapshot={"items": [{"sku": sku, "qty": "1", "price_q": 1000}]},
+            # Um pedido, uma data: o pedido da fila é para o dia da fornada. Sem
+            # data ele seria um pedido de hoje, e o gate de commit recusa levar
+            # a reserva de amanhã para hoje (beta 09/11). Para o dia da fornada
+            # o pedido ADOTA a reserva da sacola: a vaga na fila é a mesma.
+            data={"delivery_date": tomorrow.isoformat()},
         )
         result = availability.reserve(
             sku=sku,

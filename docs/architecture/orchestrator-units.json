@@ -5693,7 +5693,9 @@
             "_reserve_checked_status",
             "_reserve_listing_gate_error",
             "check",
-            "reserve"
+            "reserve",
+            "session_holds_after",
+            "session_holds_on_batch"
           ]
         }
       ],
@@ -16380,7 +16382,8 @@
             "_ORDER_HOLD_BACKSTOP_HOURS",
             "_ORDER_HOLD_PRIORITY",
             "_insufficient_supply_error",
-            "_sku_known_to_catalog"
+            "_sku_known_to_catalog",
+            "_session_holds_on_batch"
           ]
         }
       ],
@@ -16435,6 +16438,53 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_orchestrator_entrypoints.py::test_stock_sellability_gate_accepts_an_unlisted_unknown_sku"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "stock.order-date-before-batch-gate",
+      "question": "A data do pedido é anterior à fornada a que alguma reserva da sacola, de item do pedido, está presa?",
+      "owner": "stock.order-date-before-batch-gate",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.order_date_before_batch:order_date_before_batch_refusal",
+      "authoritative_symbols": [
+        "shopman.shop.policies.order_date_before_batch:order_date_before_batch_refusal"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/order_date_before_batch.py",
+          "symbols": [
+            "ORDER_DATE_BEFORE_BATCH",
+            "_WEEKDAYS",
+            "_component_skus",
+            "_line_value",
+            "_product_name",
+            "batch_day_phrase",
+            "late_holds_of_order",
+            "logger",
+            "order_date_before_batch_refusal",
+            "refusal_error"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [
+        "offerman",
+        "orderman"
+      ],
+      "ports": [
+        "adapter:catalog"
+      ],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_order_date_before_batch.py::TestRecusaAntesDoFechamento::test_data_anterior_a_fornada_devolve_a_recusa_com_item_e_dia"
       ],
       "test_gap_reason": null,
       "policy": true,

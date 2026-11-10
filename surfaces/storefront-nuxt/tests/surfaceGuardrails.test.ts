@@ -381,10 +381,15 @@ describe('surface UX guardrails', () => {
     expect(checkout).not.toContain('<AddressLabelSheet')
     expect(checkout).not.toContain('findNewlySavedAddress')
     expect(checkout).toContain('fieldErrors.delivery_date')
-    // Default = primeira data disponível do backend (nunca um "hoje" local
-    // escolhido antes da projection lazy terminar).
+    // Default = primeira data disponível do backend a partir da fornada que a
+    // sacola espera (nunca um "hoje" local escolhido antes da projection lazy
+    // terminar, nem "Hoje" para o pão de quarta: `initialCheckoutDate`).
     expect(checkout).toContain('if (!checkout.value) return')
-    expect(checkout).toContain('checkout.value.available_dates?.[0]')
+    expect(checkout).toContain('initialCheckoutDate(')
+    expect(checkout).toContain('checkout.value.available_dates || []')
+    // O motivo do "Hoje" apagado é lido junto com as caixas de data.
+    expect(checkout).toContain('id="checkout-batch-floor"')
+    expect(checkout).toContain(":aria-describedby=\"batchFloorNotice ? 'checkout-batch-floor' : undefined\"")
     expect(checkout).toContain("watch(checkout, initializeDeliveryDate, { flush: 'post' })")
     expect(checkout).toContain('closed_weekdays')
     expect(checkout).not.toContain("type Step = 'identity'")
