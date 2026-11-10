@@ -358,7 +358,7 @@ def decision_from_availability(
     )
 
 
-def promise_decision_for_sku(
+def promise_for_sku(
     sku: str,
     qty: Decimal,
     *,

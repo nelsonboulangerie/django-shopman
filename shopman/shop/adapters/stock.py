@@ -1011,9 +1011,9 @@ def get_promise_decision(
     allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
 ):
     """Return Stockman's explicit operational promise decision for a SKU."""
-    from shopman.stockman.services.availability import promise_decision_for_sku
+    from shopman.stockman.services.availability import promise_for_sku
 
-    return promise_decision_for_sku(
+    return promise_for_sku(
         sku,
         qty,
         target_date=target_date,
