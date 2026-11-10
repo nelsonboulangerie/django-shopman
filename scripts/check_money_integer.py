@@ -2,9 +2,11 @@
 Falha se um campo de modelo com nome monetário usar FloatField ou DecimalField.
 """
 from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parents[1]
 MONETARY = re.compile(r"\w*(?:_q|price|amount|cost|total|value|change|difference|balance|discount|fee|margin)\w*")
 FLOAT = re.compile(r"models\.(FloatField|DecimalField)\(")

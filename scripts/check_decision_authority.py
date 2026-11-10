@@ -4,9 +4,11 @@ falha se (1) um símbolo de decisão já-duplicado ainda estiver definido fora d
 (2) uma decisão canônica estiver definida em mais de um lugar.
 """
 from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parents[1]
 CANONICAL = {
     "promise_for_sku": "packages/stockman",

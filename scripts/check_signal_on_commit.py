@@ -4,9 +4,11 @@ transaction.on_commit em janela adjacente (disparar dentro da transação cria e
 fantasma sob rollback — o P1 do Payman).
 """
 from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parents[1]
 WINDOW = 8
 SEND_RE = re.compile(r"signal\.send\(|_signals\.\w+\.send\(|\.send\(sender=")

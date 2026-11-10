@@ -3,6 +3,7 @@ Falha candidata: ForeignKey/OneToOne/ManyToMany com alvo string apontando para a
 kernel. Regex cobre o alvo string (inequívoco); alvo importado exige AST (fora deste script).
 """
 from __future__ import annotations
+
 import re
 from pathlib import Path
 
