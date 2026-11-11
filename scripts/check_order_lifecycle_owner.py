@@ -4,6 +4,7 @@ Chamar order.transition_status() a partir do orquestrador é consumo legítimo (
 não violação — por isso NÃO é sinalizado aqui.
 """
 from __future__ import annotations
+
 import re
 from pathlib import Path
 

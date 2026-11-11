@@ -6,6 +6,7 @@ ORM.update, então este script só APONTA candidatos (`.objects.*`, `.save(`, `.
 revisão humana. Nunca falha a esteira; imprime e sai 0.
 """
 from __future__ import annotations
+
 import re
 from pathlib import Path
 

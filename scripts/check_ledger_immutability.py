@@ -6,6 +6,7 @@ Directive/Session/Hold/Quant/Order/WorkOrder são estado mutável e NÃO são si
 Este script flagra QuerySet.update/delete/bulk_update sobre esses três. Report-only.
 """
 from __future__ import annotations
+
 import ast
 from pathlib import Path
 

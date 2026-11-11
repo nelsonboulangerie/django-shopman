@@ -5,6 +5,7 @@ há subclasse de lifecycle. Este script APONTA classes que herdam de base com no
 Lifecycle/Phase para revisão humana. Não falha a esteira (regex não é AST).
 """
 from __future__ import annotations
+
 import re
 from pathlib import Path
 
