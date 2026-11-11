@@ -83,10 +83,6 @@ class InventoryProtocol(Protocol):
 
 Interface para dados de demanda histórica.
 
-### CatalogProtocol
-
-Interface para dados de catálogo.
-
 ## Configuração
 
 Chave Django settings: `CRAFTSMAN`
