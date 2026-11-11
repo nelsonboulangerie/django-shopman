@@ -133,7 +133,9 @@ def canonical_catalog(db):
 
     add_product("PAO-CONTRATO", "Pão do Contrato", 900, qty=Decimal("12"))
     add_product("CROISSANT-CONTRATO", "Croissant do Contrato", 1200, qty=Decimal("2"))
-    add_product("BOLO-CONTRATO", "Bolo do Contrato", 2400, qty=None)
+    # Esgotado é SKU que o ledger conhece com saldo zero. Sem nenhum Quant o
+    # SKU é "sem ledger", e a promessa do Stockman não lhe dá teto (#2277).
+    add_product("BOLO-CONTRATO", "Bolo do Contrato", 2400, qty=Decimal("0"))
 
     # Planejado para amanhã: o estado "encomendável" (planned) do cardápio.
     sonho = add_product("SONHO-CONTRATO", "Sonho do Contrato", 800, qty=None)
