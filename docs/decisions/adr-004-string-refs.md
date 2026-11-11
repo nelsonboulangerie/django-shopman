@@ -107,8 +107,8 @@ dependência invisível para kernels que continuam semanticamente standalone.
 - Services do framework validam `sku` contra o catálogo na borda de entrada.
 - Testes cruzados (`shopman/shop/tests/test_invariants.py`) garantem que
   os SKUs usados em fluxos reais existem no offerman.
-- Craftsman tem `CatalogProtocol.resolve()` para mapear `output_sku → Product`
-  quando o output **é** um vendável.
+- A ficha técnica do Craftsman consulta o `CRAFTSMAN["CATALOG_BACKEND"]`
+  (`get_product(sku)`) para saber nome e unidade do SKU.
 
 ## Atualização 2026-04-30: Receita ativa por SKU é determinística
 
