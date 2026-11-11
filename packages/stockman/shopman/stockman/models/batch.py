@@ -53,8 +53,8 @@ class Batch(models.Model):
     """
     Batch/lot for traceability of products with expiry.
 
-    A Batch groups stock by production lot. Each Quant can optionally
-    reference a Batch via FK (Quant.batch → Batch).
+    A Batch groups stock by production lot. A Quant references a Batch by
+    its ``ref`` (``Quant.batch`` é texto, não FK; o motivo está no campo).
     """
 
     ref = models.CharField(
