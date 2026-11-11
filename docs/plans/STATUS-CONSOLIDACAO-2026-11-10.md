@@ -2,8 +2,8 @@
 
 ## O que foi entregue (nesta sessão, todos arquivos NOVOS, sem conflito)
 
-- docs/reports/auditoria-reset-v5-2026-11-10.md — auditoria v5 (veredito APROVA COM REPAROS).
-- docs/plans/PROPOSA-FINAL-CONSOLIDACAO-PRE-GO-LIVE.md — proposta v6.
+- docs/reports/2026-11-10-auditoria-reset-arquitetural.md — auditoria do reset arquitetural (veredito APROVA COM REPAROS; hoje o relatório único, consolidado em 11/11).
+- docs/plans/PROPOSA-FINAL-CONSOLIDACAO-PRE-GO-LIVE.md — proposta final da consolidação.
 - docs/plans/RUNBOOK-CONSOLIDACAO-URGENTE-2026-11-10.md — runbook (corrigido).
 - docs/reference/guard-map.md — mapa de guardas (índice das portas invariantes).
 - scripts/check_guard_map.py — guarda do próprio mapa (roda, confere completude).
@@ -60,7 +60,7 @@
 
 | Frente | PR | O que fez |
 |---|---|---|
-| F0 | #2261 | Artefatos v7 sobre o main; guardas com ordem de import corrigida |
+| F0 | #2261 | Artefatos da spec de consolidação sobre o main; guardas com ordem de import corrigida |
 | F4b Doorman | #2262 | Alvos já resolvidos no main; travados por contrato e fronteira |
 | F2 promessa | #2263 | `promise_for_sku` (rename sem alias); caracterização com zero divergência; `_stock_decision` e `get_promise_decision` apagados |
 | F1 guardas | #2264 | 9 guardas AST com baseline única que encolhe; `make constitution-guards` no job Quality; guard-map e Constituição ligados |
