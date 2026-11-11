@@ -19,7 +19,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from django.test import Client
+from django.test import Client, TestCase
 
 CREATE = "/api/auth/access/create/"
 START = "/api/v1/auth/whatsapp/start/"
@@ -105,7 +105,15 @@ def _aperta_o_botao(browser: Client) -> dict:
 
 
 def _mensagem_chega(code: str, text: str | None = None) -> dict:
-    response = Client().post(
+    # O link sai pelo WhatsApp depois do COMMIT (ADR-025); o teste roda numa transação.
+    with TestCase.captureOnCommitCallbacks(execute=True):
+        response = _posta_mensagem(code, text)
+    assert response.status_code == 200, response.content
+    return response.json()
+
+
+def _posta_mensagem(code: str, text: str | None):
+    return Client().post(
         CREATE,
         data=json.dumps({
             "subscriber": {"id": "mc-joyce", "whatsapp_id": "5543999990009", "first_name": "Joyce"},
@@ -114,8 +122,6 @@ def _mensagem_chega(code: str, text: str | None = None) -> dict:
         content_type="application/json",
         HTTP_AUTHORIZATION=f"Bearer {KEY}",
     )
-    assert response.status_code == 200, response.content
-    return response.json()
 
 
 def _logado(browser: Client) -> bool:

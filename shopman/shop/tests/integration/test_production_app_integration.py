@@ -76,7 +76,7 @@ class TestFinishWorkOrderStockIntegration:
 
     def test_finish_with_insufficient_ingredient_alerts_the_shortfall(
         self, recipe, ingredient, croissant,
-        position_producao, position_loja, today,
+        position_producao, position_loja, today, django_capture_on_commit_callbacks,
     ):
         """Estoque de insumo INSUFICIENTE: fecha, baixa só o que havia, e GRITA.
 
@@ -97,7 +97,9 @@ class TestFinishWorkOrderStockIntegration:
         )
 
         wo = craft.plan(recipe, quantity=Decimal("20"), date=today)
-        craft.finish(wo, finished=18, actor="test")
+        # O alerta é anúncio: sai depois do COMMIT do finish (ADR-025).
+        with django_capture_on_commit_callbacks(execute=True):
+            craft.finish(wo, finished=18, actor="test")
 
         # (1) A fornada fecha, apesar da falta.
         assert wo.status == WorkOrder.Status.FINISHED
