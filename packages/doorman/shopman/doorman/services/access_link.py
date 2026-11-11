@@ -144,14 +144,18 @@ class AccessLinkService:
 
         url = cls._build_url(raw_token)
 
-        # Signal
-        access_link_created.send(
-            sender=cls,
-            token=link,
-            customer=locked_customer,
-            audience=audience,
-            source=source,
-            url=url,
+        # ADR-025: anúncio depois do COMMIT. O receiver do orquestrador manda o link
+        # pelo WhatsApp (efeito externo); antes do COMMIT, um rollback deixaria enviada
+        # uma mensagem com link para um token que não existe.
+        transaction.on_commit(
+            lambda: access_link_created.send(
+                sender=cls,
+                token=link,
+                customer=locked_customer,
+                audience=audience,
+                source=source,
+                url=url,
+            )
         )
 
         logger.info(
@@ -290,13 +294,15 @@ class AccessLinkService:
         else:
             logger.debug("No session keys to restore")
 
-        # Signal
-        customer_authenticated.send(
-            sender=cls,
-            customer=customer,
-            user=user,
-            method="access_link",
-            request=request,
+        # ADR-025: anúncio depois do COMMIT (o link consumido só vale se a troca gravou).
+        transaction.on_commit(
+            lambda: customer_authenticated.send(
+                sender=cls,
+                customer=customer,
+                user=user,
+                method="access_link",
+                request=request,
+            )
         )
 
         # Adapter hook

@@ -164,6 +164,7 @@ class ListingItem(models.Model):
         if old_price_q is not None:
             from shopman.offerman.signals import price_changed
 
+            # ADR-025: escrita acoplada — outbox do catalog_projection na transação do preço.
             price_changed.send(
                 sender=self.__class__,
                 instance=self,
@@ -175,6 +176,8 @@ class ListingItem(models.Model):
         if availability_changed_flag:
             from shopman.offerman.signals import availability_changed
 
+            # ADR-025: escrita acoplada — outbox do catalog_projection na transação do item
+            # (o receiver de campanha, que é anúncio, já se adia sozinho).
             availability_changed.send(
                 sender=self.__class__,
                 instance=self,

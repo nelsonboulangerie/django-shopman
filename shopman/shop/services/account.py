@@ -1522,11 +1522,12 @@ def anonymize_customer(customer, *, correlation_ref: str = "") -> tuple[str, str
             logger.warning("anonymize: %s falhou correlation=%s", label, correlation_ref)
 
     # As superfícies guardam dado do cliente que o shop não pode importar
-    # (`storefront` importa `shop`, nunca o contrário — ADR-001). O anúncio é um
-    # signal porque não precisamos de retorno: quem guarda, apaga.
+    # (`storefront` importa `shop`, nunca o contrário — ADR-001): quem guarda, apaga.
+    # Não é anúncio: sem o receiver a anonimização LGPD fica incompleta.
     try:
         from shopman.shop.signals import customer_anonymized
 
+        # ADR-025: escrita acoplada — o receiver apaga na transação da anonimização.
         customer_anonymized.send(
             sender=None,
             customer_ref=original_ref,

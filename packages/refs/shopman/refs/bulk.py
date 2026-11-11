@@ -70,11 +70,14 @@ class RefBulk:
 
             for ref in refs:
                 ref.value = new_norm
-                ref_renamed.send(
-                    sender=Ref,
-                    ref=ref,
-                    old_value=old_norm,
-                    actor=actor,
+                # ADR-025: anúncio depois do COMMIT do rename.
+                transaction.on_commit(
+                    lambda ref=ref: ref_renamed.send(
+                        sender=Ref,
+                        ref=ref,
+                        old_value=old_norm,
+                        actor=actor,
+                    )
                 )
 
         logger.info(
@@ -127,7 +130,12 @@ class RefBulk:
 
             for ref in refs:
                 ref.value = new_norm
-                ref_renamed.send(sender=Ref, ref=ref, old_value=old_norm, actor=actor)
+                # ADR-025: anúncio depois do COMMIT da cascata.
+                transaction.on_commit(
+                    lambda ref=ref: ref_renamed.send(
+                        sender=Ref, ref=ref, old_value=old_norm, actor=actor
+                    )
+                )
 
             # 2. Update all registered RefField sources
             sources = _ref_source_registry.get_sources_for_type(ref_type)
@@ -257,7 +265,10 @@ class RefBulk:
             ref.is_active = False
             ref.deactivated_at = now
             ref.deactivated_by = actor
-            ref_deactivated.send(sender=Ref, ref=ref, actor=actor)
+            # ADR-025: anúncio depois do COMMIT da desativação.
+            transaction.on_commit(
+                lambda ref=ref: ref_deactivated.send(sender=Ref, ref=ref, actor=actor)
+            )
 
         if count:
             logger.info(

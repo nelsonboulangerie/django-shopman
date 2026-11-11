@@ -20,6 +20,8 @@ import re
 import uuid
 from typing import TYPE_CHECKING
 
+from django.db import transaction
+
 from ..conf import doorman_settings
 from ..models.device_trust import SubjectType, TrustedDevice
 from ..signals import device_trusted
@@ -132,13 +134,15 @@ class DeviceTrustService:
 
         cls._set_cookie(response, cls.cookie_name_for(subject_type, subject_id), raw_token)
 
-        # Signal
-        device_trusted.send(
-            sender=cls,
-            device=device,
-            subject_type=subject_type,
-            subject_id=str(subject_id),
-            request=request,
+        # ADR-025: anúncio depois do COMMIT (o dispositivo só é confiável se a linha gravou).
+        transaction.on_commit(
+            lambda: device_trusted.send(
+                sender=cls,
+                device=device,
+                subject_type=subject_type,
+                subject_id=str(subject_id),
+                request=request,
+            )
         )
 
         logger.info(
