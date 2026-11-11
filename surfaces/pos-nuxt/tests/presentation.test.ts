@@ -98,7 +98,7 @@ import {
   unfiredCount,
 } from "../app/presentation/kitchen";
 import { countUnits, pruneSelection, selectedItems, selectionView, toggleSelected } from "../app/presentation/selection";
-import { cashLandedInDrawer, receiptFiscalHandoffLine, receiptLineTotalQ, receiptLines, receiptPaymentPending, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
+import { cashLandedInDrawer, receiptFiscalHandoffLine, receiptItemFromCart, receiptLineTotalQ, receiptLines, receiptPaymentPending, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
 import type { ActionAffordance } from "../app/presentation/actions";
 import { formatBRL } from "../app/utils/posIntent";
 
@@ -1230,8 +1230,8 @@ describe("presentation/receipt — print shaping (D3)", () => {
     tabDisplay: "1007",
     customerName: "João",
     items: [
-      { name: "Croissant", qty: 2, price_q: 1300, discountPct: 0 },
-      { name: "Café", qty: 1, price_q: 1000, discountPct: 10 },
+      { name: "Croissant", qty: 2, list_price_q: 1300, charged_price_q: 1300 },
+      { name: "Café", qty: 1, list_price_q: 1000, charged_price_q: 900 },
     ],
     totalDisplay: "R$ 35,00",
     payments: [{ method: "cash", amount_q: 3500 }],
@@ -1239,15 +1239,50 @@ describe("presentation/receipt — print shaping (D3)", () => {
     printedAtMs: 0,
   };
 
-  it("applies per-line discount to the net line total", () => {
+  it("the line total is the server's charged price times the quantity", () => {
     expect(receiptLineTotalQ(snap.items[0]!)).toBe(2600); // no discount
-    expect(receiptLineTotalQ(snap.items[1]!)).toBe(900); // 10% off 1000
+    expect(receiptLineTotalQ(snap.items[1]!)).toBe(900); // charged 900 of 1000
   });
 
-  it("shapes receipt lines with unit and net total displays", () => {
+  it("shapes receipt lines with net total and the discount in reais", () => {
     const lines = receiptLines(snap);
-    expect(lines[0]).toMatchObject({ name: "Croissant", qty: 2, totalDisplay: formatBRL(2600), discountPct: 0 });
-    expect(lines[1]).toMatchObject({ name: "Café", totalDisplay: formatBRL(900), discountPct: 10 });
+    expect(lines[0]).toMatchObject({ name: "Croissant", qty: 2, totalDisplay: formatBRL(2600), discountDisplay: "" });
+    expect(lines[1]).toMatchObject({ name: "Café", totalDisplay: formatBRL(900), discountDisplay: `Desconto −${formatBRL(100)}` });
+  });
+
+  // Defeito de 11/11: o congelamento lia `discount.value` como percentual sem
+  // olhar `discount.type`. R$ 5,00 de desconto numa linha de R$ 20,00 saía no
+  // papel como 5% (R$ 19,00) enquanto o servidor cobrava R$ 15,00.
+  it("a fixed R$ 5,00 manual discount prints the R$ 15,00 the server charged", () => {
+    const item = receiptItemFromCart({
+      sku: "BOLO", name: "Bolo", qty: 1, price_q: 2000, list_price_q: 2000, charged_price_q: 1500,
+      discount: { value: 5, reason: "cortesia", type: "fixed" },
+    } as never);
+    expect(receiptLineTotalQ(item)).toBe(1500);
+    expect(receiptLines({ ...snap, items: [item] })[0]).toMatchObject({
+      totalDisplay: formatBRL(1500),
+      discountDisplay: `Desconto −${formatBRL(500)}`,
+    });
+  });
+
+  // "Maior desconto ganha, um por item" (`modifiers.py`): a Xepa −25% vence a
+  // cortesia −10%, que o servidor DESCARTA. O papel não pode aplicar os 10%.
+  it("a manual discount the server discarded is not applied on paper", () => {
+    const item = receiptItemFromCart({
+      sku: "BATARD", name: "Batard", qty: 2, price_q: 1200, list_price_q: 1200, charged_price_q: 900,
+      discount: { value: 10, reason: "cortesia", type: "percent" },
+      pricing_discount: { type: "batch", label: "Hora da Xepa", amount_q: 300, percent: 25 },
+    } as never);
+    expect(receiptLineTotalQ(item)).toBe(1800);
+    expect(receiptLines({ ...snap, items: [item] })[0]!.discountDisplay).toBe(`Desconto −${formatBRL(600)}`);
+  });
+
+  it("the receipt lines add up to the total", () => {
+    const items = [
+      receiptItemFromCart({ sku: "A", name: "A", qty: 3, price_q: 1300, list_price_q: 1300, charged_price_q: 1300 } as never),
+      receiptItemFromCart({ sku: "B", name: "B", qty: 1, price_q: 2000, list_price_q: 2000, charged_price_q: 1500, discount: { value: 5, reason: "x", type: "fixed" } } as never),
+    ];
+    expect(items.reduce((sum, item) => sum + receiptLineTotalQ(item), 0)).toBe(3900 + 1500);
   });
 
   it("labels payments from the method projection", () => {
