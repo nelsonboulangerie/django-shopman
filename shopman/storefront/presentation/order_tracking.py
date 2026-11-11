@@ -187,6 +187,7 @@ class OrderTrackingCopyProjection:
     rating_contact_message: str
     rating_contact_done: str
     cancellation_contact_title: str
+    cancellation_contact_done_title: str
     cancellation_contact_message: str
     rating_google_title: str
     rating_google_share_title: str
@@ -1768,6 +1769,10 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         cancellation_contact_title=copy.title(
             "TRACKING_CANCELLATION_CONTACT_TITLE",
             "Quer cancelar?",
+        ),
+        cancellation_contact_done_title=copy.title(
+            "TRACKING_CANCELLATION_CONTACT_DONE_TITLE",
+            "Contato solicitado",
         ),
         cancellation_contact_message=copy.message(
             "TRACKING_CANCELLATION_CONTACT_MESSAGE",

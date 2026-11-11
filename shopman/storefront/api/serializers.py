@@ -403,6 +403,7 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     rating_contact_message = serializers.CharField()
     rating_contact_done = serializers.CharField()
     cancellation_contact_title = serializers.CharField()
+    cancellation_contact_done_title = serializers.CharField()
     cancellation_contact_message = serializers.CharField()
     rating_google_title = serializers.CharField()
     rating_google_share_title = serializers.CharField()
