@@ -666,7 +666,7 @@ def set_planned_quantity(
     from shopman.craftsman.exceptions import CraftError, StaleRevision
     from shopman.craftsman.models import ProductionMode, Recipe, WorkOrder, WorkOrderEvent
     from shopman.craftsman.services.execution import CraftExecution
-    from shopman.craftsman.services.scheduling import CraftPlanning, _next_seq
+    from shopman.craftsman.services.scheduling import CraftPlanning
 
     qty = _non_negative_decimal(quantity, error="Quantidade planejada inválida.")
     target_date = _target_date_or_today(target_date_value)
@@ -881,9 +881,8 @@ def set_planned_quantity(
             )
 
         if not adjusted and attempt_key:
-            WorkOrderEvent.objects.create(
-                work_order=work_order,
-                seq=_next_seq(work_order),
+            CraftExecution.record_event(
+                work_order,
                 kind=WorkOrderEvent.Kind.PLANNING_CONFIRMED,
                 payload={
                     "quantity": _decimal_wire(qty),

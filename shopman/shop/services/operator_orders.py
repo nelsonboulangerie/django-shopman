@@ -110,15 +110,6 @@ _ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
     ),
 }
 
-_NEXT_STATUS_MAP: dict[str, str] = {
-    Order.Status.ACCEPTED: Order.Status.PREPARING,
-    Order.Status.PREPARING: Order.Status.READY,
-    Order.Status.READY: Order.Status.COMPLETED,
-    Order.Status.DISPATCHED: Order.Status.DELIVERED,
-    Order.Status.DELIVERED: Order.Status.COMPLETED,
-}
-
-
 def find_order(ref: str) -> Order | None:
     """Return an order by public reference, if it exists."""
     return Order.objects.filter(ref=ref).first()
@@ -262,10 +253,15 @@ def reject_order(
 
 
 def next_status_for(order: Order) -> str:
-    """Return the canonical next operator-driven status, or empty string."""
-    if order.status == Order.Status.READY and get_fulfillment_type(order) == "delivery":
-        return Order.Status.DISPATCHED
-    return _NEXT_STATUS_MAP.get(order.status, "")
+    """O próximo status do "avançar" do operador, ou ``""``.
+
+    O passo vem do ciclo do canal no Orderman (Constituição C6); daqui só sai o
+    fato que é do orquestrador, se o pedido sai por entrega. O pedido novo não
+    "avança": confirmá-lo é gesto próprio (``operator_accept``).
+    """
+    if order.status == Order.Status.NEW:
+        return ""
+    return order.next_status(dispatch=get_fulfillment_type(order) == "delivery")
 
 
 def advance_block(order: Order, *, waitlist_state: str | None = None, payment_reads=None) -> AdvanceBlock:

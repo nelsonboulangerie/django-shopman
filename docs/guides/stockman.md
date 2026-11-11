@@ -177,6 +177,15 @@ move = stock.issue(
     user=usuario,
 )
 
+# Entrada num quant já localizado (espelho do issue; devolve o Move):
+# a devolução no mesmo saldo de onde a venda saiu, o lote versionado do QC
+move = stock.receive_into(
+    quantity=Decimal("2"),
+    quant=quant,
+    reason="Cancelamento antes do preparo",
+    kind=Move.Kind.RETURN,
+)
+
 # Ajuste de inventário (contagem física)
 move = stock.adjust(
     quant=quant,

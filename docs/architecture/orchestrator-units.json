@@ -13084,7 +13084,6 @@
             "advance_order",
             "_handoff_hold_seconds",
             "_ADVANCE_BLOCK_MESSAGES",
-            "_NEXT_STATUS_MAP",
             "_KITCHEN_FINISHED_STATUSES"
           ]
         }

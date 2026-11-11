@@ -332,22 +332,6 @@ def get_ticket_statuses(session_keys) -> list[tuple[str, str]]:
     return list(KDSTicket.objects.filter(session_key__in=list(session_keys)).values_list("session_key", "status"))
 
 
-def get_completed_ticket_timestamps(order) -> list[tuple[int, Any]]:
-    """Return [(pk, completed_at)] for tickets with a completed_at timestamp."""
-    from shopman.backstage.models import KDSTicket
-
-    return list(
-        KDSTicket.objects.filter(session_key=order.session_key, completed_at__isnull=False)
-        .values_list("pk", "completed_at")
-    )
-
-
-def shift_ticket_completed_at(pk: int, completed_at) -> None:
-    from shopman.backstage.models import KDSTicket
-
-    KDSTicket.objects.filter(pk=pk).update(completed_at=completed_at)
-
-
 def get_ticket_model():
     """Return KDSTicket model for signal wiring without direct surface imports."""
     from shopman.backstage.models import KDSTicket

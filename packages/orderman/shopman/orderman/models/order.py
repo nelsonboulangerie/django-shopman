@@ -73,6 +73,20 @@ class Order(models.Model):
 
     TERMINAL_STATUSES = [Status.COMPLETED, Status.CANCELLED, Status.RETURNED]
 
+    # Ordem do avanço operacional (ADR-006): o sentido em que o pedido anda quando
+    # alguém "avança". Cancelar, devolver e o recall da cozinha (READY→PREPARING)
+    # não são avanço e ficam de fora. Quais destes passos existem é do canal
+    # (``get_transitions``); esta tupla só diz qual vem antes de qual.
+    FORWARD_SEQUENCE = (
+        Status.NEW,
+        Status.ACCEPTED,
+        Status.PREPARING,
+        Status.READY,
+        Status.DISPATCHED,
+        Status.DELIVERED,
+        Status.COMPLETED,
+    )
+
     # Campos selados: nunca mudam após criação do Order.
     # Qualquer tentativa de alterar esses campos em save() levanta ImmutabilityError.
     SEALED_FIELDS = ["ref", "channel_ref", "session_key", "snapshot", "total_q", "currency"]
@@ -210,6 +224,27 @@ class Order(models.Model):
         """Retorna os próximos status válidos a partir do status atual."""
         transitions = self.get_transitions()
         return transitions.get(self.status, [])
+
+    def next_status(self, *, dispatch: bool) -> str:
+        """O próximo passo adiante no ciclo do canal, ou ``""`` quando não há.
+
+        Entre as transições que o canal permite a partir do status atual, escolhe a
+        mais próxima adiante em ``FORWARD_SEQUENCE``. ``dispatch`` diz se o pedido
+        sai por entrega: sem entrega, a perna de despacho (``DISPATCHED``) não é
+        candidata e o pedido pronto conclui; com entrega, ela vem primeiro quando o
+        canal a tem.
+        """
+        sequence = self.FORWARD_SEQUENCE
+        if self.status not in sequence:
+            return ""
+        position = sequence.index(self.status)
+        allowed = set(self.get_allowed_transitions())
+        for candidate in sequence[position + 1 :]:
+            if candidate == self.Status.DISPATCHED and not dispatch:
+                continue
+            if candidate in allowed:
+                return candidate
+        return ""
 
     def can_transition_to(self, new_status: str) -> bool:
         """Verifica se a transição para new_status é permitida."""

@@ -905,7 +905,6 @@ collectstatic: ## Coleta estáticos para STATIC_ROOT
 	@echo "✓ Static coletado"
 
 run: ## Sobe servidor + tunnel + directive worker (0.0.0.0:8000)
-	-$(PYTHON) manage.py refresh_oven
 	lsof -ti:8000 | xargs kill -9 2>/dev/null || true
 	killall cloudflared 2>/dev/null || true
 	killall ngrok 2>/dev/null || true

@@ -10,7 +10,7 @@ Usage:
 
 Implementation is split into modules under stocking/services/:
     queries.py    — available, demand, committed, get_quant, list_quants
-    movements.py  — receive, issue, adjust
+    movements.py  — receive, receive_into, issue, adjust, transfer
     holds.py      — hold, confirm, release, fulfill, release_expired
     planning.py   — plan, replan, realize
 """

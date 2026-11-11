@@ -2,6 +2,7 @@
 Craftsman Services.
 
 5 verbs: plan, adjust, start, finish, void.
+record_event: anota a execução no audit sem mudar o estado da ordem.
 3 queries: suggest, needs, expected.
 """
 

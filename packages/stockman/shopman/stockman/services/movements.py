@@ -1,5 +1,5 @@
 """
-Stock movements — state-changing operations (receive, issue, adjust).
+Stock movements — state-changing operations (receive, receive_into, issue, adjust, transfer).
 
 All methods use transaction.atomic() with appropriate locking.
 """
@@ -140,6 +140,43 @@ class StockMovements:
             )
             logger.info(
                 "stock.issue",
+                extra={
+                    "quant_id": quant.pk,
+                    "qty": str(quantity),
+                    "reason": reason,
+                },
+            )
+            return move
+
+    @classmethod
+    def receive_into(cls, quantity, quant,
+                     user=None, reason='Entrada', kind=Move.Kind.ADJUST, metadata=None):
+        """
+        Stock entry into an existing quant — the mirror of ``issue``.
+
+        ``receive`` resolve o quant pela coordenada (e pode criar o lote do dia);
+        este lança a entrada num quant que quem chama já localizou e travou: a
+        devolução no MESMO saldo de onde a venda saiu, ou o lote versionado de uma
+        reclassificação. Devolve o ``Move``, como ``issue``.
+
+        Raises:
+            StockError('INVALID_QUANTITY'): If quantity <= 0
+        """
+        if quantity <= 0:
+            raise StockError('INVALID_QUANTITY', requested=quantity)
+
+        with transaction.atomic():
+            locked_quant = Quant.objects.select_for_update().get(pk=quant.pk)
+            move = Move.objects.create(
+                quant=locked_quant,
+                delta=quantity,
+                reason=reason,
+                kind=kind,
+                user=user,
+                metadata=dict(metadata or {}),
+            )
+            logger.info(
+                "stock.receive_into",
                 extra={
                     "quant_id": quant.pk,
                     "qty": str(quantity),
