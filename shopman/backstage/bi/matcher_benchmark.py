@@ -588,18 +588,33 @@ def prices_for(matchers, *, llm_price_in=None, llm_price_out=None, jev_price_in=
     return prices, unpriced
 
 
-def maybe_measure(*, source: str = "yooga", force: bool = False, accept_at: float = 0.9):
+#: Tetos de uma medição. São constantes de código, e não settings, de propósito: nenhuma
+#: variável de ambiente religa o gasto. Quem quer mais passa a flag no comando manual.
+MAX_CASES = 60
+BUDGET_USD = 1.0
+
+
+def maybe_measure(
+    *,
+    source: str = "yooga",
+    force: bool = False,
+    accept_at: float = 0.9,
+    paid: bool = False,
+    max_cases: int = MAX_CASES,
+    budget_usd: float = BUDGET_USD,
+):
     """Mede e guarda o placar (``AliasBenchmarkReport``) quando há gabarito e o último está velho.
 
     Devolve ``(relatório ou None, motivo)``. Só nome de produto sai da casa;
     concorrente sem credencial ou pacote fica de fora e o placar diz por quê.
 
-    Travas de custo (ver o bloco ``SHOPMAN_ALIAS_BENCHMARK_*`` em settings):
+    Travas de custo (argumentos, nunca settings: env nenhum religa o gasto):
 
-    - Concorrente pago (LLM, Jev) só entra com ``SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED``.
-      Modelo sem preço na tabela fica de fora: sem preço, o teto não o enxergaria.
-    - No máximo ``SHOPMAN_ALIAS_BENCHMARK_MAX_CASES`` casos por medição.
-    - Teto de gasto estimado ``SHOPMAN_ALIAS_BENCHMARK_BUDGET_USD`` (vale até com ``force``).
+    - Concorrente pago (LLM, Jev) só entra com ``paid=True`` (``--paid`` no comando).
+      Credencial presente não liga nada. Modelo sem preço na tabela fica de fora: sem
+      preço, o teto não o enxergaria.
+    - No máximo ``max_cases`` casos por medição (default ``MAX_CASES``).
+    - Teto de gasto estimado ``budget_usd`` (default ``BUDGET_USD``; vale até com ``force``).
     - A vaga da semana é RESERVADA antes de medir. Antes, o placar só era gravado
       no fim. Cada deploy reiniciava o worker no meio de uma medição longa e ela
       recomeçava do zero, para sempre (28/10 a 11/11/2026, cerca de US$ 1.180). Agora,
@@ -621,16 +636,14 @@ def maybe_measure(*, source: str = "yooga", force: bool = False, accept_at: floa
     if last and not force and timezone.now() - last.created_at < timedelta(days=MEASURE_EVERY_DAYS):
         return None, f"último placar de {last.created_at:%d/%m}; o próximo sai em até {MEASURE_EVERY_DAYS} dias"
 
-    max_cases = max(1, int(getattr(settings, "SHOPMAN_ALIAS_BENCHMARK_MAX_CASES", 60)))
-    budget_usd = float(getattr(settings, "SHOPMAN_ALIAS_BENCHMARK_BUDGET_USD", 1.0))
-    paid = bool(getattr(settings, "SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED", False))
+    max_cases = max(1, int(max_cases))
     total_gold = len(cases)
     cases = cases[:max_cases]
 
     names = ("fuzzy", "embed", "llm", "jev") if paid else ("fuzzy", "embed")
     matchers, skipped = build_matchers(names, llm_models=list(DEFAULT_LLM_MODELS))
     if not paid:
-        off = "concorrente pago desligado (SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED=false)"
+        off = "concorrente pago desligado (rode à mão com --paid para incluí-lo)"
         skipped += [("llm", off), ("jev", off)]
     prices, unpriced = prices_for(matchers)
     if unpriced:
@@ -648,7 +661,7 @@ def maybe_measure(*, source: str = "yooga", force: bool = False, accept_at: floa
     result = run(cases, load_catalog(), matchers, prices=prices, accept_at=accept_at, budget_usd=budget_usd)
     text = render_report(result, source=source, accept_at=accept_at)
     if total_gold > len(cases):
-        text += f"\nAmostra: {len(cases)} dos {total_gold} de-paras confirmados (teto SHOPMAN_ALIAS_BENCHMARK_MAX_CASES)."
+        text += f"\nAmostra: {len(cases)} dos {total_gold} de-paras confirmados (teto de {max_cases} por medição)."
     report.cases = result.cases
     report.contenders = ", ".join(board.matcher for board in result.boards)[:240]
     report.report = text

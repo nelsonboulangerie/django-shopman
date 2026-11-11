@@ -1638,9 +1638,9 @@ Concierge atender: `CONCIERGE_TRIAGE_CLASSIFIER=jev`.
 saiu do `maintenance_worker` em 11/11/2026, depois de gastar cerca de US$ 1.180 de API em loop. Com pelo
 menos 20 `ProductAlias` confirmados e o último placar com mais de 7 dias (ou com `--now`), mede `fuzzy`
 e `embed`. Os pagos (`llm:claude-haiku-4-5`, `llm:claude-opus-5`, `jev`) só entram com
-`SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED=true`. Valem sempre os tetos de casos
-(`SHOPMAN_ALIAS_BENCHMARK_MAX_CASES`, default 60) e de gasto estimado
-(`SHOPMAN_ALIAS_BENCHMARK_BUDGET_USD`, default US$ 1). A vaga da semana é reservada antes de medir:
+`--paid`. Valem sempre os tetos de casos (`--max-cases`, default 60) e de gasto estimado
+(`--budget-usd`, default US$ 1). As travas são flags, nunca settings: nenhuma variável de ambiente
+religa o gasto. A vaga da semana é reservada antes de medir:
 uma medição interrompida aparece como tal no Admin e não recomeça sozinha. Grava `AliasBenchmarkReport`
 (Admin → B.I. → Placar do de-para, só leitura, só agregado).
 

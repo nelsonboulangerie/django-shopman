@@ -408,7 +408,6 @@ def test_paid_contenders_stay_off_by_default_even_with_credentials(catalog, sett
 
     settings.AI_ASSIST_API_KEY = "chave-presente"
     settings.JEV_API_KEY = "chave-presente"
-    settings.SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED = False
     monkeypatch.setattr(matcher_benchmark, "LLMMatcher", _MustNotCallLLM)
     monkeypatch.setattr(matcher_benchmark, "MIN_CONFIRMED_TO_MEASURE", 1)
     _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
@@ -469,12 +468,11 @@ def test_measure_samples_at_most_the_case_ceiling(catalog, settings, monkeypatch
     from shopman.backstage.bi import matcher_benchmark
 
     settings.AI_ASSIST_API_KEY = ""
-    settings.SHOPMAN_ALIAS_BENCHMARK_MAX_CASES = 1
     monkeypatch.setattr(matcher_benchmark, "MIN_CONFIRMED_TO_MEASURE", 1)
     _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
     _confirmed("Bolo de pote")
 
-    report, _reason = matcher_benchmark.maybe_measure()
+    report, _reason = matcher_benchmark.maybe_measure(max_cases=1)
 
     assert report.cases == 1
     assert "Amostra: 1 dos 2 de-paras confirmados" in report.report
