@@ -116,6 +116,7 @@ def register_all() -> None:
     _register_validators()
     _register_stock_signals()
     _register_production_alerts()
+    _register_production_cost()
     _register_kds_alerts()
     _register_production_order_sync()
     _register_alert_resolution()
@@ -400,6 +401,13 @@ def _register_kds_alerts() -> None:
     kds_alerts.connect()
     registry.register_directive_handler(kds_alerts.KDSTicketLateHandler())
     logger.info("shopman.handlers: connected kitchen alert receivers.")
+
+
+def _register_production_cost() -> None:
+    """Custo congelado da fornada no ``finish`` (ADR-023 §3)."""
+    from shopman.shop.handlers import production_cost
+
+    production_cost.connect()
 
 
 def _register_production_order_sync() -> None:

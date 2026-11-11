@@ -11,6 +11,10 @@ docs/decisions/adr-023-cost-live-and-frozen.md (custo vivo para precificar ×
 custo congelado no fato para contar história). Sem provedor configurado,
 ``Product.reference_cost_q`` responde ``None`` e a margem se esconde no Admin.
 
+Provedor que sabe dizer POR QUE não há custo implementa também
+:class:`CostGapExplainer`; o Admin mostra o motivo ao operador em vez de um
+traço calado (sem custo é falha que grita, nunca zero).
+
 Usage:
     # In settings.py
     OFFERMAN = {
@@ -40,4 +44,13 @@ class CostBackend(Protocol):
         Returns:
             Cost in centavos (int) or None if cost is unknown.
         """
+        ...
+
+
+@runtime_checkable
+class CostGapExplainer(Protocol):
+    """Opcional ao lado de :class:`CostBackend`: o motivo de não haver custo."""
+
+    def get_cost_gap(self, sku: str) -> str | None:
+        """Frase para o operador ("FARINHA sem custo preferencial"), ou None se há custo."""
         ...
