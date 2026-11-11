@@ -62,16 +62,23 @@ Na arquitetura atual:
 
 | Protocol | Arquivo | Motivo |
 |---|---|---|
-| `CatalogBackend` | `catalog.py` | Permite substituir fonte de produtos/preços |
-| `PricingBackend` | `catalog.py` | Estratégia de precificação por canal |
+| `CatalogBackend` | `catalog.py` | Resolução de SKU vendável (`get_product`) para o Craftsman; não cota preço |
+| `PricingBackend` | `catalog.py` | Ajuste contextual sobre o preço de lista; só `CatalogService.get_price` consulta |
 | `CostBackend` | `cost.py` | Fonte de custo (integração com stockman ou externo) |
-| `CatalogProjectionBackend` | `projection.py` | Projeção leve para storefront |
+| `CatalogProjectionBackend` | `projection.py` | Projeção do catálogo para canal externo (`project`/`retract`) |
+| `IncrementalCatalogProjectionBackend` | `projection.py` | Projeção com `update_price`/`set_availability` (iFood) |
+| `LabelAttributesProvider` | `label.py` | Campos de rótulo do tenant no formulário do Offerman |
 
 **Adapters:**
 - `packages/offerman/shopman/offerman/adapters/` — `NoopCostBackend`,
   `NoopPricingBackend`, `NoopCatalogProjectionBackend`, `OffermanCatalogBackend`
-- `shopman/shop/adapters/pricing.py` — `StorefrontPricingBackend`
-- `shopman/shop/adapters/catalog.py` — composição para framework
+- `shopman/shop/adapters/pricing.py` — `PromotionPricingBackend`
+- `shopman/shop/adapters/catalog_backend.py` — `ComposedCatalogBackend` (Offerman + Buyman)
+- `shopman/shop/adapters/catalog_projection_{google,meta,ifood}.py` — projeções
+
+Contract tests: `packages/offerman/shopman/offerman/tests/test_contracts.py` e
+`shopman/shop/tests/test_offerman_contracts.py` (paridade de assinatura, contrato fechado e a
+autoridade única de preço).
 
 ---
 

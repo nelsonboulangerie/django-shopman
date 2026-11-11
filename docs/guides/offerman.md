@@ -209,14 +209,24 @@ Offerman deve ser a fonte da verdade da oferta comercial também para catálogos
 
 ### CatalogBackend
 
-Interface para implementações alternativas do catálogo.
+Resolução de SKU vendável para um kernel que não pode importar o Offerman (o Craftsman, em
+`CRAFTSMAN["CATALOG_BACKEND"]`, pergunta a unidade e se o SKU é combo). Um verbo, porque o
+consumidor tem um. **Preço não mora aqui**: lista e faixa são `CatalogService.unit_prices`;
+preço contextual é `CatalogService.get_price` (que consulta o `PricingBackend`).
 
 ```python
 class CatalogBackend(Protocol):
     def get_product(self, sku: str) -> ProductInfo | None: ...
-    def get_price(self, sku: str, qty: Decimal = Decimal("1"), channel: str | None = None) -> PriceInfo: ...
-    def validate_sku(self, sku: str) -> SkuValidation: ...
-    def expand_bundle(self, sku: str, qty: Decimal = Decimal("1")) -> list[BundleComponent]: ...
+```
+
+### PricingBackend
+
+Ajuste contextual sobre o preço de lista (`OFFERMAN["PRICING_BACKEND"]`). Só
+`CatalogService.get_price` o consulta; devolver `None` aceita a lista.
+
+```python
+class PricingBackend(Protocol):
+    def get_price(self, *, sku, qty, listing, list_unit_price_q, list_line_total_q, context=None) -> ContextualPrice | None: ...
 ```
 
 ### CostBackend
@@ -236,16 +246,37 @@ Interface para projeção da oferta para canais terceiros.
 class CatalogProjectionBackend(Protocol):
     def project(self, items: list[ProjectedItem], *, channel: str, full_sync: bool = False) -> ProjectionResult: ...
     def retract(self, skus: list[str], *, channel: str) -> ProjectionResult: ...
+
+class IncrementalCatalogProjectionBackend(CatalogProjectionBackend, Protocol):
+    def update_price(self, item: ProjectedItem, *, channel: str) -> ProjectionResult: ...
+    def set_availability(self, item: ProjectedItem, *, channel: str) -> ProjectionResult: ...
 ```
+
+O marketplace com API granular (iFood) implementa a versão incremental; quem projeta pergunta
+por `isinstance(backend, IncrementalCatalogProjectionBackend)`, nunca por `hasattr`. O
+`ProjectedItem.price_q` é o preço da unidade pela mesma régua de `unit_prices` (a faixa que
+começa acima de 1 não é o preço de uma unidade).
+
+### LabelAttributesProvider
+
+Leitura e escrita dos campos de rótulo do tenant (alérgenos, dieta, porções) pelo
+`OFFERMAN["LABEL_ATTRIBUTES_PROVIDER"]` (fábrica sem argumentos).
+
+```python
+class LabelAttributesProvider(Protocol):
+    def get(self, product, ref: str): ...
+    def set(self, product, ref: str, value) -> None: ...  # ValueError se inválido; não salva
+```
+
+Os contract tests (`offerman/tests/test_contracts.py` e `shop/tests/test_offerman_contracts.py`)
+conferem paridade de assinatura e contrato fechado de cada impl.
 
 ### Dataclasses
 
 - `ProductInfo(sku, name, description, category, unit, is_bundle, base_price_q, is_published, is_sellable, keywords)`
-- `PriceInfo(sku, unit_price_q, total_price_q, qty, listing)`
 - `PriceAdjustment(code, label, amount_q, metadata)` — `amount_q` é o efeito total na linha cotada, não por unidade
 - `ContextualPrice(sku, qty, listing, list_unit_price_q, list_line_total_q, final_unit_price_q, final_line_total_q, adjustments, metadata)`
 - `SkuValidation(valid, sku, name, is_published, is_sellable, error_code, message)`
-- `BundleComponent(sku, name, qty)`
 - `ProjectedItem(sku, name, description, unit, price_q, is_published, is_sellable, category, image_url, keywords, metadata)`
 - `ProjectionResult(success, projected, errors, channel)`
 

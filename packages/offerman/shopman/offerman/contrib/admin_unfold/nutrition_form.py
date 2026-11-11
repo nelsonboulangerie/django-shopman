@@ -16,6 +16,7 @@ from shopman.offerman.nutrition import (
     NUTRIENT_LABELS_PT,
     NutritionFacts,
 )
+from shopman.offerman.protocols import LabelAttributesProvider
 from shopman.utils.contrib.admin_unfold.money import MoneyReaisField
 from unfold.widgets import (
     UnfoldAdminDecimalFieldWidget,
@@ -76,8 +77,11 @@ LABEL_ATTRIBUTE_FIELDS = {
 }
 
 
-def _label_attributes():
-    """O provedor de atributos de rótulo, ou ``None`` se não houver."""
+def _label_attributes() -> LabelAttributesProvider | None:
+    """O provedor de atributos de rótulo, ou ``None`` se não houver.
+
+    O contrato é ``shopman.offerman.protocols.LabelAttributesProvider``.
+    """
     from shopman.offerman.conf import get_offerman_settings
 
     path = get_offerman_settings().LABEL_ATTRIBUTES_PROVIDER

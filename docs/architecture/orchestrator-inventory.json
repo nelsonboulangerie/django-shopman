@@ -257,7 +257,6 @@
             "expand_bundle",
             "find_substitutes",
             "get_listing_item",
-            "get_price",
             "listing_exists",
             "logger"
           ]
@@ -279,11 +278,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "ComposedCatalogBackend",
-            "_instance",
-            "_lock",
-            "get_composed_catalog_backend",
-            "logger",
-            "reset_composed_catalog_backend"
+            "logger"
           ]
         }
       ]
