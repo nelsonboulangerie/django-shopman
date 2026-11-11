@@ -69,7 +69,6 @@ GUARDS: dict[str, list[str]] = {
 }
 
 UNCOVERED = [
-    "cadeia-de-custo write-only (ADR-023/024 sem leitor) — F3 decide ligar (A) ou adiar (B)",
     "duplicacao-de-autoridade GERAL — o gate cobre os conhecidos; F2 fecha promise_for_sku",
 ]
 

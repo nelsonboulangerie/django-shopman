@@ -284,6 +284,50 @@
       ]
     },
     {
+      "path": "shopman/shop/adapters/catalog_projection_google.py",
+      "touchpoints": [
+        "adapter"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "DeveloperRegistration",
+            "GoogleMerchantProjection",
+            "GoogleMerchantRateLimitError",
+            "_CONDITIONS",
+            "_SCOPE",
+            "_TOKEN_MARGIN_SECONDS",
+            "_access_token",
+            "_account",
+            "_base",
+            "_check",
+            "_configured",
+            "_data_source",
+            "_feed_label",
+            "_get_config",
+            "_google_error",
+            "_language",
+            "_service_account",
+            "_store_code",
+            "_timeout",
+            "_token_cache",
+            "_token_lock",
+            "build_local_inventory",
+            "build_product_input",
+            "logger",
+            "product_input_id",
+            "register_gcp"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/adapters/catalog_projection_ifood.py",
       "touchpoints": [
         "adapter"
@@ -366,50 +410,6 @@
       ]
     },
     {
-      "path": "shopman/shop/adapters/catalog_projection_google.py",
-      "touchpoints": [
-        "adapter"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "DeveloperRegistration",
-            "GoogleMerchantProjection",
-            "GoogleMerchantRateLimitError",
-            "_CONDITIONS",
-            "_SCOPE",
-            "_TOKEN_MARGIN_SECONDS",
-            "_access_token",
-            "_account",
-            "_base",
-            "_check",
-            "_configured",
-            "_data_source",
-            "_feed_label",
-            "_get_config",
-            "_google_error",
-            "_language",
-            "_service_account",
-            "_store_code",
-            "_timeout",
-            "_token_cache",
-            "_token_lock",
-            "build_local_inventory",
-            "build_product_input",
-            "logger",
-            "product_input_id",
-            "register_gcp"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/adapters/cost.py",
       "touchpoints": [
         "adapter"
@@ -425,10 +425,20 @@
           "symbols": [
             "MAX_DEPTH",
             "RecipeCostBackend",
+            "SNAPSHOT_KEY",
             "_NoCost",
             "_cost_per_output_unit",
+            "_cost_per_product_unit",
             "_input_cost",
-            "logger"
+            "_line_unit_cost",
+            "_material",
+            "_material_cost",
+            "_material_unit_cost",
+            "_product_unit",
+            "_qty",
+            "_round_q",
+            "logger",
+            "work_order_cost_snapshot"
           ]
         }
       ]
@@ -2944,6 +2954,7 @@
             "_register_preorder_handler",
             "_register_pricing_modifiers",
             "_register_production_alerts",
+            "_register_production_cost",
             "_register_production_order_sync",
             "_register_return_handler",
             "_register_sse_emitters",
@@ -3752,6 +3763,20 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/handlers/production_cost.py",
+      "touchpoints": [
+        "handler"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "production.frozen-cost"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
     },
     {
       "path": "shopman/shop/handlers/production_order_sync.py",
@@ -6469,6 +6494,194 @@
       ]
     },
     {
+      "path": "shopman/shop/policies/__init__.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": []
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/policies/catalog_identity.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "catalog.remote-item-identity"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/customer_cancellation.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.customer-cancellation",
+        "order.customer-cancellation-contact"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/exclusive_collections.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "catalog.group-exclusive-collections"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/group_advantage.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "promotion.group-free-shipping"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/ifood_cancel_reasons.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.ifood-cancel-reasons"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/ifood_concluded.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.ifood-concluded"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/login_code_ceiling.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "auth.login-code-ip-ceiling"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/marketing_public_link.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "marketing.public-link"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/order_date_before_batch.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.order-date-before-batch-gate"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/order_payment.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.payment-method"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/promotion.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "promotion.birthday-discount-taken",
+        "promotion.eligibility",
+        "promotion.minimum-order-eligibility"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/rating_contact.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "rating.contact-offer"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/pool_liveness.py",
       "touchpoints": [
         "outro"
@@ -6963,6 +7176,27 @@
       ]
     },
     {
+      "path": "shopman/shop/projections/exclusive_collections.py",
+      "touchpoints": [
+        "projection"
+      ],
+      "out_of_extraction": true,
+      "unit_ids": [],
+      "responsibilities": [
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "access_for_customer",
+            "access_for_tiers",
+            "exclusive_only_product_ids"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/projections/interaction_context.py",
       "touchpoints": [
         "projection"
@@ -7322,180 +7556,6 @@
       "out_of_extraction": false,
       "unit_ids": [
         "shop.purchase-policy"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/__init__.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": []
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/policies/exclusive_collections.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "catalog.group-exclusive-collections"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/promotion.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "promotion.birthday-discount-taken",
-        "promotion.eligibility",
-        "promotion.minimum-order-eligibility"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/marketing_public_link.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "marketing.public-link"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/ifood_cancel_reasons.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "order.ifood-cancel-reasons"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/ifood_concluded.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "order.ifood-concluded"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/customer_cancellation.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "order.customer-cancellation",
-        "order.customer-cancellation-contact"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/login_code_ceiling.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "auth.login-code-ip-ceiling"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/rating_contact.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "rating.contact-offer"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/order_payment.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "order.payment-method"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/order_date_before_batch.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "stock.order-date-before-batch-gate"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/group_advantage.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "promotion.group-free-shipping"
       ],
       "responsibilities": [
         "decisão"
@@ -8423,34 +8483,6 @@
       ]
     },
     {
-      "path": "shopman/shop/services/customer_contact.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "shop.services-customer-contact"
-      ],
-      "responsibilities": [
-        "composição"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/catalog_identity.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "catalog.remote-item-identity"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
       "path": "shopman/shop/services/catalog_sync.py",
       "touchpoints": [
         "service"
@@ -8798,6 +8830,20 @@
       ]
     },
     {
+      "path": "shopman/shop/services/customer_contact.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-customer-contact"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/services/customer_groups.py",
       "touchpoints": [
         "service"
@@ -8996,27 +9042,6 @@
       "support_claims": []
     },
     {
-      "path": "shopman/shop/projections/exclusive_collections.py",
-      "touchpoints": [
-        "projection"
-      ],
-      "out_of_extraction": true,
-      "unit_ids": [],
-      "responsibilities": [
-        "leitura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "leitura",
-          "symbols": [
-            "access_for_customer",
-            "access_for_tiers",
-            "exclusive_only_product_ids"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/services/delivery_fiscal_identity.py",
       "touchpoints": [
         "service"
@@ -9191,28 +9216,6 @@
       ]
     },
     {
-      "path": "shopman/shop/services/display_prices.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "catalog.display-price-source"
-      ],
-      "responsibilities": [
-        "decisão",
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "logger"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/services/display_catalog.py",
       "touchpoints": [
         "service"
@@ -9240,6 +9243,28 @@
             "is_platform_channel",
             "resolve_channel",
             "storefront_base"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/display_prices.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "catalog.display-price-source"
+      ],
+      "responsibilities": [
+        "decisão",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "logger"
           ]
         }
       ]

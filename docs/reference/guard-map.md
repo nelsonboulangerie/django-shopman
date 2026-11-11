@@ -92,7 +92,6 @@ Estas portas têm lei (Constituição/ADR) mas ainda não têm check dedicado. �
 | Porta | Evidência de que está aberta | Risco se morder |
 |---|---|---|
 | Duplicação de autoridade de decisão (geral) | a promessa de estoque já tem autoridade única (`promise_for_sku`/`decision_from_availability` no Stockman; `_stock_decision` apagado, caracterização em `shopman/shop/tests/test_promise_for_sku_characterization.py`); fora a promessa, só há guarda para o preço de lista | outra decisão duplicada diverge em produção |
-| Cadeia de custo write-only (ADR-023/024) | COST_BACKEND em settings, mas nenhum leitor em runtime (grep no repo: só offerman+settings+docs) | margem/custo de receita mentem no BI |
 | ADR-025 (signal on_commit) | Status Proposto; P1 do Payman diagnosticado mas sem gate que reprove signal.send fora de on_commit | efeito fantasma sob rollback |
 | C2 (dinheiro em _q) | sem lint que impeça float em campo monetário | arredondamento de dinheiro |
 | C3 (identidade por ref, nunca FK/pk de outro kernel) | convenção; sem check por tipo | acoplamento cross-kernel por pk |

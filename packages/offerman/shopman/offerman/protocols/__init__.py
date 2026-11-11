@@ -8,7 +8,7 @@ from shopman.offerman.protocols.catalog import (
     ProductInfo,
     SkuValidation,
 )
-from shopman.offerman.protocols.cost import CostBackend
+from shopman.offerman.protocols.cost import CostBackend, CostGapExplainer
 from shopman.offerman.protocols.label import LabelAttributesProvider
 from shopman.offerman.protocols.projection import (
     CatalogProjectionBackend,
@@ -23,6 +23,7 @@ __all__ = [
     "ContextualPrice",
     "PricingBackend",
     "CostBackend",
+    "CostGapExplainer",
     "IncrementalCatalogProjectionBackend",
     "LabelAttributesProvider",
     "PriceAdjustment",
