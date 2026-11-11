@@ -74,5 +74,5 @@ o main já tinha deixado para trás.
   `bind_verified_handle` do porto de identidade) e o OTP deixou de reaproveitar AccessLink em
   `c57a0046b`. O PR #2262 trava os dois com testes de contrato e uma regra de fronteira.
 
-**Acceptance (por kernel, os 4 gates da v6 §2):** autoridade única (busca de símbolo), gate
+**Acceptance (por kernel, os 4 gates da [proposta final](PROPOSA-FINAL-CONSOLIDACAO-PRE-GO-LIVE.md), §2):** autoridade única (busca de símbolo), gate
 AST de import, SPEC concentrada, contract tests dos verbos públicos.

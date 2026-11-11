@@ -1,15 +1,189 @@
-# Auditoria adversarial do reset arquitetural do Django Shopman (versão 2, para revisão externa)
+# Auditoria do reset arquitetural do Django Shopman
+
+- **Data:** 10/11/2026 (consolidado em 11/11/2026).
+- **Assunto:** reset de produto e da camada de aplicação, preservando os kernels comprovadamente fortes.
+- **Este é o único relatório desse reset.** Ele junta as quatro leituras feitas em 10/11, que
+  antes moravam em arquivos separados e numerados por versão. As leituras antigas saíram do
+  repositório; o histórico do git as guarda.
+- **O que não é relatório:** a execução que nasceu daqui tem nome próprio e mora em outro lugar,
+  e é chamada de **spec de consolidação**: [proposta final](../plans/PROPOSA-FINAL-CONSOLIDACAO-PRE-GO-LIVE.md),
+  [status](../plans/STATUS-CONSOLIDACAO-2026-11-10.md),
+  [Fase 3](../plans/FASE-3-SPEC-DUAL-RUN-CUSTO-KERNELS.md),
+  [Fase 4](../plans/FASE-4-PLAN-SQUASH-MIGRATIONS.md),
+  [briefs](../plans/DELEGATION-BRIEFS.md), [handoff](../plans/COORDENADOR-HANDOFF.md),
+  [guard-map](../reference/guard-map.md),
+  [ADR-044](../decisions/adr-044-substituibilidade-na-borda.md) e
+  [ADR-045](../decisions/adr-045-envelope-de-fato-operacional.md).
+
+## Como ler
+
+| Parte | Leitura | Base | Origem |
+|---|---|---|---|
+| I | **Estado vigente**: veredito, decisões, alvo, plano | `main` de 11/11 | consolidação deste arquivo |
+| II | **Inventário** com 24 agentes somente leitura, mais as objeções do dono | `origin/main` `62191553b` | PR #2258 |
+| I | **Revisão adversarial** do inventário, incorporada às seções A a H | `origin/main` `62191553b` | PR #2259 |
+| I | **Reformulação do alvo** para reavaliação independente, incorporada às seções D a G | `origin/main` `7f829e02f` | PR #2260 |
+| III | **Leitura independente**, outro fornecedor de modelo | `origin/main` `057fe9105` | sessão da consolidação |
+
+A Parte II mantém a numeração de seções 1 a 18 porque D-035 a D-038
+([DECISIONS.md](../coordination/DECISIONS.md)) e a
+[matriz de go-live](../plans/GO-LIVE-READINESS-PLAN.md) citam essas seções. Onde a Parte I
+diverge da Parte II, vale a Parte I.
+
+---
+
+# Parte I · Estado vigente
+
+## A. Veredito
+
+**APROVA COM REPAROS.** As quatro leituras convergem no mesmo alvo: monolito modular, kernels
+fortes preservados, camada de aplicação reorganizada por ciclo operacional, nenhuma
+infraestrutura nova. Nenhuma recomenda reescrever kernel. O reset se justifica pelos
+fechamentos de contrato abaixo, não por mover pastas; se sobrarem só as pastas, o veredito
+cai para derruba.
+
+O trabalho usa quatro verbos, e cada fatia diz qual está usando:
+
+1. **Preservar** kernels, invariantes e services comprovadamente corretos: cashman, payman,
+   miolo do orderman (commit idempotente), livro e promessa do stockman, `finish` do
+   craftsman. Preservar exige contract test; não é imunidade a correção.
+2. **Corrigir** concorrência, idempotência, rede dentro de transação e escritores que furam a
+   autoridade do kernel.
+3. **Construir** as entidades que hoje não têm tabela: documento fiscal, recebimento de compra,
+   corrida e custódia de entrega, revisão de pedido. Molde: o `cashman`, que nasceu com
+   tabelas novas e apagou o antigo.
+4. **Mover** lógica correta que mora no lugar errado (Shop, Backstage, Storefront) para o
+   módulo de aplicação certo, apagando a entrada antiga no mesmo PR, sem alias nem reexport.
+
+**Causa principal** (Parte II, seção 2): dado sem dono e autoridade de escrita, não lógica de
+negócio. Entidades em JSON, duas camadas de aplicação (`backstage` com 32 mil linhas de
+services), fatos sem ator e decisões do dono registradas só em comentário. A leitura
+independente (Parte III) somou a quarta face: **decisão com mais de uma autoridade**
+(`promise_decision` no stockman e no shop; preço contextual em dois lugares).
+
+## B. Onde as leituras divergiram e como ficou
+
+| Tema | Inventário | Revisão adversarial e reformulação | Estado em 11/11 |
+|---|---|---|---|
+| Corte pré-tag | Só três linhas seguram a tag; 12 escritores sem lock e a suíte dos 8 cenários entram "se der tempo" (D-038) | D-038 não tem evidência executável; os 8 cenários devem bloquear a tag | **Contestação não levada ao registro.** D-038 segue `DECIDIDA` em DECISIONS.md. Reabrir é decisão do dono |
+| Trocar kernel por sistema externo | Propriedade sem prazo; sem Protocol na frente de kernel (D-036) | Substituibilidade é invariante do alvo; três perfis de provider (seção D) | **Resolvido pela ADR-044**: substituível na borda; no núcleo só por quem implementa o mesmo contrato semântico. O texto da D-036 ainda é o do inventário |
+| Taskman | Congelar; vira kernel com segundo consumidor | Número de consumidores não define domínio; descoberta antes do plano | Critério corrigido (pergunta, linguagem, lifecycle, invariantes, autoridade). Descoberta **não feita**. A leitura independente recomenda não criar agora |
+| Recebimento e corrida de entrega | Depois da tag | Decidir antes de dado real: fazem parte da v1 | **Aberto.** Sem fatia |
+| Três ports mortos | Apagar em bloco | Discriminar método a método (`AccountingBackend` é a fronteira do Conta Azul; `ProductionBackend` tem implementação e testes) | Apagar só símbolo comprovadamente sem chamador |
+| `FiscalDocument` | Antes da tag, com dois PRs e uma semana de dupla representação | Antes da tag, numa fatia que nomeie escritor e leitor em cada fase | **Antes da primeira NFC-e real (D-037).** Unânime |
+| Orçamentos de latência, prazo de 21 dias | Propostos | Desejo, não orçamento, sem baseline; timebox limita investigação, não converte trabalho necessário em dívida | Rebaixados a hipótese até o baseline |
+| Envelope de fato operacional | Colunas de ator, dispositivo, correlação e causa | Mesma coisa, com prova de propagação síncrona e assíncrona | **ADR-045** (workstation, não posto) |
+| Dupla autoridade de promessa | Não vista | Achada pela leitura independente | **Fechada** na consolidação (#2263, #2265): `promise_for_sku` único |
+
+## C. Decisões
+
+| Decisão | O que diz | Estado |
+|---|---|---|
+| D-035 | Concierge pode ficar para depois da tag; ManyChat segue no go-live (OTP e avisos) | `DECIDIDA`, sem contestação |
+| D-036 | Trocar kernel por sistema externo: desejável, sem prazo | `DECIDIDA`; doutrina refinada pela ADR-044 |
+| D-037 | `FiscalDocument` nasce antes da primeira NFC-e real | `DECIDIDA`, sem contestação |
+| D-038 | Só três reparos seguram a tag (pacote de dias, `FiscalDocument`, colunas do carimbo) | `DECIDIDA`; contestada pela revisão adversarial (seção B) |
+| ADR-044 | Substituibilidade vive na borda de capability | Aceita |
+| ADR-045 | Envelope de fato operacional | Aceita |
+
+## D. Arquitetura alvo
+
+- **Kernels** (`packages/*`): respondem perguntas canônicas, com linguagem, lifecycle,
+  invariantes e autoridade próprias. Não importam a aplicação nem internals de kernel irmão.
+  Toda escrita em model de kernel passa pelos services do kernel (fachada fechada, por lint).
+- **Contratos de capacidade:** a aplicação depende de operações semânticas, não do ORM de uma
+  implementação. Não é obrigatório um `Protocol` por kernel agora; é obrigatório fechar a
+  escrita e explicitar o contrato. Cada provider declara seu perfil, e o contrato não promete
+  a mesma atomicidade aos três:
+
+  | Perfil | Garantias | Uso |
+  |---|---|---|
+  | Nativo transacional | mesma transação, rollback local | padrão do monolito, sem custo de rede |
+  | Remoto operacional | idempotência, timeout, retry, consistência e compensação declarados | ERP ou API que assume a capacidade em tempo real |
+  | Importação e exportação | sincronização, reconciliação, defasagem declarada | planilha ou sistema fora do comando online |
+
+- **Ports de borda:** pagamento (Efí, Stripe), fiscal (Focus), entregador (Machine),
+  notificação e OTP, projeção de catálogo (iFood, Meta, Google). Ficam; são a camada de
+  integrations.
+- **Módulos de aplicação**, por ciclo: `sales`, `orders`, `fulfillment`, `production`,
+  `procurement`, `fiscal`, `delivery`. Pacotes Python dentro da aplicação, com regra de
+  import, não apps Django novos. O inventário separou processos (`sales`, `orders`,
+  `production`, `procurement`, `closing`) de capacidades (`payments`, `pricing`, `promise`,
+  `catalog`, `customers`, `fiscal`, `fulfillment`, `delivery`, `notifications`); a lista final
+  sai da ADR do alvo.
+- **Projections** preparam leitura e não servem de payload autoritativo para comando (o
+  fechamento do dia hoje viola isso). **Surfaces** apresentam estado e enviam intenção; não
+  recalculam regra de negócio.
+
+## E. Autoridades que precisam existir antes de dado real
+
+1. **`FiscalDocument`**: obrigatória (D-037).
+2. **`PurchaseReceipt`**: identidade, linhas, documento, divergências, ator, evidência e
+   idempotência. Uma chave persistente de deduplicação não substitui o fato. Decisão aberta.
+3. **`DeliveryRun` e custódia**: corrida, estados externos, tentativas, troco e maquininha
+   fora de blocos replicados em `Order.data`. Decisão aberta.
+4. **Revisão de pedido**: diferença a mais e a menos, motivo, aprovação, reflexo em pagamento,
+   estoque e fiscal. Decisão aberta.
+5. **Fundação transversal** (ADR-045): ator tipado, dispositivo e workstation, correlação e
+   causa, data operacional, chave idempotente, referência ao fato compensado. Coluna sozinha
+   não resolve: escritores preenchem e teste prova a propagação.
+
+## F. Suíte de aceitação
+
+Os oito cenários da Parte II, seção 6: Pix depois do cancelamento; cartão recusado libera a
+reserva; PDV com pagamento misto; PDV sem conexão reenviado; `finish` simultâneo em dois
+quiosques; cancelamento depois da baixa compensa estoque, promoção, pagamento e nota;
+recebimento com NF reescaneada; edição de encomenda com diferença a mais e a menos. Mais os
+ciclos completos de Loja, PDV, iFood, produção, compra, fiscal, entrega e cancelamento.
+Primeiro passo: mapear os testes que já existem; não nasce suíte paralela sem saber o que já
+está provado. Se bloqueiam a tag é a contestação da D-038 (seção B).
+
+## G. Plano
+
+| Fase | Saída | Estado em 11/11 |
+|---|---|---|
+| 0. Verdade canônica | Nenhuma inferência apresentada como decisão do dono; evidência reproduzível ou rebaixada a hipótese | Parcial: este arquivo marca o que é contestado; D-036 e D-038 seguem com o texto original |
+| 1. Baseline executável | Kernels isolados e integração em Postgres; 8 cenários mapeados; matriz fato → autoridade → escritores → leitores → retenção → compensação; p50/p95 medidos; superfícies auditadas | Aberta |
+| 2. ADRs do alvo | Taxonomia aprovada; trechos incompatíveis da ADR-001 superados; módulos e dependências; descoberta do Taskman; autoridades da seção E | Parcial: ADR-044 e ADR-045 aceitas |
+| 3. Fatos que não podem nascer errados | Envelope, `FiscalDocument`, `PurchaseReceipt`, `DeliveryRun`, revisão de pedido; cada fatia com escritor único, concorrência, idempotência, compensação e remoção do antigo | Aberta; ver [Fase 3](../plans/FASE-3-SPEC-DUAL-RUN-CUSTO-KERNELS.md) |
+| 4. Reset da aplicação | Módulos por ciclo; uma autoridade por fatia, caracterizada antes; fachada fechada; adapters invertidos apagados; gates de import e de escrita | Começou pela consolidação F0 a F4: #2261 a #2266 no `main` (guardas AST, promessa única, ports do Offerman, Doorman e Stockman travados) |
+| 5. Ensaio e go-live | Replay de migrations, restauração, seed e purga reproduzíveis, suíte crítica verde, nenhuma autoridade dupla | Aberta; squash de migrations na [Fase 4](../plans/FASE-4-PLAN-SQUASH-MIGRATIONS.md) |
+
+**Limites estruturais até existir baseline:** nenhuma infraestrutura nova sem problema medido;
+provider nativo em processo; nenhuma chamada de rede dentro de `atomic`; nenhuma abstração
+genérica sem caso real; uma autoridade de escrita por fato; nenhuma decisão de domínio nova
+em surface; nenhuma chave de topo nova em JSON para esconder entidade durável.
+
+**Corte duro antes da tag** (todas as leituras): mudança de `app_label` ou permissão; mover
+símbolo que teste intercepta por caminho; `lock_timeout` global; corte de histórico de
+migrations por estética.
+
+## H. Limites da evidência
+
+- Nada foi executado pelas leituras: nenhum teste, migração, seed, corrida ou medição. Os 12
+  escritores sem lock, a rede sob lock na captura de cartão e o lock órfão do ManyChat são
+  leitura de código.
+- Os 24 relatórios brutos do inventário não foram versionados; as citações `r1/` e `r2/` da
+  Parte II não são reproduzíveis e valem como hipótese.
+- As superfícies Nuxt (232 mil linhas, 61% dos toques de correção em 14 dias) não tiveram
+  auditoria própria.
+- Inventário, revisão e reformulação rodaram no mesmo modelo; só a leitura independente veio de
+  outro fornecedor. Convergência entre agentes do mesmo modelo não substitui teste.
+
+---
+
+# Parte II · Inventário (24 agentes, base `62191553b`)
 
 - **Base auditada:** `origin/main` em `62191553b23eafd817c56ed9659b1006cde1dbe9` (10/11/2026).
 - **Método:** 24 agentes, todos somente leitura. Rodada 1: 6 inventários factuais (modelo barato), 6 frentes de julgamento, 1 red team cego, 6 revisões cruzadas. Rodada 2: 3 verificadores de fatos pendentes e 2 ataques do red team ao veredito consolidado.
 - **Nada foi executado:** nenhum teste, migração, seed ou acesso a ambiente vivo. Corridas e latências são leitura de código, não medição.
-- **Limitação sobre o Ultracode:** neste runtime não existe agente ou sessão separada com esse nome; "ultracode" é o modo de orquestração multiagente. O papel de red team foi cumprido por agentes dedicados do mesmo modelo, isolados das conclusões das frentes na rodada 1 e instruídos a atacar o veredito na rodada 2. Não houve conversa com outro modelo ou fornecedor. **Este documento é, portanto, a primeira leitura por um agente realmente independente.**
+- **Limitação sobre o Ultracode:** neste runtime não existe agente ou sessão separada com esse nome; "ultracode" é o modo de orquestração multiagente. O papel de red team foi cumprido por agentes dedicados do mesmo modelo, isolados das conclusões das frentes na rodada 1 e instruídos a atacar o veredito na rodada 2. Não houve conversa com outro modelo ou fornecedor nesta parte; a leitura de outro fornecedor é a Parte III.
 - **Marcas:** [F] fato atual lido no código · [H] dívida já corrigida · [I] inferência.
-- **Relatórios brutos de cada agente** (19 da rodada 1, 5 da rodada 2): não foram versionados; ficaram no scratchpad da sessão que coordenou a auditoria. As citações `r1/...` e `r2/...` abaixo apontam para eles.
+- **Relatórios brutos de cada agente** (19 da rodada 1, 5 da rodada 2): não foram versionados e se perderam com o scratchpad da sessão que coordenou. As citações `r1/...` e `r2/...` abaixo não são reproduzíveis (Parte I, seção H).
 
-### O que mudou da versão 1 para esta
+### O que mudou depois da primeira leitura do dono
 
-O dono leu a versão 1 e levantou seis objeções. Nenhum agente novo rodou; a revisão é do coordenador, sobre a mesma evidência. Mudanças:
+O dono leu a primeira redação e levantou seis objeções. Nenhum agente novo rodou; a revisão é do coordenador, sobre a mesma evidência. Mudanças:
 
 1. O slogan "movimento, nunca reescrita" era mais absoluto que o próprio plano, que constrói tabelas novas. Reescrito (seção 1, reparo 1).
 2. "Nenhum kernel é substituível" escondia o que o desenho já entrega e não dizia o que falta. Detalhado (seção 17, objeção 2).
@@ -320,10 +494,10 @@ Soma do que entra antes da tag: 3 a 4 semanas em fluxo único; cerca de 2 de cal
 3. *Concierge no go-live ou depois?* **Pode ser depois.** Isso substitui a D-017 nesse ponto e precisa ser registrado em `docs/coordination/DECISIONS.md` e na matriz (linha 72), o que esta auditoria não fez por ser somente leitura. Consequências para este relatório: o código do Concierge (13,6 mil linhas em `shopman/storefront/concierge`) fica no `main` como está, desligado; o tipo de ator `agent:concierge` continua reservado no carimbo; a troca do lock do ManyChat **continua** no pacote de dias, porque o mesmo resolvedor serve OTP e avisos da v1.
 4. *Substituir kernel por sistema externo é objetivo com prazo?* **Sem prazo.** É propriedade desejável, não objetivo datado. Vale o reparo 2 como escrito, e a condição de mudança de estratégia da seção 14 não está acionada.
 
-## 17. Objeções do dono à versão 1 e resposta do coordenador
+## 17. Objeções do dono à primeira redação e resposta do coordenador
 
 **1. "Mil decisões minhas só existirem como comentário e código não é, em si, um sintoma?"**
-É. A versão 1 usava o número só como argumento contra reescrever e não o nomeava como defeito. Agora é a quarta causa (seção 2). As duas leituras valem juntas: é defeito, e enquanto não for tratado torna a reescrita mais cara. O reparo é o item 8 do plano (índice por arquivo e linha), e ele vem antes de qualquer movimento. O que a auditoria **não** fez: ler as 999 linhas para dizer quantas conflitam entre si ou com o registro formal.
+É. A primeira redação usava o número só como argumento contra reescrever e não o nomeava como defeito. Agora é a quarta causa (seção 2). As duas leituras valem juntas: é defeito, e enquanto não for tratado torna a reescrita mais cara. O reparo é o item 8 do plano (índice por arquivo e linha), e ele vem antes de qualquer movimento. O que a auditoria **não** fez: ler as 999 linhas para dizer quantas conflitam entre si ou com o registro formal.
 
 **2. "Nenhum kernel ser substituível por ERP ou planilha é uma surpresa. Fiz desde o início pensando nisso."**
 O desenho entrega metade da propriedade, e a metade que falta é do lado da aplicação, não dos kernels.
@@ -347,7 +521,7 @@ Quatro razões, em ordem de peso:
 O que **não** está sendo dito: que port é ruim, ou que a troca nunca virá. A fachada fechada mais a suíte de contrato são exatamente o pré-requisito de um port futuro: quando houver segundo provider real, a suíte já diz o que ele precisa cumprir. O red team apontou, e o coordenador aceitou, que "port destrói atomicidade" confunde port com provider remoto; por isso os 8 a 11 ports de kernel que já existem não são apagados em bloco, passam um a um pelo critério da seção 7.
 
 **4. "Meu receio de movimento em vez de reescrita é gerar lixo e mais lixo, gambiarras."**
-O receio é legítimo e a versão 1 não o respondia. Três pontos:
+O receio é legítimo e a primeira redação não o respondia. Três pontos:
 
 - *O que a auditoria achou não é lixo espalhado.* A gambiarra está concentrada: entidades em JSON, 9 adapters que existem só para esconder o import shop→backstage, 54 a 60 ramos por literal de canal, três arquivos gigantes. A lógica de dinheiro e estoque nos kernels fortes foi lida e não mostrou erro.
 - *Onde o lixo é a estrutura, a resposta já é construir do zero:* `FiscalDocument`, `Receipt`, corrida de entrega. Isso é reescrita localizada, com tabela nova e remoção do antigo, e está no plano.
@@ -368,3 +542,71 @@ Definidos no contexto do início. Em uma linha: tag é a `go-live-v1`, o marco d
 6. **Substituibilidade.** A resposta à objeção 2 se apoia em contagem de imports e em inferência sobre o que um ERP oferece. Ninguém desenhou o port de estoque para medir o custo real; a frente E propôs um ("port semântico" que declara se entra na transação de quem chama) e foi vencida por argumento, não por experimento.
 7. **Mesmo modelo dos dois lados.** Frentes, revisões e red team rodaram no mesmo modelo. Convergência entre eles vale menos do que parece.
 8. **Cinco autoridades duplicadas ficaram sem fatia** (progresso físico do pedido em 5 portadores, vínculo pedido-fornada em dois JSON, mapa de próximo passo do operador). Estão diagnosticadas e não entram no plano pré-tag.
+
+---
+
+# Parte III · Leitura independente (base `057fe9105`)
+
+## Método
+
+- Leitura por `git show origin/main:...` sobre `057fe91059ba22ab62ec6638702ff7ebb03853b9`
+  (merge do PR #2259). O checkout local estava cerca de 200 commits atrás.
+- Runtime com um único fornecedor de modelo (DeepSeek), diferente do das Partes I e II. Não
+  houve red team de segundo modelo; a passada adversarial foi feita contra o próprio veredito e
+  vai rotulada como tal.
+- Marcas: [F] fato medido; [I] inferência; [D] dívida histórica já corrigida.
+
+## Veredito
+
+**APROVA COM REPAROS.** A hipótese está certa na direção e boa parte já está realizada: os
+kernels são o componente forte, e as capability ports reais (pagamento, fiscal, notificação,
+courier, marketing, OTP) já seguem Protocol e Adapter. O reset é (a) encerrar a dupla
+autoridade em decisões de domínio, (b) dar nome e trava de import à camada de aplicação (178
+services achatados em `shop/services/`), e (c) instalar o envelope de fato operacional. O que
+derrubaria a proposta é lê-la como mandato para generalizar ports e criar kernels vazios para
+domínios futuros, a dívida do `InventoryProtocol` que a casa já aposentou.
+
+## Achados que as outras leituras não tinham
+
+- **Quatro decisões com mais de uma autoridade** [F]: `promise_decision` (stockman
+  `availability.py:295-349` contra `shop/adapters/stock.py:1004-1039`, fechada em #2263 e
+  #2265); preço contextual (`shop/services/pricing.py:resolve` morto contra
+  `projections/catalog_context`); custo (até a ADR-023); entrega fiscal (`FiscalBackend.emit`
+  sem o parâmetro).
+- **Força dos kernels** [I]: fortes com auditoria adversarial própria: cashman, payman,
+  fiscalman (como schema e contrato), buyman. Aparentemente fortes, com lacuna estrutural:
+  stockman (SPEC dispersa e a promessa duplicada), offerman (contratos incompletos), doorman
+  (`_link_verified_identifier` importa guestman dentro do service e engole a falha,
+  `verification.py:550-595`). orderman e guestman sólidos, sem auditoria dedicada.
+- **Recebimento não é gesto de kernel** [F]: `Move.Kind.BUY` existe e nada o emite; o insumo
+  entra por seed ou ajuste. Deve ser a primeira ponte buyman → stockman.
+- **Provider remoto**: o Payman já codifica a resposta certa (timeout consulta o gateway,
+  dedupe durável, `on_commit`). Contraexemplo: o fiscalman, em que `except` → `{}` vira nota
+  terminal. Regra: idempotência, snapshot monotônico e envio depois do commit.
+- **Gêmeo legado**: `backstage/models/cash_register.py` duplica o caixa do cashman (ADR-022).
+- **Fronteiras** [I]: caixa é cashman; encerramento do dia é aplicação (agrega quatro
+  kernels); checklist é Taskman futuro. Kernel de workflow é antipadrão.
+
+## Doutrina sobre substituir kernel
+
+Substituível é a capacidade de borda. Kernel com invariante próprio (livro, reserva atômica
+com validade, máquina de estados) só é substituível por quem implementa o mesmo contrato
+semântico; planilha não implementa. Virou a [ADR-044](../decisions/adr-044-substituibilidade-na-borda.md).
+
+## Modos de falha próprios desta leitura
+
+1. port vazio; 2. renomear sem matar a duplicação; 3. reescrever kernel forte; 4. kernel de
+workflow; 5. substituir estoque ou fulfillment por provider; 6. o envelope virar kernel;
+7. seed tratado como produção; 8. gêmeo legado sobreviver; 9. escrita plugável onde signal
+basta; 10. cutover sem dual-run.
+
+**Corte sem dupla autoridade:** extrair a decisão para o kernel, rodar as duas em paralelo com
+comparação até divergência zero, virar, apagar a cópia no commit seguinte. Abortar se a
+divergência não zerar ou se o movimento exigir tocar a semântica do kernel.
+
+## Objeção final
+
+*"Se os kernels são fortes e as ports já existem, o reset é só higiene, e higiene não
+justifica o risco."* Resposta: a dupla autoridade de promessa era bug latente de consistência
+de estoque. Com o envelope e a remoção do gêmeo, o reset é fechamento de contrato. A objeção
+fixa o limite: se sobrarem só as pastas, o veredito cai para derruba.
