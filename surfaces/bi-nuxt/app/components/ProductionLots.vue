@@ -69,7 +69,7 @@ const dayColumns = computed<TableColumn<ProductionDayRow>[]>(() => [
 ]);
 
 const batchColumns: TableColumn<BIProductionBatchMargin>[] = [
-  { accessorKey: "ref", header: "Fornada" },
+  { accessorKey: "ref", header: "Lote" },
   { accessorKey: "date", header: "Fechamento", cell: ({ row }) => shortDateWithYear(row.original.date) },
   { accessorKey: "recipe", header: "Receita" },
   { accessorKey: "revenue_q", header: "Receita rastreada", cell: ({ row }) => formatMoney(row.original.revenue_q) },
@@ -164,8 +164,8 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
 
       <OperatorReadingCard
         v-if="report.batch_margins.length"
-        title="Custo e margem por fornada"
-        description="A receita considera as vendas do período cuja baixa identifica a fornada de origem."
+        title="Custo e margem por lote"
+        description="A receita considera as vendas do período cuja baixa identifica o lote de produção."
       >
         <UTable :data="report.batch_margins" :columns="batchColumns">
           <template #total_q-cell="{ row }">
