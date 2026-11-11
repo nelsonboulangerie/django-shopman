@@ -17,7 +17,6 @@ from django.test import override_settings
 # ── Contract definitions ──
 
 STOCK_CONTRACT = {
-    "check_availability": ["sku", "qty"],
     "create_hold": ["sku", "qty", "ttl_minutes"],
     "fulfill_hold": ["hold_id"],
     "release_holds": ["hold_ids"],
@@ -325,7 +324,6 @@ class TestGetAdapter:
         adapter = get_adapter("stock")
         assert adapter is not None
         assert adapter.__name__ == "shopman.shop.adapters.stock"
-        assert hasattr(adapter, "check_availability")
         assert hasattr(adapter, "create_hold")
 
     def test_notification_returns_console_default(self):

@@ -1680,7 +1680,6 @@
             "_free_by_eligible_quant",
             "_get_product",
             "_return_remainder_to_cart",
-            "check_availability",
             "create_hold",
             "create_holds_up_to",
             "extend_hold",
