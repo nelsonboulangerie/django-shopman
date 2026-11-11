@@ -62,11 +62,11 @@ rodava sozinho no `maintenance_worker`. Entre 28/10 e 11/11 ele consumiu cerca d
 por dia (Opus 5 e Haiku 4.5) sem ninguém ver, e a recarga automática do Console cobrou cerca de
 US$ 1.180. Hoje:
 
-- concorrente pago (Haiku, Opus, Jev) só entra com `SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED=true`. A
-  credencial presente não liga nada; sem ele, mede fuzzy e embeddings (custo zero);
-- no máximo `SHOPMAN_ALIAS_BENCHMARK_MAX_CASES` casos (default 60) e teto de gasto estimado
-  `SHOPMAN_ALIAS_BENCHMARK_BUDGET_USD` (default US$ 1) por medição. Ao bater no teto, para e o placar
-  diz isso;
+- as travas são flags do comando, nunca settings: nenhuma variável de ambiente religa o gasto;
+- concorrente pago (Haiku, Opus, Jev) só entra com `--paid`. A credencial presente não liga nada;
+  sem a flag, mede fuzzy e embeddings (custo zero);
+- no máximo `--max-cases` casos (default 60) e teto de gasto estimado `--budget-usd` (default
+  US$ 1) por medição. Ao bater no teto, para e o placar diz isso;
 - a vaga da semana é reservada antes de medir. Uma medição interrompida por deploy ou restart conta
   para a semana e não recomeça do zero.
 
