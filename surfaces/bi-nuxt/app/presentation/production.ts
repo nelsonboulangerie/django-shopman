@@ -3,13 +3,13 @@
 // (`OperatorReadingChart`) e as linhas do quadro "Dia a dia", que é onde o previsto,
 // a perda e o mix de preço ficam à vista de quem toca, usa o teclado ou lê com leitor
 // de tela (antes só apareciam no `:hover` da barra; laudo F01).
-import type { BIOvenTimeRow, BIProductionReport } from "~/types/bi";
+import type { BIOvenTimeRow, BIProductionBatchMargin, BIProductionReport } from "~/types/bi";
 import type {
   ReadingChartPoint,
   ReadingChartSeries,
   ReadingCsv,
 } from "../../../operator-kit/app/presentation/readingChart";
-import { BUCKET_SPAN_LABELS, bucketLabel, bucketRows, formatInt, formatMinutes } from "./bi";
+import { BUCKET_SPAN_LABELS, bucketLabel, bucketRows, formatInt, formatMinutes, formatMoney, shortDate } from "./bi";
 
 /** As duas abas da Produção: o dia (padrão, fora da URL) e os lotes no período. */
 export const PRODUCTION_VIEWS = [
@@ -163,4 +163,18 @@ export function ovenCsv(first: string, rows: readonly BIOvenTimeRow[]): ReadingC
 /** O botão que abre o resto da lista: diz quantas faltam. */
 export function showAllLabel(total: number, noun: { one: string; many: string }): string {
   return `Ver ${total === 1 ? `a ${noun.one}` : `as ${formatInt(total)} ${noun.many}`}`;
+}
+
+// Custo e margem por lote. A margem é a do lote inteiro (receita rastreada
+// até o lote encerrar menos o custo congelado total) e só sai quando o lote
+// vence ou esgota; antes disso, a célula diz até quando ele vende.
+export function batchMarginLabel(row: BIProductionBatchMargin): string {
+  if (row.margin_q !== null) return formatMoney(row.margin_q);
+  if (row.cost_status !== "complete") return "Sem custo completo";
+  if (row.lot_status === "untraceable") return "Lote sem rastreio";
+  return row.sells_until ? `Em venda até ${shortDate(row.sells_until)}` : "Em venda";
+}
+
+export function batchTracedLabel(row: BIProductionBatchMargin): string {
+  return `${formatInt(Number(row.traced_quantity))} de ${formatInt(Number(row.output_quantity))}`;
 }
