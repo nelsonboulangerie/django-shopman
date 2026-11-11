@@ -435,6 +435,12 @@ class BenchmarkResult:
     shortlist_hits: int  # casos com produto em que o certo estava entre os K
     cases_with_product: int
     boards: list[Scoreboard]
+    #: Vazio quando mediu tudo; senão, por que parou antes (teto de gasto).
+    stopped: str = ""
+
+    @property
+    def cost_usd(self) -> float:
+        return sum(board.cost_usd for board in self.boards)
 
 
 def run(
@@ -445,14 +451,30 @@ def run(
     prices: dict[str, Price],
     shortlist_size: int = DEFAULT_SHORTLIST,
     accept_at: float = 0.9,
+    budget_usd: float | None = None,
 ) -> BenchmarkResult:
-    """Cada caso, para cada concorrente, com a mesma lista curta. Erro de um caso não para a medição."""
+    """Cada caso, para cada concorrente, com a mesma lista curta. Erro de um caso não para a medição.
+
+    ``budget_usd`` é o teto de gasto estimado (tokens × tabela de preço) da medição
+    inteira: antes de cada caso, se o gasto já chegou nele, a medição para ali e o
+    resultado diz por quê. ``None`` = sem teto (só para quem roda à mão e sabe).
+    """
     boards = [Scoreboard(matcher=m.name, price=prices.get(m.name, Price()), accept_at=accept_at) for m in matchers]
     for matcher in matchers:
         if hasattr(matcher, "prepare"):
             matcher.prepare(catalog)
-    shortlist_hits = cases_with_product = 0
+    shortlist_hits = cases_with_product = measured = 0
+    stopped = ""
     for case in cases:
+        spent = sum(board.cost_usd for board in boards)
+        if budget_usd is not None and spent >= budget_usd:
+            stopped = (
+                f"parou no teto de gasto: US$ {spent:.2f} de US$ {budget_usd:.2f} "
+                f"depois de {measured} de {len(cases)} casos"
+            )
+            logger.warning("bi.matcher_benchmark: %s", stopped)
+            break
+        measured += 1
         candidates = shortlist(case.external_name, catalog, shortlist_size)
         if case.expected_pk is not None:
             cases_with_product += 1
@@ -467,11 +489,12 @@ def run(
                 verdict = Verdict(product_pk=None, confidence=0.0, error=f"{type(exc).__name__}: {exc}"[:300])
             board.add(case, verdict)
     return BenchmarkResult(
-        cases=len(cases),
+        cases=measured,
         shortlist_size=shortlist_size,
         shortlist_hits=shortlist_hits,
         cases_with_product=cases_with_product,
         boards=boards,
+        stopped=stopped,
     )
 
 
@@ -514,6 +537,9 @@ def render_report(result: BenchmarkResult, *, source: str, accept_at: float) -> 
         "\"Dos quais errados\" é o erro que passaria sem ninguém ver: o número que decide se um "
         "concorrente pode confirmar sozinho. Critério em docs/plans/BI-JEV-PILOT.md."
     )
+    lines.append(f"Gasto estimado desta medição: US$ {result.cost_usd:.2f}.")
+    if result.stopped:
+        lines.insert(0, f"⚠ Medição incompleta: {result.stopped}.")
     return "\n".join(lines)
 
 
@@ -567,6 +593,18 @@ def maybe_measure(*, source: str = "yooga", force: bool = False, accept_at: floa
 
     Devolve ``(relatório ou None, motivo)``. Só nome de produto sai da casa;
     concorrente sem credencial ou pacote fica de fora e o placar diz por quê.
+
+    Travas de custo (ver o bloco ``SHOPMAN_ALIAS_BENCHMARK_*`` em settings):
+
+    - Concorrente pago (LLM, Jev) só entra com ``SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED``.
+      Modelo sem preço na tabela fica de fora: sem preço, o teto não o enxergaria.
+    - No máximo ``SHOPMAN_ALIAS_BENCHMARK_MAX_CASES`` casos por medição.
+    - Teto de gasto estimado ``SHOPMAN_ALIAS_BENCHMARK_BUDGET_USD`` (vale até com ``force``).
+    - A vaga da semana é RESERVADA antes de medir. Antes, o placar só era gravado
+      no fim. Cada deploy reiniciava o worker no meio de uma medição longa e ela
+      recomeçava do zero, para sempre (28/10 a 11/11/2026, cerca de US$ 1.180). Agora,
+      medição interrompida também conta para a semana, e o placar fica marcado como
+      interrompido no Admin.
     """
     from datetime import timedelta
 
@@ -582,14 +620,46 @@ def maybe_measure(*, source: str = "yooga", force: bool = False, accept_at: floa
     last = AliasBenchmarkReport.objects.filter(source=source).order_by("-created_at").first()
     if last and not force and timezone.now() - last.created_at < timedelta(days=MEASURE_EVERY_DAYS):
         return None, f"último placar de {last.created_at:%d/%m}; o próximo sai em até {MEASURE_EVERY_DAYS} dias"
-    matchers, skipped = build_matchers(("fuzzy", "embed", "llm", "jev"), llm_models=list(DEFAULT_LLM_MODELS))
-    prices, _unpriced = prices_for(matchers)
-    result = run(cases, load_catalog(), matchers, prices=prices, accept_at=accept_at)
+
+    max_cases = max(1, int(getattr(settings, "SHOPMAN_ALIAS_BENCHMARK_MAX_CASES", 60)))
+    budget_usd = float(getattr(settings, "SHOPMAN_ALIAS_BENCHMARK_BUDGET_USD", 1.0))
+    paid = bool(getattr(settings, "SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED", False))
+    total_gold = len(cases)
+    cases = cases[:max_cases]
+
+    names = ("fuzzy", "embed", "llm", "jev") if paid else ("fuzzy", "embed")
+    matchers, skipped = build_matchers(names, llm_models=list(DEFAULT_LLM_MODELS))
+    if not paid:
+        off = "concorrente pago desligado (SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED=false)"
+        skipped += [("llm", off), ("jev", off)]
+    prices, unpriced = prices_for(matchers)
+    if unpriced:
+        matchers = [m for m in matchers if not (isinstance(m, LLMMatcher) and m.model in unpriced)]
+        skipped += [(f"llm:{model}", "sem preço na tabela; o teto de gasto não o enxergaria") for model in unpriced]
+
+    # Reserva a vaga ANTES de gastar: se o processo morrer no meio, a semana já conta.
     report = AliasBenchmarkReport.objects.create(
         source=source,
-        cases=result.cases,
-        contenders=", ".join(board.matcher for board in result.boards)[:240],
+        cases=len(cases),
+        contenders=", ".join(m.name for m in matchers)[:240],
         skipped="\n".join(f"{name}: {reason}" for name, reason in skipped),
-        report=render_report(result, source=source, accept_at=accept_at),
+        report=INTERRUPTED_REPORT,
     )
-    return report, "medido"
+    result = run(cases, load_catalog(), matchers, prices=prices, accept_at=accept_at, budget_usd=budget_usd)
+    text = render_report(result, source=source, accept_at=accept_at)
+    if total_gold > len(cases):
+        text += f"\nAmostra: {len(cases)} dos {total_gold} de-paras confirmados (teto SHOPMAN_ALIAS_BENCHMARK_MAX_CASES)."
+    report.cases = result.cases
+    report.contenders = ", ".join(board.matcher for board in result.boards)[:240]
+    report.report = text
+    report.save(update_fields=["cases", "contenders", "report"])
+    return report, "medido" if not result.stopped else f"medido em parte ({result.stopped})"
+
+
+#: O texto que fica no placar reservado enquanto mede. Se ele continuar lá depois, a
+#: medição morreu no meio (deploy, restart) e só volta na semana seguinte.
+INTERRUPTED_REPORT = (
+    "Medição interrompida antes de terminar (o processo reiniciou no meio). "
+    "A próxima medição só sai depois do prazo semanal; para medir já, rode à mão: "
+    "manage.py run_alias_benchmark --now"
+)

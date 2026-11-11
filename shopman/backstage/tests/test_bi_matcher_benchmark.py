@@ -389,3 +389,99 @@ def test_report_is_readable_in_admin_and_read_only(catalog, settings, monkeypatc
     page = client.get(reverse("admin:backstage_aliasbenchmarkreport_change", args=[report.pk]))
     assert page.status_code == 200 and "aceitaria sozinho" in page.content.decode()
     assert client.get(reverse("admin:backstage_aliasbenchmarkreport_add")).status_code == 403
+
+
+# ── Travas de custo (11/11/2026: a medição automática gastou ~US$ 1.180 em loop) ──
+
+
+class _MustNotCallLLM(LLMMatcher):
+    def __init__(self, *, model=None):
+        super().__init__(model=model, client=_FakeClient('{"choice": "p1", "confidence": 0.95}'))
+
+    def match(self, case, candidates):  # pragma: no cover - falha se for chamado
+        raise AssertionError("concorrente pago chamado sem opt-in")
+
+
+@pytest.mark.django_db
+def test_paid_contenders_stay_off_by_default_even_with_credentials(catalog, settings, monkeypatch):
+    from shopman.backstage.bi import matcher_benchmark
+
+    settings.AI_ASSIST_API_KEY = "chave-presente"
+    settings.JEV_API_KEY = "chave-presente"
+    settings.SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED = False
+    monkeypatch.setattr(matcher_benchmark, "LLMMatcher", _MustNotCallLLM)
+    monkeypatch.setattr(matcher_benchmark, "MIN_CONFIRMED_TO_MEASURE", 1)
+    _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
+
+    report, reason = matcher_benchmark.maybe_measure()
+
+    assert reason == "medido"
+    assert "llm" not in report.contenders and "jev" not in report.contenders
+    assert "llm: concorrente pago desligado" in report.skipped
+    assert "jev: concorrente pago desligado" in report.skipped
+
+
+@pytest.mark.django_db
+def test_budget_stops_the_run_and_says_so(catalog):
+    expensive = LLMMatcher(model="claude-haiku-4-5", client=_FakeClient(
+        '{"choice": "p1", "confidence": 0.95}', usage=(1_000_000, 0)))  # US$ 1 por chamada
+    cases = [Case(f"item {i}", catalog["CT"].pk) for i in range(5)]
+
+    result = run(
+        cases, load_catalog(), [expensive],
+        prices={expensive.name: Price(1.0, 5.0)}, budget_usd=1.5,
+    )
+
+    assert result.cases == 2  # o 3º caso já veria US$ 2 gastos
+    assert len(expensive.client.calls) == 2
+    assert "teto de gasto" in result.stopped and "2 de 5" in result.stopped
+    assert result.cost_usd == pytest.approx(2.0)
+
+
+@pytest.mark.django_db
+def test_interrupted_measure_still_counts_for_the_week(catalog, settings, monkeypatch):
+    """O loop de 28/10: deploy no meio da medição não pode fazê-la recomeçar do zero."""
+    from shopman.backstage.bi import matcher_benchmark
+    from shopman.backstage.models import AliasBenchmarkReport
+
+    settings.AI_ASSIST_API_KEY = ""
+    settings.JEV_API_KEY = ""
+    monkeypatch.setattr(matcher_benchmark, "MIN_CONFIRMED_TO_MEASURE", 1)
+    _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
+
+    def dies_mid_run(*args, **kwargs):
+        raise SystemExit("worker reiniciado pelo deploy")
+
+    monkeypatch.setattr(matcher_benchmark, "run", dies_mid_run)
+    with pytest.raises(SystemExit):
+        matcher_benchmark.maybe_measure()
+
+    reserved = AliasBenchmarkReport.objects.get()
+    assert reserved.report == matcher_benchmark.INTERRUPTED_REPORT
+
+    again, reason = matcher_benchmark.maybe_measure()
+    assert again is None and "próximo sai" in reason
+    assert AliasBenchmarkReport.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_measure_samples_at_most_the_case_ceiling(catalog, settings, monkeypatch):
+    from shopman.backstage.bi import matcher_benchmark
+
+    settings.AI_ASSIST_API_KEY = ""
+    settings.SHOPMAN_ALIAS_BENCHMARK_MAX_CASES = 1
+    monkeypatch.setattr(matcher_benchmark, "MIN_CONFIRMED_TO_MEASURE", 1)
+    _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
+    _confirmed("Bolo de pote")
+
+    report, _reason = matcher_benchmark.maybe_measure()
+
+    assert report.cases == 1
+    assert "Amostra: 1 dos 2 de-paras confirmados" in report.report
+
+
+def test_worker_cycle_no_longer_runs_the_benchmark():
+    from shopman.shop.management.commands import maintenance_worker
+
+    names = [item if isinstance(item, str) else item[0] for item in maintenance_worker.MAINTENANCE_COMMANDS]
+    assert "run_alias_benchmark" not in names
