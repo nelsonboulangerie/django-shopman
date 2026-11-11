@@ -12,6 +12,7 @@
 import type { TableColumn } from "#ui/types";
 import type { BIProductionBatchMargin, BIProductionReport } from "~/types/bi";
 import { coverageLabel, delta, formatInt, formatMoney, shortDateWithYear, startedAssumedHint } from "~/presentation/bi";
+import { batchMarginLabel, batchTracedLabel } from "~/presentation/production";
 import {
   FINISHED_SERIES,
   OVEN_FOCUS_ROWS,
@@ -74,6 +75,7 @@ const batchColumns: TableColumn<BIProductionBatchMargin>[] = [
   { accessorKey: "recipe", header: "Receita" },
   { accessorKey: "revenue_q", header: "Receita rastreada", cell: ({ row }) => formatMoney(row.original.revenue_q) },
   { accessorKey: "total_q", header: "Custo congelado" },
+  { accessorKey: "traced_quantity", header: "Vendido rastreado" },
   { accessorKey: "margin_q", header: "Margem sobre a receita rastreada" },
 ];
 
@@ -165,7 +167,7 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
       <OperatorReadingCard
         v-if="report.batch_margins.length"
         title="Custo e margem por lote"
-        description="A receita considera as vendas do período cuja baixa identifica o lote de produção."
+        description="A receita considera as vendas do período cuja baixa identifica o lote de produção. A margem desconta dela o custo congelado das mesmas unidades."
       >
         <UTable :data="report.batch_margins" :columns="batchColumns">
           <template #total_q-cell="{ row }">
@@ -178,8 +180,11 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
             </template>
             <span v-else-if="row.original.total_q !== null">{{ formatMoney(row.original.total_q) }}</span>
           </template>
+          <template #traced_quantity-cell="{ row }">
+            {{ batchTracedLabel(row.original) }}
+          </template>
           <template #margin_q-cell="{ row }">
-            {{ row.original.margin_q === null ? 'Indisponível' : formatMoney(row.original.margin_q) }}
+            {{ batchMarginLabel(row.original) }}
           </template>
         </UTable>
       </OperatorReadingCard>

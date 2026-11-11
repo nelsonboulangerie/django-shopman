@@ -23,6 +23,9 @@ export interface BIProductionBatchMargin {
   margin_q: number | null;
   cost_status: string;
   gaps: string[];
+  output_quantity: string;
+  traced_quantity: string;
+  attribution: string;
 }
 
 /** Um dia da série: produção fechada e o mix comercial da qualidade. */

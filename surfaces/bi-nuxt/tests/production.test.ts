@@ -5,7 +5,10 @@
 import { describe, expect, it } from "vitest";
 import type { BIOverShortRow, BIProductionReport } from "~/types/bi";
 import { overShortCsv, showHiddenLabel, verdictColor } from "~/presentation/overShort";
+import { formatMoney } from "~/presentation/bi";
 import {
+  batchMarginLabel,
+  batchTracedLabel,
   bucketAxisLabel,
   finishedPoints,
   ovenCsv,
@@ -111,5 +114,24 @@ describe("Sobrou ou faltou: a tabela produto a produto", () => {
     expect(productionView("lots")).toBe("lots");
     expect(productionView(undefined)).toBe("day");
     expect(productionView(["lots"])).toBe("day");
+  });
+});
+
+describe("custo e margem por lote", () => {
+  const row = {
+    ref: "WO-1", recipe: "Pão", date: "2026-11-10", revenue_q: 0, total_q: 1800, margin_q: null,
+    cost_status: "complete", gaps: [], output_quantity: "10", traced_quantity: "0", attribution: "no_traced_sale",
+  };
+
+  it("sem margem, diz o que falta em vez de mostrar prejuízo", () => {
+    expect(batchMarginLabel(row)).toBe("Sem venda rastreada no período");
+    expect(batchMarginLabel({ ...row, attribution: "untraceable" })).toBe("Lote sem rastreio");
+    expect(batchMarginLabel({ ...row, cost_status: "missing", total_q: null })).toBe("Sem custo completo");
+  });
+
+  it("com margem, mostra o dinheiro e quanto da fornada foi rastreado", () => {
+    const traced = { ...row, revenue_q: 2401, margin_q: 1861, traced_quantity: "3", attribution: "traced" };
+    expect(batchMarginLabel(traced)).toBe(formatMoney(1861));
+    expect(batchTracedLabel(traced)).toBe("3 de 10");
   });
 });

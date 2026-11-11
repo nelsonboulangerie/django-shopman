@@ -81,7 +81,12 @@ class BIProductionPrevious:
 
 @dataclass(frozen=True)
 class BIProductionBatchMargin:
-    """Custo congelado e receita rastreada de uma fornada fechada."""
+    """Custo congelado e receita rastreada de uma fornada fechada.
+
+    A margem é sobre a receita RASTREADA: desconta dela o custo das mesmas
+    unidades (custo congelado × rastreado ÷ produzido), nunca o custo da fornada
+    inteira contra a parte vendida. Sem unidade rastreada não há margem a medir.
+    """
 
     ref: str
     recipe: str
@@ -91,6 +96,14 @@ class BIProductionBatchMargin:
     margin_q: int | None
     cost_status: str
     gaps: tuple[str, ...]
+    #: Unidades que a fornada produziu (soma das saídas).
+    output_quantity: str
+    #: Unidades vendidas no período cuja baixa identifica o lote desta fornada.
+    traced_quantity: str
+    #: ``traced`` · ``no_traced_sale`` (o lote é desta fornada, mas nenhuma venda
+    #: do período o identifica) · ``untraceable`` (o estoque não separa esta
+    #: fornada: lote diário, compartilhado ou sem lote).
+    attribution: str
 
 
 @dataclass(frozen=True)
@@ -189,18 +202,35 @@ def _batch_margins(date_from: date, date_to: date) -> tuple[BIProductionBatchMar
         .order_by("-finished_at", "-target_date", "-pk")
     )
     batch_owners = _stock_batch_owners(work_orders)
-    revenue = _batch_revenue(batch_owners, date_from, date_to) if batch_owners else {}
+    owned_refs = set(batch_owners.values())
+    revenue, traced = _batch_revenue(batch_owners, date_from, date_to) if batch_owners else ({}, {})
 
     rows = []
     for wo in work_orders:
         snapshot = (wo.meta or {}).get("cost_snapshot")
         total_q = snapshot["total_q"] if snapshot is not None else None
         revenue_q = revenue.get(wo.ref, 0)
+        traced_qty = traced.get(wo.ref, Decimal(0))
+        output_qty = Decimal(wo.finished or 0)
         cost_status = "complete"
         if snapshot is None:
             cost_status = "missing"
         elif total_q is None:
             cost_status = "incomplete"
+        if wo.ref not in owned_refs:
+            attribution = "untraceable"
+        elif traced_qty <= 0:
+            attribution = "no_traced_sale"
+        else:
+            attribution = "traced"
+        margin_q = None
+        if total_q is not None and attribution == "traced" and output_qty > 0:
+            traced_cost_q = int(
+                (Decimal(total_q) * min(traced_qty, output_qty) / output_qty).quantize(
+                    Decimal(1), rounding=ROUND_HALF_UP
+                )
+            )
+            margin_q = revenue_q - traced_cost_q
         rows.append(
             BIProductionBatchMargin(
                 ref=wo.ref,
@@ -208,9 +238,12 @@ def _batch_margins(date_from: date, date_to: date) -> tuple[BIProductionBatchMar
                 date=(timezone.localdate(wo.finished_at) if wo.finished_at else wo.target_date).isoformat(),
                 revenue_q=revenue_q,
                 total_q=total_q,
-                margin_q=revenue_q - total_q if total_q is not None else None,
+                margin_q=margin_q,
                 cost_status=cost_status,
                 gaps=tuple(snapshot["gaps"]) if snapshot is not None else (),
+                output_quantity=_qty(output_qty),
+                traced_quantity=_qty(traced_qty),
+                attribution=attribution,
             )
         )
     return tuple(rows)
@@ -239,8 +272,14 @@ def _stock_batch_owners(work_orders) -> dict[str, str]:
     }
 
 
-def _batch_revenue(batch_owners: dict[str, str], date_from: date, date_to: date) -> dict[str, int]:
-    """Rateia a linha conciliada pela quantidade baixada de cada lote."""
+def _batch_revenue(
+    batch_owners: dict[str, str], date_from: date, date_to: date
+) -> tuple[dict[str, int], dict[str, Decimal]]:
+    """Rateia a linha conciliada pela quantidade baixada de cada lote.
+
+    Devolve a receita e as unidades rastreadas por fornada; uma linha que não
+    fecha (baixa maior que o vendido) não entra em nenhuma das duas.
+    """
     from shopman.orderman.models import Order
     from shopman.stockman import Hold, HoldStatus
 
@@ -257,7 +296,7 @@ def _batch_revenue(batch_owners: dict[str, str], date_from: date, date_to: date)
         quant__batch__in=batch_owners,
     ).values_list("pk", "sku", "quant__batch", "metadata__reference"))
     if not holds:
-        return {}
+        return {}, {}
 
     order_ids = {order_by_reference[reference] for _, _, _, reference in holds}
     holds_by_order = {}
@@ -283,6 +322,7 @@ def _batch_revenue(batch_owners: dict[str, str], date_from: date, date_to: date)
             totals[key] = qty + line.qty, total_q + line.line_total_q
 
     revenue: dict[str, int] = defaultdict(int)
+    traced: dict[str, Decimal] = defaultdict(Decimal)
     for key, (qty, total_q) in totals.items():
         allocated = quantities[key]
         if qty <= 0 or sum(allocated.values()) > qty:
@@ -293,8 +333,9 @@ def _batch_revenue(batch_owners: dict[str, str], date_from: date, date_to: date)
             cumulative += quantity
             cumulative_q = int((total_q * cumulative / qty).quantize(Decimal(1), rounding=ROUND_HALF_UP))
             revenue[ref] += cumulative_q - previous_q
+            traced[ref] += quantity
             previous_q = cumulative_q
-    return revenue
+    return revenue, traced
 
 
 def _counted_in_units(work_orders: list) -> list:

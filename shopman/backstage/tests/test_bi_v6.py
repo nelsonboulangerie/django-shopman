@@ -385,13 +385,16 @@ def test_batch_margin_uses_frozen_cost_and_only_traced_reconciled_sales(day):
     report = build_bi_production(date_from=old.target_date, date_to=day)
     rows = {row.ref: row for row in report.batch_margins}
     first = rows[complete.ref]
-    assert (first.cost_status, first.revenue_q, first.total_q, first.margin_q) == ("complete", 2401, 1800, 601)
+    # 3 de 10 unidades rastreadas: a margem desconta o custo dessas 3 (540), não o da fornada.
+    assert (first.cost_status, first.revenue_q, first.total_q, first.margin_q) == ("complete", 2401, 1800, 1861)
+    assert (first.attribution, first.traced_quantity, first.output_quantity) == ("traced", "3", "10")
     second = rows[incomplete.ref]
     assert (second.cost_status, second.revenue_q, second.total_q, second.margin_q) == (
         "incomplete", 1600, None, None,
     )
     assert second.gaps == ("Farinha sem preço de compra.",)
     assert (rows[old.ref].cost_status, rows[old.ref].total_q, rows[old.ref].margin_q) == ("missing", None, None)
+    assert rows[old.ref].attribution == "untraceable"
 
 
 def test_batch_margin_does_not_attribute_sales_from_a_shared_daily_batch(day):
@@ -403,5 +406,51 @@ def test_batch_margin_does_not_attribute_sales_from_a_shared_daily_batch(day):
     sale = _sale(day, time(9), recipe.output_sku, 2)
     _attach_sale_holds(sale, day, [(quant, 2)])
 
+    _freeze_cost(second, day, 900)
+
     rows = build_bi_production(date_from=day, date_to=day).batch_margins
     assert [(row.ref, row.revenue_q) for row in rows] == [(second.ref, 0)]
+    # Lote que o estoque não separa: sem margem, nunca o custo inteiro como prejuízo.
+    assert (rows[0].attribution, rows[0].margin_q) == ("untraceable", None)
+
+
+def _freeze_cost(wo, day, total_q):
+    WorkOrder.objects.filter(pk=wo.pk).update(meta={"cost_snapshot": {
+        "frozen_at": datetime.combine(day, time(6, 30), tzinfo=timezone.get_current_timezone()).isoformat(),
+        "total_q": total_q,
+        "unit_cost_q": total_q // int(wo.finished),
+        "output_quantity": str(wo.finished),
+        "lines": [],
+        "gaps": [],
+    }})
+
+
+def test_batch_margin_waits_for_the_sale_of_the_next_day(day):
+    recipe = _recipe("BINEXT", "Pão do dia seguinte")
+    wo = _lot(recipe, day, 10)
+    _freeze_cost(wo, day, 1800)
+    quant = _finished_stock(wo, "bi-margin-next")
+    next_day = day + timedelta(days=1)
+    sale = _sale(next_day, time(9), recipe.output_sku, 10)
+    _attach_sale_holds(sale, next_day, [(quant, 10)])
+
+    only_day = build_bi_production(date_from=day, date_to=day).batch_margins[0]
+    assert (only_day.attribution, only_day.revenue_q, only_day.margin_q) == ("no_traced_sale", 0, None)
+
+    both = build_bi_production(date_from=day, date_to=next_day).batch_margins[0]
+    assert (both.attribution, both.traced_quantity, both.revenue_q, both.margin_q) == ("traced", "10", 10000, 8200)
+
+
+def test_two_batches_in_one_stock_lot_have_no_margin(day):
+    recipe = _recipe("BITWO", "Baguete")
+    first = _lot(recipe, day, 10, at=time(6))
+    second = _lot(recipe, day, 10, at=time(11))
+    for wo in (first, second):
+        _freeze_cost(wo, day, 1800)
+    quant = _finished_stock(first, "bi-margin-two")
+    _finished_stock(second, quant.batch)
+    sale = _sale(day, time(15), recipe.output_sku, 20)
+    _attach_sale_holds(sale, day, [(quant, 20)])
+
+    rows = build_bi_production(date_from=day, date_to=day).batch_margins
+    assert {(row.attribution, row.margin_q) for row in rows} == {("untraceable", None)}
