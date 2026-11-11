@@ -18997,6 +18997,47 @@
       "test_gap_reason": null,
       "policy": false,
       "out_of_extraction": false
+    },
+    {
+      "id": "production.frozen-cost",
+      "question": "Como a fornada guarda o custo que os insumos tinham no dia em que ela foi feita?",
+      "owner": "production.frozen-cost",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.handlers.production_cost:on_production_changed",
+      "authoritative_symbols": [
+        "shopman.shop.handlers.production_cost:on_production_changed"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/handlers/production_cost.py",
+          "symbols": [
+            "connect",
+            "on_production_changed",
+            "freeze_work_order_cost",
+            "logger"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "handler"
+      ],
+      "domains": [
+        "craftsman",
+        "buyman"
+      ],
+      "ports": [],
+      "events": [
+        "production_changed"
+      ],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_cost_live_and_frozen.py::test_price_change_after_production_does_not_rewrite_the_frozen_cost"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
     }
   ]
 }

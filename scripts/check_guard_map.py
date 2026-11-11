@@ -79,7 +79,6 @@ GUARDS: dict[str, list[str]] = {
 }
 
 UNCOVERED = [
-    "cadeia de custo write-only (ADR-023/024 sem leitor): F3 decide ligar (A) ou adiar (B)",
     "duplicação de autoridade de decisão GERAL: check_decision_authority cobre só as decisões registradas em CANONICAL/FORBIDDEN",
 ]
 

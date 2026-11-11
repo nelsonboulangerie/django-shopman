@@ -25,6 +25,16 @@ passa; suíte de disponibilidade verde.
 
 ## 3.2 Leitor de custo (ADR-023/024 — a corda sem meio)
 
+> **RESOLVIDO (11/11/2026, F3, opção A decidida pelo dono).** O "estado atual" abaixo
+> estava defasado: o custo VIVO já existia desde 04/10 (`shop/adapters/cost.py`,
+> `RecipeCostBackend`, ligado em `OFFERMAN["COST_BACKEND"]`, lido pela margem do Admin
+> do Offerman e pelo "R$ de custo" da sobra no B.I.). A F3 fechou o que faltava:
+> revenda (SKU sem ficha, custo do próprio `Material`), lacuna que grita com motivo
+> (`CostGapExplainer` → `Product.reference_cost_gap` → selo "Sem custo" no Admin) e o
+> custo CONGELADO no `finish` (`WorkOrder.meta["cost_snapshot"]`, receiver
+> `shop/handlers/production_cost.py`). Sem migration. Provas:
+> `shopman/shop/tests/test_cost_live_and_frozen.py` e `TestCostGap` no Offerman.
+
 **Estado atual (medido):** COST_BACKEND existe em config/settings.py; offerman tem CostBackend
 (protocols/cost.py), Product.reference_cost_q e margin_percent; mas NENHUM leitor em runtime
 (grep no repo inteiro: só offerman + settings + docs). Buyman grava custo que ninguém lê.
@@ -49,6 +59,20 @@ ou (B) a coluna sumiu e a ADR de adiamento está aceita.
   autoridade única (PricingBackend); apagar caminho morto de preço.
 - **Doorman:** _link_verified_identifier para a bridge (adapters/customers.py) e parar de
   engolir exceção; desacoplar OTP de reuso interno de AccessLink.
+
+**Resultado medido (2026-11-10, frentes F4a/F4b/F4c):** parte deste spec descrevia um estado que
+o main já tinha deixado para trás.
+- Stockman: a sentinela 999999 já tinha saído em `df5fe69ff` (16/10). `Quant.batch` **continua
+  CharField, por decisão**: o campo faz parte da coordenada única (`''` = sem lote), guarda o
+  marcador `'started'` da produção, e a maioria dos lotes nasce fora do Stockman. O que faltava era
+  a regra de promessa repetida dentro de `Stock.hold`; foi concentrada em `decision_from_availability`
+  (PR #2265).
+- Offerman: `shop/services/pricing.py::resolve` já tinha saído em `6c8e51fc9` (16/10). Os verbos
+  mortos do port de catálogo (`get_price`, `validate_sku`, `expand_bundle`) e a segunda escolha de
+  faixa de preço na projeção saíram no PR #2266.
+- Doorman: `_link_verified_identifier` saiu em `a522f21cc` (17/10; hoje é o verbo
+  `bind_verified_handle` do porto de identidade) e o OTP deixou de reaproveitar AccessLink em
+  `c57a0046b`. O PR #2262 trava os dois com testes de contrato e uma regra de fronteira.
 
 **Acceptance (por kernel, os 4 gates da v6 §2):** autoridade única (busca de símbolo), gate
 AST de import, SPEC concentrada, contract tests dos verbos públicos.
