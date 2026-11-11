@@ -11,7 +11,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CANONICAL = {
-    "promise_decision_for_sku": "packages/stockman",
     "promise_for_sku": "packages/stockman",
     "decision_from_availability": "packages/stockman",
 }

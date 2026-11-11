@@ -14,7 +14,7 @@ from django.utils import timezone
 from shopman.stockman import stock
 from shopman.stockman.adapters.sku_validation import reset_sku_validator
 from shopman.stockman.models import Hold, Quant
-from shopman.stockman.services.availability import promise_decision_for_sku
+from shopman.stockman.services.availability import promise_for_sku
 
 pytestmark = pytest.mark.django_db
 
@@ -493,7 +493,7 @@ class TestPromiseDecision:
             _quantity=Decimal("10"),
         )
 
-        decision = promise_decision_for_sku(product.sku, Decimal("3"), target_date=today)
+        decision = promise_for_sku(product.sku, Decimal("3"), target_date=today)
 
         assert decision.approved is True
         assert decision.reason_code is None
@@ -515,7 +515,7 @@ class TestPromiseDecision:
             _quantity=Decimal("2"),
         )
 
-        decision = promise_decision_for_sku(product.sku, Decimal("3"), target_date=today)
+        decision = promise_for_sku(product.sku, Decimal("3"), target_date=today)
 
         assert decision.approved is False
         assert decision.reason_code == "insufficient_supply"
@@ -534,7 +534,7 @@ class TestPromiseDecision:
             _quantity=Decimal("10"),
         )
 
-        decision = promise_decision_for_sku(sku, Decimal("1"), target_date=today)
+        decision = promise_for_sku(sku, Decimal("1"), target_date=today)
 
         assert decision.approved is False
         assert decision.reason_code == "paused"
@@ -601,7 +601,7 @@ class TestPromiseDecision:
             target_date=tomorrow,
             _quantity=Decimal("5"),
         )
-        decision = promise_decision_for_sku(product.sku, Decimal("1"), target_date=tomorrow)
+        decision = promise_for_sku(product.sku, Decimal("1"), target_date=tomorrow)
         assert decision.availability_policy == "stock_only"
         assert decision.approved is False
         assert decision.available_qty == Decimal("0")
@@ -612,7 +612,7 @@ class TestPromiseDecision:
         STOCKMAN={"SKU_VALIDATOR": "shopman.stockman.tests.fakes.DemandOkSkuValidator"}
     )
     def test_demand_ok_policy_approves_beyond_current_supply(self, product, today):
-        decision = promise_decision_for_sku(product.sku, Decimal("7"), target_date=today)
+        decision = promise_for_sku(product.sku, Decimal("7"), target_date=today)
         assert decision.availability_policy == "demand_ok"
         assert decision.approved is True
         assert decision.available_qty is None
@@ -633,7 +633,7 @@ class TestPromiseDecision:
             _quantity=Decimal("0"),
         )
 
-        decision = promise_decision_for_sku(product.sku, Decimal("7"), target_date=today)
+        decision = promise_for_sku(product.sku, Decimal("7"), target_date=today)
 
         assert decision.approved is True
         assert decision.available_qty == Decimal("0")

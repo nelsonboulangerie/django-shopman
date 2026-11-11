@@ -280,7 +280,6 @@ class TestAvailabilityListingMembership:
                 "planned": Decimal("0"),
                 "positions": [{"position_ref": "vitrine"}],
             }),
-            get_promise_decision=MagicMock(),
         )
         mock_decision.return_value = PromiseDecision(
             approved=True,
@@ -307,7 +306,6 @@ class TestAvailabilityListingMembership:
 
         assert result["ok"] is True
         mock_decision.assert_called_once()
-        stock_adapter.get_promise_decision.assert_not_called()
 
     @patch("shopman.shop.services.availability.get_adapter")
     @patch("shopman.shop.services.availability._sku_in_channel_listing", return_value=True)

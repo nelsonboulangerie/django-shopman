@@ -1684,7 +1684,6 @@
             "get_availability",
             "get_availability_for_skus",
             "get_channel_scope",
-            "get_promise_decision",
             "hold_state",
             "hold_target_date",
             "is_cart_hold",

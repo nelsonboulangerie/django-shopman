@@ -240,9 +240,9 @@ class StockQueries:
         allowed_positions: list[str] | None = None,
     ):
         """Return Stockman's explicit promise decision for a SKU."""
-        from shopman.stockman.services.availability import promise_decision_for_sku
+        from shopman.stockman.services.availability import promise_for_sku
 
-        return promise_decision_for_sku(
+        return promise_for_sku(
             sku,
             quantity,
             target_date=target_date,
