@@ -9,7 +9,7 @@ import type {
   ReadingChartSeries,
   ReadingCsv,
 } from "../../../operator-kit/app/presentation/readingChart";
-import { BUCKET_SPAN_LABELS, bucketLabel, bucketRows, formatInt, formatMinutes, formatMoney } from "./bi";
+import { BUCKET_SPAN_LABELS, bucketLabel, bucketRows, formatInt, formatMinutes, formatMoney, shortDate } from "./bi";
 
 /** As duas abas da Produção: o dia (padrão, fora da URL) e os lotes no período. */
 export const PRODUCTION_VIEWS = [
@@ -165,14 +165,14 @@ export function showAllLabel(total: number, noun: { one: string; many: string })
   return `Ver ${total === 1 ? `a ${noun.one}` : `as ${formatInt(total)} ${noun.many}`}`;
 }
 
-// Custo e margem por lote. A margem desconta da receita rastreada o custo das
-// MESMAS unidades; quando não há o que medir, a célula diz o que falta, nunca
-// um prejuízo do tamanho da fornada inteira.
+// Custo e margem por lote. A margem é a do lote inteiro (receita rastreada
+// até o lote encerrar menos o custo congelado total) e só sai quando o lote
+// vence ou esgota; antes disso, a célula diz até quando ele vende.
 export function batchMarginLabel(row: BIProductionBatchMargin): string {
   if (row.margin_q !== null) return formatMoney(row.margin_q);
   if (row.cost_status !== "complete") return "Sem custo completo";
-  if (row.attribution === "untraceable") return "Lote sem rastreio";
-  return "Sem venda rastreada no período";
+  if (row.lot_status === "untraceable") return "Lote sem rastreio";
+  return row.sells_until ? `Em venda até ${shortDate(row.sells_until)}` : "Em venda";
 }
 
 export function batchTracedLabel(row: BIProductionBatchMargin): string {

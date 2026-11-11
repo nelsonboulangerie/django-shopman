@@ -12575,6 +12575,7 @@
             "_complete_planning_receipt",
             "_decimal_wire",
             "_default_position_ref",
+            "_ensure_cost_frozen",
             "_ensure_order_links_closed",
             "_ensure_stock_ledger_closed",
             "_formula_meta",

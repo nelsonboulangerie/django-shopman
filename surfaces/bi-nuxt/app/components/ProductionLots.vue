@@ -76,7 +76,7 @@ const batchColumns: TableColumn<BIProductionBatchMargin>[] = [
   { accessorKey: "revenue_q", header: "Receita rastreada", cell: ({ row }) => formatMoney(row.original.revenue_q) },
   { accessorKey: "total_q", header: "Custo congelado" },
   { accessorKey: "traced_quantity", header: "Vendido rastreado" },
-  { accessorKey: "margin_q", header: "Margem sobre a receita rastreada" },
+  { accessorKey: "margin_q", header: "Margem do lote" },
 ];
 
 // Tempo de forno: tabela com a média em barra (NuxtProgress) e o "Ver todas" (laudo F20).
@@ -167,7 +167,7 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
       <OperatorReadingCard
         v-if="report.batch_margins.length"
         title="Custo e margem por lote"
-        description="A receita considera as vendas do período cuja baixa identifica o lote de produção. A margem desconta dela o custo congelado das mesmas unidades."
+        description="A receita soma as vendas cuja baixa identifica o lote, do fechamento até a validade. A margem é a do lote inteiro, sobra e perda incluídas, e aparece quando o lote vence ou esgota."
       >
         <UTable :data="report.batch_margins" :columns="batchColumns">
           <template #total_q-cell="{ row }">
