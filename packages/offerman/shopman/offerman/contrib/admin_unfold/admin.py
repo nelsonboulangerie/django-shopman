@@ -425,7 +425,10 @@ class ProductAdmin(_ProductImportExportBase):
     @display(description="Margem (%)")
     def margin_percent_readonly(self, obj):
         margin = obj.margin_percent
-        return f"{margin:.1f}%" if margin is not None else "—"
+        if margin is not None:
+            return f"{margin:.1f}%"
+        gap = obj.reference_cost_gap
+        return f"Sem custo: {gap}" if gap else "—"
 
     @display(description="É perecível", boolean=True)
     def is_perishable_readonly(self, obj):
@@ -585,7 +588,14 @@ class ProductAdmin(_ProductImportExportBase):
     def cost_display(self, obj):
         cost_q = obj.reference_cost_q
         if cost_q is None:
-            return "—"
+            # Sem custo é falha que grita (ADR-023 §4), não um traço calado: o
+            # selo vermelho diz que falta, e o motivo do provedor vem no hover.
+            gap = obj.reference_cost_gap
+            if not gap:
+                return "—"
+            from django.utils.html import format_html
+
+            return format_html('<span title="{}">{}</span>', gap, unfold_badge("Sem custo", "red"))
         return f"R$ {format_money(cost_q)}"
 
     @display(description=_("Margem"))

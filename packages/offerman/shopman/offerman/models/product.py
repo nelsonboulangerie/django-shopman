@@ -377,6 +377,21 @@ class Product(models.Model):
         return backend.get_cost(self.sku)
 
     @property
+    def reference_cost_gap(self) -> str | None:
+        """Por que não há custo de referência, dito pelo provedor; None se há.
+
+        Só responde quando o provedor implementa ``CostGapExplainer``. Sem
+        provedor configurado não há lacuna a explicar: a coluna nem aparece.
+        """
+        from shopman.offerman.conf import get_cost_backend
+        from shopman.offerman.protocols.cost import CostGapExplainer
+
+        backend = get_cost_backend()
+        if backend is None or not isinstance(backend, CostGapExplainer):
+            return None
+        return backend.get_cost_gap(self.sku)
+
+    @property
     def margin_percent(self) -> Decimal | None:
         """Margin percentage (if CostBackend provides cost)."""
         cost_q = self.reference_cost_q
