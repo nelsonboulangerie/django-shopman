@@ -148,6 +148,51 @@ def _finish_attempt(
 class CraftExecution:
     """Finish and void operations."""
 
+    # Eventos que ANOTAM a execução sem mudar o estado da WorkOrder: o forno, a
+    # qualidade, o desvio de fórmula, a falta sobreposta e a confirmação de um
+    # planejamento que não mudou. Os eventos do ciclo (planned, adjusted, started,
+    # step_advanced, finished, voided) nascem só nos verbos que fazem a transição.
+    RECORDABLE_EVENT_KINDS = frozenset({
+        "planning_confirmed",
+        "oven_armed",
+        "oven_concluded",
+        "oven_abandoned",
+        "shortage_overridden",
+        "formula_deviation",
+        "quality_reviewed",
+        "quality_corrected",
+    })
+
+    @classmethod
+    def record_event(cls, order, *, kind, payload, actor="", idempotency_key=None):
+        """Lança no audit da WorkOrder um fato da execução que não muda o estado dela.
+
+        O ledger ``WorkOrderEvent`` é append-only e do Craftsman (Constituição C11):
+        quem está fora do pacote registra por aqui, nunca com ``objects.create``.
+        A ``seq`` é a próxima da ordem, sob a trava da linha. A idempotência de
+        negócio (replay com o mesmo payload) é de quem chama; a chave única do
+        ledger impede o lançamento em dobro.
+
+        Raises:
+            CraftError('EVENT_KIND_NOT_RECORDABLE'): kind de transição do ciclo.
+        """
+        from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+
+        kind = str(kind)
+        if kind not in cls.RECORDABLE_EVENT_KINDS:
+            raise CraftError("EVENT_KIND_NOT_RECORDABLE", kind=kind, work_order=order.ref)
+
+        with transaction.atomic():
+            WorkOrder.objects.select_for_update().filter(pk=order.pk).exists()
+            return WorkOrderEvent.objects.create(
+                work_order=order,
+                seq=_next_seq(order),
+                kind=kind,
+                payload=payload,
+                actor=str(actor or ""),
+                idempotency_key=idempotency_key,
+            )
+
     @classmethod
     def advance_step(
         cls,

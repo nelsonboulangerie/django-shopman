@@ -548,18 +548,18 @@ def settle_cancellation(order) -> dict:
                 "sale_move_id": move.pk,
             }
             if back > 0:
-                Move.objects.create(
+                StockMovements.receive_into(
+                    quantity=back,
                     quant=move.quant,
-                    delta=back,
                     kind=Move.Kind.RETURN,
                     reason=f"Cancelamento antes do preparo: {order.ref}",
                     metadata={**base_meta, "outcome": OUTCOME_RETURNED},
                 )
                 returned[sku] = returned.get(sku, Decimal("0")) + back
             if lost > 0:
-                Move.objects.create(
+                StockMovements.receive_into(
+                    quantity=lost,
                     quant=move.quant,
-                    delta=lost,
                     kind=Move.Kind.RETURN,
                     reason=f"Cancelamento depois do preparo: {order.ref}",
                     metadata={**base_meta, "outcome": OUTCOME_WASTED},

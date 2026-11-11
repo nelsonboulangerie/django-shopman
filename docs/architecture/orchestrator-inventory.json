@@ -778,7 +778,6 @@
             "create_ticket",
             "fired_line_ids_for_session",
             "get_active_prep_instances",
-            "get_completed_ticket_timestamps",
             "get_instance",
             "get_ticket",
             "get_ticket_model",
@@ -787,7 +786,6 @@
             "inherited_fired_line_ids",
             "instances_followed_by",
             "reopen_done_tickets",
-            "shift_ticket_completed_at",
             "ticket_exists_for_order",
             "unfire_session_lines"
           ]
@@ -5098,26 +5096,6 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "Command"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/management/commands/refresh_oven.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "Command",
-            "logger"
           ]
         }
       ]

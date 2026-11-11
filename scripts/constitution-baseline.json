@@ -155,78 +155,6 @@
     }
   },
   "ledger_immutability": {
-    "shopman/shop/management/commands/refresh_oven.py::Command._refresh_production_moves::Move.update": {
-      "count": 1,
-      "classe": "violacao",
-      "motivo": "reescreve o timestamp de Move; MoveQuerySet.update levanta ValueError, então o comando de demo quebra em runtime. Conserto: apagar o passo ou lançar Move novo",
-      "frente": "a abrir: C11 comandos de demo (refresh_oven)"
-    },
-    "shopman/shop/management/commands/refresh_oven.py::Command._refresh_live_orders::OrderEvent.update": {
-      "count": 1,
-      "classe": "violacao",
-      "motivo": "reescreve created_at do OrderEvent (audit append-only) para 'rejuvenescer' pedidos de demo",
-      "frente": "a abrir: C11 comandos de demo (refresh_oven)"
-    },
-    "shopman/shop/services/made_to_order.py::settle_cancellation::Move.create": {
-      "count": 2,
-      "classe": "violacao",
-      "motivo": "o orquestrador lança Move direto (RETURN/perda no cancelamento antes do preparo) em vez de passar pelo serviço de movimentos do Stockman",
-      "frente": "F4"
-    },
-    "shopman/backstage/services/production.py::_apply_quality_stock_reclassification::Move.create": {
-      "count": 4,
-      "classe": "violacao",
-      "motivo": "o backstage lança Move direto na reclassificação de qualidade, contornando StockMovements.transfer/receive do Stockman",
-      "frente": "F4"
-    },
-    "shopman/backstage/services/production.py::_abandon_open_oven_run::WorkOrderEvent.create": {
-      "count": 1,
-      "classe": "violacao",
-      "motivo": "o backstage escreve o audit append-only do Craftsman; falta um verbo do Craftsman que registre o evento",
-      "frente": "a abrir: C11 eventos de produção pelo Craftsman"
-    },
-    "shopman/backstage/services/production.py::_record_shortage_override::WorkOrderEvent.create": {
-      "count": 1,
-      "classe": "violacao",
-      "motivo": "o backstage escreve o audit append-only do Craftsman (override de falta)",
-      "frente": "a abrir: C11 eventos de produção pelo Craftsman"
-    },
-    "shopman/backstage/services/production.py::apply_oven_arm::WorkOrderEvent.create": {
-      "count": 1,
-      "classe": "violacao",
-      "motivo": "o backstage escreve o audit append-only do Craftsman (enfornar)",
-      "frente": "a abrir: C11 eventos de produção pelo Craftsman"
-    },
-    "shopman/backstage/services/production.py::apply_oven_conclude::WorkOrderEvent.create": {
-      "count": 1,
-      "classe": "violacao",
-      "motivo": "o backstage escreve o audit append-only do Craftsman (retirar do forno)",
-      "frente": "a abrir: C11 eventos de produção pelo Craftsman"
-    },
-    "shopman/backstage/services/production.py::apply_quality_correction::WorkOrderEvent.create": {
-      "count": 1,
-      "classe": "violacao",
-      "motivo": "o backstage escreve o audit append-only do Craftsman (correção de qualidade)",
-      "frente": "a abrir: C11 eventos de produção pelo Craftsman"
-    },
-    "shopman/backstage/services/production.py::apply_quality_review::WorkOrderEvent.create": {
-      "count": 1,
-      "classe": "violacao",
-      "motivo": "o backstage escreve o audit append-only do Craftsman (revisão de qualidade)",
-      "frente": "a abrir: C11 eventos de produção pelo Craftsman"
-    },
-    "shopman/backstage/services/production.py::authorize_formula_deviation::WorkOrderEvent.create": {
-      "count": 1,
-      "classe": "violacao",
-      "motivo": "o backstage escreve o audit append-only do Craftsman (desvio de fórmula)",
-      "frente": "a abrir: C11 eventos de produção pelo Craftsman"
-    },
-    "shopman/shop/services/production.py::set_planned_quantity::WorkOrderEvent.create": {
-      "count": 1,
-      "classe": "violacao",
-      "motivo": "o orquestrador escreve o audit append-only do Craftsman direto (ajuste de quantidade planejada)",
-      "frente": "a abrir: C11 eventos de produção pelo Craftsman"
-    },
     "shopman/shop/services/account.py::_anonymize_order_trail::OrderEvent.update": {
       "count": 1,
       "classe": "excecao",
@@ -299,12 +227,6 @@
     }
   },
   "order_lifecycle_owner": {
-    "shopman/shop/services/operator_orders.py::<module>::tabela de transicao": {
-      "count": 1,
-      "classe": "violacao",
-      "motivo": "_NEXT_STATUS_MAP fixa no orquestrador a sequência do botão 'avançar' do operador; as transições do Order são por canal (Order.DEFAULT_TRANSITIONS/ChannelConfig). Conserto: o Orderman expõe o próximo passo canônico do ciclo do canal",
-      "frente": "a abrir: C6 próximo passo do pedido no Orderman"
-    },
     "config/management/commands/seed.py::Command._seed_production_demand_history::objects.update(status)": {
       "count": 1,
       "classe": "excecao",

@@ -1500,8 +1500,8 @@ def authorize_formula_deviation(
     """
     from django.db import transaction
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+    from shopman.craftsman.services.execution import CraftExecution
     from shopman.craftsman.services.recipe_book import ingredient_formulas_for, resolve_execution
-    from shopman.craftsman.services.scheduling import _next_seq
     from shopman.stockman.models import Batch, Quant
 
     stable_ref = str(ingredient_ref or "").strip()
@@ -1647,9 +1647,8 @@ def authorize_formula_deviation(
             "impact": impact,
             "work_order_rev": work_order.rev,
         }
-        WorkOrderEvent.objects.create(
-            work_order=work_order,
-            seq=_next_seq(work_order),
+        CraftExecution.record_event(
+            work_order,
             kind=WorkOrderEvent.Kind.FORMULA_DEVIATION,
             payload=payload,
             actor=actor,
@@ -1672,7 +1671,7 @@ def _abandon_open_oven_run(
 ):
     """Close an impossible open oven measurement with an append-only fact."""
     from shopman.craftsman.models import WorkOrderEvent
-    from shopman.craftsman.services.scheduling import _next_seq
+    from shopman.craftsman.services.execution import CraftExecution
 
     from shopman.backstage.models import OvenRun
 
@@ -1695,9 +1694,8 @@ def _abandon_open_oven_run(
         "terminal_transition": transition,
     }
     run.save(update_fields=["status", "metadata"])
-    WorkOrderEvent.objects.create(
-        work_order=work_order,
-        seq=_next_seq(work_order),
+    CraftExecution.record_event(
+        work_order,
         kind=WorkOrderEvent.Kind.OVEN_ABANDONED,
         payload={
             "run_id": run.pk,
@@ -1730,7 +1728,8 @@ def apply_oven_arm(
     """
     from django.db import transaction
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
-    from shopman.craftsman.services.scheduling import _check_rev, _next_seq
+    from shopman.craftsman.services.execution import CraftExecution
+    from shopman.craftsman.services.scheduling import _check_rev
 
     from shopman.backstage.models import OvenRun
 
@@ -1814,9 +1813,8 @@ def apply_oven_arm(
                 arm_idempotency_key=arm_key,
                 metadata={},
             )
-            WorkOrderEvent.objects.create(
-                work_order=work_order,
-                seq=_next_seq(work_order),
+            CraftExecution.record_event(
+                work_order,
                 kind=WorkOrderEvent.Kind.OVEN_ARMED,
                 payload={
                     "run_id": run.pk,
@@ -1853,7 +1851,8 @@ def apply_oven_conclude(
     from django.db import transaction
     from shopman.craftsman.exceptions import StaleRevision
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
-    from shopman.craftsman.services.scheduling import _check_rev, _next_seq
+    from shopman.craftsman.services.execution import CraftExecution
+    from shopman.craftsman.services.scheduling import _check_rev
 
     from shopman.backstage.models import OvenRun
 
@@ -1929,9 +1928,8 @@ def apply_oven_conclude(
                     "conclude_idempotency_key",
                 ]
             )
-            WorkOrderEvent.objects.create(
-                work_order=work_order,
-                seq=_next_seq(work_order),
+            CraftExecution.record_event(
+                work_order,
                 kind=WorkOrderEvent.Kind.OVEN_CONCLUDED,
                 payload={"run_id": run.pk, "oven_ref": run.oven_ref},
                 actor=actor,
@@ -2373,6 +2371,7 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
     """Version QC lots while balancing transfers and recording loss reversals."""
     from django.db.models import Q
     from shopman.stockman.models import Batch, Hold, HoldStatus, Move, Quant
+    from shopman.stockman.services.movements import StockMovements
 
     source_quants, position_id = _locked_quality_source_stock(work_order, before_partition)
     active_holds = list(
@@ -2475,9 +2474,9 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
         quantity = Decimal(str(item.get("quantity") or "0"))
         transfer_quantity = min(quantity, transfer_in_remaining)
         if transfer_quantity > 0:
-            move = Move.objects.create(
+            move = StockMovements.receive_into(
+                quantity=transfer_quantity,
                 quant=quant,
-                delta=transfer_quantity,
                 reason=reason,
                 kind=Move.Kind.TRANSFER,
                 metadata={
@@ -2491,9 +2490,9 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
             transfer_in_remaining -= transfer_quantity
         recovery_quantity = quantity - transfer_quantity
         if recovery_quantity > 0:
-            move = Move.objects.create(
+            move = StockMovements.receive_into(
+                quantity=recovery_quantity,
                 quant=quant,
-                delta=recovery_quantity,
                 reason=f"Perda revertida após conferência: {work_order.ref}",
                 kind=Move.Kind.WASTE,
                 metadata={
@@ -2518,9 +2517,9 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
             continue
         transfer_quantity = min(quantity, transfer_out_remaining)
         if transfer_quantity > 0:
-            move = Move.objects.create(
+            move = StockMovements.issue(
+                quantity=transfer_quantity,
                 quant=quant,
-                delta=-transfer_quantity,
                 reason=reason,
                 kind=Move.Kind.TRANSFER,
                 metadata={
@@ -2534,9 +2533,9 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
             transfer_out_remaining -= transfer_quantity
         waste_quantity = quantity - transfer_quantity
         if waste_quantity > 0:
-            move = Move.objects.create(
+            move = StockMovements.issue(
+                quantity=waste_quantity,
                 quant=quant,
-                delta=-waste_quantity,
                 reason=f"Perda confirmada na revisão do QC: {work_order.ref}",
                 kind=Move.Kind.WASTE,
                 metadata={
@@ -2648,7 +2647,8 @@ def apply_quality_review(
     """Confirm the effective QC partition without rewriting production facts."""
     from django.db import transaction
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
-    from shopman.craftsman.services.scheduling import _check_rev, _next_seq
+    from shopman.craftsman.services.execution import CraftExecution
+    from shopman.craftsman.services.scheduling import _check_rev
 
     from shopman.shop.services import quality as quality_service
 
@@ -2705,9 +2705,8 @@ def apply_quality_review(
             partition = quality_service.effective_partition(work_order)
             if not partition:
                 raise ProductionError("O lote não possui fatos de qualidade para revisar.")
-            event = WorkOrderEvent.objects.create(
-                work_order=work_order,
-                seq=_next_seq(work_order),
+            event = CraftExecution.record_event(
+                work_order,
                 kind=WorkOrderEvent.Kind.QUALITY_REVIEWED,
                 payload={
                     "schema_version": 1,
@@ -2892,6 +2891,7 @@ def apply_quality_correction(
     """Correct post-close QC without rewriting the immutable closing lines."""
     from django.db import transaction
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+    from shopman.craftsman.services.execution import CraftExecution
     from shopman.craftsman.services.scheduling import _check_rev, _next_seq
 
     from shopman.shop.services import campaign as campaign_service
@@ -3034,9 +3034,8 @@ def apply_quality_correction(
                     ),
                     order_ref=work_order.ref,
                 )
-            event = WorkOrderEvent.objects.create(
-                work_order=work_order,
-                seq=event_seq,
+            event = CraftExecution.record_event(
+                work_order,
                 kind=WorkOrderEvent.Kind.QUALITY_CORRECTED,
                 payload={
                     "schema_version": 2,
@@ -3054,6 +3053,13 @@ def apply_quality_correction(
                 actor=actor,
                 idempotency_key=event_key,
             )
+            # O lote versionado e os Moves da reclassificação carregam ``event_seq``;
+            # o evento tem de ser exatamente esse lançamento, ou o rastro não fecha.
+            if event.seq != event_seq:
+                raise ProductionConflict(
+                    "A ordem de produção recebeu outro evento durante a correção.",
+                    data={"work_order": work_order.ref, "cause": "event_seq_drift"},
+                )
             _emit_quality_reviewed(work_order.pk)
             work_order.refresh_from_db(fields=["rev"])
             logger.info(
@@ -3955,7 +3961,7 @@ def _record_shortage_override(
     """Append the accepted override and its impact in the locked transaction."""
     from django.db import transaction
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
-    from shopman.craftsman.services.scheduling import _next_seq
+    from shopman.craftsman.services.execution import CraftExecution
 
     normalized_reason = str(reason or "").strip()
     if not normalized_reason:
@@ -3967,9 +3973,8 @@ def _record_shortage_override(
     if event_key and WorkOrderEvent.objects.filter(idempotency_key=event_key).exists():
         return
 
-    WorkOrderEvent.objects.create(
-        work_order=work_order,
-        seq=_next_seq(work_order),
+    CraftExecution.record_event(
+        work_order,
         kind=WorkOrderEvent.Kind.SHORTAGE_OVERRIDDEN,
         payload={
             "action": action,
