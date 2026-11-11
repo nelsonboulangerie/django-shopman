@@ -187,6 +187,7 @@ class StockHolds:
         with transaction.atomic():
             # safety_margin: a ESCRITA usa a mesma margem do read — senão a
             # margem do canal protege a vitrine mas não a reserva.
+            policy = profile["availability_policy"]
             decision = promise_for_sku(
                 sku,
                 quantity,
@@ -197,8 +198,12 @@ class StockHolds:
                 expiry_margin_days=expiry_margin_days,
                 include_nonconforming=include_nonconforming,
                 allowed_quality_grade_refs=allowed_quality_grade_refs,
+                availability_policy=policy,
             )
-            policy = profile["availability_policy"] or decision.availability_policy
+            # A promessa é decidida em ``promise_for_sku`` (pausa, política,
+            # rastreio). O hold só acrescenta as duas autorizações que não são
+            # da oferta: reservar insumo de uma WorkOrder e a demanda que o
+            # CHAMADOR autoriza (``allow_demand``).
             approved = decision.approved
             available = decision.orderable_ceiling
             if available is None:
@@ -208,21 +213,13 @@ class StockHolds:
             # sale-availability gate — pause/sellability and demand/planned policy —
             # does not apply. Reserve against physical stock only. An insumo is
             # non-sellable by nature (is_paused would otherwise reject it).
-            is_production = metadata.get("purpose") == "workorder"
-
-            if is_production:
+            if metadata.get("purpose") == "workorder":
                 # The physical quant check below is the real gate (position-agnostic,
                 # no saleable-position filter, no pause). Sale availability does not
                 # apply to reserving insumos for a WorkOrder.
                 approved = True
-            elif decision.is_paused:
-                approved = False
-                available = Decimal("0")
-            elif policy == "demand_ok" or allow_demand:
+            elif allow_demand and not decision.is_paused:
                 approved = True
-            elif policy == "stock_only":
-                approved = quantity <= decision.available
-                available = decision.available
 
             if not approved:
                 raise StockError(
