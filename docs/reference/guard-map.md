@@ -21,7 +21,7 @@ As guardas das cláusulas pétreas (C2, C3, C5, C6, C7, C10, C11 e ADR-025) são
 |---|---|---|
 | Inventário físico e unidades semânticas do orquestrador | check_orchestrator_units.py | make orchestrator-governance |
 | Preço de lista com autoridade única no Offerman | test_offerman_is_the_only_list_tier_price_owner | make test-framework |
-| Decisão canônica definida só no kernel dono; duplicação conhecida não volta (C5) | check_decision_authority.py | make constitution-guards |
+| Decisão canônica definida só no kernel dono; duplicação conhecida não volta; política de oferta (`stock_only`/`planned_ok`/`demand_ok`) só se compara no Stockman (C5) | check_decision_authority.py | make constitution-guards |
 | Estado/transição de Order só no Orderman (C6) | check_order_lifecycle_owner.py | make constitution-guards |
 | Lifecycle sem classe nem herança (C7) | check_lifecycle_functional.py | make constitution-guards |
 | Dinheiro em campo de modelo é inteiro `_q` (C2) | check_money_integer.py | make constitution-guards |
@@ -103,7 +103,7 @@ Estas portas têm lei (Constituição/ADR), mas ainda não têm check dedicado. 
 
 | Porta | Evidência de que está aberta | Risco se morder |
 |---|---|---|
-| Duplicação de autoridade de decisão (geral) | a promessa de estoque já tem autoridade única (`promise_for_sku`/`decision_from_availability` no Stockman; `_stock_decision` apagado, caracterização em `shopman/shop/tests/test_promise_for_sku_characterization.py`), travada por check_decision_authority.py; fora a promessa e o preço de lista, a guarda só conhece o que está registrado em `CANONICAL`/`FORBIDDEN`, e duplicação nova com outro nome passa | outra decisão duplicada diverge em produção |
+| Duplicação de autoridade de decisão (geral) | a promessa de estoque já tem autoridade única (`promise_for_sku`/`decision_from_availability` no Stockman; `_stock_decision` apagado, caracterização em `shopman/shop/tests/test_promise_for_sku_characterization.py`), travada por check_decision_authority.py, que também reprova comparar a política de oferta fora do Stockman ("pode pedir" em selo, substituto, anúncio, post social e falta na prateleira pergunta a `decision_from_availability`, caracterização em `shopman/shop/tests/test_pode_pedir_pergunta_a_promessa.py`); fora a promessa e o preço de lista, a guarda só conhece o que está registrado em `CANONICAL`/`FORBIDDEN`, e duplicação nova com outro nome passa | outra decisão duplicada diverge em produção |
 
 O que as guardas da seção 2 ainda não enxergam, por limite do AST e não por decisão: escrita de ledger por related manager (`order.events.create`) ou por `instancia.save()` (C11; valem as travas de runtime dos próprios modelos); FK de modelo do orquestrador para kernel (C3 vale entre kernels; o orquestrador é o encontro, C4); `send` de signal sem `sender=` (ADR-025).
 

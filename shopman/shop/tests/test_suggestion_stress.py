@@ -155,7 +155,12 @@ AFFINITY = [
 
 MERCEARIA = {s for s, *_ in CATALOG if TRUTH[s] == "acompanhamento"}
 
-ESGOTADO = {"availability_policy": "planned_ok", "total_promisable": Decimal("0"), "is_planned": False}
+ESGOTADO = {
+    "availability_policy": "planned_ok",
+    "total_promisable": Decimal("0"),
+    "is_planned": False,
+    "is_tracked": True,
+}
 
 
 @pytest.fixture(autouse=True)

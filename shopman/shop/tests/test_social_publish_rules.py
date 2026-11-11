@@ -67,7 +67,7 @@ class TestProjectionGate:
         _shop({"meta": {"require_stock": True}})
         with patch(
             "shopman.shop.projections.catalog_context.availability_for_sku",
-            return_value={"total_promisable": 0, "availability_policy": "stock_only"},
+            return_value={"total_promisable": 0, "availability_policy": "stock_only", "is_tracked": True},
         ):
             assert rules.projection_gate(_item(image_url="x"), "meta") == ("pending", "regra: exige estoque")
 
@@ -75,7 +75,7 @@ class TestProjectionGate:
         _shop({"meta": {"require_stock": True}})
         with patch(
             "shopman.shop.projections.catalog_context.availability_for_sku",
-            return_value={"total_promisable": 5, "availability_policy": "stock_only"},
+            return_value={"total_promisable": 5, "availability_policy": "stock_only", "is_tracked": True},
         ):
             assert rules.projection_gate(_item(image_url="x"), "meta") is None
 

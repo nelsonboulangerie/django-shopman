@@ -138,6 +138,29 @@ def test_decision_authority_accepts_canonical_in_owner_and_callers():
     assert decision.findings_for("shopman/shop/services/x.py", _tree(caller)) == []
 
 
+def test_decision_authority_flags_offer_policy_compared_outside_stockman():
+    """Comparar a política é decidir "pode pedir" fora da promessa (frente 5 da v7)."""
+    source = (
+        "def can_order(raw):\n"
+        "    if raw.get('availability_policy') == 'demand_ok':\n"
+        "        return True\n"
+        "    return raw['availability_policy'] in ('stock_only', 'planned_ok')\n"
+    )
+    found = decision.findings_for("shopman/shop/services/x.py", _tree(source))
+    assert sorted(f.key for f in found) == [
+        "shopman/shop/services/x.py::can_order::policy:demand_ok",
+        "shopman/shop/services/x.py::can_order::policy:planned_ok",
+        "shopman/shop/services/x.py::can_order::policy:stock_only",
+    ]
+
+
+def test_decision_authority_accepts_offer_policy_in_stockman_and_as_data():
+    owner = "def f(p):\n    return p == 'stock_only'\n"
+    assert decision.findings_for("packages/stockman/shopman/stockman/services/availability.py", _tree(owner)) == []
+    shown = "def f(raw):\n    return {'policy': raw.get('availability_policy', 'planned_ok')}\n"
+    assert decision.findings_for("shopman/shop/services/x.py", _tree(shown)) == []
+
+
 def test_decision_authority_skips_installed_build_copy(tmp_path):
     copy = tmp_path / "packages/stockman/build/lib/shopman/shop/services/availability.py"
     copy.parent.mkdir(parents=True)

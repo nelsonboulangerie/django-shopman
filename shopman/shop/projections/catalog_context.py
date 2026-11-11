@@ -706,6 +706,7 @@ def availability_for_sku(
         from django.utils import timezone
 
         component_target = explicit_target or timezone.localdate()
+        limitado = False
         for componente in componentes:
             # Bundle não tem Quant/fornada própria para ancorar um hold futuro.
             # Até existir uma promessa multi-componente de data comum, ele falha
@@ -713,6 +714,13 @@ def availability_for_sku(
             parte = leitura(componente["sku"], component_target)
             if parte is None:
                 return None
+            if parte.get("is_paused"):
+                propria["is_paused"] = True
+            if not parte.get("is_tracked"):
+                # Sem ledger não é saldo zero (mesma regra de
+                # ``bundle_availability_from_components``): não limita o pacote.
+                continue
+            limitado = True
             por_pacote = Decimal(str(componente["qty"])) or Decimal("1")
             possiveis.append(
                 Decimal(str(parte.get("total_promisable", 0))) // por_pacote
@@ -724,10 +732,11 @@ def availability_for_sku(
                 Decimal(str(parte.get("ready_physical", 0))) // por_pacote
             )
             propria.setdefault("availability_policy", parte.get("availability_policy"))
-            if parte.get("is_paused"):
-                propria["is_paused"] = True
             if parte.get("is_planned"):
                 propria["is_planned"] = True
+        # O pacote é tão rastreado quanto os componentes que o limitam: sem
+        # nenhum, a promessa não tem teto a dar (e não inventa zero).
+        propria["is_tracked"] = limitado or bool(propria.get("is_tracked"))
         propria["total_promisable"] = min(possiveis) if possiveis else Decimal("0")
         propria["available"] = min(prontos) if prontos else Decimal("0")
         propria["ready_physical"] = (
@@ -927,19 +936,17 @@ def _merge_waitlist_availability(
     planned = Decimal(str(future.get("planned") or 0))
     current_promisable = Decimal(str(current.get("total_promisable") or 0))
     future_promisable = Decimal(str(future.get("total_promisable") or 0))
-    policy = str(current.get("availability_policy") or "planned_ok")
     merged["planned"] = planned
     merged["is_planned"] = bool(future.get("is_planned"))
     merged["is_tracked"] = bool(
         current.get("is_tracked") or future.get("is_tracked")
     )
-    if policy == "stock_only":
-        merged["total_promisable"] = Decimal(str(current.get("available") or 0))
-    else:
-        # Cada hold carrega uma única target_date. O maior destes dois tetos é
-        # reservável inteiro em uma data; a soma não é (pronto que vence hoje e
-        # fornadas de dias diferentes não podem sustentar o mesmo hold).
-        merged["total_promisable"] = max(current_promisable, future_promisable)
+    # Cada leitura já vem com a política aplicada pelo Stockman (``stock_only``
+    # não conta fornada em nenhuma das duas). Cada hold carrega uma única
+    # target_date: o maior destes dois tetos é reservável inteiro em uma data;
+    # a soma não é (pronto que vence hoje e fornadas de dias diferentes não
+    # podem sustentar o mesmo hold).
+    merged["total_promisable"] = max(current_promisable, future_promisable)
     breakdown = dict(current.get("breakdown") or {})
     breakdown["planned"] = planned
     merged["breakdown"] = breakdown
@@ -975,22 +982,20 @@ def bundle_availability_from_components(
             continue
         if raw is None:
             continue  # componente sem tracking de estoque: nao e gargalo
-        if raw.get("is_tracked") is False:
-            continue  # ausência de ledger não significa saldo zero
+        # Pausa, ledger e política são da promessa do Stockman, não daqui.
+        _can_order, ceiling = promised_ceiling(raw)
         if raw.get("is_paused", False):
             return {
                 "is_paused": True,
+                "is_tracked": True,
                 "total_promisable": Decimal("0"),
                 "available": Decimal("0"),
                 "ready_physical": Decimal("0"),
             }
-        if raw.get("availability_policy", "planned_ok") == "demand_ok":
-            continue  # ilimitado: nao e gargalo
+        if ceiling is None:
+            continue  # sem ledger ou ``demand_ok``: sem teto, nao e gargalo
         is_planned = is_planned or bool(raw.get("is_planned", False))
-        promisable = raw.get("total_promisable") or Decimal("0")
-        if not isinstance(promisable, Decimal):
-            promisable = Decimal(str(promisable))
-        bundles = int(promisable // qty_per_bundle)
+        bundles = int(ceiling // qty_per_bundle)
         ready_limits.append(
             int(Decimal(str(raw.get("available") or 0)) // qty_per_bundle)
         )
@@ -1008,6 +1013,8 @@ def bundle_availability_from_components(
         "availability_policy": "planned_ok",
         "is_planned": is_planned,
         "is_paused": False,
+        # Só chega aqui com um componente de ledger limitando o pacote.
+        "is_tracked": True,
         "available": Decimal(min(ready_limits)) if ready_limits else Decimal("0"),
         "ready_physical": (
             Decimal(min(physical_limits)) if physical_limits else Decimal("0")
@@ -1150,6 +1157,23 @@ def own_holds_by_sku(session_key: str, skus: list[str]) -> dict[str, Decimal]:
     return availability.own_holds_by_sku(session_key, skus)
 
 
+def promised_ceiling(raw_avail: dict) -> tuple[bool, Decimal | None]:
+    """A promessa do Stockman sobre uma leitura já feita: dá para pedir algo, e até quanto.
+
+    Quem pergunta "pode pedir?" sem uma quantidade (selo, botão, falta na
+    prateleira, anúncio) lê o teto da própria ``decision_from_availability``:
+    ``None`` é sem teto (sem ledger, ``demand_ok``), ``0`` é fechado (pausado ou
+    sem oferta). A regra (política, pausa, ledger) não é refeita aqui.
+    """
+    from shopman.stockman.services.availability import decision_from_availability
+
+    decision = decision_from_availability(
+        str(raw_avail.get("sku") or ""), Decimal("1"), raw_avail
+    )
+    ceiling = decision.orderable_ceiling
+    return (ceiling is None or ceiling > 0), ceiling
+
+
 def basic_availability(
     raw_avail: dict | None,
     *,
@@ -1160,35 +1184,24 @@ def basic_availability(
         return BasicAvailability("unavailable", 0, False)
     if raw_avail is None:
         return BasicAvailability("available", None, True)
-    if raw_avail.get("is_paused", False):
+
+    can_order, ceiling = promised_ceiling(raw_avail)
+    if not can_order:
         return BasicAvailability("unavailable", 0, False)
-
-    policy = raw_avail.get("availability_policy", "planned_ok")
-    total_promisable = raw_avail.get("total_promisable") or Decimal("0")
-    if not isinstance(total_promisable, Decimal):
-        total_promisable = Decimal(str(total_promisable))
-
-    if policy == "demand_ok":
+    if ceiling is None:
         return BasicAvailability("available", None, True)
 
-    available_qty = int(total_promisable)
-    if total_promisable <= 0:
-        return BasicAvailability("unavailable", 0, False)
-
+    available_qty = int(ceiling)
     ready_available = Decimal(
         str(raw_avail.get("available", raw_avail.get("ready_physical")) or 0)
     )
-    if (
-        policy == "planned_ok"
-        and raw_avail.get("is_planned", False)
-        and ready_available <= 0
-    ):
-        # A fila é limitada pela quantidade realmente planejada. ``is_planned``
-        # sem saldo prometível não abre o stepper; com saldo, a apresentação
-        # distingue a fornada futura de produto pronto na prateleira.
+    if raw_avail.get("is_planned", False) and ready_available <= 0:
+        # Selo, não decisão: a promessa já abriu (teto > 0, limitado pela
+        # quantidade planejada). Sem pronto na prateleira, o que se promete é a
+        # fornada futura, e a apresentação diz isso.
         return BasicAvailability("planned_ok", available_qty, True)
 
-    if total_promisable <= low_stock_threshold:
+    if ceiling <= low_stock_threshold:
         return BasicAvailability("low_stock", available_qty, True)
 
     return BasicAvailability("available", available_qty, True)
@@ -1201,7 +1214,7 @@ def storefront_availability(raw_avail: dict | None, *, is_sellable: bool) -> dic
     is_paused = raw_avail.get("is_paused", False) or not is_sellable
     policy = raw_avail.get("availability_policy", "planned_ok")
     total_promisable = raw_avail.get("total_promisable", Decimal("0"))
-    can_order = ((policy == "demand_ok") or total_promisable > 0) and not is_paused
+    can_order = promised_ceiling(raw_avail)[0] and not is_paused
     had_stock = can_order or raw_avail.get("is_planned", False) or total_promisable > 0
     if can_order:
         state = "available"
@@ -1247,12 +1260,8 @@ def orderable_ceiling(raw_avail: dict | None, *, can_add: bool) -> int | None:
     """
     if raw_avail is None or raw_avail.get("is_paused", False):
         return None
-    if raw_avail.get("availability_policy", "planned_ok") == "demand_ok":
-        return None
-    total = promisable_int(raw_avail)
-    if total is None:
-        return None
-    return total
+    _can_order, ceiling = promised_ceiling(raw_avail)
+    return None if ceiling is None else int(ceiling)
 
 
 def product_tags(product) -> tuple[str, ...]:
