@@ -26,6 +26,7 @@ from django.utils import timezone
 from shopman.offerman.protocols.projection import ProjectedItem, ProjectionResult
 from shopman.orderman.models import Directive
 
+from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
 from shopman.shop.directives import CATALOG_PROJECT_SKU
 from shopman.shop.services import ifood_auth
 
@@ -729,7 +730,7 @@ def test_handler_marks_done_on_success(db, ifood_channel, ifood_directive):
     """Handler marks Directive done when backend.project() succeeds."""
     from shopman.shop.handlers.catalog_projection import CatalogProjectHandler
 
-    backend = MagicMock()
+    backend = MagicMock(spec=IFoodCatalogProjection)
     backend.project.return_value = ProjectionResult(success=True, projected=1, channel="ifood")
     handler = CatalogProjectHandler(backend=backend)
 
@@ -749,7 +750,7 @@ def test_handler_retracts_when_item_paused(db, ifood_channel, ifood_directive):
     """Retract-aware: an unsellable SKU is retracted, not projected."""
     from shopman.shop.handlers.catalog_projection import CatalogProjectHandler
 
-    backend = MagicMock()
+    backend = MagicMock(spec=IFoodCatalogProjection)
     backend.retract.return_value = ProjectionResult(success=True, projected=1, channel="ifood")
     handler = CatalogProjectHandler(backend=backend)
 
@@ -768,7 +769,7 @@ def test_handler_retracts_when_item_dropped_from_listing(db, ifood_channel, ifoo
     """A SKU no longer in the listing (item is None) is retracted."""
     from shopman.shop.handlers.catalog_projection import CatalogProjectHandler
 
-    backend = MagicMock()
+    backend = MagicMock(spec=IFoodCatalogProjection)
     backend.retract.return_value = ProjectionResult(success=True, projected=1, channel="ifood")
     handler = CatalogProjectHandler(backend=backend)
 
@@ -788,7 +789,7 @@ def test_handler_routes_price_intention_to_specific_patch(db, ifood_channel, ifo
     )
     ifood_directive.payload["trigger"] = "price_changed"
     ifood_directive.save(update_fields=["payload"])
-    backend = MagicMock()
+    backend = MagicMock(spec=IFoodCatalogProjection)
     backend.update_price.return_value = ProjectionResult(success=True, projected=1, channel="ifood")
 
     with patch("shopman.shop.handlers.catalog_projection._get_projected_item", return_value=item):
@@ -807,7 +808,7 @@ def test_handler_routes_pause_intention_to_specific_patch(db, ifood_channel, ifo
     )
     ifood_directive.payload["trigger"] = "availability_changed"
     ifood_directive.save(update_fields=["payload"])
-    backend = MagicMock()
+    backend = MagicMock(spec=IFoodCatalogProjection)
     backend.set_availability.return_value = ProjectionResult(success=True, projected=1, channel="ifood")
 
     with patch("shopman.shop.handlers.catalog_projection._get_projected_item", return_value=item):
@@ -821,7 +822,7 @@ def test_handler_skips_when_channel_inactive(db, ifood_directive):
     """Handler skips API call when iFood channel is inactive."""
     from shopman.shop.handlers.catalog_projection import CatalogProjectHandler
 
-    backend = MagicMock()
+    backend = MagicMock(spec=IFoodCatalogProjection)
     handler = CatalogProjectHandler(backend=backend)
 
     with patch(
@@ -838,7 +839,7 @@ def test_handler_schedules_retry_on_rate_limit(db, ifood_channel, ifood_directiv
     from shopman.shop.adapters.catalog_projection_ifood import IFoodRateLimitError
     from shopman.shop.handlers.catalog_projection import CatalogProjectHandler
 
-    backend = MagicMock()
+    backend = MagicMock(spec=IFoodCatalogProjection)
     backend.project.side_effect = IFoodRateLimitError(retry_after=30)
     handler = CatalogProjectHandler(backend=backend)
 
@@ -872,7 +873,7 @@ def test_price_retry_reads_current_state_and_preserves_intention(
     latest = replace(first, price_q=450)
     ifood_directive.payload["trigger"] = "price_changed"
     ifood_directive.save(update_fields=["payload"])
-    backend = MagicMock()
+    backend = MagicMock(spec=IFoodCatalogProjection)
     backend.update_price.side_effect = [
         IFoodRateLimitError(retry_after=1),
         ProjectionResult(success=True, projected=1, channel="ifood"),

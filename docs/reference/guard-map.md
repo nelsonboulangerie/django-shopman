@@ -104,7 +104,6 @@ Estas portas têm lei (Constituição/ADR), mas ainda não têm check dedicado. 
 | Porta | Evidência de que está aberta | Risco se morder |
 |---|---|---|
 | Duplicação de autoridade de decisão (geral) | a promessa de estoque já tem autoridade única (`promise_for_sku`/`decision_from_availability` no Stockman; `_stock_decision` apagado, caracterização em `shopman/shop/tests/test_promise_for_sku_characterization.py`), travada por check_decision_authority.py; fora a promessa e o preço de lista, a guarda só conhece o que está registrado em `CANONICAL`/`FORBIDDEN`, e duplicação nova com outro nome passa | outra decisão duplicada diverge em produção |
-| Cadeia de custo write-only (ADR-023/024) | COST_BACKEND em settings, mas nenhum leitor em runtime (grep no repo: só offerman+settings+docs) | margem/custo de receita mentem no BI |
 
 O que as guardas da seção 2 ainda não enxergam, por limite do AST e não por decisão: escrita de ledger por related manager (`order.events.create`) ou por `instancia.save()` (C11; valem as travas de runtime dos próprios modelos); FK de modelo do orquestrador para kernel (C3 vale entre kernels; o orquestrador é o encontro, C4); `send` de signal sem `sender=` (ADR-025).
 

@@ -564,3 +564,62 @@ class TestPerishableFields:
         )
         assert product.is_perishable is True
         assert product.shelf_life_days == 0
+
+
+class TestCostGap:
+    """Sem custo é falha que grita: o provedor diz o motivo, o Product repassa."""
+
+    class _ExplainingBackend:
+        def __init__(self, costs, gaps):
+            self.costs, self.gaps = costs, gaps
+
+        def get_cost(self, sku):
+            return self.costs.get(sku)
+
+        def get_cost_gap(self, sku):
+            return None if sku in self.costs else self.gaps.get(sku, "sem motivo")
+
+    @pytest.fixture
+    def use_backend(self):
+        import shopman.offerman.conf as conf
+
+        original = conf._cost_backend_instance
+
+        def _use(backend):
+            conf._cost_backend_instance = backend
+
+        yield _use
+        conf._cost_backend_instance = original
+
+    def test_explaining_backend_satisfies_both_protocols(self):
+        from shopman.offerman.protocols import CostBackend, CostGapExplainer
+
+        backend = self._ExplainingBackend({}, {})
+        assert isinstance(backend, CostBackend)
+        assert isinstance(backend, CostGapExplainer)
+
+    def test_gap_comes_from_the_provider_and_cost_stays_none(self, db, use_backend):
+        product = Product.objects.create(sku="GAP-1", name="Geleia", base_price_q=1500)
+        use_backend(self._ExplainingBackend({}, {"GAP-1": "GAP-1 não tem custo preferencial no Compras."}))
+
+        assert product.reference_cost_q is None
+        assert product.margin_percent is None
+        assert product.reference_cost_gap == "GAP-1 não tem custo preferencial no Compras."
+
+    def test_no_gap_when_there_is_cost(self, db, use_backend):
+        product = Product.objects.create(sku="GAP-2", name="Geleia", base_price_q=1500)
+        use_backend(self._ExplainingBackend({"GAP-2": 900}, {}))
+
+        assert product.reference_cost_q == 900
+        assert product.reference_cost_gap is None
+
+    def test_backend_without_explainer_and_no_backend_have_no_gap(self, db, use_backend):
+        product = Product.objects.create(sku="GAP-3", name="Geleia", base_price_q=1500)
+        assert product.reference_cost_gap is None  # sem provedor
+
+        class _Silent:
+            def get_cost(self, sku):
+                return None
+
+        use_backend(_Silent())
+        assert product.reference_cost_gap is None

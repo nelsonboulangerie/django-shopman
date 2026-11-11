@@ -28,17 +28,6 @@ class ProductInfo:
 
 
 @dataclass(frozen=True)
-class PriceInfo:
-    """Price information."""
-
-    sku: str
-    unit_price_q: int
-    total_price_q: int
-    qty: Decimal
-    listing: str | None = None
-
-
-@dataclass(frozen=True)
 class PriceAdjustment:
     """Contextual adjustment applied on top of the list price.
 
@@ -85,40 +74,19 @@ class SkuValidation:
     message: str | None = None
 
 
-@dataclass(frozen=True)
-class BundleComponent:
-    """Bundle component."""
-
-    sku: str
-    name: str
-    qty: Decimal
-
-
 @runtime_checkable
 class CatalogBackend(Protocol):
-    """Interface for catalog queries."""
+    """Resolução de SKU vendável para quem não pode importar o Offerman.
+
+    O contrato tem um verbo porque o consumidor tem um: o Craftsman pergunta a
+    unidade e se o SKU é combo (``CRAFTSMAN["CATALOG_BACKEND"]``). Preço NÃO
+    mora aqui: o preço de lista e a faixa por quantidade são decididos só por
+    ``CatalogService.unit_prices`` e o preço contextual só por
+    ``CatalogService.get_price`` (que consulta o ``PricingBackend``).
+    """
 
     def get_product(self, sku: str) -> ProductInfo | None:
-        """Return product by SKU."""
-        ...
-
-    def get_price(
-        self,
-        sku: str,
-        qty: Decimal = Decimal("1"),
-        channel: str | None = None,
-    ) -> PriceInfo:
-        """Return price."""
-        ...
-
-    def validate_sku(self, sku: str) -> SkuValidation:
-        """Validate SKU."""
-        ...
-
-    def expand_bundle(
-        self, sku: str, qty: Decimal = Decimal("1")
-    ) -> list[BundleComponent]:
-        """Expand bundle."""
+        """Return product by SKU, or ``None`` when the catalog does not know it."""
         ...
 
 

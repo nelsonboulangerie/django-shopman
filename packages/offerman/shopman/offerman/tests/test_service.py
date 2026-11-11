@@ -988,48 +988,6 @@ class TestCatalogBackendAdapter:
         backend = OffermanCatalogBackend()
         assert backend.get_product("NONEXISTENT") is None
 
-    def test_get_price_fractional_rounding(self, db):
-        """get_price rounds correctly for fractional qty."""
-        from unittest.mock import patch
-
-        from shopman.offerman.adapters.catalog_backend import OffermanCatalogBackend
-
-        backend = OffermanCatalogBackend()
-
-        with patch("shopman.offerman.adapters.catalog_backend.CatalogService.price", return_value=1001):
-            result = backend.get_price("ANY", qty=Decimal("3"))
-
-        assert result.unit_price_q == 334  # round(1001/3)
-        assert result.total_price_q == 1001
-
-    def test_expand_bundle_returns_components(self, db):
-        """expand_bundle returns BundleComponent list."""
-        from shopman.offerman.adapters.catalog_backend import OffermanCatalogBackend
-        from shopman.offerman.models import ProductComponent
-
-        combo = Product.objects.create(sku="COMBO-A", name="Combo A", base_price_q=1000)
-        comp1 = Product.objects.create(sku="ITEM-1", name="Item 1", base_price_q=500)
-        comp2 = Product.objects.create(sku="ITEM-2", name="Item 2", base_price_q=600)
-        ProductComponent.objects.create(parent=combo, component=comp1, qty=Decimal("2"))
-        ProductComponent.objects.create(parent=combo, component=comp2, qty=Decimal("1"))
-
-        backend = OffermanCatalogBackend()
-        result = backend.expand_bundle("COMBO-A")
-
-        assert len(result) == 2
-        skus = [r.sku for r in result]
-        assert "ITEM-1" in skus
-        assert "ITEM-2" in skus
-
-    def test_expand_bundle_non_bundle_returns_empty(self, db):
-        """expand_bundle on non-bundle returns empty list."""
-        from shopman.offerman.adapters.catalog_backend import OffermanCatalogBackend
-
-        Product.objects.create(sku="SINGLE", name="Single", base_price_q=500)
-        backend = OffermanCatalogBackend()
-        result = backend.expand_bundle("SINGLE")
-        assert result == []
-
 
 # ═══════════════════════════════════════════════════════════════════
 # 4.4 — Suggestions
