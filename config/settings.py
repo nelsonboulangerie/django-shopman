@@ -1611,6 +1611,18 @@ SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset(
 # Sem mensagem observada ele não faz nada; desligar é só pôr false.
 SHOPMAN_INTENT_PILOT_ENABLED = _env_bool("SHOPMAN_INTENT_PILOT_ENABLED", True)
 
+# Placar do de-para (B.I., `bi/matcher_benchmark.py`). Entre 28/10 e 11/11/2026 a
+# medição automática recomeçou do zero a cada deploy, nunca terminou e gastou cerca
+# de US$ 1.180 de API da Anthropic sem ninguém ver. Por isso, três travas:
+# - os concorrentes PAGOS (LLM da Anthropic e Jev) só entram com opt-in explícito.
+#   Credencial presente não liga nada, a mesma regra do Marketing;
+# - no máximo N casos do gabarito por medição;
+# - teto de gasto estimado por medição: ao bater, a medição para e o placar diz isso.
+# A medição também saiu do `maintenance_worker`: só roda à mão (`run_alias_benchmark --now`).
+SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED = _env_bool("SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED", False)
+SHOPMAN_ALIAS_BENCHMARK_MAX_CASES = int(os.environ.get("SHOPMAN_ALIAS_BENCHMARK_MAX_CASES", "60"))
+SHOPMAN_ALIAS_BENCHMARK_BUDGET_USD = float(os.environ.get("SHOPMAN_ALIAS_BENCHMARK_BUDGET_USD", "1.00"))
+
 # MKT-038: the generic copy transport is not authorization to use it for Marketing.
 # Both switches are deliberately false by default.  The second one records the human
 # vendor-policy gate (retention, no-training and transfer); a credential alone must

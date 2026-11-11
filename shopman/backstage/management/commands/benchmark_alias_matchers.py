@@ -9,6 +9,10 @@ Preços em US$ por milhão de tokens. O default do Jev é o preço de lançament
 (entrada US$ 0,042/M, saída grátis); o de cada LLM vem de ``LLM_PRICES``.
 ``--*-price-*`` sobrescrevem (os de LLM valem para todos os ``--llm-model``);
 modelo fora da tabela sai com custo zerado e o relatório avisa.
+
+``--budget-usd`` (default US$ 1) é o teto de gasto estimado da rodada: ao bater,
+a rodada para ali e diz quantos casos mediu. Modelo sem preço na tabela conta
+custo zero, então não é contido pelo teto: use ``--llm-price-*`` para ele.
 """
 
 from __future__ import annotations
@@ -54,6 +58,10 @@ class Command(BaseCommand):
             help=f"Corte de similaridade dos embeddings, 0–1 (default {DEFAULT_MIN_SIMILARITY}).",
         )
         parser.add_argument("--limit", type=int, default=200, help="Máximo de casos do gabarito (default 200).")
+        parser.add_argument(
+            "--budget-usd", type=float, default=1.0,
+            help="Teto de gasto estimado da rodada inteira, em US$ (default 1.00). Ao bater, para e avisa.",
+        )
         parser.add_argument(
             "--shortlist", type=int, default=DEFAULT_SHORTLIST,
             help=f"Candidatos que Jev e LLM veem (default {DEFAULT_SHORTLIST}).",
@@ -106,8 +114,11 @@ class Command(BaseCommand):
         result = run(
             cases, catalog, matchers, prices=prices,
             shortlist_size=options["shortlist"], accept_at=options["accept_at"],
+            budget_usd=options["budget_usd"],
         )
         self._report(result, options)
+        if result.stopped:
+            self.stdout.write(self.style.WARNING(f"Rodada incompleta: {result.stopped}."))
         if options["csv"]:
             self._write_csv(result, catalog, options["csv"])
 

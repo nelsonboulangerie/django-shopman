@@ -12,9 +12,9 @@
     "TAON"
   ],
   "totals": {
-    "settings": 312,
+    "settings": 314,
     "env": 24,
-    "settings_env": 172
+    "settings_env": 175
   },
   "files": {
     "config/asgi.py": {
@@ -40,7 +40,7 @@
       "env": 1
     },
     "config/settings.py": {
-      "settings_env": 171
+      "settings_env": 174
     },
     "config/settings_test.py": {
       "settings_env": 1
@@ -78,14 +78,14 @@
     "shopman/backstage/admin/closing.py": {
       "settings": 1
     },
-    "shopman/backstage/admin/kds.py": {
-      "settings": 1
-    },
     "shopman/backstage/admin/navigation.py": {
       "settings": 6
     },
     "shopman/backstage/api/catalog_bindings.py": {
       "settings": 1
+    },
+    "shopman/backstage/bi/matcher_benchmark.py": {
+      "settings": 3
     },
     "shopman/backstage/constants.py": {
       "settings": 1

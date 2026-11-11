@@ -89,7 +89,7 @@ DigitalOcean ou do Sentry.
 | [`audit_recipe_material_day1`](#audit_recipe_material_day1) | backstage | Dados | Audita fichas e dependências reais de insumo/custo para um escopo Day-1 explícito |
 | [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
 | [`benchmark_alias_matchers`](#benchmark_alias_matchers) | backstage | B.I. | Piloto: mede fuzzy × Jev × LLM × embeddings no de-para de produto contra o gabarito confirmado; não grava |
-| [`run_alias_benchmark`](#run_alias_benchmark) | backstage | B.I. | Placar semanal do de-para de produto, guardado no Admin (B.I. → Placar do de-para); roda no `maintenance_worker` |
+| [`run_alias_benchmark`](#run_alias_benchmark) | backstage | B.I. | Placar do de-para de produto, guardado no Admin (B.I. → Placar do de-para); só à mão, com travas de custo |
 | [`concierge_check`](#concierge_check) | storefront | Concierge | Confere se o Concierge ligado consegue atender (configuração; com `--live`, o campo de atendimento humano no ManyChat) |
 | [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede, sombra do Jev); roda no `maintenance_worker` |
 | [`concierge_triage_shadow`](#concierge_triage_shadow) | storefront | Concierge | O Jev decidindo a intenção em sombra: onde ele e a regra local discordam |
@@ -1634,11 +1634,15 @@ Concierge atender: `CONCIERGE_TRIAGE_CLASSIFIER=jev`.
 
 ### run_alias_benchmark
 
-**Propósito:** A medição do [BI-JEV-PILOT](../plans/BI-JEV-PILOT.md) sem console. Roda no
-`maintenance_worker`: com pelo menos 20 `ProductAlias` confirmados e o último placar com mais de 7
-dias, mede `fuzzy`, `llm:claude-haiku-4-5`, `llm:claude-opus-5` e, quando disponíveis, `embed` e
-`jev`, e grava `AliasBenchmarkReport` (Admin → B.I. → Placar do de-para, só leitura, só agregado).
-Concorrente sem credencial ou pacote fica de fora e o placar diz por quê. `--now` força.
+**Propósito:** A medição do [BI-JEV-PILOT](../plans/BI-JEV-PILOT.md) sem console. **Só à mão**:
+saiu do `maintenance_worker` em 11/11/2026, depois de gastar cerca de US$ 1.180 de API em loop. Com pelo
+menos 20 `ProductAlias` confirmados e o último placar com mais de 7 dias (ou com `--now`), mede `fuzzy`
+e `embed`. Os pagos (`llm:claude-haiku-4-5`, `llm:claude-opus-5`, `jev`) só entram com
+`SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED=true`. Valem sempre os tetos de casos
+(`SHOPMAN_ALIAS_BENCHMARK_MAX_CASES`, default 60) e de gasto estimado
+(`SHOPMAN_ALIAS_BENCHMARK_BUDGET_USD`, default US$ 1). A vaga da semana é reservada antes de medir:
+uma medição interrompida aparece como tal no Admin e não recomeça sozinha. Grava `AliasBenchmarkReport`
+(Admin → B.I. → Placar do de-para, só leitura, só agregado).
 
 ### setup_intent_categories
 

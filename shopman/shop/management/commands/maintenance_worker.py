@@ -33,7 +33,6 @@ manutenção num loop (default: a cada 5 minutos):
   recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
   purge_sign_in_audit       — trilha de acessos de operador fora da retenção
   run_intent_pilot          — piloto de intenções: sorteia, pré-marca e mede (tetos próprios)
-  run_alias_benchmark       — placar semanal do de-para de produto (B.I.)
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
 Cada tarefa tem prazo (``COMMAND_TIMEOUT_SECONDS``, com exceções em
@@ -113,10 +112,11 @@ MAINTENANCE_COMMANDS = (
     # Com a série do dia em dia, os alarmes do B.I. comparam com o esperado e
     # avisam quem opera. Depois do refresh de propósito: leem a tabela recém-feita.
     "evaluate_bi_alerts",
-    # O placar do de-para de produto: mede os concorrentes contra os de-paras
-    # confirmados e guarda o resultado no Admin. Semanal e com gabarito mínimo —
-    # quem segura a cadência é o próprio comando; ciclo vazio não custa nada.
-    "run_alias_benchmark",
+    # O placar do de-para (`run_alias_benchmark`) NÃO roda aqui de propósito. Entre
+    # 28/10 e 11/11/2026 ele recomeçou do zero a cada deploy e gastou cerca de US$ 1.180
+    # de API. Ele mede à mão, com teto de casos e de gasto
+    # (`SHOPMAN_ALIAS_BENCHMARK_*` em settings). Não volte a pô-lo no ciclo sem
+    # essas travas e sem o dono saber o custo.
     # A read model pública do cardápio (Continuum) se reconcilia com o catálogo:
     # o GET do snapshot só lê, então a cabeça que ficou para trás sara aqui.
     "refresh_catalog_structure",

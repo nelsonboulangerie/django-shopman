@@ -11,7 +11,7 @@ Base auditada: `origin/main @ ed49a8624`; implementação já integrada pelas PR
 | Entrega | Estado | Evidência / gate |
 |---|---|---|
 | Benchmark fuzzy × Jev × LLM × embeddings | **DONE** | `matcher_benchmark.py` + `benchmark_alias_matchers`, com placar, CSV e testes de parsing/falha segura. |
-| Execução semanal e leitura no Admin | **DONE** | `run_alias_benchmark`, `maintenance_worker` e `AliasBenchmarkReport` somente leitura estão no `main`. |
+| Execução semanal e leitura no Admin | **REVISTO 11/11/2026** | Saiu do `maintenance_worker` depois de gastar cerca de US$ 1.180 de API em loop (28/10 a 11/11). Roda só à mão, com travas de custo; ver "Como roda". |
 | Medição fuzzy/LLM/embeddings no gabarito real | **PENDING EXTERNO** | Gate: corpus com pelo menos 20 de-paras confirmados, staging autorizado e runtime/pacote disponível. Fixture local não vale como resultado. |
 | Medição Jev | **PENDING EXTERNO** | Gate: cadastro do fornecedor reaberto, `JEV_API_KEY` injetada pelo dono e smoke `--matcher jev --limit 5` validando o contrato; só então rodar o corpus completo. Credencial e chamada externa não são lacuna de código. |
 | Usar vencedor no `suggest_aliases` | **PENDING DECISÃO** | Gate: acerto solo ≥ 50%, zero erro aceito com confiança ≥ 0,9, desempenho superior ao fuzzy, custo por 1.000 itens em centavos, p95 < 1 s e decisão humana registrada. O vencedor apenas propõe; nunca confirma automaticamente. |
@@ -57,10 +57,18 @@ dá para medir já.
 
 ## Como roda
 
-**Sozinho, toda semana** (`run_alias_benchmark` no `maintenance_worker`): com 20 ou mais de-paras
-confirmados, mede fuzzy, Haiku 4.5 e Opus 5 (e embeddings e Jev quando houver pacote e chave) e
-guarda o placar em Admin → B.I. → **Placar do de-para**. O staging já tem 98 confirmados (registro
-de 22/08), então o primeiro placar sai no primeiro ciclo depois do deploy.
+**Só à mão, com travas de custo** (`manage.py run_alias_benchmark --now`). Até 11/11/2026 o placar
+rodava sozinho no `maintenance_worker`. Entre 28/10 e 11/11 ele consumiu cerca de 30 milhões de tokens
+por dia (Opus 5 e Haiku 4.5) sem ninguém ver, e a recarga automática do Console cobrou cerca de
+US$ 1.180. Hoje:
+
+- concorrente pago (Haiku, Opus, Jev) só entra com `SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED=true`. A
+  credencial presente não liga nada; sem ele, mede fuzzy e embeddings (custo zero);
+- no máximo `SHOPMAN_ALIAS_BENCHMARK_MAX_CASES` casos (default 60) e teto de gasto estimado
+  `SHOPMAN_ALIAS_BENCHMARK_BUDGET_USD` (default US$ 1) por medição. Ao bater no teto, para e o placar
+  diz isso;
+- a vaga da semana é reservada antes de medir. Uma medição interrompida por deploy ou restart conta
+  para a semana e não recomeça do zero.
 
 ## Rodar à mão (opcional)
 
