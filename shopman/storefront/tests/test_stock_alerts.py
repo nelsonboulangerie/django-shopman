@@ -101,7 +101,7 @@ def _deliver_queued():
 
 
 def _authenticate(client, *, ref="CUS-AUTH-NOTIFY", phone=PHONE):
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
 
     from shopman.storefront.tests.identity_fakes import make_identity_view
 
@@ -2036,7 +2036,7 @@ def test_resume_applies_only_to_future_occurrences(client):
 
 
 def test_logged_in_account_cannot_control_another_customers_alert(client):
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
 
     from shopman.storefront.tests.identity_fakes import make_identity_view
 

@@ -10,9 +10,6 @@ Defines interfaces for external integrations:
 from shopman.craftsman.protocols.catalog import (
     CatalogProtocol,
     ItemInfo,
-    ProductInfo,
-    ProductInfoBackend,
-    SkuValidationResult,
 )
 from shopman.craftsman.protocols.demand import (
     DailyDemand,
@@ -33,10 +30,7 @@ __all__ = [
     "AvailabilityResult",
     # Catalog Protocol
     "CatalogProtocol",
-    "ProductInfoBackend",
     "ItemInfo",
-    "ProductInfo",
-    "SkuValidationResult",
     # Demand Protocol
     "DemandProtocol",
     "DailyDemand",

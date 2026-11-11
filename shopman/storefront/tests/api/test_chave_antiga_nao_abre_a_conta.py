@@ -169,7 +169,7 @@ def test_email_antigo_nao_abre_a_conta_depois_da_troca_e_o_novo_abre(client: Cli
         customer=customer, identifier_type="email", identifier_value=EMAIL_ANTIGO
     ).exists()
 
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
 
     user, _ = get_or_create_user_for_customer(primeira)
     client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")

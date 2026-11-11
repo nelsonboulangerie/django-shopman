@@ -102,7 +102,6 @@ Ver nota em `shopman/shop/protocols.py`.
 | Protocol | Arquivo | Motivo |
 |---|---|---|
 | `CatalogProtocol` | `catalog.py` | Resolver `output_ref` → produto |
-| `ProductInfoBackend` | `catalog.py` | Dados descritivos de insumos/produtos |
 | `DemandProtocol` | `demand.py` | Origem de demanda (pedidos reais ou simulação) |
 | `InventoryProtocol` | `inventory.py` | Consultar disponibilidade de insumos |
 

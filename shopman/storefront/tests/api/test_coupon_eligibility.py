@@ -59,7 +59,7 @@ def _seed_stock(sku: str) -> None:
 
 
 def _login_as_customer(client: Client, customer: Customer):
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
 
     from shopman.storefront.tests.identity_fakes import make_identity_view
 

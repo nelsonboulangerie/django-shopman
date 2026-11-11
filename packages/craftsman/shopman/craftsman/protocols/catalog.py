@@ -3,9 +3,12 @@ Catalog Protocol — interface for product/item information.
 
 Craftsman defines these protocols, Offerman (or other catalog systems) implements them.
 
-Two levels of abstraction:
 - CatalogProtocol: Generic item resolution (any ref → ItemInfo)
-- ProductInfoBackend: Product-specific queries (SKU → ProductInfo, validation)
+
+O ``CRAFTSMAN["CATALOG_BACKEND"]`` que a ficha técnica consulta fala só
+``get_product(sku)`` (contrato em ``shopman.offerman.protocols.CatalogBackend``;
+implementado pelo Offerman, pelo Buyman e pelo composto do orquestrador). Ver
+``shopman.craftsman.models.recipe._catalog_product_info``.
 
 Se não configurado: item_ref é usado como-é.
 Se configurado: resolve nomes, unidades, shelf_life, etc.
@@ -36,31 +39,6 @@ class ItemInfo:
     meta: dict | None = None
 
 
-@dataclass(frozen=True)
-class ProductInfo:
-    """Product information from catalog (product-specific)."""
-
-    sku: str
-    name: str
-    description: str | None
-    category: str | None
-    unit: str
-    base_price_q: int | None
-    is_active: bool
-
-
-@dataclass(frozen=True)
-class SkuValidationResult:
-    """SKU validation result."""
-
-    valid: bool
-    sku: str
-    product_name: str | None = None
-    is_active: bool = True
-    error_code: str | None = None
-    message: str | None = None
-
-
 # ══════════════════════════════════════════════════════════════
 # PROTOCOLS
 # ══════════════════════════════════════════════════════════════
@@ -87,20 +65,3 @@ class CatalogProtocol(Protocol):
         """
         ...
 
-
-@runtime_checkable
-class ProductInfoBackend(Protocol):
-    """
-    Product-specific catalog protocol.
-
-    Used by Offerman adapter to provide production-relevant
-    product information to Craftsman.
-    """
-
-    def get_product_info(self, sku: str) -> ProductInfo | None:
-        """Get product information."""
-        ...
-
-    def validate_output_sku(self, sku: str) -> SkuValidationResult:
-        """Validate if SKU can be used as production output."""
-        ...

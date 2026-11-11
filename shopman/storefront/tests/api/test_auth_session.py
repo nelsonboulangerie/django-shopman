@@ -15,7 +15,7 @@ def _disable_request_rate_limits(settings):
 
 
 def _login_as_customer(client: Client, customer: Customer):
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
     from shopman.guestman.adapters.auth import IdentityResolver
 
     info = IdentityResolver().get(customer.uuid, purpose="session")

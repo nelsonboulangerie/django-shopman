@@ -1,7 +1,6 @@
 """Custo de leitura do catálogo: a contagem de consultas não cresce com o número de produtos.
 
-O caminho quente do catálogo (projeção de listing e adapters de SKU/produto para Stockman
-e Craftsman) prefetcha ``collection_items__collection``. O ``.filter(is_primary=True)``
+O caminho quente do catálogo (projeção de listing e adapter de SKU para o Stockman) prefetcha ``collection_items__collection``. O ``.filter(is_primary=True)``
 dentro do laço descartava o cache e voltava ao banco uma vez por produto; a correção varre
 as linhas prefetchadas em Python. Estes testes são a trava: se a contagem voltar a crescer
 com N, o custo do catálogo inteiro volta junto.
@@ -12,7 +11,6 @@ from __future__ import annotations
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
-from shopman.offerman.adapters.product_info import ProductInfoBackend
 from shopman.offerman.adapters.sku_validator import SkuValidator
 from shopman.offerman.models import Collection, CollectionItem, Listing, ListingItem, Product
 from shopman.offerman.service import CatalogService
@@ -138,41 +136,3 @@ class TestSkuValidatorQueryCount:
         assert len(thirty.captured_queries) == len(two.captured_queries)
         assert len(thirty.captured_queries) <= 3
 
-
-class TestProductInfoQueryCount:
-    def test_get_product_infos_query_count_does_not_grow_with_products(self):
-        listing, collection = _listing_and_collection()
-        _seed_products(listing, collection, 2)
-        backend = ProductInfoBackend()
-
-        with CaptureQueriesContext(connection) as two:
-            small = backend.get_product_infos(["P-000", "P-001"])
-
-        _seed_products(listing, collection, 28, start=2)
-
-        with CaptureQueriesContext(connection) as thirty:
-            big = backend.get_product_infos([f"P-{i:03d}" for i in range(30)])
-
-        assert small["P-000"].category == "featured"
-        assert big["P-029"].category == "featured"
-        assert len(thirty.captured_queries) == len(two.captured_queries)
-        assert len(thirty.captured_queries) <= 3
-
-    def test_search_products_query_count_does_not_grow_with_products(self):
-        listing, collection = _listing_and_collection()
-        _seed_products(listing, collection, 2)
-        backend = ProductInfoBackend()
-
-        with CaptureQueriesContext(connection) as two:
-            small = backend.search_products("Produto", limit=2)
-
-        _seed_products(listing, collection, 28, start=2)
-
-        with CaptureQueriesContext(connection) as thirty:
-            big = backend.search_products("Produto", limit=30)
-
-        assert len(small) == 2
-        assert len(big) == 30
-        assert big[0].category == "featured"
-        assert len(thirty.captured_queries) == len(two.captured_queries)
-        assert len(thirty.captured_queries) <= 3

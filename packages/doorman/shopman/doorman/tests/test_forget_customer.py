@@ -12,8 +12,8 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from shopman.doorman import forget_customer
 from shopman.doorman.models import CustomerUser, Passkey, TrustedDevice, VerificationCode
-from shopman.doorman.services._user_bridge import forget_customer
 
 User = get_user_model()
 pytestmark = pytest.mark.django_db

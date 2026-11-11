@@ -58,7 +58,7 @@ def _cache_control(path: str) -> str:
 
 def _customer_client() -> tuple[Client, Customer]:
     """Cliente logado com favorito e sacola: tudo o que a borda não pode espalhar."""
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
 
     from shopman.storefront.tests.identity_fakes import make_identity_view
 
