@@ -16,11 +16,11 @@ Checks executed today (pre go-live):
 4. **Unambiguous migration numbering** — two files in the same app sharing a
    number, without a merge migration reconciling them, means the next
    ``makemigrations`` picks an arbitrary base and one of them becomes an orphan
-   leaf (``multiple leaf nodes in the migration graph``). Duplicates already in
-   the repository before this check existed are NAMED in
-   ``LEGACY_PREFIX_COLLISIONS`` and stay green (renumbering an applied migration
-   is forbidden); any new one fails. ``SHOPMAN_MIGRATION_PREFIX_STRICT=1`` fails
-   on the inherited ones too.
+   leaf (``multiple leaf nodes in the migration graph``). Inherited duplicates
+   would be NAMED in ``LEGACY_PREFIX_COLLISIONS`` and stay green (renumbering an
+   applied migration is forbidden); the set is empty since the F5 squash, so
+   any duplicate fails. ``SHOPMAN_MIGRATION_PREFIX_STRICT=1`` fails on named
+   ones too.
 
 From go-live onward (the ``go-live-v1`` tag exists — ADR-015) one more check
 arms itself:
@@ -334,22 +334,19 @@ def _expand_contract_markers() -> MigrationCheck:
     )
 
 
-#: Duplicatas de prefixo numérico já existentes no repositório, herdadas de
-#: sequências paralelas de duas sessões antes desta trava existir. O Django não
-#: as confunde (a chave da migração é o NOME do arquivo, não o número), então o
-#: grafo as resolve — mas o número repetido esconde qual das duas é a "próxima".
-#: Renumerar migração já aplicada é proibido (o `git tag go-live-v1` a torna
-#: imutável, e antes dele o histórico ainda é o mesmo), então esta dívida fica
-#: NOMEADA em vez de ignorada. A trava reprova qualquer duplicata NOVA; com
-#: ``SHOPMAN_MIGRATION_PREFIX_STRICT=1`` ela reprova até estas.
-LEGACY_PREFIX_COLLISIONS: frozenset[tuple[str, str]] = frozenset(
-    [
-        *(("shop", f"{number:04d}") for number in range(23, 40)),
-        ("backstage", "0036"),
-        ("backstage", "0058"),
-        ("backstage", "0065"),
-    ]
-)
+#: Duplicatas de prefixo numérico herdadas, toleradas por nome. O Django não as
+#: confunde (a chave da migração é o NOME do arquivo, não o número), mas o
+#: número repetido esconde qual das duas é a "próxima". Renumerar migração já
+#: aplicada é proibido, então a dívida ficava NOMEADA aqui em vez de ignorada.
+#:
+#: Vazio desde a F5 da consolidação (11/11/2026): as 17 de `shop` (0023 a 0039)
+#: e as 3 de `backstage` (0036, 0058, 0065) foram pagas por squash
+#: (`shop.0023_squashed_0044_*`, `backstage.0036_squashed_0066_*`), que os
+#: bancos existentes reconhecem por `replaces`. Não volte a encher: duplicata
+#: nova se resolve renumerando a migração AINDA NÃO aplicada antes do merge.
+#: A trava reprova qualquer duplicata fora daqui; com
+#: ``SHOPMAN_MIGRATION_PREFIX_STRICT=1`` reprova até as daqui.
+LEGACY_PREFIX_COLLISIONS: frozenset[tuple[str, str]] = frozenset()
 
 
 def migration_prefix_check(graph: object, *, strict: bool | None = None) -> MigrationCheck:
@@ -471,6 +468,7 @@ def migration_prefix_check(graph: object, *, strict: bool | None = None) -> Migr
         title=title,
         status="passed",
         message="Nenhuma numeração de migração ambígua.",
+        details=details,
     )
 
 

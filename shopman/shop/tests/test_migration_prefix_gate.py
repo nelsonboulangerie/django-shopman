@@ -3,7 +3,8 @@
 Cobre a checagem ``migrations.prefix_collisions`` de ``scripts/check_migrations.py``:
 
 - duplicata de prefixo **herdada** (a dívida nomeada em
-  :data:`LEGACY_PREFIX_COLLISIONS`) passa, e reprova sob ``SHOPMAN_MIGRATION_PREFIX_STRICT``;
+  :data:`LEGACY_PREFIX_COLLISIONS`, vazia desde o squash da F5; provada aqui com
+  baseline sintético) passa, e reprova sob ``SHOPMAN_MIGRATION_PREFIX_STRICT``;
 - duplicata **nova** reprova;
 - dois números de PONTA iguais sem merge reprovam, que é o caso que produz
   ``multiple leaf nodes in the migration graph``;
@@ -20,6 +21,8 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 _SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "check_migrations.py"
 _spec = importlib.util.spec_from_file_location("check_migrations_gate", _SCRIPT)
@@ -112,10 +115,18 @@ def test_merge_reconcilia_e_nao_deixa_folha_ambigua():
 
 # ---------------------------------------------------------------------------
 # A dívida herdada é nomeada, não varrida para baixo do tapete
+#
+# O baseline real está vazio desde o squash da F5 (11/11/2026). O mecanismo
+# continua valendo e é provado com um baseline sintético.
 # ---------------------------------------------------------------------------
 
 
-def test_divida_herdada_passa_e_e_contada():
+@pytest.fixture
+def baseline_herdado(monkeypatch):
+    monkeypatch.setattr(check_migrations, "LEGACY_PREFIX_COLLISIONS", frozenset({("shop", "0023")}))
+
+
+def test_divida_herdada_passa_e_e_contada(baseline_herdado):
     """Prefixo herdado repetido, já reconciliado por um merge, segue verde.
 
     A dívida é de NOMENCLATURA: as duas cadeias existem, mas uma migração de
@@ -129,7 +140,7 @@ def test_divida_herdada_passa_e_e_contada():
     assert resultado.details["legacy_note"]
 
 
-def test_divida_herdada_nao_perdoa_folha_ambigua():
+def test_divida_herdada_nao_perdoa_folha_ambigua(baseline_herdado):
     """Herança não é salvo-conduto: duas folhas com o mesmo número reprovam."""
     nodes = [("shop", "0023_a"), ("shop", "0023_b")]
     resultado = _verdict(nodes, leaves=[("shop", "0023_a"), ("shop", "0023_b")], strict=False)
@@ -138,21 +149,21 @@ def test_divida_herdada_nao_perdoa_folha_ambigua():
     assert resultado.details["legacy_count"] == 1
 
 
-def test_divida_herdada_reprova_no_modo_estrito():
+def test_divida_herdada_reprova_no_modo_estrito(baseline_herdado):
     nodes = [("shop", "0023_a"), ("shop", "0023_b"), ("shop", "0024_merge_x")]
     resultado = _verdict(nodes, leaves=[("shop", "0024_merge_x")], strict=True)
     assert resultado.status == "failed"
     assert "STRICT" in resultado.message
 
 
-def test_modo_estrito_le_o_ambiente(monkeypatch):
+def test_modo_estrito_le_o_ambiente(monkeypatch, baseline_herdado):
     nodes = [("shop", "0023_a"), ("shop", "0023_b")]
     monkeypatch.setenv("SHOPMAN_MIGRATION_PREFIX_STRICT", "1")
     resultado = check_migrations.migration_prefix_check(_Graph(nodes, [("shop", "0023_a")]), strict=None)
     assert resultado.status == "failed"
 
 
-def test_app_do_baseline_nao_vaza_para_outro_app():
+def test_app_do_baseline_nao_vaza_para_outro_app(baseline_herdado):
     """O baseline é por (app, prefixo): '0023' de backstage não é o de shop."""
     nodes = [("backstage", "0023_a"), ("backstage", "0023_b")]
     resultado = _verdict(nodes, leaves=[("backstage", "0023_a")])
@@ -166,7 +177,7 @@ def test_app_do_baseline_nao_vaza_para_outro_app():
 
 
 def test_grafo_real_nao_tem_colisao_nova_nem_folha_ambigua():
-    """O veredito que o CI vai dar: verde, com a dívida herdada nomeada."""
+    """O veredito que o CI vai dar: verde, e sem dívida herdada (paga na F5)."""
     from django.db.migrations.loader import MigrationLoader
 
     graph = MigrationLoader(None, ignore_no_migrations=True).graph
@@ -174,9 +185,9 @@ def test_grafo_real_nao_tem_colisao_nova_nem_folha_ambigua():
     assert resultado.status == "passed", resultado.message
     assert resultado.details["new_count"] == 0
     assert resultado.details["ambiguous_leaf_count"] == 0
-    # A dívida existe e está declarada: se alguém renumerar, este número cai e
-    # o baseline do script precisa encolher junto.
-    assert resultado.details["legacy_count"] > 0
+    # O squash da F5 pagou as 20 duplicatas herdadas: nenhuma resta, e uma nova
+    # reprova como nova, não como herança.
+    assert resultado.details["legacy_count"] == 0
 
 
 def test_baseline_herdado_bate_com_as_duplicatas_do_repositorio():

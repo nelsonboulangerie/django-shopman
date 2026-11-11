@@ -8,8 +8,7 @@ from datetime import timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError, connection, transaction
-from django.db.migrations.executor import MigrationExecutor
+from django.db import IntegrityError, transaction
 from django.test import override_settings
 from django.utils import timezone
 from shopman.guestman.models import Customer
@@ -309,23 +308,3 @@ def test_ledger_rows_never_copy_contact_or_content():
     assert phone not in serialized
     assert "Fornada pronta" not in serialized
     assert not ({"phone", "email", "recipient", "content", "body"} & field_names)
-
-
-@pytest.mark.django_db(transaction=True)
-def test_delivery_ledger_migration_reverses_and_reapplies_cleanly():
-    before = [("shop", "0029_marketing_outbox_recovery")]
-    after = [("shop", "0030_marketing_delivery_ledger")]
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(before)
-    tables = set(connection.introspection.table_names())
-    assert "shop_deliverytarget" not in tables
-    assert "shop_deliveryattempt" not in tables
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(after)
-    tables = set(connection.introspection.table_names())
-    assert {"shop_deliverytarget", "shop_deliveryattempt"} <= tables
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(executor.loader.graph.leaf_nodes())
