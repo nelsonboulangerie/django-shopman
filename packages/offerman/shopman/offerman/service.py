@@ -541,6 +541,28 @@ class CatalogService:
             .order_by("product__sku", "min_qty")
         )
 
+        items = list(items)
+        # O preço publicado é o da UNIDADE (qty=1), escolhido pelo mesmo
+        # algoritmo de faixa de todo o resto (``unit_prices``): a faixa de menor
+        # ``min_qty`` só vale se cobre uma unidade; senão vale o preço-base.
+        # Item pausado/oculto segue com o preço da faixa (sellable/published
+        # não filtram aqui). Produto arquivado não tem preço vigente (o
+        # ``unit_prices`` responde ``None``) nem é projetável
+        # (``is_published``/``is_sellable`` falsos): sai pelo ``retract``, que
+        # não lê preço, e o item carrega só o preço-base do cadastro.
+        skus = list(dict.fromkeys(item.product.sku for item in items))
+        unit_prices = dict(
+            zip(
+                skus,
+                cls.unit_prices(
+                    [(sku, Decimal("1")) for sku in skus],
+                    listings=(listing.ref,),
+                    sellable_only=False,
+                ),
+                strict=True,
+            )
+        )
+
         snapshot: dict[str, ProjectedItem] = {}
         for item in items:
             if item.product.sku in snapshot:
@@ -569,7 +591,11 @@ class CatalogService:
                 name=product.name,
                 description=product.long_description or product.short_description,
                 unit=product.unit,
-                price_q=item.price_q,
+                price_q=(
+                    unit_prices[product.sku]
+                    if unit_prices[product.sku] is not None
+                    else product.base_price_q
+                ),
                 is_published=product.is_active and product.is_published and item.is_published,
                 is_sellable=product.is_active and product.is_sellable and item.is_sellable,
                 category=primary_collection,

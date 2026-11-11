@@ -26,7 +26,7 @@ from weakref import WeakValueDictionary
 
 from django.db import connection, transaction
 from django.utils import timezone
-from shopman.offerman.protocols.projection import ProjectedItem
+from shopman.offerman.protocols.projection import IncrementalCatalogProjectionBackend, ProjectedItem
 from shopman.orderman.exceptions import DirectiveTransientError
 from shopman.orderman.models import Directive
 
@@ -126,18 +126,19 @@ class CatalogProjectHandler:
                 _record_outcome(item, sku, listing_ref, status=status, error=reason)
                 return
 
+        incremental = isinstance(backend, IncrementalCatalogProjectionBackend)
         try:
             if (
                 item is not None
                 and trigger in {"availability_changed", "stock_changed"}
-                and hasattr(backend, "set_availability")
+                and incremental
             ):
                 result = backend.set_availability(item, channel=listing_ref)
                 retracting = not (item.is_published and item.is_sellable)
             elif (
                 not retracting
                 and trigger in {"price_changed", "operator_price_intention"}
-                and hasattr(backend, "update_price")
+                and incremental
             ):
                 result = backend.update_price(item, channel=listing_ref)
             elif not retracting:
