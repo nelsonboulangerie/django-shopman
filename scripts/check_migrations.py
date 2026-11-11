@@ -341,8 +341,8 @@ def _expand_contract_markers() -> MigrationCheck:
 #:
 #: Vazio desde a F5 da consolidação (11/11/2026): as 17 de `shop` (0023 a 0039)
 #: e as 3 de `backstage` (0036, 0058, 0065) foram pagas por squash
-#: (`shop.0023_squashed_0044_*`, `backstage.0036_squashed_0066_*`), que os
-#: bancos existentes reconhecem por `replaces`. Não volte a encher: duplicata
+#: (`shop.0023_squashed_0044_*`, `backstage.0036_squashed_0066_*`), hoje
+#: migrations comuns (o `replaces` saiu depois do migrate do alpha). Não volte a encher: duplicata
 #: nova se resolve renumerando a migração AINDA NÃO aplicada antes do merge.
 #: A trava reprova qualquer duplicata fora daqui; com
 #: ``SHOPMAN_MIGRATION_PREFIX_STRICT=1`` reprova até as daqui.

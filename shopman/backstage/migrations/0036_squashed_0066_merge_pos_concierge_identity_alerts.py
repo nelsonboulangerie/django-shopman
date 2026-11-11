@@ -6,11 +6,10 @@ merges 0058, 0060, 0065 e 0066. Os números repetidos eram dívida de
 nomenclatura (o grafo resolvia); o squash a paga sem renumerar migração já
 aplicada.
 
-Como cada banco a enxerga: `replaces` lista os 34 nomes. O banco que já
-aplicou todos eles (o alpha, que vira produção) a dá por aplicada sem rodar
-nada, e o `migrate` grava o nome dela em `django_migrations`. O banco novo roda
-só esta. Os arquivos substituídos saíram do repositório; `replaces` fica até
-todo banco vivo ter o nome desta gravado (ver o PR da F5).
+Substituiu 34 migrations com `replaces` até o alpha (o único banco vivo, que
+vira produção) gravar o nome desta em `django_migrations` no deploy da F5
+(11/11/2026, `No migrations to apply`). Depois disso o `replaces` saiu: esta
+é uma migration comum, e banco novo roda só ela.
 
 As funções de `RunPython` vieram das migrations de origem com o prefixo da
 origem no nome (por exemplo `dd61_refuse_populated_inventory_removal`), cada bloco sob um cabeçalho
@@ -104,7 +103,6 @@ def dd61_refuse_populated_inventory_removal(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
-    replaces = [('backstage', '0036_audit_stock_permission'), ('backstage', '0037_signinevent'), ('backstage', '0038_drawer_alerts'), ('backstage', '0039_waitlist_released_alert'), ('backstage', '0040_export_backup_permission'), ('backstage', '0041_integration_failed_alert'), ('backstage', '0042_concierge_alert_types'), ('backstage', '0043_alert_production_stock_shortfall'), ('backstage', '0044_alert_catalog_hidden_by_inactive_collection'), ('backstage', '0045_alert_unhandled_exception_and_config_drift'), ('backstage', '0046_alert_legal_parameter_stale'), ('backstage', '0047_alert_types_do_codigo'), ('backstage', '0048_production_capability_permissions'), ('backstage', '0049_operator_alert_audience'), ('backstage', '0050_ovenrun_idempotency_keys'), ('backstage', '0051_alter_ovenrun_refs'), ('backstage', '0052_operatoralert_ack_audit'), ('backstage', '0053_backfill_production_stock_shortfall_audience'), ('backstage', '0054_resolve_historical_production_low_yield'), ('backstage', '0055_dayclosing_correct_production_qc'), ('backstage', '0056_production_quality_communication_alert'), ('backstage', '0057_quality_hold_risk_alerts'), ('backstage', '0036_operatoralert_marketing_types'), ('backstage', '0058_merge_marketing_excellence'), ('backstage', '0059_alter_operatoralert_type'), ('backstage', '0058_printagentcredential_printjob_printattempt'), ('backstage', '0060_merge_20260910_2002'), ('backstage', '0061_delivery_device'), ('backstage', '0062_alter_operatoralert_type'), ('backstage', '0064_concierge_alert_labels'), ('backstage', '0063_cash_change_request_alert'), ('backstage', '0065_merge_cash_change_concierge_alerts'), ('backstage', '0065_alter_operatoralert_type'), ('backstage', '0066_merge_pos_concierge_identity_alerts')]
 
     dependencies = [
         ('backstage', '0035_purchase_operator_permission'),
