@@ -189,7 +189,7 @@ class TestDeviceTrustService:
         result = DeviceTrustService.trust(response, "customer", uuid.uuid4(), request)
         assert result is None
 
-    def test_trust_emits_signal(self):
+    def test_trust_emits_signal(self, django_capture_on_commit_callbacks):
         """trust_device should emit device_trusted signal."""
         from django.http import HttpResponse
         from shopman.doorman.signals import device_trusted
@@ -204,7 +204,9 @@ class TestDeviceTrustService:
             cid = uuid.uuid4()
             response = HttpResponse()
             request = self._make_request()
-            DeviceTrustService.trust(response, "customer", cid, request)
+            with django_capture_on_commit_callbacks(execute=True):
+                DeviceTrustService.trust(response, "customer", cid, request)
+                assert received == [], "ADR-025: anúncio só depois do COMMIT"
             assert len(received) == 1
             assert received[0]["subject_type"] == "customer"
             assert received[0]["subject_id"] == str(cid)

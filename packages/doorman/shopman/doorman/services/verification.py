@@ -389,12 +389,14 @@ class AuthService:
                 update_fields.append("delivery_method")
             code.save(update_fields=update_fields)
 
-        # Signal
-        verification_code_sent.send(
-            sender=cls,
-            code=code,
-            target_value=target_value,
-            delivery_method=actual_method,
+        # ADR-025: anúncio depois do COMMIT.
+        transaction.on_commit(
+            lambda: verification_code_sent.send(
+                sender=cls,
+                code=code,
+                target_value=target_value,
+                delivery_method=actual_method,
+            )
         )
 
         logger.info("Code sent", extra={"handle_kind": handle.kind, "purpose": purpose})
@@ -608,12 +610,14 @@ class AuthService:
             for key, val in preserved.items():
                 request.session[key] = val
 
-        # Signal
-        verification_code_verified.send(
-            sender=cls,
-            code=code,
-            customer=customer,
-            purpose=VerificationCode.Purpose.LOGIN,
+        # ADR-025: anúncio depois do COMMIT (o código só está verificado se a troca gravou).
+        transaction.on_commit(
+            lambda: verification_code_verified.send(
+                sender=cls,
+                code=code,
+                customer=customer,
+                purpose=VerificationCode.Purpose.LOGIN,
+            )
         )
 
         logger.info(

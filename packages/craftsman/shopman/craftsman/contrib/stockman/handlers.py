@@ -23,6 +23,7 @@ import logging
 from contextlib import contextmanager
 
 from django.apps import apps
+from django.db import transaction
 from django.dispatch import receiver
 from django.utils import timezone
 from shopman.craftsman.signals import production_changed, production_stock_shortfall
@@ -173,7 +174,6 @@ def _leg_lock(work_order):
     Em banco sem ``SELECT FOR UPDATE`` (SQLite de teste local) o lock é no-op —
     a serialização real vale onde a loja roda, no PostgreSQL.
     """
-    from django.db import transaction
     from shopman.craftsman.models import WorkOrder
 
     with transaction.atomic():
@@ -823,15 +823,18 @@ def _handle_finished(work_order, product_ref, date, *, fail_closed: bool = False
             shortfalls = _consume_materials(work_order, fail_closed=fail_closed)
             _stamp_leg(work_order, STOCK_CONSUMED_KEY)
 
-    # Anúncio FORA do lock (perna já commitada): a sub-baixa vira OperatorAlert no
-    # shop, que não pode ser importado daqui (core, ADR-001). Só quando o consume
-    # de fato rodou (guarda do carimbo) e faltou algo — re-run do sweeper não
-    # reanuncia, e o dedup de 12h no shop cobre a corrida.
+    # Anúncio depois do COMMIT (ADR-025): este receiver roda dentro do atomic do
+    # finish, então "fora do lock" ainda não é "commitado". A sub-baixa vira
+    # OperatorAlert no shop, que não pode ser importado daqui (core, ADR-001). Só
+    # quando o consume de fato rodou (guarda do carimbo) e faltou algo: re-run do
+    # sweeper não reanuncia, e o dedup de 12h no shop cobre a corrida.
     if shortfalls:
-        production_stock_shortfall.send(
-            sender=type(work_order),
-            work_order=work_order,
-            shortfalls=shortfalls,
+        transaction.on_commit(
+            lambda: production_stock_shortfall.send(
+                sender=type(work_order),
+                work_order=work_order,
+                shortfalls=shortfalls,
+            )
         )
 
     with _leg_lock(work_order):

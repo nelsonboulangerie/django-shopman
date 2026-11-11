@@ -240,10 +240,13 @@ class Product(models.Model):
         if is_new:
             from shopman.offerman.signals import product_created
 
+            # ADR-025: escrita acoplada — o catalog_projection grava a outbox (sync + Directive)
+            # na mesma transação do produto; rollback do produto apaga a projeção junto.
             product_created.send(sender=self.__class__, instance=self, sku=self.sku)
         elif old is not None and self._projectable_changed(old):
             from shopman.offerman.signals import product_updated
 
+            # ADR-025: escrita acoplada — outbox do catalog_projection na transação do produto.
             product_updated.send(sender=self.__class__, instance=self, sku=self.sku)
 
     def _projectable_changed(self, old: dict) -> bool:
