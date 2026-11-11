@@ -498,6 +498,9 @@ class TestAvailabilityNotifiability:
         from unittest.mock import patch
 
         from shopman.storefront.presentation.catalog import build_catalog_items_for_skus
+        # Toda leitura do Stockman diz se o ledger conhece o SKU; estes casos
+        # são todos de SKU rastreado (sem ledger tem caso próprio na promessa).
+        raw_avail = {"is_tracked": True, **raw_avail}
         with patch(
             "shopman.storefront.presentation.catalog._batch_availability",
             return_value={sku: raw_avail},
@@ -513,7 +516,7 @@ class TestAvailabilityNotifiability:
 
     def test_paused_is_paused_but_not_notifiable(self, channel):
         self._product("NOTIF-PA")
-        item = self._build("NOTIF-PA", {"is_paused": True}, channel)
+        item = self._build("NOTIF-PA", {"is_tracked": True, "is_paused": True}, channel)
         assert item.availability == Availability.UNAVAILABLE
         assert item.is_paused is True
         assert item.is_notifiable is False
@@ -522,7 +525,7 @@ class TestAvailabilityNotifiability:
         self._product("NOTIF-SO")
         item = self._build(
             "NOTIF-SO",
-            {"availability_policy": "planned_ok", "total_promisable": Decimal("0"), "is_planned": False},
+            {"is_tracked": True, "availability_policy": "planned_ok", "total_promisable": Decimal("0"), "is_planned": False},
             channel,
         )
         assert item.availability == Availability.UNAVAILABLE
@@ -535,6 +538,7 @@ class TestAvailabilityNotifiability:
         item = self._build(
             "NOTIF-PLANNED",
             {
+            "is_tracked": True,
                 "availability_policy": "planned_ok",
                 "total_promisable": Decimal("10"),
                 "ready_physical": Decimal("0"),
@@ -551,6 +555,7 @@ class TestAvailabilityNotifiability:
         item = self._build(
             "NOTIF-PLANNED-FULL",
             {
+            "is_tracked": True,
                 "availability_policy": "planned_ok",
                 "total_promisable": Decimal("0"),
                 "ready_physical": Decimal("0"),
@@ -567,6 +572,7 @@ class TestAvailabilityNotifiability:
         item = self._build(
             "NOTIF-READY-HELD",
             {
+            "is_tracked": True,
                 "availability_policy": "planned_ok",
                 "total_promisable": Decimal("10"),
                 "available": Decimal("0"),
@@ -591,6 +597,7 @@ class TestAvailabilityNotifiability:
                         "available": Decimal("5"),
                         "ready_physical": Decimal("5"),
                         "is_planned": True,
+                        "is_tracked": True,
                     },
                 )
             ]
@@ -609,7 +616,7 @@ class TestAvailabilityNotifiability:
         self._product("NOTIF-NS", sellable=False)
         item = self._build(
             "NOTIF-NS",
-            {"availability_policy": "planned_ok", "total_promisable": Decimal("0")},
+            {"is_tracked": True, "availability_policy": "planned_ok", "total_promisable": Decimal("0")},
             channel,
         )
         assert item.is_notifiable is False
@@ -626,6 +633,7 @@ class TestAvailabilityNotifiability:
         item = self._build(
             product.sku,
             {
+            "is_tracked": True,
                 "availability_policy": "planned_ok",
                 "total_promisable": Decimal("50"),
                 "is_planned": False,
@@ -659,6 +667,7 @@ class TestAvailabilityNotifiability:
             "availability_policy": "planned_ok",
             "total_promisable": Decimal("0"),  # zerado PELO hold desta sessão
             "is_planned": False,
+            "is_tracked": True,
         }
         with patch(
             "shopman.storefront.presentation.catalog._batch_availability",

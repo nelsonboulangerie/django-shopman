@@ -508,9 +508,9 @@ def _availability(product) -> dict[str, Any]:
             retryable=True,
         )
     policy = str(raw.get("availability_policy") or "planned_ok")
-    qty = raw.get("total_promisable")
-    normalized_qty = None if policy == "demand_ok" else int(Decimal(str(qty or 0)))
-    if raw.get("is_paused") or (normalized_qty == 0 and not raw.get("is_planned")):
+    can_order, ceiling = catalog_context.promised_ceiling(raw)
+    normalized_qty = None if ceiling is None else int(ceiling)
+    if not can_order:
         raise MarketingContractError(
             code="marketing_product_unavailable",
             detail="O produto não está disponível para o anúncio.",

@@ -6967,6 +6967,7 @@
             "products_by_sku",
             "products_queryset",
             "promisable_int",
+            "promised_ceiling",
             "published_products",
             "published_products_by_collection",
             "related_products",

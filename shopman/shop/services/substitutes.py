@@ -234,10 +234,10 @@ def _resolve_availability(raw_avail: dict | None, product, qty: Decimal) -> tupl
     if raw_avail is None:
         # No stockman data — assume available
         return True, Decimal("0")
-    is_paused = raw_avail.get("is_paused", False) or not product.is_sellable
-    availability_policy = raw_avail.get("availability_policy", "planned_ok")
-    total_promisable = raw_avail.get("total_promisable", Decimal("0"))
-    if availability_policy == "demand_ok" and not is_paused:
-        return True, qty
-    can_order = total_promisable >= qty and not is_paused
-    return can_order, total_promisable
+    from shopman.stockman.services.availability import decision_from_availability
+
+    decision = decision_from_availability(product.sku, qty, raw_avail)
+    if decision.orderable_ceiling is None:
+        # Sem teto (sem ledger, ``demand_ok``): cabe o que se pediu.
+        return decision.approved, qty
+    return decision.approved, decision.orderable_ceiling

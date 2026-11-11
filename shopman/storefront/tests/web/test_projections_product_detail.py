@@ -245,7 +245,7 @@ class TestAvailability:
         from unittest.mock import patch
 
         _publish_on_listing(listing, product)
-        raw = {"availability_policy": "demand_ok", "total_promisable": Decimal("0")}
+        raw = {"is_tracked": True, "availability_policy": "demand_ok", "total_promisable": Decimal("0")}
         with patch(
             "shopman.storefront.presentation.product_detail._availability",
             return_value=raw,
@@ -263,6 +263,7 @@ class TestAvailability:
 
         _publish_on_listing(listing, product)
         raw = {
+            "is_tracked": True,
             "availability_policy": "planned_ok",
             "total_promisable": Decimal("10"),
             "ready_physical": Decimal("0"),

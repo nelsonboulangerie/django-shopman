@@ -198,6 +198,7 @@ class TestPopulatedCart:
         )
 
         esgotado = {
+            "is_tracked": True,
             "availability_policy": "planned_ok",
             "total_promisable": Decimal("0"),
             "is_planned": False,
@@ -210,7 +211,7 @@ class TestPopulatedCart:
                 COMPLEMENT, cart_skus={"PAO"}, channel_ref=STOREFRONT_CHANNEL_REF,
             ) == ()
 
-        disponivel = {"availability_policy": "demand_ok"}
+        disponivel = {"is_tracked": True, "availability_policy": "demand_ok"}
         with patch(
             "shopman.shop.projections.cart._availability",
             return_value=({croissant.sku: disponivel}, {}),
