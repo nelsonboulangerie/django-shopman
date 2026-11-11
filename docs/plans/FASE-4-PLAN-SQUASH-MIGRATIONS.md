@@ -23,3 +23,21 @@
   apagar migration de outra frente (o incidente de 12/08 e 19/08).
 - O squash é pré-go-live e barato AGORA; após go-live vira expand-contract (ADR-015). Por isso
   entra antes, mas nunca por cima de trabalho alheio.
+
+## Execução (F5, 11/11/2026)
+O plano acima previa baseline `0001_initial` + reseed. Não foi assim: o banco do alpha vira
+produção e não pode ser recriado nem reseedado sem a palavra do dono. O squash usa o
+mecanismo nativo do Django (`replaces`), que vale sobre o banco que já rodou tudo.
+
+- `shop.0023_squashed_0044_merge_marketing_excellence` substitui 39 migrations (os dois
+  ramos 0023–0039, as 0040–0043 e a merge 0044). `backstage.0036_squashed_0066_merge_pos_concierge_identity_alerts`
+  substitui 34 (os ramos 0036, 0058 e 0065 e as merges até 0066). Só as faixas com
+  colisão: squash do app inteiro custaria portar ~50 RunPython e reescrever dezenas de testes
+  de migração para ganhar segundos no `migrate` do zero (366 migrations levam ~21 s).
+- As substituídas saíram do repositório na mesma PR; `replaces` fica. Banco que aplicou
+  todas reconhece a squashada sem rodar nada e o `migrate` grava o nome dela.
+- `LEGACY_PREFIX_COLLISIONS` ficou vazio: qualquer duplicata reprova.
+- **Passo seguinte (etapa 3):** apagar `replaces` das duas squashadas, depois que o deploy
+  desta PR rodou o `migrate` no alpha (o `django_migrations` dele passa a ter as duas linhas
+  `*_squashed_*`). Sem isso, um banco que só tem os nomes antigos veria as squashadas como
+  pendentes.

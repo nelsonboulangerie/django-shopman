@@ -8,8 +8,6 @@ from datetime import timedelta
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.db import connection
-from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
 from shopman.shop.models import (
@@ -582,30 +580,3 @@ def test_recovery_api_enforces_distinct_capabilities(client):
     assert reconcile_response.status_code == 200
     assert reconcile_response.json()["receipt"]["outcome"]["lookup_count"] == 1
     assert DeliveryReconciliation.objects.count() == 1
-
-
-@pytest.mark.django_db(transaction=True)
-def test_reconciliation_migration_reverses_and_reapplies_cleanly():
-    before = [("shop", "0033_marketing_delivery_aggregate")]
-    after = [("shop", "0034_marketing_delivery_recovery")]
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(before)
-    assert "shop_deliveryreconciliation" not in set(
-        connection.introspection.table_names()
-    )
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(after)
-    assert "shop_deliveryreconciliation" in set(
-        connection.introspection.table_names()
-    )
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(before)
-    assert "shop_deliveryreconciliation" not in set(
-        connection.introspection.table_names()
-    )
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(executor.loader.graph.leaf_nodes())

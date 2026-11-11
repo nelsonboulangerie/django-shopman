@@ -9,8 +9,6 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.db import connection
-from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 from shopman.guestman import ConsentService
 from shopman.guestman.models import Customer
@@ -640,30 +638,3 @@ def test_artifact_model_refuses_a_forged_hash(announcement):
             artifact_hash="0" * 64,
             retention_until=timezone.now() + timedelta(days=365 * 5),
         )
-
-
-@pytest.mark.django_db(transaction=True)
-def test_approval_schema_migration_reverses_and_reapplies_cleanly():
-    before = [("shop", "0026_marketing_command_receipt")]
-    after = [("shop", "0027_marketing_approval_outbox")]
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(before)
-    tables_before = set(connection.introspection.table_names())
-    assert "shop_marketingcontentartifact" not in tables_before
-    assert "shop_marketingauditevent" not in tables_before
-    assert "shop_marketingoutbox" not in tables_before
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(after)
-    tables_after = set(connection.introspection.table_names())
-    assert {
-        "shop_marketingcontentartifact",
-        "shop_marketingauditevent",
-        "shop_marketingoutbox",
-    } <= tables_after
-
-    # Migration tests must not leak an old schema into whichever test pytest
-    # schedules next.
-    executor = MigrationExecutor(connection)
-    executor.migrate(executor.loader.graph.leaf_nodes())

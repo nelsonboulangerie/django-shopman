@@ -10,7 +10,7 @@ from shopman.shop.models import Channel
 pytestmark = pytest.mark.django_db
 
 migration = import_module(
-    "shopman.shop.migrations.0041_enable_remote_waitlist_notifications"
+    "shopman.shop.migrations.0023_squashed_0044_merge_marketing_excellence"
 )
 
 
@@ -35,13 +35,13 @@ def test_migration_updates_only_owned_remote_channels_and_preserves_other_config
         config={"waitlist": {"enabled": False}},
     )
 
-    migration.forwards(apps, None)
+    migration.wl41_forwards(apps, None)
 
     web.refresh_from_db()
     whatsapp.refresh_from_db()
     ifood.refresh_from_db()
     for channel in (web, whatsapp):
-        assert channel.config["waitlist"] == migration.WAITLIST_POLICY
+        assert channel.config["waitlist"] == migration.wl41_WAITLIST_POLICY
         assert channel.config["notifications"]["backend"] == "manychat"
         assert channel.config["notifications"]["fallback_chain"] == ["sms", "email"]
     assert web.config["short_name"] == "Site"
@@ -52,9 +52,9 @@ def test_migration_updates_only_owned_remote_channels_and_preserves_other_config
 
 def test_reverse_stops_new_entries_without_reintroducing_console_delivery():
     web = Channel.objects.create(ref="web", name="Loja online", config={})
-    migration.forwards(apps, None)
-    migration.backwards(apps, None)
+    migration.wl41_forwards(apps, None)
+    migration.wl41_backwards(apps, None)
 
     web.refresh_from_db()
     assert web.config["waitlist"]["enabled"] is False
-    assert web.config["notifications"] == migration.NOTIFICATION_POLICY
+    assert web.config["notifications"] == migration.wl41_NOTIFICATION_POLICY

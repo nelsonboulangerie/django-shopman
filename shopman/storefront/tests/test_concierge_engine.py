@@ -139,8 +139,8 @@ def _seed_stock(sku: str, qty: Decimal) -> None:
 def surface():
     # TransactionTestCase faz flush dos dados semeados pelas migrations.
     from importlib import import_module
-    seed = import_module("shopman.shop.migrations.0028_seed_attribute_definitions")
-    for definition in seed.DEFINITIONS:
+    seed = import_module("shopman.shop.migrations.0023_squashed_0044_merge_marketing_excellence")
+    for definition in seed.at28_DEFINITIONS:
         from shopman.shop.models import AttributeDefinition
         AttributeDefinition.objects.get_or_create(ref=definition["ref"], defaults={k: v for k, v in definition.items() if k != "ref"})
     Shop.objects.create(
