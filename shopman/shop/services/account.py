@@ -1427,7 +1427,7 @@ def anonymize_customer(customer, *, correlation_ref: str = "") -> tuple[str, str
         logger.warning("anonymize: purge_pii falhou correlation=%s", correlation_ref)
 
     try:
-        from shopman.doorman.services._user_bridge import forget_customer
+        from shopman.doorman import forget_customer
 
         forget_customer(customer.uuid)
     except Exception:

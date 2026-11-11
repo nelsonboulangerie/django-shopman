@@ -88,7 +88,7 @@ Ordem de entrada: #2261, depois #2262/#2263, depois #2264/#2265 (empilhados sobr
    `services/substitutes.py`, `marketing_facts.py`, `social_publish_rules.py` e
    `backstage/services/shelf_outages.py` decidem "pode pedir" pela política de oferta, fora do
    Stockman.
-6. **Menores:** o Craftsman lê o backend de catálogo por `hasattr`, e `ProductInfoBackend` não está
+6. ✅ **Menores** (resolvido em 11/11, PR "Fronteiras menores"): o Craftsman lia o backend de catálogo por `hasattr`, e `ProductInfoBackend` não está
    ligado; o shop importa o módulo privado `doorman.services._user_bridge`; `_label_attributes`
    engole erro de import do provider (fazer falhar é decisão de comportamento).
 

@@ -162,7 +162,7 @@ def test_dispositivo_confiavel_nao_le_o_telefone_fora_do_porto(client: Client, m
 
 
 def _login_as_customer(client: Client, customer: Customer) -> None:
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
 
     from shopman.storefront.tests.identity_fakes import make_identity_view
 

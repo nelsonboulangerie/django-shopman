@@ -690,6 +690,36 @@ def test_framework_does_not_import_protected_kernel_internals():
         )
 
 
+def test_host_does_not_import_private_kernel_modules():
+    """Módulo de kernel com ``_`` no nome é interno: o host usa a API pública.
+
+    Vale também para os testes do host. Foi assim que o shop e o storefront
+    passaram a depender de ``shopman.doorman.services._user_bridge``, até os
+    dois verbos saírem por ``shopman.doorman``.
+    """
+    kernels = DOMAIN_KERNEL_PACKAGES | set(PROTECTED_KERNEL_PACKAGES)
+    violations = []
+    for root in (FRAMEWORK_ROOT, REPO_ROOT / "config"):
+        for path in _py_files(root):
+            for line, module in _imports(path):
+                parts = module.split(".")
+                if (
+                    len(parts) >= 3
+                    and parts[0] == "shopman"
+                    and parts[1] in kernels
+                    and any(p.startswith("_") and not p.startswith("__") for p in parts[2:])
+                ):
+                    violations.append((path, line, module))
+
+    if violations:
+        pytest.fail(
+            "Host imported private kernel modules:\n"
+            f"{_format_violations(violations)}\n\n"
+            "Expose the verb through the kernel's public API (package __init__ "
+            "or a public services module) and import it from there."
+        )
+
+
 def test_surfaces_do_not_import_orderman_write_primitives():
     """Surfaces must create/modify/commit sessions through shop services."""
     forbidden = (

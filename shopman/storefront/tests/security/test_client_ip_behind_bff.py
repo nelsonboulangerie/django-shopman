@@ -117,7 +117,7 @@ def _customer(ref: str) -> Customer:
 
 
 def test_consentimento_pelo_bff_grava_o_ip_do_cliente(client: Client):
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
     from shopman.guestman.contrib.consent.models import CommunicationConsent
 
     from shopman.storefront.tests.identity_fakes import make_identity_view

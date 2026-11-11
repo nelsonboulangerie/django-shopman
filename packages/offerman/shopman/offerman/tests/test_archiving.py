@@ -3,7 +3,6 @@
 from decimal import Decimal
 
 import pytest
-from shopman.offerman.adapters.product_info import ProductInfoBackend
 from shopman.offerman.adapters.sku_validator import SkuValidator
 from shopman.offerman.exceptions import CatalogError
 from shopman.offerman.models import Listing, ListingItem, Product
@@ -38,7 +37,6 @@ def test_archived_product_is_unavailable_to_sale_decisions_and_price():
 
     validation = CatalogService.validate(archived.sku)
     stock_validation = SkuValidator().validate_sku(archived.sku)
-    product_info = ProductInfoBackend().get_product_info(archived.sku)
 
     assert validation.valid is True
     assert validation.is_published is False
@@ -46,7 +44,6 @@ def test_archived_product_is_unavailable_to_sale_decisions_and_price():
     assert validation.message == "Product is archived"
     assert stock_validation.is_published is False
     assert stock_validation.is_sellable is False
-    assert product_info.is_active is False
     with pytest.raises(CatalogError, match="SKU_NOT_FOUND"):
         CatalogService.unit_price(archived.sku, qty=Decimal("1"), listing="ifood")
 

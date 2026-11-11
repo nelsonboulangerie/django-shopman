@@ -1101,10 +1101,9 @@ class TestProtocols:
         assert InventoryProtocol is not None
 
     def test_catalog_protocol_importable(self):
-        from shopman.craftsman.protocols import CatalogProtocol, ProductInfoBackend
+        from shopman.craftsman.protocols import CatalogProtocol
 
         assert CatalogProtocol is not None
-        assert ProductInfoBackend is not None
 
     def test_demand_protocol_importable(self):
         from shopman.craftsman.protocols import DailyDemand, DemandProtocol
@@ -1149,13 +1148,6 @@ class TestProtocols:
 
         assert InventoryProtocol is not None
         assert MaterialNeed is not None
-
-    def test_backward_compat_product_module(self):
-        """protocols/product.py still works as re-export."""
-        from shopman.craftsman.protocols.product import ProductInfo, ProductInfoBackend
-
-        assert ProductInfoBackend is not None
-        assert ProductInfo is not None
 
 
 # ── Inventory Protocol Wiring ─────────────────────────────────
