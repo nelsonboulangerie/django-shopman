@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.utils import timezone
 
@@ -80,6 +80,20 @@ class BIProductionPrevious:
 
 
 @dataclass(frozen=True)
+class BIProductionBatchMargin:
+    """Custo congelado e receita rastreada de uma fornada fechada."""
+
+    ref: str
+    recipe: str
+    date: str
+    revenue_q: int
+    total_q: int | None
+    margin_q: int | None
+    cost_status: str
+    gaps: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class BIProductionReport:
     date_from: str
     date_to: str
@@ -92,6 +106,7 @@ class BIProductionReport:
     batches_measured: int
     oven_coverage_percent: int
     previous: BIProductionPrevious
+    batch_margins: tuple[BIProductionBatchMargin, ...]
 
 
 def build_bi_production(
@@ -149,7 +164,137 @@ def build_bi_production(
             round(batches_measured * 100 / batches_finished) if batches_finished else 0
         ),
         previous=_production_previous(date_from, date_to),
+        batch_margins=_batch_margins(date_from, date_to),
     )
+
+
+# Motivo gravado por StockPlanning.realize na entrada física do Craftsman.
+_PRODUCTION_RECEIPT = "Recebido de produção: Finalização do lote: "
+
+
+def _batch_margins(date_from: date, date_to: date) -> tuple[BIProductionBatchMargin, ...]:
+    from django.db.models import Q
+    from shopman.craftsman.models import WorkOrder
+
+    from shopman.backstage.bi.canonical import local_window
+
+    start, end = local_window(date_from, date_to)
+    work_orders = list(
+        WorkOrder.objects.filter(status=WorkOrder.Status.FINISHED)
+        .filter(
+            Q(finished_at__gte=start, finished_at__lt=end)
+            | Q(finished_at__isnull=True, target_date__range=(date_from, date_to))
+        )
+        .select_related("recipe")
+        .order_by("-finished_at", "-target_date", "-pk")
+    )
+    batch_owners = _stock_batch_owners(work_orders)
+    revenue = _batch_revenue(batch_owners, date_from, date_to) if batch_owners else {}
+
+    rows = []
+    for wo in work_orders:
+        snapshot = (wo.meta or {}).get("cost_snapshot")
+        total_q = snapshot["total_q"] if snapshot is not None else None
+        revenue_q = revenue.get(wo.ref, 0)
+        cost_status = "complete"
+        if snapshot is None:
+            cost_status = "missing"
+        elif total_q is None:
+            cost_status = "incomplete"
+        rows.append(
+            BIProductionBatchMargin(
+                ref=wo.ref,
+                recipe=wo.recipe.name,
+                date=(timezone.localdate(wo.finished_at) if wo.finished_at else wo.target_date).isoformat(),
+                revenue_q=revenue_q,
+                total_q=total_q,
+                margin_q=revenue_q - total_q if total_q is not None else None,
+                cost_status=cost_status,
+                gaps=tuple(snapshot["gaps"]) if snapshot is not None else (),
+            )
+        )
+    return tuple(rows)
+
+
+def _stock_batch_owners(work_orders) -> dict[str, str]:
+    """Só atribui lote de estoque com origem única, inclusive fora da janela."""
+    from shopman.stockman.models import Move
+
+    if not work_orders:
+        return {}
+
+    receipts = Move.objects.filter(kind=Move.Kind.MAKE, delta__gt=0).exclude(quant__batch="")
+    refs_by_reason = {_PRODUCTION_RECEIPT + wo.ref: wo.ref for wo in work_orders}
+    candidates = receipts.filter(reason__in=refs_by_reason).order_by().values("quant__batch")
+    reasons_by_batch: dict[str, set[str]] = defaultdict(set)
+    for batch, reason in receipts.filter(quant__batch__in=candidates).order_by().values_list(
+        "quant__batch", "reason"
+    ).distinct():
+        reasons_by_batch[batch].add(reason)
+    return {
+        batch: refs_by_reason[reason]
+        for batch, reasons in reasons_by_batch.items()
+        for reason in reasons
+        if len(reasons) == 1 and reason in refs_by_reason
+    }
+
+
+def _batch_revenue(batch_owners: dict[str, str], date_from: date, date_to: date) -> dict[str, int]:
+    """Rateia a linha conciliada pela quantidade baixada de cada lote."""
+    from shopman.orderman.models import Order
+    from shopman.stockman import Hold, HoldStatus
+
+    from shopman.backstage.bi import canonical
+
+    sales = canonical.read_sales(date_from, date_to)
+    order_by_reference = {
+        f"order:{sale.ref.removeprefix('shopman:')}": sale.key
+        for sale in sales.sales if sale.source == "shopman"
+    }
+    holds = list(Hold.objects.filter(
+        metadata__reference__in=order_by_reference,
+        status=HoldStatus.FULFILLED,
+        quant__batch__in=batch_owners,
+    ).values_list("pk", "sku", "quant__batch", "metadata__reference"))
+    if not holds:
+        return {}
+
+    order_ids = {order_by_reference[reference] for _, _, _, reference in holds}
+    holds_by_order = {}
+    for order_id, entries in Order.objects.filter(pk__in=order_ids).values_list("pk", "data__hold_ids"):
+        holds_by_order[order_id] = {
+            entry["hold_id"]: Decimal(str(entry["qty"]))
+            for entry in entries or ()
+            if entry.get("hold_id") and entry.get("qty") is not None
+        }
+
+    quantities: dict[tuple[int, str], dict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
+    for hold_id, sku, batch, reference in holds:
+        order_id = order_by_reference[reference]
+        quantity = holds_by_order.get(order_id, {}).get(f"hold:{hold_id}", Decimal(0))
+        if quantity > 0:
+            quantities[order_id, sku][batch_owners[batch]] += quantity
+
+    totals: dict[tuple[int, str], tuple[Decimal, int]] = defaultdict(lambda: (Decimal(0), 0))
+    for line in sales.lines():
+        key = (line.sale_key, line.product_ref)
+        if line.source == "shopman" and key in quantities:
+            qty, total_q = totals[key]
+            totals[key] = qty + line.qty, total_q + line.line_total_q
+
+    revenue: dict[str, int] = defaultdict(int)
+    for key, (qty, total_q) in totals.items():
+        allocated = quantities[key]
+        if qty <= 0 or sum(allocated.values()) > qty:
+            continue
+        cumulative = Decimal(0)
+        previous_q = 0
+        for ref, quantity in sorted(allocated.items()):
+            cumulative += quantity
+            cumulative_q = int((total_q * cumulative / qty).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+            revenue[ref] += cumulative_q - previous_q
+            previous_q = cumulative_q
+    return revenue
 
 
 def _counted_in_units(work_orders: list) -> list:

@@ -10,8 +10,8 @@
 // toque e teclado, e o "Dia a dia" mostra o previsto e a perda que antes só existiam
 // no `:hover` da barra (laudo F01).
 import type { TableColumn } from "#ui/types";
-import type { BIProductionReport } from "~/types/bi";
-import { coverageLabel, delta, formatInt, startedAssumedHint } from "~/presentation/bi";
+import type { BIProductionBatchMargin, BIProductionReport } from "~/types/bi";
+import { coverageLabel, delta, formatInt, formatMoney, shortDateWithYear, startedAssumedHint } from "~/presentation/bi";
 import {
   FINISHED_SERIES,
   OVEN_FOCUS_ROWS,
@@ -67,6 +67,15 @@ const dayColumns = computed<TableColumn<ProductionDayRow>[]>(() => [
   { accessorKey: "fullPrice", header: "A preço cheio", meta: { class: { th: "text-end max-md:hidden", td: "text-end tnum max-md:hidden" } } },
   { accessorKey: "discounted", header: "Com desconto", meta: { class: { th: "text-end max-md:hidden", td: "text-end tnum max-md:hidden" } } },
 ]);
+
+const batchColumns: TableColumn<BIProductionBatchMargin>[] = [
+  { accessorKey: "ref", header: "Lote" },
+  { accessorKey: "date", header: "Fechamento", cell: ({ row }) => shortDateWithYear(row.original.date) },
+  { accessorKey: "recipe", header: "Receita" },
+  { accessorKey: "revenue_q", header: "Receita rastreada", cell: ({ row }) => formatMoney(row.original.revenue_q) },
+  { accessorKey: "total_q", header: "Custo congelado" },
+  { accessorKey: "margin_q", header: "Margem sobre a receita rastreada" },
+];
 
 // Tempo de forno: tabela com a média em barra (NuxtProgress) e o "Ver todas" (laudo F20).
 // Ordena pelo nome e pela média (os minutos crus, não o texto "12 min"). O "Dia a dia"
@@ -151,6 +160,28 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
               :max-ticks="maxTicks"
           empty-title="Nenhum lote fechado no período"
         />
+      </OperatorReadingCard>
+
+      <OperatorReadingCard
+        v-if="report.batch_margins.length"
+        title="Custo e margem por lote"
+        description="A receita considera as vendas do período cuja baixa identifica o lote de produção."
+      >
+        <UTable :data="report.batch_margins" :columns="batchColumns">
+          <template #total_q-cell="{ row }">
+            <span v-if="row.original.cost_status === 'missing'">Sem custo</span>
+            <template v-else-if="row.original.cost_status === 'incomplete'">
+              <span>Incompleto</span>
+              <ul class="list-disc ps-4">
+                <li v-for="(gap, index) in row.original.gaps" :key="index">{{ gap }}</li>
+              </ul>
+            </template>
+            <span v-else-if="row.original.total_q !== null">{{ formatMoney(row.original.total_q) }}</span>
+          </template>
+          <template #margin_q-cell="{ row }">
+            {{ row.original.margin_q === null ? 'Indisponível' : formatMoney(row.original.margin_q) }}
+          </template>
+        </UTable>
       </OperatorReadingCard>
 
       <OperatorReadingCard

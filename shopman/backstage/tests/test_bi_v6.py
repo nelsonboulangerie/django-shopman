@@ -24,9 +24,11 @@ from django.utils import timezone
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
 from shopman.offerman.models import Collection, CollectionItem, Product
 from shopman.orderman.models import Order, OrderItem
+from shopman.stockman import Hold, HoldStatus, Move, Position, Quant
 
 from shopman.backstage.models import DayClosing, PlanCarryNote, ShelfOutage
 from shopman.backstage.projections.bi_over_short import build_bi_over_short
+from shopman.backstage.projections.bi_production import build_bi_production
 from shopman.backstage.projections.bi_sales import build_bi_sales
 
 pytestmark = pytest.mark.django_db
@@ -322,3 +324,84 @@ def test_order_history_filters_by_product_including_the_counter(client, shop, da
     assert [row["ref"] for row in history["items"]] == [counter.ref]
     assert history["sku"] == "HIST1"
     assert history["sku_name"] == "Croissant"
+
+
+
+def _finished_stock(wo, batch):
+    position, _ = Position.objects.get_or_create(ref="bi-batches", defaults={"name": "Vitrine"})
+    quant, _ = Quant.objects.get_or_create(sku=wo.output_sku, batch=batch, position=position)
+    Move.objects.create(
+        quant=quant,
+        delta=wo.finished,
+        kind=Move.Kind.MAKE,
+        reason=f"Recebido de produção: Finalização do lote: {wo.ref}",
+    )
+    return quant
+
+
+def _attach_sale_holds(order, day, allocations):
+    entries = []
+    for quant, qty in allocations:
+        hold = Hold.objects.create(
+            sku=quant.sku,
+            quant=quant,
+            quantity=qty,
+            target_date=day,
+            status=HoldStatus.FULFILLED,
+            metadata={"reference": f"order:{order.ref}"},
+        )
+        Move.objects.create(quant=quant, delta=-qty, kind=Move.Kind.SELL, reason=f"Entrega hold:{hold.pk}")
+        entries.append({"sku": quant.sku, "hold_id": f"hold:{hold.pk}", "qty": str(qty)})
+    Order.objects.filter(pk=order.pk).update(data={"hold_ids": entries})
+
+
+def test_batch_margin_uses_frozen_cost_and_only_traced_reconciled_sales(day):
+    recipe = _recipe("BIMARGIN", "Pão da casa")
+    complete = _lot(recipe, day, 10)
+    incomplete = _lot(recipe, day, 10)
+    old = _lot(recipe, day - timedelta(days=1), 10)
+    for wo, total_q, gaps in (
+        (complete, 1800, []),
+        (incomplete, None, ["Farinha sem preço de compra."]),
+    ):
+        WorkOrder.objects.filter(pk=wo.pk).update(meta={"cost_snapshot": {
+            "frozen_at": datetime.combine(day, time(6, 30), tzinfo=timezone.get_current_timezone()).isoformat(),
+            "total_q": total_q,
+            "unit_cost_q": total_q // 10 if total_q is not None else None,
+            "output_quantity": "10",
+            "lines": [],
+            "gaps": gaps,
+        }})
+    first_stock = _finished_stock(complete, "bi-margin-first")
+    second_stock = _finished_stock(incomplete, "bi-margin-second")
+    sale = _sale(day, time(9), recipe.output_sku, 5)
+    OrderItem.objects.filter(order=sale).update(line_total_q=4001)
+    _attach_sale_holds(sale, day, [(first_stock, 3), (second_stock, 2)])
+    cancelled = _sale(day, time(10), recipe.output_sku, 1)
+    _attach_sale_holds(cancelled, day, [(first_stock, 1)])
+    Order.objects.filter(pk=cancelled.pk).update(status=Order.Status.CANCELLED)
+    _sale(day, time(11), recipe.output_sku, 4)
+
+    report = build_bi_production(date_from=old.target_date, date_to=day)
+    rows = {row.ref: row for row in report.batch_margins}
+    first = rows[complete.ref]
+    assert (first.cost_status, first.revenue_q, first.total_q, first.margin_q) == ("complete", 2401, 1800, 601)
+    second = rows[incomplete.ref]
+    assert (second.cost_status, second.revenue_q, second.total_q, second.margin_q) == (
+        "incomplete", 1600, None, None,
+    )
+    assert second.gaps == ("Farinha sem preço de compra.",)
+    assert (rows[old.ref].cost_status, rows[old.ref].total_q, rows[old.ref].margin_q) == ("missing", None, None)
+
+
+def test_batch_margin_does_not_attribute_sales_from_a_shared_daily_batch(day):
+    recipe = _recipe("BISHARED", "Baguete")
+    first = _lot(recipe, day - timedelta(days=1), 5)
+    second = _lot(recipe, day, 5)
+    quant = _finished_stock(first, "bi-margin-shared")
+    _finished_stock(second, quant.batch)
+    sale = _sale(day, time(9), recipe.output_sku, 2)
+    _attach_sale_holds(sale, day, [(quant, 2)])
+
+    rows = build_bi_production(date_from=day, date_to=day).batch_margins
+    assert [(row.ref, row.revenue_q) for row in rows] == [(second.ref, 0)]

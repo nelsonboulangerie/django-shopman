@@ -68,6 +68,7 @@ from shopman.backstage.projections.bi_over_short import (
 )
 from shopman.backstage.projections.bi_production import (
     BIOvenTimeRow,
+    BIProductionBatchMargin,
     BIProductionDay,
     BIProductionPrevious,
     BIProductionReport,
@@ -109,6 +110,7 @@ OUTPUT_RELATIVE_PATH = Path("surfaces/bi-nuxt/app/generated/biContract.ts")
 #: Every dataclass exported to the surface, dependencies first.
 CONTRACT_DATACLASSES = (
     BIOvenTimeRow,
+    BIProductionBatchMargin,
     BIProductionDay,
     BIProductionPrevious,
     BIProductionReport,

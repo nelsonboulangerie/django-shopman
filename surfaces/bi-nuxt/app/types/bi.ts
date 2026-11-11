@@ -23,6 +23,7 @@ export type {
   BIOverShortTypical,
   BIOverShortUnavailable,
   BIOverShortAnswerGroup,
+  BIProductionBatchMargin,
   BIProductionDay,
   BIProductionReport,
   BIProfileBand,
