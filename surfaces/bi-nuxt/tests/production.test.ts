@@ -25,6 +25,7 @@ function day(date: string, started: string, finished: string, loss = "0") {
 }
 
 const report: BIProductionReport = {
+  batch_margins: [],
   date_from: "2026-10-01",
   date_to: "2026-10-03",
   days: [day("2026-10-01", "100", "90", "10"), day("2026-10-02", "0", "0"), day("2026-10-03", "50", "50")],
