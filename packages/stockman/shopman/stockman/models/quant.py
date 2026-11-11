@@ -107,6 +107,19 @@ class Quant(models.Model):
         verbose_name=_('Data Alvo'),
         help_text=_('Vazio = estoque físico. Data = produção planejada.'),
     )
+    # ``batch`` é a referência TEXTUAL do lote, de propósito (F4c, 10/11/2026):
+    # 1. Faz parte da coordenada do quant (``unique_quant_coordinate``), com
+    #    ``''`` = sem lote. Uma FK nula mudaria a coordenada e o
+    #    ``get_or_create`` de toda entrada.
+    # 2. Carrega também o marcador ``'started'`` (``STARTED_BATCH``), que a
+    #    ponte ``craftsman/contrib/stockman`` escreve para o que está em
+    #    produção. Não existe ``Batch`` com esse ref, e uma FK o proibiria.
+    # 3. A maioria dos ``Batch`` nasce fora do Stockman (Compras, abertura de
+    #    embalagem, Produção no backstage); só o lote do dia do perecível nasce
+    #    no ``receive``. O Stockman não é o escritor da linha de lote.
+    # Virar FK pede antes separar "em produção" da coordenada de lote (um
+    # campo ou posição própria) e passar a criação do lote para dentro do
+    # Stockman; é redesenho do ledger com migração, não endurecimento.
     batch = models.CharField(
         max_length=50,
         blank=True,

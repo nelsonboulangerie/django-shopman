@@ -181,6 +181,7 @@ def availability_for_sku(
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
     allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
+    availability_policy: str | None = None,
 ) -> dict:
     """
     Build availability dict for a SKU with breakdown.
@@ -200,9 +201,14 @@ def availability_for_sku(
     query). ``expiry_margin_days`` / ``include_nonconforming`` are the lot
     gates (see :func:`quants_eligible_for`) — likewise ignored for the
     single-position query, which is an internal/ops view.
+
+    ``availability_policy``: a política que o chamador já resolveu (o hold
+    recebe o produto e lê a política dele). Ausente, vem do contrato de oferta.
+    Muda só a ENTRADA da regra; a regra continua aqui e em
+    :func:`decision_from_availability`.
     """
     sellable = _sku_is_sellable(sku)
-    availability_policy = _sku_availability_policy(sku)
+    availability_policy = availability_policy or _sku_availability_policy(sku)
 
     # Preserve whether the ledger knows the SKU even when the offering gate
     # pauses it. The batch path already does this; the single path must not
@@ -369,8 +375,15 @@ def promise_for_sku(
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
     allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
+    availability_policy: str | None = None,
 ) -> PromiseDecision:
-    """Return an explicit operational promise decision for a SKU."""
+    """Return an explicit operational promise decision for a SKU.
+
+    Autoridade única da promessa no Stockman: leitura (API ``/promise``,
+    ``Stock.promise``) e escrita (``Stock.hold``) decidem por aqui, e a regra
+    mora em :func:`decision_from_availability`. Nenhum outro módulo compara
+    quantidade pedida com oferta por política.
+    """
     qty_d = Decimal(str(qty))
     info = availability_for_sku(
         sku,
@@ -381,6 +394,7 @@ def promise_for_sku(
         expiry_margin_days=expiry_margin_days,
         include_nonconforming=include_nonconforming,
         allowed_quality_grade_refs=allowed_quality_grade_refs,
+        availability_policy=availability_policy,
     )
     return decision_from_availability(
         sku,

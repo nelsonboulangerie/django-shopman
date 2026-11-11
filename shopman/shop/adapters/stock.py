@@ -26,52 +26,6 @@ def _get_product(sku: str):
     return Product.objects.get(sku=sku)
 
 
-def check_availability(
-    sku: str,
-    qty: Decimal,
-    target_date: date | None = None,
-    *,
-    safety_margin: int = 0,
-    allowed_positions: list[str] | None = None,
-) -> dict:
-    """
-    Check stock availability for a SKU.
-
-    Returns:
-        {"available": bool, "available_qty": Decimal, "message": str | None}
-    """
-    from shopman.stockman.service import Stock as stock
-
-    try:
-        product = _get_product(sku)
-    except ObjectDoesNotExist:
-        return {
-            "available": False,
-            "available_qty": Decimal("0"),
-            "message": f"Produto não encontrado: {sku}",
-        }
-
-    if allowed_positions is not None:
-        from shopman.stockman.models import Position
-
-        total = Decimal("0")
-        positions = Position.objects.filter(ref__in=allowed_positions)
-        for pos in positions:
-            total += stock.available(product, target_date=target_date, position=pos)
-        available = total
-    else:
-        available = stock.available(product, target_date=target_date)
-
-    if target_date and target_date > timezone.localdate() and safety_margin > 0:
-        available = max(Decimal("0"), available - Decimal(str(safety_margin)))
-
-    return {
-        "available": qty <= available,
-        "available_qty": Decimal(str(available)),
-        "message": None if qty <= available else f"Disponível: {available}",
-    }
-
-
 def create_hold(
     sku: str,
     qty: Decimal,
