@@ -551,7 +551,9 @@ def decide(
     adapter = get_adapter("stock")
     scope = adapter.get_channel_scope(channel_ref)
     info = adapter.get_availability(sku, target_date=target_date, **_availability_kwargs(scope))
-    return _stock_decision(adapter, sku, qty_d, info, target_date=target_date)
+    from shopman.stockman.services.availability import decision_from_availability
+
+    return _promise_payload(decision_from_availability(sku, qty_d, info, target_date=target_date))
 
 
 def decide_many(
@@ -569,12 +571,14 @@ def decide_many(
     revisão da venda do PDV perguntava linha por linha. Aqui o canal, a vitrine,
     a detecção de bundle e a leitura do Stockman são feitas uma vez para todos os
     SKUs, e cada linha é decidida pelos MESMOS passos de ``decide``
-    (``_listing_gate_decision`` e ``_stock_decision``).
+    (``_listing_gate_decision`` e ``decision_from_availability`` do Stockman).
 
     Ficam no caminho de ``decide``, um por um: linha sem ``target_date`` (a data
     ali depende do SKU e da quantidade, via fila de espera) e SKU que é bundle
     (a expansão é recursiva e rara no balcão).
     """
+    from shopman.stockman.services.availability import decision_from_availability
+
     items = [(str(sku), Decimal(str(qty))) for sku, qty in lines]
     if not items:
         return []
@@ -620,7 +624,9 @@ def decide_many(
         if gate is not None:
             decisions.append(gate)
             continue
-        decisions.append(_stock_decision(adapter, sku, qty, infos[sku], target_date=target_date))
+        decisions.append(
+            _promise_payload(decision_from_availability(sku, qty, infos[sku], target_date=target_date))
+        )
     return decisions
 
 
@@ -683,16 +689,13 @@ def _listing_gate_decision(
     return None
 
 
-def _stock_decision(_adapter, sku: str, qty_d: Decimal, info: dict, *, target_date: date | None) -> dict:
-    """A decisão a partir da leitura de estoque já feita (passo final de ``decide``)."""
-    from shopman.stockman.services.availability import decision_from_availability
+def _promise_payload(decision) -> dict:
+    """A ``PromiseDecision`` do Stockman na forma do dict de ``decide``.
 
-    decision = decision_from_availability(
-        sku,
-        qty_d,
-        info,
-        target_date=target_date,
-    )
+    Só traduz: a decisão é do Stockman (``decision_from_availability``) e chega
+    pronta. O orquestrador acrescenta o que é dele: ``failed_sku`` (bundles),
+    ``source`` e o nome ``ready_qty`` para o pronto de agora.
+    """
     return {
         "approved": decision.approved,
         "sku": decision.sku,

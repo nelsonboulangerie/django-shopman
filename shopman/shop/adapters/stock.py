@@ -996,31 +996,3 @@ def get_channel_scope(channel_ref: str | None) -> dict:
 
 def _copied(values):
     return None if values is None else list(values)
-
-
-def get_promise_decision(
-    sku: str,
-    qty,
-    *,
-    target_date: date | None = None,
-    safety_margin: int = 0,
-    allowed_positions: list[str] | None = None,
-    excluded_positions: list[str] | None = None,
-    expiry_margin_days: int = 0,
-    include_nonconforming: bool = True,
-    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
-):
-    """Return Stockman's explicit operational promise decision for a SKU."""
-    from shopman.stockman.services.availability import promise_decision_for_sku
-
-    return promise_decision_for_sku(
-        sku,
-        qty,
-        target_date=target_date,
-        safety_margin=safety_margin,
-        allowed_positions=allowed_positions,
-        excluded_positions=excluded_positions,
-        expiry_margin_days=expiry_margin_days,
-        include_nonconforming=include_nonconforming,
-        allowed_quality_grade_refs=allowed_quality_grade_refs,
-    )

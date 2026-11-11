@@ -38,8 +38,8 @@
       "shopman/shop/services/availability.py:_expand_if_bundle",
       "shopman/shop/services/availability.py:_listing_gate_decision",
       "shopman/shop/services/availability.py:_listing_items_for_skus",
+      "shopman/shop/services/availability.py:_promise_payload",
       "shopman/shop/services/availability.py:_sku_in_channel_listing",
-      "shopman/shop/services/availability.py:_stock_decision",
       "shopman/shop/services/availability.py:decide",
       "shopman/shop/services/availability.py:decide_many"
     ],

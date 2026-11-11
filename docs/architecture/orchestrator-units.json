@@ -5630,7 +5630,6 @@
       "public_entrypoint": "shopman.shop.services.availability:decide",
       "authoritative_symbols": [
         "shopman.shop.services.availability:_listing_gate_decision",
-        "shopman.shop.services.availability:_stock_decision",
         "shopman.shop.services.availability:decide"
       ],
       "entrypoint_kind": "symbol",
@@ -5643,8 +5642,8 @@
             "_expand_if_bundle",
             "_listing_gate_decision",
             "_listing_items_for_skus",
+            "_promise_payload",
             "_sku_in_channel_listing",
-            "_stock_decision",
             "decide",
             "decide_many"
           ]

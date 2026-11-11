@@ -147,7 +147,7 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 - `plan(quantity, product, target_date, position, reason, user, **meta)→Quant`.
 - `replan`, `realize(product, target_date, actual_quantity, to_position, from_position, from_batch)` — materializa holds; holds sem TTL ganham `DEFAULT_MATERIALIZED_HOLD_TTL_MINUTES=30`; emite signal `holds_materialized`.
 - `availability_for_sku/for_skus` — retornam `{sku, availability_policy, total_available, total_promisable, total_reserved, available, expected, planned, ready_physical, held_ready, breakdown{ready,in_production,planned}, is_planned, is_paused, positions[]}`.
-- `promise_decision_for_sku(sku, qty, ...)→PromiseDecision(approved, requested_qty, available_qty, reason_code)`.
+- `promise_for_sku(sku, qty, ...)→PromiseDecision(approved, requested_qty, available_qty, reason_code)`.
 
 **Scope gate canônico**: `quants_eligible_for(sku, channel_ref, target_date, allowed_positions, excluded_positions)` — aplicado por availability reads E hold finding; filtros na ordem: (1) sku+`_quantity>0`, (2) `filter_valid_quants()` shelflife, (3) allowed/excluded positions, (4) batch expiry.
 

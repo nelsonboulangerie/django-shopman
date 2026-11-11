@@ -18,7 +18,7 @@ from shopman.stockman.models.enums import HoldStatus
 from shopman.stockman.models.hold import Hold
 from shopman.stockman.models.move import Move
 from shopman.stockman.models.quant import Quant
-from shopman.stockman.services.availability import promise_decision_for_sku
+from shopman.stockman.services.availability import promise_for_sku
 from shopman.stockman.services.queries import _resolve_stock_profile
 from shopman.stockman.services.scope import quants_eligible_for
 
@@ -187,7 +187,7 @@ class StockHolds:
         with transaction.atomic():
             # safety_margin: a ESCRITA usa a mesma margem do read — senão a
             # margem do canal protege a vitrine mas não a reserva.
-            decision = promise_decision_for_sku(
+            decision = promise_for_sku(
                 sku,
                 quantity,
                 target_date=target,

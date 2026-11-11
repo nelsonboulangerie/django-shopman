@@ -91,7 +91,7 @@ Estas portas têm lei (Constituição/ADR) mas ainda não têm check dedicado. �
 
 | Porta | Evidência de que está aberta | Risco se morder |
 |---|---|---|
-| Duplicação de autoridade de decisão (geral) | _stock_decision ainda vivo em shop/services/availability.py:686 recomputando o que o Stockman é dono; só há guarda para UM caso (preço de lista) | promessa/estoque divergem em produção |
+| Duplicação de autoridade de decisão (geral) | a promessa de estoque já tem autoridade única (`promise_for_sku`/`decision_from_availability` no Stockman; `_stock_decision` apagado, caracterização em `shopman/shop/tests/test_promise_for_sku_characterization.py`); fora a promessa, só há guarda para o preço de lista | outra decisão duplicada diverge em produção |
 | ADR-025 (signal on_commit) | Status Proposto; P1 do Payman diagnosticado mas sem gate que reprove signal.send fora de on_commit | efeito fantasma sob rollback |
 | C2 (dinheiro em _q) | sem lint que impeça float em campo monetário | arredondamento de dinheiro |
 | C3 (identidade por ref, nunca FK/pk de outro kernel) | convenção; sem check por tipo | acoplamento cross-kernel por pk |
