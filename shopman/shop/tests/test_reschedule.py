@@ -15,8 +15,9 @@ O que se prova aqui (``shop.services.reschedule``):
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from django.utils import timezone
@@ -235,7 +236,11 @@ def test_futura_para_hoje_ativa_agora(vitrine):
     lifecycle._schedule_preorder_activation(order)
     schedule_preorder_reminder(order)
 
-    result = reschedule(order, date=timezone.localdate().isoformat(), slot="", actor="pos:marina")
+    # Fim do dia: a hora de a encomenda chegar à Cozinha (a abertura, sem
+    # janela) já passou, então reagendar para hoje ativa agora.
+    late = timezone.make_aware(datetime.combine(timezone.localdate(), time(23, 30)))
+    with patch("django.utils.timezone.now", return_value=late):
+        result = reschedule(order, date=timezone.localdate().isoformat(), slot="", actor="pos:marina")
 
     assert result.activated_now
     order.refresh_from_db()

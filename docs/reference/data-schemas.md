@@ -47,6 +47,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `tab_display` | `string` | POS tab service | POS UI, Order.data | Rótulo curto para operador. Em numéricos, remove zeros à esquerda; em texto, preserva o rótulo informado. Ex: `"1007"`, `"mesa ana"` |
 | `tab_number` | `string` | `shop/services/pos.rename_pos_tab` (no primeiro renomear) | `build_open_tab` (`tab_number`) → barra de contexto do PDV | O número original da comanda ("1007") quando ela foi renomeada ("Mesa 6"): a barra mostra o nome grande e "#1007" pequeno. Ausente numa comanda nunca renomeada (vale o `tab_ref`) |
 | `seating_spot_ref` | `string` | `shop/services/pos.set_pos_tab_seating` (via `POST pos/tabs/rename/` com a chave `seating_spot_ref`) e `move_pos_tab_lines` (o Transferir para uma mesa LIVRE abre a comanda nova já nela; `POST pos/tabs/move-lines/` com `seating_spot_ref`, dono M=1, 13/10/2026) | `build_open_tab`, `POSTabProjection`, `projections/seating.open_tabs_by_spot` (mesa ocupada no Salão), `_mark_tab_committed` → `Order.data` | **Vínculo OPCIONAL comanda × mesa** (dono, 04/10/2026): o `ref` do `SeatingSpot` escolhido com um toque ao dar nome à comanda. Ausente = comanda sem mesa (balcão, ou ninguém escolheu); uma mesa tem no máximo uma comanda aberta |
+| `kitchen_released_at` | `string` (ISO datetime) | `lifecycle.activate_preorder` (`_stamp_kitchen_released`, o despertador tocou ou `release_preorder_now` antecipou) | `lifecycle._physical_work_deferred` (encomenda liberada não espera mais); base do tempo corrido desde a chegada à Cozinha no B.I. (seguimento) | Quando a encomenda saiu da espera e entrou no fluxo do dia: tickets na Cozinha (se houver item de cozinha) e baixa. Escrito uma vez. Ausente em pedido do dia (vai à Cozinha no aceite) |
 | `transferred_from` | `dict` | `shop/services/pos.move_pos_tab_lines` (comanda NOVA criada pelo Transferir) | `build_open_tab` (selo "Transf. da #13"), CommitService → `Order.data` | **O rastro da comanda** (dono, T1=1, 13/10/2026): `{tab_ref, tab_display, session_key, at, by}` da comanda de onde os itens saíram. Só na comanda criada pela transferência (o destino que já existia não ganha rastro). Nada por item. O evento vai ao log da sessão: `lines_transferred_out` na origem e `lines_transferred_in` no destino (`SessionEvent`, payload `{from_tab_ref, to_tab_ref, new_tab, items: [{sku, name, qty}]}`) |
 | `pos_operator` | `string` | POS tab service | POS projections, Order.data | Username do operador que abriu/tocou o POS tab |
 | `last_touched_at` | `string` | POS tab service | POS projections | Timestamp ISO da última interação operacional |
@@ -823,7 +824,15 @@ nasce no `on_cancelled`, só quando a primeira nasceu. As duas por
 #### `preorder.activate`
 
 Despertador da encomenda (pedido com `delivery_date` futura): o lifecycle adia
-KDS e baixa e agenda esta directive com `available_at` na madrugada da data.
+KDS e baixa e agenda esta directive com `available_at` na hora em que o card
+chega à Cozinha (`lifecycle.preorder_activation_at` → `kitchen_release_at`):
+**hora combinada − tempo de preparo − antecedência** (decisão do dono,
+09/11/2026), nunca antes de 00:05 do dia; sem hora combinada, a abertura da
+loja no dia; sem expediente declarado, 00:05. Preparo e antecedência vêm de
+`Shop.defaults["preorder_kitchen"]`. A ativação cria os tickets e baixa, mas
+**não** põe o pedido em preparo, em canal nenhum: ele fica Aceito até o
+"Iniciar" do posto (ou do Gestor, que antes libera a encomenda com
+`lifecycle.release_preorder_now`; a entrega no balcão faz o mesmo).
 Dedupe: `preorder.activate:{order_ref}`.
 
 | Chave | Tipo | Escrito por | Lido por |
@@ -833,8 +842,10 @@ Dedupe: `preorder.activate:{order_ref}`.
 | `delivery_date` | `string` (ISO) | lifecycle._schedule_preorder_activation, `services.reschedule` (ao mover), PreorderActivateHandler (ao re-enfileirar) | auditoria |
 
 Reagendar (`services.reschedule`) **move** a directive viva (edita `available_at` e
-`delivery_date`), nunca cria uma segunda. Se o despertador toca antes da data, o
-`PreorderActivateHandler` re-enfileira a própria directive para a madrugada certa.
+`delivery_date`), nunca cria uma segunda; trocar só a janela também move (a hora
+depende dela), e reagendar para hoje move para a hora do dia (passada a hora,
+ativa já). Se o despertador toca antes da hora, o `PreorderActivateHandler`
+re-enfileira a própria directive para a hora certa.
 
 #### `pix.generate`
 
@@ -1700,6 +1711,19 @@ edição crua do JSON cai no padrão com `logger.warning`.
 | Chave | Tipo | Lido por | Descrição |
 |-------|------|----------|-----------|
 | `stock_alerts.cooldown_minutes` | `int` (minutos) | `get_alert_cooldown_minutes` (`stockman/contrib/alerts/conf.py`, via resolver) | Intervalo mínimo entre re-notificações do MESMO alerta de estoque baixo (anti-flood; o cooldown é por `StockAlert` = par sku+posição). **Ausente = herda `STOCKMAN_ALERT_COOLDOWN_MINUTES`** (deploy, default 60) — zero regressão. O Core não depende do shop: o orquestrador injeta um resolver em `stockman.contrib.alerts.conf`. O limiar de cada alerta (`min_quantity`) continua por-SKU no admin de Alertas. |
+
+### Encomenda na Cozinha — `Shop.defaults["preorder_kitchen"]`
+
+Quando a encomenda chega à Cozinha no dia: `hora combinada − preparo −
+antecedência`. Source-of-truth tipado em `shopman/shop/preorder_kitchen_policy.py`
+(`PreorderKitchenPolicy`); lido por `lifecycle.kitchen_release_at`. Valor
+inválido cai no padrão.
+
+| Chave | Tipo | Padrão | Descrição |
+|-------|------|--------|-----------|
+| `preorder_kitchen.lead_minutes` | `int` (>= 0) | `15` | Antecedência somada ao preparo |
+| `preorder_kitchen.default_prep_minutes` | `int` (>= 0) | `30` | Fallback declarado: o preparo do SKU sem tempo próprio |
+| `preorder_kitchen.prep_minutes_by_sku` | `dict[str, int]` | `{}` | Preparo pré-configurado por SKU. Pedido com várias linhas usa o MAIOR (as estações trabalham em paralelo) |
 
 ### Produção — `Shop.defaults["production"]`
 

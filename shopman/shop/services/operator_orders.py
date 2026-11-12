@@ -617,8 +617,14 @@ def advance_order(
             # (decisão do dono, 06/11/2026): inicia os tickets que esperam no
             # posto, e é o início deles que põe o pedido em preparo. Pedido sem
             # item de cozinha não tem ticket e segue pela transição abaixo.
+            from shopman.shop import lifecycle
             from shopman.shop.services import kds as kds_service
 
+            # Encomenda do dia que ainda não chegou à Cozinha (a hora dela é
+            # hora combinada − preparo − antecedência): o "Iniciar" antecipa a
+            # chegada, para o preparo nascer com ticket e baixa.
+            if lifecycle.release_preorder_now(order):
+                order.refresh_from_db()
             if kds_service.start_order_tickets(order, actor=actor):
                 order.refresh_from_db()
         if order.status != next_status:
@@ -1622,6 +1628,12 @@ def hand_over_at_counter(
         # Receber com a cobrança do cliente ainda viva abriria a cobrança dupla:
         # quem cancela antes é :func:`take_over_before_hand_over`.
         raise ValueError("O Pix ou o link do cliente ainda está ativo. Atualize a encomenda e tente de novo.")
+    # O cliente chegou antes de a encomenda ir para a Cozinha: ela entra no
+    # fluxo do dia agora (ticket e baixa) e é entregue em seguida.
+    from shopman.shop import lifecycle
+
+    if lifecycle.release_preorder_now(order):
+        order.refresh_from_db()
     _mark_ready_at_counter(order, actor=actor)
     order.refresh_from_db()
     received = 0
