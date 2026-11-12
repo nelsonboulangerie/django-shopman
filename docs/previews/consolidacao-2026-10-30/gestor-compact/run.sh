@@ -3,11 +3,14 @@
 # A = origin/main intacto (+ só a simulação de conexão `?conn=`), C = A + apply-compact.
 # Portas: mock 38920, A 4311, C 4312. Evidência: EVIDENCE=1 ./run.sh
 set -euo pipefail
+# O main de hoje já tem o modelo de navegação (02 a 04/11): os aplicadores ancoram no main
+# da época da prévia. BASE_REF=origin/main tenta o main de hoje.
+BASE_REF=${BASE_REF:-6fcef1c53}
 export PATH=/opt/homebrew/opt/node@22/bin:$PATH
 REPO=$(git rev-parse --show-toplevel)
 HERE="$REPO/docs/previews/consolidacao-2026-10-30/gestor-compact"
 RT=$(mktemp -d /tmp/shopman-gestor-compact.XXXX)
-mkdir -p "$RT/A"; git -C "$REPO" archive origin/main surfaces/orders-nuxt surfaces/operator-kit | tar -x -C "$RT/A"
+mkdir -p "$RT/A"; git -C "$REPO" archive "$BASE_REF" surfaces/orders-nuxt surfaces/operator-kit | tar -x -C "$RT/A"
 for app in operator-kit orders-nuxt; do (cd "$RT/A/surfaces/$app" && npm ci --ignore-scripts --no-audit --no-fund); done
 cp -cR "$RT/A" "$RT/C" 2>/dev/null || cp -R "$RT/A" "$RT/C"
 export ORDERS_VISUAL_CLIENT_ONLY=1 NUXT_DJANGO_BASE_URL=http://127.0.0.1:38920 NUXT_PUBLIC_DJANGO_BASE_URL=http://127.0.0.1:38920

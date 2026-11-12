@@ -3,13 +3,16 @@
 # A = origin/main intacto (+ só a simulação de conexão), B = prévia anterior (PR #2048),
 # C = compacto (B + apply-compact). Portas: mock 38898, A 4291, B 4292, C 4293.
 set -euo pipefail
+# O main de hoje já tem o modelo de navegação (02 a 04/11): os aplicadores ancoram no main
+# da época da prévia. BASE_REF=origin/main tenta o main de hoje.
+BASE_REF=${BASE_REF:-6fcef1c53}
 REPO=$(git rev-parse --show-toplevel)
 HERE="$REPO/docs/previews/consolidacao-2026-10-30/kds-compact"
 PREV_REF=${PREV_REF:-origin/codex/shopman-ux-product-review}
 RT=$(mktemp -d /tmp/shopman-kds-compact.XXXXXX)
 git -C "$REPO" archive "$PREV_REF" docs/previews/navigation-2026-10-29/kds-native | tar -x -C "$RT"
 P="$RT/docs/previews/navigation-2026-10-29/kds-native"
-mkdir -p "$RT/A"; git -C "$REPO" archive origin/main surfaces/kds-nuxt surfaces/operator-kit | tar -x -C "$RT/A"
+mkdir -p "$RT/A"; git -C "$REPO" archive "$BASE_REF" surfaces/kds-nuxt surfaces/operator-kit | tar -x -C "$RT/A"
 for app in operator-kit kds-nuxt; do (cd "$RT/A/surfaces/$app" && npm ci --ignore-scripts --no-audit --no-fund); done
 cp -cR "$RT/A" "$RT/B" 2>/dev/null || cp -R "$RT/A" "$RT/B"
 cp -cR "$RT/A" "$RT/C" 2>/dev/null || cp -R "$RT/A" "$RT/C"

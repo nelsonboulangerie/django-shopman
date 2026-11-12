@@ -6,6 +6,9 @@
 # + mock-patch.mjs (Avisos e consulta de cliente). Portas fixas: mock 38910, A 4301, C 4302.
 # Evidência: node evidence.mjs "$RT/A/surfaces/pos-nuxt" "$HERE" com os três de pé.
 set -euo pipefail
+# O main de hoje já tem o modelo de navegação (02 a 04/11): os aplicadores ancoram no main
+# da época da prévia. BASE_REF=origin/main tenta o main de hoje.
+BASE_REF=${BASE_REF:-6fcef1c53}
 export PATH=/opt/homebrew/opt/node@22/bin:$PATH
 REPO=$(git rev-parse --show-toplevel)
 HERE="$REPO/docs/previews/consolidacao-2026-10-30/pdv-compact"
@@ -14,7 +17,7 @@ RT=$(mktemp -d /tmp/shopman-pdv-compact.XXXX)
 git -C "$REPO" archive "$PREV_REF" docs/previews/navigation-2026-10-29/native | tar -x -C "$RT"
 P="$RT/docs/previews/navigation-2026-10-29/native"
 mkdir -p "$RT/A" "$RT/mock"
-git -C "$REPO" archive origin/main surfaces/pos-nuxt surfaces/operator-kit | tar -x -C "$RT/A"
+git -C "$REPO" archive "$BASE_REF" surfaces/pos-nuxt surfaces/operator-kit | tar -x -C "$RT/A"
 for app in operator-kit pos-nuxt; do (cd "$RT/A/surfaces/$app" && npm ci --ignore-scripts --no-audit --no-fund); done
 cp -cR "$RT/A" "$RT/C" 2>/dev/null || cp -R "$RT/A" "$RT/C"
 node "$P/prepare-mock.mjs" "$RT/A/surfaces/pos-nuxt/tests/visual/mockBackend.mjs" "$RT/mock/mockBackend.mjs"
