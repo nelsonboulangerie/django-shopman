@@ -11,6 +11,11 @@ marcada como ``customer_text_approved``: credencial presente não liga provedor
 
 Quem chama recebe um cliente pronto (``anthropic_client``) ou a conexão
 resolvida (``resolve``), nunca lê chave nem cria cliente do SDK.
+
+Toda chamada paga passa pelo freio e pelo medidor (``shopman.shop.ai_governor``):
+a loja desliga a IA ou põe teto de gasto por dia em ``Shop.ai_limits``, e cada
+chamada vira uma linha em ``AiInvocation``. Desligada ou no teto, a função se
+comporta como não configurada.
 """
 
 from __future__ import annotations
@@ -126,6 +131,9 @@ def resolve(purpose: str) -> Resolved:
     model = str(route.get("model") or connection.model or "").strip()
     if not model:
         raise AINotConfigured(f"a conexão de IA '{connection.ref}' está sem modelo")
+    from shopman.shop import ai_governor
+
+    ai_governor.check(purpose)
     return Resolved(
         ref=connection.ref,
         protocol=connection.protocol,
@@ -160,7 +168,14 @@ def anthropic_client(purpose: str, *, timeout: float | None = None, max_retries:
         kwargs["timeout"] = timeout
     if max_retries is not None:
         kwargs["max_retries"] = max_retries
-    return FittedClient(anthropic.Anthropic(**kwargs), resolved.extras), resolved.model
+    client = FittedClient(
+        anthropic.Anthropic(**kwargs),
+        resolved.extras,
+        purpose=purpose,
+        connection_ref=resolved.ref,
+        default_model=resolved.model,
+    )
+    return client, resolved.model
 
 
 # ── O pedido que cada provedor entende ──────────────────────────────────────
@@ -249,12 +264,33 @@ def _with_text(system, text: str):
 
 
 class _FittedMessages:
-    def __init__(self, messages, extras: frozenset[str]):
+    def __init__(self, messages, extras: frozenset[str], *, purpose: str, connection_ref: str, default_model: str):
         self._messages = messages
         self._extras = extras
+        self._purpose = purpose
+        self._connection_ref = connection_ref
+        self._default_model = default_model
 
     def create(self, **request):
-        return self._messages.create(**fit_request(request, self._extras))
+        """O pedido ajustado ao provedor, freado e medido (``ai_governor``)."""
+        from shopman.shop import ai_governor
+
+        fitted = fit_request(request, self._extras)
+        model = str(fitted.get("model") or self._default_model)
+        estimate = ai_governor.estimate_usd(
+            model,
+            tokens_in=ai_governor.estimate_input_tokens(fitted),
+            tokens_out=int(fitted.get("max_tokens") or ai_governor.DEFAULT_MAX_OUTPUT_TOKENS),
+        )
+        with ai_governor.metered(
+            self._purpose,
+            connection_ref=self._connection_ref,
+            model=model,
+            estimate_usd_value=estimate,
+        ) as box:
+            response = self._messages.create(**fitted)
+            box["usage"] = getattr(response, "usage", None)
+        return response
 
     def __getattr__(self, name):
         return getattr(self._messages, name)
@@ -263,9 +299,15 @@ class _FittedMessages:
 class FittedClient:
     """O cliente do SDK com ``messages.create`` ajustado ao provedor; o resto passa direto."""
 
-    def __init__(self, client, extras: frozenset[str]):
+    def __init__(self, client, extras: frozenset[str], *, purpose: str, connection_ref: str, default_model: str):
         self._client = client
-        self.messages = _FittedMessages(client.messages, extras)
+        self.messages = _FittedMessages(
+            client.messages,
+            extras,
+            purpose=purpose,
+            connection_ref=connection_ref,
+            default_model=default_model,
+        )
 
     def __getattr__(self, name):
         return getattr(self._client, name)
@@ -287,3 +329,27 @@ def jev_endpoint(*, customer_text: bool) -> tuple[str, str, str]:
             f"a conexão de IA '{resolved.ref}' não está liberada para receber mensagem de cliente"
         )
     return resolved.base_url or JEV_DEFAULT_URL, resolved.api_key, resolved.model
+
+
+def jev_post(session, url: str, api_key: str, body: dict, *, timeout: float, model: str):
+    """``POST`` ao Jev, freado e medido como qualquer chamada paga. Devolve a resposta HTTP.
+
+    O custo vem do ``usage.input_tokens`` da resposta (saída grátis); sem ele, a
+    estimativa pelo tamanho do corpo.
+    """
+    from shopman.shop import ai_governor
+
+    tokens_in = ai_governor.estimate_input_tokens({"messages": body})
+    estimate = ai_governor.estimate_usd(model, tokens_in=tokens_in, tokens_out=0, protocol="jev")
+    with ai_governor.metered(
+        "decision", connection_ref="jev", model=model, estimate_usd_value=estimate, protocol="jev"
+    ) as box:
+        response = session.post(url, json=body, headers={"Authorization": f"Bearer {api_key}"}, timeout=timeout)
+        box["usage"] = {"input_tokens": tokens_in}
+        try:
+            usage = response.json().get("usage") if response.status_code < 400 else None
+        except Exception:
+            usage = None
+        if isinstance(usage, dict) and usage.get("input_tokens") is not None:
+            box["usage"] = {"input_tokens": usage.get("input_tokens")}
+    return response

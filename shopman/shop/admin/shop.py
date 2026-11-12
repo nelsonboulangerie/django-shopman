@@ -2705,10 +2705,11 @@ _INTEGRATIONS_FIELDSETS = (
     (
         "Inteligência artificial",
         {
-            "fields": ("ai_routes",),
+            "fields": ("ai_routes", "ai_limits"),
             "description": (
-                "Qual conexão de IA e qual modelo cada função usa. As conexões (provedor, endereço, "
-                "chave) ficam em Conexões de IA. Sem rota para uma função, vale a rota default."
+                "Qual conexão de IA e qual modelo cada função usa, e quanto a IA pode gastar por "
+                "dia. As conexões (provedor, endereço, chave) ficam em Conexões de IA. Sem rota "
+                "para uma função, vale a rota default. O gasto de cada dia fica em Gasto de IA."
             ),
         },
     ),

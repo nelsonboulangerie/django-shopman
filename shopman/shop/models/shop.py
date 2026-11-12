@@ -511,6 +511,24 @@ class Shop(models.Model):
         ),
     )
 
+    ai_limits = models.JSONField(
+        "freio de IA",
+        default=dict,
+        blank=True,
+        help_text=(
+            "Liga ou desliga toda IA paga da loja e diz quanto ela pode gastar por dia, em US$. "
+            '"enabled": false desliga tudo na hora. "usd_per_day" é o teto da loja (padrão 3). '
+            '"purposes" dá um teto próprio a uma função. Nenhum teto passa de 20 sem mudança no '
+            "código. A 80% do teto chega um aviso; no teto, a IA para até o dia seguinte.\n\n"
+            "Exemplo:\n"
+            "{\n"
+            '  "enabled": true,\n'
+            '  "usd_per_day": 3,\n'
+            '  "purposes": {"benchmark": 1}\n'
+            "}"
+        ),
+    )
+
     class Meta:
         verbose_name = "loja"
         verbose_name_plural = "loja"

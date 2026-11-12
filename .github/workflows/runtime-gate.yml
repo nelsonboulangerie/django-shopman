@@ -114,6 +114,13 @@ jobs:
           .venv/bin/python scripts/check_tenant_config.py
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_tenant_config.py -q
 
+      # Porta única de IA (ID3A-PLAN, E1): cliente de SDK e endereço de API de
+      # provedor só em shopman/shop/ai.py, que freia e mede cada chamada paga.
+      - name: "ID3A: nenhuma chamada a modelo fora da porta de IA"
+        run: |
+          .venv/bin/python scripts/check_ai_port.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_ai_port.py -q
+
       # Cláusulas pétreas da Constituição como máquina (docs/reference/guard-map.md):
       # C2, C3, C5, C6, C7, C10, C11 e ADR-025, AST e stdlib-only, contra a baseline
       # versionada scripts/constitution-baseline.json. Achado novo reprova; entrada

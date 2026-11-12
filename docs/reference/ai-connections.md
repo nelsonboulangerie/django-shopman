@@ -85,6 +85,29 @@ mais dá erro 400. Provedor novo que aceite mais entra com uma linha na tabela.
 }
 ```
 
+## Freio e medidor
+
+Toda chamada paga (formato Anthropic e Jev) passa pelo freio e pelo medidor
+(`shopman/shop/ai_governor.py`, ID3A-PLAN E1, decisão D-039):
+
+- **Desligar tudo:** Loja → Inteligência artificial → freio de IA,
+  `{"enabled": false}`. A função passa a se comportar como não configurada, na hora.
+- **Teto por dia, em US$:** `usd_per_day` (padrão 3) para a loja inteira e
+  `purposes` para uma função. A triagem e o resumo do Suporte nascem com US$ 0,50 e
+  US$ 1. Nenhum teto passa de US$ 20 sem mudança de código.
+- **Reserva antes da chamada:** o custo estimado (entrada pelo tamanho do pedido,
+  saída pelo `max_tokens` inteiro) é reservado no gasto do dia. Se não couber no teto,
+  a chamada não sai. Depois, a reserva vira o custo real da resposta.
+- **Aviso e parada:** a 80% do teto chega o alerta "IA perto do teto de gasto do dia";
+  no teto, "IA parou", e ela volta no dia seguinte.
+- **Onde se vê:** Admin → Chamadas de IA (uma linha por chamada, inclusive a recusada)
+  e Admin → Gasto de IA por dia. Nenhum texto enviado ao provedor é guardado.
+- **Trava na CI:** `scripts/check_ai_port.py` reprova cliente de SDK ou endereço de API
+  de provedor fora de `shopman/shop/ai.py`.
+
+O freio da casa é a segunda linha. A primeira é no provedor: limite de gasto mensal
+na chave e recarga automática desligada.
+
 ## Limites conhecidos
 
 - Preço de API é dado público de referência, não configuração da loja: mora na tabela
