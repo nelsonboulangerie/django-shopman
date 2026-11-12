@@ -118,6 +118,13 @@ const pushSettingsOpen = ref(false);
 
 // Suporte: o chamado nasce aqui, com o contexto que a Central conhece.
 const supportOpen = ref(false);
+
+// `/support` é o link que a equipe guarda. O hub é one-page; o painel abre
+// por `?support=1`. Quando o hub ganhar pages/, esta rota vira a página.
+const route = useRoute();
+onMounted(() => {
+  if (route.query.support === "1") supportOpen.value = true;
+});
 function reloadPage(): void {
   window.location.reload();
 }
