@@ -740,9 +740,9 @@ gatilho ?= -
 
 .PHONY: commitments intake commitments-pr
 
-commitments: ## O que o repo deve: ledger válido, vencidos e decisões legadas (issues=1 inclui issues com label)
+commitments: ## O que o repo deve: ledger válido, vencidos e decisões legadas (issues=1 inclui issues com label; não falha por vencido)
 	@echo "── Compromissos ──"
-	$(PYTHON) scripts/check_commitments.py $(if $(issues),--with-issues,)
+	$(PYTHON) scripts/check_commitments.py --no-fail-overdue $(if $(issues),--with-issues,)
 
 intake: ## Registra a fala do dono e devolve o ID: make intake q="..." [dono=...] [tipo=...]
 	@test -n "$(q)" || (echo 'uso: make intake q="<fala literal do dono>" [dono="Engenharia"] [tipo=pedido] [revisar_em=YYYY-MM-DD]' >&2; exit 2)

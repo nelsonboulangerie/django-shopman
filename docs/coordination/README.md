@@ -20,7 +20,8 @@ o comando vence.
 ## O ciclo semanal (10 minutos)
 
 1. `make commitments issues=1` lista o que venceu no ledger, as decisões legadas de
-   `DECISIONS.md` e as issues abertas com label que nenhuma linha cita.
+   `DECISIONS.md` e as issues abertas com label que nenhuma linha cita. O comando
+   não falha por vencido; o job semanal é quem cobra.
 2. Para cada vencido: fazer, reagendar com motivo, ou descartar com quem decidiu.
 3. `make inflight` mostra o que ficou em worktree, branch ou PR vermelho.
 4. Nenhum item sai da lista por silêncio: ou vira `FEITO` com prova, ou
