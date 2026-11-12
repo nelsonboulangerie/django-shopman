@@ -6,12 +6,12 @@
 > `ficou-de-fora`, e a linha daqui é o índice com dono, prazo e prova.
 >
 > `make commitments` mostra o que venceu. O CI reprova PR novo sem
-> `Pedido: DEV-AAAA-NNN`; o adiamento tem o gate próprio `Ficou de fora declarado`.
+> `Compromisso: DEV-AAAA-NNN`; o adiamento tem o gate próprio `Ficou de fora declarado`.
 > Um job semanal abre uma issue com os vencidos e a fecha quando a lista zera.
 
 ## Regras
 
-1. **Todo pedido e todo adiamento nascem aqui, no mesmo turno.** A fala do dono é
+1. **Toda solicitação e todo adiamento nascem aqui, no mesmo turno.** A fala do dono é
    registrada antes do primeiro edit; o adiamento, no mesmo PR que o criou. Nada
    de "fica para depois" só no corpo do PR.
 2. **Toda linha tem dono nomeado.** "Ninguém", vazio, "a definir" e "TBD" não valem.
@@ -30,7 +30,7 @@
 
 ## Vocabulário
 
-`tipo`: `pedido` (fala do dono) · `compromisso` (trabalho adiado) · `decisao`
+`tipo`: `solicitacao` (fala do dono) · `compromisso` (trabalho adiado) · `decisao`
 (pergunta que só o dono responde) · `achado` (risco ou defeito a triar).
 
 `estado`: `ABERTO` · `EM_EXECUCAO` · `BLOQUEADO` · `FEITO` · `DESCARTADO` ·
@@ -49,11 +49,11 @@ O comando devolve o ID e a linha pronta para o PR:
 
 ```
 DEV-2026-007
-Pedido: DEV-2026-007
+Compromisso: DEV-2026-007
 ```
 
-O PR novo cita `Pedido: DEV-2026-007` e a seção `## Compromissos` lista os adiamentos
-que ele criou. Pedido que não virou trabalho também fica `ABERTO`, com
+O PR novo cita `Compromisso: DEV-2026-007` e a seção `## Ficou de fora` lista os adiamentos
+que ele criou. Solicitação que não virou trabalho também fica `ABERTO`, com
 `revisar_em` curto: a linha é o que impede o esquecimento.
 
 ## Tabela
@@ -67,8 +67,9 @@ que ele criou. Pedido que não virou trabalho também fica `ABERTO`, com
 | DEV-2026-004 | compromisso | #2292 | Horário especial que encurta o dia não é conferido contra os horários dos pedidos | Engenharia · Admin | 2026-11-12 | 2026-12-03 | - | ABERTO | - |
 | DEV-2026-005 | decisao | #2069 | Aprovar ou recusar o modo compacto x padrão (KDS, PDV, Gestor, Receber) | Pablo | 2026-11-02 | 2026-11-14 | resposta do dono à prévia | ABERTO | - |
 | DEV-2026-006 | achado | STATUS-CONSOLIDACAO-2026-11-10.md | Triar o que restou das 5 frentes sem dono (ADR-025 Doorman, ledger C11, ciclo C6, leitura paralela) | Coordenação | 2026-11-10 | 2026-11-19 | - | ABERTO | - |
-| DEV-2026-007 | pedido | chat 2026-11-12 | Quero poder, SEMPRE que eu discutir algo, seja uma correção, ou um pedido de uma feature nova, NADA seja perdido, nunca mais! | Engenharia | 2026-11-12 | 2026-11-19 | - | EM_EXECUCAO | - |
-| DEV-2026-008 | pedido | chat 2026-11-12 | o que mais me importo é com a SAÚDE do REPO! Está muito cansativo e desesperador manter esse desenvolvimento!!! Faça algo a respeito. | Engenharia | 2026-11-12 | 2026-11-19 | - | EM_EXECUCAO | - |
+| DEV-2026-007 | solicitacao | chat 2026-11-12 | Quero poder, SEMPRE que eu discutir algo, seja uma correção, ou um pedido de uma feature nova, NADA seja perdido, nunca mais! | Engenharia | 2026-11-12 | 2026-11-19 | - | EM_EXECUCAO | - |
+| DEV-2026-008 | solicitacao | chat 2026-11-12 | o que mais me importo é com a SAÚDE do REPO! Está muito cansativo e desesperador manter esse desenvolvimento!!! Faça algo a respeito. | Engenharia | 2026-11-12 | 2026-11-19 | - | EM_EXECUCAO | - |
 | DEV-2026-009 | compromisso | #2303 / #2304 | Preparo da encomenda no painel do produto do Catálogo (Gestor) | Engenharia · Catálogo | 2026-11-12 | 2026-12-03 | - | ABERTO | - |
-| DEV-2026-010 | pedido | chat | BRIEF ID3A: infraestrutura de IA do Django Shopman. Sua tarefa é produzir um plano de desenvolvimento da ID3A, não código. | Engenharia | 2026-11-12 | 2026-11-19 | - | ABERTO | - |
+| DEV-2026-010 | solicitacao | chat | BRIEF ID3A: infraestrutura de IA do Django Shopman. Sua tarefa é produzir um plano de desenvolvimento da ID3A, não código. | Engenharia | 2026-11-12 | 2026-11-19 | - | ABERTO | - |
+| DEV-2026-011 | solicitacao | chat 2026-11-12 | Suporte (helpdesk interno): chamado, hub na Central, gate de aprovação do dono e DEV- | Engenharia · Suporte | 2026-11-12 | 2026-11-19 | #2310 na fila | EM_EXECUCAO | #2310 · #2314 · #2315 |
 <!-- commitments:end -->
