@@ -66,6 +66,7 @@ GUARDS: dict[str, list[str]] = {
         "scripts/check_release_readiness.py",
         "scripts/check_instance_descriptors.py",
         "scripts/check_tenant_config.py",
+        "scripts/check_ai_port.py",
     ],
     "constituicao": [
         "scripts/check_money_integer.py",

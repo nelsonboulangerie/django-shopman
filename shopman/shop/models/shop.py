@@ -494,6 +494,41 @@ class Shop(models.Model):
         ),
     )
 
+    # ── IA: qual conexão e qual modelo cada função usa (``shopman.shop.ai``) ──
+    ai_routes = models.JSONField(
+        "rotas de IA",
+        default=dict,
+        blank=True,
+        help_text=(
+            'Por propósito, a conexão de IA e o modelo. Propósito sem rota usa a rota "default"; '
+            "sem ela, a única conexão ativa do formato. Propósitos: concierge, triage, intents, "
+            "labeling, copy, marketing, recipe, scenarios, benchmark, decision.\n\n"
+            "Exemplo:\n"
+            "{\n"
+            '  "default": {"connection": "anthropic"},\n'
+            '  "copy": {"connection": "deepseek", "model": "deepseek-flash"}\n'
+            "}"
+        ),
+    )
+
+    ai_limits = models.JSONField(
+        "freio de IA",
+        default=dict,
+        blank=True,
+        help_text=(
+            "Liga ou desliga toda IA paga da loja e diz quanto ela pode gastar por dia, em US$. "
+            '"enabled": false desliga tudo na hora. "usd_per_day" é o teto da loja (padrão 3). '
+            '"purposes" dá um teto próprio a uma função. Nenhum teto passa de 20 sem mudança no '
+            "código. A 80% do teto chega um aviso; no teto, a IA para até o dia seguinte.\n\n"
+            "Exemplo:\n"
+            "{\n"
+            '  "enabled": true,\n'
+            '  "usd_per_day": 3,\n'
+            '  "purposes": {"benchmark": 1}\n'
+            "}"
+        ),
+    )
+
     class Meta:
         verbose_name = "loja"
         verbose_name_plural = "loja"

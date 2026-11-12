@@ -345,6 +345,11 @@ class OperatorAlert(models.Model):
         # do iFood) e a ação mora no pedido: "Tentar de novo". Fecha quando o
         # ``confirm`` passa, quando o iFood confirma ou quando o pedido acaba.
         ("ifood_accept_not_delivered", "iFood não recebeu o aceite"),
+        # O freio da IA (ID3A, E1): a 80% do teto diário de gasto chega o aviso; no
+        # teto, a IA paga para até o dia seguinte. O gasto de US$ 1.180 de 28/10 a
+        # 11/11 aconteceu sem nenhum dos dois.
+        ("ai_budget_warning", "IA perto do teto de gasto do dia"),
+        ("ai_budget_stopped", "IA parou: teto de gasto do dia atingido"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),
@@ -377,6 +382,8 @@ class OperatorAlert(models.Model):
     #: O financeiro de UM pedido (pagamento falhou, abaixo do total, contestação,
     #: pago depois de cancelar) é do gerente e mora em ``ORDER_TYPES``.
     FINANCE_TYPES = {
+        "ai_budget_warning",
+        "ai_budget_stopped",
         "payment_reconciliation_failed",
         "payment_ledger_drift",
         "cash_shift_open_at_closing",

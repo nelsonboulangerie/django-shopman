@@ -97,6 +97,7 @@ As guardas das cláusulas pétreas (C2, C3, C5, C6, C7, C10, C11 e ADR-025) são
 | Prontidão de release/piloto/go-live | check_release_readiness.py | make release-readiness / production-readiness |
 | Descritores de instância (schema, ownership) | check_instance_descriptors.py | make test-instance-descriptors |
 | Configuração de loja não cresce por env/settings (ADR-042) | check_tenant_config.py | make test-instance-contracts |
+| Chamada a modelo de IA só pela porta, que freia e mede (ID3A, D-039) | check_ai_port.py | make ai-port |
 
 ## 9. ÁREAS NÃO COBERTAS (sem guarda explícita): o ponto de decisão
 
