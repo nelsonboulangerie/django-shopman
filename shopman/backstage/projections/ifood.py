@@ -33,7 +33,21 @@ def cancellation_notice(order) -> str:
     return ""
 
 
+_METHOD_LABELS = {
+    "CASH": "Dinheiro", "CREDIT": "Crédito", "DEBIT": "Débito", "PIX": "Pix",
+    "MEAL_VOUCHER": "Vale-refeição", "FOOD_VOUCHER": "Vale-alimentação",
+}
+
+
 def payment_summary(order) -> tuple[str, ...]:
+    """O pagamento do iFood respondendo à única pergunta do balcão: cobrar ou não?
+
+    Pago online é UMA linha: bandeira, banco e quem bancou o frete grátis não
+    mudam nada no despacho e repetiam o total três vezes (pedido 3417, 12/11:
+    "Pago online", "OTHER NUBANK" e o desconto da entrega, todos de R$ 49,20).
+    O desdobramento continua inteiro em ``Order.data["ifood"]`` para a conciliação.
+    Só o que se cobra na porta ganha detalhe: forma, bandeira e troco.
+    """
     if order.channel_ref != "ifood":
         return ()
     payments = ((order.data or {}).get("ifood") or {}).get("payments") or {}
@@ -42,55 +56,60 @@ def payment_summary(order) -> tuple[str, ...]:
     prepaid = _amount(payments.get("prepaid_q"))
     pending = _amount(payments.get("pending_q"))
     lines = []
-    if prepaid:
-        lines.append(f"Pago online no iFood: R$ {format_money(prepaid)}")
     if pending:
-        lines.append(f"Pagamento pendente no iFood: R$ {format_money(pending)}")
-    labels = {"CASH": "Dinheiro", "CREDIT": "Crédito", "DEBIT": "Débito", "PIX": "Pix", "MEAL_VOUCHER": "Vale-refeição", "FOOD_VOUCHER": "Vale-alimentação"}
-    for method in payments.get("methods") or []:
-        if not isinstance(method, dict):
-            continue
-        name = labels.get(str(method.get("method") or "").upper(), str(method.get("method") or "Pagamento"))
-        brand = str(method.get("brand") or "").strip()
-        value = _amount(method.get("value_q"))
-        suffix = "online" if method.get("prepaid") is True else "pendente" if method.get("prepaid") is False else "conforme iFood"
-        line = f"{name}{' ' + brand if brand else ''}: R$ {format_money(value)} ({suffix})"
-        change_for = _amount(method.get("change_for_q"))
-        if str(method.get("method") or "").upper() == "CASH" and method.get("prepaid") is False and change_for:
-            line += f"; troco para R$ {format_money(change_for)}"
-            if change_for >= value:
-                line += f", troco R$ {format_money(change_for - value)}"
-        lines.append(line)
+        if prepaid:
+            lines.append(f"Já pago online no iFood: R$ {format_money(prepaid)}")
+        lines.append(f"Cobrar na entrega: R$ {format_money(pending)}")
+        for method in payments.get("methods") or []:
+            if not isinstance(method, dict) or method.get("prepaid") is True:
+                continue
+            code = str(method.get("method") or "").upper()
+            name = _METHOD_LABELS.get(code, "Outra forma")
+            brand = str(method.get("brand") or "").strip()
+            value = _amount(method.get("value_q"))
+            line = f"{name}{' ' + brand if brand else ''}: R$ {format_money(value)}"
+            change_for = _amount(method.get("change_for_q"))
+            if code == "CASH" and change_for:
+                line += f"; troco para R$ {format_money(change_for)}"
+                if change_for >= value:
+                    line += f", levar R$ {format_money(change_for - value)} de troco"
+            lines.append(line)
+    elif prepaid:
+        lines.append("Pago online no iFood. Nada a cobrar do cliente.")
     return (tuple(lines) or ("iFood: pagamento não informado.",)) + benefits_summary(order)
 
 
 def benefits_summary(order) -> tuple[str, ...]:
+    """Só o desconto que sai do caixa da LOJA (ou cujo responsável não veio).
+
+    Desconto bancado pelo iFood não muda o que a casa recebe nem o que se cobra,
+    e listá-lo fazia o pedido parecer ter um problema de valor.
+    """
     if order.channel_ref != "ifood":
         return ()
     facts = (order.data or {}).get("ifood") or {}
     benefits = facts.get("benefits") or []
     lines = []
-    targets = {"CART": "carrinho", "DELIVERY_FEE": "entrega", "ITEM": "item", "PROGRESSIVE_DISCOUNT_ITEM": "item (progressivo)"}
-    sponsors = {"IFOOD": "iFood", "MERCHANT": "Loja", "EXTERNAL": "Parceiro externo", "CHAIN": "Rede"}
+    targets = {"CART": "no carrinho", "DELIVERY_FEE": "na entrega", "ITEM": "no item", "PROGRESSIVE_DISCOUNT_ITEM": "no item"}
     for benefit in benefits:
         if not isinstance(benefit, dict):
             continue
-        target = str(benefit.get("target") or "destino não informado")
-        label = targets.get(target, target)
-        if benefit.get("target_id") is not None:
-            label += f" #{benefit['target_id']}"
-        amount = benefit.get("value_q")
-        value = f"R$ {format_money(_amount(amount))}" if amount is not None else "valor não informado"
-        shares = []
-        for share in benefit.get("sponsorships") or []:
-            if not isinstance(share, dict):
+        where = targets.get(str(benefit.get("target") or ""), "")
+        suffix = f" ({where})" if where else ""
+        shares = [s for s in benefit.get("sponsorships") or [] if isinstance(s, dict)]
+        if not shares:
+            amount = benefit.get("value_q")
+            value = f"R$ {format_money(_amount(amount))}" if amount is not None else "valor não informado"
+            lines.append(f"Desconto{suffix}: {value}; responsável não informado pelo iFood")
+            continue
+        for share in shares:
+            if str(share.get("sponsor") or "").upper() != "MERCHANT":
                 continue
-            sponsor = str(share.get("sponsor") or "Responsável não informado")
-            sponsor_label = sponsors.get(sponsor, sponsor)
             amount = share.get("value_q")
-            contribution = f"R$ {format_money(_amount(amount))}" if amount is not None else "valor não informado"
-            shares.append(f"{sponsor_label}: {contribution}")
-        lines.append(f"Desconto ({label}): {value}; " + ("; ".join(shares) or "responsável não informado pelo iFood"))
+            if amount is None:
+                lines.append(f"Desconto pago pela loja{suffix}: valor não informado")
+            elif _amount(amount):
+                lines.append(f"Desconto pago pela loja{suffix}: R$ {format_money(_amount(amount))}")
     if not benefits:
         total = _amount((facts.get("totals") or {}).get("benefits_q"))
         if total:

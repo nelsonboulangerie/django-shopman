@@ -307,6 +307,7 @@ export interface OrderItemProjection {
   qty: string;
   unit_price_display: string;
   total_display: string;
+  notes: string;
 }
 
 /** Uma linha de desconto do detalhe: "Cupom BEMVINDO", "−R$ 5,00". */

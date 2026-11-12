@@ -347,7 +347,15 @@ const itemColumns = [
                 >{{ row.original.qty }}×</span
               >
             </template>
-            <template #item-cell="{ row }">{{ row.original.name }}</template>
+            <template #item-cell="{ row }">
+              <span>{{ row.original.name }}</span>
+              <span
+                v-if="row.original.notes"
+                class="block whitespace-pre-line text-xs text-muted-foreground"
+                data-item-notes
+                >{{ row.original.notes }}</span
+              >
+            </template>
             <template #total-cell="{ row }">
               <span class="tabular-nums">{{ row.original.total_display }}</span>
             </template>
@@ -448,6 +456,14 @@ const itemColumns = [
               </template>
               <template #item-cell="{ row }">
                 <span class="op-body">{{ row.original.name }}</span>
+                <!-- A instrução do item (ex.: "Embalado para presente") chegava só
+                     ao ticket da cozinha; quem embala e despacha também lê aqui. -->
+                <span
+                  v-if="row.original.notes"
+                  class="block whitespace-pre-line text-sm font-medium"
+                  data-item-notes
+                  >{{ row.original.notes }}</span
+                >
               </template>
               <template #total-cell="{ row }">
                 <span class="tabular-nums">{{ row.original.total_display }}</span>

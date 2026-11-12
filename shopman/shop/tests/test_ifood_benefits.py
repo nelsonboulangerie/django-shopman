@@ -29,7 +29,8 @@ def test_shared_coupon_preserves_raw_and_displays_each_subsidy_without_repricing
     assert benefit["raw"] == original["benefits"][0]
     assert benefit["value_q"] == 1000
     assert [s["value_q"] for s in benefit["sponsorships"]] == [600, 400]
-    assert benefits_summary(_order(payload)) == ("Desconto (carrinho): R$ 10,00; iFood: R$ 6,00; Loja: R$ 4,00",)
+    # Só a parte da LOJA aparece: a do iFood não muda o que a casa recebe.
+    assert benefits_summary(_order(payload)) == ("Desconto pago pela loja (no carrinho): R$ 4,00",)
     assert payload["items"][0]["line_total_q"] == 2000
     assert payload["totals"]["order_amount_q"] == 1000
     assert raw == original
@@ -38,14 +39,18 @@ def test_shared_coupon_preserves_raw_and_displays_each_subsidy_without_repricing
 
 
 @pytest.mark.parametrize("target", ["DELIVERY_FEE", "ITEM", "PROGRESSIVE_DISCOUNT_ITEM"])
-@pytest.mark.parametrize("sponsor,label", [("IFOOD", "iFood"), ("MERCHANT", "Loja"), ("EXTERNAL", "Parceiro externo"), ("CHAIN", "Rede"), ("FUTURE", "FUTURE")])
-def test_targets_and_sponsors_preserve_authority(target, sponsor, label):
+@pytest.mark.parametrize("sponsor", ["IFOOD", "MERCHANT", "EXTERNAL", "CHAIN", "FUTURE"])
+def test_only_the_store_share_reaches_the_counter_and_evidence_is_kept(target, sponsor):
     raw = _raw()
     raw["benefits"] = [{"value": 4.99, "target": target, "targetId": "2", "sponsorshipValues": [{"name": sponsor, "value": 4.99}]}]
     payload = ifood_orders.map_order(raw)
     assert payload["benefits"][0]["target_id"] == "2"
-    assert f"{label}: R$ 4,99" in benefits_summary(_order(payload))[0]
-    assert "#2" in benefits_summary(_order(payload))[0]
+    assert payload["benefits"][0]["sponsorships"][0]["sponsor"] == sponsor
+    lines = benefits_summary(_order(payload))
+    if sponsor == "MERCHANT":
+        assert len(lines) == 1 and lines[0].startswith("Desconto pago pela loja") and "R$ 4,99" in lines[0]
+    else:
+        assert lines == ()
 
 
 def test_unknown_sponsor_and_legacy_totals_never_assume_store_pays():

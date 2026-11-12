@@ -1657,7 +1657,10 @@ def _customer_profile(order: Order) -> CustomerProfileProjection | None:
 
     segment = str(getattr(insight, "rfm_segment", "") or "")
     segment_tone = _SEGMENT_TONES.get(segment, "")
-    average_ticket_q = int(getattr(insight, "average_ticket_q", 0) or 0)
+    # Na primeira compra o insight só conhece ESTE pedido: o "ticket médio" é o
+    # total dele e o "costuma levar" é o que está no carrinho agora. Dizer isso
+    # seria afirmar hábito de quem ainda não tem (pedido iFood 3417, 12/11).
+    average_ticket_q = 0 if is_first_order else int(getattr(insight, "average_ticket_q", 0) or 0)
 
     return CustomerProfileProjection(
         is_first_order=is_first_order,
@@ -1667,7 +1670,7 @@ def _customer_profile(order: Order) -> CustomerProfileProjection | None:
         # Vazio, não "R$ 0,00": sem insight ainda não SABEMOS o ticket, e zero
         # afirmaria que o cliente não gasta nada.
         average_ticket_display=_money(average_ticket_q) if average_ticket_q > 0 else "",
-        favorite_product=_favorite_product(insight),
+        favorite_product="" if is_first_order else _favorite_product(insight),
         segment=segment if segment_tone else "",
         segment_label=_segment_label(segment) if segment_tone else "",
         segment_tone=segment_tone,
