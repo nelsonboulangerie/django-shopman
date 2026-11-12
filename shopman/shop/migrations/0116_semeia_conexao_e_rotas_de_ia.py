@@ -27,21 +27,17 @@ def seed(apps, schema_editor):
             "name": "Anthropic",
             "protocol": "anthropic",
             "model": "claude-opus-5",
-            "price_input_per_m": 5,
-            "price_output_per_m": 25,
             "customer_text_approved": True,
         },
     )
     # Jev (TypeSafe), aprovado pelo dono em 02/10/2026 (D-028), inclusive para texto
-    # redigido de cliente. Saída grátis; entrada a US$ 0,042 por milhão.
+    # redigido de cliente.
     AIConnection.objects.get_or_create(
         ref="jev",
         defaults={
             "name": "Jev (TypeSafe)",
             "protocol": "jev",
             "model": "jev-latest",
-            "price_input_per_m": "0.042",
-            "price_output_per_m": 0,
             "customer_text_approved": True,
         },
     )

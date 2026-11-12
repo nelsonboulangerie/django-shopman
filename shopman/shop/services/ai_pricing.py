@@ -18,11 +18,8 @@ régua da Concierge (``storefront/concierge/metrics.py``).
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
-
-logger = logging.getLogger(__name__)
 
 LLM_PRICES = {
     "claude-haiku-4-5": (1.00, 5.00),
@@ -30,26 +27,22 @@ LLM_PRICES = {
     "claude-sonnet-5-5": (2.00, 10.00),
     "claude-opus-5": (5.00, 25.00),
     "claude-opus-5-5": (4.00, 20.00),
+    # DeepSeek no formato Anthropic (api-docs.deepseek.com/quick_start/pricing, lida em
+    # 12/11/2026). Preço de PICO, o dobro do fora de pico: o teto de gasto erra para
+    # o lado seguro.
+    "deepseek-flash": (0.30, 1.20),
+    "deepseek-v4-pro": (1.32, 3.96),
 }
 
 
 def model_prices(model: str) -> tuple[float, float] | None:
-    """(entrada, saída) em US$/M: a tabela pública, senão o preço cadastrado na conexão de IA.
+    """(entrada, saída) em US$/M da tabela pública, ou ``None``: custo desconhecido.
 
-    Modelo de outro provedor (DeepSeek, Kimi) não está na tabela; o preço vem da
-    ``AIConnection`` que o usa como padrão. Sem nenhum dos dois, ``None``: custo
-    desconhecido, e o teto de gasto deixa o modelo de fora.
+    Preço de API é dado público de referência, não configuração da loja: mora aqui,
+    no código, e não na conexão. Modelo fora da tabela tem custo desconhecido, e o
+    teto de gasto dos placares o deixa de fora.
     """
-    prices = LLM_PRICES.get(model)
-    if prices is not None:
-        return prices
-    try:
-        from shopman.shop.ai import connection_price
-
-        return connection_price(model)
-    except Exception:  # noqa: BLE001 - sem banco (teste puro, import cedo): só a tabela
-        logger.debug("ai_pricing.connection_price_unreadable model=%s", model, exc_info=True)
-        return None
+    return LLM_PRICES.get(model)
 
 
 @dataclass

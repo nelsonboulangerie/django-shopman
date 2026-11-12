@@ -13,7 +13,6 @@ Admin: o formulário só a substitui e mostra os quatro últimos caracteres.
 
 from __future__ import annotations
 
-from django.core.validators import MinValueValidator
 from django.db import models
 
 
@@ -49,24 +48,7 @@ class AIConnection(models.Model):
     model = models.CharField(
         "modelo padrão",
         max_length=80,
-        help_text="Usado quando a rota do propósito não diz outro. Ex.: claude-opus-5, deepseek-chat.",
-    )
-    price_input_per_m = models.DecimalField(
-        "preço de entrada (US$ por milhão de tokens)",
-        max_digits=8,
-        decimal_places=4,
-        null=True,
-        blank=True,
-        validators=[MinValueValidator(0)],
-        help_text="Para medir custo e respeitar teto de gasto. Vazio: custo desconhecido.",
-    )
-    price_output_per_m = models.DecimalField(
-        "preço de saída (US$ por milhão de tokens)",
-        max_digits=8,
-        decimal_places=4,
-        null=True,
-        blank=True,
-        validators=[MinValueValidator(0)],
+        help_text="Usado quando a rota do propósito não diz outro. Ex.: claude-opus-5, deepseek-flash.",
     )
     customer_text_approved = models.BooleanField(
         "pode receber mensagem de cliente",

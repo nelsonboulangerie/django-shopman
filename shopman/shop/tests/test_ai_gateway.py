@@ -56,12 +56,12 @@ def test_single_active_connection_serves_every_purpose_without_routes():
 @pytest.mark.django_db
 def test_route_picks_connection_and_model_per_purpose():
     _connection("anthropic", model="claude-opus-5")
-    _connection("deepseek", model="deepseek-chat", base_url="https://api.deepseek.com/anthropic")
+    _connection("deepseek", model="deepseek-flash", base_url="https://api.deepseek.com/anthropic")
     _routes({"default": {"connection": "anthropic"}, "copy": {"connection": "deepseek"}})
 
     assert ai.resolve("marketing").ref == "anthropic"
     copy = ai.resolve("copy")
-    assert (copy.ref, copy.model, copy.base_url) == ("deepseek", "deepseek-chat", "https://api.deepseek.com/anthropic")
+    assert (copy.ref, copy.model, copy.base_url) == ("deepseek", "deepseek-flash", "https://api.deepseek.com/anthropic")
 
 
 @pytest.mark.django_db
@@ -89,9 +89,9 @@ def test_key_missing_is_not_configured():
 
 @pytest.mark.django_db
 def test_anthropic_client_points_at_the_connection_address():
-    configure_ai("sk-deepseek", model="deepseek-chat", base_url="https://api.deepseek.com/anthropic")
+    configure_ai("sk-deepseek", model="deepseek-flash", base_url="https://api.deepseek.com/anthropic")
     client, model = ai.anthropic_client("copy", timeout=5.0)
-    assert model == "deepseek-chat"
+    assert model == "deepseek-flash"
     assert str(client.base_url).rstrip("/") == "https://api.deepseek.com/anthropic"
     assert client.api_key == "sk-deepseek"
 
@@ -109,11 +109,71 @@ def test_jev_uses_its_own_connection_never_the_default_route():
         ai.jev_endpoint(customer_text=True)
 
 
-@pytest.mark.django_db
-def test_price_of_a_model_outside_the_table_comes_from_the_connection():
+def test_prices_are_the_public_table_and_unknown_is_unknown():
     from shopman.shop.services.ai_pricing import model_prices
 
-    _connection("deepseek", model="deepseek-chat", price_input_per_m="0.27", price_output_per_m="1.10")
-    assert model_prices("deepseek-chat") == (0.27, 1.10)
+    assert model_prices("deepseek-flash") == (0.30, 1.20)
     assert model_prices("claude-opus-5") == (5.00, 25.00)
     assert model_prices("desconhecido") is None
+
+
+# ── O pedido ajustado ao provedor ───────────────────────────────────────────
+
+FULL_REQUEST = {
+    "model": "m",
+    "max_tokens": 600,
+    "system": [{"type": "text", "text": "Sistema.", "cache_control": {"type": "ephemeral"}}],
+    "messages": [
+        {"role": "user", "content": [{"type": "text", "text": "oi", "cache_control": {"type": "ephemeral"}}]}
+    ],
+    "thinking": {"type": "adaptive"},
+    "output_config": {"effort": "low", "format": {"type": "json_schema", "schema": {"type": "object"}}},
+}
+
+
+def test_anthropic_gets_the_request_untouched():
+    assert ai.fit_request(FULL_REQUEST, ai.extras_for("")) is FULL_REQUEST
+    assert ai.extras_for("https://api.anthropic.com") == ai.EXTRAS
+
+
+def test_deepseek_keeps_effort_and_thinking_and_gets_the_schema_as_instruction():
+    fitted = ai.fit_request(FULL_REQUEST, ai.extras_for("https://api.deepseek.com/anthropic"))
+    assert fitted["thinking"] == {"type": "adaptive"}
+    assert fitted["output_config"] == {"effort": "low"}
+    assert fitted["system"][0] == FULL_REQUEST["system"][0]
+    assert "esquema JSON" in fitted["system"][-1]["text"]
+    assert '{"type": "object"}' in fitted["system"][-1]["text"]
+
+
+def test_unknown_provider_gets_only_the_basics():
+    fitted = ai.fit_request(FULL_REQUEST, ai.extras_for("https://api.moonshot.ai/anthropic"))
+    assert "thinking" not in fitted and "output_config" not in fitted
+    assert "cache_control" not in fitted["system"][0]
+    assert "cache_control" not in fitted["messages"][0]["content"][0]
+    assert "cache_control" in FULL_REQUEST["system"][0], "o pedido original não muda"
+    assert (fitted["max_tokens"], fitted["model"]) == (600, "m")
+
+
+@pytest.mark.django_db
+def test_the_gateway_client_fits_every_call(monkeypatch):
+    sent = {}
+
+    class _Messages:
+        def create(self, **request):
+            sent.update(request)
+            return "ok"
+
+    class _Client:
+        def __init__(self, **kwargs):
+            self.messages = _Messages()
+            self.base_url = kwargs.get("base_url")
+
+    import anthropic
+
+    monkeypatch.setattr(anthropic, "Anthropic", _Client)
+    configure_ai("k", model="deepseek-flash", base_url="https://api.deepseek.com/anthropic")
+    client, model = ai.anthropic_client("copy")
+    output = {"format": {"type": "json_schema", "schema": {}}, "effort": "high"}
+    assert client.messages.create(model=model, max_tokens=10, messages=[], output_config=output) == "ok"
+    assert sent["output_config"] == {"effort": "high"}
+    assert client.base_url == "https://api.deepseek.com/anthropic"

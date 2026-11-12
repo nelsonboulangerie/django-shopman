@@ -30,8 +30,6 @@ class AIConnectionForm(forms.ModelForm):
             "protocol",
             "base_url",
             "model",
-            "price_input_per_m",
-            "price_output_per_m",
             "customer_text_approved",
             "is_active",
         )
@@ -66,7 +64,6 @@ class AIConnectionAdmin(ModelAdmin):
             },
         ),
         ("Chave", {"fields": ("key_display", "new_api_key", "clear_api_key")}),
-        ("Custo", {"fields": ("price_input_per_m", "price_output_per_m")}),
         ("Dados de cliente", {"fields": ("customer_text_approved",)}),
         ("Registro", {"fields": ("created_at", "updated_at")}),
     )

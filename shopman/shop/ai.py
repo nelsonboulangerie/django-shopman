@@ -15,7 +15,10 @@ resolvida (``resolve``), nunca lê chave nem cria cliente do SDK.
 
 from __future__ import annotations
 
+import copy
+import json
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 #: Propósito → o que ele é. A chave é o que vai em ``Shop.ai_routes``.
 PURPOSES = {
@@ -47,12 +50,10 @@ class Resolved:
     api_key: str
     model: str
     customer_text_approved: bool
-    price_input_per_m: float | None
-    price_output_per_m: float | None
 
     @property
-    def priced(self) -> bool:
-        return self.price_input_per_m is not None and self.price_output_per_m is not None
+    def extras(self) -> frozenset[str]:
+        return extras_for(self.base_url)
 
 
 def _protocol_for(purpose: str) -> str:
@@ -132,8 +133,6 @@ def resolve(purpose: str) -> Resolved:
         api_key=api_key,
         model=model,
         customer_text_approved=connection.customer_text_approved,
-        price_input_per_m=_float(connection.price_input_per_m),
-        price_output_per_m=_float(connection.price_output_per_m),
     )
 
 
@@ -161,7 +160,115 @@ def anthropic_client(purpose: str, *, timeout: float | None = None, max_retries:
         kwargs["timeout"] = timeout
     if max_retries is not None:
         kwargs["max_retries"] = max_retries
-    return anthropic.Anthropic(**kwargs), resolved.model
+    return FittedClient(anthropic.Anthropic(**kwargs), resolved.extras), resolved.model
+
+
+# ── O pedido que cada provedor entende ──────────────────────────────────────
+#
+# Quem chama escreve o pedido completo, no formato Anthropic, com os extras que
+# melhoram a resposta: ``effort``, raciocínio (``thinking``), saída estruturada
+# (``output_config.format``) e cache de prompt (``cache_control``). Cada provedor
+# compatível aceita só parte disso, e o que ele não aceita vira erro 400. A porta
+# ajusta o pedido ao provedor, e quem chama não precisa saber qual é.
+
+#: Os extras do formato Anthropic.
+EXTRAS = frozenset({"effort", "thinking", "structured_output", "prompt_cache"})
+
+#: O que cada provedor aceita, pelo host do endereço da conexão. Endereço vazio é
+#: a Anthropic. Host fora da tabela recebe só o básico: pedir de menos nunca
+#: quebra, pedir de mais dá 400. DeepSeek conforme a tabela de compatibilidade
+#: dela (api-docs.deepseek.com/guides/anthropic_api, lida em 12/11/2026): aceita
+#: ``effort`` e ``thinking``, ignora ``cache_control``, e o ``output_config``
+#: dela é só ``effort``.
+EXTRAS_BY_HOST = {
+    "api.anthropic.com": EXTRAS,
+    "api.deepseek.com": frozenset({"effort", "thinking", "prompt_cache"}),
+}
+
+
+def extras_for(base_url: str) -> frozenset[str]:
+    if not base_url:
+        return EXTRAS
+    host = (urlparse(base_url).hostname or "").lower()
+    return EXTRAS_BY_HOST.get(host, frozenset())
+
+
+def fit_request(request: dict, extras: frozenset[str]) -> dict:
+    """O pedido sem o que o provedor não aceita.
+
+    Saída estruturada não some: vira instrução no sistema com o mesmo esquema, e a
+    validação de quem chama continua conferindo a resposta.
+    """
+    if extras >= EXTRAS:
+        return request
+    fitted = dict(request)
+    if "thinking" not in extras:
+        fitted.pop("thinking", None)
+    output = dict(fitted.pop("output_config", None) or {})
+    schema_format = output.pop("format", None)
+    if "effort" not in extras:
+        output.pop("effort", None)
+    if schema_format and "structured_output" in extras:
+        output["format"] = schema_format
+    if output:
+        fitted["output_config"] = output
+    if "prompt_cache" not in extras:
+        fitted = _without_cache_control(fitted)
+    if schema_format and "structured_output" not in extras:
+        schema = schema_format.get("schema") if isinstance(schema_format, dict) else None
+        if schema:
+            fitted["system"] = _with_text(
+                fitted.get("system"),
+                "Responda somente com um objeto JSON válido, sem texto antes ou depois, neste "
+                f"esquema JSON:\n{json.dumps(schema, ensure_ascii=False)}",
+            )
+    return fitted
+
+
+def _without_cache_control(request: dict) -> dict:
+    request = copy.deepcopy(request)
+    for key in ("system", "tools"):
+        if isinstance(request.get(key), list):
+            for block in request[key]:
+                if isinstance(block, dict):
+                    block.pop("cache_control", None)
+    for message in request.get("messages") or []:
+        if isinstance(message, dict) and isinstance(message.get("content"), list):
+            for block in message["content"]:
+                if isinstance(block, dict):
+                    block.pop("cache_control", None)
+    return request
+
+
+def _with_text(system, text: str):
+    if not system:
+        return text
+    if isinstance(system, str):
+        return f"{system}\n\n{text}"
+    return [*system, {"type": "text", "text": text}]
+
+
+class _FittedMessages:
+    def __init__(self, messages, extras: frozenset[str]):
+        self._messages = messages
+        self._extras = extras
+
+    def create(self, **request):
+        return self._messages.create(**fit_request(request, self._extras))
+
+    def __getattr__(self, name):
+        return getattr(self._messages, name)
+
+
+class FittedClient:
+    """O cliente do SDK com ``messages.create`` ajustado ao provedor; o resto passa direto."""
+
+    def __init__(self, client, extras: frozenset[str]):
+        self._client = client
+        self.messages = _FittedMessages(client.messages, extras)
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
 
 
 #: Endereço oficial do Jev quando a conexão não diz outro.
@@ -180,22 +287,3 @@ def jev_endpoint(*, customer_text: bool) -> tuple[str, str, str]:
             f"a conexão de IA '{resolved.ref}' não está liberada para receber mensagem de cliente"
         )
     return resolved.base_url or JEV_DEFAULT_URL, resolved.api_key, resolved.model
-
-
-def connection_price(model: str) -> tuple[float, float] | None:
-    """Preço cadastrado numa conexão ativa cujo modelo padrão é ``model``."""
-    from shopman.shop.models import AIConnection
-
-    connection = (
-        AIConnection.objects.filter(is_active=True, model=model)
-        .exclude(price_input_per_m=None)
-        .exclude(price_output_per_m=None)
-        .first()
-    )
-    if connection is None:
-        return None
-    return float(connection.price_input_per_m), float(connection.price_output_per_m)
-
-
-def _float(value) -> float | None:
-    return None if value is None else float(value)
