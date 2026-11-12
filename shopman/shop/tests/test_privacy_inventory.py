@@ -156,3 +156,36 @@ def test_login_pelo_whatsapp_declara_o_manychat_mesmo_sem_notificacao(settings):
     settings.MANYCHAT_WEBHOOK_SECRET = ""
     assert "manychat" not in {processor.key for processor in active_processors()}
 
+
+#: Região da DigitalOcean → país, como o cliente lê. Região nova no spec reprova até
+#: alguém escrever aqui onde ela fica e conferir a frase da hospedagem.
+_PAIS_DA_REGIAO = {"nyc": "Estados Unidos", "sfo": "Estados Unidos", "tor": "Canadá"}
+
+
+def test_hospedagem_declara_o_pais_dos_specs_de_deploy():
+    """A frase diz onde os dados moram, e quem decide é a `region` do spec de deploy.
+
+    Mudar a hospedagem de país (São Paulo, por exemplo) sem mexer na política deixaria a
+    página mentindo sobre transferência internacional, que é das coisas que o cliente
+    mais precisa saber dela.
+    """
+    specs = sorted((Path(__file__).resolve().parents[3] / ".do").glob("app*.yaml"))
+    assert specs, "nenhum spec de deploy em .do/"
+    regioes = set()
+    for spec in specs:
+        achada = re.search(r"^region:\s*(\S+)", spec.read_text(), re.MULTILINE)
+        assert achada, f"{spec.name} sem region"
+        regioes.add(achada.group(1))
+    hospedagem = next(processor for processor in PROCESSORS if processor.key == "digitalocean")
+    for regiao in regioes:
+        pais = _PAIS_DA_REGIAO.get(regiao)
+        assert pais, f"região {regiao} sem país declarado em _PAIS_DA_REGIAO"
+        assert pais in hospedagem.role, f"a política não diz {pais}: {hospedagem.role}"
+
+
+def test_maquina_de_desenvolvimento_nao_declara_hospedagem(settings):
+    settings.SHOPMAN_ENVIRONMENT = "development"
+    assert "digitalocean" not in {processor.key for processor in active_processors()}
+    settings.SHOPMAN_ENVIRONMENT = "production"
+    assert "digitalocean" in {processor.key for processor in active_processors()}
+
