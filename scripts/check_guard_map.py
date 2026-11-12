@@ -37,6 +37,7 @@ GUARDS: dict[str, list[str]] = {
         "scripts/check_semantic_docs.py",
         "scripts/check_legal_archive.py",
         "scripts/check_marketing_docs.py",
+        "scripts/check_commitments.py",
     ],
     "superficies-nuxt": [
         "scripts/check_surface_registry.py",
