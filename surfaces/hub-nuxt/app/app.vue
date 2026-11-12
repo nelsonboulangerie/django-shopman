@@ -115,6 +115,9 @@ const pushState = computed(() =>
   }),
 );
 const pushSettingsOpen = ref(false);
+
+// Suporte: o chamado nasce aqui, com o contexto que a Central conhece.
+const supportOpen = ref(false);
 function reloadPage(): void {
   window.location.reload();
 }
@@ -242,6 +245,13 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
     icon: "i-lucide-refresh-cw",
     disabled: pending.value,
     onSelect: () => void refresh(),
+  },
+  {
+    label: "Suporte",
+    icon: "i-lucide-life-buoy",
+    onSelect: () => {
+      supportOpen.value = true;
+    },
   },
   {
     label: "Avisos neste dispositivo",
@@ -436,6 +446,7 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
           <OperatorPushSettings class="mt-0! border-0! bg-transparent! p-0!" />
         </template>
       </NuxtModal>
+      <SupportPanel v-model:open="supportOpen" :context="{ app: 'hub', route: '/' }" />
       <OperatorSonner />
       <OperatorPwaRuntime />
     </div>
