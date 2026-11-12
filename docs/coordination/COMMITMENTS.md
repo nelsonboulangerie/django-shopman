@@ -70,4 +70,5 @@ que ele criou. Pedido que não virou trabalho também fica `ABERTO`, com
 | DEV-2026-007 | pedido | chat 2026-11-12 | Quero poder, SEMPRE que eu discutir algo, seja uma correção, ou um pedido de uma feature nova, NADA seja perdido, nunca mais! | Engenharia | 2026-11-12 | 2026-11-19 | - | EM_EXECUCAO | - |
 | DEV-2026-008 | pedido | chat 2026-11-12 | o que mais me importo é com a SAÚDE do REPO! Está muito cansativo e desesperador manter esse desenvolvimento!!! Faça algo a respeito. | Engenharia | 2026-11-12 | 2026-11-19 | - | EM_EXECUCAO | - |
 | DEV-2026-009 | compromisso | #2303 / #2304 | Preparo da encomenda no painel do produto do Catálogo (Gestor) | Engenharia · Catálogo | 2026-11-12 | 2026-12-03 | - | ABERTO | - |
+| DEV-2026-010 | pedido | chat | BRIEF ID3A: infraestrutura de IA do Django Shopman. Sua tarefa é produzir um plano de desenvolvimento da ID3A, não código. | Engenharia | 2026-11-12 | 2026-11-19 | - | ABERTO | - |
 <!-- commitments:end -->
