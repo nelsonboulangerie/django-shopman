@@ -149,8 +149,10 @@ describe("OperatorOrderDetail", () => {
     });
 
     expect(wrapper.find("[data-contact-whatsapp]").exists()).toBe(false);
-    expect(wrapper.get("[data-contact-relay-expired]").text()).toContain("Código vencido");
-    expect(wrapper.get("[data-contact-phone]").text()).toBe("Ligar pela central");
+    expect(wrapper.get("[data-contact-relay-expired]").text()).toContain("o código venceu");
+    // A central é rodapé pró-forma (dono, 12/11/2026): sem botão, sem cartão de alerta.
+    expect(wrapper.text()).not.toContain("Ligar pela central");
+    expect(wrapper.find("[data-customer-contact] [data-contact-phone]").exists()).toBe(false);
   });
 
   it("a nota da cozinha é leitura por padrão e editor quando a tela o entrega", async () => {

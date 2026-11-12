@@ -526,6 +526,11 @@ class OrderCardProjection:
     # itens — o dobro da altura do card do PDV, na mesma coluna, e a fila deixava
     # de ser varredura. Ficam só os dois fatos que decidem algo de relance.
     ifood_pickup_code: str = ""
+    # "Código do entregador · 6005" na entrega, "Código de retirada · 6005" no balcão.
+    ifood_pickup_code_label: str = ""
+    # Onde está o entregador do iFood ("Entregador a caminho da loja"), pelo último
+    # fato recebido. Ocupa o lugar do "Pronto" nos pedidos com entregador do iFood.
+    ifood_logistics_label: str = ""
     ifood_schedule_label: str = ""
     # O iFood à frente do estado local (concluiu, ou o entregador dele já retirou):
     # uma linha escrita como instrução. Vazia no caso normal.
@@ -815,6 +820,8 @@ class OperatorOrderProjection:
     ifood_cancellation_notice: str = ""
     ifood_payment_summary: tuple[str, ...] = ()
     ifood_operation_summary: tuple[str, ...] = ()
+    # O mesmo selo do card: onde está o entregador do iFood.
+    ifood_logistics_label: str = ""
     ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
     # O mesmo aviso do card (P1-3): o aceite não chegou ao iFood.
     ifood_accept_failed: bool = False
@@ -1071,6 +1078,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     # Itens a preço de tabela e o desconto (cupom, promoção) em linha própria:
     # rateado no preço, o cupom sumia para o operador (beta 06/11).
     items, discount_lines = order_pricing.priced_items(order)
+    discount_lines = discount_lines + ifood_projection.total_lines(order)
 
     customer_data = order.data.get("customer", {})
     customer_name = _format_customer_display(
@@ -1118,6 +1126,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
         ifood_payment_summary=ifood_projection.payment_summary(order),
         ifood_operation_summary=ifood_projection.operation_summary(order),
+        ifood_logistics_label=ifood_projection.logistics_label(order),
         test_order_label=_test_order_label(order),
         test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
@@ -2269,6 +2278,8 @@ def _build_card(
         payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
         ifood_pickup_code=ifood_projection.pickup_code(order),
+        ifood_pickup_code_label=ifood_projection.pickup_code_label(order),
+        ifood_logistics_label=ifood_projection.logistics_label(order),
         ifood_schedule_label=ifood_projection.schedule_label(order),
         ifood_remote_ahead_label=ifood_projection.remote_ahead_label(order),
         ifood_negotiations=negotiations(order, user=user),

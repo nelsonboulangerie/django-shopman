@@ -78,3 +78,85 @@ def test_outros_canais_continuam_mostrando_o_aviso_nao_enviado():
     receipts = build_notification_receipts(order)
 
     assert [r.state_label for r in receipts] == ["Não enviado"]
+
+
+# ── Depois do aceite, quem conduz o pedido com entregador do iFood é o iFood ──
+
+
+def _courier_order(ref="IFOOD-3417-LOG", status="preparing", delivered_by="IFOOD", fulfillment="delivery"):
+    return Order.objects.create(
+        ref=ref, channel_ref="ifood", external_ref=f"ext-{ref}", status=status, total_q=4920,
+        data={"fulfillment_type": fulfillment, "payment": {"method": "external", "status": "paid"},
+              "ifood": {"delivered_by": delivered_by, "pickup_code": "6005"}},
+    )
+
+
+def _logistics_event(code, order, event_id=None):
+    return {"id": event_id or f"ev-{code}", "code": code, "orderId": order.external_ref,
+            "metadata": {"workerName": "Marcos", "workerPhone": "11999999999"}}
+
+
+def test_andamento_do_entregador_vira_fato_e_selo_sem_alerta_de_portal():
+    from unittest.mock import patch
+
+    from shopman.backstage.projections import ifood
+    from shopman.shop.services import ifood_events
+
+    order = _courier_order()
+    assert ifood.logistics_label(order) == ""
+    with patch.object(ifood_events, "acknowledge", return_value=True), \
+         patch.object(ifood_events, "_alert_unhandled_event") as alert:
+        summary = ifood_events.process_events([_logistics_event("ASSIGN_DRIVER", order)])
+        assert summary["failed"] == 0 and summary["acked"]
+        order.refresh_from_db()
+        assert ifood.logistics_label(order) == "Entregador do iFood designado: Marcos"
+        # o telefone do entregador não é guardado
+        assert "workerPhone" not in order.data["ifood"]["logistics"]["ASSIGN_DRIVER"]["metadata"]
+
+        ifood_events.process_events([_logistics_event("GOING_TO_ORIGIN", order)])
+        order.refresh_from_db()
+        assert ifood.logistics_label(order) == "Entregador a caminho da loja"
+
+        ifood_events.process_events([_logistics_event("DELIVERY_PICKUP_CODE_REQUESTED", order)])
+        order.refresh_from_db()
+        assert ifood.logistics_label(order) == "Entregador do iFood na loja"
+
+        ifood_events.process_events([_logistics_event("DELIVERY_DROP_CODE_VALIDATION_SUCCESS", order)])
+        order.refresh_from_db()
+        assert ifood.logistics_label(order) == "Entregue ao cliente"
+    alert.assert_not_called()
+
+
+def test_selo_so_existe_com_entregador_do_ifood():
+    from shopman.backstage.projections import ifood
+
+    order = _courier_order(ref="IFOOD-3417-MCH", delivered_by="MERCHANT")
+    order.data["ifood"]["logistics"] = {"ASSIGN_DRIVER": {"event_id": "x"}}
+    assert ifood.logistics_label(order) == ""
+
+
+def test_codigo_na_entrega_e_do_entregador_e_no_balcao_e_de_retirada():
+    from shopman.backstage.projections import ifood
+
+    assert ifood.pickup_code_label(_courier_order(ref="IFOOD-3417-D")) == "Código do entregador · 6005"
+    assert ifood.pickup_code_label(_courier_order(ref="IFOOD-3417-T", fulfillment="pickup")) == "Código de retirada · 6005"
+
+
+def test_pronto_e_saiu_ficam_no_menu_quando_o_entregador_e_do_ifood():
+    from django.contrib.auth import get_user_model
+
+    from shopman.shop.services import operator_orders
+
+    user = get_user_model().objects.create_superuser("gestor3417", "g@x.com", "x")
+    ifood_courier = _courier_order(ref="IFOOD-3417-MENU")
+    own = _courier_order(ref="IFOOD-3417-OWN", delivered_by="MERCHANT")
+
+    def advance_priority(order):
+        actions = operator_orders.operational_actions(order, user=user)
+        return next(a.priority for a in actions if a.ref == "advance")
+
+    assert advance_priority(ifood_courier) == "menu"
+    assert advance_priority(own) == "primary"
+    Order.objects.filter(pk=ifood_courier.pk).update(status="dispatched")
+    ifood_courier.refresh_from_db()
+    assert advance_priority(ifood_courier) == "menu"  # "Marcar como entregue" é do iFood

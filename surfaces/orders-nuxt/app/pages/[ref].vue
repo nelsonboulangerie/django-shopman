@@ -948,6 +948,7 @@ const outside = useOutsideStore(
             <p class="flex min-w-0 items-center gap-1.5">
               <span class="truncate text-lg font-semibold leading-tight text-highlighted">{{ code.code }}</span>
               <NuxtBadge v-if="order?.status_label" :color="statusColor(order.status)" :label="order.status_label" class="shrink-0" />
+              <NuxtBadge v-if="order?.ifood_logistics_label" color="info" variant="subtle" icon="i-lucide-bike" :label="order.ifood_logistics_label" class="min-w-0 truncate" data-detail-ifood-logistics />
             </p>
             <p v-if="order" class="flex min-w-0 items-center gap-1 text-xs text-muted">
               <Icon :name="channelIcon" class="size-3.5 shrink-0" /><span class="truncate">{{ order.channel_name || order.channel_ref }}</span>
@@ -1010,6 +1011,15 @@ const outside = useOutsideStore(
           :color="statusColor(order.status)"
           :label="order.status_label"
           data-detail-status
+        />
+        <!-- Pedido com entregador do iFood: onde está o entregador, ao lado do status. -->
+        <NuxtBadge
+          v-if="order?.ifood_logistics_label"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-bike"
+          :label="order.ifood_logistics_label"
+          data-detail-ifood-logistics
         />
         <!-- `min-w-0`: sem ele o invólucro segura a largura do rótulo completo e o
              selo não encolhe (cortava "Atualiza sozinho a cada" a 800 px). -->

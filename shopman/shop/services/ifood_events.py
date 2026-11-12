@@ -86,10 +86,8 @@ _INERT_CODES = {
     # Nenhuma" para os quatro.
     "SEPARATION_STARTED", "PREPARATION_STARTED", "SEPARATION_ENDED",
     "PREPARATION_ENDED", "READY_TO_PICKUP",
-    # Rastreio do entregador do iFood. A loja não repassa rastreio ao cliente
-    # (é o app deles que mostra), então nenhum destes vira trabalho aqui.
-    "ASSIGN_DRIVER", "GOING_TO_ORIGIN", "ARRIVED_AT_ORIGIN", "COLLECTED",
-    "ARRIVED_AT_DESTINATION", "DELIVERY_GROUP_ASSIGNED",
+    # Agrupamento de entregas do iFood: não muda nada no balcão.
+    "DELIVERY_GROUP_ASSIGNED",
     # Sugestão de horário para pedido agendado, de loja com "Preparo
     # Inteligente". A casa começa o preparo pelo `preparationStartDateTime` do
     # próprio pedido, que a documentação chama de mais restritivo.
@@ -97,6 +95,19 @@ _INERT_CODES = {
     # Pedido de cancelamento em trânsito: quem fecha é o CAN, que é tratado.
     "CANCELLATION_REQUESTED",
 }
+# Andamento do entregador do iFood. Não é trabalho da loja, mas é o que o balcão
+# precisa ver para não abrir o portal deles (dono, 12/11/2026): cada código vira
+# um fato em ``order.data["ifood"]["logistics"]`` e o Gestor mostra o mais recente
+# como selo (``backstage/projections/ifood.logistics_label``). Antes eram inertes,
+# e os de código de coleta/entrega viravam alerta mandando conferir o portal.
+_LOGISTICS_CODES = {
+    "ASSIGN_DRIVER", "ADR", "GOING_TO_ORIGIN", "GTO", "ARRIVED_AT_ORIGIN", "AAO",
+    "COLLECTED", "CLT", "ARRIVED_AT_DESTINATION", "AAD",
+    "DELIVERY_PICKUP_CODE_REQUESTED", "DELIVERY_DROP_CODE_REQUESTED",
+    "DELIVERY_DROP_CODE_VALIDATION_SUCCESS",
+}
+_LOGISTICS_ALIASES = {"ADR": "ASSIGN_DRIVER", "GTO": "GOING_TO_ORIGIN", "AAO": "ARRIVED_AT_ORIGIN",
+                      "CLT": "COLLECTED", "AAD": "ARRIVED_AT_DESTINATION"}
 _ACK_BATCH = 100  # iFood acknowledges in batches.
 
 
@@ -222,6 +233,15 @@ def process_events(events: list[dict]) -> dict:
                 failed += 1
             continue
 
+        if code in _LOGISTICS_CODES:
+            outcome = _record_logistics(code, event_id, order_id, event.get("metadata"))
+            if outcome == "failed":
+                failed += 1  # pedido ainda não existe aqui: sem ACK, o iFood reentrega
+            else:
+                ignored += 1
+                handled_ids.append(event_id)
+            continue
+
         # Código sem processador. Continua sendo ackado — não ackar faria o
         # iFood reentregar para sempre, e a reentrega infinita esconde tanto
         # quanto o silêncio. O que muda é que ele deixa de ser INVISÍVEL: só os
@@ -255,6 +275,41 @@ def process_events(events: list[dict]) -> dict:
     }
     logger.info("ifood_events.process_events: %s", summary)
     return summary
+
+
+def _record_logistics(code: str, event_id: str, order_id: str, metadata=None) -> str:
+    """Grava o andamento do entregador do iFood no pedido (o primeiro de cada código).
+
+    O ``metadata`` do evento vai junto, sem telefone: no ``ASSIGN_DRIVER`` é onde o
+    iFood põe quem é o entregador, e o balcão o reconhece pelo nome.
+    """
+    from django.db import transaction
+    from django.utils import timezone
+    from shopman.orderman.models import Order
+
+    if not order_id:
+        return "failed"
+    step = _LOGISTICS_ALIASES.get(code, code)
+    with transaction.atomic():
+        order = Order.objects.select_for_update().filter(
+            channel_ref=ifood_ingest.IFOOD_CHANNEL_REF, external_ref=order_id,
+        ).first()
+        if order is None:
+            return "failed"
+        data = dict(order.data or {})
+        facts = dict(data.get("ifood") or {})
+        logistics = dict(facts.get("logistics") or {})
+        if step in logistics:
+            return "deduped"
+        record = {"event_id": event_id, "observed_at": timezone.now().isoformat()}
+        if isinstance(metadata, dict):
+            record["metadata"] = {k: v for k, v in metadata.items() if "phone" not in str(k).lower()}
+        logistics[step] = record
+        facts["logistics"] = logistics
+        data["ifood"] = facts
+        order.data = data
+        order.save(update_fields=["data", "updated_at"])
+    return "ingested"
 
 
 def _process_placed(event_id: str, order_id: str) -> str:
@@ -840,7 +895,8 @@ def _process_remote_progress(event_id: str, order_id: str, *, dispatch: bool) ->
             _record_remote(order, marker, event_id)
             # O iFood tem o aceite: o aviso de "não recebeu o aceite" perde o objeto.
             ifood_accept_sync.on_remote_confirmed(order)
-            if not already_applied and order.status != expected:
+            ready_here = order.status == expected or (dispatch and _collected_by_ifood_courier(order))
+            if not already_applied and not ready_here:
                 # ACK é "armazenei", não "apliquei" (doc do polling). O fato fica no
                 # pedido e a reconciliação o aplica quando o estado local chegar lá
                 # — antes, o evento ficava sem ACK e o iFood usava a fila de
@@ -856,7 +912,7 @@ def _process_remote_progress(event_id: str, order_id: str, *, dispatch: bool) ->
             if not already_applied:
                 _reconcile_locked(order)
                 order.refresh_from_db()
-                if order.status == expected:
+                if order.status != target:
                     raise ValueError(f"iFood {code} did not reach its local target status")
             webhook_idempotency.mark_done(
                 claim, response_body={"status": "already_processed" if already_applied else target, "order_ref": order.ref},
@@ -1080,6 +1136,28 @@ def _record_remote(order, marker: str, event_id: str) -> None:
     order.save(update_fields=["data", "updated_at"])
 
 
+def _collected_by_ifood_courier(order) -> bool:
+    """A coleta do entregador do iFood (DSP) prova que a sacola saiu da casa.
+
+    Decisão do dono (12/11/2026, pedido 3417): com entregador do iFood, quem
+    determina o andamento depois do aceite é o iFood. O entregador coletou às
+    17:52 e o pedido seguiu "Em preparo" aqui, pedindo um "Pronto" que não
+    mudava mais nada. Com o pedido EM PREPARO (a cozinha já trabalhava nele), o
+    DSP leva a Pronto e a Saiu pelo sistema, e os tickets abertos do KDS fecham
+    junto. Antes do preparo (novo, aceito) nada é inventado: o fato espera.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    facts = (order.data or {}).get("ifood") or {}
+    return (
+        order.status == Order.Status.PREPARING
+        and get_fulfillment_type(order) == "delivery"
+        and str(facts.get("delivered_by") or "").upper() == "IFOOD"
+    )
+
+
 def conclusion_allowed(order) -> bool:
     """Onde o CON pode fechar o pedido: depois da entrega, ou na retirada pronta."""
     from shopman.orderman.models import Order
@@ -1130,6 +1208,12 @@ def _reconcile_locked(order) -> None:
                 operator_orders.advance_order(order, actor="system:ifood")
                 order.refresh_from_db()
             return
+        if facts.get("remote_dispatched") and _collected_by_ifood_courier(order):
+            # Pronto pelo sistema: ``advance_order`` fecha os tickets abertos do
+            # KDS, e o aviso ao iFood não ecoa (``remote_status_observed``).
+            operator_orders.advance_order(order, actor="system:ifood:DSP")
+            order.refresh_from_db()
+            continue
         if (facts.get("remote_dispatched") and order.status == Order.Status.READY
                 and get_fulfillment_type(order) == "delivery"):
             operator_orders.advance_order(order, actor="system:ifood:DSP")

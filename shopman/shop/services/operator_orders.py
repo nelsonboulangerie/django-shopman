@@ -2336,9 +2336,20 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
         # Na ENTREGA, quem decide o pronto é o operador (decisão do dono,
         # 13/10/2026): ele sabe se a sacola está pronta e chama o entregador na
         # hora. O "Marcar pronto" fica à vista mesmo com ticket na Cozinha.
+        # Com ENTREGADOR DO iFOOD é o iFood quem chama, coleta e conclui (dono,
+        # 12/11/2026, pedido 3417): o pronto sai do KDS, a coleta (DSP) fecha o
+        # pedido sozinha, a conclusão do iFood (CON) encerra, e o Gestor mostra o
+        # andamento do entregador. "Pronto", "Saiu" e "Entregue" ficam no menu,
+        # como reserva para o caso que o sistema não viu.
+        ifood_courier = (
+            order.channel_ref == "ifood"
+            and get_fulfillment_type(order) == "delivery"
+            and str(((order.data or {}).get("ifood") or {}).get("delivered_by") or "").upper() == "IFOOD"
+        )
         priority = (
             "menu"
-            if target == Order.Status.READY and get_fulfillment_type(order) != "delivery" and _kitchen_will_conclude(order)
+            if (target == Order.Status.READY and get_fulfillment_type(order) != "delivery" and _kitchen_will_conclude(order))
+            or (ifood_courier and target in (Order.Status.READY, Order.Status.DISPATCHED, Order.Status.DELIVERED))
             else "primary"
         )
         actions.append(Action(
