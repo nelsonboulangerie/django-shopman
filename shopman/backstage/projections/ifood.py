@@ -59,7 +59,7 @@ def payment_summary(order) -> tuple[str, ...]:
     if pending:
         if prepaid:
             lines.append(f"Já pago online no iFood: R$ {format_money(prepaid)}")
-        lines.append(f"Cobrar na entrega: R$ {format_money(pending)}")
+        due = []
         for method in payments.get("methods") or []:
             if not isinstance(method, dict) or method.get("prepaid") is True:
                 continue
@@ -67,15 +67,25 @@ def payment_summary(order) -> tuple[str, ...]:
             name = _METHOD_LABELS.get(code, "Outra forma")
             brand = str(method.get("brand") or "").strip()
             value = _amount(method.get("value_q"))
-            line = f"{name}{' ' + brand if brand else ''}: R$ {format_money(value)}"
+            how = f"{name}{' ' + brand if brand else ''}"
+            change = ""
             change_for = _amount(method.get("change_for_q"))
             if code == "CASH" and change_for:
-                line += f"; troco para R$ {format_money(change_for)}"
+                change = f"; troco para R$ {format_money(change_for)}"
                 if change_for >= value:
-                    line += f", levar R$ {format_money(change_for - value)} de troco"
-            lines.append(line)
+                    change += f" (levar R$ {format_money(change_for - value)})"
+            due.append((how, value, change))
+        if len(due) == 1:
+            # Uma forma só: valor, forma e troco numa linha, sem repetir o total.
+            how, _value, change = due[0]
+            how = how[:1].lower() + how[1:]
+            lines.append(f"Cobrar na entrega: R$ {format_money(pending)} em {how}{change}")
+        else:
+            lines.append(f"Cobrar na entrega: R$ {format_money(pending)}")
+            lines.extend(f"{how}: R$ {format_money(value)}{change}" for how, value, change in due)
     elif prepaid:
-        lines.append("Pago online no iFood. Nada a cobrar do cliente.")
+        # A linha de cima já diz "iFood · Pago online"; aqui, só o gesto.
+        lines.append("Nada a cobrar do cliente.")
     return (tuple(lines) or ("iFood: pagamento não informado.",)) + benefits_summary(order)
 
 
