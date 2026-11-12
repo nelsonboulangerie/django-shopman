@@ -1719,6 +1719,13 @@ antecedência`. Source-of-truth tipado em `shopman/shop/preorder_kitchen_policy.
 (`PreorderKitchenPolicy`); lido por `lifecycle.kitchen_release_at`. Valor
 inválido cai no padrão.
 
+Editado no Admin em **Configurações › Pedidos e entrega › Encomenda na Cozinha**
+(`ShopOrderingAdmin`, campos `defaults_preorder_kitchen_*`). O form grava as três
+chaves sempre (em branco = padrão declarado), confere cada SKU de
+`prep_minutes_by_sku` contra o catálogo e recusa minutos fora de 0 a 720; outras
+chaves do bloco são preservadas. Na tela, o preparo por SKU se escreve como
+`BAGUETE: 20; BOLO-CHOC: 90`.
+
 | Chave | Tipo | Padrão | Descrição |
 |-------|------|--------|-----------|
 | `preorder_kitchen.lead_minutes` | `int` (>= 0) | `15` | Antecedência somada ao preparo |
