@@ -303,10 +303,20 @@ async function submitDev(): Promise<void> {
                 {{ item.label }}
               </NuxtButton>
             </div>
-            <OperatorButton label="Novo chamado" icon="i-lucide-plus" size="sm" @click="newOpen = !newOpen" />
+            <OperatorButton
+              v-if="capabilities.create"
+              label="Novo chamado"
+              icon="i-lucide-plus"
+              size="sm"
+              @click="newOpen = !newOpen"
+            />
           </div>
 
-          <form v-if="newOpen" class="flex flex-col gap-2 rounded border border-default p-3" @submit.prevent="submitNew">
+          <form
+            v-if="newOpen && capabilities.create"
+            class="flex flex-col gap-2 rounded border border-default p-3"
+            @submit.prevent="submitNew"
+          >
             <NuxtSelect v-model="newType" :items="typeItems" value-key="value" label-key="label" size="sm" />
             <NuxtTextarea
               v-model="newDescription"
