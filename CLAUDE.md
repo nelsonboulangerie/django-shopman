@@ -160,7 +160,7 @@ número na linha):**
 make intake q="<as primeiras palavras dele, literais>" dono="Engenharia"
 ```
 
-O comando devolve `C-AAAA-NNN` e a linha `Pedido: C-AAAA-NNN`. O PR cita essa linha;
+O comando devolve `DEV-AAAA-NNN` e a linha `Pedido: DEV-AAAA-NNN`. O PR cita essa linha;
 a CI reprova PR novo sem ela. O relatório final lista os IDs tocados e o estado de
 cada um. Pedido que não virou trabalho também é linha (`ABERTO`, `revisar_em` curto).
 

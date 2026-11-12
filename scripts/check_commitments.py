@@ -10,7 +10,7 @@ O ledger é `docs/coordination/COMMITMENTS.md`. Este script:
 1. valida o ledger (ID único, estado conhecido, dono, `revisar_em` para item
    aberto, prova para item terminal);
 2. lista o que venceu, incluindo as decisões legadas de `DECISIONS.md`;
-3. com `--pr-body`, reprova PR novo sem a linha `Pedido: C-...` (ou
+3. com `--pr-body`, reprova PR novo sem a linha `Pedido: DEV-...` (ou
    `Pedido: #2300`). O gate do que ficou de fora é `check_ficou_de_fora.py`;
    este script não o duplica;
 4. com `--add`, registra a fala do dono e devolve o ID para o PR.
@@ -51,20 +51,20 @@ TYPES = {"pedido", "compromisso", "decisao", "achado"}
 STATES = {"ABERTO", "EM_EXECUCAO", "BLOQUEADO", "FEITO", "DESCARTADO", "SUPERSEDIDO"}
 TERMINAL = {"FEITO", "DESCARTADO", "SUPERSEDIDO"}
 EMPTY_OWNERS = {"", "-", "—", "ninguem", "ninguém", "a definir", "tbd", "n/a"}
-ID_RE = re.compile(r"^C-\d{4}-\d{3}$")
-REF_RE = re.compile(r"\bC-\d{4}-\d{3}\b")
+ID_RE = re.compile(r"^DEV-\d{4}-\d{3}$")
+REF_RE = re.compile(r"\bDEV-\d{4}-\d{3}\b")
 ISSUE_NUM_RE = re.compile(r"#(\d{3,})")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 REQUEST_LINE_RE = re.compile(
-    r"^\s*Pedido:\s*(?P<value>(?:C-\d{4}-\d{3}|#\d{3,})"
-    r"(?:\s*,\s*(?:C-\d{4}-\d{3}|#\d{3,}))*|nenhum)\s*$",
+    r"^\s*Pedido:\s*(?P<value>(?:DEV-\d{4}-\d{3}|#\d{3,})"
+    r"(?:\s*,\s*(?:DEV-\d{4}-\d{3}|#\d{3,}))*|nenhum)\s*$",
     re.MULTILINE | re.IGNORECASE,
 )
 ISSUE_NUM_RE = re.compile(r"#(\d{3,})")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 REQUEST_LINE_RE = re.compile(
-    r"^\s*Pedido:\s*(?P<value>(?:C-\d{4}-\d{3}|#\d{3,})"
-    r"(?:\s*,\s*(?:C-\d{4}-\d{3}|#\d{3,}))*|nenhum)\s*$",
+    r"^\s*Pedido:\s*(?P<value>(?:DEV-\d{4}-\d{3}|#\d{3,})"
+    r"(?:\s*,\s*(?:DEV-\d{4}-\d{3}|#\d{3,}))*|nenhum)\s*$",
     re.MULTILINE | re.IGNORECASE,
 )
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$", re.MULTILINE)
@@ -159,7 +159,7 @@ def validate(entries: list[Entry], today: dt.date) -> list[str]:
     for entry in entries:
         where = entry.id or entry.compromisso[:40] or "linha sem id"
         if not ID_RE.match(entry.id):
-            errors.append(f"{where}: id fora do formato C-AAAA-NNN")
+            errors.append(f"{where}: id fora do formato DEV-AAAA-NNN")
         elif entry.id in seen:
             errors.append(f"{entry.id}: id duplicado")
         else:
@@ -345,7 +345,7 @@ def check_pr_body(
     match = REQUEST_LINE_RE.search(body)
     if not match:
         errors.append(
-            "PR sem a linha 'Pedido: C-AAAA-NNN' (ou 'Pedido: #2300'), ou "
+            "PR sem a linha 'Pedido: DEV-AAAA-NNN' (ou 'Pedido: #2300'), ou "
             "'Pedido: nenhum'; o pedido do dono é registrado antes do trabalho"
         )
         return errors
@@ -359,7 +359,7 @@ def check_pr_body(
 
 
 def next_id(entries: list[Entry], year: int) -> str:
-    prefix = f"C-{year}-"
+    prefix = f"DEV-{year}-"
     numbers = [
         int(entry.id.rsplit("-", 1)[1])
         for entry in entries
