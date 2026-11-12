@@ -170,7 +170,7 @@ async function submitDev(): Promise<void> {
   <NuxtModal v-model:open="isOpen" title="Suporte">
     <template #body>
       <div class="flex max-h-[75vh] flex-col gap-4 overflow-y-auto" data-support-panel>
-        <NuxtAlert v-if="error" color="error" :title="error" data-support-error />
+        <NuxtAlert v-if="error" color="error" variant="subtle" :title="error" data-support-error />
 
         <div v-if="ticket" class="flex flex-col gap-4" data-support-ticket>
           <div class="flex items-center gap-2">
