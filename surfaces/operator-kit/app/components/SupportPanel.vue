@@ -240,8 +240,8 @@ async function submitDev(): Promise<void> {
           <section v-if="canTriage(ticket, capabilities)" class="flex flex-col gap-2 rounded border border-default p-3">
             <h4 class="text-sm font-medium">Triagem</h4>
             <div class="flex flex-wrap items-center gap-2">
-              <NuxtSelect v-model="triageType" :items="typeItems" size="sm" class="min-w-40" />
-              <NuxtSelect v-model="triagePriority" :items="priorityItems" size="sm" class="min-w-32" />
+              <NuxtSelect v-model="triageType" :items="typeItems" value-key="value" label-key="label" size="sm" class="min-w-40" />
+              <NuxtSelect v-model="triagePriority" :items="priorityItems" value-key="value" label-key="label" size="sm" class="min-w-32" />
               <OperatorButton label="Triar" size="sm" :loading="pending" @click="runTriage" />
             </div>
           </section>
@@ -307,7 +307,7 @@ async function submitDev(): Promise<void> {
           </div>
 
           <form v-if="newOpen" class="flex flex-col gap-2 rounded border border-default p-3" @submit.prevent="submitNew">
-            <NuxtSelect v-model="newType" :items="typeItems" size="sm" />
+            <NuxtSelect v-model="newType" :items="typeItems" value-key="value" label-key="label" size="sm" />
             <NuxtTextarea
               v-model="newDescription"
               :rows="4"
