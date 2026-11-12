@@ -148,6 +148,34 @@ outras sessões e para o Pablo. Draft custa 20 segundos; redescobrir custa dias.
   legítima, desde que dita e com o trabalho publicado. Não contorne: publique.
 - `AGENTS.md` é link para este arquivo: o Codex lê a mesma regra.
 
+## ⛔ O PEDIDO: a fala do dono vira linha antes do primeiro edit
+
+Vale para Claude, Codex, DSH e humano. Sessão não tem memória; o repo tem.
+
+**Quando o Pablo pedir, corrigir, reclamar ou sugerir algo que vai virar trabalho,
+a primeira ação é registrar a fala literal (e, se ela virar issue, citar o
+número na linha):**
+
+```bash
+make intake q="<as primeiras palavras dele, literais>" dono="Engenharia"
+```
+
+O comando devolve `C-AAAA-NNN` e a linha `Pedido: C-AAAA-NNN`. O PR cita essa linha;
+a CI reprova PR novo sem ela. O relatório final lista os IDs tocados e o estado de
+cada um. Pedido que não virou trabalho também é linha (`ABERTO`, `revisar_em` curto).
+
+**Adiamento também é linha, no mesmo PR.** Se o PR tem "Fora deste PR", "Seguimento",
+"Pendências" ou "Ficou de fora", cada item aponta para um `C-` que exista em
+`docs/coordination/COMMITMENTS.md` **ou** para uma issue aberta com label
+`ficou-de-fora`. Sem um dos dois, a CI reprova: foi assim que o #2298 deixou dois
+itens reais sem dono, e o #2292 mais dois. O detalhe pode viver na issue; a linha
+do ledger é o índice que o `make commitments` lê.
+
+`make commitments` mostra o que venceu, inclusive as decisões legadas de
+`DECISIONS.md`. O job semanal abre uma issue com os vencidos e a fecha quando a
+lista zera. O ritual é de 10 minutos; o dono do ritual é a coordenação do turno:
+sem alguém assumindo, o item é `BLOQUEADO`, não `ABERTO`.
+
 ## Estrutura do Projeto
 
 ```

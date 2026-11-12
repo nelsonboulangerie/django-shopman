@@ -1,3 +1,12 @@
+## Pedido
+
+<!-- O pedido que autoriza este PR. Se veio de conversa, rode
+     `make intake q="<a fala do dono>"` e cole o ID devolvido.
+     PR de manutenção sem pedido: `Pedido: nenhum` e diga o motivo.
+     O CI reprova PR novo sem esta linha. -->
+
+Pedido: C-...
+
 ## O que muda
 
 <!-- Descreva resumidamente o que esta PR faz e por quê. -->
@@ -20,3 +29,12 @@
 - [ ] **Muda dado de seed** — não aparece no alpha sem reseed. Diga aqui o que só aparece depois dele, e **não reseede por conta própria**: a autorização é do Pablo, por evento.
 - [ ] **Muda contrato de projection** — regenere `contracts/projections/*.json` e commite os dois lados juntos; o front consome esse arquivo.
 - [ ] **Exige ação humana no deploy** (variável nova, segredo, comando a rodar) — descreva o quê:
+
+## Compromissos
+
+<!-- Todo adiamento ("fora deste PR", "seguimento", "pendência", "ficou de fora")
+     vira uma linha em docs/coordination/COMMITMENTS.md, no MESMO PR, ou uma issue
+     aberta com label `ficou-de-fora`; cite o C-AAAA-NNN ou o #numero aqui. Sem
+     isso, o item morre no merge. Se não há adiamento, escreva "nenhum". -->
+
+- nenhum
