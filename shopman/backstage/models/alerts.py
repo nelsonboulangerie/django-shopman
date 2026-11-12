@@ -345,6 +345,10 @@ class OperatorAlert(models.Model):
         # do iFood) e a ação mora no pedido: "Tentar de novo". Fecha quando o
         # ``confirm`` passa, quando o iFood confirma ou quando o pedido acaba.
         ("ifood_accept_not_delivered", "iFood não recebeu o aceite"),
+        # O gestor fechou no calendário um dia que já tinha pedido em aberto
+        # marcado (encomenda paga, inclusive). Fechar não cancela nem remarca:
+        # o aviso, um por pedido, é para alguém remarcar ou falar com o cliente.
+        ("order_on_closed_day", "Pedido marcado para dia fechado"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),
@@ -415,6 +419,7 @@ class OperatorAlert(models.Model):
         "ifood_cancellation_refused",
         "ifood_accept_not_delivered",
         "fiscal_return_note_due",
+        "order_on_closed_day",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)
