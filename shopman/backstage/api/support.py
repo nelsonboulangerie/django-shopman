@@ -270,9 +270,11 @@ class SupportTicketListCreateView(APIView):
 
         client_uuid = data.pop("client_uuid", None)
         if client_uuid:
-            existing = SupportTicket.objects.filter(
-                client_uuid=client_uuid, requester=request.user
-            ).first()
+            existing = SupportTicket.objects.filter(client_uuid=client_uuid).first()
+            if existing and existing.requester_id != request.user.pk:
+                raise ValidationError(
+                    {"client_uuid": "Este UUID já pertence a outro chamado."}
+                )
             if existing:
                 return Response(
                     _ticket_payload(existing, include_thread=True), status=200
