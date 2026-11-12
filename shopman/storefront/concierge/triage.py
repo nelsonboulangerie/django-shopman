@@ -243,9 +243,9 @@ def rules_summary(intent: str, text: str) -> str:
 
 
 def _model_enabled() -> bool:
-    from .service import config
-
     from shopman.shop import ai
+
+    from .service import config
 
     return bool(config().get("triage_with_model")) and ai.is_configured("triage")
 

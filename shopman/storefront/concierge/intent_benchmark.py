@@ -32,7 +32,6 @@ import statistics
 import time
 from dataclasses import dataclass, field
 
-
 from shopman.shop.services.ai_pricing import Price
 
 logger = logging.getLogger(__name__)
