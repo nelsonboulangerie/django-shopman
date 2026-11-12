@@ -852,7 +852,6 @@ function nuxtIcon(icon: string): string {
         v-if="card.ifood_logistics_label"
         class="self-start"
         color="info"
-        variant="subtle"
         icon="i-lucide-bike"
         :label="card.ifood_logistics_label"
         data-ifood-logistics
