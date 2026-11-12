@@ -170,9 +170,7 @@ async function submitDev(): Promise<void> {
   <NuxtModal v-model:open="isOpen" title="Suporte">
     <template #body>
       <div class="flex max-h-[75vh] flex-col gap-4 overflow-y-auto" data-support-panel>
-        <p v-if="error" class="rounded bg-error/10 px-3 py-2 text-sm text-error" role="alert" data-support-error>
-          {{ error }}
-        </p>
+        <NuxtAlert v-if="error" color="error" :title="error" data-support-error />
 
         <div v-if="ticket" class="flex flex-col gap-4" data-support-ticket>
           <div class="flex items-center gap-2">
@@ -273,20 +271,20 @@ async function submitDev(): Promise<void> {
             <p class="text-xs text-muted">O PR cita o compromisso no corpo.</p>
           </section>
 
-          <form v-if="canReply(ticket)" class="flex flex-col gap-2" @submit.prevent="send">
+          <div v-if="canReply(ticket)" class="flex flex-col gap-2">
             <NuxtTextarea v-model="replyBody" :rows="3" placeholder="Escreva uma mensagem" />
             <div class="flex items-center justify-between gap-2">
               <NuxtCheckbox v-if="capabilities.triage" v-model="internalNote" label="Nota interna" />
               <OperatorButton
-                type="submit"
                 label="Enviar"
                 icon="i-lucide-send"
                 size="sm"
                 :loading="pending"
                 :disabled="!replyBody.trim()"
+                @click="send"
               />
             </div>
-          </form>
+          </div>
         </div>
 
         <div v-else class="flex flex-col gap-4" data-support-list>
@@ -312,10 +310,9 @@ async function submitDev(): Promise<void> {
             />
           </div>
 
-          <form
+          <div
             v-if="newOpen && capabilities.create"
             class="flex flex-col gap-2 rounded border border-default p-3"
-            @submit.prevent="submitNew"
           >
             <NuxtSelect v-model="newType" :items="typeItems" value-key="value" label-key="label" size="sm" />
             <NuxtTextarea
@@ -324,13 +321,13 @@ async function submitDev(): Promise<void> {
               placeholder="O que aconteceu? O contexto da tela já vai junto."
             />
             <OperatorButton
-              type="submit"
               label="Abrir chamado"
               size="sm"
               :loading="pending"
               :disabled="!newDescription.trim()"
+              @click="submitNew"
             />
-          </form>
+          </div>
 
           <OperatorScreenState
             v-if="!pending && !visibleTickets.length"
