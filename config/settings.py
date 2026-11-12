@@ -1616,7 +1616,7 @@ SHOPMAN_CONSENT_IP_RETENTION_DAYS = min(
 # O atendente que vende pelo chat. A LÍNGUA é do modelo; o DINHEIRO é do código:
 # preço, disponibilidade, sacola, prazo e pagamento saem das ferramentas
 # (services do Shopman), nunca do texto gerado. Desligado por padrão: ligar é
-# `SHOPMAN_CONCIERGE_ENABLED=true` + credencial da Anthropic (`AI_ASSIST_API_KEY`).
+# `SHOPMAN_CONCIERGE_ENABLED=true` + conexão de IA do propósito `concierge` liberada para mensagem de cliente.
 # Cada connection declara adapter, conta, canal e autenticação próprios e permanece
 # inativa até seu gate explícito. Nenhuma credencial liga outro provider por efeito
 # colateral.

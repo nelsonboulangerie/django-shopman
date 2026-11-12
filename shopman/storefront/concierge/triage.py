@@ -39,7 +39,6 @@ import re
 import unicodedata
 from dataclasses import asdict, dataclass, field
 
-from django.conf import settings
 from django.utils import timezone
 
 from . import allergens
@@ -244,22 +243,30 @@ def rules_summary(intent: str, text: str) -> str:
 def _model_enabled() -> bool:
     from .service import config
 
-    return bool(config().get("triage_with_model")) and bool(
-        (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
-    )
+    from shopman.shop import ai
+
+    return bool(config().get("triage_with_model")) and ai.is_configured("triage")
 
 
 def _model_toggle() -> bool:
-    """A chave ``triage_with_model`` sozinha: o Jev não depende da credencial da Anthropic."""
+    """A chave ``triage_with_model`` sozinha: o Jev não depende da conexão da triagem."""
     from .service import config
 
     return bool(config().get("triage_with_model"))
 
 
 def _model_name() -> str:
-    from .service import config
+    from shopman.shop import ai
 
-    return str(config().get("triage_model") or config().get("model") or settings.AI_ASSIST_MODEL)
+    return ai.resolve("triage").model
+
+
+def build_client():
+    """O cliente da conexão de IA do propósito ``triage``."""
+    from shopman.shop import ai
+
+    client, _model = ai.anthropic_client("triage", timeout=15.0, max_retries=1)
+    return client
 
 
 def build_prompt(text: str, context: list[tuple[str, str]]) -> str:
@@ -288,11 +295,7 @@ def classify_with_model(text: str, context: list[tuple[str, str]], *, client=Non
     if client is None:
         if not _model_enabled():
             return None
-        import anthropic
-
-        client = anthropic.Anthropic(
-            api_key=settings.AI_ASSIST_API_KEY, timeout=15.0, max_retries=1
-        )
+        client = build_client()
     try:
         message = client.messages.create(
             model=_model_name(),

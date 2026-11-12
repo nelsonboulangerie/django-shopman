@@ -22,6 +22,7 @@ PURPOSES = {
     "concierge": "Concierge: atendimento no WhatsApp",
     "triage": "Triagem das mensagens de clientes",
     "intents": "Leitura de intenções das mensagens (e seu placar)",
+    "labeling": "Pré-rótulo do gabarito do piloto de intenções",
     "copy": "Sugestão de texto no catálogo",
     "marketing": "Sugestão de texto nos anúncios",
     "recipe": "Leitura de receita por foto ou texto",
@@ -31,7 +32,7 @@ PURPOSES = {
 }
 
 #: Propósitos que mandam texto de cliente ao provedor.
-CUSTOMER_TEXT_PURPOSES = frozenset({"concierge", "triage", "intents"})
+CUSTOMER_TEXT_PURPOSES = frozenset({"concierge", "triage", "intents", "labeling"})
 
 
 class AINotConfigured(Exception):
@@ -161,6 +162,24 @@ def anthropic_client(purpose: str, *, timeout: float | None = None, max_retries:
     if max_retries is not None:
         kwargs["max_retries"] = max_retries
     return anthropic.Anthropic(**kwargs), resolved.model
+
+
+#: Endereço oficial do Jev quando a conexão não diz outro.
+JEV_DEFAULT_URL = "https://api.typesafe.ai/v1/systemone"
+
+
+def jev_endpoint(*, customer_text: bool) -> tuple[str, str, str]:
+    """``(url, chave, modelo)`` do Jev (propósito ``decision``).
+
+    ``customer_text`` diz se o pedido leva mensagem de cliente: aí a conexão
+    precisa estar liberada para isso, como qualquer outra.
+    """
+    resolved = resolve("decision")
+    if customer_text and not resolved.customer_text_approved:
+        raise AINotConfigured(
+            f"a conexão de IA '{resolved.ref}' não está liberada para receber mensagem de cliente"
+        )
+    return resolved.base_url or JEV_DEFAULT_URL, resolved.api_key, resolved.model
 
 
 def connection_price(model: str) -> tuple[float, float] | None:

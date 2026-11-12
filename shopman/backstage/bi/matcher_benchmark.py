@@ -34,7 +34,6 @@ import statistics
 import time
 from dataclasses import dataclass, field
 
-from django.conf import settings
 
 from shopman.backstage.bi.mapping import DEFAULT_MIN_SCORE, normalize_name
 from shopman.shop.services.ai_pricing import Price
@@ -155,11 +154,13 @@ class JevMatcher:
     name = "jev"
 
     def __init__(self, *, timeout: float = 15.0, session=None):
-        self.api_key = (getattr(settings, "JEV_API_KEY", "") or "").strip()
-        if not self.api_key:
-            raise MatcherNotConfigured("Jev não configurado. Defina JEV_API_KEY.")
-        self.url = settings.JEV_API_URL
-        self.model = settings.JEV_MODEL
+        from shopman.shop import ai
+
+        try:
+            # Só nome de produto sai da casa: sem texto de cliente.
+            self.url, self.api_key, self.model = ai.jev_endpoint(customer_text=False)
+        except ai.AINotConfigured as exc:
+            raise MatcherNotConfigured(f"Jev não configurado: {exc}.") from exc
         self.timeout = timeout
         if session is None:
             import requests
@@ -252,7 +253,7 @@ _JSON_OBJECT = re.compile(r"\{.*\}", re.S)
 
 
 class LLMMatcher:
-    """Um modelo da Anthropic (credencial de ``AI_ASSIST_*``) respondendo a escolha em JSON.
+    """Um modelo no formato Anthropic (conexão de IA ``benchmark``) respondendo a escolha em JSON.
 
     Chama o SDK direto, e não ``copy_assist.suggest``, porque o piloto precisa do
     ``usage`` (tokens) que o transporte de texto descarta. Um concorrente por
@@ -262,15 +263,17 @@ class LLMMatcher:
     """
 
     def __init__(self, *, model: str | None = None, timeout: float = 60.0, client=None):
-        api_key = (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
-        if client is None and not api_key:
-            raise MatcherNotConfigured("LLM não configurado. Defina AI_ASSIST_API_KEY.")
-        if client is None:
-            import anthropic
+        from shopman.shop import ai
 
-            client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
+        try:
+            if client is None:
+                client, default_model = ai.anthropic_client("benchmark", timeout=timeout)
+            else:
+                default_model = "" if model else ai.resolve("benchmark").model
+        except ai.AINotConfigured as exc:
+            raise MatcherNotConfigured(f"LLM não configurado: {exc}.") from exc
         self.client = client
-        self.model = model or settings.AI_ASSIST_MODEL
+        self.model = model or default_model
         self.name = f"llm:{self.model}"
 
     def build_prompt(self, case: Case, keyed: dict[str, CatalogEntry]) -> str:

@@ -571,7 +571,7 @@ def run_plural(cases: list[dict], *, reader: str = "local", client=None) -> Plur
     if reader == "model" and client is None:
         client = intents.build_client()
         if client is None:
-            raise ValueError("leitura com o modelo indisponível neste ambiente (AI_ASSIST_API_KEY vazia).")
+            raise ValueError("leitura com o modelo indisponível neste ambiente (sem conexão de IA para intents).")
     report = PluralReport(reader=reader)
     team = intents.TEAM_ACTS | intents.OTHER_DESK_ACTS
     config = {**(getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}), "triage_with_model": False}

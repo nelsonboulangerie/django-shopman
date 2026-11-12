@@ -15,11 +15,11 @@ Concorrentes:
 - ``llm:<modelo>``: um modelo da Anthropic devolvendo a lista em JSON.
 - ``jev``: TypeSafe Jev, uma pergunta sim/não por intenção numa chamada só.
 
-**Texto de cliente só sai da casa para provedor aprovado.** Os dois últimos
-mandam a mensagem (redigida) para fora; cada um só entra se o provedor dele
-estiver em ``SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED`` (``anthropic`` aprovado
-pelo dono em 23/09/2026; ``typesafe`` em 02/10/2026, D-028) — o desenho do Marketing, em que
-credencial sozinha nunca liga provedor. Todos recebem o MESMO texto: a versão
+**Texto de cliente só sai da casa para conexão liberada.** Os dois últimos
+mandam a mensagem (redigida) para fora; cada um só entra se a conexão de IA
+dele estiver marcada como "pode receber mensagem de cliente" (``shopman.shop.ai``;
+Anthropic aprovada pelo dono em 23/09/2026, Jev em 02/10/2026, D-028): o desenho
+do Marketing, em que credencial sozinha nunca liga provedor. Todos recebem o MESMO texto: a versão
 redigida que a pessoa confere (``redact_observation_text``).
 """
 
@@ -32,7 +32,6 @@ import statistics
 import time
 from dataclasses import dataclass, field
 
-from django.conf import settings
 
 from shopman.shop.services.ai_pricing import Price
 
@@ -117,16 +116,6 @@ def gold_samples(*, limit: int | None = None) -> list[Sample]:
     ]
 
 
-def provider_approved(provider: str) -> bool:
-    return provider in getattr(settings, "SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED", frozenset())
-
-
-def _require_provider(provider: str) -> None:
-    if not provider_approved(provider):
-        raise ContenderNotConfigured(
-            f"manda texto de cliente (redigido) para {provider}, que não está em "
-            "SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED — decisão do dono."
-        )
 
 
 # ── Concorrentes ────────────────────────────────────────────────────────────
@@ -214,17 +203,21 @@ def build_llm_prompt(sample: Sample, categories: list[Category]) -> str:
 class LLMContender:
     """Um modelo da Anthropic devolvendo o conjunto de intenções em JSON."""
 
-    def __init__(self, *, model: str | None = None, timeout: float = 60.0, client=None):
-        _require_provider("anthropic")
-        api_key = (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
-        if client is None and not api_key:
-            raise ContenderNotConfigured("LLM não configurado. Defina AI_ASSIST_API_KEY.")
-        if client is None:
-            import anthropic
+    def __init__(
+        self, *, model: str | None = None, timeout: float = 60.0, client=None, purpose: str = "intents"
+    ):
+        # Texto de cliente (redigido): só para conexão liberada (``shopman.shop.ai``).
+        from shopman.shop import ai
 
-            client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
+        try:
+            if client is None:
+                client, default_model = ai.anthropic_client(purpose, timeout=timeout)
+            else:
+                default_model = "" if model else ai.resolve(purpose).model
+        except ai.AINotConfigured as exc:
+            raise ContenderNotConfigured(f"LLM não configurado: {exc}.") from exc
         self.client = client
-        self.model = model or settings.AI_ASSIST_MODEL
+        self.model = model or default_model
         self.name = f"llm:{self.model}"
 
     def predict(self, sample: Sample, categories: list[Category]) -> Prediction:
@@ -277,12 +270,12 @@ class JevContender:
     name = "jev"
 
     def __init__(self, *, timeout: float = 15.0, session=None):
-        _require_provider("typesafe")
-        self.api_key = (getattr(settings, "JEV_API_KEY", "") or "").strip()
-        if not self.api_key:
-            raise ContenderNotConfigured("Jev não configurado. Defina JEV_API_KEY.")
-        self.url = settings.JEV_API_URL
-        self.model = settings.JEV_MODEL
+        from shopman.shop import ai
+
+        try:
+            self.url, self.api_key, self.model = ai.jev_endpoint(customer_text=True)
+        except ai.AINotConfigured as exc:
+            raise ContenderNotConfigured(f"Jev não configurado: {exc}.") from exc
         self.timeout = timeout
         if session is None:
             import requests
