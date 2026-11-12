@@ -557,12 +557,12 @@ def build_contenders(
 
 def prices_for(contenders, *, llm_price_in=None, llm_price_out=None, jev_price_in=0.042):
     """({nome: Price}, [modelos sem preço na tabela])."""
-    from shopman.shop.services.ai_pricing import LLM_PRICES
+    from shopman.shop.services.ai_pricing import model_prices
 
     prices, unpriced = {"jev": Price(jev_price_in, 0.0)}, []
     for contender in contenders:
         if isinstance(contender, LLMContender):
-            table_in, table_out = LLM_PRICES.get(contender.model, (None, None))
+            table_in, table_out = model_prices(contender.model) or (None, None)
             price_in = llm_price_in if llm_price_in is not None else table_in
             price_out = llm_price_out if llm_price_out is not None else table_out
             if price_in is None or price_out is None:

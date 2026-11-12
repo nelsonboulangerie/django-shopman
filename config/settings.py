@@ -1576,37 +1576,14 @@ OFFERMAN = {
     "LABEL_ATTRIBUTES_PROVIDER": "shopman.shop.services.attributes.label_attributes_provider",
 }
 
-# ── Assist de IA (catálogo e anúncios) ───────────────────────────────
-# Sugestão de texto POR CAMPO no painel de produto do Gestor (descrição, legenda
-# social, hashtags) e no card de revisão de anúncio. Sem chave configurada o endpoint
-# responde 503 e a superfície mostra um aviso — nunca um erro: o assist é
-# conveniência, não caminho crítico.
-#
-# O default do MODELO é a resposta canônica: ambiente que não define
-# `AI_ASSIST_MODEL` roda no modelo atual, sem precisar de env var em lugar nenhum. A
-# variável existe só para pinar ou testar outro. A voz de marca NÃO está aqui — é
-# `Shop.brand_voice`, editável no Admin.
-AI_ASSIST_PROVIDER = os.environ.get("AI_ASSIST_PROVIDER", "anthropic")
-AI_ASSIST_API_KEY = os.environ.get("AI_ASSIST_API_KEY", "")
-AI_ASSIST_MODEL = os.environ.get("AI_ASSIST_MODEL", "claude-opus-5")
+# ── IA ─────────────────────────────────────────────────────────────────
+# Nenhuma chave, endereço ou modelo de IA mora aqui. A loja cadastra conexões
+# (Admin → Conexões de IA: formato, endereço, chave cifrada, modelo, preço) e diz
+# por propósito qual usa (`Shop.ai_routes`). Toda chamada passa por
+# `shopman/shop/ai.py`. Texto de cliente só vai a conexão liberada para isso.
+# Era `AI_ASSIST_*`/`JEV_*` por env até 12/11/2026 (ADR-042).
 
-# Piloto do de-para do B.I. (`benchmark_alias_matchers`): TypeSafe Jev contra o
-# fuzzy de hoje e o LLM acima. Só o comando de piloto lê isto; sem chave, o Jev
-# fica fora do placar e o resto roda.
-JEV_API_KEY = os.environ.get("JEV_API_KEY", "")
-JEV_API_URL = os.environ.get("JEV_API_URL", "https://api.typesafe.ai/v1/systemone")
-JEV_MODEL = os.environ.get("JEV_MODEL", "jev-latest")
-
-# Piloto de intenções da mensageria (INTENT-PILOT-PLAN). Texto de cliente, mesmo
-# redigido, só sai da casa para os provedores desta lista — credencial sozinha
-# nunca liga provedor (a regra do Marketing). `anthropic` está aprovado pelo dono
-# em 23/09/2026 (já recebe o texto cru quando o concierge atende); `typesafe` (Jev)
-# aprovado por ele em 02/10/2026 (D-028), posto no painel junto com a chave.
-SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset(
-    value.strip().lower()
-    for value in os.environ.get("SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED", "anthropic").split(",")
-    if value.strip()
-)
+# Piloto de intenções da mensageria (INTENT-PILOT-PLAN).
 # O ciclo automático do piloto no `maintenance_worker` (sorteia, pré-rotula, mede).
 # Sem mensagem observada ele não faz nada; desligar é só pôr false.
 SHOPMAN_INTENT_PILOT_ENABLED = _env_bool("SHOPMAN_INTENT_PILOT_ENABLED", True)
@@ -1665,9 +1642,8 @@ SHOPMAN_CONCIERGE = {
     "output_retry_enabled": _env_bool("CONCIERGE_OUTPUT_RETRY_ENABLED", False),
     "transfer_enabled": _env_bool("CONCIERGE_TRANSFER_ENABLED", False),
     "enabled": _env_bool("SHOPMAN_CONCIERGE_ENABLED", False),
-    # Modelo do concierge. Sonnet 5 por padrão: latência de chat e custo de
-    # centavos por conversa. `claude-opus-5` é troca de env, sem deploy de código.
-    "model": os.environ.get("CONCIERGE_MODEL", "claude-sonnet-5"),
+    # O modelo do concierge, da triagem e da leitura de intenções NÃO mora aqui:
+    # é a rota de IA de cada propósito (`Shop.ai_routes`, `shopman/shop/ai.py`).
     "effort": os.environ.get("CONCIERGE_EFFORT", "medium"),
     # Raciocínio adaptativo ligado explicitamente (Sonnet 5 / Opus 5). Sem ele o
     # modelo pode escrever a chamada de ferramenta como texto. Haiku 4.5 não aceita.
@@ -1697,11 +1673,10 @@ SHOPMAN_CONCIERGE = {
     # Triagem (D32, aprovada pelo dono em 02/10/2026): toda mensagem ganha uma das
     # 12 intenções e uma urgência. A regra local roda sempre; com o modelo ligado,
     # ele propõe intenção, urgência e o resumo de uma ou duas linhas. Sem chave ou
-    # com falha, vale a regra local. Modelo vazio = o mesmo do concierge.
+    # com falha, vale a regra local. O modelo é o da rota de IA `triage`.
     "triage_with_model": _env_bool("CONCIERGE_TRIAGE_WITH_MODEL", True),
-    "triage_model": os.environ.get("CONCIERGE_TRIAGE_MODEL", ""),
     # Quem propõe a intenção quando o modelo está ligado: `anthropic` (o modelo
-    # acima) ou `jev` (TypeSafe; pede `typesafe` aprovado e `JEV_API_KEY`). O dono
+    # da rota `triage`) ou `jev` (a conexão de IA do propósito `decision`). O dono
     # quer testar o Jev decidindo (02/10/2026, D-028): enquanto a Concierge observa,
     # o piloto mede o Jev em sombra (`intent_pilot.shadow_triage`); esta chave é a
     # troca para quando ela atender. A regra local sensível vence os dois.
@@ -1719,7 +1694,6 @@ SHOPMAN_CONCIERGE = {
         for value in os.environ.get("CONCIERGE_INTENTS_SUBSCRIBERS", "").split(",")
         if value.strip()
     ],
-    "intents_model": os.environ.get("CONCIERGE_INTENTS_MODEL", "claude-haiku-4-5"),
     # Primeira connection real. Novos providers/canais entram como irmãos com o
     # mesmo contrato; nenhuma view ou service recebe defaults de transporte.
     "connections": {

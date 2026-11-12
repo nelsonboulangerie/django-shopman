@@ -30,6 +30,24 @@ LLM_PRICES = {
 }
 
 
+def model_prices(model: str) -> tuple[float, float] | None:
+    """(entrada, saída) em US$/M: a tabela pública, senão o preço cadastrado na conexão de IA.
+
+    Modelo de outro provedor (DeepSeek, Kimi) não está na tabela; o preço vem da
+    ``AIConnection`` que o usa como padrão. Sem nenhum dos dois, ``None``: custo
+    desconhecido, e o teto de gasto deixa o modelo de fora.
+    """
+    prices = LLM_PRICES.get(model)
+    if prices is not None:
+        return prices
+    try:
+        from shopman.shop.ai import connection_price
+
+        return connection_price(model)
+    except Exception:  # noqa: BLE001 - sem banco (teste puro, import cedo): só a tabela
+        return None
+
+
 @dataclass
 class Price:
     """US$ por milhão de tokens."""
@@ -55,7 +73,7 @@ def usage_cost(model: str, usage: Mapping) -> float | None:
     conta zero. Modelo fora da tabela devolve ``None``: custo desconhecido não é
     custo zero.
     """
-    prices = LLM_PRICES.get(model)
+    prices = model_prices(model)
     if prices is None:
         return None
     price_in, price_out = prices
