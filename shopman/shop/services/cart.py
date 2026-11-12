@@ -222,7 +222,7 @@ def add_item(
         qty=qty,
         session_key=resolved_key,
         channel_ref=channel_ref,
-        cart_date=_cart_date(session),
+        cart_date=session_cart_date(session),
     )
     _refuse_a_second_date(
         session_key=resolved_key, sku=sku, requested_qty=qty, new_hold_id=hold_ids[0] if hold_ids else None,
@@ -314,7 +314,7 @@ def update_qty(
             new_qty=Decimal(str(qty)) + others,
             session_key=session_key,
             channel_ref=channel_ref,
-            target_date=_cart_date(session),
+            target_date=session_cart_date(session),
         )
         if not result["ok"]:
             # A recusa não toca na reserva que existia: o teto da linha é o que
@@ -743,7 +743,7 @@ def clear_session(*, session_key: str, channel_ref: str) -> None:
     session_service.abandon_session(session_key=session_key, channel_ref=channel_ref)
 
 
-def _cart_date(session: Session | None) -> date | None:
+def session_cart_date(session: Session | None) -> date | None:
     """A data da sacola: a que as reservas dela já prometem, ou a escolhida.
 
     A reserva manda (P2 do WP-DATA-E-PROMESSA: a data da sacola é a que o

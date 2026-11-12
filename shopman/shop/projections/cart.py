@@ -18,8 +18,11 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
+
+from django.utils import timezone
 
 from shopman.shop import product_options
 
@@ -288,7 +291,7 @@ def build_cart(
     # das linhas, logo abaixo, sai do memo. A resposta é a mesma: o trilho só
     # depende do conjunto de SKUs da sacola, que já está decidido aqui.
     upsell = _upsell(set(skus), channel_ref=channel_ref)
-    avail_map, own_holds = _availability(skus, session_key, channel_ref)
+    avail_map, own_holds = _availability(skus, session_key, channel_ref, _future_cart_date(session))
     planned_by_sku = _planned_holds(session_key, skus)
     earlier_by_sku = _earlier_available_dates(raw_items, planned_by_sku, channel_ref)
 
@@ -449,8 +452,23 @@ def _made_to_order_skus(products: list, skus: list[str]) -> frozenset[str]:
         return frozenset()
 
 
+def _future_cart_date(session) -> date | None:
+    """A data da sacola quando ela é de outro dia; ``None`` para hoje ou sem data.
+
+    A fonte é a mesma da reserva (``cart.session_cart_date``): o teto da linha
+    lê a data em que a sacola reserva. Sacola de hoje (ou sem data) segue na
+    leitura canônica do cardápio, sem data explícita.
+    """
+    from shopman.shop.services.cart import session_cart_date
+
+    day = session_cart_date(session)
+    if day is None or day <= timezone.localdate():
+        return None
+    return day
+
+
 def _availability(
-    skus: list[str], session_key: str, channel_ref: str,
+    skus: list[str], session_key: str, channel_ref: str, target_date: date | None = None,
 ) -> tuple[dict[str, dict | None], dict[str, Decimal]]:
     """Canonical catalog availability + own-hold lookup.
 
@@ -458,13 +476,16 @@ def _availability(
     enabled, the first reservable future batch as a separate promise. Passing
     the waitlist horizon directly to Stockman made a zero-day product's fresh
     stock look expired in the cart even while the menu correctly offered it.
+
+    A sacola com data futura (``target_date``) lê ESSA data, a mesma em que a
+    reserva sai: o teto da linha não pode ser o pronto de hoje.
     """
     try:
         from shopman.shop.projections import catalog_context
         from shopman.shop.services import availability as availability_service
 
         avail_map = catalog_context.availability_for_skus(
-            skus, channel_ref=channel_ref,
+            skus, channel_ref=channel_ref, target_date=target_date,
         )
         own_holds = availability_service.own_holds_by_sku(session_key, skus)
         return avail_map, own_holds
