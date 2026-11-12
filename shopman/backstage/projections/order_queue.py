@@ -39,6 +39,7 @@ from shopman.backstage.projections.order_attention import (
     AcceptanceTimer,
     PrepExpectation,
     QueueAwarenessProjection,
+    acceptance_timer_goal,
     build_queue_awareness,
     card_attention,
     prep_expectation,
@@ -1792,8 +1793,8 @@ def board_rail_counts() -> dict[str, int]:
     """Os selos do rail do Gestor fora do quadro (G26): pedidos novos e o que está na Saída.
 
     As MESMAS réguas do quadro (``build_two_zone_queue``): balcão do PDV fica de
-    fora, encomenda de data futura não é pedido novo do dia, e a Saída soma o
-    pronto e o que saiu para entrega. Só contagem, sem montar cartão nenhum.
+    fora, todo pedido novo conta na Entrada (inclusive a encomenda, que tem prazo
+    de aceite), e a Saída soma o pronto e o que saiu para entrega. Só contagem, sem montar cartão nenhum.
     """
     from shopman.shop.services.pos_sales_mode import is_pos_counter_order
 
@@ -1803,7 +1804,7 @@ def board_rail_counts() -> dict[str, int]:
         )
         if not is_pos_counter_order(order)
     ]
-    intake = sum(1 for order in orders if order.status == Order.Status.NEW and not _is_future_preorder(order))
+    intake = sum(1 for order in orders if order.status == Order.Status.NEW)
     exit_ = sum(1 for order in orders if order.status != Order.Status.NEW)
     return {"intake": intake, "exit": exit_}
 
@@ -1869,16 +1870,14 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     )
     # Uma consulta ao livro para todos os cards: o troco que saiu e voltou.
     courier_change = operator_orders.courier_change_by_order([o.ref for o in all_orders if _is_delivery(o)])
-    # Encomenda para data futura não é trabalho do dia — vive no grupo "Agendados",
-    # nunca na Entrada/Preparo do dia. Vale para pedido NOVO (ainda a aceitar) e
-    # confirmado: o card de encomenda carrega o badge "Agendado · <data>", então
-    # tê-lo na Entrada com esse badge é contraditório para o operador. O card novo
-    # mantém o prazo de confirmação (auto-confirm) e o botão de aceitar; o
-    # despertador (preorder.activate) devolve o pedido ao fluxo na data (WP-D).
+    # Todo pedido NOVO mora na Entrada, qualquer que seja a data: aceitar tem prazo
+    # (60 min na encomenda, dono 09/11) e sem aceite o pedido se cancela e
+    # estorna. Escondê-lo em "Agendados" fazia o operador perder o prazo (beta
+    # 09/11). Aceita, a encomenda de data futura sai do dia e vai para "Agendados";
+    # o despertador (preorder.activate) a devolve ao fluxo na data (WP-D).
     intake = tuple(
         _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, deadline=deadlines.get(o.ref))
         for o in new_orders
-        if not _is_future_preorder(o)
     )
     prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
     ready_orders = [o for o in all_orders if o.status == "ready"]
@@ -1890,14 +1889,15 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     ready_moments = ready_moments_for(ready_orders)
     expectation = prep_expectation(now=timezone.now())
     prep = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, expectation=expectation) for o in prep_orders if not _is_future_preorder(o))
-    # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
-    # seguem nas colunas de expedição mesmo que a data combinada seja futura.
+    # Só a encomenda já aceita e ainda antes da expedição vira "Agendados" (a nova
+    # está na Entrada); ready/dispatched/delivered seguem nas colunas de expedição
+    # mesmo que a data combinada seja futura.
     future_preorders = [
         o for o in all_orders
-        if o.status in ("new", "accepted", "preparing") and _is_future_preorder(o)
+        if o.status in ("accepted", "preparing") and _is_future_preorder(o)
     ]
     preorders = tuple(
-        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user)
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
     preparing_count = len(prep)
@@ -2171,7 +2171,7 @@ def _build_card(
     now = timezone.now()
     elapsed = (now - order.created_at).total_seconds()
 
-    timer_class = _timer_class(order.status, elapsed)
+    timer_class = _timer_class(order.status, *_acceptance_clock(order, deadline, now))
 
     queue_items = getattr(order, "_queue_items", None)
     if queue_items is None:
@@ -3251,11 +3251,31 @@ def _format_customer_display(value: str) -> str:
     return label
 
 
-def _timer_class(status: str, elapsed: float) -> str:
+#: O prazo de aceite quando o pedido novo não tem timer agendado (o do dia).
+ACCEPT_WINDOW_SECONDS = 300
+
+
+def _acceptance_clock(order: Order, deadline, now) -> tuple[float, float]:
+    """(segundos corridos, segundos do prazo) do aceite do pedido novo.
+
+    Com timer agendado (``confirmation.timeout``), conta o prazo DELE: 5 min no
+    pedido do dia, 60 na encomenda e no pedido que chega com a casa fechada (dono,
+    09/11; ``lifecycle.acceptance_timeout_minutes``). Contar 5 min da criação para
+    todos deixava a encomenda vermelha aos 4 min, com 56 ainda pela frente.
+    """
+    timer = acceptance_timer_goal(deadline if isinstance(deadline, AcceptanceTimer) else None)
+    if timer is not None:
+        minutes, since = timer
+        return (now - since).total_seconds(), minutes * 60
+    return (now - order.created_at).total_seconds(), ACCEPT_WINDOW_SECONDS
+
+
+def _timer_class(status: str, elapsed: float, window: float = ACCEPT_WINDOW_SECONDS) -> str:
+    """O tom do aceite: no prazo até 60% dele, atenção até 80%, urgente depois."""
     if status == "new":
-        if elapsed < 180:
+        if elapsed < window * 0.6:
             return "timer-ok"
-        elif elapsed < 240:
+        elif elapsed < window * 0.8:
             return "timer-warning"
         else:
             return "timer-urgent"
