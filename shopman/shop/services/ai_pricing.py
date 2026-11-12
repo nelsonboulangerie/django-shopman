@@ -18,8 +18,11 @@ régua da Concierge (``storefront/concierge/metrics.py``).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 LLM_PRICES = {
     "claude-haiku-4-5": (1.00, 5.00),
@@ -45,6 +48,7 @@ def model_prices(model: str) -> tuple[float, float] | None:
 
         return connection_price(model)
     except Exception:  # noqa: BLE001 - sem banco (teste puro, import cedo): só a tabela
+        logger.debug("ai_pricing.connection_price_unreadable model=%s", model, exc_info=True)
         return None
 
 

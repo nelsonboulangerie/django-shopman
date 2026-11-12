@@ -10,8 +10,8 @@ do catálogo). Nada aqui grava alias; o piloto só mede.
 - ``jev``: o modelo de decisão da TypeSafe. Recebe os K candidatos mais
   parecidos (a mesma lista curta do fuzzy) mais a opção ``other`` e devolve
   uma escolha com probabilidade. Cobra só entrada.
-- ``llm:<modelo>``: o mesmo pedido a um modelo da Anthropic (credencial de
-  ``AI_ASSIST_*``), com resposta em JSON — o do dia e o Haiku, lado a lado. É a
+- ``llm:<modelo>``: o mesmo pedido a um modelo no formato Anthropic (conexão de
+  IA do propósito ``benchmark``), com resposta em JSON — o do dia e o Haiku, lado a lado. É a
   linha de base que o Jev promete bater em custo e tempo.
 - ``embed``: embeddings locais (``fastembed``), o produto mais próximo em
   significado no catálogo inteiro. Custo zero, nada sai da casa.
@@ -33,7 +33,6 @@ import re
 import statistics
 import time
 from dataclasses import dataclass, field
-
 
 from shopman.backstage.bi.mapping import DEFAULT_MIN_SCORE, normalize_name
 from shopman.shop.services.ai_pricing import Price

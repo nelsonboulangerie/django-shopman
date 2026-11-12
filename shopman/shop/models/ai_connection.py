@@ -77,8 +77,8 @@ class AIConnection(models.Model):
         ),
     )
     is_active = models.BooleanField("ativa", default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField("criada em", auto_now_add=True)
+    updated_at = models.DateTimeField("atualizada em", auto_now=True)
 
     class Meta:
         app_label = "shop"

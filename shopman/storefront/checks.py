@@ -29,8 +29,12 @@ sendo o ensaio manual do checklist (``docs/plans/WHATSAPP-CONCIERGE-PLAN.md``).
 
 from __future__ import annotations
 
+import logging
+
 from django.conf import settings
 from django.core.checks import Warning, register
+
+logger = logging.getLogger(__name__)
 
 MANYCHAT_PROVIDER = "manychat"
 
@@ -137,4 +141,5 @@ def _concierge_ai_problem() -> str:
 
         return ai.explain("concierge")
     except Exception:  # noqa: BLE001 - check roda antes do migrate, sem tabela
+        logger.debug("concierge.check.ai_unreadable", exc_info=True)
         return ""

@@ -7,7 +7,7 @@ substitui (vazio mantém a atual) e a lista mostra os quatro últimos caracteres
 from django import forms
 from django.contrib import admin
 from unfold.admin import ModelAdmin
-from unfold.widgets import UnfoldAdminPasswordWidget
+from unfold.widgets import UnfoldAdminPasswordWidget, UnfoldBooleanSwitchWidget
 
 from shopman.shop.models import AIConnection
 
@@ -20,7 +20,7 @@ class AIConnectionForm(forms.ModelForm):
         widget=UnfoldAdminPasswordWidget(render_value=False),
         help_text="Cole a chave para gravar ou trocar. Vazio mantém a chave atual.",
     )
-    clear_api_key = forms.BooleanField(label="apagar a chave", required=False)
+    clear_api_key = forms.BooleanField(label="apagar a chave", required=False, widget=UnfoldBooleanSwitchWidget)
 
     class Meta:
         model = AIConnection

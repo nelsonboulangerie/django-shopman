@@ -9,12 +9,14 @@
     "IFOOD",
     "COMTELE",
     "MACHINE",
-    "TAON"
+    "TAON",
+    "AI_",
+    "JEV"
   ],
   "totals": {
-    "settings": 311,
+    "settings": 310,
     "env": 24,
-    "settings_env": 172
+    "settings_env": 171
   },
   "files": {
     "config/asgi.py": {
@@ -40,7 +42,7 @@
       "env": 1
     },
     "config/settings.py": {
-      "settings_env": 171
+      "settings_env": 170
     },
     "config/settings_test.py": {
       "settings_env": 1
@@ -485,9 +487,6 @@
       "settings": 1
     },
     "shopman/storefront/concierge/dialogue.py": {
-      "settings": 1
-    },
-    "shopman/storefront/concierge/intent_benchmark.py": {
       "settings": 1
     },
     "shopman/storefront/concierge/intent_pilot.py": {

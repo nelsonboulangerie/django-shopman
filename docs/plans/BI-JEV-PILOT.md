@@ -13,7 +13,7 @@ Base auditada: `origin/main @ ed49a8624`; implementação já integrada pelas PR
 | Benchmark fuzzy × Jev × LLM × embeddings | **DONE** | `matcher_benchmark.py` + `benchmark_alias_matchers`, com placar, CSV e testes de parsing/falha segura. |
 | Execução semanal e leitura no Admin | **REVISTO 11/11/2026** | Saiu do `maintenance_worker` depois de gastar cerca de US$ 1.180 de API em loop (28/10 a 11/11). Roda só à mão, com travas de custo; ver "Como roda". |
 | Medição fuzzy/LLM/embeddings no gabarito real | **PENDING EXTERNO** | Gate: corpus com pelo menos 20 de-paras confirmados, staging autorizado e runtime/pacote disponível. Fixture local não vale como resultado. |
-| Medição Jev | **PENDING EXTERNO** | Gate: cadastro do fornecedor reaberto, `JEV_API_KEY` injetada pelo dono e smoke `--matcher jev --limit 5` validando o contrato; só então rodar o corpus completo. Credencial e chamada externa não são lacuna de código. |
+| Medição Jev | **PENDING EXTERNO** | Gate: cadastro do fornecedor reaberto, chave na conexão de IA `jev` (Admin) posta pelo dono e smoke `--matcher jev --limit 5` validando o contrato; só então rodar o corpus completo. Credencial e chamada externa não são lacuna de código. |
 | Usar vencedor no `suggest_aliases` | **PENDING DECISÃO** | Gate: acerto solo ≥ 50%, zero erro aceito com confiança ≥ 0,9, desempenho superior ao fuzzy, custo por 1.000 itens em centavos, p95 < 1 s e decisão humana registrada. O vencedor apenas propõe; nunca confirma automaticamente. |
 
 Nada foi **SUPERSEDED**: o piloto continua válido. A pendência é produzir
@@ -79,7 +79,7 @@ US$ 1.180. Hoje:
    `pip install fastembed` (não está na imagem; some no próximo deploy) e
    `benchmark_alias_matchers --limit 200 --llm-model claude-haiku-4-5 --llm-model claude-opus-5 --csv /tmp/piloto.csv`.
    A primeira rodada do `embed` baixa o modelo (~0,2 GB).
-3. Quando o cadastro reabrir: `JEV_API_KEY` no ambiente (decisão do dono), rodada de fumaça
+3. Quando o cadastro reabrir: chave na conexão de IA `jev` (Admin → Conexões de IA, decisão do dono), rodada de fumaça
    `benchmark_alias_matchers --matcher jev --limit 5` para validar o formato da resposta, e a rodada
    completa de novo com o Jev no placar.
 

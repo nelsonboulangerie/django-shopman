@@ -37,6 +37,8 @@ import json
 import logging
 import re
 import unicodedata
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 
 from django.utils import timezone
@@ -255,10 +257,24 @@ def _model_toggle() -> bool:
     return bool(config().get("triage_with_model"))
 
 
+#: Modelo trocado só dentro de uma avaliação (``reply_eval --model``); em produção, vazio.
+_MODEL_OVERRIDE: ContextVar[str] = ContextVar("triage_model_override", default="")
+
+
+@contextmanager
+def model_override(model: str):
+    """Troca o modelo da triagem dentro do bloco, sem tocar na rota da loja."""
+    token = _MODEL_OVERRIDE.set(model)
+    try:
+        yield
+    finally:
+        _MODEL_OVERRIDE.reset(token)
+
+
 def _model_name() -> str:
     from shopman.shop import ai
 
-    return ai.resolve("triage").model
+    return _MODEL_OVERRIDE.get() or ai.resolve("triage").model
 
 
 def build_client():

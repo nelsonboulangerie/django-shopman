@@ -26,8 +26,8 @@ class Migration(migrations.Migration):
                 ('price_output_per_m', models.DecimalField(blank=True, decimal_places=4, max_digits=8, null=True, validators=[django.core.validators.MinValueValidator(0)], verbose_name='preço de saída (US$ por milhão de tokens)')),
                 ('customer_text_approved', models.BooleanField(default=False, help_text='Concierge, triagem e leitura de intenções mandam o texto do cliente a este provedor. Só marque depois de aceitar a política de dados dele (LGPD).', verbose_name='pode receber mensagem de cliente')),
                 ('is_active', models.BooleanField(default=True, verbose_name='ativa')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True, verbose_name='criada em')),
+                ('updated_at', models.DateTimeField(auto_now=True, verbose_name='atualizada em')),
             ],
             options={
                 'verbose_name': 'conexão de IA',

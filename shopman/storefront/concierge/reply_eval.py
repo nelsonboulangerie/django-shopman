@@ -221,10 +221,8 @@ def run(cases: list[dict], *, classifier: str = "rules", model: str = "", client
         "triage_classifier": "jev" if classifier == "jev" else "anthropic",
         "triage_with_model": classifier != "rules",
     }
-    if model:
-        config["triage_model"] = model
     report = Report(classifier=classifier if not model else f"{classifier}:{model}")
-    with override_settings(SHOPMAN_CONCIERGE=config):
+    with override_settings(SHOPMAN_CONCIERGE=config), triage.model_override(model):
         for case in cases:
             meter = metrics.TurnMeter()
             context = [(line["who"], line["text"]) for line in case.get("previous", [])]
