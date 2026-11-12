@@ -5,7 +5,7 @@
      PR de manutenção sem pedido: `Pedido: nenhum` e diga o motivo.
      O CI reprova PR novo sem esta linha. -->
 
-Pedido: C-...
+Pedido: DEV-...
 
 ## O que muda
 

@@ -6,7 +6,7 @@
 > `ficou-de-fora`, e a linha daqui é o índice com dono, prazo e prova.
 >
 > `make commitments` mostra o que venceu. O CI reprova PR novo sem
-> `Pedido: C-AAAA-NNN`; o adiamento tem o gate próprio `Ficou de fora declarado`.
+> `Pedido: DEV-AAAA-NNN`; o adiamento tem o gate próprio `Ficou de fora declarado`.
 > Um job semanal abre uma issue com os vencidos e a fecha quando a lista zera.
 
 ## Regras
@@ -48,11 +48,11 @@ make intake q="<as primeiras palavras do dono, literais>" dono="Engenharia"
 O comando devolve o ID e a linha pronta para o PR:
 
 ```
-C-2026-007
-Pedido: C-2026-007
+DEV-2026-007
+Pedido: DEV-2026-007
 ```
 
-O PR novo cita `Pedido: C-2026-007` e a seção `## Compromissos` lista os adiamentos
+O PR novo cita `Pedido: DEV-2026-007` e a seção `## Compromissos` lista os adiamentos
 que ele criou. Pedido que não virou trabalho também fica `ABERTO`, com
 `revisar_em` curto: a linha é o que impede o esquecimento.
 
@@ -61,14 +61,14 @@ que ele criou. Pedido que não virou trabalho também fica `ABERTO`, com
 <!-- commitments:start -->
 | id | tipo | origem | compromisso | dono | criado | revisar_em | gatilho | estado | prova |
 |---|---|---|---|---|---|---|---|---|---|
-| C-2026-001 | compromisso | #2298 / #2300 | B.I.: tempo corrido desde kitchen_released_at e tempo de preparo (Iniciar a Pronto) | Engenharia · B.I. | 2026-11-12 | 2026-11-26 | encomenda futura no ar | EM_EXECUCAO | #2300 |
-| C-2026-002 | compromisso | #2298 / #2301 | Editar preorder_kitchen no Admin, hoje só JSON em Shop.defaults | Engenharia · Admin | 2026-11-12 | 2026-11-26 | #2298 na fila | EM_EXECUCAO | #2303 |
-| C-2026-003 | compromisso | #2292 | Aviso antes de salvar o fechamento do dia (padrão de confirmação em dois passos) | Engenharia · Admin | 2026-11-12 | 2026-12-03 | padrão de confirmação existir no Admin | ABERTO | - |
-| C-2026-004 | compromisso | #2292 | Horário especial que encurta o dia não é conferido contra os horários dos pedidos | Engenharia · Admin | 2026-11-12 | 2026-12-03 | - | ABERTO | - |
-| C-2026-005 | decisao | #2069 | Aprovar ou recusar o modo compacto x padrão (KDS, PDV, Gestor, Receber) | Pablo | 2026-11-02 | 2026-11-14 | resposta do dono à prévia | ABERTO | - |
-| C-2026-006 | achado | STATUS-CONSOLIDACAO-2026-11-10.md | Triar o que restou das 5 frentes sem dono (ADR-025 Doorman, ledger C11, ciclo C6, leitura paralela) | Coordenação | 2026-11-10 | 2026-11-19 | - | ABERTO | - |
-| C-2026-007 | pedido | chat 2026-11-12 | Quero poder, SEMPRE que eu discutir algo, seja uma correção, ou um pedido de uma feature nova, NADA seja perdido, nunca mais! | Engenharia | 2026-11-12 | 2026-11-19 | - | EM_EXECUCAO | - |
-| C-2026-008 | pedido | chat 2026-11-12 | o que mais me importo é com a SAÚDE do REPO! Está muito cansativo e desesperador manter esse desenvolvimento!!! Faça algo a respeito. | Engenharia | 2026-11-12 | 2026-11-19 | - | EM_EXECUCAO | - |
-| C-2026-009 | compromisso | #2303 / #2304 | Preparo da encomenda no painel do produto do Catálogo (Gestor) | Engenharia · Catálogo | 2026-11-12 | 2026-12-03 | - | ABERTO | - |
-| C-2026-010 | pedido | chat | BRIEF ID3A: infraestrutura de IA do Django Shopman. Sua tarefa é produzir um plano de desenvolvimento da ID3A, não código. | Engenharia | 2026-11-12 | 2026-11-19 | - | ABERTO | - |
+| DEV-2026-001 | compromisso | #2298 / #2300 | B.I.: tempo corrido desde kitchen_released_at e tempo de preparo (Iniciar a Pronto) | Engenharia · B.I. | 2026-11-12 | 2026-11-26 | encomenda futura no ar | EM_EXECUCAO | #2300 |
+| DEV-2026-002 | compromisso | #2298 / #2301 | Editar preorder_kitchen no Admin, hoje só JSON em Shop.defaults | Engenharia · Admin | 2026-11-12 | 2026-11-26 | #2298 na fila | EM_EXECUCAO | #2303 |
+| DEV-2026-003 | compromisso | #2292 | Aviso antes de salvar o fechamento do dia (padrão de confirmação em dois passos) | Engenharia · Admin | 2026-11-12 | 2026-12-03 | padrão de confirmação existir no Admin | ABERTO | - |
+| DEV-2026-004 | compromisso | #2292 | Horário especial que encurta o dia não é conferido contra os horários dos pedidos | Engenharia · Admin | 2026-11-12 | 2026-12-03 | - | ABERTO | - |
+| DEV-2026-005 | decisao | #2069 | Aprovar ou recusar o modo compacto x padrão (KDS, PDV, Gestor, Receber) | Pablo | 2026-11-02 | 2026-11-14 | resposta do dono à prévia | ABERTO | - |
+| DEV-2026-006 | achado | STATUS-CONSOLIDACAO-2026-11-10.md | Triar o que restou das 5 frentes sem dono (ADR-025 Doorman, ledger C11, ciclo C6, leitura paralela) | Coordenação | 2026-11-10 | 2026-11-19 | - | ABERTO | - |
+| DEV-2026-007 | pedido | chat 2026-11-12 | Quero poder, SEMPRE que eu discutir algo, seja uma correção, ou um pedido de uma feature nova, NADA seja perdido, nunca mais! | Engenharia | 2026-11-12 | 2026-11-19 | - | EM_EXECUCAO | - |
+| DEV-2026-008 | pedido | chat 2026-11-12 | o que mais me importo é com a SAÚDE do REPO! Está muito cansativo e desesperador manter esse desenvolvimento!!! Faça algo a respeito. | Engenharia | 2026-11-12 | 2026-11-19 | - | EM_EXECUCAO | - |
+| DEV-2026-009 | compromisso | #2303 / #2304 | Preparo da encomenda no painel do produto do Catálogo (Gestor) | Engenharia · Catálogo | 2026-11-12 | 2026-12-03 | - | ABERTO | - |
+| DEV-2026-010 | pedido | chat | BRIEF ID3A: infraestrutura de IA do Django Shopman. Sua tarefa é produzir um plano de desenvolvimento da ID3A, não código. | Engenharia | 2026-11-12 | 2026-11-19 | - | ABERTO | - |
 <!-- commitments:end -->

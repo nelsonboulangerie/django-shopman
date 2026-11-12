@@ -25,7 +25,7 @@ def _repo(tmp_path: Path, rows: list[str] | None = None) -> Path:
 
 
 def _row(
-    id: str = "C-2026-001",
+    id: str = "DEV-2026-001",
     tipo: str = "compromisso",
     origem: str = "#1",
     compromisso: str = "corrigir o fluxo de encomenda",
@@ -120,13 +120,13 @@ def test_vencido_e_terminal_nao_vencem(tmp_path: Path):
         tmp_path,
         [
             _row(revisar="2026-11-10"),
-            _row(id="C-2026-002", revisar="2026-11-10", estado="FEITO", prova="#99"),
+            _row(id="DEV-2026-002", revisar="2026-11-10", estado="FEITO", prova="#99"),
         ],
     )
 
     expired = guard.overdue(_entries(root), TODAY)
 
-    assert [entry.id for entry in expired] == ["C-2026-001"]
+    assert [entry.id for entry in expired] == ["DEV-2026-001"]
 
 
 def test_pr_novo_sem_pedido_reprova():
@@ -141,7 +141,7 @@ def test_pr_novo_com_pedido_conhecido_passa():
     entry = _entry(_row())
 
     errors = guard.check_pr_body(
-        "## Pedido\n\nPedido: C-2026-001\n",
+        "## Pedido\n\nPedido: DEV-2026-001\n",
         [entry],
         created=dt.date(2026, 11, 13),
     )
@@ -177,7 +177,7 @@ def test_next_id_e_append(tmp_path: Path):
         revisar_em="2026-11-19",
     )
 
-    assert entry.id == "C-2026-002"
+    assert entry.id == "DEV-2026-002"
     entries, errors = guard.load_ledger(root)
     assert errors == []
     assert entries[-1].compromisso == "o dono pediu para corrigir o fluxo"

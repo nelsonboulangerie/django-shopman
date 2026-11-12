@@ -2,7 +2,7 @@
 
 > **Status:** aprovado pelo dono em 12/11/2026 (respostas no fim e em D-039). O E1 (medidor e
 > freio) entra antes da tag `go-live-v1`, sem segurar a tag.
-> **Pedido:** C-2026-010 (brief do dono de 12/11/2026).
+> **Pedido:** DEV-2026-010 (brief do dono de 12/11/2026).
 > **Pré-requisito:** PR nelsonboulangerie/django-shopman#2306 (`ai-conexao-configuravel`,
 > aberto em 12/11/2026 e ainda fora do `main`). Ele é a fundação que a ID3A estende:
 > `AIConnection`, `Shop.ai_routes`, `shopman/shop/ai.py`, `LLM_PRICES`. Tudo o que este
