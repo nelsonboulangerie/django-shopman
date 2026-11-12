@@ -147,6 +147,7 @@ const CONTEXT_LABELS: Record<string, string> = {
   shop_ref: "Loja",
   sector_ref: "Setor",
   workstation_ref: "Posto",
+  terminal_ref: "Terminal",
   device_ref: "Dispositivo",
   business_date: "Dia operacional",
   last_error_id: "Erro",

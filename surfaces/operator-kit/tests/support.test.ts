@@ -91,12 +91,14 @@ describe("presentation/support", () => {
       app: "hub",
       route: "/pos",
       workstation_ref: "pdv-02",
+      terminal_ref: "PDV-02",
       focus: { kind: "order", ref: "ORD-1" },
       empty: "",
     });
 
     expect(rows).toContainEqual({ label: "Tela", value: "/pos" });
     expect(rows).toContainEqual({ label: "Posto", value: "pdv-02" });
+    expect(rows).toContainEqual({ label: "Terminal", value: "PDV-02" });
     expect(rows).toContainEqual({ label: "Em foco", value: "order ORD-1" });
     expect(rows.some((row) => row.label === "empty")).toBe(false);
   });
