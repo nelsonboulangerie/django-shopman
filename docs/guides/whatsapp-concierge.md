@@ -194,7 +194,8 @@ CONCIERGE_TRANSFER_ENABLED=false
 ```
 
 Além disso, o ambiente precisa da chave dedicada `CONCIERGE_API_KEY`, de
-`AI_ASSIST_API_KEY` e do worker canônico. A lista de subjects vazia
+uma conexão de IA para o propósito `concierge` liberada para mensagem de cliente
+(Admin → Conexões de IA; ver [ai-connections](../reference/ai-connections.md)) e do worker canônico. A lista de subjects vazia
 fecha a connection. Telefone ou nome no body não substituem essa lista.
 
 Para uma homologação autorizada, os dois switches de admissão são independentes:
