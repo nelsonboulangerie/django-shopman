@@ -8,6 +8,7 @@ import {
   filterTickets,
   formatAge,
   isTerminal,
+  operatorSupportContext,
   statusColor,
   supportQueue,
   ticketTitle,
@@ -117,6 +118,14 @@ describe("presentation/support", () => {
     expect(isTerminal("closed")).toBe(true);
     expect(isTerminal("rejected")).toBe(true);
     expect(isTerminal("in_dev")).toBe(false);
+  });
+
+  it("contexto genérico carrega app, rota e extras", () => {
+    expect(operatorSupportContext("kds", "/", { workstation_ref: "kds-01" })).toEqual({
+      app: "kds",
+      route: "/",
+      workstation_ref: "kds-01",
+    });
   });
 
   it("filtro separa as duas filas", () => {

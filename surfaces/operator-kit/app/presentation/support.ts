@@ -176,3 +176,12 @@ export function contextRows(context: Record<string, unknown> | null | undefined)
   }
   return rows;
 }
+
+/** Contexto base de qualquer app de operador: app, rota e o que a tela souber. */
+export function operatorSupportContext(
+  app: string,
+  route: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return { app, route, ...extra };
+}
