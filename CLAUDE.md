@@ -164,12 +164,10 @@ O comando devolve `C-AAAA-NNN` e a linha `Pedido: C-AAAA-NNN`. O PR cita essa li
 a CI reprova PR novo sem ela. O relatório final lista os IDs tocados e o estado de
 cada um. Pedido que não virou trabalho também é linha (`ABERTO`, `revisar_em` curto).
 
-**Adiamento também é linha, no mesmo PR.** Se o PR tem "Fora deste PR", "Seguimento",
-"Pendências" ou "Ficou de fora", cada item aponta para um `C-` que exista em
-`docs/coordination/COMMITMENTS.md` **ou** para uma issue aberta com label
-`ficou-de-fora`. Sem um dos dois, a CI reprova: foi assim que o #2298 deixou dois
-itens reais sem dono, e o #2292 mais dois. O detalhe pode viver na issue; a linha
-do ledger é o índice que o `make commitments` lê.
+**Adiamento tem gate próprio.** A seção `## Ficou de fora` do template declara o
+que ficou, e cada item vira issue aberta com label `ficou-de-fora` (check
+"Ficou de fora declarado"). O ledger indexa a issue com dono, prazo e prova; não
+duplique a regra no corpo do PR.
 
 `make commitments` mostra o que venceu, inclusive as decisões legadas de
 `DECISIONS.md`. O job semanal abre uma issue com os vencidos e a fecha quando a

@@ -2,12 +2,12 @@
 
 > **Isto não é um plano.** É o registro único de tudo que o dono pediu, o time
 > adiou, alguém achou ou uma decisão deixou em aberto, e que ainda não está no
-> `main` com prova. Se um PR diz "fora deste PR", "seguimento", "pendência" ou
-> "ficou de fora", ele aponta para uma linha daqui ou para uma issue com label.
+> `main` com prova. Se um PR diz "ficou de fora", o item é uma issue com label
+> `ficou-de-fora`, e a linha daqui é o índice com dono, prazo e prova.
 >
-> `make commitments` mostra o que venceu. O CI reprova PR que abre um adiamento
-> sem linha e PR novo sem `Pedido: C-AAAA-NNN`. Um job semanal abre uma issue com
-> os vencidos e a fecha quando a lista zera.
+> `make commitments` mostra o que venceu. O CI reprova PR novo sem
+> `Pedido: C-AAAA-NNN`; o adiamento tem o gate próprio `Ficou de fora declarado`.
+> Um job semanal abre uma issue com os vencidos e a fecha quando a lista zera.
 
 ## Regras
 

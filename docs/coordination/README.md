@@ -36,9 +36,9 @@ cita. Assim o gesto de abrir issue não vira um segundo backlog invisível.
 
 ## O que o CI cobra
 
-- PR que abre seção "Fora deste PR", "Seguimento", "Fora do escopo",
-  "Pendências" ou "Ficou de fora" precisa citar um `C-AAAA-NNN` que exista no
-  ledger **ou** uma issue aberta com label `ficou-de-fora`.
+- PR declara o que ficou de fora na seção `## Ficou de fora`; cada item é uma
+  issue aberta com label `ficou-de-fora` (check "Ficou de fora declarado"). O
+  ledger indexa a issue com dono, prazo e prova.
 - PR novo (a partir de 13/11/2026) precisa da linha `Pedido: C-AAAA-NNN`, ou
   `Pedido: nenhum` com o motivo.
 - O ledger reprova: ID duplicado, estado fora do vocabulário, item aberto sem

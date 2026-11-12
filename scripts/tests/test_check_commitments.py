@@ -129,54 +129,6 @@ def test_vencido_e_terminal_nao_vencem(tmp_path: Path):
     assert [entry.id for entry in expired] == ["C-2026-001"]
 
 
-def test_pr_com_adiamento_sem_id_reprova():
-    errors = guard.check_pr_body(
-        "## Fora deste PR\n\n- fica para depois\n", [], author="app/dependabot"
-    )
-
-    assert any("sem citar C-AAAA-NNN" in error for error in errors)
-
-
-def test_pr_com_id_conhecido_passa():
-    entries = [_entry(_row())]
-
-    errors = guard.check_pr_body(
-        "## Fora deste PR\n\n- C-2026-001 fica para depois\n",
-        entries,
-        author="app/dependabot",
-    )
-
-    assert errors == []
-
-
-def test_pr_com_id_desconhecido_reprova():
-    errors = guard.check_pr_body(
-        "## Fora deste PR\n\n- C-2026-999 fica para depois\n",
-        [],
-        author="app/dependabot",
-    )
-
-    assert any("C-2026-999" in error for error in errors)
-
-
-def test_pr_com_nenhum_passa():
-    errors = guard.check_pr_body(
-        "## Fora deste PR\n\n- nenhum\n", [], author="app/dependabot"
-    )
-
-    assert errors == []
-
-
-def test_prosa_de_seguimento_sem_lista_passa():
-    errors = guard.check_pr_body(
-        "## Seguimento\n\nEste PR segue o #2279, que já estava na fila.\n",
-        [],
-        author="app/dependabot",
-    )
-
-    assert errors == []
-
-
 def test_pr_novo_sem_pedido_reprova():
     errors = guard.check_pr_body(
         "## O que muda\n\nnada\n", [], created=dt.date(2026, 11, 13)
@@ -247,28 +199,6 @@ def test_decisoes_legadas_vencidas(tmp_path: Path):
     found = guard.legacy_overdue(tmp_path, TODAY)
 
     assert [item["id"] for item in found] == ["D-004"]
-
-
-def test_pr_com_issue_conhecida_passa():
-    errors = guard.check_pr_body(
-        "## Fora deste PR\n\n- #2300 fica para depois\n",
-        [],
-        author="app/dependabot",
-        known_issues={2300},
-    )
-
-    assert errors == []
-
-
-def test_pr_com_issue_sem_label_ou_fechada_reprova():
-    errors = guard.check_pr_body(
-        "## Fora deste PR\n\n- #2300 fica para depois\n",
-        [],
-        author="app/dependabot",
-        known_issues={2301},
-    )
-
-    assert any("#2300" in error and "label" in error for error in errors)
 
 
 def test_pedido_com_issue_conhecida_passa():

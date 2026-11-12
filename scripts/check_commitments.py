@@ -10,9 +10,9 @@ O ledger é `docs/coordination/COMMITMENTS.md`. Este script:
 1. valida o ledger (ID único, estado conhecido, dono, `revisar_em` para item
    aberto, prova para item terminal);
 2. lista o que venceu, incluindo as decisões legadas de `DECISIONS.md`;
-3. com `--pr-body`, reprova PR que abre uma seção de adiamento sem citar um
-   `C-AAAA-NNN` do ledger ou uma issue aberta com label, e PR novo sem a linha
-   `Pedido: C-...` (ou `Pedido: #2300`);
+3. com `--pr-body`, reprova PR novo sem a linha `Pedido: C-...` (ou
+   `Pedido: #2300`). O gate do que ficou de fora é `check_ficou_de_fora.py`;
+   este script não o duplica;
 4. com `--add`, registra a fala do dono e devolve o ID para o PR.
 
 Sem Django e sem dependência externa: roda antes do install.
@@ -53,6 +53,13 @@ TERMINAL = {"FEITO", "DESCARTADO", "SUPERSEDIDO"}
 EMPTY_OWNERS = {"", "-", "—", "ninguem", "ninguém", "a definir", "tbd", "n/a"}
 ID_RE = re.compile(r"^C-\d{4}-\d{3}$")
 REF_RE = re.compile(r"\bC-\d{4}-\d{3}\b")
+ISSUE_NUM_RE = re.compile(r"#(\d{3,})")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+REQUEST_LINE_RE = re.compile(
+    r"^\s*Pedido:\s*(?P<value>(?:C-\d{4}-\d{3}|#\d{3,})"
+    r"(?:\s*,\s*(?:C-\d{4}-\d{3}|#\d{3,}))*|nenhum)\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
 ISSUE_NUM_RE = re.compile(r"#(\d{3,})")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 REQUEST_LINE_RE = re.compile(
@@ -295,18 +302,6 @@ def orphan_issues(root: Path, issues: list[dict]) -> list[dict]:
     ]
 
 
-def _headings(body: str):
-    matches = list(HEADING_RE.finditer(body))
-    for index, match in enumerate(matches):
-        level = len(match.group(1))
-        end = len(body)
-        for following in matches[index + 1 :]:
-            if len(following.group(1)) <= level:
-                end = following.start()
-                break
-        yield match.group(2).strip(), match.end(), end
-
-
 def _check_refs(
     refs: list[str],
     issues: list[int],
@@ -336,35 +331,13 @@ def check_pr_body(
     author: str = "",
     known_issues: set[int] | None = None,
 ) -> list[str]:
-    """Gate de nascimento: adiamento e pedido têm linha ou issue com label.
+    """Gate do pedido: PR novo cita o pedido do dono (C- ou issue com label).
 
-    `known_issues` é o conjunto de issues abertas com label. `None` significa
-    "não conferido" (gh indisponível ou teste local): a referência `#N` passa,
-    porque o gate não pode depender de rede para não travar todo PR.
+    A declaração do que ficou de fora é outro gate (`Ficou de fora declarado`);
+    este aqui não a duplica.
     """
     errors: list[str] = []
     known = {entry.id for entry in entries}
-
-    for title, start, end in _headings(body):
-        if not DEFERRAL_WORDS.search(title):
-            continue
-        section = body[start:end]
-        bullets = [
-            line for line in section.splitlines() if re.match(r"^\s*[-*]\s+\S", line)
-        ]
-        if not bullets:
-            continue  # prosa de contexto ("Seguimento do #2279"), não lista de adiados
-        if all(NO_DEFERRAL_RE.match(line) for line in bullets):
-            continue
-        refs = REF_RE.findall(section)
-        issues = [int(number) for number in ISSUE_NUM_RE.findall(section)]
-        if not refs and not issues:
-            errors.append(
-                f"seção '{title}' adia trabalho sem citar C-AAAA-NNN nem issue "
-                "com label; registre o item no mesmo PR"
-            )
-        errors += _check_refs(refs, issues, known, known_issues, title)
-
     if author in BOT_LOGINS:
         return errors
     if created is not None and created < REQUEST_GATE_START:
