@@ -1042,7 +1042,7 @@ def _physical_work_deferred(order) -> bool:
 #: ``Order.data`` — ISO datetime em que a encomenda saiu da espera e entrou no
 #: fluxo do dia: tickets na Cozinha (se houver item de cozinha) e baixa. O
 #: despertador tocou, ou alguém a liberou antes (``release_preorder_now``).
-#: Base do tempo corrido desde a chegada à Cozinha no B.I.
+#: Base da espera na Cozinha no B.I. (``backstage/projections/bi_preorder_kitchen``).
 KITCHEN_RELEASED_AT_KEY = "kitchen_released_at"
 
 

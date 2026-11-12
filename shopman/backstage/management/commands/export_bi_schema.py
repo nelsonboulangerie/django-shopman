@@ -66,6 +66,7 @@ from shopman.backstage.projections.bi_over_short import (
     BIOverShortTypical,
     BIOverShortUnavailable,
 )
+from shopman.backstage.projections.bi_preorder_kitchen import BIPreorderKitchenReport, BIPreorderKitchenRow
 from shopman.backstage.projections.bi_production import (
     BIOvenTimeRow,
     BIProductionBatchMargin,
@@ -145,6 +146,8 @@ CONTRACT_DATACLASSES = (
     BICustomersReport,
     BIDeliveryCostDay,
     BIDeliveryCostReport,
+    BIPreorderKitchenRow,
+    BIPreorderKitchenReport,
     BIExploreRow,
     BIExploreMetricOption,
     BIExploreReport,
