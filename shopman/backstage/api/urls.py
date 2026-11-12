@@ -357,6 +357,14 @@ from .saved_views import SavedViewDetailView, SavedViewListView
 from .search import SuiteSearchView
 from .seating import POSSeatingView
 from .sign_ins import SignInListView
+from .support import (
+    SupportTicketDecisionView,
+    SupportTicketDetailView,
+    SupportTicketLinkDevView,
+    SupportTicketListCreateView,
+    SupportTicketMessageView,
+    SupportTicketTriageView,
+)
 from .telemetry import ClientErrorView, ClientPwaUpdateView, MarketingVitalView
 from .tenant import OperatorTenantView
 from .timer_tags import ProductionTimerTagsView
@@ -974,6 +982,37 @@ urlpatterns = [
     # Operator alerts
     path("alerts/", AlertListView.as_view(), name="api-backstage-alerts"),
     path("alerts/<int:pk>/ack/", AlertAckView.as_view(), name="api-backstage-alert-ack"),
+    # Suporte (helpdesk interno)
+    path(
+        "support/tickets/",
+        SupportTicketListCreateView.as_view(),
+        name="api-backstage-support-tickets",
+    ),
+    path(
+        "support/tickets/<str:ref>/",
+        SupportTicketDetailView.as_view(),
+        name="api-backstage-support-ticket",
+    ),
+    path(
+        "support/tickets/<str:ref>/messages/",
+        SupportTicketMessageView.as_view(),
+        name="api-backstage-support-ticket-messages",
+    ),
+    path(
+        "support/tickets/<str:ref>/triage/",
+        SupportTicketTriageView.as_view(),
+        name="api-backstage-support-ticket-triage",
+    ),
+    path(
+        "support/tickets/<str:ref>/decision/",
+        SupportTicketDecisionView.as_view(),
+        name="api-backstage-support-ticket-decision",
+    ),
+    path(
+        "support/tickets/<str:ref>/link-dev/",
+        SupportTicketLinkDevView.as_view(),
+        name="api-backstage-support-ticket-link-dev",
+    ),
     # Notificações PESSOAIS (vs. alerts, que são da loja): o gestor recebe o
     # pedido de aprovação onde estiver. Push pelo canal SSE ``user-<id>``.
     # O histórico de acessos da PRÓPRIA conta (a trilha de todos é a tela de
