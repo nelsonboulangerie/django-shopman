@@ -81,7 +81,7 @@ from .feeds import (
     FeedSwitchView,
 )
 from .hub import HubView
-from .ifood_store import IFoodStoreView
+from .ifood_store import IFoodStoreView, IFoodWidgetView
 from .kds import (
     KDSBoardView,
     KDSCustomerStatusView,
@@ -770,6 +770,7 @@ urlpatterns = [
     path("orders/rail-counts/", OrderRailCountsView.as_view(), name="api-backstage-order-rail-counts"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
     path("ifood/store/", IFoodStoreView.as_view(), name="api-backstage-ifood-store"),
+    path("ifood/widget/", IFoodWidgetView.as_view(), name="api-backstage-ifood-widget"),
     # Catalog matrix (produto × superfície)
     path(
         "catalog/channels/<str:ref>/review/",

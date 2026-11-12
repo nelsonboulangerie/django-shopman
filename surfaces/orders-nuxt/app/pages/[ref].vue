@@ -29,6 +29,7 @@ import { settledRefresh } from "~/utils/settledRefresh";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { COURIER_CALL_HASH } from "~/presentation/courier";
 import { contactRequestNotice } from "~/presentation/contactRequest";
+import { ifoodChatNotice } from "~/presentation/ifoodWidget";
 import { orderTicketMenuItem } from "~/presentation/orderTicket";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
@@ -747,6 +748,12 @@ const thumbAction = computed(() => {
   };
 });
 // O estado escrito que vale em toda largura (as pílulas de pagamento são só do celular).
+// O chat do cliente iFood (DEV-2026-018): o widget sobe na casca (app.vue); o
+// detalhe só diz onde ele está, ou que não carregou.
+const ifoodWidget = useIFoodWidget();
+const ifoodChat = computed(() =>
+  ifoodChatNotice(ifoodWidget.state.value, order.value?.channel_ref === "ifood"),
+);
 // O aceite que não chegou ao iFood (P1-3): o fato, o prazo dele contando e o reenvio.
 const acceptNotice = computed(() =>
   order.value ? ifoodAcceptNotice(order.value, nowMs.value) : null,
@@ -1421,6 +1428,18 @@ const outside = useOutsideStore(
         </template>
 
         <template v-if="!outside.away.value" #after-profile>
+          <!-- chat do cliente iFood: o widget do iFood mora no canto da tela (casca);
+               aqui só se diz onde ele está, ou que não carregou (DEV-2026-018). -->
+          <NuxtAlert
+            v-if="ifoodChat"
+            :color="ifoodChat.tone"
+            variant="subtle"
+            :icon="ifoodChat.icon"
+            :title="ifoodChat.title"
+            :description="ifoodChat.description"
+            data-ifood-chat
+            :data-ifood-chat-state="ifoodWidget.state.value"
+          />
           <!-- corrida de entrega (logística externa) -->
           <OrderCourierPanel
             v-if="order.courier"

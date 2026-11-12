@@ -12,10 +12,15 @@ describe("Pedidos — configuração segura de release", () => {
     expect(config).toContain("operatorSecurityHeaders: true");
   });
 
-  it("abre só as duas exceções decididas: foto de produto e agente do balcão", () => {
+  it("abre só as exceções decididas: foto de produto, agente do balcão e widget do iFood", () => {
     expect(config).toContain('"img-src": ["https:"]');
     expect(config).toContain('"connect-src": ["http://127.0.0.1:*", "http://localhost:*"]');
-    expect(config).not.toContain('"script-src"');
+    // Chat com o cliente iFood (DEV-2026-018): o script e o iframe do iFood, por host
+    // explícito, e nada mais.
+    expect(config).toContain('"script-src": ["https://widgets.ifood.com.br"]');
+    expect(config).toContain('"frame-src": ["https://embeddables.ifood.com.br"]');
+    expect(config.match(/"script-src"/g)).toHaveLength(1);
+    expect(config.match(/"frame-src"/g)).toHaveLength(1);
   });
 
   it("abre só a localização (G18, fora da loja), e só para a própria origem", () => {
@@ -26,13 +31,17 @@ describe("Pedidos — configuração segura de release", () => {
     );
   });
 
-  it("a política resultante carrega a foto e fala com o agente, e nada além", () => {
+  it("a política resultante carrega a foto, fala com o agente e enquadra só o iFood", () => {
     const csp = operatorBaselineContentSecurityPolicy({
       "img-src": ["https:"],
       "connect-src": ["http://127.0.0.1:*", "http://localhost:*"],
+      "script-src": ["https://widgets.ifood.com.br"],
+      "frame-src": ["https://embeddables.ifood.com.br"],
     });
     expect(csp).toContain("img-src 'self' data: blob: https:");
     expect(csp).toContain("connect-src 'self' http://127.0.0.1:* http://localhost:*");
+    expect(csp).toContain("script-src 'self' 'unsafe-inline' https://widgets.ifood.com.br;");
+    expect(csp).toContain("frame-src https://embeddables.ifood.com.br;");
     expect(csp).toContain("frame-ancestors 'none'");
   });
 });
