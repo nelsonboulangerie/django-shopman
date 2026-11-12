@@ -1,7 +1,7 @@
 # ID3A-PLAN: a infraestrutura de IA do Django Shopman
 
-> **Status:** proposta, esperando decisão do dono (as 5 perguntas do fim). Nenhum código
-> nasce deste documento antes das respostas.
+> **Status:** aprovado pelo dono em 12/11/2026 (respostas no fim e em D-039). O E1 (medidor e
+> freio) entra antes da tag `go-live-v1`, sem segurar a tag.
 > **Pedido:** C-2026-010 (brief do dono de 12/11/2026).
 > **Pré-requisito:** PR nelsonboulangerie/django-shopman#2306 (`ai-conexao-configuravel`,
 > aberto em 12/11/2026 e ainda fora do `main`). Ele é a fundação que a ID3A estende:
@@ -545,7 +545,7 @@ para o contrato e o parse; CI nunca chama provedor pago.
 | Classe | Exemplo | Pode ir a provedor externo? |
 |---|---|---|
 | `public` | nome de produto, copy de catálogo, cenário do B.I. | sim, qualquer conexão ativa (DeepSeek incluída) |
-| `internal` | texto do chamado do operador | só redigido, só a conexão com `internal_text_approved` (campo novo, irmão do `customer_text_approved`) |
+| `internal` | texto do chamado do operador | só redigido, só a conexão com `internal_text_approved` (campo novo, irmão do `customer_text_approved`). **Default: DeepSeek** (D-039), trocável no Admin |
 | `customer` | mensagem de cliente | só com o cofre de pseudônimos (fase 3) e `customer_text_approved` |
 | `sensitive` | saúde, alergia com detalhe, criança | **nunca** externo; regra, modelo local ou equipe |
 
@@ -592,7 +592,7 @@ O `context` do chamado (envelope ADR-045) vai só como refs (`sector_ref`, `rout
 | Provedor | Uso proposto | O que falta saber |
 |---|---|---|
 | Anthropic | `internal` e, com cofre, `customer` | DPA dos termos comerciais e retenção da API (suposição: existe DPA; retenção zero só por pedido) |
-| DeepSeek | **só `public`** | jurisdição e retenção (suposição: dados tratados na China, sem DPA equivalente). O dono tem reservas; o plano não manda texto de operador ou cliente para lá |
+| DeepSeek | `public` e `internal` (redigido), por decisão do dono (D-039); `customer` não | jurisdição e retenção (suposição: dados tratados na China, sem DPA equivalente). Por isso só vai texto redigido, e o Admin troca o provedor de qualquer tarefa sem código |
 | TypeSafe (Jev) | decisão `internal`; `customer` já aprovado redigido no comparador (D-028) | DPA e retenção, antes da promoção (gate da seção 7) |
 | local | `sensitive` | custo de GPU e hospedagem (decisão à parte) |
 
@@ -659,7 +659,7 @@ freio (pergunta 5).
 | Risco | Prob. | Impacto | Mitigação |
 |---|---|---|---|
 | Gasto fora de controle de novo | média | alto | as seis camadas da seção 6, começando pelo limite no Console |
-| Dado de cliente no texto do operador vai para fora | alta | alto | redação obrigatória; `sensitive` bloqueia; DeepSeek só `public` |
+| Dado de cliente no texto do operador vai para fora | alta | alto | redação obrigatória; `sensitive` bloqueia; `customer` nunca vai à DeepSeek |
 | Sem gabarito, a fase 1b nunca começa | média | médio | o shadow gera gabarito sozinho a cada triagem humana; meta de 100 casos |
 | Probabilidade do LLM mal calibrada | alta | médio | limiar por backend no gabarito; humano sempre confirma |
 | Injeção de prompt no texto do chamado | média | baixo | saída é escolha entre opções fixas; texto livre só em resumo com citação; nada da IA vira transição |
@@ -720,8 +720,8 @@ aprovado aparece em `/privacidade` por trava. Saída guardada 30 dias, linha 180
 pseudonimizado continua dado pessoal; a pseudonimização é medida de segurança, não
 dispensa base legal nem transparência.
 
-**Consequências.** DeepSeek fica restrita a dado público enquanto o dono não decidir o
-contrário. O modelo local é o caminho para `sensitive` e a futura segunda implementação
+**Consequências.** DeepSeek é o default de `public` e de `internal` redigido (D-039), e a
+troca de provedor por tarefa é configuração no Admin, nunca código. O modelo local é o caminho para `sensitive` e a futura segunda implementação
 de geração.
 
 ---
@@ -815,20 +815,19 @@ transferência internacional; meta de 15% de mascaramento.
 
 ---
 
-## As 5 perguntas para o dono, antes do primeiro código
+## Decisões do dono (12/11/2026, D-039)
 
-1. **Texto do chamado (redigido) pode ir a provedor estrangeiro, e a qual?** Recomendo
-   Anthropic para `internal` e DeepSeek só para dado público (catálogo, anúncios, B.I.).
-   No volume do Suporte a diferença de custo é de ~US$ 16/mês. A alternativa é só regra
-   até o plano de LGPD virar código, e aí a fase 1 mede pouco.
-2. **Tetos:** aprova US$ 3/dia por loja, US$ 0,50/dia na triagem, US$ 1/dia no resumo e o
-   teto de código de US$ 20/dia? E você põe limite mensal no Console de cada chave, com a
-   **recarga automática desligada**? (Só você pode fazer isso, e é o freio que faltou.)
-3. **Chave e ordem:** você só cola uma chave de IA de novo depois do E1 (medidor e freio)
-   estar no `main`? E para a fase 1, qual chave: a Anthropic nova, com que modelo
-   (recomendo Haiku 4.5 na triagem e Sonnet 5 no resumo)?
-4. **Gabarito:** a triagem do gerente vale como rótulo, e o snapshot redigido de ~150
-   chamados pode ficar numa tabela do staging por 12 meses para avaliação?
-5. **Go-live:** o E1 entra antes da tag (3 dias, fora da matriz da D-038, sem segurar
-   nada), ou espera o go-live? Recomendo antes: o Concierge segue em `assist` para um
-   contato (D-018), e qualquer chave colada hoje volta a gastar sem freio.
+1. **Provedor:** DeepSeek por padrão, inclusive para o texto redigido do chamado
+   (`internal`), mas sempre trocável pelo Admin (Conexões de IA e rotas por tarefa). O
+   `customer` continua fora da DeepSeek até o plano de LGPD virar código.
+2. **Tetos aprovados:** US$ 3/dia por loja, US$ 0,50/dia na triagem, US$ 1/dia no resumo,
+   teto de código de US$ 20/dia. Limite no provedor e recarga automática desligada ficam
+   com o dono.
+3. **Chave:** não há chave utilizável no sistema hoje (a da Anthropic foi desativada em
+   11/11; as conexões `anthropic` e `jev` nasceram vazias; DeepSeek nunca foi cadastrada).
+   A chave entra em **Admin → Conexões de IA**, depois que o #2306 e o E1 estiverem no ar.
+4. **Gabarito:** decidido pela recomendação. Quando o gerente classifica um chamado, a
+   classificação dele é a resposta certa contra a qual a IA é medida. Uma cópia redigida
+   de até 150 chamados fica guardada no banco da loja por 12 meses, para retestar a IA a
+   cada mudança de prompt ou de provedor. Nada vai para o repositório.
+5. **E1 antes da tag `go-live-v1`.**
