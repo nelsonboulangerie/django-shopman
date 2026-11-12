@@ -477,6 +477,12 @@ relógio; a confirmação, sim.
 | `confirmed` | `waitlist.confirm` (cliente, via `POST /api/v1/orders/{ref}/waitlist-confirm/`) | Vaga garantida; a cobrança acontece aqui (`charge_at=confirmation`) |
 | `released` | `waitlist.release` (timeout via `sweep_waitlist_windows`, ou recusa) | Saiu da fila; hold liberado, cliente avisado, `OperatorAlert` no Gestor |
 
+**Encomenda e pedido pago não são fila** (laudo de 09/11/2026): o hold da encomenda
+também nasce com `metadata.planned`, mas `waitlist.is_outside_the_queue` (`is_preorder`
+gravado no commit, ou pagamento capturado cobrindo o pedido) devolve `none` em `state_for`,
+impede `open_window` de chamar o cliente e faz `release`/`sweep_expired` recusarem soltar
+a reserva. Os desfechos `confirmed`/`released` já gravados continuam lidos.
+
 Liberação **nunca é silenciosa**: cliente (`waitlist_released`) e loja
 (`OperatorAlert type="waitlist_released"`) são avisados, e com
 `release_policy=serve_next` a vaga vai ao próximo da fila (FCFS) na hora.
