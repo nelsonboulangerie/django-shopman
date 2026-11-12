@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
+import { useSupport } from "../composables/useSupport";
+import OperatorButton from "./OperatorButton.vue";
+import OperatorScreenState from "./OperatorScreenState.vue";
+
 import {
   SUPPORT_FILTERS,
   SUPPORT_PRIORITY_LABELS,
@@ -18,8 +22,8 @@ import {
   ticketTitle,
   typeLabel,
   type SupportFilter,
-} from "~/presentation/support";
-import type { SupportDecisionKind, SupportPriority, SupportType } from "~/types/support";
+} from "../presentation/support";
+import type { SupportDecisionKind, SupportPriority, SupportType } from "../types/support";
 
 const props = withDefaults(
   defineProps<{

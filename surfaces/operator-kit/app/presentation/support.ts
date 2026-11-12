@@ -8,7 +8,7 @@ import type {
   SupportStatus,
   SupportTicket,
   SupportType,
-} from "~/types/support";
+} from "../types/support";
 
 export const SUPPORT_TYPE_LABELS: Record<SupportType, string> = {
   question: "Dúvida",

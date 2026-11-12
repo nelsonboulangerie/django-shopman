@@ -1,4 +1,5 @@
-import { httpErrorMessage } from "../../../operator-kit/app/utils/httpError";
+import { httpErrorMessage } from "../utils/httpError";
+import { useApiPath } from "./useApiPath";
 
 import type {
   SupportCapabilities,
@@ -8,7 +9,7 @@ import type {
   SupportTicket,
   SupportTicketDetail,
   SupportType,
-} from "~/types/support";
+} from "../types/support";
 
 const EMPTY_CAPABILITIES: SupportCapabilities = {
   create: false,
@@ -20,6 +21,13 @@ const EMPTY_CAPABILITIES: SupportCapabilities = {
 };
 
 const BASE = "/api/v1/backstage/support";
+
+// `$fetch` tipado por rota estoura a profundidade com a união de rotas da suíte;
+// a URL já vem de `useApiPath`, que é string.
+const fetchJson = $fetch as unknown as <R>(
+  url: string,
+  options?: Record<string, unknown>,
+) => Promise<R>;
 
 export interface NewTicketPayload {
   description: string;
@@ -49,7 +57,7 @@ export function useSupport() {
   const loaded = ref(false);
 
   async function request<T>(path: string, options: Record<string, unknown> = {}): Promise<T> {
-    return (await $fetch(apiPath(path), { credentials: "include", ...options })) as T;
+    return await fetchJson<T>(apiPath(path), { credentials: "include", ...options });
   }
 
   function updateList(updated: SupportTicket): void {
