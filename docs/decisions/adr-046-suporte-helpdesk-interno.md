@@ -9,11 +9,13 @@
 
 ## Contexto
 
-Pedidos, queixas e decisões se perdem em chats e em corpos de PR. O operador
+Solicitações, queixas e decisões se perdem em chats e em corpos de PR. O operador
 não pode preencher contexto que o sistema já tem (pedido, dispositivo, turno,
 setor). O dono não pode deixar código mudar sem autorização. O Canny resolve
 feedback, mas não tem o pedido, o dispositivo e o turno; um SaaS externo não
 enxerga o contexto operacional da casa.
+
+**Vocabulário:** `Pedido` é o Order do cliente. `Chamado` (ticket) é o `HELP-AAAA`. `Solicitação` é o chamado que pede mudança. `Compromisso` é o `DEV-AAAA`.
 
 O repo já tem as peças: `backstage` para a superfície de operador, `hub-nuxt`
 como home mobile-first autenticada, SSE, permissões por `has_perm`, e o ledger
@@ -24,32 +26,32 @@ como home mobile-first autenticada, SSE, permissões por `has_perm`, e o ledger
 1. **Suporte é capability, não kernel.** Vive em `shopman/backstage` (models,
    API, projection, permissões) e numa página `/support` no `hub-nuxt`. Não
    cria 14º pacote nem 12ª surface nesta fase.
-2. **O ticket é `HELP-AAAA`.** Tem mensagens, decisão, aprovador, estado, SLA e
+2. **O chamado (ticket) é `HELP-AAAA`.** Tem mensagens, decisão, aprovador, estado, SLA e
    um `ledger_ref` para o compromisso de dev (`DEV-AAAA`).
-3. **Contexto automático.** O ticket nasce com o envelope operacional da
+3. **Contexto automático.** O chamado nasce com o envelope operacional da
    ADR-045: ator, papel, loja, setor, turno, dispositivo, workstation,
    `business_date`, rota, entidade em foco, último erro/request ID, versão e
    conectividade. O operador escreve só a exceção. O contexto carrega refs, não
    PII.
-4. **Captura primeiro, classificação depois.** O ticket nasce `NEW` com o texto
+4. **Captura primeiro, classificação depois.** O chamado nasce `NEW` com o texto
    cru. A classificação (tipo, fila, prioridade) é sugestão da IA ou triagem
    humana; se a confiança for baixa, a IA faz **uma** pergunta ao requester.
    Nunca bloqueia a captura.
-5. **Tipos:** `question`, `complaint`, `bug`, `request`, `idea`, `decision`.
+5. **Tipos:** `question` (Dúvida), `complaint` (Queixa), `bug` (Defeito), `request` (Solicitação), `idea` (Ideia), `decision` (Decisão).
 6. **Estados:** `NEW`, `TRIAGE`, `WAITING_REQUESTER`, `WAITING_OWNER`,
    `APPROVED`, `REJECTED`, `IN_DEV`, `RESOLVED`, `CLOSED`, `DEFERRED`. Cada
    estado tem dono e próximo evento; `DEFERRED` exige `revisar_em`.
 7. **Permissões:** `shop.create_support_ticket`,
    `shop.triage_support_tickets`, `shop.view_all_support_tickets`,
    `shop.approve_support_requests` (só dono), `shop.link_support_dev`.
-8. **Aprovação.** Pedido explícito do dono é aprovação implícita, registrada
+8. **Aprovação.** Solicitação explícita do dono é aprovação implícita, registrada
    com `approved_by`, `approved_at` e `approval_basis`. Ideia vai para triagem.
    Ambíguo: a IA pergunta. Só o aprovado gera `DEV-`; o PR cita
-   `Pedido: DEV-…` e o CI confere.
+   `Compromisso: DEV-…` e o CI confere.
 9. **Offline-first** no POS/KDS: fila local, UUID idempotente, sincronização
    quando voltar. O pior incidente é o sistema fora do ar.
 10. **UI simples:** um campo, contexto no topo, sugestão editável, thread,
-    status e aprovação. Sem dois botões "Pedido/Ideia".
+    status e aprovação. Sem dois botões "Solicitação/Ideia".
 11. **Notificações:** SSE no hub. Telegram/WhatsApp são canais (entrada e
     aviso), nunca o banco ou o motor.
 12. **Interno primeiro.** O tronco externo (público) vem depois, com auth de
