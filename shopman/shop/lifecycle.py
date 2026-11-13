@@ -317,6 +317,21 @@ def dispatch(order, phase: str) -> None:
     handler(order, config)
     if phase in DURABLE_PHASES:
         _mark_phase_complete(order, phase)
+    if phase != "on_commit":
+        _resolve_acceptance_alerts(order)
+
+
+def _resolve_acceptance_alerts(order) -> None:
+    """O pedido saiu de ``new``: os avisos de aceite no bolso somem (#2324)."""
+    if order.status == Order.Status.NEW:
+        return
+    try:
+        from shopman.shop.services import order_acceptance_alerts
+
+        order_acceptance_alerts.resolve(order)
+    except Exception:
+        # O sino reconcilia na leitura; aviso preso não pode derrubar a transição.
+        logger.exception("order_acceptance_alerts.resolve_failed order=%s", order.ref)
 
 
 # ── Phase handlers ──
@@ -845,7 +860,10 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
         _schedule_confirmation_timeout(order, config, action=action, source="order_commit")
         return
 
-    # manual: aguarda operador, mas agenda alerta de "stale" se configurado.
+    # manual: aguarda operador. Com prazo de fora (iFood), o pedido novo vai ao
+    # bolso de quem atende como Web Push crítico (#2324).
+    _notify_new_order_awaiting_acceptance(order, config)
+    # E agenda alerta de "stale" se configurado.
     stale_minutes = getattr(config.confirmation, "stale_new_alert_minutes", 0)
     if stale_minutes and stale_minutes > 0:
         alert_at = timezone.now() + timedelta(minutes=stale_minutes)
@@ -857,6 +875,16 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
             },
             available_at=alert_at,
         )
+
+
+def _notify_new_order_awaiting_acceptance(order, config: ChannelConfig) -> None:
+    try:
+        from shopman.shop.services import order_acceptance_alerts
+
+        order_acceptance_alerts.notify_new_order(order, config)
+    except Exception:
+        # O pedido segue no quadro e o aviso de 5 min tenta de novo; o commit não cai.
+        logger.exception("order_acceptance_alerts.notify_new_failed order=%s", order.ref)
 
 
 def start_acceptance_deadline(order) -> None:
