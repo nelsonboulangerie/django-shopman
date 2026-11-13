@@ -1834,7 +1834,7 @@ function compactClear() {
             <template v-for="zone in desktopZones" :key="zone.key" #[zone.key]>
               <!-- As colunas recolhidas ficam no lugar delas, como tira: as que vêm
                    antes desta coluna aberta (e, na última, as que vêm depois). -->
-              <div class="flex h-full min-h-0 gap-2">
+              <div class="flex h-full min-h-0 w-full min-w-0 gap-2">
               <OrderBoardStrip
                 v-for="closed in boardStrips[zone.key]?.before ?? []"
                 :key="closed.key"

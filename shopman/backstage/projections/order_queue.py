@@ -3271,9 +3271,10 @@ def _acceptance_clock(order: Order, deadline, now) -> tuple[float, float]:
 
 
 def _timer_class(status: str, elapsed: float, window: float = ACCEPT_WINDOW_SECONDS) -> str:
-    """O tom do aceite: no prazo até 60% dele, atenção até 80%, urgente depois."""
+    """O tom do aceite: no prazo até a metade dele (como o iFood; dono, 13/11/2026),
+    atenção até 80%, urgente depois."""
     if status == "new":
-        if elapsed < window * 0.6:
+        if elapsed < window * 0.5:
             return "timer-ok"
         elif elapsed < window * 0.8:
             return "timer-warning"

@@ -370,6 +370,10 @@ def test_encomenda_nova_aos_10_minutos_nao_fica_urgente(operator):
     with patch("django.utils.timezone.now", return_value=timezone.now() + timedelta(minutes=10)):
         _, cards = _cards(operator)
     assert cards[order.ref].timer_class == "timer-ok"
+    # Passou da metade do prazo: atenção, como o iFood (dono, 13/11/2026).
+    with patch("django.utils.timezone.now", return_value=timezone.now() + timedelta(minutes=32)):
+        _, cards = _cards(operator)
+    assert cards[order.ref].timer_class == "timer-warning"
     with patch("django.utils.timezone.now", return_value=timezone.now() + timedelta(minutes=50)):
         _, cards = _cards(operator)
     assert cards[order.ref].timer_class == "timer-urgent"

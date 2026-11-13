@@ -31,6 +31,7 @@ describe("boardStrip", () => {
     expect(strip.count).toBe(4);
     expect(strip.signals.map((s) => [s.kind, s.short])).toEqual([["late", "1"], ["next", "6′"]]);
     expect(strip.label).toBe("Abrir Preparo: 4 pedidos, 1 atrasado, próximo pronto em ~6 min");
+    expect(strip.dot).toBe("late");
   });
 
   it("Entrada: o que precisa de você não some atrás da coluna fechada", () => {
@@ -42,11 +43,18 @@ describe("boardStrip", () => {
     expect(strip.signals.map((s) => [s.kind, s.short])).toEqual([["need", "2"], ["late", "1"]]);
     // A previsão de pronto é só do Preparo.
     expect(strip.signals.some((s) => s.kind === "next")).toBe(false);
+    // O ponto mostra o mais grave.
+    expect(strip.dot).toBe("late");
+    const calm = boardStrip(zone("intake", "Entrada"), [
+      card({ ref: "A", attention: "confirm", attention_since_iso: ago(60), goal_minutes: 5 }),
+    ], NOW);
+    expect(calm.dot).toBe("need");
   });
 
   it("sem sinal, a tira fica com o número e o nome", () => {
     const strip = boardStrip(zone("expedition", "Saída"), [card()], NOW);
     expect(strip.signals).toEqual([]);
+    expect(strip.dot).toBeNull();
     expect(strip.label).toBe("Abrir Saída: 1 pedido");
   });
 });

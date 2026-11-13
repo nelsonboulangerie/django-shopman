@@ -1,13 +1,14 @@
-// A coluna recolhida do quadro (D, dono 13/11/2026): uma tira estreita que guarda o
-// lugar da coluna e diz, sem abrir, se ela pede olho. De cima para baixo: abrir, o
-// número, os sinais e o nome em pé. Os sinais são só os que mudam o que o gerente faz:
+// A coluna recolhida do quadro (D, dono 13/11/2026, variante 5): uma tira estreita que
+// guarda o lugar da coluna e diz, sem abrir, se ela pede olho: o número na linha do
+// cabeçalho e um ponto no canto (`dot`). Os sinais são os que mudam o que o gerente faz:
 //
 // - "precisam de você": o servidor marcou o pedido (`attention`). Em Novos recolhido
 //   é o que não pode sumir atrás da coluna fechada;
 // - "atrasados": passaram da meta da etapa, ou (na Cozinha) da previsão de pronto;
 // - "próximo pronto": em Em preparo, a previsão mais próxima (`ready_eta_iso`).
 //
-// Sem sinal, nada aparece: a tira fica com o número e o nome. Puro: testado em
+// O ponto mostra o mais grave (atraso antes de "precisa de você"); a frase inteira vai
+// no nome acessível e no título. Puro: testado em
 // `tests/boardStrip.test.ts`.
 import type { OrderCardProjection } from "~/types/orders";
 import type { ZoneView } from "./board";
@@ -29,6 +30,8 @@ export interface BoardStrip {
   title: string;
   count: number;
   signals: StripSignal[];
+  /** O ponto no canto da tira: o sinal mais grave, ou nada. */
+  dot: "late" | "need" | null;
   /** O nome acessível do botão que abre a coluna. */
   label: string;
 }
@@ -93,6 +96,7 @@ export function boardStrip(
     title: zone.title,
     count: cards.length,
     signals,
+    dot: late ? "late" : need ? "need" : null,
     label: `Abrir ${zone.title}: ${facts.join(", ")}`,
   };
 }
