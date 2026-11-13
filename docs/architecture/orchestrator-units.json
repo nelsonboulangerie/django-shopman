@@ -12625,7 +12625,9 @@
       ],
       "ports": [],
       "events": [],
-      "directives": [],
+      "directives": [
+        "PREORDER_ACTIVATE"
+      ],
       "config_surface": [],
       "tests": [
         "shopman/backstage/tests/test_pos_preorder_hand_over.py::test_entregar_conclui_a_encomenda_ainda_na_cozinha"
@@ -13097,7 +13099,9 @@
       ],
       "ports": [],
       "events": [],
-      "directives": [],
+      "directives": [
+        "PREORDER_ACTIVATE"
+      ],
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_handoff_without_nfce.py::test_o_gestor_despacha_e_o_alerta_nasce_sem_barrar"
@@ -19037,6 +19041,44 @@
       ],
       "test_gap_reason": null,
       "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "shop.preorder-kitchen-policy",
+      "question": "Quando o card da encomenda chega à Cozinha (hora combinada menos preparo menos antecedência)?",
+      "owner": "preorder.kitchen-policy",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.preorder_kitchen_policy:resolve_preorder_kitchen_policy",
+      "authoritative_symbols": [
+        "shopman.shop.policies.preorder_kitchen_policy:PreorderKitchenPolicy"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/preorder_kitchen_policy.py",
+          "symbols": [
+            "BLOCK",
+            "DEFAULT_LEAD_MINUTES",
+            "DEFAULT_PREP_MINUTES",
+            "PreorderKitchenPolicy",
+            "_minutes",
+            "resolve_preorder_kitchen_policy"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_preorder_kitchen_release.py::test_policy_ignores_garbage"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
       "out_of_extraction": false
     }
   ]

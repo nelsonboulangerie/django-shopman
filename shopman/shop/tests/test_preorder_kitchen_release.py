@@ -28,7 +28,7 @@ from shopman.shop.lifecycle import (
     release_preorder_now,
 )
 from shopman.shop.models import Channel, Shop
-from shopman.shop.preorder_kitchen_policy import (
+from shopman.shop.policies.preorder_kitchen_policy import (
     DEFAULT_LEAD_MINUTES,
     DEFAULT_PREP_MINUTES,
     PreorderKitchenPolicy,

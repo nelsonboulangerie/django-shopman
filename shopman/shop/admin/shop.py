@@ -79,7 +79,7 @@ from shopman.shop.operator_capacity_policy import (
     SUSTAIN_MINUTES_CEILING,
     SUSTAIN_MINUTES_FLOOR,
 )
-from shopman.shop.preorder_kitchen_policy import (
+from shopman.shop.policies.preorder_kitchen_policy import (
     DEFAULT_LEAD_MINUTES,
     DEFAULT_PREP_MINUTES,
     PreorderKitchenPolicy,
