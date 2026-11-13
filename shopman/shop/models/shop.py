@@ -494,6 +494,23 @@ class Shop(models.Model):
         ),
     )
 
+    # ── IA: qual conexão e qual modelo cada função usa (``shopman.shop.ai``) ──
+    ai_routes = models.JSONField(
+        "rotas de IA",
+        default=dict,
+        blank=True,
+        help_text=(
+            'Por propósito, a conexão de IA e o modelo. Propósito sem rota usa a rota "default"; '
+            "sem ela, a única conexão ativa do formato. Propósitos: concierge, triage, intents, "
+            "labeling, copy, marketing, recipe, scenarios, benchmark, decision.\n\n"
+            "Exemplo:\n"
+            "{\n"
+            '  "default": {"connection": "anthropic"},\n'
+            '  "copy": {"connection": "deepseek", "model": "deepseek-flash"}\n'
+            "}"
+        ),
+    )
+
     class Meta:
         verbose_name = "loja"
         verbose_name_plural = "loja"

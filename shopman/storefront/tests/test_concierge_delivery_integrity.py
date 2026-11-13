@@ -7,6 +7,7 @@ import pytest
 from django.utils import timezone
 
 from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage, OutboundAttempt
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import agent, service
 from shopman.storefront.concierge.contracts import HandoffOutcome, SendOutcome, WindowEvidence
 from shopman.storefront.tests.support.concierge_transport_v3 import (
@@ -27,7 +28,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture(autouse=True)
 def enabled(settings, monkeypatch):
-    settings.AI_ASSIST_API_KEY = "test-only"
+    configure_ai("test-only")
     settings.SHOPMAN_CONCIERGE = {
         "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,

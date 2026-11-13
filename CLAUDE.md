@@ -148,7 +148,7 @@ outras sessões e para o Pablo. Draft custa 20 segundos; redescobrir custa dias.
   legítima, desde que dita e com o trabalho publicado. Não contorne: publique.
 - `AGENTS.md` é link para este arquivo: o Codex lê a mesma regra.
 
-## ⛔ O PEDIDO: a fala do dono vira linha antes do primeiro edit
+## ⛔ A SOLICITAÇÃO: a fala do dono vira linha antes do primeiro edit
 
 Vale para Claude, Codex, DSH e humano. Sessão não tem memória; o repo tem.
 
@@ -160,9 +160,9 @@ número na linha):**
 make intake q="<as primeiras palavras dele, literais>" dono="Engenharia"
 ```
 
-O comando devolve `C-AAAA-NNN` e a linha `Pedido: C-AAAA-NNN`. O PR cita essa linha;
+O comando devolve `DEV-AAAA-NNN` e a linha `Compromisso: DEV-AAAA-NNN`. O PR cita essa linha;
 a CI reprova PR novo sem ela. O relatório final lista os IDs tocados e o estado de
-cada um. Pedido que não virou trabalho também é linha (`ABERTO`, `revisar_em` curto).
+cada um. Solicitação que não virou trabalho também é linha (`ABERTO`, `revisar_em` curto).
 
 **Adiamento tem gate próprio.** A seção `## Ficou de fora` do template declara o
 que ficou, e cada item vira issue aberta com label `ficou-de-fora` (check
