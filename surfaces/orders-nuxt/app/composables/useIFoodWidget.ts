@@ -8,6 +8,7 @@
 // A autorização é do iFood, por dispositivo, no Portal do Parceiro: o servidor
 // não vê token nenhum.
 import {
+  IFOOD_WIDGET_INIT_TIMEOUT_MS,
   IFOOD_WIDGET_SCRIPT,
   ifoodWidgetInit,
   type IFoodWidgetState,
@@ -68,6 +69,13 @@ export function useIFoodWidget() {
         return;
       }
       state.value = "loading";
+      // O `init` do iFood pode não responder nunca (iframe que não sobe, widget
+      // recusado): "Carregando" para sempre seria um rótulo que mente. Passado o
+      // prazo, o aviso manda para o Gestor do iFood; se o init responder depois,
+      // volta a pronto.
+      const timer = setTimeout(() => {
+        if (state.value === "loading") state.value = "failed";
+      }, IFOOD_WIDGET_INIT_TIMEOUT_MS);
       try {
         const widget = await loadScript();
         await widget.init(config);
@@ -75,6 +83,8 @@ export function useIFoodWidget() {
       } catch (error) {
         console.error("[ifood-widget]", error);
         state.value = "failed";
+      } finally {
+        clearTimeout(timer);
       }
     })();
     return started;

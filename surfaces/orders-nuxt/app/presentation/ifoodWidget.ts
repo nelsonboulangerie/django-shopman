@@ -8,6 +8,9 @@ import type { IFoodWidgetProjection } from "~/types/ifoodWidget";
 
 export const IFOOD_WIDGET_SCRIPT = "https://widgets.ifood.com.br/widget.js";
 
+/** Quanto o Gestor espera o `init` do iFood antes de dizer que o chat não carregou. */
+export const IFOOD_WIDGET_INIT_TIMEOUT_MS = 30_000;
+
 /** off: a loja não ligou · loading: baixando/autorizando · ready · failed. */
 export type IFoodWidgetState = "off" | "loading" | "ready" | "failed";
 
