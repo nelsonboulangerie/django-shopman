@@ -514,6 +514,7 @@
         }
       ],
       "batches_finished": 296,
+      "batch_margins": [],
       "batches_started_assumed": 0,
       "batches_measured": 117,
       "oven_coverage_percent": 40,

@@ -280,7 +280,7 @@ def test_home_projection_promotes_whatsapp_origin_only_with_real_cart(rf):
 
 
 def _login_home_customer(client, *, ref: str, phone: str, **extra):
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
     from shopman.guestman.models import Customer
 
     from shopman.shop.models import Shop

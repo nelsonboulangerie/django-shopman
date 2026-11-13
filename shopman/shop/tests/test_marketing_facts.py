@@ -84,6 +84,7 @@ def test_facts_replace_stale_event_values_with_canonical_owner_reads(product, mo
         lambda *args, **kwargs: {
             "availability_policy": "stock_only",
             "total_promisable": 3,
+            "is_tracked": True,
         },
     )
     now = timezone.now()

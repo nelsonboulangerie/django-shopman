@@ -2703,6 +2703,16 @@ _INTEGRATIONS_FIELDSETS = (
         },
     ),
     (
+        "Inteligência artificial",
+        {
+            "fields": ("ai_routes",),
+            "description": (
+                "Qual conexão de IA e qual modelo cada função usa. As conexões (provedor, endereço, "
+                "chave) ficam em Conexões de IA. Sem rota para uma função, vale a rota default."
+            ),
+        },
+    ),
+    (
         "Notificações e fiscal",
         {
             "fields": ("integrations_notification_default", "integrations_fiscal"),

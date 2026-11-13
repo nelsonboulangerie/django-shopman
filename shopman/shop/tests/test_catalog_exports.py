@@ -44,6 +44,7 @@ def test_build_catalog_export_returns_neutral_payload(monkeypatch):
     monkeypatch.setattr(
         "shopman.shop.projections.catalog_context.availability_for_sku",
         lambda sku, *, channel_ref: {
+            "is_tracked": True,
             "total_promisable": Decimal("3"),
             "availability_policy": "planned_ok",
             "is_paused": False,

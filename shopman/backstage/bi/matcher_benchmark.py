@@ -10,8 +10,8 @@ do catálogo). Nada aqui grava alias; o piloto só mede.
 - ``jev``: o modelo de decisão da TypeSafe. Recebe os K candidatos mais
   parecidos (a mesma lista curta do fuzzy) mais a opção ``other`` e devolve
   uma escolha com probabilidade. Cobra só entrada.
-- ``llm:<modelo>``: o mesmo pedido a um modelo da Anthropic (credencial de
-  ``AI_ASSIST_*``), com resposta em JSON — o do dia e o Haiku, lado a lado. É a
+- ``llm:<modelo>``: o mesmo pedido a um modelo no formato Anthropic (conexão de
+  IA do propósito ``benchmark``), com resposta em JSON — o do dia e o Haiku, lado a lado. É a
   linha de base que o Jev promete bater em custo e tempo.
 - ``embed``: embeddings locais (``fastembed``), o produto mais próximo em
   significado no catálogo inteiro. Custo zero, nada sai da casa.
@@ -33,8 +33,6 @@ import re
 import statistics
 import time
 from dataclasses import dataclass, field
-
-from django.conf import settings
 
 from shopman.backstage.bi.mapping import DEFAULT_MIN_SCORE, normalize_name
 from shopman.shop.services.ai_pricing import Price
@@ -155,11 +153,13 @@ class JevMatcher:
     name = "jev"
 
     def __init__(self, *, timeout: float = 15.0, session=None):
-        self.api_key = (getattr(settings, "JEV_API_KEY", "") or "").strip()
-        if not self.api_key:
-            raise MatcherNotConfigured("Jev não configurado. Defina JEV_API_KEY.")
-        self.url = settings.JEV_API_URL
-        self.model = settings.JEV_MODEL
+        from shopman.shop import ai
+
+        try:
+            # Só nome de produto sai da casa: sem texto de cliente.
+            self.url, self.api_key, self.model = ai.jev_endpoint(customer_text=False)
+        except ai.AINotConfigured as exc:
+            raise MatcherNotConfigured(f"Jev não configurado: {exc}.") from exc
         self.timeout = timeout
         if session is None:
             import requests
@@ -252,7 +252,7 @@ _JSON_OBJECT = re.compile(r"\{.*\}", re.S)
 
 
 class LLMMatcher:
-    """Um modelo da Anthropic (credencial de ``AI_ASSIST_*``) respondendo a escolha em JSON.
+    """Um modelo no formato Anthropic (conexão de IA ``benchmark``) respondendo a escolha em JSON.
 
     Chama o SDK direto, e não ``copy_assist.suggest``, porque o piloto precisa do
     ``usage`` (tokens) que o transporte de texto descarta. Um concorrente por
@@ -262,15 +262,17 @@ class LLMMatcher:
     """
 
     def __init__(self, *, model: str | None = None, timeout: float = 60.0, client=None):
-        api_key = (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
-        if client is None and not api_key:
-            raise MatcherNotConfigured("LLM não configurado. Defina AI_ASSIST_API_KEY.")
-        if client is None:
-            import anthropic
+        from shopman.shop import ai
 
-            client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
+        try:
+            if client is None:
+                client, default_model = ai.anthropic_client("benchmark", timeout=timeout)
+            else:
+                default_model = "" if model else ai.resolve("benchmark").model
+        except ai.AINotConfigured as exc:
+            raise MatcherNotConfigured(f"LLM não configurado: {exc}.") from exc
         self.client = client
-        self.model = model or settings.AI_ASSIST_MODEL
+        self.model = model or default_model
         self.name = f"llm:{self.model}"
 
     def build_prompt(self, case: Case, keyed: dict[str, CatalogEntry]) -> str:
@@ -574,12 +576,12 @@ def build_matchers(names, *, llm_models=None, min_score: int = DEFAULT_MIN_SCORE
 
 def prices_for(matchers, *, llm_price_in=None, llm_price_out=None, jev_price_in=0.042, jev_price_out=0.0):
     """({nome: Price}, [modelos sem preço na tabela])."""
-    from shopman.shop.services.ai_pricing import LLM_PRICES
+    from shopman.shop.services.ai_pricing import model_prices
 
     prices, unpriced = {"jev": Price(jev_price_in, jev_price_out)}, []
     for matcher in matchers:
         if isinstance(matcher, LLMMatcher):
-            table_in, table_out = LLM_PRICES.get(matcher.model, (None, None))
+            table_in, table_out = model_prices(matcher.model) or (None, None)
             price_in = llm_price_in if llm_price_in is not None else table_in
             price_out = llm_price_out if llm_price_out is not None else table_out
             if price_in is None or price_out is None:

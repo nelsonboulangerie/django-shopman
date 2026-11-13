@@ -80,24 +80,26 @@ LABEL_ATTRIBUTE_FIELDS = {
 def _label_attributes() -> LabelAttributesProvider | None:
     """O provedor de atributos de rótulo, ou ``None`` se não houver.
 
-    O contrato é ``shopman.offerman.protocols.LabelAttributesProvider``.
+    O contrato é ``shopman.offerman.protocols.LabelAttributesProvider``. Sem
+    caminho configurado, os campos somem; caminho configurado que não carrega é
+    erro de configuração e grita, em vez de sumir com os campos calado.
     """
+    from django.core.exceptions import ImproperlyConfigured
+    from django.utils.module_loading import import_string
     from shopman.offerman.conf import get_offerman_settings
 
     path = get_offerman_settings().LABEL_ATTRIBUTES_PROVIDER
     if not path:
         return None
     try:
-        from django.utils.module_loading import import_string
+        provider_class = import_string(path)
+    except ImportError as exc:
+        raise ImproperlyConfigured(
+            f"OFFERMAN['LABEL_ATTRIBUTES_PROVIDER'] não carrega: {path!r} ({exc})"
+        ) from exc
+    return provider_class()
 
-        return import_string(path)()
-    except Exception:  # pragma: no cover — configuração, não fluxo
-        import logging
 
-        logging.getLogger(__name__).warning(
-            "Failed to load OFFERMAN['LABEL_ATTRIBUTES_PROVIDER']: %s", path, exc_info=True,
-        )
-        return None
 REMOTE_PURCHASE_FORM_FIELDS = (
     "allergens_text",
     "dietary_info_text",

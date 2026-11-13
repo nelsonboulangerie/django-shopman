@@ -5,7 +5,10 @@
 import { describe, expect, it } from "vitest";
 import type { BIOverShortRow, BIProductionReport } from "~/types/bi";
 import { overShortCsv, showHiddenLabel, verdictColor } from "~/presentation/overShort";
+import { formatMoney } from "~/presentation/bi";
 import {
+  batchMarginLabel,
+  batchTracedLabel,
   bucketAxisLabel,
   finishedPoints,
   ovenCsv,
@@ -25,6 +28,7 @@ function day(date: string, started: string, finished: string, loss = "0") {
 }
 
 const report: BIProductionReport = {
+  batch_margins: [],
   date_from: "2026-10-01",
   date_to: "2026-10-03",
   days: [day("2026-10-01", "100", "90", "10"), day("2026-10-02", "0", "0"), day("2026-10-03", "50", "50")],
@@ -110,5 +114,26 @@ describe("Sobrou ou faltou: a tabela produto a produto", () => {
     expect(productionView("lots")).toBe("lots");
     expect(productionView(undefined)).toBe("day");
     expect(productionView(["lots"])).toBe("day");
+  });
+});
+
+describe("custo e margem por lote", () => {
+  const row = {
+    ref: "WO-1", recipe: "Pão", date: "2026-11-10", revenue_q: 3000, total_q: 1800, margin_q: null,
+    cost_status: "complete", gaps: [], output_quantity: "10", traced_quantity: "3",
+    lot_status: "open", sells_until: "2026-11-11",
+  };
+
+  it("lote em venda diz até quando, em vez de uma margem pela metade", () => {
+    expect(batchMarginLabel(row)).toBe("Em venda até 11/11");
+    expect(batchMarginLabel({ ...row, sells_until: null })).toBe("Em venda");
+    expect(batchMarginLabel({ ...row, lot_status: "untraceable" })).toBe("Lote sem rastreio");
+    expect(batchMarginLabel({ ...row, cost_status: "missing", total_q: null })).toBe("Sem custo completo");
+  });
+
+  it("lote encerrado mostra a margem do lote inteiro e quanto foi rastreado", () => {
+    const closed = { ...row, lot_status: "closed", margin_q: 1200 };
+    expect(batchMarginLabel(closed)).toBe(formatMoney(1200));
+    expect(batchTracedLabel(closed)).toBe("3 de 10");
   });
 });

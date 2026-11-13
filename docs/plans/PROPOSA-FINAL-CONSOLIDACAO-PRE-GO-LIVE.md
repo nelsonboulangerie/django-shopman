@@ -1,5 +1,5 @@
-# Proposta FINAL — consolidação pré go-live do Django Shopman (v6)
-> 2026-11-10 · Sucede a auditoria v5 · Incorpora decisões do dono (workstation, promise_for_sku, camada de integrações, fronteira de superfície)
+# Proposta FINAL — consolidação pré go-live do Django Shopman
+> 2026-11-10 · Sucede a [auditoria do reset arquitetural](../reports/2026-11-10-auditoria-reset-arquitetural.md) · Incorpora decisões do dono (workstation, promise_for_sku, camada de integrações, fronteira de superfície)
 
 ## 0. Decisões vinculantes (o que já está decidido)
 

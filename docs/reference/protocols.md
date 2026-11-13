@@ -101,8 +101,6 @@ Ver nota em `shopman/shop/protocols.py`.
 
 | Protocol | Arquivo | Motivo |
 |---|---|---|
-| `CatalogProtocol` | `catalog.py` | Resolver `output_ref` → produto |
-| `ProductInfoBackend` | `catalog.py` | Dados descritivos de insumos/produtos |
 | `DemandProtocol` | `demand.py` | Origem de demanda (pedidos reais ou simulação) |
 | `InventoryProtocol` | `inventory.py` | Consultar disponibilidade de insumos |
 
@@ -110,7 +108,6 @@ Ver nota em `shopman/shop/protocols.py`.
 - `craftsman/contrib/stockman/production.py` — `CraftingProductionBackend`
 - `craftsman/contrib/demand/backend.py` — `OrderingDemandBackend`
 - `craftsman/adapters/noop.py` — `NoopDemandBackend`
-- `craftsman/adapters/stock.py` — `StockingBackend`
 
 ---
 

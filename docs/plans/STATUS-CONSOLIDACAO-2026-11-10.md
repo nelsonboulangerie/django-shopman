@@ -2,8 +2,8 @@
 
 ## O que foi entregue (nesta sessão, todos arquivos NOVOS, sem conflito)
 
-- docs/reports/auditoria-reset-v5-2026-11-10.md — auditoria v5 (veredito APROVA COM REPAROS).
-- docs/plans/PROPOSA-FINAL-CONSOLIDACAO-PRE-GO-LIVE.md — proposta v6.
+- docs/reports/2026-11-10-auditoria-reset-arquitetural.md — auditoria do reset arquitetural (veredito APROVA COM REPAROS; hoje o relatório único, consolidado em 11/11).
+- docs/plans/PROPOSA-FINAL-CONSOLIDACAO-PRE-GO-LIVE.md — proposta final da consolidação.
 - docs/plans/RUNBOOK-CONSOLIDACAO-URGENTE-2026-11-10.md — runbook (corrigido).
 - docs/reference/guard-map.md — mapa de guardas (índice das portas invariantes).
 - scripts/check_guard_map.py — guarda do próprio mapa (roda, confere completude).
@@ -60,7 +60,7 @@
 
 | Frente | PR | O que fez |
 |---|---|---|
-| F0 | #2261 | Artefatos v7 sobre o main; guardas com ordem de import corrigida |
+| F0 | #2261 | Artefatos da spec de consolidação sobre o main; guardas com ordem de import corrigida |
 | F4b Doorman | #2262 | Alvos já resolvidos no main; travados por contrato e fronteira |
 | F2 promessa | #2263 | `promise_for_sku` (rename sem alias); caracterização com zero divergência; `_stock_decision` e `get_promise_decision` apagados |
 | F1 guardas | #2264 | 9 guardas AST com baseline única que encolhe; `make constitution-guards` no job Quality; guard-map e Constituição ligados |
@@ -88,7 +88,7 @@ Ordem de entrada: #2261, depois #2262/#2263, depois #2264/#2265 (empilhados sobr
    `services/substitutes.py`, `marketing_facts.py`, `social_publish_rules.py` e
    `backstage/services/shelf_outages.py` decidem "pode pedir" pela política de oferta, fora do
    Stockman.
-6. **Menores:** o Craftsman lê o backend de catálogo por `hasattr`, e `ProductInfoBackend` não está
+6. ✅ **Menores** (resolvido em 11/11, PR #2276): o Craftsman lia o backend de catálogo por `hasattr`, e `ProductInfoBackend` não está
    ligado; o shop importa o módulo privado `doorman.services._user_bridge`; `_label_attributes`
    engole erro de import do provider (fazer falhar é decisão de comportamento).
 

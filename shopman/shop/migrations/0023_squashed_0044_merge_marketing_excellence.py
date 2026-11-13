@@ -6,11 +6,10 @@ as 0040 a 0043 e a merge 0044. Os números repetidos eram dívida de
 nomenclatura (o grafo resolvia); o squash a paga sem renumerar migração já
 aplicada.
 
-Como cada banco a enxerga: `replaces` lista os 39 nomes. O banco que já
-aplicou todos eles (o alpha, que vira produção) a dá por aplicada sem rodar
-nada, e o `migrate` grava o nome dela em `django_migrations`. O banco novo roda
-só esta. Os arquivos substituídos saíram do repositório; `replaces` fica até
-todo banco vivo ter o nome desta gravado (ver o PR da F5).
+Substituiu 39 migrations com `replaces` até o alpha (o único banco vivo, que
+vira produção) gravar o nome desta em `django_migrations` no deploy da F5
+(11/11/2026, `No migrations to apply`). Depois disso o `replaces` saiu: esta
+é uma migration comum, e banco novo roda só ela.
 
 As funções de `RunPython` vieram das migrations de origem com o prefixo da
 origem no nome (por exemplo `qh42_forwards`), cada bloco sob um cabeçalho
@@ -1134,7 +1133,6 @@ def qh42_backwards(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
-    replaces = [('shop', '0023_alter_usernotification_category'), ('shop', '0024_cancel_advanced_order_permission'), ('shop', '0025_concierge_conversation'), ('shop', '0026_conversation_flags'), ('shop', '0027_attribute_definition'), ('shop', '0028_seed_attribute_definitions'), ('shop', '0029_product_affinity'), ('shop', '0030_seed_suggestion_rules'), ('shop', '0031_enable_substitute_rule'), ('shop', '0032_forget_rules_cache'), ('shop', '0033_rename_legacy_attribute_keys'), ('shop', '0034_attribute_extends_from_source'), ('shop', '0035_promessa_que_a_casa_honra'), ('shop', '0036_devolve_lactose_e_vegetariano'), ('shop', '0037_contact_release'), ('shop', '0038_qualitygrade_is_active'), ('shop', '0039_backfill_batch_quality_grade_ref'), ('shop', '0040_quality_grade_labels'), ('shop', '0041_enable_remote_waitlist_notifications'), ('shop', '0042_freeze_active_hold_quality_policy'), ('shop', '0043_announcement_status_superseded'), ('shop', '0023_audience_snapshot'), ('shop', '0024_marketing_capabilities'), ('shop', '0025_marketing_test_receipt'), ('shop', '0026_marketing_command_receipt'), ('shop', '0027_marketing_approval_outbox'), ('shop', '0028_marketing_transactional_transitions'), ('shop', '0029_marketing_outbox_recovery'), ('shop', '0030_marketing_delivery_ledger'), ('shop', '0031_marketing_attempt_outcomes'), ('shop', '0032_marketing_delivery_leases'), ('shop', '0033_marketing_delivery_aggregate'), ('shop', '0034_marketing_delivery_recovery'), ('shop', '0035_marketing_security_authorization'), ('shop', '0036_marketing_platform_configuration'), ('shop', '0037_user_notification_lifecycle'), ('shop', '0038_alter_announcementtemplate_use_ai_generation_and_more'), ('shop', '0039_campaign_version_and_fire_audit'), ('shop', '0044_merge_marketing_excellence')]
 
     dependencies = [
         ('craftsman', '0008_alter_workorderevent_kind'),

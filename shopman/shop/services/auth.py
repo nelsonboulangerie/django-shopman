@@ -540,9 +540,9 @@ def trusted_device_login(request, *, phone: str):
     """
     from django.contrib.auth import login
     from django.db import transaction
+    from shopman.doorman import get_or_create_user_for_customer
     from shopman.doorman.conf import get_adapter
     from shopman.doorman.protocols.identity import IdentityConflict
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
     from shopman.doorman.services.device_trust import DeviceTrustService
 
     from shopman.shop.services import account as account_service
@@ -671,10 +671,10 @@ def passkey_login(request, *, credential: dict):
     """
     from django.contrib.auth import login
     from django.db import transaction
+    from shopman.doorman import get_or_create_user_for_customer
     from shopman.doorman.conf import get_adapter
     from shopman.doorman.models import Passkey
     from shopman.doorman.services import passkey as passkey_service
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
 
     from shopman.shop.services import account as account_service
     from shopman.shop.services.customer_sign_in import mark_method

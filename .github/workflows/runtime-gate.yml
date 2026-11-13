@@ -30,6 +30,9 @@ jobs:
     name: Quality + deploy contract
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: read
 
     steps:
       - name: Checkout
@@ -104,6 +107,22 @@ jobs:
           .venv/bin/python scripts/check_instance_descriptors.py
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_instance_descriptors.py -q
           python scripts/check_canonical_docs.py
+
+      # Gate de nascimento dos compromissos: PR que adia trabalho numa seção
+      # "Fora deste PR / Seguimento / Pendências" precisa citar um C-AAAA-NNN
+      # que exista em docs/coordination/COMMITMENTS.md. Sem isto, o adiamento
+      # morre no merge (foi o #2298: dois itens reais, sem ID, dono ou data).
+      # No merge_group não há corpo de PR; o PR já passou por aqui antes.
+      - name: "Compromissos: adiamento tem ID, dono, prazo e prova"
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          .venv/bin/python scripts/check_commitments.py --pr-body-env --no-fail-overdue --with-issues \
+            --pr-created "${{ github.event.pull_request.created_at }}" \
+            --author "${{ github.event.pull_request.user.login }}"
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_commitments.py -q
 
       # Trava barata de multi-loja (ADR-042): o alvo é um schema do Postgres por
       # loja, e até lá nenhuma configuração ou credencial NOVA de uma loja entra

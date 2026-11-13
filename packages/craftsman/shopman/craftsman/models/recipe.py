@@ -427,13 +427,6 @@ def _catalog_unit_for_sku(sku: str) -> str:
 
 
 def _validate_output_sku_for_recipe(sku: str) -> None:
-    validation = _catalog_output_validation(sku)
-    if validation is not None and not getattr(validation, "valid", True):
-        raise ValidationError({
-            "output_sku": getattr(validation, "message", "")
-            or _("SKU inválido para saída de produção.")
-        })
-
     info = _catalog_product_info(sku)
     if info is not None and getattr(info, "is_bundle", False):
         raise ValidationError({
@@ -445,6 +438,12 @@ def _validate_output_sku_for_recipe(sku: str) -> None:
 
 
 def _catalog_product_info(sku: str):
+    """O que o ``CRAFTSMAN["CATALOG_BACKEND"]`` sabe do SKU, ou ``None``.
+
+    O contrato é um verbo só, ``get_product(sku)``, e os três backends ligados o
+    implementam (Offerman, Buyman e o composto do orquestrador). A ficha lê
+    ``unit``, ``is_bundle`` e ``name`` da resposta.
+    """
     try:
         from shopman.craftsman.adapters.catalog import get_catalog_backend
 
@@ -452,30 +451,7 @@ def _catalog_product_info(sku: str):
     except Exception:
         return None
 
-    if hasattr(backend, "get_product"):
-        try:
-            return backend.get_product(sku)
-        except Exception:
-            return None
-    if hasattr(backend, "get_product_info"):
-        try:
-            return backend.get_product_info(sku)
-        except Exception:
-            return None
-    return None
-
-
-def _catalog_output_validation(sku: str):
     try:
-        from shopman.craftsman.adapters.catalog import get_catalog_backend
-
-        backend = get_catalog_backend()
-    except Exception:
-        return None
-
-    if not hasattr(backend, "validate_output_sku"):
-        return None
-    try:
-        return backend.validate_output_sku(sku)
+        return backend.get_product(sku)
     except Exception:
         return None

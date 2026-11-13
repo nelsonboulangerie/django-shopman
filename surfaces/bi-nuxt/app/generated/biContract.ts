@@ -13,6 +13,22 @@ export interface BIOvenTimeRow {
   avg_planned_minutes: string;
 }
 
+/** Custo congelado e receita rastreada de uma fornada fechada. */
+export interface BIProductionBatchMargin {
+  ref: string;
+  recipe: string;
+  date: string;
+  revenue_q: number;
+  total_q: number | null;
+  margin_q: number | null;
+  cost_status: string;
+  gaps: string[];
+  output_quantity: string;
+  traced_quantity: string;
+  lot_status: string;
+  sells_until: string | null;
+}
+
 /** Um dia da série: produção fechada e o mix comercial da qualidade. */
 export interface BIProductionDay {
   date: string;
@@ -36,7 +52,7 @@ export interface BIProductionPrevious {
   finished_by_day: string[];
 }
 
-/** BIProductionReport(date_from: 'str', date_to: 'str', days: 'tuple[BIProductionDay, ...]', oven_time_by_recipe: 'tuple[BIOvenTimeRow, ...]', oven_time_by_oven: 'tuple[BIOvenTimeRow, ...]', batches_finished: 'int', batches_started_assumed: 'int', batches_measured: 'int', oven_coverage_percent: 'int', previous: 'BIProductionPrevious') */
+/** BIProductionReport(date_from: 'str', date_to: 'str', days: 'tuple[BIProductionDay, ...]', oven_time_by_recipe: 'tuple[BIOvenTimeRow, ...]', oven_time_by_oven: 'tuple[BIOvenTimeRow, ...]', batches_finished: 'int', batches_started_assumed: 'int', batches_measured: 'int', oven_coverage_percent: 'int', previous: 'BIProductionPrevious', batch_margins: 'tuple[BIProductionBatchMargin, ...]') */
 export interface BIProductionReport {
   date_from: string;
   date_to: string;
@@ -48,6 +64,7 @@ export interface BIProductionReport {
   batches_measured: number;
   oven_coverage_percent: number;
   previous: BIProductionPrevious;
+  batch_margins: BIProductionBatchMargin[];
 }
 
 /** Um lote fechado do produto no dia: o registro de onde o "fez" saiu. */

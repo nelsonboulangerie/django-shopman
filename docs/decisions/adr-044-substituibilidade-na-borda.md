@@ -3,7 +3,7 @@
 **Status:** Aceito
 **Data:** 2026-11-10
 **Escopo:** packages/* (kernels), shopman/shop (orquestrador), integrações
-**Origem:** auditoria v5/v6 + questão Q6 do dono (2026-11-10)
+**Origem:** [auditoria do reset arquitetural](../reports/2026-11-10-auditoria-reset-arquitetural.md) e proposta final da consolidação + questão Q6 do dono (2026-11-10)
 
 ## Contexto
 

@@ -204,7 +204,7 @@ Referências:
 
 - [protocols/inventory.py](../../packages/craftsman/shopman/craftsman/protocols/inventory.py#L1)
 - [protocols/demand.py](../../packages/craftsman/shopman/craftsman/protocols/demand.py#L1)
-- [protocols/catalog.py](../../packages/craftsman/shopman/craftsman/protocols/catalog.py#L1)
+- `protocols/catalog.py` (removido em 11/11/2026, PR #2278)
 - [adapters/stock.py](../../packages/craftsman/shopman/craftsman/adapters/stock.py#L48)
 - [contrib/demand/backend.py](../../packages/craftsman/shopman/craftsman/contrib/demand/backend.py#L22)
 - [contrib/stockman/production.py](../../packages/craftsman/shopman/craftsman/contrib/stockman/production.py#L30)

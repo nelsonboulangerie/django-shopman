@@ -27,7 +27,7 @@ def _customer() -> Customer:
 
 
 def _login(client: Client, customer: Customer, *, step_up: bool = False) -> None:
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
 
     from shopman.storefront.tests.identity_fakes import grant_recent_step_up, make_identity_view
 

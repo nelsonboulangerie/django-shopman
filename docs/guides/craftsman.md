@@ -83,10 +83,6 @@ class InventoryProtocol(Protocol):
 
 Interface para dados de demanda histórica.
 
-### CatalogProtocol
-
-Interface para dados de catálogo.
-
 ## Configuração
 
 Chave Django settings: `CRAFTSMAN`
@@ -94,7 +90,7 @@ Chave Django settings: `CRAFTSMAN`
 | Setting | Default | Descrição |
 |---------|---------|-----------|
 | `INVENTORY_BACKEND` | None | Dotted path para InventoryProtocol |
-| `CATALOG_BACKEND` | None | Dotted path para CatalogProtocol |
+| `CATALOG_BACKEND` | None | Dotted path do backend de catálogo: um verbo só, `get_product(sku)` (contrato em `offerman.protocols.CatalogBackend`) |
 | `DEMAND_BACKEND` | None | Dotted path para DemandProtocol |
 | `SAFETY_STOCK_PERCENT` | 0.20 | Margem de segurança (20%) |
 | `HISTORICAL_DAYS` | 28 | Dias de histórico para sugestões |

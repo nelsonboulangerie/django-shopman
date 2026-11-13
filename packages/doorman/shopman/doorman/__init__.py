@@ -3,6 +3,7 @@ Shopman Doorman — Phone-First Authentication.
 
 Usage:
     from shopman.doorman import get_access_link_service, get_auth_service
+    from shopman.doorman import forget_customer, get_or_create_user_for_customer
 """
 
 __title__ = "Shopman Doorman"
@@ -39,6 +40,12 @@ def __getattr__(name):
     elif name == 'hash_device_token':
         from shopman.doorman.models.device_trust import _hash_token
         return _hash_token
+    elif name in ('get_or_create_user_for_customer', 'forget_customer'):
+        # Os dois verbos da ponte identidade → ``User``: o host abre a sessão de um
+        # cliente verificado e esquece o login dele na anonimização (LGPD). Saem aqui
+        # para que ninguém de fora importe ``services._user_bridge``, que é interno.
+        from shopman.doorman.services import _user_bridge
+        return getattr(_user_bridge, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -48,4 +55,6 @@ __all__ = [
     "TrustedDevice",
     "SubjectType",
     "hash_device_token",
+    "get_or_create_user_for_customer",
+    "forget_customer",
 ]

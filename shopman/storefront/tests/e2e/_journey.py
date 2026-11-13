@@ -192,7 +192,7 @@ def authenticate(client: Client, customer) -> None:
     After this, requests via ``client`` have ``request.customer`` populated and
     ``get_authenticated_customer`` returns the ``Customer`` — no OTP/HTTP needed.
     """
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
 
     from shopman.storefront.tests.identity_fakes import make_identity_view
 

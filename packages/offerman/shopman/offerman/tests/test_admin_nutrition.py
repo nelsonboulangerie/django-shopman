@@ -80,6 +80,25 @@ def test_the_core_has_no_opinion_about_label_vocabulary(sem_provedor):
     assert _label_attributes() is None
 
 
+@pytest.mark.parametrize(
+    "path",
+    ["shopman.nao_existe.Provedor", "shopman.offerman.protocols.NaoExiste"],
+)
+def test_a_provider_path_that_does_not_load_fails_loud(settings, path):
+    """Caminho configurado que não carrega é erro de configuração, não "sem provedor".
+
+    Engolir o erro sumia com alérgeno, dieta e porção do formulário sem ninguém
+    saber por quê. Antes do go-live não há configuração velha a tolerar.
+    """
+    from django.core.exceptions import ImproperlyConfigured
+    from shopman.offerman.contrib.admin_unfold.nutrition_form import _label_attributes
+
+    settings.OFFERMAN = {**getattr(settings, "OFFERMAN", {}), "LABEL_ATTRIBUTES_PROVIDER": path}
+
+    with pytest.raises(ImproperlyConfigured, match="LABEL_ATTRIBUTES_PROVIDER"):
+        _label_attributes()
+
+
 def test_form_populates_initial_from_instance(sem_provedor):
     product = Product.objects.create(
         sku="INIT",
