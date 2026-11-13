@@ -79,6 +79,11 @@ from shopman.shop.operator_capacity_policy import (
     SUSTAIN_MINUTES_CEILING,
     SUSTAIN_MINUTES_FLOOR,
 )
+from shopman.shop.policies.preorder_kitchen_policy import (
+    DEFAULT_LEAD_MINUTES,
+    DEFAULT_PREP_MINUTES,
+    PreorderKitchenPolicy,
+)
 from shopman.shop.production_config import ProductionConfig
 from shopman.shop.purchase_policy import POLICY_MINIMUMS, PurchasePolicy
 from shopman.shop.resale_markup import DEFAULT_RESALE_MARKUP_PCT, MAX_RESALE_MARKUP_PCT, ResaleMarkup
@@ -487,6 +492,39 @@ def _parse_markup_by_collection(raw: str) -> dict[str, int]:
     unknown = sorted(set(result) - set(Collection.objects.filter(ref__in=result).values_list("ref", flat=True)))
     if unknown:
         errors.append(f"Categoria desconhecida: {', '.join(unknown)}. Use o código da coleção.")
+    if errors:
+        raise forms.ValidationError(errors)
+    return result
+
+
+#: Teto de cada tempo da encomenda na Cozinha (preparo, antecedência), em minutos.
+MAX_PREORDER_KITCHEN_MINUTES = 720
+
+
+def _parse_prep_minutes_by_sku(raw: str) -> dict[str, int]:
+    """``"BAGUETE: 20; BOLO-CHOC: 90"`` → ``{"BAGUETE": 20, "BOLO-CHOC": 90}``, conferindo cada SKU."""
+    from shopman.offerman.models import Product
+
+    result: dict[str, int] = {}
+    errors: list[str] = []
+    for chunk in (part.strip() for part in raw.replace("\n", ";").split(";")):
+        if not chunk:
+            continue
+        sku, sep, value = (piece.strip() for piece in chunk.partition(":"))
+        try:
+            minutes = int(value) if sep else None
+        except ValueError:
+            minutes = None
+        if not sku or minutes is None or minutes < 0 or minutes > MAX_PREORDER_KITCHEN_MINUTES:
+            errors.append(
+                f"\"{chunk}\": escreva SKU: minutos, como BAGUETE: 20 "
+                f"(de 0 a {MAX_PREORDER_KITCHEN_MINUTES} minutos)."
+            )
+            continue
+        result[sku] = minutes
+    unknown = sorted(set(result) - set(Product.objects.filter(sku__in=result).values_list("sku", flat=True)))
+    if unknown:
+        errors.append(f"SKU desconhecido: {', '.join(unknown)}. Use o SKU do produto no catálogo.")
     if errors:
         raise forms.ValidationError(errors)
     return result
@@ -953,6 +991,38 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         help_text=(
             "Categoria é a coleção principal do produto (use o código da coleção). "
             "Separe por ponto e vírgula. Categoria fora da lista usa o markup padrão."
+        ),
+    )
+    fields["defaults_preorder_kitchen_lead_minutes"] = forms.IntegerField(
+        label="Antecedência da encomenda na Cozinha (min)",
+        required=False,
+        min_value=0,
+        max_value=MAX_PREORDER_KITCHEN_MINUTES,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_LEAD_MINUTES)}),
+        help_text=(
+            "Folga somada ao preparo. Com 15 min de antecedência e 30 min de preparo, a encomenda "
+            "combinada para as 17h chega à Cozinha às 16h15. "
+            f"Em branco = {DEFAULT_LEAD_MINUTES} min."
+        ),
+    )
+    fields["defaults_preorder_kitchen_default_prep_minutes"] = forms.IntegerField(
+        label="Preparo padrão da encomenda (min)",
+        required=False,
+        min_value=0,
+        max_value=MAX_PREORDER_KITCHEN_MINUTES,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_PREP_MINUTES)}),
+        help_text=(
+            "Vale para todo produto que não tem preparo próprio na lista ao lado. "
+            f"Em branco = {DEFAULT_PREP_MINUTES} min."
+        ),
+    )
+    fields["defaults_preorder_kitchen_prep_minutes_by_sku"] = forms.CharField(
+        label="Preparo por produto (min)",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "BAGUETE: 20; BOLO-CHOC: 90"}),
+        help_text=(
+            "SKU e minutos de preparo, separados por ponto e vírgula. Encomenda com vários produtos "
+            "usa o maior preparo entre eles. Produto fora da lista usa o preparo padrão."
         ),
     )
     fields["defaults_marketing_whatsapp_minimum_audience"] = forms.IntegerField(
@@ -1618,6 +1688,14 @@ class ShopForm(forms.ModelForm):
                 )]
                 field.initial = str(purchase_block.get(f"receive_position_{key}") or "")
 
+        if self._has("defaults_preorder_kitchen_lead_minutes"):
+            kitchen = PreorderKitchenPolicy.from_defaults(defaults)
+            self.fields["defaults_preorder_kitchen_lead_minutes"].initial = kitchen.lead_minutes
+            self.fields["defaults_preorder_kitchen_default_prep_minutes"].initial = kitchen.default_prep_minutes
+            self.fields["defaults_preorder_kitchen_prep_minutes_by_sku"].initial = "; ".join(
+                f"{sku}: {minutes}" for sku, minutes in sorted(kitchen.prep_minutes_by_sku.items())
+            )
+
         if self._has("defaults_purchase_resale_markup_pct"):
             markup = ResaleMarkup.from_defaults(defaults)
             self.fields["defaults_purchase_resale_markup_pct"].initial = markup.default_pct
@@ -1722,6 +1800,14 @@ class ShopForm(forms.ModelForm):
                 else:
                     previous_threshold = threshold
                     previous_label = TIER_LABELS[name]
+
+        if self._has("defaults_preorder_kitchen_prep_minutes_by_sku"):
+            try:
+                cleaned_data["defaults_preorder_kitchen_prep_minutes_by_sku"] = _parse_prep_minutes_by_sku(
+                    cleaned_data.get("defaults_preorder_kitchen_prep_minutes_by_sku") or ""
+                )
+            except forms.ValidationError as exc:
+                self.add_error("defaults_preorder_kitchen_prep_minutes_by_sku", exc)
 
         if self._has("defaults_purchase_resale_markup_by_collection"):
             try:
@@ -2249,6 +2335,19 @@ class ShopForm(forms.ModelForm):
             ) or {}
             defaults["purchase"] = purchase_cfg
 
+        if self._has("defaults_preorder_kitchen_lead_minutes"):
+            kitchen_cfg = dict(
+                defaults.get("preorder_kitchen") if isinstance(defaults.get("preorder_kitchen"), dict) else {}
+            )
+            lead = self.cleaned_data.get("defaults_preorder_kitchen_lead_minutes")
+            prep = self.cleaned_data.get("defaults_preorder_kitchen_default_prep_minutes")
+            kitchen_cfg["lead_minutes"] = int(lead) if lead is not None else DEFAULT_LEAD_MINUTES
+            kitchen_cfg["default_prep_minutes"] = int(prep) if prep is not None else DEFAULT_PREP_MINUTES
+            kitchen_cfg["prep_minutes_by_sku"] = self.cleaned_data.get(
+                "defaults_preorder_kitchen_prep_minutes_by_sku"
+            ) or {}
+            defaults["preorder_kitchen"] = kitchen_cfg
+
         return defaults
 
 
@@ -2520,6 +2619,20 @@ _ORDERING_FIELDSETS = (
             "description": (
                 "Turnos de retirada das encomendas e janela máxima para encomendar. "
                 "Para hoje, a loja oferece as meias horas do expediente que ainda dão."
+            ),
+        },
+    ),
+    (
+        "Encomenda na Cozinha",
+        {
+            "fields": (
+                ("defaults_preorder_kitchen_lead_minutes", "defaults_preorder_kitchen_default_prep_minutes"),
+                "defaults_preorder_kitchen_prep_minutes_by_sku",
+            ),
+            "description": (
+                "No dia da encomenda, o card chega à Cozinha na hora combinada menos o preparo e a "
+                "antecedência. Chegar não é começar: o posto ainda toca em Iniciar. Encomenda sem "
+                "hora combinada chega na abertura da loja."
             ),
         },
     ),

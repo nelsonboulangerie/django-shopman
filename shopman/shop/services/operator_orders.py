@@ -1644,6 +1644,7 @@ def hand_over_at_counter(
         )
     elif tenders:
         raise ValueError("Esta encomenda já está paga: não há o que receber.")
+    _fulfill_on_hand_over(order)
     advance_order(order, actor=actor, cash_shift=cash_shift, target_status=Order.Status.COMPLETED)
     logger.info("operator_hand_over_at_counter order=%s received=%s", order.ref, received)
     return received
@@ -1656,6 +1657,25 @@ def hand_over_at_counter(
 COUNTER_HAND_OVER_STATUSES = frozenset({
     Order.Status.ACCEPTED, Order.Status.PREPARING, Order.Status.READY,
 })
+
+
+def _fulfill_on_hand_over(order: Order) -> None:
+    """A mercadoria sai pelo balcão agora: o ledger baixa aqui, se ainda não baixou.
+
+    A baixa da encomenda é do despertador (``lifecycle.activate_preorder``), e
+    ele só ativa o que está pago: a encomenda de Pix pendente (ou de sinal) não
+    arma despertador no aceite, e reagendá-la para hoje não tem o que ativar. O
+    dinheiro que falta entra no acerto do balcão (:func:`settle_delivery_cash`),
+    que não passa por ``on_paid`` — e o pedido concluía com os holds pendentes
+    (beta 09/11). ``stock.fulfill`` é idempotente (hold baixado é sucesso), então
+    a encomenda que o despertador já baixou não baixa duas vezes. Sem
+    ``pending_materialization_ok``: com o pão na mão do cliente, hold de demanda
+    sem estoque é drift, e ``stock.fulfill`` alerta o operador.
+    """
+    from shopman.shop.services import stock
+
+    order.refresh_from_db()
+    stock.fulfill(order)
 
 
 def _mark_ready_at_counter(order: Order, *, actor: str) -> None:

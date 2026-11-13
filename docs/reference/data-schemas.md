@@ -478,6 +478,12 @@ relógio; a confirmação, sim.
 | `confirmed` | `waitlist.confirm` (cliente, via `POST /api/v1/orders/{ref}/waitlist-confirm/`) | Vaga garantida; a cobrança acontece aqui (`charge_at=confirmation`) |
 | `released` | `waitlist.release` (timeout via `sweep_waitlist_windows`, ou recusa) | Saiu da fila; hold liberado, cliente avisado, `OperatorAlert` no Gestor |
 
+**Encomenda e pedido pago não são fila** (laudo de 09/11/2026): o hold da encomenda
+também nasce com `metadata.planned`, mas `waitlist.is_outside_the_queue` (`is_preorder`
+gravado no commit, ou pagamento capturado cobrindo o pedido) devolve `none` em `state_for`,
+impede `open_window` de chamar o cliente e faz `release`/`sweep_expired` recusarem soltar
+a reserva. Os desfechos `confirmed`/`released` já gravados continuam lidos.
+
 Liberação **nunca é silenciosa**: cliente (`waitlist_released`) e loja
 (`OperatorAlert type="waitlist_released"`) são avisados, e com
 `release_policy=serve_next` a vaga vai ao próximo da fila (FCFS) na hora.
@@ -1718,6 +1724,13 @@ Quando a encomenda chega à Cozinha no dia: `hora combinada − preparo −
 antecedência`. Source-of-truth tipado em `shopman/shop/preorder_kitchen_policy.py`
 (`PreorderKitchenPolicy`); lido por `lifecycle.kitchen_release_at`. Valor
 inválido cai no padrão.
+
+Editado no Admin em **Configurações › Pedidos e entrega › Encomenda na Cozinha**
+(`ShopOrderingAdmin`, campos `defaults_preorder_kitchen_*`). O form grava as três
+chaves sempre (em branco = padrão declarado), confere cada SKU de
+`prep_minutes_by_sku` contra o catálogo e recusa minutos fora de 0 a 720; outras
+chaves do bloco são preservadas. Na tela, o preparo por SKU se escreve como
+`BAGUETE: 20; BOLO-CHOC: 90`.
 
 | Chave | Tipo | Padrão | Descrição |
 |-------|------|--------|-----------|

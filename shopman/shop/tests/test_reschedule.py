@@ -404,3 +404,92 @@ def test_despertador_que_toca_cedo_volta_para_a_fila(vitrine):
     assert alarm.status == "queued"
     assert timezone.localtime(alarm.available_at).date() == _day(3)
     assert alarm.attempts == 0
+
+
+# ── reagendar para hoje e entregar no balcão: a baixa sai uma vez ───────────
+
+
+@pytest.fixture
+def caixa(db):
+    from django.contrib.auth.models import User
+    from shopman.cashman import services as cash
+
+    return cash.open_shift(operator=User.objects.create_user("marina", password="x", is_staff=True), float_q=10000)
+
+
+def _vendidos() -> Decimal:
+    """Quanto o ledger tirou da prateleira em vendas (moves ``SELL``)."""
+    from shopman.stockman.models import Move
+
+    return -sum((m.delta for m in Move.objects.filter(kind=Move.Kind.SELL, quant__sku=SKU)), Decimal("0"))
+
+
+def test_encomenda_paga_reagendada_para_hoje_e_entregue_baixa_uma_vez_so(vitrine):
+    """Paga e aceita para D+2 → hoje → "Entregar" no PDV: holds baixados, ledger −2 uma vez.
+
+    O despertador que chegar depois (worker atrasado, ``holds_materialized``) não
+    baixa de novo: o pedido concluído não é mais ativável e o hold baixado é
+    sucesso idempotente.
+    """
+    from shopman.payman import PaymentService
+
+    from shopman.shop.services import operator_orders
+
+    Channel.objects.filter(ref="web").update(config={"payment": {"timing": "post_commit", "method": "pix"}})
+    StockMovements.receive(quantity=Decimal("10"), sku=SKU, position=vitrine, reason="prateleira")
+    _plan(2, 5, vitrine)
+    order = _encomenda("RS-PAGA", 2)
+    intent = PaymentService.settle(order.ref, 2400, "pix", idempotency_key="t:rs-paga", asserted_at_terminal=True)
+    order.data["payment"] = {"method": "pix", "intent_ref": intent.ref}
+    order.save(update_fields=["data"])
+    lifecycle._schedule_preorder_activation(order)
+
+    reschedule(order, date=timezone.localdate().isoformat(), slot="", actor="pos:marina")
+    order.refresh_from_db()
+    operator_orders.hand_over_at_counter(order, cash_shift=None, actor="pos:marina")
+    order.refresh_from_db()
+    assert order.status == Order.Status.COMPLETED
+    assert all(h.status == HoldStatus.FULFILLED for h in _holds(order))
+    assert _vendidos() == Decimal("2")
+
+    lifecycle.activate_preorder(order)
+    stock.fulfill(order)
+    assert _vendidos() == Decimal("2"), "uma baixa só"
+
+
+def test_encomenda_recebida_no_balcao_reagendada_para_hoje_baixa_na_entrega(vitrine, caixa):
+    """Beta 09/11 (P1): Pix pendente assumido no balcão, reagendada para hoje, "Receber e entregar".
+
+    Sem pagamento, o aceite não arma despertador (o trabalho físico espera o
+    dinheiro) e o reagendamento para hoje não tem o que ativar. O dinheiro chega
+    no acerto do balcão, que não passa por ``on_paid``: sem a baixa na entrega,
+    os holds ficavam PENDENTES e o estoque do sistema acima da prateleira.
+    """
+    from shopman.shop.services import operator_orders
+
+    Channel.objects.filter(ref="web").update(config={"payment": {"timing": "post_commit", "method": "pix"}})
+    StockMovements.receive(quantity=Decimal("10"), sku=SKU, position=vitrine, reason="prateleira")
+    _plan(2, 5, vitrine)
+    order = _encomenda("RS-BALCAO", 2)
+    order.data["payment"] = {
+        "method": "pix",
+        "counter_takeover": {"from_method": "pix", "cancelled_intent_ref": "", "actor": "pos:marina"},
+    }
+    order.save(update_fields=["data"])
+    assert not _live_alarms(order).exists(), "sem pagamento o aceite não arma o despertador"
+
+    result = reschedule(order, date=timezone.localdate().isoformat(), slot="", actor="pos:marina")
+    assert not result.activated_now
+    order.refresh_from_db()
+    assert all(h.status == HoldStatus.PENDING for h in _holds(order))
+
+    received = operator_orders.hand_over_at_counter(
+        order, cash_shift=caixa, actor="pos:marina", tenders=[{"method": "cash", "amount_q": 2400}],
+    )
+    order.refresh_from_db()
+    assert (received, order.status) == (2400, Order.Status.COMPLETED)
+    assert all(h.status == HoldStatus.FULFILLED for h in _holds(order)), "a mercadoria saiu: o ledger baixa"
+    assert _vendidos() == Decimal("2")
+
+    stock.fulfill(order)
+    assert _vendidos() == Decimal("2"), "uma baixa só"

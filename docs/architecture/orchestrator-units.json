@@ -12608,6 +12608,7 @@
           "symbols": [
             "collects_at_handoff",
             "_counter_tender",
+            "_fulfill_on_hand_over",
             "counter_hand_over_block",
             "hand_over_at_counter",
             "_mark_ready_at_counter",
@@ -12625,7 +12626,9 @@
       ],
       "ports": [],
       "events": [],
-      "directives": [],
+      "directives": [
+        "PREORDER_ACTIVATE"
+      ],
       "config_surface": [],
       "tests": [
         "shopman/backstage/tests/test_pos_preorder_hand_over.py::test_entregar_conclui_a_encomenda_ainda_na_cozinha"
@@ -13097,7 +13100,9 @@
       ],
       "ports": [],
       "events": [],
-      "directives": [],
+      "directives": [
+        "PREORDER_ACTIVATE"
+      ],
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_handoff_without_nfce.py::test_o_gestor_despacha_e_o_alerta_nasce_sem_barrar"
@@ -16997,7 +17002,10 @@
           "path": "shopman/shop/services/waitlist.py",
           "symbols": [
             "queue_for",
-            "_orders_from_holds"
+            "_orders_from_holds",
+            "is_preorder",
+            "_is_paid",
+            "is_outside_the_queue"
           ]
         }
       ],
@@ -19041,13 +19049,12 @@
     },
     {
       "id": "shop.preorder-kitchen-policy",
-      "question": "Quando o card de uma encomenda chega à Cozinha, respeitando hora combinada, preparo e antecedência?",
+      "question": "Quando o card da encomenda chega à Cozinha (hora combinada menos preparo menos antecedência)?",
       "owner": "preorder.kitchen-policy",
       "responsibility": "decisão",
       "public_entrypoint": "shopman.shop.policies.preorder_kitchen_policy:resolve_preorder_kitchen_policy",
       "authoritative_symbols": [
-        "shopman.shop.policies.preorder_kitchen_policy:PreorderKitchenPolicy",
-        "shopman.shop.policies.preorder_kitchen_policy:resolve_preorder_kitchen_policy"
+        "shopman.shop.policies.preorder_kitchen_policy:PreorderKitchenPolicy"
       ],
       "entrypoint_kind": "symbol",
       "sources": [
@@ -19072,54 +19079,10 @@
       "directives": [],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/test_preorder_kitchen_release.py::test_resolve_preorder_kitchen_policy_reads_shop_defaults",
         "shopman/shop/tests/test_preorder_kitchen_release.py::test_policy_ignores_garbage"
       ],
       "test_gap_reason": null,
       "policy": true,
-      "out_of_extraction": false
-    },
-    {
-      "id": "order.lifecycle-kitchen-release",
-      "question": "Quando e como uma encomenda é liberada para a Cozinha fora do despertador agendado?",
-      "owner": "preorder.kitchen-release",
-      "responsibility": "composição",
-      "public_entrypoint": "shopman.shop.lifecycle:release_preorder_now",
-      "authoritative_symbols": [
-        "shopman.shop.lifecycle:release_preorder_now",
-        "shopman.shop.lifecycle:kitchen_release_at"
-      ],
-      "entrypoint_kind": "symbol",
-      "sources": [
-        {
-          "path": "shopman/shop/lifecycle.py",
-          "symbols": [
-            "KITCHEN_RELEASED_AT_KEY",
-            "_has_live_preorder_alarm",
-            "_stamp_kitchen_released",
-            "kitchen_release_at",
-            "release_preorder_now"
-          ]
-        }
-      ],
-      "touchpoints": [
-        "lifecycle"
-      ],
-      "domains": [
-        "orderman"
-      ],
-      "ports": [],
-      "events": [],
-      "directives": [
-        "PREORDER_ACTIVATE"
-      ],
-      "config_surface": [],
-      "tests": [
-        "shopman/shop/tests/test_preorder_kitchen_release.py::test_release_now_sends_to_kitchen_and_closes_the_alarm",
-        "shopman/shop/tests/test_preorder_kitchen_release.py::test_release_now_does_not_touch_another_day"
-      ],
-      "test_gap_reason": null,
-      "policy": false,
       "out_of_extraction": false
     }
   ]

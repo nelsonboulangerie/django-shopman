@@ -32,7 +32,6 @@ from shopman.shop.policies.preorder_kitchen_policy import (
     DEFAULT_LEAD_MINUTES,
     DEFAULT_PREP_MINUTES,
     PreorderKitchenPolicy,
-    resolve_preorder_kitchen_policy,
 )
 
 pytestmark = pytest.mark.django_db
@@ -136,13 +135,6 @@ def test_policy_ignores_garbage():
     assert policy.default_prep_minutes == DEFAULT_PREP_MINUTES
     assert policy.prep_minutes_by_sku == {"B": 40}
     assert policy.prep_minutes_for([]) == DEFAULT_PREP_MINUTES
-
-
-def test_resolve_preorder_kitchen_policy_reads_shop_defaults(shop):
-    shop.defaults = {**(shop.defaults or {}), "preorder_kitchen": {"lead_minutes": 20}}
-    policy = resolve_preorder_kitchen_policy()
-    assert isinstance(policy, PreorderKitchenPolicy)
-    assert policy.lead_minutes == 20
 
 
 # ── A espera no dia ──────────────────────────────────────────────────────────

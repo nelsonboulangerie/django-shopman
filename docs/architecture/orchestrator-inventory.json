@@ -2110,6 +2110,7 @@
             "GOOGLE_MERCHANT_KEY",
             "GoogleMerchantForm",
             "GoogleMerchantRegistrationForm",
+            "MAX_PREORDER_KITCHEN_MINUTES",
             "MONTH_CHOICES",
             "NOTIFICATION_BACKEND_CHOICES",
             "NotificationTemplateAdmin",
@@ -2163,6 +2164,7 @@
             "_oklch_raw_to_hex",
             "_opening_field",
             "_parse_markup_by_collection",
+            "_parse_prep_minutes_by_sku",
             "_people",
             "_production_suggestion_defaults",
             "_q_to_reais",
@@ -3937,11 +3939,9 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
-        "order.lifecycle-kitchen-release",
         "order.lifecycle-transition-policy"
       ],
       "responsibilities": [
-        "composição",
         "decisão",
         "infraestrutura"
       ],
@@ -3949,6 +3949,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "KITCHEN_RELEASED_AT_KEY",
             "STALE_ALERT_FRACTION_OF_DEADLINE",
             "_alert_coupon_over_redeemed",
             "_alert_if_card_authorization_held",
@@ -3959,6 +3960,7 @@
             "_create_alert",
             "_dispatch_physical_work",
             "_handle_confirmation",
+            "_has_live_preorder_alarm",
             "_ifood_cancellation_pending",
             "_mark_phase_complete",
             "_mark_preparing_after_physical_work_dispatch",
@@ -3984,9 +3986,12 @@
             "_schedule_preorder_activation",
             "_schedule_stale_alert_before_deadline",
             "_settle_cancelled_payment",
+            "_stamp_kitchen_released",
             "_verify_holds",
             "acceptance_timeout_minutes",
-            "logger"
+            "kitchen_release_at",
+            "logger",
+            "release_preorder_now"
           ]
         }
       ]
@@ -6935,6 +6940,7 @@
             "_earlier_available_dates",
             "_earliest_fulfillable_date",
             "_empty_cart",
+            "_future_cart_date",
             "_line_availability",
             "_made_to_order_skus",
             "_planned_holds",
@@ -7615,6 +7621,20 @@
       "out_of_extraction": false,
       "unit_ids": [
         "shop.purchase-policy"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/preorder_kitchen_policy.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.preorder-kitchen-policy"
       ],
       "responsibilities": [
         "decisão"
@@ -13840,20 +13860,6 @@
           ]
         }
       ]
-    },
-    {
-      "path": "shopman/shop/policies/preorder_kitchen_policy.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "shop.preorder-kitchen-policy"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
     }
   ]
 }
