@@ -6933,6 +6933,7 @@
             "_earlier_available_dates",
             "_earliest_fulfillable_date",
             "_empty_cart",
+            "_future_cart_date",
             "_line_availability",
             "_made_to_order_skus",
             "_planned_holds",

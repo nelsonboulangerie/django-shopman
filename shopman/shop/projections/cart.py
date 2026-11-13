@@ -455,13 +455,13 @@ def _made_to_order_skus(products: list, skus: list[str]) -> frozenset[str]:
 def _future_cart_date(session) -> date | None:
     """A data da sacola quando ela é de outro dia; ``None`` para hoje ou sem data.
 
-    A fonte é a mesma da reserva (``cart.session_cart_date``): o teto da linha
+    A fonte é a mesma da reserva (``cart._cart_date``): o teto da linha
     lê a data em que a sacola reserva. Sacola de hoje (ou sem data) segue na
     leitura canônica do cardápio, sem data explícita.
     """
-    from shopman.shop.services.cart import session_cart_date
+    from shopman.shop.services.cart import _cart_date
 
-    day = session_cart_date(session)
+    day = _cart_date(session)
     if day is None or day <= timezone.localdate():
         return None
     return day
