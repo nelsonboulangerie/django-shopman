@@ -104,8 +104,18 @@ def _cfg() -> dict:
     return getattr(settings, "SHOPMAN_IFOOD", {}) or {}
 
 
+def polling_configured() -> bool:
+    """Integração direta configurada (credencial OAuth): o polling deve estar vivo."""
+    cfg = _cfg()
+    return bool(str(cfg.get("client_id") or "").strip()) and bool(str(cfg.get("client_secret") or "").strip())
+
+
 def poll() -> list[dict]:
-    """Poll the iFood event stream. Returns the events list (``[]`` on 204/idle)."""
+    """Poll the iFood event stream. Returns the events list (``[]`` on 204/idle).
+
+    Every answer from iFood (204, or 200 with a JSON list) records the poll's
+    sign of life (``ifood_poll_health``); a missing answer never does.
+    """
     merchant_id = str(_cfg().get("merchant_id") or "").strip()
     extra = {"x-polling-merchants": merchant_id} if merchant_id else None
 
@@ -128,6 +138,7 @@ def poll() -> list[dict]:
         return []
 
     if resp.status_code == 204:
+        _record_poll_success()
         return []
     if resp.status_code != 200:
         return []
@@ -136,7 +147,20 @@ def poll() -> list[dict]:
     except ValueError:
         logger.warning("ifood_events.poll: response was not JSON")
         return []
-    return events if isinstance(events, list) else []
+    if not isinstance(events, list):
+        return []
+    _record_poll_success()
+    return events
+
+
+def _record_poll_success() -> None:
+    # O sinal de vida nunca derruba o poll: cache fora é outro alarme.
+    try:
+        from shopman.shop.services import ifood_poll_health
+
+        ifood_poll_health.record_success()
+    except Exception:
+        logger.exception("ifood_events.poll: sinal de vida não gravado")
 
 
 def acknowledge(event_ids: list[str]) -> bool:
@@ -1179,7 +1203,7 @@ def run_once() -> dict:
     return process_events(poll())
 
 
-__all__ = ["acknowledge", "conclusion_allowed", "poll", "process_events", "run_once"]
+__all__ = ["acknowledge", "conclusion_allowed", "poll", "polling_configured", "process_events", "run_once"]
 
 
 def _process_handshake(event: dict, *, settlement: bool) -> str:

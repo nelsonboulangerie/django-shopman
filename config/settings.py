@@ -362,6 +362,7 @@ WATCHMAN = {
         "shopman.shop.watchman_checks.CacheCheck",
         "shopman.shop.watchman_checks.MigrationsCheck",
         "shopman.shop.watchman_checks.QueueCheck",
+        "shopman.shop.watchman_checks.IfoodPollingCheck",
         "shopman.watchman.performance.PerformanceBudgetCheck",
         "shopman.shop.watchman_infrastructure.ProductionContractCheck",
         "shopman.shop.watchman_infrastructure.DeploymentDriftCheck",
@@ -377,7 +378,12 @@ WATCHMAN = {
         "infrastructure": ["production_contract", "deployment_drift", "external_monitoring", "expiry_lifecycle"],
         # O diagnóstico interativo permanece curto. Os contratos de infraestrutura
         # são deliberadamente um perfil CLI separado porque podem levar minutos.
-        "diagnostic": ["process", "pool", "database", "cache", "migrations", "queue", "performance_budgets"],
+        "diagnostic": [
+            "process", "pool", "database", "cache", "migrations", "queue", "ifood_polling", "performance_budgets",
+        ],
+        # Fora da prontidão de propósito: o poller do iFood é outro componente, e
+        # reprovar a prontidão do web tiraria do ar a loja inteira por ele.
+        "ifood": ["ifood_polling"],
         # O commit do `main` contra o que cada componente serve (WP-RELEASE-01 R1).
         # Perfil próprio, de CLI: pergunta a endereços públicos e ao git.
         "release": ["release_identity"],
