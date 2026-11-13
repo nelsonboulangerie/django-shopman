@@ -28,6 +28,7 @@ from shopman.backstage.projections.bi_explore import (
 )
 from shopman.backstage.projections.bi_forecast import ForecastError, build_bi_forecast
 from shopman.backstage.projections.bi_over_short import build_bi_over_short
+from shopman.backstage.projections.bi_preorder_kitchen import build_bi_preorder_kitchen
 from shopman.backstage.projections.bi_production import build_bi_production
 from shopman.backstage.projections.bi_profiles import build_bi_consumption_profiles
 from shopman.backstage.projections.bi_sales import build_bi_sales
@@ -95,6 +96,24 @@ class BIDeliveryTimingView(_BIBase):
 
     def get(self, request):
         report = build_bi_delivery_timing(
+            date_from=_query_date(request, "date_from"),
+            date_to=_query_date(request, "date_to"),
+        )
+        return _bi_reading(report)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="B.I. preorder kitchen times: per order, wait from kitchen arrival to start, and prep from start to ready",
+        responses={200: OpenApiResponse(description="B.I. preorder kitchen report.")},
+    ),
+)
+class BIPreorderKitchenView(_BIBase):
+    """Os dois tempos da encomenda: espera na Cozinha e preparo, por pedido."""
+
+    def get(self, request):
+        report = build_bi_preorder_kitchen(
             date_from=_query_date(request, "date_from"),
             date_to=_query_date(request, "date_to"),
         )

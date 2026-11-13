@@ -526,6 +526,11 @@ class OrderCardProjection:
     # itens — o dobro da altura do card do PDV, na mesma coluna, e a fila deixava
     # de ser varredura. Ficam só os dois fatos que decidem algo de relance.
     ifood_pickup_code: str = ""
+    # "Código do entregador · 6005" na entrega, "Código de retirada · 6005" no balcão.
+    ifood_pickup_code_label: str = ""
+    # Onde está o entregador do iFood ("Entregador a caminho da loja"), pelo último
+    # fato recebido. Ocupa o lugar do "Pronto" nos pedidos com entregador do iFood.
+    ifood_logistics_label: str = ""
     ifood_schedule_label: str = ""
     # O iFood à frente do estado local (concluiu, ou o entregador dele já retirou):
     # uma linha escrita como instrução. Vazia no caso normal.
@@ -815,6 +820,8 @@ class OperatorOrderProjection:
     ifood_cancellation_notice: str = ""
     ifood_payment_summary: tuple[str, ...] = ()
     ifood_operation_summary: tuple[str, ...] = ()
+    # O mesmo selo do card: onde está o entregador do iFood.
+    ifood_logistics_label: str = ""
     ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
     # O mesmo aviso do card (P1-3): o aceite não chegou ao iFood.
     ifood_accept_failed: bool = False
@@ -1071,6 +1078,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     # Itens a preço de tabela e o desconto (cupom, promoção) em linha própria:
     # rateado no preço, o cupom sumia para o operador (beta 06/11).
     items, discount_lines = order_pricing.priced_items(order)
+    discount_lines = discount_lines + ifood_projection.total_lines(order)
 
     customer_data = order.data.get("customer", {})
     customer_name = _format_customer_display(
@@ -1118,6 +1126,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
         ifood_payment_summary=ifood_projection.payment_summary(order),
         ifood_operation_summary=ifood_projection.operation_summary(order),
+        ifood_logistics_label=ifood_projection.logistics_label(order),
         test_order_label=_test_order_label(order),
         test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
@@ -1657,7 +1666,10 @@ def _customer_profile(order: Order) -> CustomerProfileProjection | None:
 
     segment = str(getattr(insight, "rfm_segment", "") or "")
     segment_tone = _SEGMENT_TONES.get(segment, "")
-    average_ticket_q = int(getattr(insight, "average_ticket_q", 0) or 0)
+    # Na primeira compra o insight só conhece ESTE pedido: o "ticket médio" é o
+    # total dele e o "costuma levar" é o que está no carrinho agora. Dizer isso
+    # seria afirmar hábito de quem ainda não tem (pedido iFood 3417, 12/11).
+    average_ticket_q = 0 if is_first_order else int(getattr(insight, "average_ticket_q", 0) or 0)
 
     return CustomerProfileProjection(
         is_first_order=is_first_order,
@@ -1667,7 +1679,7 @@ def _customer_profile(order: Order) -> CustomerProfileProjection | None:
         # Vazio, não "R$ 0,00": sem insight ainda não SABEMOS o ticket, e zero
         # afirmaria que o cliente não gasta nada.
         average_ticket_display=_money(average_ticket_q) if average_ticket_q > 0 else "",
-        favorite_product=_favorite_product(insight),
+        favorite_product="" if is_first_order else _favorite_product(insight),
         segment=segment if segment_tone else "",
         segment_label=_segment_label(segment) if segment_tone else "",
         segment_tone=segment_tone,
@@ -2266,6 +2278,8 @@ def _build_card(
         payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
         ifood_pickup_code=ifood_projection.pickup_code(order),
+        ifood_pickup_code_label=ifood_projection.pickup_code_label(order),
+        ifood_logistics_label=ifood_projection.logistics_label(order),
         ifood_schedule_label=ifood_projection.schedule_label(order),
         ifood_remote_ahead_label=ifood_projection.remote_ahead_label(order),
         ifood_negotiations=negotiations(order, user=user),

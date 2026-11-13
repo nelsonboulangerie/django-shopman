@@ -9899,11 +9899,14 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_LOGISTICS_ALIASES",
+            "_LOGISTICS_CODES",
             "_alert_patched",
             "_alert_unhandled_event",
             "_apply_patch",
             "_brl",
             "_cfg",
+            "_collected_by_ifood_courier",
             "_describe_patch",
             "_fiscal_authorized_explanation",
             "_money_q",
@@ -9916,6 +9919,7 @@
             "_process_placed",
             "_process_remote_progress",
             "_reconcile_locked",
+            "_record_logistics",
             "_record_remote",
             "_refresh_financials",
             "logger"
@@ -10086,6 +10090,7 @@
             "_cfg",
             "_compose_address",
             "_item_preparation_notes",
+            "_map_additional_fees",
             "_map_benefits",
             "_map_customer",
             "_map_delivery",

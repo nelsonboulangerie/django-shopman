@@ -87,6 +87,7 @@ def priced_items(order) -> tuple[tuple[OrderItemProjection, ...], tuple[OrderDis
                 qty=format(it.qty.normalize(), "f"),
                 unit_price_display=_money(list_unit_q),
                 total_display=_money(list_line_q),
+                notes=str(meta.get("notes") or "").strip(),
             )
         )
     # Cupom primeiro: é o que o operador procura quando o cliente pergunta.

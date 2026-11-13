@@ -477,9 +477,15 @@ export function workingOrders(
         stations,
         seconds,
         ageLabel: minutesLabel(seconds),
-        summary: stations.length
-          ? `${done} de ${stations.length} ${stations.length === 1 ? "pronta" : "prontas"}`
-          : "Sem estação",
+        // Com entregador do iFood, onde ele está entra na mesma linha (12/11/2026).
+        summary: [
+          stations.length
+            ? `${done} de ${stations.length} ${stations.length === 1 ? "pronta" : "prontas"}`
+            : "Sem estação",
+          card.ifood_logistics_label,
+        ]
+          .filter(Boolean)
+          .join(" · "),
       };
     })
     .sort((a, b) => b.seconds - a.seconds);
@@ -493,7 +499,10 @@ export function workingOrders(
         seconds,
         ageLabel: minutesLabel(seconds),
         summary:
-          card.courier_status_label || card.equipment_label || "A caminho",
+          card.ifood_logistics_label ||
+          card.courier_status_label ||
+          card.equipment_label ||
+          "A caminho",
       };
     })
     .sort((a, b) => b.seconds - a.seconds);

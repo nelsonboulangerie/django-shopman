@@ -18,6 +18,7 @@
 #   - PR verde fora da fila          → gh pr merge <N>
 #   - PR vermelho / em conflito      → conserte, ou nomeie a causa no relatório
 #   - PR mergeado e branch com delta → PR de seguimento
+#   - PR sem a seção "Ficou de fora"  → issue `ficou-de-fora` por item, ou "nada"
 #
 # Bloqueia UMA vez por turno (stop_hook_active): a segunda tentativa passa, para
 # que "estou esperando a palavra do Pablo sobre X" continue sendo uma saída
@@ -84,6 +85,13 @@ if [ "${ahead}" -gt 0 ] && command -v gh >/dev/null 2>&1; then
     fail="$(printf '%s' "${pr}" | jq -r '[.statusCheckRollup[]? | select(.conclusion=="FAILURE")] | length')"
     case "${state}" in
       OPEN)
+        # O que o PR deixou de fora precisa estar em issue (check "Ficou de fora
+        # declarado"). Pergunta aqui para a sessão saber antes do CI reprovar.
+        top="$(git -C "${cwd}" rev-parse --show-toplevel 2>/dev/null)"
+        if [ "${draft}" != "true" ] && [ -f "${top}/scripts/check_ficou_de_fora.py" ] && \
+          ! python3 "${top}/scripts/check_ficou_de_fora.py" --pr "${prn}" >/dev/null 2>&1; then
+          pend+="  - PR #${prn} não declara o que ficou de fora: issue com label ficou-de-fora para cada item + seção '## Ficou de fora' (ou 'nada') no corpo (python3 scripts/check_ficou_de_fora.py --pr ${prn})\n"
+        fi
         if [ "${draft}" != "true" ]; then
           if [ "${mss}" = "DIRTY" ]; then
             pend+="  - PR #${prn} em CONFLITO com o main (merge do main no branch, resolva, push)\n"
