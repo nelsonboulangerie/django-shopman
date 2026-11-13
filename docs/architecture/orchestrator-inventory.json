@@ -9965,7 +9965,12 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "ALTERNATIVE_TYPES",
+            "MONEY_ALTERNATIVES",
+            "TIME_ALTERNATIVE",
             "_alert_text",
+            "_alternative_body",
+            "_cents",
             "_evidence_urls",
             "_expiry",
             "_extra",
@@ -9974,6 +9979,10 @@
             "_open",
             "_records",
             "_save",
+            "_selected_alternative",
+            "_sent_alternative",
+            "alternative_summary",
+            "alternatives",
             "logger"
           ]
         }
