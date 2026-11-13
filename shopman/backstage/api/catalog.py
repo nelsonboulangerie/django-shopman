@@ -480,7 +480,7 @@ class CatalogAiAssistView(_CatalogBase):
     descarta ela sozinha na superfície. Não grava nada — quem persiste é o PATCH
     do produto (ou o POST social), depois do "Aceitar".
 
-    503 quando o deployment não tem ``AI_ASSIST_API_KEY``: a superfície mostra um
+    503 quando não há conexão de IA para ``copy``: a superfície mostra um
     aviso, não um erro. O assist é conveniência, não caminho crítico.
     """
 

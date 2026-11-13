@@ -24,6 +24,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from shopman.shop.models import Conversation, ConversationMessage
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.checks import concierge_findings
 from shopman.storefront.concierge import service, triage
 from shopman.storefront.tests import test_concierge_engine as engine
@@ -43,6 +44,12 @@ conversation = engine.conversation
 outbox = engine.outbox
 
 pytestmark = pytest.mark.django_db
+
+
+@pytest.fixture
+def triage_connection():
+    """A conexão de IA da triagem: o cliente é injetado, o modelo vem dela."""
+    return configure_ai("sk-teste", model="claude-sonnet-5")
 
 
 class JsonClient:
@@ -107,14 +114,14 @@ def test_rules_never_invent_an_intent():
 # ── 2. Decisão ───────────────────────────────────────────────────────
 
 
-def test_sensitive_rule_wins_over_the_model():
+def test_sensitive_rule_wins_over_the_model(triage_connection):
     client = JsonClient({"intent": "product_question", "urgency": "can_wait", "summary": "Pergunta de pão."})
     decision = triage.decide("sou celíaca, tem glúten no pão?", client=client)
     assert (decision.intent, decision.urgency, decision.destination) == ("allergy", "now", "team")
     assert decision.summary == "Pergunta de pão."
 
 
-def test_model_proposes_intent_urgency_and_summary():
+def test_model_proposes_intent_urgency_and_summary(triage_connection):
     client = JsonClient({"intent": "order", "urgency": "today", "summary": "Quer encomendar pães para sábado."})
     decision = triage.decide("dá pra separar umas coisas pra sábado?", client=client)
     assert (decision.intent, decision.urgency, decision.destination, decision.source) == (
@@ -126,7 +133,7 @@ def test_model_proposes_intent_urgency_and_summary():
         assert f"- {ref}:" in prompt
 
 
-def test_model_sensitive_proposal_escalates_too():
+def test_model_sensitive_proposal_escalates_too(triage_connection):
     client = JsonClient({"intent": "complaint", "urgency": "can_wait", "summary": "Cobrança errada."})
     decision = triage.decide("olha, a conta de ontem ficou estranha", client=client)
     assert (decision.intent, decision.urgency, decision.destination) == ("complaint", "now", "team")
@@ -137,18 +144,18 @@ def test_model_sensitive_proposal_escalates_too():
     "não é JSON",
     RuntimeError("rede caiu"),
 ])
-def test_unreadable_or_failing_model_falls_back_to_rules(payload):
+def test_unreadable_or_failing_model_falls_back_to_rules(payload, triage_connection):
     decision = triage.decide("que horas vocês fecham?", client=JsonClient(payload))
     assert (decision.intent, decision.source, decision.destination) == ("hours_delivery", "rules", "answer")
     assert "que horas vocês fecham?" in decision.summary
 
 
-def test_model_urgency_outside_the_three_is_discarded():
+def test_model_urgency_outside_the_three_is_discarded(triage_connection):
     client = JsonClient({"intent": "hours_delivery", "urgency": "urgentissimo", "summary": "Horário."})
     assert triage.decide("abre amanhã?", client=client).urgency == "today"
 
 
-def test_other_desk_never_wakes_anyone_even_if_the_model_says_now():
+def test_other_desk_never_wakes_anyone_even_if_the_model_says_now(triage_connection):
     client = JsonClient({"intent": "job", "urgency": "now", "summary": "Procura vaga."})
     decision = triage.decide("tem vaga de padeiro?", client=client)
     assert (decision.destination, decision.urgency) == ("other_desk", "can_wait")
@@ -174,7 +181,7 @@ def test_a_replayed_turn_does_not_count_as_a_second_attempt():
 
 def test_model_is_off_without_the_switch(settings):
     settings.SHOPMAN_CONCIERGE = {**CONCIERGE_SETTINGS}
-    settings.AI_ASSIST_API_KEY = "sk-teste"
+    configure_ai("sk-teste")
     assert triage.classify_with_model("oi", []) is None
 
 
@@ -282,13 +289,13 @@ def test_check_is_silent_while_the_concierge_is_off(settings):
 
 
 def test_check_passes_when_everything_is_there(settings):
-    settings.AI_ASSIST_API_KEY = "sk"
+    configure_ai("sk")
     settings.MANYCHAT_API_TOKEN = "tok"
     assert concierge_findings(_ready_config()) == []
 
 
 def test_check_warns_that_observe_mode_does_not_answer(settings):
-    settings.AI_ASSIST_API_KEY = "sk"
+    configure_ai("sk")
     settings.MANYCHAT_API_TOKEN = "tok"
     findings = concierge_findings({**_ready_config(), "operation_mode": "observe"})
     assert [check_id for check_id, *_ in findings] == ["SHOPMAN_W022"]
@@ -296,7 +303,7 @@ def test_check_warns_that_observe_mode_does_not_answer(settings):
 
 
 def test_check_names_each_missing_piece(settings):
-    settings.AI_ASSIST_API_KEY = ""
+    configure_ai("")
     settings.MANYCHAT_API_TOKEN = ""
     config = _ready_config()
     options = config["connections"]["manychat-whatsapp-primary"]["options"]
@@ -307,7 +314,7 @@ def test_check_names_each_missing_piece(settings):
         response_window={},
     )
     messages = " | ".join(message for _id, message, _hint in concierge_findings(config))
-    for piece in ("AI_ASSIST_API_KEY", "lista de assinantes vazia", "sem chave de ingresso",
+    for piece in ("Concierge ligado sem conexão de IA utilizável", "lista de assinantes vazia", "sem chave de ingresso",
                   "MANYCHAT_API_TOKEN", "campo de atendimento humano", "fuso da janela"):
         assert piece in messages
 
@@ -321,7 +328,7 @@ def test_concierge_check_command_when_off(settings):
 
 def test_concierge_check_live_confirms_the_handoff_field(settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = _ready_config()
-    settings.AI_ASSIST_API_KEY = "sk"
+    configure_ai("sk")
     settings.MANYCHAT_API_TOKEN = "tok"
     from shopman.storefront.management.commands import concierge_check
 
@@ -344,3 +351,13 @@ def test_concierge_check_ids_do_not_collide_with_the_shop_checks():
     shop_checks = (pathlib.Path(__file__).resolve().parents[2] / "shop" / "checks.py").read_text(encoding="utf-8")
     used_in_shop = set(re.findall(r'id="(SHOPMAN_[EW]\d+)"', shop_checks))
     assert used_in_shop and {"SHOPMAN_W022", "SHOPMAN_W023"}.isdisjoint(used_in_shop)
+
+
+def test_model_override_changes_the_triage_model_only_inside_the_block(monkeypatch):
+    from shopman.storefront.concierge import triage
+
+    monkeypatch.setattr("shopman.shop.ai.resolve", lambda purpose: type("R", (), {"model": "rota"})())
+    assert triage._model_name() == "rota"
+    with triage.model_override("claude-haiku-4-5"):
+        assert triage._model_name() == "claude-haiku-4-5"
+    assert triage._model_name() == "rota"

@@ -26,6 +26,7 @@ from shopman.craftsman.services import recipe_book as craftsman
 
 from shopman.backstage.services import recipe_book as recipe_book_service
 from shopman.backstage.tests.production_grants import grant_production_operator
+from shopman.shop.tests.ai_support import configure_ai
 
 pytestmark = pytest.mark.django_db
 
@@ -262,7 +263,8 @@ def test_list_query_count_stays_bounded(client, viewer, entry):
     assert response.status_code == 200
     assert "projection;dur=" in response.headers["Server-Timing"]
     assert "db;dur=" in response.headers["Server-Timing"]
-    assert len(queries) <= 10, [query["sql"] for query in queries]
+    # 11 = 10 de antes + 1 da conexão de IA (``capture_available`` lê o banco, não o settings).
+    assert len(queries) <= 11, [query["sql"] for query in queries]
 
 
 def test_list_pages_sorts_and_filters_in_the_database(client, viewer, entry):
@@ -982,18 +984,16 @@ class _FakeAnthropic:
 def provider(monkeypatch, settings):
     _FakeAnthropic.raise_exc = None
     monkeypatch.setattr("anthropic.Anthropic", _FakeAnthropic)
-    settings.AI_ASSIST_API_KEY = "sk-ant-teste"
-    settings.AI_ASSIST_PROVIDER = "anthropic"
-    settings.AI_ASSIST_MODEL = "claude-opus-5"
+    configure_ai("sk-ant-teste", model="claude-opus-5")
     return _FakeAnthropic
 
 
 def test_capture_is_503_without_a_credential(client, editor, settings):
-    settings.AI_ASSIST_API_KEY = ""
+    configure_ai("")
     client.force_login(editor)
     response = _post(client, reverse("api-backstage-recipes-capture"), {"text": FRENCH_NOTE})
     assert response.status_code == 503
-    assert "AI_ASSIST_API_KEY" in response.json()["detail"]
+    assert "Conexões de IA" in response.json()["detail"]
     assert client.get(reverse("api-backstage-recipes-access")).json()["access"]["capture_available"] is False
 
 
