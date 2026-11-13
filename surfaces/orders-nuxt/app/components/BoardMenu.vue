@@ -20,6 +20,8 @@ const props = withDefaults(
     attentionPending: boolean;
     selecting: boolean;
     full?: boolean;
+    /** No Quadro da mesa (D): a ordem mora aqui, não num botão do cabeçalho. */
+    sortInMenu?: boolean;
     canShowAll?: boolean;
     queueAvailable?: boolean;
     mode?: "dropdown" | "panel";
@@ -80,29 +82,7 @@ const items = computed(() => {
           },
         ]
       : []),
-    ...(!props.full
-      ? [
-          {
-            label:
-              props.viewMode === "board"
-                ? props.queueAvailable
-                  ? "Voltar à grade"
-                  : "Voltar à lista"
-                : "Ver em colunas",
-            icon: "i-lucide-columns-3",
-            kbds: ["V"],
-            onSelect: () =>
-              emit(
-                "view",
-                props.viewMode === "board"
-                  ? props.queueAvailable
-                    ? "queue"
-                    : "table"
-                  : "board",
-              ),
-          },
-        ]
-      : []),
+    // A visão (Fila · Quadro · Tabela) é o seletor do cabeçalho; aqui só no `full`.
     {
       label: props.selecting ? EXIT_SELECTION_LABEL : "Selecionar pedidos",
       icon: "i-lucide-list-checks",
@@ -110,6 +90,15 @@ const items = computed(() => {
     },
   ];
 
+  const sortGroup = [
+    { type: "label" as const, label: "Ordenar" },
+    ...SORT_OPTIONS.map((option) => ({
+      label: option.label,
+      icon:
+        props.sort === option.key ? "i-lucide-check" : "i-lucide-arrow-up-down",
+      onSelect: () => emit("sort", option.key),
+    })),
+  ];
   const full = props.full
     ? [
         { type: "label" as const, label: "Ordenar" },
@@ -153,7 +142,7 @@ const items = computed(() => {
   return [
     [{ type: "label" as const, slot: "freshness", label: "Leitura da fila" }],
     primary,
-    ...(full.length ? [full] : []),
+    ...(full.length ? [full] : props.sortInMenu ? [sortGroup] : []),
     [
       {
         label: "Exportar CSV",

@@ -500,8 +500,8 @@ function nuxtIcon(icon: string): string {
        moldura na cor principal (`data-highlight="true"` do tema); o "Próximo" da
        saída, o halo (`ready`). -->
   <NuxtCard
-    as="article"
     v-if="compact"
+    as="article"
     :variant="selected ? 'subtle' : 'outline'"
     :data-card-state="handoff ? 'handoff' : seal.tone"
     :data-highlight="next ? 'ready' : card.attention && !handoff ? 'true' : undefined"
@@ -600,22 +600,8 @@ function nuxtIcon(icon: string): string {
         </template>
       </NuxtPopover>
     </div>
-    <div
-      v-if="undo && undo.kind === 'auto_ready'"
-      class="flex flex-wrap items-center gap-2 op-micro text-muted"
-      :data-undo="undo.kind"
-    >
-      <span>{{ undo.label }}</span>
-      <NuxtButton
-        v-if="undo.canUndo"
-        label="Desfazer"
-        color="neutral"
-        variant="ghost"
-        :disabled="busy"
-        data-undo-button
-        @click="emit('action', undo.action)"
-      />
-    </div>
+    <!-- O "pronto sozinho" com Desfazer mora na faixa "O sistema fez", abaixo do
+         cabeçalho do Quadro; aqui não se repete. -->
     <div
       v-if="danfe && !danfe.attention && !handoff"
       class="flex items-center gap-1.5 op-micro text-muted"
@@ -666,8 +652,8 @@ function nuxtIcon(icon: string): string {
     </div>
   </NuxtCard>
   <NuxtCard
-    as="article"
     v-else
+    as="article"
     class="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto]"
     :variant="selected ? 'subtle' : 'outline'"
     :data-card-state="handoff ? 'handoff' : seal.tone"

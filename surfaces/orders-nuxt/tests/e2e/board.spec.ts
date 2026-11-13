@@ -15,7 +15,7 @@ test.describe("Gestor — board de pedidos", () => {
     await expect(page.locator('[data-board-strip="prep"]')).toHaveCount(0);
     await expect(page.getByText("2× Pão · 1× Café")).toBeVisible();
     await expect(page.getByText("R$ 15,00")).toBeVisible();
-    await expect(page.getByText("Ana · Loja online", { exact: true })).toBeVisible();
+    await expect(page.locator("[data-card-who]").filter({ hasText: "Ana" }).filter({ hasText: "Loja online" }).first()).toBeVisible();
   });
 
   test("indicador de tempo-real: sem SSE (origem do mock) → 'Atualiza sozinho a cada 30 s'", async ({ page }) => {

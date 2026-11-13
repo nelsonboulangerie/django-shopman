@@ -558,7 +558,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(board).toContain("<OperatorSplitter");
     expect(board).not.toContain("<QueueColumnResizeHandle");
     expect(board).not.toContain("<QueueColumnStrip");
-    expect(board).toContain('v-if="hasChannelQueueSignal" #feedback');
+    expect(board).toContain('v-if="hasChannelQueueSignal || showSystemBand" #feedback');
     // A coluna é um bloco só, com o cabeçalho dentro (dono, 13/11/2026, prévia
     // `gestor-d`): nada de faixa de toolbar com linha embaixo.
     expect(boardColumn).toMatch(/<header\s+v-if="!phone && heading"/);
@@ -782,7 +782,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(appConfig).toMatch(
       /pageCard:\s*\{[\s\S]*?container:\s*["']p-4 sm:p-4["']/,
     );
-    expect(card).toMatch(/<NuxtCard\s+as="article"/);
+    expect(card).toMatch(/<NuxtCard\s+(?:v-(?:if="compact"|else)\s+)?as="article"/);
     expect(card).toContain(
       // 1fr, não minmax(0,1fr): numa grade que rola, o corpo não pode encolher
       // abaixo do conteúdo (o rodapé subia por cima dele na Saída). Sem h-full

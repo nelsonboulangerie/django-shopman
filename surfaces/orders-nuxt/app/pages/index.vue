@@ -261,6 +261,14 @@ const fulfillment_ = computed(() => fulfillmentCounts(allCards.value));
 const sortLabel = computed(
   () => SORT_OPTIONS.find((o) => o.key === sort.value)?.label ?? "Chegada",
 );
+const boardOrderHint = computed(() => {
+  const by: Record<string, string> = {
+    arrival: "Por chegada",
+    urgency: "Mais urgente primeiro",
+    recent: "Mais recentes primeiro",
+  };
+  return `${by[sort.value] ?? sortLabel.value}, em cada coluna`;
+});
 const sortMenuItems = computed(() =>
   (view.value === "queue" ? QUEUE_SORT_OPTIONS : SORT_OPTIONS).map(
     (option) => ({
@@ -282,12 +290,23 @@ const sortMenuItems = computed(() =>
 );
 
 function triaged(zone: ZoneView): OrderCardProjection[] {
-  return triageCards(zone.cards, {
+  const cards = triageCards(zone.cards, {
     query: query.value,
     channel: channel.value,
     sort: sort.value,
     fulfillment: fulfillment.value,
   });
+  return view.value === "board" ? inBoardScope(cards) : cards;
+}
+// Os recortes do Quadro (D, prévia `gestor-d`): Todos · Precisa de você · Atrasados,
+// com a régua da Fila, em cada coluna. O Quadro abre em Todos; a Fila tem o seu.
+const boardScope = ref<QueueScope>("all");
+function inBoardScope(cards: OrderCardProjection[]): OrderCardProjection[] {
+  if (boardScope.value === "all") return cards;
+  const keep = new Set(
+    queueItems(cards, nowMs.value, { scope: boardScope.value }).map((item) => item.card.ref),
+  );
+  return cards.filter((card) => keep.has(card.ref));
 }
 // flat rows for the dense table view, honouring the same triage + zone order.
 const tableRows = computed(() =>
@@ -850,6 +869,31 @@ const queueScopeTabs = computed(() =>
     count: scopeCounts.value[option.key],
   })),
 );
+const boardScopeCounts = computed(() =>
+  queueScopeCounts(
+    zones.value.flatMap((zone) => zone.cards),
+    nowMs.value,
+  ),
+);
+const boardScopeTabs = computed(() =>
+  (["all", "attention", "late"] as const).map((key) => ({
+    key,
+    label: QUEUE_SCOPES.find((option) => option.key === key)!.label,
+    count: boardScopeCounts.value[key],
+  })),
+);
+function pickBoardScope(value: string | number) {
+  if (value === "attention" || value === "all" || value === "late")
+    boardScope.value = value;
+}
+// O que a Saída do sistema fez sozinho e ainda se desfaz: a faixa abaixo do cabeçalho.
+const systemUndoLines = computed(() =>
+  (queue.value?.awareness?.system_actions ?? []).filter(
+    (line) => Boolean(line.undo_action) && Date.parse(line.undo_until_iso) > nowMs.value,
+  ),
+);
+const boardDesk = computed(() => view.value === "board" && !boardAsTabs.value);
+const showSystemBand = computed(() => boardDesk.value && systemUndoLines.value.length > 0);
 function pickScope(value: string | number) {
   if (value === "attention" || value === "all" || value === "late")
     scope.value = value;
@@ -1540,8 +1584,10 @@ function compactClear() {
           :choices="rideCandidates"
           @done="refresh()"
         />
-        <!-- Onde está a maquininha: some quando todas estão na loja. -->
+        <!-- Onde está a maquininha: some quando todas estão na loja (no Quadro, mora na
+             linha de baixo). -->
         <EquipmentOutMenu
+          v-if="!boardDesk"
           :items="queue?.equipment_out ?? []"
           :is-busy="isBusy"
           @back="equipmentBack"
@@ -1586,9 +1632,13 @@ function compactClear() {
           />
         </NuxtFieldGroup>
         <template v-if="!compactHeader">
-          <!-- ordenar: na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
+          <!-- ordenar (no Quadro, mora no ⋮ e a ordem em vigor aparece na linha de baixo): na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
                no quadro e na tabela, a ordem deles -->
-          <NuxtDropdownMenu :items="sortMenuItems" :content="{ align: 'end' }">
+          <NuxtDropdownMenu
+            v-if="!boardDesk"
+            :items="sortMenuItems"
+            :content="{ align: 'end' }"
+          >
             <NuxtButton
               icon="i-lucide-arrow-up-down"
               trailing-icon="i-lucide-chevron-down"
@@ -1638,6 +1688,7 @@ function compactClear() {
           :attention-pending="attentionPending"
           :selecting="selecting"
           :full="compactHeader"
+          :sort-in-menu="boardDesk"
           @refresh="refresh()"
           @acknowledge="acknowledgeAttention"
           @select="selecting ? stopSelection() : startSelection()"
@@ -1667,23 +1718,52 @@ function compactClear() {
            muda o trabalho; no quadro e na tabela, "Todos" tira os recortes. É o primário
            da toolbar: no celular fica na linha, ao lado do "Filtros". -->
       <template
-        v-if="view === 'queue' && !(isPhone && phoneExitMode)"
+        v-if="(view === 'queue' && !(isPhone && phoneExitMode)) || boardDesk"
         #filters-primary
       >
-        <!-- A Fila só existe do `lg` para cima (`queueAvailable`): o CSS diz o mesmo, e o
-             celular não desenha os escopos antes de montar. -->
+        <!-- Um controle só para os recortes (o da Fila e o do Quadro, cada um com o seu
+             estado). A Fila só existe do `lg` para cima (`queueAvailable`): o CSS diz o
+             mesmo, e o celular não desenha os escopos antes de montar. -->
         <OperatorQuickFilters
-          class="max-lg:hidden"
-          :model-value="scope"
-          :items="queueScopeTabs"
-          label="Recortes da fila"
-          data-queue-scopes
-          @update:model-value="pickScope(String($event))"
+          :class="view === 'queue' ? 'max-lg:hidden' : undefined"
+          :model-value="view === 'queue' ? scope : boardScope"
+          :items="view === 'queue' ? queueScopeTabs : boardScopeTabs"
+          :label="view === 'queue' ? 'Recortes da fila' : 'Recortes do quadro'"
+          :data-queue-scopes="view === 'queue' ? '' : undefined"
+          :data-board-scopes="view === 'queue' ? undefined : ''"
+          @update:model-value="
+            view === 'queue'
+              ? pickScope(String($event))
+              : pickBoardScope(String($event))
+          "
         />
       </template>
-      <template v-if="hasChannelQueueSignal" #feedback>
-        <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
-        <ChannelQueueSignal :attention="channelAttention" />
+      <!-- À direita da linha de baixo, no Quadro: a ordem em vigor (trocar fica no ⋮) e
+           a maquininha na rua, que só aparece enquanto alguma está fora. -->
+      <template v-if="boardDesk" #filters-end>
+        <div class="flex items-center gap-2">
+          <EquipmentOutMenu
+            :items="queue?.equipment_out ?? []"
+            :is-busy="isBusy"
+            @back="equipmentBack"
+          />
+          <span class="op-micro text-muted-foreground" data-board-order-hint>
+            {{ boardOrderHint }}
+          </span>
+        </div>
+      </template>
+      <template v-if="hasChannelQueueSignal || showSystemBand" #feedback>
+        <div class="flex flex-col gap-2">
+          <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
+          <ChannelQueueSignal v-if="hasChannelQueueSignal" :attention="channelAttention" />
+          <OrderSystemBand
+            v-if="showSystemBand"
+            :lines="systemUndoLines"
+            :busy="isBusy"
+            :server-now="queue?.intake[0]?.server_now_iso"
+            @undo="(ref_) => onAction(ref_, 'undo_ready')"
+          />
+        </div>
       </template>
       <!-- Com o modo de seleção ligado, a barra de seleção toma o lugar da toolbar. -->
       <template v-if="selecting" #selection>
