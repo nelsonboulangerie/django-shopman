@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from shopman.backstage.projections.ifood import operation_summary, payment_summary, total_lines
+from shopman.backstage.projections.ifood import operation_summary, total_lines
 from shopman.shop.services import ifood_ingest, ifood_orders
 
 
