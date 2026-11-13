@@ -35,7 +35,7 @@ for (const touch of [false, true]) {
         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(TARGET);
       }
       // O quadro de colunas é a Supervisão (V4-G4: o desktop abre na Fila).
-      await page.goto("/?view=board");
+      await page.goto("/?view=board&columns=all");
       await expect(page.getByText("Ana · Loja online", { exact: true })).toBeVisible();
       // v4 (UX-KIT-V2): atender e a seleção em lote moram no ⋯ do cartão; a caixa volta
       // ao cartão no modo de seleção.
@@ -66,23 +66,23 @@ for (const touch of [false, true]) {
         await more.click();
         await expect(page.getByRole("menuitem", { name: "Urgência", exact: true })).toBeVisible();
         await page.screenshot({ path: testInfo.outputPath("board.png") });
-        await page.getByRole("menuitem", { name: "Lista", exact: true }).click();
+        await page.getByRole("menuitem", { name: "Tabela", exact: true }).click();
       } else {
         const sort = page.getByRole("button", { name: "Chegada", exact: true });
         await target(sort, "Ordenar");
-        await target(page.getByRole("tab", { name: "Grade", exact: true }), "Modo grade");
-        await target(page.getByRole("tab", { name: "Lista", exact: true }), "Modo lista");
+        await target(page.getByRole("tab", { name: "Fila", exact: true }), "Modo fila");
+        await target(page.getByRole("tab", { name: "Tabela", exact: true }), "Modo tabela");
         await page.screenshot({ path: testInfo.outputPath("board.png") });
-        await page.getByRole("tab", { name: "Lista", exact: true }).click();
+        await page.getByRole("tab", { name: "Tabela", exact: true }).click();
       }
-      const table = page.getByRole("table", { name: "Lista dos pedidos em andamento" });
+      const table = page.getByRole("table", { name: "Tabela dos pedidos em andamento" });
       await expect(table).toBeVisible();
-      // A caixa da Lista é a do `OperatorTable` do kit: o quadrado desenhado tem 16 px,
+      // A caixa da Tabela é a do `OperatorTable` do kit: o quadrado desenhado tem 16 px,
       // mas o ALVO em volta dele tem 32 (o `after:size-control` do kit). A medida é de
       // acerto: um toque em qualquer ponto do quadrado de 32 px cai na caixa.
       const rowBox = table.getByRole("checkbox", { name: "Selecionar o pedido WEB-20260625-0007" });
-      await hitTarget(rowBox, "Caixa da linha da Lista");
-      await hitTarget(table.locator("[data-operator-table-select-all]"), "Caixa do cabeçalho da Lista");
+      await hitTarget(rowBox, "Caixa da linha da Tabela");
+      await hitTarget(table.locator("[data-operator-table-select-all]"), "Caixa do cabeçalho da Tabela");
       await rowBox.click();
       await expect(rowBox).toBeChecked();
       // O nome do botão de abrir a linha contrai a preposição com o artigo ("do pedido").

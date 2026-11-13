@@ -22,10 +22,10 @@ describe("gestorSections (rail)", () => {
       channelsAttention: "",
       canManageCustomers: true,
     });
-    expect(sections.map((s) => s.key)).toEqual(["orders", "settings"]);
+    expect(sections.map((s) => s.key)).toEqual(["orders", "history", "settings"]);
     expect(
       sections.filter((s) => s.group === "Operação").map((s) => s.key),
-    ).toEqual(["orders"]);
+    ).toEqual(["orders", "history"]);
     expect(sections.find((s) => s.key === "settings")?.foot).toBe(true);
   });
 
@@ -38,7 +38,7 @@ describe("gestorSections (rail)", () => {
     expect(sections.find((s) => s.key === "exit")).toBeUndefined();
   });
 
-  it("Canais sobe para a operação de quem cuida do catálogo, com o ponto de atenção", () => {
+  it("Catálogo e Canais sobem para a operação de quem cuida do catálogo, com o ponto em Canais", () => {
     const sections = gestorSections({
       channelsAttention: "1 desligado",
       canManageCustomers: false,
@@ -46,8 +46,10 @@ describe("gestorSections (rail)", () => {
     });
     expect(
       sections.filter((s) => s.group === "Operação").map((s) => s.key),
-    ).toEqual(["orders", "feeds"]);
+    ).toEqual(["orders", "history", "catalog", "feeds"]);
     expect(sections.find((s) => s.key === "feeds")?.attention).toBe("1 desligado");
+    expect(activeSectionKey("/catalog", sections)).toBe("catalog");
+    expect(activeSectionKey("/history", sections)).toBe("history");
     // O ponto não se repete em Ajustes, e Canais acende Canais, não Ajustes.
     expect(sections.find((s) => s.key === "settings")?.attention).toBeUndefined();
     expect(activeSectionKey("/feeds", sections)).toBe("feeds");
@@ -127,29 +129,26 @@ describe("gestorSections (rail)", () => {
       canManageCustomers: true,
     });
     for (const path of [
-      "/catalog",
-      "/history",
       "/customers/groups",
       "/customers/merges",
       "/workstations",
-      "/checklists",
       "/settings",
     ]) {
       expect(activeSectionKey(path, sections)).toBe("settings");
     }
     expect(activeSectionKey("/", sections)).toBe("orders");
-    expect(SETTINGS_ROUTES).toContain("/catalog");
+    expect(SETTINGS_ROUTES).toContain("/customers");
   });
 });
 
 describe("gestorSettingsSections (andar Ajustes)", () => {
-  it("Clientes aparece para quem pode gerir clientes, depois do Catálogo (Canais mora no rail)", () => {
+  it("Clientes aparece para quem pode gerir clientes (Histórico, Catálogo e Canais moram no rail)", () => {
     const keys = gestorSettingsSections({
       channelsAttention: "",
       canManageCustomers: true,
       canManageCatalog: true,
     }).map((s) => s.key);
-    expect(keys).toEqual(["history", "catalog", "customers"]);
+    expect(keys).toEqual(["customers"]);
   });
 
   it("sem a permissão (ou sem resposta ainda) a linha não existe", () => {
@@ -158,7 +157,7 @@ describe("gestorSettingsSections (andar Ajustes)", () => {
       canManageCustomers: false,
       canManageCatalog: true,
     }).map((s) => s.key);
-    expect(keys).toEqual(["history", "catalog"]);
+    expect(keys).toEqual([]);
   });
 
   it("Canais não se repete em Ajustes: mora no rail", () => {
@@ -177,7 +176,7 @@ describe("gestorSettingsSections (andar Ajustes)", () => {
       canManageCatalog: true,
       canManageWorkstations: true,
     }).map((s) => s.key);
-    expect(keys).toEqual(["history", "catalog", "workstations"]);
+    expect(keys).toEqual(["workstations"]);
     expect(
       gestorSettingsSections({
         channelsAttention: "",
@@ -186,24 +185,11 @@ describe("gestorSettingsSections (andar Ajustes)", () => {
     ).not.toContain("workstations");
   });
 
-  it("Rotinas aparece só para quem pode executar checklist", () => {
-    const visible = gestorSettingsSections({
-      channelsAttention: "",
-      canManageCustomers: false,
-      canManageCatalog: true,
-      canOperateChecklists: true,
-    });
-    expect(visible.map((s) => s.key)).toEqual([
-      "checklists",
-      "history",
-      "catalog",
-    ]);
+  it("Rotinas não mora mais no Gestor: foram para o PDV", () => {
     expect(
-      gestorSettingsSections({
-        channelsAttention: "",
-        canManageCustomers: false,
-      }).map((s) => s.key),
+      gestorSettingsSections({ channelsAttention: "", canManageCustomers: true }).map((s) => s.key),
     ).not.toContain("checklists");
+    expect(SETTINGS_ROUTES).not.toContain("/checklists");
   });
 });
 
@@ -214,40 +200,38 @@ describe("gestorSwitcherSections (trocador e barra de baixo)", () => {
     channelsAttention: "",
     canManageCustomers: true,
     canManageCatalog: true,
-    canOperateChecklists: true,
   };
   const all = () => gestorSwitcherSections(gestorSections(input), gestorSettingsSections(input));
 
   it("lista tudo na ordem do app, sem o item Ajustes, cada seção com a sua forma", () => {
     expect(all().map((s) => `${s.key}:${s.form}`)).toEqual([
       "orders:floor",
-      "feeds:office",
-      "checklists:floor",
-      "history:office",
-      "catalog:office",
+      "history:floor",
+      "catalog:floor",
+      "feeds:floor",
       "customers:office",
     ]);
   });
 
-  it("a barra de baixo do chão: Pedidos e Rotinas", () => {
+  it("a barra de baixo do chão: a operação inteira", () => {
     const floor = all().filter((s) => s.form === "floor");
-    expect(quickBarLayout(floor).items.map((s) => s.label)).toEqual(["Pedidos", "Rotinas"]);
+    expect(quickBarLayout(floor).items.map((s) => s.label)).toEqual(["Pedidos", "Histórico", "Catálogo", "Canais"]);
     expect(quickBarProblems(floor)).toEqual([]);
-    expect(all().filter((s) => s.quick).map((s) => s.key)).toEqual(["orders", "checklists"]);
+    expect(all().filter((s) => s.quick).map((s) => s.key)).toEqual(["orders", "history", "catalog", "feeds"]);
   });
 
-  it("sem a permissão de Rotinas, o chão fica com Pedidos", () => {
+  it("sem Catálogo, o chão fica com Pedidos e Histórico", () => {
     const sections = gestorSwitcherSections(
-      gestorSections({ ...input, canOperateChecklists: false }),
-      gestorSettingsSections({ ...input, canOperateChecklists: false }),
+      gestorSections({ ...input, canManageCatalog: false }),
+      gestorSettingsSections({ ...input, canManageCatalog: false }),
     );
-    expect(sections.filter((s) => s.form === "floor").map((s) => s.key)).toEqual(["orders"]);
+    expect(sections.filter((s) => s.form === "floor").map((s) => s.key)).toEqual(["orders", "history"]);
   });
 
-  it("antes de montar (Ajustes ainda sem resposta) o trocador já tem Pedidos e Canais", () => {
+  it("antes de montar (Ajustes ainda sem resposta) o trocador já tem a operação inteira", () => {
     expect(
       gestorSwitcherSections(gestorSections(input), []).map((s) => s.key),
-    ).toEqual(["orders", "feeds"]);
+    ).toEqual(["orders", "history", "catalog", "feeds"]);
   });
 });
 
@@ -289,11 +273,15 @@ describe("Catálogo e Canais só para quem cuida do catálogo", () => {
       channelsAttention: "",
       canManageCustomers: false,
     }).map((s) => s.key);
-    expect(keys).toEqual(["history"]);
+    expect(keys).toEqual([]);
+    expect(
+      gestorSections({ channelsAttention: "", canManageCustomers: false }).map((s) => s.key),
+    ).not.toContain("catalog");
   });
 
   it("a URL direta fora do acesso diz o nome da seção; dentro dele, nada", () => {
-    const caixa = gestorSettingsSections({ channelsAttention: "", canManageCustomers: false });
+    const semCatalogo = { channelsAttention: "", canManageCustomers: false };
+    const caixa = [...gestorSections(semCatalogo), ...gestorSettingsSections(semCatalogo)];
     expect(deniedSettingsSection("/catalog", caixa)).toBe("o Catálogo");
     expect(deniedSettingsSection("/channels/web/catalog", caixa)).toBe("os Canais");
     expect(deniedSettingsSection("/feeds", caixa)).toBe("os Canais");

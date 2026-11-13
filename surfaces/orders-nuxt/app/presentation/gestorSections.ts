@@ -2,9 +2,10 @@
 // ou Postos é o servidor; aqui só se monta a lista a partir da resposta.
 //
 // Dois andares (SUITE-UX §3, D de 13/11/2026): a OPERAÇÃO no rail (Pedidos, o quadro
-// com Fila · Quadro · Tabela, e Canais, quem cuida do catálogo) e um item só no pé,
-// **Ajustes**, que abre a página com Histórico, Catálogo, Clientes e Postos. O ponto
-// de canal desligado mora em Canais (ou em Ajustes, para quem não vê Canais).
+// com Fila · Quadro · Tabela; Histórico; e, para quem cuida do catálogo, Catálogo e
+// Canais) e um item só no pé, **Ajustes**, que abre a página com Clientes e Postos.
+// Rotinas (abertura, rotina e fechamento) moram no PDV, perto do caixa. O ponto de canal desligado mora em Canais (ou em Ajustes, para quem não vê
+// Canais).
 //
 // Barra inferior do celular (regra única do kit, `quickBarLayout`): as seções do chão
 // (`GESTOR_FLOOR_SECTIONS`) vão para baixo; o resto, para a gaveta.
@@ -24,8 +25,6 @@ export interface GestorSectionsInput {
   // são o cadastro de quem cuida do catálogo. Desconhecido esconde, como em Clientes
   // (beta 05/11, GES-08: o Caixa via os dois e, ao entrar, lia "Sem conexão").
   canManageCatalog?: boolean;
-  // Execução das rotinas operacionais; a permissão é perguntada ao servidor.
-  canOperateChecklists?: boolean;
   // Quem só expede (SUITE-UX §15) entra no Gestor pela coluna Saída e não ganha o
   // resto: o rail fica só com a operação. Ausente conta como quem gerencia.
   expeditesOnly?: boolean;
@@ -48,8 +47,10 @@ export const SETTINGS_ROUTES = [
   "/feeds",
   "/channels",
   "/workstations",
-  "/checklists",
 ];
+
+/** As telas da operação, no rail: não acendem Ajustes. */
+const RAIL_ROUTES = ["/history", "/catalog", "/feeds", "/channels"];
 
 function badge(count: number | undefined) {
   return count ? { badge: String(count) } : {};
@@ -102,8 +103,26 @@ export function gestorSections({
   if (expeditesOnly) return operation;
   return [
     ...operation,
+    // Os pedidos que já saíram do quadro (concluídos, cancelados, devolvidos): a
+    // "quarta coluna", a um toque para conferir (dono, 13/11/2026).
+    {
+      key: "history",
+      label: "Histórico",
+      icon: "lucide:history",
+      to: "/history",
+      group: "Operação",
+    },
+    // Catálogo é operação, não cadastro: a disponibilidade dos itens por canal muda
+    // ao longo do dia (dono, 13/11/2026).
     ...(canManageCatalog
       ? [
+          {
+            key: "catalog",
+            label: "Catálogo",
+            icon: "lucide:book-open",
+            to: "/catalog",
+            group: "Operação",
+          },
           {
             key: "feeds",
             label: "Canais",
@@ -120,7 +139,8 @@ export function gestorSections({
       label: "Ajustes",
       icon: "lucide:settings-2",
       to: "/settings",
-      match: SETTINGS_ROUTES.filter((route) => !(canManageCatalog && (route === "/feeds" || route === "/channels"))),
+      // Só as telas que moram em Ajustes: Histórico, Catálogo e Canais são do rail.
+      match: SETTINGS_ROUTES.filter((route) => !RAIL_ROUTES.includes(route)),
       // Sem Canais no rail (quem não cuida do catálogo), o aviso de canal fica aqui.
       attention: canManageCatalog ? undefined : channelsAttention || undefined,
       foot: true,
@@ -139,8 +159,6 @@ export function gestorSettingsSections({
   channelsAttention,
   canManageCustomers,
   canManageWorkstations = false,
-  canManageCatalog = false,
-  canOperateChecklists = false,
   catalogOnly = false,
 }: GestorSectionsInput): GestorSettingsEntry[] {
   if (catalogOnly) {
@@ -164,36 +182,7 @@ export function gestorSettingsSections({
     ];
   }
   return [
-    ...(canOperateChecklists
-      ? [
-          {
-            key: "checklists",
-            label: "Rotinas",
-            icon: "lucide:clipboard-check",
-            to: "/checklists",
-            description: "Abertura, rotina e fechamento da loja",
-          },
-        ]
-      : []),
-    // Os pedidos que já saíram do quadro: concluídos, cancelados e devolvidos.
-    {
-      key: "history",
-      label: "Histórico",
-      icon: "lucide:history",
-      to: "/history",
-      description: "Pedidos concluídos, cancelados e devolvidos",
-    },
-    ...(canManageCatalog
-      ? [
-          {
-            key: "catalog",
-            label: "Catálogo",
-            icon: "lucide:book-open",
-            to: "/catalog",
-            description: "Produtos, preços, coleções e disponibilidade",
-          },
-        ]
-      : []),
+    // Histórico e Catálogo moram no rail (operação), não aqui.
     ...(canManageCustomers
       ? [
           {
@@ -229,7 +218,6 @@ const SETTINGS_ROUTE_NAMES: Record<string, string> = {
   "/feeds": "os Canais",
   "/channels": "os Canais",
   "/workstations": "os Postos",
-  "/checklists": "as Rotinas",
 };
 
 function underRoute(path: string, route: string) {
@@ -250,7 +238,8 @@ export function deniedSettingsSection(
 ): string {
   const route = Object.keys(SETTINGS_ROUTE_NAMES).find((r) => underRoute(path, r));
   if (!route) return "";
-  const ok = allowed.some((section) =>
+  // O item Ajustes acende para todas as telas dele, mas não é permissão de nenhuma.
+  const ok = allowed.filter((section) => section.key !== "settings").some((section) =>
     [section.to, ...(section.match ?? [])].some(
       (to) => typeof to === "string" && underRoute(route, to.split("?")[0] ?? ""),
     ),
@@ -259,12 +248,12 @@ export function deniedSettingsSection(
 }
 
 /** As seções do chão: andando pela loja (dono, 31/10/2026). */
-export const GESTOR_FLOOR_SECTIONS: readonly string[] = ["orders", "checklists"];
+export const GESTOR_FLOOR_SECTIONS: readonly string[] = ["orders", "history", "catalog", "feeds"];
 
 /**
  * O trocador (modelo de navegação, 31/10/2026): a operação e o que mora em Ajustes, cada
  * seção com a sua forma, sem o item Ajustes (o trocador já mostra o que mora nele).
- * Chão: Pedidos e Rotinas, e são elas que vão para a barra de baixo no celular,
+ * Chão: a operação (Pedidos, Histórico, Catálogo e Canais), que vai para a barra de baixo no celular,
  * ao alcance do polegar (`quick`; dono, 03/11/2026: "seção vai para baixo"). No topo da
  * tela fica só a subdivisão da seção (as colunas do quadro). Escritório: o resto.
  */
@@ -308,7 +297,6 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{ prefix: string; perm: string; what: str
   { prefix: "/customers", perm: "shop.manage_customers", what: "os Clientes" },
   { prefix: "/history", perm: "shop.manage_orders", what: "o Histórico" },
   { prefix: "/workstations", perm: "cashman.manage_operators", what: "os Postos" },
-  { prefix: "/checklists", perm: "backstage.perform_operation_task", what: "as Rotinas" },
 ];
 
 export function gestorRoutePermission(path: string): { perm: string; what: string } | null {

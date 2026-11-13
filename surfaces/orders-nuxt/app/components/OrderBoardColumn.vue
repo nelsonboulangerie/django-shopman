@@ -4,7 +4,7 @@ import type {
   OperatorSwipeCommit,
 } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
 import type { AffordanceRef, ZoneView } from "~/presentation/board";
-import { exitGesture, swipeHint, zoneEmptyText } from "~/presentation/board";
+import { exitGesture, exitRows, swipeHint, zoneEmptyText } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
 
 const props = withDefaults(
@@ -61,6 +61,12 @@ function commitExit(card: OrderCardProjection) {
   if (gesture && !props.isBusy(card.ref))
     emit("action", card.ref, gesture.action);
 }
+// Prontos em "A coletar" e "Saiu para entrega"; as outras colunas, sem partes.
+const rows = computed(() =>
+  props.zone.key === "expedition"
+    ? exitRows(props.cards)
+    : props.cards.map((card) => ({ card, heading: "" })),
+);
 const hint = computed(() =>
   swipeHint(props.zone.key, exitColumn.value ? props.cards : [], props.canOpen),
 );
@@ -70,12 +76,21 @@ const hint = computed(() =>
   <!-- No Splitter a coluna ocupa o painel (h-full, min-h-0); solta no contêiner que
        rola (abas do celular e do tablet), ela tem a altura da área visível, senão
        encolhe a zero ao lado da negociação e dos agendados. -->
+  <!-- Na mesa, a coluna é um bloco só (dono, 13/11/2026, prévia `gestor-d`): fundo
+       suave, cantos arredondados e o cabeçalho DENTRO dele, sem faixa nem linha. -->
   <section
-    class="flex min-w-0 flex-col gap-3"
-    :class="phone ? 'min-h-full flex-1' : 'h-full min-h-0 w-full'"
+    class="flex min-w-0 flex-col gap-2"
+    :class="
+      phone
+        ? 'min-h-full flex-1'
+        : 'h-full min-h-0 w-full rounded-xl bg-elevated/60 px-2 pb-2'
+    "
     :data-zone="zone.key"
   >
-    <OperatorToolbar v-if="!phone && heading" as="header">
+    <header
+      v-if="!phone && heading"
+      class="flex h-11 shrink-0 items-center px-1"
+    >
       <OrderBoardHeading
         :zone="zone"
         :cards="cards"
@@ -85,7 +100,7 @@ const hint = computed(() =>
       >
         <template #actions><slot name="heading-actions" /></template>
       </OrderBoardHeading>
-    </OperatorToolbar>
+    </header>
 
     <NuxtEmpty
       v-if="!cards.length"
@@ -104,9 +119,15 @@ const hint = computed(() =>
         class="grid min-h-0 flex-1 auto-rows-max items-start gap-3 overflow-y-auto -mx-2 -mt-2 px-2 pt-2 pb-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]"
         data-zone-cards
       >
+        <template v-for="{ card, heading: part } in rows" :key="card.ref">
+        <h3
+          v-if="part"
+          class="col-span-full op-micro font-semibold text-muted-foreground"
+          data-exit-part
+        >
+          {{ part }}
+        </h3>
         <OrderCard
-          v-for="card in cards"
-          :key="card.ref"
           :card="card"
           :busy="isBusy(card.ref)"
           :error="actionError(card.ref)"
@@ -129,6 +150,7 @@ const hint = computed(() =>
           "
           @volumes="(count) => emit('volumes', card.ref, count, 'exit')"
         />
+        </template>
       </div>
     </template>
 
@@ -137,9 +159,15 @@ const hint = computed(() =>
       class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto -mx-2 -mt-2 px-2 pt-2 pb-3"
       data-zone-cards
     >
+      <template v-for="{ card, heading: part } in rows" :key="card.ref">
+      <h3
+        v-if="part"
+        class="op-micro font-semibold text-muted-foreground"
+        data-exit-part
+      >
+        {{ part }}
+      </h3>
       <OperatorSwipeRow
-        v-for="card in cards"
-        :key="card.ref"
         :actions="phone ? swipeActions(card) : []"
         :commit="swipeCommit(card)"
         :label="`Pedido ${card.ref}`"
@@ -179,6 +207,7 @@ const hint = computed(() =>
           "
         />
       </OperatorSwipeRow>
+      </template>
       <p
         v-if="phone && cards.length"
         class="flex items-center justify-center gap-1.5 py-1 op-micro text-muted-foreground"

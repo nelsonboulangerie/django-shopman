@@ -9,6 +9,10 @@ test.describe("Gestor — board de pedidos", () => {
     // "Seu acesso não inclui o Gestor de pedidos" e nenhum teste daqui prova o Gestor.
     await expect(page.getByText("Seu acesso não inclui o Gestor de pedidos")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Pedidos", level: 1 })).toBeVisible();
+    // Em preparo abre recolhida, como tira (D, dono 13/11/2026): a tira abre a coluna.
+    await expect(page.getByText("2× Pão · 1× Café")).toHaveCount(0);
+    await page.locator('[data-board-strip="prep"]').click();
+    await expect(page.locator('[data-board-strip="prep"]')).toHaveCount(0);
     await expect(page.getByText("2× Pão · 1× Café")).toBeVisible();
     await expect(page.getByText("R$ 15,00")).toBeVisible();
     await expect(page.getByText("Ana · Loja online", { exact: true })).toBeVisible();
@@ -24,14 +28,14 @@ test.describe("Gestor — board de pedidos", () => {
 
 
 test("card e lista mantêm o avanço bloqueado e explicam o motivo", async ({ page }) => {
-  await page.goto("/?view=board");
+  await page.goto("/?view=board&columns=all");
   // No cartão o bloqueio é a pílula "Por que espera"; o motivo abre a um toque.
   const card = page.locator("article").filter({ hasText: "Pagamento pendente" });
   await card.getByRole("button", { name: "Por que espera", exact: true }).click();
   await expect(page.getByText("O pagamento ainda não foi capturado.", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
-  // Na Lista o gesto aparece travado, com o motivo no title.
-  await page.getByRole("tab", { name: "Lista" }).click();
+  // Na Tabela o gesto aparece travado, com o motivo no title.
+  await page.getByRole("tab", { name: "Tabela" }).click();
   const action = page.getByRole("button", { name: "Aguardando pagamento", exact: true });
   await expect(action).toBeDisabled();
   await expect(action).toHaveAttribute("title", "O pagamento ainda não foi capturado.");

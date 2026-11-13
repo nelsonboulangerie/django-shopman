@@ -88,15 +88,6 @@ export function useGestorSections() {
       watch: [operatorId],
     },
   );
-  const { data: checklistsAccess, status: checklistsStatus } = useFetch<{ authorized?: boolean }>(
-    "/api/v1/backstage/operator/session/",
-    {
-      key: useOperatorResourceKey("operation-checklists-access"),
-      query: { perm: "backstage.perform_operation_task" },
-      server: true,
-      watch: [operatorId],
-    },
-  );
   // Catálogo e Canais só para quem cuida do catálogo (`shop.manage_catalog`): o
   // servidor já recusava; a tela mostrava as duas e depois "Sem conexão".
   const { data: catalogAccess, status: catalogStatus } = useFetch<{ authorized?: boolean }>(
@@ -119,7 +110,6 @@ export function useGestorSections() {
     canManageCustomers: customersAccess.value?.authorized === true,
     canManageWorkstations: workstationsAccess.value?.authorized === true,
     canManageCatalog: catalogAccess.value?.authorized === true,
-    canOperateChecklists: checklistsAccess.value?.authorized === true,
     expeditesOnly: expeditesOnly.value,
     catalogOnly: catalogOnly.value,
     intakeCount: rail.value.onBoard ? rail.value.intake : offBoard.value.intake,
@@ -135,19 +125,18 @@ export function useGestorSections() {
     }
     return route.path === "/" ? "orders" : undefined;
   });
-  // As quatro perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.
+  // As três perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.
   const ready = computed(() =>
     accessResolved([
       customersStatus.value,
       workstationsStatus.value,
-      checklistsStatus.value,
       catalogStatus.value,
     ]),
   );
-  // A URL direta numa seção que o acesso não inclui: só depois de as quatro
+  // A URL direta numa seção que o acesso não inclui: só depois de as três
   // perguntas responderem com sucesso (enquanto carrega, a página monta como antes).
   const accessReady = computed(() =>
-    [customersStatus, workstationsStatus, checklistsStatus, catalogStatus].every(
+    [customersStatus, workstationsStatus, catalogStatus].every(
       (s) => s.value === "success",
     ),
   );

@@ -1,8 +1,7 @@
 <script setup lang="ts">
-// Ajustes do Gestor (UX-15, prévia v4 `gestor-fila4.html`): o andar do cadastro e do
-// que se consulta fora do turno. Histórico, Catálogo, Clientes, Canais e Postos saíram
-// do rail da operação e moram aqui, cada um a um toque. O ponto de atenção de Canais
-// ("1 desligado") aparece no item Ajustes do rail e na linha de Canais.
+// Ajustes do Gestor (D, 13/11/2026): o andar do cadastro que se mexe fora do turno,
+// Clientes e Postos. Histórico, Catálogo e Canais são operação e moram no rail; Rotinas
+// mora no PDV.
 import { SETTINGS_SKELETON_CARDS } from "~/presentation/gestorSections";
 
 const { settings, ready } = useGestorSections();

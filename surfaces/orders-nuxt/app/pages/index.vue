@@ -542,7 +542,9 @@ const phoneTabs = computed(() => {
         { key: "prep", title: "Em preparo" },
       ]
     : [
-        ...(isPhone.value ? zones.value : desktopZones.value),
+        // Em abas, as três etapas aparecem sempre: recolher é gesto das colunas, e a
+        // aba do Preparo não pode sumir do tablet porque ele abre recolhido na mesa.
+        ...zones.value,
         ...(negotiationZone.value ? [negotiationZone.value] : []),
       ].map((zone) => ({
         key: zone.key,
@@ -699,10 +701,10 @@ const view = computed(() =>
 // recolhida) e Tabela (densa, com seleção em lote). Nenhum gesto muda de modo a modo.
 const viewTabs = computed(() => [
   ...(queueAvailable.value
-    ? [{ value: "queue", label: "Fila", icon: "i-lucide-list-ordered" }]
+    ? [{ value: "queue", label: "Fila" }]
     : []),
-  { value: "board", label: "Quadro", icon: "i-lucide-columns-3" },
-  { value: "table", label: "Tabela", icon: "i-lucide-table" },
+  { value: "board", label: "Quadro" },
+  { value: "table", label: "Tabela" },
 ]);
 function pickView(value: string | number) {
   const next = String(value);
@@ -1418,7 +1420,7 @@ function compactClear() {
          enquanto há pedido novo esperando. No posto Saída (`gestor-colunas4.html`):
          "Visão: Saída", "Mostrar as 3 colunas" e o som; o resto no ⋯. -->
     <OperatorCompactBar
-      :title="phoneExitMode ? 'Saída' : 'Pedidos'"
+      title="Pedidos"
       :tone="liveTone"
       :time="readClock"
       :conn-label="error ? 'Atualização falhou' : realtimeView.label"
@@ -1482,7 +1484,7 @@ function compactClear() {
       </template>
     </NuxtModal>
     <OperatorPageHeader
-      :title="exitPostView ? 'Saída' : 'Pedidos'"
+      title="Pedidos"
       :filters-wrap="false"
       :phone-actions="phoneHeaderActions"
       actions-from="md"
@@ -1601,7 +1603,9 @@ function compactClear() {
           </NuxtDropdownMenu>
 
           <!-- visão: Fila · Quadro · Tabela, um controle só (dono, 13/11/2026). A Fila
-               some abaixo do lg (não cabe); o aparelho lembra a escolha. -->
+               some abaixo do lg (não cabe); o aparelho lembra a escolha. Só o nome, sem
+               ícone: com os três ícones, o selo de atualização não cabia na linha a
+               1280 px. -->
           <NuxtTabs
             :model-value="view"
             :items="viewTabs"
@@ -2146,53 +2150,14 @@ function compactClear() {
           </template>
         </OperatorTable>
 
-        <!-- Encomendas: pedidos confirmados para datas futuras, fora das colunas
-             do dia. Agrupados pela data combinada; no dia, o despertador devolve
-             o pedido ao fluxo normal do board. -->
-        <section v-if="preordersCount" class="mt-6" data-preorders-section>
-          <div class="flex items-center gap-2 border-b pb-2">
-            <Icon
-              name="lucide:calendar-clock"
-              class="size-4 text-muted-foreground"
-            />
-            <h2 class="text-sm font-bold uppercase tracking-wide">Encomendas</h2>
-            <OperatorCountChip :count="preordersCount" />
-            <span
-              class="ms-auto hidden text-end text-xs text-muted-foreground sm:block"
-              >Confirmados para os próximos dias</span
-            >
-          </div>
-          <div class="mt-3 grid gap-4 lg:grid-cols-3">
-            <div
-              v-for="group in triagedPreorders"
-              :key="group.date"
-              class="flex min-w-0 flex-col gap-3"
-            >
-              <h3
-                class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-              >
-                {{ group.label }}
-              </h3>
-              <OrderCard
-                v-for="card in group.cards"
-                :key="card.ref"
-                :card="card"
-                :busy="isBusy(card.ref)"
-                :error="actionError(card.ref)"
-                :selected="isSelected(card.ref)"
-                :selecting="selecting"
-                :danfe-printing="danfePrint.isPrinting(card.ref)"
-                :can-open="canManageOrders"
-                @action="(action) => onAction(card.ref, action)"
-                @dismiss-error="clearActionError(card.ref)"
-                @toggle-select="toggleSelect(card.ref)"
-                @toggle-assign="onToggleAssign(card)"
-                @select-mode="startSelection(card.ref)"
-                @print-danfe="danfePrint.printDanfe(card.ref)"
-              />
-            </div>
-          </div>
-        </section>
+        <!-- Encomendas: os pedidos dos próximos dias, fora das colunas do dia, numa lista
+             simples (dono, 13/11/2026). No dia, o despertador devolve o pedido ao
+             fluxo normal do quadro. -->
+        <OrderPreorderList
+          v-if="preordersCount"
+          :groups="triagedPreorders"
+          :count="preordersCount"
+        />
       </template>
     </section>
 

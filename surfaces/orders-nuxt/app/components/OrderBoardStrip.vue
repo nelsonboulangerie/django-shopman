@@ -15,13 +15,13 @@ const emit = defineEmits<{ open: [] }>();
   <NuxtButton
     color="neutral"
     variant="soft"
-    class="relative h-full w-12 shrink-0 flex-col items-center justify-start gap-0 p-0 pb-3"
+    class="relative h-full w-11 shrink-0 flex-col items-center justify-start gap-0 p-0 pb-3"
     :aria-label="`${strip.label} (atalho: ${shortcut})`"
     :title="strip.label"
     :data-board-strip="strip.key"
     @click="emit('open')"
   >
-    <span class="grid h-12 w-full place-items-center border-b border-default">
+    <span class="grid h-11 w-full place-items-center">
       <OperatorCountChip :count="strip.count" />
     </span>
     <span

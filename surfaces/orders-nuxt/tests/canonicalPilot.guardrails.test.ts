@@ -559,7 +559,10 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(board).not.toContain("<QueueColumnResizeHandle");
     expect(board).not.toContain("<QueueColumnStrip");
     expect(board).toContain('v-if="hasChannelQueueSignal" #feedback');
-    expect(boardColumn).toContain('v-if="!phone && heading" as="header"');
+    // A coluna é um bloco só, com o cabeçalho dentro (dono, 13/11/2026, prévia
+    // `gestor-d`): nada de faixa de toolbar com linha embaixo.
+    expect(boardColumn).toMatch(/<header\s+v-if="!phone && heading"/);
+    expect(boardColumn).not.toContain("<OperatorToolbar");
     expect(boardColumn).toContain("<OrderBoardHeading");
     // O posto Saída usa o mesmo painel de filtros; não há cabeçalho de coluna na toolbar.
     expect(board).not.toContain('v-if="exitPostView && desktopZones[0]"');
@@ -889,8 +892,9 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(board).not.toContain("data-board-view-label");
-    // A visão do posto é o título da página; não há selo repetindo-a.
-    expect(board).toContain(`:title="exitPostView ? 'Saída' : 'Pedidos'"`);
+    // O título é sempre "Pedidos" (D, 13/11/2026): o balcão é o mesmo quadro com
+    // colunas recolhidas, não uma tela com outro nome; não há selo repetindo a visão.
+    expect(board).toContain('title="Pedidos"');
     expect(board).not.toContain("viewLabel");
   });
 

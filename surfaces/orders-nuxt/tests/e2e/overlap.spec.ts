@@ -21,7 +21,6 @@ const ROUTES = [
   "/customers/groups",
   "/customers/merges",
   "/feeds",
-  "/checklists",
   "/workstations",
   "/settings",
 ] as const;
