@@ -1078,3 +1078,24 @@ no JSON, não de dinheiro, e isso é leitura de código, não foi reproduzido.
 intercepta por caminho, `lock_timeout` global, corte do histórico de migrations.
 
 **Fonte.** `docs/reports/2026-11-10-auditoria-reset-arquitetural.md`, seções 12 a 14 e 16.
+
+---
+
+## D-039 · ID3A: DeepSeek por padrão, tetos de gasto e freio antes da tag
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-12 · **revisar_em:** 2026-12-12
+
+**Decisão do dono**, respondendo às cinco perguntas do [ID3A-PLAN](../plans/ID3A-PLAN.md) (#2311):
+
+1. *"A princípio, Deepseek. Mas deve ser flexível, via configuração pelo Admin!"* A DeepSeek é o
+   provedor padrão de dado público e do texto redigido do Suporte. A troca por tarefa é
+   configuração (Admin → Conexões de IA e rotas), nunca código. Mensagem de cliente não vai à
+   DeepSeek sem nova decisão.
+2. Tetos aprovados: US$ 3/dia por loja, US$ 0,50/dia na triagem do Suporte, US$ 1/dia no resumo,
+   teto de código de US$ 20/dia.
+3. A chave nova entra pelo Admin (Conexões de IA); não há chave utilizável hoje.
+4. Gabarito (decidido pela recomendação, delegado): a triagem do gerente é o rótulo; até 150
+   chamados redigidos ficam no banco da loja por 12 meses para reteste.
+5. O medidor e freio da porta de IA (E1) entra **antes** da tag `go-live-v1`, sem segurá-la.
+
+**Fonte.** Conversa de 12/11/2026; PR #2311.
