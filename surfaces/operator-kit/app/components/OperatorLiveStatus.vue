@@ -4,8 +4,10 @@
 // 08/10/2026 (onda 0.M; o ponto vermelho do "Sem conexão" é do PR #1539):
 //
 //   live  ponto verde e a hora da última leitura ("10:12").
-//   calm  neutro, sem ponto, a cadência por extenso ("Atualiza sozinho a cada 60 s", o rótulo
-//         que o app passa, porque a cadência é dele).
+//   calm  neutro. Com a hora (D, dono 13/11/2026: "Conexão é pra ficar o resumido, tipo
+//         ● 11:52"): o ponto neutro e a hora, e a cadência ("Atualiza sozinho a cada
+//         60 s", o rótulo que o app passa) vai para o nome acessível e a dica. Sem a
+//         hora, a cadência por extenso, sem ponto.
 //   late  âmbar, com ponto: "Última leitura às 10:04".
 //   off   ponto vermelho e "Sem conexão".
 //
@@ -63,14 +65,14 @@ const TONE_COLOR = {
 
 const badgeColor = computed(() => TONE_COLOR[props.tone]);
 /** Ponto só onde o estado é uma leitura no tempo (ao vivo, atrasada) ou a falta dela. */
-const dotted = computed(() => props.tone !== "calm");
+const dotted = computed(() => props.tone !== "calm" || Boolean(props.time));
 
 const display = computed(() => {
   if (props.tone === "live") return props.time || props.label;
   if (props.tone === "late")
     return props.time ? `Última leitura às ${props.time}` : props.label;
   if (props.tone === "off") return OFF_LABEL;
-  return props.label;
+  return props.time || props.label;
 });
 
 // A anatomia do `NuxtBadge` `md` (tema oficial do Nuxt UI 4: `text-xs px-2 gap-1`,
@@ -82,7 +84,7 @@ const ICON_REM = 1;
 
 /** O curto só existe no calmo: nos outros tons o texto já é a coisa (a hora, "Sem conexão"). */
 const short = computed(() => {
-  const value = props.tone === "calm" ? props.shortLabel.trim() : "";
+  const value = props.tone === "calm" && !props.time ? props.shortLabel.trim() : "";
   return value && value !== display.value ? value : "";
 });
 

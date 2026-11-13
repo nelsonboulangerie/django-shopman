@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // "O sistema fez", em faixa (D, dono 13/11/2026, prévia `gestor-d`): o que o sistema
 // mudou sozinho e ainda dá para desfazer, logo abaixo do cabeçalho. Uma linha por
-// pedido, só enquanto a janela do Desfazer está aberta; fechada, some. A lista inteira
+// pedido, só enquanto a janela do Desfazer está aberta; fechada, some. A faixa é a do
+// kit (`OperatorBand`: descolada e invertida, variante 3 do dono). A lista inteira
 // do que o sistema fez continua na Fila.
 import type { SystemActionProjection } from "~/types/orders";
 import { splitRef } from "~/presentation/board";
@@ -16,14 +17,11 @@ const emit = defineEmits<{ undo: [ref: string] }>();
 
 <template>
   <div class="flex flex-col gap-2" data-system-band>
-    <NuxtAlert
+    <OperatorBand
       v-for="line in lines"
       :key="`${line.order_ref}-${line.at_iso}`"
-      color="neutral"
-      variant="subtle"
       icon="i-lucide-sparkles"
       :title="`${splitRef(line.order_ref).code} ficou ${line.verb.toLowerCase()} sozinho · ${line.reason}`"
-      orientation="horizontal"
       :data-system-band-line="line.order_ref"
     >
       <template #actions>
@@ -40,6 +38,6 @@ const emit = defineEmits<{ undo: [ref: string] }>();
           @click="emit('undo', line.order_ref)"
         />
       </template>
-    </NuxtAlert>
+    </OperatorBand>
   </div>
 </template>

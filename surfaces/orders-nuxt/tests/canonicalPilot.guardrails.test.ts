@@ -247,6 +247,9 @@ describe("Gestor canônico em Nuxt UI", () => {
       // A caixa de Avisos (P1-12, 14/10/2026): a descrição preserva as quebras de
       // linha, para o aviso que traz os dados um por linha (a nota de estorno).
       "operator-kit/OperatorInbox.vue",
+      // A faixa invertida (dono, 13/11/2026): o ícone leva o tom do aviso, porque o
+      // fundo é um só para todas as gravidades.
+      "operator-kit/OperatorBand.vue",
     ]);
     expect(
       runtimeOffenders(/\b:ui=|\bui="/).filter((file) => !kitPieceUi.has(file)),

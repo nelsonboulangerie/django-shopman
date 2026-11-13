@@ -744,17 +744,27 @@ describe("OperatorLiveStatus", () => {
     expect(live(wrapper).attributes("data-live-tone")).toBe("live");
   });
 
-  it("calmo: neutro, sem ponto, a cadência por extenso", async () => {
+  it("calmo com a hora: o ponto neutro e a hora; a cadência vai para o nome acessível (D, dono 13/11/2026)", async () => {
     const wrapper = await mountSuspended(OperatorLiveStatus, {
-      props: { tone: "calm", time: "10:30", label: "Atualiza Sozinho a Cada 60 s" },
+      props: { tone: "calm", time: "10:30", label: "Atualiza Sozinho a Cada 60 s", shortLabel: "A cada 60 s" },
+    });
+    mounted.push(wrapper as unknown as VueWrapper);
+    expect(wrapper.text().trim()).toBe("10:30");
+    expect(wrapper.text()).not.toMatch(NO_ENGLISH_SWITCH);
+    expect(live(wrapper).attributes("class")).toContain("bg-elevated");
+    expect(dot(wrapper as unknown as VueWrapper).exists()).toBe(true);
+    expect(live(wrapper).attributes("aria-label")).toContain("Atualiza Sozinho a Cada 60 s");
+    expect(live(wrapper).attributes("aria-label")).toContain("10:30");
+  });
+
+  it("calmo sem a hora: neutro, sem ponto, a cadência por extenso", async () => {
+    const wrapper = await mountSuspended(OperatorLiveStatus, {
+      props: { tone: "calm", label: "Atualiza Sozinho a Cada 60 s" },
     });
     mounted.push(wrapper as unknown as VueWrapper);
     expect(wrapper.text().trim()).toBe("Atualiza Sozinho a Cada 60 s");
-    expect(wrapper.text()).not.toMatch(NO_ENGLISH_SWITCH);
-    expect(live(wrapper).attributes("class")).toContain("bg-elevated");
     expect(live(wrapper).attributes("class")).not.toContain("ring-accented");
     expect(dot(wrapper as unknown as VueWrapper).exists()).toBe(false);
-    expect(live(wrapper).attributes("aria-label")).toContain("10:30");
   });
 
   it("o rótulo que cabe: o invólucro é o contêiner, pede a largura do completo e leva o curto escrito pelo app", async () => {

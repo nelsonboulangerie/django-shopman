@@ -699,18 +699,17 @@ function clearAll() {
     <slot name="below" />
 
     <!-- O aviso da tela (fase 2, K6): abaixo da toolbar, um inteiro e o resto em "e mais
-         N". A orientação vertical canônica mantém a ação sob o texto e o fechar no
+         N". Em faixa descolada e invertida (`OperatorBand`, D, dono 13/11/2026). A orientação vertical canônica mantém a ação sob o texto e o fechar no
          canto superior direito. Lugar declarado: a tela não monta faixa própria. -->
     <div
       v-if="visibleAlerts.length"
       class="flex flex-col gap-2 px-4 py-2 sm:px-6"
       data-page-header-alerts
     >
-      <NuxtAlert
+      <OperatorBand
         v-for="alert in shownAlerts"
         :key="alert.id ?? alert.title"
-        :color="alert.color"
-        variant="subtle"
+        :tone="alert.color"
         :icon="alert.icon ?? screenAlertIcon(alert.color)"
         :title="alert.title"
         :description="alert.description"
