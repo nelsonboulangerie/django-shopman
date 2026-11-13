@@ -19038,6 +19038,42 @@
       "test_gap_reason": null,
       "policy": false,
       "out_of_extraction": false
+    },
+    {
+      "id": "preorder.closed-day-orders",
+      "question": "Como o fechamento de uma data no calendário encontra e avisa os pedidos em aberto comprometidos para aquele dia?",
+      "owner": "preorder.closed-day",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.closed_day_orders:alert_orders_on_closed_day",
+      "authoritative_symbols": [
+        "shopman.shop.services.closed_day_orders:alert_orders_on_closed_day"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/closed_day_orders.py",
+          "symbols": [
+            "open_orders_committed_between",
+            "alert_orders_on_closed_day"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_closed_day_orders.py::test_closed_day_orders_finds_open_orders_and_alerts"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
     }
   ]
 }

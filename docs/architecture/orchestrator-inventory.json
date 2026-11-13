@@ -13838,6 +13838,29 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/services/closed_day_orders.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "preorder.closed-day-orders"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "OPEN_STATUSES"
+          ]
+        }
+      ]
     }
   ]
 }
