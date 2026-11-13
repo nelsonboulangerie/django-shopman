@@ -3937,9 +3937,11 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "order.lifecycle-kitchen-release",
         "order.lifecycle-transition-policy"
       ],
       "responsibilities": [
+        "composição",
         "decisão",
         "infraestrutura"
       ],
@@ -13838,6 +13840,20 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/policies/preorder_kitchen_policy.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.preorder-kitchen-policy"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
     }
   ]
 }

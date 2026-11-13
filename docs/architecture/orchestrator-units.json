@@ -19038,6 +19038,89 @@
       "test_gap_reason": null,
       "policy": false,
       "out_of_extraction": false
+    },
+    {
+      "id": "shop.preorder-kitchen-policy",
+      "question": "Quando o card de uma encomenda chega à Cozinha, respeitando hora combinada, preparo e antecedência?",
+      "owner": "preorder.kitchen-policy",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.preorder_kitchen_policy:resolve_preorder_kitchen_policy",
+      "authoritative_symbols": [
+        "shopman.shop.policies.preorder_kitchen_policy:PreorderKitchenPolicy",
+        "shopman.shop.policies.preorder_kitchen_policy:resolve_preorder_kitchen_policy"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/preorder_kitchen_policy.py",
+          "symbols": [
+            "BLOCK",
+            "DEFAULT_LEAD_MINUTES",
+            "DEFAULT_PREP_MINUTES",
+            "PreorderKitchenPolicy",
+            "_minutes",
+            "resolve_preorder_kitchen_policy"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_preorder_kitchen_release.py::test_resolve_preorder_kitchen_policy_reads_shop_defaults",
+        "shopman/shop/tests/test_preorder_kitchen_release.py::test_policy_ignores_garbage"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "order.lifecycle-kitchen-release",
+      "question": "Quando e como uma encomenda é liberada para a Cozinha fora do despertador agendado?",
+      "owner": "preorder.kitchen-release",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.lifecycle:release_preorder_now",
+      "authoritative_symbols": [
+        "shopman.shop.lifecycle:release_preorder_now",
+        "shopman.shop.lifecycle:kitchen_release_at"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/lifecycle.py",
+          "symbols": [
+            "KITCHEN_RELEASED_AT_KEY",
+            "_has_live_preorder_alarm",
+            "_stamp_kitchen_released",
+            "kitchen_release_at",
+            "release_preorder_now"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "lifecycle"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [
+        "PREORDER_ACTIVATE"
+      ],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_preorder_kitchen_release.py::test_release_now_sends_to_kitchen_and_closes_the_alarm",
+        "shopman/shop/tests/test_preorder_kitchen_release.py::test_release_now_does_not_touch_another_day"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
     }
   ]
 }

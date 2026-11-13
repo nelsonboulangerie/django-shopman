@@ -1069,7 +1069,7 @@ def kitchen_release_at(order, target):
     from datetime import datetime
     from datetime import time as time_type
 
-    from shopman.shop.preorder_kitchen_policy import resolve_preorder_kitchen_policy
+    from shopman.shop.policies.preorder_kitchen_policy import resolve_preorder_kitchen_policy
     from shopman.shop.services import business_calendar
     from shopman.shop.services.fulfillment_window import promised_at
 
