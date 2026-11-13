@@ -112,7 +112,7 @@ class AcceptanceTimer(NamedTuple):
     timeout_minutes: int = 0
 
 
-def _timer_goal(timer: AcceptanceTimer | None) -> tuple[int, datetime] | None:
+def acceptance_timer_goal(timer: AcceptanceTimer | None) -> tuple[int, datetime] | None:
     """A meta e o "desde" tirados do timer agendado, ou ``None`` sem timer.
 
     A meta é o prazo que o timer conta e o "desde" é o fim dele menos o prazo:
@@ -194,7 +194,7 @@ def card_attention(
     """Os campos de atenção do cartão: o fato, desde quando conta e a meta.
 
     ``acceptance_timer`` é o prazo de aceite já agendado para o pedido novo: com
-    ele, a meta e o "desde" saem do próprio timer (``_timer_goal``).
+    ele, a meta e o "desde" saem do próprio timer (``acceptance_timer_goal``).
     """
     kind = attention_kind(order, card)
     if not kind:
@@ -230,7 +230,7 @@ def card_attention(
             "goal_label": f"meta {CONFIRM_GOAL_MINUTES}",
         }
     if kind in ("confirm",) or (kind == "blocked" and order.status == Order.Status.NEW):
-        goal, since = _timer_goal(acceptance_timer) or (
+        goal, since = acceptance_timer_goal(acceptance_timer) or (
             _confirmation_goal(order, channel_config), order.created_at,
         )
     else:
@@ -249,11 +249,57 @@ def card_attention(
     if kind == "handoff":
         # No balcão o relógio é o do pronto ("6 min no balcão").
         since_iso = card.ready_at_iso or _iso(order.ready_at) or _iso(order.created_at)
+    agreed = _agreed_goal(order, kind, since_iso, goal, channel_config)
+    if agreed is not None:
+        return {"attention": kind, "attention_since_iso": since_iso, **agreed}
     return {
         "attention": kind,
         "attention_since_iso": since_iso,
         "goal_minutes": goal,
         "goal_label": "no balcão" if kind == "handoff" else f"meta {goal}",
+    }
+
+
+#: As etapas cujo prazo, num pedido com hora combinada, é a hora combinada.
+_AGREED_STAGES = ("start", "station", "mark_ready", "dispatch", "handoff")
+
+
+def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_config) -> dict | None:
+    """A meta do pedido com hora combinada: o atraso se mede contra o combinado.
+
+    Sem isto, a retirada combinada para as 18h aceita às 10h nascia atrasada às
+    10h05 ("iniciar, meta 5"), e a entrega das 18h ficava vermelha 30 min depois
+    de chegar. A régua é a da Cozinha (``kds._build_ticket``): com hora combinada,
+    o prazo é ela (``fulfillment_window.promised_at``). O "desde" continua o da
+    etapa (o número diz há quanto tempo o pedido está nela); só a meta se estica
+    até o prazo:
+
+    - **iniciar**: o combinado menos o preparo (a meta da estação), para dar tempo;
+    - **pronto** (estação ou à mão) e **despachar**: o próprio combinado;
+    - **balcão**: a meta do balcão contada do combinado, não do pronto. Pronto
+      antes da hora não é cliente atrasado.
+
+    ``None`` quando o pedido não combinou hora: vale a meta da etapa.
+    """
+    if kind not in _AGREED_STAGES:
+        return None
+    from shopman.shop.services.fulfillment_window import promised_at
+
+    promised = promised_at(order)
+    since = _parse(since_iso)
+    if promised is None or since is None:
+        return None
+    clock = timezone.localtime(promised)
+    if kind == "start":
+        deadline = promised - timedelta(minutes=stage_goal("station", channel_config))
+    elif kind == "handoff":
+        deadline = max(since, promised) + timedelta(minutes=goal)
+    else:
+        deadline = promised
+    minutes = max(1, math.ceil((deadline - since).total_seconds() / 60))
+    return {
+        "goal_minutes": minutes,
+        "goal_label": "no balcão" if kind == "handoff" else f"combinado para as {clock:%H:%M}",
     }
 
 
@@ -311,7 +357,15 @@ def ready_eta(order: Order, expectation: PrepExpectation, channel_config=None, *
         if at is not None:
             starts.append(at)
     start = min(starts) if starts else order.preparing_at
-    return (start or now) + timedelta(minutes=expected)
+    if start is None:
+        # Ainda não começou e tem hora combinada: fica pronto na hora combinada,
+        # não daqui a um preparo (a retirada das 18h não é "próximo pronto em ~4 min").
+        from shopman.shop.services.fulfillment_window import promised_at
+
+        promised = promised_at(order)
+        ready = now + timedelta(minutes=expected)
+        return max(ready, promised) if promised is not None else ready
+    return start + timedelta(minutes=expected)
 
 
 # ── A consciência ao lado da Fila ────────────────────────────────────────
@@ -574,6 +628,7 @@ __all__ = [
     "MenuOutageProjection",
     "QueueAwarenessProjection",
     "SystemActionProjection",
+    "acceptance_timer_goal",
     "attention_kind",
     "build_queue_awareness",
     "card_attention",

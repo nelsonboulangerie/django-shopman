@@ -732,6 +732,29 @@ coordination: ## Leitura de coordenação só com git: main, fila, PRs abertos, 
 inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branches sem PR, PRs verdes fora da fila
 	@bash scripts/inflight.sh
 
+# ── Compromissos: o que o repo deve, com dono, prazo e prova ──────────
+# O ledger é docs/coordination/COMMITMENTS.md. `intake` registra a fala do
+# dono ANTES do primeiro edit e devolve o ID que o PR cita. `commitments`
+# mostra o que venceu, incluindo as decisões legadas de DECISIONS.md.
+dono ?= Engenharia
+tipo ?= solicitacao
+origem ?= chat
+gatilho ?= -
+
+.PHONY: commitments intake commitments-pr
+
+commitments: ## O que o repo deve: ledger válido, vencidos e decisões legadas (issues=1 inclui issues com label; não falha por vencido)
+	@echo "── Compromissos ──"
+	$(PYTHON) scripts/check_commitments.py --no-fail-overdue $(if $(issues),--with-issues,)
+
+intake: ## Registra a fala do dono e devolve o ID: make intake q="..." [dono=...] [tipo=...]
+	@test -n "$(q)" || (echo 'uso: make intake q="<fala literal do dono>" [dono="Engenharia"] [tipo=solicitacao] [revisar_em=YYYY-MM-DD]' >&2; exit 2)
+	$(PYTHON) scripts/check_commitments.py --add --quote "$(q)" --dono "$(dono)" --tipo "$(tipo)" --origem "$(origem)" --gatilho "$(gatilho)" $(if $(revisar_em),--revisar-em "$(revisar_em)",)
+
+commitments-pr: ## Gate de nascimento: make commitments-pr body=<arquivo> [created=YYYY-MM-DD] [author=login]
+	@test -n "$(body)" || (echo 'uso: make commitments-pr body=<arquivo>' >&2; exit 2)
+	$(PYTHON) scripts/check_commitments.py --pr-body "$(body)" $(if $(created),--pr-created "$(created)",) $(if $(author),--author "$(author)",)
+
 # Prontidão: roda igual no checkout principal, numa worktree e na CI.
 # - Python: o .venv deste checkout; numa worktree (sem .venv), o .venv da árvore
 #   principal, com o código DESTA árvore à frente no PYTHONPATH (os editable

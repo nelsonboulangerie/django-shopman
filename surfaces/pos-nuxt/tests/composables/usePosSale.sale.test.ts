@@ -99,7 +99,7 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     expect(h.sale.result.value?.orderRef).toBe("PED-1");
     // Recibo congelado ANTES do reset: 1 linha (pão), total do review.
     expect(h.sale.result.value?.receipt.items).toHaveLength(1);
-    expect(h.sale.result.value?.receipt.items[0]).toMatchObject({ qty: 2, price_q: 500 });
+    expect(h.sale.result.value?.receipt.items[0]).toMatchObject({ qty: 2, list_price_q: 500, charged_price_q: 500 });
     expect(h.sale.result.value?.receipt.totalDisplay).toBe("R$ 10,00");
     // Carrinho zerado após finalizar.
     expect(h.sale.cart.items).toHaveLength(0);
@@ -721,7 +721,7 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     const closeCalls = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
     expect(closeCalls).toHaveLength(1);
     expect(h.sale.result.value?.orderRef).toBe("PED-1");
-    expect(h.sale.result.value?.receipt.items[0]).toMatchObject({ qty: 2, price_q: 500 });
+    expect(h.sale.result.value?.receipt.items[0]).toMatchObject({ qty: 2, list_price_q: 500, charged_price_q: 500 });
     expect(h.sale.cart.items).toHaveLength(0);
     expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
     expect(vi.mocked(toast.warning)).toHaveBeenCalledWith(

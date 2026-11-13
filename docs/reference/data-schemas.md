@@ -799,7 +799,7 @@ Write-back: `holds` (list de hold objects do backend)
 |-------|------|-------------|----------|
 | `order_ref` | `string` | hooks._on_order_created | ConfirmationTimeoutHandler |
 | `expires_at` | `string` | hooks._on_order_created | ConfirmationTimeoutHandler |
-| `timeout_minutes` | `int` | `lifecycle._schedule_confirmation_timeout` | `order_queue._confirmation_deadlines` → `order_attention._timer_goal`: o prazo que o timer conta (5 no pedido do dia, 60 na encomenda da loja online), gravado na hora de agendar. A meta do pedido novo no Gestor sai daqui, e o "desde" é `expires_at` menos esse prazo |
+| `timeout_minutes` | `int` | `lifecycle._schedule_confirmation_timeout` | `order_queue._confirmation_deadlines` → `order_attention.acceptance_timer_goal`: o prazo que o timer conta (5 no pedido do dia, 60 na encomenda da loja online), gravado na hora de agendar. A meta do pedido novo no Gestor sai daqui, e o "desde" é `expires_at` menos esse prazo |
 | `action` | `string` | `lifecycle._schedule_confirmation_timeout` | ConfirmationTimeoutHandler: `"confirm"` (`auto_confirm`) ou `"cancel"` (`auto_cancel`). No `cancel` o pedido ainda `new` sai por `cancellation.cancel` com `cancellation_reason="confirmation_timeout"` (chave `store_did_not_confirm`): o dinheiro volta (Pix estornado, cartão anulado no Stripe) |
 
 #### `order.stale_new_alert`
