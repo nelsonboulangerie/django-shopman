@@ -209,3 +209,73 @@ def test_unit_cost_divides_by_what_came_out_of_the_oven(supplier):
     snapshot = wo.meta[SNAPSHOT_KEY]
     assert snapshot["total_q"] == 4000
     assert snapshot["unit_cost_q"] == 500
+
+
+def test_cost_lines_add_up_to_the_frozen_total(supplier):
+    """Contrato: cada linha arredonda ao centavo e o total é a soma delas."""
+    _material("SAL-F3", "g", supplier, cost_q=6)  # R$ 0,06/kg: 100 g = 0,6 centavo
+    _material("ACUCAR-F3", "g", supplier, cost_q=6)
+    Product.objects.create(sku="PITADA-F3", name="Pitada", base_price_q=100)
+    recipe = Recipe.objects.create(ref="pitada-f3", name="Pitada", output_sku="PITADA-F3", batch_size=Decimal("1"))
+    RecipeItem.objects.create(recipe=recipe, input_sku="SAL-F3", quantity=Decimal("100"), unit="g")
+    RecipeItem.objects.create(recipe=recipe, input_sku="ACUCAR-F3", quantity=Decimal("100"), unit="g")
+
+    snapshot = _bake(recipe, planned="1", finished="1").meta[SNAPSHOT_KEY]
+
+    assert [line["cost_q"] for line in snapshot["lines"]] == [1, 1]
+    assert snapshot["total_q"] == 2
+    assert snapshot["unit_cost_q"] == 2
+
+
+def test_unit_cost_comes_from_the_frozen_total(supplier):
+    """2,5 centavos em 2 unidades: total gravado 3, unitário 3 ÷ 2 = 2 (não 1,25 → 1)."""
+    _material("FERMENTO-F3", "g", supplier, cost_q=25)  # 100 g = 2,5 centavos
+    Product.objects.create(sku="MINI-F3", name="Mini", base_price_q=100)
+    recipe = Recipe.objects.create(ref="mini-f3", name="Mini", output_sku="MINI-F3", batch_size=Decimal("2"))
+    RecipeItem.objects.create(recipe=recipe, input_sku="FERMENTO-F3", quantity=Decimal("100"), unit="g")
+
+    snapshot = _bake(recipe, planned="2", finished="2").meta[SNAPSHOT_KEY]
+
+    assert snapshot["total_q"] == 3
+    assert snapshot["unit_cost_q"] == 2
+
+
+def test_finish_replay_freezes_the_cost_the_signal_failed_to_freeze(supplier, monkeypatch):
+    """O receiver blindado estourou; o retry idempotente do operador congela o custo."""
+    from shopman.stockman import stock
+    from shopman.stockman.models import Move, Position, PositionKind
+
+    from shopman.shop.adapters import cost as cost_adapter
+    from shopman.shop.services.production import finish_work_order
+
+    recipe = _croissant(supplier)
+    deposito = Position.objects.create(ref="deposito-f3", name="Depósito", kind=PositionKind.PHYSICAL, is_saleable=False)
+    Position.objects.get_or_create(
+        ref="vitrine", defaults={"name": "Vitrine", "kind": PositionKind.PHYSICAL, "is_saleable": True}
+    )
+    for sku in ("FARINHA-F3", "MANTEIGA-F3"):
+        stock.receive(quantity=Decimal("5000"), sku=sku, position=deposito, reason="compra", kind=Move.Kind.BUY)
+    wo = craft.plan(recipe, Decimal("10"), date=timezone.localdate())
+    craft.start(wo, quantity=Decimal("10"), actor="test")
+
+    real_snapshot = cost_adapter.work_order_cost_snapshot
+    calls = {"n": 0}
+
+    def fails_twice(work_order):
+        # A primeira tentativa é a do receiver; a segunda, a da rede de segurança.
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise RuntimeError("falha no cálculo do custo")
+        return real_snapshot(work_order)
+
+    monkeypatch.setattr(cost_adapter, "work_order_cost_snapshot", fails_twice)
+    finish_work_order(work_order_id=wo.pk, quantity="10", actor="test", idempotency_key="f3-replay")
+    wo.refresh_from_db()
+    assert wo.status == WorkOrder.Status.FINISHED
+    assert SNAPSHOT_KEY not in wo.meta
+
+    finish_work_order(work_order_id=wo.pk, quantity="10", actor="test", idempotency_key="f3-replay")
+    finish_work_order(work_order_id=wo.pk, quantity="10", actor="test", idempotency_key="f3-replay")
+    wo.refresh_from_db()
+    assert wo.meta[SNAPSHOT_KEY]["total_q"] == 4000
+    assert calls["n"] == 3  # congelou uma vez; o segundo replay não recalcula

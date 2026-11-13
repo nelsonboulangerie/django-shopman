@@ -49,8 +49,9 @@ from shopman.backstage import permissions
 
 logger = logging.getLogger(__name__)
 
-#: Meta do aceite: o card do Gestor fica urgente aos 4 minutos (`order_queue._timer_class`).
-ACCEPT_TARGET_SECONDS = 240
+#: Meta do aceite: o card do Gestor fica urgente aos 80% do prazo (`order_queue._timer_class`),
+#: 4 min no prazo de 5 do pedido do dia.
+ACCEPT_TARGET_SHARE = 0.8
 
 #: Quanto à frente a Central olha as encomendas de retirada do PDV.
 PREORDER_HORIZON = timedelta(hours=1)
@@ -200,19 +201,23 @@ def _orders(user, base: str, label: str, now: datetime, out: _Collected) -> None
         for order in Order.objects.filter(status__in=order_queue.ACTIVE_STATUSES).order_by("created_at")
         if not is_pos_counter_order(order)
     ]
-    # Encomenda de data futura vive em "Agendados", não é trabalho do dia (mesma régua do quadro).
+    # Mesma régua do quadro: todo pedido novo espera aceite, inclusive a encomenda
+    # (60 min de prazo, dono 09/11); a encomenda de data futura já aceita vive em
+    # "Agendados" e não é trabalho do dia.
     today_work = [
         order
         for order in active
-        if not (order.status in ("new", "accepted", "preparing") and order_queue._is_future_preorder(order))
+        if not (order.status in ("accepted", "preparing") and order_queue._is_future_preorder(order))
     ]
     to_accept = [order for order in today_work if order.status == "new"]
     deadlines = order_queue._confirmation_deadlines([order.ref for order in to_accept])
     channels = _channel_labels({order.channel_ref or "" for order in to_accept})
 
     for order in to_accept:
-        elapsed = (now - order.created_at).total_seconds()
-        slack = ACCEPT_TARGET_SECONDS - elapsed
+        # O prazo do aceite é o do timer do pedido (5 ou 60 min), como no cartão
+        # do Gestor: urgente aos 80% dele.
+        elapsed, window = order_queue._acceptance_clock(order, deadlines.get(order.ref), now)
+        slack = window * ACCEPT_TARGET_SHARE - elapsed
         deadline_iso, deadline_action = (deadlines.get(order.ref) or order_queue._external_deadline(order) or ("", ""))[:2]
         deadline = _parse_iso(deadline_iso)
         due_label = ""

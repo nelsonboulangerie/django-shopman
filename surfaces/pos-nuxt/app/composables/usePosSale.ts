@@ -68,7 +68,7 @@ import {
 } from "~/utils/posTabLifecycle";
 import { saleTotalView } from "~/presentation/saleTotal";
 import { composedAddressLine, emptyAddressDraft } from "~/presentation/address";
-import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, type PosReceiptSnapshot } from "~/presentation/receipt";
+import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, receiptItemFromCart, type PosReceiptSnapshot } from "~/presentation/receipt";
 import {
   applyLinePrices,
   linesWithoutServerPrices,
@@ -3799,13 +3799,9 @@ export function usePosSale(deps: PosSaleDeps) {
           orderRef,
           tabDisplay: cart.tabDisplay,
           customerName: cart.customerName,
-          items: cart.items.map((item) => ({
-            name: item.name,
-            qty: item.qty,
-            price_q: item.price_q,
-            discountPct: item.discount?.value || 0,
-            ...(item.weighed ? { weightG: item.weighed.weight_g } : {}),
-          })),
+          // O preço que o SERVIDOR cobrou em cada linha, nunca o desconto
+          // recalculado aqui: as linhas do papel somam o total.
+          items: cart.items.map(receiptItemFromCart),
           totalDisplay: review.value?.total_display || "",
           payments: cart.paymentTenders.map((tender) => ({
             method: tender.method,

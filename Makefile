@@ -54,21 +54,24 @@ install: ## Instala deps + apps da suite em modo editável
 		"ruff>=0.15,<1.0" \
 		"pytest-xdist>=3.6,<4.0" \
 		phonenumbers pytest pytest-django pytest-cov
-	# Instala cada app em modo editável
-	$(PYTHON) -m pip install -e packages/refs
-	$(PYTHON) -m pip install -e packages/utils
-	$(PYTHON) -m pip install -e packages/watchman
-	$(PYTHON) -m pip install -e packages/offerman
-	$(PYTHON) -m pip install -e packages/stockman
-	$(PYTHON) -m pip install -e packages/craftsman
-	$(PYTHON) -m pip install -e packages/guestman
-	$(PYTHON) -m pip install -e packages/doorman
-	$(PYTHON) -m pip install -e packages/orderman
-	$(PYTHON) -m pip install -e packages/payman
-	$(PYTHON) -m pip install -e packages/buyman
-	$(PYTHON) -m pip install -e packages/fiscalman
-	$(PYTHON) -m pip install -e packages/cashman
-	$(PYTHON) -m pip install -e .
+	# Instala cada app em modo editável, SOB os mesmos pinos: sem `-c` aqui o pip
+	# resolve a dependência transitiva do zero (12/11/2026: o `erpbrasil.edoc` 3.3.0
+	# saiu de manhã, puxou `erpbrasil-assinatura` 1.9 → `pyOpenSSL<24.3`, e o
+	# backtrack tentou compilar PyYAML 6.0 do fonte; todo PR do dia ficou vermelho).
+	$(PYTHON) -m pip install -c constraints.txt -e packages/refs
+	$(PYTHON) -m pip install -c constraints.txt -e packages/utils
+	$(PYTHON) -m pip install -c constraints.txt -e packages/watchman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/offerman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/stockman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/craftsman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/guestman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/doorman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/orderman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/payman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/buyman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/fiscalman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/cashman
+	$(PYTHON) -m pip install -c constraints.txt -e .
 	@echo "✓ Dependências instaladas"
 
 # ── Testes ────────────────────────────────────────────────────────────
@@ -728,6 +731,29 @@ coordination: ## Leitura de coordenação só com git: main, fila, PRs abertos, 
 
 inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branches sem PR, PRs verdes fora da fila
 	@bash scripts/inflight.sh
+
+# ── Compromissos: o que o repo deve, com dono, prazo e prova ──────────
+# O ledger é docs/coordination/COMMITMENTS.md. `intake` registra a fala do
+# dono ANTES do primeiro edit e devolve o ID que o PR cita. `commitments`
+# mostra o que venceu, incluindo as decisões legadas de DECISIONS.md.
+dono ?= Engenharia
+tipo ?= solicitacao
+origem ?= chat
+gatilho ?= -
+
+.PHONY: commitments intake commitments-pr
+
+commitments: ## O que o repo deve: ledger válido, vencidos e decisões legadas (issues=1 inclui issues com label; não falha por vencido)
+	@echo "── Compromissos ──"
+	$(PYTHON) scripts/check_commitments.py --no-fail-overdue $(if $(issues),--with-issues,)
+
+intake: ## Registra a fala do dono e devolve o ID: make intake q="..." [dono=...] [tipo=...]
+	@test -n "$(q)" || (echo 'uso: make intake q="<fala literal do dono>" [dono="Engenharia"] [tipo=solicitacao] [revisar_em=YYYY-MM-DD]' >&2; exit 2)
+	$(PYTHON) scripts/check_commitments.py --add --quote "$(q)" --dono "$(dono)" --tipo "$(tipo)" --origem "$(origem)" --gatilho "$(gatilho)" $(if $(revisar_em),--revisar-em "$(revisar_em)",)
+
+commitments-pr: ## Gate de nascimento: make commitments-pr body=<arquivo> [created=YYYY-MM-DD] [author=login]
+	@test -n "$(body)" || (echo 'uso: make commitments-pr body=<arquivo>' >&2; exit 2)
+	$(PYTHON) scripts/check_commitments.py --pr-body "$(body)" $(if $(created),--pr-created "$(created)",) $(if $(author),--author "$(author)",)
 
 # Prontidão: roda igual no checkout principal, numa worktree e na CI.
 # - Python: o .venv deste checkout; numa worktree (sem .venv), o .venv da árvore

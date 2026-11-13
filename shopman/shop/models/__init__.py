@@ -1,6 +1,7 @@
 """Shopman models — Shop, Channel, RuleConfig, Promotion, Coupon, entrega, Campaign."""
 
 from .affinity import ProductAffinity
+from .ai_connection import AIConnection, AIProtocol
 from .attributes import (
     AttributeDefinition,
     AttributePurpose,
@@ -91,6 +92,8 @@ from .user_notification import (
 
 __all__ = [
     "Shop",
+    "AIConnection",
+    "AIProtocol",
     "AttributeDefinition",
     "AttributePurpose",
     "AttributeSource",

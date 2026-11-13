@@ -81,7 +81,14 @@ class BIProductionPrevious:
 
 @dataclass(frozen=True)
 class BIProductionBatchMargin:
-    """Custo congelado e receita rastreada de uma fornada fechada."""
+    """Custo congelado e receita rastreada de uma fornada fechada.
+
+    A margem é da FORNADA INTEIRA (decisão do dono, 11/11/2026): a receita que a
+    baixa do lote identifica, do fechamento até o lote encerrar, menos o custo
+    congelado total (sobra e perda incluídas). Quem diz quando o lote encerra é
+    a validade dele (``Batch.expiry_date``, da ``shelf_life_days`` da ficha), ou
+    o estoque zerado, se esgotar antes. Lote ainda em venda não tem margem.
+    """
 
     ref: str
     recipe: str
@@ -91,6 +98,16 @@ class BIProductionBatchMargin:
     margin_q: int | None
     cost_status: str
     gaps: tuple[str, ...]
+    #: Unidades que a fornada produziu (soma das saídas).
+    output_quantity: str
+    #: Unidades vendidas cuja baixa identifica o lote desta fornada, até agora.
+    traced_quantity: str
+    #: ``closed`` (venceu ou esgotou) · ``open`` (ainda em venda) ·
+    #: ``untraceable`` (o estoque não separa esta fornada: lote diário,
+    #: compartilhado ou sem lote).
+    lot_status: str
+    #: Último dia de venda do lote (a validade), quando o lote tem uma.
+    sells_until: str | None
 
 
 @dataclass(frozen=True)
@@ -189,18 +206,33 @@ def _batch_margins(date_from: date, date_to: date) -> tuple[BIProductionBatchMar
         .order_by("-finished_at", "-target_date", "-pk")
     )
     batch_owners = _stock_batch_owners(work_orders)
-    revenue = _batch_revenue(batch_owners, date_from, date_to) if batch_owners else {}
+    lots = _lot_state(batch_owners)
+    today = timezone.localdate()
+    # A receita é acumulada até o lote encerrar, então a leitura de vendas vai
+    # além da janela: até a última validade em jogo, nunca depois de hoje.
+    expiries = [expiry for _, expiry in lots.values()]
+    last_day = today if None in expiries else max(expiries, default=date_to)
+    sales_to = max(date_to, min(today, last_day))
+    revenue, traced = _batch_revenue(batch_owners, date_from, sales_to) if batch_owners else ({}, {})
 
     rows = []
     for wo in work_orders:
         snapshot = (wo.meta or {}).get("cost_snapshot")
         total_q = snapshot["total_q"] if snapshot is not None else None
         revenue_q = revenue.get(wo.ref, 0)
+        traced_qty = traced.get(wo.ref, Decimal(0))
         cost_status = "complete"
         if snapshot is None:
             cost_status = "missing"
         elif total_q is None:
             cost_status = "incomplete"
+        sells_until = None
+        if wo.ref not in lots:
+            lot_status = "untraceable"
+        else:
+            balance, sells_until = lots[wo.ref]
+            expired = sells_until is not None and sells_until < today
+            lot_status = "closed" if expired or balance <= 0 else "open"
         rows.append(
             BIProductionBatchMargin(
                 ref=wo.ref,
@@ -208,12 +240,39 @@ def _batch_margins(date_from: date, date_to: date) -> tuple[BIProductionBatchMar
                 date=(timezone.localdate(wo.finished_at) if wo.finished_at else wo.target_date).isoformat(),
                 revenue_q=revenue_q,
                 total_q=total_q,
-                margin_q=revenue_q - total_q if total_q is not None else None,
+                margin_q=revenue_q - total_q if total_q is not None and lot_status == "closed" else None,
                 cost_status=cost_status,
                 gaps=tuple(snapshot["gaps"]) if snapshot is not None else (),
+                output_quantity=_qty(Decimal(wo.finished or 0)),
+                traced_quantity=_qty(traced_qty),
+                lot_status=lot_status,
+                sells_until=sells_until.isoformat() if sells_until else None,
             )
         )
     return tuple(rows)
+
+
+def _lot_state(batch_owners: dict[str, str]) -> dict[str, tuple[Decimal, date | None]]:
+    """Por fornada: o saldo que ainda resta nos lotes dela e a validade mais longa."""
+    from django.db.models import Sum
+    from shopman.stockman.models import Batch, Quant
+
+    if not batch_owners:
+        return {}
+    balance: dict[str, Decimal] = defaultdict(Decimal)
+    for batch, quantity in (
+        Quant.objects.filter(batch__in=batch_owners).values("batch").annotate(total=Sum("_quantity"))
+        .values_list("batch", "total")
+    ):
+        balance[batch_owners[batch]] += quantity or Decimal(0)
+    known = dict(Batch.objects.filter(ref__in=batch_owners).values_list("ref", "expiry_date"))
+    expiries: dict[str, list[date | None]] = defaultdict(list)
+    for batch, ref in batch_owners.items():
+        expiries[ref].append(known.get(batch))
+    # Lote sem validade deixa a fornada sem validade (só encerra esgotando);
+    # com várias, vale a mais longa: a fornada vende até o último lote dela vencer.
+    expiry = {ref: None if None in dates else max(dates) for ref, dates in expiries.items()}
+    return {ref: (balance.get(ref, Decimal(0)), expiry[ref]) for ref in expiry}
 
 
 def _stock_batch_owners(work_orders) -> dict[str, str]:
@@ -239,8 +298,14 @@ def _stock_batch_owners(work_orders) -> dict[str, str]:
     }
 
 
-def _batch_revenue(batch_owners: dict[str, str], date_from: date, date_to: date) -> dict[str, int]:
-    """Rateia a linha conciliada pela quantidade baixada de cada lote."""
+def _batch_revenue(
+    batch_owners: dict[str, str], date_from: date, date_to: date
+) -> tuple[dict[str, int], dict[str, Decimal]]:
+    """Rateia a linha conciliada pela quantidade baixada de cada lote.
+
+    Devolve a receita e as unidades rastreadas por fornada; uma linha que não
+    fecha (baixa maior que o vendido) não entra em nenhuma das duas.
+    """
     from shopman.orderman.models import Order
     from shopman.stockman import Hold, HoldStatus
 
@@ -257,7 +322,7 @@ def _batch_revenue(batch_owners: dict[str, str], date_from: date, date_to: date)
         quant__batch__in=batch_owners,
     ).values_list("pk", "sku", "quant__batch", "metadata__reference"))
     if not holds:
-        return {}
+        return {}, {}
 
     order_ids = {order_by_reference[reference] for _, _, _, reference in holds}
     holds_by_order = {}
@@ -283,6 +348,7 @@ def _batch_revenue(batch_owners: dict[str, str], date_from: date, date_to: date)
             totals[key] = qty + line.qty, total_q + line.line_total_q
 
     revenue: dict[str, int] = defaultdict(int)
+    traced: dict[str, Decimal] = defaultdict(Decimal)
     for key, (qty, total_q) in totals.items():
         allocated = quantities[key]
         if qty <= 0 or sum(allocated.values()) > qty:
@@ -293,8 +359,9 @@ def _batch_revenue(batch_owners: dict[str, str], date_from: date, date_to: date)
             cumulative += quantity
             cumulative_q = int((total_q * cumulative / qty).quantize(Decimal(1), rounding=ROUND_HALF_UP))
             revenue[ref] += cumulative_q - previous_q
+            traced[ref] += quantity
             previous_q = cumulative_q
-    return revenue
+    return revenue, traced
 
 
 def _counted_in_units(work_orders: list) -> list:

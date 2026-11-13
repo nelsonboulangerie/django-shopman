@@ -47,7 +47,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--llm-model", action="append",
-            help="Modelo do concorrente llm; repetível (ex.: claude-haiku-4-5). Default: AI_ASSIST_MODEL.",
+            help="Modelo do concorrente llm; repetível (ex.: claude-haiku-4-5). Default: o modelo da rota de IA benchmark.",
         )
         parser.add_argument(
             "--embedding-model", default=DEFAULT_EMBEDDING_MODEL,
