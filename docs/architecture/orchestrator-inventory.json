@@ -7357,6 +7357,7 @@
             "_fulfillment_wait_context",
             "_is_payment_timeout_cancelled",
             "_iso",
+            "_list_price_of",
             "_mock_confirmation_projection_value",
             "_money_outcome",
             "_note_says_card_hold_released",
