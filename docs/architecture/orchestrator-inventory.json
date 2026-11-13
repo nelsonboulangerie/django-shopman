@@ -1771,6 +1771,26 @@
       ]
     },
     {
+      "path": "shopman/shop/admin/ai_connection.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "AIConnectionAdmin",
+            "AIConnectionForm"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/admin/attributes.py",
       "touchpoints": [
         "admin"
@@ -2173,6 +2193,45 @@
           "responsibility": "configuração",
           "symbols": [
             "FontPreviewWidget"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/ai.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "AINotConfigured",
+            "CUSTOMER_TEXT_PURPOSES",
+            "EXTRAS",
+            "EXTRAS_BY_HOST",
+            "FittedClient",
+            "JEV_DEFAULT_URL",
+            "PURPOSES",
+            "Resolved",
+            "_FittedMessages",
+            "_protocol_for",
+            "_route",
+            "_routes",
+            "_with_text",
+            "_without_cache_control",
+            "anthropic_client",
+            "explain",
+            "extras_for",
+            "fit_request",
+            "is_configured",
+            "jev_endpoint",
+            "resolve"
           ]
         }
       ]
@@ -5666,6 +5725,26 @@
       ]
     },
     {
+      "path": "shopman/shop/models/ai_connection.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "AIConnection",
+            "AIProtocol"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/models/attributes.py",
       "touchpoints": [
         "model"
@@ -7793,6 +7872,29 @@
       ]
     },
     {
+      "path": "shopman/shop/secret_box.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_INFO",
+            "_fernet",
+            "logger",
+            "open_secret",
+            "seal_secret"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/sentinels.py",
       "touchpoints": [
         "outro"
@@ -7943,6 +8045,7 @@
             "CACHE_WRITE_FACTOR",
             "LLM_PRICES",
             "Price",
+            "model_prices",
             "usage_cost"
           ]
         }
@@ -10420,6 +10523,7 @@
             "_URL",
             "_WARNING_CODES",
             "_actor_ref",
+            "_ai_configured",
             "_current_facts",
             "_field_hash",
             "_fold",
