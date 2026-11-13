@@ -488,3 +488,31 @@ def test_aviso_de_lote_nunca_vira_abrir_o_pedido_no_gestor(client):
     items = _queue_items(padeiro)
     assert [item["app"] for item in items] == ["production"]
     assert items[0]["url"].startswith("https://prod.example.test/plan?q=WO-001")
+
+
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_encomenda_nova_espera_aceite_na_central_pelo_prazo_dela():
+    """A encomenda nova tem 60 min de aceite (dono, 09/11): entra na fila da Central
+    como pedido para aceitar, e aos 10 min ainda não estourou a meta."""
+    from shopman.orderman.models import Directive
+
+    order = _order_to_accept("WEB-20261003-ENC2", minutes_ago=10)
+    order.data["delivery_date"] = (timezone.localdate() + timedelta(days=2)).isoformat()
+    order.save(update_fields=["data"])
+    started = timezone.now() - timedelta(minutes=10)
+    Directive.objects.create(
+        topic="confirmation.timeout",
+        status="queued",
+        payload={
+            "order_ref": order.ref,
+            "action": "cancel",
+            "expires_at": (started + timedelta(minutes=60)).isoformat(),
+            "timeout_minutes": 60,
+        },
+    )
+    admin = User.objects.create_superuser("hub-q-enc", "e@b.c", "pw")
+
+    item = next(item for item in _queue_items(admin) if item["kind"] == "order_to_accept")
+    assert item["title"] == "Pedido ENC2 para aceitar"
+    assert item["attention"] is False
+    assert item["slack_seconds"] > 30 * 60

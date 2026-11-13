@@ -132,10 +132,10 @@ class OrderQueueSurfaceTests(TestCase):
         self.assertEqual(queue.intake, ())
 
     def test_future_preorder_leaves_the_day_columns_for_the_preorders_group(self) -> None:
-        """WP-D: encomenda para data futura sai das colunas do dia e vive no grupo
-        "Agendados", ordenada pela data combinada. Vale para pedido NOVO (ainda a
-        aceitar) e confirmado: ambos carregam o badge "Agendado · <data>", então
-        um novo na Entrada com esse badge seria contraditório — pertence aqui."""
+        """WP-D: encomenda ACEITA para data futura sai das colunas do dia e vive no
+        grupo "Agendados", ordenada pela data combinada. A encomenda NOVA fica na
+        Entrada até o aceite: ela tem prazo (60 min, dono 09/11) e, escondida em
+        "Agendados", o operador perdia o prazo e o pedido se cancelava (beta 09/11)."""
         from datetime import timedelta
 
         from django.utils import timezone
@@ -157,18 +157,17 @@ class OrderQueueSurfaceTests(TestCase):
         queue = build_two_zone_queue()
 
         self.assertEqual([o.ref for o in queue.prep], ["Q-HOJE"])
-        # Novo e confirmado, todos futuros → grupo Agendados; a Entrada não recebe
-        # card com badge "Agendado" (badge e seção concordam). Ordem: data, criação.
-        self.assertEqual([o.ref for o in queue.preorders], ["Q-AMANHA", "Q-NOVA-ENC", "Q-SAB"])
-        self.assertEqual(queue.preorders_count, 3)
-        self.assertEqual([o.ref for o in queue.intake], [])
+        self.assertEqual([o.ref for o in queue.preorders], ["Q-AMANHA", "Q-SAB"])
+        self.assertEqual(queue.preorders_count, 2)
+        self.assertEqual([o.ref for o in queue.intake], ["Q-NOVA-ENC"])
 
         cards = {c.ref: c for c in queue.preorders + queue.intake + queue.prep}
         self.assertTrue(cards["Q-AMANHA"].is_preorder)
         self.assertEqual(cards["Q-AMANHA"].commitment_date, tomorrow)
         self.assertEqual(cards["Q-AMANHA"].commitment_date_display, "amanhã")
-        # O card novo segue com o badge de encomenda E a ação de aceitar.
+        # O card novo na Entrada carrega o badge de encomenda E a ação de aceitar.
         self.assertTrue(cards["Q-NOVA-ENC"].is_preorder)
+        self.assertEqual(cards["Q-NOVA-ENC"].commitment_date_display, "amanhã")
         self.assertTrue(cards["Q-NOVA-ENC"].can_confirm)
         self.assertFalse(cards["Q-HOJE"].is_preorder)
         self.assertEqual(cards["Q-HOJE"].commitment_date_display, "")

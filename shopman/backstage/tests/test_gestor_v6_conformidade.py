@@ -174,3 +174,13 @@ def test_rail_counts_follow_the_board():
     counts = board_rail_counts()
     assert counts == {"intake": len(queue.intake), "exit": queue.expedition_count}
     assert counts == {"intake": 1, "exit": 2}
+
+
+def test_rail_counts_new_preorder_in_the_intake():
+    """A encomenda nova tem prazo de aceite: conta na Entrada como no quadro (beta 09/11)."""
+    order = _order("V6-R-ENC", "new")
+    order.data["delivery_date"] = (timezone.localdate() + timedelta(days=2)).isoformat()
+    order.save(update_fields=["data"])
+    queue = build_two_zone_queue()
+    assert [card.ref for card in queue.intake] == ["V6-R-ENC"]
+    assert board_rail_counts() == {"intake": 1, "exit": 0}

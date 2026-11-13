@@ -15,6 +15,7 @@ from shopman.shop.models import (
     ConversationMessage,
     OutboundAttempt,
 )
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import service, tools, transport
 from shopman.storefront.concierge.contracts import (
     HandoffOutcome,
@@ -54,7 +55,7 @@ def conversation(settings, monkeypatch):
             }
         },
     }
-    settings.AI_ASSIST_API_KEY = "fake"
+    configure_ai("fake")
     monkeypatch.setattr(service, "_alert", lambda *args: None)
     monkeypatch.setattr(
         transport,

@@ -26,8 +26,6 @@ from __future__ import annotations
 
 import logging
 
-from django.conf import settings
-
 logger = logging.getLogger(__name__)
 
 #: Voz padrão de quando a loja não configurou a sua. Não é a voz da Nelson — é o piso
@@ -49,13 +47,15 @@ class CopyAssistError(Exception):
     """O provedor não respondeu, ou respondeu vazio."""
 
 
-def is_configured() -> bool:
-    """Há credencial para pedir sugestão neste ambiente?
+def is_configured(purpose: str = "copy") -> bool:
+    """Há conexão de IA para pedir sugestão neste propósito?
 
     A tela pergunta isto ANTES de oferecer o botão: oferecer e falhar depois ensina o
     gestor a não confiar no recurso.
     """
-    return bool((getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip())
+    from shopman.shop import ai
+
+    return ai.is_configured(purpose)
 
 
 def brand_voice() -> str:
@@ -80,29 +80,24 @@ def suggest(
     max_tokens: int = 400,
     voice: str = "",
     timeout: float | None = None,
+    purpose: str = "copy",
 ) -> str:
     """Uma sugestão de texto. Devolve o texto limpo, ou levanta.
 
     ``voice`` vazio busca a voz da loja — o caminho normal. Passar voz explícita existe
     para quem já a resolveu e não quer uma segunda consulta ao banco.
     """
-    api_key = (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
-    if not api_key:
-        raise CopyAssistNotConfigured("Assist de IA não configurado. Defina AI_ASSIST_API_KEY.")
-
-    provider = getattr(settings, "AI_ASSIST_PROVIDER", "anthropic")
-    if provider != "anthropic":
-        raise CopyAssistError(f"Provedor de IA '{provider}' não suportado.")
-
     import anthropic
 
-    client_kwargs = {"api_key": api_key}
-    if timeout is not None:
-        client_kwargs["timeout"] = timeout
-    client = anthropic.Anthropic(**client_kwargs)
+    from shopman.shop import ai
+
+    try:
+        client, model = ai.anthropic_client(purpose, timeout=timeout)
+    except ai.AINotConfigured as exc:
+        raise CopyAssistNotConfigured(f"Assist de IA não configurado: {exc}.") from exc
     try:
         message = client.messages.create(
-            model=getattr(settings, "AI_ASSIST_MODEL", "claude-opus-5"),
+            model=model,
             max_tokens=max_tokens,
             system=voice or brand_voice(),
             messages=[{"role": "user", "content": prompt}],

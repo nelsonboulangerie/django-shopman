@@ -43,7 +43,7 @@ const printedAt = computed(() => new Date(props.receipt.printedAtMs).toLocaleStr
           <td class="pr-1 tabular-nums">{{ line.qtyLabel }}</td>
           <td class="w-full">
             {{ line.name }}
-            <span v-if="line.discountPct" class="block text-[10px]">Desconto −{{ line.discountPct }}%</span>
+            <span v-if="line.discountDisplay" class="block text-[10px]" data-line-discount>{{ line.discountDisplay }}</span>
           </td>
           <td class="whitespace-nowrap pl-1 text-right tabular-nums">{{ line.totalDisplay }}</td>
         </tr>

@@ -12,7 +12,7 @@ function receipt(overrides: Partial<PosReceiptSnapshot> = {}): PosReceiptSnapsho
     orderRef: "PDV-042",
     tabDisplay: "",
     customerName: "",
-    items: [{ name: "Pão", qty: 1, price_q: 4200, discountPct: 0 }],
+    items: [{ name: "Pão", qty: 1, list_price_q: 4200, charged_price_q: 4200 }],
     totalDisplay: formatBRL(4200),
     payments: [{ method: "cash", amount_q: 10000, collection: "terminal" }],
     fulfillmentLabel: "Retirada",

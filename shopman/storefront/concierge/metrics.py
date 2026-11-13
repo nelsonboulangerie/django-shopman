@@ -217,7 +217,6 @@ def triage_client_for(meter: TurnMeter, triage_client=None):
     medido; cliente injetado (teste, comando) é só embrulhado. Desligado, segue
     ``None``: a regra local responde sem rede.
     """
-    from django.conf import settings
 
     from . import triage
 
@@ -235,7 +234,5 @@ def triage_client_for(meter: TurnMeter, triage_client=None):
     if triage_client is None:
         if not triage._model_enabled():
             return None
-        import anthropic
-
-        triage_client = anthropic.Anthropic(api_key=settings.AI_ASSIST_API_KEY, timeout=15.0, max_retries=1)
+        triage_client = triage.build_client()
     return meter.wrap(triage_client, "triage")
