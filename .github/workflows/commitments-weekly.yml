@@ -1,0 +1,40 @@
+name: Commitments Weekly
+
+"on":
+  schedule:
+    # Segunda, 08:17 BRT. O horário é calmo de propósito: a issue chega antes da
+    # semana começar, não no meio de um deploy.
+    - cron: "17 11 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  overdue:
+    name: Compromissos vencidos
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Stdlib-only: não instala Django nem dependência nenhuma.
+      - name: Relatório de vencidos
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/check_commitments.py --format issue --no-fail-overdue --with-issues \
+            > "${RUNNER_TEMP}/overdue.md"
+
+      - name: Abrir, atualizar ou fechar a issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/commitments_issue.sh "${RUNNER_TEMP}/overdue.md"

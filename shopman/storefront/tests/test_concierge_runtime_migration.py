@@ -9,13 +9,14 @@ from shopman.orderman.models import Directive, IdempotencyKey, Order
 
 from shopman.shop.models import Conversation, ConversationBinding, OutboundAttempt
 from shopman.shop.models import ConversationMessage as Message
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import service, transport
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def config(settings, *, enabled=False):
-    settings.AI_ASSIST_API_KEY = "synthetic-key"
+    configure_ai("synthetic-key")
     settings.SHOPMAN_CONCIERGE = {
         "enabled": enabled,
         "contract_version": 3,

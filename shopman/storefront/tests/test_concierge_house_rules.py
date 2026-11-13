@@ -20,6 +20,7 @@ from django.test import override_settings
 from django.utils import timezone
 
 from shopman.shop.models import Conversation, ConversationMessage
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import house_rules, service
 from shopman.storefront.concierge.house_rules import (
     CART,
@@ -235,13 +236,14 @@ def test_r7_discount_request_gets_the_fixed_reply_without_model(conversation, al
 
 
 @pytest.mark.django_db
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_house_reply_with_a_promise_nobody_keeps_is_held_and_goes_to_the_team(conversation, outbox, monkeypatch):
     """A copy do teto diário prometia "a equipe segue com você" sem chamar ninguém.
 
     A resposta montada pelo sistema passa pela tabela: R6 segura, a conversa vai para a
     equipe e o cliente recebe o aviso de handoff, que agora é verdade.
     """
+    configure_ai("sk-teste")
     copies = {
         "CONCIERGE_TURN_LIMIT": "Chegamos ao limite. A equipe segue com você por aqui.",
         "CONCIERGE_HANDOFF_ACK": "Solicitei atendimento humano. A equipe continuará por aqui.",
@@ -267,9 +269,10 @@ def test_house_reply_with_a_promise_nobody_keeps_is_held_and_goes_to_the_team(co
 
 
 @pytest.mark.django_db
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_house_reply_is_repaired_before_it_goes_out(conversation, outbox, monkeypatch):
     """Copy editada no Admin com travessão e "obrigado" sai consertada, e o envelope conta."""
+    configure_ai("sk-teste")
     monkeypatch.setattr(
         service,
         "copy_message",
