@@ -42,6 +42,7 @@ from .saved_view import SavedView
 from .seating import FixtureKind, SeatingFixture, SeatingSpot, SpotKind, SpotShape
 from .shelf_outage import OutageReason, ShelfOutage
 from .sign_in import SignInEvent, SignInMethod, SignInOutcome
+from .support import SupportDecision, SupportMessage, SupportTicket
 from .timer_tag import TimerTag, TimerTagOrigin
 from .workstation import Workstation
 
@@ -108,4 +109,7 @@ __all__ = [
     "TimerTagOrigin",
     "OutageReason",
     "ShelfOutage",
+    "SupportDecision",
+    "SupportMessage",
+    "SupportTicket",
 ]

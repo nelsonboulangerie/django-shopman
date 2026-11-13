@@ -535,6 +535,12 @@ class Shop(models.Model):
             ("manage_catalog", "Pode criar/editar Product, Listing e Collection"),
             ("manage_customers", "Pode criar/editar Customer, grupos e loyalty"),
             ("view_reports", "Pode acessar dashboard e relatórios analíticos"),
+            ("create_support_ticket", "Pode abrir chamado no Suporte"),
+            ("triage_support_tickets", "Pode triar chamados do Suporte"),
+            ("view_all_support_tickets", "Pode ver todos os chamados do Suporte"),
+            ("approve_support_requests", "Pode aprovar pedidos de produto do Suporte"),
+            ("link_support_dev", "Pode ligar chamado aprovado a um compromisso DEV-"),
+            ("view_support_audit", "Pode ver a auditoria do Suporte"),
         ]
 
     def __str__(self):
