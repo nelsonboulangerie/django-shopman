@@ -5,7 +5,6 @@ import {
   gestorSections,
   gestorSettingsSections,
 } from "~/presentation/gestorSections";
-import { useOperatorResourceKey } from "./useOperatorResourceKey";
 
 /** O que o quadro conta ao rail (selos de Pedidos e Saída, e se o posto é a Saída).
  *  Vale enquanto o quadro está montado; fora dele, `useGestorRailCounts` lê a contagem. */
@@ -68,11 +67,17 @@ export function useGestorSections() {
     "operator-session",
   );
   const operatorId = computed(() => session.value?.operator?.id ?? null);
+  // As perguntas de permissão têm chave ESTÁVEL, sem o operador: no servidor o rail
+  // monta antes de a sessão do operador chegar ("unidentified") e, no navegador, a
+  // sessão já vem no payload; com o operador na chave, o navegador não achava a
+  // resposta do servidor e desenhava o rail sem Catálogo e Canais (hidratação
+  // divergente, PR #2331). Trocar de operador relê pelo `watch: [operatorId]`.
+  const ACCESS_KEY = (resource: string) => `orders:rail:${resource}`;
   // Clientes só para quem pode usar a seção (`shop.manage_customers`, 24/09/2026).
   const { data: customersAccess, status: customersStatus } = useFetch<{ authorized?: boolean }>(
     "/api/v1/backstage/operator/session/",
     {
-      key: useOperatorResourceKey("customers-access"),
+      key: ACCESS_KEY("customers-access"),
       query: { perm: "shop.manage_customers" },
       server: true,
       watch: [operatorId],
@@ -82,7 +87,7 @@ export function useGestorSections() {
   const { data: workstationsAccess, status: workstationsStatus } = useFetch<{ authorized?: boolean }>(
     "/api/v1/backstage/operator/session/",
     {
-      key: useOperatorResourceKey("workstations-access"),
+      key: ACCESS_KEY("workstations-access"),
       query: { perm: "cashman.manage_operators" },
       server: true,
       watch: [operatorId],
@@ -93,7 +98,7 @@ export function useGestorSections() {
   const { data: catalogAccess, status: catalogStatus } = useFetch<{ authorized?: boolean }>(
     "/api/v1/backstage/operator/session/",
     {
-      key: useOperatorResourceKey("catalog-access"),
+      key: ACCESS_KEY("catalog-access"),
       query: { perm: "shop.manage_catalog" },
       server: true,
       watch: [operatorId],
