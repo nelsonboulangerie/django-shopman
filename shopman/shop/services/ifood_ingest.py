@@ -142,6 +142,7 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
             "totals": payload.get("totals") or {},
             "payments": payload.get("payments") or {},
             "benefits": payload.get("benefits") or [],
+            "additional_fees": payload.get("additional_fees") or [],
             "delivered_by": delivery.get("delivered_by", ""),
             "pickup_code": delivery.get("pickup_code", ""),
             "takeout_at": delivery.get("takeout_at", ""),

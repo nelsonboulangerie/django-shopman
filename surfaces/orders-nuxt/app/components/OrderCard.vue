@@ -846,12 +846,22 @@ function nuxtIcon(icon: string): string {
       >
         {{ card.ifood_schedule_label }}
       </p>
+      <!-- Com entregador do iFood quem conduz depois do aceite é o iFood: o card
+           mostra onde está o entregador (dono, 12/11/2026). -->
       <NuxtBadge
-        v-if="card.ifood_pickup_code"
+        v-if="card.ifood_logistics_label"
+        class="self-start"
+        color="info"
+        icon="i-lucide-bike"
+        :label="card.ifood_logistics_label"
+        data-ifood-logistics
+      />
+      <NuxtBadge
+        v-if="card.ifood_pickup_code_label"
         class="self-start"
         color="neutral"
         icon="i-lucide-key-round"
-        :label="`Código de retirada · ${card.ifood_pickup_code}`"
+        :label="card.ifood_pickup_code_label"
         data-ifood-pickup-code
       />
 

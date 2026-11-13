@@ -268,7 +268,6 @@ const itemColumns = [
               :order="order"
               :admin-url="customerUrl"
               :external="!customerHref"
-              :relay-expires="relayExpires"
             />
           </div>
         </template>
@@ -347,7 +346,15 @@ const itemColumns = [
                 >{{ row.original.qty }}×</span
               >
             </template>
-            <template #item-cell="{ row }">{{ row.original.name }}</template>
+            <template #item-cell="{ row }">
+              <span>{{ row.original.name }}</span>
+              <span
+                v-if="row.original.notes"
+                class="block whitespace-pre-line text-xs text-muted-foreground"
+                data-item-notes
+                >{{ row.original.notes }}</span
+              >
+            </template>
             <template #total-cell="{ row }">
               <span class="tabular-nums">{{ row.original.total_display }}</span>
             </template>
@@ -448,6 +455,14 @@ const itemColumns = [
               </template>
               <template #item-cell="{ row }">
                 <span class="op-body">{{ row.original.name }}</span>
+                <!-- A instrução do item (ex.: "Embalado para presente") chegava só
+                     ao ticket da cozinha; quem embala e despacha também lê aqui. -->
+                <span
+                  v-if="row.original.notes"
+                  class="block whitespace-pre-line text-sm font-medium"
+                  data-item-notes
+                  >{{ row.original.notes }}</span
+                >
               </template>
               <template #total-cell="{ row }">
                 <span class="tabular-nums">{{ row.original.total_display }}</span>
@@ -677,15 +692,12 @@ const itemColumns = [
                       customer_email: '',
                     }"
                     admin-url=""
-                    relay-expires=""
                     compact
                   />
                 </div>
               </div>
               <div
-                v-if="
-                  order.customer_relay_phone || order.customer_email || customerUrl
-                "
+                v-if="order.customer_email || customerUrl"
                 class="flex flex-wrap gap-2"
                 data-customer-contact-more
               >
@@ -693,14 +705,11 @@ const itemColumns = [
                   :order="{
                     ...order,
                     customer_whatsapp_url: '',
-                    customer_phone_uri: order.customer_relay_phone
-                      ? order.customer_phone_uri
-                      : '',
+                    customer_phone_uri: '',
                   }"
                   :admin-url="customerUrl"
                   :external="!customerHref"
-                  :relay-expires="relayExpires"
-                />
+                    />
               </div>
               <div
                 v-if="profile"
@@ -724,5 +733,28 @@ const itemColumns = [
         />
       </div>
     </template>
+
+    <!-- Rodapé pró-forma do pedido iFood: a central do iFood com o código que leva
+         ao cliente. Existe, mas não disputa atenção (dono, 12/11/2026). -->
+    <p
+      v-if="order.customer_relay_phone"
+      class="order-last text-xs text-muted-foreground lg:col-span-2"
+      data-contact-relay
+    >
+      Contato pela central do iFood:
+      <a
+        v-if="order.customer_phone_uri"
+        :href="order.customer_phone_uri"
+        class="underline"
+        data-contact-phone
+        >{{ order.customer_relay_phone }}</a
+      ><span v-else>{{ order.customer_relay_phone }}</span
+      ><template v-if="order.customer_relay_code"
+        >, código <span data-contact-relay-code>{{ order.customer_relay_code }}</span
+        ><template v-if="relayExpires"> ({{ relayExpires.toLowerCase() }})</template></template
+      ><span v-else data-contact-relay-expired
+        >; o código venceu e a central não repassa mais a ligação</span
+      >.
+    </p>
   </div>
 </template>
