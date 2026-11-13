@@ -139,6 +139,10 @@ def test_after_preparation_there_is_no_cancel_only_the_manager(order_paid):
         "O preparo já começou e o pedido é feito para você, então ele não pode mais ser cancelado. "
         "Se algo não está certo, fale com o responsável."
     )
+    # Antes do pedido de contato, o título convida ("Quer cancelar?"); depois, a
+    # pergunta já foi respondida e o título vira confirmação.
+    assert proj.copy.cancellation_contact_title == "Quer cancelar?"
+    assert proj.copy.cancellation_contact_done_title == "Contato solicitado"
 
 
 def test_contact_after_preparation_opens_the_ombudsman_without_cancelling(client, order_paid):
@@ -151,6 +155,9 @@ def test_contact_after_preparation_opens_the_ombudsman_without_cancelling(client
     body = response.json()
     assert body["cancellation_contact"] == {"requested": True}
     assert "request_cancellation_contact" not in [action["ref"] for action in body["actions"]]
+    # O estado "pedido feito" não reusa o título da pergunta.
+    assert body["copy"]["cancellation_contact_title"] == "Quer cancelar?"
+    assert body["copy"]["cancellation_contact_done_title"] == "Contato solicitado"
     order_paid.refresh_from_db()
     assert order_paid.status == "preparing"
     alert = OperatorAlert.objects.get(type=customer_contact.ALERT_TYPE, order_ref=order_paid.ref)

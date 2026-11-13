@@ -535,6 +535,11 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_CANCELLATION_CONTACT_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Quer cancelar?")},
     },
+    # Depois que o cliente pediu o contato, "Quer cancelar?" mente: a pergunta já
+    # foi respondida. O título vira a confirmação do que aconteceu.
+    "TRACKING_CANCELLATION_CONTACT_DONE_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Contato solicitado")},
+    },
     "TRACKING_CANCELLATION_CONTACT_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="O preparo já começou e o pedido é feito para você, então ele não pode mais ser cancelado. Se algo não está certo, fale com o responsável.")},
     },
