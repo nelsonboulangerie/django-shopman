@@ -737,7 +737,7 @@ inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branche
 # dono ANTES do primeiro edit e devolve o ID que o PR cita. `commitments`
 # mostra o que venceu, incluindo as decisões legadas de DECISIONS.md.
 dono ?= Engenharia
-tipo ?= pedido
+tipo ?= solicitacao
 origem ?= chat
 gatilho ?= -
 
@@ -748,7 +748,7 @@ commitments: ## O que o repo deve: ledger válido, vencidos e decisões legadas 
 	$(PYTHON) scripts/check_commitments.py --no-fail-overdue $(if $(issues),--with-issues,)
 
 intake: ## Registra a fala do dono e devolve o ID: make intake q="..." [dono=...] [tipo=...]
-	@test -n "$(q)" || (echo 'uso: make intake q="<fala literal do dono>" [dono="Engenharia"] [tipo=pedido] [revisar_em=YYYY-MM-DD]' >&2; exit 2)
+	@test -n "$(q)" || (echo 'uso: make intake q="<fala literal do dono>" [dono="Engenharia"] [tipo=solicitacao] [revisar_em=YYYY-MM-DD]' >&2; exit 2)
 	$(PYTHON) scripts/check_commitments.py --add --quote "$(q)" --dono "$(dono)" --tipo "$(tipo)" --origem "$(origem)" --gatilho "$(gatilho)" $(if $(revisar_em),--revisar-em "$(revisar_em)",)
 
 commitments-pr: ## Gate de nascimento: make commitments-pr body=<arquivo> [created=YYYY-MM-DD] [author=login]

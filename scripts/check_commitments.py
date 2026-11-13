@@ -10,8 +10,8 @@ O ledger é `docs/coordination/COMMITMENTS.md`. Este script:
 1. valida o ledger (ID único, estado conhecido, dono, `revisar_em` para item
    aberto, prova para item terminal);
 2. lista o que venceu, incluindo as decisões legadas de `DECISIONS.md`;
-3. com `--pr-body`, reprova PR novo sem a linha `Pedido: DEV-...` (ou
-   `Pedido: #2300`). O gate do que ficou de fora é `check_ficou_de_fora.py`;
+3. com `--pr-body`, reprova PR novo sem a linha `Compromisso: DEV-...` (ou
+   `Compromisso: #2300`). O gate do que ficou de fora é `check_ficou_de_fora.py`;
    este script não o duplica;
 4. com `--add`, registra a fala do dono e devolve o ID para o PR.
 
@@ -47,7 +47,7 @@ COLUMNS = (
     "estado",
     "prova",
 )
-TYPES = {"pedido", "compromisso", "decisao", "achado"}
+TYPES = {"solicitacao", "compromisso", "decisao", "achado"}
 STATES = {"ABERTO", "EM_EXECUCAO", "BLOQUEADO", "FEITO", "DESCARTADO", "SUPERSEDIDO"}
 TERMINAL = {"FEITO", "DESCARTADO", "SUPERSEDIDO"}
 EMPTY_OWNERS = {"", "-", "—", "ninguem", "ninguém", "a definir", "tbd", "n/a"}
@@ -55,15 +55,8 @@ ID_RE = re.compile(r"^DEV-\d{4}-\d{3}$")
 REF_RE = re.compile(r"\bDEV-\d{4}-\d{3}\b")
 ISSUE_NUM_RE = re.compile(r"#(\d{3,})")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-REQUEST_LINE_RE = re.compile(
-    r"^\s*Pedido:\s*(?P<value>(?:DEV-\d{4}-\d{3}|#\d{3,})"
-    r"(?:\s*,\s*(?:DEV-\d{4}-\d{3}|#\d{3,}))*|nenhum)\s*$",
-    re.MULTILINE | re.IGNORECASE,
-)
-ISSUE_NUM_RE = re.compile(r"#(\d{3,})")
-DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-REQUEST_LINE_RE = re.compile(
-    r"^\s*Pedido:\s*(?P<value>(?:DEV-\d{4}-\d{3}|#\d{3,})"
+COMMITMENT_LINE_RE = re.compile(
+    r"^\s*Compromisso:\s*(?P<value>(?:DEV-\d{4}-\d{3}|#\d{3,})"
     r"(?:\s*,\s*(?:DEV-\d{4}-\d{3}|#\d{3,}))*|nenhum)\s*$",
     re.MULTILINE | re.IGNORECASE,
 )
@@ -78,11 +71,11 @@ NO_DEFERRAL_RE = re.compile(
 )
 
 # PRs anteriores a esta data são a migração: o corpo deles não tinha a linha
-# `Pedido:`. A partir dela, PR novo sem pedido reprova. Remover a data quando a
+# `Compromisso:`. A partir dela, PR novo sem compromisso reprova. Remover a data quando a
 # migração fechar (não antes: os PRs de 12/11 ainda estão abertos).
-REQUEST_GATE_START = dt.date(2026, 11, 13)
+COMMITMENT_GATE_START = dt.date(2026, 11, 13)
 BOT_LOGINS = {"app/dependabot", "dependabot[bot]"}
-ISSUE_LABELS = ("ficou-de-fora", "pedido", "decisao", "achado")
+ISSUE_LABELS = ("ficou-de-fora", "helpdesk", "dev", "decisao", "achado")
 
 
 @dataclass(frozen=True)
@@ -318,7 +311,7 @@ def _check_refs(
             if number not in known_issues:
                 errors.append(
                     f"issue #{number} citada em '{where}' não está aberta com label "
-                    "(ficou-de-fora, pedido, decisao ou achado)"
+                    "(ficou-de-fora, helpdesk, dev, decisao ou achado)"
                 )
     return errors
 
@@ -331,7 +324,7 @@ def check_pr_body(
     author: str = "",
     known_issues: set[int] | None = None,
 ) -> list[str]:
-    """Gate do pedido: PR novo cita o pedido do dono (C- ou issue com label).
+    """Gate do compromisso: PR novo cita a solicitação do dono (DEV- ou issue com label).
 
     A declaração do que ficou de fora é outro gate (`Ficou de fora declarado`);
     este aqui não a duplica.
@@ -340,13 +333,13 @@ def check_pr_body(
     known = {entry.id for entry in entries}
     if author in BOT_LOGINS:
         return errors
-    if created is not None and created < REQUEST_GATE_START:
+    if created is not None and created < COMMITMENT_GATE_START:
         return errors  # migração: PR aberto antes da regra
-    match = REQUEST_LINE_RE.search(body)
+    match = COMMITMENT_LINE_RE.search(body)
     if not match:
         errors.append(
-            "PR sem a linha 'Pedido: DEV-AAAA-NNN' (ou 'Pedido: #2300'), ou "
-            "'Pedido: nenhum'; o pedido do dono é registrado antes do trabalho"
+            "PR sem a linha 'Compromisso: DEV-AAAA-NNN' (ou 'Compromisso: #2300'), ou "
+            "'Compromisso: nenhum'; a solicitação do dono é registrada antes do trabalho"
         )
         return errors
     value = match.group("value").strip()
@@ -354,7 +347,7 @@ def check_pr_body(
         return errors
     refs = REF_RE.findall(value)
     issues = [int(number) for number in ISSUE_NUM_RE.findall(value)]
-    errors += _check_refs(refs, issues, known, known_issues, "Pedido")
+    errors += _check_refs(refs, issues, known, known_issues, "Compromisso")
     return errors
 
 
@@ -531,7 +524,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--add", action="store_true", help="registra uma linha e imprime o ID")
     parser.add_argument("--quote", default="", help="fala literal do dono")
     parser.add_argument("--compromisso", default="", help="resumo de uma linha (default: a fala)")
-    parser.add_argument("--tipo", default="pedido", choices=sorted(TYPES))
+    parser.add_argument("--tipo", default="solicitacao", choices=sorted(TYPES))
     parser.add_argument("--dono", default="Engenharia")
     parser.add_argument("--origem", default="chat")
     parser.add_argument("--gatilho", default="-")
@@ -560,7 +553,7 @@ def main(argv: list[str] | None = None) -> int:
             prova=args.prova,
         )
         print(entry.id)
-        label = "Pedido" if entry.tipo == "pedido" else "Referência"
+        label = "Compromisso" if entry.tipo in {"solicitacao", "compromisso"} else "Referência"
         print(f"{label}: {entry.id}")
         return 0
 
