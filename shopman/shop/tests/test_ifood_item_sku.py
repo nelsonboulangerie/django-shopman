@@ -181,9 +181,8 @@ def test_ticket_cai_na_estacao_da_colecao_do_produto(channel):
 
 
 def test_aviso_do_item_sem_vinculo_diz_qual_item(channel):
-    from shopman.shop.services.stock import _alert_unknown_sku
-
     from shopman.backstage.models import OperatorAlert
+    from shopman.shop.services.stock import _alert_unknown_sku
 
     order = ifood_ingest.ingest(_payload())
     item = order.snapshot["items"][0]
@@ -195,9 +194,8 @@ def test_aviso_do_item_sem_vinculo_diz_qual_item(channel):
 
 
 def test_aviso_do_item_ambiguo_diz_que_ha_dois_produtos(channel):
-    from shopman.shop.services.stock import _alert_unknown_sku
-
     from shopman.backstage.models import OperatorAlert
+    from shopman.shop.services.stock import _alert_unknown_sku
 
     _bind(channel, _product("CAMEMBERT"))
     _bind(channel, _product("BRIE"), resource_id=EXTERNAL_CODE)
