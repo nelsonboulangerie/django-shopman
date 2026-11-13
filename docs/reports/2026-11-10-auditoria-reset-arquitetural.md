@@ -2,7 +2,7 @@
 
 - **Data:** 10/11/2026 (consolidado em 11/11/2026).
 - **Assunto:** reset de produto e da camada de aplicação, preservando os kernels comprovadamente fortes.
-- **Este é o único relatório desse reset.** Ele junta as quatro leituras feitas em 10/11, que
+- **Este é o único relatório desse reset.** Ele junta as cinco leituras feitas em 10/11, que
   antes moravam em arquivos separados e numerados por versão. As leituras antigas saíram do
   repositório; o histórico do git as guarda.
 - **O que não é relatório:** a execução que nasceu daqui tem nome próprio e mora em outro lugar,
@@ -23,7 +23,8 @@
 | II | **Inventário** com 24 agentes somente leitura, mais as objeções do dono | `origin/main` `62191553b` | PR #2258 |
 | I | **Revisão adversarial** do inventário, incorporada às seções A a H | `origin/main` `62191553b` | PR #2259 |
 | I | **Reformulação do alvo** para reavaliação independente, incorporada às seções D a G | `origin/main` `7f829e02f` | PR #2260 |
-| III | **Leitura independente**, outro fornecedor de modelo | `origin/main` `057fe9105` | sessão da consolidação |
+| III | **Reconferência** do coordenador sobre a reformulação: corte da tag, cenários, Taskman, textos para D-036 e D-038 | `origin/main` `7f829e02f` | PR draft #2275, fechado |
+| IV | **Leitura independente**, outro fornecedor de modelo | `origin/main` `057fe9105` | sessão da consolidação |
 
 A Parte II mantém a numeração de seções 1 a 18 porque D-035 a D-038
 ([DECISIONS.md](../coordination/DECISIONS.md)) e a
@@ -36,7 +37,7 @@ diverge da Parte II, vale a Parte I.
 
 ## A. Veredito
 
-**APROVA COM REPAROS.** As quatro leituras convergem no mesmo alvo: monolito modular, kernels
+**APROVA COM REPAROS.** As cinco leituras convergem no mesmo alvo: monolito modular, kernels
 fortes preservados, camada de aplicação reorganizada por ciclo operacional, nenhuma
 infraestrutura nova. Nenhuma recomenda reescrever kernel. O reset se justifica pelos
 fechamentos de contrato abaixo, não por mover pastas; se sobrarem só as pastas, o veredito
@@ -58,7 +59,7 @@ O trabalho usa quatro verbos, e cada fatia diz qual está usando:
 **Causa principal** (Parte II, seção 2): dado sem dono e autoridade de escrita, não lógica de
 negócio. Entidades em JSON, duas camadas de aplicação (`backstage` com 32 mil linhas de
 services), fatos sem ator e decisões do dono registradas só em comentário. A leitura
-independente (Parte III) somou a quarta face: **decisão com mais de uma autoridade**
+independente (Parte IV) somou a quarta face: **decisão com mais de uma autoridade**
 (`promise_decision` no stockman e no shop; preço contextual em dois lugares).
 
 ## B. Onde as leituras divergiram e como ficou
@@ -74,6 +75,14 @@ independente (Parte III) somou a quarta face: **decisão com mais de uma autorid
 | Orçamentos de latência, prazo de 21 dias | Propostos | Desejo, não orçamento, sem baseline; timebox limita investigação, não converte trabalho necessário em dívida | Rebaixados a hipótese até o baseline |
 | Envelope de fato operacional | Colunas de ator, dispositivo, correlação e causa | Mesma coisa, com prova de propagação síncrona e assíncrona | **ADR-045** (workstation, não posto) |
 | Dupla autoridade de promessa | Não vista | Achada pela leitura independente | **Fechada** na consolidação (#2263, #2265): `promise_for_sku` único |
+
+A reconferência (Parte III) tomou posição em cada tema, entre o inventário e a reformulação:
+corte por "irrecuperável ou custa dias"; emenda à D-038 com escritores do carimbo, manifesto
+dos cenários, testes de corrida no gate Postgres, guarda de imutabilidade do `OrderEvent` e
+reparos do recebimento; `PurchaseReceipt`, `DeliveryRun`, revisão de pedido e módulos depois
+da tag; Taskman no Backstage com gatilho; D-036 como intenção de desenho com catraca, porque
+quatro ciclos só admitem provider nativo. Os textos propostos para D-036, D-038 e ADR-001 estão
+lá e **pedem a palavra do dono**.
 
 ## C. Decisões
 
@@ -167,8 +176,11 @@ migrations por estética.
   Parte II não são reproduzíveis e valem como hipótese.
 - As superfícies Nuxt (232 mil linhas, 61% dos toques de correção em 14 dias) não tiveram
   auditoria própria.
-- Inventário, revisão e reformulação rodaram no mesmo modelo; só a leitura independente veio de
-  outro fornecedor. Convergência entre agentes do mesmo modelo não substitui teste.
+- Inventário e reconferência são do mesmo coordenador (Claude), que também redigiu a D-038;
+  revisão e reformulação são do Codex; só a leitura independente veio de um terceiro
+  fornecedor. Convergência entre agentes do mesmo modelo não substitui teste.
+- Achado de passagem, fora do reset e não reproduzido em tela: o recibo do navegador no PDV
+  aplica desconto em reais como percentual (Parte III, "Superfícies").
 
 ---
 
@@ -545,7 +557,229 @@ Definidos no contexto do início. Em uma linha: tag é a `go-live-v1`, o marco d
 
 ---
 
-# Parte III · Leitura independente (base `057fe9105`)
+# Parte III · Reconferência do coordenador (base `7f829e02f`)
+
+Claude, com 7 verificadores e 2 céticos em leitura, reconferiu no código as afirmações novas da
+reformulação (PR #2260). Ficou só no branch do PR draft #2275, marcado "não mergear", e entra
+aqui. Mesmo limite das outras leituras: nada executado. **Viés declarado:** o coordenador que
+escreveu esta parte também escreveu o inventário e a D-038.
+
+## Veredito
+
+**APROVAR O RESET COMO ARQUITETURA ALVO, COM CORTE ESTREITO ANTES DA TAG.** A arquitetura alvo
+da reformulação é boa e deve virar ADR. O plano dela não serve como gate de go-live: põe cinco
+ou seis entidades novas e a reorganização em módulos antes da tag, sem teto. O corte da D-038
+estava estreito demais em três pontos, confirmados no código.
+
+**Critério do corte:** antes da tag entra o que não se recupera depois dela e o que custa dias.
+JSON acompanhado de evento imutável é recuperável; fato sem registro durável não é.
+
+## O que está registrado e o que é proposta
+
+Decisões no registro: D-017, D-029, D-030, D-035 a D-038. Falas do dono sem redação própria:
+"fiz desde o início pensando nisso" (substituibilidade); "Sem prazo" (trocar kernel); "se vira
+aí, quero no menor tempo possível" (o que bloqueia); "Antes, claro" (`FiscalDocument`); "Pode
+ser depois" (Concierge). **Propostas, sem decisão:** monolito modular como nome, módulos por
+ciclo, perfis de provider, Taskman, Spendman, Human e Assetman.
+
+## Substituibilidade: o que o código entrega hoje
+
+- A aplicação lê models de kernel direto em 960 linhas de import (shop 534, backstage 403,
+  storefront 23). Comando:
+  `rg -n "^\s*from shopman\.(offerman|stockman|craftsman|orderman|guestman|doorman|payman|buyman|fiscalman|cashman|watchman|refs)\.models(\.\w+)* import" shopman/<app> --glob '!**/tests/**' --glob '!**/migrations/**' | wc -l`.
+- **Quatro ciclos compartilham transação local entre kernels e só admitem provider nativo até
+  redesenho:** commit do pedido com reserva na loja online
+  (`packages/orderman/.../commit.py:299-300,597`; PDV e marketplace saem antes da reserva,
+  `shopman/shop/lifecycle.py:201-204`); PDV, pagamento com caixa
+  (`shopman/shop/services/pos.py:4843-4854`); cancelamento com pagamento
+  (`shopman/shop/services/cancellation.py:19-63`); produção com estoque
+  (`craftsman/contrib/stockman`).
+- 72 imports kernel → kernel, todos em `contrib/` ou `adapters/` (gate em
+  `test_import_boundaries.py:451`). `get_adapter`: 89 chamadas em 30 arquivos.
+- **Regra testável proposta:** (1) toda escrita em model de kernel passa pelos services do
+  kernel, com gate; (2) a leitura direta de models de kernel pela aplicação não cresce (catraca
+  por arquivo); (3) o contrato de cada kernel é sua suíte em Postgres; (4) Protocol na frente de
+  estoque, pedido, caixa ou pagamento só com segunda implementação real.
+
+## Módulos de aplicação: lista corrigida
+
+Os sete nomes da reformulação cobrem cerca de 39% de `shopman/shop/services` (177 arquivos,
+81.879 linhas, classificação por nome de arquivo) e se sobrepõem em `pos.py`,
+`operator_orders.py`, `order_edit.py` e `kds.py`. Proposta:
+
+- **Processos** (coordenam ciclo, abrem transação): `sales`, `orders` (absorve fulfillment e
+  KDS), `delivery`, `production`, `procurement`, `closing`, `operations`.
+- **Capacidades** (chamadas por processo): `payments`, `fiscal`, `catalog`, `availability`,
+  `customers`, `identity`, `notifications`.
+- **Canal:** `channels/ifood`. **Carregado como está:** `marketing` (cerca de 24% de
+  `shop/services`).
+- **Dependência:** surface → processo → capacidade → kernel. Processo não importa processo.
+
+O defeito "organizado pelo público da tela" está medido em `backstage/services` (604 imports
+backstage → kernels). Em `shop` não existe: `shop → backstage` são 41 imports em 9 arquivos,
+todos em `shopman/shop/adapters/`.
+
+**Surface** só calcula como prévia declarada; todo valor que entra em comando é recalculado ou
+conferido pelo servidor. Exceção nomeada: a venda sem conexão do PDV
+(`surfaces/pos-nuxt/app/presentation/offlineSales.ts`), reconciliada em
+`shopman/shop/services/pos_offline_sale.py:1-40`.
+
+## Corte da tag proposto
+
+**Antes da tag:**
+
+| # | Item | Por que não espera | Esforço (inferência) |
+|---|---|---|---|
+| 1 | Pacote de dias da D-038 | Já decidido | dias |
+| 2 | `FiscalDocument` | A nota são chaves `nfce_*`, um slot por pedido (`shopman/shop/handlers/fiscal.py:497-517,594-595`): rejeição, tentativa e segunda nota não têm registro | 1,5 a 2 semanas |
+| 3 | Carimbo dos fatos **com escritores** nos caminhos de dinheiro e estoque (venda PDV, pagamento, recebimento, despacho) | Dispositivo e correlação são irrecuperáveis para todo fato gravado antes de o escritor preencher; só a coluna não evita perda | depende do mapa de escritores |
+| 4 | Manifesto cenário → teste, lacunas dos cenários 2, 3, 4 e 6, testes de corrida dentro do gate Postgres | Ver "Cenários críticos" | 3,5 a 4,5 dias |
+| 5 | Guarda de imutabilidade do `OrderEvent` | Append-only só na docstring, sem guarda de `save`/`delete`, FK `CASCADE` (`packages/orderman/shopman/orderman/models/order.py:420-427`). Todo adiamento abaixo se apoia nele | horas |
+| 6 | Recebimento: dedupe permanente, `source_ref` no `Move.metadata`, registro durável da recusa | `purchase.receipt` fora de `PERSISTENT_SCOPES`, validade 24 h (`shopman/shop/services/remote_mutations.py:250`); `source_ref` só nos 12 últimos caracteres de `reason` (`shopman/backstage/services/purchase.py:2463-2465`); recusa só cria Directive de notificação (`:516-596`) | horas a 1 dia |
+| 7 | `RuleConfig.rule_path` no caminho final dos módulos de regra | Persiste caminho Python no banco (`shopman/shop/models/rules.py:28,75`) | horas |
+
+Itens 3 a 6 são emenda à D-038 e **pedem a palavra do dono**.
+
+**Estado da ficha dos fatos:**
+
+| Ledger | Ator | Idempotência | Dispositivo, correlação |
+|---|---|---|---|
+| stockman `Move` | FK `user` (`SET_NULL`, `move.py:84-89`) | nenhuma | nenhum |
+| cashman `Entry` | FK `operator` e `approved_by` | constraints únicas | FK `shift`, `order_ref`, `payment_ref`, `parent` |
+| payman `PaymentTransaction` | nenhum (`transaction.py:42-65`) | `idempotency_key` único | `gateway_id` |
+| orderman `OrderEvent` | texto de 128 caracteres | nenhuma | `seq` por pedido |
+| craftsman `WorkOrderEvent` | texto | `idempotency_key` | nenhum |
+| orderman `Directive` | nenhum | `dedupe_key` | nenhum |
+
+**Depois da tag, uma fatia por vez** (a ADR-015 não encarece nenhum destes):
+
+| Item | Onde o fato já é durável | Perda real por esperar |
+|---|---|---|
+| `PurchaseReceipt` e `PurchaseOrder` | `Move kind=BUY` imutável por linha, com ator, fornecedor, chave da NF e custo (`purchase.py:327-349,2030-2068`) | Pedido de compra é apagado ao receber (`:1152-1166`); aceitável se o item 6 entrar |
+| `DeliveryRun` e custódia | `Order.data["courier"]` sob `select_for_update` com `OrderEvent` por transição (`courier.py:951,978`); troco no livro do cashman | `driver` não é copiado para a tentativa arquivada (`courier.py:903-916`) |
+| Revisão de pedido | `OrderEvent` por revisão com diff, settlement e `approved_by` (`order_edit.py:1372-1397`) | Nenhuma identificada |
+| Módulos e movimento de arquivos | Não muda autoridade de dado | Custo de teste: 1.054 `patch("shopman...")` em 128 arquivos |
+
+Entidade nova nasce já no módulo destino; não se cria no lugar velho para mover depois.
+
+## Taskman
+
+**Manter no Backstage, com gatilho de extração.** O que existe
+(`shopman/backstage/models/operation.py`, `services/operations.py`,
+`api/operation_checklists.py`): 5 models, cerca de 994 linhas, um consumidor
+(`surfaces/orders-nuxt/pages/checklists.vue`), nenhum import de kernel. O que "proto-Taskman
+funcional" esconde: só `start_checklist_run` tem transação e lock (`services/operations.py:44-45`);
+"rotina encerrada não muda" mora na view (`api/operation_checklists.py:64`); `CANCELLED`,
+`SKIPPED` e `BLOCKED` não têm escritor; a dupla conferência aceita a mesma pessoa
+(`services/operations.py:124-133`); não há atribuição, prazo, recorrência nem dependência.
+Passa como domínio candidato, não como kernel maduro.
+
+**Gatilho:** primeira tarefa fora de checklist diário (atribuição ou prazo), primeiro escritor
+fora do backstage, ou primeiro escritor de `linked_domain`/`linked_ref`. **Antes da tag, sem
+mover nada:** levar a guarda de rotina encerrada para o serviço e decidir se a dupla conferência
+exige pessoa diferente (decisão de produto).
+
+## Cenários críticos: cobertura medida
+
+A suíte principal roda em SQLite (`config/settings.py:617-671`); há um gate Postgres por lista
+fechada (`scripts/run_runtime_tests.py:30-150`).
+
+| # | Cenário | Estado | Evidência | Falta |
+|---|---|---|---|---|
+| 1 | Pix depois do cancelamento | Coberto | `shopman/shop/tests/test_payment_webhooks.py:872,1495` | A corrida real está fora do gate |
+| 2 | Cartão recusado | Parcial, mal enunciado | Recusa só grava `payment.last_decline` (`payment.py:1263-1287`); quem libera é o vencimento | Teste recusa → vencimento → holds liberados |
+| 3 | PDV com pagamento misto | Caminho feliz | `test_pos_cash_ledger.py:333,351,380,411` | Falha no livro com pagamento misto |
+| 4 | Venda sem conexão reenviada | Pedido e caixa | `test_pos_venda_sem_conexao.py:103`; `test_pos_cash_ledger.py:892` | Move e diretiva fiscal únicos |
+| 5 | `finish` simultâneo | Coberto, concorrência real | `test_concurrent_finish_does_not_double_credit.py:117` | nada |
+| 6 | Cancelamento depois da baixa | Parcial | Pernas em separado; orquestração só com mock (`test_lifecycle.py:826`) | Prova conjunta das quatro compensações |
+| 7 | NF reescaneada | Sequencial | `test_purchase_recibo_e_dinheiro.py:79` | Item 6 do corte |
+| 8 | Edição de encomenda | Funcional | `test_order_edit.py:156,253,296,327` | Teste com threads |
+
+Enunciado corrigido do 2: "pedido de cartão recusado e não repago libera a reserva no
+vencimento". **Cenário 9 proposto: toda corrida escrita roda no gate Postgres.** A catraca
+`shopman/shop/tests/test_runtime_gate.py:33` só enxerga o marcador `requires_postgres`; 22
+arquivos usam skip inline e ficam fora da lista do gate (entre eles
+`test_cancellation_fresh_state.py`, `test_cod_custody_concurrency.py`,
+`test_pos_committed_sale_recovery.py`, `test_h03_payment_guard_lock.py`). Não verificado se
+`omotenashi-gate.yml` ou `orders-isolated-capacity.yml` os executam.
+
+## Superfícies
+
+Amostra dirigida sem máquina de estados nem regra de preço duplicada em escala. **Defeito
+candidato, independente do reset:** o recibo do navegador no PDV grava
+`discountPct: item.discount?.value` sem ler o tipo
+(`surfaces/pos-nuxt/app/composables/usePosSale.ts:3806`) e aplica como percentual
+(`presentation/receipt.ts:78-83`), mesmo com desconto em reais. Não reproduzido em tela. Menor
+auditoria necessária: tabela `campo do comando → origem → tratamento no servidor` para pos,
+storefront, orders, purchase, production e kds; 6 a 8 agente-horas, em paralelo.
+
+## ADR-001
+
+- **Manter:** pureza e pontes (`:32-98`), teste signal × Protocol (`:142-154`), regra das duas
+  implementações (`:178-180`).
+- **Reescrever por estar velho:** `:11-14` (oito cores; são 13); `:107-119` (`CheckoutService`
+  não existe); `:129-136` (`StockBackend`, `ContaazulBackend` não existem); `:157-165`
+  (`PaymentBackend` vive em `packages/payman/shopman/payman/protocols.py:70`); `:190-192`;
+  `:209-214` (o teste está em `test_import_boundaries.py:451`).
+- **Superar** `:203-205`: *"Substituir um kernel não é plug-and-play hoje, e isso é dívida
+  medida, não escolha. A substituição é intenção de desenho: a escrita é fechada nos services do
+  kernel, a leitura direta não cresce, e o contrato de cada kernel é uma suíte executável. Um
+  provider não nativo só entra num ciclo cujas garantias ele satisfaz."*
+
+## Textos propostos para o registro
+
+Só valem com a palavra do dono, como entrada nova que superseda a anterior.
+
+**D-036:** *Substituibilidade de kernel é intenção de desenho, sem prazo. O Shopman foi
+desenhado para que um domínio possa ser atendido pelo kernel nativo ou por outro sistema. Não é
+entrega datada, e nenhuma mudança pode torná-la mais cara. Consequência: (1) toda escrita em
+model de kernel passa pelos services do kernel, com gate; (2) a leitura direta de models de
+kernel pela aplicação não cresce; (3) as garantias de cada kernel viram suíte de contrato em
+Postgres; (4) os ciclos com transação local entre kernels ficam listados como "só nativo até
+redesenho"; (5) Protocol na frente de estoque, pedido, caixa ou pagamento só nasce com segunda
+implementação real.*
+
+**D-038 (emenda):** *Critério único: segura a tag o que não se recupera depois dela e o que
+custa dias. Além do pacote de dias e do `FiscalDocument`: (a) o carimbo dos fatos exige os
+escritores de dispositivo e correlação nos caminhos de dinheiro e estoque, não só as colunas;
+(b) manifesto cenário → teste, lacunas dos cenários 2, 3, 4 e 6 e os testes de corrida dentro do
+gate Postgres; (c) guarda de imutabilidade do `OrderEvent`, `source_ref` no Move e registro
+durável da recusa de recebimento. Não seguem para a matriz: módulos por ciclo, Taskman,
+`PurchaseReceipt`, `DeliveryRun`, revisão de pedido. Gatilho de promoção: qualquer cenário ou
+escritor sem trava reproduzido com perda de dinheiro, estoque ou nota vira linha da matriz no
+mesmo dia.*
+
+## Divergências com a reformulação
+
+| # | Tema | Reformulação (Codex) | Reconferência (Claude) |
+|---|---|---|---|
+| 1 | Critério do corte | Nenhum fato essencial nasce só em JSON genérico | Nenhum fato irrecuperável nasce sem registro durável; JSON com evento imutável é recuperável |
+| 2 | `PurchaseReceipt`, `DeliveryRun`, revisão de pedido | Construir antes de dado real | Depois da tag; antes, só os reparos pequenos |
+| 3 | Módulos | Antes do go-live | Depois; mover pacote não muda autoridade de dado |
+| 4 | D-038 | Contestada até baseline | Decidida; emenda por entrada nova |
+| 5 | D-036 | Invariante | Intenção de desenho com catraca; "invariante" é falso contra quatro ciclos |
+| 6 | Taskman | Avaliar extração agora | Adiar com gatilho |
+| 7 | Estimativa | Nenhuma antes do baseline | Estimar o estimável, com teto |
+| 8 | Oito cenários | Construir como gate bloqueante | Seis já cobertos; fechar quatro lacunas e o furo do gate |
+| 9 | Superfícies | Antes de aprovar o reset | Em paralelo; só bloqueia a estimativa do movimento |
+
+## Estimativas e incertezas
+
+Estimável agora: lacunas dos cenários, manifesto e catraca (3,5 a 4,5 dias); reparos de
+recebimento e guarda do `OrderEvent` (horas a 1 dia); `FiscalDocument` (1,5 a 2 semanas);
+auditoria de superfícies (6 a 8 agente-horas). Depende de medir: escritores do carimbo, o que
+reprova quando os 22 testes rodarem em Postgres, movimento dos módulos, latência e contenção.
+Vazão de referência: cerca de 550 PRs em 30 dias, perto de 3% estruturais.
+
+Menos certeza: se os 22 testes rodam em algum workflow; o risco dos 12 escritores de
+`Order.data` sem lock (nenhum reproduzido); o adiamento de três entidades cai se a guarda do
+`OrderEvent` não entrar; o tamanho do item 3 do corte; a classificação por nome de arquivo;
+`driver` consultável na Machine por `id_mch` (inferência); agendamento de
+`cleanup_idempotency_keys` fora do repositório (não verificado).
+
+---
+
+# Parte IV · Leitura independente (base `057fe9105`)
 
 ## Método
 

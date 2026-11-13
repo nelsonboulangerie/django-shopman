@@ -11,9 +11,9 @@ reporta ao dono. Você não implementa sozinho o trabalho de frente.
 1. Leia AGENTS.md (é link para CLAUDE.md) integralmente. As regras dele valem para você e para quem delegar.
 2. Fixe o SHA de origin/main e registre.
 3. Inventarie o que está em voo: make inflight, gh pr list, git worktree list, git branch -r.
-4. Leia o estado v7 — os arquivos abaixo são o ponto de partida AUTORITATIVO. Não reinvente o decidido.
+4. Leia a spec de consolidação: os arquivos abaixo são o ponto de partida AUTORITATIVO. Não reinvente o decidido.
 
-## Estado v7 (já produzido, ponto de partida)
+## A spec de consolidação (já produzida, ponto de partida)
 - docs/plans/STATUS-CONSOLIDACAO-2026-11-10.md — estado honesto + limitações + handoff.
 - docs/reference/guard-map.md — o mapa de guardas (índice das portas invariantes; seção 9/10 = não cobertas).
 - docs/plans/FASE-3-SPEC-DUAL-RUN-CUSTO-KERNELS.md — specs de dual-run, custo e endurecimento dos kernels.

@@ -25,6 +25,7 @@ from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
 from shopman.offerman.models import Collection, CollectionItem, Product
 from shopman.orderman.models import Order, OrderItem
 from shopman.stockman import Hold, HoldStatus, Move, Position, Quant
+from shopman.stockman.models import Batch
 
 from shopman.backstage.models import DayClosing, PlanCarryNote, ShelfOutage
 from shopman.backstage.projections.bi_over_short import build_bi_over_short
@@ -355,25 +356,32 @@ def _attach_sale_holds(order, day, allocations):
     Order.objects.filter(pk=order.pk).update(data={"hold_ids": entries})
 
 
-def test_batch_margin_uses_frozen_cost_and_only_traced_reconciled_sales(day):
+def _lot_batch(quant, expiry):
+    Batch.objects.create(ref=quant.batch, sku=quant.sku, expiry_date=expiry)
+
+
+def _freeze_cost(wo, day, total_q, gaps=()):
+    WorkOrder.objects.filter(pk=wo.pk).update(meta={"cost_snapshot": {
+        "frozen_at": datetime.combine(day, time(6, 30), tzinfo=timezone.get_current_timezone()).isoformat(),
+        "total_q": total_q,
+        "unit_cost_q": total_q // int(wo.finished) if total_q is not None else None,
+        "output_quantity": str(wo.finished),
+        "lines": [],
+        "gaps": list(gaps),
+    }})
+
+
+def test_batch_margin_is_the_whole_batch_once_the_lot_expires(day):
     recipe = _recipe("BIMARGIN", "Pão da casa")
     complete = _lot(recipe, day, 10)
     incomplete = _lot(recipe, day, 10)
     old = _lot(recipe, day - timedelta(days=1), 10)
-    for wo, total_q, gaps in (
-        (complete, 1800, []),
-        (incomplete, None, ["Farinha sem preço de compra."]),
-    ):
-        WorkOrder.objects.filter(pk=wo.pk).update(meta={"cost_snapshot": {
-            "frozen_at": datetime.combine(day, time(6, 30), tzinfo=timezone.get_current_timezone()).isoformat(),
-            "total_q": total_q,
-            "unit_cost_q": total_q // 10 if total_q is not None else None,
-            "output_quantity": "10",
-            "lines": [],
-            "gaps": gaps,
-        }})
+    _freeze_cost(complete, day, 1800)
+    _freeze_cost(incomplete, day, None, ["Farinha sem preço de compra."])
     first_stock = _finished_stock(complete, "bi-margin-first")
     second_stock = _finished_stock(incomplete, "bi-margin-second")
+    _lot_batch(first_stock, day)
+    _lot_batch(second_stock, day)
     sale = _sale(day, time(9), recipe.output_sku, 5)
     OrderItem.objects.filter(order=sale).update(line_total_q=4001)
     _attach_sale_holds(sale, day, [(first_stock, 3), (second_stock, 2)])
@@ -385,13 +393,56 @@ def test_batch_margin_uses_frozen_cost_and_only_traced_reconciled_sales(day):
     report = build_bi_production(date_from=old.target_date, date_to=day)
     rows = {row.ref: row for row in report.batch_margins}
     first = rows[complete.ref]
-    assert (first.cost_status, first.revenue_q, first.total_q, first.margin_q) == ("complete", 2401, 1800, 601)
+    # Venceu ontem com 7 sobrando: a margem é a da fornada inteira, sobra incluída.
+    assert (first.lot_status, first.revenue_q, first.total_q, first.margin_q) == ("closed", 2401, 1800, 601)
+    assert (first.traced_quantity, first.output_quantity, first.sells_until) == ("3", "10", day.isoformat())
     second = rows[incomplete.ref]
     assert (second.cost_status, second.revenue_q, second.total_q, second.margin_q) == (
         "incomplete", 1600, None, None,
     )
     assert second.gaps == ("Farinha sem preço de compra.",)
-    assert (rows[old.ref].cost_status, rows[old.ref].total_q, rows[old.ref].margin_q) == ("missing", None, None)
+    assert (rows[old.ref].cost_status, rows[old.ref].lot_status, rows[old.ref].margin_q) == (
+        "missing", "untraceable", None,
+    )
+
+
+def test_batch_margin_waits_while_the_lot_is_on_sale(day):
+    recipe = _recipe("BIOPEN", "Bolo")
+    wo = _lot(recipe, day, 10)
+    _freeze_cost(wo, day, 1800)
+    quant = _finished_stock(wo, "bi-margin-open")
+    today = timezone.localdate()
+    _lot_batch(quant, today)  # vale até hoje: ainda em venda
+    sale = _sale(day, time(9), recipe.output_sku, 3)
+    _attach_sale_holds(sale, day, [(quant, 3)])
+
+    row = build_bi_production(date_from=day, date_to=day).batch_margins[0]
+    assert (row.lot_status, row.sells_until, row.revenue_q, row.margin_q) == ("open", today.isoformat(), 3000, None)
+
+
+def test_batch_margin_counts_the_sale_of_the_next_day(day):
+    recipe = _recipe("BINEXT", "Pão do dia seguinte")
+    wo = _lot(recipe, day, 10)
+    _freeze_cost(wo, day, 1800)
+    quant = _finished_stock(wo, "bi-margin-next")
+    today = timezone.localdate()
+    _lot_batch(quant, today)
+    sale = _sale(today, time(9), recipe.output_sku, 10)
+    _attach_sale_holds(sale, today, [(quant, 10)])
+
+    # Esgotou hoje, na validade: encerrou, e a venda de hoje entra na fornada de ontem.
+    row = build_bi_production(date_from=day, date_to=day).batch_margins[0]
+    assert (row.lot_status, row.traced_quantity, row.revenue_q, row.margin_q) == ("closed", "10", 10000, 8200)
+
+
+def test_expired_lot_without_sales_is_the_whole_cost_lost(day):
+    recipe = _recipe("BILOST", "Brioche")
+    wo = _lot(recipe, day, 10)
+    _freeze_cost(wo, day, 1800)
+    _lot_batch(_finished_stock(wo, "bi-margin-lost"), day)
+
+    row = build_bi_production(date_from=day, date_to=day).batch_margins[0]
+    assert (row.lot_status, row.revenue_q, row.margin_q) == ("closed", 0, -1800)
 
 
 def test_batch_margin_does_not_attribute_sales_from_a_shared_daily_batch(day):
@@ -400,8 +451,11 @@ def test_batch_margin_does_not_attribute_sales_from_a_shared_daily_batch(day):
     second = _lot(recipe, day, 5)
     quant = _finished_stock(first, "bi-margin-shared")
     _finished_stock(second, quant.batch)
+    _freeze_cost(second, day, 900)
     sale = _sale(day, time(9), recipe.output_sku, 2)
     _attach_sale_holds(sale, day, [(quant, 2)])
 
     rows = build_bi_production(date_from=day, date_to=day).batch_margins
     assert [(row.ref, row.revenue_q) for row in rows] == [(second.ref, 0)]
+    # Lote que o estoque não separa: sem margem, nunca o custo inteiro como prejuízo.
+    assert (rows[0].lot_status, rows[0].margin_q) == ("untraceable", None)

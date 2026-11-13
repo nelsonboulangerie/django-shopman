@@ -7,6 +7,7 @@ import pytest
 from django.utils import timezone
 
 from shopman.shop.models import Conversation, ConversationBinding
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import service, transport
 from shopman.storefront.concierge.contracts import InboundEvent, TransportScope, WindowEvidence
 
@@ -49,7 +50,7 @@ def _event(subject, text, event_id):
 def test_ingress_telemetry_correlates_internal_ids_without_payload(settings, caplog, monkeypatch):
     subject = "private-subject-canary"
     secret_text = "private-address-canary"
-    settings.AI_ASSIST_API_KEY = "synthetic-key"
+    configure_ai("synthetic-key")
     settings.SHOPMAN_CONCIERGE = _config(subject)
     operational_logger = logging.getLogger("shopman.operational")
     monkeypatch.setattr(operational_logger, "handlers", [*operational_logger.handlers, caplog.handler])
@@ -65,7 +66,7 @@ def test_ingress_telemetry_correlates_internal_ids_without_payload(settings, cap
 
 def test_rejection_and_identity_failure_do_not_log_subject_or_provider_echo(settings, monkeypatch, caplog):
     subject = "private-subject-canary"
-    settings.AI_ASSIST_API_KEY = "synthetic-key"
+    configure_ai("synthetic-key")
     monkeypatch.setattr(service.logger, "handlers", [*service.logger.handlers, caplog.handler])
     settings.SHOPMAN_CONCIERGE = {**_config(subject), "enabled": False}
     with caplog.at_level(logging.INFO):

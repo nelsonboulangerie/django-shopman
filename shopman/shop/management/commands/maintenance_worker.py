@@ -115,7 +115,7 @@ MAINTENANCE_COMMANDS = (
     # O placar do de-para (`run_alias_benchmark`) NÃO roda aqui de propósito. Entre
     # 28/10 e 11/11/2026 ele recomeçou do zero a cada deploy e gastou cerca de US$ 1.180
     # de API. Ele mede à mão, com teto de casos e de gasto
-    # (`SHOPMAN_ALIAS_BENCHMARK_*` em settings). Não volte a pô-lo no ciclo sem
+    # (flags do comando manual). Não volte a pô-lo no ciclo sem
     # essas travas e sem o dono saber o custo.
     # A read model pública do cardápio (Continuum) se reconcilia com o catálogo:
     # o GET do snapshot só lê, então a cabeça que ficou para trás sara aqui.

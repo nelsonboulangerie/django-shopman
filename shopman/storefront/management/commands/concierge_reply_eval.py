@@ -34,7 +34,7 @@ class Command(BaseCommand):
                 "jev-shadow (a intenção que o Jev deu em sombra no alpha, gravada no caso; sem rede)."
             ),
         )
-        parser.add_argument("--model", default="", help="Modelo da triagem com --classifier model (default: o do settings).")
+        parser.add_argument("--model", default="", help="Modelo da triagem com --classifier model (default: o da rota de IA triage).")
         parser.add_argument("--golden", default="", help="Outro arquivo de casos (default: concierge/golden_set.json).")
         parser.add_argument("--limit", type=int, default=0, help="Só os N primeiros casos.")
         parser.add_argument("--show-misses", type=int, default=15, help="Quantos erros listar (default 15).")

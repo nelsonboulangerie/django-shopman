@@ -6,16 +6,18 @@
 // ePOS on real hardware) is validated separately on a device.
 import type { POSCartItem, POSPaymentMethodProjection, PosFiscalState } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
-import { lineTotalQ } from "~/presentation/lineDiscounts";
+import { lineTotalQ, unitChargedQ } from "~/presentation/lineDiscounts";
 import { methodLabel } from "~/presentation/payment";
 import { kgDisplay, lineAmountQ } from "~/presentation/weighed";
 
 export interface PosReceiptItem {
   name: string;
   qty: number;
-  price_q: number;
-  discountPct: number;
-  /** Peça pesada: o peso, em gramas. `price_q` é então o preço do quilo. */
+  /** A etiqueta por unidade, sem desconto nenhum (na peça pesada, o quilo). */
+  list_price_q: number;
+  /** O que o SERVIDOR cobrou por unidade, depois da política de descontos. */
+  charged_price_q: number;
+  /** Peça pesada: o peso, em gramas. Os preços são então os do quilo. */
   weightG?: number;
 }
 
@@ -56,7 +58,8 @@ export interface ReceiptLineView {
   qtyLabel: string;
   unitDisplay: string;
   totalDisplay: string;
-  discountPct: number;
+  /** "Desconto −R$ 5,00", ou "" quando a linha saiu pela etiqueta. */
+  discountDisplay: string;
 }
 
 /**
@@ -74,13 +77,40 @@ export function cashLandedInDrawer(payments: readonly PosReceiptPayment[]): bool
   return payments.some((tender) => tender.method === "cash" && tender.collection !== "on_delivery");
 }
 
-/** Net line total in cents, applying the per-line percentage discount. */
+/**
+ * Congela uma linha do carrinho para o recibo com o preço que o SERVIDOR cobrou.
+ *
+ * ⚠️ O recibo não recalcula desconto. Ele recalculava, e errava de dois jeitos:
+ * lia `discount.value` como percentual sem olhar `discount.type` (R$ 5,00 de
+ * desconto saía como 5%), e aplicava o desconto manual que a política "maior
+ * desconto ganha, um por item" (`modifiers.py`) pode ter descartado no servidor.
+ * Com `charged_price_q`, as linhas do recibo somam o total, como no "Total
+ * parcial" (`cartNetTotalQ`).
+ */
+export function receiptItemFromCart(item: POSCartItem): PosReceiptItem {
+  const charged = unitChargedQ(item);
+  const list = typeof item.list_price_q === "number" ? item.list_price_q : item.price_q;
+  return {
+    name: item.name,
+    qty: item.qty,
+    list_price_q: Math.max(list, charged),
+    charged_price_q: charged,
+    ...(item.weighed ? { weightG: item.weighed.weight_g } : {}),
+  };
+}
+
+function receiptLineShape(item: PosReceiptItem) {
+  return { qty: item.qty, weighed: item.weightG ? { entry: "weight" as const, weight_g: item.weightG } : null };
+}
+
+/** Total da linha em centavos: o preço cobrado × a quantidade (ou o peso). */
 export function receiptLineTotalQ(item: PosReceiptItem): number {
-  const line = { qty: item.qty, weighed: item.weightG ? { entry: "weight" as const, weight_g: item.weightG } : null };
-  const gross = lineAmountQ(item.price_q, line);
-  if (!item.discountPct) return gross;
-  const perUnit = Math.min(item.price_q, Math.round((item.price_q * item.discountPct) / 100));
-  return Math.max(0, lineAmountQ(item.price_q - perUnit, line));
+  return lineAmountQ(item.charged_price_q, receiptLineShape(item));
+}
+
+/** Quanto a linha economizou contra a etiqueta, em centavos. */
+export function receiptLineSavingsQ(item: PosReceiptItem): number {
+  return Math.max(0, lineAmountQ(item.list_price_q, receiptLineShape(item)) - receiptLineTotalQ(item));
 }
 
 /**
@@ -109,9 +139,9 @@ export function receiptLines(snap: PosReceiptSnapshot): ReceiptLineView[] {
     name: item.name,
     qty: item.qty,
     qtyLabel: item.weightG ? kgDisplay(item.weightG) : `${item.qty}×`,
-    unitDisplay: formatBRL(item.price_q) + (item.weightG ? "/kg" : ""),
+    unitDisplay: formatBRL(item.charged_price_q) + (item.weightG ? "/kg" : ""),
     totalDisplay: formatBRL(receiptLineTotalQ(item)),
-    discountPct: item.discountPct,
+    discountDisplay: receiptLineSavingsQ(item) > 0 ? `Desconto −${formatBRL(receiptLineSavingsQ(item))}` : "",
   }));
 }
 

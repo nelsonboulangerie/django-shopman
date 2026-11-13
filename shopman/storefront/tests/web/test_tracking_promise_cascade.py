@@ -523,3 +523,65 @@ def test_capture_failure_of_an_older_intent_does_not_leak(make_order, patch_paym
         },
     )
     assert _promise_state(order) == "payment_authorized"
+
+
+def _preorder_wait_data(state: str):
+    from shopman.shop.projections.order_tracking import TrackingPromiseData
+
+    return TrackingPromiseData(
+        state=state,
+        tone="info",
+        deadline_at=None,
+        deadline_kind=None,
+        timer_mode="none",
+        deadline_action="none",
+        requires_active_notification=True,
+        notification_topic=None,
+        payment_method="pix",
+        fulfillment_wait_kind="preorder",
+    )
+
+
+@pytest.mark.parametrize(
+    ("state", "paid"),
+    [("store_checking", True), ("store_checking", False), ("received", False), ("payment_confirmed", True)],
+)
+@pytest.mark.parametrize("when", ["sábado, 19/07", None])
+def test_preorder_not_accepted_yet_is_not_called_reserved(state, paid, when):
+    """Laudo de encomendas 09/11: encomenda paga ainda ``new`` dizia "reservada"
+    enquanto a Conta dizia "Aguardando a loja". Antes do aceite, quem confirma
+    é a loja; pago, o cliente sabe que o valor volta se ela não puder."""
+    from shopman.shop.projections.copy import build_copy
+    from shopman.storefront.presentation.order_tracking import _promise_copy
+
+    _title, message = _promise_copy(
+        _preorder_wait_data(state),
+        status="new",
+        is_delivery=False,
+        copy=build_copy("TRACKING"),
+        when_display=when,
+        payment_confirmed=paid,
+    )
+    assert "reservada" not in message
+    assert "A loja confirma sua encomenda" in message
+    assert "{when}" not in message
+    if when:
+        assert when in message
+    if paid and state == "store_checking":
+        assert message.startswith("Pagamento recebido.")
+        assert "devolvemos o valor" in message
+
+
+@pytest.mark.parametrize("when", ["sábado, 19/07", None])
+def test_preorder_accepted_is_reserved(when):
+    from shopman.shop.projections.copy import build_copy
+    from shopman.storefront.presentation.order_tracking import _promise_copy
+
+    _title, message = _promise_copy(
+        _preorder_wait_data("received"),
+        status="accepted",
+        is_delivery=False,
+        copy=build_copy("TRACKING"),
+        when_display=when,
+    )
+    assert "reservada" in message
