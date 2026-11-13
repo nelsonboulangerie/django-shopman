@@ -16661,6 +16661,53 @@
       "out_of_extraction": false
     },
     {
+      "id": "shop.services-order-acceptance-alerts",
+      "question": "Quando o pedido que espera aceite vira alerta pessoal crítico (Web Push) para quem atende?",
+      "owner": "operator-notification.order-acceptance",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.order_acceptance_alerts:notify_new_order",
+      "authoritative_symbols": [
+        "shopman.shop.services.order_acceptance_alerts:notify_new_order"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/order_acceptance_alerts.py",
+          "symbols": [
+            "ORDER_NEW_AWAITING_ACCEPTANCE",
+            "ORDER_STALE_AWAITING_ACCEPTANCE",
+            "CONDITIONS",
+            "PERMISSION",
+            "OWNER_ORDERS",
+            "source_ref",
+            "order_ref_from_source",
+            "deep_link",
+            "notify_new_order",
+            "notify_stale_order",
+            "resolve",
+            "reconcile",
+            "external_deadline"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_order_acceptance_push.py::test_pedido_aceito_antes_dos_5_min_nao_gera_push_nenhum"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "shop.services-user-notifications",
       "question": "Lifecycle, dedupe e reconciliação de alertas pessoais do operador?",
       "owner": "operator-notification.lifecycle",

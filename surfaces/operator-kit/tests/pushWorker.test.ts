@@ -74,6 +74,28 @@ describe("operator push service worker", () => {
     );
   });
 
+  it("o crítico fica na tela até alguém tocar; o comum some sozinho", async () => {
+    const harness = workerHarness();
+    let pending: Promise<void> = Promise.resolve();
+    const push = (payload: object) =>
+      harness.listeners.get("push")!({
+        data: { json: () => payload },
+        waitUntil: (value: Promise<void>) => { pending = value; },
+      });
+    push({ title: "Pedido iFood 3417 novo: aceite até 15:37", severity: "critical" });
+    await pending;
+    expect(harness.self.registration.showNotification).toHaveBeenLastCalledWith(
+      "Pedido iFood 3417 novo: aceite até 15:37",
+      expect.objectContaining({ requireInteraction: true, renotify: true }),
+    );
+    push({ title: "Relatório pronto", severity: "information" });
+    await pending;
+    expect(harness.self.registration.showNotification).toHaveBeenLastCalledWith(
+      "Relatório pronto",
+      expect.objectContaining({ requireInteraction: false, renotify: false }),
+    );
+  });
+
   it("mantém o transporte fora do cache e limita destinos ao mesmo origin", () => {
     expect(OPERATOR_PUSH_WORKER).toContain('credentials: "include"');
     expect(OPERATOR_PUSH_WORKER).toContain("url.origin === self.location.origin");
