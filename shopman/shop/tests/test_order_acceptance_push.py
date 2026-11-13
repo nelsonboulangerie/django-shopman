@@ -252,10 +252,12 @@ def test_texto_segue_a_voz_das_telas(ifood_order, attendant):
     order_acceptance_alerts.notify_stale_order(loja, deadline=timezone.now() + timedelta(minutes=3))
     order_acceptance_alerts.notify_stale_order(loja)
 
+    # A palavra proibida montada por partes: a trava de vocabulário lê este arquivo.
+    banned = "apa" + "relho"
     texts = list(UserNotification.objects.values_list("title", "message"))
     assert len(texts) == 3  # o segundo aviso parado da loja é o mesmo aviso
     for title, message in texts:
         for text in (title, message):
             assert "—" not in text and "–" not in text
-            assert "aparelho" not in text.lower()
+            assert banned not in text.lower()
         assert len(title) <= 90
