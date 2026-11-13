@@ -811,6 +811,15 @@ Write-back: `holds` (list de hold objects do backend)
 | `alert_at` | `string` (ISO) | idem | StaleNewOrderAlertHandler |
 | `deadline_at` | `string` (ISO) | `lifecycle._schedule_stale_alert_before_deadline` | StaleNewOrderAlertHandler: o aviso diz até quando aceitar e que, vencido, o pedido é cancelado e o pagamento devolvido, e grava o mesmo prazo em `OperatorAlert.respond_by` (o título da janela conta até a mesma hora). Só no `auto_cancel`; o `alert_at` fica a 1/3 do prazo do pedido e anda junto quando o prazo é reagendado |
 
+Além do `OperatorAlert` da tela, o handler cria o alerta pessoal
+`order_stale_awaiting_acceptance` (categoria `order`, severidade `critical`: Web Push
+com `Urgency: high`, que vibra e fica na tela até alguém tocar) para quem tem
+`shop.manage_orders`. No canal `manual` com `confirmation.external_sla_minutes` (iFood),
+o pedido novo já nasce com o alerta pessoal `order_new_awaiting_acceptance`, com o prazo
+de `data.ifood.confirm_by` no título; o lembrete de pedido parado o substitui. Os dois
+somem quando o pedido sai de `new` (`lifecycle.dispatch` → `order_acceptance_alerts.resolve`,
+e a leitura do sino reconcilia). Issue #2324.
+
 #### `stock.consume_made_to_order` e `stock.settle_made_to_order_cancellation`
 
 A baixa de insumo do item feito na hora (ADR-040). A primeira nasce em

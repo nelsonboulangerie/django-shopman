@@ -22,10 +22,13 @@ self.addEventListener("push", event => {
   const vibrate = Array.isArray(payload.vibrate)
     ? payload.vibrate.filter(value => Number.isFinite(value) && value >= 0 && value <= 2000).slice(0, 10)
     : undefined;
+  // O crítico (pedido do iFood esperando aceite) fica na tela até alguém tocar.
+  const critical = payload.severity === "critical";
   event.waitUntil(self.registration.showNotification(title, {
     body: typeof payload.body === "string" ? payload.body : "",
     tag,
-    renotify: payload.severity === "critical" || Boolean(vibrate && vibrate.length),
+    renotify: critical || Boolean(vibrate && vibrate.length),
+    requireInteraction: critical,
     vibrate: vibrate && vibrate.length ? vibrate : undefined,
     data: { action_url: shopmanSafeActionUrl(payload.action_url) },
   }));
