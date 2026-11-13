@@ -1246,7 +1246,7 @@ def _promise_copy(
             message = (
                 _paid_fulfillment_wait_message(data, copy=copy, wait_display=wait_display)
                 if payment_confirmed
-                else _waitlist_message(data, copy=copy, wait_display=wait_display)
+                else _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True)
             )
             return title, message
         if payment_confirmed:
@@ -1277,7 +1277,7 @@ def _promise_copy(
         if _is_fulfillment_wait(data):
             return (
                 copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"),
-                _waitlist_message(data, copy=copy, wait_display=wait_display),
+                _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True),
             )
         return (
             copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"),
@@ -1287,7 +1287,10 @@ def _promise_copy(
 
     if state == "payment_confirmed":
         if _is_fulfillment_wait(data):
-            message = _waitlist_message(data, copy=copy, wait_display=wait_display)
+            # O título já diz "Pagamento recebido"; a frase diz quem confirma.
+            message = _waitlist_message(
+                data, copy=copy, wait_display=wait_display, awaiting_store=status == "new",
+            )
             return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento recebido"), message
         message = (
             copy.message("TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW",
@@ -1426,7 +1429,20 @@ def _waitlist_message(
     *,
     copy: CopyCatalog,
     wait_display: str | None,
+    awaiting_store: bool = False,
 ) -> str:
+    # Encomenda que a loja ainda não aceitou não está "reservada": a Conta diz
+    # "Aguardando a loja" e o acompanhamento diz a mesma coisa (laudo 09/11).
+    if awaiting_store and data.fulfillment_wait_kind == "preorder":
+        if wait_display:
+            return copy.message(
+                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE",
+                "A loja confirma sua encomenda para {when} e avisa por aqui.",
+            ).replace("{when}", wait_display)
+        return copy.message(
+            "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_DATE",
+            "A loja confirma sua encomenda e avisa por aqui.",
+        )
     if wait_display:
         if data.fulfillment_wait_kind == "preorder":
             return copy.message(
@@ -1496,15 +1512,16 @@ def _paid_fulfillment_wait_message(
     copy: CopyCatalog,
     wait_display: str | None,
 ) -> str:
+    """Pago e a loja ainda não aceitou (``store_checking``/``new``)."""
     if data.fulfillment_wait_kind == "preorder":
         if wait_display:
             return copy.message(
                 "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID",
-                "Pagamento recebido. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
+                "Pagamento recebido. A loja confirma sua encomenda para {when} e avisa por aqui. Se não puder, devolvemos o valor.",
             ).replace("{when}", wait_display)
         return copy.message(
             "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE",
-            "Pagamento recebido. Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
+            "Pagamento recebido. A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor.",
         )
 
     if wait_display:

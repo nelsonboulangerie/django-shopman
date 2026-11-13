@@ -1,3 +1,12 @@
+## Compromisso
+
+<!-- O compromisso de dev que autoriza este PR. Se veio de conversa, rode
+     `make intake q="<a fala do dono>"` e cole o ID devolvido.
+     PR de manutenção sem compromisso: `Compromisso: nenhum` e diga o motivo.
+     O CI reprova PR novo sem esta linha. -->
+
+Compromisso: DEV-...
+
 ## O que muda
 
 <!-- Descreva resumidamente o que esta PR faz e por quê. -->

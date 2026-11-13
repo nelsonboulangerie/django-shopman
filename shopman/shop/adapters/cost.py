@@ -190,7 +190,6 @@ def work_order_cost_snapshot(work_order) -> dict:
 
     lines: list[dict] = []
     gaps: list[str] = []
-    total = Decimal(0)
     consumption = work_order.items.filter(kind=WorkOrderItem.Kind.CONSUMPTION).order_by("pk")
     for item in consumption:
         quantity = Decimal(item.quantity)
@@ -202,7 +201,6 @@ def work_order_cost_snapshot(work_order) -> dict:
             gaps.append(exc.reason)
         else:
             line_total = unit_cost * quantity
-            total += line_total
             line["unit_cost"] = str(unit_cost.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
             line["cost_q"] = _round_q(line_total)
         lines.append(line)
@@ -213,9 +211,15 @@ def work_order_cost_snapshot(work_order) -> dict:
         (Decimal(q) for q in work_order.items.filter(kind=WorkOrderItem.Kind.OUTPUT).values_list("quantity", flat=True)),
         Decimal(0),
     )
+    # O contrato (data-schemas, WorkOrder.meta.cost_snapshot): cada linha
+    # arredonda ao centavo, o total é a SOMA dessas linhas e o unitário sai do
+    # total gravado. Arredondar o total pela soma decimal deixava linhas de
+    # 1 + 1 centavo com total de 1.
     complete = not gaps
-    total_q = _round_q(total) if complete else None
-    unit_cost_q = _round_q(total / output_quantity) if complete and output_quantity > 0 else None
+    total_q = sum(line["cost_q"] for line in lines) if complete else None
+    unit_cost_q = (
+        _round_q(Decimal(total_q) / output_quantity) if total_q is not None and output_quantity > 0 else None
+    )
     return {
         "frozen_at": timezone.now().isoformat(),
         "total_q": total_q,

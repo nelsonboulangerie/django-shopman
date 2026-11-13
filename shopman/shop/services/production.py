@@ -1048,6 +1048,7 @@ def finish_work_order(
 
     _ensure_stock_ledger_closed(work_order)
     _ensure_order_links_closed(work_order)
+    _ensure_cost_frozen(work_order)
     return work_order.ref, total
 
 
@@ -1115,6 +1116,34 @@ def _ensure_order_links_closed(work_order) -> None:
     except Exception:
         logger.warning(
             "production.finish: vínculo de pedido não confirmado em %s (não-fatal)",
+            getattr(work_order, "ref", "?"),
+            exc_info=True,
+        )
+
+
+def _ensure_cost_frozen(work_order) -> None:
+    """Rede de segurança do custo congelado, irmã das duas acima (ADR-023 §3).
+
+    O receiver ``production_cost`` é blindado: um erro nele vai ao log e não
+    derruba a fornada. Sozinho, isso deixava a ordem SEM ``cost_snapshot`` para
+    sempre, porque o replay idempotente do finish não reemite
+    ``production_changed``. Aqui, no mesmo caminho guardado do finish (logo
+    após o ``.send()`` e também no replay), congelamos se ainda não houver:
+    ``freeze_work_order_cost`` trava a linha e não reescreve snapshot existente,
+    então no caminho feliz é uma consulta e nada mais.
+
+    No replay o custo é o do instante do replay (o primeiro congelamento que deu
+    certo), e o ``frozen_at`` diz quando foi. Se falhar de novo, grita no log
+    (ERROR, chega ao Sentry) e a fornada segue fechada: o B.I. mostra "Sem
+    custo" em vez de inventar um número, e o próximo replay tenta outra vez.
+    """
+    try:
+        from shopman.shop.handlers.production_cost import freeze_work_order_cost
+
+        freeze_work_order_cost(work_order)
+    except Exception:
+        logger.error(
+            "production.finish: custo congelado não gravado em %s",
             getattr(work_order, "ref", "?"),
             exc_info=True,
         )
