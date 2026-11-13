@@ -79,17 +79,17 @@ const hint = computed(() =>
   <!-- Na mesa, a coluna é um bloco só (dono, 13/11/2026, prévia `gestor-d`): fundo
        suave, cantos arredondados e o cabeçalho DENTRO dele, sem faixa nem linha. -->
   <section
-    class="flex min-w-0 flex-col gap-2"
+    class="flex min-w-0 flex-col"
     :class="
       phone
-        ? 'min-h-full flex-1'
-        : 'h-full min-h-0 w-full rounded-xl bg-elevated/60 px-2 pb-2'
+        ? 'min-h-full flex-1 gap-3'
+        : 'h-full min-h-0 w-full rounded-xl bg-elevated/60'
     "
     :data-zone="zone.key"
   >
     <header
       v-if="!phone && heading"
-      class="flex h-11 shrink-0 items-center px-1"
+      class="flex h-11 shrink-0 items-center px-3"
     >
       <OrderBoardHeading
         :zone="zone"
@@ -104,6 +104,7 @@ const hint = computed(() =>
 
     <NuxtEmpty
       v-if="!cards.length"
+      :class="phone ? undefined : 'mx-2 mb-2'"
       icon="i-lucide-circle-check"
       :title="zoneEmptyText(zone.key)"
     />
@@ -116,7 +117,7 @@ const hint = computed(() =>
          acima do rodapé (dono, 08/10/2026). -->
     <template v-else-if="wide">
       <div
-        class="grid min-h-0 flex-1 auto-rows-max items-start gap-3 overflow-y-auto -mx-2 -mt-2 px-2 pt-2 pb-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]"
+        class="grid min-h-0 flex-1 auto-rows-max items-start gap-2 overflow-y-auto px-2 pt-1 pb-2 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]"
         data-zone-cards
       >
         <template v-for="{ card, heading: part } in rows" :key="card.ref">
@@ -129,6 +130,7 @@ const hint = computed(() =>
         </h3>
         <OrderCard
           :card="card"
+          :compact="!phone"
           :busy="isBusy(card.ref)"
           :error="actionError(card.ref)"
           :selected="isSelected(card.ref)"
@@ -156,7 +158,8 @@ const hint = computed(() =>
 
     <div
       v-else
-      class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto -mx-2 -mt-2 px-2 pt-2 pb-3"
+      class="flex min-h-0 flex-1 flex-col overflow-y-auto"
+      :class="phone ? '-mx-2 -mt-2 gap-3 px-2 pt-2 pb-3' : 'gap-2 px-2 pt-1 pb-2'"
       data-zone-cards
     >
       <template v-for="{ card, heading: part } in rows" :key="card.ref">
@@ -176,6 +179,7 @@ const hint = computed(() =>
       >
         <OrderCard
           :card="card"
+          :compact="!phone"
           :swipe-reject="phone"
           :busy="isBusy(card.ref)"
           :error="actionError(card.ref)"

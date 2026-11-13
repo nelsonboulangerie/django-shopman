@@ -21,13 +21,17 @@ const emit = defineEmits<{
     <h2 class="font-semibold text-highlighted" :title="zone.subtitle">
       {{ zone.title }}
     </h2>
-    <OperatorCountChip :count="cards.length" />
+    <span
+      class="rounded-full bg-default px-2 op-micro font-semibold tnum text-highlighted"
+      data-board-count
+      >{{ cards.length }}</span
+    >
     <div class="ms-auto flex items-center gap-1">
       <!-- O gesto da coluna inteira (em Prontos, "Juntar entregas"), antes do recolher. -->
       <slot name="actions" />
       <NuxtButton
         v-if="canCollapse"
-        icon="i-lucide-panel-left-close"
+        icon="i-lucide-chevrons-left"
         color="neutral"
         variant="ghost"
         square

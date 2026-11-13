@@ -12,17 +12,24 @@ const emit = defineEmits<{ open: [] }>();
 </script>
 
 <template>
+  <!-- O mesmo fundo das colunas abertas (a tira é a coluna, fechada); o botão é ela
+       inteira, sem fundo próprio. -->
+  <div class="h-full w-11 shrink-0 rounded-xl bg-elevated/60">
   <NuxtButton
     color="neutral"
-    variant="soft"
-    class="relative h-full w-11 shrink-0 flex-col items-center justify-start gap-0 p-0 pb-3"
+    variant="ghost"
+    class="relative h-full w-full flex-col items-center justify-start gap-0 p-0 pb-3"
     :aria-label="`${strip.label} (atalho: ${shortcut})`"
     :title="strip.label"
     :data-board-strip="strip.key"
     @click="emit('open')"
   >
     <span class="grid h-11 w-full place-items-center">
-      <OperatorCountChip :count="strip.count" />
+      <span
+        class="rounded-full bg-default px-2 op-micro font-semibold tnum text-highlighted"
+        data-board-count
+        >{{ strip.count }}</span
+      >
     </span>
     <span
       v-if="strip.dot"
@@ -35,6 +42,7 @@ const emit = defineEmits<{ open: [] }>();
     >
       {{ strip.title }}
     </span>
-    <Icon name="i-lucide-panel-left-open" class="mt-auto size-4" />
+    <Icon name="i-lucide-chevrons-right" class="mt-auto size-4" />
   </NuxtButton>
+  </div>
 </template>

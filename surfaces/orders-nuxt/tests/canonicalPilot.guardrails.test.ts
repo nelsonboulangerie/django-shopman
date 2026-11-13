@@ -744,6 +744,10 @@ describe("Gestor canônico em Nuxt UI", () => {
       new URL("../app/components/OrderCard.vue", import.meta.url),
       "utf8",
     );
+    const cardActions = readFileSync(
+      new URL("../app/components/OrderCardActions.vue", import.meta.url),
+      "utf8",
+    );
     const feeds = readFileSync(
       new URL("../app/pages/feeds.vue", import.meta.url),
       "utf8",
@@ -790,8 +794,10 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(card).toContain("<template #header>");
     expect(card).toContain("<template #footer>");
     // 1/3 + 2/3 quando o rodapé tem largura para isso; abaixo, empilha legível.
-    expect(card).toContain("'@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
-    expect(card).toContain('class="@container flex items-end gap-2"');
+    // O rodapé de gestos é um componente só (cartão inteiro e compacto do Quadro).
+    expect(card).toContain("<OrderCardActions");
+    expect(cardActions).toContain("'@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
+    expect(cardActions).toContain('class="@container flex items-end gap-2"');
     // Cartão sem cabeçalho nem rodapé destacados (conjunto mínimo, regra do dono): o
     // título e as ações moram no corpo, sem a divisória dos slots oficiais. O
     // `OrderCard` (acima) é a exceção da Saída: o cartão do pedido tem cabeçalho.
