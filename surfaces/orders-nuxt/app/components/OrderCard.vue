@@ -39,7 +39,7 @@ import { COURIER_CALL_HASH, courierReminderLine } from "~/presentation/courier";
 import { kitchenChips } from "~/presentation/kitchen";
 import { cardCheckBadge } from "~/presentation/volumeCheck";
 import OrderCardActions from "./OrderCardActions.vue";
-import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import OrderCardNotices from "./OrderCardNotices.vue";
 
 // ``canOpen``: falso para quem só expede; o detalhe do pedido e o "Atender" são de quem
 // gerencia. ``selecting``: o modo de seleção em lote está ligado e o cartão mostra a
@@ -174,7 +174,7 @@ function pressEnd() {
 onBeforeUnmount(pressEnd);
 
 /** Um aviso do pedido, compacto: a pílula no cartão e o Alert inteiro no Popover. */
-interface CardNotice {
+export interface CardNotice {
   key: string;
   color: "error" | "warning" | "info";
   icon: string;
@@ -529,14 +529,14 @@ function nuxtIcon(icon: string): string {
       <NuxtLink
         v-if="canOpen"
         :to="`/${card.ref}`"
-        class="shrink-0 text-2xl font-bold leading-none text-highlighted hover:underline"
+        class="shrink-0 text-xl font-bold leading-none text-highlighted hover:underline"
         :class="handoff ? 'line-through decoration-success/60' : ''"
         :aria-label="`Abrir pedido ${card.ref}`"
         >{{ code.code }}</NuxtLink
       >
       <span
         v-else
-        class="shrink-0 text-2xl font-bold leading-none text-highlighted"
+        class="shrink-0 text-xl font-bold leading-none text-highlighted"
         data-card-code
         >{{ code.code }}</span
       >
@@ -573,33 +573,7 @@ function nuxtIcon(icon: string): string {
       {{ compactDetail }}
     </p>
     <!-- as exceções, só quando existem -->
-    <div v-if="notices.length" class="flex flex-wrap gap-1.5" data-card-notices>
-      <NuxtPopover
-        v-for="notice in notices"
-        :key="notice.key"
-        :content="{ side: 'bottom', align: 'start' }"
-      >
-        <NuxtButton
-          :color="notice.color"
-          variant="soft"
-          :icon="notice.icon"
-          :label="notice.label"
-          :data-card-notice="notice.key"
-        />
-        <template #content>
-          <NuxtAlert
-            class="max-w-80"
-            :color="notice.color"
-            variant="subtle"
-            :icon="notice.icon"
-            :title="notice.title"
-            :description="notice.description"
-            :actions="alertActions(notice.color, notice.actions ?? [])"
-            v-bind="notice.attrs"
-          />
-        </template>
-      </NuxtPopover>
-    </div>
+    <OrderCardNotices :notices="notices" />
     <!-- O "pronto sozinho" com Desfazer mora na faixa "O sistema fez", abaixo do
          cabeçalho do Quadro; aqui não se repete. -->
     <div
@@ -999,37 +973,7 @@ function nuxtIcon(icon: string): string {
       </template>
 
       <!-- avisos: a pílula com cor e nome; o texto e o gesto no Popover -->
-      <div
-        v-if="notices.length"
-        class="flex flex-wrap gap-1.5"
-        data-card-notices
-      >
-        <NuxtPopover
-          v-for="notice in notices"
-          :key="notice.key"
-          :content="{ side: 'bottom', align: 'start' }"
-        >
-          <NuxtButton
-            :color="notice.color"
-            variant="soft"
-            :icon="notice.icon"
-            :label="notice.label"
-            :data-card-notice="notice.key"
-          />
-          <template #content>
-            <NuxtAlert
-              class="max-w-80"
-              :color="notice.color"
-              variant="subtle"
-              :icon="notice.icon"
-              :title="notice.title"
-              :description="notice.description"
-              :actions="alertActions(notice.color, notice.actions ?? [])"
-              v-bind="notice.attrs"
-            />
-          </template>
-        </NuxtPopover>
-      </div>
+      <OrderCardNotices :notices="notices" />
       <p
         v-if="card.ifood_schedule_label"
         class="op-micro text-muted-foreground"

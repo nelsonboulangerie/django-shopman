@@ -1653,7 +1653,7 @@ function compactClear() {
           </NuxtDropdownMenu>
 
           <!-- visão: Fila · Quadro · Tabela, um controle só (dono, 13/11/2026). A Fila
-               some abaixo do lg (não cabe); o aparelho lembra a escolha. Só o nome, sem
+               some abaixo do lg (não cabe); o dispositivo lembra a escolha. Só o nome, sem
                ícone: com os três ícones, o selo de atualização não cabia na linha a
                1280 px. -->
           <NuxtTabs

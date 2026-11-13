@@ -34,7 +34,7 @@ const total = computed(() => props.count);
         :rel="link.rel"
         external
         color="neutral"
-        variant="link"
+        variant="ghost"
         trailing-icon="i-lucide-arrow-up-right"
         label="Abrir Encomendas"
         data-preorders-open
