@@ -31,7 +31,7 @@
 // Quem põe o selo dentro de outro invólucro dá `min-w-0` a ele, ou o invólucro
 // segura a largura do completo e o selo não encolhe. Atributos de fora (`class`,
 // `data-*`) vão para o selo, não para o invólucro.
-import { computed, useAttrs } from "vue";
+import { computed, onMounted, ref, useAttrs } from "vue";
 
 import { labelWidthEm } from "../presentation/actionLabel";
 
@@ -65,14 +65,22 @@ const TONE_COLOR = {
 
 const badgeColor = computed(() => TONE_COLOR[props.tone]);
 /** Ponto só onde o estado é uma leitura no tempo (ao vivo, atrasada) ou a falta dela. */
-const dotted = computed(() => props.tone !== "calm" || Boolean(props.time));
+// A hora do calmo só depois de montar: o servidor formata no fuso dele e o navegador no
+// da loja, e a hora divergente quebra a hidratação (o servidor da CI roda em UTC). No
+// HTML do servidor o calmo segue com a cadência por extenso, como antes.
+const mounted = ref(false);
+onMounted(() => {
+  mounted.value = true;
+});
+const calmTime = computed(() => (mounted.value ? props.time : ""));
+const dotted = computed(() => props.tone !== "calm" || Boolean(calmTime.value));
 
 const display = computed(() => {
   if (props.tone === "live") return props.time || props.label;
   if (props.tone === "late")
     return props.time ? `Última leitura às ${props.time}` : props.label;
   if (props.tone === "off") return OFF_LABEL;
-  return props.time || props.label;
+  return calmTime.value || props.label;
 });
 
 // A anatomia do `NuxtBadge` `md` (tema oficial do Nuxt UI 4: `text-xs px-2 gap-1`,
@@ -84,7 +92,7 @@ const ICON_REM = 1;
 
 /** O curto só existe no calmo: nos outros tons o texto já é a coisa (a hora, "Sem conexão"). */
 const short = computed(() => {
-  const value = props.tone === "calm" && !props.time ? props.shortLabel.trim() : "";
+  const value = props.tone === "calm" && !calmTime.value ? props.shortLabel.trim() : "";
   return value && value !== display.value ? value : "";
 });
 
