@@ -16997,7 +16997,10 @@
           "path": "shopman/shop/services/waitlist.py",
           "symbols": [
             "queue_for",
-            "_orders_from_holds"
+            "_orders_from_holds",
+            "is_preorder",
+            "_is_paid",
+            "is_outside_the_queue"
           ]
         }
       ],
