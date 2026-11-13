@@ -1,16 +1,13 @@
 // Presentation — as seções do Gestor. Puro: quem decide se o operador PODE ver Clientes
 // ou Postos é o servidor; aqui só se monta a lista a partir da resposta.
 //
-// Dois andares (SUITE-UX §3, prévia v4 `gestor-fila4.html`, UX-KIT-V2): a OPERAÇÃO no
-// rail (Pedidos, com as três colunas, e Saída, o posto do passe) e um item só no pé,
-// **Ajustes**, que abre a página com Histórico, Catálogo, Clientes, Canais e Postos.
-// Ajustes não divide barra com a operação; o ponto avisa pendência (canal desligado)
-// sem pesar na fila. Toda seção continua a um toque de Ajustes.
+// Dois andares (SUITE-UX §3, D de 13/11/2026): a OPERAÇÃO no rail (Pedidos, o quadro
+// com Fila · Quadro · Tabela, e Canais, quem cuida do catálogo) e um item só no pé,
+// **Ajustes**, que abre a página com Histórico, Catálogo, Clientes e Postos. O ponto
+// de canal desligado mora em Canais (ou em Ajustes, para quem não vê Canais).
 //
-// Barra inferior do celular (regra única do kit, `quickBarLayout`): as três seções
-// declaram `quick`, e é o que a barra já mostrava. Sem seção de fora, não há "Mais": o
-// ☰ abre a gaveta com o menu completo. Quem só expede tem duas seções ao todo, e a
-// barra mostra as duas (o mínimo de 3 vale para app com 3 seções ou mais).
+// Barra inferior do celular (regra única do kit, `quickBarLayout`): as seções do chão
+// (`GESTOR_FLOOR_SECTIONS`) vão para baixo; o resto, para a gaveta.
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
 export interface GestorSectionsInput {
@@ -37,12 +34,10 @@ export interface GestorSectionsInput {
   catalogOnly?: boolean;
   // Contagens do quadro para os selos do rail (vazias fora do quadro).
   intakeCount?: number;
-  exitCount?: number;
 }
 
-/** `?columns=all` / `?columns=expedition`: o quadro abre com as três colunas ou como posto
- *  Saída (o mesmo parâmetro que o índice de estações da Cozinha usa). */
-export const ORDERS_ALL_COLUMNS = "/?columns=all";
+/** `?columns=expedition`: o quadro abre como balcão de saída (o mesmo parâmetro que o
+ *  índice de estações da Cozinha usa). */
 export const ORDERS_EXIT_POST = "/?columns=expedition";
 
 /** As rotas que moram em Ajustes: estar numa delas acende o item Ajustes. */
@@ -62,10 +57,10 @@ function badge(count: number | undefined) {
 
 export function gestorSections({
   channelsAttention,
+  canManageCatalog = false,
   expeditesOnly = false,
   catalogOnly = false,
   intakeCount,
-  exitCount,
 }: GestorSectionsInput): OperatorSection[] {
   if (catalogOnly) {
     return [
@@ -89,37 +84,45 @@ export function gestorSections({
       },
     ];
   }
+  // D (dono, 13/11/2026): o balcão de saída não é seção, é o mesmo quadro com Entrada
+  // e Preparo recolhidas, e o posto lembra. "Pedidos" abre o quadro como o posto o
+  // deixou; quem só expede entra direto na Saída. Canais sobe para o rail: desligar o
+  // iFood no meio do movimento é operação, não ajuste, e o ponto de atenção mora nele.
   const operation: OperatorSection[] = [
     {
       key: "orders",
       label: "Pedidos",
       icon: "lucide:clipboard-list",
-      to: ORDERS_ALL_COLUMNS,
+      to: expeditesOnly ? ORDERS_EXIT_POST : "/",
       group: "Operação",
       quick: true,
       ...badge(intakeCount),
-    },
-    // O posto do passe: o mesmo quadro com Entrada e Preparo recolhidas (SUITE-UX §16).
-    {
-      key: "exit",
-      label: "Saída",
-      icon: "lucide:package-check",
-      to: ORDERS_EXIT_POST,
-      group: "Operação",
-      quick: true,
-      ...badge(exitCount),
     },
   ];
   if (expeditesOnly) return operation;
   return [
     ...operation,
+    ...(canManageCatalog
+      ? [
+          {
+            key: "feeds",
+            label: "Canais",
+            icon: "lucide:monitor-play",
+            to: "/feeds",
+            match: ["/channels"],
+            attention: channelsAttention || undefined,
+            group: "Operação",
+          },
+        ]
+      : []),
     {
       key: "settings",
       label: "Ajustes",
       icon: "lucide:settings-2",
       to: "/settings",
-      match: SETTINGS_ROUTES,
-      attention: channelsAttention || undefined,
+      match: SETTINGS_ROUTES.filter((route) => !(canManageCatalog && (route === "/feeds" || route === "/channels"))),
+      // Sem Canais no rail (quem não cuida do catálogo), o aviso de canal fica aqui.
+      attention: canManageCatalog ? undefined : channelsAttention || undefined,
       foot: true,
       quick: true,
     },
@@ -202,19 +205,7 @@ export function gestorSettingsSections({
           },
         ]
       : []),
-    ...(canManageCatalog
-      ? [
-          {
-            key: "feeds",
-            label: "Canais",
-            icon: "lucide:monitor-play",
-            to: "/feeds",
-            match: ["/channels"],
-            attention: channelsAttention || undefined,
-            description: "Loja online, iFood, WhatsApp e o catálogo de cada canal",
-          },
-        ]
-      : []),
+    // Canais mora no rail (operação), não aqui.
     // Onde cada dispositivo fica (UX-POSTO1).
     ...(canManageWorkstations
       ? [
@@ -268,12 +259,12 @@ export function deniedSettingsSection(
 }
 
 /** As seções do chão: andando pela loja (dono, 31/10/2026). */
-export const GESTOR_FLOOR_SECTIONS: readonly string[] = ["orders", "exit", "checklists"];
+export const GESTOR_FLOOR_SECTIONS: readonly string[] = ["orders", "checklists"];
 
 /**
  * O trocador (modelo de navegação, 31/10/2026): a operação e o que mora em Ajustes, cada
  * seção com a sua forma, sem o item Ajustes (o trocador já mostra o que mora nele).
- * Chão: Pedidos, Saída e Rotinas, e são elas que vão para a barra de baixo no celular,
+ * Chão: Pedidos e Rotinas, e são elas que vão para a barra de baixo no celular,
  * ao alcance do polegar (`quick`; dono, 03/11/2026: "seção vai para baixo"). No topo da
  * tela fica só a subdivisão da seção (as colunas do quadro). Escritório: o resto.
  */

@@ -26,7 +26,9 @@ const emit = defineEmits<{
       {{ zone.subtitle }}
     </span>
 
-    <div class="ms-auto flex items-center">
+    <div class="ms-auto flex items-center gap-1">
+      <!-- O gesto da coluna inteira (na Saída, "Juntar entregas"), antes do recolher. -->
+      <slot name="actions" />
       <NuxtButton
         v-if="canCollapse"
         icon="i-lucide-panel-left-close"

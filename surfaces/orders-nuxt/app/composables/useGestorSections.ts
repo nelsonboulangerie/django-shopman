@@ -123,11 +123,9 @@ export function useGestorSections() {
     expeditesOnly: expeditesOnly.value,
     catalogOnly: catalogOnly.value,
     intakeCount: rail.value.onBoard ? rail.value.intake : offBoard.value.intake,
-    exitCount: rail.value.onBoard ? rail.value.exit : offBoard.value.exit,
   }));
   const sections = computed(() => gestorSections(input.value));
   const settings = computed(() => gestorSettingsSections(input.value));
-  // No quadro, quem diz se a tela é "Pedidos" ou "Saída" é a arrumação do posto.
   const route = useRoute();
   const current = computed(() => {
     if (catalogOnly.value) {
@@ -135,7 +133,7 @@ export function useGestorSections() {
         ? "feeds"
         : "catalog";
     }
-    return route.path === "/" ? (rail.value.exitPost ? "exit" : "orders") : undefined;
+    return route.path === "/" ? "orders" : undefined;
   });
   // As quatro perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.
   const ready = computed(() =>
@@ -154,7 +152,9 @@ export function useGestorSections() {
     ),
   );
   const denied = computed(() =>
-    accessReady.value ? deniedSettingsSection(route.path, settings.value) : "",
+    accessReady.value
+      ? deniedSettingsSection(route.path, [...sections.value, ...settings.value])
+      : "",
   );
   return { sections, settings, current, ready, denied };
 }

@@ -77,4 +77,5 @@ que ele criou. Solicitação que não virou trabalho também fica `ABERTO`, com
 | DEV-2026-014 | compromisso | chat 2026-11-12 | Webhook do app de produção do iFood em standby (decisão do dono 12/11: só polling); reavaliar depois de dias estável | Engenharia · iFood | 2026-11-12 | 2026-11-26 | dias estáveis só com polling | ABERTO | - |
 | DEV-2026-015 | achado | logs 2026-11-12 | Itens do cardápio iFood sem de-para com SKU do catálogo (alertas stock_unknown_sku no 1º pedido real) | Engenharia · iFood | 2026-11-12 | 2026-11-19 | - | ABERTO | - |
 | DEV-2026-016 | compromisso | chat 2026-11-12 | Desligar o webhook do app de teste NB Teste (C), que passou a receber 401 com o segredo de produção | Engenharia · iFood | 2026-11-12 | 2026-11-19 | - | FEITO | portal iFood 12/11: webhook do NB Teste (C) desligado, 'Suas alterações foram salvas' |
+| DEV-2026-017 | solicitacao | chat | O mais grave que vejo ali é que a coluna quando colapsada está mal diagramada.. Não mereceria um menu lateral Canais? Você contemplou a questão de Juntar entregas? Pode fazer! | Engenharia | 2026-11-13 | 2026-11-20 | - | ABERTO | - |
 <!-- commitments:end -->

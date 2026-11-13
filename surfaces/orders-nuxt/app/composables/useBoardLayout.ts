@@ -28,6 +28,9 @@ export const BOARD_ZONE_KEYS = ["intake", "prep", "expedition"] as const;
 /** `?columns=expedition`: abre o quadro já como posto de saída (o índice de estações
  *  da Cozinha manda a estação de Saída para cá; ver `kds-nuxt/app/presentation/exitStation.ts`). */
 export const BOARD_COLUMNS_QUERY = "columns";
+/** O Preparo é o espelho da Cozinha (dono, 13/11/2026): o trabalho dele é do KDS, e o
+ *  Gestor o abre quando precisa interferir. Quem nunca arrumou o posto o vê recolhido. */
+export const BOARD_CLOSED_BY_DEFAULT = ["prep"] as const;
 export const BOARD_LAYOUT_PATH = "/api/v1/backstage/orders/board-layout/";
 /** Espera depois do último gesto antes de gravar (arrastar e apertar 1/2/3 em sequência). */
 export const BOARD_LAYOUT_SAVE_DELAY_MS = 600;
@@ -47,7 +50,7 @@ interface ResizeStart {
 
 export function useBoardLayout() {
   const keys = BOARD_ZONE_KEYS as readonly string[];
-  const layout = ref<QueueColumnLayout>(defaultQueueLayout(keys));
+  const layout = ref<QueueColumnLayout>(defaultQueueLayout(keys, BOARD_CLOSED_BY_DEFAULT));
   const station = ref("");
   const saveFailed = ref(false);
   let touched = false;
@@ -60,7 +63,7 @@ export function useBoardLayout() {
       station.value = String(response?.station || "");
       // O operador mexeu antes da resposta chegar: vale o gesto, e ele é que vai ao posto.
       if (touched) scheduleSave();
-      else layout.value = normalizeQueueLayout(keys, response?.columns);
+      else layout.value = normalizeQueueLayout(keys, response?.columns, BOARD_CLOSED_BY_DEFAULT);
     } catch {
       // silêncio-deliberado: sem leitura, a tela fica com as três colunas (o padrão).
     }

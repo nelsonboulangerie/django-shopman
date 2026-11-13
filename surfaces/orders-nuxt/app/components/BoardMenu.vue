@@ -125,17 +125,17 @@ const items = computed(() => {
         ...(props.queueAvailable
           ? [
               {
-                label: "Grade",
+                label: "Fila",
                 icon:
                   props.viewMode === "queue"
                     ? "i-lucide-check"
-                    : "i-lucide-layout-grid",
+                    : "i-lucide-list-ordered",
                 onSelect: () => emit("view", "queue"),
               },
             ]
           : []),
         {
-          label: "Colunas",
+          label: "Quadro",
           icon:
             props.viewMode === "board"
               ? "i-lucide-check"
@@ -143,8 +143,8 @@ const items = computed(() => {
           onSelect: () => emit("view", "board"),
         },
         {
-          label: "Lista",
-          icon: props.viewMode === "table" ? "i-lucide-check" : "i-lucide-list",
+          label: "Tabela",
+          icon: props.viewMode === "table" ? "i-lucide-check" : "i-lucide-table",
           onSelect: () => emit("view", "table"),
         },
       ]

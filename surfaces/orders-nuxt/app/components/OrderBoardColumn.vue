@@ -82,7 +82,9 @@ const hint = computed(() =>
         :can-collapse="canCollapse"
         :shortcut="shortcut"
         @collapse="emit('collapse')"
-      />
+      >
+        <template #actions><slot name="heading-actions" /></template>
+      </OrderBoardHeading>
     </OperatorToolbar>
 
     <NuxtEmpty
