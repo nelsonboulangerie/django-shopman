@@ -12608,6 +12608,7 @@
           "symbols": [
             "collects_at_handoff",
             "_counter_tender",
+            "_fulfill_on_hand_over",
             "counter_hand_over_block",
             "hand_over_at_counter",
             "_mark_ready_at_counter",
