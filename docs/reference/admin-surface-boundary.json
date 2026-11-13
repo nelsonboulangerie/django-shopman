@@ -71,7 +71,7 @@
       "admin_fit": "integration",
       "purpose": "Configurar loja, integrações, aparência e capacidades globais.",
       "models": [
-        "shop.pushsubscription", "shop.shop", "shop.shopappearance", "shop.shopintegrations",
+        "shop.aiconnection", "shop.pushsubscription", "shop.shop", "shop.shopappearance", "shop.shopintegrations",
         "shop.shoployalty", "shop.shopmenu", "shop.shopoperation", "shop.shopordering",
         "shop.shoppos", "shop.shopproduction", "shop.shoppurchase", "shop.shopsearch"
       ]

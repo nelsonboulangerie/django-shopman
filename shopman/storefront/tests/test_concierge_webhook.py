@@ -14,6 +14,7 @@ from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import service, webhook
 from shopman.storefront.concierge.contracts import InboundEvent
 
@@ -56,7 +57,7 @@ CONFIG = {
 @pytest.fixture(autouse=True)
 def configured(settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = deepcopy(CONFIG)
-    settings.AI_ASSIST_API_KEY = "fake"
+    configure_ai("fake")
     monkeypatch.setattr(webhook.timezone, "now", lambda: NOW)
     cache.clear()
     yield
@@ -340,7 +341,7 @@ def test_deliberate_standby_does_not_raise_an_error_per_message(url, intake, set
 )
 def test_misconfiguration_still_raises_an_error(url, intake, settings, caplog, override, api_key, reason):
     settings.SHOPMAN_CONCIERGE = {**CONFIG, **override}
-    settings.AI_ASSIST_API_KEY = api_key
+    configure_ai(api_key)
     response, errors = _webhook_errors(url, caplog)
     assert response.json() == {"status": "disabled", "reason": reason}
     assert len(errors) == 1

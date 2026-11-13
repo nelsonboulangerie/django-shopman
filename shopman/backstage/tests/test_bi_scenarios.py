@@ -15,13 +15,13 @@ from datetime import timedelta
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
-from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from shopman.backstage.bi import scenarios
 from shopman.backstage.models import BIScenarioReport, DayClosing, HistoricalSale
 from shopman.backstage.tests.support import historical_batch
+from shopman.shop.tests.ai_support import configure_ai
 
 GOOD = json.dumps({
     "scenarios": [
@@ -88,12 +88,12 @@ def test_prompt_asks_for_strict_json_and_proposals_only():
 
 
 @pytest.mark.django_db
-@override_settings(AI_ASSIST_API_KEY="test-key", AI_ASSIST_MODEL="claude-test")
 def test_generate_records_a_versioned_report(history, viewer, monkeypatch):
+    configure_ai("test-key", model="claude-test")
     seen = {}
 
-    def fake_suggest(prompt, *, max_tokens, voice):
-        seen["prompt"], seen["voice"] = prompt, voice
+    def fake_suggest(prompt, *, max_tokens, voice, purpose):
+        seen["prompt"], seen["voice"], seen["purpose"] = prompt, voice, purpose
         return "```json\n" + GOOD + "\n```"  # cerca de código tolerada
 
     monkeypatch.setattr("shopman.shop.services.copy_assist.suggest", fake_suggest)
@@ -103,6 +103,7 @@ def test_generate_records_a_versioned_report(history, viewer, monkeypatch):
     assert report.model == "claude-test" and report.requested_by == viewer
     assert len(report.inputs_hash) == 64 and report.inputs["focus"] == "sales"
     assert seen["voice"] == scenarios.ANALYST_VOICE  # a voz do analista, não a da marca
+    assert seen["purpose"] == "scenarios"
     assert '"scenarios"' in seen["prompt"]
     # A mesma pergunta, o mesmo hash: duas rodadas iguais são reproduzíveis.
     again = scenarios.generate(focus="sales", requested_by=viewer)
@@ -110,8 +111,8 @@ def test_generate_records_a_versioned_report(history, viewer, monkeypatch):
 
 
 @pytest.mark.django_db
-@override_settings(AI_ASSIST_API_KEY="test-key")
 def test_off_contract_answer_is_a_failed_report_never_an_invented_scenario(history, monkeypatch):
+    configure_ai("test-key")
     monkeypatch.setattr("shopman.shop.services.copy_assist.suggest", lambda *a, **k: "Acho que vai vender bem.")
     report = scenarios.generate(focus="production")
     assert report.status == BIScenarioReport.Status.FAILED
@@ -132,8 +133,8 @@ def test_off_contract_answer_is_a_failed_report_never_an_invented_scenario(histo
 
 
 @pytest.mark.django_db
-@override_settings(AI_ASSIST_API_KEY="")
 def test_without_credential_generation_refuses_before_touching_anything(history):
+    configure_ai("")
     with pytest.raises(scenarios.ScenariosNotConfigured):
         scenarios.generate(focus="sales")
     assert BIScenarioReport.objects.count() == 0
@@ -143,8 +144,8 @@ def test_without_credential_generation_refuses_before_touching_anything(history)
 
 
 @pytest.mark.django_db
-@override_settings(AI_ASSIST_API_KEY="")
 def test_api_lists_and_declares_configuration(client, viewer, history):
+    configure_ai("")
     client.force_login(viewer)
     page = client.get(reverse("api-backstage-bi-scenarios")).json()["bi"]
     assert page["configured"] is False
@@ -153,8 +154,8 @@ def test_api_lists_and_declares_configuration(client, viewer, history):
 
 
 @pytest.mark.django_db
-@override_settings(AI_ASSIST_API_KEY="test-key")
 def test_api_generates_and_returns_the_report(client, viewer, history, monkeypatch):
+    configure_ai("test-key")
     monkeypatch.setattr("shopman.shop.services.copy_assist.suggest", lambda *a, **k: GOOD)
     client.force_login(viewer)
     created = client.post(reverse("api-backstage-bi-scenarios"), {"focus": "production"})

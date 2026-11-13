@@ -60,6 +60,7 @@ As guardas das cláusulas pétreas (C2, C3, C5, C6, C7, C10, C11 e ADR-025) são
 | Mapa semântico dos pacotes + referências da Constituição | check_semantic_docs.py | make canonical-docs |
 | Versão legal arquivada é imutável | check_legal_archive.py | make docs-governance |
 | Docs/rotas/probes do Marketing não derivam | check_marketing_docs.py | make marketing-docs |
+| Pedido/adiamento tem ID, dono, prazo e prova | check_commitments.py | make commitments |
 | Este mapa é completo e cita toda guarda que existe | check_guard_map.py | make constitution-guards |
 
 ## 6. Superfícies Nuxt (registry, versão, operador, copy)
