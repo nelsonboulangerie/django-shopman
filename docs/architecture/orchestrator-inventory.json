@@ -8503,6 +8503,28 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/services/closed_day_orders.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "OPEN_STATUSES",
+            "alert_orders_on_closed_day",
+            "open_orders_committed_between"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/channel_switch.py",
       "touchpoints": [
         "service"
