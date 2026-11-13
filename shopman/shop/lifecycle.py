@@ -1012,28 +1012,95 @@ def _stock_fulfill_allowed(order, config: ChannelConfig) -> bool:
 
 
 def _physical_work_deferred(order) -> bool:
-    """True quando o pedido é para data FUTURA (encomenda): KDS e baixa esperam o dia."""
+    """True enquanto a encomenda não chegou à hora de ir para a Cozinha.
+
+    Data FUTURA espera o dia. NO dia, a encomenda (``is_preorder`` gravado no
+    commit, ou despertador vivo) espera ``preorder_activation_at``: hora
+    combinada − preparo − antecedência (decisão do dono, 09/11/2026). Pedido do
+    dia sem despertador vai para a Cozinha no aceite, como sempre. Depois que
+    a Cozinha recebeu (``kitchen_released_at``), nada mais espera.
+    """
     from shopman.shop.services.order_helpers import get_commitment_date
 
     if ifood_schedule.is_scheduled(order):
         return not ifood_schedule.is_due(order)
     target = get_commitment_date(order)
-    return target is not None and target > timezone.localdate()
+    if target is None:
+        return False
+    today = timezone.localdate()
+    if target != today:
+        return target > today
+    data = order.data or {}
+    if data.get(KITCHEN_RELEASED_AT_KEY):
+        return False
+    if not (data.get("is_preorder") or _has_live_preorder_alarm(order)):
+        return False
+    available_at, _ = preorder_activation_at(order)
+    return available_at is not None and available_at > timezone.now()
+
+
+#: ``Order.data`` — ISO datetime em que a encomenda saiu da espera e entrou no
+#: fluxo do dia: tickets na Cozinha (se houver item de cozinha) e baixa. O
+#: despertador tocou, ou alguém a liberou antes (``release_preorder_now``).
+#: Base do tempo corrido desde a chegada à Cozinha no B.I.
+KITCHEN_RELEASED_AT_KEY = "kitchen_released_at"
+
+
+def _has_live_preorder_alarm(order) -> bool:
+    from shopman.shop.directives import PREORDER_ACTIVATE
+
+    ref = getattr(order, "ref", None)
+    if not ref:
+        return False
+    return Directive.objects.filter(
+        topic=PREORDER_ACTIVATE,
+        dedupe_key=f"preorder.activate:{ref}",
+        status__in=("queued", "running"),
+    ).exists()
+
+
+def kitchen_release_at(order, target):
+    """A hora em que a encomenda do dia ``target`` chega à Cozinha.
+
+    Com hora combinada: ``hora − preparo − antecedência``
+    (``preorder_kitchen_policy``), nunca antes de 00:05 do dia. Sem hora
+    combinada: a abertura da loja no dia; sem expediente declarado, 00:05.
+    """
+    from datetime import datetime
+    from datetime import time as time_type
+
+    from shopman.shop.policies.preorder_kitchen_policy import resolve_preorder_kitchen_policy
+    from shopman.shop.services import business_calendar
+    from shopman.shop.services.fulfillment_window import promised_at
+
+    floor = timezone.make_aware(datetime.combine(target, time_type(0, 5)))
+    promised = promised_at(order)
+    if promised is not None and timezone.localtime(promised).date() == target:
+        policy = resolve_preorder_kitchen_policy()
+        skus = list(order.items.values_list("sku", flat=True)) if order.pk else []
+        minutes = policy.prep_minutes_for(skus) + policy.lead_minutes
+        return max(floor, promised - timedelta(minutes=minutes))
+    try:
+        hours = business_calendar.selling_hours_for(target)
+    except Exception:
+        logger.warning("lifecycle.kitchen_release_at: calendar unreadable for %s", target, exc_info=True)
+        hours = None
+    if hours is not None:
+        return max(floor, timezone.make_aware(datetime.combine(target, hours[0])))
+    return floor
 
 
 def preorder_activation_at(order):
     """Quando o despertador da encomenda deve tocar: ``(available_at, data)``.
 
-    Madrugada (00:05) da data combinada; iFood agendado toca no início do preparo
-    que o próprio iFood informa. ``(None, None)`` quando não há data (ou o
+    No dia combinado, a hora em que o card chega à Cozinha
+    (:func:`kitchen_release_at`); iFood agendado toca no início do preparo que
+    o próprio iFood informa. ``(None, None)`` quando não há data (ou o
     agendamento do iFood é ilegível — quem agenda decide o que fazer com isso).
     Uma régua só para quem cria (``_schedule_preorder_activation``), quem move
     (``services.reschedule``) e quem re-enfileira o toque cedo demais
     (``PreorderActivateHandler``).
     """
-    from datetime import datetime
-    from datetime import time as time_type
-
     from shopman.shop.services.order_helpers import get_commitment_date
 
     if ifood_schedule.is_scheduled(order):
@@ -1044,15 +1111,15 @@ def preorder_activation_at(order):
     target = get_commitment_date(order)
     if target is None:
         return None, None
-    return timezone.make_aware(datetime.combine(target, time_type(0, 5))), target
+    return kitchen_release_at(order, target), target
 
 
 def _schedule_preorder_activation(order) -> None:
-    """Agenda o despertador da encomenda: directive na meia-noite da data.
+    """Agenda o despertador da encomenda: directive na hora de ir para a Cozinha.
 
     Dedupe por pedido — confirmado e pago agendam o mesmo despertador uma vez.
-    O worker de directives (``process_directives``) entrega na manhã da data;
-    o handler dispara KDS + baixa pelo caminho normal.
+    O worker de directives (``process_directives``) entrega na hora de
+    ``preorder_activation_at``; o handler dispara KDS + baixa pelo caminho normal.
     """
     from shopman.shop.directives import PREORDER_ACTIVATE, create_deduped
 
@@ -1079,28 +1146,33 @@ def _schedule_preorder_activation(order) -> None:
     )
 
 
-def activate_preorder(order) -> None:
-    """Dispara o trabalho físico adiado de uma encomenda NA data dela.
+def activate_preorder(order, *, early: bool = False) -> None:
+    """Dispara o trabalho físico adiado de uma encomenda NA hora dela.
 
     Chamado pelo handler da directive ``preorder.activate``: cria os tickets
-    de KDS, baixa o estoque (se o pagamento permite) e marca PREPARING —
-    exatamente o que ``_on_accepted`` teria feito se a data fosse hoje.
-    A baixa tolera holds ainda não materializados (fornada da manhã): o
-    receiver de ``holds_materialized`` completa quando o pão existir.
+    de KDS e baixa o estoque (se o pagamento permite). NÃO marca PREPARING, em
+    canal nenhum (decisão do dono, 09/11/2026): chegar à Cozinha não é "Em
+    preparo", o pedido fica Aceito até o "Iniciar" do posto (ou o atalho do
+    Gestor, que é o mesmo ato). A baixa tolera holds ainda não materializados
+    (fornada da manhã): o receiver de ``holds_materialized`` completa quando o
+    pão existir.
     """
     if order.status not in (Order.Status.ACCEPTED, Order.Status.PREPARING):
         logger.info(
             "lifecycle.activate_preorder: skip order=%s status=%s", order.ref, order.status
         )
         return
-    if _physical_work_deferred(order):
-        # Antes do dia nada dispara. Quem garante que o despertador toque de novo
-        # na data certa é o ``PreorderActivateHandler``: ele confere a data antes
-        # de chamar esta função e re-enfileira a PRÓPRIA directive (uma só, o
-        # dedupe do Core recusaria uma segunda enquanto esta está viva). Chegar
-        # aqui cedo por outro caminho (``holds_materialized``) não perde nada: o
-        # despertador daquele pedido continua na fila.
-        logger.warning("lifecycle.activate_preorder: too early order=%s", order.ref)
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    if _physical_work_deferred(order) and not (early and get_commitment_date(order) == timezone.localdate()):
+        # Antes da hora nada dispara (``early`` antecipa só a HORA, no dia; outra
+        # data segue esperando). Quem garante que o despertador toque de novo na
+        # hora certa é o ``PreorderActivateHandler``: ele confere antes de chamar
+        # esta função e re-enfileira a PRÓPRIA directive (uma só, o dedupe do
+        # Core recusaria uma segunda enquanto esta está viva). Chegar aqui cedo
+        # por outro caminho (``holds_materialized``, a fornada da manhã) não perde
+        # nada: o despertador daquele pedido continua na fila.
+        logger.info("lifecycle.activate_preorder: too early order=%s", order.ref)
         return
 
     if _ifood_cancellation_pending(order):
@@ -1120,13 +1192,55 @@ def activate_preorder(order) -> None:
         _create_alert(order, "preorder_activation_blocked_unpaid")
         notification.send(order, "payment_requested")
         return
-    # Mesmo knob do mesmo-dia: no dia, a encomenda vai para a Cozinha; no canal
-    # "operator" ela fica Aceita, esperando o "Iniciar preparo" do posto.
-    physical_work_dispatched = _dispatch_physical_work(order)
+    # A encomenda chega à Cozinha e fica Aceita, esperando o "Iniciar" do posto,
+    # em TODO canal: o ``prep_start`` não vale aqui (decisão do dono, 09/11).
+    _dispatch_physical_work(order)
+    _stamp_kitchen_released(order)
     if _stock_fulfill_allowed(order, config):
         stock.fulfill(order, pending_materialization_ok=True)
-    if physical_work_dispatched and _prep_starts_automatically(config):
-        _mark_preparing_after_physical_work_dispatch(order)
+
+
+def _stamp_kitchen_released(order) -> None:
+    if getattr(order, "pk", None) is None:
+        return
+    data = dict(order.data or {})
+    if data.get(KITCHEN_RELEASED_AT_KEY):
+        return
+    data[KITCHEN_RELEASED_AT_KEY] = timezone.now().isoformat()
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+
+
+def release_preorder_now(order) -> bool:
+    """Leva a encomenda do dia à Cozinha AGORA, antes da hora do despertador.
+
+    Para quem age antes da hora: o "Iniciar" do Gestor e a entrega no balcão do
+    cliente que chegou cedo. Sem isso, o pedido iria a preparo (ou seria
+    entregue) sem ticket e sem baixa. Só vale NO dia: encomenda de outra data
+    segue esperando (o caminho é reagendar). Encerra o despertador vivo e
+    chama ``activate_preorder``. True quando a encomenda foi liberada agora.
+    """
+    from shopman.shop.directives import PREORDER_ACTIVATE
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    if ifood_schedule.is_scheduled(order):
+        return False
+    if get_commitment_date(order) != timezone.localdate():
+        return False
+    if not _physical_work_deferred(order):
+        return False
+    activate_preorder(order, early=True)
+    order.refresh_from_db()
+    if not (order.data or {}).get(KITCHEN_RELEASED_AT_KEY):
+        # Não foi (pagamento pendente, cancelamento do iFood): o despertador
+        # continua valendo.
+        return False
+    Directive.objects.filter(
+        topic=PREORDER_ACTIVATE,
+        dedupe_key=f"preorder.activate:{order.ref}",
+        status="queued",
+    ).update(status="done", last_error="", updated_at=timezone.now())
+    return True
 
 
 def _mark_preparing_after_physical_work_dispatch(order) -> bool:
