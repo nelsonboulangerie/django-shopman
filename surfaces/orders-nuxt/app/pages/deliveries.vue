@@ -132,7 +132,7 @@ const quotes: Record<number, string> = { 4: "R$ 18,40 · 24 min", 5: "R$ 11,90 �
             <ul class="mt-2 flex flex-col">
               <li v-for="o in waiting" :key="o.ref">
                 <button type="button" class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition hover:bg-elevated" @click="toggle(o.ref)">
-                  <span class="grid size-6 shrink-0 place-items-center rounded-full op-micro font-bold" :style="{ background: rideColor(active - 1).bg, color: rideColor(active - 1).fg }"><NuxtIcon name="i-lucide-plus" class="size-3.5" /></span>
+                  <span class="grid size-6 shrink-0 place-items-center rounded-full border-2 bg-white text-toned" style="border-color:#b9a888"><NuxtIcon name="i-lucide-plus" class="size-3.5" /></span>
                   <span class="min-w-0 flex-1 truncate op-body"><span class="font-medium text-highlighted">{{ o.code }} · {{ o.customer }}</span> <span class="text-muted">· {{ o.place }}</span></span>
                   <NuxtBadge v-if="o.preparing" label="Em preparo" color="warning" variant="soft" size="sm" icon="i-lucide-chef-hat" />
                 </button>
@@ -167,7 +167,7 @@ const quotes: Record<number, string> = { 4: "R$ 18,40 · 24 min", 5: "R$ 11,90 �
                 <ol v-if="r.number === active" class="flex flex-col gap-1 px-3 pb-3">
                   <li v-if="!r.refs.length" class="rounded-lg border border-dashed border-default px-3 py-3 text-center op-body text-muted">Toque nos pedidos no mapa ou na lista.</li>
                   <li v-for="(ref, k) in r.refs" :key="ref" class="flex items-center gap-2.5 rounded-lg bg-elevated/60 px-2 py-1.5">
-                    <span class="grid size-6 shrink-0 place-items-center rounded-full op-micro font-semibold" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }">{{ k + 1 }}</span>
+                    <span class="grid size-6 shrink-0 place-items-center rounded-full border-[3px] bg-white op-micro font-bold text-highlighted" :style="{ borderColor: rideColor(r.number - 1).bg }">{{ k + 1 }}</span>
                     <span class="min-w-0 flex-1">
                       <span class="block truncate op-body font-medium text-highlighted">{{ byRef(ref).code }} · {{ byRef(ref).customer }}</span>
                       <span class="block truncate op-micro text-muted">{{ byRef(ref).place }}</span>

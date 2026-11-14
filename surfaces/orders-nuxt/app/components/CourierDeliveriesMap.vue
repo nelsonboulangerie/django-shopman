@@ -5,8 +5,9 @@
 // Três camadas, do fundo para a frente (dono, 14/11):
 //  · NA RUA (corridas chamadas): rota e paradas em CINZA CLARO; só o entregador, a
 //    moto, leva a cor e o número da corrida. O que já foi chamado sai da frente.
-//  · MONTANDO: rotas e paradas na cor da corrida, com o número da parada. A ativa
-//    em traço cheio, as outras tracejadas.
+//  · MONTANDO: parada em branco com borda grossa na cor da corrida (a espessura do
+//    traço) e o número da parada; rota pontilhada na cor. A ativa forte, as outras
+//    esmaecidas. O cheio de cor fica só para a moto: ela é o destaque do mapa.
 //  · ESPERANDO: o pedido sem corrida, em branco com o código. Tocar põe na ativa.
 import { rideColor } from "~/presentation/ridePalette";
 
@@ -90,11 +91,11 @@ const places = computed(() => {
         fill="none"
         :stroke="rideColor(r.number - 1).bg"
         vector-effect="non-scaling-stroke"
-        style="stroke-width: 3.5px"
-        :stroke-dasharray="r.number === active ? '0' : '6 5'"
+        style="stroke-width: 4px"
+        stroke-dasharray="0.1 8"
         stroke-linecap="round"
         stroke-linejoin="round"
-        :opacity="r.number === active ? 0.95 : 0.6"
+        :opacity="r.number === active ? 1 : 0.55"
       />
     </svg>
 
@@ -133,8 +134,8 @@ const places = computed(() => {
         v-for="(s, k) in r.stops"
         :key="s.ref"
         type="button"
-        class="absolute z-10 grid size-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full op-label font-semibold tabular-nums shadow-md ring-4 transition hover:scale-110"
-        :style="{ ...at(s), background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg, '--tw-ring-color': `${rideColor(r.number - 1).bg}33` }"
+        class="absolute z-10 grid size-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-4 bg-white op-label font-bold tabular-nums shadow-sm transition hover:scale-110"
+        :style="{ ...at(s), borderColor: rideColor(r.number - 1).bg, color: '#111' }"
         :aria-label="`Pedido ${s.code}, corrida ${r.number}`"
         @click="emit('toggle', s.ref)"
       >{{ k + 1 }}</button>
@@ -171,7 +172,7 @@ const places = computed(() => {
 
     <div class="absolute bottom-3 left-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-white/90 px-2.5 py-1.5 op-micro text-toned shadow-sm">
       <span class="flex items-center gap-1"><span class="size-3 rounded-full border-2 bg-white" style="border-color:#b9a888" />Esperando</span>
-      <span class="flex items-center gap-1"><span class="size-3 rounded-full" :style="{ background: rideColor(active - 1).bg }" />Montando</span>
+      <span class="flex items-center gap-1"><span class="size-3 rounded-full border-[3px] bg-white" :style="{ borderColor: rideColor(active - 1).bg }" />Montando</span>
       <span class="flex items-center gap-1"><span class="h-1 w-4 rounded" :style="{ background: GREY }" /><NuxtIcon name="i-lucide-bike" class="size-3.5" />Na rua</span>
     </div>
   </div>
