@@ -1969,7 +1969,7 @@ function compactClear() {
                 <!-- Uma corrida da TaOn para várias entregas prontas, na coluna delas:
                      some com menos de duas. -->
                 <template v-if="zone.key === 'expedition'" #heading-actions>
-                  <CourierRideMenu :choices="rideCandidates" @done="refresh()" />
+                  <CourierRideMenu :choices="rideCandidates" :origin="(queue as any)?.ride_origin ?? null" @done="refresh()" />
                 </template>
               </OrderBoardColumn>
               <OrderBoardStrip

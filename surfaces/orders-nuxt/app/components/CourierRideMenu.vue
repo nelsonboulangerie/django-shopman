@@ -19,10 +19,14 @@ import {
 import { freeMachines } from "../../../operator-kit/app/presentation/custody";
 import { useRideQuote } from "~/composables/useRideQuote";
 
-const props = defineProps<{ choices: RideChoice[] }>();
-// PRÉVIA (14/11): três desenhos do modal por ?ride=A|B|C. Sai antes do merge.
+type MappedChoice = RideChoice & { latitude?: number | null; longitude?: number | null };
+const props = defineProps<{
+  choices: MappedChoice[];
+  origin?: { latitude: number; longitude: number } | null;
+}>();
+// PRÉVIA (14/11): desenhos do modal por ?ride=D|E|F. Sai antes do merge.
 const route = useRoute();
-const layout = computed(() => String(route.query.ride || "A"));
+const layout = computed(() => String(route.query.ride || "D"));
 const emit = defineEmits<{ done: [] }>();
 
 const open = ref(false);
@@ -56,6 +60,12 @@ const quoteLine = computed(() => {
 
 const chosen = computed(() =>
   props.choices.filter((choice) => picked.value.includes(choice.card.ref)),
+);
+// As paradas na ordem em que o operador marcou.
+const chosenInOrder = computed(() =>
+  picked.value
+    .map((ref) => props.choices.find((choice) => choice.card.ref === ref))
+    .filter((choice): choice is MappedChoice => Boolean(choice)),
 );
 const asksChange = computed(() =>
   chosen.value.filter((choice) => choice.change_out_suggested_q > 0),
@@ -111,29 +121,54 @@ async function call() {
 }
 const code = (ref_: string) => splitRef(ref_).code;
 
-// A lista é uma escolha múltipla com teto: o que passa do teto fica inerte.
-const items = computed(() =>
-  props.choices.map((choice) => ({
-    value: choice.card.ref,
-    label: choice.label,
-    description: rideOfferLine(choice),
-    disabled: !picked.value.includes(choice.card.ref) && picked.value.length >= MAX_RIDE_STOPS,
-  })),
-);
-// Por bairro (B): quem junta olha o bairro primeiro.
-const byPlace = computed(() => {
-  const groups = new Map<string, typeof items.value>();
-  props.choices.forEach((choice, index) => {
+// Os bairros, na ordem em que aparecem; cada linha é uma escolha com teto.
+const groups = computed(() => {
+  const map = new Map<string, MappedChoice[]>();
+  for (const choice of props.choices) {
     const key = choice.place || "Sem bairro";
-    groups.set(key, [...(groups.get(key) || []), { ...items.value[index]!, description: [choice.stage, choice.distance_label, choice.needs_machine ? "leva a maquininha" : choice.change_out_suggested_q > 0 ? "leva troco" : ""].filter(Boolean).join(" · ") }]);
-  });
-  return [...groups.entries()].map(([place, rows]) => ({ place, rows }));
+    map.set(key, [...(map.get(key) || []), choice]);
+  }
+  return [...map.entries()].map(([place, rows]) => ({
+    place,
+    rows,
+    items: rows.map((choice) => ({
+      value: choice.card.ref,
+      label: choice.label,
+      description: [choice.stage, choice.distance_label, choice.needs_machine ? "leva a maquininha" : choice.change_out_suggested_q > 0 ? "leva troco" : ""].filter(Boolean).join(" · "),
+      disabled: !picked.value.includes(choice.card.ref) && picked.value.length >= MAX_RIDE_STOPS,
+    })),
+  }));
 });
 function setPicked(next: unknown) {
   picked.value = [...new Set(Array.isArray(next) ? next.map(String) : [])].slice(0, MAX_RIDE_STOPS);
 }
-const pickedCount = computed(() => `${picked.value.length} de ${MAX_RIDE_STOPS}`);
-const stops = computed(() => chosen.value);
+function setGroup(rows: MappedChoice[], next: unknown) {
+  const mine = new Set(rows.map((row) => row.card.ref));
+  const wanted = new Set(Array.isArray(next) ? next.map(String) : []);
+  const kept = picked.value.filter((ref) => !mine.has(ref) || wanted.has(ref));
+  setPicked([...kept, ...[...wanted].filter((ref) => !picked.value.includes(ref))]);
+}
+function flip(ref: string) {
+  toggle(ref, !picked.value.includes(ref));
+}
+const groupPicked = (rows: MappedChoice[]) => rows.filter((row) => picked.value.includes(row.card.ref)).length;
+// Marcar o bairro: troca a corrida pelos pedidos dele (até o teto).
+function pickPlace(rows: MappedChoice[]) {
+  setPicked(rows.map((row) => row.card.ref));
+}
+// As sugestões (F): o bairro com dois ou mais é uma corrida pronta.
+const suggestions = computed(() => groups.value.filter((group) => group.rows.length >= 2));
+const points = computed(() =>
+  props.choices
+    .filter((choice) => choice.latitude != null && choice.longitude != null)
+    .map((choice) => ({
+      ref: choice.card.ref,
+      code: code(choice.card.ref),
+      place: choice.place,
+      latitude: Number(choice.latitude),
+      longitude: Number(choice.longitude),
+    })),
+);
 </script>
 
 <template>
@@ -150,119 +185,87 @@ const stops = computed(() => chosen.value);
     v-model:open="open"
     title="Juntar entregas"
     :description="`Uma corrida da TaOn leva até ${MAX_RIDE_STOPS} pedidos, na ordem do percurso. O frete do cliente não muda.`"
-    :ui="{
-      content: layout === 'C' ? 'sm:max-w-3xl' : 'sm:max-w-lg',
-      body: layout === 'C' ? 'p-0 sm:p-0 overflow-hidden' : undefined,
-      footer: 'flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center',
-    }"
+    :ui="{ content: layout === 'E' ? 'sm:max-w-6xl' : 'sm:max-w-4xl', body: 'p-0 sm:p-0 overflow-hidden' }"
     data-courier-ride-panel
   >
     <template #body>
-      <!-- A: cartões selecionáveis, um por pedido -->
-      <NuxtCheckboxGroup
-        v-if="layout === 'A'"
-        :model-value="picked"
-        :items="items"
-        variant="card"
-        legend="Pedidos prontos para sair"
-        :ui="{ legend: 'sr-only', fieldset: 'gap-2' }"
+      <div
+        class="grid h-[min(72dvh,44rem)] min-h-0"
+        :class="layout === 'E' ? 'sm:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_18rem]' : 'sm:grid-cols-[minmax(0,1fr)_19rem]'"
         data-courier-ride-orders
-        @update:model-value="setPicked"
-      />
-
-      <!-- B: por bairro, linhas enxutas -->
-      <div v-else-if="layout === 'B'" class="flex flex-col gap-4" data-courier-ride-orders>
-        <section v-for="group in byPlace" :key="group.place" class="flex flex-col gap-1.5">
-          <h3 class="flex items-center gap-2 op-label font-semibold text-highlighted">
-            <NuxtIcon name="i-lucide-map-pin" class="size-4 text-muted" />
-            {{ group.place }}
-            <NuxtBadge :label="String(group.rows.length)" color="neutral" variant="soft" size="sm" />
-          </h3>
-          <NuxtCheckboxGroup
-            :model-value="picked"
-            :items="group.rows"
-            variant="table"
-            :legend="group.place"
-            :ui="{ legend: 'sr-only' }"
-            @update:model-value="(v) => setPicked([...picked.filter((r) => !group.rows.some((row) => row.value === r)), ...(Array.isArray(v) ? v : [])])"
-          />
-        </section>
-      </div>
-
-      <!-- C: a lista à esquerda, a corrida montando à direita -->
-      <div v-else class="grid h-[min(70dvh,40rem)] min-h-0 sm:grid-cols-[1fr_17rem]" data-courier-ride-orders>
-        <div class="min-h-0 overflow-y-auto p-4">
-          <NuxtCheckboxGroup
-            :model-value="picked"
-            :items="items"
-            variant="card"
-            legend="Pedidos prontos para sair"
-            :ui="{ legend: 'sr-only', fieldset: 'gap-2' }"
-            @update:model-value="setPicked"
-          />
+      >
+        <!-- E: o mapa primeiro; tocar no ponto marca o pedido -->
+        <div v-if="layout === 'E'" class="min-h-0 p-4 max-sm:hidden">
+          <CourierRideMap :points="points" :picked="picked" :origin="origin" full @toggle="flip" />
         </div>
-        <aside class="flex min-h-0 flex-col gap-3 overflow-y-auto border-t border-default bg-elevated/50 p-4 sm:border-t-0 sm:border-l">
-          <p class="op-label font-semibold text-highlighted">A corrida <span class="font-normal text-muted">· {{ pickedCount }}</span></p>
-          <p v-if="!stops.length" class="op-body text-muted">Marque os pedidos que vão juntos.</p>
-          <ol v-else class="flex flex-col gap-2">
-            <li v-for="(stop, index) in stops" :key="stop.card.ref" class="flex items-start gap-2">
-              <span class="grid size-6 shrink-0 place-items-center rounded-full bg-primary op-micro font-semibold text-inverted">{{ index + 1 }}</span>
-              <span class="min-w-0"><span class="block truncate op-body font-medium">{{ stop.label }}</span><span class="block truncate op-micro text-muted">{{ stop.place }}</span></span>
-            </li>
-          </ol>
-          <p v-if="quoteLine" class="op-body font-medium tabular-nums" role="status" data-courier-ride-quote>{{ quoteLine }}</p>
-          <NuxtFormField
-            v-for="choice in asksChange"
-            :key="`change-${choice.card.ref}`"
-            :label="`Troco do ${code(choice.card.ref)}`"
-            :description="choice.change_label || undefined"
-            data-courier-ride-change
-          >
-            <NuxtInput v-model="changeOut[choice.card.ref]" class="w-full" type="text" inputmode="decimal" icon="i-lucide-circle-dollar-sign" :aria-label="`Troco que o entregador leva no pedido ${code(choice.card.ref)}`" />
-          </NuxtFormField>
-          <div v-if="needsMachine && free.length >= 2" class="flex flex-col gap-1.5" data-courier-ride-machine>
-            <p class="op-body font-medium">Qual maquininha vai?</p>
-            <div class="grid grid-cols-2 gap-2">
-              <NuxtButton v-for="opt in free" :key="opt.ref" type="button" :label="opt.label" :color="machineRef === opt.ref ? 'primary' : 'neutral'" :variant="machineRef === opt.ref ? 'solid' : 'outline'" @click="machineRef = opt.ref" />
+
+        <!-- a lista por bairro -->
+        <div class="min-h-0 overflow-y-auto p-4" :class="layout === 'E' ? 'border-default sm:border-l' : ''">
+          <!-- F: o bairro com dois ou mais vira uma corrida pronta, num toque -->
+          <div v-if="layout === 'F' && suggestions.length" class="mb-4 flex flex-col gap-2" data-courier-ride-suggestions>
+            <p class="op-micro font-semibold uppercase tracking-wide text-muted">Juntos por bairro</p>
+            <div class="flex flex-wrap gap-2">
+              <NuxtButton
+                v-for="group in suggestions"
+                :key="`s-${group.place}`"
+                :label="group.place"
+                icon="i-lucide-map-pin"
+                :color="groupPicked(group.rows) === Math.min(group.rows.length, MAX_RIDE_STOPS) && picked.length === groupPicked(group.rows) ? 'primary' : 'neutral'"
+                :variant="groupPicked(group.rows) === Math.min(group.rows.length, MAX_RIDE_STOPS) && picked.length === groupPicked(group.rows) ? 'solid' : 'outline'"
+                @click="pickPlace(group.rows)"
+              >
+                <template #trailing>
+                  <NuxtBadge :label="String(group.rows.length)" color="neutral" variant="soft" size="sm" />
+                </template>
+              </NuxtButton>
             </div>
           </div>
-          <p v-else-if="needsMachine && !free.length" class="op-body" data-courier-ride-no-machine>
-            {{ machinesOutSentence(machines) }} Tire da corrida o pedido de cartão ou espere a maquininha voltar.
-          </p>
-          <NuxtAlert v-if="failure" color="error" variant="subtle" :description="failure" data-courier-ride-error />
-          <NuxtButton class="sticky bottom-0 mt-auto" block icon="i-lucide-bike" :label="`Chamar a corrida (${picked.length})`" :loading="sending" :disabled="!canCall" data-courier-ride-call @click="call" />
-        </aside>
-      </div>
 
-    </template>
-
-    <template v-if="layout !== 'C'" #footer>
-      <!-- A e B: o que a corrida pede, no pé, junto do botão: nunca escondido na lista -->
-      <div v-if="layout !== 'C' && (asksChange.length || needsMachine)" class="flex w-full flex-col gap-3 sm:basis-full">
-        <NuxtFormField
-          v-for="choice in asksChange"
-          :key="`change-${choice.card.ref}`"
-          :label="`Troco do pedido ${code(choice.card.ref)}`"
-          :description="choice.change_label || undefined"
-          data-courier-ride-change
-        >
-          <NuxtInput v-model="changeOut[choice.card.ref]" class="w-full" type="text" inputmode="decimal" icon="i-lucide-circle-dollar-sign" :aria-label="`Troco que o entregador leva no pedido ${code(choice.card.ref)}`" />
-        </NuxtFormField>
-        <div v-if="needsMachine && free.length >= 2" class="flex flex-col gap-1.5" data-courier-ride-machine>
-          <p class="op-body font-medium">Qual maquininha vai na corrida?</p>
-          <div class="grid grid-cols-2 gap-2">
-            <NuxtButton v-for="opt in free" :key="opt.ref" type="button" :label="opt.label" :color="machineRef === opt.ref ? 'primary' : 'neutral'" :variant="machineRef === opt.ref ? 'solid' : 'outline'" @click="machineRef = opt.ref" />
-          </div>
+          <section v-for="group in groups" :key="group.place" class="mb-4 flex flex-col gap-1.5 last:mb-0">
+            <div class="flex items-center gap-2">
+              <NuxtIcon name="i-lucide-map-pin" class="size-4 shrink-0 text-muted" />
+              <h3 class="min-w-0 flex-1 truncate op-label font-semibold text-highlighted">{{ group.place }}</h3>
+              <span class="op-micro tabular-nums text-muted">{{ groupPicked(group.rows) ? `${groupPicked(group.rows)} de ${group.rows.length}` : group.rows.length }}</span>
+              <NuxtButton
+                v-if="layout === 'D' && group.rows.length >= 2"
+                label="Marcar o bairro"
+                color="neutral"
+                variant="link"
+                size="xs"
+                @click="pickPlace(group.rows)"
+              />
+            </div>
+            <NuxtCheckboxGroup
+              :model-value="picked.filter((ref) => group.rows.some((row) => row.card.ref === ref))"
+              :items="group.items"
+              variant="table"
+              :legend="group.place"
+              :ui="{ legend: 'sr-only' }"
+              @update:model-value="(v) => setGroup(group.rows, v)"
+            />
+          </section>
         </div>
-        <p v-else-if="needsMachine && !free.length" class="op-body" data-courier-ride-no-machine>
-          {{ machinesOutSentence(machines) }} Tire da corrida o pedido de cartão ou espere a maquininha voltar.
-        </p>
+
+        <!-- a corrida montando, com o botão sempre à vista -->
+        <div class="min-h-0 border-t border-default bg-elevated/40 sm:border-t-0 sm:border-l">
+          <CourierRideSummary
+            v-model:change-out="changeOut"
+            v-model:machine-ref="machineRef"
+            :stops="chosenInOrder"
+            :asks-change="asksChange"
+            :needs-machine="needsMachine"
+            :free="free"
+            :machines="machines"
+            :quote-line="quoteLine"
+            :failure="failure"
+            :sending="sending"
+            :can-call="canCall"
+            :timeline="layout !== 'D'"
+            @remove="(ref) => toggle(ref, false)"
+            @call="call"
+          />
+        </div>
       </div>
-      <NuxtAlert v-if="failure" color="error" variant="subtle" :description="failure" data-courier-ride-error />
-      <p class="min-w-0 flex-1 op-body tabular-nums" :class="quoteLine ? 'font-medium' : 'text-muted'" role="status" data-courier-ride-quote>
-        {{ quoteLine || `${pickedCount} marcados` }}
-      </p>
-      <NuxtButton icon="i-lucide-bike" :label="`Chamar a corrida (${picked.length})`" :loading="sending" :disabled="!canCall" data-courier-ride-call @click="call" />
     </template>
   </NuxtModal>
 </template>
