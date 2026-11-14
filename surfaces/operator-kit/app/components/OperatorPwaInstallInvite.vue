@@ -48,7 +48,15 @@ const insideTheApp = computed(() => {
 // Espera a oferta de vincular o dispositivo sair da tela (PDV2-25): um diálogo de
 // primeira entrada por vez.
 const stationOfferOpen = useStationSetupOfferOpen();
-const visible = computed(() => pwa.canInvite.value && insideTheApp.value && !stationOfferOpen.value);
+// O X fecha nesta montagem; "Agora não" adia por dias (regra do kit: todo aviso fecha).
+const notices = useAlertDismissals();
+const visible = computed(
+  () =>
+    pwa.canInvite.value &&
+    insideTheApp.value &&
+    !stationOfferOpen.value &&
+    notices.isOpen("pwa-install"),
+);
 watch(visible, (value) => emit("visibility", value), { immediate: true });
 
 // Um toque resolve, ou a pessoa vai seguir passos — o título diz qual dos dois é, antes
@@ -105,12 +113,14 @@ const actions = computed(() => [
        enquanto não fosse respondido. -->
   <NuxtAlert
     v-if="visible"
+    v-bind="notices.closeProps"
     color="info"
     variant="subtle"
     icon="i-lucide-monitor-down"
     :title="title"
     :actions="alertActions('info', actions)"
     data-operator-pwa-install
+    @update:open="notices.onOpen('pwa-install', $event)"
   >
     <template #description>
       <div class="flex flex-col gap-3">

@@ -62,7 +62,7 @@ const autoUpdate = usePwaAutoUpdate({
     <!-- Um aviso por vez: versão, instalação, depois notificações. Os componentes
          seguem montados para preservar os eventos de instalação do navegador. -->
     <aside
-      class="fixed inset-x-4 bottom-[calc(var(--ui-header-height)+1rem+env(safe-area-inset-bottom))] z-[60] flex flex-col gap-2 max-h-[50dvh] overflow-y-auto sm:end-6 sm:start-auto sm:w-[28rem] lg:bottom-[calc(1.5rem+env(safe-area-inset-bottom))]"
+      class="fixed inset-x-4 bottom-[calc(var(--ui-header-height)+1rem+env(safe-area-inset-bottom))] z-[60] flex flex-col gap-2 max-h-[calc(100dvh-2*var(--ui-header-height)-2rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] overflow-y-auto sm:end-6 sm:start-auto sm:w-[28rem] lg:bottom-[calc(1.5rem+env(safe-area-inset-bottom))]"
       aria-live="polite"
       data-operator-pwa-notices
     >
