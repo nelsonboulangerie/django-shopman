@@ -29,7 +29,7 @@ describe("gestorSections (rail)", () => {
     expect(sections.find((s) => s.key === "settings")?.foot).toBe(true);
   });
 
-  it("Pedidos abre o quadro como o posto deixou; não há seção Saída", () => {
+  it("Pedidos abre o painel como o posto deixou; não há seção Saída", () => {
     const sections = gestorSections({
       channelsAttention: "",
       canManageCustomers: false,
@@ -98,7 +98,7 @@ describe("gestorSections (rail)", () => {
     expect(loud?.attention).toBe("1 desligado");
   });
 
-  it("os selos contam o que o quadro vê; zero não é selo", () => {
+  it("os selos contam o que o painel vê; zero não é selo", () => {
     const sections = gestorSections({
       channelsAttention: "",
       canManageCustomers: false,
@@ -255,7 +255,7 @@ describe("Ajustes só lista o que a conta abre", () => {
     expect(gestorRoutePermission("/customers/CLI-003")?.perm).toBe("shop.manage_customers");
     expect(gestorRoutePermission("/history")?.perm).toBe("shop.manage_orders");
     expect(gestorRoutePermission("/workstations")?.perm).toBe("cashman.manage_operators");
-    // O quadro e Ajustes são do Gestor inteiro: a antessala já respondeu por eles.
+    // O painel e Ajustes são do Gestor inteiro: a antessala já respondeu por eles.
     expect(gestorRoutePermission("/")).toBeNull();
     expect(gestorRoutePermission("/settings")).toBeNull();
     expect(gestorRoutePermission("/catalogue")).toBeNull();

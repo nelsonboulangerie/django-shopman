@@ -1,4 +1,4 @@
-// A arrumação das colunas do quadro (Entrada, Preparo, Saída) NESTE posto.
+// A arrumação das colunas do painel (Entrada, Preparo, Saída) NESTE posto.
 //
 // SUITE-UX §16 e lei L7: recolher e ajustar a largura é do posto, e fica no servidor
 // (`orders/board-layout/`, que guarda no `Terminal.metadata` da estação confiável).
@@ -25,7 +25,7 @@ import {
 } from "../../../operator-kit/app/presentation/queueColumns";
 
 export const BOARD_ZONE_KEYS = ["intake", "prep", "expedition"] as const;
-/** `?columns=expedition`: abre o quadro já como posto de saída (o índice de estações
+/** `?columns=expedition`: abre o painel já como posto de saída (o índice de estações
  *  da Cozinha manda a estação de Saída para cá; ver `kds-nuxt/app/presentation/exitStation.ts`). */
 export const BOARD_COLUMNS_QUERY = "columns";
 /** O Preparo é o espelho da Cozinha (dono, 13/11/2026): o trabalho dele é do KDS, e o

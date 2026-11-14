@@ -20,7 +20,7 @@ const props = withDefaults(
     attentionPending: boolean;
     selecting: boolean;
     full?: boolean;
-    /** No Quadro da mesa (D): a ordem mora aqui, não num botão do cabeçalho. */
+    /** No Painel da mesa (D): a ordem mora aqui, não num botão do cabeçalho. */
     sortInMenu?: boolean;
     canShowAll?: boolean;
     queueAvailable?: boolean;
@@ -82,7 +82,7 @@ const items = computed(() => {
           },
         ]
       : []),
-    // A visão (Fila · Quadro · Tabela) é o seletor do cabeçalho; aqui só no `full`.
+    // A visão (Fila · Painel · Tabela) é o seletor do cabeçalho; aqui só no `full`.
     {
       label: props.selecting ? EXIT_SELECTION_LABEL : "Selecionar pedidos",
       icon: "i-lucide-list-checks",
@@ -124,7 +124,7 @@ const items = computed(() => {
             ]
           : []),
         {
-          label: "Quadro",
+          label: "Painel",
           icon:
             props.viewMode === "board"
               ? "i-lucide-check"

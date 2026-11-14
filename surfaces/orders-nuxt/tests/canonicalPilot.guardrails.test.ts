@@ -797,7 +797,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(card).toContain("<template #header>");
     expect(card).toContain("<template #footer>");
     // 1/3 + 2/3 quando o rodapé tem largura para isso; abaixo, empilha legível.
-    // O rodapé de gestos é um componente só (cartão inteiro e compacto do Quadro).
+    // O rodapé de gestos é um componente só (cartão inteiro e compacto do Painel).
     expect(card).toContain("<OrderCardActions");
     expect(cardActions).toContain("'@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
     expect(cardActions).toContain('class="@container flex items-end gap-2"');
@@ -901,7 +901,7 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(board).not.toContain("data-board-view-label");
-    // O título é sempre "Pedidos" (D, 13/11/2026): o balcão é o mesmo quadro com
+    // O título é sempre "Pedidos" (D, 13/11/2026): o balcão é o mesmo painel com
     // colunas recolhidas, não uma tela com outro nome; não há selo repetindo a visão.
     expect(board).toContain('title="Pedidos"');
     expect(board).not.toContain("viewLabel");

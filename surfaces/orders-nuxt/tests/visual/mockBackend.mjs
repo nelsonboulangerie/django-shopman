@@ -6,7 +6,7 @@ import { galleryQueue } from "./galleryCards.mjs";
 
 // Backend hermético da matriz visual do Gestor. Sem Django, sem dados vivos:
 // as fixtures abaixo foram CAPTURADAS do backend real (seed Nelson) e o mock só
-// reescreve os campos de relógio para o quadro não nascer "desatualizado".
+// reescreve os campos de relógio para o painel não nascer "desatualizado".
 // O estado é trocado por GET /__visual/scenario?set=<normal|empty|dense|error|gallery>.
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -102,7 +102,7 @@ function galleryDetail(ref) {
 let scenario = "normal";
 // Conferência das sacolas (MOCK_VOLUMES=1): o G96 (pronto, retirada) com 3 sacolas
 // declaradas, e a bipada do leitor respondida como o servidor responde. Fora da
-// flag, o quadro não muda.
+// flag, o painel não muda.
 const VOLUMES = process.env.MOCK_VOLUMES === "1";
 const DECLARED = VOLUMES ? { "PDV-261006-G96": 3, "WEB-261006-W29": 2 } : {};
 const checkedBags = new Map();

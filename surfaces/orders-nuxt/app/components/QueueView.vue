@@ -529,7 +529,7 @@ function switchHint(row: {
             <span class="shrink-0 op-title tnum xl:self-end">{{
               item.card.total_display
             }}</span>
-            <!-- o gesto da linha e o ⋯ do pedido (as mesmas opções do cartão do quadro) -->
+            <!-- o gesto da linha e o ⋯ do pedido (as mesmas opções do cartão do painel) -->
             <div class="flex min-w-0 flex-1 items-center gap-1.5">
               <NuxtButton
                 v-if="item.kind === 'negotiation'"

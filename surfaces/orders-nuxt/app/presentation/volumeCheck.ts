@@ -57,7 +57,7 @@ export const EMPTY_CONFERENCE: ConferenceState = { conference: null, alarm: null
 
 /**
  * O pedido que a próxima bipada confere. Com um pedido FIXO (o detalhe aberto),
- * é ele. No quadro, é o da conferência em curso, enquanto ela não terminou; a
+ * é ele. No painel, é o da conferência em curso, enquanto ela não terminou; a
  * conferência que terminou não prende a próxima sacola (é outro pedido saindo).
  */
 export function expectedRef(state: ConferenceState, fixedRef = ""): string {

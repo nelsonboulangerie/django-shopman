@@ -38,7 +38,7 @@ for (const width of WIDTHS) {
     test.use({ viewport: { width, height: width < 768 ? 844 : 900 } });
 
     test("o detalhe do pedido, vindo da fila (com anterior e próximo)", async ({ page }) => {
-      // A casa é o Quadro; a trilha de anterior e próximo nasce da Fila.
+      // A casa é o Painel; a trilha de anterior e próximo nasce da Fila.
       const home = width >= 1024 ? "/?view=queue" : "/";
       await page.goto(home);
       // A fila grava a trilha: o detalhe aberto dela ganha "Pedido anterior" e "Próximo".

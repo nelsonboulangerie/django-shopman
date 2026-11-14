@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// A coluna recolhida do quadro (D, dono 13/11/2026, variante 5): guarda o lugar da
+// A coluna recolhida do painel (D, dono 13/11/2026, variante 5): guarda o lugar da
 // coluna, na mesma ordem das abertas. Na linha do cabeçalho das abertas, só o número,
 // no mesmo selo delas; um ponto no canto quando a coluna pede olho (vermelho para
 // atraso, a cor principal para "precisa de você"). Abaixo, o nome em pé; no pé, o

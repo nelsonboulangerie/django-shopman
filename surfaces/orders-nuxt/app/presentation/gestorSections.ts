@@ -1,8 +1,8 @@
 // Presentation — as seções do Gestor. Puro: quem decide se o operador PODE ver Clientes
 // ou Postos é o servidor; aqui só se monta a lista a partir da resposta.
 //
-// Dois andares (SUITE-UX §3, D de 13/11/2026): a OPERAÇÃO no rail (Pedidos, o quadro
-// com Fila · Quadro · Tabela; Histórico; e, para quem cuida do catálogo, Catálogo e
+// Dois andares (SUITE-UX §3, D de 13/11/2026): a OPERAÇÃO no rail (Pedidos, o painel
+// com Fila · Painel · Tabela; Histórico; e, para quem cuida do catálogo, Catálogo e
 // Canais) e um item só no pé, **Ajustes**, que abre a página com Clientes e Postos.
 // Rotinas (abertura, rotina e fechamento) moram no PDV, perto do caixa. O ponto de canal desligado mora em Canais (ou em Ajustes, para quem não vê
 // Canais).
@@ -31,11 +31,11 @@ export interface GestorSectionsInput {
   // Persona que cuida do catálogo: entra no mesmo app, mas não recebe Pedidos,
   // Saída, Histórico ou Clientes.
   catalogOnly?: boolean;
-  // Contagens do quadro para os selos do rail (vazias fora do quadro).
+  // Contagens do painel para os selos do rail (vazias fora do painel).
   intakeCount?: number;
 }
 
-/** `?columns=expedition`: o quadro abre como balcão de saída (o mesmo parâmetro que o
+/** `?columns=expedition`: o painel abre como balcão de saída (o mesmo parâmetro que o
  *  índice de estações da Cozinha usa). */
 export const ORDERS_EXIT_POST = "/?columns=expedition";
 
@@ -85,8 +85,8 @@ export function gestorSections({
       },
     ];
   }
-  // D (dono, 13/11/2026): o balcão de saída não é seção, é o mesmo quadro com Entrada
-  // e Preparo recolhidas, e o posto lembra. "Pedidos" abre o quadro como o posto o
+  // D (dono, 13/11/2026): o balcão de saída não é seção, é o mesmo painel com Entrada
+  // e Preparo recolhidas, e o posto lembra. "Pedidos" abre o painel como o posto o
   // deixou; quem só expede entra direto na Saída. Canais sobe para o rail: desligar o
   // iFood no meio do movimento é operação, não ajuste, e o ponto de atenção mora nele.
   const operation: OperatorSection[] = [
@@ -103,7 +103,7 @@ export function gestorSections({
   if (expeditesOnly) return operation;
   return [
     ...operation,
-    // Os pedidos que já saíram do quadro (concluídos, cancelados, devolvidos): a
+    // Os pedidos que já saíram do painel (concluídos, cancelados, devolvidos): a
     // "quarta coluna", a um toque para conferir (dono, 13/11/2026).
     {
       key: "history",
@@ -255,7 +255,7 @@ export const GESTOR_FLOOR_SECTIONS: readonly string[] = ["orders", "history", "c
  * seção com a sua forma, sem o item Ajustes (o trocador já mostra o que mora nele).
  * Chão: a operação (Pedidos, Histórico, Catálogo e Canais), que vai para a barra de baixo no celular,
  * ao alcance do polegar (`quick`; dono, 03/11/2026: "seção vai para baixo"). No topo da
- * tela fica só a subdivisão da seção (as colunas do quadro). Escritório: o resto.
+ * tela fica só a subdivisão da seção (as colunas do painel). Escritório: o resto.
  */
 export function gestorSwitcherSections(
   sections: readonly OperatorSection[],

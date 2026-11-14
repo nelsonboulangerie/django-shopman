@@ -153,7 +153,7 @@ export function useAlerts() {
    * "Aceitar" no aviso do pedido parado: o MESMO aceite do cartão. Relê o pedido e
    * manda a intenção canônica dele (`base_revision`, `expected_actor_id`) pela
    * rota que o aviso trouxe; o servidor revalida tudo sob trava. O aviso fecha
-   * sozinho quando o pedido sai de "novo", e o quadro se atualiza pelo SSE.
+   * sozinho quando o pedido sai de "novo", e o painel se atualiza pelo SSE.
    */
   async function accept(alert: AlertProjection): Promise<boolean> {
     const action = acceptAction(alert);

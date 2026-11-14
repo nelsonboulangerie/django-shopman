@@ -34,7 +34,7 @@ for (const touch of [false, true]) {
         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(TARGET);
         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(TARGET);
       }
-      // O quadro de colunas é a Supervisão (V4-G4: o desktop abre na Fila).
+      // O painel de colunas é a Supervisão (V4-G4: o desktop abre na Fila).
       await page.goto("/?view=board&columns=all");
       await expect(page.locator("[data-card-who]").filter({ hasText: "Ana" }).filter({ hasText: "Loja online" }).first()).toBeVisible();
       // v4 (UX-KIT-V2): atender e a seleção em lote moram no ⋯ do cartão; a caixa volta
@@ -50,25 +50,25 @@ for (const touch of [false, true]) {
       await target(page.locator("[data-sound-toggle]").filter({ visible: true }).first(), "Som");
       await target(page.getByRole("button", { name: "Avisos", exact: true }), "Avisos");
       await target(page.getByRole("button", { name: "Iniciar preparo", exact: true }), "Ação principal");
-      // A busca abre a paleta da suíte; "Filtrar o quadro" recorta o quadro desta tela.
+      // A busca abre a paleta da suíte; "Filtrar o painel" recorta o painel desta tela.
       const search = page.getByRole("button", { name: touch ? "Buscar" : "Buscar por código, cliente ou item (atalho: /)", exact: true });
       await target(search, "Busca");
       await search.click();
       await page.getByRole("textbox", { name: "Buscar pedido, cliente ou item" }).fill("Ana");
-      await page.getByRole("option", { name: "Filtrar o quadro por “Ana”" }).click();
+      await page.getByRole("option", { name: "Filtrar o painel por “Ana”" }).click();
       await expect(page.getByText("Pagamento pendente · Loja online", { exact: true })).toHaveCount(0);
       await expect(page.locator("[data-card-who]").filter({ hasText: "Ana" }).filter({ hasText: "Loja online" }).first()).toBeVisible();
       await page.goto("/?view=board");
       const more = page.getByRole("button", { name: "Mais ações da fila", exact: true });
       await target(more, "Mais ações da fila");
       if (touch) {
-        // Tablet em pé: ordenar e a visão entram no ⋯ do quadro (o cabeçalho fica numa linha).
+        // Tablet em pé: ordenar e a visão entram no ⋯ do painel (o cabeçalho fica numa linha).
         await more.click();
         await expect(page.getByRole("menuitem", { name: "Urgência", exact: true })).toBeVisible();
         await page.screenshot({ path: testInfo.outputPath("board.png") });
         await page.getByRole("menuitem", { name: "Tabela", exact: true }).click();
       } else {
-        // No Quadro da mesa (D), a ordem mora no ⋮; na Tabela, segue o botão.
+        // No Painel da mesa (D), a ordem mora no ⋮; na Tabela, segue o botão.
         await target(page.getByRole("tab", { name: "Fila", exact: true }), "Modo fila");
         await target(page.getByRole("tab", { name: "Tabela", exact: true }), "Modo tabela");
         await more.click();

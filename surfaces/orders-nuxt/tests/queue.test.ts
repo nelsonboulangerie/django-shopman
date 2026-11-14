@@ -33,7 +33,7 @@ describe("queueItems", () => {
     expect(items[1]).toMatchObject({ timeLabel: "6 min", goalLabel: "no balcão", tone: "warning" });
   });
 
-  it("o mesmo pedido em duas listas (quadro e encomendas) entra uma vez", () => {
+  it("o mesmo pedido em duas listas (painel e encomendas) entra uma vez", () => {
     expect(queueItems([card(), card()], NOW)).toHaveLength(1);
   });
 
