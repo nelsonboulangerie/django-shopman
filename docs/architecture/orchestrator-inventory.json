@@ -8864,6 +8864,7 @@
         "delivery.courier-handoff-charge",
         "delivery.courier-quote",
         "delivery.courier-return",
+        "delivery.courier-ride-number",
         "delivery.courier-ride-quote",
         "delivery.courier-shared-ride",
         "delivery.courier-shared-ride-eligibility",

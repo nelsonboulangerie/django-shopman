@@ -8581,6 +8581,45 @@
       "out_of_extraction": false
     },
     {
+      "id": "delivery.courier-ride-number",
+      "question": "Que número (e cor) a corrida ganha na tela, e quando ele volta a ficar livre?",
+      "owner": "delivery.ride-number",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.courier:next_ride_number",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:next_ride_number"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "RIDE_NUMBERS",
+            "next_ride_number",
+            "ride_is_live"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [
+        "COURIER_DISPATCH"
+      ],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_deliveries_projection.py::test_the_number_is_freed_when_the_ride_ends"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "delivery.courier-shared-ride-eligibility",
       "question": "Este pedido pode entrar numa corrida com outros pedidos, ou leva maquininha, troco ou já tem corrida?",
       "owner": "delivery.shared-ride-eligibility",
