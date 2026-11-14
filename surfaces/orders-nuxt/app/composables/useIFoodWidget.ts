@@ -40,8 +40,8 @@ function loadScript(): Promise<IFoodWidgetApi> {
     script.onload = () =>
       window.iFoodWidget
         ? resolve(window.iFoodWidget)
-        : reject(new Error("iFood widget sem API"));
-    script.onerror = () => reject(new Error("iFood widget não baixou"));
+        : reject(new Error("o script do iFood carregou, mas o widget não apareceu"));
+    script.onerror = () => reject(new Error("o script do iFood não baixou"));
     document.head.appendChild(script);
   });
 }
