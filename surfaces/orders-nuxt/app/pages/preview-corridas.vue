@@ -108,46 +108,23 @@ const initial = computed(() =>
       </section>
     </div>
 
-    <!-- O Pronto de um pedido que sai em sacolas pergunta quantas (volumes). Três
-         desenhos para o dono escolher; mesmo peso em tudo, uma ação só. -->
-    <div v-if="moment === 'volumes'" class="mx-auto grid max-w-6xl grid-cols-3 items-start gap-6 pt-16">
-      <div v-for="v in ['A', 'B', 'C']" :key="v" class="flex flex-col gap-3">
-        <p class="text-center op-label font-semibold text-muted">{{ v }}</p>
-        <div class="overflow-hidden rounded-2xl bg-default shadow-xl ring-1 ring-default" :data-volumes-variant="v">
-          <div class="px-6 pt-6 text-center">
-            <p class="op-micro text-muted">A05 · Cíntia Melo · Entrega</p>
-            <p class="mt-1 op-title font-semibold text-highlighted">Quantas sacolas (volumes)?</p>
+    <!-- O Pronto de um pedido de entrega ou encomenda pergunta as sacolas, no Gestor
+         e na Cozinha (dono, 14/11: desenho B, um controle só). -->
+    <div v-if="moment === 'volumes'" class="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
+      <div class="w-full max-w-sm overflow-hidden rounded-2xl bg-default shadow-2xl ring-1 ring-default" data-ready-volumes>
+        <div class="px-6 pt-6 text-center">
+          <p class="op-micro text-muted">A05 · Cíntia Melo · Entrega</p>
+          <p class="mt-1 op-title font-semibold text-highlighted">Quantas sacolas (volumes)?</p>
+        </div>
+        <div class="flex justify-center px-6 py-7">
+          <div class="flex h-16 items-stretch overflow-hidden rounded-2xl ring-1 ring-default">
+            <button type="button" class="grid w-16 place-items-center text-toned transition hover:bg-elevated" aria-label="Menos uma" @click="bags = Math.max(1, bags - 1)"><NuxtIcon name="i-lucide-minus" class="size-6" /></button>
+            <span class="grid w-20 place-items-center border-x border-default text-3xl font-semibold tabular-nums text-highlighted">{{ bags }}</span>
+            <button type="button" class="grid w-16 place-items-center text-toned transition hover:bg-elevated" aria-label="Mais uma" @click="bags = Math.min(99, bags + 1)"><NuxtIcon name="i-lucide-plus" class="size-6" /></button>
           </div>
-
-          <!-- A: uma fileira de números iguais; "5+" abre o − + -->
-          <div v-if="v === 'A'" class="grid grid-cols-5 gap-2 px-6 py-7">
-            <button v-for="n in [1, 2, 3, 4]" :key="n" type="button" class="aspect-square rounded-xl text-2xl font-semibold tabular-nums ring-1 transition" :class="n === bags ? 'bg-primary text-inverted ring-primary' : 'bg-default text-highlighted ring-default hover:bg-elevated'" @click="bags = n">{{ n }}</button>
-            <button type="button" class="aspect-square rounded-xl text-lg font-semibold text-toned ring-1 ring-default transition hover:bg-elevated">5+</button>
-          </div>
-
-          <!-- B: um controle só, do mesmo tamanho de ponta a ponta -->
-          <div v-else-if="v === 'B'" class="flex justify-center px-6 py-7">
-            <div class="flex h-16 items-stretch overflow-hidden rounded-2xl ring-1 ring-default">
-              <button type="button" class="grid w-16 place-items-center text-toned transition hover:bg-elevated" aria-label="Menos uma" @click="bags = Math.max(1, bags - 1)"><NuxtIcon name="i-lucide-minus" class="size-6" /></button>
-              <span class="grid w-20 place-items-center border-x border-default text-3xl font-semibold tabular-nums text-highlighted">{{ bags }}</span>
-              <button type="button" class="grid w-16 place-items-center text-toned transition hover:bg-elevated" aria-label="Mais uma" @click="bags = Math.min(99, bags + 1)"><NuxtIcon name="i-lucide-plus" class="size-6" /></button>
-            </div>
-          </div>
-
-          <!-- C: as sacolas desenhadas; tocar na terceira = 3 -->
-          <div v-else class="flex flex-col items-center gap-2 px-6 py-7">
-            <div class="flex gap-1.5">
-              <button v-for="n in 5" :key="n" type="button" class="grid size-12 place-items-center rounded-xl transition" :class="n <= bags ? 'bg-primary/12 text-primary' : 'text-muted/50 hover:text-muted'" :aria-label="`${n} sacolas`" @click="bags = n">
-                <NuxtIcon :name="n <= bags ? 'i-lucide-shopping-bag' : 'i-lucide-shopping-bag'" class="size-7" />
-              </button>
-              <button type="button" class="grid size-12 place-items-center rounded-xl text-muted ring-1 ring-default transition hover:bg-elevated" aria-label="Mais de 5"><NuxtIcon name="i-lucide-plus" class="size-5" /></button>
-            </div>
-            <p class="op-body tabular-nums text-muted">{{ bags }} {{ bags === 1 ? "sacola" : "sacolas" }}</p>
-          </div>
-
-          <div class="border-t border-default p-4">
-            <NuxtButton block size="lg" icon="i-lucide-check" :label="`Pronto, ${bags} ${bags === 1 ? 'sacola' : 'sacolas'}`" />
-          </div>
+        </div>
+        <div class="border-t border-default p-4">
+          <NuxtButton block size="lg" icon="i-lucide-check" :label="`Pronto, ${bags} ${bags === 1 ? 'sacola' : 'sacolas'}`" />
         </div>
       </div>
     </div>

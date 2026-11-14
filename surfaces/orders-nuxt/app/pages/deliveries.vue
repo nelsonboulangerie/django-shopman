@@ -3,10 +3,11 @@
 // não vai ao ar assim.
 //
 // Mapa à esquerda, coluna à direita, as MESMAS três partes nos dois:
-//  1. Esperando entregador: pedidos de entrega prontos (ou quase) sem corrida.
+//  Nomes do dono (14/11): Aguardando · Editando · Corridas, e Entregador no mapa.
+//  1. Aguardando: pedidos de entrega prontos (ou quase) sem corrida.
 //  2. Montando: as corridas que o operador está juntando, cada uma com a sua cor.
 //     "Chamar N corridas" chama todas de uma vez.
-//  3. Na rua: as corridas já chamadas. No mapa a rota fica cinza e só a moto leva a
+//  3. Corridas: as já chamadas. No mapa a rota fica a 50% e só a moto leva a
 //     cor; na coluna, cada uma é o mesmo ESPELHO que o Painel mostra.
 // Tocar numa corrida da rua (linha, moto ou parada) abre o detalhe ao lado
 // (`?ride=N`): é o mesmo endereço a que o espelho do Painel leva.
@@ -117,7 +118,7 @@ const quotes: Record<number, string> = { 4: "R$ 18,40 · 24 min", 5: "R$ 11,90 �
     <header class="flex items-center gap-3 border-b border-default px-4 py-3 lg:px-6">
       <div class="min-w-0 flex-1">
         <h1 class="op-title font-semibold text-highlighted">Entregas</h1>
-        <p class="op-body text-muted">{{ waiting.length }} esperando · {{ ready.reduce((s, r) => s + r.refs.length, 0) }} em montagem · {{ live.length }} corridas na rua</p>
+        <p class="op-body text-muted">{{ waiting.length }} aguardando · {{ ready.reduce((s, r) => s + r.refs.length, 0) }} editando · {{ live.length }} corridas</p>
       </div>
       <NuxtBadge color="success" variant="soft" icon="i-lucide-radio" label="TaOn em dia" class="hidden sm:inline-flex" />
     </header>
@@ -135,7 +136,7 @@ const quotes: Record<number, string> = { 4: "R$ 18,40 · 24 min", 5: "R$ 11,90 �
           <section>
             <h2 class="flex items-center gap-2 op-label font-semibold text-highlighted">
               <span class="size-3 rounded-full border-2 bg-white" style="border-color:#b9a888" />
-              Esperando entregador
+              Aguardando
               <NuxtBadge :label="String(waiting.length)" color="neutral" variant="soft" size="sm" />
             </h2>
             <div v-if="suggestions.length" class="mt-2 flex flex-wrap gap-1.5">
@@ -156,7 +157,7 @@ const quotes: Record<number, string> = { 4: "R$ 18,40 · 24 min", 5: "R$ 11,90 �
           <section class="mt-5">
             <h2 class="flex items-center gap-2 op-label font-semibold text-highlighted">
               <NuxtIcon name="i-lucide-route" class="size-4 text-muted" />
-              Em montagem
+              Editando
               <NuxtBadge :label="String(building.length)" color="neutral" variant="soft" size="sm" />
             </h2>
             <div class="mt-2 flex flex-col gap-2">
@@ -197,7 +198,7 @@ const quotes: Record<number, string> = { 4: "R$ 18,40 · 24 min", 5: "R$ 11,90 �
           <section class="mt-5 pb-2">
             <h2 class="flex items-center gap-2 op-label font-semibold text-highlighted">
               <NuxtIcon name="i-lucide-bike" class="size-4 text-muted" />
-              Na rua
+              Corridas
               <NuxtBadge :label="String(live.length)" color="neutral" variant="soft" size="sm" />
             </h2>
             <div class="mt-2 flex flex-col gap-2">
