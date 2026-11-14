@@ -118,6 +118,8 @@ export function useGestorSections() {
     expeditesOnly: expeditesOnly.value,
     catalogOnly: catalogOnly.value,
     intakeCount: rail.value.onBoard ? rail.value.intake : offBoard.value.intake,
+    // PRÉVIA (14/11): número fixo até a projeção contar as entregas esperando.
+    deliveriesWaiting: 11,
   }));
   const sections = computed(() => gestorSections(input.value));
   const settings = computed(() => gestorSettingsSections(input.value));
@@ -128,6 +130,7 @@ export function useGestorSections() {
         ? "feeds"
         : "catalog";
     }
+    if (route.path.startsWith("/deliveries")) return "deliveries";
     return route.path === "/" ? "orders" : undefined;
   });
   // As três perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.
