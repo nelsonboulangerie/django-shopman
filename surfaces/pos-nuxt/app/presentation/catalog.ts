@@ -231,8 +231,12 @@ export function productFallbackIcon(product: POSProductProjection): string {
 export interface POSChoiceGroup {
   name: string;
   options: POSProductProjection[];
-  /** "R$ 14,00" quando todas custam o mesmo; "a partir de R$ 14,00" quando não. */
-  priceLabel: string;
+  /** O menor preço ("R$ 14,00"); "" quando nenhuma opção tem preço. */
+  price: string;
+  /** As opções custam diferente: a tela antepõe "a partir de". Separado do valor para
+   *  o valor nunca ser cortado: quando não cabe, o prefixo fica numa linha e o valor
+   *  inteiro na de baixo (dono, 14/11). */
+  priceFrom: boolean;
   /** Inerte só quando NENHUMA opção pode entrar no pedido. */
   allBlocked: boolean;
   /** A foto do tile: a da primeira opção vendável que tem foto. */
@@ -267,11 +271,12 @@ export function choiceGroupsByName(products: POSProductProjection[]): Map<string
 export function choiceGroup(name: string, options: POSProductProjection[]): POSChoiceGroup {
   const sellable = options.filter((option) => !productBlockedLabel(option));
   const priced = options.filter((option) => option.price_q > 0);
-  let priceLabel = "";
+  let price = "";
+  let priceFrom = false;
   if (priced.length) {
     const cheapest = priced.reduce((min, option) => (option.price_q < min.price_q ? option : min));
-    const samePrice = priced.every((option) => option.price_q === cheapest.price_q);
-    priceLabel = samePrice ? cheapest.price_display : `a partir de ${cheapest.price_display}`;
+    price = cheapest.price_display;
+    priceFrom = !priced.every((option) => option.price_q === cheapest.price_q);
   }
   const cover =
     sellable.find((option) => option.image_url?.trim()) ||
@@ -279,7 +284,7 @@ export function choiceGroup(name: string, options: POSProductProjection[]): POSC
     sellable[0] ||
     options[0]!;
   const label = options.map((option) => (option.choice_group_label || "").trim()).find(Boolean) || "";
-  return { name, options, priceLabel, allBlocked: sellable.length === 0, cover, label };
+  return { name, options, price, priceFrom, allBlocked: sellable.length === 0, cover, label };
 }
 
 /**
