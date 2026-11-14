@@ -83,7 +83,11 @@ from shopman.backstage.projections.feeds import (
     ManagerOptionProjection,
     MenuboardAutomaticProjection,
 )
-from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection
+from shopman.backstage.projections.ifood_handshake import (
+    IFoodNegotiationAlternative,
+    IFoodNegotiationChoice,
+    IFoodNegotiationProjection,
+)
 from shopman.backstage.projections.notification_receipts import (
     NotificationAttemptProjection,
     NotificationReceiptProjection,
@@ -139,6 +143,8 @@ CONTRACT_DATACLASSES = (
     CatalogPublicationSkip,
     CatalogPublicationPreview,
     Action,
+    IFoodNegotiationChoice,
+    IFoodNegotiationAlternative,
     IFoodNegotiationProjection,
     CatalogSnapshotSummary,
     CatalogProductOption,

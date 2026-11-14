@@ -195,7 +195,7 @@ export function galleryQueue(base) {
         id: "neg-1", type: "AFTER_DELIVERY", action: "CANCELLATION", message: "Cliente diz que o pedido chegou frio.",
         expires_at: iso(420), timeout_action: "ACCEPT", state: "open", can_respond: true, response_notice: "",
         items: ["1x Croissant de manteiga"], evidence_urls: [], accept_reasons: [], reject_reasons: ["Pedido entregue conforme combinado"],
-        alternatives_available: false,
+        alternatives_available: false, alternatives: [],
         actions: [action("accept", "Aceitar solicitação"), action("reject", "Rejeitar solicitação")],
       }],
       ifood_cancellation_notice: "O cliente pediu cancelamento no iFood. Responda até 15:10.",

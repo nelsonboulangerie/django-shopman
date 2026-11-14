@@ -2816,14 +2816,31 @@ class OrderIFoodHandshakeView(_OrderActionBase):
         if err:
             return err
         inputs = {key: str(request.data.get(key) or "").strip() for key in (
-            "dispute_id", "decision", "reason", "detail_reason",
+            "dispute_id", "decision", "reason", "detail_reason", "alternative_id",
         )}
+        # Contraproposta: valor em centavos (``amount_q``) e tempo em minutos são
+        # inteiros. Vazio é "não informado"; o resto é recusado antes de qualquer
+        # gravação, no dialeto ``{detail, field, errors}``.
+        for field, message in (("amount_q", "Valor inválido. Informe o valor em centavos."),
+                               ("minutes", "Tempo inválido. Escolha um dos tempos oferecidos pelo iFood.")):
+            value = request.data.get(field)
+            if value is None or value == "":
+                inputs[field] = None
+            elif isinstance(value, int) and not isinstance(value, bool):
+                inputs[field] = value
+            elif isinstance(value, str) and value.strip().isascii() and value.strip().isdigit() and len(value.strip()) < 15:
+                inputs[field] = int(value.strip())
+            else:
+                return Response({"detail": message, "field": field, "errors": {field: [message]},
+                                 "outcome": "not_applied"}, status=400)
 
         def execute(base):
             try:
                 ifood_handshake.enqueue_response(order, **inputs, actor=_actor(request), expected_revision=base)
             except ifood_handshake.HandshakeValidationError as exc:
-                raise OrderError(str(exc)) from exc
+                error = OrderError(str(exc))
+                error.field = exc.field  # o ``_context_response`` devolve ``{detail, field, errors}``
+                raise error from exc
             return {"response_queued": True}
 
         return self._context_response(request, order, "ifood-handshake", inputs, execute)

@@ -60,7 +60,24 @@ export interface Action {
   confirmation: Record<string, unknown>;
 }
 
-/** IFoodNegotiationProjection(id: str, type: str, action: str, message: str, expires_at: str, timeout_action: str, state: str, can_respond: bool, response_notice: str, items: tuple[str, ...], evidence_urls: tuple[str, ...], accept_reasons: tuple[str, ...], reject_reasons: tuple[str, ...], alternatives_available: bool, actions: tuple[shopman.shop.projections.types.Action, ...]) */
+/** IFoodNegotiationChoice(value: str, label: str) */
+export interface IFoodNegotiationChoice {
+  value: string;
+  label: string;
+}
+
+/** Uma contraproposta que o operador pode enviar. */
+export interface IFoodNegotiationAlternative {
+  id: string;
+  type: string;
+  label: string;
+  max_amount_q: number;
+  max_amount_display: string;
+  minutes_options: number[];
+  reason_options: IFoodNegotiationChoice[];
+}
+
+/** IFoodNegotiationProjection(id: str, type: str, action: str, message: str, expires_at: str, timeout_action: str, state: str, can_respond: bool, response_notice: str, items: tuple[str, ...], evidence_urls: tuple[str, ...], accept_reasons: tuple[str, ...], reject_reasons: tuple[str, ...], alternatives_available: bool, alternatives: tuple[shopman.backstage.projections.ifood_handshake.IFoodNegotiationAlternative, ...], actions: tuple[shopman.shop.projections.types.Action, ...]) */
 export interface IFoodNegotiationProjection {
   id: string;
   type: string;
@@ -76,6 +93,7 @@ export interface IFoodNegotiationProjection {
   accept_reasons: string[];
   reject_reasons: string[];
   alternatives_available: boolean;
+  alternatives: IFoodNegotiationAlternative[];
   actions: Action[];
 }
 
