@@ -28,12 +28,8 @@ const props = defineProps<{
 }>();
 
 const MAX = 4;
-const COLORS = [
-  { name: "bronze", dot: "#8b6a2f", soft: "rgba(139,106,47,.18)" },
-  { name: "azul", dot: "#2f6f9f", soft: "rgba(47,111,159,.18)" },
-  { name: "verde", dot: "#3f7f4f", soft: "rgba(63,127,79,.18)" },
-  { name: "vinho", dot: "#8f3a4a", soft: "rgba(143,58,74,.18)" },
-];
+import { RIDE_PALETTE } from "~/presentation/ridePalette";
+const COLORS = RIDE_PALETTE.map((c) => ({ name: c.name, dot: c.bg, fg: c.fg, soft: `${c.bg}2e` }));
 const rides = ref<string[][]>(props.initial?.map((r) => [...r]) ?? [[]]);
 const active = ref(props.initialActive ?? 0);
 
@@ -139,9 +135,9 @@ const callLabel = computed(() =>
           :key="o.ref"
           type="button"
           class="absolute grid -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full font-semibold tabular-nums shadow-md transition hover:scale-110"
-          :class="rideOf(o.ref) >= 0 ? 'size-9 text-white ring-4' : 'size-8 border-2 bg-white op-micro'"
+          :class="rideOf(o.ref) >= 0 ? 'size-9 ring-4' : 'size-8 border-2 bg-white op-micro'"
           :style="rideOf(o.ref) >= 0
-            ? { left: `${xy(o).x}%`, top: `${xy(o).y}%`, background: COLORS[rideOf(o.ref)]!.dot, '--tw-ring-color': COLORS[rideOf(o.ref)]!.soft }
+            ? { left: `${xy(o).x}%`, top: `${xy(o).y}%`, background: COLORS[rideOf(o.ref)]!.dot, color: COLORS[rideOf(o.ref)]!.fg, '--tw-ring-color': COLORS[rideOf(o.ref)]!.soft }
             : { left: `${xy(o).x}%`, top: `${xy(o).y}%`, borderColor: '#b9a888', color: '#5b4a2c' }"
           :aria-label="`Pedido ${o.code}, ${o.place}`"
           @click="toggle(o.ref)"
@@ -150,7 +146,7 @@ const callLabel = computed(() =>
           <span v-if="o.stage === 'Em preparo'" class="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-white text-[9px] text-toned ring-1 ring-default" title="Em preparo"><NuxtIcon name="i-lucide-chef-hat" class="size-2.5" /></span>
         </button>
         <p class="absolute bottom-3 left-3 rounded-md bg-white/90 px-2.5 py-1.5 op-micro text-toned shadow-sm">
-          Toque no pedido para pôr na corrida <span class="font-semibold" :style="{ color: COLORS[active]!.dot }">{{ active + 1 }}</span>. Toque no bairro para pôr todos.
+          Toque no pedido para pôr na corrida <span class="inline-grid h-5 min-w-5 place-items-center rounded px-1 font-bold" :style="{ background: COLORS[active]!.dot, color: COLORS[active]!.fg }">{{ active + 1 }}</span>. Toque no bairro para pôr todos.
         </p>
       </div>
     </div>
@@ -174,7 +170,7 @@ const callLabel = computed(() =>
             :class="i === active ? 'bg-default' : 'border-default bg-elevated/50'"
           >
             <button type="button" class="flex w-full items-center gap-2 px-3 py-2.5 text-left" @click="active = i">
-              <span class="size-3 shrink-0 rounded-full" :style="{ background: COLORS[i]!.dot }" />
+              <span class="grid h-6 min-w-6 shrink-0 place-items-center rounded-md px-1.5 op-micro font-bold" :style="{ background: COLORS[i]!.dot, color: COLORS[i]!.fg }">{{ i + 1 }}</span>
               <span class="op-label font-semibold text-highlighted">Corrida {{ i + 1 }}</span>
               <span class="op-micro tabular-nums text-muted">{{ ride.length }} de {{ MAX }}</span>
               <span v-if="i !== active && ride.length" class="ml-1 min-w-0 flex-1 truncate op-micro text-muted">{{ ride.map((r) => order(r).code).join(" → ") }}</span>
@@ -186,7 +182,7 @@ const callLabel = computed(() =>
                 Toque nos pedidos no mapa ou na lista.
               </li>
               <li v-for="(ref, k) in ride" :key="ref" class="flex items-center gap-2.5 rounded-lg bg-elevated/60 px-2 py-1.5">
-                <span class="grid size-6 shrink-0 place-items-center rounded-full op-micro font-semibold text-white" :style="{ background: COLORS[i]!.dot }">{{ k + 1 }}</span>
+                <span class="grid size-6 shrink-0 place-items-center rounded-full op-micro font-semibold" :style="{ background: COLORS[i]!.dot, color: COLORS[i]!.fg }">{{ k + 1 }}</span>
                 <span class="min-w-0 flex-1">
                   <span class="block truncate op-body font-medium text-highlighted">{{ order(ref).code }} · {{ order(ref).customer }}</span>
                   <span class="block truncate op-micro text-muted">{{ order(ref).place }} · {{ order(ref).stage }}<template v-if="order(ref).asks"> · leva {{ order(ref).asks }}</template></span>

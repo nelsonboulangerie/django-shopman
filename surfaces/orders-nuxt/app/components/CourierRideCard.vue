@@ -12,7 +12,6 @@ export interface RideStop {
 }
 const props = defineProps<{
   number: number;
-  color: string;
   state: "searching" | "late" | "coming" | "atStore" | "route" | "back" | "failed";
   stops: RideStop[];
   courier?: { name: string; vehicle: string };
@@ -22,6 +21,9 @@ const props = defineProps<{
   cost?: string;
 }>();
 
+import { rideColor } from "~/presentation/ridePalette";
+const tone = computed(() => rideColor(props.number - 1));
+const color = computed(() => tone.value.bg);
 const head = computed(() => ({
   searching: { icon: "i-lucide-radar", tone: "neutral", title: "Procurando entregador", hint: props.since ? `Chamada há ${props.since}` : "" },
   late: { icon: "i-lucide-hourglass", tone: "warning", title: "Ninguém aceitou ainda", hint: `Chamada há ${props.since}` },
@@ -37,14 +39,15 @@ const toneClass: Record<string, string> = {
 </script>
 
 <template>
-  <article class="overflow-hidden rounded-xl border border-default bg-default shadow-xs" :style="{ borderLeft: `5px solid ${color}` }" data-ride-card>
+  <article class="overflow-hidden rounded-xl border border-default bg-default shadow-xs" :style="{ borderTop: `6px solid ${color}` }" data-ride-card>
     <header class="flex items-start gap-3 px-4 pt-3.5">
       <span class="grid size-9 shrink-0 place-items-center rounded-full bg-elevated" :class="toneClass[head.tone]">
         <NuxtIcon :name="head.icon" class="size-5" :class="state === 'searching' ? 'animate-pulse' : ''" />
       </span>
       <div class="min-w-0 flex-1">
         <p class="flex items-center gap-2">
-          <span class="op-micro font-semibold tabular-nums" :style="{ color }">Corrida {{ number }}</span>
+          <span class="inline-grid h-5 min-w-5 place-items-center rounded px-1.5 op-micro font-bold tabular-nums" :style="{ background: color, color: tone.fg }">{{ number }}</span>
+          <span class="op-micro font-semibold text-highlighted">Corrida {{ number }}</span>
           <span class="op-micro text-muted">· {{ stops.length }} {{ stops.length === 1 ? "pedido" : "pedidos" }}<template v-if="cost"> · {{ cost }}</template></span>
         </p>
         <p class="op-label font-semibold text-highlighted">{{ head.title }}</p>
@@ -59,8 +62,8 @@ const toneClass: Record<string, string> = {
         <span v-if="i < stops.length - 1" class="absolute top-6 bottom-0 left-3 w-px" :class="stop.state === 'done' ? 'bg-success/60' : 'bg-default'" aria-hidden="true" />
         <span
           class="relative z-10 grid size-6 shrink-0 place-items-center rounded-full op-micro font-semibold"
-          :class="stop.state === 'done' ? 'bg-success text-white' : stop.state === 'now' ? 'text-white ring-4' : 'border-2 bg-default text-toned'"
-          :style="stop.state === 'now' ? { background: color, '--tw-ring-color': `${color}33` } : stop.state === 'done' ? {} : { borderColor: `${color}88` }"
+          :class="stop.state === 'done' ? 'bg-success text-white' : stop.state === 'now' ? 'ring-4' : 'border-2 bg-default text-toned'"
+          :style="stop.state === 'now' ? { background: color, color: tone.fg, '--tw-ring-color': `${color}33` } : stop.state === 'done' ? {} : { borderColor: color }"
         >
           <NuxtIcon v-if="stop.state === 'done'" name="i-lucide-check" class="size-3.5" />
           <template v-else>{{ i + 1 }}</template>
