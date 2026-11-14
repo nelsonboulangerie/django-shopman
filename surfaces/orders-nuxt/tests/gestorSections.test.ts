@@ -14,30 +14,46 @@ import {
   SETTINGS_ROUTES,
 } from "../app/presentation/gestorSections";
 
-// O rail do Gestor em dois andares (prévia v4, UX-KIT-V2): a operação em cima (Pedidos e
-// Saída) e Ajustes no pé. As seções que saíram do rail moram em Ajustes, a um toque.
+// O rail do Gestor em dois andares (D, 13/11/2026): a operação em cima (Pedidos e, para
+// quem cuida do catálogo, Canais) e Ajustes no pé. As seções que saíram do rail moram em Ajustes, a um toque.
 describe("gestorSections (rail)", () => {
   it("a operação em cima, com o rótulo do grupo; Ajustes no pé", () => {
     const sections = gestorSections({
       channelsAttention: "",
       canManageCustomers: true,
     });
-    expect(sections.map((s) => s.key)).toEqual(["orders", "exit", "settings"]);
+    expect(sections.map((s) => s.key)).toEqual(["orders", "history", "settings"]);
     expect(
       sections.filter((s) => s.group === "Operação").map((s) => s.key),
-    ).toEqual(["orders", "exit"]);
+    ).toEqual(["orders", "history"]);
     expect(sections.find((s) => s.key === "settings")?.foot).toBe(true);
   });
 
-  it("Pedidos abre as três colunas; Saída abre o posto do passe", () => {
+  it("Pedidos abre o quadro como o posto deixou; não há seção Saída", () => {
     const sections = gestorSections({
       channelsAttention: "",
       canManageCustomers: false,
     });
-    expect(sections.find((s) => s.key === "orders")?.to).toBe("/?columns=all");
-    expect(sections.find((s) => s.key === "exit")?.to).toBe(
-      "/?columns=expedition",
-    );
+    expect(sections.find((s) => s.key === "orders")?.to).toBe("/");
+    expect(sections.find((s) => s.key === "exit")).toBeUndefined();
+  });
+
+  it("Catálogo e Canais sobem para a operação de quem cuida do catálogo, com o ponto em Canais", () => {
+    const sections = gestorSections({
+      channelsAttention: "1 desligado",
+      canManageCustomers: false,
+      canManageCatalog: true,
+    });
+    expect(
+      sections.filter((s) => s.group === "Operação").map((s) => s.key),
+    ).toEqual(["orders", "history", "catalog", "feeds"]);
+    expect(sections.find((s) => s.key === "feeds")?.attention).toBe("1 desligado");
+    expect(activeSectionKey("/catalog", sections)).toBe("catalog");
+    expect(activeSectionKey("/history", sections)).toBe("history");
+    // O ponto não se repete em Ajustes, e Canais acende Canais, não Ajustes.
+    expect(sections.find((s) => s.key === "settings")?.attention).toBeUndefined();
+    expect(activeSectionKey("/feeds", sections)).toBe("feeds");
+    expect(activeSectionKey("/channels/ifood/catalog", sections)).toBe("feeds");
   });
 
   it("quem só expede (SUITE-UX §15) fica só com a operação", () => {
@@ -46,7 +62,16 @@ describe("gestorSections (rail)", () => {
       canManageCustomers: true,
       expeditesOnly: true,
     }).map((s) => s.key);
-    expect(keys).toEqual(["orders", "exit"]);
+    expect(keys).toEqual(["orders"]);
+  });
+
+  it("quem só expede entra direto no balcão de saída", () => {
+    const sections = gestorSections({
+      channelsAttention: "",
+      canManageCustomers: false,
+      expeditesOnly: true,
+    });
+    expect(sections.find((s) => s.key === "orders")?.to).toBe("/?columns=expedition");
   });
 
   it("quem cuida só do catálogo recebe Catálogo e Canais, sem Pedidos ou Clientes", () => {
@@ -77,39 +102,25 @@ describe("gestorSections (rail)", () => {
     const sections = gestorSections({
       channelsAttention: "",
       canManageCustomers: false,
-      intakeCount: 2,
-      exitCount: 0,
+      intakeCount: 0,
     });
-    expect(sections.find((s) => s.key === "orders")).toMatchObject({
-      badge: "2",
-    });
-    expect(sections.find((s) => s.key === "exit")?.badge).toBeUndefined();
+    expect(sections.find((s) => s.key === "orders")?.badge).toBeUndefined();
+    expect(
+      gestorSections({ channelsAttention: "", canManageCustomers: false, intakeCount: 2 })
+        .find((s) => s.key === "orders"),
+    ).toMatchObject({ badge: "2" });
   });
 
-  it("barra inferior: as três seções declaradas, sem 'Mais' (o ☰ abre o menu completo)", () => {
+  it("barra inferior: as seções declaradas, sem erro de regra", () => {
     const sections = gestorSections({
       channelsAttention: "",
       canManageCustomers: true,
     });
-    const layout = quickBarLayout(sections);
-    expect(layout.items.map((s) => s.key)).toEqual([
+    expect(quickBarLayout(sections).items.map((s) => s.key)).toEqual([
       "orders",
-      "exit",
       "settings",
     ]);
-    expect(layout.more).toBe(false);
     expect(quickBarProblems(sections)).toEqual([]);
-    // Quem só expede tem duas seções ao todo: a barra mostra as duas, sem erro.
-    const expedite = gestorSections({
-      channelsAttention: "",
-      canManageCustomers: true,
-      expeditesOnly: true,
-    });
-    expect(quickBarLayout(expedite).items.map((s) => s.key)).toEqual([
-      "orders",
-      "exit",
-    ]);
-    expect(quickBarProblems(expedite)).toEqual([]);
   });
 
   it("estar numa seção de Ajustes acende o item Ajustes", () => {
@@ -118,31 +129,26 @@ describe("gestorSections (rail)", () => {
       canManageCustomers: true,
     });
     for (const path of [
-      "/catalog",
-      "/history",
       "/customers/groups",
       "/customers/merges",
-      "/channels/ifood/catalog",
-      "/feeds",
       "/workstations",
-      "/checklists",
       "/settings",
     ]) {
       expect(activeSectionKey(path, sections)).toBe("settings");
     }
     expect(activeSectionKey("/", sections)).toBe("orders");
-    expect(SETTINGS_ROUTES).toContain("/catalog");
+    expect(SETTINGS_ROUTES).toContain("/customers");
   });
 });
 
 describe("gestorSettingsSections (andar Ajustes)", () => {
-  it("Clientes aparece para quem pode gerir clientes, entre Catálogo e Canais", () => {
+  it("Clientes aparece para quem pode gerir clientes (Histórico, Catálogo e Canais moram no rail)", () => {
     const keys = gestorSettingsSections({
       channelsAttention: "",
       canManageCustomers: true,
       canManageCatalog: true,
     }).map((s) => s.key);
-    expect(keys).toEqual(["history", "catalog", "customers", "feeds"]);
+    expect(keys).toEqual(["customers"]);
   });
 
   it("sem a permissão (ou sem resposta ainda) a linha não existe", () => {
@@ -151,16 +157,16 @@ describe("gestorSettingsSections (andar Ajustes)", () => {
       canManageCustomers: false,
       canManageCatalog: true,
     }).map((s) => s.key);
-    expect(keys).toEqual(["history", "catalog", "feeds"]);
+    expect(keys).toEqual([]);
   });
 
-  it("a atenção de Canais também aparece na linha de Canais", () => {
-    const loud = gestorSettingsSections({
+  it("Canais não se repete em Ajustes: mora no rail", () => {
+    const keys = gestorSettingsSections({
       channelsAttention: "1 desligado",
       canManageCustomers: false,
       canManageCatalog: true,
-    }).find((s) => s.key === "feeds");
-    expect(loud?.attention).toBe("1 desligado");
+    }).map((s) => s.key);
+    expect(keys).not.toContain("feeds");
   });
 
   it("Postos aparece por último, só para quem gere operadores", () => {
@@ -170,7 +176,7 @@ describe("gestorSettingsSections (andar Ajustes)", () => {
       canManageCatalog: true,
       canManageWorkstations: true,
     }).map((s) => s.key);
-    expect(keys).toEqual(["history", "catalog", "feeds", "workstations"]);
+    expect(keys).toEqual(["workstations"]);
     expect(
       gestorSettingsSections({
         channelsAttention: "",
@@ -179,25 +185,11 @@ describe("gestorSettingsSections (andar Ajustes)", () => {
     ).not.toContain("workstations");
   });
 
-  it("Rotinas aparece só para quem pode executar checklist", () => {
-    const visible = gestorSettingsSections({
-      channelsAttention: "",
-      canManageCustomers: false,
-      canManageCatalog: true,
-      canOperateChecklists: true,
-    });
-    expect(visible.map((s) => s.key)).toEqual([
-      "checklists",
-      "history",
-      "catalog",
-      "feeds",
-    ]);
+  it("Rotinas não mora mais no Gestor: foram para o PDV", () => {
     expect(
-      gestorSettingsSections({
-        channelsAttention: "",
-        canManageCustomers: false,
-      }).map((s) => s.key),
+      gestorSettingsSections({ channelsAttention: "", canManageCustomers: true }).map((s) => s.key),
     ).not.toContain("checklists");
+    expect(SETTINGS_ROUTES).not.toContain("/checklists");
   });
 });
 
@@ -208,43 +200,38 @@ describe("gestorSwitcherSections (trocador e barra de baixo)", () => {
     channelsAttention: "",
     canManageCustomers: true,
     canManageCatalog: true,
-    canOperateChecklists: true,
   };
   const all = () => gestorSwitcherSections(gestorSections(input), gestorSettingsSections(input));
 
   it("lista tudo na ordem do app, sem o item Ajustes, cada seção com a sua forma", () => {
     expect(all().map((s) => `${s.key}:${s.form}`)).toEqual([
       "orders:floor",
-      "exit:floor",
-      "checklists:floor",
-      "history:office",
-      "catalog:office",
+      "history:floor",
+      "catalog:floor",
+      "feeds:floor",
       "customers:office",
-      "feeds:office",
     ]);
   });
 
-  it("a barra de baixo do chão: Pedidos, Saída e Rotinas, sem 'Mais' (o selo abre o resto)", () => {
+  it("a barra de baixo do chão: a operação inteira", () => {
     const floor = all().filter((s) => s.form === "floor");
-    const layout = quickBarLayout(floor);
-    expect(layout.items.map((s) => s.label)).toEqual(["Pedidos", "Saída", "Rotinas"]);
-    expect(layout.more).toBe(false);
+    expect(quickBarLayout(floor).items.map((s) => s.label)).toEqual(["Pedidos", "Histórico", "Catálogo", "Canais"]);
     expect(quickBarProblems(floor)).toEqual([]);
-    expect(all().filter((s) => s.quick).map((s) => s.key)).toEqual(["orders", "exit", "checklists"]);
+    expect(all().filter((s) => s.quick).map((s) => s.key)).toEqual(["orders", "history", "catalog", "feeds"]);
   });
 
-  it("sem a permissão de Rotinas, o chão fica com Pedidos e Saída", () => {
+  it("sem Catálogo, o chão fica com Pedidos e Histórico", () => {
     const sections = gestorSwitcherSections(
-      gestorSections({ ...input, canOperateChecklists: false }),
-      gestorSettingsSections({ ...input, canOperateChecklists: false }),
+      gestorSections({ ...input, canManageCatalog: false }),
+      gestorSettingsSections({ ...input, canManageCatalog: false }),
     );
-    expect(sections.filter((s) => s.form === "floor").map((s) => s.key)).toEqual(["orders", "exit"]);
+    expect(sections.filter((s) => s.form === "floor").map((s) => s.key)).toEqual(["orders", "history"]);
   });
 
-  it("antes de montar (Ajustes ainda sem resposta) o chão já tem Pedidos e Saída", () => {
+  it("antes de montar (Ajustes ainda sem resposta) o trocador já tem a operação inteira", () => {
     expect(
       gestorSwitcherSections(gestorSections(input), []).map((s) => s.key),
-    ).toEqual(["orders", "exit"]);
+    ).toEqual(["orders", "history", "catalog", "feeds"]);
   });
 });
 
@@ -286,11 +273,15 @@ describe("Catálogo e Canais só para quem cuida do catálogo", () => {
       channelsAttention: "",
       canManageCustomers: false,
     }).map((s) => s.key);
-    expect(keys).toEqual(["history"]);
+    expect(keys).toEqual([]);
+    expect(
+      gestorSections({ channelsAttention: "", canManageCustomers: false }).map((s) => s.key),
+    ).not.toContain("catalog");
   });
 
   it("a URL direta fora do acesso diz o nome da seção; dentro dele, nada", () => {
-    const caixa = gestorSettingsSections({ channelsAttention: "", canManageCustomers: false });
+    const semCatalogo = { channelsAttention: "", canManageCustomers: false };
+    const caixa = [...gestorSections(semCatalogo), ...gestorSettingsSections(semCatalogo)];
     expect(deniedSettingsSection("/catalog", caixa)).toBe("o Catálogo");
     expect(deniedSettingsSection("/channels/web/catalog", caixa)).toBe("os Canais");
     expect(deniedSettingsSection("/feeds", caixa)).toBe("os Canais");
@@ -299,12 +290,14 @@ describe("Catálogo e Canais só para quem cuida do catálogo", () => {
     expect(deniedSettingsSection("/history", caixa)).toBe("");
     expect(deniedSettingsSection("/", caixa)).toBe("");
     expect(deniedSettingsSection("/WEB-261105-K38", caixa)).toBe("");
-    const gerente = gestorSettingsSections({
+    const access = {
       channelsAttention: "",
       canManageCustomers: true,
       canManageCatalog: true,
       canManageWorkstations: true,
-    });
+    };
+    // Canais saiu de Ajustes para o rail: a recusa olha as duas listas, como a página.
+    const gerente = [...gestorSections(access), ...gestorSettingsSections(access)];
     for (const path of ["/catalog", "/channels/web/catalog", "/feeds", "/customers", "/workstations"])
       expect(deniedSettingsSection(path, gerente)).toBe("");
   });

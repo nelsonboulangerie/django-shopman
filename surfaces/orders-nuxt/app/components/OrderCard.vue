@@ -38,8 +38,8 @@ import { danfeLine } from "~/presentation/danfe";
 import { COURIER_CALL_HASH, courierReminderLine } from "~/presentation/courier";
 import { kitchenChips } from "~/presentation/kitchen";
 import { cardCheckBadge } from "~/presentation/volumeCheck";
-import OrderCardMenu from "./OrderCardMenu.vue";
-import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import OrderCardActions from "./OrderCardActions.vue";
+import OrderCardNotices from "./OrderCardNotices.vue";
 
 // ``canOpen``: falso para quem só expede; o detalhe do pedido e o "Atender" são de quem
 // gerencia. ``selecting``: o modo de seleção em lote está ligado e o cartão mostra a
@@ -56,6 +56,10 @@ const props = withDefaults(
     canOpen?: boolean;
     /** Celular (G17): o Recusar mora no deslize do cartão; a ação principal fica larga. */
     swipeReject?: boolean;
+    /** O Quadro da mesa (D, dono 13/11/2026, prévia `gestor-d`): o cartão enxuto, em
+     *  quatro linhas (código, selo e valor; quem; itens; o gesto e o ⋮). O que é
+     *  exceção (avisos, erro, desfazer, DANFE) só aparece quando existe. */
+    compact?: boolean;
   }>(),
   { canOpen: true },
 );
@@ -170,7 +174,7 @@ function pressEnd() {
 onBeforeUnmount(pressEnd);
 
 /** Um aviso do pedido, compacto: a pílula no cartão e o Alert inteiro no Popover. */
-interface CardNotice {
+export interface CardNotice {
   key: string;
   color: "error" | "warning" | "info";
   icon: string;
@@ -453,6 +457,37 @@ function action(
 ): ButtonProps {
   return { ...props, ...attrs };
 }
+// O selo único do cartão enxuto: o que muda o que o operador faz primeiro (a saída
+// tocada, o prazo que decide sozinho, o bloqueio), senão a situação e o tempo.
+const compactPill = computed<{ label: string; color: "error" | "warning" | "success" | "neutral" | "info" | "primary" }>(() => {
+  if (handoff.value) return { label: handoff.value.label, color: "success" };
+  const timeColor =
+    clock.value.tone === "late"
+      ? "error"
+      : clock.value.tone === "warning"
+        ? "warning"
+        : clock.value.tone === "ready"
+          ? "success"
+          : "neutral";
+  if (clock.value.countdown) return { label: clock.value.text, color: timeColor };
+  if (seal.value.tone === "error" || seal.value.tone === "warning")
+    return { label: seal.value.label, color: seal.value.tone };
+  const status =
+    seal.value.label !== props.card.status_label &&
+    !props.card.ready_at_iso &&
+    !props.card.dispatched_at_iso
+      ? `${props.card.status_label} · `
+      : "";
+  return { label: `${status}${clock.value.text}`, color: timeColor };
+});
+// A terceira linha: o que saiu com o entregador (maquininha, troco) ou o andamento;
+// sem nada disso, os itens.
+const compactDetail = computed(() =>
+  [onRoad.value, props.card.change_label, progressLines.value[0]?.text]
+    .filter(Boolean)
+    .join(" · "),
+);
+
 function nuxtIcon(icon: string): string {
   return icon.startsWith("lucide:")
     ? `i-lucide-${icon.slice("lucide:".length)}`
@@ -461,7 +496,137 @@ function nuxtIcon(icon: string): string {
 </script>
 
 <template>
+  <!-- O cartão enxuto do Quadro (prévia `gestor-d`): o pedido que espera você ganha a
+       moldura na cor principal (`data-highlight="true"` do tema); o "Próximo" da
+       saída, o halo (`ready`). -->
   <NuxtCard
+    v-if="compact"
+    as="article"
+    :variant="selected ? 'subtle' : 'outline'"
+    :data-card-state="handoff ? 'handoff' : seal.tone"
+    :data-highlight="next ? 'ready' : card.attention && !handoff ? 'true' : undefined"
+    :aria-selected="selecting ? selected : undefined"
+    data-card-compact
+    @pointerdown="pressStart"
+    @pointerup="pressEnd"
+    @pointerleave="pressEnd"
+    @pointercancel="pressEnd"
+  >
+    <div class="flex flex-col gap-1">
+    <div class="flex items-baseline gap-2" :class="handoff ? 'opacity-55' : ''">
+      <NuxtButton
+        v-if="selecting"
+        :icon="selected ? 'i-lucide-check-square-2' : 'i-lucide-square'"
+        color="neutral"
+        variant="ghost"
+        square
+        class="self-center"
+        :aria-label="selected ? 'Desmarcar pedido' : 'Selecionar pedido'"
+        :aria-pressed="selected"
+        data-card-select
+        @click="emit('toggle-select')"
+      />
+      <NuxtLink
+        v-if="canOpen"
+        :to="`/${card.ref}`"
+        class="shrink-0 text-xl font-bold leading-none text-highlighted hover:underline"
+        :class="handoff ? 'line-through decoration-success/60' : ''"
+        :aria-label="`Abrir pedido ${card.ref}`"
+        >{{ code.code }}</NuxtLink
+      >
+      <span
+        v-else
+        class="shrink-0 text-xl font-bold leading-none text-highlighted"
+        data-card-code
+        >{{ code.code }}</span
+      >
+      <NuxtBadge
+        class="min-w-0 self-center"
+        :color="compactPill.color"
+        :label="compactPill.label"
+        :role="clock.countdown ? 'timer' : undefined"
+        data-card-clock
+      />
+      <span class="ms-auto shrink-0 tnum text-muted">{{ card.total_display }}</span>
+    </div>
+    <p
+      class="truncate"
+      :title="`${card.customer_name || 'Sem cliente'} · ${channelLabel(card.channel_ref)} · ${card.fulfillment_label}`"
+      data-card-who
+    >
+      {{ card.customer_name || "Sem cliente" }} · {{ channelLabel(card.channel_ref) }} ·
+      {{ card.fulfillment_label }}
+    </p>
+    <p
+      v-if="card.items_summary"
+      class="truncate op-micro text-muted"
+      :title="card.items_summary"
+    >
+      {{ card.items_summary }}
+    </p>
+    <p
+      v-if="compactDetail && !handoff"
+      class="truncate op-micro text-muted"
+      :title="compactDetail"
+      data-card-detail
+    >
+      {{ compactDetail }}
+    </p>
+    <!-- as exceções, só quando existem -->
+    <OrderCardNotices :notices="notices" />
+    <!-- O "pronto sozinho" com Desfazer mora na faixa "O sistema fez", abaixo do
+         cabeçalho do Quadro; aqui não se repete. -->
+    <div
+      v-if="danfe && !danfe.attention && !handoff"
+      class="flex items-center gap-1.5 op-micro text-muted"
+      data-danfe
+    >
+      <span class="min-w-0 flex-1 truncate" data-danfe-status>{{ danfe.status }}</span>
+      <NuxtButton
+        icon="i-lucide-printer"
+        :label="danfePrinting || danfe.sending ? 'Imprimindo…' : danfe.action"
+        color="neutral"
+        variant="ghost"
+        class="shrink-0"
+        :disabled="danfePrinting || danfe.sending"
+        data-danfe-print
+        @click="emit('print-danfe')"
+      />
+    </div>
+    <NuxtAlert
+      v-if="error"
+      color="error"
+      variant="subtle"
+      icon="i-lucide-triangle-alert"
+      :title="error"
+      :close="action({}, { 'aria-label': 'Dispensar aviso' })"
+      data-card-error
+      @update:open="emit('dismiss-error')"
+    />
+    <div class="mt-1.5">
+      <OrderCardActions
+        :card="card"
+        :busy="busy"
+        :handoff="handoff"
+        :primary="primary"
+        :secondary="secondary"
+        :primary-label="primaryLabel"
+        :waiting-for="waitingFor"
+        :can-open="canOpen"
+        :selecting="selecting"
+        :selected="selected"
+        @action="(ref_) => emit('action', ref_)"
+        @toggle-assign="emit('toggle-assign')"
+        @toggle-select="emit('toggle-select')"
+        @select-mode="emit('select-mode')"
+        @volumes="(count) => emit('volumes', count)"
+        @station-recall="(pk) => emit('station-recall', pk)"
+      />
+    </div>
+    </div>
+  </NuxtCard>
+  <NuxtCard
+    v-else
     as="article"
     class="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto]"
     :variant="selected ? 'subtle' : 'outline'"
@@ -808,37 +973,7 @@ function nuxtIcon(icon: string): string {
       </template>
 
       <!-- avisos: a pílula com cor e nome; o texto e o gesto no Popover -->
-      <div
-        v-if="notices.length"
-        class="flex flex-wrap gap-1.5"
-        data-card-notices
-      >
-        <NuxtPopover
-          v-for="notice in notices"
-          :key="notice.key"
-          :content="{ side: 'bottom', align: 'start' }"
-        >
-          <NuxtButton
-            :color="notice.color"
-            variant="soft"
-            :icon="notice.icon"
-            :label="notice.label"
-            :data-card-notice="notice.key"
-          />
-          <template #content>
-            <NuxtAlert
-              class="max-w-80"
-              :color="notice.color"
-              variant="subtle"
-              :icon="notice.icon"
-              :title="notice.title"
-              :description="notice.description"
-              :actions="alertActions(notice.color, notice.actions ?? [])"
-              v-bind="notice.attrs"
-            />
-          </template>
-        </NuxtPopover>
-      </div>
+      <OrderCardNotices :notices="notices" />
       <p
         v-if="card.ifood_schedule_label"
         class="op-micro text-muted-foreground"
@@ -897,101 +1032,24 @@ function nuxtIcon(icon: string): string {
     <template #footer>
       <!-- @container: o rodapé decide pela própria largura (card largo, coluna estreita,
            grade da Saída), não pelo breakpoint da página. -->
-      <div class="@container flex items-end gap-2">
-        <!-- O Desfazer é o MESMO botão da saída tocada (dono, 09/10/2026): o primário
-             sólido, no mesmo lugar e tamanho; muda só o texto, e o fundo esvazia atrás. -->
-        <OperatorTimedButton
-          v-if="handoff && handoff.canUndo"
-          :until="handoff.untilIso"
-          :since="handoff.sinceIso || undefined"
-          :server-now="card.server_now_iso || undefined"
-          label="Desfazer"
-          block
-          class="min-w-0 flex-1"
-          color="primary"
-          variant="solid"
-          icon="i-lucide-undo-2"
-          :disabled="busy"
-          :loading="busy"
-          data-undo-button
-          @click="emit('action', handoff.action)"
-        />
-        <div
-          v-else-if="!handoff"
-          class="grid min-w-0 flex-1 gap-2"
-          :class="
-            primary && secondary.length === 1
-              ? '@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'
-              : secondary.length > 1
-                ? 'grid-cols-1 @[20rem]:grid-cols-2'
-                : 'grid-cols-1'
-          "
-        >
-          <NuxtButton
-            v-for="aff in secondary"
-            :key="aff.ref"
-            block
-            class="h-full min-w-0"
-            :disabled="busy"
-            :loading="busy"
-            :color="aff.priority === 'danger' ? 'error' : 'neutral'"
-            variant="outline"
-            :icon="nuxtIcon(aff.icon)"
-            :title="aff.reason || undefined"
-            @click="emit('action', aff.ref)"
-          >
-            <span class="min-w-0 text-center leading-tight">{{
-              aff.label
-            }}</span>
-          </NuxtButton>
-          <NuxtButton
-            v-if="primary"
-            block
-            class="min-w-0"
-            :class="secondary.length > 1 ? '@[20rem]:col-span-2' : undefined"
-            :disabled="busy || primary.disabled"
-            :loading="busy"
-            :title="
-              primary.reason ||
-              (primaryLabel !== primary.label ? primary.label : undefined)
-            "
-            :color="primary.disabled ? 'neutral' : 'primary'"
-            :variant="primary.disabled ? 'outline' : 'solid'"
-            :icon="primary.disabled ? 'i-lucide-lock' : nuxtIcon(primary.icon)"
-            data-card-primary
-            @click="!primary.disabled && emit('action', primary.ref)"
-          >
-            <span class="min-w-0 text-center leading-tight">{{
-              primaryLabel
-            }}</span>
-          </NuxtButton>
-          <NuxtAlert
-            v-else-if="waitingFor"
-            class="min-w-0"
-            color="info"
-            variant="subtle"
-            icon="i-lucide-chef-hat"
-            :title="`Aguardando ${waitingFor}`"
-            data-card-waiting
-          />
-        </div>
-        <div v-else class="flex-1" />
-
-        <!-- ⋯ do cartão: atender, seleção em lote, voltar à estação, abrir. -->
-        <OrderCardMenu
-          class="shrink-0"
-          :card="card"
-          :busy="busy"
-          :can-open="canOpen"
-          :selecting="selecting"
-          :selected="selected"
-          @toggle-assign="emit('toggle-assign')"
-          @toggle-select="emit('toggle-select')"
-          @select-mode="emit('select-mode')"
-          @volumes="(count) => emit('volumes', count)"
-          @station-recall="(pk) => emit('station-recall', pk)"
-        />
-      </div>
+      <OrderCardActions
+        :card="card"
+        :busy="busy"
+        :handoff="handoff"
+        :primary="primary"
+        :secondary="secondary"
+        :primary-label="primaryLabel"
+        :waiting-for="waitingFor"
+        :can-open="canOpen"
+        :selecting="selecting"
+        :selected="selected"
+        @action="(ref_) => emit('action', ref_)"
+        @toggle-assign="emit('toggle-assign')"
+        @toggle-select="emit('toggle-select')"
+        @select-mode="emit('select-mode')"
+        @volumes="(count) => emit('volumes', count)"
+        @station-recall="(pk) => emit('station-recall', pk)"
+      />
     </template>
   </NuxtCard>
 </template>

@@ -70,12 +70,13 @@ export function minutesLabel(seconds: number): string {
   return rest ? `${Math.floor(m / 60)}h ${rest} min` : `${Math.floor(m / 60)}h`;
 }
 
-/** O tom do número: passou da meta é atraso; a partir de 80% dela, atenção. */
+/** O tom do número, como o iFood (dono, 13/11/2026): passou da meta é atraso; a partir
+ *  da metade dela, atenção. */
 export function goalTone(seconds: number, goalMinutes: number): QueueTone {
   if (!goalMinutes) return timeTone("on_time");
   const ratio = seconds / (goalMinutes * 60);
   if (ratio >= 1) return timeTone("late");
-  if (ratio >= 0.8) return timeTone("warning");
+  if (ratio >= 0.5) return timeTone("warning");
   return timeTone("on_time");
 }
 
