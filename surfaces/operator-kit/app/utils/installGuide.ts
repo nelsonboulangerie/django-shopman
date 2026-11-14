@@ -426,5 +426,9 @@ export function installStepLines(text: string, glyph?: InstallGlyph): InstallSte
   const lead = parts.slice(0, cut).map((part) => ({ ...part }));
   const last = lead[lead.length - 1];
   if (last) last.text = last.text.trimEnd();
-  return { lead: lead.filter((part) => part.text.length > 0), target: parts.slice(cut) };
+  // A linha de baixo começa uma frase: "Três pontinhos", não "três pontinhos" (dono, 14/11).
+  const target = parts.slice(cut).map((part) => ({ ...part }));
+  const first = target.find((part) => part.text.trim().length > 0);
+  if (first) first.text = first.text.charAt(0).toLocaleUpperCase("pt-BR") + first.text.slice(1);
+  return { lead: lead.filter((part) => part.text.length > 0), target };
 }

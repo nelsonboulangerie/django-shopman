@@ -250,6 +250,11 @@ describe("installTextParts", () => {
     }
   });
 
+  it("a linha de baixo começa com maiúscula", () => {
+    const lines = installStepLines("No canto da barra do Chrome, toque nos **três pontinhos**", "menu-horizontal");
+    expect(lines.target[0]).toMatchObject({ text: "Três pontinhos", glyph: "menu-horizontal" });
+  });
+
   it("o passo vira duas linhas: o gesto em cima, o símbolo com o rótulo embaixo", () => {
     const lines = installStepLines("Role e toque em **Adicionar à Tela de Início**", "add-home");
     expect(lines.lead).toEqual([{ text: "Role e toque em", strong: false }]);
