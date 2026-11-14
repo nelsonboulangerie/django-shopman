@@ -1048,6 +1048,29 @@ python manage.py reconcile_user_notifications
 
 ---
 
+### check_ifood_polling
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/check_ifood_polling.py`
+
+O sinal de vida do `ifood_poll --watch` (componente `ifood-poll-worker`). A
+integração direta do iFood entra só por polling, e o iFood cancela em 8 minutos o
+pedido que ninguém aceitou. Cada resposta do iFood ao poll (200 com lista, ou 204)
+grava a hora em `worker_heartbeat` (`ifood_poll`, Redis compartilhado). Passados
+2 minutos sem resposta, abre o `OperatorAlert` crítico `ifood_poll_stale`, com
+e-mail síncrono (`critical_alerts.deliver_now`); quando o polling volta, resolve o
+alerta aberto. Sem credencial OAuth do iFood, ou com cache por processo (dev/CI),
+volta calado. Roda no `maintenance_worker`, depois do `check_ifood_store`. A sonda
+gêmea é `ifood_polling` do Watchman (perfis `diagnostic` e `ifood`, fora da
+prontidão):
+
+```bash
+python manage.py check_ifood_polling
+python manage.py watchman check --profile ifood
+```
+
+---
+
 ### fiscal_audit_catalog
 
 **App:** `shopman.shop`

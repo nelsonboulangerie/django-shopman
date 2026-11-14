@@ -115,3 +115,52 @@ class QueueCheck:
             healthy="workers and durable queue are current",
             remediation="Inspect worker heartbeats and the oldest queued directives.",
         )
+
+
+class IfoodPollingCheck:
+    id = "ifood_polling"
+    description = "The iFood order poller answered within the last 2 minutes."
+    scopes = frozenset({Scope.DIAGNOSTIC})
+    timeout_seconds = 2.0
+
+    def run(self, context: CheckContext) -> CheckResult:
+        from shopman.shop.services import ifood_poll_health as health
+
+        state = health.current()
+        limit = int(health.STALE_AFTER.total_seconds())
+        if state.state == health.DISABLED:
+            return CheckResult(
+                id=self.id,
+                status=Status.SKIPPED,
+                summary="iFood direct integration is not configured",
+            )
+        if state.state == health.UNKNOWN:
+            return CheckResult(
+                id=self.id,
+                status=Status.UNKNOWN,
+                summary="process-local cache cannot see the poller heartbeat",
+            )
+        if state.state == health.FRESH:
+            return CheckResult(
+                id=self.id,
+                status=Status.PASS,
+                summary="iFood poller is answering",
+                evidence={"age_seconds": state.age_seconds, "limit_seconds": limit},
+            )
+        evidence = {"limit_seconds": limit}
+        if state.state == health.STALE:
+            evidence["age_seconds"] = state.age_seconds
+            evidence["last_success"] = state.last_success.isoformat()
+            summary = f"no successful iFood poll for {state.age_seconds}s"
+        else:
+            summary = "no successful iFood poll was ever recorded"
+        return CheckResult(
+            id=self.id,
+            status=Status.FAIL,
+            summary=summary,
+            evidence=evidence,
+            remediation=(
+                "Inspect the ifood-poll-worker component (ifood_poll --watch) and iFood OAuth; "
+                "iFood cancels orders not accepted within 8 minutes."
+            ),
+        )

@@ -4315,6 +4315,30 @@
       ]
     },
     {
+      "path": "shopman/shop/management/commands/check_ifood_polling.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "Command",
+            "MESSAGE_MARKER",
+            "RESOLVED_BY",
+            "_message",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/management/commands/cleanup_stale_planning.py",
       "touchpoints": [
         "outro"
@@ -9930,9 +9954,42 @@
             "_process_remote_progress",
             "_reconcile_locked",
             "_record_logistics",
+            "_record_poll_success",
             "_record_remote",
             "_refresh_financials",
-            "logger"
+            "logger",
+            "polling_configured"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/ifood_poll_health.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "DISABLED",
+            "FRESH",
+            "MISSING",
+            "POLL_HEARTBEAT",
+            "PollHealth",
+            "STALE",
+            "STALE_AFTER",
+            "UNKNOWN",
+            "_LOCMEM_BACKEND",
+            "_shared_cache",
+            "current",
+            "last_success",
+            "record_success"
           ]
         }
       ]
@@ -13715,6 +13772,7 @@
           "symbols": [
             "CacheCheck",
             "DatabaseCheck",
+            "IfoodPollingCheck",
             "LegacyCheck",
             "MigrationsCheck",
             "PoolCheck",

@@ -25,6 +25,7 @@ manutenção num loop (default: a cada 5 minutos):
   check_integration_drift   — integração em configuração degradada vira alerta (push, não pull)
   check_geoip_freshness     — base de cidade velha vira alerta (velha, ela erra CALADA)
   check_ifood_store         — iFood fechado com a casa aberta (ou o contrário) vira alerta
+  check_ifood_polling       — polling do iFood sem resposta há mais de 2 min vira alerta
   check_card_machines_out   — maquininha na rua além do limite vira alerta
   sweep_danfe_print_jobs    — DANFE da entrega que a impressora não buscou vira alerta
   sweep_kitchen_print_jobs  — Via Cozinha que a impressora do posto não buscou vira alerta
@@ -220,6 +221,11 @@ MAINTENANCE_COMMANDS = (
     # esquecida no Portal) ou abre com ela fechada. É o vigia que o
     # ``ifood_poll`` não tinha. Desligado (IFOOD_MERCHANT_SYNC), volta calado.
     "check_ifood_store",
+    # O sinal de vida do ``ifood_poll --watch``: a integração direta entra só por
+    # polling, e sem ele o iFood cancela em 8 min o pedido que não entrou. Mais de
+    # 2 min sem resposta do iFood vira alerta crítico com e-mail (DEV-2026-017).
+    # Não depende do módulo Merchant: ligado sempre que houver credencial.
+    "check_ifood_polling",
     # A maquininha não tem indicador fixo no Gestor: o card da saída basta. Só
     # quando passa do limite (default 2 h, em Shop.defaults) vira alerta.
     "check_card_machines_out",
