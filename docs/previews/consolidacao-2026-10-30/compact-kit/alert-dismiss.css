@@ -1,0 +1,9 @@
+
+/* PRÉVIA (decisão consolidada): o fechar dos avisos fica no canto superior direito, em
+   todo app e nos dois modos. Só o fechar muda de lugar; composição, descrição, cores e a
+   ação do aviso ficam como no kit. O título reserva o espaço para não passar por baixo. */
+[data-slot="root"][data-orientation]:has(> [data-slot="actions"] > [data-slot="close"]) { position: relative; }
+[data-slot="root"][data-orientation] > [data-slot="actions"]:has(> [data-slot="close"]) {
+  position: absolute; inset-block-start: 8px; inset-inline-end: 8px; flex-basis: auto; flex-direction: row;
+}
+[data-slot="root"][data-orientation]:has(> [data-slot="actions"] > [data-slot="close"]) [data-slot="title"] { padding-inline-end: 36px; }

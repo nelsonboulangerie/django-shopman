@@ -1,0 +1,21 @@
+
+/* PRÉVIA (rodada desktop): regras comuns da mesa, em todo app e nos dois modos.
+   1. O título da página nunca se corta: a busca do centro é que encolhe (a 1024px o
+      Gestor mostrava "Ped" e o PDV "Enco"). Só do `sm` para cima; o celular tem a
+      régua dele.
+   2. Avisos com 44px onde o ponteiro é o dedo (o PDV e a Cozinha rodam em tablet e
+      monitor de toque na largura de mesa). No mouse fica o tamanho do kit. */
+@media (min-width: 640px) {
+  [data-slot="root"] > [data-slot="left"] { flex-shrink: 0; }
+  [data-slot="root"] > [data-slot="left"] > [data-slot="title"] { flex-shrink: 0; min-width: max-content; }
+  /* Quem cede é a busca do centro: encolhe até o mínimo e o texto do campo se corta
+     (o atalho e a lupa ficam). Sem isto, o título inteiro empurrava as ações da direita
+     para fora da tela. */
+  [data-slot="root"] > [data-slot="center"] { flex: 1 1 0; min-width: 0; justify-content: center; }
+  [data-slot="root"] > [data-slot="center"] > *,
+  [data-slot="root"] > [data-slot="center"] > * > * { min-width: 0; max-width: 100%; }
+  [data-slot="root"] > [data-slot="center"] button { min-width: 0; max-width: 100%; }
+}
+@media (pointer: coarse) {
+  [data-operator-inbox-trigger] { min-width: 44px; min-height: 44px; justify-content: center; }
+}
