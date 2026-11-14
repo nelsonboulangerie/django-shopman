@@ -678,6 +678,14 @@ const boardSplitterPersistenceKey = computed(
   () =>
     `orders-board:${boardLayout.station.value || "device"}:${desktopZones.value.map((zone) => zone.key).join("-")}`,
 );
+// Abriu ou recolheu uma coluna: a largura guardada no navegador para esse conjunto
+// sai antes de o Splitter montar, e as abertas voltam a dividir o espaço por igual.
+const boardSplitter = ref<{ reset: () => void } | null>(null);
+watch(
+  boardSplitterPersistenceKey,
+  () => boardSplitter.value?.reset(),
+  { flush: "pre" },
+);
 // O índice de estações da Cozinha (estação de Saída) e o posto de saída chegam com
 // `?columns=expedition`: o quadro abre só com a Saída, e a arrumação fica no posto.
 // O parâmetro sai da URL depois de aplicado, para o operador poder abrir as outras.
@@ -703,7 +711,8 @@ watch(
   },
 );
 // O posto de saída é tablet de toque: todo alvo do cartão sobe para 48 px.
-// A Fila "Precisa de você" (V4-G4) é a casa do desktop e do tablet deitado. O celular e
+// A Fila "Precisa de você" (V4-G4) segue no desktop e no tablet deitado; a casa é o
+// Quadro. O celular e
 // o tablet em pé seguem com as colunas em abas, e o posto Saída com a Saída larga: lá a
 // escolha "Fila" vira o Quadro. Antes de montar (SSR), vale a escolha guardada.
 const queueAvailable = computed(
@@ -1908,6 +1917,7 @@ function compactClear() {
           <OperatorSplitter
             v-if="!boardAsTabs"
             id="orders-board-columns"
+            ref="boardSplitter"
             :persistence-key="boardSplitterPersistenceKey"
             :items="boardSplitterItems"
             class="min-h-full flex-1"

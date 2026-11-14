@@ -13,12 +13,13 @@ const emit = defineEmits<{ open: [] }>();
 
 <template>
   <!-- O mesmo fundo das colunas abertas (a tira é a coluna, fechada); o botão é ela
-       inteira, sem fundo próprio. -->
+       inteira, sem fundo próprio. O foco é desenhado para dentro: a tira encosta na
+       borda do painel do Splitter, que recorta o que passa dela. -->
   <div class="h-full w-11 shrink-0 rounded-xl bg-elevated/60">
   <NuxtButton
     color="neutral"
     variant="ghost"
-    class="relative h-full w-full flex-col items-center justify-start gap-0 p-0 pb-3"
+    class="relative h-full w-full flex-col items-center justify-start gap-0 p-0 pb-3 focus-visible:-outline-offset-2"
     :aria-label="`${strip.label} (atalho: ${shortcut})`"
     :title="strip.label"
     :data-board-strip="strip.key"

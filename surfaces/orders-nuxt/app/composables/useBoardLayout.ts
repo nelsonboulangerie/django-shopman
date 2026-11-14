@@ -104,14 +104,24 @@ export function useBoardLayout() {
     scheduleSave();
   }
 
+  /** Abrir ou recolher uma coluna redivide a largura: as abertas ficam iguais (dono,
+   *  14/11/2026: "as colunas abertas sempre dividem o espaço disponível igualmente").
+   *  O ajuste à mão na alça vale até a próxima coluna abrir ou recolher. */
+  function equalized(next: QueueColumnLayout): QueueColumnLayout {
+    if (next === layout.value) return next;
+    return Object.fromEntries(
+      keys.map((key) => [key, { open: Boolean(next[key]?.open), weight: 1 }]),
+    );
+  }
   const isOpen = (key: string) => Boolean(layout.value[key]?.open);
   const toggle = (key: string) =>
-    commit(toggleQueueColumn(layout.value, keys, key));
-  const open = (key: string) => commit(openQueueColumn(layout.value, key));
+    commit(equalized(toggleQueueColumn(layout.value, keys, key)));
+  const open = (key: string) =>
+    commit(equalized(openQueueColumn(layout.value, key)));
   const showAll = () => commit(showAllQueueColumns(keys));
   /** Só a coluna pedida aberta (o posto de saída), guardada no posto como qualquer gesto. */
   const showOnly = (key: string) =>
-    commit(onlyQueueColumn(layout.value, keys, key));
+    commit(equalized(onlyQueueColumn(layout.value, keys, key)));
   /** O posto de saída: só a Saída aberta. Os alvos do cartão sobem para 48 px. */
   const exitPost = computed(() =>
     isOnlyQueueColumn(layout.value, keys, "expedition"),

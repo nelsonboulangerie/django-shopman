@@ -39,54 +39,75 @@ _METHOD_LABELS = {
 }
 
 
-def payment_summary(order) -> tuple[str, ...]:
-    """O pagamento do iFood respondendo à única pergunta do balcão: cobrar ou não?
+def _due_methods(payments) -> list[tuple[str, int, str]]:
+    """As formas que se cobram na porta: (forma com bandeira, valor, troco)."""
+    due = []
+    for method in payments.get("methods") or []:
+        if not isinstance(method, dict) or method.get("prepaid") is True:
+            continue
+        code = str(method.get("method") or "").upper()
+        name = _METHOD_LABELS.get(code, "Outra forma")
+        brand = str(method.get("brand") or "").strip()
+        value = _amount(method.get("value_q"))
+        how = f"{name}{' ' + brand if brand else ''}"
+        change = ""
+        change_for = _amount(method.get("change_for_q"))
+        if code == "CASH" and change_for:
+            change = f"; troco para R$ {format_money(change_for)}"
+            if change_for >= value:
+                change += f" (levar R$ {format_money(change_for - value)})"
+        due.append((how, value, change))
+    return due
 
-    Pago online é UMA linha: bandeira, banco e quem bancou o frete grátis não
-    mudam nada no despacho e repetiam o total três vezes (pedido 3417, 12/11:
-    "Pago online", "OTHER NUBANK" e o desconto da entrega, todos de R$ 49,20).
-    O desdobramento continua inteiro em ``Order.data["ifood"]`` para a conciliação.
-    Só o que se cobra na porta ganha detalhe: forma, bandeira e troco.
+
+def payment_headline(order) -> str:
+    """O pagamento do iFood numa frase só, respondendo à pergunta do balcão: cobrar ou não?
+
+    É a linha do pagamento no detalhe, no lugar de "iFood · Pago online" mais um
+    "Nada a cobrar do cliente." logo abaixo, que diziam a mesma coisa duas vezes
+    (dono, 14/11/2026: "porque a informação sobre pagamento do iFood ainda parece
+    duplicada?"). Pago online é UMA linha: bandeira, banco e quem bancou o frete
+    grátis não mudam nada no despacho (pedido 3417, 12/11). O desdobramento
+    continua inteiro em ``Order.data["ifood"]`` para a conciliação. Só o que se
+    cobra na porta ganha detalhe: forma, bandeira e troco.
+    """
+    if order.channel_ref != "ifood":
+        return ""
+    payments = ((order.data or {}).get("ifood") or {}).get("payments") or {}
+    prepaid = _amount(payments.get("prepaid_q"))
+    pending = _amount(payments.get("pending_q"))
+    if pending:
+        due = _due_methods(payments)
+        if len(due) == 1:
+            how, _value, change = due[0]
+            how = how[:1].lower() + how[1:]
+            return f"Cobrar na entrega: R$ {format_money(pending)} em {how}{change}"
+        return f"Cobrar na entrega: R$ {format_money(pending)}"
+    if prepaid:
+        return "Pago online no iFood: nada a cobrar"
+    return "Pagamento não informado pelo iFood"
+
+
+def payment_summary(order) -> tuple[str, ...]:
+    """O que a frase do pagamento (:func:`payment_headline`) não diz sozinha.
+
+    Vazio no caso comum (pago online, ou uma forma só na porta). Só o pagamento
+    dividido ganha linhas: a parte já paga online e cada forma a cobrar.
     """
     if order.channel_ref != "ifood":
         return ()
     payments = ((order.data or {}).get("ifood") or {}).get("payments") or {}
-    if not payments:
-        return ("iFood: pagamento não informado.",)
     prepaid = _amount(payments.get("prepaid_q"))
     pending = _amount(payments.get("pending_q"))
+    if not pending:
+        return ()
     lines = []
-    if pending:
-        if prepaid:
-            lines.append(f"Já pago online no iFood: R$ {format_money(prepaid)}")
-        due = []
-        for method in payments.get("methods") or []:
-            if not isinstance(method, dict) or method.get("prepaid") is True:
-                continue
-            code = str(method.get("method") or "").upper()
-            name = _METHOD_LABELS.get(code, "Outra forma")
-            brand = str(method.get("brand") or "").strip()
-            value = _amount(method.get("value_q"))
-            how = f"{name}{' ' + brand if brand else ''}"
-            change = ""
-            change_for = _amount(method.get("change_for_q"))
-            if code == "CASH" and change_for:
-                change = f"; troco para R$ {format_money(change_for)}"
-                if change_for >= value:
-                    change += f" (levar R$ {format_money(change_for - value)})"
-            due.append((how, value, change))
-        if len(due) == 1:
-            # Uma forma só: valor, forma e troco numa linha, sem repetir o total.
-            how, _value, change = due[0]
-            how = how[:1].lower() + how[1:]
-            lines.append(f"Cobrar na entrega: R$ {format_money(pending)} em {how}{change}")
-        else:
-            lines.append(f"Cobrar na entrega: R$ {format_money(pending)}")
-            lines.extend(f"{how}: R$ {format_money(value)}{change}" for how, value, change in due)
-    elif prepaid:
-        # A linha de cima já diz "iFood · Pago online"; aqui, só o gesto.
-        lines.append("Nada a cobrar do cliente.")
-    return (tuple(lines) or ("iFood: pagamento não informado.",))
+    if prepaid:
+        lines.append(f"Já pago online no iFood: R$ {format_money(prepaid)}")
+    due = _due_methods(payments)
+    if len(due) > 1:
+        lines.extend(f"{how}: R$ {format_money(value)}{change}" for how, value, change in due)
+    return tuple(lines)
 
 
 _FEE_LABELS = {
@@ -167,7 +188,15 @@ def operation_summary(order) -> tuple[str, ...]:
         lines.append(pickup_code_label(order).replace(" · ", ": "))
     if get_fulfillment_type(order) == "delivery":
         provider = str(facts.get("delivered_by") or "").upper()
-        lines.append({"IFOOD": "Entrega por entregador iFood", "MERCHANT": "Entrega própria da loja"}.get(provider, "Responsável pela entrega não informado pelo iFood"))
+        if provider == "IFOOD":
+            # Quem leva é o iFood, e quem escolhe o entregador também. Depois do
+            # primeiro fato da corrida, o selo do cabeçalho diz quem é e onde está
+            # (``logistics_label``); antes dele, esta linha diz que é o iFood que
+            # designa, em vez de parecer que falta um passo aqui.
+            if not logistics_label(order):
+                lines.append("Entregador do iFood: o iFood designa perto da hora de sair")
+        else:
+            lines.append({"MERCHANT": "Entrega própria da loja"}.get(provider, "Responsável pela entrega não informado pelo iFood"))
     takeout = _takeout_local(order)
     if takeout is not None:
         lines.append(f"Retirada prevista: {takeout.strftime('%d/%m/%Y às %H:%M')}")
@@ -209,6 +238,72 @@ _LOGISTICS_STEPS = (
 )
 
 
+_TIMELINE_STEPS = {
+    "ASSIGN_DRIVER": "Entregador do iFood designado",
+    "GOING_TO_ORIGIN": "Entregador a caminho da loja",
+    "ARRIVED_AT_ORIGIN": "Entregador do iFood na loja",
+    "DELIVERY_PICKUP_CODE_REQUESTED": "Entregador do iFood na loja",
+    "COLLECTED": "Saiu com o entregador do iFood",
+    "ARRIVED_AT_DESTINATION": "Entregador chegou ao cliente",
+    "DELIVERY_DROP_CODE_VALIDATION_SUCCESS": "Entregue ao cliente",
+}
+_TIMELINE_REMOTE = {
+    "remote_dispatched": "Saiu para entrega no iFood",
+    "remote_concluded": "Concluído no iFood",
+}
+
+
+def timeline_facts(order) -> list[tuple]:
+    """O que o iFood contou do pedido, com hora, para a linha do tempo do Gestor.
+
+    O andamento do entregador e o encerramento lá chegam como fatos em
+    ``Order.data["ifood"]`` (não como eventos do pedido): sem isto, a linha do
+    tempo parava no último gesto da loja enquanto o iFood conduzia (dono,
+    14/11/2026). Devolve ``(quando, rótulo, detalhe)``; fatos sem hora ficam de
+    fora, e dois passos seguidos com o mesmo rótulo viram um.
+    """
+    from django.utils.dateparse import parse_datetime
+
+    if order.channel_ref != "ifood":
+        return []
+    facts = (order.data or {}).get("ifood") or {}
+    logistics = facts.get("logistics") if isinstance(facts.get("logistics"), dict) else {}
+    found = []
+    for step, label in _TIMELINE_STEPS.items():
+        record = logistics.get(step)
+        if isinstance(record, dict):
+            detail = courier_name(order) if step == "ASSIGN_DRIVER" else ""
+            found.append((record.get("observed_at"), label, detail))
+    for marker, label in _TIMELINE_REMOTE.items():
+        record = facts.get(marker)
+        if isinstance(record, dict):
+            found.append((record.get("observed_at"), label, ""))
+    out = []
+    for raw, label, detail in found:
+        try:
+            when = parse_datetime(str(raw or ""))
+        except (TypeError, ValueError):
+            when = None
+        if when is not None:
+            out.append((when, label, detail))
+    out.sort(key=lambda item: item[0])
+    deduped = []
+    for item in out:
+        if deduped and deduped[-1][1] == item[1]:
+            continue
+        deduped.append(item)
+    return deduped
+
+
+def courier_name(order) -> str:
+    """O nome do entregador que o iFood designou, ou vazio antes disso."""
+    facts = (order.data or {}).get("ifood") or {}
+    logistics = facts.get("logistics") if isinstance(facts.get("logistics"), dict) else {}
+    assigned = logistics.get("ASSIGN_DRIVER") if isinstance(logistics.get("ASSIGN_DRIVER"), dict) else {}
+    meta = assigned.get("metadata") if isinstance(assigned.get("metadata"), dict) else {}
+    return str(meta.get("workerName") or meta.get("driverName") or "").strip()
+
+
 def logistics_label(order) -> str:
     """Onde está o entregador do iFood, numa frase, pelo último fato recebido.
 
@@ -231,8 +326,7 @@ def logistics_label(order) -> str:
     for step, label in _LOGISTICS_STEPS:
         if logistics.get(step):
             if step == "ASSIGN_DRIVER":
-                meta = logistics[step].get("metadata") if isinstance(logistics[step].get("metadata"), dict) else {}
-                name = str(meta.get("workerName") or meta.get("driverName") or "").strip()
+                name = courier_name(order)
                 if name:
                     return f"{label}: {name}"
             return label
