@@ -80,4 +80,5 @@ que ele criou. Solicitação que não virou trabalho também fica `ABERTO`, com
 | DEV-2026-016 | compromisso | chat 2026-11-12 | Desligar o webhook do app de teste NB Teste (C), que passou a receber 401 com o segredo de produção | Engenharia · iFood | 2026-11-12 | 2026-11-19 | - | FEITO | portal iFood 12/11: webhook do NB Teste (C) desligado, 'Suas alterações foram salvas' |
 | DEV-2026-018 | solicitacao | chat | O mais grave que vejo ali é que a coluna quando colapsada está mal diagramada.. Não mereceria um menu lateral Canais? Você contemplou a questão de Juntar entregas? Pode fazer! | Engenharia | 2026-11-13 | 2026-11-20 | - | ABERTO | - |
 | DEV-2026-021 | solicitacao | chat | nfce ok, assim que formos pro golive ja estara em producao. faça toda parte do ifood ok | Engenharia | 2026-11-13 | 2026-11-20 | - | ABERTO | - |
+| DEV-2026-019 | solicitacao | chat 2026-11-12 | E sim, se for a única solução, teremos que embutir o widget! (Widget do iFood no Gestor, issue #2321) | Engenharia · iFood | 2026-11-12 | 2026-11-19 | - | ABERTO | - |
 <!-- commitments:end -->

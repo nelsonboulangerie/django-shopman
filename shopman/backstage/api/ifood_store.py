@@ -1,6 +1,7 @@
 """Backstage API — a loja no iFood (card do canal iFood e sinal da fila).
 
 GET  /api/v1/backstage/ifood/store/          → projeção (quem vê a fila de pedidos)
+GET  /api/v1/backstage/ifood/widget/         → qual widget do iFood carregar (vazio = nenhum)
 
 Ligar e desligar o iFood (com período) é o toggle "Ativo" do card, comum a todos
 os canais: ``POST /api/v1/backstage/feeds/switch/``.
@@ -15,7 +16,10 @@ from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from shopman.backstage.projections.ifood_store import build_ifood_store_projection
+from shopman.backstage.projections.ifood_store import (
+    build_ifood_store_projection,
+    build_ifood_widget_projection,
+)
 
 from .permissions import HasBackstagePermission
 
@@ -41,7 +45,9 @@ def _projection(request) -> dict:
 
 
 @extend_schema_view(
-    get=extend_schema(tags=["backstage"], summary="A loja no iFood (status e conferência)", responses={200: _STORE_RESPONSE}),
+    get=extend_schema(
+        tags=["backstage"], summary="A loja no iFood (status e conferência)", responses={200: _STORE_RESPONSE}
+    ),
 )
 class IFoodStoreView(APIView):
     permission_classes = [HasBackstagePermission]
@@ -49,3 +55,27 @@ class IFoodStoreView(APIView):
 
     def get(self, request):
         return Response(_projection(request))
+
+
+_WIDGET_RESPONSE = inline_serializer(
+    name="IFoodWidgetProjectionResponse",
+    fields={
+        "widget_id": serializers.CharField(),
+        "merchant_ids": serializers.ListField(child=serializers.CharField()),
+    },
+)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="O widget do iFood (chat com o cliente) a carregar no Gestor",
+        responses={200: _WIDGET_RESPONSE},
+    ),
+)
+class IFoodWidgetView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request):
+        return Response(asdict(build_ifood_widget_projection()))

@@ -34,13 +34,17 @@ export const OPERATOR_CONTENT_SECURITY_POLICY = OPERATOR_CSP_DIRECTIVES.map(
 
 // Exceção de CSP é por app e por diretiva (SEC-SURF-001, item 5): o app declara
 // em `runtimeConfig.operatorCspAllow` só a origem que uma função real exige.
-// Diretivas de enquadramento, de formulário e de base nunca abrem, e fontes que
-// desligam a política (`*`, `'unsafe-*'`, esquemas genéricos além de `https:`)
+// Quem enquadra o app (`frame-ancestors`), formulário e base nunca abrem, e fontes
+// que desligam a política (`*`, `'unsafe-*'`, esquemas genéricos além de `https:`)
 // são recusadas. `script-src` abre mais estreito que as outras: só host `https://`
 // explícito ou curinga de subdomínio de um domínio fixo, nunca `https:` nem loopback.
+// `frame-src` (o que o app enquadra) é o mais estreito de todos: só host `https://`
+// explícito, sem curinga. O primeiro uso é o widget do iFood no Gestor de pedidos
+// (`https://embeddables.ifood.com.br`, DEV-2026-019).
 export const OPERATOR_CSP_EXTENSIBLE_DIRECTIVES = Object.freeze([
   "connect-src",
   "font-src",
+  "frame-src",
   "img-src",
   "media-src",
   "script-src",
@@ -61,6 +65,7 @@ const SCRIPT_SOURCE_PATTERN = new RegExp(
   String.raw`^(https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+` + PORT + `|${SUBDOMAIN_WILDCARD})$`,
   "i",
 );
+const FRAME_SOURCE_PATTERN = new RegExp(String.raw`^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+` + PORT + "$", "i");
 const WILDCARD_BASE = new RegExp(`^${SUBDOMAIN_WILDCARD}$`, "i");
 
 // Segundo nível de sufixo público de país (`com.br`, `co.uk`): o curinga sobre ele
@@ -76,6 +81,7 @@ function wildcardOverPublicSuffix(source: string): boolean {
 }
 
 function operatorCspSourceAccepted(directive: OperatorCspDirective, source: string): boolean {
+  if (directive === "frame-src") return FRAME_SOURCE_PATTERN.test(source);
   const pattern = directive === "script-src" ? SCRIPT_SOURCE_PATTERN : SOURCE_PATTERN;
   return pattern.test(source) && !wildcardOverPublicSuffix(source);
 }
@@ -94,7 +100,10 @@ export function operatorBaselineContentSecurityPolicy(allow?: OperatorCspAllow |
   }
   return OPERATOR_CSP_DIRECTIVES.map(([directive, sources]) => {
     const extra = allow[directive as OperatorCspDirective] ?? [];
-    const merged = [...sources.split(" "), ...extra.filter((source) => !sources.split(" ").includes(source))];
+    // `'none'` com outra origem ao lado é ignorado pelo navegador (com aviso): a
+    // exceção substitui o `'none'` em vez de se somar a ele.
+    const base = extra.length && sources === "'none'" ? [] : sources.split(" ");
+    const merged = [...base, ...extra.filter((source) => !base.includes(source))];
     return `${directive} ${merged.join(" ")}`;
   }).join("; ");
 }

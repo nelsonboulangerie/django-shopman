@@ -2833,6 +2833,16 @@ _INTEGRATIONS_FIELDSETS = (
         },
     ),
     (
+        "Chat do iFood",
+        {
+            "fields": ("ifood_widget_id",),
+            "description": (
+                "O widget oficial do iFood no Gestor de pedidos: chat com o cliente, "
+                "notificações e rastreio. Vazio, o Gestor não mostra o botão do iFood."
+            ),
+        },
+    ),
+    (
         "Campanhas de WhatsApp",
         {
             "fields": ("defaults_marketing_whatsapp_minimum_audience",),

@@ -57,6 +57,10 @@ vi.stubGlobal("useVolumeCheck", () => ({
 vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
 vi.stubGlobal("useNowTick", () => ref(Date.now()));
 vi.stubGlobal("useScreen", () => ({ ready: ref(true), belowSm: ref(false), belowMd: ref(false), belowLg: ref(false), belowXl: ref(false) }));
+// O widget do iFood sobe na casca (app.vue); o detalhe só lê o estado dele.
+const ifoodWidgetState = ref<"off" | "loading" | "ready" | "failed">("off");
+beforeEach(() => { ifoodWidgetState.value = "off"; });
+vi.stubGlobal("useIFoodWidget", () => ({ state: ifoodWidgetState, start: vi.fn() }));
 vi.stubGlobal("useOutsideStore", () => ({ askConsent: ref(false), away: ref(false), allow: vi.fn(), decline: vi.fn(), showAll: vi.fn() }));
 vi.stubGlobal("useOrderDetail", () => ({
   order: computed(() => detalhe.value),
@@ -723,6 +727,27 @@ describe("detalhe iFood", () => {
     expect(w.get('[data-action="advance-blocked"]').attributes("disabled")).toBeDefined();
     expect(w.find('[data-action="advance"]').exists()).toBe(false);
     expect(w.text()).toContain("Confirmado");
+  });
+});
+
+describe("chat do cliente iFood (widget do iFood, DEV-2026-019)", () => {
+  it("pedido do iFood com o widget pronto: diz que o chat está no botão do iFood", () => {
+    ifoodWidgetState.value = "ready";
+    const w = abrir(order({ channel_ref: "ifood" }));
+    expect(w.get("[data-ifood-chat]").attributes("data-ifood-chat-state")).toBe("ready");
+    expect(w.get("[data-ifood-chat]").text()).toContain("botão do iFood");
+  });
+
+  it("o widget não carregou: manda responder pelo Gestor do iFood", () => {
+    ifoodWidgetState.value = "failed";
+    const w = abrir(order({ channel_ref: "ifood" }));
+    expect(w.get("[data-ifood-chat]").text()).toContain("Gestor do iFood");
+  });
+
+  it("widget desligado na loja, ou pedido de outro canal: nada aparece", () => {
+    expect(abrir(order({ channel_ref: "ifood" })).find("[data-ifood-chat]").exists()).toBe(false);
+    ifoodWidgetState.value = "ready";
+    expect(abrir(order({ channel_ref: "web" })).find("[data-ifood-chat]").exists()).toBe(false);
   });
 });
 

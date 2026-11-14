@@ -72,7 +72,7 @@ describe("operator-kit — exceção de CSP por app e por diretiva", () => {
   });
 
   it("recusa diretiva que não aceita exceção", () => {
-    for (const directive of ["default-src", "style-src", "worker-src", "frame-src", "form-action", "base-uri"]) {
+    for (const directive of ["default-src", "style-src", "worker-src", "form-action", "base-uri"]) {
       expect(() =>
         operatorBaselineContentSecurityPolicy({ [directive]: ["https://cdn.example.com"] } as never),
       ).toThrow(new RegExp(directive));
@@ -159,6 +159,35 @@ describe("operator-kit: exceção de script-src, mais estreita que as outras", (
     ]) {
       expect(() => operatorBaselineContentSecurityPolicy({ "script-src": [source] }), source).toThrow(
         /script-src/,
+      );
+    }
+  });
+});
+
+describe("operator-kit: exceção de frame-src, só host https explícito", () => {
+  it("troca o 'none' pelo host declarado e mantém quem enquadra o app fechado", () => {
+    const csp = operatorBaselineContentSecurityPolicy({
+      "frame-src": ["https://embeddables.ifood.com.br"],
+    });
+    expect(csp).toContain("frame-src https://embeddables.ifood.com.br;");
+    expect(csp).not.toMatch(/frame-src[^;]*'none'/);
+    expect(csp).toContain("frame-ancestors 'none'");
+  });
+
+  it("recusa curinga, esquema genérico e loopback em frame-src", () => {
+    for (const source of [
+      "https:",
+      "*",
+      "https://*.ifood.com.br",
+      "http://embeddables.ifood.com.br",
+      "http://127.0.0.1:*",
+      "https://localhost",
+      "'self'",
+      "data:",
+      "blob:",
+    ]) {
+      expect(() => operatorBaselineContentSecurityPolicy({ "frame-src": [source] }), source).toThrow(
+        /frame-src/,
       );
     }
   });
