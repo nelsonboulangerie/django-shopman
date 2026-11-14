@@ -660,7 +660,9 @@ def _apply_patch(order, payload: dict, event_id: str) -> dict:
     """
     from shopman.shop.services import order_edit
 
-    items = ifood_ingest.normalize_items(payload["items"])
+    items = ifood_ingest.normalize_items(
+        payload["items"], channel_ref=order.channel_ref, merchant_id=payload.get("merchant_id", "")
+    )
     subtotal_q = sum(int(item["line_total_q"]) for item in items)
     # Mesma régua da ingestão: o total que vale é o ``orderAmount`` do iFood
     # (subtotal + entrega + taxas − benefícios), porque é o que a plataforma

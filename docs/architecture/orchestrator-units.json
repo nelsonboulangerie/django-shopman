@@ -10187,12 +10187,23 @@
             "IFOOD_CHANNEL_REF",
             "_IFOOD_PAYMENT_METHOD_REFS"
           ]
+        },
+        {
+          "path": "shopman/shop/services/ifood_item_sku.py",
+          "symbols": [
+            "resolve_items",
+            "SOURCE_BINDING",
+            "SOURCE_EXTERNAL_CODE",
+            "SOURCE_UNBOUND",
+            "SOURCE_AMBIGUOUS"
+          ]
         }
       ],
       "touchpoints": [
         "service"
       ],
       "domains": [
+        "offerman",
         "orderman"
       ],
       "ports": [],
