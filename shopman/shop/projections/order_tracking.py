@@ -84,6 +84,12 @@ class TrackingItemData:
     qty: int
     unit_price_q: int
     line_total_q: int
+    # Preço de LISTA da linha (antes do desconto), na régua da sacola: o
+    # ``meta._list_q`` carimbado pelo pricing ou, sem ele, o que o registro de
+    # desconto selado diz que saiu desta linha. Sem desconto é o próprio preço
+    # cobrado. O Resumo mostra a linha cheia e o desconto uma vez só, embaixo.
+    list_unit_price_q: int = 0
+    list_line_total_q: int = 0
 
 
 @dataclass(frozen=True)
@@ -1700,17 +1706,54 @@ def _build_items(order) -> tuple[TrackingItemData, ...]:
     # Pedido + ajustes: o acompanhamento mostra o pedido que vale agora.
     from shopman.shop.services import order_composition
 
-    return tuple(
-        TrackingItemData(
-            sku=item.sku,
-            name=item.name or item.sku,
-            qty=int(item.qty),
-            unit_price_q=int(item.unit_price_q),
-            line_total_q=int(item.line_total_q),
+    pricing = (order.snapshot or {}).get("pricing") or {}
+    discount_records = [d for d in (pricing.get("discount") or {}).get("items") or [] if isinstance(d, dict)]
+
+    items = []
+    for item in order_composition.effective_items(order):
+        if item.sku == "__DELIVERY_FEE__":
+            continue
+        list_unit_q, list_total_q = _list_price_of(item, discount_records)
+        items.append(
+            TrackingItemData(
+                sku=item.sku,
+                name=item.name or item.sku,
+                qty=int(item.qty),
+                unit_price_q=int(item.unit_price_q),
+                line_total_q=int(item.line_total_q),
+                list_unit_price_q=list_unit_q,
+                list_line_total_q=list_total_q,
+            )
         )
-        for item in order_composition.effective_items(order)
-        if item.sku != "__DELIVERY_FEE__"
-    )
+    return tuple(items)
+
+
+def _list_price_of(item, discount_records: list[dict]) -> tuple[int, int]:
+    """Preço de lista da linha (unitário, total), na mesma conta da sacola.
+
+    Primeiro o ``meta._list_q`` (a fonte da sacola, ``projections.cart``);
+    sem ele, o registro de desconto selado da linha (``line_id``, ou ``sku``)
+    devolve o que saiu dela. Nunca abaixo do preço cobrado.
+    """
+    from decimal import ROUND_HALF_UP, Decimal
+
+    unit_q = int(item.unit_price_q)
+    total_q = int(item.line_total_q)
+    qty = Decimal(str(item.qty))
+    listed = (item.meta or {}).get("_list_q")
+    if listed is not None and int(listed) > unit_q:
+        list_unit_q = int(listed)
+        return list_unit_q, int((qty * list_unit_q).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+    records = [d for d in discount_records if item.line_id and d.get("line_id") == item.line_id]
+    if not records:
+        records = [d for d in discount_records if not d.get("line_id") and d.get("sku") == item.sku]
+    off_q = sum(int(d.get("discount_q", 0) or 0) * int(d.get("qty", 0) or 0) for d in records)
+    if off_q <= 0:
+        return unit_q, total_q
+    list_total_q = total_q + off_q
+    list_unit_q = int((Decimal(list_total_q) / qty).quantize(Decimal("1"), rounding=ROUND_HALF_UP)) if qty else unit_q
+    return list_unit_q, list_total_q
 
 
 def _carrier_tracking_url(carrier: str, tracking_code: str) -> str | None:
