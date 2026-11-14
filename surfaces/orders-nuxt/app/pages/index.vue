@@ -727,12 +727,21 @@ const view = computed(() =>
 // os dois modos, acionáveis por um toggle", para decidir no uso e fundir depois):
 // Fila (urgência, um pedido por linha), Quadro (as três colunas, a do Preparo
 // recolhida) e Tabela (densa, com seleção em lote). Nenhum gesto muda de modo a modo.
+// PRÉVIA (14/11): três conjuntos de ícones, escolhidos por ?iconset=A|B|C. Sai antes do merge.
+const PREVIEW_ICONSETS: Record<string, [string, string, string]> = {
+  A: ["i-lucide-square-kanban", "i-lucide-list-ordered", "i-lucide-table"],
+  B: ["i-lucide-kanban", "i-lucide-arrow-down-wide-narrow", "i-lucide-sheet"],
+  C: ["i-lucide-columns-3", "i-lucide-rows-3", "i-lucide-table-2"],
+};
+const previewIcons = computed(
+  () => PREVIEW_ICONSETS[String(route.query.iconset || "A")] || PREVIEW_ICONSETS.A!,
+);
 const viewTabs = computed(() => [
+  { value: "board", icon: previewIcons.value[0], "aria-label": "Painel", title: "Painel" },
   ...(queueAvailable.value
-    ? [{ value: "queue", label: "Fila" }]
+    ? [{ value: "queue", icon: previewIcons.value[1], "aria-label": "Fila", title: "Fila" }]
     : []),
-  { value: "board", label: "Quadro" },
-  { value: "table", label: "Tabela" },
+  { value: "table", icon: previewIcons.value[2], "aria-label": "Tabela", title: "Tabela" },
 ]);
 function pickView(value: string | number) {
   const next = String(value);
@@ -1445,7 +1454,7 @@ const compactOptions = computed(() => [
           { type: "label" as const, label: "Ver como" },
           ...(
             [
-              { key: "board", label: "Quadro", icon: "i-lucide-columns-3" },
+              { key: "board", label: "Painel", icon: "i-lucide-square-kanban" },
               { key: "table", label: "Tabela", icon: "i-lucide-table" },
             ] as const
           ).map((option) => ({
@@ -1944,6 +1953,7 @@ function compactClear() {
                 :next-ref="zoneNext(zone)"
                 :phone="false"
                 :wide="wideColumn(zone.key)"
+                :two-up="desktopZones.length === 1 && !wideColumn(zone.key)"
                 :can-open="canManageOrders"
                 :selecting="selecting"
                 :can-collapse="boardLayout.canCollapse(zone.key)"
