@@ -51,7 +51,6 @@ defineProps<{ plan: InstallPlan }>()
       </li>
     </ol>
 
-    <p v-if="plan.done" class="shop-body mt-4 font-semibold">{{ plan.done }}</p>
     <p v-if="plan.note" class="shop-meta mt-2 leading-snug">
       <template v-for="(part, partIndex) in installTextParts(plan.note)" :key="partIndex">
         <strong v-if="part.strong" class="font-semibold">{{ part.text }}</strong>

@@ -4,6 +4,7 @@ import {
   detectBrowser,
   detectOs,
   installPlan,
+  installStepLines,
   installTextParts,
   INSTALL_GLYPH_PATHS,
   type InstallEnvironment,
@@ -95,31 +96,31 @@ describe("installPlan", () => {
     const foraDoWebKit = [UA.androidChrome, UA.androidFirefox, UA.androidSamsung, UA.windowsChrome, UA.windowsEdge, UA.windowsFirefox, UA.linuxFirefox];
     for (const userAgent of foraDoWebKit) {
       const result = plan(userAgent);
-      const todo = [...result.steps.map((step) => step.text), result.note || "", result.done || ""].join(" ");
+      const todo = [...result.steps.map((step) => step.text), result.note || ""].join(" ");
       expect(todo).not.toContain("Safari");
     }
   });
 
-  it("no iPhone com Safari ensina o gesto do Safari, e diz onde o botão fica", () => {
+  it("no iPhone com Safari ensina o gesto do Safari, curto: o desenho mostra o botão", () => {
     const result = plan(UA.iphoneSafari);
     expect(result.kind).toBe("steps");
     expect(result.invite).toBe(true);
     const texto = textOf(UA.iphoneSafari);
     expect(texto).toContain("Compartilhar");
-    expect(texto).toContain("barra de baixo");
     expect(texto).toContain("Adicionar à Tela de Início");
-    expect(result.done).toBeTruthy();
+    // O gesto, depois o alvo, e nada depois dele (dono, 14/11).
+    for (const step of result.steps) expect(step.text).toMatch(/\*\*$/);
   });
 
   it("no iPad o botão Compartilhar fica no alto, não na barra de baixo", () => {
     const texto = textOf(UA.ipadSafari, { platform: "MacIntel", maxTouchPoints: 5 });
-    expect(texto).toContain("no alto, à direita");
+    expect(texto).toContain("No alto, à direita");
     expect(texto).not.toContain("barra de baixo");
   });
 
   it("no Chrome do iPhone o caminho é o menu do Chrome, não a barra do Safari", () => {
     const texto = textOf(UA.iphoneChrome);
-    expect(texto).toContain("⋯");
+    expect(texto).toContain("três pontinhos");
     expect(texto).toContain("Chrome");
     expect(texto).toContain("Adicionar à Tela de Início");
     expect(texto).not.toContain("barra de baixo");
@@ -241,20 +242,23 @@ describe("installTextParts", () => {
     expect(partes[0]).toMatchObject({ text: "Abra o menu do navegador.", glyph: "menu-lines" });
   });
 
-  // Beta 05/11 (CEN-07 e LOJA-09): "Toque em [⋮] ⋮ (três pontinhos)", o símbolo duas vezes.
-  it("o símbolo escrito não se repete ao lado do desenho", () => {
-    const partes = installTextParts("Toque em **⋮** (três pontinhos), no canto da barra do navegador, fora do app.", "menu-vertical");
-    expect(partes.filter((part) => part.glyph)).toHaveLength(1);
-    const comDesenho = partes.find((part) => part.glyph);
-    expect(comDesenho).toMatchObject({ glyph: "menu-vertical", text: "" });
-    expect(partes.map((part) => part.text).join("")).not.toContain("⋮");
-    expect(partes.map((part) => part.text).join("")).toContain("fora do app");
+  // Beta 05/11 (CEN-07 e LOJA-09): "Toque em [⋮] ⋮ (três pontinhos)", o símbolo duas
+  // vezes. O rótulo é o NOME do botão ("três pontinhos"), nunca o caractere.
+  it("nenhum passo usa o caractere do símbolo como rótulo", () => {
+    for (const userAgent of Object.values(UA)) {
+      for (const step of plan(userAgent).steps) expect(step.text).not.toMatch(/[⋮⋯≡☰]/);
+    }
   });
 
-  it("as três linhas (≡) do Samsung Internet também não se repetem", () => {
-    const partes = installTextParts("Toque em **≡** (as três linhas), na barra de baixo.", "menu-lines");
-    expect(partes.find((part) => part.glyph)).toMatchObject({ glyph: "menu-lines", text: "" });
-    expect(partes.map((part) => part.text).join("")).not.toContain("≡");
+  it("a linha de baixo começa com maiúscula", () => {
+    const lines = installStepLines("No canto da barra do Chrome, toque nos **três pontinhos**", "menu-horizontal");
+    expect(lines.target[0]).toMatchObject({ text: "Três pontinhos", glyph: "menu-horizontal" });
+  });
+
+  it("o passo vira duas linhas: o gesto em cima, o símbolo com o rótulo embaixo", () => {
+    const lines = installStepLines("Role e toque em **Adicionar à Tela de Início**", "add-home");
+    expect(lines.lead).toEqual([{ text: "Role e toque em", strong: false }]);
+    expect(lines.target).toEqual([{ text: "Adicionar à Tela de Início", strong: true, glyph: "add-home" }]);
   });
 
   it("sem símbolo, nada muda", () => {
