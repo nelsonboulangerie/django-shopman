@@ -53,7 +53,8 @@ def test_online_payment_preserves_card_brand():
         "prepaid_q": 3000, "pending_q": 0,
         "methods": [{"method": "CREDIT", "value_q": 3000, "prepaid": True, "brand": "VISA"}],
     }))
-    assert summary == ("Pago online no iFood: R$ 30,00", "Crédito VISA: R$ 30,00 (online)")
+    # Pago online é uma linha só: bandeira e banco não mudam o despacho (3417, 12/11).
+    assert summary == ("Nada a cobrar do cliente.",)
 
 
 def test_offline_credit_is_pending_and_keeps_its_brand():
@@ -61,7 +62,7 @@ def test_offline_credit_is_pending_and_keeps_its_brand():
         "prepaid_q": 0, "pending_q": 3000,
         "methods": [{"method": "CREDIT", "value_q": 3000, "prepaid": False, "brand": "ELO"}],
     }))
-    assert summary == ("Pagamento pendente no iFood: R$ 30,00", "Crédito ELO: R$ 30,00 (pendente)")
+    assert summary == ("Cobrar na entrega: R$ 30,00 em crédito ELO",)
 
 
 def test_mixed_payment_cash_change_uses_cash_part_not_order_total():
@@ -72,8 +73,10 @@ def test_mixed_payment_cash_change_uses_cash_part_not_order_total():
             {"method": "CASH", "value_q": 2000, "prepaid": False, "change_for_q": 5000},
         ],
     }))
-    assert summary[:2] == ("Pago online no iFood: R$ 10,00", "Pagamento pendente no iFood: R$ 20,00")
-    assert summary[-1] == "Dinheiro: R$ 20,00 (pendente); troco para R$ 50,00, troco R$ 30,00"
+    assert summary == (
+        "Já pago online no iFood: R$ 10,00",
+        "Cobrar na entrega: R$ 20,00 em dinheiro; troco para R$ 50,00 (levar R$ 30,00)",
+    )
 
 
 def test_invalid_cash_change_does_not_invent_negative_change():
@@ -90,7 +93,7 @@ def test_prepaid_cash_does_not_prompt_second_collection_or_change():
         "prepaid_q": 3000,
         "methods": [{"method": "CASH", "value_q": 3000, "prepaid": True, "change_for_q": 5000}],
     }))
-    assert not any("troco" in line or "pendente" in line for line in summary)
+    assert summary == ("Nada a cobrar do cliente.",)
 
 
 @pytest.mark.parametrize("payments,expected,tone", [
@@ -163,7 +166,7 @@ def test_batched_board_retains_ifood_payment_evidence():
     # é lá que a evidência tem de continuar inteira.
     assert not hasattr(card, "ifood_payment_summary")
     detail = order_queue.build_operator_order(Order.objects.get(ref="IFOOD-BOARD"))
-    assert detail.ifood_payment_summary == ("Pagamento pendente no iFood: R$ 30,00",)
+    assert detail.ifood_payment_summary == ("Cobrar na entrega: R$ 30,00",)
 
 
 # ── P2-29: a hora da retirada (``takeout.takeoutDateTime``) ──────────────────

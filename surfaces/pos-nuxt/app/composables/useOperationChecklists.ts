@@ -1,8 +1,13 @@
-import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { httpError } from "../../../operator-kit/app/utils/httpError";
 import type { OperationChecklistResponse } from "~/types/operationChecklists";
 
 const BASE = "/api/v1/backstage/operation-checklists";
+
+/** A leitura é de quem está operando: o cache nunca serve a rotina de outra pessoa. */
+function operatorKey(resource: string): string {
+  const { data } = useNuxtData<{ operator?: { id: number } }>("operator-session");
+  return `pos:${data.value?.operator?.id ?? "unidentified"}:${resource}`;
+}
 
 export interface TaskEvidenceInput extends Record<string, unknown> {
   evidence_text?: string;
@@ -14,7 +19,7 @@ export interface TaskEvidenceInput extends Record<string, unknown> {
 export function useOperationChecklists() {
   const { data, pending, error, refresh } =
     useFetch<OperationChecklistResponse>(`${BASE}/`, {
-      key: useOperatorResourceKey("operation-checklists"),
+      key: operatorKey("operation-checklists"),
       dedupe: "defer",
       onResponseError: operatorSessionOnError,
     });
@@ -48,7 +53,7 @@ export function useOperationChecklists() {
     } catch (err) {
       const text = httpErrorMessage(
         err,
-        "Não foi possível atualizar o checklist.",
+        "A rotina não foi atualizada. Tente de novo.",
       );
       const field = (httpError(err).data as { field?: unknown } | null)?.field;
       if (taskId !== undefined && typeof field === "string" && field) {

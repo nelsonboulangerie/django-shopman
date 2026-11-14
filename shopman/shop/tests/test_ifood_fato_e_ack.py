@@ -75,10 +75,27 @@ def test_pedido_concluido_no_ifood_com_cozinha_em_preparo_fecha_quando_sai():
     assert not _callbacks_for("ready", "dispatched").exists()
 
 
-def test_entregador_do_ifood_retira_antes_de_a_cozinha_marcar_pronto():
-    """Logística do iFood: DSP chega com o pedido em preparo. Quando a cozinha
-    marca "Pronto", o pedido sai sozinho (o fato já dizia), sem ecoar despacho."""
+def test_entregador_do_ifood_coleta_com_o_pedido_em_preparo_e_o_pedido_sai_sozinho():
+    """Pedido real 3417 (12/11/2026): o entregador do iFood coletou com o pedido
+    "Em preparo" e ele ficou pedindo um "Pronto" que não mudava mais nada. Com
+    entregador do iFood, a coleta (DSP) prova que a sacola saiu: o sistema leva o
+    pedido a Pronto e a Saiu, sem ecoar nada ao iFood (dono, 12/11/2026)."""
     order = _order(Order.Status.PREPARING, delivered_by="IFOOD")
+    with patch.object(ifood_events, "acknowledge", return_value=True):
+        assert ifood_events.process_events([_event("DSP", "dsp-1")])["ingested"] == 1
+    order.refresh_from_db()
+
+    assert order.status == Order.Status.DISPATCHED
+    actors = list(order.events.filter(type="status_changed").values_list("actor", flat=True))
+    assert actors == ["system:ifood:DSP", "system:ifood:DSP"]
+    assert not _callbacks_for("ready").exists()
+    assert not _callbacks_for("dispatched").exists()
+
+
+def test_entrega_propria_com_dsp_em_preparo_continua_esperando_o_pronto():
+    """Entrega da LOJA (delivered_by MERCHANT): quem leva é a casa, e a saída
+    continua sendo gesto daqui. O fato espera o "Pronto" e aplica depois."""
+    order = _order(Order.Status.PREPARING, delivered_by="MERCHANT")
     with patch.object(ifood_events, "acknowledge", return_value=True):
         assert ifood_events.process_events([_event("DSP", "dsp-1")])["ingested"] == 1
     order.refresh_from_db()
@@ -93,8 +110,20 @@ def test_entregador_do_ifood_retira_antes_de_a_cozinha_marcar_pronto():
 
 
 def test_retirada_adiantada_e_concluida_fecha_a_cadeia_inteira():
-    """DSP e CON gravados com a cozinha atrasada: marcar "Pronto" fecha tudo."""
+    """DSP e CON com o pedido em preparo e entregador do iFood: a coleta leva a
+    Saiu e a conclusão fecha, sem nenhum toque aqui e sem eco ao iFood."""
     order = _order(Order.Status.PREPARING, delivered_by="IFOOD")
+    with patch.object(ifood_events, "acknowledge", return_value=True):
+        ifood_events.process_events([_event("DSP", "dsp-1"), _event("CON", "con-1")])
+
+    order.refresh_from_db()
+    assert order.status == Order.Status.COMPLETED
+    assert not _callbacks_for("ready", "dispatched").exists()
+
+
+def test_entrega_propria_adiantada_e_concluida_fecha_quando_marca_pronto():
+    """Entrega da loja: DSP e CON gravados com a cozinha atrasada; o "Pronto" fecha tudo."""
+    order = _order(Order.Status.PREPARING, delivered_by="MERCHANT")
     with patch.object(ifood_events, "acknowledge", return_value=True):
         ifood_events.process_events([_event("DSP", "dsp-1"), _event("CON", "con-1")])
 

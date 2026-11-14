@@ -33,68 +33,122 @@ def cancellation_notice(order) -> str:
     return ""
 
 
+_METHOD_LABELS = {
+    "CASH": "Dinheiro", "CREDIT": "Crédito", "DEBIT": "Débito", "PIX": "Pix",
+    "MEAL_VOUCHER": "Vale-refeição", "FOOD_VOUCHER": "Vale-alimentação",
+}
+
+
 def payment_summary(order) -> tuple[str, ...]:
+    """O pagamento do iFood respondendo à única pergunta do balcão: cobrar ou não?
+
+    Pago online é UMA linha: bandeira, banco e quem bancou o frete grátis não
+    mudam nada no despacho e repetiam o total três vezes (pedido 3417, 12/11:
+    "Pago online", "OTHER NUBANK" e o desconto da entrega, todos de R$ 49,20).
+    O desdobramento continua inteiro em ``Order.data["ifood"]`` para a conciliação.
+    Só o que se cobra na porta ganha detalhe: forma, bandeira e troco.
+    """
     if order.channel_ref != "ifood":
         return ()
     payments = ((order.data or {}).get("ifood") or {}).get("payments") or {}
     if not payments:
-        return ("iFood: pagamento não informado.",) + benefits_summary(order)
+        return ("iFood: pagamento não informado.",)
     prepaid = _amount(payments.get("prepaid_q"))
     pending = _amount(payments.get("pending_q"))
     lines = []
-    if prepaid:
-        lines.append(f"Pago online no iFood: R$ {format_money(prepaid)}")
     if pending:
-        lines.append(f"Pagamento pendente no iFood: R$ {format_money(pending)}")
-    labels = {"CASH": "Dinheiro", "CREDIT": "Crédito", "DEBIT": "Débito", "PIX": "Pix", "MEAL_VOUCHER": "Vale-refeição", "FOOD_VOUCHER": "Vale-alimentação"}
-    for method in payments.get("methods") or []:
-        if not isinstance(method, dict):
-            continue
-        name = labels.get(str(method.get("method") or "").upper(), str(method.get("method") or "Pagamento"))
-        brand = str(method.get("brand") or "").strip()
-        value = _amount(method.get("value_q"))
-        suffix = "online" if method.get("prepaid") is True else "pendente" if method.get("prepaid") is False else "conforme iFood"
-        line = f"{name}{' ' + brand if brand else ''}: R$ {format_money(value)} ({suffix})"
-        change_for = _amount(method.get("change_for_q"))
-        if str(method.get("method") or "").upper() == "CASH" and method.get("prepaid") is False and change_for:
-            line += f"; troco para R$ {format_money(change_for)}"
-            if change_for >= value:
-                line += f", troco R$ {format_money(change_for - value)}"
-        lines.append(line)
-    return (tuple(lines) or ("iFood: pagamento não informado.",)) + benefits_summary(order)
+        if prepaid:
+            lines.append(f"Já pago online no iFood: R$ {format_money(prepaid)}")
+        due = []
+        for method in payments.get("methods") or []:
+            if not isinstance(method, dict) or method.get("prepaid") is True:
+                continue
+            code = str(method.get("method") or "").upper()
+            name = _METHOD_LABELS.get(code, "Outra forma")
+            brand = str(method.get("brand") or "").strip()
+            value = _amount(method.get("value_q"))
+            how = f"{name}{' ' + brand if brand else ''}"
+            change = ""
+            change_for = _amount(method.get("change_for_q"))
+            if code == "CASH" and change_for:
+                change = f"; troco para R$ {format_money(change_for)}"
+                if change_for >= value:
+                    change += f" (levar R$ {format_money(change_for - value)})"
+            due.append((how, value, change))
+        if len(due) == 1:
+            # Uma forma só: valor, forma e troco numa linha, sem repetir o total.
+            how, _value, change = due[0]
+            how = how[:1].lower() + how[1:]
+            lines.append(f"Cobrar na entrega: R$ {format_money(pending)} em {how}{change}")
+        else:
+            lines.append(f"Cobrar na entrega: R$ {format_money(pending)}")
+            lines.extend(f"{how}: R$ {format_money(value)}{change}" for how, value, change in due)
+    elif prepaid:
+        # A linha de cima já diz "iFood · Pago online"; aqui, só o gesto.
+        lines.append("Nada a cobrar do cliente.")
+    return (tuple(lines) or ("iFood: pagamento não informado.",))
 
 
-def benefits_summary(order) -> tuple[str, ...]:
+_FEE_LABELS = {
+    "SMALL_ORDER_FEE": "Taxa de pedido mínimo do iFood",
+    "SERVICE_FEE": "Taxa de serviço do iFood",
+}
+
+
+def total_lines(order):
+    """O que leva dos itens ao total do pedido iFood, linha por linha.
+
+    No pedido 3417 (12/11/2026) os itens davam R$ 48,00 e o total R$ 49,20, sem
+    nada na tela que explicasse a diferença: era uma taxa do iFood paga pelo
+    cliente (``additionalFees``). A entrega grátis bancada pelo iFood fica de
+    fora: sai do total e entra de novo, e não muda nada para quem despacha.
+    Só entram linhas que mudam a conta; a soma fecha com ``orderAmount``.
+    """
+    from shopman.backstage.projections.order_pricing import OrderDiscountLineProjection
+
     if order.channel_ref != "ifood":
         return ()
     facts = (order.data or {}).get("ifood") or {}
-    benefits = facts.get("benefits") or []
+    totals = facts.get("totals") or {}
+    benefits = [b for b in facts.get("benefits") or [] if isinstance(b, dict)]
     lines = []
-    targets = {"CART": "carrinho", "DELIVERY_FEE": "entrega", "ITEM": "item", "PROGRESSIVE_DISCOUNT_ITEM": "item (progressivo)"}
-    sponsors = {"IFOOD": "iFood", "MERCHANT": "Loja", "EXTERNAL": "Parceiro externo", "CHAIN": "Rede"}
+
+    delivery_benefits = sum(_amount(b.get("value_q")) for b in benefits if b.get("target") == "DELIVERY_FEE")
+    delivery_net = _amount(totals.get("delivery_fee_q")) - delivery_benefits
+    if delivery_net > 0:
+        lines.append(OrderDiscountLineProjection(kind="delivery", label="Taxa de entrega", amount_display=f"+R$ {format_money(delivery_net)}"))
+
+    fees = [f for f in facts.get("additional_fees") or [] if isinstance(f, dict) and _amount(f.get("value_q"))]
+    if fees:
+        for fee in fees:
+            label = _FEE_LABELS.get(str(fee.get("type") or "").upper()) or str(fee.get("description") or "").strip() or "Taxa do iFood paga pelo cliente"
+            lines.append(OrderDiscountLineProjection(kind="fee", label=label, amount_display=f"+R$ {format_money(_amount(fee.get('value_q')))}"))
+    elif _amount(totals.get("additional_fees_q")):
+        lines.append(OrderDiscountLineProjection(
+            kind="fee", label="Taxa do iFood paga pelo cliente",
+            amount_display=f"+R$ {format_money(_amount(totals.get('additional_fees_q')))}",
+        ))
+
+    by_sponsor = {"store": 0, "ifood": 0, "unknown": 0}
     for benefit in benefits:
-        if not isinstance(benefit, dict):
+        if benefit.get("target") == "DELIVERY_FEE":
             continue
-        target = str(benefit.get("target") or "destino não informado")
-        label = targets.get(target, target)
-        if benefit.get("target_id") is not None:
-            label += f" #{benefit['target_id']}"
-        amount = benefit.get("value_q")
-        value = f"R$ {format_money(_amount(amount))}" if amount is not None else "valor não informado"
-        shares = []
-        for share in benefit.get("sponsorships") or []:
-            if not isinstance(share, dict):
-                continue
-            sponsor = str(share.get("sponsor") or "Responsável não informado")
-            sponsor_label = sponsors.get(sponsor, sponsor)
-            amount = share.get("value_q")
-            contribution = f"R$ {format_money(_amount(amount))}" if amount is not None else "valor não informado"
-            shares.append(f"{sponsor_label}: {contribution}")
-        lines.append(f"Desconto ({label}): {value}; " + ("; ".join(shares) or "responsável não informado pelo iFood"))
-    if not benefits:
-        total = _amount((facts.get("totals") or {}).get("benefits_q"))
-        if total:
-            lines.append(f"Desconto: R$ {format_money(total)}; responsável não informado pelo iFood")
+        shares = [x for x in benefit.get("sponsorships") or [] if isinstance(x, dict)]
+        if not shares:
+            # Sem o desdobramento não se afirma quem paga: nem iFood, nem loja.
+            by_sponsor["unknown"] += _amount(benefit.get("value_q"))
+            continue
+        for share in shares:
+            key = "store" if str(share.get("sponsor") or "").upper() == "MERCHANT" else "ifood"
+            by_sponsor[key] += _amount(share.get("value_q"))
+    if by_sponsor["ifood"]:
+        lines.append(OrderDiscountLineProjection(kind="discount", label="Desconto do iFood", amount_display=f"−R$ {format_money(by_sponsor['ifood'])}"))
+    if by_sponsor["store"]:
+        lines.append(OrderDiscountLineProjection(kind="discount", label="Desconto da loja", amount_display=f"−R$ {format_money(by_sponsor['store'])}"))
+    if by_sponsor["unknown"]:
+        lines.append(OrderDiscountLineProjection(kind="discount", label="Desconto (responsável não informado pelo iFood)", amount_display=f"−R$ {format_money(by_sponsor['unknown'])}"))
+    if not benefits and _amount(totals.get("benefits_q")):
+        lines.append(OrderDiscountLineProjection(kind="discount", label="Desconto (responsável não informado pelo iFood)", amount_display=f"−R$ {format_money(_amount(totals.get('benefits_q')))}"))
     return tuple(lines)
 
 
@@ -109,9 +163,8 @@ def operation_summary(order) -> tuple[str, ...]:
 
     facts = (order.data or {}).get("ifood") or {}
     lines = []
-    pickup_code = str(facts.get("pickup_code") or "").strip()
-    if pickup_code:
-        lines.append(f"Código de retirada: {pickup_code}")
+    if pickup_code_label(order):
+        lines.append(pickup_code_label(order).replace(" · ", ": "))
     if get_fulfillment_type(order) == "delivery":
         provider = str(facts.get("delivered_by") or "").upper()
         lines.append({"IFOOD": "Entrega por entregador iFood", "MERCHANT": "Entrega própria da loja"}.get(provider, "Responsável pela entrega não informado pelo iFood"))
@@ -142,6 +195,64 @@ def operation_summary(order) -> tuple[str, ...]:
 # por bandeira, o CEP, o responsável pela entrega e três linhas de janela. Nada
 # disso ajuda a escolher qual pedido pegar — e o card do iFood ficava com o dobro
 # da altura do card do PDV, quebrando a leitura em varredura da fila.
+
+
+_LOGISTICS_STEPS = (
+    # (fato, rótulo) do mais adiantado para o mais antigo: vale o primeiro presente.
+    ("DELIVERY_DROP_CODE_VALIDATION_SUCCESS", "Entregue ao cliente"),
+    ("ARRIVED_AT_DESTINATION", "Entregador chegou ao cliente"),
+    ("COLLECTED", "Saiu com o entregador do iFood"),
+    ("ARRIVED_AT_ORIGIN", "Entregador do iFood na loja"),
+    ("DELIVERY_PICKUP_CODE_REQUESTED", "Entregador do iFood na loja"),
+    ("GOING_TO_ORIGIN", "Entregador a caminho da loja"),
+    ("ASSIGN_DRIVER", "Entregador do iFood designado"),
+)
+
+
+def logistics_label(order) -> str:
+    """Onde está o entregador do iFood, numa frase, pelo último fato recebido.
+
+    Com entregador do iFood, depois do aceite quem conduz é o iFood (dono,
+    12/11/2026): o Gestor mostra o andamento no lugar de pedir "Pronto".
+    Vazio fora do iFood, sem entregador do iFood ou sem nenhum fato ainda.
+    """
+    if order.channel_ref != "ifood":
+        return ""
+    facts = (order.data or {}).get("ifood") or {}
+    if str(facts.get("delivered_by") or "").upper() != "IFOOD":
+        return ""
+    if order.status in {"completed"} or facts.get("remote_concluded"):
+        return "Concluído no iFood"
+    logistics = facts.get("logistics") if isinstance(facts.get("logistics"), dict) else {}
+    if facts.get("remote_dispatched") and not any(
+        logistics.get(step) for step in ("DELIVERY_DROP_CODE_VALIDATION_SUCCESS", "ARRIVED_AT_DESTINATION")
+    ):
+        return "Saiu com o entregador do iFood"
+    for step, label in _LOGISTICS_STEPS:
+        if logistics.get(step):
+            if step == "ASSIGN_DRIVER":
+                meta = logistics[step].get("metadata") if isinstance(logistics[step].get("metadata"), dict) else {}
+                name = str(meta.get("workerName") or meta.get("driverName") or "").strip()
+                if name:
+                    return f"{label}: {name}"
+            return label
+    return ""
+
+
+def pickup_code_label(order) -> str:
+    """O código com o nome do que ele é: na entrega, quem o diz é o ENTREGADOR.
+
+    Na entrega pelo iFood o ``pickupCode`` é o código que o entregador informa
+    para coletar a sacola; "Código de retirada" fazia parecer código do cliente.
+    """
+    code = pickup_code(order)
+    if not code:
+        return ""
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    if get_fulfillment_type(order) == "delivery":
+        return f"Código do entregador · {code}"
+    return f"Código de retirada · {code}"
 
 
 def pickup_code(order) -> str:
@@ -231,6 +342,11 @@ def remote_ahead_label(order) -> str:
     facts = (order.data or {}).get("ifood") or {}
     if facts.get("remote_concluded"):
         return "Concluído no iFood · Finalize aqui"
-    if facts.get("remote_dispatched") and order.status in {"new", "accepted", "preparing"}:
+    ifood_courier = str(facts.get("delivered_by") or "").upper() == "IFOOD"
+    if facts.get("remote_dispatched") and (
+        order.status in {"new", "accepted"} or (order.status == "preparing" and not ifood_courier)
+    ):
+        # Em preparo o DSP fecha sozinho (``ifood_events._collected_by_ifood_courier``);
+        # antes do preparo nada é inventado, e quem conduz é o operador.
         return "Retirado pelo entregador do iFood · Marque Pronto"
     return ""

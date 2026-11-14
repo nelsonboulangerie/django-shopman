@@ -36,8 +36,14 @@ function clampWeight(value: number): number {
 }
 
 /** As colunas todas abertas, em partes iguais: a arrumação de quem nunca mexeu. */
-export function defaultQueueLayout(keys: readonly string[]): QueueColumnLayout {
-  return Object.fromEntries(keys.map((key) => [key, { open: true, weight: 1 }]));
+/** A arrumação de quem nunca mexeu: tudo aberto, menos as colunas que o app declara
+ *  recolhidas de saída (no Gestor, o Preparo, espelho da Cozinha). Nunca todas. */
+export function defaultQueueLayout(
+  keys: readonly string[],
+  closed: readonly string[] = [],
+): QueueColumnLayout {
+  const shut = keys.every((key) => closed.includes(key)) ? [] : closed;
+  return Object.fromEntries(keys.map((key) => [key, { open: !shut.includes(key), weight: 1 }]));
 }
 
 /**
@@ -45,18 +51,22 @@ export function defaultQueueLayout(keys: readonly string[]): QueueColumnLayout {
  * coluna nova entra aberta, peso fora da faixa volta para dentro dela, e nunca sai
  * daqui uma tela com todas recolhidas (a fila não pode desaparecer).
  */
-export function normalizeQueueLayout(keys: readonly string[], raw: unknown): QueueColumnLayout {
+export function normalizeQueueLayout(
+  keys: readonly string[],
+  raw: unknown,
+  closed: readonly string[] = [],
+): QueueColumnLayout {
   const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const layout: QueueColumnLayout = {};
   for (const key of keys) {
     const item = source[key];
     const entry = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
     layout[key] = {
-      open: typeof entry.open === "boolean" ? entry.open : true,
+      open: typeof entry.open === "boolean" ? entry.open : !closed.includes(key),
       weight: clampWeight(typeof entry.weight === "number" ? entry.weight : 1),
     };
   }
-  if (keys.length && !keys.some((key) => layout[key]!.open)) return defaultQueueLayout(keys);
+  if (keys.length && !keys.some((key) => layout[key]!.open)) return defaultQueueLayout(keys, closed);
   return layout;
 }
 

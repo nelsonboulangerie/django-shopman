@@ -1072,3 +1072,23 @@ describe("a pergunta da corrida com várias paradas", () => {
     );
   });
 });
+
+// Prontos em duas partes (dono, 13/11/2026): "A coletar" e "Saiu para entrega".
+describe("exitRows", () => {
+  it("o que espera no balcão primeiro, o que está na rua depois, um rótulo por parte", async () => {
+    const { exitRows } = await import("../app/presentation/board");
+    const rows = exitRows([
+      { ref: "R1", status: "dispatched" },
+      { ref: "B1", status: "ready" },
+      { ref: "B2", status: "ready" },
+      { ref: "R2", status: "dispatched" },
+    ] as never);
+    expect(rows.map((r) => [r.card.ref, r.heading])).toEqual([
+      ["B1", "A coletar"],
+      ["B2", ""],
+      ["R1", "Saiu para entrega"],
+      ["R2", ""],
+    ]);
+    expect(exitRows([{ ref: "R1", status: "dispatched" }] as never)[0]!.heading).toBe("Saiu para entrega");
+  });
+});

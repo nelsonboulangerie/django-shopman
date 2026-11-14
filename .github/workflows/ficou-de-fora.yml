@@ -1,0 +1,38 @@
+name: Ficou de fora
+
+# Todo PR declara o que deixou de fora, e cada item vira issue com o label
+# `ficou-de-fora` (dono, 12/11/2026: "Você decide não fazer e fica por isso
+# mesmo... COMO saberei o que ficou para trás?"). A regra e o porquê moram em
+# scripts/check_ficou_de_fora.py.
+
+"on":
+  pull_request:
+    # `edited`: corrigir o corpo do PR roda o check de novo, sem push.
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+  # Check obrigatório precisa rodar na fila, ou a fila trava esperando por ele.
+  # No merge group o script só confirma: o corpo já foi conferido no PR.
+  merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  ficou-de-fora:
+    name: Ficou de fora declarado
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/check_ficou_de_fora.py
+          sparse-checkout-cone-mode: false
+      - name: Conferir a seção "Ficou de fora"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/check_ficou_de_fora.py

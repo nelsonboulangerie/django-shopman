@@ -325,6 +325,7 @@ export interface OrderItemProjection {
   qty: string;
   unit_price_display: string;
   total_display: string;
+  notes: string;
 }
 
 /** Uma linha de desconto do detalhe: "Cupom BEMVINDO", "−R$ 5,00". */
@@ -561,6 +562,8 @@ export interface OrderCardProjection {
   waitlist_label: string;
   ifood_cancellation_notice: string;
   ifood_pickup_code: string;
+  ifood_pickup_code_label: string;
+  ifood_logistics_label: string;
   ifood_schedule_label: string;
   ifood_remote_ahead_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
@@ -746,6 +749,7 @@ export interface OperatorOrderProjection {
   ifood_cancellation_notice: string;
   ifood_payment_summary: string[];
   ifood_operation_summary: string[];
+  ifood_logistics_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
   ifood_accept_failed: boolean;
   ifood_accept_notice: string;

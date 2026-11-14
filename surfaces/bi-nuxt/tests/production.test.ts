@@ -110,8 +110,9 @@ describe("Sobrou ou faltou: a tabela produto a produto", () => {
     expect(showHiddenLabel(3)).toBe("Ver os outros 3 produtos");
   });
 
-  it("a aba mora na URL: só `lots` abre os lotes, o resto é o dia", () => {
+  it("a aba mora na URL: `lots` abre os lotes, `preorders` as encomendas, o resto é o dia", () => {
     expect(productionView("lots")).toBe("lots");
+    expect(productionView("preorders")).toBe("preorders");
     expect(productionView(undefined)).toBe("day");
     expect(productionView(["lots"])).toBe("day");
   });
