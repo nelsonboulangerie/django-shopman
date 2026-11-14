@@ -529,6 +529,11 @@ describe("os recortes de todo dia são a faixa de filtros rápidos da suíte", (
       .toEqual([["to_receive", 1], ["unprinted", 1], ["pickup", 1], ["delivery", 2]]);
   });
 
+  it("A receber e Sem Via Pedido contam pendência (âmbar); Retiradas e Entregas, volume (latão)", () => {
+    const kinds = quickFilterItems([], NO_FILTERS).map((item) => [item.key, item.countKind ?? "pending"]);
+    expect(kinds).toEqual([["to_receive", "pending"], ["unprinted", "pending"], ["pickup", "volume"], ["delivery", "volume"]]);
+  });
+
   it("o painel devolve dois valores numa dimensão: na tela fica um só, e o novo vence", () => {
     const pickup = { ...NO_FILTERS, fulfillment: "pickup" as const };
     // Retiradas apertado, toca Entregas: o painel devolve as duas, a tela fica com Entregas.

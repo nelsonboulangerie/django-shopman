@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { COUNT_CHIP_INVERTED_ON, COUNT_CHIP_INVERT_CLASSES } from "../app/presentation/countChip";
+import { COUNT_CHIP_INVERTED_ON, COUNT_CHIP_INVERT_CLASSES, COUNT_CHIP_VOLUME_CLASSES } from "../app/presentation/countChip";
 import { QUICK_ACTIVE } from "../app/presentation/quickFilters";
 
 // O chip de contagem contrasta com o pai (coordenação, 09/10/2026): círculo × fundo do
@@ -91,6 +91,27 @@ describe("chip de contagem: contraste com o pai", () => {
       }
     }
   }
+
+  // O chip de volume (dono, 14/11/2026): latão contido, a mesma régua nos dois temas, e
+  // longe o bastante do âmbar da pendência para não ser lido como pedido.
+  for (const theme of ["light", "dark"] as const) {
+    const t = THEME[theme];
+    for (const [parent, background] of Object.entries(parents(theme))) {
+      const inverted = COUNT_CHIP_INVERTED_ON[parent as keyof typeof COUNT_CHIP_INVERTED_ON];
+      if (inverted && (inverted.themes as readonly string[]).includes(theme)) continue;
+      it(`${theme} · ${parent} · volume: círculo ≥ 3:1 com o pai, número AA`, () => {
+        const circle = t["count-volume"]!;
+        const number = t["count-volume-foreground"]!;
+        expect(circle, "token --count-volume no tema").toMatch(/^#/);
+        expect(contrast(circle, background), `círculo ${circle} sobre ${background}`).toBeGreaterThanOrEqual(3);
+        expect(contrast(number, circle), `número ${number} sobre ${circle}`).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
+
+  it("o volume pinta pelos tokens do tema e a inversão continua no mesmo base", () => {
+    expect(COUNT_CHIP_VOLUME_CLASSES).toBe("bg-(--count-volume) text-(--count-volume-foreground)");
+  });
 
   it("a inversão está no CSS do chip para cada pai que inverte", () => {
     expect(COUNT_CHIP_INVERT_CLASSES).toContain("in-[[data-slot=trigger][data-state=active]]:bg-(--ui-text-inverted)");

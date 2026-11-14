@@ -26,9 +26,11 @@ import {
   COUNT_CHIP_COLOR,
   COUNT_CHIP_INVERT_CLASSES,
   COUNT_CHIP_SIZE,
+  COUNT_CHIP_VOLUME_CLASSES,
   countChipText,
   hasCount,
   type CountChipColor,
+  type CountChipKind,
 } from "../presentation/countChip";
 
 // O NuxtChip entrega os atributos ao filho do slot padrão, e aqui não há filho: os
@@ -43,18 +45,25 @@ const props = withDefaults(
   defineProps<{
     count?: number | null;
     color?: CountChipColor;
+    /** O que o número conta: pendência (âmbar, o padrão) ou volume (latão contido). */
+    kind?: CountChipKind;
     /** Ponto de estado, sem número. */
     dot?: boolean;
     dotSize?: ChipProps["size"];
   }>(),
-  { count: null, color: COUNT_CHIP_COLOR, dot: false, dotSize: "md" },
+  { count: null, color: COUNT_CHIP_COLOR, kind: "pending", dot: false, dotSize: "md" },
 );
 
 const shown = computed(() => props.dot || hasCount(props.count));
 const numbered = computed(() => !props.dot && hasCount(props.count));
 const size = computed<ChipProps["size"]>(() => (numbered.value ? COUNT_CHIP_SIZE : props.dotSize));
-// Anel transparente (no fluxo) e a inversão sobre pai preenchido de cor próxima.
-const chipUi = { base: `ring-transparent ${COUNT_CHIP_INVERT_CLASSES}` };
+// Anel transparente (no fluxo) e a inversão sobre pai preenchido de cor próxima. O
+// volume pinta o latão contido antes da inversão, que continua vencendo no pai cheio.
+const volume = computed(() => props.kind === "volume" && numbered.value);
+const chipColor = computed<ChipProps["color"]>(() => (volume.value ? "neutral" : props.color));
+const chipUi = computed(() => ({
+  base: `ring-transparent ${volume.value ? `${COUNT_CHIP_VOLUME_CLASSES} ` : ""}${COUNT_CHIP_INVERT_CLASSES}`,
+}));
 const text = computed(() => (numbered.value ? countChipText(props.count as number) : ""));
 </script>
 
@@ -63,14 +72,14 @@ const text = computed(() => (numbered.value ? countChipText(props.count as numbe
     v-if="shown"
     as="span"
     :class="attrs.class"
-    :color="color"
+    :color="chipColor"
     :size="size"
     inset
     standalone
     :ui="chipUi"
   >
     <template #content>
-      <span v-bind="passThrough" class="tabular-nums" data-count-chip>{{ text }}</span>
+      <span v-bind="passThrough" class="tabular-nums" data-count-chip :data-count-kind="volume ? 'volume' : undefined">{{ text }}</span>
     </template>
   </NuxtChip>
 </template>

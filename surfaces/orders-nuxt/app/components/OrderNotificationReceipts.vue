@@ -29,7 +29,7 @@ const toneColor = (
     <div class="flex flex-col gap-3">
       <div class="flex items-center justify-between gap-3">
         <h2 class="op-title">Avisos ao cliente</h2>
-        <OperatorCountChip :count="receipts.length" />
+        <OperatorCountChip :count="receipts.length" kind="volume" />
       </div>
       <ol class="flex flex-col gap-3">
         <li

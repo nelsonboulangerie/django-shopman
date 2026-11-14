@@ -25,7 +25,7 @@ const total = computed(() => props.count);
   <section class="mt-6" data-preorders-section>
     <div class="flex items-center gap-2 border-b border-default pb-2">
       <h2 class="font-semibold text-highlighted">Encomendas</h2>
-      <OperatorCountChip :count="total" />
+      <OperatorCountChip :count="total" kind="volume" />
       <NuxtButton
         v-if="preordersHref"
         class="ms-auto"

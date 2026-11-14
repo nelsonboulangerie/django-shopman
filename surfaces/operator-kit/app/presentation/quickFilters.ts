@@ -21,11 +21,18 @@
 // mais que isso viram um `NuxtSelect`. Nenhuma decisão de árvore em JS: as duas formas
 // existem e a régua é CSS (`max-sm:hidden` / `sm:hidden`).
 
+import type { CountChipKind } from "./countChip";
+
 /** Um item da faixa. `count` sai no chip de contagem da suíte (zero não aparece). */
 export interface QuickFilterItem {
   key: string;
   label: string;
   count?: number | null;
+  /**
+   * O que a contagem conta (`CountChipKind`): `volume` para quantos há no recorte
+   * (Todos, Entregas, uma coleção), latão contido; sem nada, pendência (âmbar).
+   */
+  countKind?: CountChipKind;
   icon?: string;
   /** Sub-seção: a rota para onde o item leva (muda a URL). */
   to?: string;

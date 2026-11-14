@@ -150,8 +150,8 @@ const counts = computed(() => ({
 // vez, com a contagem ao lado). A peça cuida do celular sozinha: a faixa rola sem cortar
 // rótulo (laudo F18, "Na me…") e, acima do teto, vira seletor.
 const verdictItems = computed<QuickFilterItem[]>(() => [
-  { key: "all", label: "Todos", count: rows.value.length },
-  ...VERDICTS.map((key) => ({ key, label: verdictMeta(key).label, count: counts.value[key] })),
+  { key: "all", label: "Todos", count: rows.value.length, countKind: "volume" },
+  ...VERDICTS.map((key) => ({ key, label: verdictMeta(key).label, count: counts.value[key], countKind: "volume" as const })),
 ]);
 const VERDICT_TEXT = { error: "text-error", warning: "text-warning", success: "text-success" } as const;
 

@@ -105,6 +105,12 @@
   --rail: #8b6b2e; /* Brass-700 — rail bronze (mesmo tom da ação no claro) */
   --rail-foreground: #ffffff;
 
+  /* Chip de contagem de VOLUME (dono, 14/11/2026): latão contido, a claridade do cinza
+     médio na matiz do tema. Âmbar fica só para pendência. Passa 3:1 com o pai e AA no
+     número (tests/countChipContrast.test.ts). */
+  --count-volume: #7e7255;
+  --count-volume-foreground: #ffffff;
+
   --sidebar: #f5e7dd; /* Faubourg-200 */
   --sidebar-foreground: #3b2a1e;
   --sidebar-primary: #8b6b2e;
@@ -198,6 +204,9 @@
   --rail: #4c381f; /* Brass-900 — bronze escuro: recua sem perder a identidade
                       (a ação dourada #d4a53f fica exclusiva de botões/foco) */
   --rail-foreground: #f0e6d2;
+
+  --count-volume: #9f9374;
+  --count-volume-foreground: #1f1712;
 
   --sidebar: #2b1d16;
   --sidebar-foreground: #f0e6d2;

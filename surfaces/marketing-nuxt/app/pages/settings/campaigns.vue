@@ -431,12 +431,13 @@ const stateCounts = computed(() => ({
 }));
 const STATE_LABELS = { active: "Ligadas", inactive: "Desligadas" } as const;
 const stateItems = computed(() => [
-  { label: "Todas", key: "all", count: stateCounts.value.all },
-  { label: STATE_LABELS.active, key: "active", count: stateCounts.value.active },
+  { label: "Todas", key: "all", count: stateCounts.value.all, countKind: "volume" as const },
+  { label: STATE_LABELS.active, key: "active", count: stateCounts.value.active, countKind: "volume" as const },
   {
     label: STATE_LABELS.inactive,
     key: "inactive",
     count: stateCounts.value.inactive,
+    countKind: "volume" as const,
   },
 ]);
 const stateChoice = computed<string | string[] | undefined>({

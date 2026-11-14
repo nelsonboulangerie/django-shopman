@@ -78,6 +78,7 @@ const tabItems = computed(() =>
     value: item.key,
     disabled: item.disabled,
     count: item.count,
+    countKind: item.countKind,
   })),
 );
 
@@ -127,7 +128,7 @@ const favoriteOn = (view: { query: FilterPanelQuery }) => Boolean(props.query) &
 // ── celular: mais que o teto vira seletor ────────────────────────────────
 const collapses = computed(() => collapsesOnPhone(props.items, props.phoneMax));
 const selectItems = computed(() =>
-  props.items.map((item) => ({ label: item.label, value: item.key, icon: item.icon, disabled: item.disabled, count: item.count })),
+  props.items.map((item) => ({ label: item.label, value: item.key, icon: item.icon, disabled: item.disabled, count: item.count, countKind: item.countKind })),
 );
 const selectValue = computed<string | string[]>({
   get: () => (mode.value === "multiple" ? quickKeys(model.value) : tabValue.value),
@@ -166,7 +167,7 @@ const favoritesClass = computed(() =>
         data-quick-filters-strip
       >
         <template #trailing="{ item }">
-          <OperatorCountChip :count="(item as { count?: number | null }).count" data-quick-filter-count />
+          <OperatorCountChip :count="(item as Pick<QuickFilterItem, 'count' | 'countKind'>).count" :kind="(item as Pick<QuickFilterItem, 'count' | 'countKind'>).countKind" data-quick-filter-count />
         </template>
       </NuxtTabs>
 
@@ -199,7 +200,7 @@ const favoritesClass = computed(() =>
           @click="select(item.key)"
         >
           <template v-if="item.count" #trailing>
-            <OperatorCountChip :count="item.count" data-quick-filter-count />
+            <OperatorCountChip :count="item.count" :kind="item.countKind" data-quick-filter-count />
           </template>
         </NuxtButton>
       </div>
@@ -241,7 +242,7 @@ const favoritesClass = computed(() =>
       data-quick-filters-select
     >
       <template #item-trailing="{ item }">
-        <OperatorCountChip :count="(item as { count?: number | null }).count" />
+        <OperatorCountChip :count="(item as Pick<QuickFilterItem, 'count' | 'countKind'>).count" :kind="(item as Pick<QuickFilterItem, 'count' | 'countKind'>).countKind" />
       </template>
     </NuxtSelect>
   </div>

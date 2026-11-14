@@ -22,6 +22,27 @@ export type CountChipColor = "success" | "warning" | "error";
 /** A cor da referência (barra lateral da Cozinha): o âmbar da casa. */
 export const COUNT_CHIP_COLOR: CountChipColor = "warning";
 
+/**
+ * O que o número conta (dono, 14/11/2026). `pending` (o padrão) conta o que pede
+ * alguém: Precisa de você, Atrasados, A receber, as filas da Cozinha. É o âmbar.
+ * `volume` conta quantos há num recorte: Todos, Entregas, as coleções do catálogo, os
+ * filtros ligados. É o latão contido (`--count-volume`), a claridade de um cinza médio
+ * na matiz do tema: separa do âmbar pela saturação e pela matiz, e o âmbar volta a
+ * querer dizer uma coisa só. O dourado da ação (`primary`) não serve: tem a claridade
+ * do âmbar e só a matiz os separava (prévia de 14/11, opção F).
+ *
+ * O padrão continua `pending`: trocá-lo repintaria em silêncio toda contagem sem
+ * `kind` escrito. Contagem de volume declara `kind="volume"`.
+ */
+export type CountChipKind = "pending" | "volume";
+
+/**
+ * As classes do chip de volume, no `base` antes da inversão: sobre pai preenchido
+ * (aba ativa, botão ligado, barra lateral clara) a inversão continua vencendo, porque
+ * as classes dela têm variante e saem depois no CSS.
+ */
+export const COUNT_CHIP_VOLUME_CLASSES = "bg-(--count-volume) text-(--count-volume-foreground)";
+
 /** O tamanho do chip numerado: o `4xl` do kit (16 px), porque o `3xl` não lê dois dígitos. */
 export const COUNT_CHIP_SIZE = "4xl" as const;
 

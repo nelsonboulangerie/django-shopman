@@ -876,6 +876,7 @@ const queueScopeTabs = computed(() =>
     key: option.key,
     label: option.label,
     count: scopeCounts.value[option.key],
+    countKind: option.key === "all" ? ("volume" as const) : undefined,
   })),
 );
 const boardScopeCounts = computed(() =>
@@ -889,6 +890,7 @@ const boardScopeTabs = computed(() =>
     key,
     label: QUEUE_SCOPES.find((option) => option.key === key)!.label,
     count: boardScopeCounts.value[key],
+    countKind: key === "all" ? ("volume" as const) : undefined,
   })),
 );
 function pickBoardScope(value: string | number) {

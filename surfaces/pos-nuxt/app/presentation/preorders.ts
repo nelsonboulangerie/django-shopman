@@ -586,6 +586,8 @@ export function railBadge(list: Pick<PreorderListResponse, "days"> | null | unde
 export interface QuickFilter {
   /** A chave do item na faixa. */
   key: string;
+  /** A contagem conta o que pede alguém (âmbar) ou só quantos há (volume, latão). */
+  countKind?: "volume";
   /** A dimensão do estado que o filtro rápido escreve. */
   dimension: keyof PreorderFilters;
   value: string;
@@ -595,8 +597,8 @@ export interface QuickFilter {
 export const QUICK_FILTERS: readonly QuickFilter[] = [
   { key: "to_receive", dimension: "pay", value: "to_receive", label: "A receber" },
   { key: "unprinted", dimension: "print", value: "pending", label: "Sem Via Pedido" },
-  { key: "pickup", dimension: "fulfillment", value: "pickup", label: "Retiradas" },
-  { key: "delivery", dimension: "fulfillment", value: "delivery", label: "Entregas" },
+  { key: "pickup", dimension: "fulfillment", value: "pickup", label: "Retiradas", countKind: "volume" },
+  { key: "delivery", dimension: "fulfillment", value: "delivery", label: "Entregas", countKind: "volume" },
 ];
 
 /** As chaves da faixa ligadas no estado da tela. */
@@ -633,11 +635,11 @@ export function filtersFromQuickKeys(current: PreorderFilters, keys: readonly st
 export function quickFilterItems(
   cards: readonly FilterCard[],
   filters: PreorderFilters,
-): { key: string; label: string; count: number }[] {
+): { key: string; label: string; count: number; countKind?: "volume" }[] {
   const chips = filterChips(cards, filters);
   const count = (dimension: keyof PreorderFilters, value: string) =>
     (chips[dimension] as FilterChip<string>[]).find((chip) => chip.key === value)?.count ?? 0;
-  return QUICK_FILTERS.map((quick) => ({ key: quick.key, label: quick.label, count: count(quick.dimension, quick.value) }));
+  return QUICK_FILTERS.map((quick) => ({ key: quick.key, label: quick.label, count: count(quick.dimension, quick.value), ...(quick.countKind ? { countKind: quick.countKind } : {}) }));
 }
 
 /**

@@ -1761,7 +1761,7 @@ useHead({ title: "Catálogo" });
             >
           </template>
           <template #trailing="{ item }"
-            ><OperatorCountChip :count="item.count"
+            ><OperatorCountChip :count="item.count" kind="volume"
           /></template>
         </NuxtTabs>
         <!-- "23 de 131 produtos · 4 canais · 4 feeds" no fim da linha das coleções (v3),

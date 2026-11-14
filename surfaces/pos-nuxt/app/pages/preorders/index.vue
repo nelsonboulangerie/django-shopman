@@ -921,6 +921,7 @@ function refreshAll() {
                   <OperatorCountChip
                     v-if="weekDay.orders_count"
                     :count="weekDay.orders_count"
+                    kind="volume"
                     aria-hidden="true"
                     data-week-day-count
                   />

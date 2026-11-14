@@ -235,9 +235,9 @@ watch(isPhone, (phone) => {
 const filterTabs = computed(() => {
   const counts = filterCounts.value;
   return [
-    { key: "all", label: "Todos", count: counts.all },
+    { key: "all", label: "Todos", count: counts.all, countKind: "volume" as const },
     ...(counts.delivery || filter.value === "delivery"
-      ? [{ key: "delivery", label: "Entrega", icon: "i-lucide-bike", count: counts.delivery }]
+      ? [{ key: "delivery", label: "Entrega", icon: "i-lucide-bike", count: counts.delivery, countKind: "volume" as const }]
       : []),
     ...(counts.late || filter.value === "late"
       ? [

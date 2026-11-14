@@ -47,6 +47,15 @@ describe("OperatorCountChip (no fluxo)", () => {
     expect(wrapper.get("[data-count-chip]").text()).toBe("7");
   });
 
+  it("volume é o latão contido; a inversão sobre pai preenchido continua no mesmo base", async () => {
+    const wrapper = await mount({ count: 23, kind: "volume" });
+    const base = wrapper.get("[data-slot=base]");
+    expect(base.classes()).toEqual(expect.arrayContaining(["bg-(--count-volume)", "text-(--count-volume-foreground)"]));
+    expect(base.classes()).not.toContain("bg-warning");
+    expect(base.classes()).toContain("in-[[aria-pressed=true]]:bg-(--ui-text-inverted)");
+    expect(wrapper.get("[data-count-chip]").attributes("data-count-kind")).toBe("volume");
+  });
+
   it("vira pílula de pontas redondas com 99+", async () => {
     const wrapper = await mount({ count: 250 });
     const base = wrapper.get("[data-slot=base]");

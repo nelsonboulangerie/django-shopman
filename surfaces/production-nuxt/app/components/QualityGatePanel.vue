@@ -67,7 +67,7 @@ const pendingCount = computed(
 );
 const viewTabs = computed(() => [
   { value: "pending", label: "Para confirmar", count: pendingCount.value },
-  { value: "reviewed", label: "Confirmados", count: gate.value.reviewed.length },
+  { value: "reviewed", label: "Confirmados", count: gate.value.reviewed.length, countKind: "volume" as const },
 ]);
 const summary = computed(() => cleanSummary(gate.value.clean));
 const closers = computed(() => closersSummary(gate.value.clean));
@@ -136,7 +136,7 @@ function closedLine(order: QCOrderCardProjection): string {
       class="w-full sm:w-auto sm:justify-self-end"
       aria-label="Lotes da Qualidade"
     >
-      <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+      <template #trailing="{ item }"><OperatorCountChip :count="item.count" :kind="item.countKind" /></template>
     </NuxtTabs>
 
     <div

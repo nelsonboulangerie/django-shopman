@@ -1049,6 +1049,7 @@ const planFilterTabs = computed(() =>
     key: filter.key,
     label: filter.label,
     count: planGroups.value.counts[filter.key],
+    countKind: filter.key === "all" || filter.key === "done" ? ("volume" as const) : undefined,
   })),
 );
 const openFilterTabs = computed(() =>
@@ -1056,6 +1057,7 @@ const openFilterTabs = computed(() =>
     key: filter.key,
     label: filter.label,
     count: openGroups.value.counts[filter.key],
+    countKind: filter.key === "all" || filter.key === "opened" ? ("volume" as const) : undefined,
   })),
 );
 const panelFilters = computed<ActiveFilters>({

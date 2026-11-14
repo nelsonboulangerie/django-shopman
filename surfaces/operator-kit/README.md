@@ -496,7 +496,7 @@ cai. Uso novo fora do conjunto reprova; migrar um uso antigo baixa o teto.
 | Cores geradas | `primary`, `info`, `success`, `warning`, `error` (e o `neutral`, que o Nuxt UI sempre gera) | `theme.colors` no módulo: cor que não é gerada não existe no tipo do `color` |
 | Escolha numa lista | `NuxtSelect` (lista curta e fixa) e `NuxtSelectMenu` (longa, buscável ou que cresce) | ver abaixo. O antigo adaptador nativo foi removido |
 | Texto | 5 tamanhos: `text-xs` 12 (rótulo e meta), `text-sm` 14 (texto corrido e controles), `text-base` 16 (título de cartão), `text-xl` (título de tela), `text-2xl` (figura); 2 pesos: `font-medium` e `font-semibold` | nenhum tamanho arbitrário novo (`text-[13px]`, `text-[0.625rem]`); a trava conta os que existem. Os papéis `op-*` de `operator-suite.css` ainda não foram reduzidos a esses cinco |
-| Chip | ponto (estado) e número (contagem) com anel de 2 px (`chip.slots.base: 'ring-2'`, o traço dos ícones Lucide), na cor do fundo onde o chip está (`ring-bg`) | exceção declarada: o tamanho `4xl` numerado (16 px, texto 12 px), porque o `3xl` oficial não lê dois dígitos. Número acima de 99 escreve "99+". Toda contagem é o **chip de contagem** (`OperatorCountChip`, ver abaixo); selo com número não existe |
+| Chip | ponto (estado) e número (contagem) com anel de 2 px (`chip.slots.base: 'ring-2'`, o traço dos ícones Lucide), na cor do fundo onde o chip está (`ring-bg`) | exceção declarada: o tamanho `4xl` numerado (16 px, texto 12 px), porque o `3xl` oficial não lê dois dígitos. Número acima de 99 escreve "99+". Toda contagem é o **chip de contagem** (`OperatorCountChip`, ver abaixo), âmbar para pendência e latão contido para volume (`kind`, 14/11/2026); selo com número não existe |
 | Rail | dourado pelo tema: `ui.dashboardSidebar.slots` (`root` e `content`) redefine os tokens do Nuxt UI só dentro do rail (`--ui-text*`, `--ui-primary`, `--primary-ink`, `--ui-bg` = `--rail`, `--ui-border`) | nenhuma tela passa `:ui` ao rail. Três estados e sinais no `OperatorSuiteShell` (PR-K4): ver "Barra lateral em três estados" abaixo |
 | Raio | ainda o do kit (`--radius` e `--radius-sm/md/lg/xl` em `operator-base.css`) | `--ui-radius` não entrou: nenhum valor único reproduz os raios de hoje (ver o PR-K3) |
 
@@ -541,6 +541,17 @@ os botões, abas e recortes usavam ("Todos 7", "Entrega 3", "Atrasados").
   próprio pai pelo CSS (`COUNT_CHIP_INVERT_CLASSES`, aba ativa do Nuxt UI e escopo
   `.bg-rail`), sem prop nem `:ui` por tela; a tabela `COUNT_CHIP_INVERTED_ON` é medida
   por `tests/countChipContrast.test.ts` contra os tokens do tema.
+- **Pendência ou volume** (dono, 14/11/2026). O âmbar conta o que **pede alguém**:
+  Precisa de você, Atrasados, A receber, as filas da Cozinha, o sino. É o padrão
+  (`kind="pending"`). O que conta **quantos há** num recorte (Todos, Entregas, uma
+  coleção, os filtros ligados) declara `kind="volume"` e sai em latão contido
+  (`--count-volume`: `#7e7255` no claro, `#9f9374` no escuro), a claridade de um cinza
+  médio na matiz do tema. Separa do âmbar pela saturação e pela matiz; o dourado da ação
+  (`primary`) foi descartado porque tem a claridade do âmbar e só a matiz os separava.
+  No filtro rápido o item diz `countKind: "volume"`. O padrão continua âmbar para nada
+  ser repintado em silêncio: contagem de volume nova declara o `kind`. Sobre pai
+  preenchido o volume inverte como o âmbar. Contraste medido em
+  `tests/countChipContrast.test.ts`.
 - **Zero não aparece.** Um círculo âmbar com "0" aponta para o nada. Sem contagem maior
   que zero, o chip não é desenhado; `dot` desenha o ponto de estado (sem número) no
   tamanho padrão do ponto.

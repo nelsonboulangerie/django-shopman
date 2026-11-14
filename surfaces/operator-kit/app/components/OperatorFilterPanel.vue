@@ -484,7 +484,7 @@ const canSave = computed(() => Boolean(saved) && activeCount.value > 0);
       >
         <span class="max-sm:sr-only">Filtros</span>
         <template v-if="activeCount" #trailing>
-          <OperatorCountChip :count="activeCount" data-operator-filter-panel-count />
+          <OperatorCountChip :count="activeCount" kind="volume" data-operator-filter-panel-count />
         </template>
       </NuxtButton>
       <template #content><ReusePalette /></template>
