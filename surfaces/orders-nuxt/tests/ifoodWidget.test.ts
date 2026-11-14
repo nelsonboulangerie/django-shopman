@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ifoodChatNotice, ifoodWidgetInit } from "../app/presentation/ifoodWidget";
+import { ifoodChatNotice, ifoodWidgetInit, ifoodWidgetVisible } from "../app/presentation/ifoodWidget";
 
 describe("widget do iFood: quando iniciar", () => {
   it("sem ID do widget ou sem loja, não inicia (init vazio apaga a autorização)", () => {
@@ -15,9 +15,22 @@ describe("widget do iFood: quando iniciar", () => {
     expect(ifoodWidgetInit({ widget_id: " w1 ", merchant_ids: ["m1"] })).toEqual({
       widgetId: "w1",
       merchantIds: ["m1"],
+      autoShow: false,
     });
     const many = Array.from({ length: 12 }, (_, i) => `m${i}`);
     expect(ifoodWidgetInit({ widget_id: "w1", merchant_ids: many })?.merchantIds).toHaveLength(10);
+  });
+});
+
+describe("widget do iFood: quando o botão aparece (DEV-2026-023)", () => {
+  it("com pedido iFood em andamento, em qualquer tela", () => {
+    expect(ifoodWidgetVisible(true, false)).toBe(true);
+  });
+  it("no detalhe de um pedido iFood, mesmo entregue", () => {
+    expect(ifoodWidgetVisible(false, true)).toBe(true);
+  });
+  it("sem pedido iFood em andamento e fora de um pedido iFood, some", () => {
+    expect(ifoodWidgetVisible(false, false)).toBe(false);
   });
 });
 

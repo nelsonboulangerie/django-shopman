@@ -60,7 +60,8 @@ vi.stubGlobal("useScreen", () => ({ ready: ref(true), belowSm: ref(false), below
 // O widget do iFood sobe na casca (app.vue); o detalhe só lê o estado dele.
 const ifoodWidgetState = ref<"off" | "loading" | "ready" | "failed">("off");
 beforeEach(() => { ifoodWidgetState.value = "off"; });
-vi.stubGlobal("useIFoodWidget", () => ({ state: ifoodWidgetState, start: vi.fn() }));
+const setViewingIFoodOrder = vi.fn();
+vi.stubGlobal("useIFoodWidget", () => ({ state: ifoodWidgetState, start: vi.fn(), setViewingIFoodOrder }));
 vi.stubGlobal("useOutsideStore", () => ({ askConsent: ref(false), away: ref(false), allow: vi.fn(), decline: vi.fn(), showAll: vi.fn() }));
 vi.stubGlobal("useOrderDetail", () => ({
   order: computed(() => detalhe.value),
@@ -742,6 +743,16 @@ describe("chat do cliente iFood (widget do iFood, DEV-2026-019)", () => {
     ifoodWidgetState.value = "failed";
     const w = abrir(order({ channel_ref: "ifood" }));
     expect(w.get("[data-ifood-chat]").text()).toContain("Gestor do iFood");
+  });
+
+  it("o detalhe de pedido iFood avisa que o botão do iFood deve aparecer; o de outro canal, não", () => {
+    setViewingIFoodOrder.mockClear();
+    abrir(order({ channel_ref: "ifood" })).unmount();
+    expect(setViewingIFoodOrder.mock.calls.map((c) => c[0])).toEqual([true, false]);
+    setViewingIFoodOrder.mockClear();
+    abrir(order({ channel_ref: "web" }));
+    expect(setViewingIFoodOrder).toHaveBeenCalledWith(false);
+    expect(setViewingIFoodOrder).not.toHaveBeenCalledWith(true);
   });
 
   it("widget desligado na loja, ou pedido de outro canal: nada aparece", () => {
