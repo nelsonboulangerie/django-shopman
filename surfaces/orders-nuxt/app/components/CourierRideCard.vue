@@ -62,8 +62,8 @@ const toneClass: Record<string, string> = {
         <span v-if="i < stops.length - 1" class="absolute top-6 bottom-0 left-3 w-px" :class="stop.state === 'done' ? 'bg-success/60' : 'bg-default'" aria-hidden="true" />
         <span
           class="relative z-10 grid size-6 shrink-0 place-items-center rounded-full op-micro font-semibold"
-          :class="stop.state === 'done' ? 'bg-success text-white' : stop.state === 'now' ? 'ring-4' : 'border-2 bg-default text-toned'"
-          :style="stop.state === 'now' ? { background: color, color: tone.fg, '--tw-ring-color': `${color}33` } : stop.state === 'done' ? {} : { borderColor: color }"
+          :class="stop.state === 'done' ? 'bg-success text-white' : stop.state === 'now' ? 'ring-4' : ''"
+          :style="stop.state === 'done' ? {} : { background: color, color: tone.fg, ...(stop.state === 'now' ? { '--tw-ring-color': `${color}40` } : {}) }"
         >
           <NuxtIcon v-if="stop.state === 'done'" name="i-lucide-check" class="size-3.5" />
           <template v-else>{{ i + 1 }}</template>
