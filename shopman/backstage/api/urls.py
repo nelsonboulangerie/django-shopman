@@ -359,6 +359,7 @@ from .search import SuiteSearchView
 from .seating import POSSeatingView
 from .sign_ins import SignInListView
 from .support import (
+    SupportCapabilitiesView,
     SupportTicketDecisionView,
     SupportTicketDetailView,
     SupportTicketLinkDevView,
@@ -985,6 +986,11 @@ urlpatterns = [
     path("alerts/", AlertListView.as_view(), name="api-backstage-alerts"),
     path("alerts/<int:pk>/ack/", AlertAckView.as_view(), name="api-backstage-alert-ack"),
     # Suporte (helpdesk interno)
+    path(
+        "support/capabilities/",
+        SupportCapabilitiesView.as_view(),
+        name="api-backstage-support-capabilities",
+    ),
     path(
         "support/tickets/",
         SupportTicketListCreateView.as_view(),
