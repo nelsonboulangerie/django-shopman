@@ -97,6 +97,9 @@ const mapBuilding = computed(() => building.value.map((r) => ({ number: r.number
 const callLabel = computed(() =>
   ready.value.length === 1 ? `Chamar a corrida ${ready.value[0]!.number}` : `Chamar ${ready.value.length} corridas`,
 );
+// Volumes declarados por quem embalou (exemplo): o B02 ainda não tem.
+const VOLUMES: Record<string, number> = { A02: 2, A05: 1, B01: 1, D02: 1, D03: 2 };
+const liveOpacity = computed(() => (route.query.live === "50" ? 0.5 : 1));
 const quotes: Record<number, string> = { 4: "R$ 18,40 · 24 min", 5: "R$ 11,90 · 17 min" };
 </script>
 
@@ -113,7 +116,7 @@ const quotes: Record<number, string> = { 4: "R$ 18,40 · 24 min", 5: "R$ 11,90 �
     <div class="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-2">
       <!-- o mapa -->
       <div class="h-[38dvh] shrink-0 border-b border-default lg:h-auto lg:border-r lg:border-b-0">
-        <CourierDeliveriesMap :origin="origin" :waiting="mapWaiting" :building="mapBuilding" :live="mapLive" :active="active" @toggle="toggle" @fill="fill" @open="open" />
+        <CourierDeliveriesMap :origin="origin" :waiting="mapWaiting" :building="mapBuilding" :live="mapLive" :active="active" :live-opacity="liveOpacity" @toggle="toggle" @fill="fill" @open="open" />
       </div>
 
       <!-- a coluna: as mesmas três partes -->
@@ -196,7 +199,7 @@ const quotes: Record<number, string> = { 4: "R$ 18,40 · 24 min", 5: "R$ 11,90 �
                 :state="r.state"
                 :courier="r.courier"
                 :eta="r.eta"
-                :stops="r.stops.map((s) => ({ code: s.code, done: 'done' in s && Boolean(s.done) }))"
+                :stops="r.stops.map((s) => ({ code: s.code, done: 'done' in s && Boolean(s.done), volumes: VOLUMES[s.code] }))"
               />
             </div>
           </section>

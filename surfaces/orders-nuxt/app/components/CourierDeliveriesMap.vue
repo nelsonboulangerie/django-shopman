@@ -3,11 +3,11 @@
 // caminho dela, num desenho só.
 //
 // Três camadas, do fundo para a frente (dono, 14/11):
-//  · NA RUA (corridas chamadas): rota e paradas em CINZA CLARO; só o entregador, a
-//    moto, leva a cor e o número da corrida. O que já foi chamado sai da frente.
-//  · MONTANDO: parada em branco com borda grossa na cor da corrida (a espessura do
-//    traço) e o número da parada; rota pontilhada na cor. A ativa forte, as outras
-//    esmaecidas. O cheio de cor fica só para a moto: ela é o destaque do mapa.
+//  · CHAMADA (na rua): rota e borda da parada na cor da corrida, em traço CONTÍNUO
+//    (variante: a 50%, para comparar). O entregador é o único cheio de cor: moto
+//    sobre fundo sólido, com o número (dono, 14/11, terceira rodada).
+//  · MONTANDO: rota e borda da parada na cor da corrida, PONTILHADAS. A ativa
+//    forte, as outras esmaecidas.
 //  · ESPERANDO: o pedido sem corrida, em branco com o código. Tocar põe na ativa.
 import { rideColor } from "~/presentation/ridePalette";
 
@@ -33,11 +33,12 @@ const props = defineProps<{
   building: { number: number; stops: MapPoint[] }[];
   live: MapLiveRide[];
   active: number;
+  /** Opacidade da rota e das paradas das corridas chamadas (a moto fica sempre cheia). */
+  liveOpacity?: number;
 }>();
 const emit = defineEmits<{ toggle: [ref: string]; fill: [place: string]; open: [number: number] }>();
 
-const GREY = "#c9ccd1";
-const GREY_STOP = "#aeb3ba";
+const liveAlpha = computed(() => props.liveOpacity ?? 1);
 
 const everyPoint = computed(() => [
   props.origin,
@@ -83,7 +84,7 @@ const places = computed(() => {
 
     <!-- as linhas: na rua (cinza) por baixo, montando (cor) por cima -->
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="absolute inset-0 size-full" aria-hidden="true">
-      <path v-for="r in live" :key="`l${r.number}`" :d="line(r.stops)" fill="none" :stroke="GREY" vector-effect="non-scaling-stroke" style="stroke-width: 4px" stroke-linecap="round" stroke-linejoin="round" />
+      <path v-for="r in live" :key="`l${r.number}`" :d="line(r.stops)" fill="none" :stroke="rideColor(r.number - 1).bg" :opacity="liveAlpha" vector-effect="non-scaling-stroke" style="stroke-width: 4px" stroke-linecap="round" stroke-linejoin="round" />
       <path
         v-for="r in building.filter((b) => b.stops.length)"
         :key="`b${r.number}`"
@@ -119,8 +120,8 @@ const places = computed(() => {
         v-for="(s, k) in r.stops"
         :key="s.ref"
         type="button"
-        class="absolute grid size-7 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full op-micro font-semibold text-white shadow-sm"
-        :style="{ ...at(s), background: GREY_STOP }"
+        class="absolute grid size-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-4 border-solid op-label font-bold tabular-nums text-highlighted shadow-sm"
+        :style="{ ...at(s), borderColor: `color-mix(in srgb, ${rideColor(r.number - 1).bg} ${liveAlpha * 100}%, transparent)`, background: 'white' }"
         :aria-label="`Corrida ${r.number}, parada ${k + 1}, pedido ${s.code}`"
         @click="emit('open', r.number)"
       >
@@ -134,7 +135,7 @@ const places = computed(() => {
         v-for="(s, k) in r.stops"
         :key="s.ref"
         type="button"
-        class="absolute z-10 grid size-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-4 bg-white op-label font-bold tabular-nums shadow-sm transition hover:scale-110"
+        class="absolute z-10 grid size-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-4 border-dotted bg-white op-label font-bold tabular-nums shadow-sm transition hover:scale-110"
         :style="{ ...at(s), borderColor: rideColor(r.number - 1).bg, color: '#111' }"
         :aria-label="`Pedido ${s.code}, corrida ${r.number}`"
         @click="emit('toggle', s.ref)"
@@ -170,10 +171,14 @@ const places = computed(() => {
       </button>
     </template>
 
-    <div class="absolute bottom-3 left-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-white/90 px-2.5 py-1.5 op-micro text-toned shadow-sm">
-      <span class="flex items-center gap-1"><span class="size-3 rounded-full border-2 bg-white" style="border-color:#b9a888" />Esperando</span>
-      <span class="flex items-center gap-1"><span class="size-3 rounded-full border-[3px] bg-white" :style="{ borderColor: rideColor(active - 1).bg }" />Montando</span>
-      <span class="flex items-center gap-1"><span class="h-1 w-4 rounded" :style="{ background: GREY }" /><NuxtIcon name="i-lucide-bike" class="size-3.5" />Na rua</span>
+    <!-- legenda pela FORMA, nunca pela cor: a cor é sempre a da corrida -->
+    <div class="absolute bottom-3 left-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-white/90 px-2.5 py-1.5 op-micro text-toned shadow-sm" data-map-legend>
+      <span class="flex items-center gap-1"><span class="size-3.5 rounded-full border-2 bg-white" style="border-color:#b9a888" />Esperando</span>
+      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" stroke="#5f6670" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><span class="size-3.5 rounded-full border-[3px] border-dotted bg-white" style="border-color:#5f6670" />Montando</span>
+      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" stroke="#5f6670" stroke-width="3" stroke-linecap="round" /></svg><span class="size-3.5 rounded-full border-[3px] bg-white" style="border-color:#5f6670" />Chamada</span>
+      <span class="flex items-center gap-1"><span class="grid h-4 w-6 place-items-center rounded-full bg-[#5f6670] text-white"><NuxtIcon name="i-lucide-bike" class="size-3" /></span>Entregador</span>
+      <span class="text-muted">· a cor é a da corrida</span>
     </div>
+
   </div>
 </template>

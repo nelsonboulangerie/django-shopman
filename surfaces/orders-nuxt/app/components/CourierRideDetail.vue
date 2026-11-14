@@ -21,8 +21,6 @@ import { rideColor } from "~/presentation/ridePalette";
 const props = defineProps<{ number: number }>();
 defineEmits<{ close: [] }>();
 const tone = computed(() => rideColor(props.number - 1));
-const GREY = "#c9ccd1";
-const GREY_STOP = "#aeb3ba";
 
 const stops = [
   { code: "D01", customer: "Lúcia Ferreira", address: "R. Ernani Lacerda de Athayde, 1100 · Bela Suíça", state: "done", at: "12:27", x: 40, y: 66 },
@@ -53,21 +51,21 @@ const path = computed(() => [store, ...stops].map((p, i) => `${i ? "L" : "M"}${p
     </header>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <!-- onde está agora: a rota já chamada em cinza, a moto na cor da corrida -->
+      <!-- onde está agora: rota e paradas em traço contínuo na cor; a moto cheia de cor -->
       <div class="relative mx-5 mt-4 h-48 overflow-hidden rounded-xl bg-[#f3ede3] ring-1 ring-default">
         <svg class="absolute inset-0 size-full" aria-hidden="true">
           <defs><pattern id="det-streets" width="40" height="40" patternUnits="userSpaceOnUse" patternTransform="rotate(-12)"><path d="M40 0H0V40" fill="none" stroke="#fff" stroke-width="5" /><path d="M40 0H0V40" fill="none" stroke="#e4dccd" stroke-width="1" /></pattern></defs>
           <rect width="100%" height="100%" fill="url(#det-streets)" />
         </svg>
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="absolute inset-0 size-full" aria-hidden="true">
-          <path :d="path" fill="none" :stroke="GREY" vector-effect="non-scaling-stroke" style="stroke-width: 4px" stroke-linejoin="round" stroke-linecap="round" />
+          <path :d="path" fill="none" :stroke="tone.bg" vector-effect="non-scaling-stroke" style="stroke-width: 4px" stroke-linejoin="round" stroke-linecap="round" />
         </svg>
         <span class="absolute grid size-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-inverted text-inverted ring-4 ring-white" :style="{ left: `${store.x}%`, top: `${store.y}%` }"><NuxtIcon name="i-lucide-store" class="size-4" /></span>
         <span
           v-for="(s, i) in stops"
           :key="s.code"
-          class="absolute grid size-7 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full op-micro font-semibold text-white shadow"
-          :style="{ left: `${s.x}%`, top: `${s.y}%`, background: GREY_STOP }"
+          class="absolute grid size-7 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-[3px] bg-white op-micro font-bold text-highlighted shadow"
+          :style="{ left: `${s.x}%`, top: `${s.y}%`, borderColor: tone.bg }"
         ><NuxtIcon v-if="s.state === 'done'" name="i-lucide-check" class="size-3.5" /><template v-else>{{ i + 1 }}</template></span>
         <span class="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full py-1 pr-2 pl-1 shadow-lg ring-2 ring-white" :style="{ left: `${courierAt.x}%`, top: `${courierAt.y}%`, background: tone.bg, color: tone.fg }" title="Léo agora">
           <span class="grid size-6 place-items-center rounded-full bg-white/20"><NuxtIcon name="i-lucide-bike" class="size-4" /></span>
@@ -93,7 +91,7 @@ const path = computed(() => [store, ...stops].map((p, i) => `${i ? "L" : "M"}${p
         <ol class="mt-2 flex flex-col">
           <li v-for="(s, i) in stops" :key="s.code" class="relative flex gap-3 pb-4 last:pb-0">
             <span v-if="i < stops.length - 1" class="absolute top-7 bottom-0 left-3.5 w-px bg-default" aria-hidden="true" />
-            <span class="relative z-10 grid size-7 shrink-0 place-items-center rounded-full op-micro font-semibold text-white" :style="{ background: GREY_STOP }">
+            <span class="relative z-10 grid size-7 shrink-0 place-items-center rounded-full border-[3px] bg-white op-micro font-bold text-highlighted" :style="{ borderColor: tone.bg }">
               <NuxtIcon v-if="s.state === 'done'" name="i-lucide-check" class="size-3.5" /><template v-else>{{ i + 1 }}</template>
             </span>
             <div class="min-w-0 flex-1">

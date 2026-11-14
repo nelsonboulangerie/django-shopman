@@ -90,8 +90,8 @@ const initial = computed(() =>
         <div class="flex flex-col gap-2">
           <p class="px-1 op-micro font-semibold text-muted">Corridas · 4</p>
           <div class="grid grid-cols-1 gap-2">
-            <CourierRideMirror :number="1" state="atStore" courier="Diego" :stops="[{ code: 'A02' }, { code: 'A05' }]" />
-            <CourierRideMirror :number="2" state="coming" courier="Rita" eta="6 min" :stops="[{ code: 'B01' }, { code: 'B02' }]" />
+            <CourierRideMirror :number="1" state="atStore" courier="Diego" :stops="[{ code: 'A02', volumes: 2 }, { code: 'A05', volumes: 1 }]" />
+            <CourierRideMirror :number="2" state="coming" courier="Rita" eta="6 min" :stops="[{ code: 'B01', volumes: 1 }, { code: 'B02' }]" />
             <CourierRideMirror :number="3" state="route" courier="Léo" eta="12:49" :stops="[{ code: 'D01', done: true }, { code: 'D02' }, { code: 'D03' }]" />
             <CourierRideMirror :number="6" state="back" courier="Marcos" :stops="[{ code: 'E01', done: true }]" />
           </div>
