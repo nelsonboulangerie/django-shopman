@@ -378,6 +378,7 @@ function menuDotSize(size: string): ChipProps["size"] {
               />
             </template>
           </NuxtNavigationMenu>
+          <slot name="rail-actions" />
           <div
             class="flex gap-1.5"
             :class="isCollapsed ? 'flex-col items-center' : 'flex-row items-center'"

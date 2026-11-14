@@ -10,11 +10,18 @@
 // Exceção declarada: o Painel de retirada (`/pickup`) é a TV do salão, para o cliente.
 // Fica fora do shell, em tela cheia, sem navegação e sem login; a trava de operador
 // nunca o cobre.
+import { operatorSupportContext } from "../../operator-kit/app/presentation/support";
+
 const OPERATOR_PERM = "backstage.operate_kds";
 const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock, stationRef } =
   useOperatorLock(OPERATOR_PERM);
 
 const route = useRoute();
+
+// O chamado da Cozinha leva app, tela e posto.
+const supportContext = computed(() =>
+  operatorSupportContext("kds", route.path, stationRef.value ? { workstation_ref: stationRef.value } : {}),
+);
 const isCustomerBoard = computed(() => route.path.startsWith("/pickup"));
 // Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): oferta, não
 // parede, só para quem gere operadores, num dispositivo que ainda não é posto.
@@ -54,6 +61,9 @@ useOperatorWindowTitle();
         @select="onSelect"
         @lock="lock"
       >
+        <template #rail-actions>
+          <SupportTrigger :context="supportContext" size="sm" variant="ghost" block />
+        </template>
         <!-- A trava cobre a tela por cima; o quadro segue montado por baixo e volta
              no mesmo estado quando alguém se identifica. -->
         <NuxtPage />
