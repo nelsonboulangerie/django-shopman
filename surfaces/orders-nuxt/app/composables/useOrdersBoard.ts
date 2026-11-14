@@ -188,7 +188,7 @@ export function useOrdersBoard() {
   const preorders = computed<PreorderGroup[]>(() =>
     queue.value ? preorderGroups(queue.value) : [],
   );
-  // Maquininhas na rua: o quadro responde "onde está" sem abrir card.
+  // Maquininhas na rua: o painel responde "onde está" sem abrir card.
   const equipmentAvailable = computed(
     () => queue.value?.equipment_available ?? [],
   );
@@ -559,7 +559,7 @@ export function useOrdersBoard() {
     if (error.value) {
       setActionError(
         ref_,
-        "A leitura está desatualizada. Atualize o quadro antes de confirmar.",
+        "A leitura está desatualizada. Atualize o painel antes de confirmar.",
       );
       return false;
     }
@@ -633,13 +633,13 @@ export function useOrdersBoard() {
         ? httpErrorMessage(
             error,
             "O pedido mudou de estado antes da ação chegar.",
-          ) + " Atualizamos o quadro: confira o pedido antes de tentar de novo."
+          ) + " Atualizamos o painel: confira o pedido antes de tentar de novo."
         : httpErrorMessage(error, failureMessage(ref_, action));
       // Um lugar só: o aviso no cartão (ou na linha), que fica até a próxima tentativa.
       // O toast repetia a mesma frase ao mesmo tempo (laudo do Gestor, P1-6).
       setActionError(ref_, message);
       // Refetch canônico: o estado no servidor pode ter mudado (é justamente o
-      // caso do 409) — o quadro precisa mostrar a verdade, não a foto velha.
+      // caso do 409) — o painel precisa mostrar a verdade, não a foto velha.
       await refresh();
       return false;
     } finally {

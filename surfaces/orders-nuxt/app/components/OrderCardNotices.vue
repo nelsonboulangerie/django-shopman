@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Os avisos do cartão do pedido (dono, 07/10/2026): a pílula com a cor e o nome; o
-// texto e o gesto no Popover. Um lugar só para o cartão inteiro e o enxuto do Quadro.
+// texto e o gesto no Popover. Um lugar só para o cartão inteiro e o enxuto do Painel.
 import type { CardNotice } from "./OrderCard.vue";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Encomendas no Gestor (dono, 13/11/2026; o vocabulário fechado diz Encomenda, não
-// Agendado): os pedidos dos próximos dias, abaixo do quadro, numa
+// Agendado): os pedidos dos próximos dias, abaixo do painel, numa
 // lista simples. Não entra no fluxo do dia; está ali para conferir de relance o que vem
 // pela frente. Cada linha abre o pedido (o mesmo detalhe das Encomendas, com os
 // gestos dele, inclusive o aceite da encomenda nova); o cabeçalho leva às Encomendas

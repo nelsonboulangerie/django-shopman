@@ -23,7 +23,7 @@ describe("notificação local de pedido tratável", () => {
 
     expect(ok).toBe(true);
     expect(current.showNotification).toHaveBeenCalledWith("Pedido para tratar WEB-7", {
-      body: "Há um pedido que já pode ser tratado no quadro.",
+      body: "Há um pedido que já pode ser tratado no painel.",
       tag: "gestor-treatable-order",
       data: { action_url: "/?view=board" },
     });

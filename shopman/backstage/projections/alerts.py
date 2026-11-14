@@ -156,9 +156,9 @@ _ALERT_HOMES: dict[str, tuple[str, str, str]] = {
     "stock_discrepancy": ("production", "/plan", "Abrir o plano"),
     "stock_low": ("production", "/plan", "Abrir o plano"),
     # Gestor: o card filtrado no quadro, quando o gesto mora no card.
-    "order_production_quality_risk": ("orders", "/", "Abrir o pedido no quadro"),
+    "order_production_quality_risk": ("orders", "/", "Abrir o pedido no painel"),
     "danfe_print_failed": ("orders", "/", "Imprimir a DANFE no card"),
-    "dispatch_unchecked_volumes": ("orders", "/", "Abrir o pedido no quadro"),
+    "dispatch_unchecked_volumes": ("orders", "/", "Abrir o pedido no painel"),
     # Gestor: a loja no iFood (o interruptor do canal mora na Fila).
     "ifood_store_closed_while_open": ("orders", "/", "Conferir o iFood na Fila"),
     "ifood_store_open_while_closed": ("orders", "/", "Conferir o iFood na Fila"),

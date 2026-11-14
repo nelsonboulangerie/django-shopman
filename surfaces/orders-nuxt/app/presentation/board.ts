@@ -323,7 +323,7 @@ export function undoLine(source: UndoSource, nowMs: number): UndoLine | null {
 // ── Zones (Entrada / Preparo / Saída) ──────────────────────────────────────
 
 export interface ZoneView {
-  /** As três etapas do quadro, mais a aba "Negociação" do quadro em abas
+  /** As três etapas do painel, mais a aba "Negociação" do painel em abas
    *  (`negotiationZoneView`), que não é etapa nem coluna do desktop. */
   key: "intake" | "prep" | "expedition" | "negotiation";
   title: string;
@@ -406,9 +406,9 @@ export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {
   ];
 }
 
-/** A aba "Negociação" do quadro em abas (celular e tablet em pé): o pedido do iFood
+/** A aba "Negociação" do painel em abas (celular e tablet em pé): o pedido do iFood
  *  com negociação aberta que não está em etapa nenhuma (já entregue, o cliente reclamou
- *  depois). No desktop ele entra no "Precisa de você" da Fila; no quadro em abas, sem
+ *  depois). No desktop ele entra no "Precisa de você" da Fila; no painel em abas, sem
  *  esta aba, ele não aparecia em lugar nenhum. O que ainda está numa etapa já mostra a
  *  negociação no próprio cartão, e não se repete aqui. Sem nenhum, a aba não existe. */
 export function negotiationZoneView(
@@ -417,7 +417,7 @@ export function negotiationZoneView(
   const inStage = new Set(
     zonesView(queue).flatMap((zone) => zone.cards.map((card) => card.ref)),
   );
-  // O contrato gerado tipa `timer_class` como texto; o cartão do quadro, como a régua.
+  // O contrato gerado tipa `timer_class` como texto; o cartão do painel, como a régua.
   const cards = (
     (queue.ifood_negotiation_orders ?? []) as OrderCardProjection[]
   ).filter((card) => !inStage.has(card.ref));
@@ -816,7 +816,7 @@ export function triageCards(
 }
 
 /** "queue": a Grade, os cartões da Fila "Precisa de você" (um toque no controle de modo);
- *  "board": o quadro de três colunas; "table": a Lista, a tabela densa. */
+ *  "board": o painel de três colunas; "table": a Lista, a tabela densa. */
 export type ViewMode = "queue" | "board" | "table";
 
 export interface FlatRow {

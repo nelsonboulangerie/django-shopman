@@ -188,7 +188,7 @@ watch(
 );
 const queueViewport = ref<HTMLElement | null>(null);
 // Conferência das sacolas (P1-13): o leitor do posto Saída bipa o QR da Via
-// Pedido em qualquer ponto do quadro. Só avisa; a saída segue no cartão.
+// Pedido em qualquer ponto do painel. Só avisa; a saída segue no cartão.
 const volumeCheck = useVolumeCheck({
   enabled: () => !stationLocked.value,
   onChecked: () => refresh(),
@@ -298,8 +298,8 @@ function triaged(zone: ZoneView): OrderCardProjection[] {
   });
   return view.value === "board" ? inBoardScope(cards) : cards;
 }
-// Os recortes do Quadro (D, prévia `gestor-d`): Todos · Precisa de você · Atrasados,
-// com a régua da Fila, em cada coluna. O Quadro abre em Todos; a Fila tem o seu.
+// Os recortes do Painel (D, prévia `gestor-d`): Todos · Precisa de você · Atrasados,
+// com a régua da Fila, em cada coluna. O Painel abre em Todos; a Fila tem o seu.
 const boardScope = ref<QueueScope>("all");
 function inBoardScope(cards: OrderCardProjection[]): OrderCardProjection[] {
   if (boardScope.value === "all") return cards;
@@ -513,13 +513,13 @@ const screen = useScreen();
 const isPhone = screen.belowMd;
 const hydrated = screen.ready;
 // Tablet em pé: três colunas de ~240 px cortavam selo e prazo do cartão. Abaixo do
-// lg, com mais de uma coluna aberta, o quadro usa as abas do celular.
+// lg, com mais de uma coluna aberta, o painel usa as abas do celular.
 const isNarrowTablet = computed(
   () => screen.belowLg.value && !screen.belowMd.value,
 );
 // A aba "Negociação" (só quando há): o pedido do iFood já fora das etapas com
 // negociação aberta. É ação pendente do gerente; a Fila do desktop o mostra, e no
-// quadro em abas ele ficava sem lugar. A Saída do celular é do posto, não do gerente.
+// painel em abas ele ficava sem lugar. A Saída do celular é do posto, não do gerente.
 const negotiationZone = computed(() =>
   queue.value ? negotiationZoneView(queue.value) : null,
 );
@@ -621,7 +621,7 @@ function onSwipe(card: OrderCardProjection, key: string) {
 }
 
 // ── colunas ajustáveis e recolhíveis, lembradas por posto (SUITE-UX §16) ──
-// O tablet do passe fica só com a Saída: é o mesmo quadro, com Entrada e Preparo
+// O tablet do passe fica só com a Saída: é o mesmo painel, com Entrada e Preparo
 // recolhidas numa faixa. Nenhuma ação muda; muda só o que cabe na tela.
 const boardLayout = useBoardLayout();
 // O sinal de canal decide se a segunda linha do cabeçalho existe. Montar sempre o
@@ -687,10 +687,10 @@ watch(
   { flush: "pre" },
 );
 // O índice de estações da Cozinha (estação de Saída) e o posto de saída chegam com
-// `?columns=expedition`: o quadro abre só com a Saída, e a arrumação fica no posto.
+// `?columns=expedition`: o painel abre só com a Saída, e a arrumação fica no posto.
 // O parâmetro sai da URL depois de aplicado, para o operador poder abrir as outras.
 // O rail usa o mesmo parâmetro: "Pedidos" abre as três colunas (`?columns=all`) e
-// "Saída" abre o posto do passe, inclusive com o quadro já na tela.
+// "Saída" abre o posto do passe, inclusive com o painel já na tela.
 function applyColumnsQuery() {
   const wanted = route.query[BOARD_COLUMNS_QUERY];
   if (wanted !== "expedition" && wanted !== "all") return;
@@ -712,9 +712,9 @@ watch(
 );
 // O posto de saída é tablet de toque: todo alvo do cartão sobe para 48 px.
 // A Fila "Precisa de você" (V4-G4) segue no desktop e no tablet deitado; a casa é o
-// Quadro. O celular e
+// Painel. O celular e
 // o tablet em pé seguem com as colunas em abas, e o posto Saída com a Saída larga: lá a
-// escolha "Fila" vira o Quadro. Antes de montar (SSR), vale a escolha guardada.
+// escolha "Fila" vira o Painel. Antes de montar (SSR), vale a escolha guardada.
 const queueAvailable = computed(
   () => !boardLayout.exitPost.value && !screen.belowLg.value,
 );
@@ -723,25 +723,14 @@ const view = computed(() =>
     ? "board"
     : viewMode.value,
 );
-// Três modos de ver o MESMO trabalho, num controle só (dono, 13/11/2026: "mantermos
-// os dois modos, acionáveis por um toggle", para decidir no uso e fundir depois):
-// Fila (urgência, um pedido por linha), Quadro (as três colunas, a do Preparo
-// recolhida) e Tabela (densa, com seleção em lote). Nenhum gesto muda de modo a modo.
-// PRÉVIA (14/11): três conjuntos de ícones, escolhidos por ?iconset=A|B|C. Sai antes do merge.
-const PREVIEW_ICONSETS: Record<string, [string, string, string]> = {
-  A: ["i-lucide-square-kanban", "i-lucide-list-ordered", "i-lucide-table"],
-  B: ["i-lucide-kanban", "i-lucide-arrow-down-wide-narrow", "i-lucide-sheet"],
-  C: ["i-lucide-columns-3", "i-lucide-rows-3", "i-lucide-table-2"],
-};
-const previewIcons = computed(
-  () => PREVIEW_ICONSETS[String(route.query.iconset || "A")] || PREVIEW_ICONSETS.A!,
-);
+// Três modos de ver o MESMO trabalho, só com ícone (dono, 14/11): Painel, a casa,
+// primeiro; depois Fila e Tabela. O nome fica no aria-label e na dica.
 const viewTabs = computed(() => [
-  { value: "board", icon: previewIcons.value[0], "aria-label": "Painel", title: "Painel" },
+  { value: "board", icon: "i-lucide-columns-3", "aria-label": "Painel", title: "Painel" },
   ...(queueAvailable.value
-    ? [{ value: "queue", icon: previewIcons.value[1], "aria-label": "Fila", title: "Fila" }]
+    ? [{ value: "queue", icon: "i-lucide-rows-3", "aria-label": "Fila", title: "Fila" }]
     : []),
-  { value: "table", icon: previewIcons.value[2], "aria-label": "Tabela", title: "Tabela" },
+  { value: "table", icon: "i-lucide-table-2", "aria-label": "Tabela", title: "Tabela" },
 ]);
 function pickView(value: string | number) {
   const next = String(value);
@@ -763,8 +752,8 @@ const compactHeader = computed(
     (exitPostView.value || (screen.belowXl.value && !isPhone.value)),
 );
 
-// O rail conta o que o quadro vê: pedidos novos em Pedidos e o que está na Saída, e
-// acende "Saída" quando o posto está só com ela. Fora do quadro, a contagem leve do rail.
+// O rail conta o que o painel vê: pedidos novos em Pedidos e o que está na Saída, e
+// acende "Saída" quando o posto está só com ela. Fora do painel, a contagem leve do rail.
 const rail = useGestorRail();
 watch(
   () => ({
@@ -827,7 +816,7 @@ const shortcutHint = (key: string) =>
   String(BOARD_ZONE_KEYS.indexOf(key as (typeof BOARD_ZONE_KEYS)[number]) + 1);
 
 // ── a Fila "Precisa de você" (V4-G4) ────────────────────────────────────────
-// Os mesmos recortes do quadro (busca, canal, Entrega/Retirada), mais as encomendas
+// Os mesmos recortes do painel (busca, canal, Entrega/Retirada), mais as encomendas
 // que ainda pedem aceite. O foco começa no mais urgente; ↑/↓ andam, Enter faz o gesto.
 // A Fila também recebe o pedido em negociação no iFood, inclusive o já entregue (o
 // cliente reclama depois): ele espera uma resposta como qualquer outro (dono, 07/10).
@@ -1095,7 +1084,7 @@ function onKeydown(e: KeyboardEvent) {
   const column =
     view.value === "board" ? queueColumnForKey(e.key, boardLayout.keys) : null;
   if (column) {
-    // Com um diálogo aberto a tecla é do diálogo, não do quadro atrás dele.
+    // Com um diálogo aberto a tecla é do diálogo, não do painel atrás dele.
     if (
       typing ||
       rejectRef.value ||
@@ -1155,7 +1144,7 @@ function onKeydown(e: KeyboardEvent) {
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
-// reject dialog: o MESMO `OrderReasonDialog` do detalhe (beta 06/11: o quadro tinha
+// reject dialog: o MESMO `OrderReasonDialog` do detalhe (beta 06/11: o painel tinha
 // um diálogo próprio, com texto livre). Uma lista de motivos em qualquer canal; no
 // iFood o diálogo esconde o que o iFood não oferece.
 const rejectRef = ref<string | null>(null);
@@ -1440,7 +1429,7 @@ watch(error, (now, before) => {
   if (now && now !== before) queueFailures.value += 1;
 });
 // O ⋮ da linha do chão: as ações da fila e, em grupos próprios, Ordenar e Ver como (não
-// são filtro: ficam fora do painel). No celular a Fila não existe: Quadro ou Tabela.
+// são filtro: ficam fora do painel). No celular a Fila não existe: Painel ou Tabela.
 const compactOptions = computed(() => [
   phoneHeaderActions.value.map(({ priority: _p, ...item }) => item),
   ...(phoneExitMode.value
@@ -1454,8 +1443,8 @@ const compactOptions = computed(() => [
           { type: "label" as const, label: "Ver como" },
           ...(
             [
-              { key: "board", label: "Painel", icon: "i-lucide-square-kanban" },
-              { key: "table", label: "Tabela", icon: "i-lucide-table" },
+              { key: "board", label: "Painel", icon: "i-lucide-columns-3" },
+              { key: "table", label: "Tabela", icon: "i-lucide-table-2" },
             ] as const
           ).map((option) => ({
             label: option.label,
@@ -1490,7 +1479,7 @@ function compactClear() {
       search-button-label="Buscar por código, cliente ou item"
       :filter-active="channel !== 'all' || fulfillment !== 'all'"
       :filter-label="compactFilterLabel"
-      :summary="visibleCount + ' de ' + compactTotal + ' pedidos no quadro.'"
+      :summary="visibleCount + ' de ' + compactTotal + ' pedidos no painel.'"
       :options="compactOptions"
       @clear="compactClear"
     >
@@ -1568,7 +1557,7 @@ function compactClear() {
         <OperatorSuiteSearch
           ref="searchInput"
           :model-value="query"
-          screen-label="filtrando o quadro"
+          screen-label="filtrando o painel"
           :placeholder="
             exitPostView
               ? 'Código ou cliente'
@@ -1602,7 +1591,7 @@ function compactClear() {
           :choices="rideCandidates"
           @done="refresh()"
         />
-        <!-- Onde está a maquininha: some quando todas estão na loja (no Quadro, mora na
+        <!-- Onde está a maquininha: some quando todas estão na loja (no Painel, mora na
              linha de baixo). -->
         <EquipmentOutMenu
           v-if="!boardDesk"
@@ -1650,8 +1639,8 @@ function compactClear() {
           />
         </NuxtFieldGroup>
         <template v-if="!compactHeader">
-          <!-- ordenar (no Quadro, mora no ⋮ e a ordem em vigor aparece na linha de baixo): na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
-               no quadro e na tabela, a ordem deles -->
+          <!-- ordenar (no Painel, mora no ⋮ e a ordem em vigor aparece na linha de baixo): na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
+               no painel e na tabela, a ordem deles -->
           <NuxtDropdownMenu
             v-if="!boardDesk"
             :items="sortMenuItems"
@@ -1670,10 +1659,9 @@ function compactClear() {
             />
           </NuxtDropdownMenu>
 
-          <!-- visão: Fila · Quadro · Tabela, um controle só (dono, 13/11/2026). A Fila
-               some abaixo do lg (não cabe); o dispositivo lembra a escolha. Só o nome, sem
-               ícone: com os três ícones, o selo de atualização não cabia na linha a
-               1280 px. -->
+          <!-- visão: Painel · Fila · Tabela, um controle só, só com ícone (dono,
+               14/11/2026). A Fila some abaixo do lg (não cabe); o dispositivo lembra a
+               escolha. -->
           <NuxtTabs
             :model-value="view"
             :items="viewTabs"
@@ -1733,20 +1721,20 @@ function compactClear() {
         />
       </template>
       <!-- na Fila (v4): "Precisa de você N · Todos N · ● Atrasados N", o recorte do que
-           muda o trabalho; no quadro e na tabela, "Todos" tira os recortes. É o primário
+           muda o trabalho; no painel e na tabela, "Todos" tira os recortes. É o primário
            da toolbar: no celular fica na linha, ao lado do "Filtros". -->
       <template
         v-if="(view === 'queue' && !(isPhone && phoneExitMode)) || boardDesk"
         #filters-primary
       >
-        <!-- Um controle só para os recortes (o da Fila e o do Quadro, cada um com o seu
+        <!-- Um controle só para os recortes (o da Fila e o do Painel, cada um com o seu
              estado). A Fila só existe do `lg` para cima (`queueAvailable`): o CSS diz o
              mesmo, e o celular não desenha os escopos antes de montar. -->
         <OperatorQuickFilters
           :class="view === 'queue' ? 'max-lg:hidden' : undefined"
           :model-value="view === 'queue' ? scope : boardScope"
           :items="view === 'queue' ? queueScopeTabs : boardScopeTabs"
-          :label="view === 'queue' ? 'Recortes da fila' : 'Recortes do quadro'"
+          :label="view === 'queue' ? 'Recortes da fila' : 'Recortes do painel'"
           :data-queue-scopes="view === 'queue' ? '' : undefined"
           :data-board-scopes="view === 'queue' ? undefined : ''"
           @update:model-value="
@@ -1756,7 +1744,7 @@ function compactClear() {
           "
         />
       </template>
-      <!-- À direita da linha de baixo, no Quadro: a ordem em vigor (trocar fica no ⋮) e
+      <!-- À direita da linha de baixo, no Painel: a ordem em vigor (trocar fica no ⋮) e
            a maquininha na rua, que só aparece enquanto alguma está fora. -->
       <template v-if="boardDesk" #filters-end>
         <div class="flex items-center gap-2">
@@ -1920,7 +1908,7 @@ function compactClear() {
           @switch="(ref_) => (switchRef = ref_)"
         />
 
-        <!-- O quadro usa o Splitter oficial do kit no desktop. No celular, as tabs
+        <!-- O painel usa o Splitter oficial do kit no desktop. No celular, as tabs
              mantêm uma coluna por vez: nenhuma alça ou faixa paralela ao Nuxt UI. -->
         <template v-else-if="view === 'board'">
           <OperatorSplitter
@@ -2253,7 +2241,7 @@ function compactClear() {
 
         <!-- Encomendas: os pedidos dos próximos dias, fora das colunas do dia, numa lista
              simples (dono, 13/11/2026). No dia, o despertador devolve o pedido ao
-             fluxo normal do quadro. -->
+             fluxo normal do painel. -->
         <OrderPreorderList
           v-if="preordersCount"
           :groups="triagedPreorders"

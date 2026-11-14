@@ -1,10 +1,10 @@
 import { test, expect } from "@playwright/test";
 
-// A Fila "Precisa de você" (V4-G4): a um toque do Quadro (a casa, dono 14/11/2026) e na
+// A Fila "Precisa de você" (V4-G4): a um toque do Painel (a casa, dono 14/11/2026) e na
 // tecla G; só o fato humano é botão, o resto vira número e a Tabela segue na tecla L.
 test.use({ viewport: { width: 1440, height: 900 } });
 
-test("o desktop abre no Quadro; a Fila vem por urgência, com a coluna de consciência", async ({ page }) => {
+test("o desktop abre no Painel; a Fila vem por urgência, com a coluna de consciência", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("[data-board-columns]")).toBeVisible();
   await expect(page.locator("[data-queue-view]")).toHaveCount(0);
@@ -41,8 +41,8 @@ test("L abre a Tabela e G volta para a Fila", async ({ page }) => {
   await expect(page.locator("[data-supervision-table]")).toBeVisible();
 });
 
-test("tablet em pé segue com o quadro em abas (a Fila é do desktop)", async ({ page }) => {
-  // Três colunas de ~240 px cortavam selo e prazo do cartão: abaixo do lg o quadro usa
+test("tablet em pé segue com o painel em abas (a Fila é do desktop)", async ({ page }) => {
+  // Três colunas de ~240 px cortavam selo e prazo do cartão: abaixo do lg o painel usa
   // as abas do celular, uma etapa por vez (74932fb8f, 07/10/2026).
   await page.setViewportSize({ width: 820, height: 1180 });
   await page.goto("/");

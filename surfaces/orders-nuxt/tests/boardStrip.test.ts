@@ -1,4 +1,4 @@
-// A coluna recolhida do quadro (D, dono 13/11/2026): número, sinais que pedem olho e o
+// A coluna recolhida do painel (D, dono 13/11/2026): número, sinais que pedem olho e o
 // nome acessível com a frase inteira.
 import { describe, expect, it } from "vitest";
 

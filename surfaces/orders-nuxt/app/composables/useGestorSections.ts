@@ -6,8 +6,8 @@ import {
   gestorSettingsSections,
 } from "~/presentation/gestorSections";
 
-/** O que o quadro conta ao rail (selos de Pedidos e Saída, e se o posto é a Saída).
- *  Vale enquanto o quadro está montado; fora dele, `useGestorRailCounts` lê a contagem. */
+/** O que o painel conta ao rail (selos de Pedidos e Saída, e se o posto é a Saída).
+ *  Vale enquanto o painel está montado; fora dele, `useGestorRailCounts` lê a contagem. */
 export interface GestorRailState {
   onBoard: boolean;
   exitPost: boolean;
@@ -24,7 +24,7 @@ export function useGestorRail() {
   }));
 }
 
-/** Os selos fora do quadro: `orders/rail-counts/` a cada minuto enquanto `active()`.
+/** Os selos fora do painel: `orders/rail-counts/` a cada minuto enquanto `active()`.
  *  Leitura que falha não vira zero mentiroso: o selo some até a próxima dar certo. */
 export function useGestorRailCounts(active: () => boolean) {
   const counts = useState<{ intake: number; exit: number }>(
@@ -106,8 +106,8 @@ export function useGestorSections() {
   );
   const { expeditesOnly, catalogOnly } = useGestorAccess();
   const rail = useGestorRail();
-  // Fora do quadro (Catálogo, Clientes, Canais) os selos continuam (G26, v4
-  // `catalogo-produto`: "Pedidos 10"): uma contagem leve, com a régua do quadro.
+  // Fora do painel (Catálogo, Clientes, Canais) os selos continuam (G26, v4
+  // `catalogo-produto`: "Pedidos 10"): uma contagem leve, com a régua do painel.
   const offBoard = useGestorRailCounts(() => !rail.value.onBoard);
 
   const input = computed(() => ({
