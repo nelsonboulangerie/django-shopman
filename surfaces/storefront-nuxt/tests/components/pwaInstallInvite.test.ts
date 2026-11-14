@@ -115,7 +115,6 @@ describe('PwaInstallInvite', () => {
 
     expect(wrapper.get('[data-testid="pwa-install-steps"]').text()).toContain('Compartilhar')
     expect(wrapper.text()).toContain('Adicionar à Tela de Início')
-    expect(wrapper.text()).toContain('barra de baixo')
     expect(wrapper.text()).toContain('Coloque a loja na Tela de Início')
   })
 

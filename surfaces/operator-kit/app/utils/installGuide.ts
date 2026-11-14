@@ -61,7 +61,11 @@ export type InstallGlyph =
 
 export interface InstallStep {
   glyph: InstallGlyph;
-  /** Texto do passo. `**assim**` marca o rótulo literal do menu — o que ela procura. */
+  /**
+   * Texto do passo: o gesto, depois o alvo. `**assim**` marca o rótulo literal do menu,
+   * o que ela procura; o símbolo entra colado nele. Nada depois do alvo: a tela põe o
+   * gesto numa linha e o símbolo com o rótulo na de baixo (dono, 14/11).
+   */
   text: string;
 }
 
@@ -73,8 +77,6 @@ export interface InstallPlan {
   steps: InstallStep[];
   /** A saída quando o passo 1 não aparece onde foi dito. Sempre verdadeira, nunca chute. */
   note?: string;
-  /** O que a pessoa vê quando terminar. Fecha a promessa em vez de deixá-la no ar. */
-  done?: string;
   os: InstallOs;
   browser: InstallBrowser;
 }
@@ -139,33 +141,25 @@ function isIpad(env: Pick<InstallEnvironment, "userAgent" | "platform" | "maxTou
   return env.platform === "MacIntel" && (env.maxTouchPoints || 0) > 1;
 }
 
-const IOS_FALLBACK_NOTE =
-  "Não achou? No Safari o caminho é sempre este: o botão Compartilhar fica na barra de baixo.";
+const IOS_FALLBACK_NOTE = "Não achou? No Safari, **Compartilhar** fica na barra de baixo.";
 
 function iosPlan(env: InstallEnvironment, browser: InstallBrowser): InstallPlan {
   const tablet = isIpad(env);
-  const device = tablet ? "iPad" : "iPhone";
-  const done = "Pronto: o ícone fica junto dos seus outros aplicativos, e abre em tela cheia.";
-  const base = { kind: "steps" as const, invite: true, done, os: "ios" as const, browser };
+  const base = { kind: "steps" as const, invite: true, os: "ios" as const, browser };
 
   if (browser === "in-app") {
     const host = inAppHost(env.userAgent);
     return {
       ...base,
       steps: [
-        {
-          glyph: "menu-horizontal",
-          text: "Toque em **⋯** no canto desta tela e escolha **Abrir no Safari**.",
-        },
-        {
-          glyph: "share-ios",
-          text: "Já no Safari, toque em **Compartilhar** (o quadradinho com a seta para cima, na barra de baixo).",
-        },
-        { glyph: "add-home", text: "Role a lista e toque em **Adicionar à Tela de Início**." },
+        { glyph: "menu-horizontal", text: "No canto desta tela, toque nos **três pontinhos** e escolha **Abrir no Safari**" },
+        { glyph: "share-ios", text: "No Safari, toque em **Compartilhar**" },
+        { glyph: "add-home", text: "Role e toque em **Adicionar à Tela de Início**" },
+        { glyph: "confirm", text: "Toque em **Adicionar**" },
       ],
       note: host
-        ? `Esta janela é o navegador de dentro do ${host}: ela não guarda ícones na tela inicial.`
-        : "Esta janela é o navegador de dentro de outro aplicativo: ela não guarda ícones na tela inicial.",
+        ? `O navegador de dentro do ${host} não põe ícones na tela inicial.`
+        : "O navegador de dentro de outro aplicativo não põe ícones na tela inicial.",
     };
   }
 
@@ -175,12 +169,10 @@ function iosPlan(env: InstallEnvironment, browser: InstallBrowser): InstallPlan 
       steps: [
         {
           glyph: "share-ios",
-          text: tablet
-            ? "Toque em **Compartilhar** (o quadradinho com a seta para cima, no alto, à direita)."
-            : "Toque em **Compartilhar** (o quadradinho com a seta para cima, na barra de baixo).",
+          text: tablet ? "No alto, à direita, toque em **Compartilhar**" : "Toque em **Compartilhar**",
         },
-        { glyph: "add-home", text: "Role a lista para baixo e toque em **Adicionar à Tela de Início**." },
-        { glyph: "confirm", text: "Toque em **Adicionar**, no alto, à direita." },
+        { glyph: "add-home", text: "Role e toque em **Adicionar à Tela de Início**" },
+        { glyph: "confirm", text: "Toque em **Adicionar**" },
       ],
     };
   }
@@ -189,9 +181,9 @@ function iosPlan(env: InstallEnvironment, browser: InstallBrowser): InstallPlan 
     return {
       ...base,
       steps: [
-        { glyph: "menu-horizontal", text: "Toque em **⋯** (três pontinhos), no canto da barra do Chrome." },
-        { glyph: "add-home", text: "Escolha **Adicionar à Tela de Início**." },
-        { glyph: "confirm", text: "Toque em **Adicionar**." },
+        { glyph: "menu-horizontal", text: "No canto da barra do Chrome, toque nos **três pontinhos**" },
+        { glyph: "add-home", text: "Toque em **Adicionar à Tela de Início**" },
+        { glyph: "confirm", text: "Toque em **Adicionar**" },
       ],
       note: IOS_FALLBACK_NOTE,
     };
@@ -203,30 +195,29 @@ function iosPlan(env: InstallEnvironment, browser: InstallBrowser): InstallPlan 
   return {
     ...base,
     steps: [
-      { glyph: "menu-lines", text: "Abra o menu do navegador e toque em **Compartilhar**." },
-      { glyph: "add-home", text: `Na lista que o ${device} abrir, role e escolha **Adicionar à Tela de Início**.` },
-      { glyph: "confirm", text: "Toque em **Adicionar**." },
+      { glyph: "menu-lines", text: "No menu do navegador, toque em **Compartilhar**" },
+      { glyph: "add-home", text: "Role e toque em **Adicionar à Tela de Início**" },
+      { glyph: "confirm", text: "Toque em **Adicionar**" },
     ],
     note: IOS_FALLBACK_NOTE,
   };
 }
 
 function androidPlan(env: InstallEnvironment, browser: InstallBrowser): InstallPlan {
-  const done = "Pronto: o ícone fica junto dos seus outros aplicativos, e abre em tela cheia.";
-  const base = { kind: "steps" as const, invite: true, done, os: "android" as const, browser };
+  const base = { kind: "steps" as const, invite: true, os: "android" as const, browser };
 
   if (browser === "in-app") {
     const host = inAppHost(env.userAgent);
     return {
       ...base,
       steps: [
-        { glyph: "menu-vertical", text: "Toque em **⋮** no canto desta tela e escolha **Abrir no navegador**." },
-        { glyph: "menu-vertical", text: "Já no navegador, toque em **⋮** de novo." },
-        { glyph: "add-home", text: "Escolha **Instalar aplicativo**." },
+        { glyph: "menu-vertical", text: "No canto desta tela, toque nos **três pontinhos** e escolha **Abrir no navegador**" },
+        { glyph: "menu-vertical", text: "No navegador, toque nos **três pontinhos**" },
+        { glyph: "add-home", text: "Toque em **Instalar aplicativo**" },
       ],
       note: host
-        ? `Esta janela é o navegador de dentro do ${host}: ela não guarda ícones na tela inicial.`
-        : "Esta janela é o navegador de dentro de outro aplicativo: ela não guarda ícones na tela inicial.",
+        ? `O navegador de dentro do ${host} não põe ícones na tela inicial.`
+        : "O navegador de dentro de outro aplicativo não põe ícones na tela inicial.",
     };
   }
 
@@ -234,9 +225,9 @@ function androidPlan(env: InstallEnvironment, browser: InstallBrowser): InstallP
     return {
       ...base,
       steps: [
-        { glyph: "menu-vertical", text: "Toque em **⋮** (três pontinhos), no canto da barra do Firefox, fora do app." },
-        { glyph: "add-home", text: "Escolha **Instalar**." },
-        { glyph: "confirm", text: "Confirme em **Adicionar**." },
+        { glyph: "menu-vertical", text: "No canto da barra do Firefox, toque nos **três pontinhos**" },
+        { glyph: "add-home", text: "Toque em **Instalar**" },
+        { glyph: "confirm", text: "Toque em **Adicionar**" },
       ],
     };
   }
@@ -245,9 +236,9 @@ function androidPlan(env: InstallEnvironment, browser: InstallBrowser): InstallP
     return {
       ...base,
       steps: [
-        { glyph: "menu-lines", text: "Toque em **≡** (as três linhas), na barra de baixo." },
-        { glyph: "add-home", text: "Escolha **Adicionar página a** e depois **Tela inicial**." },
-        { glyph: "confirm", text: "Confirme em **Adicionar**." },
+        { glyph: "menu-lines", text: "Na barra de baixo, toque nas **três linhas**" },
+        { glyph: "add-home", text: "Toque em **Adicionar página a** e depois em **Tela inicial**" },
+        { glyph: "confirm", text: "Toque em **Adicionar**" },
       ],
     };
   }
@@ -255,11 +246,11 @@ function androidPlan(env: InstallEnvironment, browser: InstallBrowser): InstallP
   return {
     ...base,
     steps: [
-      { glyph: "menu-vertical", text: "Toque em **⋮** (três pontinhos), no canto da barra do navegador, fora do app." },
-      { glyph: "add-home", text: "Escolha **Instalar aplicativo**." },
-      { glyph: "confirm", text: "Confirme em **Instalar**." },
+      { glyph: "menu-vertical", text: "No canto da barra do navegador, toque nos **três pontinhos**" },
+      { glyph: "add-home", text: "Toque em **Instalar aplicativo**" },
+      { glyph: "confirm", text: "Toque em **Instalar**" },
     ],
-    note: "Em alguns navegadores a opção se chama **Adicionar à tela inicial**: é a mesma coisa.",
+    note: "Em alguns navegadores, a opção se chama **Adicionar à tela inicial**.",
   };
 }
 
@@ -274,11 +265,10 @@ function desktopPlan(env: InstallEnvironment, os: InstallOs, browser: InstallBro
         kind: "steps",
         invite: true,
         steps: [
-          { glyph: "menu-mac", text: "Na barra de menus do Mac, abra **Arquivo**." },
-          { glyph: "add-home", text: "Escolha **Adicionar ao Dock…**" },
-          { glyph: "confirm", text: "Clique em **Adicionar**." },
+          { glyph: "menu-mac", text: "Na barra de menus do Mac, clique em **Arquivo**" },
+          { glyph: "add-home", text: "Clique em **Adicionar ao Dock…**" },
+          { glyph: "confirm", text: "Clique em **Adicionar**" },
         ],
-        done: "Pronto: o ícone fica no Dock e abre em janela própria, sem a barra do navegador.",
         os,
         browser,
       };
@@ -307,14 +297,10 @@ function desktopPlan(env: InstallEnvironment, os: InstallOs, browser: InstallBro
       kind: "steps",
       invite: false,
       steps: [
-        {
-          glyph: "install-bar",
-          text: "Na barra de endereço, clique no ícone de instalar (um monitor com uma seta para baixo, na ponta direita).",
-        },
-        { glyph: "confirm", text: "Clique em **Instalar**." },
+        { glyph: "install-bar", text: "Na ponta direita da barra de endereço, clique no **ícone de instalar**" },
+        { glyph: "confirm", text: "Clique em **Instalar**" },
       ],
-      note: "Sem o ícone na barra? Abra o menu do navegador e procure **Instalar**. Se não houver, o aplicativo já está instalado neste computador.",
-      done: "Pronto: o aplicativo abre em janela própria, sem a barra do navegador.",
+      note: "Sem o ícone? Procure **Instalar** no menu do navegador. Se não houver, o aplicativo já está instalado.",
       os,
       browser,
     };
@@ -363,9 +349,6 @@ export interface InstallTextPart {
   glyph?: InstallGlyph;
 }
 
-/** Rótulos que são só o símbolo do menu: o desenho substitui o caractere. */
-const SYMBOL_ONLY_LABELS = new Set(["⋮", "⋯", "≡", "☰"]);
-
 /**
  * Quebra `**assim**` em pedaços para a tela destacar o rótulo do menu — e diz onde o
  * símbolo entra.
@@ -393,10 +376,6 @@ export function installTextParts(text: string, glyph?: InstallGlyph): InstallTex
   if (!glyph || parts.length === 0) return parts;
   const alvo = parts.find((part) => part.strong) || parts[0]!;
   alvo.glyph = glyph;
-  // O símbolo escrito ("**⋮**") é o próprio desenho: com os dois, a tela mostrava o
-  // símbolo duas vezes, lado a lado (beta 05/11, CEN-07 e LOJA-09). O desenho fica;
-  // o texto sai.
-  if (alvo.strong && SYMBOL_ONLY_LABELS.has(alvo.text.trim())) alvo.text = "";
   return parts;
 }
 
@@ -427,3 +406,25 @@ export const INSTALL_GLYPH_PATHS: Record<InstallGlyph, string[]> = {
   "add-home": ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M12 8v8", "M8 12h8"],
   confirm: ["m5 13 4 4L19 7"],
 };
+
+export interface InstallStepLines {
+  /** O gesto ("Role e toque em"): a primeira linha do passo. */
+  lead: InstallTextPart[];
+  /** O símbolo colado no rótulo, e o que vier depois: a segunda linha. */
+  target: InstallTextPart[];
+}
+
+/**
+ * O passo em duas linhas (dono, 14/11): o gesto em cima, o símbolo com o rótulo embaixo.
+ * O rótulo numa linha própria é o que o olho procura na tela do navegador; colado no fim
+ * da frase, o símbolo quebrava a linha e desalinhava do texto.
+ */
+export function installStepLines(text: string, glyph?: InstallGlyph): InstallStepLines {
+  const parts = installTextParts(text, glyph);
+  const cut = parts.findIndex((part) => part.glyph);
+  if (cut < 0) return { lead: parts, target: [] };
+  const lead = parts.slice(0, cut).map((part) => ({ ...part }));
+  const last = lead[lead.length - 1];
+  if (last) last.text = last.text.trimEnd();
+  return { lead: lead.filter((part) => part.text.length > 0), target: parts.slice(cut) };
+}

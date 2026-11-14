@@ -1820,9 +1820,8 @@ function compactClear() {
         color="warning"
         variant="subtle"
         icon="i-lucide-volume-x"
-        title="O som dos avisos de pedido está desligado"
-        description="Toque em qualquer lugar da tela para ligar."
-        :actions="alertActions('warning', [{ label: 'Ligar o som', class: 'min-h-11', onClick: handleSoundAction }])"
+        title="Som dos pedidos desligado"
+        description="Toque na tela para ligar."
         data-sound-blocked
         @update:open="notices.onOpen('sound-blocked', $event)"
       />

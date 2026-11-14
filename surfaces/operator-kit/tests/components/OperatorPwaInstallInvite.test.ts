@@ -149,27 +149,26 @@ describe("OperatorPwaInstallInvite", () => {
     expect(document.body.textContent).toContain("Compartilhar");
     expect(document.body.textContent).toContain("Adicionar à Tela de Início");
     expect(document.body.textContent).toContain(
-      `Coloque ${POS.article} ${POS.label} na tela inicial`,
+      `Acesse ${POS.article} ${POS.label} direto da tela inicial do seu dispositivo.`,
     );
     expect(document.body.textContent).not.toContain("Instalar");
   });
 
-  it("chama o app pelo nome e diz o que ELE passa a fazer", async () => {
-    // Os oito diziam "Instale Shopman" e "Abra o caixa direto da tela inicial" — marca
-    // no lugar do app, e a copy do balcão no B.I., na Cozinha e no Marketing.
+  it("chama o app pelo nome, numa frase só", async () => {
+    // Os oito diziam "Instale Shopman": a marca no lugar do app. O título é a mensagem
+    // inteira (dono, 14/11), sem parágrafo de apoio.
     state.plan.value = PROMPT;
     state.canInvite.value = true;
     await mountInvite();
     expect(document.body.textContent).toContain(
-      `Instale ${POS.article} ${POS.label}`,
+      `Acesse ${POS.article} ${POS.label} direto da tela inicial do seu dispositivo.`,
     );
-    expect(document.body.textContent).toContain(POS.install);
     expect(document.body.textContent).not.toContain("Shopman");
 
     for (const wrapper of mounted.splice(0)) wrapper.unmount();
     document.body.innerHTML = "";
     await mountInvite("kds", OPERATOR_APPS.kds);
-    expect(document.body.textContent).toContain("Instale a Cozinha");
+    expect(document.body.textContent).toContain("Acesse a Cozinha direto da tela inicial");
     expect(document.body.textContent).not.toContain("caixa");
   });
 

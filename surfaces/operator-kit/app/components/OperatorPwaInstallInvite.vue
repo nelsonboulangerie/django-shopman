@@ -16,7 +16,6 @@ import type { OperatorSession } from "../types/operator";
 interface OperatorInstallIdentity {
   label: string;
   article: string;
-  install: string;
 }
 
 const emit = defineEmits<{ visibility: [visible: boolean] }>();
@@ -59,21 +58,14 @@ const visible = computed(
 );
 watch(visible, (value) => emit("visibility", value), { immediate: true });
 
-// Um toque resolve, ou a pessoa vai seguir passos — o título diz qual dos dois é, antes
-// de ela decidir se tem tempo agora.
+// O título é a mensagem inteira (dono, 14/11): o que muda para ela, sem parágrafo de
+// apoio. Os passos (ou o botão Instalar) dizem o resto.
 const title = computed(() => {
   const named = identity.value
     ? `${identity.value.article} ${identity.value.label}`
     : "este aplicativo";
-  return plan.value.kind === "prompt"
-    ? `Instale ${named}`
-    : `Coloque ${named} na tela inicial`;
+  return `Acesse ${named} direto da tela inicial do seu dispositivo.`;
 });
-const description = computed(
-  () =>
-    identity.value?.install ||
-    "Abra este aplicativo direto da tela inicial, sem procurar o endereço no navegador.",
-);
 
 // O prompt nativo demora a voltar: o botão diz que está esperando (clique nunca inerte).
 const installing = ref(false);
@@ -122,11 +114,8 @@ const actions = computed(() => [
     data-operator-pwa-install
     @update:open="notices.onOpen('pwa-install', $event)"
   >
-    <template #description>
-      <div class="flex flex-col gap-3">
-        <p>{{ description }}</p>
-        <OperatorInstallSteps v-if="plan.kind === 'steps'" :plan="plan" />
-      </div>
+    <template v-if="plan.kind === 'steps'" #description>
+      <OperatorInstallSteps :plan="plan" class="mt-2" />
     </template>
   </NuxtAlert>
 </template>
