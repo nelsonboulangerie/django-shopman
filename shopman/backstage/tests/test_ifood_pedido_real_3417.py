@@ -160,3 +160,42 @@ def test_pronto_e_saiu_ficam_no_menu_quando_o_entregador_e_do_ifood():
     Order.objects.filter(pk=ifood_courier.pk).update(status="dispatched")
     ifood_courier.refresh_from_db()
     assert advance_priority(ifood_courier) == "menu"  # "Marcar como entregue" é do iFood
+
+
+def test_linha_do_tempo_mostra_o_que_o_ifood_conduz_na_ordem_da_hora():
+    """O andamento do entregador e o encerramento lá entram no histórico (dono, 14/11)."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from shopman.backstage.projections.order_queue import _build_timeline
+
+    order = _courier_order(ref="IFOOD-3417-TL")
+    accepted = order.events.order_by("seq").last()
+    base = (accepted.created_at if accepted else timezone.now()) + timedelta(minutes=1)
+    order.data["ifood"]["logistics"] = {
+        "ASSIGN_DRIVER": {"observed_at": base.isoformat(), "metadata": {"workerName": "Marcos"}},
+        "ARRIVED_AT_ORIGIN": {"observed_at": (base + timedelta(minutes=5)).isoformat()},
+        # O mesmo passo dito de dois jeitos aparece uma vez só.
+        "DELIVERY_PICKUP_CODE_REQUESTED": {"observed_at": (base + timedelta(minutes=6)).isoformat()},
+        "COLLECTED": {"observed_at": (base + timedelta(minutes=8)).isoformat()},
+        "GOING_TO_ORIGIN": {},  # sem hora: fica de fora
+    }
+    order.data["ifood"]["remote_concluded"] = {"observed_at": (base + timedelta(minutes=30)).isoformat()}
+    order.save(update_fields=["data"])
+
+    ifood_lines = [(e.label, e.actor, e.detail) for e in _build_timeline(order) if e.event_type == "ifood_fact"]
+
+    assert ifood_lines == [
+        ("Entregador do iFood designado", "iFood", "Marcos"),
+        ("Entregador do iFood na loja", "iFood", ""),
+        ("Saiu com o entregador do iFood", "iFood", ""),
+        ("Concluído no iFood", "iFood", ""),
+    ]
+
+
+def test_linha_do_tempo_de_outro_canal_nao_ganha_fato_do_ifood():
+    from shopman.backstage.projections.order_queue import _build_timeline
+
+    order = _order("WEB-3417-TL", channel="web")
+    assert not [e for e in _build_timeline(order) if e.event_type == "ifood_fact"]

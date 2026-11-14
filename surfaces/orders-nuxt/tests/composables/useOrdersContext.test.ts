@@ -46,21 +46,24 @@ describe("contexto da fila por pessoa e sessão", () => {
     const board = useOrdersContext();
     board.readLocation({ q: ["A", "B"], view: "unknown", sort: "other", fulfillment: "express" });
     expect(board.query.value).toBe("");
-    // A casa é a Fila (v4); modo desconhecido não fabrica outro.
-    expect(board.viewMode.value).toBe("queue");
+    // A casa é o Quadro; modo desconhecido não fabrica outro.
+    expect(board.viewMode.value).toBe("board");
     expect(board.sort.value).toBe("arrival");
     expect(board.fulfillment.value).toBe("all");
   });
 
-  it("a visão vive na URL: sem parâmetro é a Fila; board e table são escritos", () => {
+  it("a visão vive na URL: sem parâmetro é o Quadro; queue e table são escritos", () => {
     const board = useOrdersContext();
-    board.readLocation({ view: "board" });
-    expect(board.viewMode.value).toBe("board");
-    expect(board.location.value.query).toMatchObject({ view: "board" });
+    board.readLocation({ view: "queue" });
+    expect(board.viewMode.value).toBe("queue");
+    expect(board.location.value.query).toMatchObject({ view: "queue" });
     board.readLocation({ view: "table" });
     expect(board.viewMode.value).toBe("table");
+    // Links antigos com `?view=board` continuam abrindo o Quadro.
+    board.readLocation({ view: "board" });
+    expect(board.viewMode.value).toBe("board");
     board.readLocation({});
-    expect(board.viewMode.value).toBe("queue");
+    expect(board.viewMode.value).toBe("board");
     expect(board.location.value.query).not.toHaveProperty("view");
   });
 });

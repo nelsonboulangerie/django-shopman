@@ -1,11 +1,14 @@
 import { test, expect } from "@playwright/test";
 
-// A Fila "Precisa de você" (V4-G4): o desktop abre nela; só o fato humano é botão, o
-// resto vira número e a Tabela segue a um toque e na tecla L.
+// A Fila "Precisa de você" (V4-G4): a um toque do Quadro (a casa, dono 14/11/2026) e na
+// tecla G; só o fato humano é botão, o resto vira número e a Tabela segue na tecla L.
 test.use({ viewport: { width: 1440, height: 900 } });
 
-test("o desktop abre na Fila, por urgência, com a coluna de consciência", async ({ page }) => {
+test("o desktop abre no Quadro; a Fila vem por urgência, com a coluna de consciência", async ({ page }) => {
   await page.goto("/");
+  await expect(page.locator("[data-board-columns]")).toBeVisible();
+  await expect(page.locator("[data-queue-view]")).toHaveCount(0);
+  await page.keyboard.press("g");
   const queue = page.locator("[data-queue-view]");
   await expect(queue.getByRole("heading", { name: "Precisa de você" })).toBeVisible();
   const items = queue.locator("[data-queue-item]");
@@ -28,7 +31,7 @@ test("o desktop abre na Fila, por urgência, com a coluna de consciência", asyn
 });
 
 test("L abre a Tabela e G volta para a Fila", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?view=queue");
   await expect(page.locator("[data-queue-view]")).toBeVisible();
   await page.keyboard.press("l");
   await expect(page.locator("[data-supervision-table]")).toBeVisible();

@@ -815,7 +815,7 @@ export function triageCards(
   return sortCards(filtered, opts.sort);
 }
 
-/** "queue": a Grade, os cartões da Fila "Precisa de você" (abre nela no desktop);
+/** "queue": a Grade, os cartões da Fila "Precisa de você" (um toque no controle de modo);
  *  "board": o quadro de três colunas; "table": a Lista, a tabela densa. */
 export type ViewMode = "queue" | "board" | "table";
 

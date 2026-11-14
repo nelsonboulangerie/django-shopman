@@ -38,7 +38,9 @@ for (const width of WIDTHS) {
     test.use({ viewport: { width, height: width < 768 ? 844 : 900 } });
 
     test("o detalhe do pedido, vindo da fila (com anterior e próximo)", async ({ page }) => {
-      await page.goto("/");
+      // A casa é o Quadro; a trilha de anterior e próximo nasce da Fila.
+      const home = width >= 1024 ? "/?view=queue" : "/";
+      await page.goto(home);
       // A fila grava a trilha: o detalhe aberto dela ganha "Pedido anterior" e "Próximo".
       for (const ref of ["WEB-20260625-0007", "WEB-20260625-0008"]) {
         await page.locator(`a[href$='/${ref}']`).first().click();
@@ -48,7 +50,7 @@ for (const width of WIDTHS) {
           await expect(page.locator("[data-operator-record-nav]").filter({ visible: true }).first()).toBeVisible();
         }
         await expectNoOperatorOverlap(page, `${ref} a ${width} px`);
-        await page.goto("/");
+        await page.goto(home);
       }
     });
 

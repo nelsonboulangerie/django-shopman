@@ -1120,7 +1120,11 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         kitchen_note=order.data.get("kitchen_note", ""),
         customer_note=str(order.data.get("order_notes", "") or ""),
         payment_method=method,
-        payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
+        # No iFood a linha do pagamento é a frase inteira (cobrar ou não); o status
+        # sai vazio para a tela não dizer "iFood · Pago online" e repetir abaixo.
+        payment_method_label=(
+            ifood_projection.payment_headline(order) if order.channel_ref == "ifood" else payment_method_label
+        ),
         managers=_approver_options(user),
         contact_request=_contact_request(order),
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
@@ -1131,7 +1135,9 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
         payment_status_label=(
-            _money_outside_the_charge_label(order, payment_status)
+            ""
+            if order.channel_ref == "ifood"
+            else _money_outside_the_charge_label(order, payment_status)
             or _order_payment_status_label(order, payment_status)
         ),
         fiscal_status=fiscal_status,
@@ -3540,7 +3546,7 @@ def _cancellation_detail(order: Order) -> str:
 def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
     events = list(order.events.order_by("seq"))
     names = _actor_names(event.actor for event in events)
-    result: list[TimelineEventProjection] = []
+    result: list[tuple] = []
     for event in events:
         payload = event.payload or {}
         new_status = payload.get("new_status", "")
@@ -3566,15 +3572,34 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             detail = _cancellation_detail(order)
 
         result.append(
-            TimelineEventProjection(
-                label=label,
-                event_type=event.type,
-                timestamp_display=_format_datetime(event.created_at),
-                actor=_timeline_actor(event.actor, names),
-                detail=detail,
+            (
+                event.created_at,
+                TimelineEventProjection(
+                    label=label,
+                    event_type=event.type,
+                    timestamp_display=_format_datetime(event.created_at),
+                    actor=_timeline_actor(event.actor, names),
+                    detail=detail,
+                ),
             )
         )
-    return tuple(result)
+    # O que o iFood conduz (entregador, saída e encerramento lá) entra na mesma
+    # linha, na ordem da hora em que chegou.
+    for when, label, detail in ifood_projection.timeline_facts(order):
+        result.append(
+            (
+                when,
+                TimelineEventProjection(
+                    label=label,
+                    event_type="ifood_fact",
+                    timestamp_display=_format_datetime(when),
+                    actor="iFood",
+                    detail=detail,
+                ),
+            )
+        )
+    result.sort(key=lambda item: item[0])
+    return tuple(projection for _when, projection in result)
 
 
 def _short_date(raw) -> str:

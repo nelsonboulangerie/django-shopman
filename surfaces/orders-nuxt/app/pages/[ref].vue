@@ -538,6 +538,10 @@ const volumeCheck = useVolumeCheck({
 // celular. Ela fica só no que é comportamento: a direção da gaveta (aberta depois de
 // montar) e a posição do dispositivo (`useOutsideStore`).
 const { belowMd: isPhone } = useScreen();
+// "Marcar como entregue" ao lado de "Entregador voltou": a alternativa ao primário.
+const courierBackAdvance = computed(() =>
+  primary.value?.key === "courier-back" ? advanceAction.value : undefined,
+);
 function menuDo(fn: () => unknown) {
   menuOpen.value = false;
   void fn();
@@ -550,7 +554,9 @@ const detailMenuItems = computed(() => [
     "data-action": "refresh",
     onSelect: () => refresh(),
   },
-  ...(menuAdvance.value
+  // No celular o avanço secundário mora aqui; do `md` para cima ele é botão à vista no
+  // cabeçalho (dono, 14/11/2026: o que é útil não fica escondido com espaço de sobra).
+  ...(menuAdvance.value && isPhone.value
     ? [
         {
           label: menuAdvance.value.label,
@@ -575,17 +581,17 @@ const detailMenuItems = computed(() => [
         },
       ]
     : []),
-  ...(primary.value?.key === "courier-back" && advanceAction.value
+  ...(courierBackAdvance.value && isPhone.value
     ? [
         {
-          label: advanceAction.value.label,
+          label: courierBackAdvance.value.label,
           // O que saiu pode ser só o troco, só a maquininha ou o dinheiro a
           // receber: a frase vale para qualquer combinação.
           description: "O que saiu com o entregador continua em aberto.",
           icon: "i-lucide-check",
           "data-action": "advance",
-          disabled: busy.value || !advanceAction.value.enabled,
-          title: advanceAction.value.reason || undefined,
+          disabled: busy.value || !courierBackAdvance.value.enabled,
+          title: courierBackAdvance.value.reason || undefined,
           onSelect: () => menuDo(onAdvance),
         },
       ]
@@ -1072,6 +1078,35 @@ const outside = useOutsideStore(
           :aria-expanded="menuOpen"
           data-action="menu"
           @click="menuOpen = !menuOpen"
+        />
+        <!-- O avanço que não é o gesto do momento (o pronto com a Cozinha ou o iFood
+             conduzindo; o entregue ao lado do "Entregador voltou"): à vista, secundário. -->
+        <NuxtButton
+          v-if="menuAdvance"
+          type="button"
+          icon="i-lucide-check"
+          :label="menuAdvance.label"
+          color="neutral"
+          variant="outline"
+          :disabled="busy || !menuAdvance.enabled"
+          :title="menuAdvance.reason || undefined"
+          data-action="advance-secondary"
+          @click="onMenuAdvance"
+        />
+        <NuxtButton
+          v-else-if="courierBackAdvance"
+          type="button"
+          icon="i-lucide-check"
+          :label="courierBackAdvance.label"
+          color="neutral"
+          variant="outline"
+          :disabled="busy || !courierBackAdvance.enabled"
+          :title="
+            courierBackAdvance.reason ||
+            'O que saiu com o entregador continua em aberto.'
+          "
+          data-action="advance-secondary"
+          @click="onAdvance"
         />
         <NuxtButton
           v-if="rejectAction"
