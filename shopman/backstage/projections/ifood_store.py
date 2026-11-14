@@ -78,10 +78,16 @@ class IFoodWidgetProjection:
     ``widget_id`` vazio = desligado: a tela não carrega nada do iFood. O widget
     roda no navegador e se autoriza sozinho, por dispositivo, no Portal do
     Parceiro; o servidor só diz qual widget e qual loja.
+
+    ``has_order_in_progress``: há pedido iFood aberto e ainda não entregue. O
+    botão do iFood só aparece no Gestor enquanto isso for verdade (decisão do
+    dono, 14/11, DEV-2026-023): sem pedido em curso ele não polui a tela; com
+    pedido em curso, a mensagem nova do cliente aparece em qualquer tela.
     """
 
     widget_id: str = ""
     merchant_ids: tuple[str, ...] = ()
+    has_order_in_progress: bool = False
 
 
 def build_ifood_widget_projection() -> IFoodWidgetProjection:
@@ -92,7 +98,21 @@ def build_ifood_widget_projection() -> IFoodWidgetProjection:
     merchant = ifood_merchant.merchant_id()
     if not widget_id or not merchant:
         return IFoodWidgetProjection()
-    return IFoodWidgetProjection(widget_id=widget_id, merchant_ids=(merchant,))
+    return IFoodWidgetProjection(
+        widget_id=widget_id,
+        merchant_ids=(merchant,),
+        has_order_in_progress=_ifood_order_in_progress(),
+    )
+
+
+def _ifood_order_in_progress() -> bool:
+    """Pedido iFood aberto e ainda não entregue (cancelado e devolvido não contam)."""
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.ifood_ingest import IFOOD_CHANNEL_REF
+
+    finished = [Order.Status.DELIVERED, *Order.TERMINAL_STATUSES]
+    return Order.objects.filter(channel_ref=IFOOD_CHANNEL_REF).exclude(status__in=finished).exists()
 
 
 __all__ = [
