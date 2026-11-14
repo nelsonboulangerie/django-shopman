@@ -32,6 +32,7 @@ onMounted(async () => {
   const body = await $fetch<{ queue: { expedition_pickup: OrderCardProjection[] } }>("/api/v1/backstage/orders/");
   pickup.value = body.queue.expedition_pickup || [];
 });
+const bags = ref(2);
 const initial = computed(() =>
   moment.value === "vazio" ? [[]] : [["A12", "A14", "A18"], ["B03", "B09"]],
 );
@@ -105,6 +106,30 @@ const initial = computed(() =>
           </div>
         </div>
       </section>
+    </div>
+
+    <!-- O Pronto de um pedido de ENTREGA já pergunta as sacolas: a informação nasce
+         na hora de fechar a sacola, por quem fechou, e nunca falta na saída. -->
+    <div v-if="moment === 'volumes'" class="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
+      <div class="w-full max-w-sm overflow-hidden rounded-2xl bg-default shadow-2xl ring-1 ring-default" data-ready-volumes>
+        <div class="px-5 pt-5">
+          <p class="op-micro font-semibold text-muted">A05 · Cíntia Melo · Entrega</p>
+          <p class="mt-1 op-title font-semibold text-highlighted">Quantas sacolas?</p>
+          <p class="op-body text-muted">Cada uma sai com a sua Via Pedido, "Volume 1 de {{ bags }}".</p>
+        </div>
+        <div class="flex items-center justify-center gap-5 py-6">
+          <NuxtButton size="xl" color="neutral" variant="outline" icon="i-lucide-minus" square aria-label="Menos uma" @click="bags = Math.max(1, bags - 1)" />
+          <span class="w-16 text-center text-5xl font-bold tabular-nums text-highlighted">{{ bags }}</span>
+          <NuxtButton size="xl" color="neutral" variant="outline" icon="i-lucide-plus" square aria-label="Mais uma" @click="bags = Math.min(99, bags + 1)" />
+        </div>
+        <div class="flex justify-center gap-2 pb-5">
+          <NuxtButton v-for="n in [1, 2, 3, 4]" :key="n" size="sm" :color="n === bags ? 'primary' : 'neutral'" :variant="n === bags ? 'solid' : 'soft'" :label="String(n)" @click="bags = n" />
+        </div>
+        <div class="flex gap-2 border-t border-default p-4">
+          <NuxtButton color="neutral" variant="ghost" label="Voltar" />
+          <NuxtButton class="flex-1 justify-center" size="lg" icon="i-lucide-check" :label="`Pronto, ${bags} ${bags === 1 ? 'sacola' : 'sacolas'}`" />
+        </div>
+      </div>
     </div>
 
     <div v-if="moment === 'acompanhar'" class="mx-auto grid max-w-6xl grid-cols-3 gap-4">

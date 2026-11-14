@@ -44,6 +44,13 @@ const pool = ([
   ["D10", "Tiago Martins", "Bela Suíça", -0.001, 0.002],
 ] as Row[]).map(pt);
 const byRef = (ref: string) => pool.find((o) => o.ref === ref)!;
+// PRÉVIA: alguns pedidos na mesma rua de outra corrida, para mostrar as linhas lado a
+// lado. B03 fica além do B01 (corrida 2), no mesmo rumo; A12 no caminho do A05 (corrida 1).
+function along(ref: string, from: { latitude: number; longitude: number }, to: { latitude: number; longitude: number }, t: number) {
+  const o = byRef(ref);
+  o.latitude = from.latitude + (to.latitude - from.latitude) * t;
+  o.longitude = from.longitude + (to.longitude - from.longitude) * t;
+}
 
 // As corridas na rua. As cores 1 a 3 estão com elas; montar começa na 4.
 const live = [
@@ -51,6 +58,8 @@ const live = [
   { number: 2, state: "coming" as const, courier: "Rita", eta: "6 min", stops: [pt(["B01", "Davi Prado", "Centro", -0.0028, -0.004]), pt(["B02", "Elisa Cunha", "Centro", 0.0035, -0.0035])], at: { latitude: -23.3025, longitude: -51.1735 } },
   { number: 3, state: "route" as const, courier: "Léo", eta: "12:49", stops: [{ ...pt(["D01", "Lúcia Ferreira", "Bela Suíça", 0.004, -0.004]), done: true }, pt(["D02", "Tiago Martins", "Bela Suíça", -0.003, -0.003]), pt(["D03", "Sofia Ramos", "Bela Suíça", -0.0045, 0.0045])], at: { latitude: -23.3405, longitude: -51.1695 } },
 ];
+along("B03", origin, live[1]!.stops[0]!, 1.45);
+along("A12", origin, live[0]!.stops[0]!, 0.72);
 const mapLive = computed<MapLiveRide[]>(() => live.map((r) => ({ number: r.number, stops: r.stops, courier: r.at })));
 
 // Montando: números (e cores) a partir do primeiro livre.
@@ -99,7 +108,7 @@ const callLabel = computed(() =>
 );
 // Volumes declarados por quem embalou (exemplo): o B02 ainda não tem.
 const VOLUMES: Record<string, number> = { A02: 2, A05: 1, B01: 1, D02: 1, D03: 2 };
-const liveOpacity = computed(() => (route.query.live === "50" ? 0.5 : 1));
+const liveOpacity = computed(() => (route.query.live === "100" ? 1 : 0.5));
 const quotes: Record<number, string> = { 4: "R$ 18,40 · 24 min", 5: "R$ 11,90 · 17 min" };
 </script>
 
@@ -108,7 +117,7 @@ const quotes: Record<number, string> = { 4: "R$ 18,40 · 24 min", 5: "R$ 11,90 �
     <header class="flex items-center gap-3 border-b border-default px-4 py-3 lg:px-6">
       <div class="min-w-0 flex-1">
         <h1 class="op-title font-semibold text-highlighted">Entregas</h1>
-        <p class="op-body text-muted">{{ waiting.length }} esperando · {{ ready.reduce((s, r) => s + r.refs.length, 0) }} montando · {{ live.length }} corridas na rua</p>
+        <p class="op-body text-muted">{{ waiting.length }} esperando · {{ ready.reduce((s, r) => s + r.refs.length, 0) }} em montagem · {{ live.length }} corridas na rua</p>
       </div>
       <NuxtBadge color="success" variant="soft" icon="i-lucide-radio" label="TaOn em dia" class="hidden sm:inline-flex" />
     </header>
@@ -147,7 +156,7 @@ const quotes: Record<number, string> = { 4: "R$ 18,40 · 24 min", 5: "R$ 11,90 �
           <section class="mt-5">
             <h2 class="flex items-center gap-2 op-label font-semibold text-highlighted">
               <NuxtIcon name="i-lucide-route" class="size-4 text-muted" />
-              Montando
+              Em montagem
               <NuxtBadge :label="String(building.length)" color="neutral" variant="soft" size="sm" />
             </h2>
             <div class="mt-2 flex flex-col gap-2">

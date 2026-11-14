@@ -10,6 +10,7 @@
 //    forte, as outras esmaecidas.
 //  · ESPERANDO: o pedido sem corrida, em branco com o código. Tocar põe na ativa.
 import { rideColor } from "~/presentation/ridePalette";
+import { metroLines } from "~/presentation/metroLines";
 
 export interface MapPoint {
   ref: string;
@@ -38,7 +39,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ toggle: [ref: string]; fill: [place: string]; open: [number: number] }>();
 
-const liveAlpha = computed(() => props.liveOpacity ?? 1);
+const liveAlpha = computed(() => props.liveOpacity ?? 0.5);
 
 const everyPoint = computed(() => [
   props.origin,
@@ -55,8 +56,34 @@ function xy(p: { latitude: number; longitude: number }) {
   const b = bounds.value;
   return { x: ((p.longitude - b.minLng) / (b.maxLng - b.minLng)) * 100, y: (1 - (p.latitude - b.minLat) / (b.maxLat - b.minLat)) * 100 };
 }
-const line = (pts: { latitude: number; longitude: number }[]) =>
-  [props.origin, ...pts].map(xy).map((p, k) => `${k ? "L" : "M"}${p.x} ${p.y}`).join(" ");
+// As linhas em pixels, para correrem lado a lado onde se encontram (metrô).
+const box = ref<HTMLElement | null>(null);
+const size = ref({ w: 1, h: 1 });
+let observer: ResizeObserver | null = null;
+onMounted(() => {
+  observer = new ResizeObserver(([entry]) => {
+    if (entry) size.value = { w: entry.contentRect.width, h: entry.contentRect.height };
+  });
+  if (box.value) observer.observe(box.value);
+});
+onBeforeUnmount(() => observer?.disconnect());
+const GAP = 5; // 4 px de traço + 1 de respiro
+const lines = computed(() => {
+  const px = (p: { latitude: number; longitude: number }) => {
+    const q = xy(p);
+    return { x: (q.x / 100) * size.value.w, y: (q.y / 100) * size.value.h };
+  };
+  const all = [
+    ...props.live.map((r) => ({ id: r.number, points: [props.origin, ...r.stops].map(px), live: true })),
+    ...props.building.filter((r) => r.stops.length).map((r) => ({ id: r.number, points: [props.origin, ...r.stops].map(px), live: false })),
+  ];
+  const laid = metroLines(all, GAP);
+  return laid.map((l, i) => ({
+    ...l,
+    live: all[i]!.live,
+    d: l.points.map((p, k) => `${k ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" "),
+  }));
+});
 const at = (p: { latitude: number; longitude: number }) => ({ left: `${xy(p).x}%`, top: `${xy(p).y}%` });
 
 // O bairro escrito uma vez, abaixo dos seus pedidos que ainda esperam ou montam.
@@ -71,7 +98,7 @@ const places = computed(() => {
 </script>
 
 <template>
-  <div class="relative size-full overflow-hidden bg-[#f3ede3]" data-deliveries-map>
+  <div ref="box" class="relative size-full overflow-hidden bg-[#f3ede3]" data-deliveries-map>
     <svg class="absolute inset-0 size-full" aria-hidden="true">
       <defs>
         <pattern id="deliv-streets" width="46" height="46" patternUnits="userSpaceOnUse" patternTransform="rotate(-12)">
@@ -82,21 +109,19 @@ const places = computed(() => {
       <rect width="100%" height="100%" fill="url(#deliv-streets)" />
     </svg>
 
-    <!-- as linhas: na rua (cinza) por baixo, montando (cor) por cima -->
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="absolute inset-0 size-full" aria-hidden="true">
-      <path v-for="r in live" :key="`l${r.number}`" :d="line(r.stops)" fill="none" :stroke="rideColor(r.number - 1).bg" :opacity="liveAlpha" vector-effect="non-scaling-stroke" style="stroke-width: 4px" stroke-linecap="round" stroke-linejoin="round" />
+    <!-- as linhas: lado a lado onde se encontram, como metrô; nenhuma some -->
+    <svg class="absolute inset-0 size-full" aria-hidden="true">
       <path
-        v-for="r in building.filter((b) => b.stops.length)"
-        :key="`b${r.number}`"
-        :d="line(r.stops)"
+        v-for="l in lines"
+        :key="`${l.live ? 'l' : 'b'}${l.id}`"
+        :d="l.d"
         fill="none"
-        :stroke="rideColor(r.number - 1).bg"
-        vector-effect="non-scaling-stroke"
-        style="stroke-width: 4px"
-        stroke-dasharray="0.1 8"
+        :stroke="rideColor(l.id - 1).bg"
+        stroke-width="4"
         stroke-linecap="round"
         stroke-linejoin="round"
-        :opacity="r.number === active ? 1 : 0.55"
+        :stroke-dasharray="l.live ? undefined : '0.1 8'"
+        :opacity="l.live ? liveAlpha : l.id === active ? 1 : 0.55"
       />
     </svg>
 
@@ -174,8 +199,8 @@ const places = computed(() => {
     <!-- legenda pela FORMA, nunca pela cor: a cor é sempre a da corrida -->
     <div class="absolute bottom-3 left-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-white/90 px-2.5 py-1.5 op-micro text-toned shadow-sm" data-map-legend>
       <span class="flex items-center gap-1"><span class="size-3.5 rounded-full border-2 bg-white" style="border-color:#b9a888" />Esperando</span>
-      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" stroke="#5f6670" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><span class="size-3.5 rounded-full border-[3px] border-dotted bg-white" style="border-color:#5f6670" />Montando</span>
-      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" stroke="#5f6670" stroke-width="3" stroke-linecap="round" /></svg><span class="size-3.5 rounded-full border-[3px] bg-white" style="border-color:#5f6670" />Chamada</span>
+      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" stroke="#5f6670" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><span class="size-3.5 rounded-full border-[3px] border-dotted bg-white" style="border-color:#5f6670" />Em montagem</span>
+      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" stroke="#5f6670" stroke-width="3" stroke-linecap="round" /></svg><span class="size-3.5 rounded-full border-[3px] bg-white" style="border-color:#5f6670" />Chamado</span>
       <span class="flex items-center gap-1"><span class="grid h-4 w-6 place-items-center rounded-full bg-[#5f6670] text-white"><NuxtIcon name="i-lucide-bike" class="size-3" /></span>Entregador</span>
       <span class="text-muted">· a cor é a da corrida</span>
     </div>
