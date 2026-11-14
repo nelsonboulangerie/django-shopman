@@ -31,20 +31,20 @@ const located = computed(() =>
 const mapOrigin = computed(() => props.origin ?? located.value[0] ?? null);
 const nextRef = computed(() => props.ride.stops.find((stop) => !stop.done)?.ref ?? "");
 const copied = ref(false);
-async function copyLink() {
-  try {
-    await navigator.clipboard.writeText(props.ride.tracking_url);
-    copied.value = true;
-    setTimeout(() => (copied.value = false), 2000);
-  } catch {
-    copied.value = false;
-  }
+function copyLink() {
+  void navigator.clipboard
+    .writeText(props.ride.tracking_url)
+    .then(() => {
+      copied.value = true;
+      setTimeout(() => (copied.value = false), 2000);
+    })
+    .catch(() => (copied.value = false));
 }
 const at = (iso: string) => (iso ? clockHHMM(Date.parse(iso)) : "");
 </script>
 
 <template>
-  <aside class="flex h-full w-full flex-col overflow-hidden bg-default shadow-2xl ring-1 ring-default sm:w-[30rem]" data-ride-detail>
+  <aside class="flex h-full w-full flex-col overflow-hidden bg-default" data-ride-detail>
     <header class="flex items-start gap-3 border-b border-default px-5 py-4" :style="{ borderTop: `6px solid ${tone.bg}` }">
       <span class="grid size-9 shrink-0 place-items-center rounded-lg text-lg font-bold" :style="{ background: tone.bg, color: tone.fg }">{{ ride.number }}</span>
       <div class="min-w-0 flex-1">
@@ -96,7 +96,7 @@ const at = (iso: string) => (iso ? clockHHMM(Date.parse(iso)) : "");
                 </span>
               </p>
               <p class="truncate op-micro text-muted">{{ stop.address }}</p>
-              <NuxtButton class="-ml-2" size="xs" color="neutral" variant="link" label="Abrir o pedido" trailing-icon="i-lucide-arrow-up-right" :to="`/${encodeURIComponent(stop.ref)}`" />
+              <NuxtButton class="-ml-2" color="neutral" variant="ghost" label="Abrir o pedido" trailing-icon="i-lucide-arrow-up-right" :to="`/${encodeURIComponent(stop.ref)}`" />
             </div>
           </li>
         </ol>
@@ -133,7 +133,7 @@ const at = (iso: string) => (iso ? clockHHMM(Date.parse(iso)) : "");
 
     <footer class="flex flex-wrap items-center gap-2 border-t border-default px-5 py-3">
       <template v-if="ride.back_action">
-        <NuxtButton class="flex-1 justify-center" color="success" icon="i-lucide-undo-2" :label="ride.back_action.label" :loading="busy" :disabled="!ride.back_action.enabled" @click="emit('back')" />
+        <NuxtButton class="flex-1 justify-center" color="primary" icon="i-lucide-undo-2" :label="ride.back_action.label" :loading="busy" :disabled="!ride.back_action.enabled" @click="emit('back')" />
       </template>
       <template v-else-if="ride.cancel_action">
         <p class="min-w-0 flex-1 op-micro text-muted">Antes de ele sair com as sacolas, dá para cancelar.</p>

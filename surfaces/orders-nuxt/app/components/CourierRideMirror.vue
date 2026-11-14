@@ -39,7 +39,7 @@ const showBags = computed(() => beforeHandoff(props.ride));
     </span>
     <NuxtButton
       v-if="ride.back_action"
-      color="success"
+      color="primary"
       icon="i-lucide-undo-2"
       :label="ride.back_action.label"
       :loading="busy"

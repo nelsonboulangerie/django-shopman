@@ -14,6 +14,7 @@ import type {
 } from "~/generated/ordersContract";
 import type { MapLiveRide, MapPoint } from "~/components/CourierDeliveriesMap.vue";
 import { rideColor } from "~/presentation/ridePalette";
+import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import {
   needsMachine,
   nextFreeNumber,
@@ -139,6 +140,18 @@ const callLabel = computed(() =>
 const canCall = computed(
   () => ready.value.length > 0 && !sending.value && (!wantsMachine.value || Boolean(machineRef.value)),
 );
+const callContext = computed(
+  () => `${editingCount.value} ${editingCount.value === 1 ? "pedido" : "pedidos"} em ${ready.value.length} ${ready.value.length === 1 ? "corrida" : "corridas"}`,
+);
+const callAction = computed<OperatorActionBarAction>(() => ({
+  label: callLabel.value,
+  shortLabel: "Chamar",
+  icon: "i-lucide-bike",
+  loading: sending.value,
+  disabled: !canCall.value,
+  reason: wantsMachine.value && !machineRef.value ? "Escolha a maquininha que vai." : "",
+  onSelect: () => void call(),
+}));
 async function call() {
   sending.value = true;
   failure.value = "";
@@ -271,7 +284,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
             <h2 class="flex items-center gap-2 op-label font-semibold text-highlighted">
               <span class="size-3 rounded-full border-2 bg-white" style="border-color: #b9a888" />
               Aguardando
-              <NuxtBadge :label="String(waiting.length)" color="neutral" />
+              <OperatorCountChip :count="waiting.length" />
             </h2>
             <p v-if="!waitingAll.length" class="mt-2 op-body text-muted">Nenhuma entrega aguardando entregador.</p>
             <div v-if="suggestions.length" class="mt-2 flex flex-wrap gap-1.5">
@@ -298,7 +311,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
             <h2 class="flex items-center gap-2 op-label font-semibold text-highlighted">
               <NuxtIcon name="i-lucide-route" class="size-4 text-muted" />
               Editando
-              <NuxtBadge :label="String(editing.length)" color="neutral" />
+              <OperatorCountChip :count="editing.length" />
             </h2>
             <div class="mt-2 flex flex-col gap-2">
               <section
@@ -309,13 +322,13 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
                 :class="ride.number === active ? 'bg-default' : 'border-default bg-elevated/50'"
               >
                 <div class="flex w-full items-center gap-2 px-3 py-2.5">
-                  <NuxtButton color="neutral" variant="link" class="min-w-0 flex-1 justify-start gap-2 p-0 text-left" :aria-pressed="ride.number === active" @click="active = ride.number">
+                  <NuxtButton color="neutral" variant="ghost" class="min-w-0 flex-1 justify-start gap-2 p-0 text-left" :aria-pressed="ride.number === active" @click="active = ride.number">
                     <span class="grid h-6 min-w-6 shrink-0 place-items-center rounded-md px-1.5 op-micro font-bold" :style="{ background: rideColor(ride.number - 1).bg, color: rideColor(ride.number - 1).fg }">{{ ride.number }}</span>
                     <span class="op-label font-semibold text-highlighted">Corrida {{ ride.number }}</span>
                     <span class="op-micro tabular-nums text-muted">{{ ride.refs.length }} de {{ maxStops }}</span>
                     <span v-if="ride.number !== active && ride.refs.length" class="ml-1 min-w-0 flex-1 truncate op-micro text-muted">{{ ride.refs.map((ref) => byRef.get(ref)?.code ?? ref).join(" → ") }}</span>
                   </NuxtButton>
-                  <NuxtButton icon="i-lucide-trash-2" size="xs" color="neutral" variant="ghost" square :aria-label="`Desfazer a corrida ${ride.number}`" @click="drop(ride.number)" />
+                  <NuxtButton icon="i-lucide-trash-2" color="neutral" variant="ghost" square :aria-label="`Desfazer a corrida ${ride.number}`" @click="drop(ride.number)" />
                 </div>
                 <ol v-if="ride.number === active" class="flex flex-col gap-1 px-3 pb-3">
                   <li v-if="!ride.refs.length" class="rounded-lg border border-dashed border-default px-3 py-3 text-center op-body text-muted">Toque nos pedidos no mapa ou na lista.</li>
@@ -325,7 +338,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
                       <span class="block truncate op-body font-medium text-highlighted">{{ byRef.get(ref)?.code }} · {{ byRef.get(ref)?.customer }}</span>
                       <span class="block truncate op-micro text-muted">{{ [byRef.get(ref)?.place, byRef.get(ref)?.change_label].filter(Boolean).join(" · ") }}</span>
                     </span>
-                    <NuxtButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost" square :aria-label="`Tirar ${byRef.get(ref)?.code}`" @click="toggle(ref)" />
+                    <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square :aria-label="`Tirar ${byRef.get(ref)?.code}`" @click="toggle(ref)" />
                   </li>
                   <li v-if="ride.refs.length > 1" class="px-1 pt-1 op-micro text-muted">A TaOn leva na ordem do percurso, a partir da loja.</li>
                 </ol>
@@ -339,7 +352,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
             <h2 class="flex items-center gap-2 op-label font-semibold text-highlighted">
               <NuxtIcon name="i-lucide-bike" class="size-4 text-muted" />
               Corridas
-              <NuxtBadge :label="String(rides.length)" color="neutral" />
+              <OperatorCountChip :count="rides.length" />
             </h2>
             <p v-if="!rides.length" class="mt-2 op-body text-muted">Nenhuma corrida na rua.</p>
             <div class="mt-2 flex flex-col gap-2">
@@ -355,7 +368,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
           </section>
         </div>
 
-        <div v-if="ready.length" class="sticky bottom-0 flex flex-col gap-2 border-t border-default bg-default p-4">
+        <div v-if="ready.length" class="flex flex-col gap-2 border-t border-default bg-default p-4">
           <p v-if="failure" class="op-body text-error" aria-live="assertive">{{ failure }}</p>
           <div v-if="wantsMachine && machines.length > 1" class="flex items-center gap-2">
             <p class="op-body text-toned">Maquininha que vai:</p>
@@ -366,22 +379,35 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
             <p class="min-w-0 flex-1 op-body text-muted">
               {{ editingCount }} {{ editingCount === 1 ? "pedido" : "pedidos" }} em {{ ready.length }} {{ ready.length === 1 ? "corrida" : "corridas" }}<template v-if="waiting.length"> · {{ waiting.length }} ficam</template>
             </p>
-            <NuxtButton icon="i-lucide-bike" :label="callLabel" :loading="sending" :disabled="!canCall" @click="call" />
+            <NuxtButton class="hidden lg:inline-flex" icon="i-lucide-bike" :label="callLabel" :loading="sending" :disabled="!canCall" @click="call" />
           </div>
         </div>
       </div>
     </div>
 
-    <div v-if="openRide && data" class="fixed inset-0 z-50 flex justify-end bg-black/30" @click.self="close">
-      <CourierRideDetail
-        :ride="openRide"
-        :origin="data.origin"
-        :now="now"
-        :busy="busyRide === openRide.key"
-        @close="close"
-        @back="rideAction(openRide, 'courier-back')"
-        @cancel="rideAction(openRide, 'courier-cancel')"
-      />
-    </div>
+    <!-- No celular, o "Chamar" é a ação do momento na base (kit). -->
+    <OperatorActionBar v-if="ready.length" :action="callAction" :context-label="callContext" label="Chamar as corridas" />
+
+    <NuxtSlideover
+      :open="Boolean(openRide && data)"
+      side="right"
+      class="sm:max-w-lg"
+      :title="openRide ? `Corrida ${openRide.number}` : 'Corrida'"
+      description="O andamento da corrida, o entregador e as paradas."
+      @update:open="(value: boolean) => { if (!value) close(); }"
+    >
+      <template #content>
+        <CourierRideDetail
+          v-if="openRide && data"
+          :ride="openRide"
+          :origin="data.origin"
+          :now="now"
+          :busy="busyRide === openRide.key"
+          @close="close"
+          @back="rideAction(openRide, 'courier-back')"
+          @cancel="rideAction(openRide, 'courier-cancel')"
+        />
+      </template>
+    </NuxtSlideover>
   </div>
 </template>

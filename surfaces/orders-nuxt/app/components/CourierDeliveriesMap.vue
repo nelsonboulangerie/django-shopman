@@ -136,7 +136,7 @@ const places = computed(() => {
       class="absolute -translate-x-1/2 translate-y-5"
       :style="{ left: `${label.x}%`, top: `${label.y}%` }"
     >
-      <NuxtButton color="neutral" variant="link" class="p-0" :aria-label="`Pôr ${label.place} na corrida ${active}`" @click="emit('fill', label.place)">
+      <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Pôr ${label.place} na corrida ${active}`" @click="emit('fill', label.place)">
         <span class="whitespace-nowrap rounded-full bg-white/85 px-2 py-0.5 op-micro font-semibold text-toned shadow-sm transition hover:bg-white hover:text-highlighted">{{ label.place }}</span>
       </NuxtButton>
     </span>
@@ -148,7 +148,7 @@ const places = computed(() => {
     <!-- corrida chamada: borda contínua na cor; entregue leva o visto -->
     <template v-for="r in live" :key="`ls${r.number}`">
       <span v-for="(s, k) in r.stops" :key="s.ref" class="absolute -translate-x-1/2 -translate-y-1/2" :style="at(s)">
-        <NuxtButton color="neutral" variant="link" class="p-0" :aria-label="`Corrida ${r.number}, parada ${k + 1}, pedido ${s.code}`" @click="emit('open', r.number)">
+        <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Corrida ${r.number}, parada ${k + 1}, pedido ${s.code}`" @click="emit('open', r.number)">
           <span
             class="grid size-9 place-items-center rounded-full border-4 border-solid bg-white op-label font-bold tabular-nums text-highlighted shadow-sm"
             :style="{ borderColor: `color-mix(in srgb, ${rideColor(r.number - 1).bg} ${liveAlpha * 100}%, transparent)` }"
@@ -162,7 +162,7 @@ const places = computed(() => {
     <!-- editando: borda pontilhada na cor da corrida -->
     <template v-for="r in building" :key="`bs${r.number}`">
       <span v-for="(s, k) in r.stops" :key="s.ref" class="absolute z-10 -translate-x-1/2 -translate-y-1/2" :style="at(s)">
-        <NuxtButton color="neutral" variant="link" class="p-0" :aria-label="`Pedido ${s.code}, corrida ${r.number}`" @click="emit('toggle', s.ref)">
+        <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Pedido ${s.code}, corrida ${r.number}`" @click="emit('toggle', s.ref)">
           <span class="grid size-9 place-items-center rounded-full border-4 border-dotted bg-white op-label font-bold tabular-nums text-highlighted shadow-sm transition hover:scale-110" :style="{ borderColor: rideColor(r.number - 1).bg }">{{ k + 1 }}</span>
         </NuxtButton>
       </span>
@@ -170,8 +170,8 @@ const places = computed(() => {
 
     <!-- aguardando: brancos com o código -->
     <span v-for="o in waiting" :key="o.ref" class="absolute z-10 -translate-x-1/2 -translate-y-1/2" :style="at(o)">
-      <NuxtButton color="neutral" variant="link" class="p-0" :aria-label="`Pedido ${o.code}, ${o.place}`" @click="emit('toggle', o.ref)">
-        <span class="relative grid size-9 place-items-center rounded-full border-2 border-[#b9a888] bg-white op-micro font-semibold tabular-nums text-[#5b4a2c] shadow-md transition hover:scale-110">
+      <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Pedido ${o.code}, ${o.place}`" @click="emit('toggle', o.ref)">
+        <span class="relative grid size-9 place-items-center rounded-full border-2 border-[#b9a888] bg-white op-micro font-semibold tabular-nums text-toned shadow-md transition hover:scale-110">
           {{ o.code }}
           <span v-if="o.preparing" class="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-white text-toned ring-1 ring-default" title="Em preparo"><NuxtIcon name="i-lucide-chef-hat" class="size-2.5" /></span>
         </span>
@@ -181,7 +181,7 @@ const places = computed(() => {
     <!-- o entregador: o único cheio de cor -->
     <template v-for="r in live" :key="`c${r.number}`">
       <span v-if="r.courier" class="absolute z-20 -translate-x-1/2 -translate-y-1/2" :style="at(r.courier)">
-        <NuxtButton color="neutral" variant="link" class="p-0" :aria-label="`Entregador da corrida ${r.number}`" @click="emit('open', r.number)">
+        <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Entregador da corrida ${r.number}`" @click="emit('open', r.number)">
           <span class="flex items-center gap-1 rounded-full py-1 pr-2 pl-1 shadow-lg ring-2 ring-white transition hover:scale-105" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }">
             <span class="grid size-6 place-items-center rounded-full bg-white/20"><NuxtIcon name="i-lucide-bike" class="size-4" /></span>
             <span class="op-label font-bold tabular-nums">{{ r.number }}</span>
