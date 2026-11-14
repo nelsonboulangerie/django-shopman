@@ -63,7 +63,10 @@ const initial = computed(() =>
     </div>
 
     <!-- O Saída completo: o que espera entregador, as corridas vivas e a retirada -->
-    <div v-else-if="moment === 'saida'" class="mx-auto grid max-w-[88rem] grid-cols-[18rem_2.75rem_minmax(0,1fr)] gap-3">
+    <div v-if="moment === 'detalhe'" class="fixed inset-0 z-50 flex justify-end bg-black/30">
+      <CourierRideDetail :number="3" />
+    </div>
+    <div v-if="moment === 'saida' || moment === 'detalhe'" class="mx-auto grid max-w-[88rem] grid-cols-[18rem_2.75rem_minmax(0,1fr)] gap-3">
       <section class="flex flex-col gap-2 rounded-xl bg-[color-mix(in_oklab,var(--ui-bg-elevated)_80%,transparent)] p-2">
         <p class="flex items-center gap-2 px-1.5 pt-1 op-label font-semibold text-highlighted">Novos <NuxtBadge label="0" color="neutral" variant="soft" size="sm" /></p>
         <NuxtEmpty icon="i-lucide-circle-check" title="Nenhum pedido novo agora." class="m-1" />
@@ -123,7 +126,7 @@ const initial = computed(() =>
       </section>
     </div>
 
-    <div v-else class="mx-auto grid max-w-6xl grid-cols-3 gap-4">
+    <div v-if="moment === 'acompanhar'" class="mx-auto grid max-w-6xl grid-cols-3 gap-4">
       <CourierRideCard :number="1" state="atStore" :courier="{ name: 'Diego', vehicle: 'Moto vermelha · ABC1D23' }"
         :stops="[{ code: 'A12', customer: 'Maria Santos', place: 'Gleba Palhano', state: 'ready' }, { code: 'A14', customer: 'João Oliveira', place: 'Gleba Palhano', state: 'ready' }, { code: 'A18', customer: 'Fernanda Dias', place: 'Gleba Palhano', state: 'ready' }]"
         :handoff="['3 sacolas', 'Troco R$ 20,00 (A14)']" cost="R$ 18,40" />

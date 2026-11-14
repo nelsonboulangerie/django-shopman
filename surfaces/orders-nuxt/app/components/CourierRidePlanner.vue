@@ -102,7 +102,7 @@ const callLabel = computed(() =>
 </script>
 
 <template>
-  <div class="grid h-[min(78dvh,46rem)] min-h-0 grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]" data-ride-planner>
+  <div class="grid h-[min(78dvh,46rem)] min-h-0 grid-cols-2" data-ride-planner>
     <!-- o mapa: a loja, os pedidos, as corridas desenhadas por cor -->
     <div class="relative min-h-0 border-r border-default">
       <div class="absolute inset-0 overflow-hidden bg-[#f3ede3]">
