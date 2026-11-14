@@ -1,4 +1,4 @@
-"""O widget oficial do iFood no Gestor (DEV-2026-018, issue #2321).
+"""O widget oficial do iFood no Gestor (DEV-2026-019, issue #2321).
 
 O servidor só diz qual widget e qual loja carregar; o widget vazio desliga tudo.
 """

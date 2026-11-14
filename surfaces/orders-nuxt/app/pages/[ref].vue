@@ -748,7 +748,7 @@ const thumbAction = computed(() => {
   };
 });
 // O estado escrito que vale em toda largura (as pílulas de pagamento são só do celular).
-// O chat do cliente iFood (DEV-2026-018): o widget sobe na casca (app.vue); o
+// O chat do cliente iFood (DEV-2026-019): o widget sobe na casca (app.vue); o
 // detalhe só diz onde ele está, ou que não carregou.
 const ifoodWidget = useIFoodWidget();
 const ifoodChat = computed(() =>
@@ -1429,7 +1429,7 @@ const outside = useOutsideStore(
 
         <template v-if="!outside.away.value" #after-profile>
           <!-- chat do cliente iFood: o widget do iFood mora no canto da tela (casca);
-               aqui só se diz onde ele está, ou que não carregou (DEV-2026-018). -->
+               aqui só se diz onde ele está, ou que não carregou (DEV-2026-019). -->
           <NuxtAlert
             v-if="ifoodChat"
             :color="ifoodChat.tone"

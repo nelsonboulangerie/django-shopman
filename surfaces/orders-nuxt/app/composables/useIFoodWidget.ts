@@ -1,4 +1,4 @@
-// O widget oficial do iFood no Gestor (DEV-2026-018): chat com o cliente,
+// O widget oficial do iFood no Gestor (DEV-2026-019): chat com o cliente,
 // notificações e rastreio, num iframe do iFood preso ao canto da tela.
 //
 // Liga só quando a loja preencheu o ID do widget (Admin › Loja › Chat do iFood):

@@ -40,7 +40,7 @@ export const OPERATOR_CONTENT_SECURITY_POLICY = OPERATOR_CSP_DIRECTIVES.map(
 // explícito ou curinga de subdomínio de um domínio fixo, nunca `https:` nem loopback.
 // `frame-src` (o que o app enquadra) é o mais estreito de todos: só host `https://`
 // explícito, sem curinga. O primeiro uso é o widget do iFood no Gestor de pedidos
-// (`https://embeddables.ifood.com.br`, DEV-2026-018).
+// (`https://embeddables.ifood.com.br`, DEV-2026-019).
 export const OPERATOR_CSP_EXTENSIBLE_DIRECTIVES = Object.freeze([
   "connect-src",
   "font-src",

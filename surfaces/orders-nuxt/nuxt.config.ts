@@ -44,7 +44,7 @@ export default defineNuxtConfig({
     //   próprio balcão (DEFAULT_AGENT_URL http://127.0.0.1:47811). Quem chama é o
     //   navegador; nada fica aberto para fora da máquina.
     // - script-src + frame-src iFood: o widget oficial do iFood (chat com o
-    //   cliente, DEV-2026-018). O script vem de widgets.ifood.com.br e abre um
+    //   cliente, DEV-2026-019). O script vem de widgets.ifood.com.br e abre um
     //   iframe de embeddables.ifood.com.br; o resto da conversa acontece dentro do
     //   iframe, sob a política do próprio iFood. O <style> que o script injeta já
     //   cabe no style-src de base. Só carrega com o ID do widget preenchido na Loja.

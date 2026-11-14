@@ -730,7 +730,7 @@ describe("detalhe iFood", () => {
   });
 });
 
-describe("chat do cliente iFood (widget do iFood, DEV-2026-018)", () => {
+describe("chat do cliente iFood (widget do iFood, DEV-2026-019)", () => {
   it("pedido do iFood com o widget pronto: diz que o chat está no botão do iFood", () => {
     ifoodWidgetState.value = "ready";
     const w = abrir(order({ channel_ref: "ifood" }));

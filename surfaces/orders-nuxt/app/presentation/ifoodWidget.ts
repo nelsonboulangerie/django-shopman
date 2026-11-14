@@ -1,4 +1,4 @@
-// O widget oficial do iFood no Gestor (DEV-2026-018, issue #2321) — regras puras.
+// O widget oficial do iFood no Gestor (DEV-2026-019, issue #2321) — regras puras.
 //
 // A API do iFood não tem chat. O iFood oferece um widget (chat com o cliente,
 // notificações, rastreio) que roda num iframe dele, preso ao canto da tela. A API

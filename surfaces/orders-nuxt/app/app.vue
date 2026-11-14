@@ -50,7 +50,7 @@ const surface = computed(() =>
 );
 // O widget do iFood (chat com o cliente) mora na casca, não no detalhe: a mensagem
 // nova do cliente aparece no botão do iFood em qualquer tela do Gestor. Só sobe
-// depois da trava liberar a página, e só se a loja ligou (DEV-2026-018).
+// depois da trava liberar a página, e só se a loja ligou (DEV-2026-019).
 const ifoodWidget = useIFoodWidget();
 watch(
   () => surface.value.showPage,

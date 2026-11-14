@@ -470,7 +470,7 @@ class Shop(models.Model):
     )
 
     # ── iFood: o widget oficial (chat com o cliente) no Gestor de pedidos ──
-    # Decisão do dono, 12/11/2026 (DEV-2026-018, issue #2321): a API do iFood não
+    # Decisão do dono, 12/11/2026 (DEV-2026-019, issue #2321): a API do iFood não
     # tem chat; o caminho do iFood é o widget embutido. Vazio, o Gestor não carrega
     # nada do iFood no navegador.
     ifood_widget_id = models.CharField(
