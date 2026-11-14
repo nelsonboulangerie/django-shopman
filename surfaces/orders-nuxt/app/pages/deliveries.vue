@@ -240,15 +240,14 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
 </script>
 
 <template>
-  <div class="flex min-h-dvh flex-col lg:h-dvh" data-deliveries-page>
-    <header class="flex items-center gap-3 border-b border-default px-4 py-3 lg:px-6">
-      <div class="min-w-0 flex-1">
-        <h1 class="op-title font-semibold text-highlighted">Entregas</h1>
-        <p class="op-body text-muted">
+  <main class="flex min-h-0 flex-1 flex-col" data-deliveries-page>
+    <OperatorPageHeader title="Entregas" :filters-wrap="false">
+      <template #status>
+        <span class="op-micro text-muted">
           {{ waiting.length }} aguardando · {{ editingCount }} editando · {{ rides.length }} {{ rides.length === 1 ? "corrida" : "corridas" }}
-        </p>
-      </div>
-    </header>
+        </span>
+      </template>
+    </OperatorPageHeader>
 
     <OperatorScreenState v-if="error && !data" state="error" what="as entregas" class="m-4" />
     <div v-else-if="pending && !data" class="grid flex-1 place-items-center p-6"><NuxtSkeleton class="h-64 w-full max-w-3xl" /></div>
@@ -260,7 +259,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
       class="m-6"
     />
 
-    <div v-else-if="data" class="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-2">
+    <div v-else-if="data" class="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)]">
       <div class="h-[38dvh] shrink-0 border-b border-default lg:h-auto lg:border-r lg:border-b-0">
         <CourierDeliveriesMap
           v-if="origin"
@@ -270,6 +269,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
           :live="mapLive"
           :active="active"
           :live-opacity="0.5"
+          :maps-key="data.maps_key"
           @toggle="toggle"
           @fill="fill"
           @open="openFromMap"
@@ -401,6 +401,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
           v-if="openRide && data"
           :ride="openRide"
           :origin="data.origin"
+          :maps-key="data.maps_key"
           :now="now"
           :busy="busyRide === openRide.key"
           @close="close"
@@ -409,5 +410,5 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
         />
       </template>
     </NuxtSlideover>
-  </div>
+  </main>
 </template>

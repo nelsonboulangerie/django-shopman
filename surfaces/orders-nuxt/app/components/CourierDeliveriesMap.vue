@@ -4,14 +4,19 @@
 //
 // Três camadas, do fundo para a frente (dono, 14/11):
 //  · CHAMADA (na rua): rota e borda da parada na cor da corrida, em traço CONTÍNUO
-//    (variante: a 50%, para comparar). O entregador é o único cheio de cor: moto
-//    sobre fundo sólido, com o número (dono, 14/11, terceira rodada).
+//    a 50%. O entregador é o único cheio de cor: moto sobre fundo sólido, com o
+//    número (dono, 14/11, terceira rodada).
 //  · EDITANDO: rota e borda da parada na cor da corrida, PONTILHADAS. A ativa
 //    forte, as outras esmaecidas.
 //  · AGUARDANDO: o pedido sem corrida, em branco com o código. Tocar põe na ativa.
-// Desenho próprio (SVG sobre uma trama de ruas): sem mapa de terceiros por ora.
+//
+// O fundo é o Google Maps de verdade (dono, 14/11: "Pq não mostra um mapa de
+// verdade?"), com a chave pública do navegador. As camadas acima são as nossas,
+// presas ao mapa por um OverlayView: arrastar e dar zoom levam tudo junto. Sem chave,
+// ou se o Google recusar, o desenho próprio (trama de ruas) fica no lugar.
 import { rideColor } from "~/presentation/ridePalette";
 import { metroLines } from "~/presentation/metroLines";
+import type { GMap, GOverlayView } from "~/composables/useGoogleMap";
 
 export interface MapPoint {
   ref: string;
@@ -29,8 +34,9 @@ export interface MapLiveRide {
   /** Ainda procurando entregador: a rota aparece, a moto não. */
   searching?: boolean;
 }
+type LatLng = { latitude: number; longitude: number };
 const props = defineProps<{
-  origin: { latitude: number; longitude: number };
+  origin: LatLng;
   waiting: MapPoint[];
   building: { number: number; stops: MapPoint[] }[];
   live: MapLiveRide[];
@@ -39,43 +45,125 @@ const props = defineProps<{
   liveOpacity?: number;
   /** Sem a legenda (o mapa pequeno do detalhe). */
   bare?: boolean;
+  /** A chave pública do Google Maps; vazia, o desenho próprio. */
+  mapsKey?: string;
 }>();
 const emit = defineEmits<{ toggle: [ref: string]; fill: [place: string]; open: [number: number] }>();
 
 const liveAlpha = computed(() => props.liveOpacity ?? 0.5);
 
-const everyPoint = computed(() => [
+const everyPoint = computed<LatLng[]>(() => [
   props.origin,
   ...props.waiting,
   ...props.building.flatMap((r) => r.stops),
   ...props.live.flatMap((r) => [...r.stops, ...(r.courier ? [r.courier] : [])]),
 ]);
+
+// ── o desenho próprio: a caixa do mapa vira o retângulo que cabe todos os pontos ──
 const bounds = computed(() => {
   const lats = everyPoint.value.map((p) => p.latitude), lngs = everyPoint.value.map((p) => p.longitude);
   const dLat = Math.max(...lats) - Math.min(...lats) || 0.01, dLng = Math.max(...lngs) - Math.min(...lngs) || 0.01;
   return { minLat: Math.min(...lats) - dLat * 0.12, maxLat: Math.max(...lats) + dLat * 0.14, minLng: Math.min(...lngs) - dLng * 0.1, maxLng: Math.max(...lngs) + dLng * 0.1 };
 });
-function xy(p: { latitude: number; longitude: number }) {
-  const b = bounds.value;
-  return { x: ((p.longitude - b.minLng) / (b.maxLng - b.minLng)) * 100, y: (1 - (p.latitude - b.minLat) / (b.maxLat - b.minLat)) * 100 };
-}
-// As linhas em pixels, para correrem lado a lado onde se encontram (metrô).
 const box = ref<HTMLElement | null>(null);
 const size = ref({ w: 1, h: 1 });
 let observer: ResizeObserver | null = null;
+
+// ── o mapa de verdade ──
+const canvas = ref<HTMLElement | null>(null);
+const layer = ref<HTMLElement | null>(null);
+/** O painel do Google onde a nossa camada mora; null = desenho próprio. */
+const pane = shallowRef<HTMLElement | null>(null);
+/** Sobe a cada `draw()` do Google (zoom, tamanho): as posições se recalculam. */
+const tick = ref(0);
+let map: GMap | null = null;
+let overlay: GOverlayView | null = null;
+let fitted = "";
+const google = useGoogleMap();
+let mapLibs: Awaited<ReturnType<typeof google.load>> | null = null;
+const real = computed(() => Boolean(pane.value) && !google.refused.value);
+
+function px(p: LatLng): { x: number; y: number } {
+  if (real.value && overlay) {
+    void tick.value;
+    const q = overlay.getProjection()?.fromLatLngToDivPixel({ lat: p.latitude, lng: p.longitude });
+    if (q) return { x: q.x, y: q.y };
+  }
+  const b = bounds.value;
+  return {
+    x: ((p.longitude - b.minLng) / (b.maxLng - b.minLng)) * size.value.w,
+    y: (1 - (p.latitude - b.minLat) / (b.maxLat - b.minLat)) * size.value.h,
+  };
+}
+
+function fit() {
+  if (!map || !mapLibs) return;
+  const key = everyPoint.value.map((p) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`).sort().join("|");
+  if (key === fitted) return;
+  fitted = key;
+  const area = new mapLibs.core.LatLngBounds();
+  for (const p of everyPoint.value) area.extend({ lat: p.latitude, lng: p.longitude });
+  map.fitBounds(area, props.bare ? 28 : 56);
+}
+async function mountRealMap() {
+  if (!props.mapsKey || !canvas.value) return;
+  try {
+    mapLibs = await google.load(props.mapsKey);
+  } catch {
+    return; // fica o desenho próprio
+  }
+  if (!canvas.value) return;
+  const libs = mapLibs;
+  map = new libs.maps.Map(canvas.value, {
+    center: { lat: props.origin.latitude, lng: props.origin.longitude },
+    zoom: 14,
+    disableDefaultUI: true,
+    zoomControl: !props.bare,
+    clickableIcons: false,
+    keyboardShortcuts: false,
+    gestureHandling: "greedy",
+    // Sem comércio, ônibus e rótulos de lugar: o que importa são as nossas paradas.
+    styles: [
+      { featureType: "poi", stylers: [{ visibility: "off" }] },
+      { featureType: "transit", stylers: [{ visibility: "off" }] },
+    ],
+  });
+  const view = new libs.maps.OverlayView();
+  view.onAdd = () => {
+    pane.value = view.getPanes()?.overlayMouseTarget ?? null;
+  };
+  view.draw = () => {
+    tick.value++;
+  };
+  view.onRemove = () => {
+    pane.value = null;
+  };
+  overlay = view;
+  view.setMap(map);
+  fit();
+}
+watch(layer, (el) => {
+  if (el && mapLibs) mapLibs.maps.OverlayView.preventMapHitsAndGesturesFrom(el);
+});
+watch(everyPoint, () => fit());
+
 onMounted(() => {
   observer = new ResizeObserver(([entry]) => {
     if (entry) size.value = { w: entry.contentRect.width, h: entry.contentRect.height };
   });
   if (box.value) observer.observe(box.value);
+  void mountRealMap();
 });
-onBeforeUnmount(() => observer?.disconnect());
+onBeforeUnmount(() => {
+  observer?.disconnect();
+  overlay?.setMap(null);
+  overlay = null;
+  map = null;
+});
+
+// As linhas em pixels, para correrem lado a lado onde se encontram (metrô).
 const GAP = 5; // 4 px de traço + 1 de respiro
 const lines = computed(() => {
-  const px = (p: { latitude: number; longitude: number }) => {
-    const q = xy(p);
-    return { x: (q.x / 100) * size.value.w, y: (q.y / 100) * size.value.h };
-  };
   const all = [
     ...props.live.map((r) => ({ id: r.number, points: [props.origin, ...r.stops].map(px), live: true })),
     ...props.building.filter((r) => r.stops.length).map((r) => ({ id: r.number, points: [props.origin, ...r.stops].map(px), live: false })),
@@ -87,13 +175,16 @@ const lines = computed(() => {
     d: l.points.map((p, k) => `${k ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" "),
   }));
 });
-const at = (p: { latitude: number; longitude: number }) => ({ left: `${xy(p).x}%`, top: `${xy(p).y}%` });
+const at = (p: LatLng) => {
+  const q = px(p);
+  return { left: `${q.x}px`, top: `${q.y}px` };
+};
 
 // O bairro escrito uma vez, abaixo dos seus pedidos que ainda esperam ou montam.
 const places = computed(() => {
   const groups = new Map<string, { x: number; n: number; y: number }>();
   for (const p of [...props.waiting, ...props.building.flatMap((r) => r.stops)]) {
-    const q = xy(p), g = groups.get(p.place) || { x: 0, n: 0, y: 0 };
+    const q = px(p), g = groups.get(p.place) || { x: 0, n: 0, y: 0 };
     groups.set(p.place, { x: g.x + q.x, n: g.n + 1, y: Math.max(g.y, q.y) });
   }
   return [...groups.entries()].map(([place, g]) => ({ place, x: g.x / g.n, y: g.y }));
@@ -101,8 +192,9 @@ const places = computed(() => {
 </script>
 
 <template>
-  <div ref="box" class="relative size-full overflow-hidden bg-[#f3ede3]" data-deliveries-map>
-    <svg class="absolute inset-0 size-full" aria-hidden="true">
+  <div ref="box" class="relative size-full overflow-hidden bg-[#f3ede3]" data-deliveries-map :data-map-real="real ? '' : undefined">
+    <div ref="canvas" class="absolute inset-0" :class="real ? '' : 'invisible'" />
+    <svg v-if="!real" class="absolute inset-0 size-full" aria-hidden="true">
       <defs>
         <pattern id="deliv-streets" width="46" height="46" patternUnits="userSpaceOnUse" patternTransform="rotate(-12)">
           <path d="M46 0H0V46" fill="none" stroke="#fff" stroke-width="5" />
@@ -112,8 +204,12 @@ const places = computed(() => {
       <rect width="100%" height="100%" fill="url(#deliv-streets)" />
     </svg>
 
+    <!-- A nossa camada: no painel do Google quando o mapa é o de verdade (anda com
+         ele), por cima da trama quando não. As posições são em pixels nos dois. -->
+    <Teleport defer :to="pane ?? box" :disabled="!real">
+    <div ref="layer" :class="real ? 'absolute top-0 left-0 size-0 overflow-visible' : 'absolute inset-0'">
     <!-- as linhas: lado a lado onde se encontram, como metrô; nenhuma some -->
-    <svg class="absolute inset-0 size-full" aria-hidden="true">
+    <svg class="pointer-events-none absolute top-0 left-0 size-px overflow-visible" aria-hidden="true">
       <path
         v-for="l in lines"
         :key="`${l.live ? 'l' : 'b'}${l.id}`"
@@ -134,7 +230,7 @@ const places = computed(() => {
       v-for="label in places"
       :key="label.place"
       class="absolute -translate-x-1/2 translate-y-5"
-      :style="{ left: `${label.x}%`, top: `${label.y}%` }"
+      :style="{ left: `${label.x}px`, top: `${label.y}px` }"
     >
       <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Pôr ${label.place} na corrida ${active}`" @click="emit('fill', label.place)">
         <span class="whitespace-nowrap rounded-full bg-white/85 px-2 py-0.5 op-micro font-semibold text-toned shadow-sm transition hover:bg-white hover:text-highlighted">{{ label.place }}</span>
@@ -190,8 +286,11 @@ const places = computed(() => {
       </span>
     </template>
 
+    </div>
+    </Teleport>
+
     <!-- legenda pela FORMA, nunca pela cor: a cor é sempre a da corrida -->
-    <div v-if="!bare" class="absolute bottom-3 left-3 hidden flex-wrap sm:flex items-center gap-x-3 gap-y-1 rounded-md bg-white/90 px-2.5 py-1.5 op-micro text-toned shadow-sm" data-map-legend>
+    <div v-if="!bare" class="absolute top-3 left-3 hidden flex-wrap sm:flex items-center gap-x-3 gap-y-1 rounded-md bg-white/90 px-2.5 py-1.5 op-micro text-toned shadow-sm" data-map-legend>
       <span class="flex items-center gap-1"><span class="size-3.5 rounded-full border-2 bg-white" style="border-color:#b9a888" />Aguardando</span>
       <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" stroke="#5f6670" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><span class="size-3.5 rounded-full border-[3px] border-dotted bg-white" style="border-color:#5f6670" />Editando</span>
       <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" stroke="#5f6670" stroke-width="3" stroke-linecap="round" /></svg><span class="size-3.5 rounded-full border-[3px] bg-white" style="border-color:#5f6670" />Corrida</span>

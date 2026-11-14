@@ -25,6 +25,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Order
 
+from shopman.shop.google_maps_credentials import browser_api_key
 from shopman.shop.projections.types import Action
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,9 @@ class DeliveriesProjection:
     machines: tuple[dict, ...] = field(default_factory=tuple)
     #: A integração com a TaOn está ligada (sem ela, a página só informa).
     courier_on: bool = True
+    #: A chave PÚBLICA do Google Maps (a do navegador, a mesma do PDV e da loja):
+    #: com ela o mapa é o de verdade; vazia, o desenho próprio fica no lugar.
+    maps_key: str = ""
 
 
 def _point(address: dict) -> tuple[float | None, float | None]:
@@ -301,6 +305,7 @@ def build_deliveries(*, user=None) -> DeliveriesProjection:
         max_stops=courier.MAX_RIDE_STOPS,
         machines=tuple({"ref": PREFIX + str(device.ref), "label": device.label} for device in devices),
         courier_on=get_adapter("courier") is not None,
+        maps_key=browser_api_key(),
     )
 
 
