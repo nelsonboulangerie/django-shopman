@@ -15,16 +15,16 @@ export interface RideColor {
   fg: string;
 }
 
-// Como linhas de metrô (dono, 14/11): cada cor num matiz bem longe das outras, e a
-// mais clara (amarelo) longe da mais escura (preto). Matizes: laranja 21°, amarelo 48°,
-// verde 142°, azul 223°, magenta 327°, mais o preto, sem matiz.
+// Como linhas de metrô (dono, 14/11): cada cor num matiz bem longe das outras.
+// Matizes: azul 223°, verde 142°, amarelo 48°, laranja 21°, magenta 327°, mais o preto,
+// sem matiz. A ordem de uso é a do dono.
 export const RIDE_PALETTE: readonly RideColor[] = [
-  { name: "Preto", bg: "#111111", fg: "#ffffff" },
-  { name: "Amarelo", bg: "#ffd000", fg: "#000000" },
   { name: "Azul", bg: "#0047ff", fg: "#ffffff" },
-  { name: "Laranja", bg: "#ff5a00", fg: "#000000" },
   { name: "Verde", bg: "#00a03c", fg: "#000000" },
+  { name: "Amarelo", bg: "#ffd000", fg: "#000000" },
+  { name: "Laranja", bg: "#ff5a00", fg: "#000000" },
   { name: "Magenta", bg: "#e4007c", fg: "#ffffff" },
+  { name: "Preto", bg: "#111111", fg: "#ffffff" },
 ];
 
 export function rideColor(index: number): RideColor {
