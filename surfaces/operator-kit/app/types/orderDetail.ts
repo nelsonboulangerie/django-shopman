@@ -33,6 +33,8 @@ export interface OrderDetailItem {
   qty: string;
   unit_price_display: string;
   total_display: string;
+  /** Instrução do item (observação do cliente, complementos): a mesma do ticket da cozinha. */
+  notes?: string;
 }
 
 /** Uma linha de desconto: "Cupom BEMVINDO" e "−R$ 5,00" (itens a preço de tabela). */

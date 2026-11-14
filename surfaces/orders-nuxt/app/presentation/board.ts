@@ -353,6 +353,25 @@ export function zoneEmptyText(key: ZoneView["key"]): string {
 
 /** Group the two-zone queue projection into the three action columns the board
  *  renders. Expedition merges pickup + delivery (ready) + delivery-in-transit. */
+/** Prontos em duas partes (dono, 13/11/2026): "A coletar" (no balcão, esperando o
+ *  cliente ou o entregador) e "Saiu para entrega" (em trânsito, o controle do que
+ *  ainda está na rua). Retirado pelo cliente vai direto para o Histórico. A ordem de
+ *  cada parte é a que veio; o rótulo vai no primeiro cartão de cada uma. */
+export interface ExitRow {
+  card: OrderCardProjection;
+  /** O rótulo da parte que começa neste cartão; vazio no resto. */
+  heading: string;
+}
+
+export function exitRows(cards: OrderCardProjection[]): ExitRow[] {
+  const toCollect = cards.filter((card) => card.status !== "dispatched");
+  const onRoad = cards.filter((card) => card.status === "dispatched");
+  return [
+    ...toCollect.map((card, i) => ({ card, heading: i === 0 ? "A coletar" : "" })),
+    ...onRoad.map((card, i) => ({ card, heading: i === 0 ? "Saiu para entrega" : "" })),
+  ];
+}
+
 export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {
   const expedition = [
     ...queue.expedition_pickup,
@@ -362,24 +381,24 @@ export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {
   return [
     {
       key: "intake",
-      title: "Entrada",
-      subtitle: "Novos: aceitar ou recusar",
+      title: "Novos",
+      subtitle: "Aceitar ou recusar",
       icon: "lucide:inbox",
       cards: queue.intake,
       count: queue.intake.length,
     },
     {
       key: "prep",
-      title: "Preparo",
-      subtitle: "Confirmados e em preparo",
+      title: "Em preparo",
+      subtitle: "Confirmados e na cozinha",
       icon: "lucide:cooking-pot",
       cards: queue.prep,
       count: queue.prep.length,
     },
     {
       key: "expedition",
-      title: "Saída",
-      subtitle: "Retirada, coleta e entrega",
+      title: "Prontos",
+      subtitle: "A coletar e saiu para entrega",
       icon: "lucide:package-check",
       cards: expedition,
       count: expedition.length,

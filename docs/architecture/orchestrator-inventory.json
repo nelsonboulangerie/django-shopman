@@ -3711,9 +3711,17 @@
         "notification.push-handler"
       ],
       "responsibilities": [
-        "composição"
+        "composição",
+        "infraestrutura"
       ],
-      "support_claims": []
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_CRITICAL_ORDER_VIBRATION"
+          ]
+        }
+      ]
     },
     {
       "path": "shopman/shop/handlers/payment_refund.py",
@@ -3964,6 +3972,7 @@
             "_ifood_cancellation_pending",
             "_mark_phase_complete",
             "_mark_preparing_after_physical_work_dispatch",
+            "_notify_new_order_awaiting_acceptance",
             "_on_accepted",
             "_on_cancelled",
             "_on_commit",
@@ -3982,6 +3991,7 @@
             "_record_availability_decision",
             "_record_coupon_use",
             "_release_coupon_use",
+            "_resolve_acceptance_alerts",
             "_schedule_confirmation_timeout",
             "_schedule_preorder_activation",
             "_schedule_stale_alert_before_deadline",
@@ -9923,11 +9933,14 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_LOGISTICS_ALIASES",
+            "_LOGISTICS_CODES",
             "_alert_patched",
             "_alert_unhandled_event",
             "_apply_patch",
             "_brl",
             "_cfg",
+            "_collected_by_ifood_courier",
             "_describe_patch",
             "_fiscal_authorized_explanation",
             "_money_q",
@@ -9940,6 +9953,7 @@
             "_process_placed",
             "_process_remote_progress",
             "_reconcile_locked",
+            "_record_logistics",
             "_record_poll_success",
             "_record_remote",
             "_refresh_financials",
@@ -10143,6 +10157,7 @@
             "_cfg",
             "_compose_address",
             "_item_preparation_notes",
+            "_map_additional_fees",
             "_map_benefits",
             "_map_customer",
             "_map_delivery",
@@ -13259,6 +13274,33 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/order_acceptance_alerts.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-order-acceptance-alerts"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_canceller",
+            "_clock",
+            "_close",
+            "_notify",
+            "_order_label",
             "logger"
           ]
         }

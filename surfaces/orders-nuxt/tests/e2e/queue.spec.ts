@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 // A Fila "Precisa de você" (V4-G4): o desktop abre nela; só o fato humano é botão, o
-// resto vira número e a Lista (a tabela) segue a um toque e na tecla L.
+// resto vira número e a Tabela segue a um toque e na tecla L.
 test.use({ viewport: { width: 1440, height: 900 } });
 
 test("o desktop abre na Fila, por urgência, com a coluna de consciência", async ({ page }) => {
@@ -27,14 +27,14 @@ test("o desktop abre na Fila, por urgência, com a coluna de consciência", asyn
   await expect(queue.locator("[data-queue-menu]")).toContainText("iFood");
 });
 
-test("L abre a Lista e G volta para a Grade", async ({ page }) => {
+test("L abre a Tabela e G volta para a Fila", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("[data-queue-view]")).toBeVisible();
   await page.keyboard.press("l");
   await expect(page.locator("[data-supervision-table]")).toBeVisible();
   await page.keyboard.press("g");
   await expect(page.locator("[data-queue-view]")).toBeVisible();
-  await page.getByRole("tab", { name: "Lista" }).click();
+  await page.getByRole("tab", { name: "Tabela" }).click();
   await expect(page.locator("[data-supervision-table]")).toBeVisible();
 });
 
@@ -43,7 +43,7 @@ test("tablet em pé segue com o quadro em abas (a Fila é do desktop)", async ({
   // as abas do celular, uma etapa por vez (74932fb8f, 07/10/2026).
   await page.setViewportSize({ width: 820, height: 1180 });
   await page.goto("/");
-  await expect(page.getByRole("tab", { name: "Preparo 4" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Em preparo 4" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("Ana · Loja online", { exact: true })).toBeVisible();
   await expect(page.locator("[data-board-columns]")).toHaveCount(0);
   await expect(page.locator("[data-queue-view]")).toHaveCount(0);

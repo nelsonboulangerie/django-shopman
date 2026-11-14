@@ -84,14 +84,15 @@ describe("G05: a cópia da Fila não se corta", () => {
   });
 });
 
-describe("Grade G | Lista L, dois segmentos genéricos (dono, 07/10/2026)", () => {
-  it("a Lista é a tabela densa; as colunas saem do alternador", () => {
+describe("Fila · Quadro · Tabela, um controle só (dono, 13/11/2026)", () => {
+  it("os três modos no alternador; a Fila só onde cabe", () => {
     const page = readFileSync(new URL("../app/pages/index.vue", import.meta.url), "utf8");
     const items = page.slice(page.indexOf("const viewTabs"), page.indexOf("function pickView"));
     const control = page.slice(page.lastIndexOf("<NuxtTabs", page.indexOf("data-view-switch")), page.indexOf("/>", page.indexOf("data-view-switch")));
-    expect(items).toContain('value: "queue", label: "Grade"');
-    expect(items).toContain('value: "table", label: "Lista"');
-    expect(items).not.toContain('value: "board"');
+    expect(items).toContain('value: "queue", label: "Fila"');
+    expect(items).toContain('value: "board", label: "Quadro"');
+    expect(items).toContain('value: "table", label: "Tabela"');
+    expect(items).toContain("queueAvailable.value");
     expect(control).toContain(':items="viewTabs"');
     expect(control).toContain('@update:model-value="pickView"');
   });

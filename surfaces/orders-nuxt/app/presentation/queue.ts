@@ -70,12 +70,13 @@ export function minutesLabel(seconds: number): string {
   return rest ? `${Math.floor(m / 60)}h ${rest} min` : `${Math.floor(m / 60)}h`;
 }
 
-/** O tom do número: passou da meta é atraso; a partir de 80% dela, atenção. */
+/** O tom do número, como o iFood (dono, 13/11/2026): passou da meta é atraso; a partir
+ *  da metade dela, atenção. */
 export function goalTone(seconds: number, goalMinutes: number): QueueTone {
   if (!goalMinutes) return timeTone("on_time");
   const ratio = seconds / (goalMinutes * 60);
   if (ratio >= 1) return timeTone("late");
-  if (ratio >= 0.8) return timeTone("warning");
+  if (ratio >= 0.5) return timeTone("warning");
   return timeTone("on_time");
 }
 
@@ -476,9 +477,15 @@ export function workingOrders(
         stations,
         seconds,
         ageLabel: minutesLabel(seconds),
-        summary: stations.length
-          ? `${done} de ${stations.length} ${stations.length === 1 ? "pronta" : "prontas"}`
-          : "Sem estação",
+        // Com entregador do iFood, onde ele está entra na mesma linha (12/11/2026).
+        summary: [
+          stations.length
+            ? `${done} de ${stations.length} ${stations.length === 1 ? "pronta" : "prontas"}`
+            : "Sem estação",
+          card.ifood_logistics_label,
+        ]
+          .filter(Boolean)
+          .join(" · "),
       };
     })
     .sort((a, b) => b.seconds - a.seconds);
@@ -492,7 +499,10 @@ export function workingOrders(
         seconds,
         ageLabel: minutesLabel(seconds),
         summary:
-          card.courier_status_label || card.equipment_label || "A caminho",
+          card.ifood_logistics_label ||
+          card.courier_status_label ||
+          card.equipment_label ||
+          "A caminho",
       };
     })
     .sort((a, b) => b.seconds - a.seconds);
