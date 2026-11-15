@@ -8,7 +8,8 @@
 //    número (dono, 14/11, terceira rodada).
 //  · EDITANDO: rota e borda da parada na cor da corrida, PONTILHADAS. A ativa
 //    forte, as outras esmaecidas.
-//  · AGUARDANDO: o pedido sem corrida, em branco com o código. Tocar põe na ativa.
+//  · AGUARDANDO: o pedido sem corrida, QUADRADO branco com o código (a parada de
+//    corrida é redonda e numerada; dono, 15/11: as duas estavam parecidas). Tocar põe na ativa.
 //
 // O fundo é o Google Maps de verdade (dono, 14/11: "Pq não mostra um mapa de
 // verdade?"), com a chave pública do navegador. As camadas acima são as nossas,
@@ -264,10 +265,10 @@ const places = computed(() => {
       </span>
     </template>
 
-    <!-- aguardando: brancos com o código -->
+    <!-- aguardando: quadrados brancos com o código (parada de corrida é redonda) -->
     <span v-for="o in waiting" :key="o.ref" class="absolute z-10 -translate-x-1/2 -translate-y-1/2" :style="at(o)">
       <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Pedido ${o.code}, ${o.place}`" @click="emit('toggle', o.ref)">
-        <span class="relative grid size-9 place-items-center rounded-full border-2 border-[#b9a888] bg-white op-micro font-semibold tabular-nums text-toned shadow-md transition hover:scale-110">
+        <span class="relative grid h-9 min-w-9 place-items-center rounded-lg border-2 border-[#b9a888] px-1.5 bg-white op-micro font-semibold tabular-nums text-toned shadow-md transition hover:scale-110">
           {{ o.code }}
           <span v-if="o.preparing" class="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-white text-toned ring-1 ring-default" title="Em preparo"><NuxtIcon name="i-lucide-chef-hat" class="size-2.5" /></span>
         </span>
@@ -291,7 +292,7 @@ const places = computed(() => {
 
     <!-- legenda pela FORMA, nunca pela cor: a cor é sempre a da corrida -->
     <div v-if="!bare" class="absolute inset-x-3 top-3 mx-auto hidden w-fit flex-wrap justify-center sm:flex items-center gap-x-3 gap-y-1 rounded-md bg-white/90 px-2.5 py-1.5 op-micro text-toned shadow-sm" data-map-legend>
-      <span class="flex items-center gap-1"><span class="size-3.5 rounded-full border-2 bg-white" style="border-color:#b9a888" />Aguardando</span>
+      <span class="flex items-center gap-1"><span class="h-3.5 w-4 rounded-[3px] border-2 bg-white" style="border-color:#b9a888" />Aguardando</span>
       <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" stroke="#5f6670" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><span class="size-3.5 rounded-full border-[3px] border-dotted bg-white" style="border-color:#5f6670" />Editando</span>
       <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" stroke="#5f6670" stroke-width="3" stroke-linecap="round" /></svg><span class="size-3.5 rounded-full border-[3px] bg-white" style="border-color:#5f6670" />Corrida</span>
       <span class="flex items-center gap-1"><span class="grid h-4 w-6 place-items-center rounded-full bg-[#5f6670] text-white"><NuxtIcon name="i-lucide-bike" class="size-3" /></span>Entregador</span>
