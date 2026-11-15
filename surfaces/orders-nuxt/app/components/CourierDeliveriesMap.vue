@@ -290,7 +290,7 @@ const places = computed(() => {
     </Teleport>
 
     <!-- legenda pela FORMA, nunca pela cor: a cor é sempre a da corrida -->
-    <div v-if="!bare" class="absolute top-3 left-3 hidden max-w-[calc(100%-1.5rem)] flex-wrap sm:flex items-center gap-x-3 gap-y-1 rounded-md bg-white/90 px-2.5 py-1.5 op-micro text-toned shadow-sm" data-map-legend>
+    <div v-if="!bare" class="absolute inset-x-3 top-3 mx-auto hidden w-fit flex-wrap justify-center sm:flex items-center gap-x-3 gap-y-1 rounded-md bg-white/90 px-2.5 py-1.5 op-micro text-toned shadow-sm" data-map-legend>
       <span class="flex items-center gap-1"><span class="size-3.5 rounded-full border-2 bg-white" style="border-color:#b9a888" />Aguardando</span>
       <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" stroke="#5f6670" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><span class="size-3.5 rounded-full border-[3px] border-dotted bg-white" style="border-color:#5f6670" />Editando</span>
       <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" stroke="#5f6670" stroke-width="3" stroke-linecap="round" /></svg><span class="size-3.5 rounded-full border-[3px] bg-white" style="border-color:#5f6670" />Corrida</span>
