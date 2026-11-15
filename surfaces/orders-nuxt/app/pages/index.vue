@@ -727,11 +727,11 @@ const view = computed(() =>
 // primeiro; depois Fila e Tabela. O nome fica escondido na tela (leitor de tela e
 // teste o acham) e aparece na dica: o NuxtTabs não repassa aria-label do item.
 const viewTabs = computed(() => [
-  { value: "board", icon: "i-lucide-columns-3", label: "Painel", title: "Painel" },
+  { value: "board", icon: "i-lucide-columns-3", title: "Painel" },
   ...(queueAvailable.value
-    ? [{ value: "queue", icon: "i-lucide-rows-3", label: "Fila", title: "Fila" }]
+    ? [{ value: "queue", icon: "i-lucide-rows-3", title: "Fila" }]
     : []),
-  { value: "table", icon: "i-lucide-table-2", label: "Tabela", title: "Tabela" },
+  { value: "table", icon: "i-lucide-table-2", title: "Tabela" },
 ]);
 function pickView(value: string | number) {
   const next = String(value);
@@ -1668,11 +1668,14 @@ function compactClear() {
             :items="viewTabs"
             :content="false"
             variant="pill"
-            :ui="{ label: 'sr-only' }"
             aria-label="Visão do Gestor"
             data-view-switch
             @update:model-value="pickView"
-          />
+          >
+            <!-- o nome, só para o leitor de tela: o NuxtTabs não repassa aria-label do
+                 item, e o rótulo visível ocuparia espaço. -->
+            <template #trailing="{ item }"><span class="sr-only">{{ item.title }}</span></template>
+          </NuxtTabs>
           <!-- Exibir (linhas e colunas) só existe com a Tabela na tela. -->
           <OperatorTableView v-if="view === 'table'" table-key="orders-queue" />
         </template>
