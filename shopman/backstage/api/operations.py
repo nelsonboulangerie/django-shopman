@@ -2416,6 +2416,29 @@ class OrderQueueView(OperationalObservationMixin, APIView):
         return Response(read_data(queue=projection_data(queue), device_agent=_station_device_agent(request)))
 
 
+class DeliveriesView(APIView):
+    """A seção Entregas do Gestor: o que aguarda entregador e as corridas vivas
+    da TaOn, com as coordenadas para o mapa (``projections.deliveries``)."""
+
+    permission_classes = [HasOrderBoardAccess]
+
+    def get(self, request):
+        from shopman.backstage.projections.deliveries import build_deliveries
+
+        return Response(projection_data(build_deliveries(user=request.user)))
+
+
+class DeliveriesCountView(APIView):
+    """O selo de Entregas no menu: ``{waiting}``, entregas do dia sem corrida chamada."""
+
+    permission_classes = [HasOrderBoardAccess]
+
+    def get(self, request):
+        from shopman.backstage.projections.deliveries import deliveries_waiting_count
+
+        return Response({"waiting": deliveries_waiting_count()})
+
+
 class OrderRailCountsView(APIView):
     """Os selos do rail fora do quadro (G26): ``{intake, exit}``, a mesma régua do quadro.
     Leve de propósito: o Catálogo, os Clientes e os Canais leem isto em vez do quadro."""
