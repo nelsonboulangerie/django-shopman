@@ -19,6 +19,7 @@ const props = defineProps<{
   origin: DeliveriesProjection["origin"];
   now: number;
   busy?: boolean;
+  mapsKey?: string;
 }>();
 const emit = defineEmits<{ close: []; back: []; cancel: [] }>();
 const tone = computed(() => rideColor(props.ride.number - 1));
@@ -63,6 +64,7 @@ const at = (iso: string) => (iso ? clockHHMM(Date.parse(iso)) : "");
           :live="[{ number: ride.number, stops: located, courier: ride.position }]"
           :active="ride.number"
           :live-opacity="0.5"
+          :maps-key="mapsKey"
           bare
         />
         <p v-if="ride.position" class="absolute right-2 bottom-2 rounded-md bg-white/90 px-2 py-1 op-micro text-toned shadow-sm">Posição pela TaOn</p>

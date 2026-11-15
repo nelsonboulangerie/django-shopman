@@ -1220,7 +1220,7 @@ export interface DeliveryRideProjection {
   cancel_action: Action | null;
 }
 
-/** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True) */
+/** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, maps_key: 'str' = '') */
 export interface DeliveriesProjection {
   origin: DeliveryPointProjection | null;
   waiting: DeliveryStopProjection[];
@@ -1228,4 +1228,5 @@ export interface DeliveriesProjection {
   max_stops: number;
   machines: Record<string, unknown>[];
   courier_on: boolean;
+  maps_key: string;
 }

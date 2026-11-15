@@ -7,10 +7,13 @@
 // vazio apaga a autorização do dispositivo (documentação do widget).
 // A autorização é do iFood, por dispositivo, no Portal do Parceiro: o servidor
 // não vê token nenhum.
+import { measureBottomObstruction } from "../../../operator-kit/app/composables/useNextFocus";
 import {
   IFOOD_WIDGET_INIT_TIMEOUT_MS,
+  IFOOD_WIDGET_PANEL_MIN_HEIGHT,
   IFOOD_WIDGET_SCRIPT,
   ifoodWidgetInit,
+  ifoodWidgetLift,
   type IFoodWidgetState,
 } from "~/presentation/ifoodWidget";
 import type { IFoodWidgetProjection } from "~/types/ifoodWidget";
@@ -29,6 +32,29 @@ declare global {
 }
 
 let started: Promise<void> | null = null;
+
+// O BOTÃO DO IFOOD NÃO TAMPA A BASE (dono, 14/11: "está tampando a barra inferior").
+// O widget fica preso ao canto a uma margem fixa do Portal; a base do Gestor muda
+// por tela (barra das seções, barra de ação, área segura do celular). A camada do
+// widget (`.embeddables-focus-wrapper`) leva o iframe e as regiões de toque dentro
+// dela; subir a camada inteira com `transform` sobe os dois juntos, e o toque
+// continua no lugar do desenho. A medida da base é a mesma do próximo foco
+// (`data-focus-obstruction`).
+const LIFT_EVERY_MS = 400;
+function keepAboveTheBase(): void {
+  let last = -1;
+  window.setInterval(() => {
+    const layer = document.querySelector<HTMLElement>(".embeddables-focus-wrapper");
+    if (!layer) return;
+    const panelOpen = [...layer.querySelectorAll<HTMLElement>(".click-rect")].some(
+      (rect) => rect.offsetHeight > IFOOD_WIDGET_PANEL_MIN_HEIGHT,
+    );
+    const lift = ifoodWidgetLift(measureBottomObstruction(), panelOpen);
+    if (lift === last) return;
+    last = lift;
+    layer.style.transform = lift ? `translateY(-${lift}px)` : "";
+  }, LIFT_EVERY_MS);
+}
 
 function loadScript(): Promise<IFoodWidgetApi> {
   if (window.iFoodWidget) return Promise.resolve(window.iFoodWidget);
@@ -80,6 +106,7 @@ export function useIFoodWidget() {
         const widget = await loadScript();
         await widget.init(config);
         state.value = "ready";
+        keepAboveTheBase();
       } catch (error) {
         console.error("[ifood-widget]", error);
         state.value = "failed";

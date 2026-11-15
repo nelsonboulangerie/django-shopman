@@ -48,10 +48,14 @@ export default defineNuxtConfig({
     //   iframe de embeddables.ifood.com.br; o resto da conversa acontece dentro do
     //   iframe, sob a política do próprio iFood. O <style> que o script injeta já
     //   cabe no style-src de base. Só carrega com o ID do widget preenchido na Loja.
+    // - maps.googleapis.com: o mapa da página Entregas (`useGoogleMap`), a mesma
+    //   Maps JS API e a mesma chave pública do PDV. O bootstrap e os pedaços que ele
+    //   carrega vêm deste host, que também autentica a chave; os ladrilhos
+    //   (maps.gstatic.com) já cabem no img-src https.
     operatorCspAllow: {
       "img-src": ["https:"],
-      "connect-src": ["http://127.0.0.1:*", "http://localhost:*"],
-      "script-src": ["https://widgets.ifood.com.br"],
+      "connect-src": ["https://maps.googleapis.com", "http://127.0.0.1:*", "http://localhost:*"],
+      "script-src": ["https://widgets.ifood.com.br", "https://maps.googleapis.com"],
       "frame-src": ["https://embeddables.ifood.com.br"],
     },
     public: {
