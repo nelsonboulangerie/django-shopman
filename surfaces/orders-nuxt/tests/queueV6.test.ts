@@ -89,11 +89,12 @@ describe("Painel · Fila · Tabela, um controle só de ícones (dono, 14/11/2026
     const page = readFileSync(new URL("../app/pages/index.vue", import.meta.url), "utf8");
     const items = page.slice(page.indexOf("const viewTabs"), page.indexOf("function pickView"));
     const control = page.slice(page.lastIndexOf("<NuxtTabs", page.indexOf("data-view-switch")), page.indexOf("/>", page.indexOf("data-view-switch")));
-    expect(items).toContain('value: "board", icon: "i-lucide-columns-3", "aria-label": "Painel"');
-    expect(items).toContain('value: "queue", icon: "i-lucide-rows-3", "aria-label": "Fila"');
-    expect(items).toContain('value: "table", icon: "i-lucide-table-2", "aria-label": "Tabela"');
+    expect(items).toContain('value: "board", icon: "i-lucide-columns-3", label: "Painel"');
+    expect(items).toContain('value: "queue", icon: "i-lucide-rows-3", label: "Fila"');
+    expect(items).toContain('value: "table", icon: "i-lucide-table-2", label: "Tabela"');
     expect(items.indexOf('"board"')).toBeLessThan(items.indexOf('"queue"'));
-    expect(items).not.toMatch(/\blabel:/);
+    // O nome não aparece na tela: só para o leitor de tela e na dica.
+    expect(control).toContain(`:ui="{ label: 'sr-only' }"`);
     expect(items).toContain("queueAvailable.value");
     expect(control).toContain(':items="viewTabs"');
     expect(control).toContain('@update:model-value="pickView"');
