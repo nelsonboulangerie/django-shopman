@@ -1401,6 +1401,32 @@
           }
         },
         {
+          "id": "deliveries",
+          "source_files": [
+            "app/pages/deliveries.vue"
+          ],
+          "routes": [
+            "/deliveries"
+          ],
+          "variants": [
+            "map",
+            "editing",
+            "rides",
+            "detail"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
+        },
+        {
           "id": "settings",
           "source_files": [
             "app/pages/settings.vue"

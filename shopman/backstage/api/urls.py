@@ -162,6 +162,8 @@ from .operation_checklists import (
 from .operations import (
     CourierTicketEscposView,
     DayClosingView,
+    DeliveriesCountView,
+    DeliveriesView,
     OperationEpisodeAnswerView,
     OperatorBadgeLostView,
     OperatorEligibleView,
@@ -768,6 +770,8 @@ urlpatterns = [
     # ⚠️ ANTES de `orders/<str:ref>/…`: `board-layout` casaria com `<str:ref>`.
     path("orders/board-layout/", OrderBoardLayoutView.as_view(), name="api-backstage-order-board-layout"),
     path("orders/rail-counts/", OrderRailCountsView.as_view(), name="api-backstage-order-rail-counts"),
+    path("deliveries/", DeliveriesView.as_view(), name="api-backstage-deliveries"),
+    path("deliveries/count/", DeliveriesCountView.as_view(), name="api-backstage-deliveries-count"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
     path("ifood/store/", IFoodStoreView.as_view(), name="api-backstage-ifood-store"),
     path("ifood/widget/", IFoodWidgetView.as_view(), name="api-backstage-ifood-widget"),

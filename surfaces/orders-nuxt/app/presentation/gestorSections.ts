@@ -33,6 +33,8 @@ export interface GestorSectionsInput {
   catalogOnly?: boolean;
   // Contagens do quadro para os selos do rail (vazias fora do quadro).
   intakeCount?: number;
+  // Entregas do dia sem corrida chamada: o selo de Entregas.
+  deliveriesWaiting?: number;
 }
 
 /** `?columns=expedition`: o quadro abre como balcão de saída (o mesmo parâmetro que o
@@ -62,6 +64,7 @@ export function gestorSections({
   expeditesOnly = false,
   catalogOnly = false,
   intakeCount,
+  deliveriesWaiting,
 }: GestorSectionsInput): OperatorSection[] {
   if (catalogOnly) {
     return [
@@ -100,6 +103,17 @@ export function gestorSections({
       ...badge(intakeCount),
     },
   ];
+  // As corridas da TaOn numa seção própria, logo abaixo de Pedidos (dono,
+  // 14/11/2026): o que aguarda entregador, o que se está juntando e o que está na rua.
+  operation.push({
+    key: "deliveries",
+    label: "Entregas",
+    icon: "lucide:bike",
+    to: "/deliveries",
+    group: "Operação",
+    quick: true,
+    ...badge(deliveriesWaiting),
+  });
   if (expeditesOnly) return operation;
   return [
     ...operation,
@@ -248,7 +262,7 @@ export function deniedSettingsSection(
 }
 
 /** As seções do chão: andando pela loja (dono, 31/10/2026). */
-export const GESTOR_FLOOR_SECTIONS: readonly string[] = ["orders", "history", "catalog", "feeds"];
+export const GESTOR_FLOOR_SECTIONS: readonly string[] = ["orders", "deliveries", "history", "catalog", "feeds"];
 
 /**
  * O trocador (modelo de navegação, 31/10/2026): a operação e o que mora em Ajustes, cada
