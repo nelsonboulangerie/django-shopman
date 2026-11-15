@@ -1406,13 +1406,6 @@ const attention = computed(() => {
     what: card?.status_label || "Pedido para tratar",
   };
 });
-// O navegador só deixa tocar som depois do primeiro toque na tela, e qualquer toque já
-// liga. Em vez de "Som bloqueado" pendurado no aviso, a tela pede o toque uma vez.
-const startDismissed = ref(false);
-function startTap() {
-  startDismissed.value = true;
-  handleSoundAction();
-}
 // Ver: abre a zona do pedido. Na Saída, fica nela se o pedido é da Saída ou do preparo;
 // senão sai do posto e abre Pedidos (o selo muda junto).
 function seeAttention() {
@@ -1516,26 +1509,6 @@ function compactClear() {
         <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square class="size-11 justify-center text-inverted" aria-label="Fechar o aviso" data-attention-close @click="notices.close(`attention:${attentionRef}`)" />
       </div>
     </div>
-    <!-- O som pede um toque do navegador uma vez; a tela pede, ao abrir (celular). Qualquer
-         toque já libera o som (o kit escuta o primeiro gesto); o botão é a porta para quem
-         chega pelo teclado. -->
-    <NuxtModal
-      :open="isPhone && soundOn && soundBlocked && !startDismissed"
-      fullscreen
-      :close="false"
-      title="Toque para começar"
-      description="O som dos avisos de pedido liga junto."
-      data-sound-start
-      @update:open="(v) => { if (!v) startTap(); }"
-    >
-      <template #content>
-        <div class="flex h-full flex-col items-center justify-center gap-4 p-6 text-center" @pointerdown="startTap">
-          <p class="text-xl font-semibold text-highlighted">Toque para começar</p>
-          <p class="text-muted">O som dos avisos de pedido liga junto.</p>
-          <NuxtButton label="Começar" class="min-h-11" data-sound-start-button @click="startTap" />
-        </div>
-      </template>
-    </NuxtModal>
     <OperatorPageHeader
       title="Pedidos"
       :filters-wrap="false"
@@ -1837,6 +1810,20 @@ function compactClear() {
         @switch="volumeCheck.switchTo"
         @dismiss-alarm="volumeCheck.dismissAlarm"
         @end="volumeCheck.end"
+      />
+      <!-- O navegador só deixa tocar som depois do primeiro toque na tela, e qualquer toque
+           já liga (o kit escuta o primeiro gesto). O aviso não bloqueia a fila (dono,
+           14/11): fecha no X e volta enquanto o som seguir mudo. -->
+      <NuxtAlert
+        v-if="isPhone && soundOn && soundBlocked && notices.isOpen('sound-blocked')"
+        v-bind="notices.closeProps"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-volume-x"
+        title="Som dos pedidos desligado"
+        description="Toque na tela para ligar."
+        data-sound-blocked
+        @update:open="notices.onOpen('sound-blocked', $event)"
       />
       <!-- A fila é lida só no cliente (`server: false`): o servidor e a hidratação
            desenham o esqueleto também, senão o cliente hidratava um nó que o servidor
