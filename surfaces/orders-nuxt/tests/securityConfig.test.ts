@@ -12,12 +12,12 @@ describe("Pedidos — configuração segura de release", () => {
     expect(config).toContain("operatorSecurityHeaders: true");
   });
 
-  it("abre só as exceções decididas: foto de produto, agente do balcão e widget do iFood", () => {
+  it("abre só as exceções decididas: foto de produto, agente do balcão, widget do iFood e mapa das Entregas", () => {
     expect(config).toContain('"img-src": ["https:"]');
-    expect(config).toContain('"connect-src": ["http://127.0.0.1:*", "http://localhost:*"]');
+    expect(config).toContain('"connect-src": ["https://maps.googleapis.com", "http://127.0.0.1:*", "http://localhost:*"]');
     // Chat com o cliente iFood (DEV-2026-019): o script e o iframe do iFood, por host
-    // explícito, e nada mais.
-    expect(config).toContain('"script-src": ["https://widgets.ifood.com.br"]');
+    // explícito. O mapa das Entregas (DEV-2026-024): a Maps JS API, por host explícito.
+    expect(config).toContain('"script-src": ["https://widgets.ifood.com.br", "https://maps.googleapis.com"]');
     expect(config).toContain('"frame-src": ["https://embeddables.ifood.com.br"]');
     expect(config.match(/"script-src"/g)).toHaveLength(1);
     expect(config.match(/"frame-src"/g)).toHaveLength(1);
