@@ -25,7 +25,7 @@
       "kind": "operator",
       "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
       "capabilities": { "pwa": true },
-      "exceptions": [{ "capability": "browser", "reason": "Fluxo Playwright ainda não foi promovido ao gate canônico.", "owner": "engineering", "expires": "2026-11-14" }]
+      "exceptions": [{ "capability": "browser", "reason": "Playwright da Central reprova por mismatch de hidratação no rail (#2473); promover quando corrigir.", "owner": "engineering", "expires": "2026-11-29" }]
     },
     "pos": {
       "dir": "pos-nuxt",

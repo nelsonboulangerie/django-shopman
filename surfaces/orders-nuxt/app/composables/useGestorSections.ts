@@ -109,6 +109,13 @@ export function useGestorSections() {
   // Fora do quadro (Catálogo, Clientes, Canais) os selos continuam (G26, v4
   // `catalogo-produto`: "Pedidos 10"): uma contagem leve, com a régua do quadro.
   const offBoard = useGestorRailCounts(() => !rail.value.onBoard);
+  // O selo de Entregas: entregas do dia sem corrida chamada, relido a cada push
+  // do canal de pedidos (e no poll calmo de fallback).
+  const { data: deliveries, refresh: refreshDeliveries } = useFetch<{ waiting?: number }>(
+    "/api/v1/backstage/deliveries/count/",
+    { key: "orders:rail:deliveries", server: false },
+  );
+  if (import.meta.client) useBackstageEvents("orders", () => void refreshDeliveries(), { pollMs: 60_000 });
 
   const input = computed(() => ({
     channelsAttention: attention.value?.label || "",
@@ -118,6 +125,7 @@ export function useGestorSections() {
     expeditesOnly: expeditesOnly.value,
     catalogOnly: catalogOnly.value,
     intakeCount: rail.value.onBoard ? rail.value.intake : offBoard.value.intake,
+    deliveriesWaiting: deliveries.value?.waiting ?? 0,
   }));
   const sections = computed(() => gestorSections(input.value));
   const settings = computed(() => gestorSettingsSections(input.value));
@@ -128,6 +136,7 @@ export function useGestorSections() {
         ? "feeds"
         : "catalog";
     }
+    if (route.path.startsWith("/deliveries")) return "deliveries";
     return route.path === "/" ? "orders" : undefined;
   });
   // As três perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.

@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py + shopman/backstage/projections/deliveries.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -1160,4 +1160,72 @@ export interface OrderHistoryProjection {
   total: number;
   has_next: boolean;
   total_label: string;
+}
+
+/** DeliveryPointProjection(latitude: 'float', longitude: 'float') */
+export interface DeliveryPointProjection {
+  latitude: number;
+  longitude: number;
+}
+
+/** Um pedido de entrega: na lista Aguardando ou como parada de uma corrida. */
+export interface DeliveryStopProjection {
+  ref: string;
+  code: string;
+  customer: string;
+  place: string;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  stage: string;
+  volumes: number;
+  done: boolean;
+  change_out_suggested_q: number;
+  needs_machine: boolean;
+  change_label: string;
+  group_refusal: string;
+  error: string;
+  dispatch_action: Action | null;
+}
+
+/** DeliveryDriverProjection(name: 'str', phone: 'str', vehicle: 'str') */
+export interface DeliveryDriverProjection {
+  name: string;
+  phone: string;
+  vehicle: string;
+}
+
+/** Uma corrida chamada, viva: do "procurando" à volta do entregador. */
+export interface DeliveryRideProjection {
+  key: string;
+  number: number;
+  state: string;
+  status_label: string;
+  stops: DeliveryStopProjection[];
+  driver: DeliveryDriverProjection | null;
+  position: DeliveryPointProjection | null;
+  called_at: string;
+  called_by: string;
+  pickup_eta_at: string;
+  arrived_pickup_at: string;
+  picked_up_at: string;
+  delivery_eta_at: string;
+  tracking_url: string;
+  cost_display: string;
+  bags: number;
+  undeclared: string[];
+  lead_ref: string;
+  back_action: Action | null;
+  back_lines: string[];
+  cancel_action: Action | null;
+}
+
+/** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True) */
+export interface DeliveriesProjection {
+  origin: DeliveryPointProjection | null;
+  waiting: DeliveryStopProjection[];
+  rides: DeliveryRideProjection[];
+  max_stops: number;
+  machines: Record<string, unknown>[];
+  courier_on: boolean;
 }

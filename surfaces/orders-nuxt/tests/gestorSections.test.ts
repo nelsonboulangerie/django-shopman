@@ -22,10 +22,10 @@ describe("gestorSections (rail)", () => {
       channelsAttention: "",
       canManageCustomers: true,
     });
-    expect(sections.map((s) => s.key)).toEqual(["orders", "history", "settings"]);
+    expect(sections.map((s) => s.key)).toEqual(["orders", "deliveries", "history", "settings"]);
     expect(
       sections.filter((s) => s.group === "Operação").map((s) => s.key),
-    ).toEqual(["orders", "history"]);
+    ).toEqual(["orders", "deliveries", "history"]);
     expect(sections.find((s) => s.key === "settings")?.foot).toBe(true);
   });
 
@@ -46,7 +46,7 @@ describe("gestorSections (rail)", () => {
     });
     expect(
       sections.filter((s) => s.group === "Operação").map((s) => s.key),
-    ).toEqual(["orders", "history", "catalog", "feeds"]);
+    ).toEqual(["orders", "deliveries", "history", "catalog", "feeds"]);
     expect(sections.find((s) => s.key === "feeds")?.attention).toBe("1 desligado");
     expect(activeSectionKey("/catalog", sections)).toBe("catalog");
     expect(activeSectionKey("/history", sections)).toBe("history");
@@ -62,7 +62,7 @@ describe("gestorSections (rail)", () => {
       canManageCustomers: true,
       expeditesOnly: true,
     }).map((s) => s.key);
-    expect(keys).toEqual(["orders"]);
+    expect(keys).toEqual(["orders", "deliveries"]);
   });
 
   it("quem só expede entra direto no balcão de saída", () => {
@@ -118,6 +118,7 @@ describe("gestorSections (rail)", () => {
     });
     expect(quickBarLayout(sections).items.map((s) => s.key)).toEqual([
       "orders",
+      "deliveries",
       "settings",
     ]);
     expect(quickBarProblems(sections)).toEqual([]);
@@ -206,6 +207,7 @@ describe("gestorSwitcherSections (trocador e barra de baixo)", () => {
   it("lista tudo na ordem do app, sem o item Ajustes, cada seção com a sua forma", () => {
     expect(all().map((s) => `${s.key}:${s.form}`)).toEqual([
       "orders:floor",
+      "deliveries:floor",
       "history:floor",
       "catalog:floor",
       "feeds:floor",
@@ -215,9 +217,9 @@ describe("gestorSwitcherSections (trocador e barra de baixo)", () => {
 
   it("a barra de baixo do chão: a operação inteira", () => {
     const floor = all().filter((s) => s.form === "floor");
-    expect(quickBarLayout(floor).items.map((s) => s.label)).toEqual(["Pedidos", "Histórico", "Catálogo", "Canais"]);
+    expect(quickBarLayout(floor).items.map((s) => s.label)).toEqual(["Pedidos", "Entregas", "Histórico", "Catálogo", "Canais"]);
     expect(quickBarProblems(floor)).toEqual([]);
-    expect(all().filter((s) => s.quick).map((s) => s.key)).toEqual(["orders", "history", "catalog", "feeds"]);
+    expect(all().filter((s) => s.quick).map((s) => s.key)).toEqual(["orders", "deliveries", "history", "catalog", "feeds"]);
   });
 
   it("sem Catálogo, o chão fica com Pedidos e Histórico", () => {
@@ -225,13 +227,13 @@ describe("gestorSwitcherSections (trocador e barra de baixo)", () => {
       gestorSections({ ...input, canManageCatalog: false }),
       gestorSettingsSections({ ...input, canManageCatalog: false }),
     );
-    expect(sections.filter((s) => s.form === "floor").map((s) => s.key)).toEqual(["orders", "history"]);
+    expect(sections.filter((s) => s.form === "floor").map((s) => s.key)).toEqual(["orders", "deliveries", "history"]);
   });
 
   it("antes de montar (Ajustes ainda sem resposta) o trocador já tem a operação inteira", () => {
     expect(
       gestorSwitcherSections(gestorSections(input), []).map((s) => s.key),
-    ).toEqual(["orders", "history", "catalog", "feeds"]);
+    ).toEqual(["orders", "deliveries", "history", "catalog", "feeds"]);
   });
 });
 
