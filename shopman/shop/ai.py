@@ -348,7 +348,8 @@ def jev_post(session, url: str, api_key: str, body: dict, *, timeout: float, mod
         box["usage"] = {"input_tokens": tokens_in}
         try:
             usage = response.json().get("usage") if response.status_code < 400 else None
-        except Exception:
+        except (ValueError, AttributeError):
+            # Corpo que não é JSON, ou JSON que não é objeto: vale a estimativa.
             usage = None
         if isinstance(usage, dict) and usage.get("input_tokens") is not None:
             box["usage"] = {"input_tokens": usage.get("input_tokens")}
