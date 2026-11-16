@@ -47,9 +47,9 @@ const at = (iso: string) => (iso ? clockHHMM(Date.parse(iso)) : "");
 <template>
   <aside class="flex h-full w-full flex-col overflow-hidden bg-default" data-ride-detail>
     <header class="flex items-start gap-3 border-b border-default px-5 py-4" :style="{ borderTop: `6px solid ${tone.bg}` }">
-      <span class="grid size-9 shrink-0 place-items-center rounded-lg text-lg font-bold" :style="{ background: tone.bg, color: tone.fg }">{{ ride.number }}</span>
+      <span class="grid size-9 shrink-0 place-items-center rounded-lg text-lg font-bold" :style="{ background: tone.bg, color: tone.fg }">{{ ride.letter }}</span>
       <div class="min-w-0 flex-1">
-        <p class="op-title font-semibold text-highlighted">Corrida {{ ride.number }} · {{ ride.status_label }}</p>
+        <p class="op-title font-semibold text-highlighted">Corrida {{ ride.letter }} · {{ ride.status_label }}</p>
         <p class="op-body text-muted">{{ line.hint || line.title }}</p>
       </div>
       <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" aria-label="Fechar" @click="emit('close')" />
