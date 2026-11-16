@@ -36,10 +36,28 @@ Todo achado se classifica em uma delas:
 
 Os princípios da casa estão no CLAUDE.md e não se repetem aqui.
 
+## Teste como um operador de verdade
+
+O teste automatizado é necessário, mas não basta. A prova principal é **usar o app como um
+operador normal (ou o cliente) usaria**:
+
+- pela UI, clicando e digitando;
+- com o papel real do brief (Caixa, Gerente, cliente novo, cliente que volta), **nunca como
+  superusuário**;
+- sem atalho de API, Admin ou banco para chegar a um estado;
+- de dispositivo e tamanho reais;
+- até o fim do fluxo.
+
+Vale para esta revisão e para todo WP.
+
+**Canonização.** As melhores verificações feitas assim viram Playwright do próprio app
+(`surfaces/<app>/tests/e2e/`, contra o Django da pilha), com o mesmo papel e os mesmos passos
+da pessoa. O plano lista quais jornadas canonizar e em que WP cada uma nasce.
+
 ## Método
 
 1. **Meça antes de opinar.** Monte uma pilha isolada, com as portas e o banco que o brief do
-   app dá, e rode o seed. Percorra as jornadas do brief **pela UI**, em 375 px e em 1366 px,
+   app dá, e rode o seed. Percorra as jornadas do brief como operador, em 375 px e em 1366 px,
    cruzando as horas que mudam a regra: abertura, corte, fechamento e virada do dia. Cada
    achado tem prova: uma captura, ou `caminho:linha`.
 2. **Leia o histórico do app** (laudos, PRs e decisões que o brief cita). Não reaudite o que já
@@ -62,12 +80,17 @@ Os princípios da casa estão no CLAUDE.md e não se repetem aqui.
    - dependências;
    - arquivos que toca;
    - fora do escopo;
-   - pronto quando: o teste ou o roteiro pela UI que prova;
+   - pronto quando, sempre as duas coisas:
+     - o roteiro feito como operador, com o papel e os passos, e as capturas como prova;
+     - os testes automatizados, incluindo a jornada canonizada em Playwright quando o WP é
+       dono dela;
    - se muda tela (se sim, o WP inclui prévia local ao dono antes de enfileirar);
    - tamanho;
-   - um brief para a sessão Opus, que aponta o que ler e não copia o CLAUDE.md.
-4. **Ondas**: o que corre em paralelo. Dois WPs da mesma onda nunca tocam o mesmo arquivo.
-5. **Decisões do dono**: no máximo seis, só as que bloqueiam um WP e que nenhum documento já
+   - um brief para a sessão Opus, que aponta o que ler e não copia o CLAUDE.md. O brief manda
+     seguir a seção "Teste como um operador de verdade" deste arquivo.
+4. **Jornadas a canonizar**: a lista, cada uma com o papel, os passos e o WP que a escreve.
+5. **Ondas**: o que corre em paralelo. Dois WPs da mesma onda nunca tocam o mesmo arquivo.
+6. **Decisões do dono**: no máximo seis, só as que bloqueiam um WP e que nenhum documento já
    respondeu. Cada uma respondível com sim/1/2, com a recomendação primeiro. Antes de
    perguntar, procure em `docs/coordination/DECISIONS.md` e em `docs/reference/`.
 

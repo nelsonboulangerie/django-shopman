@@ -18,6 +18,12 @@ limites). Este arquivo diz só o que é do PDV. Entregue em `docs/plans/EXCELENC
 - Os services de pedido, estoque, pagamento e promoção do `shop`.
 - O Core em `packages/` (`cashman`, `orderman`, `stockman`).
 
+## Papéis
+
+- A Caixa, com PIN.
+- O Gerente, escolhido da lista e assinando com o próprio PIN.
+- Nunca o superusuário.
+
 ## Jornadas pela UI
 
 1. Abrir o caixa.

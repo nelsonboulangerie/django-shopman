@@ -24,6 +24,13 @@ esforço vai para ele, sem abandonar o resto.
 - O `lifecycle.py` e os services do `shop`.
 - O Core em `packages/orderman`.
 
+## Papéis
+
+- Quem opera o Gestor no dia a dia, com PIN.
+- O Gerente.
+- O cliente, pela loja, para criar os pedidos.
+- Nunca o superusuário.
+
 ## Jornadas pela UI
 
 1. Pedido de hoje: chegar, aceitar no prazo e recusar com motivo.

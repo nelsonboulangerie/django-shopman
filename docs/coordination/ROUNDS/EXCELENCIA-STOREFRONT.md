@@ -27,6 +27,13 @@ limites). Este arquivo diz só o que é da loja. Entregue em
 
 As regras estão no CLAUDE.md e em `docs/reference/omotenashi-copy.md`.
 
+## Papéis
+
+- O cliente novo, que entra por OTP.
+- O cliente que volta.
+- O operador do Gestor, com PIN, só para aceitar ou recusar o pedido.
+- Nunca o superusuário.
+
 ## Jornadas pela UI
 
 1. Cardápio, busca e produto: disponível, Indisponível, fornada futura e item que acaba
