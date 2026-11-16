@@ -1,11 +1,12 @@
 <script setup lang="ts">
-// PRÉVIA (16/11, DEV-2026-030): os links entre as 3 prévias de "Quem leva" (serviço da
+// PRÉVIA (16/11, DEV-2026-030): os links entre as prévias de "Quem leva" (serviço da
 // corrida e entregador da casa). Não vai ao ar.
 const props = defineProps<{ current: number }>();
 const items = [
   { n: 1, label: "Chamar entregador: quem leva" },
   { n: 2, label: "Corrida da casa na Saída" },
   { n: 3, label: "O que o entregador recebe" },
+  { n: 4, label: "Mapa em pé e deitado" },
 ];
 </script>
 
