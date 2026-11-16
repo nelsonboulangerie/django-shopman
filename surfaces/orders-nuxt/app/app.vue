@@ -157,7 +157,7 @@ useOperatorWindowTitle();
         @lock="lock"
       >
         <template #rail-actions>
-          <SupportTrigger :context="supportContext" size="sm" variant="ghost" block />
+          <SupportTrigger :context="supportContext" variant="ghost" block />
         </template>
         <div class="flex min-h-0 flex-1 flex-col">
           <OperatorStationSetup

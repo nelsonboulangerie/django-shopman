@@ -217,7 +217,7 @@ const supportContext = computed(() =>
       @lock="lock()"
     >
       <template #rail-actions>
-        <SupportTrigger :context="supportContext" size="sm" variant="ghost" block />
+        <SupportTrigger :context="supportContext" variant="ghost" block />
       </template>
       <NuxtPage />
     </OperatorSuiteShell>
