@@ -130,10 +130,10 @@ describe("OrderCard — a encomenda se anuncia (WP-G01)", () => {
 
   it("pedido de hoje com hora combinada mostra a hora no cartão enxuto", () => {
     const w = mountCard({
-      card: card({ schedule_label: "Hoje · 14:00 às 14:30", schedule_state: "today" }),
+      card: card({ schedule_label: "Hoje · 14h às 14h30", schedule_state: "today" }),
       compact: true,
     });
-    expect(w.get("[data-card-promise]").text()).toBe("Hoje · 14:00 às 14:30");
+    expect(w.get("[data-card-promise]").text()).toBe("Hoje · 14h às 14h30");
   });
 
   it("encomenda vencida se diz no passado", () => {

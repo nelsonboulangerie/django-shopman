@@ -453,7 +453,7 @@ export interface SchedulePromise {
  * função só, para o Painel, a Fila, a Tabela e o sino não falarem cada um a sua.
  *
  * - `future`: "Encomenda · Amanhã · A partir das 15h"
- * - `today`: "Hoje · 14:00 às 14:30" (pedido de hoje com hora combinada)
+ * - `today`: "Hoje · 14h às 14h30" (pedido de hoje com hora combinada)
  * - `overdue`: "Era para ontem · A partir das 15h", em vermelho
  */
 export function schedulePromise(source: {

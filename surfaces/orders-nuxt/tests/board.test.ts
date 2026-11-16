@@ -279,8 +279,8 @@ describe("schedulePromise — a encomenda se anuncia (WP-G01)", () => {
 
   it("hoje com hora combinada: a hora, sem a palavra Encomenda", () => {
     expect(
-      schedulePromise({ schedule_label: "Hoje · 14:00 às 14:30", schedule_state: "today" })?.label,
-    ).toBe("Hoje · 14:00 às 14:30");
+      schedulePromise({ schedule_label: "Hoje · 14h às 14h30", schedule_state: "today" })?.label,
+    ).toBe("Hoje · 14h às 14h30");
   });
 
   it("vencida: o nome próprio do passado, em vermelho", () => {

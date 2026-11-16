@@ -481,7 +481,7 @@ class OrderCardProjection:
     commitment_date: str = ""
     commitment_date_display: str = ""
     # O combinado, na frase do detalhe (``_schedule``): "Amanhã · A partir das
-    # 15h", "Hoje · 14:00 às 14:30", "Era para ontem · A partir das 15h". Vazio
+    # 15h", "Hoje · 14h às 14h30", "Era para ontem · A partir das 15h". Vazio
     # quando não há o que dizer (o pedido de agora, ou o combinado já cumprido).
     # ``schedule_state``: ``future`` | ``today`` | ``overdue`` | "". O cartão, a
     # Fila, a Tabela e o sino leem daqui, e só daqui: aceitar uma encomenda sem
@@ -1441,7 +1441,7 @@ def _schedule(order: Order) -> tuple[str, str]:
     função só, para nenhuma forma dizer o combinado com outras palavras.
 
     - ``future``: data depois de hoje. "Amanhã · A partir das 15h".
-    - ``today``: hoje, COM hora combinada. "Hoje · 14:00 às 14:30". Hoje sem
+    - ``today``: hoje, COM hora combinada. "Hoje · 14h às 14h30". Hoje sem
       hora não é estado: é o pedido de agora, e o cartão não tem o que dizer.
     - ``overdue``: o dia passou e o pedido segue aberto. O passado tem nome
       próprio, "Era para ontem · A partir das 15h": a data sozinha se lê como

@@ -26,6 +26,7 @@ from shopman.backstage.models import OperatorAlert
 from shopman.backstage.projections.alerts import build_operator_alerts_projection
 from shopman.backstage.projections.order_queue import build_operator_order, build_order_card
 from shopman.shop.models import Shop
+from shopman.shop.services.fulfillment_window import window_label
 
 pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
@@ -87,7 +88,8 @@ def test_encomenda_para_daqui_a_dois_dias_diz_a_data():
 def test_pedido_de_hoje_com_hora_combinada_mostra_a_hora():
     card = build_order_card(_order("G01-HOJE", day=_today(), slot="14:00-14:30"))
 
-    assert (card.schedule_label, card.schedule_state) == ("Hoje · 14:00 às 14:30", "today")
+    # A hora sai do formatador da janela (a frente "12h45" muda o formato ali, num ponto só).
+    assert (card.schedule_label, card.schedule_state) == (f"Hoje · {window_label('14:00-14:30')}", "today")
     assert card.is_preorder is False
 
 
@@ -95,7 +97,7 @@ def test_pedido_de_hoje_com_janela_e_sem_data_e_do_dia_da_venda():
     """A meia hora do PDV para hoje vem sem ``delivery_date``: o dia é o da venda."""
     card = build_order_card(_order("G01-PDV", slot="14:00-14:30"))
 
-    assert (card.schedule_label, card.schedule_state) == ("Hoje · 14:00 às 14:30", "today")
+    assert (card.schedule_label, card.schedule_state) == (f"Hoje · {window_label('14:00-14:30')}", "today")
 
 
 def test_pedido_de_agora_nao_tem_o_que_dizer():
