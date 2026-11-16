@@ -2,6 +2,8 @@
 // (telefone → código → boas-vindas, que é SÓ o nome), normalização de erros da
 // API de auth (rate limit é recuperação calma, não falha) e cooldown de reenvio.
 
+import { formatClock } from '~/utils/clock'
+
 export type AuthStep = 'phone' | 'code' | 'welcome'
 
 export interface AuthFlowState {
@@ -171,7 +173,7 @@ export function otpValidUntilDisplay (expiresAtIso: string | null | undefined): 
   if (!expiresAtIso?.trim()) return ''
   const parsed = Date.parse(expiresAtIso)
   if (Number.isNaN(parsed)) return ''
-  return new Date(parsed).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  return formatClock(parsed)
 }
 
 // ── O passo do código sobrevive ao recarregamento ──────────────────────────
