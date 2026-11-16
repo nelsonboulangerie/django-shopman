@@ -89,6 +89,33 @@ def advance_order(order, *, actor: str, operator=None, change_out_raw: str | Non
         raise OrderError(str(exc) or "Ação inválida") from exc
 
 
+class OrderRideRevisionChanged(OrderConflict):
+    """Um pedido da corrida mudou depois que a tela foi lida (409 ``revision_changed``).
+
+    ``errors`` aponta cada pedido que mudou, no dialeto canônico: a tela diz
+    qual foi e recarrega, em vez de chamar com endereço ou troco que ninguém viu.
+    """
+
+    code = "revision_changed"
+
+    def __init__(self, message: str, *, refs: list[str]):
+        super().__init__(message)
+        self.refs = list(refs)
+        self.errors = {
+            ref: [f"O pedido {operator_orders.short_ref(ref)} mudou depois que você abriu esta tela."]
+            for ref in self.refs
+        }
+
+
+class OrderRideAlreadyCalled(Exception):
+    """A corrida pedida já existe com estes mesmos pedidos: é sucesso, não recusa."""
+
+    def __init__(self, message: str, *, ride_number: int | None, directive_id: int | None = None):
+        super().__init__(message)
+        self.ride_number = ride_number
+        self.directive_id = directive_id
+
+
 class OrderChangeOutRequired(OrderError):
     """O despacho precisa saber quanto de troco o entregador leva (409 + sugestão)."""
 
@@ -477,7 +504,8 @@ def recent_history(*, limit: int = 20):
     return operator_orders.recent_history(limit=limit)
 
 
-def courier_dispatch(order, *, actor: str, expected_revision=None, operator=None, change_out_raw: str | None = None, equipment=None):
+def courier_dispatch(order, *, actor: str, expected_revision=None, operator=None, change_out_raw: str | None = None, equipment=None,
+                     ride_number: int | None = None):
     """Chama o entregador da TaOn: registra a custódia que sai com ele e abre a corrida.
 
     A custódia (troco da gaveta, maquininha da casa) é a do despacho do Gestor,
@@ -509,7 +537,7 @@ def courier_dispatch(order, *, actor: str, expected_revision=None, operator=None
                 shift = type(shift).objects.select_for_update().get(pk=shift.pk)
             # A corrida primeiro: as recusas dela (iFood, estado, corrida ativa,
             # revisão) valem antes de perguntar pelo troco.
-            directive = courier.redispatch(order, actor=actor, expected_revision=expected_revision)
+            directive = courier.redispatch(order, actor=actor, expected_revision=expected_revision, ride_number=ride_number)
             operator_orders.record_partner_custody(
                 order, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or []),
             )
@@ -522,7 +550,8 @@ def courier_dispatch(order, *, actor: str, expected_revision=None, operator=None
         raise OrderError(str(exc) or "Não foi possível despachar a corrida.") from exc
 
 
-def courier_group_dispatch(orders, *, actor: str, operator=None, change_out_raw: dict | None = None, machine: str = ""):
+def courier_group_dispatch(orders, *, actor: str, operator=None, change_out_raw: dict | None = None, machine: str = "",
+                           expected_revisions: dict[str, str] | None = None, ride_number: int | None = None):
     """Uma corrida da TaOn para vários pedidos, com a custódia de cada um.
 
     A corrida conjunta é uma saída (``trip_ref``, a mesma do despacho do
@@ -531,6 +560,12 @@ def courier_group_dispatch(orders, *, actor: str, operator=None, change_out_raw:
     pedido de cartão e compartilhada pelos outros. Tudo na transação do pedido
     de corrida: se um pedido recusa (troco sem valor, maquininha que acabou de
     sair), nada sai da gaveta e a corrida não é pedida.
+
+    ``expected_revisions`` é o que a tela leu de cada pedido
+    (``courier.dispatch_revision``), conferido com os pedidos travados antes de
+    gravar: o pedido que mudou recusa com :class:`OrderRideRevisionChanged`. A
+    corrida que já existe com estes mesmos pedidos levanta
+    :class:`OrderRideAlreadyCalled`, que quem chama trata como feito.
     """
     from shopman.backstage.services.exceptions import POSError
     from shopman.backstage.services.pos import parse_money_to_q
@@ -554,7 +589,9 @@ def courier_group_dispatch(orders, *, actor: str, operator=None, change_out_raw:
         with transaction.atomic():
             if shift is not None:
                 shift = type(shift).objects.select_for_update().get(pk=shift.pk)
-            directive = courier.request_group_dispatch(orders, actor=actor)
+            directive = courier.request_group_dispatch(
+                orders, actor=actor, expected_revisions=expected_revisions, ride_number=ride_number,
+            )
             trip = str(directive.payload["order_ref"])
             # Uma maquininha que já saiu numa chamada anterior de um destes
             # pedidos (corrida que não abriu) é a maquininha da corrida.
@@ -580,6 +617,10 @@ def courier_group_dispatch(orders, *, actor: str, operator=None, change_out_raw:
                 if recorded.get("device_ref") and shared is None:
                     shared = {"device_ref": recorded["device_ref"], "device_label": recorded.get("device_label", "")}
             return directive
+    except courier.RideRevisionChanged as exc:
+        raise OrderRideRevisionChanged(str(exc), refs=exc.refs) from exc
+    except courier.RideAlreadyCalled as exc:
+        raise OrderRideAlreadyCalled(str(exc), ride_number=exc.ride_number, directive_id=exc.directive_id) from exc
     except OrderStateConflict as exc:
         raise OrderConflict(str(exc)) from exc
     except ValueError as exc:
