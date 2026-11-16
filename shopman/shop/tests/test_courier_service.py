@@ -155,6 +155,7 @@ def test_dispatch_handler_opens_ride_and_schedules_sync(shop):
     block = courier.get_block(order)
     assert block["id_mch"] == f"MOCK-{order.ref}"
     assert block["provider"] == "machine"
+    assert block["service"] == "taon"  # o serviço padrão do Admin (DEV-2026-030, M1)
     assert block["status"] == "D"
     assert block["estimate"] == {"value_q": 1250, "minutes": 18.0, "km": 4.2, "with_return": False}
     assert Directive.objects.filter(topic=COURIER_SYNC, payload__order_ref=order.ref).exists()

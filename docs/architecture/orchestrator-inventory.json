@@ -467,6 +467,7 @@
             "CANCEL_REASON_OPERATOR_DEFAULT",
             "CANCEL_REASON_ORDER_CANCELLED",
             "CANCEL_REASON_REFUSED_CODE",
+            "CAPABILITIES",
             "CourierDispatchResult",
             "CourierError",
             "CourierEstimate",
@@ -474,6 +475,7 @@
             "RATE_LIMIT_DEFAULT_SECONDS",
             "RATE_LIMIT_MAX_SECONDS",
             "READ_VIAS",
+            "RIDE_STATES",
             "RIDE_STATUSES",
             "TERMINAL_STATUSES",
             "USER_AGENT_PRODUCT",
@@ -507,6 +509,7 @@
             "logger",
             "read_ride",
             "register_webhook",
+            "ride_state",
             "snapshot_from_details",
             "snapshot_from_listing",
             "tracking_links",
@@ -7801,8 +7804,10 @@
         {
           "responsibility": "contrato",
           "symbols": [
+            "DeliveryCapabilities",
             "NotificationResult",
-            "ReserveRefusal"
+            "ReserveRefusal",
+            "RideState"
           ]
         }
       ]
@@ -9440,6 +9445,37 @@
             "_publication_readiness",
             "_switched_off_readiness",
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/delivery_services.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura",
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_KIND_BY_REF",
+            "_kind",
+            "courier_backend"
+          ]
+        },
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "capabilities",
+            "new_ride_service_ref",
+            "ride_state",
+            "service_for_new_ride"
           ]
         }
       ]

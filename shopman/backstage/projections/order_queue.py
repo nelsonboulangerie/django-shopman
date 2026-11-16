@@ -1540,12 +1540,12 @@ def _courier_block(order: Order) -> dict | None:
 
         from django.core.cache import cache
 
-        from shopman.shop.adapters import get_adapter
         from shopman.shop.adapters.courier_machine import TERMINAL_STATUSES
+        from shopman.shop.services import delivery_services
 
         data = order.data or {}
         block = data.get("courier") if isinstance(data.get("courier"), dict) else {}
-        adapter_on = get_adapter("courier") is not None
+        adapter_on = delivery_services.courier_backend(block) is not None
         if not block and not adapter_on:
             return None
 
@@ -2567,10 +2567,10 @@ def _ride_candidates(orders) -> tuple[RideCandidateProjection, ...]:
     então a corrida junta pedido pronto e pedido em preparo. Encomenda de outro
     dia fica de fora.
     """
-    from shopman.shop.adapters import get_adapter
+    from shopman.shop.services import delivery_services
 
     orders = sorted(orders, key=lambda order: order.status != "ready")
-    if len(orders) < 2 or get_adapter("courier") is None:
+    if len(orders) < 2 or delivery_services.courier_backend() is None:
         return ()
     rows = [_ride_candidate(order) for order in orders if _rides_with_others(order)]
     return tuple(rows) if len(rows) >= 2 else ()
@@ -2632,10 +2632,9 @@ def _ride_offer(order: Order) -> list[dict]:
     vê, ali, quem pode ir junto. Até ``MAX_RIDE_STOPS - 1``; sem coordenada vai
     ao fim. Vazio quando este pedido não pode ir com outros.
     """
-    from shopman.shop.adapters import get_adapter
-    from shopman.shop.services import courier
+    from shopman.shop.services import courier, delivery_services
 
-    if get_adapter("courier") is None or not _rides_with_others(order):
+    if delivery_services.courier_backend() is None or not _rides_with_others(order):
         return []
     pool = [other for other in Order.objects.filter(status__in=("accepted", "preparing", "ready")).exclude(pk=order.pk)
             if _rides_with_others(other)]

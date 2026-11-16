@@ -401,6 +401,7 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
 ```jsonc
 "courier": {
   "provider": "machine",
+  "service": "taon",               // o serviço de entrega da corrida (`DeliveryService.ref`), gravado quando ela abre: o padrão do Admin (DEV-2026-030, M1). Quem fala com ele é `services/delivery_services.courier_backend(block)`; corrida sem a chave (aberta antes) segue com a central configurada
   "id_mch": "184532",              // corrida ATIVA (string); some quando N/C arquiva
   "status": "E",                   // letra Machine crua
   "called_at": "iso",              // a PRIMEIRA chamada pedida (courier.request_dispatch), antes da central responder
