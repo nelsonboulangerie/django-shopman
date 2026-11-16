@@ -357,6 +357,10 @@ class OperatorAlert(models.Model):
         # O iFood avisou que o pedido andou (confirmou, saiu, concluiu) e aqui ele
         # ficou para trás por mais de 3 h: o operador encerra (reconcile_ifood_orders).
         ("ifood_order_behind", "Pedido atrasado aqui em relação ao iFood"),
+        # O gestor fechou no calendário um dia que já tinha pedido em aberto
+        # marcado (encomenda paga, inclusive). Fechar não cancela nem remarca:
+        # o aviso, um por pedido, é para alguém remarcar ou falar com o cliente.
+        ("order_on_closed_day", "Pedido marcado para dia fechado"),
         # O freio da IA (ID3A, E1): a 80% do teto diário de gasto chega o aviso; no
         # teto, a IA paga para até o dia seguinte. O gasto de US$ 1.180 de 28/10 a
         # 11/11 aconteceu sem nenhum dos dois.
@@ -444,6 +448,7 @@ class OperatorAlert(models.Model):
         "ifood_order_behind",
         "ifood_poll_stale",
         "fiscal_return_note_due",
+        "order_on_closed_day",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)
