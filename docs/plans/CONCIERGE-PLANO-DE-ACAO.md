@@ -21,14 +21,15 @@
 - **O que falta para o cliente sentir:** responder sem depender de chave, mandar ao modelo só
   texto redigido, achar melhor o que é da equipe, e o "não sei, vou verificar" com a resposta
   voltando pela própria conversa.
-- **O que corto:** a chamada de modelo da triagem e o laço do agente. Proponho cortar também a
-  redação por modelo, o "vale para todo mundo" e o modelo da Meta para fora da janela de 24
-  horas (decisão 2, ainda aberta).
+- **O que sai:** a chamada de modelo da triagem, o laço do agente e a redação por modelo (o dono
+  confirmou em 16/11: não reescreve, salvo necessidade provada). O "vale para todo mundo" virou
+  outra coisa, por pedido dele: promover a resposta da equipe a pergunta frequente (WP-15).
+  Resta uma pergunta aberta, sobre a mensagem-modelo da Meta.
 - **O pedido na conversa entra** (dono, 16/11): quatro WPs próprios (WP-11 a WP-14), depois que
   a fase de respostas estiver com clientes.
-- **Quanto:** 14 WPs em 8 ondas. Os dois primeiros a delegar, em paralelo: **WP-01** (freio e
+- **Quanto:** 15 WPs em 8 ondas. Os dois primeiros a delegar, em paralelo: **WP-01** (freio e
   medidor no `main`) e **WP-02** (régua que prova).
-- **Do dono:** três decisões respondidas em 16/11 e duas abertas, na seção 5.
+- **Do dono:** sete respostas dadas em 16/11 e uma pergunta aberta, na seção 5.
 
 ## 1. Estado medido
 
@@ -72,11 +73,11 @@ leitura. Não foi medido de novo: não há chave, e chamada paga pede a palavra 
 
 | # | O que sai | Motivo |
 |---|---|---|
-| C1 | **Redação por modelo** (metade da F6): o modelo "deixa mais natural" a frase montada | É a segunda chamada paga de cada resposta, pede um verificador de marcadores inteiro, e só compra naturalidade. O dono já fixou "a frase é da casa" (03/10, topo de `intents.py`). Sem texto de modelo, R1 e R5 valem por construção. Volta a ser discutida se o piloto mostrar respostas duras demais, com exemplos reais |
+| C1 | **Redação por modelo** (metade da F6): o modelo "deixa mais natural" a frase montada | É a segunda chamada paga de cada resposta, pede um verificador de marcadores inteiro, e só compra naturalidade. O dono já fixou "a frase é da casa" (03/10, topo de `intents.py`). Sem texto de modelo, R1 e R5 valem por construção. **Confirmado pelo dono (16/11):** "Não deve reescrever (a não ser que essa necessidade seja 'provada')". A prova, se vier, são conversas reais do piloto em que a frase da casa saiu dura ou confusa |
 | C2 | **Chamada de modelo na triagem** antes da leitura de partes | Com a leitura ligada, é uma chamada a mais por turno (US$ 0,0016 e 2,7 s medidos na OBS0310-K) para devolver uma intenção que a leitura já devolve. Ficam a regra local e o Jev (o dono decidiu que o Jev é a primeira opinião) |
 | C3 | **O laço do agente** (`agent.run_agent`, as especificações de ferramenta, o prompt dele e as variáveis de ambiente que só ele lê) | O V2 já o condenava. Hoje é caminho morto por padrão, mas religável por variável de ambiente, e é o caminho que manda nome (no prompt) e endereço de entrega (nas ferramentas) ao provedor. Os executores de `tools.py` ficam: são a base de qualquer pedido futuro |
-| C4 | **"Vale para todo mundo"** (V2, 8.5): a resposta da equipe vira fato da casa | É um produto dentro do produto (curadoria, validade, revisão). A FAQ já é editável no Admin e a busca já a lê. Reabrir quando a régua mostrar a mesma pergunta verificada várias vezes |
-| C5 | **Modelo da Meta para responder fora das 24 horas** (V2, 8.4) | Fila de aprovação de 24 a 48 horas por rodada, para um caso raro. O próprio V2 dá a saída honesta sem modelo: fora da janela, a Concierge não promete e diz quando a equipe atende |
+| ~~C4~~ | ~~"Vale para todo mundo"~~ (V2, 8.5) | **Trocado, não cortado** (dono, 16/11): o nome era vago ("por quanto tempo, eternamente?"). No lugar entra "Promover a pergunta frequente": a resposta da equipe vira um rascunho de pergunta frequente, com sugestão da IA para generalizar, e só vale depois de publicada no Admin. É o WP-15 |
+| C5 | **Mensagem-modelo da Meta para responder fora das 24 horas** (V2, 8.4); decisão 2c, aberta | Fila de aprovação de 24 a 48 horas por rodada, para um caso raro. O próprio V2 dá a saída honesta sem modelo: fora da janela, a Concierge não promete e diz quando a equipe atende |
 | ~~C6~~ | ~~Atos de pedido no chat~~ | **Deixou de ser corte** (dono, 16/11: "quero que a Concierge consiga montar o pedido do cliente NA CONVERSA, interagindo com dados reais"). A trava continua real: o ManyChat não entrega identificador nem horário verificado da mensagem, então o servidor fecha toda mudança (`service._claim`, `service.assert_turn_authority`) e não aceita o "sim" como confirmação (`tools._confirmation`). O WP-11 troca a prova do provedor por uma prova que a casa controla; WP-12 a WP-14 constroem em cima |
 | C7 | **Rotular os 221 casos com lista de atos e estado** (continuação da F1) | Os 18 casos com várias partes já têm rótulo, e os 47 de contexto já têm estado. O que falta à régua é repetição e trava de gasto (WP-02) |
 | C8 | **E11 da ID3A agora** (Concierge migrada para contratos de tarefa) | A Concierge já fala pela porta (`ai.anthropic_client("intents")`). Contrato de tarefa é refatoração que só existe depois do E2 ao E4; não muda nada para o cliente |
@@ -95,7 +96,7 @@ A frente abre antes da fase 3 da ID3A. Isto é o que precisa existir antes, e o 
 | E2 a E4 (pacote, contratos, gateway) | Não | A Concierge já usa a porta. Cuidado só de calendário: o E2 renomeia propósito para tarefa; nenhum WP daqui cria propósito novo | fora |
 | **E5**, `ai_eval` | Não | O próprio ID3A (corte C7) cita o `concierge_reply_eval` como prova de que comando basta. Do E5 só é preciso o padrão de rodada paga (`--paid`, `--max-cases`, `--budget-usd`) | WP-02 |
 | **E9**, inventário de privacidade lendo conexões | **Sim**, desde 16/11 | O dono escolheu Jev com um modelo mais barato (DeepSeek) em vez da Anthropic. `/privacidade` hoje só declara a Anthropic (`shopman/shop/privacy_inventory.py`); quem passa a receber mensagem de cliente precisa aparecer lá | WP-10 |
-| E10, cofre de pseudônimos | **Depende da decisão 1b** | Os WPs cumprem quatro condições: (1) texto de cliente só para conexão `customer_text_approved` (já travado em `ai.resolve`); (2) redigido antes de sair; (3) sem nome nem endereço; (4) categoria sensível mascarada. Com a Anthropic isso bastava. Para a DeepSeek, a D-039 dizia "mensagem de cliente não vai à DeepSeek sem nova decisão", e o ID3A punha o cofre antes. A decisão 1b pergunta se o texto redigido basta | fora, ou WP novo de 5 a 8 dias |
+| E10, cofre de pseudônimos | **Não** (decisão 1b, dono, 16/11: a mensagem redigida pode ir à DeepSeek e ao Jev) | Os WPs cumprem quatro condições: (1) texto de cliente só para conexão `customer_text_approved` (já travado em `ai.resolve`); (2) redigido antes de sair; (3) sem nome nem endereço; (4) categoria sensível mascarada. Com a Anthropic isso bastava. Para a DeepSeek, a D-039 dizia "mensagem de cliente não vai à DeepSeek sem nova decisão", e o ID3A punha o cofre antes. O dono decidiu que o texto redigido basta (D-040) | fora |
 | **Redação antes do modelo** | **Sim** | Contrato do V2 (5.2) que o código não cumpre | WP-03 |
 | **`sensitive` nunca vai para fora** (ID3A, seção 9: saúde, alergia com detalhe, criança) | **Sim** | Já aprovado na D-039. O redator que faz isso existe (`concierge/observation_privacy.py`) e só é usado na observação passiva | WP-03 |
 | **Nome e endereço não saem** | **Sim** | Quem os manda é o laço do agente (`prompt.py`, `tools.py`, como anota o `privacy_inventory.py`). A nota de memória da leitura leva só o estado e o rótulo do pedido, e sai redigida no WP-03 | WP-08 |
@@ -105,8 +106,7 @@ A frente abre antes da fase 3 da ID3A. Isto é o que precisa existir antes, e o 
 
 Tamanho: **P** cabe em meia sessão; **M**, uma sessão; **G**, uma sessão cheia (se estourar, a
 sessão publica o que tem em PR draft e para). Toda prova roda no worktree da sessão, com o
-`PYTHONPATH` que o `CLAUDE.md` descreve. Nenhum WP faz chamada paga, salvo o WP-09, e só com a
-decisão 1b.
+`PYTHONPATH` que o `CLAUDE.md` descreve. Chamada paga só em dois: o WP-09 (placar, até US$ 2, autorizado na D-040) e o WP-15 (uma sugestão por clique, pelo freio do WP-01).
 
 Regra comum a todos os briefs, dita uma vez: a sessão lê o `CLAUDE.md` e este plano, confere com
 `gh pr list` e `git worktree list` se a frente já tem dono, e não toca arquivo fora da lista do
@@ -218,14 +218,14 @@ Compromisso: DEV-2026-026.
 - **Objetivo:** parte de consulta sem fato vira uma pergunta exata no sino do Gestor, e a resposta da equipe volta ao cliente pela Concierge.
 - **Depende de:** WP-03. A decisão 3 já foi dada: 10 e 30 minutos, configuráveis no Admin.
 - **Arquivos:** `shopman/storefront/concierge/verification.py` (novo), `shopman/storefront/concierge/intents.py`, `shopman/storefront/concierge/dialogue.py`, `shopman/storefront/concierge/service.py`, `shopman/shop/config.py` (os dois prazos no `ChannelConfig`, editáveis no Admin como o teto do desconto; decisão do dono, 16/11), `shopman/backstage/models/alerts.py` e a migração do tipo, `shopman/backstage/alert_specs.py`, `shopman/backstage/api/alerts.py` e `urls.py`, `shopman/shop/omotenashi/copy.py`, `usage_map.py`, `shopman/storefront/admin/concierge.py`, `docs/reference/data-schemas.md`, `shopman/storefront/tests/test_concierge_verification.py` (novo).
-- **Fora do escopo:** a tela (WP-07), o relógio dos prazos (WP-06), "vale para todo mundo" (C4), modelo da Meta (C5). Nada novo importa de `agent.py`.
+- **Fora do escopo:** a tela (WP-07), o relógio dos prazos (WP-06), promover a pergunta frequente (WP-15), mensagem-modelo da Meta (C5). Nada novo importa de `agent.py`.
 - **Pronto quando:** `pytest shopman/storefront/tests/test_concierge_verification.py` verde com sete cenários nomeados: (1) sem fato no expediente cria um cartão `concierge_verify` com a pergunta do cliente (redigida) e responde com o prazo, e as outras partes da mesma mensagem são respondidas; (2) a equipe responde e o cliente recebe "A equipe confirmou: ...", passando pelas regras de forma e pela janela de 24 horas; (3) "e aí?" durante a espera é respondido pelo estado, sem cartão novo; (4) "assumo a conversa" vira handoff; (5) fora do expediente, o prazo vem do calendário da casa; (6) fora da janela de 24 horas, nada é prometido; (7) turno revogado não grava `verifying`. Placar gratuito sem regressão. Toda copy de prazo (inclusive as que o WP-06 vai disparar) já nasce aqui.
 - **Cliente vê:** sim. "Não achei, quer a equipe?" vira "já perguntei para a equipe, te respondo por aqui em até 10 minutos".
 - **Tamanho:** G.
 
 ```text
 Tarefa: o caminho "não sei, vou verificar" (bloco 4 do V2), só o backend.
-Leia: docs/plans/CONCIERGE-PLANO-DE-ACAO.md (WP-05 e cortes C4, C5), CONCIERGE-ARQUITETURA-ALVO-V2.md
+Leia: docs/plans/CONCIERGE-PLANO-DE-ACAO.md (WP-05, WP-15 e o corte C5), CONCIERGE-ARQUITETURA-ALVO-V2.md
 seções 6.2 e 8, concierge/intents.py (execute e a função search), concierge/dialogue.py,
 service.mark_handoff e service._triage_alert, concierge/discount.py (precedente de config no
 ChannelConfig), shopman/backstage/api/alerts.py, docs/reference/data-schemas.md (Concierge).
@@ -327,7 +327,7 @@ Compromisso: DEV-2026-026.
 ### WP-09 · Ensaio, placar com modelo e abertura das respostas
 
 - **Objetivo:** provar as metas com a leitura por Jev e DeepSeek, ensaiar no número do dono e abrir as respostas (sem pedido na conversa) para o primeiro grupo de clientes.
-- **Depende de:** WP-01 a WP-08 e WP-10; decisão 1b; três ações do dono (chave do Jev e chave da DeepSeek no Admin, com a conexão marcada para mensagem de cliente, e a palavra para mudar variável do app vivo).
+- **Depende de:** WP-01 a WP-08 e WP-10; três ações do dono (chave do Jev e chave da DeepSeek no Admin, com a conexão marcada para mensagem de cliente, e a palavra para mudar variável do app vivo).
 - **Arquivos:** `docs/reports/concierge-ensaio.md` (novo), `.do/app.alpha-subdomains.yaml` (identidade, devolução da conversa, coorte).
 - **Fora do escopo:** corrigir o que o ensaio achar (cada achado vira issue ou WP novo); reseed; pedido na conversa.
 - **Pronto quando:** o relatório traz a saída de: (1) `concierge_reply_eval --plural --reader model --repeat 3 --paid --budget-usd 2`, uma vez com `deepseek-flash` e uma com `deepseek-v4-pro` na rota `intents`, com o Jev no porteiro; meta: equipe 13/13 nas três rodadas, partes em 90% ou mais, várias partes todas achadas em 85% ou mais, sem precisar em 4 ou menos, p95 da leitura abaixo de 2 s; (2) `concierge_check --live` sem pendência; (3) o "Teste prático no portão ManyChat" do guia, no número do dono, mais três conversas de verificação (respondida, atrasada, assumida); (4) o gasto do dia no Admin, em "Chamadas de IA". Meta não batida fica escrita com o caso e a issue, e a Concierge abre pelo caminho sem modelo.
@@ -336,8 +336,9 @@ Compromisso: DEV-2026-026.
 - **Tamanho:** M.
 
 ```text
-Tarefa: ensaio final e abertura das respostas da Concierge. Esta sessão faz chamada paga, e só com
-a decisão 1b do plano respondida e as chaves do Jev e da DeepSeek já cadastradas pelo dono.
+Tarefa: ensaio final e abertura das respostas da Concierge. Esta sessão faz chamada paga: o dono
+autorizou (D-040) a mensagem redigida ir à DeepSeek e ao Jev e uma rodada de placar de até US$ 2.
+Só comece com as chaves do Jev e da DeepSeek já cadastradas por ele no Admin.
 Leia: docs/plans/CONCIERGE-PLANO-DE-ACAO.md (WP-09 e seção 5), docs/guides/whatsapp-concierge.md
 ("Teste prático no portão ManyChat" e "Contenção e recuperação"), docs/plans/WHATSAPP-CONCIERGE-PLAN.md
 ("Como ligar"), D-039, docs/reference/ai-connections.md (o que a DeepSeek aceita).
@@ -477,6 +478,33 @@ Não faça: reseed; corrigir achado no mesmo PR; banco do alpha fora da conexão
 Compromisso: DEV-2026-027.
 ```
 
+### WP-15 · Promover a resposta da equipe a pergunta frequente
+
+- **Objetivo:** depois de responder uma verificação, a equipe pode promovê-la a pergunta frequente: nasce um rascunho generalizado por IA, que só vale para os próximos clientes depois de publicado no Admin.
+- **Depende de:** WP-05 e WP-07 (o cartão e a resposta); WP-01 (a sugestão é chamada paga e passa pelo freio).
+- **Arquivos:** `shopman/storefront/concierge/faq_promotion.py` (novo), `shopman/backstage/api/alerts.py` e `urls.py` (o endpoint de promover), `shopman/shop/admin/faq.py` (de onde veio o rascunho), `surfaces/orders-nuxt/` (o botão no cartão respondido), `shopman/storefront/tests/test_concierge_faq_promotion.py` (novo) e o teste do cartão no `orders-nuxt`.
+- **Como funciona** (dono, 16/11: "Converter/promover a tópico das perguntas frequentes (FAQ), com sugestão por IA para generalizar"): o botão cria uma `FAQEntry` **não publicada** com pergunta, resposta e termos de busca sugeridos pela IA a partir da pergunta do cliente (redigida) e da resposta da equipe. Quem publica é quem já publica pergunta frequente no Admin, depois de ler e ajustar. Vale enquanto estiver publicada, como toda pergunta frequente: sai do ar quando alguém despublica, e o histórico fica no Admin. Sem IA configurada ou com o freio fechado, o rascunho nasce com os textos originais, sem sugestão.
+- **Fora do escopo:** publicar sozinha; resposta que é do dia ("amanhã tem pão de forma") não é promovida, e o rascunho avisa quando a resposta cita data; `service.py`, `intents.py`, `tools.py`.
+- **Pronto quando:** `pytest shopman/storefront/tests/test_concierge_faq_promotion.py` verde com: (1) promover cria uma `FAQEntry` com `is_published=False` e a origem anotada; (2) a sugestão nunca leva documento, contato nem endereço (o texto vai redigido) e respeita o limite de 2.000 caracteres; (3) sem IA, o rascunho nasce com os textos originais; (4) promover duas vezes a mesma verificação não cria dois rascunhos; (5) a pergunta só passa a ser usada pela Concierge depois de publicada. No `orders-nuxt`, teste do botão (promoveu, erro, já promovida). Tela nova: prévia local ao dono antes de enfileirar.
+- **Cliente vê:** sim, depois da publicação: a próxima pessoa que perguntar recebe a resposta sem esperar a equipe.
+- **Tamanho:** M.
+
+```text
+Tarefa: "Promover a pergunta frequente" a partir de uma verificação respondida pela equipe.
+Leia: docs/plans/CONCIERGE-PLANO-DE-ACAO.md (WP-15), shopman/shop/models/faq.py e
+shopman/shop/admin/faq.py, concierge/verification.py e o endpoint de resposta (WP-05), o cartão
+do sino no orders-nuxt (WP-07), shopman/shop/ai.py e docs/reference/ai-connections.md (propósitos
+e o freio), shopman/shop/services/copy_assist.py (como uma sugestão de texto já é pedida à IA).
+Faça: endpoint e botão "Promover a pergunta frequente" no cartão já respondido. Cria FAQEntry não
+publicada com pergunta, resposta e termos de busca sugeridos pela IA a partir do texto REDIGIDO.
+Sem IA disponível, o rascunho nasce com os textos originais. Publicar continua sendo do Admin.
+Não faça: publicar automaticamente; propósito novo de IA sem necessidade (reuse o de sugestão de
+texto se couber; se não couber, pare e escreva no PR); tocar service.py, intents.py ou tools.py.
+Antes de enfileirar: prévia local do botão para o dono.
+Pronto: ver "Pronto quando" do WP-15.
+Compromisso: DEV-2026-027.
+```
+
 ## 4. Ondas
 
 Dois WPs da mesma onda não tocam o mesmo arquivo. Uma onda só começa com a anterior no `main`.
@@ -487,7 +515,7 @@ Dois WPs da mesma onda não tocam o mesmo arquivo. Uma onda só começa com a an
 | **2** | WP-03 (sem chave, texto redigido) · WP-04 (equipe pela regra) · WP-10 (privacidade) | A coorte volta a ser respondida, com privacidade, e a equipe é achada sem modelo |
 | **3** | WP-05 ("vou verificar", backend) | O contrato do cartão |
 | **4** | WP-06 (prazos) · WP-07 (sino do Gestor) · WP-08 (um caminho só) | "Vou verificar" completo; código morto fora |
-| **5** | WP-09 (ensaio e abertura das respostas) · WP-11 (autoridade de compra) | Clientes atendidos; a trava do pedido resolvida |
+| **5** | WP-09 (ensaio e abertura das respostas) · WP-11 (autoridade de compra) · WP-15 (promover a pergunta frequente) | Clientes atendidos; a trava do pedido resolvida; a casa aprende com cada verificação |
 | **6** | WP-12 (sacola na conversa) | Itens pela conversa |
 | **7** | WP-13 (fechar o pedido) | Pedido completo pela conversa |
 | **8** | WP-14 (ensaio do pedido) | Clientes pedindo pela conversa |
@@ -507,6 +535,8 @@ flowchart LR
   WP07 --> WP09
   WP08 --> WP09
   WP08 --> WP11[WP-11 autoridade de compra]
+  WP07 --> WP15[WP-15 promover a pergunta frequente]
+  WP01 --> WP15
   WP11 --> WP12[WP-12 sacola]
   WP12 --> WP13[WP-13 fechar pedido]
   WP13 --> WP14[WP-14 ensaio do pedido]
@@ -521,11 +551,14 @@ depois da onda 2 e deixar o "vou verificar" para o fim; a regra dos arquivos con
 
 ## 5. Decisões do dono
 
-### Respondidas em 16/11/2026 (DEV-2026-027)
+### Respondidas em 16/11/2026 (DEV-2026-027, D-040)
 
 | # | Pergunta | Resposta do dono | O que mudou no plano |
 |---|---|---|---|
-| 1 | Chave da Anthropic para a leitura, com teto e uma rodada de placar? | "Não. Pretendo associar JEV a algum outro modelo mais barato, como DeepSeek v4 Pro." | A leitura passa a ser Jev no porteiro e DeepSeek na extração. O WP-10 (privacidade) virou pré-requisito. Sobrou a decisão 1b |
+| 1 | Chave da Anthropic para a leitura, com teto e uma rodada de placar? | "Não. Pretendo associar JEV a algum outro modelo mais barato, como DeepSeek v4 Pro." | A leitura passa a ser Jev no porteiro e DeepSeek na extração. O WP-10 (privacidade) virou pré-requisito |
+| 1b | A mensagem redigida do cliente pode ir à DeepSeek e ao Jev, declaradas em `/privacidade`, com uma rodada de placar de até US$ 2? | "OK" | O cofre de pseudônimos deixa de ser pré-requisito. Muda o item 1 da D-039 neste ponto |
+| 2a | Deixar de fora a IA reescrevendo a resposta? | "Não deve reescrever (a não ser que essa necessidade seja 'provada')" | Corte C1 confirmado, com o critério de reabertura |
+| 2b | Deixar de fora o "vale para todo mundo"? | "'Vale para todo mundo' é vago. Tipo, por quanto tempo, eternamente? Melhor seria dar opção de 'Converter/promover a tópico das perguntas frequentes (FAQ)', com sugestão por IA para generalizar, algo assim." | WP-15, novo |
 | 3 | Prazos do "vou verificar": 10 e 30 minutos? | "Sim. Configurável via admin." | Os dois prazos nascem no `ChannelConfig`, editáveis no Admin (WP-05) |
 | 4 | Pedido dentro da conversa: fora do plano, ou link com sacola montada? | "WP destacado: idealmente, quero que a Concierge consiga montar o pedido do cliente NA CONVERSA, interagindo com dados reais, via projections ou o que seja." | Deixou de ser corte: WP-11 a WP-14 |
 | 5 | Abrir por grupo ou para todos? | "Pode ser opção 1." | Grupo de até 20 contatos por uma semana, depois todos (WP-09) |
@@ -536,25 +569,18 @@ DeepSeek v4 Pro por cerca de US$ 0,0026 e DeepSeek flash por cerca de US$ 0,0006
 [INFERÊNCIA sobre a premissa de tokens] Pela tabela, o v4 Pro não é mais barato que o Haiku
 nesta leitura; o barato é o flash. O WP-09 mede os dois lado a lado antes de escolher.
 
-### Abertas
+### Aberta
 
-**1b. Mensagem de cliente para a DeepSeek.** A D-039 diz "mensagem de cliente não vai à DeepSeek
-sem nova decisão". Depois do WP-03 o que sai é a mensagem redigida: sem documento, telefone,
-e-mail, endereço, cartão nem detalhe de saúde. Nome escrito pelo cliente no meio da frase ainda
-pode sair. Autoriza a mensagem redigida ir à DeepSeek e ao Jev, com as duas declaradas em
-`/privacidade`, e uma rodada de placar de até US$ 2? **sim** (recomendo) / **só depois do cofre
-de pseudônimos**, que troca nomes por marcadores antes de sair e custa de 5 a 8 dias a mais.
-Segura só o WP-09.
-
-**2. Três coisas do plano antigo que proponho não construir agora.** (a) A IA reescrever a
-resposta para soar mais natural: hoje a frase sai pronta da casa, com os dados do sistema;
-reescrever custa uma segunda chamada paga por resposta e reabre o risco de ela afirmar algo
-falso. (b) Um botão "vale para todo mundo", que transformaria a resposta da equipe em resposta
-automática para os próximos clientes: a equipe pode publicar uma pergunta frequente no Admin,
-que já existe. (c) Uma mensagem-modelo aprovada pela Meta para responder o cliente depois de 24
-horas: é fila de aprovação para um caso raro; sem ela, a Concierge diz quando a equipe atende.
-**sim, deixa as três de fora** (recomendo) / **não**, e diga qual entra. Não segura nenhum WP
-das ondas 1 a 4; cada "entra" vira um WP a mais.
+**2c. Responder o cliente depois de 24 horas.** O WhatsApp só deixa a casa escrever texto livre
+até 24 horas depois da última mensagem do cliente. Passado isso, só sai uma mensagem de texto
+fixo aprovada antes pela Meta. O caso em que isso pega: o cliente pergunta no sábado às 21h algo
+que a Concierge precisa verificar, a casa fecha no domingo, e a equipe só responde na segunda às
+7h, 34 horas depois. **Sem** a mensagem aprovada (recomendo): no sábado a Concierge não promete
+resposta; diz "a equipe confirma isso na segunda, a partir das 7h; me chame de novo e eu te
+respondo". **Com** ela: a Concierge promete, e na segunda o cliente recebe "A equipe respondeu
+sua pergunta. Responda esta mensagem para ver.", mas isso pede um texto submetido à Meta (24 a
+48 horas de fila) e um WP a mais. **sim, fica sem** (recomendo) / **não, quero a mensagem
+aprovada**. Não segura nenhum WP.
 
 ## Arquivos lidos
 
