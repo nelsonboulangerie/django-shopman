@@ -405,7 +405,7 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "status": "E",                   // letra Machine crua
   "called_at": "iso",              // a PRIMEIRA chamada pedida (courier.request_dispatch), antes da central responder
   "called_by": "operator:ana",     // quem pediu (ator do request_dispatch); encerra o lembrete do Gestor
-  "ride_number": 2,                // o número (e a cor) da corrida na tela, 1 a 6, gravado na chamada (courier.next_ride_number): o menor livre entre as corridas vivas; igual em todos os pedidos da corrida. Seção Entregas do Gestor
+  "ride_number": 2,                // o número da corrida, 1 a 26, gravado na chamada (courier.next_ride_number, sob trava): na tela é a LETRA (courier.ride_letter: 1 é A, 26 é Z) e a cor (repete a cada 6). O que a tela mostrava vale se continuar livre; senão, o menor livre entre as corridas vivas. Igual em todos os pedidos da corrida. Seção Entregas do Gestor
   "requested_at": "2026-07-07T18:02:11-03:00",
   "dispatched_at": null,           // setado no primeiro E (coleta)
   "finished_at": null,             // setado no F
