@@ -258,6 +258,7 @@ def test_accepted_ride_enriches_driver_and_tracking(shop):
     assert block["status"] == "A"
     assert block["driver"]["name"] == "Entregador Mock"
     assert block["tracking_url"].startswith("https://rastreio.mock/")
+    assert block["tracking_match"] == "single"
     assert order.status == Order.Status.READY  # aceite ainda não é coleta
 
 
@@ -779,11 +780,29 @@ def test_notification_context_includes_courier_tracking(shop):
             "id_mch": "1",
             "status": "E",
             "tracking_url": "https://rastreio.mock/pedido/x",
+            "tracking_match": "single",
         }
     )
     ctx = _build_context(order, {"order_ref": order.ref}, "order_dispatched")
     assert ctx["courier_tracking_url"] == "https://rastreio.mock/pedido/x"
     assert ctx["courier_tracking_suffix"] == "\nAcompanhe o entregador: https://rastreio.mock/pedido/x"
+
+
+def test_notification_context_drops_a_link_recorded_without_proof(shop):
+    """Link sem ``tracking_match`` pode ser o da parada de outro cliente: o sufixo some."""
+    from shopman.shop.services.notification import _build_context
+
+    order = _delivery_order(
+        ref="CR-UNPROVEN",
+        courier={
+            "provider": "machine", "id_mch": "1", "status": "E",
+            "ride_orders": ["CR-OTHER", "CR-UNPROVEN"],
+            "tracking_url": "https://rastreio.mock/pedido/de-outro",
+        },
+    )
+    ctx = _build_context(order, {"order_ref": order.ref}, "order_dispatched")
+    assert ctx["courier_tracking_url"] == ""
+    assert ctx["courier_tracking_suffix"] == ""
 
 
 def test_notification_context_suppresses_suffix_without_ride(shop):
