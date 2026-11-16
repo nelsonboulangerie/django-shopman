@@ -128,9 +128,8 @@ const detours: Step[] = [
 
 const palette = [
   { name: "Tela", light: "#ffffff", lightFg: "#000000", dark: "#000000", darkFg: "#ffffff" },
-  { name: "Bloco", light: "#e5e5e5", lightFg: "#000000", dark: "#404040", darkFg: "#ffffff" },
-  { name: "Apoio (texto pequeno)", light: "#ffffff", lightFg: "#404040", dark: "#000000", darkFg: "#e5e5e5" },
-  { name: "Badge do código", light: "#404040", lightFg: "#ffffff", dark: "#e5e5e5", darkFg: "#000000" },
+  { name: "Bloco, escolha e botão secundário", light: "#bfbfbf", lightFg: "#000000", dark: "#808080", darkFg: "#000000" },
+  { name: "Badge do código", light: "#808080", lightFg: "#000000", dark: "#bfbfbf", darkFg: "#000000" },
   { name: "Forte (botão principal, aviso)", light: "#000000", lightFg: "#ffffff", dark: "#ffffff", darkFg: "#000000" },
 ];
 
@@ -182,7 +181,7 @@ const fixes = [
               <span>Tema das telas:</span>
               <NuxtButton size="sm" color="neutral" :variant="!dark ? 'solid' : 'outline'" icon="i-lucide-sun" label="Claro" @click="dark = false" />
               <NuxtButton size="sm" color="neutral" :variant="dark ? 'solid' : 'outline'" icon="i-lucide-moon" label="Escuro" @click="dark = true" />
-              <span class="op-micro text-muted">A paleta das telas é própria: branco, preto e dois cinzas. No aviso de cancelamento (7), o tom forte é o oposto do tema.</span>
+              <span class="op-micro text-muted">A paleta das telas é própria: branco, preto, cinza 25% e cinza 50%. No aviso de cancelamento (7), o tom forte é o oposto do tema.</span>
             </div>
             <h1 class="op-title font-semibold text-highlighted">Prévia 5 · A corrida do entregador da casa, em hiperfoco (linguagem do Painel)</h1>
             <p class="op-body text-toned">
@@ -206,12 +205,12 @@ const fixes = [
                   <span class="op-micro shrink-0 text-muted">{{ t.name }} · {{ t.spec }}</span>
                 </p>
                 <p class="flex items-baseline justify-between gap-4">
-                  <span class="inline-flex w-fit items-center rounded-lg bg-[#404040] px-2 py-0.5 text-[15px] font-bold tabular-nums text-white">A47</span>
-                  <span class="op-micro shrink-0 text-muted">Código do pedido · sempre este badge</span>
+                  <span class="inline-flex w-fit items-center rounded-lg bg-[#808080] px-2 py-0.5 text-[15px] font-bold tabular-nums text-black">A47</span>
+                  <span class="op-micro shrink-0 text-muted">Código do pedido · sempre este badge, na linha de cima</span>
                 </p>
               </div>
               <div class="flex w-[420px] flex-col gap-3 rounded-2xl bg-default p-5 ring-1 ring-default">
-                <p class="op-micro font-semibold text-muted">Paleta: branco, preto e dois cinzas (#e5e5e5 e #404040)</p>
+                <p class="op-micro font-semibold text-muted">Paleta: branco, preto, cinza 25% (#bfbfbf) e cinza 50% (#808080)</p>
                 <div v-for="row in palette" :key="row.name" class="flex items-center gap-3">
                   <span class="flex overflow-hidden rounded-lg ring-1 ring-black/20">
                     <span class="grid size-10 place-items-center text-[11px] font-bold" :style="{ background: row.light, color: row.lightFg }">Aa</span>
@@ -222,11 +221,12 @@ const fixes = [
               </div>
               <div class="flex w-[420px] flex-col gap-2 rounded-2xl bg-default p-5 ring-1 ring-default op-body text-toned">
                 <p class="op-micro font-semibold text-muted">Regras</p>
-                <p>· O código do pedido é sempre o mesmo badge. O que pertence a um pedido mora dentro do bloco dele.</p>
+                <p>· O código do pedido é sempre o mesmo badge, na linha de cima, à esquerda. O que pertence a um pedido mora dentro do bloco dele.</p>
+                <p>· Tudo alinhado à esquerda; centralizado só o texto dentro de botão.</p>
                 <p>· Grande só para o título da tela e para o dinheiro.</p>
                 <p>· Espaço: 20 px na borda, 16 px dentro do bloco, 12 px entre blocos, 28 px entre grupos.</p>
                 <p>· Tema claro ou escuro: o entregador escolhe na tela inicial e o sistema lembra, no celular e no cadastro dele. Sem escolha, segue o celular.</p>
-                <p>· Contraste medido em toda tela, nos dois temas: texto e badge no mínimo 8,2:1 (AAA). A letra da rota, texto grande sobre a cor da rota, 6,3:1 (AAA para texto grande).</p>
+                <p>· Medido em toda tela, nos dois temas: só 3 tamanhos, só as 4 cores, badge sempre na linha de cima, nada centralizado fora de botão. Contraste mínimo 5,3:1 (preto sobre o cinza 50%): passa no AA, não no AAA.</p>
                 <p>· A cor da rota só no quadrado da letra e na linha do mapa.</p>
               </div>
             </div>
