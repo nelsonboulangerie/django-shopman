@@ -5,6 +5,9 @@
 // casa e o frete do cliente não muda. A corrida é uma saída: o troco sai da
 // gaveta pedido a pedido e a maquininha é uma só para todos os pedidos de
 // cartão (o "Voltou" fecha todos). A recusa do servidor aparece aqui mesmo.
+// A chamada passa pelo protocolo de intenção (`action`: a `ride_action` da fila,
+// com quem a tela leu e a revisão de cada candidato).
+import type { Action } from "~/generated/ordersContract";
 import {
   courierRideBody,
   courierRideCallLabel,
@@ -19,8 +22,11 @@ import {
 import { freeMachines } from "../../../operator-kit/app/presentation/custody";
 import { useRideQuote } from "~/composables/useRideQuote";
 
-const props = defineProps<{ choices: RideChoice[] }>();
-const emit = defineEmits<{ done: [] }>();
+const props = defineProps<{ choices: RideChoice[]; action?: Action | null }>();
+// `done`: a corrida foi chamada. `stale`: o servidor recusou porque um pedido
+// mudou; a fila é relida e a recusa fica na tela.
+const emit = defineEmits<{ done: []; stale: [] }>();
+const intentions = useOrderIntention();
 
 const open = ref(false);
 const picked = ref<string[]>([]);
@@ -86,15 +92,15 @@ async function call() {
   sending.value = true;
   failure.value = "";
   try {
-    await $fetch("/api/v1/backstage/orders/courier-ride/", {
-      method: "POST",
-      body: courierRideBody(
+    await intentions.executeRide(
+      props.action,
+      courierRideBody(
         picked.value,
         props.choices,
         changeOut.value,
         machine.value?.ref,
       ),
-    });
+    );
     open.value = false;
     emit("done");
   } catch (error) {
@@ -102,6 +108,9 @@ async function call() {
       error,
       "Não foi possível chamar a corrida. Atualize a fila.",
     );
+    // Um pedido mudou depois que a fila foi lida: a frase do servidor diz qual,
+    // e a fila é relida para a próxima tentativa partir do que está valendo.
+    if (httpErrorCode(error) === "revision_changed") emit("stale");
   } finally {
     sending.value = false;
   }
