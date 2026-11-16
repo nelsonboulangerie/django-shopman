@@ -170,7 +170,7 @@ def test_information_in_the_same_turn_does_not_erase_the_recap_question():
 
 def test_slot_by_time():
     state = _state({"tool": "list_fulfillment_slots", "date": "2026-10-03", "slots": [
-        {"ref": "a", "name": "14:00 às 14:30"}, {"ref": "b", "name": "14:30 às 15:00"}]})
+        {"ref": "a", "name": "14h às 14h30"}, {"ref": "b", "name": "14:30 às 15:00"}]})
     resolution = _resolve("14:30", state)
     assert resolution.outcome == "resolved" and resolution.text == "14:30 às 15:00"
 

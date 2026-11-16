@@ -379,7 +379,7 @@ def _dim_key(dim: str, *, local=None, extra=None) -> tuple[str, str]:
         iso = local.date().isoformat()
         return iso, iso
     if dim == "hour":
-        return f"{local.hour:02d}", f"{local.hour}h"
+        return f"{local.hour:02d}", f"{local.hour}h"  # hora-ok: rótulo da faixa de hora cheia do gráfico, não relógio
     if dim == "weekday":
         return _weekday(local)
     if dim == "month_of_year":

@@ -243,7 +243,7 @@ describe("o porquê que o B.I. levou ao plano", () => {
       SATURDAY,
     ).filter((line) => line.kind === "bi");
     expect(lines.map((line) => line.text)).toEqual([
-      "No sábado 03/10 acabou às 10:40, ~14 vendas perdidas",
+      "No sábado 03/10 acabou às 10h40, ~14 vendas perdidas",
       "Na terça 29/09 sobraram 12 de 60 feitas",
     ]);
     expect(lines[0]!.note).toBe("levado do B.I.");

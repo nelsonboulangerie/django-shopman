@@ -10,7 +10,7 @@ import {
 
 describe("presentation/cashReport — leituras X/Z da antesala", () => {
   it("formata hora curta e tolera ausência/lixo", () => {
-    expect(timeDisplay("2026-07-17T8h02:00-03:00")).toBe("8h02");
+    expect(timeDisplay("2026-07-17T08:02:00-03:00")).toBe("8h02");
     expect(timeDisplay("")).toBe("");
     expect(timeDisplay(null)).toBe("");
     expect(timeDisplay("garbage")).toBe("");
@@ -18,10 +18,10 @@ describe("presentation/cashReport — leituras X/Z da antesala", () => {
 
   it("mostra o período do turno: fechado com fim, aberto com 'desde'", () => {
     expect(
-      shiftPeriodDisplay({ opened_at: "2026-07-17T8h02:00-03:00", closed_at: "2026-07-17T12:30:00-03:00" }),
+      shiftPeriodDisplay({ opened_at: "2026-07-17T08:02:00-03:00", closed_at: "2026-07-17T12:30:00-03:00" }),
     ).toBe("8h02 às 12h30");
     expect(
-      shiftPeriodDisplay({ opened_at: "2026-07-17T8h02:00-03:00", closed_at: "" }),
+      shiftPeriodDisplay({ opened_at: "2026-07-17T08:02:00-03:00", closed_at: "" }),
     ).toBe("desde 8h02");
     expect(shiftPeriodDisplay({ opened_at: "", closed_at: "" })).toBe("");
   });

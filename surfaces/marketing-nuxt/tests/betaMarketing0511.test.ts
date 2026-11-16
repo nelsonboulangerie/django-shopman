@@ -74,14 +74,14 @@ describe("ge:MKT-03: quem não aprova não recebe o gesto de aprovar", () => {
 describe("ge:MKT-07: silêncio do WhatsApp contra o prazo do anúncio", () => {
   const zone = "America/Sao_Paulo";
 
-  it("às 07:21 com prazo às 07:45, as 08:00 já vencem: devolve a hora do prazo", () => {
+  it("às 07:21 com prazo às 7h45, as 08:00 já vencem: devolve a hora do prazo", () => {
     expect(
       quietHoursOutlastDeadline({
         timeZone: zone,
         expiresAt: "2026-11-05T07:45:00-03:00",
         nowMs: Date.parse("2026-11-05T07:21:00-03:00"),
       }),
-    ).toBe("07:45");
+    ).toBe("7h45");
   });
 
   it("prazo depois das 08:00: agendar resolve, então não cruza", () => {

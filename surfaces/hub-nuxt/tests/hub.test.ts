@@ -221,7 +221,7 @@ function sourceFiles(dir: string): string[] {
 describe("camada da suíte (prévia v4)", () => {
   it("hubDateLine: hora e dia por extenso, com o dia da semana em maiúscula", () => {
     const nowMs = Date.parse("2026-10-03T13:03:00Z");
-    expect(hubDateLine(nowMs, "America/Sao_Paulo")).toBe("10:03 · Sábado, 3 de outubro");
+    expect(hubDateLine(nowMs, "America/Sao_Paulo")).toBe("10h03 · Sábado, 3 de outubro");
     expect(hubDateLine(Number.NaN)).toBe("");
   });
 
@@ -285,12 +285,12 @@ describe("selo, aviso e nome acessível do bloco", () => {
   });
 
   it("a releitura que falha diz de quando é a tela, e nunca usa travessão", () => {
-    expect(staleQueueAlert("10:42")).toEqual({
+    expect(staleQueueAlert("10h42")).toEqual({
       title: "Os apps não foram atualizados.",
-      description: "O que está na tela é de 10:42.",
+      description: "O que está na tela é de 10h42.",
     });
     expect(staleQueueAlert("").description).toBe("O que está na tela pode estar desatualizado.");
-    expect(readClockLabel(Date.parse("2026-10-03T13:42:00Z"), "America/Sao_Paulo")).toBe("10:42");
+    expect(readClockLabel(Date.parse("2026-10-03T13:42:00Z"), "America/Sao_Paulo")).toBe("10h42");
     expect(readClockLabel(Number.NaN)).toBe("");
   });
 });

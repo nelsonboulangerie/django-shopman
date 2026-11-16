@@ -885,7 +885,7 @@ describe("AnnouncementCard — decisão montada pela página", () => {
 
     expect(card.canContinue).toBe(false);
     expect(card.continueBlockedReason).toBe(
-      "O WhatsApp só envia a partir das 8h e este anúncio vence às 07:45. Tire o WhatsApp para postar agora.",
+      "O WhatsApp só envia a partir das 8h e este anúncio vence às 7h45. Tire o WhatsApp para postar agora.",
     );
     const alert = wrapper.get("[data-quiet-outlasts-deadline]");
     const remove = alert.findAll("button").find((button) => button.text() === "Tirar o WhatsApp");
@@ -914,7 +914,7 @@ describe("AnnouncementCard — decisão montada pela página", () => {
 
     expect(card.canContinue).toBe(false);
     expect(card.continueBlockedReason).toBe(
-      "O WhatsApp só envia a partir das 8h e este anúncio vence às 07:45. Escolha outra plataforma para postar agora.",
+      "O WhatsApp só envia a partir das 8h e este anúncio vence às 7h45. Escolha outra plataforma para postar agora.",
     );
     const alert = wrapper.get("[data-quiet-outlasts-deadline]");
     expect(alert.findAll("button").some((button) => button.text() === "Tirar o WhatsApp")).toBe(false);

@@ -34,7 +34,7 @@ def shop(db):
 
     shop = Shop.objects.create(name="Nelson")
     shop.opening_hours = {
-        name: {"open": "09:00", "close": "18:00"}
+        name: {"open": "9h", "close": "18:00"}
         for name in (
             "monday", "tuesday", "wednesday", "thursday",
             "friday", "saturday", "sunday",
@@ -220,7 +220,7 @@ class TestTheQuestionOnlyShowsWhenThereIsASignal:
 
         assert projection.has_pending_episodes
         assert projection.pending_episodes[0].signal
-        assert projection.pending_episodes[0].window_display == "10:00 → 15:00"
+        assert projection.pending_episodes[0].window_display == "10h → 15h"
         assert {o.ref for o in projection.episode_options} == {
             "falta-de-energia", "evento-na-regiao",
         }

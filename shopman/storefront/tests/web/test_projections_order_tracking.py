@@ -161,7 +161,7 @@ class TestPreorderTracking:
 
         proj = build_order_tracking(order)
 
-        assert proj.when_display == "amanhã · 14:00 às 14:30"
+        assert proj.when_display == "amanhã · 14h às 14h30"
 
     def test_on_the_day_the_preorder_rejoins_the_normal_flow(self, order):
         order, _ = self._make_preorder(order, days_ahead=0)
@@ -1629,7 +1629,7 @@ class TestTrackingSummary:
         proj = build_order_tracking(order)
 
         assert proj.when_display is None
-        assert proj.schedule_display == "hoje · 19:30 às 20:00"
+        assert proj.schedule_display == "hoje · 19h30 às 20h"
 
 
 class TestShareSummary:
@@ -1652,7 +1652,7 @@ class TestShareSummary:
 
         assert text.splitlines()[0].startswith(f"Pedido {order_items.ref} na ")
         assert "10× " in text and "2× " in text
-        assert "Entrega: hoje · 19:30 às 20:00" in text
+        assert "Entrega: hoje · 19h30 às 20h" in text
         assert "Endereço: Rua Pará, 100 - Centro - Londrina/PR" in text
         assert "http" not in text
         assert "/pedido/" not in text
@@ -1679,7 +1679,7 @@ class TestDispatchedEtaRespectsTheWindow:
 
         proj = build_order_tracking(order)
 
-        assert proj.eta_display == f"10:00 de {tomorrow:%d/%m}"
+        assert proj.eta_display == f"10h de {tomorrow:%d/%m}"
         assert "10:00" in proj.promise.message
 
 

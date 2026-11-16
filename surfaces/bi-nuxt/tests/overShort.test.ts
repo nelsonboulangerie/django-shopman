@@ -151,13 +151,13 @@ describe("o dia e a comparação", () => {
 describe("a resposta", () => {
   it("diz onde faltou (e quando acabou) e onde sobrou (e quanto)", () => {
     expect(overShortAnswer(report)).toBe(
-      "Faltou Croissant Manteiga (acabou às 10:40); sobrou Baguette de Tradition (12 un.).",
+      "Faltou Croissant Manteiga (acabou às 10h40); sobrou Baguette de Tradition (12 un.).",
     );
   });
 
   it("agrupa quando são vários", () => {
     const two = { rows: [croissant, row({ sku: "CI", name: "Ciabatta" }), shokupan] };
-    expect(overShortAnswer(two)).toBe("Faltou Croissant Manteiga e mais 1 (acabou às 10:40).");
+    expect(overShortAnswer(two)).toBe("Faltou Croissant Manteiga e mais 1 (acabou às 10h40).");
   });
 
   it("dia sem lote e dia todo na medida têm frase própria", () => {
@@ -252,8 +252,8 @@ describe("as outras respostas", () => {
   it("vendas: a base tem o nome do Comparar com, e o dia em curso diz até quando (ge:BI-05, ge:BI-06)", () => {
     const report = { orders_total: 15, revenue_total_q: 110000, previous: { revenue_total_q: 550000 } };
     expect(salesAnswer({ ...report, compare: "year" })).toContain("80% abaixo do mesmo período do ano passado.");
-    expect(salesAnswer({ ...report, previous: { revenue_total_q: 550000, partial_until: "07:25" } })).toContain(
-      "80% abaixo do período anterior até 07:25.",
+    expect(salesAnswer({ ...report, previous: { revenue_total_q: 550000, partial_until: "7h25" } })).toContain(
+      "80% abaixo do período anterior até 7h25.",
     );
   });
 
@@ -333,9 +333,9 @@ describe("V6: a resposta agrupada, a comparação escolhida e o que aconteceu de
 
   it("canais que saíram do ar no mesmo minuto vão juntos; Me avise conta clientes", () => {
     expect(unavailableText({ at: "10:40", channels: ["iFood", "Meta", "Google"], automatic: true })).toBe(
-      "iFood, Meta e Google indisponíveis às 10:40",
+      "iFood, Meta e Google indisponíveis às 10h40",
     );
-    expect(unavailableText({ at: "11:05", channels: ["Site"], automatic: false })).toBe("Site indisponível às 11:05");
+    expect(unavailableText({ at: "11:05", channels: ["Site"], automatic: false })).toBe("Site indisponível às 11h05");
     expect(clientCount(5)).toBe("5 clientes");
     expect(clientCount(1)).toBe("1 cliente");
   });

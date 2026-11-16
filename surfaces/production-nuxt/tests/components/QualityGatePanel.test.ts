@@ -143,7 +143,7 @@ describe("QualityGatePanel — qualidade em lote", () => {
     expect(exceptions).toHaveLength(1);
     expect(exceptions[0]!.text()).toContain("Croissant");
     expect(exceptions[0]!.text()).toContain("Perda 2");
-    expect(exceptions[0]!.text()).toContain("fechado por Rafael 07:00");
+    expect(exceptions[0]!.text()).toContain("fechado por Rafael 7h");
 
     const buttons = exceptions[0]!.findAll("button");
     await buttons.find((button) => button.text().includes("Confirmar assim"))!.trigger("click");

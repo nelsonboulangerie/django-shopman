@@ -36,7 +36,7 @@ def _sale(ref, at, total_q=1000):
 
 
 def test_today_is_compared_with_the_base_day_up_to_the_same_hour(monkeypatch):
-    """ge:BI-06: às 12:00 o hoje não se compara com o dia inteiro de ontem."""
+    """ge:BI-06: às 12h o hoje não se compara com o dia inteiro de ontem."""
     today = timezone.localdate()
     yesterday = today - timedelta(days=1)
     _sale("BI06-MORNING", _at(yesterday, 8))
@@ -50,7 +50,7 @@ def test_today_is_compared_with_the_base_day_up_to_the_same_hour(monkeypatch):
     assert report.previous.date_from == yesterday.isoformat()
     assert report.previous.orders_total == 1
     assert report.previous.revenue_total_q == 1000
-    assert report.previous.partial_until == "12:00"
+    assert report.previous.partial_until == "12h"
 
     whole = bi_sales.build_bi_sales(date_from=yesterday, date_to=yesterday)
     assert whole.previous.partial_until == ""

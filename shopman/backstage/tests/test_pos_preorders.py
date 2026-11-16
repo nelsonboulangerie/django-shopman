@@ -122,7 +122,7 @@ def test_dentro_do_dia_a_ordem_e_a_da_janela():
     projection = _list()
 
     assert [c.ref for c in projection.days[0].orders] == ["CEDO", "TARDE"]
-    assert projection.days[0].orders[0].window_start == "09:00"
+    assert projection.days[0].orders[0].window_start == "9h"
     assert projection.days[0].orders[0].window_label
 
 

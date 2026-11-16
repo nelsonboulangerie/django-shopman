@@ -47,7 +47,7 @@ def shift():
 
 
 def test_titulo_do_turno_em_hora_local(shift):
-    assert "05/11/2026 10:00" in str(shift)
+    assert "05/11/2026 10h" in str(shift)
 
 
 def test_linha_do_tempo_do_turno_em_hora_local():
@@ -56,12 +56,12 @@ def test_linha_do_tempo_do_turno_em_hora_local():
     from django.contrib import admin
 
     inline = EntryInline(Entry, admin.site)
-    assert inline.at_display(entry) == "05/11 10:00"
-    assert str(entry).startswith("05/11 10:00")
+    assert inline.at_display(entry) == "05/11 10h"
+    assert str(entry).startswith("05/11 10h")
 
 
 def test_data_da_cobranca_em_hora_local():
-    assert _format_datetime(UTC_13H) == "05/11/26 · 10:00"
+    assert _format_datetime(UTC_13H) == "05/11/26 · 10h"
     assert _format_datetime(None) == "—"
 
 
@@ -69,7 +69,7 @@ def test_alerta_do_dashboard_em_hora_local():
     alert = OperatorAlert.objects.create(type="stale_new_order", severity="warning", message="x", audience="orders")
     OperatorAlert.objects.filter(pk=alert.pk).update(created_at=UTC_13H)
     rows = {a.pk: a for a in build_dashboard().operator_alerts}
-    assert rows[alert.pk].created_at_display == "05/11 10:00"
+    assert rows[alert.pk].created_at_display == "05/11 10h"
 
 
 def test_meio_da_venda_e_comprovante_em_portugues(shift):
@@ -88,5 +88,5 @@ def test_estoque_mostra_movimento_e_reserva_na_hora_da_loja():
     """Movimentos, reservas e alertas do estoque usavam ``strftime`` cru."""
     from shopman.stockman.contrib.admin_unfold.admin import _format_datetime as stock_datetime
 
-    assert stock_datetime(UTC_13H) == "05/11/26 · 10:00"
+    assert stock_datetime(UTC_13H) == "05/11/26 · 10h"
     assert stock_datetime(None) == "-"

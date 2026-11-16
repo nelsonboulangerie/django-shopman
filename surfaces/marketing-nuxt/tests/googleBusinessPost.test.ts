@@ -107,7 +107,7 @@ describe("post do Google: rótulo é o que o Google mostra", () => {
 
   it("período do evento no horário da loja", () => {
     expect(googlePeriodLabel("2026-10-05T08:00", "2026-10-05T12:00")).toBe(
-      "seg., 05/10, 08:00 – 12:00",
+      "seg., 05/10, 8h – 12h",
     );
     expect(googlePeriodLabel("", "2026-10-05T12:00")).toBe("");
   });
@@ -152,7 +152,7 @@ describe("retrato do post do Google", () => {
       postTypeLabel: "Oferta",
       buttonLabel: "Ver oferta",
       title: "Semana do Pão",
-      period: "sex., 25/09, 12:00 – dom., 11/10, 23:59",
+      period: "sex., 25/09, 12h – dom., 11/10, 23h59",
     });
     const [event] = scenesFromDraftArtifacts({
       previews: {
