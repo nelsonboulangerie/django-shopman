@@ -260,7 +260,7 @@ Por qual meio, recomendado: **link** (página pública com token) enviado pelo *
 dispositivo do operador** num toque (abre o WhatsApp com o texto pronto; zero integração nova),
 mais a **via impressa** com o mesmo conteúdo e um QR do link (#2406, já desenhada:
 `courier_ticket` Identificada). O envio automático pelo WhatsApp da loja (modelo novo na Meta)
-fica para depois (issue `ficou-de-fora`).
+fica para depois (#2508).
 
 ### 4.3 Como o estado avança sem API
 
@@ -293,7 +293,7 @@ Sem link de terceiro, a página do pedido mostra o fato útil de cada estado, na
 decidida na prévia 7 da revisão (sem "corrida", sem "TaOn", sem emoji): "Diego está a caminho.
 Deve chegar por volta de 12h45." A hora vem da cotação/rota (km e tempo da tabela) e da hora
 da saída. Sem botão "Acompanhar o entregador" (`customer_tracking = False`). Posição ao vivo
-pelo celular do entregador fica para depois (issue `ficou-de-fora`), se o dono quiser.
+pelo celular do entregador fica para depois (#2509), se o dono quiser.
 
 ### 4.6 Cancelar
 
@@ -379,7 +379,7 @@ Onde aparece:
 | **M2. Entregador da casa** | `courier_own_fleet.py`; página do entregador por link (token, prazo); toques "Saí", "Entreguei", "Não consegui", "Voltei"; enviar pelo WhatsApp do dispositivo; via impressa com QR (fecha #2406) | M0, M1 | depois da M1 |
 | **M3. Quem leva no sheet** | Linha "Quem leva" no `CourierCallSheet`, regra de sugestão, cotação por serviço, "Entregadores de hoje"; cartão da Saída da corrida da casa (forma E, com letra e o nome da pessoa) | F5, M2 | depois da F5 e da M2 |
 | **M4. Cliente e B.I.** | Página do pedido da corrida da casa (nome + hora, sem link); custo por serviço e acerto do dia; tempos com `ride_ref` (#2467) | M1, M2; prévia 7 da revisão implementada | depois da M2 |
-| **M5. Segunda API de terceiro** | Implementação nova do contrato | o dono nomear o serviço | issue `ficou-de-fora` |
+| **M5. Segunda API de terceiro** | Implementação nova do contrato | o dono nomear o serviço | #2507 |
 
 Notas de coordenação:
 - Nenhuma frente M edita `courier.py`, handlers, webhook, `deliveries.py`, `operations.py`
