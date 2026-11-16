@@ -218,6 +218,7 @@ POLICY: dict[str, Rule] = {
     "shop.DeliveryService": _keep(_CONFIG),
     "shop.Courier": _keep("entregadores da casa (cadastro real, não dado de teste)"),
     "shop.CourierRate": _keep(_CONFIG),
+    "shop.CourierLink": _purge("links de rota dos pedidos de ensaio; vão junto com os pedidos"),
     "shop.Promotion": _keep("promoções e cupons: entram ou não no Dia 1 é decisão do dono"),
     "shop.Promotion_channels": _keep("promoções e cupons: entram ou não no Dia 1 é decisão do dono"),
     "shop.Coupon": _keep("promoções e cupons: entram ou não no Dia 1 é decisão do dono"),
