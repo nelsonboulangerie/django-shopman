@@ -8,14 +8,14 @@ base `docs/coordination/ROUNDS/EXCELENCIA-base.md`. Medido em 16/11/2026 contra 
 
 ## Sumário
 
-- **1 achado P0, 22 P1 e 24 P2** no perímetro do Gestor, mais 11 itens de fronteira.
+- **1 achado P0, 22 P1 e 29 P2** no perímetro do Gestor, mais 18 itens de fronteira.
 - **A causa que mais se repete é de contrato, não de tela**: o card do Gestor conhece o
   *dia* da encomenda e não conhece a *hora combinada*, a *hora de ir à Cozinha* nem a
   *saúde da reserva*. Seis achados P1 e o P0 saem dessa falta.
 - **O salto que mais impressiona**: "Promessa em risco". Quando a produção muda (lote
   cancelado, rendeu menos, atrasou), o Gestor mostra pedido a pedido quem ficou sem pão, com
   a ação pronta. Nenhum dos cinco benchmarks liga produção real a pedido aceito.
-- **13 WPs em 6 ondas**. O primeiro a delegar é o **WP-G01** (a encomenda se anuncia), junto
+- **14 WPs em 6 ondas**. O primeiro a delegar é o **WP-G01** (a encomenda se anuncia), junto
   com o **WP-G00** (harness de operador de verdade).
 - **4 decisões do dono**, no fim.
 
@@ -40,7 +40,8 @@ leitura.
 | Estados fiscais (nota recusada, DANFE, entrega sem CPF) pela UI | a pilha local não tem adapter fiscal (`SHOPMAN_W003` no boot: só existe `fiscal_focusnfe`, que é serviço externo) | leitura de código, com `caminho:linha` |
 | Virada do dia e "encomenda no dia" pela UI | não há relógio de teste no servidor (nenhum `TEST_NOW` em `config/` nem em `shop/`) | leitura de código e dos testes de `test_preorder_kitchen_release.py` |
 | Encomenda no seed | o seed não cria nenhuma encomenda futura nem pedido novo: os 10 ativos são de hoje e já aceitos | criadas pela loja da pilha |
-| Desempenho | três revisões irmãs compilavam na mesma máquina (carga acima de 20); nada de tempo de resposta medido aqui vale como achado | fora do laudo |
+| Desempenho | três revisões irmãs compilavam na mesma máquina (carga acima de 20, swap quase cheio); nada de tempo de resposta medido aqui vale como achado | fora do laudo |
+| Jornadas que não foram percorridas pela UI | a máquina saturada consumiu a janela: a compilação do Gestor levou 35 min | preparo até a entrega com a Cozinha, cancelamento depois do preparo, fila de espera, loja fechada e a aba Encomendas do PDV ficaram por leitura de código; a issue de "ficou de fora" do PR carrega o roteiro que falta |
 
 O roteiro percorrido pela UI está na seção 3.
 
@@ -82,7 +83,27 @@ Gestor", e ela não existe em superfície nenhuma (P1-17).
 
 ## 3. Roteiro percorrido pela UI
 
-<!-- roteiro-ui -->
+Papéis: cliente novo na loja (375 px), Gerente (senha, para abrir o dispositivo) e Caixa
+com PIN, no Gestor (1366 px e 375 px). Nunca o superusuário. Pix simulado; o código de
+entrada saiu no log local; nenhuma mensagem real.
+
+| Passo | O que a tela mostrou | Achado |
+|---|---|---|
+| Cliente encomenda Pain de Campagne para amanhã, "A partir das 15h", e paga | a loja diz "Pagamento recebido. A loja confirma sua encomenda para amanhã · A partir das 15h" | - |
+| Caixa olha o pedido novo no Painel (1366) | "T09 · Cancela Sozinho em 59:05 · Clara Teste · Loja online · Retirada · 1x Pain de Campagne". Nenhuma palavra "Encomenda", nem "amanhã", nem "15h" | P1-01 |
+| Caixa abre "Recusar" (sem confirmar) | título "Recusar pedido", sem dizer qual; nada sobre o dinheiro; motivos "Não dá para entregar" numa retirada e "Pagamento não confirmado" num pedido pago; o botão de confirmar cortado na base em 850 px de altura. Acerto: "O cliente vai ler", com a frase do motivo | P1-11, P2-29 |
+| Caixa abre o detalhe | "Amanhã · A partir das 15h" em letra miúda sob o total; "NFC-e não solicitada" sem ação; "Aparece no ticket da cozinha (KDS)"; atalhos "Sem cebola" num pão | P2-28 |
+| Caixa aceita | o detalhe mostra "Aguardando o dia da encomenda. Encomenda para uma data futura. O preparo abre no dia combinado." em vermelho, e o aviso ao cliente "Falhou em todos os canais. Fale com o cliente por outro meio." sem botão | P2-26, P1-18 |
+| Caixa volta ao Painel (1366) | **a encomenda sumiu**: "Novos 0 · Nenhum pedido novo agora.", o contador "Todos" caiu de 11 para 10 e a lista "Encomendas" fica abaixo da dobra, sem aviso | P1-09 |
+| Caixa rola até a lista | "amanhã · T09 · Clara Teste · 1x Pain de Campagne · R$ 18,70". Sem hora, sem "Retirada", sem pagamento | P1-09 |
+| A mesma lista em 375 px | "T09 · Clara Teste · 1… · R$ 18,70"; a linha fica colada à barra inferior | P2-02, P2-03 |
+| Cliente lê o acompanhamento | "Encomenda confirmada. Pedido garantido para amanhã · A partir das 15h." | contexto do P0-1 |
+| Cliente cancela antes do preparo | a loja avisa antes: "Cancelamos agora e devolvemos os R$ 18,70 do seu Pix para a mesma conta." | contraste com o P1-11 |
+| Caixa abre o cancelado no Gestor | "Pix · Reembolsado" e, na linha do tempo, "Pagamento estornado": duas palavras para o mesmo fato; a frase que o cliente leu não existe ali | P2-25 |
+| Histórico | "7 pedidos", sem dizer que são só os de hoje; hora sem rótulo; o cancelado aparece com "Pix · R$ 18,70", igual a um concluído | P1-21, P2-23 |
+| Pedidos do seed no Painel, na Fila e na Tabela | "Pix expirado" em três formas no mesmo cartão (selo "Bloqueado", pílula "Por que espera", botão desligado) e uma saída só, "Cancelar pedido"; na Fila e na Tabela nem essa. "Entregar J40" no Painel é "Marcar como retirado" na Tabela. "meta 5" sem unidade. "Aguardando Encomendas" é a estação da Cozinha, ao lado da lista "Encomendas" | P1-16, P1-12, P2-27 |
+| Gestor no celular (375) | o convite "Vincular este dispositivo a um posto de trabalho?" ocupa um quarto da tela acima do app; cabe um cartão | F-16 |
+| Entrada depois de sessão vencida | o login respondeu 200 e a tela caiu em "Sua sessão terminou": uma resposta atrasada, ainda com o cookie velho, apagou o novo. Visto uma vez, na pilha | F-17 |
 
 ## 4. Laudo
 
@@ -135,19 +156,19 @@ chegar por push, e não só quando alguém olhar o painel.
 | P1-06 | **Pedido de hoje com hora combinada: o cartão do Painel não mostra a hora.** Só aparece como meta na Fila e no detalhe. | UX, PROM | `OQ:2232`, `:2324`; `FE/components/OrderCard.vue:804-810`; `FE/components/QueueView.vue:326-328` | Mesmo eixo do P1-01: o display da data só existe para data futura. |
 | P1-07 | **Encomenda vencida não tem nome.** A de ontem, não iniciada, lê "combinado para as 18:00" sem o dia; nada diz "era para ontem". | COPY (D3), PROM | `OA:302`; `OQ:2231-2232`, `:2324` | A frase formata só a hora, e o card apaga a data quando ela deixa de ser futura. |
 | P1-08 | **Pronto e não retirado é beco.** Na loja online, pedido em "Pronto" não se cancela nem com gerente; a tela mostra "Pedido em Pronto não pode ser cancelado." sem ação. O contorno é "Voltar para a cozinha" e cancelar dali, que burla a régua de gerente. Não existe gesto de não comparecimento. | FLUXO, PERM | `packages/orderman/shopman/orderman/models/order.py:60-72` (`READY` não vai a `CANCELLED`); `config/instances/nelson.json:158-196` (só o canal `pdv` declara a transição); `shopman/shop/services/cancellation.py:190-194`; `FE/pages/[ref].vue:1163-1169`; `shopman/shop/services/kds.py:1039-1050` | A régua de transições do canal e a política de cancelamento foram escritas para canais diferentes, e "não retirado" nunca virou estado. |
-| P1-09 | **A lista "Encomendas" dos próximos dias não responde nada.** Mostra código, nome, itens e total. Não diz hora, retirada ou entrega, pagamento nem produção. O único sinal, "Precisa de você", aparece justamente em quem espera um fato de fora (pagamento). | UX, COPY (D1) | `FE/components/OrderPreorderList.vue:49-68`; `OA:173` (ali a única atenção possível é `blocked`) | A linha foi desenhada sem os fatos que o card já tem, e o teste do selo é "qualquer atenção". |
+| P1-09 | **A encomenda aceita some da tela, e a lista onde ela vai morar não responde nada.** Depois do aceite o Painel diz "Nenhum pedido novo agora.", o contador cai e a lista "Encomendas" fica abaixo da dobra, sem aviso, também em 1366 px. A linha mostra código, nome, itens e total: não diz hora, retirada ou entrega, pagamento nem produção. O único sinal, "Precisa de você", aparece justamente em quem espera um fato de fora (pagamento). | UX, COPY (D1), FLUXO | visto na pilha (seção 3); `FE/components/OrderPreorderList.vue:49-68`; `FE/pages/index.vue:2237`; `OA:173` (ali a única atenção possível é `blocked`) | A lista foi posta depois do painel de altura cheia, e a linha foi desenhada sem os fatos que o card já tem. |
 | P1-10 | **O Gestor mostra a encomenda e não a remarca.** O atalho leva à lista geral de Encomendas do PDV, e não ao pedido, embora a rota por pedido exista. | FLUXO | `OPS:3155-3179` (o endpoint existe, com `shop.manage_orders`); `FE/components/OrderPreorderList.vue:15-18` (`/preorders` genérico); `surfaces/pos-nuxt/app/pages/preorders/[ref].vue` (a rota existe) | Decisão D-003: remarcar e editar moram no PDV até a concierge nascer. O atalho ficou genérico. |
 
 **Ação ao lado do estado**
 
 | # | Achado | Lente | Prova | Causa |
 |---|---|---|---|---|
-| P1-11 | **Recusar pelo painel não diz o que acontece com o dinheiro, e o erro da recusa aparece no cartão, atrás do diálogo aberto.** | UX, CONTR | `FE/pages/index.vue:2267-2280` (diálogo sem o efeito do dinheiro); `OQ:862-869` (`cancel_money_effect` só no detalhe); `FE/pages/index.vue:1187-1191`; `FE/composables/useOrdersBoard.ts:627-644`; `FE/components/OrderReasonDialog.vue:14-28` (sem prop de erro) | O campo não está no contrato do card, e o lugar do erro é o cartão enquanto o gesto mora num modal. |
+| P1-11 | **Recusar pelo painel não diz qual pedido, não diz o que acontece com o dinheiro, e o erro da recusa aparece no cartão, atrás do diálogo aberto.** A loja diz ao cliente ("devolvemos os R$ 18,70 do seu Pix") o que o Gestor não diz a quem opera. Os motivos não olham o pedido: "Não dá para entregar" numa retirada, "Pagamento não confirmado" num pedido pago. | UX, CONTR, OMO | `FE/pages/index.vue:2267-2280` (diálogo sem o efeito do dinheiro); `OQ:862-869` (`cancel_money_effect` só no detalhe); `FE/pages/index.vue:1187-1191`; `FE/composables/useOrdersBoard.ts:627-644`; `FE/components/OrderReasonDialog.vue:14-28` (sem prop de erro) | O campo não está no contrato do card, e o lugar do erro é o cartão enquanto o gesto mora num modal. |
 | P1-12 | **Bloqueio sem ação e motivo escondido.** Na Fila, o bloqueio é pílula com motivo e nenhum gesto (o cartão tem "Cancelar pedido" pronto para o mesmo caso). O "Aceitar" travado só explica o porquê em `title`, que não existe no toque. | FLUXO, MOB | `FE/components/QueueView.vue:477-489` contra `FE/components/OrderCard.vue:329-340`; `OQ:2844-2852`; `FE/components/OrderCardActions.vue:89-92`; `FE/components/QueueView.vue:637-643` | A ação foi implementada só no cartão; o motivo, só em atributo de hover. |
 | P1-13 | **"NFC-e não autorizada" é texto cinza igual aos outros estados, sem o motivo da recusa, com "Reprocessar NFC-e" dentro do ⋮.** O alerta manda "Abra o pedido e toque em Reprocessar" e o link chega sem âncora. | FLUXO, OMO | `OQ:3039-3051`, `:744-747` (a projeção não carrega o motivo); `FE/pages/[ref].vue:626-637`; `shopman/shop/handlers/fiscal.py:88-95`; `shopman/backstage/projections/alerts.py:209-213` | O estado de falha foi tratado como mais uma pílula informativa. |
 | P1-14 | **A DANFE da sacola não existe no detalhe.** O gesto de imprimir e reimprimir vive só no card do painel. | FLUXO | `useDanfePrint` só em `FE/pages/index.vue:108`; `danfe_*` só no card (`OQ:550-560`), ausente de `OperatorOrderProjection` (`OQ:669-878`) | O gesto nasceu no card e o contrato do detalhe não o herdou. |
 | P1-15 | **Estorno pendente ou recusado é invisível.** O pedido cancelado continua lendo "Pix · Pago". A falha vira alerta cuja frase é "o suporte resolve", e o único reenvio é o Admin do Payman, com permissão só do grupo Dono. | CONTR, PERM | `OQ:115-129`; `shopman/shop/services/payment.py:1915-1931`, `:1948-1952`, `:2190-2213`; `shopman/shop/adapters/payman_refund.py:1-8`; `config/instances/nelson.json:2064-2082` | O estado do estorno nunca virou campo do detalhe, e o Gerente precisa do Dono para um pedido. |
-| P1-16 | **Depois de cancelar, o destino do dinheiro some do detalhe.** O cliente lê "estorno pedido" ou "estornado" na loja; o Gestor não lê nada. | CONTR | `OQ:1270-1272` (devolve vazio para cancelado); `shopman/shop/projections/order_tracking.py:667-682` (só a loja lê `cancelled_money`) | A frase do dinheiro foi escrita só para antes do gesto. |
+| P1-16 | **Cobrança vencida em pedido aceito: o fato aparece em três formas e a única saída é cancelar.** No cartão, selo "Bloqueado", pílula "Por que espera" e um botão desligado "Pix expirado"; só o popover oferece "Cancelar pedido". Na Fila e na Tabela o "próximo passo" é o mesmo botão desligado. Não há cobrar de novo nem avisar o cliente. | FLUXO, COPY (D2) | visto na pilha (seção 3); `FE/components/OrderCard.vue:321`, `:329-340`; `FE/components/QueueView.vue:477-489`; `OQ:1216-1223` (reenviar só quando o método é link) | Um estado foi desenhado como rótulo dentro de um botão, e o gesto de cobrar de novo não existe para Pix. |
 | P1-17 | **Devolução não tem porta de entrada.** O serviço existe e ninguém o chama; o Histórico anuncia "concluídos, cancelados e devolvidos" e a referência de cenários diz "só no Gestor". | FLUXO | `shopman/shop/handlers/returns.py:40` (`initiate_return` sem chamador fora dos testes); `FE/pages/history.vue:181`; `docs/reference/cenarios-de-pedido.md:269` | O serviço nunca ganhou rota nem tela. |
 | P1-18 | **"Avisar o cliente" abre conversa em branco, e o recibo de aviso com falha instrui sem botão.** | OMO, COPY (D1) | `OQ:3171` (`https://wa.me/{digits}` sem texto); `surfaces/operator-kit/app/components/OperatorOrderContact.vue:21-52`; `shopman/backstage/projections/notification_receipts.py:172-176`; `FE/components/OrderNotificationReceipts.vue:36-88` | O contato é atalho de discagem, não mensagem. A issue #2407 carrega o "Reenviar/Copiar mensagem". |
 | P1-19 | **Quatro avisos do sino levam a um detalhe que não tem o gesto que a frase pede:** nota a cancelar ("Leve o caso ao contador"), estorno que falhou, etapa travada ("não refaça a etapa à mão") e encomenda sem pagamento na hora da Cozinha ("Cobre o cliente ou cancele"). | OMO | `shopman/shop/handlers/fiscal.py:604-614`; `payment.py:2202-2213`; `LC:245-256`, `:1528-1531`; `alerts.py:261-268`; `OQ:1216-1223` | "Todo aviso com pedido leva ao pedido" não garante que o pedido tenha a ação. |
@@ -183,6 +204,11 @@ chegar por push, e não só quando alguém olhar o painel.
 | P2-22 | Frases que nomeiam controle inexistente: "Reenvie ou copie o link." sem "Copiar link"; "Confira o envio com o responsável" | COPY (D1, D3) | `OQ:3018`, `:2986` |
 | P2-23 | Histórico: o "dia" erra no devolvido e no cancelado depois de concluído; a hora da linha não tem rótulo; "hoje" não vira à meia-noite; sem sinal de estorno na linha | CONTR, COPY | `shopman/backstage/projections/order_history.py:150`, `:299-302`; `FE/pages/history.vue:29`, `:271-274` |
 | P2-24 | O seed não cria encomenda futura, pedido novo nem estado fiscal: o caso mais complexo da casa não tem massa de teste | CONTR | `config/management/commands/seed.py`; medido no banco da pilha |
+| P2-25 | Dinheiro do cancelado: "Pix · Reembolsado" no resumo e "Pagamento estornado" na linha do tempo, na mesma tela; a frase que o cliente lê ("Devolvemos os R$ 18,70 do seu Pix para a mesma conta") não existe no Gestor | CONTR, COPY (D7) | visto na pilha; `shopman/backstage/presentation/status.py:83`; `OQ:1270-1272`; `shopman/shop/projections/order_tracking.py:667-682` |
+| P2-26 | Estado saudável com cor de erro: "Aguardando o dia da encomenda" aparece em vermelho no detalhe, e o botão principal vira o mesmo rótulo, desligado | UX | visto na pilha; `FE/pages/[ref].vue` (aviso do bloqueio do avanço); frase em `OO:105-107` |
+| P2-27 | Um gesto com dois nomes ("Entregar J40" no Painel, "Marcar como retirado" na Tabela); "meta 5" sem unidade na Fila; "Aguardando Encomendas" (a estação da Cozinha) ao lado da lista "Encomendas" | COPY (D3, D7) | visto na pilha; `FE/pages/index.vue` (Tabela), `FE/components/QueueView.vue` (meta), `FE/presentation/kitchen.ts` |
+| P2-28 | Jargão e instrução ao operador no detalhe: "Aparece no ticket da cozinha (KDS)"; "Atalhos gerais do pedido. Use apenas os que se aplicam aos itens.", com "Sem cebola" num pedido de pão | COPY (D6, D7), OMO | visto na pilha; `FE/pages/[ref].vue` |
+| P2-29 | Diálogo de recusa em 850 px de altura: o botão de confirmar fica cortado na base, depois de oito motivos, da frase ao cliente e da observação | UX, MOB | visto na pilha; `FE/components/OrderReasonDialog.vue` |
 
 ### 4.5 Reclassificados (não são defeito)
 
@@ -216,6 +242,9 @@ testes dessas projeções e regenera `contracts/projections/*.json`.
 | F-13 | Frases de bloqueio e de alerta escritas no shop: "O preparo abre no dia combinado." sem a data (`OO:105-107`), "Atualize o quadro." (`LC:102`, palavra vetada em 14/11), "o suporte resolve" | chegam ao Gestor como texto de tela | shop | todo app com sino |
 | F-14 | A hora da suíte em "12h45" é frente própria (`claude/suite-hora-12h45`) | o detalhe mistura "às 14h32", "14:32" e "03/10 14:32" (`OQ:3020-3028`, `:3654-3658`) | frente da hora | todos |
 | F-15 | Seção Entregas e widget do iFood | fora por brief | frentes próprias (DEV-2026-026; #2323, #2455) | - |
+| F-16 | No celular, o convite "Vincular este dispositivo a um posto de trabalho?" ocupa um quarto da tela acima do app (visto em 375 px) | sobra um cartão por tela a quem acompanha do telefone | operator-kit | todos os apps de operador |
+| F-17 | Entrar logo depois de a sessão vencer pode cair em "Sua sessão terminou": a resposta atrasada de uma chamada com o cookie velho apaga o novo (visto uma vez; `surfaces/operator-kit/server/utils/operatorCookies.ts:158-205` repassa a expiração vazia) | o operador digita a senha duas vezes | operator-kit (BFF) | todos os apps de operador |
+| F-18 | Na loja, a primeira adição à sacola num navegador novo se perdeu ao abrir a Sacola (visto uma vez, não reproduzido), e a linha da sacola mostrou "R$ 22,00" com total "R$ 18,70" | é por onde nasce todo pedido do Gestor | Storefront (revisão irmã) | - |
 
 ## 6. O salto
 
@@ -328,13 +357,16 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Objetivo:** a lista dos próximos dias responde, por linha, quando, como, se está paga e
   se a produção cobre, e leva ao pedido certo no PDV para remarcar.
 - **Achados que fecha:** P1-09, P1-10, P2-02, P2-03.
+- **O que não pode faltar:** quem aceita uma encomenda vê para onde ela foi (o aceite
+  aponta a linha em "Encomendas"), e a lista é alcançável sem rolar às cegas.
 - **Dependências:** WP-G01.
 - **Arquivos:** `OrderPreorderList.vue`, `presentation/preorderList.ts` (novo),
   `pages/index.vue` (posição da lista e `<MoreBelow />`), testes.
 - **Fora do escopo:** editar ou remarcar dentro do Gestor (D-002, D-003); a cobertura de
   produção por dia (G10).
 - **Pronto quando:**
-  - roteiro: com três encomendas aceitas em dois dias diferentes, o Caixa lê em cada linha o
+  - roteiro: o Caixa aceita uma encomenda e vê, sem rolar, que ela foi para "Encomendas" e
+    em que dia. Com três encomendas aceitas em dois dias diferentes, lê em cada linha o
     dia, a janela, "Retirada" ou "Entrega" e o pagamento; a que espera pagamento diz
     "Aguardando pagamento", e não "Precisa de você"; "Remarcar no PDV" abre aquela encomenda
     no PDV. Em 375 px a linha quebra em duas e a tela avisa que há encomendas abaixo. Capturas
@@ -372,7 +404,7 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Objetivo:** o detalhe do pedido abre com uma faixa "O que falta neste pedido", e cada
   linha dela tem o botão que resolve.
 - **Achados que fecha:** P1-13, P1-14, P1-15 (a parte visível), P1-16, P1-19, P1-20, P2-20,
-  P2-22.
+  P2-22, P2-25, P2-26, P2-28.
 - **Dependências:** nenhuma de código; roda depois do G02 porque toca `order_queue.py`.
 - **Arquivos:** `order_queue.py` (detalhe), `pages/[ref].vue`,
   `components/OrderDetailPending.vue` (novo), `composables/useOrderDetail.ts`,
@@ -390,7 +422,8 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Muda tela:** sim (prévia). **Tamanho:** G.
 - **Brief:** leia os achados P1-13 a P1-16, P1-19 e P1-20 e a fronteira F-11. O detalhe ganha
   no contrato uma lista de pendências, cada uma com rótulo, motivo e a ação já existente
-  (reprocessar a nota, imprimir a DANFE, reenviar a cobrança). O dinheiro do cancelado usa o
+  (reprocessar a nota, imprimir a DANFE, reenviar a cobrança). A cobrança vencida (P1-16)
+  entra ali como um fato só, com o gesto ao lado; espera saudável não usa cor de erro. O dinheiro do cancelado usa o
   mesmo `cancelled_money` que a loja lê. O 403 do detalhe ganha texto próprio. Não escreva no
   `operator-kit`.
 
@@ -398,7 +431,7 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 
 - **Objetivo:** quem recusa sabe o que acontece com o dinheiro antes de confirmar, e todo
   bloqueio tem o motivo à vista e o gesto ao lado.
-- **Achados que fecha:** P1-11, P1-12, P2-01, P2-13, P2-16.
+- **Achados que fecha:** P1-11, P1-12, P2-01, P2-13, P2-16, P2-29.
 - **Dependências:** nenhuma.
 - **Arquivos:** `pages/index.vue` (diálogo de recusa), `OrderReasonDialog.vue`,
   `OrderCardActions.vue`, `OrderCardNotices.vue`, testes.
@@ -411,8 +444,10 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
   - testes: componentes, e a J2.
 - **Muda tela:** sim (prévia). **Tamanho:** M.
 - **Brief:** leia os achados P1-11 e P1-12. O efeito do dinheiro vem do detalhe do pedido,
-  buscado ao abrir o diálogo: não acrescente campo ao card neste WP. O diálogo recebe o erro
-  e o `field`. Botão secundário respeita `disabled` e mostra o motivo como texto.
+  buscado ao abrir o diálogo: não acrescente campo ao card neste WP. O diálogo diz qual
+  pedido (código, cliente e total), esconde o motivo que contradiz o pedido (entrega numa
+  retirada, pagamento não confirmado num pago), mantém o confirmar sempre à vista e recebe o
+  erro e o `field`. Botão secundário respeita `disabled` e mostra o motivo como texto.
 
 ### WP-G07 · Avisar o cliente com a mensagem pronta
 
@@ -464,10 +499,10 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 ### WP-G09 · Contrato limpo
 
 - **Objetivo:** o contrato do Gestor fica só com o que alguém lê, com um relógio e um "hoje".
-- **Achados que fecha:** P2-05 a P2-12, P2-17, P2-18.
+- **Achados que fecha:** P2-05 a P2-12, P2-17, P2-18, P2-27.
 - **Dependências:** WP-G08.
-- **Arquivos:** `order_queue.py`, `pages/index.vue`, `presentation/board.ts`,
-  `presentation/queue.ts`, tipos, testes e contrato.
+- **Arquivos:** `order_queue.py`, `pages/index.vue`, `QueueView.vue`, `presentation/board.ts`,
+  `presentation/queue.ts`, `presentation/kitchen.ts`, tipos, testes e contrato.
 - **Fora do escopo:** o formato "12h45" (F-14); `useNowTick` do kit.
 - **Pronto quando:**
   - roteiro: o Caixa percorre Painel, Fila e Tabela e não vê diferença além das palavras
@@ -573,7 +608,8 @@ Conferência dos arquivos por onda:
   `OrderReasonDialog.vue`, `OrderCardActions.vue` e `OrderCardNotices.vue`.
 - Onda 3: G07 fica com `[ref].vue`, `contactRequest.ts` e `OrderNotificationReceipts.vue`;
   G08 com `OrderCard.vue`, `QueueView.vue`, `board.ts` e `queue.ts`.
-- Onda 4: G09 fica com `pages/index.vue`, `board.ts` e `queue.ts`; G10 com
+- Onda 4: G09 fica com `pages/index.vue`, `QueueView.vue`, `board.ts`, `queue.ts` e
+  `kitchen.ts`; G10 com
   `OrderPreorderList.vue`, `operations.py` e `urls.py`.
 
 ## 10. Decisões do dono
