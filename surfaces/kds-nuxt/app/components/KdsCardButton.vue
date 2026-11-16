@@ -59,7 +59,7 @@ const LOOKS: Record<KdsCardButtonTone, Look> = {
     color: "neutral",
     variant: "outline",
     extra:
-      "ring-0 border-2 border-dashed border-border text-muted-foregroundbg-[repeating-linear-gradient(135deg,transparent_0_7px,color-mix(in_oklab,var(--destructive)_9%,transparent)_7px_14px)]",
+      "ring-0 border-2 border-dashed border-border text-muted-foreground bg-[repeating-linear-gradient(135deg,transparent_0_7px,color-mix(in_oklab,var(--destructive)_9%,transparent)_7px_14px)]",
   },
 };
 const look = computed(() => LOOKS[props.tone]);
