@@ -3,13 +3,14 @@
 // caminho dela, num desenho só.
 //
 // Três camadas, do fundo para a frente (dono, 14/11):
-// A parada de corrida é um OCTÓGONO, como placa de trânsito, com o número e o fundo
-// em listras finas na cor da corrida (dono, 16/11). A letra usa a tinta da corrida
-// (`ink`: o mesmo matiz escurecido até ler sobre branco).
-//  · CHAMADA (na rua): rota e borda em traço CONTÍNUO, a 50%. A parada já entregue
+// A parada de corrida é um OCTÓGONO, como placa de trânsito, com o número na tinta
+// da corrida (`ink`: o mesmo matiz escurecido até ler sobre branco; dono, 16/11).
+//  · CHAMADA (na rua): fundo branco; rota e borda em traço CONTÍNUO, a 50%. A parada já entregue
 //    fica SÓLIDA na cor, com o visto na cor de texto dela (dono, 16/11). O entregador:
 //    moto sobre fundo sólido, com o número (dono, 14/11, terceira rodada).
-//  · EDITANDO: rota e borda PONTILHADAS. A ativa forte, as outras esmaecidas.
+//  · EDITANDO: fundo em listras finas na cor; rota e borda PONTILHADAS. A ativa
+//    forte, as outras esmaecidas. As listras separam a corrida que se monta da que
+//    já está na rua (dono, 16/11).
 //  · AGUARDANDO: o pedido sem corrida, REDONDO, preto e branco, com o código. A forma
 //    e a falta de cor separam o que espera do que já tem corrida (dono, 15 e 16/11).
 //    Tocar põe na ativa.
@@ -246,15 +247,14 @@ const places = computed(() => {
       <NuxtIcon name="i-lucide-store" class="size-4" />
     </span>
 
-    <!-- corrida chamada: octógono listrado de borda contínua; entregue fica sólido, com o visto -->
+    <!-- corrida chamada: octógono branco de borda contínua; entregue fica sólido, com o visto -->
     <template v-for="r in live" :key="`ls${r.number}`">
       <span v-for="(s, k) in r.stops" :key="s.ref" class="absolute -translate-x-1/2 -translate-y-1/2" :style="at(s)">
         <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Corrida ${r.number}, parada ${k + 1}, pedido ${s.code}`" @click="emit('open', r.number)">
           <span class="relative grid size-9 place-items-center op-label font-bold tabular-nums" :style="{ color: s.done ? rideColor(r.number - 1).fg : rideColor(r.number - 1).ink }">
             <svg class="absolute inset-0 size-full drop-shadow-sm" viewBox="0 0 36 36" aria-hidden="true">
-              <defs v-if="!s.done"><pattern :id="`stripe-l${r.number}`" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#fff" /><rect width="1.5" height="4" :fill="rideColor(r.number - 1).bg" :fill-opacity="liveAlpha" /></pattern></defs>
               <polygon v-if="s.done" :points="OCTAGON" :fill="rideColor(r.number - 1).bg" stroke-width="4" stroke-linejoin="round" :stroke="rideColor(r.number - 1).bg" />
-              <polygon v-else :points="OCTAGON" :fill="`url(#stripe-l${r.number})`" stroke-width="4" stroke-linejoin="round" :stroke="rideColor(r.number - 1).bg" :stroke-opacity="liveAlpha" />
+              <polygon v-else :points="OCTAGON" fill="#fff" stroke-width="4" stroke-linejoin="round" :stroke="rideColor(r.number - 1).bg" :stroke-opacity="liveAlpha" />
             </svg>
             <span class="relative"><NuxtIcon v-if="s.done" name="i-lucide-check" class="size-3.5" /><template v-else>{{ k + 1 }}</template></span>
           </span>
@@ -306,7 +306,7 @@ const places = computed(() => {
     <div v-if="!bare" class="absolute inset-x-3 top-3 mx-auto hidden w-fit flex-wrap justify-center sm:flex items-center gap-x-3 gap-y-1 rounded-md bg-white/90 px-2.5 py-1.5 op-micro text-toned shadow-sm" data-map-legend>
       <span class="flex items-center gap-1"><span class="size-3.5 rounded-full border-2 border-black bg-white" />Aguardando</span>
       <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" stroke="#5f6670" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><defs><pattern id="legend-stripe" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="3" fill="#fff" /><rect width="1.1" height="3" fill="#5f6670" /></pattern></defs><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="url(#legend-stripe)" stroke="#5f6670" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 3.2" /></svg>Editando</span>
-      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" stroke="#5f6670" stroke-width="3" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="url(#legend-stripe)" stroke="#5f6670" stroke-width="2.5" stroke-linejoin="round" /></svg>Corrida</span>
+      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" stroke="#5f6670" stroke-width="3" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="#fff" stroke="#5f6670" stroke-width="2.5" stroke-linejoin="round" /></svg>Corrida</span>
       <span class="flex items-center gap-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="#5f6670" stroke="#5f6670" stroke-width="2.5" stroke-linejoin="round" /></svg>Entregue</span>
       <span class="flex items-center gap-1"><span class="grid h-4 w-6 place-items-center rounded-full bg-[#5f6670] text-white"><NuxtIcon name="i-lucide-bike" class="size-3" /></span>Entregador</span>
     </div>
