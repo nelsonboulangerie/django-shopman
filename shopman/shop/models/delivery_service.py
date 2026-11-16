@@ -84,15 +84,13 @@ class DeliveryService(models.Model):
     def is_own_fleet(self) -> bool:
         return self.kind == self.KIND_OWN_FLEET
 
+    #: A recusa de quem pendura entregador ou valor num serviço que não é da casa.
+    NOT_OWN_FLEET_MESSAGE = "Só serviço do tipo Entregadores da casa tem entregador e tabela de valores."
+
     @classmethod
     def default(cls) -> DeliveryService | None:
         """O serviço padrão ativo, ou None quando não há um."""
         return cls.objects.filter(is_default=True, is_active=True).first()
-
-
-def _require_own_fleet(service: DeliveryService | None, field: str) -> None:
-    if service is not None and not service.is_own_fleet:
-        raise ValidationError({field: "Só serviço do tipo Entregadores da casa tem entregador e tabela de valores."})
 
 
 class Courier(models.Model):
@@ -135,8 +133,8 @@ class Courier(models.Model):
 
     def clean(self) -> None:
         super().clean()
-        if self.service_id:
-            _require_own_fleet(self.service, "service")
+        if self.service_id and not self.service.is_own_fleet:
+            raise ValidationError({"service": DeliveryService.NOT_OWN_FLEET_MESSAGE})
         if self.phone:
             from shopman.utils.phone import is_valid_phone, normalize_phone
 
@@ -204,8 +202,8 @@ class CourierRate(models.Model):
 
     def clean(self) -> None:
         super().clean()
-        if self.service_id:
-            _require_own_fleet(self.service, "service")
+        if self.service_id and not self.service.is_own_fleet:
+            raise ValidationError({"service": DeliveryService.NOT_OWN_FLEET_MESSAGE})
         if self.courier_id and self.service_id and self.courier.service_id != self.service_id:
             raise ValidationError({"courier": "Este entregador é de outro serviço."})
         if self.max_km is not None and self.max_km <= 0:

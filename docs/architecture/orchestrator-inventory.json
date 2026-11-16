@@ -1876,14 +1876,25 @@
       "out_of_extraction": false,
       "unit_ids": [],
       "responsibilities": [
-        "configuração"
+        "configuração",
+        "infraestrutura"
       ],
       "support_claims": [
         {
           "responsibility": "configuração",
           "symbols": [
+            "CourierAdmin",
+            "CourierRateAdmin",
+            "CourierRateInline",
             "DeliveryDistanceBandAdmin",
+            "DeliveryServiceAdmin",
             "DeliveryZoneAdmin"
+          ]
+        },
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_brl"
           ]
         }
       ]
@@ -6013,6 +6024,27 @@
       ]
     },
     {
+      "path": "shopman/shop/models/delivery_service.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "Courier",
+            "CourierRate",
+            "DeliveryService"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/models/faq.py",
       "touchpoints": [
         "model"
@@ -9241,6 +9273,39 @@
           "symbols": [
             "_digits",
             "_join"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/delivery_rates.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato",
+        "infraestrutura",
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "RideValue"
+          ]
+        },
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_pick"
+          ]
+        },
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "ride_value"
           ]
         }
       ]
