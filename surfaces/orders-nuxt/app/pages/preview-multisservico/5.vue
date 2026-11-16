@@ -17,6 +17,13 @@ interface Step {
 
 const happy: Step[] = [
   {
+    n: "i", moment: "home", title: "Tela inicial (sem corrida)",
+    when: "Quando não há corrida. É o único lugar de configuração: tema e \"Adicionar à tela inicial\". Dentro da corrida, nada disso aparece.",
+    tap: "Nenhum.",
+    gestor: "Diego na escala, livre.",
+    cliente: "Nada.",
+  },
+  {
     n: "0", moment: "call", title: "A chamada chega",
     when: "O balcão envia a corrida. Com vários pedidos o aviso diz \"Rota A\"; com um só, o código do pedido (\"Pedido B12\"). A primeira de um entregador novo vai pelo link no WhatsApp.",
     tap: "Nenhum: tocar no aviso só abre.",
@@ -60,8 +67,8 @@ const happy: Step[] = [
   },
   {
     n: "6", moment: "closed", title: "Fechada",
-    when: "Quem fecha é o balcão, ao conferir no Gestor. O convite para instalar aparece aqui, uma vez, nunca no meio da corrida.",
-    tap: "Nenhum (instalar é opcional).",
+    when: "Quem fecha é o balcão, ao conferir no Gestor. Em seguida a página volta à tela inicial.",
+    tap: "Nenhum.",
     gestor: "Corrida A fechada. A pagar a Diego hoje: R$ 27,00.",
     cliente: "Nada.",
   },
@@ -90,18 +97,18 @@ const detours: Step[] = [
     cliente: "Nada.",
   },
   {
-    n: "3d", moment: "other-pay", title: "Pagou de outro jeito",
-    when: "Marina pagou no cartão ou no Pix em vez do dinheiro. O acerto da volta se refaz sozinho. Pix fora da maquininha não existe: ele não tem como conferir.",
-    tap: "Como pagou (1 toque, só nesse caso).",
-    gestor: "A47 pago no cartão. O acerto de Diego passa a R$ 42,00.",
-    cliente: "Nada.",
+    n: "3b", moment: "problem", title: "Problema",
+    when: "Só quando ele toca \"Problema\" na entrega. Abre uma folha com os casos; nada é automático.",
+    tap: "O caso (1 toque).",
+    gestor: "Aviso com o caso e \"Ligar para Marina\".",
+    cliente: "A loja liga; nada automático.",
   },
   {
-    n: "3b", moment: "failed", title: "Não consegui",
-    when: "Só quando ele toca. Nunca automático.",
-    tap: "O motivo.",
-    gestor: "Aviso com o motivo e \"Ligar para Marina\".",
-    cliente: "A loja liga; nada automático.",
+    n: "3d", moment: "other-pay", title: "Pagou de outro jeito",
+    when: "Escolhido na folha de Problema. O acerto da volta se refaz sozinho. Pix só pela maquininha: ele não tem como conferir outro Pix.",
+    tap: "Como pagou (1 toque).",
+    gestor: "A47 pago no cartão. O acerto de Diego passa a R$ 42,00.",
+    cliente: "Nada.",
   },
   {
     n: "3b'", moment: "failed-wait", title: "A espera curta",
@@ -119,13 +126,21 @@ const detours: Step[] = [
   },
 ];
 
+const palette = [
+  { name: "Tela", light: "#ffffff", lightFg: "#000000", dark: "#000000", darkFg: "#ffffff" },
+  { name: "Bloco", light: "#e5e5e5", lightFg: "#000000", dark: "#404040", darkFg: "#ffffff" },
+  { name: "Apoio (texto pequeno)", light: "#ffffff", lightFg: "#404040", dark: "#000000", darkFg: "#e5e5e5" },
+  { name: "Badge do código", light: "#404040", lightFg: "#ffffff", dark: "#e5e5e5", darkFg: "#000000" },
+  { name: "Forte (botão principal, aviso)", light: "#000000", lightFg: "#ffffff", dark: "#ffffff", darkFg: "#000000" },
+];
+
 const typeScale = [
   { name: "Grande", spec: "28 · 800", sample: "R$ 58,00", cls: "text-[28px] font-extrabold leading-tight text-highlighted" },
   { name: "Normal", spec: "18 · 500", sample: "2 sacolas", cls: "text-[18px] font-medium leading-snug text-highlighted" },
   { name: "Pequeno", spec: "15 · 500", sample: "Faltam 2 · chega 12h46", cls: "text-[15px] font-medium leading-snug text-muted" },
 ];
 
-const colorMode = useColorMode();
+const dark = ref(false);
 
 const sections = [
   { title: "O caminho feliz: 3 toques numa corrida de duas entregas", steps: happy },
@@ -136,6 +151,7 @@ const fixes = [
   "Toque sem querer em Entreguei: 10 s para desfazer, e o cliente só é avisado depois.",
   "Mesmo prédio ou GPS entre torres: o botão leva o código (\"Entreguei A47\") e, com duas entregas perto, a tela pergunta \"Qual entrega é esta?\".",
   "Pagou de outro jeito: cartão ou Pix na maquininha, e o acerto da volta se refaz sozinho.",
+  "Rodapé da entrega: um botão principal e dois iguais, \"Ligar\" e \"Problema\"; os casos moram na folha de Problema.",
   "Pedido cancelado com ele na rua: tela que passa na frente de todas, com \"Entendi\".",
   "\"Diego chegou.\" saía no semáforo: virou \"Diego está chegando.\", e o \"chegou\" saiu.",
   "A tela trocava enquanto ele lia: a tela da entrega só sai com o toque dele ou com 200 m de distância por 30 s.",
@@ -149,7 +165,7 @@ const fixes = [
   "Balcão não fechou: a corrida seguinte começa com \"Antes: entregue R$ 100,00 da corrida A no caixa.\"",
   "Maquininha com bolinha azul confundia com a rota A: agora vai só pelo nome, \"Maquininha Azul\".",
   "Fonte grande ou tela de 360 px: o botão principal fica preso no rodapé, e o resto rola.",
-  "Tema: o entregador escolhe claro ou escuro e o sistema lembra; sem escolha, segue o celular.",
+  "Tema: o entregador escolhe na tela inicial e o sistema lembra; sem escolha, segue o celular. Nada de configuração dentro da corrida.",
   "Ruído: saíram o \"combinado até\" da entrega, o \"Você recebe\" repetido na loja, o mapa da volta e a nota \"os endereços somem\".",
   "Gênero: \"Marina paga com\" no lugar de \"Ela paga com\"; o nome não diz o gênero.",
 ];
@@ -163,10 +179,10 @@ const fixes = [
           <header class="flex flex-col gap-1">
             <MsPreviewNav :current="5" />
             <div class="flex items-center gap-2 op-body text-toned">
-              <span>Tema da página:</span>
-              <NuxtButton size="sm" color="neutral" :variant="colorMode.value === 'light' ? 'solid' : 'outline'" icon="i-lucide-sun" label="Claro" @click="colorMode.preference = 'light'" />
-              <NuxtButton size="sm" color="neutral" :variant="colorMode.value === 'dark' ? 'solid' : 'outline'" icon="i-lucide-moon" label="Escuro" @click="colorMode.preference = 'dark'" />
-              <span class="op-micro text-muted">No aviso de cancelamento (7), o tom forte vira o oposto do tema.</span>
+              <span>Tema das telas:</span>
+              <NuxtButton size="sm" color="neutral" :variant="!dark ? 'solid' : 'outline'" icon="i-lucide-sun" label="Claro" @click="dark = false" />
+              <NuxtButton size="sm" color="neutral" :variant="dark ? 'solid' : 'outline'" icon="i-lucide-moon" label="Escuro" @click="dark = true" />
+              <span class="op-micro text-muted">A paleta das telas é própria: branco, preto e dois cinzas. No aviso de cancelamento (7), o tom forte é o oposto do tema.</span>
             </div>
             <h1 class="op-title font-semibold text-highlighted">Prévia 5 · A corrida do entregador da casa, em hiperfoco (linguagem do Painel)</h1>
             <p class="op-body text-toned">
@@ -190,22 +206,27 @@ const fixes = [
                   <span class="op-micro shrink-0 text-muted">{{ t.name }} · {{ t.spec }}</span>
                 </p>
                 <p class="flex items-baseline justify-between gap-4">
-                  <span class="inline-flex w-fit items-center rounded-lg bg-accented px-2 py-0.5 text-[15px] font-bold tabular-nums text-highlighted">A47</span>
+                  <span class="inline-flex w-fit items-center rounded-lg bg-[#404040] px-2 py-0.5 text-[15px] font-bold tabular-nums text-white">A47</span>
                   <span class="op-micro shrink-0 text-muted">Código do pedido · sempre este badge</span>
                 </p>
               </div>
               <div class="flex w-[420px] flex-col gap-3 rounded-2xl bg-default p-5 ring-1 ring-default">
-                <p class="op-micro font-semibold text-muted">Fundo: 2 tons e o forte, sem borda nem fio</p>
-                <div class="rounded-2xl bg-default p-4 ring-1 ring-default"><span class="op-body text-toned">Tela · o fundo</span></div>
-                <div class="rounded-2xl bg-elevated p-4"><span class="op-body text-toned">Bloco · um pedido, uma escolha, um recado</span></div>
-                <div class="rounded-2xl bg-inverted p-4"><span class="op-body text-inverted">Forte · o botão principal e o aviso que passa na frente. É o oposto do tema.</span></div>
+                <p class="op-micro font-semibold text-muted">Paleta: branco, preto e dois cinzas (#e5e5e5 e #404040)</p>
+                <div v-for="row in palette" :key="row.name" class="flex items-center gap-3">
+                  <span class="flex overflow-hidden rounded-lg ring-1 ring-black/20">
+                    <span class="grid size-10 place-items-center text-[11px] font-bold" :style="{ background: row.light, color: row.lightFg }">Aa</span>
+                    <span class="grid size-10 place-items-center text-[11px] font-bold" :style="{ background: row.dark, color: row.darkFg }">Aa</span>
+                  </span>
+                  <span class="op-body text-toned">{{ row.name }}</span>
+                </div>
               </div>
               <div class="flex w-[420px] flex-col gap-2 rounded-2xl bg-default p-5 ring-1 ring-default op-body text-toned">
                 <p class="op-micro font-semibold text-muted">Regras</p>
                 <p>· O código do pedido é sempre o mesmo badge. O que pertence a um pedido mora dentro do bloco dele.</p>
                 <p>· Grande só para o título da tela e para o dinheiro.</p>
                 <p>· Espaço: 20 px na borda, 16 px dentro do bloco, 12 px entre blocos, 28 px entre grupos.</p>
-                <p>· Tema claro ou escuro: o entregador escolhe (o ícone no balcão) e o sistema lembra, no celular e no cadastro dele. Sem escolha, segue o celular.</p>
+                <p>· Tema claro ou escuro: o entregador escolhe na tela inicial e o sistema lembra, no celular e no cadastro dele. Sem escolha, segue o celular.</p>
+                <p>· Contraste medido em toda tela, nos dois temas: texto e badge no mínimo 8,2:1 (AAA). A letra da rota, texto grande sobre a cor da rota, 6,3:1 (AAA para texto grande).</p>
                 <p>· A cor da rota só no quadrado da letra e na linha do mapa.</p>
               </div>
             </div>
@@ -223,7 +244,7 @@ const fixes = [
                   class="overflow-hidden rounded-[2.2rem] border-[10px] border-black/85 shadow-xl"
                   :class="s.landscape ? 'h-[360px] w-[740px]' : 'h-[700px] w-[340px]'"
                 >
-                  <MsFocusScreen :moment="s.moment" :landscape="s.landscape" />
+                  <MsFocusScreen :moment="s.moment" :landscape="s.landscape" :dark="dark" />
                 </div>
                 <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 op-micro" :class="s.landscape ? 'max-w-[740px]' : 'max-w-[340px]'">
                   <dt class="font-semibold text-highlighted">Quando</dt><dd class="text-toned">{{ s.when }}</dd>
