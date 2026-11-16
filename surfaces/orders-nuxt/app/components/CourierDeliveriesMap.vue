@@ -52,11 +52,13 @@ const props = defineProps<{
 const emit = defineEmits<{ toggle: [ref: string]; fill: [place: string]; open: [number: number] }>();
 
 const liveAlpha = computed(() => props.liveOpacity ?? 0.5);
-// PRÉVIA (16/11): duas leituras da parada para o dono escolher; `?paradas=listrado`
+// PRÉVIA (16/11): três leituras da parada para o dono escolher; `?paradas=listrado`
 // mostra a segunda. Sai daqui quando ele decidir.
 const OCTAGON = "32.8,24.1 24.1,32.8 11.9,32.8 3.2,24.1 3.2,11.9 11.9,3.2 24.1,3.2 32.8,11.9";
 const route = useRoute();
-const striped = computed(() => route.query.paradas === "listrado");
+// `?paradas=ambos`: listras na cor E letra e borda na cor.
+const striped = computed(() => route.query.paradas === "listrado" || route.query.paradas === "ambos");
+const grayInk = computed(() => route.query.paradas === "listrado");
 
 const everyPoint = computed<LatLng[]>(() => [
   props.origin,
@@ -251,10 +253,10 @@ const places = computed(() => {
     <template v-for="r in live" :key="`ls${r.number}`">
       <span v-for="(s, k) in r.stops" :key="s.ref" class="absolute -translate-x-1/2 -translate-y-1/2" :style="at(s)">
         <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Corrida ${r.number}, parada ${k + 1}, pedido ${s.code}`" @click="emit('open', r.number)">
-          <span class="relative grid size-9 place-items-center op-label font-bold tabular-nums" :style="{ color: striped ? '#3d434a' : rideColor(r.number - 1).ink }">
+          <span class="relative grid size-9 place-items-center op-label font-bold tabular-nums" :style="{ color: grayInk ? '#3d434a' : rideColor(r.number - 1).ink }">
             <svg class="absolute inset-0 size-full drop-shadow-sm" viewBox="0 0 36 36" aria-hidden="true">
               <defs v-if="striped"><pattern :id="`stripe-l${r.number}`" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#fff" /><rect width="1.5" height="4" :fill="rideColor(r.number - 1).bg" :fill-opacity="liveAlpha" /></pattern></defs>
-              <polygon :points="OCTAGON" :fill="striped ? `url(#stripe-l${r.number})` : '#fff'" stroke-width="4" stroke-linejoin="round" :stroke="striped ? '#5f6670' : rideColor(r.number - 1).bg" :stroke-opacity="striped ? 1 : liveAlpha" />
+              <polygon :points="OCTAGON" :fill="striped ? `url(#stripe-l${r.number})` : '#fff'" stroke-width="4" stroke-linejoin="round" :stroke="grayInk ? '#5f6670' : rideColor(r.number - 1).bg" :stroke-opacity="grayInk ? 1 : liveAlpha" />
             </svg>
             <span class="relative"><NuxtIcon v-if="s.done" name="i-lucide-check" class="size-3.5" /><template v-else>{{ k + 1 }}</template></span>
           </span>
@@ -266,10 +268,10 @@ const places = computed(() => {
     <template v-for="r in building" :key="`bs${r.number}`">
       <span v-for="(s, k) in r.stops" :key="s.ref" class="absolute z-10 -translate-x-1/2 -translate-y-1/2" :style="at(s)">
         <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Pedido ${s.code}, corrida ${r.number}`" @click="emit('toggle', s.ref)">
-          <span class="relative grid size-9 place-items-center op-label font-bold tabular-nums transition hover:scale-110" :style="{ color: striped ? '#3d434a' : rideColor(r.number - 1).ink }">
+          <span class="relative grid size-9 place-items-center op-label font-bold tabular-nums transition hover:scale-110" :style="{ color: grayInk ? '#3d434a' : rideColor(r.number - 1).ink }">
             <svg class="absolute inset-0 size-full drop-shadow-sm" viewBox="0 0 36 36" aria-hidden="true">
               <defs v-if="striped"><pattern :id="`stripe-b${r.number}`" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#fff" /><rect width="1.5" height="4" :fill="rideColor(r.number - 1).bg" /></pattern></defs>
-              <polygon :points="OCTAGON" :fill="striped ? `url(#stripe-b${r.number})` : '#fff'" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 6" :stroke="striped ? '#5f6670' : rideColor(r.number - 1).bg" />
+              <polygon :points="OCTAGON" :fill="striped ? `url(#stripe-b${r.number})` : '#fff'" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 6" :stroke="grayInk ? '#5f6670' : rideColor(r.number - 1).bg" />
             </svg>
             <span class="relative">{{ k + 1 }}</span>
           </span>
