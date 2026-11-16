@@ -267,7 +267,9 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
         arrived_pickup_at=progress.get("arrived_pickup_at", ""),
         picked_up_at=progress.get("picked_up_at", ""),
         delivery_eta_at=progress.get("delivery_eta_at", ""),
-        tracking_url=str(block.get("tracking_url") or ""),
+        # O link é de UMA parada. Com várias, "o link da corrida" seria o de um
+        # cliente só, pronto para ser copiado para outro: não aparece.
+        tracking_url=courier.proven_tracking(block)["url"] if len(stops) == 1 else "",
         cost_display=_money(int(cost_q)) if isinstance(cost_q, int) and cost_q > 0 else "",
         bags=sum(stop.volumes for stop in pending),
         undeclared=tuple(stop.code for stop in pending if not stop.volumes),

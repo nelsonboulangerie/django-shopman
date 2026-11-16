@@ -1565,9 +1565,10 @@ def _courier_block(order: Order) -> dict | None:
 
         if unresolved is not None:
             error = {"message": COURIER_NO_ANSWER_MESSAGE, "at": unresolved.updated_at.isoformat()}
-        from shopman.shop.services.courier import progress_view
+        from shopman.shop.services.courier import progress_view, proven_tracking
 
         progress = progress_view(block)
+        tracking = proven_tracking(block)
         status_label = COURIER_STATUS_LABELS.get(ride_status, "")
         if ride_status in ("A", "S") and progress["arrived_pickup_at"]:
             status_label = "Entregador na loja"
@@ -1579,8 +1580,9 @@ def _courier_block(order: Order) -> dict | None:
             **progress,
             "active": active,
             "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
-            "tracking_url": str(block.get("tracking_url") or "") if active else "",
-            "confirmation_code": str(block.get("confirmation_code") or ""),
+            # Só o link e o código casados com a parada DESTE pedido (``courier.proven_tracking``).
+            "tracking_url": tracking["url"] if active else "",
+            "confirmation_code": tracking["code"],
             "estimate_display": estimate_display,
             "final_value_display": (
                 _money(int(block["final_value_q"]))
