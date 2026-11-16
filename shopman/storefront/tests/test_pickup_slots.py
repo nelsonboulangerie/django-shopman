@@ -64,7 +64,7 @@ class TestGradeDeHoje:
         first = ctx["pickup_slots"][0]
         assert first == {
             "ref": "10:00-10:30",
-            "label": "10:00 às 10h30",
+            "label": "10h às 10h30",
             "starts_at": "10:00",
             "enabled": True,
             "reason": "",

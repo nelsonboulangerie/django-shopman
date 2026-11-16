@@ -197,7 +197,7 @@ describe("fila de decisões: a casa", () => {
         NOW,
       ).detail,
     ).toBe(
-      "O sistema consultou sem reenviar: publicado ontem às 18:10 · automático",
+      "O sistema consultou sem reenviar: publicado ontem às 18h10 · automático",
     );
     expect(
       automaticCheckLine(check({ state: "checking", checked_at: null }), TZ, NOW)

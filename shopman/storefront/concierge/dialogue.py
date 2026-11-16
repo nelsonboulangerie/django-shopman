@@ -487,7 +487,7 @@ class Resolution:
         return self.outcome in {"ask", "handoff", "courtesy", "add_preview", "add_apply"}
 
 
-_TIME_RE = re.compile(r"\b(\d{1,2})\s*(?:[:h]\s*(\d{2}))?\b")
+_TIME_RE = re.compile(r"\b(\d{1,2})\s*(?:[:h]\s*(\d{2})?)?\b")
 
 
 def _slot_by_time(text: str, options: list[dict]) -> int:
