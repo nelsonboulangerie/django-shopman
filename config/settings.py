@@ -1307,10 +1307,19 @@ UNFOLD = {
             ],
         },
         {
-            "models": ["shop.deliveryzone", "shop.deliverydistanceband"],
+            "models": [
+                "shop.deliveryzone",
+                "shop.deliverydistanceband",
+                "shop.deliveryservice",
+                "shop.courier",
+                "shop.courierrate",
+            ],
             "items": [
                 {"title": "Zonas de entrega", "link": reverse_lazy("admin:shop_deliveryzone_changelist")},
                 {"title": "Faixas de distância", "link": reverse_lazy("admin:shop_deliverydistanceband_changelist")},
+                {"title": "Serviços de entrega", "link": reverse_lazy("admin:shop_deliveryservice_changelist")},
+                {"title": "Entregadores da casa", "link": reverse_lazy("admin:shop_courier_changelist")},
+                {"title": "Valores dos entregadores", "link": reverse_lazy("admin:shop_courierrate_changelist")},
             ],
         },
         {
