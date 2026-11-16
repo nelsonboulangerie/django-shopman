@@ -271,16 +271,16 @@ const card = computed(() => props.moment === "door-card");
 </template>
 
 <style scoped>
-/* Cinza claro = 25% (#bfbfbf); cinza médio = 50% (#808080). Nenhum dos dois passa como texto
-   pequeno sobre branco ou preto, então o texto é sempre preto ou branco; a hierarquia é só
-   o tamanho. */
+/* Dois cinzas claros (dono, 16/11): neutral-100 (#f5f5f5) no bloco e neutral-300 (#d4d4d4)
+   no badge; no escuro, o espelho: neutral-800 (#262626) e neutral-600 (#525252). O texto é
+   sempre preto ou branco; a hierarquia é só o tamanho. */
 .ms-courier {
   --c-bg: #ffffff;
   --c-fg: #000000;
   --c-muted: #000000;
-  --c-block: #bfbfbf;
+  --c-block: #f5f5f5;
   --c-block-fg: #000000;
-  --c-badge: #808080;
+  --c-badge: #d4d4d4;
   --c-badge-fg: #000000;
   --c-strong: #000000;
   --c-strong-fg: #ffffff;
@@ -289,10 +289,10 @@ const card = computed(() => props.moment === "door-card");
   --c-bg: #000000;
   --c-fg: #ffffff;
   --c-muted: #ffffff;
-  --c-block: #808080;
-  --c-block-fg: #000000;
-  --c-badge: #bfbfbf;
-  --c-badge-fg: #000000;
+  --c-block: #262626;
+  --c-block-fg: #ffffff;
+  --c-badge: #525252;
+  --c-badge-fg: #ffffff;
   --c-strong: #ffffff;
   --c-strong-fg: #000000;
 }
