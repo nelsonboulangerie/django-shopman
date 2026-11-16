@@ -15,6 +15,16 @@ export interface EditingRide {
   refs: string[];
 }
 
+/**
+ * A letra da corrida, como o operador a chama: 1 é A, 2 é B, 26 é Z. Corrida se
+ * nomeia por letra em toda tela (decisão do dono, 16/11/2026); o número segue
+ * sendo o que o servidor grava e o que escolhe a cor. Espelha `courier.ride_letter`.
+ */
+export function rideLetter(number: number | null | undefined): string {
+  if (typeof number !== "number" || !Number.isInteger(number) || number < 1) return "";
+  return String.fromCharCode(65 + ((number - 1) % 26));
+}
+
 /** O menor número livre: nem das corridas na rua, nem das que estão sendo editadas. */
 export function nextFreeNumber(taken: readonly number[]): number | null {
   for (let n = 1; n <= RIDE_PALETTE.length; n++) if (!taken.includes(n)) return n;

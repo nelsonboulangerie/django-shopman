@@ -601,6 +601,19 @@ def ride_is_live(order) -> bool:
     ).exists()
 
 
+def ride_letter(number) -> str:
+    """A letra da corrida, como o operador a chama: 1 é A, 2 é B, 26 é Z.
+
+    Corrida se nomeia por LETRA em toda tela e em toda mensagem (decisão do dono,
+    16/11/2026); o número segue sendo o que se grava (``courier.ride_number``) e
+    o que escolhe a cor. Sem número válido devolve vazio, e quem escreve a frase
+    decide o que dizer sem a letra.
+    """
+    if isinstance(number, bool) or not isinstance(number, int) or number < 1:
+        return ""
+    return chr(ord("A") + (number - 1) % 26)
+
+
 def next_ride_number(*, exclude_refs=()) -> int:
     """O menor número livre entre as corridas vivas (1 a :data:`RIDE_NUMBERS`).
 

@@ -1167,3 +1167,11 @@ def test_new_call_after_cancel_carries_the_new_charge(shop):
     block = courier.get_block(order)
     assert block["door_charge_note"].endswith("Cobrar R$ 50,00 em dinheiro · sem troco")
     assert courier.charge_outdated(order) is None
+
+
+def test_ride_letter_names_the_ride_as_the_operator_says_it():
+    """Corrida é letra na tela e na mensagem; o número só grava e escolhe a cor."""
+    assert [courier.ride_letter(n) for n in (1, 2, 6, 26)] == ["A", "B", "F", "Z"]
+    assert courier.ride_letter(27) == "A"
+    assert [courier.ride_letter(v) for v in (0, -1, None, "2", True, 1.0)] == [""] * 6
+
