@@ -2004,6 +2004,7 @@
           "offerman.view_listingitem",
           "offerman.view_product",
           "offerman.view_productcomponent",
+          "shop.create_support_ticket",
           "shop.manage_catalog",
           "shop.manage_rules",
           "shop.view_coupon",
@@ -2018,6 +2019,7 @@
           "backstage.operate_kds",
           "backstage.perform_operation_task",
           "cashman.operate_pos",
+          "shop.create_support_ticket",
           "shop.manage_orders"
         ]
       },
@@ -2041,6 +2043,7 @@
           "craftsman.view_workorder",
           "craftsman.view_workorderevent",
           "craftsman.view_workorderitem",
+          "shop.create_support_ticket",
           "shop.edit_production_finished",
           "shop.edit_production_planned",
           "shop.edit_production_started",
@@ -2065,7 +2068,13 @@
           "cashman.audit_shift",
           "payman.refund_paymentintent",
           "payman.view_paymentintent",
-          "payman.view_paymenttransaction"
+          "payman.view_paymenttransaction",
+          "shop.approve_support_requests",
+          "shop.create_support_ticket",
+          "shop.link_support_dev",
+          "shop.triage_support_tickets",
+          "shop.view_all_support_tickets",
+          "shop.view_support_audit"
         ]
       },
       {
@@ -2205,6 +2214,7 @@
           "shop.change_faqentry",
           "shop.change_omotenashicopy",
           "shop.change_promotion",
+          "shop.create_support_ticket",
           "shop.edit_marketing_campaigns",
           "shop.edit_marketing_templates",
           "shop.edit_production_finished",
@@ -2216,6 +2226,8 @@
           "shop.manage_customers",
           "shop.manage_orders",
           "shop.preview_marketing_audience",
+          "shop.triage_support_tickets",
+          "shop.view_all_support_tickets",
           "shop.view_announcement",
           "shop.view_announcementtemplate",
           "shop.view_attributedefinition",

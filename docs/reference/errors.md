@@ -89,6 +89,29 @@ Todos saem **409**. O 200 devolve `{ok, ref, detail, payment_link_notice}` — a
 prova de envio ("Enviando o link ao cliente…") que o detalhe do gestor também
 carrega em `payment_link_notice`.
 
+### Recusa nomeada: a corrida de vários pedidos e o pedido que mudou (409 `revision_changed`)
+
+`POST /api/v1/backstage/orders/courier-ride/` (uma corrida da TaOn para vários
+pedidos) passa pelo protocolo de intenção das ações de operador
+(`_intention_response` em `shopman/backstage/api/operations.py`): quem a tela leu
+(`expected_actor_id`), uma `Idempotency-Key` por corrida e o que a tela leu de
+CADA pedido (`base_revisions`: `{ref: courier.dispatch_revision}`, entregue pronto
+na ação `courier-ride` da projeção). As recusas:
+
+| Status | `code` | O que aconteceu | O que resolve |
+|---|---|---|---|
+| 400 | `intention_required` | Faltou a chave ou a revisão de algum pedido | Atualizar a fila e chamar de novo |
+| 409 | `actor_changed` | Quem está identificado não é quem a tela leu | Atualizar a fila |
+| 409 | `revision_changed` | Endereço, pagamento ou corrida de um pedido mudou depois que a tela foi lida. `errors` aponta cada pedido que mudou (`{ref: [mensagem]}`) e `detail` diz qual, pelo código curto | A tela mostra o `detail`, relê a fila e o operador confere antes de chamar |
+| 409 | `intention_conflict` | A mesma chave com outros pedidos ou outra custódia | Nunca reaproveitar a chave de outra corrida |
+| 400 | (sem código, ou `change_out_required`) | Recusa de negócio: diz qual pedido e por quê | O que o `detail` diz |
+
+Repetir a mesma chave devolve o mesmo resultado com `replayed: true`, e
+`GET ?idempotency_key=` lê o resultado sem executar nada. A corrida que já
+existe com estes mesmos pedidos (outro dispositivo chamou) não é recusa: sai
+**200** com `already_called: true` e a frase em `detail`. O 200 traz
+`ride_number` e `ride_letter`, o número e a letra com que a corrida ficou.
+
 ### Recusa nomeada: `error.code` em 403
 
 Nem toda recusa é igual, e o status HTTP sozinho não separa as três que o operador

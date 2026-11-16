@@ -1,6 +1,7 @@
 // A arrumação das colunas do Gestor fica lembrada por POSTO, no servidor (SUITE-UX
-// §16, L7). Sem posto ou sem servidor, a tela abre com as três colunas e o que o
-// operador mudar vale até recarregar.
+// §16, L7). Sem posto ou sem servidor, a tela abre com Entrada e Saída, o Preparo
+// recolhido (espelho da Cozinha; dono, 13/11/2026), e o que o operador mudar vale até
+// recarregar.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
@@ -18,6 +19,13 @@ const SAIDA = {
   expedition: { open: true, weight: 1 },
 };
 
+// As três abertas, como o posto que já abriu o Preparo (os gestos medidos a partir dali).
+const ALL = {
+  intake: { open: true, weight: 1 },
+  prep: { open: true, weight: 1 },
+  expedition: { open: true, weight: 1 },
+};
+
 function puts() {
   return env.fetchMock.mock.calls.filter(([, options]) => options?.method === "PUT");
 }
@@ -32,12 +40,20 @@ afterEach(() => {
 });
 
 describe("useBoardLayout", () => {
-  it("sem leitura, abre com as três colunas", async () => {
+  it("sem leitura, abre com o Preparo recolhido", async () => {
     env.fetchMock.mockRejectedValueOnce(new Error("offline"));
     const board = useBoardLayout();
     await board.load();
-    expect(board.allOpen.value).toBe(true);
-    expect(board.gridTemplate.value).toBe("minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)");
+    expect(board.isOpen("intake")).toBe(true);
+    expect(board.isOpen("prep")).toBe(false);
+    expect(board.isOpen("expedition")).toBe(true);
+  });
+
+  it("posto sem arrumação guardada também abre com o Preparo recolhido", async () => {
+    env.fetchMock.mockResolvedValueOnce({ station: "passe", columns: null });
+    const board = useBoardLayout();
+    await board.load();
+    expect(board.isOpen("prep")).toBe(false);
   });
 
   it("o posto Saída abre como o posto deixou", async () => {
@@ -50,7 +66,7 @@ describe("useBoardLayout", () => {
   });
 
   it("recolher grava no posto, uma vez, depois da última tecla", async () => {
-    env.fetchMock.mockResolvedValueOnce({ station: "passe", columns: null });
+    env.fetchMock.mockResolvedValueOnce({ station: "passe", columns: ALL });
     const board = useBoardLayout();
     await board.load();
     env.fetchMock.mockResolvedValue({});
@@ -74,7 +90,7 @@ describe("useBoardLayout", () => {
   });
 
   it("dispositivo que não é posto: muda na tela e não grava", async () => {
-    env.fetchMock.mockResolvedValueOnce({ station: "", columns: null });
+    env.fetchMock.mockResolvedValueOnce({ station: "", columns: ALL });
     const board = useBoardLayout();
     await board.load();
     board.toggle("prep");
@@ -111,7 +127,7 @@ describe("useBoardLayout", () => {
   });
 
   it("arrastar mostra a prévia sem gravar; soltar grava; soltar no fim recolhe", async () => {
-    env.fetchMock.mockResolvedValueOnce({ station: "passe", columns: null });
+    env.fetchMock.mockResolvedValueOnce({ station: "passe", columns: ALL });
     const board = useBoardLayout();
     await board.load();
     env.fetchMock.mockResolvedValue({});
@@ -141,7 +157,7 @@ describe("useBoardLayout", () => {
   });
 
   it("persiste um resize do Splitter oficial, mas ignora layouts idênticos", async () => {
-    env.fetchMock.mockResolvedValueOnce({ station: "passe", columns: null });
+    env.fetchMock.mockResolvedValueOnce({ station: "passe", columns: ALL });
     const board = useBoardLayout();
     await board.load();
     env.fetchMock.mockResolvedValue({});

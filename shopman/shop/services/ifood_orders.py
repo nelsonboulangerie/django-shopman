@@ -98,6 +98,7 @@ def map_order(order: dict) -> dict:
         "items": _map_items(order.get("items") or []),
         "benefits": _map_benefits(order.get("benefits") or []),
         "totals": _map_totals(order.get("total") or {}),
+        "additional_fees": _map_additional_fees(order.get("additionalFees")),
         "payments": _map_payments(order.get("payments") or {}),
         "notes": _order_notes(order),
     }
@@ -330,6 +331,32 @@ def _map_totals(total: dict) -> dict:
         "benefits_q": _to_q(total.get("benefits", 0)),
         "order_amount_q": _to_q(total.get("orderAmount", 0)),
     }
+
+
+def _map_additional_fees(fees) -> list[dict]:
+    """As taxas que o iFood cobra do cliente além dos itens e da entrega.
+
+    ``total.additionalFees`` só traz a SOMA; o tipo (pedido mínimo, serviço) e
+    quem fica com o valor vêm na lista ``additionalFees`` do pedido. Sem ela a
+    tela não explicava por que o total (R$ 49,20) passava dos itens (R$ 48,00)
+    no pedido 3417 (12/11/2026).
+    """
+    if not isinstance(fees, list):
+        return []
+    mapped = []
+    for fee in fees:
+        if not isinstance(fee, dict):
+            continue
+        mapped.append({
+            "type": str(fee.get("type") or ""),
+            "value_q": _benefit_amount(fee.get("value")),
+            "description": str(fee.get("description") or ""),
+            "liabilities": [
+                {"name": str(item.get("name") or ""), "percentage": item.get("percentage")}
+                for item in (fee.get("liabilities") or []) if isinstance(item, dict)
+            ],
+        })
+    return mapped
 
 
 def _map_payments(payments: dict) -> dict:

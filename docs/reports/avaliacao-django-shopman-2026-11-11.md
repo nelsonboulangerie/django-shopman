@@ -1,50 +1,50 @@
 # Avaliação técnica do Django Shopman
 
-**Versão 1.0 · 11/11/2026 · Base `8830a72bf82670f03601be69457e77fcc61bebd6`**
+**11/11/2026 · Base `8830a72bf82670f03601be69457e77fcc61bebd6`**
 
 O Shopman modela bem a operação da Nelson e está mais consistente sobre quem decide preço, estoque, estado do pedido e dinheiro. A fragilidade central está na recuperação de gestos que atravessam esses domínios. Prioridade para a virada: ensaiar a operação com interrupções e corrigir a gravação do custo da fornada antes de usar a margem por lote em decisões de mix.
 
 ## Escopo e evidência
 
-O SHA da análise foi confirmado como o `main` no GitHub. Inspeção independente do código, dos contratos e dos testes versionados, com exclusão das alterações locais. As nove guardas da Constituição passaram com a baseline vigente, assim como os verificadores de registro e versões das superfícies. O modo estrito apontou as exceções registradas de ciclo de pedido, ledger e signals. Foram verificações estáticas. A suíte completa, o ambiente implantado e os fluxos com dispositivos e provedores reais ficaram sem verificação. Os defeitos abaixo são demonstráveis pelo código. Os riscos descritos nas tabelas orientam a reavaliação, sem implicar incidentes observados. [Commit](https://github.com/nelsonboulangerie/django-shopman/commit/8830a72bf82670f03601be69457e77fcc61bebd6) · [Guardas](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/docs/reference/guard-map.md)
+O SHA da análise foi confirmado como o `main` no GitHub. Inspeção independente do código, dos contratos e dos testes versionados, com exclusão das alterações locais. As nove guardas da Constituição passaram com a baseline vigente, assim como os verificadores de registro e versões das superfícies. O modo estrito apontou as exceções registradas de ciclo de pedido, ledger e signals. Foram verificações estáticas. A suíte completa, o ambiente implantado e os fluxos com dispositivos e provedores reais ficaram sem verificação. A revisão independente no mesmo SHA registrou quatro testes de reprodução falhando: custo ausente após reenvio, divergência na soma em centavos, venda fora da janela e lote diário compartilhado. As tabelas por app registram características e cenários a verificar. [Commit](https://github.com/nelsonboulangerie/django-shopman/commit/8830a72bf82670f03601be69457e77fcc61bebd6) · [Guardas](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/docs/reference/guard-map.md)
 
 ## Achados prioritários e correções propostas
 
-### 1. Fechamento da fornada pode perder o custo histórico
+### 1. Fechamento pode confirmar a fornada sem custo histórico (P1)
 
-**Evidência.** `CraftExecution.finish` emite `production_changed` após seu bloco `atomic` interno. O receiver de custo registra exceções em log. O reenvio idempotente deixa de emitir o signal novamente. A fachada recompõe estoque e vínculo com pedidos, porém não recompõe o custo. A baseline descreve o fechamento como escrita na mesma transação, uma garantia que o bloco interno do kernel por si só não entrega. [Execução](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/packages/craftsman/shopman/craftsman/services/execution.py#L655) · [Recuperação](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/shopman/shop/services/production.py#L1054) · [Receiver](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/shopman/shop/handlers/production_cost.py) · [Baseline](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/scripts/constitution-baseline.json)
+**Evidência.** No fluxo do operador, o `atomic` externo protege contra queda do processo antes do commit. A baseline descreve corretamente esse fluxo. O receiver de custo captura exceções e deixa o fechamento prosseguir. O reenvio idempotente não reemite o signal, e a fachada recompõe estoque e vínculo com pedidos, mas não o custo. A revisão reproduziu pela fachada uma fornada fechada, com estoque realizado e sem snapshot mesmo após dois reenvios. [Fluxo do operador](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/shopman/backstage/services/production.py#L3125) · [Recuperação](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/shopman/shop/services/production.py#L1054) · [Receiver](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/shopman/shop/handlers/production_cost.py)
 
-**Solução preferida.** Capturar valores de custo ou lacunas na transação que confirma o fechamento, preservando a independência do Craftsman por meio da orquestração do Shop. Se o snapshot final for assíncrono, gravar na mesma transação uma tarefa durável com os valores já capturados. Corrigir a descrição da fronteira transacional na baseline.
+**Solução.** Capturar valores de custo ou lacunas na transação que confirma o fechamento. Se a materialização for assíncrona, gravar nessa mesma transação uma tarefa durável com os valores já capturados. Verificar também os pontos de entrada do Admin e da API do Craftsman. Reprocessar com o preço preferencial vigente em outra data altera o fato histórico.
 
-**Aceite.** Interromper entre fechamento e materialização, alterar o custo preferencial e reenviar duas vezes. O snapshot deve aparecer uma vez com os valores originais. Lacunas reais ficam explícitas. O estoque e os vínculos não duplicam.
+**Aceite.** Testar pelo ponto de entrada do operador e pela fachada. Com falha na captura, o fechamento reverte. Com falha após captura durável, alterar o preço preferencial e reenviar duas vezes deve materializar um único snapshot com os valores originais, sem duplicar estoque ou vínculos. Lacunas reais ficam explícitas.
 
-### 2. Margem por fornada mistura custo integral com receita parcial
+### 2. Margem por fornada mistura custo integral com receita parcial (P1 para uso gerencial)
 
-**Evidência.** O período filtra tanto a data da fornada quanto a data da venda. Atribuição depende de holds cumpridos e de origem única inferida de texto em `Move.reason`. Sem receita atribuída, o cálculo usa zero e deduz o custo integral. Uma venda no dia seguinte, saldo ainda disponível e perda de rastreabilidade podem produzir o mesmo número. A UI já rotula a coluna como margem sobre a receita rastreada. [Projeção](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/shopman/backstage/projections/bi_production.py#L168) · [Tabela](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/surfaces/bi-nuxt/app/components/ProductionLots.vue#L71)
+**Evidência.** O período filtra a fornada e a venda. Uma fornada vendida integralmente no dia seguinte apareceu com −R$ 18 na janela de um dia e +R$ 82 na de dois dias. Atribuição depende de holds cumpridos e de origem única inferida de `Move.reason`. Sem atribuição, o cálculo usa receita zero e deduz o custo inteiro. O fechamento particionado do operador usa lotes por ordem. O escalar ou o fallback de partição pode usar lote diário compartilhado. O teste existente confirma a exclusão da receita ambígua e deixa a margem sem asserção. [Projeção](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/shopman/backstage/projections/bi_production.py#L168) · [Teste](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/shopman/backstage/tests/test_bi_v6.py#L397)
 
-**Solução em duas etapas.** Primeiro, mostrar cobertura e suprimir a margem quando a atribuição for indeterminada. Depois, persistir vínculo explícito entre saída da fornada, movimento e lote de estoque. Definir se o relatório mede retorno acumulado da fornada até uma data de corte ou margem das unidades vendidas no período, com custo proporcional às saídas atribuídas. Até essa decisão e a validação da cobertura, manter a métrica fora da QME.
+**Solução.** Suprimir a margem quando a atribuição for indeterminada, com cobertura e motivo visíveis. Persistir vínculo explícito entre saída da fornada, movimento e lote. Decidir se o relatório mede retorno acumulado da fornada até uma data de corte ou margem das unidades vendidas no período, com custo proporcional. Manter o indicador fora da QME até definir a leitura e validar a cobertura.
 
-**Aceite.** Testar venda no dia seguinte, venda parcial, duas fornadas no mesmo lote diário, ausência de vínculo e devolução. Expor o que foi atribuído e o que permanece indeterminado. Reconciliar centavos com a venda canônica.
+**Aceite.** Testar venda posterior, venda parcial, lote diário compartilhado, ausência de vínculo e devolução. Distinguir receita atribuída, saldo ainda sem venda e receita indeterminada. Reconciliar centavos com a venda canônica.
 
-### 3. O custo congelado diverge do contrato de arredondamento
+### 3. Custo congelado diverge do contrato de centavos (P2)
 
-**Evidência.** O schema define `total_q` como soma das linhas e `unit_cost_q` a partir de `total_q`. O código arredonda linhas individualmente e calcula total e custo unitário a partir da soma decimal original. Duas linhas de 0,6 centavo gravam 1 centavo cada e total de 1 centavo. [Schema](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/docs/reference/data-schemas.md#L1986) · [Cálculo](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/shopman/shop/adapters/cost.py#L181)
+**Evidência.** Duas linhas de 0,6 centavo gravam 1 centavo cada e total de 1 centavo. Com custo exato de 2,5 centavos para duas unidades, o unitário sai 1 centavo a partir da soma decimal. Pelo contrato, o total gravado de 3 centavos produz unitário de 2 centavos. [Schema](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/docs/reference/data-schemas.md#L1986) · [Cálculo](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/shopman/shop/adapters/cost.py#L181)
 
-**Solução preferida.** Cumprir o contrato publicado. Se for necessário arredondar o agregado uma única vez, distribuir o resíduo entre as linhas com regra determinística e derivar o unitário do total gravado. Preservar snapshots existentes e explicitar a regra aplicável a cada versão, se necessário.
+**Solução.** Cumprir o contrato publicado. Se o total for arredondado uma única vez, distribuir o resíduo entre as linhas por regra determinística. Derivar o unitário do total gravado e preservar os snapshots existentes.
 
-**Aceite.** Testar frações de centavo, saída zero e lacuna. Nas novas gravações completas, a soma das linhas deve bater com o total e o unitário deve seguir a regra publicada.
+**Aceite.** Testar as duas identidades, soma das linhas igual ao total e unitário derivado do total, além de saída zero e custo com lacuna.
 
-### 4. Código crítico concentrado nas bordas
+### 4. Código crítico concentrado nas bordas (P2 de manutenção)
 
-**Evidência.** `backstage/api/operations.py` tem 7.246 linhas, `shop/services/pos.py` 6.767, `usePosSale.ts` 4.668, `order_queue.py` 3.598 e `finalizar.vue` 2.608. O risco vem da concentração de decisões, efeitos e recuperação nesses fluxos.
+**Evidência.** `backstage/api/operations.py` tem 7.246 linhas, `shop/services/pos.py` 6.767, `usePosSale.ts` 4.668, `order_queue.py` 3.598 e `finalizar.vue` 2.608. As contagens são verificadas. O risco de manutenção é uma avaliação da concentração de decisões, efeitos e recuperação nesses fluxos.
 
 **Solução preferida.** Delimitar por gesto operacional. Começar com fechamento e recuperação de venda no PDV, depois recuperação da fornada. Caracterizar o comportamento dos pontos de entrada antes de extrair código. Preservar idempotência, contratos e propriedade das escritas.
 
 **Aceite.** Cada gesto tem um ponto de entrada e resultados verificáveis no pedido, pagamento e estoque pertinentes. Venda mista, reenvio, recusa e falha parcial mantêm o comportamento esperado.
 
-### 5. Promoção verifica identidade antes de verificar comportamento
+### 5. Promoção verifica identidade antes de verificar comportamento (P2, P1 na virada)
 
-**Evidência.** O workflow reaproveita os manifests por digest, exige aprovação e comprova o SHA no ambiente. No modelo pós-go-live, o `plan` verifica ancestralidade e digests antes da promoção. O smoke funcional desta esteira roda depois. PDV, Cozinha, Gestor, Produção e Central compartilham um grupo de deploy. [Promoção](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/.github/workflows/promote-release.yml) · [Grupos](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/surfaces/operator-router/groups.json)
+**Evidência.** O workflow reaproveita os manifests por digest, exige aprovação e comprova o SHA no ambiente. No modelo pós-go-live, o `plan` verifica ancestralidade e digests antes da promoção. O smoke funcional desta esteira roda depois, e o gate de migração citado exercita um banco vazio. PDV, Cozinha, Gestor, Produção e Central compartilham um grupo de deploy. [Promoção](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/.github/workflows/promote-release.yml) · [Grupos](https://github.com/nelsonboulangerie/django-shopman/blob/8830a72bf/surfaces/operator-router/groups.json)
 
 **Solução preferida.** Ensaiar os mesmos digests em ambiente representativo e descartável antes da promoção, com configuração equivalente e integrações de teste. Incluir atualização do schema a partir da versão anterior. Preservar a validação de identidade e o smoke pós-promoção.
 
@@ -57,11 +57,11 @@ O SHA da análise foi confirmado como o `main` no GitHub. Inspeção independent
 - **Regressões arquiteturais detectáveis.** Guardas de dependência, dinheiro, ledger e projeções, além de registro e locks alinhados nas superfícies. A guarda de autoridade cobre as decisões cadastradas.
 - **Release rastreável.** Construção única, promoção por digest e identidade verificável por componente. A [leitura do custo congelado pelo B.I.](https://github.com/nelsonboulangerie/django-shopman/pull/2272) já distingue ausência e incompletude do custo.
 
-## Avaliação por app
+## Acertos e cenários a verificar por app
 
 | Superfície | Acerto | Fragilidade e encaminhamento |
 |---|---|---|
-| PDV | Comanda, venda mista, custódia e fila idempotente. | A venda offline desativada bloqueia cobrança sem rede. Ensaiar recuperação de cobrança e conciliação fiscal. |
+| PDV | Comanda, venda mista, custódia e fila idempotente. | Com a opção de venda offline desativada na configuração da loja, perder rede bloqueia a cobrança. Ensaiar recuperação de cobrança e conciliação fiscal. |
 | Loja online | Promessa considera saldo e fornada. | Checkout concentra estado. Testar combo, troca de data, reserva e retorno de pagamento no mesmo cenário. |
 | Gestor de Pedidos | Fila dedicada e aceite sensível a encomenda e horário. | Projeção extensa e escopo de gestão amplo. Isolar ações da fila com contratos próprios. |
 | Produção | Planejamento, mise en place, fechamento e qualidade. | Tornar recuperáveis as consequências do fechamento, inclusive o custo. |

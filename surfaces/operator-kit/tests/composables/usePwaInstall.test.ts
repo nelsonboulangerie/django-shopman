@@ -55,7 +55,7 @@ describe("usePwaInstall", () => {
     expect(state.plan.value.kind).toBe("steps");
     expect(state.canInvite.value).toBe(true);
     const texto = state.plan.value.steps.map((step) => step.text).join(" ");
-    expect(texto).toContain("⋮");
+    expect(texto).toContain("três pontinhos");
     expect(texto).not.toContain("Safari");
     wrapper.unmount();
   });

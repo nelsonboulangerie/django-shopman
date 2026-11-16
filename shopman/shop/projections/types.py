@@ -199,6 +199,9 @@ class OrderItemProjection:
     qty: str  # Exact decimal, without insignificant trailing zeros.
     unit_price_display: str
     total_display: str
+    # Instrução do item (observação do cliente, complementos do iFood): a mesma
+    # que o ticket da cozinha mostra. Vazio quando o item não tem nenhuma.
+    notes: str = ""
 
 
 @dataclass(frozen=True)

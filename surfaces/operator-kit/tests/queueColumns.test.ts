@@ -46,6 +46,18 @@ describe("colunas de fila: arrumação padrão e higiene", () => {
     expect(allQueueColumnsOpen(normalizeQueueLayout(KEYS, fechadas), KEYS)).toBe(true);
     expect(normalizeQueueLayout(KEYS, null)).toEqual(defaultQueueLayout(KEYS));
   });
+
+  it("o app pode declarar colunas recolhidas de saída; o que o posto guardou vale", () => {
+    expect(defaultQueueLayout(KEYS, ["prep"])).toEqual({
+      intake: { open: true, weight: 1 },
+      prep: { open: false, weight: 1 },
+      expedition: { open: true, weight: 1 },
+    });
+    expect(normalizeQueueLayout(KEYS, null, ["prep"]).prep?.open).toBe(false);
+    expect(normalizeQueueLayout(KEYS, { prep: { open: true, weight: 1 } }, ["prep"]).prep?.open).toBe(true);
+    // Declarar todas recolhidas não apaga a fila.
+    expect(allQueueColumnsOpen(defaultQueueLayout(KEYS, KEYS), KEYS)).toBe(true);
+  });
 });
 
 describe("recolher e abrir", () => {

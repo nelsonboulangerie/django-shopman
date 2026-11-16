@@ -94,11 +94,11 @@ def test_remote_event_before_placed_can_retry_after_materialization(code, initia
         assert order.status == target
 
 
-@pytest.mark.parametrize("initial", ["new", "accepted", "preparing"])
+@pytest.mark.parametrize("initial", ["new", "accepted"])
 def test_dsp_before_local_readiness_does_not_invent_preparation(initial):
-    """O entregador do iFood retirou antes de a cozinha marcar "Pronto": o fato
-    é gravado e reconhecido, e o pedido local fica onde está — nada de preparo
-    ou saída inventados. Quando a cozinha marcar, a reconciliação aplica."""
+    """O entregador do iFood retirou antes de a cozinha começar: o fato é
+    gravado e reconhecido, e o pedido local fica onde está — nada de preparo
+    inventado. (Em preparo, a coleta fecha o pedido: ``test_ifood_fato_e_ack``.)"""
     order = _order(initial)
     event = _event("DSP")
     with patch.object(ifood_events, "acknowledge", return_value=True) as ack:
