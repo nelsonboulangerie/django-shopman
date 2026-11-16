@@ -24,28 +24,28 @@ const happy: Step[] = [
     cliente: "Nada muda.",
   },
   {
-    n: "1", moment: "pickup", title: "Na loja: conferir e sair",
+    n: "1", moment: "pickup", title: "No balcão: pegar e sair",
     when: "Celular a menos de 60 m da loja. Um bloco por pedido, o código sempre à esquerda e no mesmo peso; dentro dele, as sacolas e o que vai junto (troco ou maquininha).",
     tap: "Saí da loja.",
     gestor: "Diego chegou à loja. Ao tocar Saí: A47 e C03 saem para entrega.",
     cliente: "\"Diego está a caminho. Deve chegar por volta de 12h46.\"",
   },
   {
-    n: "2", moment: "drive", landscape: true, title: "Dirigindo: só o caminho",
+    n: "2", moment: "drive", landscape: true, title: "Dirigindo: o endereço",
     when: "Depois de Saí e depois de cada entrega. Em movimento, nada para ler nem tocar. \"Abrir no Waze\" fica à mão, mas a nossa página é o mapa (é ela que manda a posição).",
     tap: "Nenhum.",
     gestor: "Diego na rua · 2 entregas a fazer · posição no mapa.",
     cliente: "Aos 80 m: \"Diego está chegando.\"",
   },
   {
-    n: "3", moment: "door", title: "Na porta: entregar certo",
-    when: "A porta é a parada aberta mais perto, parado há 15 s (ele pode mudar a ordem). Fica na tela até ele tocar, ou até se afastar 200 m por 30 s.",
+    n: "3", moment: "door", title: "Na entrega: quem, o quê, quanto",
+    when: "A tela da entrega é a da entrega aberta mais perto, parado há 15 s (ele pode mudar a ordem). Fica na tela até ele tocar, ou até se afastar 200 m por 30 s.",
     tap: "Entreguei A47.",
     gestor: "A47 entregue às 12h47.",
     cliente: "\"Entregue às 12h47.\" (sai depois do Desfazer)",
   },
   {
-    n: "4", moment: "door-card", title: "Na porta seguinte (cartão)",
+    n: "4", moment: "door-card", title: "Na entrega seguinte (cartão)",
     when: "Igual à 3. Já pago mostra \"Já pago. Só entregar.\"; com a instrução de deixar na portaria, o botão vira \"Deixei na portaria\" (nunca em pedido a cobrar).",
     tap: "Entreguei C03.",
     gestor: "C03 entregue às 12h55.",
@@ -83,9 +83,9 @@ const detours: Step[] = [
     cliente: "Nada até os 10 s.",
   },
   {
-    n: "3c", moment: "which-door", title: "Duas paradas perto",
+    n: "3c", moment: "which-door", title: "Duas entregas perto",
     when: "Duas paradas abertas a menos de 150 m (mesmo prédio, GPS entre torres). Pergunta uma vez, em vez de adivinhar.",
-    tap: "A porta (1 toque, só nesse caso).",
+    tap: "A entrega (1 toque, só nesse caso).",
     gestor: "Nada.",
     cliente: "Nada.",
   },
@@ -120,12 +120,12 @@ const detours: Step[] = [
 ];
 
 const typeScale = [
-  { name: "display", spec: "40 · 900", sample: "R$ 58,00", cls: "text-[40px] font-black leading-[1.05] tracking-tight text-highlighted" },
-  { name: "title", spec: "24 · 800", sample: "Leve da loja", cls: "text-[24px] font-extrabold leading-tight text-highlighted" },
-  { name: "ref", spec: "20 · 800", sample: "A47", cls: "text-[20px] font-extrabold tabular-nums text-highlighted" },
-  { name: "body", spec: "18 · 500", sample: "2 sacolas", cls: "text-[18px] font-medium leading-snug text-highlighted" },
-  { name: "meta", spec: "15 · 500", sample: "Faltam 2 · chega 12h46", cls: "text-[15px] font-medium leading-snug text-muted" },
+  { name: "Grande", spec: "28 · 800", sample: "R$ 58,00", cls: "text-[28px] font-extrabold leading-tight text-highlighted" },
+  { name: "Normal", spec: "18 · 500", sample: "2 sacolas", cls: "text-[18px] font-medium leading-snug text-highlighted" },
+  { name: "Pequeno", spec: "15 · 500", sample: "Faltam 2 · chega 12h46", cls: "text-[15px] font-medium leading-snug text-muted" },
 ];
+
+const colorMode = useColorMode();
 
 const sections = [
   { title: "O caminho feliz: 3 toques numa corrida de duas entregas", steps: happy },
@@ -134,23 +134,23 @@ const sections = [
 
 const fixes = [
   "Toque sem querer em Entreguei: 10 s para desfazer, e o cliente só é avisado depois.",
-  "Mesmo prédio ou GPS entre torres: o botão leva o código (\"Entreguei A47\") e, com duas paradas perto, a tela pergunta a porta.",
+  "Mesmo prédio ou GPS entre torres: o botão leva o código (\"Entreguei A47\") e, com duas entregas perto, a tela pergunta \"Qual entrega é esta?\".",
   "Pagou de outro jeito: cartão ou Pix na maquininha, e o acerto da volta se refaz sozinho.",
   "Pedido cancelado com ele na rua: tela que passa na frente de todas, com \"Entendi\".",
   "\"Diego chegou.\" saía no semáforo: virou \"Diego está chegando.\", e o \"chegou\" saiu.",
-  "A tela trocava enquanto ele lia: a porta só sai com o toque dele ou com 200 m de distância por 30 s.",
+  "A tela trocava enquanto ele lia: a tela da entrega só sai com o toque dele ou com 200 m de distância por 30 s.",
   "Não consegui mandava seguir cedo: 3 minutos de espera enquanto a loja liga, e o motivo \"Pedido com problema\".",
   "Portaria e condomínio: torre e a instrução do cliente sem edição; \"Deixei na portaria\" só em pedido já pago.",
   "Pedido que atrasa: cada linha diz se está pronta, e o botão só aparece com tudo pronto.",
   "Troco somado: o troco e a maquininha vão dentro do bloco do pedido que precisa deles.",
-  "Ordem trocada: a porta é a parada aberta mais perto; \"Falta 1\" no lugar de \"1 de 2\".",
+  "Ordem trocada: vale a entrega aberta mais perto; \"Falta 1\" no lugar de \"1 de 2\".",
   "Link encaminhado: preso ao primeiro celular que abre; os outros veem \"Esta corrida está aberta em outro celular.\"",
   "Esqueceu de tocar Saí: fora da loja por 1 minuto, aviso a ele e ao Gestor; nunca automático.",
   "Balcão não fechou: a corrida seguinte começa com \"Antes: entregue R$ 100,00 da corrida A no caixa.\"",
   "Maquininha com bolinha azul confundia com a rota A: agora vai só pelo nome, \"Maquininha Azul\".",
   "Fonte grande ou tela de 360 px: o botão principal fica preso no rodapé, e o resto rola.",
-  "Noite: tema escuro sozinho depois do pôr do sol, na direção e na porta.",
-  "Ruído: saíram o \"combinado até\" da porta, o \"Você recebe\" repetido na loja, o mapa da volta e a nota \"os endereços somem\".",
+  "Tema: o entregador escolhe claro ou escuro e o sistema lembra; sem escolha, segue o celular.",
+  "Ruído: saíram o \"combinado até\" da entrega, o \"Você recebe\" repetido na loja, o mapa da volta e a nota \"os endereços somem\".",
   "Gênero: \"Marina paga com\" no lugar de \"Ela paga com\"; o nome não diz o gênero.",
 ];
 </script>
@@ -162,9 +162,15 @@ const fixes = [
         <main class="mx-auto flex w-full max-w-[1440px] flex-col gap-8 px-8 py-8">
           <header class="flex flex-col gap-1">
             <MsPreviewNav :current="5" />
+            <div class="flex items-center gap-2 op-body text-toned">
+              <span>Tema da página:</span>
+              <NuxtButton size="sm" color="neutral" :variant="colorMode.value === 'light' ? 'solid' : 'outline'" icon="i-lucide-sun" label="Claro" @click="colorMode.preference = 'light'" />
+              <NuxtButton size="sm" color="neutral" :variant="colorMode.value === 'dark' ? 'solid' : 'outline'" icon="i-lucide-moon" label="Escuro" @click="colorMode.preference = 'dark'" />
+              <span class="op-micro text-muted">No aviso de cancelamento (7), o tom forte vira o oposto do tema.</span>
+            </div>
             <h1 class="op-title font-semibold text-highlighted">Prévia 5 · A corrida do entregador da casa, em hiperfoco (linguagem do Painel)</h1>
             <p class="op-body text-toned">
-              Uma tela por momento, e a tela muda sozinha quando o momento muda: na loja, dirigindo (carro ou moto), na porta. Em cada uma, só o
+              Uma tela por momento, e a tela muda sozinha quando o momento muda: no balcão, dirigindo (carro ou moto), na entrega. Em cada uma, só o
               que importa ali. O caminho feliz custa <strong class="text-highlighted">3 toques</strong>; cada exceção custa no máximo um a mais, e só
               quando acontece.
             </p>
@@ -178,25 +184,28 @@ const fixes = [
             <h2 class="op-title text-highlighted">A linguagem, com rigor: só estas peças</h2>
             <div class="flex flex-wrap items-start gap-8">
               <div class="flex w-[420px] flex-col gap-3 rounded-2xl bg-default p-5 ring-1 ring-default">
-                <p class="op-micro font-semibold text-muted">Texto: 5 estilos, e só eles</p>
+                <p class="op-micro font-semibold text-muted">Texto: 3 tamanhos, e só eles</p>
                 <p v-for="t in typeScale" :key="t.name" class="flex items-baseline justify-between gap-4">
                   <span :class="t.cls">{{ t.sample }}</span>
                   <span class="op-micro shrink-0 text-muted">{{ t.name }} · {{ t.spec }}</span>
                 </p>
+                <p class="flex items-baseline justify-between gap-4">
+                  <span class="inline-flex w-fit items-center rounded-lg bg-accented px-2 py-0.5 text-[15px] font-bold tabular-nums text-highlighted">A47</span>
+                  <span class="op-micro shrink-0 text-muted">Código do pedido · sempre este badge</span>
+                </p>
               </div>
               <div class="flex w-[420px] flex-col gap-3 rounded-2xl bg-default p-5 ring-1 ring-default">
-                <p class="op-micro font-semibold text-muted">Superfície: 3 tons, sem borda nem fio</p>
+                <p class="op-micro font-semibold text-muted">Fundo: 2 tons e o forte, sem borda nem fio</p>
                 <div class="rounded-2xl bg-default p-4 ring-1 ring-default"><span class="op-body text-toned">Tela · o fundo</span></div>
                 <div class="rounded-2xl bg-elevated p-4"><span class="op-body text-toned">Bloco · um pedido, uma escolha, um recado</span></div>
-                <div class="rounded-2xl bg-inverted p-4"><span class="op-body text-inverted">Forte · o botão principal e o aviso que passa na frente</span></div>
-                <div class="rounded-2xl border-s-[6px] border-inverted bg-elevated p-4"><span class="op-body text-toned">Fio grosso · só o dinheiro da porta</span></div>
+                <div class="rounded-2xl bg-inverted p-4"><span class="op-body text-inverted">Forte · o botão principal e o aviso que passa na frente. É o oposto do tema.</span></div>
               </div>
               <div class="flex w-[420px] flex-col gap-2 rounded-2xl bg-default p-5 ring-1 ring-default op-body text-toned">
                 <p class="op-micro font-semibold text-muted">Regras</p>
-                <p>· O código do pedido é sempre o mesmo estilo, à esquerda do bloco dele. O que pertence a um pedido mora dentro do bloco dele.</p>
-                <p>· Um "display" por tela: a coisa que ele precisa ver de longe.</p>
+                <p>· O código do pedido é sempre o mesmo badge. O que pertence a um pedido mora dentro do bloco dele.</p>
+                <p>· Grande só para o título da tela e para o dinheiro.</p>
                 <p>· Espaço: 20 px na borda, 16 px dentro do bloco, 12 px entre blocos, 28 px entre grupos.</p>
-                <p>· Os tons são os do Painel do Gestor; à noite viram o tema escuro sozinhos.</p>
+                <p>· Tema claro ou escuro: o entregador escolhe (o ícone no balcão) e o sistema lembra, no celular e no cadastro dele. Sem escolha, segue o celular.</p>
                 <p>· A cor da rota só no quadrado da letra e na linha do mapa.</p>
               </div>
             </div>
