@@ -714,7 +714,7 @@ describe("selos da linha (dono, 03/11/2026)", () => {
     expect(moneyBadge({ ...base, balance_q: 6000, balance_display: "R$ 60,00" })).toEqual({ amount: "R$ 60,00", of: "", label: "A Receber", tone: "warning" });
     expect(moneyBadge({ ...base, balance_q: 2000, balance_display: "R$ 20,00" })).toEqual({ amount: "R$ 20,00", of: "de R$ 60,00", label: "A Receber", tone: "warning" });
     expect(moneyBadge({ ...base, balance_q: 0, payment_state: "paid" })).toMatchObject({ label: "Pago", tone: "success" });
-    expect(moneyBadge({ ...base, balance_q: null })).toMatchObject({ label: "Conferir Pagamento", tone: "warning" });
+    expect(moneyBadge({ ...base, balance_q: null })).toMatchObject({ label: "Conferir pagamento", tone: "warning" });
   });
 });
 

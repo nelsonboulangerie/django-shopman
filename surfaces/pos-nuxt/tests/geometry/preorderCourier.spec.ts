@@ -96,7 +96,7 @@ test("chamar o entregador muda o estado na hora (mock: nunca a TaOn)", async ({ 
   await expect(page.locator("[data-pos-courier-state]")).toHaveText("Não atendida", { timeout: 90_000 });
   await page.locator("[data-pos-courier-call]").click();
   await page.locator("[data-pos-courier-confirm-call]").click();
-  await expect(page.locator("[data-pos-courier-state]")).toHaveText("Procurando Entregador");
+  await expect(page.locator("[data-pos-courier-state]")).toHaveText("Procurando entregador");
   await expect(page.locator("[data-pos-courier-call]")).toHaveCount(0);
 });
 

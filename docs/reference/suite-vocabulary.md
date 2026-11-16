@@ -160,21 +160,26 @@ directive, servidor* e os nomes de pacote (*offerman, stockman, craftsman, order
 guestman, doorman, payman, buyman, fiscalman, cashman*). "Projeção" em português fica: é
 a tela de previsão do B.I.
 
-### 2.6 Maiúsculas no selo: nome tem, frase não (dono, 03/11, 04/11 e 07/11/2026)
+### 2.6 Maiúscula no selo: só a primeira letra da sentença (dono, 16/11/2026)
 
-Selo (o `NuxtBadge` da suíte) que é **nome** leva maiúscula em cada palavra, e artigo,
-preposição e unidade no meio ficam minúsculos. Selo que é **frase** leva só a primeira
-maiúscula, como qualquer frase da casa. É frase a parte do selo que tem **"não"**, que
-tem **vírgula** ou que tem **cinco palavras ou mais**. Cada parte de um selo composto
-(separado por " · ") é julgada sozinha. Marca e sigla ("iFood", "PDV", "NFC-e") e
-palavra com número ficam como são.
+Selo (o `NuxtBadge` da suíte) é sentença: **só a primeira letra é maiúscula**, como
+qualquer frase da casa. Dono, 16/11/2026: "'Procurando Outro Entregador' ->
+'Procurando outro entregador'. A regra é clara: Maiúscula para primeira letra da
+sentença!", e vale para todo selo. Cada parte de um selo composto (separado por " · ")
+é uma sentença. Nome próprio ("Cozinha", "Diego"), marca e sigla ("iFood", "PDV",
+"NFC-e") e palavra com número ficam como são.
 
-| É nome (cada palavra maiúscula) | É frase (só a primeira) |
+| Certo | Errado |
 |---|---|
-| **Loja Online** · **A Receber** · **Pagar na Retirada** · **Saiu para Entrega** · **Pronto pela Cozinha** | **Falhou em todos os canais** · **Não enviado** · **Não atendida** · **NFC-e não solicitada** · **Aceito pelo provedor, sem comprovante** |
+| **Procurando outro entregador** · **Loja online** · **A receber** · **Pagar na retirada** · **Saiu para entrega** · **Pronto pela Cozinha** · **Pix · Não pago** | ⛔ *Procurando Outro Entregador* · *Loja Online* · *A Receber* · *Saiu para Entrega* |
+
+⛔ **Revertido em 16/11/2026**: a regra de 03/11, 04/11 e 07/11/2026 ("Maiúsculas no
+selo: nome tem, frase não") dava maiúscula a cada palavra do selo curto ("Loja Online",
+"A Receber", "Pagar na Retirada") e só a primeira ao selo-frase. Não volta.
 
 Mora num ponto só: `surfaces/operator-kit/app/presentation/badgeCase.ts`, aplicado pelo
-`NuxtBadge` do kit; nenhum app chama à mão. A trava é
+`NuxtBadge` do kit; nenhum app chama à mão. Quem escreve o texto do selo escreve em
+sentença; o kit só garante a primeira maiúscula. A trava é
 `surfaces/operator-kit/tests/badgeCase.test.ts`. A frase que não cabe em selo (o
 detalhe, o motivo) vai fora dele, em texto.
 
