@@ -838,6 +838,7 @@ export interface TwoZoneQueueProjection {
   equipment_out: EquipmentOutProjection[];
   equipment_available: EquipmentOptionProjection[];
   ride_candidates: RideCandidateProjection[];
+  ride_action: Action | null;
   ifood_negotiation_orders: OrderCardProjection[];
   cancel_reasons: CancelReasonProjection[];
   awareness: QueueAwarenessProjection | null;
@@ -1220,7 +1221,7 @@ export interface DeliveryRideProjection {
   cancel_action: Action | null;
 }
 
-/** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, maps_key: 'str' = '') */
+/** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None) */
 export interface DeliveriesProjection {
   origin: DeliveryPointProjection | null;
   waiting: DeliveryStopProjection[];
@@ -1229,4 +1230,7 @@ export interface DeliveriesProjection {
   machines: Record<string, unknown>[];
   courier_on: boolean;
   maps_key: string;
+  group_action: Action | null;
+  free_numbers: number[];
+  next_number: number | null;
 }

@@ -6,7 +6,7 @@
 //  2. Editando: as corridas que o operador está juntando, cada uma com o seu número
 //     e cor. Estado só da tela: nada é gravado até "Chamar".
 //  3. Corridas: as chamadas, vivas. No mapa a rota fica a 50% e só a moto leva a
-//     cor cheia; na coluna, cada uma é um espelho que abre o detalhe (`?ride=N`).
+//     cor cheia; na coluna, cada uma é um espelho que abre o detalhe (`?ride=<chave>`).
 import type {
   DeliveriesProjection,
   DeliveryRideProjection,
@@ -44,24 +44,25 @@ const byRef = computed(() => new Map(waitingAll.value.map((stop) => [stop.ref, s
 // ── editando ────────────────────────────────────────────────────────────────
 const editing = ref<EditingRide[]>([]);
 const active = ref(0);
-const liveNumbers = computed(() => rides.value.map((ride) => ride.number));
-const taken = computed(() => [...liveNumbers.value, ...editing.value.map((ride) => ride.number)]);
+// Os números livres vêm do servidor (`free_numbers`: as corridas na rua já
+// descontadas, até 26 letras); a tela só desconta as que ela mesma está editando.
+const freeNumbers = computed(() => data.value?.free_numbers ?? []);
+const editingNumbers = computed(() => editing.value.map((ride) => ride.number));
 function ensureEditing() {
   if (editing.value.length) return;
-  const number = nextFreeNumber(liveNumbers.value) ?? 1;
+  const number = nextFreeNumber(freeNumbers.value, []) ?? 1;
   editing.value = [{ number, refs: [] }];
   active.value = number;
 }
-watch(liveNumbers, () => {
+watch(freeNumbers, (free) => {
   // Uma corrida chamada enquanto se editava (em outro dispositivo) pode ter pego o
   // número: a editada troca para um livre.
   for (const ride of editing.value) {
-    if (!liveNumbers.value.includes(ride.number)) continue;
-    const others = [...liveNumbers.value, ...editing.value.filter((r) => r !== ride).map((r) => r.number)];
-    const free = nextFreeNumber(others);
-    if (!free) continue;
-    if (active.value === ride.number) active.value = free;
-    ride.number = free;
+    if (free.includes(ride.number)) continue;
+    const next = nextFreeNumber(free, editing.value.filter((r) => r !== ride).map((r) => r.number));
+    if (!next) continue;
+    if (active.value === ride.number) active.value = next;
+    ride.number = next;
   }
 });
 // O que sumiu da lista (chamado em outro lugar, cancelado) sai da edição.
@@ -92,7 +93,7 @@ function fill(place: string) {
   mine.refs = refs.slice(0, maxStops.value);
 }
 function newRide() {
-  const number = nextFreeNumber(taken.value);
+  const number = nextFreeNumber(freeNumbers.value, editingNumbers.value);
   if (!number) return;
   editing.value.push({ number, refs: [] });
   active.value = number;
@@ -117,7 +118,7 @@ const suggestions = computed(() => {
   return [...count.entries()].filter(([, n]) => n >= 2).map(([place, n]) => ({ place, n }));
 });
 const canAddRide = computed(
-  () => waiting.value.length > 0 && nextFreeNumber(taken.value) !== null && editing.value.every((ride) => ride.refs.length),
+  () => waiting.value.length > 0 && nextFreeNumber(freeNumbers.value, editingNumbers.value) !== null && editing.value.every((ride) => ride.refs.length),
 );
 
 // ── chamar ──────────────────────────────────────────────────────────────────
@@ -157,24 +158,36 @@ async function call() {
   failure.value = "";
   const calls = rideCalls(ready.value, waitingAll.value, machineRef.value);
   const called: string[] = [];
+  // A corrida que já existia com os mesmos pedidos (chamada em outro dispositivo):
+  // o servidor diz, e a frase é a dele.
+  let already = "";
   try {
     for (const item of calls) {
       if (item.kind === "group") {
-        await $fetch("/api/v1/backstage/orders/courier-ride/", {
-          method: "POST",
-          body: { refs: item.refs, change_out: item.change_out, machine: item.machine },
+        // Pelo protocolo de intenção, como a chamada de um pedido só: quem a tela
+        // leu, a revisão de cada pedido e uma chave por corrida, guardada até a
+        // resposta definitiva (`group_action` da projeção).
+        const result = await intentions.executeRide(data.value?.group_action, {
+          refs: item.refs,
+          change_out: item.change_out,
+          machine: item.machine,
+          ride_number: item.number,
         });
+        if (result.already_called && result.detail) already = result.detail;
       } else {
         const ref = item.refs[0]!;
         await intentions.execute(ref, "courier-dispatch", byRef.value.get(ref)?.dispatch_action ?? undefined, {
           ...(item.change_out[ref] ? { change_out: item.change_out[ref] } : {}),
           ...(item.machine ? { equipment: [item.machine] } : {}),
+          ride_number: item.number,
         });
       }
       called.push(...item.refs);
     }
     useSonner.success(
-      calls.length === 1 ? "Corrida chamada. A TaOn avisa quando alguém aceitar." : `${calls.length} corridas chamadas.`,
+      calls.length === 1
+        ? already || "Corrida chamada. A TaOn avisa quando alguém aceitar."
+        : `${calls.length} corridas chamadas.`,
     );
   } catch (err) {
     failure.value = httpErrorMessage(err, "Não foi possível chamar. Confira as corridas e tente de novo.");
@@ -189,11 +202,11 @@ async function call() {
 
 // ── corridas: detalhe e gestos ───────────────────────────────────────────────
 const openKey = computed(() => String(route.query.ride || ""));
-const openRide = computed(() =>
-  rides.value.find((ride) => String(ride.number) === openKey.value || ride.key === openKey.value),
-);
+// A corrida aberta se identifica pela chave dela (`ride.key`), não pelo número: o
+// número volta a ficar livre quando a corrida fecha e outra o pega.
+const openRide = computed(() => rides.value.find((ride) => ride.key === openKey.value));
 function open(ride: DeliveryRideProjection) {
-  void router.replace({ query: { ...route.query, ride: String(ride.number) } });
+  void router.replace({ query: { ...route.query, ride: ride.key } });
 }
 function close() {
   void router.replace({ query: { ...route.query, ride: undefined } });

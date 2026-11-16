@@ -8551,7 +8551,10 @@
           "path": "shopman/shop/services/courier.py",
           "symbols": [
             "MAX_RIDE_STOPS",
+            "RideAlreadyCalled",
+            "RideRevisionChanged",
             "_route",
+            "_same_ride_already_called",
             "_stop",
             "dispatch_task_filter",
             "request_group_dispatch",
@@ -8594,7 +8597,10 @@
         {
           "path": "shopman/shop/services/courier.py",
           "symbols": [
+            "RIDE_LETTERS",
             "RIDE_NUMBERS",
+            "_live_ride_numbers",
+            "free_ride_numbers",
             "next_ride_number",
             "ride_is_live",
             "ride_letter"

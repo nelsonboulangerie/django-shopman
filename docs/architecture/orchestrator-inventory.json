@@ -1786,7 +1786,10 @@
           "responsibility": "configuração",
           "symbols": [
             "AIConnectionAdmin",
-            "AIConnectionForm"
+            "AIConnectionForm",
+            "AiInvocationAdmin",
+            "AiSpendDayAdmin",
+            "_ReadOnlyAdmin"
           ]
         }
       ]
@@ -2234,7 +2237,60 @@
             "fit_request",
             "is_configured",
             "jev_endpoint",
+            "jev_post",
             "resolve"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/ai_governor.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "AIBudgetExceeded",
+            "AIDisabled",
+            "CHARS_PER_TOKEN",
+            "DEFAULT_MAX_OUTPUT_TOKENS",
+            "DEFAULT_PURPOSE_USD_PER_DAY",
+            "DEFAULT_SHOP_USD_PER_DAY",
+            "HARD_CAP_USD_PER_DAY",
+            "JEV_PRICES",
+            "Lease",
+            "Limits",
+            "SHOP_SCOPE",
+            "WARNING_FRACTION",
+            "_alert_if_near_cap",
+            "_alert_once",
+            "_alert_stopped",
+            "_budget_message",
+            "_micros",
+            "_record",
+            "_scope_label",
+            "_scopes",
+            "_today",
+            "_token",
+            "_usd",
+            "actual_usd",
+            "check",
+            "estimate_input_tokens",
+            "estimate_usd",
+            "limits",
+            "logger",
+            "metered",
+            "prices_for",
+            "reserve",
+            "settle",
+            "usage_tokens"
           ]
         }
       ]
@@ -5820,6 +5876,27 @@
       ]
     },
     {
+      "path": "shopman/shop/models/ai_invocation.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "AiInvocation",
+            "AiOutcome",
+            "AiSpendDay"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/models/attributes.py",
       "touchpoints": [
         "model"
@@ -8918,6 +8995,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "_LINK_ORDER_KEYS",
+            "_RIDE_NUMBER_LOCK",
             "_TRACKING_LINKS_SHARED_SECONDS",
             "_TRACKING_RETRY_SECONDS",
             "_alert_ride_failed",
@@ -8928,6 +9006,7 @@
             "_enrich_accepted",
             "_enrich_finished",
             "_link_names",
+            "_lock_ride_numbers",
             "_resolve_sync_alert",
             "_ride_links",
             "_save_block",
