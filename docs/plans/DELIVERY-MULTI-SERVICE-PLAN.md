@@ -1,7 +1,7 @@
 # DELIVERY-MULTI-SERVICE-PLAN: escolher o serviço da corrida e entregadores próprios
 
-> **Compromisso:** DEV-2026-030 (fala do dono, 16/11/2026). **Estado:** fase 1, pacote de
-> trabalho para o dono decidir. Nenhum código de produção antes da palavra dele.
+> **Compromisso:** DEV-2026-030 (fala do dono, 16/11/2026). **Estado:** desenho DECIDIDO
+> pelo dono em 16/11/2026 (respostas no §9); execução pela esteira, frente a frente (§7).
 > **Base medida:** `origin/main` em `ed7cf13c1` (16/11/2026, depois do #2492).
 > **Apoia-se em:** revisão das Entregas, DEV-2026-026, referência no PR draft #2484
 > (frentes F1a a F10). Este plano não reabre nenhuma delas: diz onde se encaixa.
@@ -113,9 +113,11 @@ o Core não muda):
 | `config` | JSON da implementação (base da API, forma de pagamento, motivo padrão…), validado pela implementação |
 | `secret` | credencial cifrada por `shop/secret_box.py` (o mesmo de `ai_connection.py`), nunca em env |
 
-A escolha padrão e a regra de sugestão moram em `Shop.defaults["delivery"]["services"]`
-(declaradas antes em `data-schemas.md`), e o canal pode sobrescrever pela cascata de
-sempre: `{"default": "casa", "suggest": "own_first", "auto_dispatch": "taon"}`.
+| `is_default` | o serviço que vem marcado no sheet (decisão do dono, 16/11: configurável no Admin, hoje a TaOn). Um só por loja (restrição no banco) |
+
+O serviço padrão é o registro marcado no Admin, e é ele também que o despacho automático
+(`fulfillment.courier = "auto"`) usa. Os entregadores da casa livres aparecem como opção no
+mesmo sheet, sem vir marcados.
 
 **ADR-042:** a TaOn de hoje continua lendo `SHOPMAN_MACHINE` (baseline congelada, só pode
 diminuir). Ao criar o registro `taon`, a frente M1 move as leituras para o `config` e o
@@ -198,9 +200,9 @@ O ponto de encaixe é o `CourierCallSheet` e o `courier.ride_plan` que a F5 cons
    cotação, a casa pela tabela) e o estado ("Diego · livre", "Rui · volta 12h50", "TaOn · cota
    R$ 11,00 · 18 min"). Sem cotação, o chip diz "Sem cotação agora" e nunca vem marcado por
    preço.
-3. **Regra de sugestão (recomendada: "a casa primeiro"):** entregador da casa livre e na
-   escala vem marcado; ninguém da casa livre, a TaOn. Alternativa: o mais barato entre os
-   que cotaram. Uma linha diz por quê: "Sugestão da casa: Diego está livre."
+3. **Regra de sugestão (DECIDIDA, dono 16/11):** vem marcado o serviço padrão do Admin
+   (hoje a TaOn). Os entregadores da casa livres e na escala aparecem como opção, a um toque.
+   Sem regra de "mais barato" e sem "casa primeiro".
 4. **A cotação "juntas contra separadas" é do serviço marcado**, nas duas linhas já
    decididas (✔ na mais barata, a linha dela em destaque). Trocar o chip recalcula.
 5. **Na casa, a pessoa é parte do chip:** "Diego", "Rui"; não há um segundo passo "escolher
@@ -295,6 +297,26 @@ Deve chegar por volta de 12h45." A hora vem da cotação/rota (km e tempo da tab
 da saída. Sem botão "Acompanhar o entregador" (`customer_tracking = False`). Posição ao vivo
 pelo celular do entregador fica para depois (#2509), se o dono quiser.
 
+### 4.5.1 Localização do entregador da casa (pergunta 6, alternativa 2)
+
+Na prática, a única fonte é o celular do entregador. Três caminhos, do mais leve ao mais pesado:
+
+1. **Pela página do link (recomendado, frente da #2509).** Depois de "Saí da loja", a página
+   pede a permissão de localização do navegador e manda a posição a cada 15 s enquanto
+   estiver aberta. A posição entra no mesmo cache e no mesmo mapa das Entregas que já
+   desenham o entregador da TaOn, e, para o cliente, só na parada dele, com a idade visível
+   ("Posição de há 20 s"). **Limite honesto:** navegador não manda posição com a tela
+   apagada nem com outro app na frente (Waze, Maps); no iPhone isso é regra do sistema. Com
+   o celular no suporte e a nossa página na tela, funciona; navegando pelo Waze, a posição
+   congela e a tela diz "Última posição há 4 min".
+2. **Localização em tempo real do próprio WhatsApp**, compartilhada com o número da loja.
+   Zero desenvolvimento, mas só a casa vê (no WhatsApp, fora do Gestor) e o cliente não.
+3. **App nativo** com localização em segundo plano. Resolve o limite do caminho 1, mas é
+   um app para publicar e manter. Só se o caminho 1 provar que os buracos atrapalham.
+
+Até lá, a casa acompanha a corrida pelos toques do entregador ("Saí", "Entreguei A47"), com
+a hora prevista refeita a cada parada, e o cliente vê nome e hora (decisão 6 = 1).
+
 ### 4.6 Cancelar
 
 Antes da saída: um toque e uma confirmação no Gestor; o link do entregador passa a dizer
@@ -374,8 +396,8 @@ Onde aparece:
 
 | Frente | Entrega no ar | Depende de | Pode começar |
 |---|---|---|---|
-| **M0. Cadastro e contrato** | Modelos `DeliveryService`, `Courier`, `CourierRate` + Admin + `DeliveryServiceBackend`/`DeliveryCapabilities` em `protocols.py` + chaves de `Shop.defaults.delivery.services` em `data-schemas.md` + seed (registro `taon` e "Entregadores da casa"). Nada muda para o operador | nada (não toca os arquivos em voo) | **já**, depois da palavra do dono |
-| **M1. Núcleo neutro** | Estado neutro, `ride_ref`, `service` no bloco; a letra da TaOn e o corpo da Machine descem para `courier_machine.py`; `get_adapter` por serviço; nome do serviço vindo do cadastro; `SHOPMAN_MACHINE` vira `config`/`secret` do registro (baseline do ADR-042 diminui); migração de dados dos pedidos com `id_mch`. Tela idêntica | F1a, F1b, F2a, F3, F4a, F4b mergeados (todos mexem em `courier.py`, handlers e projeções) | depois da F4b |
+| **M0. Cadastro** | Modelos `DeliveryService` (com `is_default`), `Courier`, `CourierRate` + Admin + a régua pura do valor da corrida da casa (`delivery_rates.ride_value`) + migração de dados com os registros "TaOn" (padrão) e "Entregadores da casa". Nada muda para o operador; o dono já pode cadastrar entregadores e a tabela | nada (não toca os arquivos em voo) | **já** |
+| **M1. Núcleo neutro e contrato** | `DeliveryServiceBackend`/`DeliveryCapabilities` em `protocols.py` (nascem com a TaOn conformada; o entregador da casa é a segunda implementação, na M2, como pede o ADR-001); estado neutro, `ride_ref`, `service` no bloco; a letra da TaOn e o corpo da Machine descem para `courier_machine.py`; `get_adapter` por serviço; nome do serviço vindo do cadastro; `SHOPMAN_MACHINE` vira `config`/`secret` do registro (baseline do ADR-042 diminui); migração de dados dos pedidos com `id_mch`. Tela idêntica | F1a, F1b, F2a, F3, F4a, F4b mergeados (todos mexem em `courier.py`, handlers e projeções) | depois da F4b |
 | **M2. Entregador da casa** | `courier_own_fleet.py`; página do entregador por link (token, prazo); toques "Saí", "Entreguei", "Não consegui", "Voltei"; enviar pelo WhatsApp do dispositivo; via impressa com QR (fecha #2406) | M0, M1 | depois da M1 |
 | **M3. Quem leva no sheet** | Linha "Quem leva" no `CourierCallSheet`, regra de sugestão, cotação por serviço, "Entregadores de hoje"; cartão da Saída da corrida da casa (forma E, com letra e o nome da pessoa) | F5, M2 | depois da F5 e da M2 |
 | **M4. Cliente e B.I.** | Página do pedido da corrida da casa (nome + hora, sem link); custo por serviço e acerto do dia; tempos com `ride_ref` (#2467) | M1, M2; prévia 7 da revisão implementada | depois da M2 |
@@ -384,7 +406,7 @@ Onde aparece:
 Notas de coordenação:
 - Nenhuma frente M edita `courier.py`, handlers, webhook, `deliveries.py`, `operations.py`
   (endpoint `courier-ride`), `deliveries.vue` ou `Courier*.vue` antes dos PRs da revisão
-  entrarem. A M0 cria arquivos novos e mexe em `protocols.py`, `models/`, Admin e docs.
+  entrarem. A M0 cria arquivos novos e mexe só em `models/`, Admin, migração e docs.
 - A M1 é o único refactor grande; pede uma janela em que as frentes F da revisão não estejam
   com PR aberto nos mesmos arquivos. Proposta: entra logo depois da F4b, antes da F5, e a F5
   já nasce sobre o núcleo neutro. Se a F5 vier antes, a M1 adapta a F5.
@@ -412,9 +434,21 @@ Comando para abrir: ver o corpo do PR.
 
 ---
 
-## 9. Perguntas ao dono
+## 9. Decisões do dono (16/11/2026)
 
-Escritas no PR e no chat, no máximo seis, cada uma respondível com "1" ou "2":
+| # | Pergunta | Resposta |
+|---|---|---|
+| 1 | Quem vem marcado | **Padrão configurável no Admin: TaOn. Opcional: entregador da casa livre.** (nem "casa primeiro" nem "mais barato") |
+| 2 | Como o entregador recebe | **1**: link no WhatsApp num toque + via impressa com QR |
+| 3 | Quem avança o estado | **1**: o entregador pelo link, com o operador podendo marcar |
+| 4 | Valor negociado | **1**: tabela da casa por distância + parada extra + volta, com exceção por entregador |
+| 5 | Pagamento do entregador | **1**: o sistema soma "a pagar hoje"; pagamento por fora |
+| 6 | O que o cliente vê | **1** agora (nome e hora); a **2** (posição ao vivo) interessa: abordagem no §4.5.1, frente na #2509 |
+
+Ele também perguntou se haverá UI para o entregador: sim, é a página do link (prévia M3),
+aberta no navegador do celular, sem instalar nada.
+
+### Perguntas como foram feitas
 
 1. **Quem vem marcado:** (1) entregador da casa livre primeiro, TaOn quando ninguém da casa
    está livre [recomendo]; (2) sempre o mais barato entre os que cotaram.
