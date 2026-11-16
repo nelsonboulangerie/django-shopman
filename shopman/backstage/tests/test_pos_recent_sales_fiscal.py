@@ -21,10 +21,10 @@ from django.test import TestCase
 from django.utils import timezone
 from shopman.cashman.models import Shift
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock, format_local
 
 from shopman.shop.models import Channel, Shop
 from shopman.shop.tests.danfe_fixtures import xml_for_key
-from shopman.utils.formatting import format_clock, format_local
 
 
 def _brasilia(hour, minute, *, day=30, month=9):

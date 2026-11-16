@@ -14,6 +14,7 @@ from unittest.mock import patch
 import pytest
 from django.utils import timezone
 from shopman.craftsman.models import Recipe, WorkOrder
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage.projections.production import build_production_forecast
 
@@ -127,7 +128,7 @@ def test_finished_row_is_confirmed_with_real_time_and_qty(recipe):
     # Beta 05/11: "Confirmado" no Letreiro contradizia "Para confirmar" na
     # Qualidade. O lote finalizado é Fechado (suite-vocabulary).
     assert row.status_label == "Fechado"
-    assert row.eta_display == timezone.localtime(finished_at).strftime("%H:%M")
+    assert row.eta_display == format_clock(finished_at)
     assert row.eta_is_actual is True
     assert row.qty == "10"
 

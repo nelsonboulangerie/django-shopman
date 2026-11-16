@@ -146,7 +146,7 @@ for (const viewport of VIEWPORTS) {
           const cards = page.locator("[data-kds-grid] article");
           await expect(cards.first()).toBeVisible();
           // O pedido que caiu inteiro não some: é o primeiro card, riscado, "Não preparar".
-          await expect(cards.nth(0)).toContainText("Pedido cancelado às 08:22. Não preparar.");
+          await expect(cards.nth(0)).toContainText("Pedido cancelado às 8h22. Não preparar.");
           await expect(cards.nth(0).locator("ul")).toHaveCSS("text-decoration-line", "line-through");
           await expect(cards.nth(1)).toContainText("Cancelado: 1× Pão de queijo");
           await expect(cards.nth(1).locator("[data-kds-action]")).toHaveText("Recebi o cancelamento");
@@ -168,7 +168,7 @@ for (const viewport of VIEWPORTS) {
           await page.goto("/cafes");
           await expect(page.locator("[data-operator-action-bar-action]")).toContainText("Recebi o cancelamento");
           await expect(page.locator("[data-kds-phone-queue] [data-kds-changes]").first()).toContainText(
-            "Pedido cancelado às 08:22",
+            "Pedido cancelado às 8h22",
           );
           await expect(page.locator("[data-kds-queue-alarm]").first()).toContainText(/Mudou|Cancelado/);
         });

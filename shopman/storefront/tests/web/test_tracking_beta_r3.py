@@ -375,7 +375,7 @@ class TestSms02PromisedWindow:
         assert proj.promise.message == "Entrega combinada para amanhã, 15h às 15h30. Avisamos quando sair."
         # Este teste prova o limite da janela; a data acompanha o horário
         # quando a apresentação distingue uma previsão de outro dia.
-        assert proj.eta_display.split(" de ")[0] == "15:00"
+        assert proj.eta_display.split(" de ")[0] == "15h"
 
     def test_ready_pickup_before_the_window_says_when_to_come(self, order):
         tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()

@@ -82,7 +82,7 @@ class TestDetection:
         episode = OperationEpisode.objects.get(detector="sales_silence")
         assert episode.needs_answer
         assert episode.kind is None, "o sistema nunca chuta o motivo"
-        assert "10:00" in episode.detected_signal and "15:00" in episode.detected_signal
+        assert "entre 10h e 15h" in episode.detected_signal
 
     def test_slow_morning_is_not_an_episode(self, ontem):
         """Sem venda ANTES do silêncio, é só a manhã começando devagar."""
