@@ -2,6 +2,7 @@
 
 from .affinity import ProductAffinity
 from .ai_connection import AIConnection, AIProtocol
+from .ai_invocation import AiInvocation, AiOutcome, AiSpendDay
 from .attributes import (
     AttributeDefinition,
     AttributePurpose,
@@ -95,6 +96,9 @@ __all__ = [
     "Shop",
     "AIConnection",
     "AIProtocol",
+    "AiInvocation",
+    "AiOutcome",
+    "AiSpendDay",
     "AttributeDefinition",
     "AttributePurpose",
     "AttributeSource",

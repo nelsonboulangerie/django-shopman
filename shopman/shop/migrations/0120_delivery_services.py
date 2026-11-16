@@ -26,7 +26,7 @@ def remove_initial_services(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('shop', '0118_shop_ifood_widget_id'),
+        ('shop', '0119_freio_e_medidor_de_ia'),
     ]
 
     operations = [
