@@ -469,7 +469,9 @@ Recomendação primeiro. Procurei em `docs/coordination/DECISIONS.md` e em `docs
 
 ## 7. Fronteiras
 
-Registradas, não mexidas. Cada uma vira issue `ficou-de-fora` no PR deste plano.
+Registradas, não mexidas. Cada uma tem issue `ficou-de-fora` aberta pelo PR #2557: F1 #2558,
+F2 #2559, F3 #2560, F4 #2561, F5 #2562, F6 #2563, F7 #2564, F8 #2565. A lacuna de medição da
+seção 0 é a #2566.
 
 | # | O que é | Por que afeta o PDV | De quem é | Quem mais sente |
 |---|---|---|---|---|
