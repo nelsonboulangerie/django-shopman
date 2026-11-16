@@ -1,7 +1,7 @@
 # EXCELÊNCIA-PDV: plano
 
 > Brief: `docs/coordination/ROUNDS/EXCELENCIA-PDV.md` e `EXCELENCIA-base.md` (PR #2483).
-> Compromisso: DEV-2026-026. Base medida: `main` em `d48286ec4`, 16/11/2026.
+> Compromisso: DEV-2026-028. Base medida: `main` em `d48286ec4`, 16/11/2026.
 > Nenhum código de produção foi alterado. Capturas em
 > `docs/coordination/EVIDENCE/EXCELENCIA-PDV/` (abaixo, `EV/`).
 
@@ -167,7 +167,7 @@ Lente: UX, segurança. Apontado pelo dono em 16/11.
   o erro (`FE/composables/useDrawerOpening.ts:199-201`).
 
 **P1-10. Encomenda de qualquer valor entra "Na retirada", sem cobrança e sem gerente.** Lente:
-segurança. Depende da decisão D3.
+segurança. Decidido em D3: a opção some para encomenda de outro dia.
 
 - Prova: os R$ 2.747,00 da K16 foram registrados com "Sem cobrança agora: recebe no balcão
   quando o cliente buscar" (`EV/encomenda-na-retirada-sem-sinal.jpg`), pela Caixa sozinha. Não
@@ -289,7 +289,7 @@ e `docs/reference/backstage-pos-surface-contract.md`.
 ### WP-E7. O que a Caixa não vê
 
 - Objetivo: a projeção do PDV entrega à Caixa só o que a tela dela usa.
-- Fecha: P1-7, P1-8 (lado do PDV), #2335, #2336. Dependências: decisão D4.
+- Fecha: P1-7, P1-8 (lado do PDV), #2335, #2336. Dependências: nenhuma (D4 decidida: a Caixa não vê).
 - Arquivos: `OPS` (POSView, busca e lookup de cliente), `PPOS` (resumo do turno e últimas
   vendas), `shopman/backstage/projections/preorders.py`, `FE/composables/usePosSale.ts` (só a
   chamada da busca), `shopman/backstage/api/throttles.py`.
@@ -318,20 +318,24 @@ e `docs/reference/backstage-pos-surface-contract.md`.
 
 ### WP-E2. Promessa com lastro na encomenda (P0)
 
-- Objetivo: a linha da encomenda mostra a fornada da data, e o que passa do plano vira pedido
-  de reforço à vista, nunca ressalva recolhida.
-- Fecha: P0-2, P1-10. Dependências: decisões D1 e D3; WP-E1 (mesmo arquivo de pagamento).
+- Objetivo: a linha da encomenda mostra a fornada da data; o que passa do plano bloqueia o
+  Validar e só o gerente libera, vendo os dois números. Encomenda de outro dia não oferece "Na
+  retirada".
+- Fecha: P0-2, P1-10. Dependências: WP-E1 (mesmo arquivo de pagamento). D1 e D3 decididas.
 - Arquivos: `PPOS` (`build_pos_schedule` passa a devolver planejado e livre por SKU na data),
   `FE/types/pos.ts`, `FE/components/PosCartPanel.vue`, `FE/components/PosPaymentWorkspace.vue`,
   `FE/presentation/payment.ts`.
 - Fora do escopo: a frase de `SPOS:1371` e o alerta à Produção (fronteira F2).
 - Pronto quando: (a) roteiro: Fran pede 200 baguettes para amanhã; a linha diz "22 planejadas
-  para ter 17/11"; Validar exige a confirmação da decisão D1, com o número na frente; a tela
-  final diz o que foi prometido e o que depende da Produção; (b) pytest da projeção e J5.
+  para ter 17/11"; Validar fica travado com "200 pedidas, 22 planejadas" e pede o gerente,
+  que vê os dois números e assina; sem a assinatura a encomenda não fecha; a forma "Na
+  retirada" não aparece para outro dia; (b) pytest da projeção e J5.
 - Muda tela: sim (prévia). Tamanho: G.
 - Brief: "Leia P0-2, ADR-040, `shopman/shop/services/stock.py:170-190` e
   `shopman/shop/tests/test_pos_encomenda_reserva_na_data.py`. O PDV não decide estoque: mostra
-  o lastro que o servidor apura e aplica a regra que o dono escolheu em D1 e D3."
+  o lastro que o servidor apura. Regras do dono (D-041): acima do plano bloqueia e só o gerente
+  libera; encomenda de outro dia não tem 'Na retirada'. A liberação usa a autorização presa ao
+  gesto e ao valor do WP-E1."
 
 ### WP-E6. Gesto de caixa sem brecha
 
@@ -354,7 +358,7 @@ e `docs/reference/backstage-pos-surface-contract.md`.
 
 - Objetivo: data ainda sem fornada planejada não vira "Sem saldo"; vira pedido à Produção, dito
   assim.
-- Fecha: P1-1, P2-10. Dependências: decisão D2; WP-E2.
+- Fecha: P1-1, P2-10. Dependências: WP-E2. D2 decidida: libera como pedido à Produção.
 - Arquivos: `PPOS` (`_pos_sold_out_on`, `_sold_out_skus`), `FE/presentation/catalog.ts`,
   `FE/components/PosProductTile.vue`, `FE/composables/usePosSale.ts` (só `addProduct`).
 - Fora do escopo: a antecedência por produto no servidor (fronteira F2).
@@ -399,7 +403,7 @@ e `docs/reference/backstage-pos-surface-contract.md`.
 ### WP-E8. Venda de um fôlego
 
 - Objetivo: três toques além dos itens na venda em dinheiro.
-- Fecha: P2-2, P2-3. Dependências: decisão D5; WP-E3 (mesmo tile).
+- Fecha: P2-2, P2-3. Dependências: WP-E3 (mesmo tile). D5 decidida: cai direto na grade.
 - Arquivos: `FE/components/PosSaleResult.vue`, `PosTabBoard.vue`, `PosProductGrid.vue`,
   `PosProductTile.vue`, `FE/presentation/payment.ts` (cédulas sugeridas), `PPOS` (ordem da
   grade).
@@ -452,20 +456,18 @@ Dois WPs da mesma onda nunca tocam o mesmo arquivo.
 
 ## 6. Decisões do dono
 
-Recomendação primeiro. Procurei em `docs/coordination/DECISIONS.md` e em `docs/reference/`.
+Respondidas em 16/11/2026 e registradas como D-041 em `docs/coordination/DECISIONS.md`.
 
-- **D1. Encomenda acima da fornada planejada da data.** 1: aceita, mas o operador vê o plano e
-  confirma, e o excedente vira pedido de reforço à Produção (recomendado). 2: bloqueia acima do
-  plano e só o gerente libera. Bloqueia WP-E2.
-- **D2. Encomenda para data ainda sem plano de produção (por exemplo, daqui a dez dias).**
-  Liberar no PDV como pedido à Produção? Sim (recomendado) ou não. Bloqueia WP-E3.
-- **D3. Encomenda de outro dia "a pagar na retirada", sem sinal.** A regra de 28/08 é
-  "encomenda cobra antes". 1: pede o gerente (recomendado). 2: a opção some para outro dia.
-  Bloqueia WP-E2.
-- **D4. A Caixa vê o faturamento do dia e as somas de encomendas?** Não (recomendado) ou sim.
-  Bloqueia WP-E7.
-- **D5. "Nova venda" cai direto na grade da próxima comanda livre, sem passar pelo quadro?**
-  Sim (recomendado) ou não. Bloqueia WP-E8.
+- **D1. Encomenda acima da fornada planejada da data.** Bloqueia acima do plano e só o gerente
+  libera (opção 2). Vale para WP-E2.
+- **D2. Encomenda para data ainda sem plano de produção.** Sim: entra no PDV como pedido à
+  Produção. Vale para WP-E3.
+- **D3. Encomenda de outro dia "a pagar na retirada", sem sinal.** A opção some (opção 2; "KISS").
+  Vale para WP-E2.
+- **D4. A Caixa vê o faturamento do dia e as somas de encomendas?** Não. O dono lembrou que a
+  contagem do fechamento é cega: a resposta já estava dada e a pergunta não devia ter sido
+  feita. Vale para WP-E7.
+- **D5. "Nova venda" cai direto na grade da próxima comanda livre?** Sim. Vale para WP-E8.
 
 ## 7. Fronteiras
 
