@@ -345,6 +345,18 @@ class OperatorAlert(models.Model):
         # do iFood) e a ação mora no pedido: "Tentar de novo". Fecha quando o
         # ``confirm`` passa, quando o iFood confirma ou quando o pedido acaba.
         ("ifood_accept_not_delivered", "iFood não recebeu o aceite"),
+        # Preparo, pronto ou saída esgotaram as tentativas sem chegar ao iFood: o
+        # pedido andou aqui e parou lá (16/11/2026, DEV-2026-041).
+        ("ifood_status_not_delivered", "iFood não recebeu uma etapa do pedido"),
+        # O pedido de cancelamento da loja esgotou as tentativas: o pedido destrava
+        # aqui e continua ativo no iFood.
+        ("ifood_cancellation_not_delivered", "Cancelamento não chegou ao iFood"),
+        # O iFood cancelou um pedido que aqui já estava pronto ou saiu: a transição
+        # não existe no fluxo local, e sem aviso a equipe entregaria um cancelado.
+        ("ifood_cancelled_not_applied", "iFood cancelou pedido que segue ativo aqui"),
+        # O iFood avisou que o pedido andou (confirmou, saiu, concluiu) e aqui ele
+        # ficou para trás por mais de 3 h: o operador encerra (reconcile_ifood_orders).
+        ("ifood_order_behind", "Pedido atrasado aqui em relação ao iFood"),
         # O freio da IA (ID3A, E1): a 80% do teto diário de gasto chega o aviso; no
         # teto, a IA paga para até o dia seguinte. O gasto de US$ 1.180 de 28/10 a
         # 11/11 aconteceu sem nenhum dos dois.
@@ -426,6 +438,10 @@ class OperatorAlert(models.Model):
         "ifood_negotiation_open",
         "ifood_cancellation_refused",
         "ifood_accept_not_delivered",
+        "ifood_status_not_delivered",
+        "ifood_cancellation_not_delivered",
+        "ifood_cancelled_not_applied",
+        "ifood_order_behind",
         "ifood_poll_stale",
         "fiscal_return_note_due",
     }
