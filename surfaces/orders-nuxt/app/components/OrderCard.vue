@@ -30,6 +30,7 @@ import {
   kitchenWaiting,
   productionLines,
   schedulePromise,
+  PROMISE_BADGE_UI,
   undoLine,
   type AffordanceRef,
   type Tone,
@@ -573,6 +574,7 @@ function nuxtIcon(icon: string): string {
       :color="promise.color"
       :icon="promise.icon"
       :label="promise.label"
+      :ui="PROMISE_BADGE_UI"
       :data-card-promise="promise.state"
     />
     <p
@@ -824,6 +826,7 @@ function nuxtIcon(icon: string): string {
             :color="promise.color"
             :icon="promise.icon"
             :label="promise.label"
+            :ui="PROMISE_BADGE_UI"
             :data-card-promise="promise.state"
           />
           <!-- fila de espera: o pedido não está parado, está esperando o lote -->

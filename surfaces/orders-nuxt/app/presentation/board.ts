@@ -472,6 +472,13 @@ export function schedulePromise(source: {
   return null;
 }
 
+/**
+ * O selo do combinado quebra a linha e nunca corta: "Encomenda · Qua…" escondia o dia
+ * e a hora, que são o motivo do selo (Tabela a 375 px). `text-clip` tira o `truncate`
+ * do rótulo do Nuxt UI (mesmo grupo no tailwind-merge).
+ */
+export const PROMISE_BADGE_UI = { label: "text-clip whitespace-normal text-start" } as const;
+
 /** O aviso do sino com o combinado do pedido à frente: quem toca "Aceitar" lê para quando. */
 export function alertMessageWithSchedule(alert: {
   message: string;

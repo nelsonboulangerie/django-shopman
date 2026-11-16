@@ -29,6 +29,7 @@ import {
   rideChoices,
   rowsToCsv,
   schedulePromise,
+  PROMISE_BADGE_UI,
   SORT_OPTIONS,
   splitRef,
   statusTone,
@@ -2056,6 +2057,7 @@ function compactClear() {
                 :color="schedulePromise(row.original.card)!.color"
                 :icon="schedulePromise(row.original.card)!.icon"
                 :label="schedulePromise(row.original.card)!.label"
+                :ui="PROMISE_BADGE_UI"
                 :data-table-promise="schedulePromise(row.original.card)!.state"
               />
             </div>

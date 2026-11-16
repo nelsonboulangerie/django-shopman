@@ -25,6 +25,7 @@ import {
   cardDeadlineLabel,
   confirmationRemainingLabel,
   schedulePromise,
+  PROMISE_BADGE_UI,
   splitRef,
   undoLine,
 } from "~/presentation/board";
@@ -351,6 +352,7 @@ function switchHint(row: {
               :color="schedulePromise(item.card)!.color"
               :icon="schedulePromise(item.card)!.icon"
               :label="schedulePromise(item.card)!.label"
+              :ui="PROMISE_BADGE_UI"
               :data-queue-promise="schedulePromise(item.card)!.state"
             />
             <p class="op-body text-foreground/85">
