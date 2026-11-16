@@ -174,6 +174,24 @@ const itemCountLabel = computed(() => {
       </div>
     </section>
 
+    <!-- COBRANÇA NÃO CRIADA: a venda existe e o dinheiro não entrou. Sem
+         obrigado: o total e quem resolve. Não expira sozinha (o atendente
+         resolve; a próxima publicação troca a tela). -->
+    <section v-else-if="phase === 'payment_failed'" class="grid flex-1 place-items-center p-10" data-display-payment-failed>
+      <div class="grid w-full max-w-4xl gap-8 text-center">
+        <!-- Escala e espaçamento propositais para leitura à distância no monitor do cliente. -->
+        <p class="flex items-center justify-center gap-4 text-5xl font-semibold tracking-tight md:text-7xl">
+          <Icon name="lucide:circle-alert" class="size-12 shrink-0 text-destructive md:size-16" />
+          Pagamento não concluído
+        </p>
+        <div class="grid gap-2">
+          <p class="text-3xl text-muted-foreground">Total</p>
+          <p class="text-7xl font-semibold tabular-nums tracking-tight md:text-8xl">{{ snapshot?.totalDisplay }}</p>
+        </div>
+        <p class="text-3xl text-muted-foreground md:text-4xl">Quem está atendendo vai confirmar com você.</p>
+      </div>
+    </section>
+
     <!-- RESULTADO: troco enorme quando houver, e o obrigado. -->
     <section v-else class="grid flex-1 place-items-center p-10">
       <div class="grid gap-8 text-center">
