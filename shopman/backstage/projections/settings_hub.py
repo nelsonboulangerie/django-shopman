@@ -81,6 +81,8 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Cardápio", "shop_shopmenu", "Coleções que aparecem na loja e como o cardápio se monta.", "restaurant_menu"),
             _model("Integrações", "shop_shopintegrations", "Serviços externos: pagamento, mensagens, iFood, o mínimo de público das campanhas de WhatsApp e os limites de capacidade dos apps de operação.", "extension"),
             _model("Conexões de IA", "shop_aiconnection", "Provedor, endereço, chave e modelo de cada IA: Anthropic, DeepSeek, Jev.", "smart_toy"),
+            _model("Gasto de IA por dia", "shop_aispendday", "Quanto a IA gastou em cada dia, na loja e em cada função, e quantas chamadas o freio recusou. Só leitura.", "savings"),
+            _model("Chamadas de IA", "shop_aiinvocation", "Cada chamada a um modelo: função, modelo, resultado, tokens e custo. Não guarda o texto. Só leitura.", "receipt_long"),
             _model("Histórico da configuração", "shop_instanceapplyrecord", "Cada vez que a configuração da loja foi aplicada pelo descritor: quem aplicou, quando e o que mudou. Só leitura.", "history"),
         ),
     ),

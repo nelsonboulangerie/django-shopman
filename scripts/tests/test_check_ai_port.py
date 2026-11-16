@@ -17,7 +17,7 @@ def test_cliente_do_sdk_fora_da_porta_reprova():
 
 def test_endereco_de_api_fora_da_porta_reprova():
     found = check.violations_in(Path("shopman/x.py"), "URL = 'https://api.deepseek.com/anthropic'\n")
-    assert len(found) == 1 and "api.deepseek.com" in found[0]
+    assert found == ["shopman/x.py:1: endereço de API de IA (api.deepseek.com) fora da porta"]
 
 
 def test_importar_para_pegar_erro_passa():

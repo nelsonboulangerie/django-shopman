@@ -99,6 +99,7 @@ _PURCHASE = "cadastro de compra da casa"
 _USER_CASCADE = "do operador; some só junto da conta de cliente, se houver"
 _YOOGA = "histórico real (Yooga) e sua curadoria"
 _FRAMEWORK = "infraestrutura do Django"
+_AI_METER = "medidor da IA: gasto real em dólar, sem texto nem cliente; apagar zeraria o teto do dia"
 
 POLICY: dict[str, Rule] = {
     # Django e bibliotecas
@@ -228,6 +229,8 @@ POLICY: dict[str, Rule] = {
     "shop.IFoodStoreStatus": _keep("estado da loja no iFood"),
     "shop.OperatorPasskey": _keep("passkey dos operadores"),
     "shop.AIConnection": _keep("conexões de IA da loja (chave cifrada)"),
+    "shop.AiInvocation": _keep(_AI_METER),
+    "shop.AiSpendDay": _keep(_AI_METER),
     "shop.PushSubscription": _keep("aviso no dispositivo do operador"),
     "shop.AnnouncementTemplate": _keep(_CONFIG),
     "shop.Campaign": _keep(_CONFIG),

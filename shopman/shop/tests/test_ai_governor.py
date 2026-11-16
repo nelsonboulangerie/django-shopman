@@ -84,6 +84,26 @@ def test_kill_switch_no_meio_freia_o_cliente_ja_criado(shop):
     assert AiInvocation.objects.get().outcome == AiOutcome.KILLED
 
 
+def test_freio_desligado_recusa_e_registra_a_leitura_de_intencoes(shop):
+    """A leitura de intenções da Concierge (texto de cliente) obedece ao mesmo freio."""
+    configure_ai(model="claude-haiku-4-5", customer_text=True)
+    messages = FakeMessages()
+    client, model = _client(messages, purpose="intents")
+    _limits(enabled=False)
+
+    # Quem pergunta antes de chamar já ouve "não configurada" e cai na regra.
+    assert not ai.is_configured("intents")
+    with pytest.raises(ai.AINotConfigured):
+        ai.anthropic_client("intents")
+    # O cliente que já estava na mão não fura o freio: nada sai, e a recusa fica.
+    with pytest.raises(ai_governor.AIDisabled):
+        client.messages.create(model=model, max_tokens=300, messages=[{"role": "user", "content": "tem pão?"}])
+    assert messages.calls == []
+    row = AiInvocation.objects.get()
+    assert (row.purpose, row.outcome, row.model) == ("intents", AiOutcome.KILLED, "claude-haiku-4-5")
+    assert (row.cost_usd_micros, row.reserved_usd_micros) == (0, 0)
+
+
 def test_teto_da_loja_recusa_quando_a_reserva_nao_cabe(shop):
     configure_ai(model="claude-opus-5")
     _limits(usd_per_day=0.01)
