@@ -20,6 +20,7 @@ from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
 from shopman.shop.handlers.courier_sync import CourierSyncHandler
 from shopman.shop.models import Shop
 from shopman.shop.services import courier
+from shopman.shop.services.operator_orders import short_ref
 
 pytestmark = [pytest.mark.django_db, pytest.mark.channels("web", "pdv")]
 
@@ -521,7 +522,7 @@ def _beat(order):
 
 def _sync_alerts(order):
     return OperatorAlert.objects.filter(type="integration_failed", order_ref=order.ref,
-                                        message__contains=f"corrida {courier.get_block(order).get('id_mch')}")
+                                        message__contains=f"número {courier.get_block(order).get('id_mch')} na TaOn")
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
@@ -543,6 +544,10 @@ def test_sync_failure_is_not_silent(shop, django_capture_on_commit_callbacks):
     assert courier.dispatch_revision(order) == revision  # a batida que falha de novo não gira a revisão
     _beat(order)
     assert _sync_alerts(order).filter(resolved_at__isnull=True).count() == 1
+    # O aviso chama a corrida pela letra; o id da TaOn vai só como referência do painel.
+    message = _sync_alerts(order).get().message
+    assert f"da corrida A do pedido {short_ref(order.ref)} (número {ride} na TaOn)" in message
+    assert f"corrida {ride}" not in message
     assert courier.progress_view(courier.get_block(order))["sync_since"]
 
     _beat(order)
