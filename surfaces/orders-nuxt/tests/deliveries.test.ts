@@ -10,6 +10,7 @@ import {
   needsMachine,
   nextFreeNumber,
   rideCalls,
+  rideLetter,
   rideLine,
   whatsappLink,
 } from "~/presentation/deliveries";
@@ -37,6 +38,17 @@ describe("números das corridas", () => {
     expect(nextFreeNumber([1, 2, 4])).toBe(3);
     expect(nextFreeNumber([])).toBe(1);
     expect(nextFreeNumber([1, 2, 3, 4, 5, 6])).toBeNull();
+  });
+});
+
+describe("letra da corrida", () => {
+  it("nomeia a corrida por letra, como o operador a chama", () => {
+    expect([1, 2, 6, 26].map(rideLetter)).toEqual(["A", "B", "F", "Z"]);
+    expect(rideLetter(27)).toBe("A");
+  });
+
+  it("sem número válido não inventa letra", () => {
+    expect([0, -1, null, undefined, 1.5].map((n) => rideLetter(n as number))).toEqual(["", "", "", "", ""]);
   });
 });
 
