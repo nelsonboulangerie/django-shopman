@@ -34,10 +34,21 @@ function ride(extra: Partial<DeliveryRideProjection> = {}): DeliveryRideProjecti
 }
 
 describe("números das corridas", () => {
-  it("dá o menor livre e nada quando as seis cores estão em uso", () => {
-    expect(nextFreeNumber([1, 2, 4])).toBe(3);
-    expect(nextFreeNumber([])).toBe(1);
-    expect(nextFreeNumber([1, 2, 3, 4, 5, 6])).toBeNull();
+  it("dá o menor dos que o servidor diz livres, menos os das corridas em edição", () => {
+    // 1, 2 e 4 estão na rua: o servidor manda só os livres (até a letra Z).
+    const free = [3, 5, 6, 7, 8];
+    expect(nextFreeNumber(free, [])).toBe(3);
+    expect(nextFreeNumber(free, [3])).toBe(5);
+    expect(nextFreeNumber(free, [3, 5, 6])).toBe(7);
+  });
+
+  it("a sétima corrida tem número próprio: o teto é o do servidor, não o das seis cores", () => {
+    expect(nextFreeNumber([7, 8], [])).toBe(7);
+  });
+
+  it("nada quando o servidor não tem número livre, ou todos estão em edição", () => {
+    expect(nextFreeNumber([], [])).toBeNull();
+    expect(nextFreeNumber([2], [2])).toBeNull();
   });
 });
 
@@ -66,9 +77,16 @@ describe("chamar as corridas editadas", () => {
       "machine:1",
     );
     expect(calls).toEqual([
-      { kind: "group", refs: ["NB-A01", "NB-A02"], change_out: { "NB-A01": "20,00" }, machine: "machine:1" },
-      { kind: "single", refs: ["NB-A03"], change_out: {}, machine: "" },
+      { kind: "group", number: 1, refs: ["NB-A01", "NB-A02"], change_out: { "NB-A01": "20,00" }, machine: "machine:1" },
+      { kind: "single", number: 2, refs: ["NB-A03"], change_out: {}, machine: "" },
     ]);
+  });
+
+  it("chama na ordem dos números, para cada corrida ficar com a letra que mostrava", () => {
+    const editing = [{ number: 3, refs: ["NB-A03"] }, { number: 2, refs: ["NB-A01", "NB-A02"] }];
+    expect(rideCalls(editing, stops, "").map((call) => call.number)).toEqual([2, 3]);
+    // A ordem da edição na tela não muda.
+    expect(editing.map((ride) => ride.number)).toEqual([3, 2]);
   });
 
   it("a maquininha só é pergunta quando algum pedido é de cartão na porta", () => {

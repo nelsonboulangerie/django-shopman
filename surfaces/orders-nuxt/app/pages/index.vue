@@ -1561,7 +1561,9 @@ function compactClear() {
         <CourierRideMenu
           v-if="!(view === 'board' && !boardAsTabs && boardLayout.isOpen('expedition'))"
           :choices="rideCandidates"
+          :action="queue?.ride_action"
           @done="refresh()"
+          @stale="refresh()"
         />
         <!-- Onde está a maquininha: some quando todas estão na loja (no Painel, mora na
              linha de baixo). -->
@@ -1957,7 +1959,7 @@ function compactClear() {
                 <!-- Uma corrida da TaOn para várias entregas prontas, na coluna delas:
                      some com menos de duas. -->
                 <template v-if="zone.key === 'expedition'" #heading-actions>
-                  <CourierRideMenu :choices="rideCandidates" @done="refresh()" />
+                  <CourierRideMenu :choices="rideCandidates" :action="queue?.ride_action" @done="refresh()" @stale="refresh()" />
                 </template>
               </OrderBoardColumn>
               <OrderBoardStrip
