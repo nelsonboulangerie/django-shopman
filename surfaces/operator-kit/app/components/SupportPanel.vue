@@ -206,15 +206,28 @@ async function submitDev(): Promise<void> {
             </p>
           </div>
 
-          <details v-if="contextRows(ticket.context).length" class="rounded border border-default p-3">
-            <summary class="cursor-pointer text-sm font-medium">Contexto do chamado</summary>
-            <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-              <template v-for="row in contextRows(ticket.context)" :key="row.label">
-                <dt class="text-muted">{{ row.label }}</dt>
-                <dd class="break-words">{{ row.value }}</dd>
-              </template>
-            </dl>
-          </details>
+          <NuxtCollapsible
+            v-if="contextRows(ticket.context).length"
+            class="rounded border border-default px-3 py-1"
+            data-support-context
+          >
+            <NuxtButton
+              label="Contexto do chamado"
+              color="neutral"
+              variant="ghost"
+              trailing-icon="i-lucide-chevron-down"
+              block
+              class="justify-between px-0"
+            />
+            <template #content>
+              <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 pb-2 text-xs">
+                <template v-for="row in contextRows(ticket.context)" :key="row.label">
+                  <dt class="text-muted">{{ row.label }}</dt>
+                  <dd class="break-words">{{ row.value }}</dd>
+                </template>
+              </dl>
+            </template>
+          </NuxtCollapsible>
 
           <div class="flex flex-col gap-3" data-support-thread>
             <article
