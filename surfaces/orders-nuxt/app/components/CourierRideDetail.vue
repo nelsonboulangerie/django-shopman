@@ -169,7 +169,8 @@ const showCancelState = computed(
       </section>
     </div>
 
-    <footer class="flex flex-wrap items-center gap-2 border-t border-default px-5 py-3">
+    <!-- Com o cancelamento pedido, o aviso do topo já diz tudo: o rodapé não repete nem oferece gesto. -->
+    <footer v-if="ride.back_action || ride.cancel_action || ride.cancel_state !== 'pending'" class="flex flex-wrap items-center gap-2 border-t border-default px-5 py-3" data-ride-footer>
       <template v-if="ride.back_action">
         <NuxtButton class="flex-1 justify-center" color="primary" icon="i-lucide-undo-2" :label="ride.back_action.label" :loading="busy" :disabled="!ride.back_action.enabled" @click="emit('back')" />
       </template>
@@ -180,7 +181,6 @@ const showCancelState = computed(
           <NuxtButton color="error" variant="ghost" icon="i-lucide-circle-x" :label="ride.cancel_action.label" :loading="busy" :disabled="!ride.cancel_action.enabled" :title="ride.cancel_action.reason || undefined" data-ride-cancel @click="confirmingCancel = true" />
         </template>
       </template>
-      <p v-else-if="ride.cancel_state === 'pending'" class="min-w-0 flex-1 op-micro text-muted">O cancelamento já foi pedido. A corrida sai daqui quando a TaOn confirmar.</p>
       <p v-else-if="ride.cancel_state === 'unknown'" class="min-w-0 flex-1 op-micro text-muted">Confira esta corrida na central da TaOn antes de pedir o cancelamento de novo.</p>
       <p v-else class="min-w-0 flex-1 op-micro text-muted">Ele já saiu com as sacolas: cancelar agora só pela central da TaOn.</p>
     </footer>

@@ -184,13 +184,15 @@ describe("Entregas: cancelar a corrida no detalhe", () => {
     } finally { w.unmount(); }
   });
 
-  it("cancelamento pendente: a frase aparece e o botão some", () => {
+  it("cancelamento pendente: a frase aparece uma vez só (no aviso), e o rodapé some com o botão", () => {
     const message = "Pedido de cancelamento enviado. Esperando a TaOn confirmar.";
     const w = mountDetail({ cancel_action: null, cancel_state: "pending", cancel_message: message });
     try {
       expect(w.get("[data-ride-cancel-state]").text()).toContain(message);
       expect(w.find("[data-ride-cancel]").exists()).toBe(false);
-      expect(w.text()).toContain("O cancelamento já foi pedido.");
+      // O aviso do topo já diz: o rodapé não repete a mesma coisa nem fica vazio na tela.
+      expect(w.find("[data-ride-footer]").exists()).toBe(false);
+      expect(w.text()).not.toContain("O cancelamento já foi pedido");
       expect(w.text()).not.toContain("Ele já saiu com as sacolas");
     } finally { w.unmount(); }
   });
