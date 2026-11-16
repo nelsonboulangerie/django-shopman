@@ -8585,7 +8585,7 @@
     },
     {
       "id": "delivery.courier-ride-number",
-      "question": "Que número (e cor) a corrida ganha na tela, e quando ele volta a ficar livre?",
+      "question": "Que número a corrida ganha (a letra e a cor dela na tela), e quando ele volta a ficar livre?",
       "owner": "delivery.ride-number",
       "responsibility": "composição",
       "public_entrypoint": "shopman.shop.services.courier:next_ride_number",
