@@ -113,9 +113,9 @@ describe("aviso de canal na fila de Pedidos", () => {
       resolve(__dirname, "../../app/pages/index.vue"),
       "utf8",
     );
-    expect(page).toContain('v-if="hasChannelQueueSignal" #feedback');
+    expect(page).toContain('v-if="hasChannelQueueSignal || showSystemBand" #feedback');
     expect(page).toContain(
-      '<ChannelQueueSignal :attention="channelAttention" />',
+      '<ChannelQueueSignal v-if="hasChannelQueueSignal" :attention="channelAttention" />',
     );
     expect(page).not.toContain("IFoodQueueSignal");
   });

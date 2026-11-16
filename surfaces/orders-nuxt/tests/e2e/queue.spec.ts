@@ -1,11 +1,14 @@
 import { test, expect } from "@playwright/test";
 
-// A Fila "Precisa de você" (V4-G4): o desktop abre nela; só o fato humano é botão, o
-// resto vira número e a Lista (a tabela) segue a um toque e na tecla L.
+// A Fila "Precisa de você" (V4-G4): a um toque do Painel (a casa, dono 14/11/2026) e na
+// tecla G; só o fato humano é botão, o resto vira número e a Tabela segue na tecla L.
 test.use({ viewport: { width: 1440, height: 900 } });
 
-test("o desktop abre na Fila, por urgência, com a coluna de consciência", async ({ page }) => {
+test("o desktop abre no Painel; a Fila vem por urgência, com a coluna de consciência", async ({ page }) => {
   await page.goto("/");
+  await expect(page.locator("[data-board-columns]")).toBeVisible();
+  await expect(page.locator("[data-queue-view]")).toHaveCount(0);
+  await page.keyboard.press("g");
   const queue = page.locator("[data-queue-view]");
   await expect(queue.getByRole("heading", { name: "Precisa de você" })).toBeVisible();
   const items = queue.locator("[data-queue-item]");
@@ -27,23 +30,23 @@ test("o desktop abre na Fila, por urgência, com a coluna de consciência", asyn
   await expect(queue.locator("[data-queue-menu]")).toContainText("iFood");
 });
 
-test("L abre a Lista e G volta para a Grade", async ({ page }) => {
-  await page.goto("/");
+test("L abre a Tabela e G volta para a Fila", async ({ page }) => {
+  await page.goto("/?view=queue");
   await expect(page.locator("[data-queue-view]")).toBeVisible();
   await page.keyboard.press("l");
   await expect(page.locator("[data-supervision-table]")).toBeVisible();
   await page.keyboard.press("g");
   await expect(page.locator("[data-queue-view]")).toBeVisible();
-  await page.getByRole("tab", { name: "Lista" }).click();
+  await page.getByRole("tab", { name: "Tabela" }).click();
   await expect(page.locator("[data-supervision-table]")).toBeVisible();
 });
 
-test("tablet em pé segue com o quadro em abas (a Fila é do desktop)", async ({ page }) => {
-  // Três colunas de ~240 px cortavam selo e prazo do cartão: abaixo do lg o quadro usa
+test("tablet em pé segue com o painel em abas (a Fila é do desktop)", async ({ page }) => {
+  // Três colunas de ~240 px cortavam selo e prazo do cartão: abaixo do lg o painel usa
   // as abas do celular, uma etapa por vez (74932fb8f, 07/10/2026).
   await page.setViewportSize({ width: 820, height: 1180 });
   await page.goto("/");
-  await expect(page.getByRole("tab", { name: "Preparo 4" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Em preparo 4" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("Ana · Loja online", { exact: true })).toBeVisible();
   await expect(page.locator("[data-board-columns]")).toHaveCount(0);
   await expect(page.locator("[data-queue-view]")).toHaveCount(0);

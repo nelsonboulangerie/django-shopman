@@ -72,6 +72,13 @@ from shopman.backstage.projections.customers import (
     MergePreviewProjection,
     MergeSideProjection,
 )
+from shopman.backstage.projections.deliveries import (
+    DeliveriesProjection,
+    DeliveryDriverProjection,
+    DeliveryPointProjection,
+    DeliveryRideProjection,
+    DeliveryStopProjection,
+)
 from shopman.backstage.projections.feeds import (
     CatalogChannelProjection,
     ChannelPeriodOption,
@@ -83,7 +90,11 @@ from shopman.backstage.projections.feeds import (
     ManagerOptionProjection,
     MenuboardAutomaticProjection,
 )
-from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection
+from shopman.backstage.projections.ifood_handshake import (
+    IFoodNegotiationAlternative,
+    IFoodNegotiationChoice,
+    IFoodNegotiationProjection,
+)
 from shopman.backstage.projections.notification_receipts import (
     NotificationAttemptProjection,
     NotificationReceiptProjection,
@@ -139,6 +150,8 @@ CONTRACT_DATACLASSES = (
     CatalogPublicationSkip,
     CatalogPublicationPreview,
     Action,
+    IFoodNegotiationChoice,
+    IFoodNegotiationAlternative,
     IFoodNegotiationProjection,
     CatalogSnapshotSummary,
     CatalogProductOption,
@@ -217,6 +230,11 @@ CONTRACT_DATACLASSES = (
     HistoryFacet,
     OrderHistoryRowProjection,
     OrderHistoryProjection,
+    DeliveryPointProjection,
+    DeliveryStopProjection,
+    DeliveryDriverProjection,
+    DeliveryRideProjection,
+    DeliveriesProjection,
 )
 
 
@@ -235,6 +253,7 @@ def render_orders_contract_ts() -> str:
             " + shopman/backstage/projections/notification_receipts.py"
             " + shopman/backstage/projections/order_history.py"
             " + shopman/backstage/projections/order_attention.py"
+            " + shopman/backstage/projections/deliveries.py"
         ),
         command="export_orders_schema",
         dataclasses=CONTRACT_DATACLASSES,

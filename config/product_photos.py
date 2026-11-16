@@ -26,7 +26,15 @@ NOME do arquivo (``cap.v2.webp``), nunca sobrescrever.
 from __future__ import annotations
 
 #: SKU → nome do arquivo em ``surfaces/storefront-nuxt/public/img/products/``.
-HOSTED_PHOTOS: dict[str, str] = {}
+HOSTED_PHOTOS: dict[str, str] = {
+    "REFRI-GUARANA-WEWI-255": "refri-guarana-wewi-255.webp",
+    "REFRI-LARANJA-WEWI-255": "refri-laranja-wewi-255.webp",
+    "REFRI-LEMONSOUR-WEWI-255": "refri-lemonsour-wewi-255.webp",
+    "TONICA-ORIGINAL-WEWI-255": "tonica-original-wewi-255.webp",
+    "TONICA-ROSE-WEWI-255": "tonica-rose-wewi-255.webp",
+    "TONICA-GINGER-WEWI-255": "tonica-ginger-wewi-255.webp",
+    "SUCO-GOIABA-ESSERE-300": "suco-goiaba-essere-300.webp",
+}
 
 
 def hosted_photo_url(sku: str, image_base: str) -> str | None:

@@ -24,6 +24,18 @@ export function usePosShell(pos: Ref<POSProjection | null>) {
   const tabs = usePosTabsState();
   const preorders = usePosPreordersRail();
   const { probe } = useAgentHealth(computed(() => pos.value));
+  // Rotinas: a permissão é perguntada ao servidor, como no resto da suíte.
+  const { data: operatorSession } = useNuxtData<{ operator?: { id: number } }>("operator-session");
+  const operatorId = computed(() => operatorSession.value?.operator?.id ?? null);
+  const { data: checklistsAccess } = useFetch<{ authorized?: boolean }>(
+    "/api/v1/backstage/operator/session/",
+    {
+      key: computed(() => `pos:${operatorId.value ?? "unidentified"}:operation-checklists-access`),
+      query: { perm: "backstage.perform_operation_task" },
+      server: false,
+      watch: [operatorId],
+    },
+  );
 
   const terminal = computed(() => {
     if (!pos.value) return undefined;
@@ -43,6 +55,7 @@ export function usePosShell(pos: Ref<POSProjection | null>) {
       preorders: { allowed: preorders.allowed.value, badge: preorders.badge.value },
       terminal: terminal.value,
       canCloseDay: pos.value?.can_close_day === true,
+      canOperateChecklists: checklistsAccess.value?.authorized === true,
     }),
   );
   const switcherSections = computed(() => posSwitcherSections(sections.value));
