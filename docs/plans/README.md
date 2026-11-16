@@ -36,6 +36,7 @@ as tabelas abaixo são a classificação semântica explícita.
 | [`FISCALMAN-PLAN.md`](FISCALMAN-PLAN.md) | S0–S4 concluídos e verdes; resta S5 (NF-e mod. 55/resale) + contador valida NCM/CSC/IBPT. |
 | [`IFOOD-DIRECT-INTEGRATION-PLAN.md`](IFOOD-DIRECT-INTEGRATION-PLAN.md) | Integração direta entregue; ensaio autorizado na loja de teste concluído em 20/10 com restauração exata (#1929, #1962). Credenciais e homologação comercial de produção continuam externas e pendentes. |
 | [`DELIVERY-EXTERNAL-LOGISTICS-PLAN.md`](DELIVERY-EXTERNAL-LOGISTICS-PLAN.md) | Machine (courier) construída e `Signature-V2` verificada no webhook; fora do código, credenciais centrais e homologação continuam pendentes. |
+| [`DELIVERY-MULTI-SERVICE-PLAN.md`](DELIVERY-MULTI-SERVICE-PLAN.md) | Escolher o serviço de cada corrida (TaOn, entregador da casa, outra API) e entregador próprio de ponta a ponta; fase 1, esperando a palavra do dono (DEV-2026-030). |
 | [`DELIVERY-GEOCODING-AND-FEEDBACK-PLAN.md`](DELIVERY-GEOCODING-AND-FEEDBACK-PLAN.md) | Cascata de geocoding entregue; pendente robustez multi-provedor + feedback omotenashi. |
 | [`OPERATION-DOMAIN-PLAN.md`](OPERATION-DOMAIN-PLAN.md) | Baseline de modelos/Admin implementado; próxima camada (superfície de execução, BI) aberta. |
 | [`OPERATION-RUNBOOKS-PLAN.md`](OPERATION-RUNBOOKS-PLAN.md) | Baseline de runbooks/diagnose concluído; snapshot/smoke real de gateway bloqueado por credenciais. |
