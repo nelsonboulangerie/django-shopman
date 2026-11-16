@@ -419,7 +419,7 @@ describe("customerMergeDescription", () => {
       now: agora,
     });
     expect(frase).toContain("1 contato e 1 pedido passaram para este cadastro.");
-    expect(frase).toContain("hoje às 23:05");
+    expect(frase).toContain("hoje às 23h05");
   });
 
   it("sem prazo utilizável NÃO promete desfazer", () => {
@@ -440,7 +440,7 @@ describe("customerMergeDescription", () => {
   });
 
   it("o prazo se lê de relance: hoje, amanhã, ou a data", () => {
-    expect(mergeUndoDeadlineLabel(iso(new Date(2026, 8, 8, 23, 59)), agora)).toBe("hoje às 23:59");
+    expect(mergeUndoDeadlineLabel(iso(new Date(2026, 8, 8, 23, 59)), agora)).toBe("hoje às 23h59");
     expect(mergeUndoDeadlineLabel(iso(new Date(2026, 8, 9, 0, 1)), agora)).toBe("amanhã às 00:01");
     // A janela é de 24h, então isto não acontece hoje — mas a frase não pode
     // virar "amanhã" se um dia a política mudar.

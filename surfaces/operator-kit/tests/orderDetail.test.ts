@@ -122,7 +122,7 @@ describe("orderDetail · linhas", () => {
     expect(relayExpiresLabel("")).toBe("");
     expect(relayExpiresLabel("não é data")).toBe("");
     expect(relayExpiresLabel("2026-09-28T14:32:00")).toMatch(
-      /^Vale até \d{2}:\d{2}$/,
+      /^Vale até \d{1,2}h(\d{2})?$/,
     );
   });
 });

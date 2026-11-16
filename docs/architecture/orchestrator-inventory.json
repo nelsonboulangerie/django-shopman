@@ -12779,7 +12779,7 @@
         {
           "responsibility": "leitura",
           "symbols": [
-            "format_clock",
+            "clock_hhmm",
             "product_names"
           ]
         }

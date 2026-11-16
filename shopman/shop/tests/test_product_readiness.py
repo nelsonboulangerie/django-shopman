@@ -17,8 +17,8 @@ from shopman.offerman.models import Product
 from shopman.shop.services.product_readiness import (
     _round_up_minutes,
     bottleneck,
+    clock_hhmm,
     declared_ready_times,
-    format_clock,
     observed_ready_times,
     parse_clock,
     product_names,
@@ -64,8 +64,8 @@ class ParseClockTests(TestCase):
         self.assertIsNone(parse_clock("99:99"))
 
     def test_format_round_trip(self):
-        self.assertEqual(format_clock(parse_clock("9:5")), "09:05")
-        self.assertEqual(format_clock(None), "")
+        self.assertEqual(clock_hhmm(parse_clock("9:5")), "09:05")
+        self.assertEqual(clock_hhmm(None), "")
 
 
 class DeclaredReadyTimesTests(TestCase):

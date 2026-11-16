@@ -51,7 +51,7 @@ def test_hoje_e_meia_hora_cortada_pelo_relogio_e_pela_antecedencia(loja):
     refs = [w["ref"] for w in delivery_windows_for(today, now=now)]
 
     assert refs == ["11:00-11:30", "11:30-12:00", "12:00-12:30", "12:30-13:00"]
-    assert delivery_windows_for(today, now=now)[0]["label"] == "11:00 às 11:30"
+    assert delivery_windows_for(today, now=now)[0]["label"] == "11h às 11h30"
 
 
 def test_encomenda_e_turno_da_casa_dentro_do_expediente(loja):
@@ -97,7 +97,7 @@ def test_turno_de_retirada_ou_hora_inventada_sao_recusados(loja):
     assert delivery_window_error(tomorrow, "11:00-11:30", now=now) == DELIVERY_WINDOW_UNKNOWN
     # Hora fora do expediente, e o rótulo no lugar do ref.
     assert delivery_window_error(today, "18:00-18:30", now=now) == DELIVERY_WINDOW_UNKNOWN
-    assert delivery_window_error(today, "11:00 às 11:30", now=now) == DELIVERY_WINDOW_UNKNOWN
+    assert delivery_window_error(today, "11h às 11h30", now=now) == DELIVERY_WINDOW_UNKNOWN
 
 
 def test_dia_fechado_nao_tem_grade(loja):

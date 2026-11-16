@@ -233,7 +233,7 @@ def test_hoje_sai_de_meia_em_meia_hora_do_expediente(loja):
     assert [s["ref"] for s in janelas["windows"]] == [
         "09:00-09:30", "09:30-10:00", "10:00-10:30", "10:30-11:00",
     ]
-    assert janelas["windows"][0]["label"] == "09:00 às 09:30"
+    assert janelas["windows"][0]["label"] == "9h às 9h30"
     assert janelas["grid"] == "half_hour"
 
 

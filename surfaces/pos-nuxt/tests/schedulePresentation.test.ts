@@ -118,7 +118,7 @@ describe("windowLabel", () => {
   it("ref fora da grade não deixa a tela em branco", () => {
     // O expediente do dia pode ter mudado depois; o ref se lê sozinho.
     // Ref fora da lista NUNCA vira texto cru: o dono viu "Hoje, slot-09".
-    expect(windowLabel(JANELAS, "23:00-23:30")).toBe("23:00 às 23:30");
+    expect(windowLabel(JANELAS, "23:00-23:30")).toBe("23h às 23h30");
     expect(windowLabel([], "slot-09")).toBe("a partir das 9h");
     expect(windowLabel([], "slot-15")).toBe("a partir das 15h");
     expect(windowLabel([], "qualquer-coisa")).toBe("horário combinado");

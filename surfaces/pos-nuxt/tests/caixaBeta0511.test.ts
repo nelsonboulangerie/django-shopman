@@ -14,7 +14,7 @@ describe("a hora do turno é a do balcão (PDV2-24, PDV-19)", () => {
   const opened = "2026-11-05T11:45:00+00:00";
 
   it("'Turno aberto em' sai no fuso da loja", () => {
-    expect(formatOpenedAt(opened)).toBe("05/11, 08:45");
+    expect(formatOpenedAt(opened)).toBe("05/11, 8h45");
   });
 
   it("o Fim do dia diz quem ABRIU, não quem opera agora", () => {

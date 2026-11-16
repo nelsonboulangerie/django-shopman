@@ -31,7 +31,7 @@ def test_o_resumo_resolve_o_canonico():
 def test_o_resumo_resolve_a_meia_hora():
     rows = _rows({"delivery_date": "2026-09-16", "delivery_time_slot": "14:00-14:30"})
 
-    assert rows["Entrega em"] == "2026-09-16 (14:00 às 14:30)"
+    assert rows["Entrega em"] == "2026-09-16 (14h às 14h30)"
 
 
 def test_o_resumo_sem_janela_mostra_so_a_data():
