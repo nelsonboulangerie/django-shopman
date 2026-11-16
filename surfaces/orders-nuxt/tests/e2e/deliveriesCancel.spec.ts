@@ -22,7 +22,7 @@ test.beforeEach(async ({ context, page, baseURL }) => {
 
 test.describe("Entregas: cancelar a corrida", () => {
   test("antes do aceite: um toque arma, o segundo confirma, e o pedido aparece na tela", async ({ page }) => {
-    await page.goto("/deliveries?ride=1");
+    await page.goto("/deliveries?ride=776753301");
     const detail = page.locator("[data-ride-detail]");
     await detail.locator("[data-ride-cancel]").click();
     expect(await sent(page)).toEqual([]);
@@ -44,7 +44,7 @@ test.describe("Entregas: cancelar a corrida", () => {
   });
 
   test("depois do aceite: o motivo é o próprio botão e vai como reason_id", async ({ page }) => {
-    await page.goto("/deliveries?ride=2");
+    await page.goto("/deliveries?ride=776753302");
     const detail = page.locator("[data-ride-detail]");
     await detail.locator("[data-ride-cancel]").click();
     const confirm = detail.locator("[data-courier-cancel-confirm]");
