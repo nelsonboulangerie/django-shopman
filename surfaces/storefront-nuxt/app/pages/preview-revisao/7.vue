@@ -114,7 +114,7 @@ const rows: DecidedRow[] = [
     b: {
       tone: 'info',
       title: 'Seu pedido está pronto',
-      message: 'Está levando mais que o normal. Seguimos chamando o entregador.',
+      message: 'Está demorando mais que o normal. Seguimos chamando o entregador.',
       actions: [],
       steps: steps('ready')
     },
@@ -154,7 +154,7 @@ const rows: DecidedRow[] = [
     b: {
       tone: 'info',
       title: 'Saiu para entrega',
-      message: 'Diego está levando. Deve chegar por volta de 12h45.',
+      message: 'Diego está a caminho. Deve chegar por volta de 12h45.',
       actions: [RECEIVED, TRACK],
       steps: steps('dispatched')
     },
