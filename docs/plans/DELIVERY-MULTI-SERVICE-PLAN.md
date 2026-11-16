@@ -326,6 +326,19 @@ opção. Quem navega pela nossa página manda posição o tempo todo.
 própria (M2b, #2509), na mesma página: PWA instalável, tela acesa, mapa da corrida e posição
 para a casa (mapa das Entregas) e para o cliente (só a parada dele, com a idade visível).
 
+**Requisito do dono (16/11):** se a nossa página é o mapa, ela tem que ser "SUPER otimizada
+para mobile, inclusive em modo horizontal". Vira critério de pronto da M2b (prévia 4 no #2511):
+- em pé, o mapa ocupa a tela e embaixo fica só a próxima parada; deitado (suporte da moto), o
+  mapa fica à esquerda e a parada à direita, do lado do polegar, sem rolar para entregar,
+  medido em 812 × 375 e 740 × 360;
+- texto de 16 px para cima, botão principal de 56 px, alto contraste para ler no sol, bordas
+  seguras do celular (notch, barra de gestos);
+- tela acesa durante a corrida, PWA instalável que abre em tela cheia, toques guardados sem
+  rede e enviados quando ela volta;
+- o mapa enquadra a rota inteira, segue a moto até o entregador mexer e tem "Centralizar em
+  mim"; abre do cache e carrega só a área da rota;
+- prova antes da fila: medição em retrato e paisagem nos três tamanhos e prévia local ao dono.
+
 Até lá, a casa acompanha a corrida pelos toques do entregador ("Saí", "Entreguei A47"), com
 a hora prevista refeita a cada parada, e o cliente vê nome e hora (decisão 6 = 1).
 
