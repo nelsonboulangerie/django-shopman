@@ -480,6 +480,14 @@ class OrderCardProjection:
     is_preorder: bool = False
     commitment_date: str = ""
     commitment_date_display: str = ""
+    # O combinado, na frase do detalhe (``_schedule``): "Amanhã · A partir das
+    # 15h", "Hoje · 14:00 às 14:30", "Era para ontem · A partir das 15h". Vazio
+    # quando não há o que dizer (o pedido de agora, ou o combinado já cumprido).
+    # ``schedule_state``: ``future`` | ``today`` | ``overdue`` | "". O cartão, a
+    # Fila, a Tabela e o sino leem daqui, e só daqui: aceitar uma encomenda sem
+    # ver o dia e a hora era prometer às cegas.
+    schedule_label: str = ""
+    schedule_state: str = ""
     # Troco da entrega (WP-9): o que a loja coletou no checkout e o que o livro
     # do caixa diz. ``change_for_q`` é com quanto o cliente paga (0 = não disse);
     # ``change_out_suggested_q`` é o troco que a loja sugere levar
@@ -1414,21 +1422,65 @@ def _detail_deadline(order: Order, accept=None) -> dict[str, str]:
     return {"confirmation_deadline_iso": deadline[0], "confirmation_action": deadline[1]} if deadline else {}
 
 
-def _schedule_label(order: Order) -> str:
-    """Quando o combinado acontece: "Sáb, 27/09 · 08h às 10h".
+#: Estados em que o combinado ainda está por cumprir: passada a data, o pedido
+#: "era para" aquele dia. Concluído, entregue, cancelado ou devolvido já não
+#: deve nada ao relógio, e a data volta a ser só a data.
+_SCHEDULE_OPEN_STATUSES = frozenset({
+    Order.Status.NEW,
+    Order.Status.ACCEPTED,
+    Order.Status.PREPARING,
+    Order.Status.READY,
+    Order.Status.DISPATCHED,
+})
 
-    Só para pedido com data (``delivery_date``) ou janela combinada; o pedido de
-    agora não tem o que dizer aqui. Data sem janela diz "sem horário combinado"
-    por extenso — o vazio pareceria esquecimento.
+
+def _schedule(order: Order) -> tuple[str, str]:
+    """O combinado do pedido, numa frase só, e em que pé está: ``(rótulo, estado)``.
+
+    A MESMA frase no detalhe, no cartão, na Fila, na Tabela e no sino: uma
+    função só, para nenhuma forma dizer o combinado com outras palavras.
+
+    - ``future``: data depois de hoje. "Amanhã · A partir das 15h".
+    - ``today``: hoje, COM hora combinada. "Hoje · 14:00 às 14:30". Hoje sem
+      hora não é estado: é o pedido de agora, e o cartão não tem o que dizer.
+    - ``overdue``: o dia passou e o pedido segue aberto. O passado tem nome
+      próprio, "Era para ontem · A partir das 15h": a data sozinha se lê como
+      se ainda fosse cumprir.
+    - ``""``: nada combinado (ou já cumprido). O rótulo pode existir mesmo
+      assim, para o detalhe (um concluído de sábado continua "Sáb, 14/11 · …").
+
+    A janela sai de ``fulfillment_window.window_label`` e o dia, de
+    ``promised_at`` quando há janela (sem data, o dia da venda): as mesmas
+    réguas da Fila e da loja. Data sem janela diz "sem horário combinado" por
+    extenso, porque o vazio pareceria esquecimento.
     """
-    from shopman.shop.services.fulfillment_window import window_label
+    from shopman.shop.services.fulfillment_window import promised_at, window_label
 
     commitment = get_commitment_date(order)
     window = window_label((order.data or {}).get("delivery_time_slot"))
+    if commitment is None and not window:
+        return "", ""
     if commitment is None:
-        return window
+        promised = promised_at(order)
+        commitment = timezone.localtime(promised).date() if promised is not None else None
+    if commitment is None:
+        return window, ""
+    today = timezone.localdate()
     day = str(_commitment_date_display(commitment))
-    return f"{day[:1].upper()}{day[1:]} · {window or 'sem horário combinado'}"
+    if commitment < today and order.status in _SCHEDULE_OPEN_STATUSES:
+        label = f"Era para {day}"
+        return (f"{label} · {window}" if window else label), "overdue"
+    label = f"{day[:1].upper()}{day[1:]} · {window or 'sem horário combinado'}"
+    if commitment > today:
+        return label, "future"
+    if commitment == today and window:
+        return label, "today"
+    return label, ""
+
+
+def _schedule_label(order: Order) -> str:
+    """Quando o combinado acontece, para o detalhe: a frase de :func:`_schedule`."""
+    return _schedule(order)[0]
 
 
 #: Letra Machine → label pt-BR do operador (fonte única do gestor).
@@ -2075,6 +2127,8 @@ def _commitment_date_display(commitment) -> str:
         return "hoje"
     if commitment == today + timedelta(days=1):
         return "amanhã"
+    if commitment == today - timedelta(days=1):
+        return "ontem"
     return f"{formats.date_format(commitment, 'D')}, {formats.date_format(commitment, 'd/m')}"
 
 
@@ -2243,6 +2297,7 @@ def _build_card(
     )
     commitment = get_commitment_date(order)
     is_preorder = commitment is not None and commitment > timezone.localdate()
+    schedule_label, schedule_state = _schedule(order)
     waitlist_state, waitlist_deadline_iso, waitlist_label = _waitlist_badge(order, states=waitlist_states)
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
     danfe = order_danfe.card_state(order, reads=danfe_reads, now=now)
@@ -2335,6 +2390,8 @@ def _build_card(
         is_preorder=is_preorder,
         commitment_date=commitment.isoformat() if commitment else "",
         commitment_date_display=_commitment_date_display(commitment) if is_preorder else "",
+        schedule_label=schedule_label if schedule_state else "",
+        schedule_state=schedule_state,
         **_courier_change_fields(order, courier_change),
         **_equipment_fields(order, channel_config=channel_config),
         waitlist_state=waitlist_state,

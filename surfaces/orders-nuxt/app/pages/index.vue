@@ -28,6 +28,7 @@ import {
   resolveShortcut,
   rideChoices,
   rowsToCsv,
+  schedulePromise,
   SORT_OPTIONS,
   splitRef,
   statusTone,
@@ -2048,6 +2049,15 @@ function compactClear() {
                   row.original.card.customer_name || "Sem cliente"
                 }}</span>
               </span>
+              <!-- O combinado, com as palavras do cartão (WP-G01). -->
+              <NuxtBadge
+                v-if="schedulePromise(row.original.card)"
+                class="mt-1 max-w-full self-start"
+                :color="schedulePromise(row.original.card)!.color"
+                :icon="schedulePromise(row.original.card)!.icon"
+                :label="schedulePromise(row.original.card)!.label"
+                :data-table-promise="schedulePromise(row.original.card)!.state"
+              />
             </div>
           </template>
           <template #stage-cell="{ row }">

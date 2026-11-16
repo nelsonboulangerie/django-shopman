@@ -105,6 +105,63 @@ describe("OrderCard — para onde vai", () => {
   });
 });
 
+describe("OrderCard — a encomenda se anuncia (WP-G01)", () => {
+  const amanha = {
+    status: "new",
+    status_label: "Novo",
+    can_confirm: true,
+    is_preorder: true,
+    commitment_date_display: "amanhã",
+    schedule_label: "Amanhã · A partir das 15h",
+    schedule_state: "future" as const,
+  };
+
+  it("o cartão enxuto do Painel diz Encomenda, o dia e a janela", () => {
+    const w = mountCard({ card: card(amanha), compact: true });
+    const promise = w.get("[data-card-promise]");
+    expect(promise.attributes("data-card-promise")).toBe("future");
+    expect(promise.text()).toBe("Encomenda · Amanhã · A partir das 15h");
+  });
+
+  it("o cartão cheio diz a mesma frase", () => {
+    const w = mountCard({ card: card(amanha) });
+    expect(w.get("[data-card-promise]").text()).toBe("Encomenda · Amanhã · A partir das 15h");
+  });
+
+  it("pedido de hoje com hora combinada mostra a hora no cartão enxuto", () => {
+    const w = mountCard({
+      card: card({ schedule_label: "Hoje · 14:00 às 14:30", schedule_state: "today" }),
+      compact: true,
+    });
+    expect(w.get("[data-card-promise]").text()).toBe("Hoje · 14:00 às 14:30");
+  });
+
+  it("encomenda vencida se diz no passado", () => {
+    const w = mountCard({
+      card: card({ schedule_label: "Era para ontem · A partir das 15h", schedule_state: "overdue" }),
+      compact: true,
+    });
+    expect(w.get("[data-card-promise]").attributes("data-card-promise")).toBe("overdue");
+    expect(w.get("[data-card-promise]").text()).toBe("Era para ontem · A partir das 15h");
+  });
+
+  it("pedido de agora não ganha selo de combinado", () => {
+    const w = mountCard({ card: card({ schedule_label: "", schedule_state: "" }), compact: true });
+    expect(w.find("[data-card-promise]").exists()).toBe(false);
+  });
+
+  it("o cartão enxuto não corta Retirada/Entrega: o corte cai no nome (P2-04)", () => {
+    const w = mountCard({
+      card: card({ customer_name: "Maria Aparecida dos Santos Albuquerque", fulfillment_label: "Entrega" }),
+      compact: true,
+    });
+    const fulfillment = w.get("[data-card-fulfillment]");
+    expect(fulfillment.text()).toBe("· Entrega");
+    expect(fulfillment.classes()).toContain("shrink-0");
+    expect(fulfillment.classes()).not.toContain("truncate");
+  });
+});
+
 describe("OrderCard — render", () => {
   it("mostra cliente, itens e total", () => {
     const w = mountCard({ card: card() });

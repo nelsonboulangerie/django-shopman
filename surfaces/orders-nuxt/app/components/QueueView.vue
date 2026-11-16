@@ -24,6 +24,7 @@ import {
   cardAuthorizationNotice,
   cardDeadlineLabel,
   confirmationRemainingLabel,
+  schedulePromise,
   splitRef,
   undoLine,
 } from "~/presentation/board";
@@ -343,6 +344,15 @@ function switchHint(row: {
                 }}</span
               >
             </p>
+            <!-- O combinado, com as palavras do cartão (WP-G01). -->
+            <NuxtBadge
+              v-if="schedulePromise(item.card)"
+              class="max-w-full self-start"
+              :color="schedulePromise(item.card)!.color"
+              :icon="schedulePromise(item.card)!.icon"
+              :label="schedulePromise(item.card)!.label"
+              :data-queue-promise="schedulePromise(item.card)!.state"
+            />
             <p class="op-body text-foreground/85">
               {{ item.card.items_summary }}
             </p>

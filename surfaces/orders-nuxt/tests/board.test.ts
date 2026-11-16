@@ -2,6 +2,8 @@ import { fixtureActions } from "./support/orderActions";
 import { describe, expect, it } from "vitest";
 
 import {
+  alertMessageWithSchedule,
+  schedulePromise,
   appendTag,
   bulkableRefs,
   changeBackSuggestionQ,
@@ -259,6 +261,52 @@ describe("zonesView", () => {
     expect(zone?.count).toBe(1);
     expect(zoneEmptyText("negotiation")).toBe(
       "Nenhuma negociação do iFood esperando resposta.",
+    );
+  });
+});
+
+describe("schedulePromise — a encomenda se anuncia (WP-G01)", () => {
+  it("outro dia: a palavra Encomenda à frente da frase do servidor", () => {
+    expect(
+      schedulePromise({ schedule_label: "Amanhã · A partir das 15h", schedule_state: "future" }),
+    ).toEqual({
+      label: "Encomenda · Amanhã · A partir das 15h",
+      color: "neutral",
+      icon: "i-lucide-calendar-clock",
+      state: "future",
+    });
+  });
+
+  it("hoje com hora combinada: a hora, sem a palavra Encomenda", () => {
+    expect(
+      schedulePromise({ schedule_label: "Hoje · 14:00 às 14:30", schedule_state: "today" })?.label,
+    ).toBe("Hoje · 14:00 às 14:30");
+  });
+
+  it("vencida: o nome próprio do passado, em vermelho", () => {
+    const promise = schedulePromise({
+      schedule_label: "Era para ontem · A partir das 15h",
+      schedule_state: "overdue",
+    });
+    expect(promise?.label).toBe("Era para ontem · A partir das 15h");
+    expect(promise?.color).toBe("error");
+  });
+
+  it("sem combinado, nada", () => {
+    expect(schedulePromise({ schedule_label: "", schedule_state: "" })).toBeNull();
+    expect(schedulePromise({ schedule_label: "Amanhã · A partir das 15h", schedule_state: "" })).toBeNull();
+  });
+
+  it("o sino diz a mesma frase do cartão antes do texto do aviso", () => {
+    expect(
+      alertMessageWithSchedule({
+        message: "O pedido T09 espera aceite.",
+        order_schedule_label: "Amanhã · A partir das 15h",
+        order_schedule_state: "future",
+      }),
+    ).toBe("Encomenda · Amanhã · A partir das 15h. O pedido T09 espera aceite.");
+    expect(alertMessageWithSchedule({ message: "O pedido T09 espera aceite." })).toBe(
+      "O pedido T09 espera aceite.",
     );
   });
 });
