@@ -13,18 +13,23 @@ export interface RideColor {
   bg: string;
   /** O texto sobre a cor: branco ou preto, o que passa de 4,5:1. */
   fg: string;
+  /** A cor escrita sobre branco (a letra da parada): o mesmo matiz, escurecido até
+   * passar de 4,5:1. Igual a `bg` quando ele já passa. */
+  ink: string;
 }
 
 // Como linhas de metrô (dono, 14/11): cada cor num matiz bem longe das outras.
 // Matizes: azul 223°, verde 142°, amarelo 48°, laranja 21°, magenta 327°, mais o preto,
 // sem matiz. A ordem de uso é a do dono.
 export const RIDE_PALETTE: readonly RideColor[] = [
-  { name: "Azul", bg: "#0047ff", fg: "#ffffff" },
-  { name: "Verde", bg: "#00a03c", fg: "#000000" },
-  { name: "Amarelo", bg: "#ffd000", fg: "#000000" },
-  { name: "Laranja", bg: "#ff5a00", fg: "#000000" },
-  { name: "Magenta", bg: "#e4007c", fg: "#ffffff" },
-  { name: "Preto", bg: "#111111", fg: "#ffffff" },
+  { name: "Azul", bg: "#0047ff", fg: "#ffffff", ink: "#0047ff" },
+  // Verde escurecido (dono, 16/11: a moto com número no verde pedia letra branca;
+  // #00a03c com branco dava 3,4:1). #008933 com branco: 4,5:1.
+  { name: "Verde", bg: "#008933", fg: "#ffffff", ink: "#008933" },
+  { name: "Amarelo", bg: "#ffd000", fg: "#000000", ink: "#8f7400" },
+  { name: "Laranja", bg: "#ff5a00", fg: "#000000", ink: "#cf4900" },
+  { name: "Magenta", bg: "#e4007c", fg: "#ffffff", ink: "#e4007c" },
+  { name: "Preto", bg: "#111111", fg: "#ffffff", ink: "#111111" },
 ];
 
 export function rideColor(index: number): RideColor {
