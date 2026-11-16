@@ -7,6 +7,7 @@
 import type { OperatorOrderDetail } from "../../../operator-kit/app/types/orderDetail";
 import type { KeyedReason } from "../../../operator-kit/app/types/reason";
 import type { CourierChargeOutdated } from "../../../operator-kit/app/presentation/courierCharge";
+import type { CourierCancelState } from "../../../operator-kit/app/presentation/courierCancel";
 
 import type { POSManagerProjection, POSTabPayload } from "./pos";
 
@@ -174,6 +175,8 @@ export interface PreorderCourier {
   can_dispatch_again?: boolean;
   /** A corrida pode ser cancelada (antes da coleta, régua da central). */
   can_cancel?: boolean;
+  /** O cancelamento pedido (`courier.cancel_state`): `pending`, `unknown` ou `failed`; vazio sem pedido. */
+  cancel_state?: CourierCancelState;
   /** O que a chamada pergunta: troco da gaveta e maquininha da casa. */
   custody?: { change_out_suggested_q: number; needs_machine: boolean; recorded: boolean };
   /** O pedido mudou depois da chamada e a corrida leva a cobrança antiga (`courier.charge_outdated`). */

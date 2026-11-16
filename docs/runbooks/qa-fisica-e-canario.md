@@ -277,7 +277,7 @@ Quem faz: o gerente, no PC ou tablet do escritório, com o **Gestor de pedidos**
 - [ ] ★ **G2.2** Pedido de retirada: o cliente chega, tocar em **Marcar como retirado**. **Confira:** o número sai do Painel de retirada (Folha 3, K5.4) e a NFC-e sai ("NFC-e sai na retirada" vira "NFC-e autorizada").
 - [ ] ★ **G2.3** Pedido de entrega: depois de Pronto, **Confira** que a DANFE imprimiu sozinha na impressora da saída ("DANFE impressa" no card). Imprimir a **Via Pedido** e grampear na sacola.
 - [ ] ★ **G2.4** Tocar em **Marcar saída para entrega** (ou **Saiu com a maquininha**) e, na volta, **Marcar como entregue**. **Confira:** o cliente vê "Saiu para entrega" e depois "Entregue".
-- [ ] **G2.5** Entrega por parceiro (se ligada): **Cotar entrega** e **Chamar entregador**. **Confira:** a corrida aparece no pedido; **Solicitar cancelamento da corrida** cancela.
+- [ ] **G2.5** Entrega por parceiro (se ligada): **Cotar entrega** e **Chamar entregador**. **Confira:** a corrida aparece no pedido; **Cancelar corrida** pede a confirmação (um toque não cancela) e, confirmado, mostra "Pedido de cancelamento enviado. Esperando a TaOn confirmar." até a corrida sair da tela.
 - [ ] **G2.6** Entrega paga na entrega: na volta, em **Acerto da entrega**, informar o **Valor recebido** e **Confirmar acerto**.
 
 ### G3. Pedido iFood

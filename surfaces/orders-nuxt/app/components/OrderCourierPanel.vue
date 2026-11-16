@@ -29,6 +29,7 @@ import type {
 } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
 import { useRideQuote } from "~/composables/useRideQuote";
+import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
 
@@ -61,7 +62,8 @@ const emit = defineEmits<{
       machine: string;
     },
   ];
-  cancel: [];
+  /** Confirmado: depois do aceite vem com o motivo escolhido (`reason_id` da TaOn). */
+  cancel: [reasonId?: number];
   dispatchAgain: [];
   dismissReminder: [];
   dismissQuoteError: [];
@@ -84,7 +86,9 @@ const currentStep = computed(
     steps.value.at(-1)?.key,
 );
 
-// Cancelar corrida é irreversível para a solicitação em curso → confirm de 1 toque.
+// Cancelar corrida é irreversível para a solicitação em curso: o primeiro toque
+// só ARMA a confirmação (`CourierCancelConfirm`, a mesma da seção Entregas); o
+// segundo confirma e, depois do aceite, já é o motivo. Um toque nunca cancela.
 const confirmingCancel = ref(false);
 watch(
   () => JSON.stringify(props.cancelAction?.payload_schema),
@@ -93,17 +97,35 @@ watch(
   },
 );
 function requestCancel() {
-  if (!confirmingCancel.value) {
-    confirmingCancel.value = true;
-    return;
-  }
+  confirmingCancel.value = true;
+}
+function confirmCancel(reasonId?: number) {
   confirmingCancel.value = false;
-  emit("cancel");
+  emit("cancel", reasonId);
 }
 
+// O cancelamento pedido (`courier.cancel_state`): espera, dúvida ou recusa da
+// TaOn. Dispensável, e volta quando o estado muda (a recusa não é a espera).
+const cancelState = computed(() =>
+  courierCancelNotice(
+    props.courier.cancel_state?.state,
+    props.courier.cancel_state?.message,
+  ),
+);
+const cancelDismissedFor = ref("");
+const cancelStateKey = computed(
+  () =>
+    `${props.courier.cancel_state?.state ?? ""}:${props.courier.cancel_state?.at ?? ""}`,
+);
+const showCancelState = computed(
+  () =>
+    Boolean(cancelState.value) &&
+    cancelDismissedFor.value !== cancelStateKey.value,
+);
+
 // O pedido mudou depois da chamada e a corrida leva a cobrança antiga (P2-28): o
-// aviso amarelo leva o "Solicitar cancelamento", que arma a MESMA confirmação de
-// baixo; cancelada a corrida, o "Chamar entregador" de sempre leva a cobrança nova.
+// aviso amarelo leva o "Cancelar corrida", que arma a MESMA confirmação de baixo;
+// cancelada a corrida, o "Chamar entregador" de sempre leva a cobrança nova.
 const chargeNotice = computed(() =>
   courierChargeNotice(props.courier.charge_outdated, { cancelHere: true }),
 );
@@ -117,7 +139,7 @@ const chargeOffersCancel = computed(
 const chargeActions = computed(() => [
   chargeOffersCancel.value &&
     !confirmingCancel.value && {
-      label: "Solicitar cancelamento",
+      label: props.cancelAction?.label || "Cancelar corrida",
       icon: "i-lucide-ban",
       disabled: props.busy || !props.cancelAction?.enabled,
       onClick: requestCancel,
@@ -465,6 +487,19 @@ const vehicle = computed(() =>
           </template>
         </NuxtAlert>
 
+        <!-- o cancelamento pedido: esperando a TaOn, sem resposta, ou recusado -->
+        <NuxtAlert
+          v-if="showCancelState && cancelState"
+          :color="cancelState.color"
+          variant="subtle"
+          :icon="cancelState.icon"
+          :title="cancelState.message"
+          close
+          role="status"
+          data-courier-cancel-state
+          @update:open="cancelDismissedFor = cancelStateKey"
+        />
+
         <!-- falha terminal do despacho (Machine recusou / dados) -->
         <NuxtAlert
           v-else-if="courier.error"
@@ -761,23 +796,25 @@ const vehicle = computed(() =>
             @click="emit('quote')"
           />
           <NuxtButton
-            v-if="
-              courier.can_cancel && (!chargeOffersCancel || confirmingCancel)
-            "
+            v-if="courier.can_cancel && !chargeOffersCancel && !confirmingCancel"
             type="button"
             :disabled="busy || !cancelAction?.enabled"
+            :title="cancelAction?.reason || undefined"
             icon="i-lucide-ban"
-            :label="
-              confirmingCancel
-                ? 'Confirmar solicitação?'
-                : 'Solicitar cancelamento'
-            "
+            :label="cancelAction?.label || 'Cancelar corrida'"
             color="error"
             variant="outline"
-            @blur="confirmingCancel = false"
+            data-courier-cancel
             @click="requestCancel"
           />
         </div>
+        <CourierCancelConfirm
+          v-if="courier.can_cancel && confirmingCancel && cancelAction"
+          :action="cancelAction"
+          :busy="busy"
+          @confirm="confirmCancel"
+          @keep="confirmingCancel = false"
+        />
       </template>
     </div>
   </NuxtCard>

@@ -25,7 +25,7 @@ export const COURIER_CHARGE_TITLE = "O pedido mudou depois da chamada";
 
 /**
  * O aviso, ou `null` quando a corrida leva a cobrança certa. `cancelHere`: a tela
- * tem o "Solicitar cancelamento" (o Gestor); no PDV, ele mora no Gestor.
+ * tem o "Cancelar corrida" (o Gestor); no PDV, ele mora no Gestor.
  */
 export function courierChargeNotice(
   outdated: CourierChargeOutdated | null | undefined,
