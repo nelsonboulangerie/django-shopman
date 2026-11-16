@@ -18,6 +18,9 @@ base `docs/coordination/ROUNDS/EXCELENCIA-base.md`. Medido em 16/11/2026 contra 
 - **14 WPs em 6 ondas**. O primeiro a delegar é o **WP-G01** (a encomenda se anuncia), junto
   com o **WP-G00** (harness de operador de verdade).
 - **4 decisões do dono**, no fim.
+- **O que este PR deixou de fora tem issue**: execução do plano (#2546), o lado de fronteira do
+  P0 (#2547), o pedido de hoje com hora combinada (#2548), as demais fronteiras (#2549) e as
+  jornadas ainda não percorridas pela UI (#2550).
 
 ## 1. Como foi medido, e o que a medição não cobre
 
@@ -139,7 +142,7 @@ deixar Painel, Fila, Tabela, lista de Encomendas, sino e detalhe lerem dali.
 
 O conserto tem dois lados. **No perímetro** (WP-G08): a projection deriva, na leitura, a
 saúde da reserva de cada pedido aceito e publica `promise_risk` com a ação ao lado. **Na
-fronteira** (F-6): o cancelamento do lote vira fato do pedido (evento e alerta), para o aviso
+fronteira** (F-6, #2547): o cancelamento do lote vira fato do pedido (evento e alerta), para o aviso
 chegar por push, e não só quando alguém olhar o painel.
 
 ### 4.3 P1 no perímetro
@@ -633,7 +636,7 @@ nenhuma das quatro tem resposta escrita.
    Bloqueia o WP-G07.
 
 Uma decisão de fronteira fica registrada sem bloquear este plano: **o pedido de hoje com hora
-combinada deve esperar a hora da Cozinha, como a encomenda?** (F-5). Recomendo sim; é frente
+combinada deve esperar a hora da Cozinha, como a encomenda?** (F-5, #2548). Recomendo sim; é frente
 do `lifecycle`, e o WP-G02 já mostra a hora no cartão para o que existe hoje.
 
 ## 11. Benchmarks
