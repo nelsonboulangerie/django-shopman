@@ -18,14 +18,14 @@ interface Step {
 const happy: Step[] = [
   {
     n: "0", moment: "call", title: "A chamada chega",
-    when: "O balcão envia a corrida. A primeira de um entregador novo vai pelo link no WhatsApp; com a página instalada, chega como aviso.",
+    when: "O balcão envia a corrida. Com vários pedidos o aviso diz \"Rota A\"; com um só, o código do pedido (\"Pedido B12\"). A primeira de um entregador novo vai pelo link no WhatsApp.",
     tap: "Nenhum: tocar no aviso só abre.",
     gestor: "Corrida A · Diego avisado às 12h31.",
     cliente: "Nada muda.",
   },
   {
     n: "1", moment: "pickup", title: "Na loja: conferir e sair",
-    when: "Celular a menos de 60 m da loja. Cada pedido diz se está pronto; um troco por linha, do pedido que precisa dele.",
+    when: "Celular a menos de 60 m da loja. Um bloco por pedido, o código sempre à esquerda e no mesmo peso; dentro dele, as sacolas e o que vai junto (troco ou maquininha).",
     tap: "Saí da loja.",
     gestor: "Diego chegou à loja. Ao tocar Saí: A47 e C03 saem para entrega.",
     cliente: "\"Diego está a caminho. Deve chegar por volta de 12h46.\"",
@@ -119,6 +119,14 @@ const detours: Step[] = [
   },
 ];
 
+const typeScale = [
+  { name: "display", spec: "40 · 900", sample: "R$ 58,00", cls: "text-[40px] font-black leading-[1.05] tracking-tight text-highlighted" },
+  { name: "title", spec: "24 · 800", sample: "Leve da loja", cls: "text-[24px] font-extrabold leading-tight text-highlighted" },
+  { name: "ref", spec: "20 · 800", sample: "A47", cls: "text-[20px] font-extrabold tabular-nums text-highlighted" },
+  { name: "body", spec: "18 · 500", sample: "2 sacolas", cls: "text-[18px] font-medium leading-snug text-highlighted" },
+  { name: "meta", spec: "15 · 500", sample: "Faltam 2 · chega 12h46", cls: "text-[15px] font-medium leading-snug text-muted" },
+];
+
 const sections = [
   { title: "O caminho feliz: 3 toques numa corrida de duas entregas", steps: happy },
   { title: "Quando sai do roteiro: um toque a mais só na exceção", steps: detours },
@@ -134,12 +142,12 @@ const fixes = [
   "Não consegui mandava seguir cedo: 3 minutos de espera enquanto a loja liga, e o motivo \"Pedido com problema\".",
   "Portaria e condomínio: torre e a instrução do cliente sem edição; \"Deixei na portaria\" só em pedido já pago.",
   "Pedido que atrasa: cada linha diz se está pronta, e o botão só aparece com tudo pronto.",
-  "Troco somado: um troco por linha, do pedido que precisa dele.",
+  "Troco somado: o troco e a maquininha vão dentro do bloco do pedido que precisa deles.",
   "Ordem trocada: a porta é a parada aberta mais perto; \"Falta 1\" no lugar de \"1 de 2\".",
   "Link encaminhado: preso ao primeiro celular que abre; os outros veem \"Esta corrida está aberta em outro celular.\"",
   "Esqueceu de tocar Saí: fora da loja por 1 minuto, aviso a ele e ao Gestor; nunca automático.",
   "Balcão não fechou: a corrida seguinte começa com \"Antes: entregue R$ 100,00 da corrida A no caixa.\"",
-  "Maquininha com bolinha azul confundia com a corrida A: agora vai só pelo nome, \"Maquininha Azul\".",
+  "Maquininha com bolinha azul confundia com a rota A: agora vai só pelo nome, \"Maquininha Azul\".",
   "Fonte grande ou tela de 360 px: o botão principal fica preso no rodapé, e o resto rola.",
   "Noite: tema escuro sozinho depois do pôr do sol, na direção e na porta.",
   "Ruído: saíram o \"combinado até\" da porta, o \"Você recebe\" repetido na loja, o mapa da volta e a nota \"os endereços somem\".",
@@ -154,7 +162,7 @@ const fixes = [
         <main class="mx-auto flex w-full max-w-[1440px] flex-col gap-8 px-8 py-8">
           <header class="flex flex-col gap-1">
             <MsPreviewNav :current="5" />
-            <h1 class="op-title font-semibold text-highlighted">Prévia 5 · A corrida do entregador da casa, em hiperfoco (revisada)</h1>
+            <h1 class="op-title font-semibold text-highlighted">Prévia 5 · A corrida do entregador da casa, em hiperfoco (linguagem do Painel)</h1>
             <p class="op-body text-toned">
               Uma tela por momento, e a tela muda sozinha quando o momento muda: na loja, dirigindo (carro ou moto), na porta. Em cada uma, só o
               que importa ali. O caminho feliz custa <strong class="text-highlighted">3 toques</strong>; cada exceção custa no máximo um a mais, e só
@@ -165,6 +173,34 @@ const fixes = [
               iguais é contorno. Nada verde: verde seria o resultado, não o gesto.
             </p>
           </header>
+
+          <section class="flex flex-col gap-4">
+            <h2 class="op-title text-highlighted">A linguagem, com rigor: só estas peças</h2>
+            <div class="flex flex-wrap items-start gap-8">
+              <div class="flex w-[420px] flex-col gap-3 rounded-2xl bg-default p-5 ring-1 ring-default">
+                <p class="op-micro font-semibold text-muted">Texto: 5 estilos, e só eles</p>
+                <p v-for="t in typeScale" :key="t.name" class="flex items-baseline justify-between gap-4">
+                  <span :class="t.cls">{{ t.sample }}</span>
+                  <span class="op-micro shrink-0 text-muted">{{ t.name }} · {{ t.spec }}</span>
+                </p>
+              </div>
+              <div class="flex w-[420px] flex-col gap-3 rounded-2xl bg-default p-5 ring-1 ring-default">
+                <p class="op-micro font-semibold text-muted">Superfície: 3 tons, sem borda nem fio</p>
+                <div class="rounded-2xl bg-default p-4 ring-1 ring-default"><span class="op-body text-toned">Tela · o fundo</span></div>
+                <div class="rounded-2xl bg-elevated p-4"><span class="op-body text-toned">Bloco · um pedido, uma escolha, um recado</span></div>
+                <div class="rounded-2xl bg-inverted p-4"><span class="op-body text-inverted">Forte · o botão principal e o aviso que passa na frente</span></div>
+                <div class="rounded-2xl border-s-[6px] border-inverted bg-elevated p-4"><span class="op-body text-toned">Fio grosso · só o dinheiro da porta</span></div>
+              </div>
+              <div class="flex w-[420px] flex-col gap-2 rounded-2xl bg-default p-5 ring-1 ring-default op-body text-toned">
+                <p class="op-micro font-semibold text-muted">Regras</p>
+                <p>· O código do pedido é sempre o mesmo estilo, à esquerda do bloco dele. O que pertence a um pedido mora dentro do bloco dele.</p>
+                <p>· Um "display" por tela: a coisa que ele precisa ver de longe.</p>
+                <p>· Espaço: 20 px na borda, 16 px dentro do bloco, 12 px entre blocos, 28 px entre grupos.</p>
+                <p>· Os tons são os do Painel do Gestor; à noite viram o tema escuro sozinhos.</p>
+                <p>· A cor da rota só no quadrado da letra e na linha do mapa.</p>
+              </div>
+            </div>
+          </section>
 
           <section v-for="sec in sections" :key="sec.title" class="flex flex-col gap-4">
             <h2 class="op-title text-highlighted">{{ sec.title }}</h2>
