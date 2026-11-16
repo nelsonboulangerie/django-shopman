@@ -3,7 +3,7 @@
 Este arquivo não se executa sozinho. Cada app tem o seu brief (`EXCELENCIA-<app>.md`), que
 aponta para cá e diz o perímetro, as fronteiras e o foco daquele app.
 
-Compromisso: DEV-2026-026. Modelo: Fable 5.2, esforço `high`. Nenhum código de produção.
+Compromisso: DEV-2026-028. Modelo: Fable 5.2, esforço `high`. Nenhum código de produção.
 
 ## O objetivo
 

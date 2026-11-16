@@ -1,6 +1,6 @@
 # CONCIERGE-R3: plano de ação da Concierge em pacotes delegáveis
 
-Compromisso: DEV-2026-025. Modelo: Fable 5.2, esforço `high`. Nenhum código de produção.
+Compromisso: DEV-2026-026. Modelo: Fable 5.2, esforço `high`. Nenhum código de produção.
 
 ## Tarefa
 
