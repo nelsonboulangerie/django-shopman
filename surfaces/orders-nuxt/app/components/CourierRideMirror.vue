@@ -2,7 +2,7 @@
 // O ESPELHO da corrida: uma linha que diz o momento dela e, quando o gesto é de
 // quem está no balcão, o botão pronto. Mora na parte "Corridas" da página Entregas
 // (e, no próximo passo, no Painel). Tocar na linha abre o detalhe da corrida
-// (`/deliveries?ride=N`).
+// (`/deliveries?ride=<chave da corrida>`).
 import type { DeliveryRideProjection } from "~/generated/ordersContract";
 import { rideColor } from "~/presentation/ridePalette";
 import { beforeHandoff, bagsWord, rideLine } from "~/presentation/deliveries";
@@ -16,7 +16,7 @@ const showBags = computed(() => beforeHandoff(props.ride));
 
 <template>
   <NuxtLink
-    :to="{ path: '/deliveries', query: { ride: String(ride.number) } }"
+    :to="{ path: '/deliveries', query: { ride: ride.key } }"
     class="group flex items-center gap-3 rounded-xl border border-default bg-default py-2.5 pr-2.5 pl-3 shadow-xs transition hover:border-accented hover:shadow-sm focus-visible:outline-2 focus-visible:outline-primary"
     :style="{ borderLeft: `6px solid ${tone.bg}` }"
     data-ride-mirror

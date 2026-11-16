@@ -2521,6 +2521,121 @@ def _station_device_agent(request) -> dict:
 # ── Order action endpoints ────────────────────────────────────────────
 
 
+def _intention_scope(request, operation: str, resource: str) -> str:
+    """O escopo de uma intenção: a pessoa, a operação e o recurso (o pedido, ou "" na corrida em grupo)."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": f"orders.{operation}", "ref": resource})
+
+
+def _intention_response(request, *, operation, resource, inputs, execute, prepare=None, base=None, finish=None,
+                        where="o pedido"):
+    """O protocolo de intenção das ações de operador, num lugar só.
+
+    Quem age é quem a tela leu (``expected_actor_id``), sobre o que a tela leu
+    (``base``: a ``base_revision`` do corpo, ou o que a view passar, como o mapa
+    de revisões de uma corrida de vários pedidos), uma vez só
+    (``Idempotency-Key``): repetir a mesma chave devolve o mesmo resultado, com
+    ``replayed``. ``execute(base)`` grava e devolve o que acrescentar à resposta;
+    as recusas de negócio viram recibo ``not_applied`` no dialeto canônico.
+    ``prepare`` roda antes de qualquer gravação e só na primeira vez; ``finish``
+    acrescenta leitura fresca à resposta (nunca ao recibo). ``resource`` é o
+    pedido da ação, ou "" quando ela é de vários; ``where`` é como a mensagem
+    chama o que o operador precisa atualizar.
+    """
+    from shopman.shop.services.operator_orders import OrderStateConflict
+    from shopman.shop.services.remote_mutations import (
+        RemoteMutationConflict,
+        RemoteMutationInProgress,
+        lookup_local_mutation,
+        mutation_fingerprint,
+        run_idempotent_mutation,
+    )
+
+    if request.data.get("expected_actor_id") != request.user.pk:
+        return Response({"detail": f"A identificação mudou. Atualize {where} antes de gravar.", "code": "actor_changed"}, status=409)
+    key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
+    if base is None:
+        base = str(request.data.get("base_revision") or "")
+    if not key or len(key) > 128 or not base:
+        return Response({"detail": f"Esta tela está desatualizada. Atualize {where} e tente de novo.", "code": "intention_required"}, status=400)
+    scope = _intention_scope(request, operation, resource)
+    fingerprint = mutation_fingerprint({"scope": scope, "base": base, "inputs": inputs})
+
+    def apply():
+        try:
+            extra = execute(base) or {}
+        except (OrderStateConflict, OrderConflict) as exc:
+            body = {"detail": str(exc), "outcome": "not_applied", "intention": key}
+            # Conflito nomeado (``revision_changed`` da corrida): o código onde as
+            # telas o procuram e, no dialeto canônico, o que mudou em ``errors``.
+            code = getattr(exc, "code", "")
+            if code:
+                body.update({"code": code, "error": {"code": code, "message": str(exc)}})
+            errors = getattr(exc, "errors", None)
+            if errors:
+                body["errors"] = errors
+            return body, 409
+        except notification_service.NotificationResendRefused as exc:
+            return {"detail": exc.message, "error": {"code": exc.code, "message": exc.message}, "outcome": "not_applied", "intention": key}, exc.status
+        except OrderError as exc:
+            body = {"detail": str(exc), "outcome": "not_applied", "intention": key}
+            # Recusa de campo (reagendar: ``date``/``slot``) sai no dialeto
+            # canônico ``{detail, field, errors}`` para a tela apontar a entrada.
+            field = getattr(exc, "field", "")
+            if field:
+                body.update({"field": field, "errors": {field: [str(exc)]}})
+            code = getattr(exc, "code", "")
+            if code:
+                body["code"] = code
+                # O mesmo código onde as telas de operador o procuram
+                # (``httpErrorCode`` lê ``error.code``).
+                body["error"] = {"code": code, "message": str(exc)}
+            return body, 400
+        return {"ok": True, **({"ref": resource} if resource else {}), "outcome": "applied", "intention": key, **extra}, 200
+
+    try:
+        result = lookup_local_mutation(scope=scope, key=key, fingerprint=fingerprint)
+        if result is None:
+            # Provider reads and approval checks precede the local transaction.
+            # A committed replay never repeats this preparation.
+            if prepare is not None:
+                refusal = prepare()
+                if refusal is not None:
+                    # O preparo roda ANTES de qualquer gravação: recusa aqui nunca
+                    # aplicou nada, e a tela precisa saber disso para liberar a
+                    # intenção. Sem o carimbo, um 503 (iFood fora do ar ao ler os
+                    # motivos) parecia "talvez gravou", o recibo dizia
+                    # "desconhecido" e a tela prendia a intenção até o F5 — foi
+                    # assim que um cancelamento travou na homologação de 21/09.
+                    if isinstance(refusal.data, dict):
+                        refusal.data.setdefault("outcome", "not_applied")
+                        refusal.data.setdefault("intention", key)
+                    return refusal
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=apply)
+    except RemoteMutationConflict as exc:
+        return Response({"detail": str(exc), "code": "intention_conflict"}, status=409)
+    except RemoteMutationInProgress:
+        return Response({"outcome": "in_progress", "intention": key}, status=202)
+    return Response({**result.response_body, "replayed": result.replayed, **(finish() if finish else {})}, status=result.response_code)
+
+
+def _intention_receipt(request, *, operation, resource):
+    """A consulta pura do resultado de uma intenção (``GET ?idempotency_key=``): nunca executa nada."""
+    from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
+
+    key = str(request.query_params.get("idempotency_key") or "")
+    if not operation or not key or len(key) > 128:
+        return Response({"detail": "Intenção indisponível."}, status=400)
+    try:
+        result = lookup_local_mutation(scope=_intention_scope(request, operation, resource), key=key)
+    except RemoteMutationInProgress:
+        result = None
+    if result is None:
+        return Response({"outcome": "unknown", "intention": key}, status=202)
+    return Response({**result.response_body, "replayed": True}, status=result.response_code)
+
+
 class _OrderActionBase(OperationalObservationMixin, APIView):
     """Shared base for order action endpoints (advance/confirm/reject/cancel)."""
 
@@ -2528,92 +2643,17 @@ class _OrderActionBase(OperationalObservationMixin, APIView):
     required_permission = "shop.manage_orders"
 
     def _context_response(self, request, order, operation, inputs, execute, *, prepare=None):
-        from shopman.shop.services.operator_orders import OrderStateConflict
-        from shopman.shop.services.remote_mutations import (
-            RemoteMutationConflict,
-            RemoteMutationInProgress,
-            lookup_local_mutation,
-            mutation_fingerprint,
-            run_idempotent_mutation,
+        def with_order():
+            order.refresh_from_db()
+            return {"order": projection_data(build_operator_order(order, user=request.user))}
+
+        return _intention_response(
+            request, operation=operation, resource=order.ref, inputs=inputs, execute=execute,
+            prepare=prepare, finish=with_order,
         )
-
-        if request.data.get("expected_actor_id") != request.user.pk:
-            return Response({"detail": "A identificação mudou. Atualize o pedido antes de gravar.", "code": "actor_changed"}, status=409)
-        key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
-        base = str(request.data.get("base_revision") or "")
-        if not key or len(key) > 128 or not base:
-            return Response({"detail": "Esta tela está desatualizada. Atualize o pedido e tente de novo.", "code": "intention_required"}, status=400)
-        scope = mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": f"orders.{operation}", "ref": order.ref})
-        fingerprint = mutation_fingerprint({"scope": scope, "base": base, "inputs": inputs})
-
-        def apply():
-            try:
-                extra = execute(base) or {}
-            except (OrderStateConflict, OrderConflict) as exc:
-                return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 409
-            except notification_service.NotificationResendRefused as exc:
-                return {"detail": exc.message, "error": {"code": exc.code, "message": exc.message}, "outcome": "not_applied", "intention": key}, exc.status
-            except OrderError as exc:
-                body = {"detail": str(exc), "outcome": "not_applied", "intention": key}
-                # Recusa de campo (reagendar: ``date``/``slot``) sai no dialeto
-                # canônico ``{detail, field, errors}`` para a tela apontar a entrada.
-                field = getattr(exc, "field", "")
-                if field:
-                    body.update({"field": field, "errors": {field: [str(exc)]}})
-                code = getattr(exc, "code", "")
-                if code:
-                    body["code"] = code
-                    # O mesmo código onde as telas de operador o procuram
-                    # (``httpErrorCode`` lê ``error.code``).
-                    body["error"] = {"code": code, "message": str(exc)}
-                return body, 400
-            return {"ok": True, "ref": order.ref, "outcome": "applied", "intention": key, **extra}, 200
-
-        try:
-            result = lookup_local_mutation(scope=scope, key=key, fingerprint=fingerprint)
-            if result is None:
-                # Provider reads and approval checks precede the local transaction.
-                # A committed replay never repeats this preparation.
-                if prepare is not None:
-                    refusal = prepare()
-                    if refusal is not None:
-                        # O preparo roda ANTES de qualquer gravação: recusa aqui nunca
-                        # aplicou nada, e a tela precisa saber disso para liberar a
-                        # intenção. Sem o carimbo, um 503 (iFood fora do ar ao ler os
-                        # motivos) parecia "talvez gravou", o recibo dizia
-                        # "desconhecido" e a tela prendia a intenção até o F5 — foi
-                        # assim que um cancelamento travou na homologação de 21/09.
-                        if isinstance(refusal.data, dict):
-                            refusal.data.setdefault("outcome", "not_applied")
-                            refusal.data.setdefault("intention", key)
-                        return refusal
-                result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=apply)
-        except RemoteMutationConflict as exc:
-            return Response({"detail": str(exc), "code": "intention_conflict"}, status=409)
-        except RemoteMutationInProgress:
-            return Response({"outcome": "in_progress", "intention": key}, status=202)
-        order.refresh_from_db()
-        return Response({**result.response_body, "replayed": result.replayed, "order": projection_data(build_operator_order(order, user=request.user))}, status=result.response_code)
 
     def get(self, request, ref: str):
-        from shopman.shop.services.remote_mutations import (
-            RemoteMutationInProgress,
-            lookup_local_mutation,
-            mutation_fingerprint,
-        )
-
-        operation = getattr(self, "intention_operation", "")
-        key = str(request.query_params.get("idempotency_key") or "")
-        if not operation or not key or len(key) > 128:
-            return Response({"detail": "Intenção indisponível."}, status=400)
-        scope = mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": f"orders.{operation}", "ref": ref})
-        try:
-            result = lookup_local_mutation(scope=scope, key=key)
-        except RemoteMutationInProgress:
-            result = None
-        if result is None:
-            return Response({"outcome": "unknown", "intention": key}, status=202)
-        return Response({**result.response_body, "replayed": True}, status=result.response_code)
+        return _intention_receipt(request, operation=getattr(self, "intention_operation", ""), resource=ref)
 
     def _get_order(self, ref: str):
         order = orders_service.find_order(ref)
@@ -4353,16 +4393,29 @@ class OrderCourierDispatchView(_OrderActionBase):
         if change_out is not None and not isinstance(change_out, str | int | float):
             return Response({"detail": "Troco inválido."}, status=400)
         change_out = None if change_out is None else str(change_out)
+        # O número (letra e cor) que a tela mostrava para esta corrida, quando a
+        # chamada vem das Entregas; vale se ainda estiver livre.
+        ride_number, valid = _ride_number_input(request.data)
+        if not valid:
+            return Response({"detail": "Número de corrida inválido.", "field": "ride_number",
+                             "errors": {"ride_number": ["Número de corrida inválido."]}}, status=400)
 
         def enqueue(base):
+            from shopman.shop.services import courier
+
             task = orders_service.courier_dispatch(
                 order, actor=_actor(request), expected_revision=base, operator=request.user,
-                change_out_raw=change_out, equipment=equipment,
+                change_out_raw=change_out, equipment=equipment, ride_number=ride_number,
             )
-            return {"directive_id": task.pk, "status": task.status}
+            order.refresh_from_db()
+            number = courier.get_block(order).get("ride_number")
+            return {"directive_id": task.pk, "status": task.status,
+                    "ride_number": number, "ride_letter": courier.ride_letter(number)}
 
-        return self._context_response(request, order, self.intention_operation,
-            {"change_out": change_out, "equipment": equipment}, enqueue)
+        inputs = {"change_out": change_out, "equipment": equipment}
+        if ride_number is not None:
+            inputs["ride_number"] = ride_number
+        return self._context_response(request, order, self.intention_operation, inputs, enqueue)
 
 
 @extend_schema_view(
@@ -4581,29 +4634,71 @@ class OrderVolumeCheckView(APIView):
         })
 
 
+def _ride_number_input(data) -> tuple[int | None, bool]:
+    """O número de corrida que a tela mostrava (``ride_number``): ``(valor, válido)``."""
+    from shopman.shop.services import courier
+
+    value = data.get("ride_number")
+    if value is None:
+        return None, True
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= courier.RIDE_LETTERS:
+        return None, False
+    return value, True
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
         summary="One courier ride for several orders (one stop per order)",
-        responses={200: OpenApiResponse(description="Ride dispatch queued.")},
+        responses={
+            200: OpenApiResponse(description="Ride dispatch queued (or already called)."),
+            409: OpenApiResponse(description="An order changed since the screen read it (revision_changed)."),
+        },
+    ),
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Read the committed result of a courier ride intention",
+        responses={200: OpenApiResponse(description="Committed result."),
+                   202: OpenApiResponse(description="No committed result yet.")},
     ),
 )
-class OrderCourierRideView(APIView):
+class OrderCourierRideView(OperationalObservationMixin, APIView):
     """Uma corrida da TaOn para vários pedidos: uma solicitação, uma parada por pedido.
+
+    Passa pelo protocolo de intenção, como a chamada de um pedido só
+    (``courier-dispatch``): ``expected_actor_id`` (quem a tela leu), uma
+    ``Idempotency-Key`` por corrida e ``base_revisions`` (``{ref:
+    courier.dispatch_revision}``, o que a tela leu de CADA pedido), conferidas
+    com os pedidos travados antes de gravar. A projeção entrega isso pronto na
+    ação ``courier-ride`` (``group_action`` das Entregas, ``ride_action`` do
+    Painel e do detalhe).
 
     ``refs``: os pedidos, de 2 a ``courier.MAX_RIDE_STOPS``, cada um podendo ser
     chamado sozinho (``courier.group_refusal``). A custódia vem junto, como na
     chamada de um pedido: ``change_out`` é ``{ref: "20,00"}`` para os pedidos
     que pedem troco, e ``machine`` a maquininha da corrida (uma só, para todos
-    os pedidos de cartão). A recusa diz qual pedido e por quê. Pedir de novo a
-    mesma corrida é recusado (a tarefa já está na fila).
+    os pedidos de cartão). ``ride_number`` é o número que a tela mostrava; vale
+    se ainda estiver livre, e a resposta diz o que ficou (``ride_number`` e
+    ``ride_letter``).
+
+    Recusas: pedido que mudou devolve 409 ``revision_changed`` com
+    ``errors{ref}``; as de negócio dizem qual pedido e por quê. Repetir a mesma
+    chave devolve o mesmo resultado (``replayed``); a corrida que já existe com
+    estes mesmos pedidos conta como feita (``already_called``).
+    ``GET ?idempotency_key=`` lê o resultado sem executar nada.
     """
 
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
+    intention_operation = "courier-ride"
+
+    def get(self, request):
+        return _intention_receipt(request, operation=self.intention_operation, resource="")
 
     def post(self, request):
         from shopman.orderman.models import Order
+
+        from shopman.shop.services import courier
 
         refs = request.data.get("refs")
         if not isinstance(refs, list) or any(not isinstance(ref, str) or not ref.strip() for ref in refs):
@@ -4613,26 +4708,59 @@ class OrderCourierRideView(APIView):
         if not isinstance(change_out, dict) or any(
             not isinstance(value, str | int | float) for value in change_out.values()
         ):
-            return Response({"detail": "Troco inválido.", "field": "change_out"}, status=400)
+            return Response({"detail": "Troco inválido.", "field": "change_out",
+                             "errors": {"change_out": ["Troco inválido."]}}, status=400)
         machine = request.data.get("machine") or ""
         if not isinstance(machine, str):
-            return Response({"detail": "Maquininha inválida.", "field": "machine"}, status=400)
+            return Response({"detail": "Maquininha inválida.", "field": "machine",
+                             "errors": {"machine": ["Maquininha inválida."]}}, status=400)
+        ride_number, valid = _ride_number_input(request.data)
+        if not valid:
+            return Response({"detail": "Número de corrida inválido.", "field": "ride_number",
+                             "errors": {"ride_number": ["Número de corrida inválido."]}}, status=400)
         refs = list(dict.fromkeys(ref.strip()[:64] for ref in refs))
-        orders = list(Order.objects.filter(ref__in=refs))
-        by_ref = {order.ref: order for order in orders}
-        if len(by_ref) != len(refs):
-            return Response({"detail": "Algum pedido não existe mais. Atualize a fila."}, status=409)
-        try:
-            task = orders_service.courier_group_dispatch(
-                [by_ref[ref] for ref in refs], actor=_actor(request), operator=request.user,
-                change_out_raw={str(ref): str(value) for ref, value in change_out.items()}, machine=machine.strip(),
-            )
-        except orders_service.OrderChangeOutRequired as exc:
-            return Response({"detail": str(exc), "code": "change_out_required", "suggested_q": exc.suggested_q},
-                            status=409)
-        except OrderError as exc:
-            return Response({"detail": str(exc)}, status=409)
-        return Response({"directive_id": task.pk, "status": task.status, "refs": refs})
+        revisions = request.data.get("base_revisions")
+        if not isinstance(revisions, dict):
+            revisions = {}
+        # Só as revisões dos pedidos desta corrida; faltou uma, a tela está velha.
+        base = {ref: revisions[ref] for ref in refs if isinstance(revisions.get(ref), str) and revisions[ref]}
+        if len(base) != len(refs):
+            base = None
+        change_out = {str(ref): str(value) for ref, value in change_out.items()}
+        machine = machine.strip()
+        found: dict[str, Order] = {}
+
+        def prepare():
+            found.update({order.ref: order for order in Order.objects.filter(ref__in=refs)})
+            if len(found) != len(refs):
+                return Response({"detail": "Algum pedido não existe mais. Atualize a fila."}, status=409)
+            return None
+
+        def enqueue(expected):
+            if not found and prepare() is not None:
+                raise OrderConflict("Algum pedido não existe mais. Atualize a fila.")
+            orders = [found[ref] for ref in refs]
+            try:
+                task = orders_service.courier_group_dispatch(
+                    orders, actor=_actor(request), operator=request.user, change_out_raw=change_out,
+                    machine=machine, expected_revisions=expected, ride_number=ride_number,
+                )
+            except orders_service.OrderRideAlreadyCalled as exc:
+                # A corrida pedida já existe com estes mesmos pedidos (outro
+                # dispositivo, ou a tela que perdeu a resposta): é o que o
+                # operador queria. Nada é gravado de novo, nem troco nem maquininha.
+                return {"refs": refs, "already_called": True, "detail": str(exc),
+                        **({"directive_id": exc.directive_id} if exc.directive_id else {}),
+                        "ride_number": exc.ride_number, "ride_letter": courier.ride_letter(exc.ride_number)}
+            number = courier.get_block(Order.objects.get(ref=task.payload["order_ref"])).get("ride_number")
+            return {"refs": refs, "directive_id": task.pk, "status": task.status,
+                    "ride_number": number, "ride_letter": courier.ride_letter(number)}
+
+        return _intention_response(
+            request, operation=self.intention_operation, resource="", base=base or "",
+            inputs={"refs": refs, "change_out": change_out, "machine": machine, "ride_number": ride_number},
+            execute=enqueue, prepare=prepare, where="a fila",
+        )
 
 
 class OrderCourierRideQuoteView(APIView):

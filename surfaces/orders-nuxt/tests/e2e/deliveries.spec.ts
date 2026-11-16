@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 // A seção Entregas contra o mock: duas corridas na rua (números 1 e 2) e três entregas
 // aguardando. Decisão do dono (16/11/2026): corrida se nomeia por LETRA em toda tela;
-// o número só escolhe a cor e vai na URL (`?ride=`).
+// o número só escolhe a cor, e a URL do detalhe leva a chave da corrida (`?ride=<chave>`).
 test.describe("Entregas: corrida por letra", () => {
   test.use({ viewport: { width: 1360, height: 900 } });
 
@@ -30,8 +30,8 @@ test.describe("Entregas: corrida por letra", () => {
     await expect(page.getByText(/[Cc]orrida \d/)).toHaveCount(0);
   });
 
-  test("o detalhe abre pelo número na URL e se apresenta pela letra", async ({ page }) => {
-    await page.goto("/deliveries?ride=2");
+  test("o detalhe abre pela chave na URL e se apresenta pela letra", async ({ page }) => {
+    await page.goto("/deliveries?ride=776753358");
     const detail = page.locator("[data-ride-detail]");
     await expect(detail.getByText("Corrida B · Em rota", { exact: true })).toBeVisible();
     await expect(page.getByRole("dialog", { name: "Corrida B" })).toBeVisible();

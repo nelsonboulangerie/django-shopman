@@ -174,7 +174,7 @@ const DETAIL_EXTRA = {
 
 // A seção Entregas: três entregas aguardando e duas corridas na rua (A a caminho da
 // loja, B em rota). Sem chave do Google Maps: o mapa é o desenho próprio. O número da
-// corrida escolhe a cor; o que a tela escreve é a LETRA (`letter`).
+// corrida escolhe a cor; o que a tela escreve é a LETRA (`letter`); a URL leva a chave.
 const minutesAgo = (n) => new Date(Date.now() - n * 60_000).toISOString();
 const minutesAhead = (n) => new Date(Date.now() + n * 60_000).toISOString();
 const ORIGIN = { latitude: -23.3273, longitude: -51.1762 };
@@ -225,6 +225,9 @@ const DELIVERIES = {
     },
   ],
   max_stops: 4,
+  // Os números livres vêm do servidor: 1 e 2 estão na rua, sobram 3 a 26 (C a Z).
+  free_numbers: Array.from({ length: 24 }, (_, i) => i + 3),
+  next_number: 3,
   machines: [],
   courier_on: true,
   maps_key: "",
