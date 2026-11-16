@@ -1,6 +1,6 @@
 // Presentation — a seção Entregas (corridas da TaOn). Puro: a página e o espelho só
 // desenham o que estas funções dizem. Desenho aprovado pelo dono em 14/11/2026
-// (PR #2462): Aguardando · Editando · Corridas, cada corrida com o seu número e cor.
+// (PR #2462): Aguardando · Editando · Corridas, cada corrida com a sua letra e cor.
 import type {
   Action,
   DeliveryRideProjection,

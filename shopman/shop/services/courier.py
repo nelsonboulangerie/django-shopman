@@ -623,7 +623,7 @@ def request_dispatch(order, *, actor: str, ride_number: int | None = None) -> Di
     return directive
 
 
-# ── Número (e cor) da corrida ───────────────────────────────────────
+# ── Número da corrida: a letra e a cor dela na tela ─────────────────
 
 #: Quantas cores a tela tem para as corridas vivas (``ridePalette.ts`` do Gestor).
 #: A cor repete a cada seis corridas; a letra desfaz a dúvida.
@@ -637,7 +637,7 @@ _RIDE_NUMBER_LOCK = 0x52494445  # "RIDE"
 
 
 def ride_is_live(order) -> bool:
-    """A corrida deste pedido ainda ocupa um número na tela.
+    """A corrida deste pedido ainda ocupa uma letra (e uma cor) na tela.
 
     Viva: chamada à espera da TaOn, corrida aberta ainda não terminada, ou
     terminada com o entregador ainda devendo voltar (troco, dinheiro, maquininha).
@@ -1594,7 +1594,12 @@ def _sync_failures_key(ride_id: str) -> str:
 
 
 def _sync_alert_marker(ride_id: str) -> str:
-    return f"corrida {ride_id}"
+    """O trecho do aviso que identifica a corrida na TaOn (dedupe e resolução).
+
+    É a referência para achá-la no painel da central, não o nome dela: na casa a
+    corrida se chama pela letra (:func:`ride_letter`).
+    """
+    return f"número {ride_id} na TaOn"
 
 
 #: O que cada marco do progresso lido prova sobre a corrida, na ordem em que acontece.
@@ -1742,13 +1747,17 @@ def _alert_sync_failed(order, ride_id: str) -> None:
     from shopman.shop.services.operator_orders import short_ref
 
     marker = _sync_alert_marker(ride_id)
+    # Sem letra gravada, a frase diz só "corrida": o id da TaOn nunca faz de nome.
+    letter = ride_letter(get_block(order).get("ride_number"))
+    name = f"corrida {letter}" if letter else "corrida"
     try:
         if alert_adapter.recent_exists(_SYNC_ALERT_TYPE, None, order_ref=order.ref, message_contains=marker):
             return
         alert_adapter.create(
             _SYNC_ALERT_TYPE,
             "warning",
-            f"A TaOn não está informando o andamento da {marker} do pedido {short_ref(order.ref)}. "
+            f"A TaOn não está informando o andamento da {name} do pedido "
+            f"{short_ref(order.ref)} ({marker}). "
             "O status na tela pode estar parado: confira no painel da TaOn.",
             order_ref=order.ref,
         )

@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -27,7 +28,7 @@ function stop(ref: string, extra: Partial<DeliveryStopProjection> = {}): Deliver
 
 function ride(extra: Partial<DeliveryRideProjection> = {}): DeliveryRideProjection {
   return {
-    key: "1", number: 1, state: "searching", status_label: "", stops: [stop("NB-A01")], driver: null, position: null,
+    key: "1", number: 1, letter: "A", state: "searching", status_label: "", stops: [stop("NB-A01")], driver: null, position: null,
     called_at: "", called_by: "", pickup_eta_at: "", arrived_pickup_at: "", picked_up_at: "", delivery_eta_at: "",
     tracking_url: "", cost_display: "", bags: 1, undeclared: [], lead_ref: "NB-A01", back_action: null,
     back_lines: [], cancel_action: null, cancel_state: "", cancel_message: "", ...extra,
@@ -115,6 +116,24 @@ describe("letra da corrida", () => {
 
   it("sem número válido não inventa letra", () => {
     expect([0, -1, null, undefined, 1.5].map((n) => rideLetter(n as number))).toEqual(["", "", "", "", ""]);
+  });
+
+  // Decisão do dono (16/11/2026): corrida é LETRA em toda tela, nunca número. O número
+  // segue no dado (escolhe a cor e a letra), mas não se escreve para o
+  // operador: nem solto no template, nem depois de "corrida" numa frase ou aria-label.
+  it("nenhuma tela do Gestor escreve o número da corrida", () => {
+    const root = new URL("../app/", import.meta.url);
+    const files = (readdirSync(root, { recursive: true }) as string[]).filter(
+      (file) => /\.(vue|ts)$/.test(file) && !file.startsWith("generated/"),
+    );
+    const shown = /\{\{\s*(?:ride|r|openRide|activeRide)\.number\s*\}\}/;
+    const spoken = /[Cc]orridas?\s+\$\{(?!\s*rideLetter\()[^}]*\bnumber\b/;
+    const offenders = files.filter((file) => {
+      const source = readFileSync(new URL(file, root), "utf8");
+      return shown.test(source) || spoken.test(source);
+    });
+    expect(offenders).toEqual([]);
+    expect(files.length).toBeGreaterThan(50);
   });
 });
 
