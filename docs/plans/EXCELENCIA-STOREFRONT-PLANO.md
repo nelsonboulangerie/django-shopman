@@ -22,9 +22,11 @@ Foco do brief: nada que o cliente lê fica velho, a encomenda é a joia, confian
   acompanhamento, diz a mesma frase calculada pelo servidor a partir da produção: "Fica pronto
   amanhã, terça, a partir das 15h". O botão do pão de amanhã passa a ser "Encomendar para
   amanhã". Nenhum dos seis benchmarks liga a promessa à produção real.
-- **12 WPs em 4 ondas.** O primeiro a delegar é o **WP-L01** (a promessa de quando, um fato
-  só), junto com o **WP-L00** (harness da cliente de verdade).
-- **4 decisões do dono**, no fim.
+- **11 WPs em 4 ondas**, mais um sem data (a agenda das fornadas). O primeiro a delegar é o
+  **WP-L01** (a promessa de quando, um fato só), junto com o **WP-L00** (harness da cliente de
+  verdade).
+- **As 4 decisões do dono foram respondidas em 16/11/2026** (seção 10): nenhum WP das ondas
+  espera decisão.
 - **O que este PR deixou de fora tem issue**: a execução do plano (#2567), as fronteiras
   (#2568) e as jornadas que não foram percorridas pela UI (#2569).
 
@@ -136,7 +138,7 @@ do aceite): do lado da loja a cliente também não fica sabendo. Está em F-6.
 | **P1-02** | **"Disponível hoje na loja, com retirada grátis" com a casa fechada.** Às 18:38, com a loja fechada desde as 18h, a cliente A leu "Disponível hoje"; no mesmo minuto a cliente B leu "Retirada grátis na loja quando abrirmos, amanhã às 9h". A diferença: na A o estado da loja não tinha carregado. | PROM, CONTR | `IMG/13` | `FE/presentation/product.ts:28-34`: sem estado da loja, a frase afirma "hoje" (falha aberta). O estado vem do shell em cache (`FE/composables/useStorefrontShell.ts:6-13,30`) e a frase não usa a grade de retirada que o checkout usa: perto do fechamento, com a casa aberta, ela também diz "hoje" quando já não há horário de retirada |
 | **P1-03** | **O produto fica velho na tela.** A página aberta continuou "Últimas unidades · Adicionar" 14 minutos depois de o item esgotar, inclusive ao voltar para a aba. O mesmo vale para busca, coleção e início, e a home promete "Disponibilidade em tempo real" em três lugares. | PROM, CONTR | `IMG/13` e `IMG/15` (mesma página, 18:38 e 18:52) | sem consulta nem push em `FE/pages/produto/[sku].vue:25-28`, `FE/pages/busca.vue:17`, `FE/pages/colecao/[ref].vue:37`; a home reaproveita a primeira carga (`FE/composables/useStorefrontHome.ts:6-13`). O canal `stock-web` existe e ninguém assina; `SA/urls.py:186-203` só expõe os eventos de pedido. A promessa de tempo real está em `shopman/shop/omotenashi/copy.py:306`, `:315`, `:324`, `:379` |
 | **P1-04** | **Depois de o servidor dizer que acabou, a página continua vendendo.** O aviso "Ficou indisponível enquanto você escolhia" é bom. Ao fechá-lo, a página segue "Últimas unidades · Disponível hoje · Adicionar", e o toque seguinte repete o ciclo. | CONTR | `IMG/14`, `IMG/15` (depois do 409) | `FE/composables/useCartState.ts:380-398` só recarrega a sacola; o produto só é rebuscado pelo botão de erro (`FE/pages/produto/[sku].vue:193`); os cards leem `can_add_to_cart` parado (`FE/components/ProductTile.vue:122`, `ProductListItem.vue:129`) |
-| **P1-05** | **A linha com promoção mostra dois valores que não fecham.** "1 × R$ 6,00 (riscado) R$ 5,10 cada" e, na mesma linha, o total "R$ 6,00". A revisão do pedido repete o "R$ 6,00". O plano do Gestor viu o mesmo de fora (F-18 de lá). | CONTR | `IMG/03`, `IMG/05` | duas correções de beta que se cruzaram: a linha fala o preço cheio para as linhas somarem o Subtotal (`SP/cart.py:66`, `:387-392`, de 05/11) e a linha repete o par do cardápio (`SP/cart.py:369-378`, de 06/11). Tela: `FE/pages/sacola.vue:229-231` e `:298`; `FE/pages/finalizar.vue:2431`. Depende da decisão 1 |
+| **P1-05** | **A linha com promoção mostra dois valores que não fecham.** "1 × R$ 6,00 (riscado) R$ 5,10 cada" e, na mesma linha, o total "R$ 6,00". A revisão do pedido repete o "R$ 6,00". O plano do Gestor viu o mesmo de fora (F-18 de lá). | CONTR | `IMG/03`, `IMG/05` | duas correções de beta que se cruzaram: a linha fala o preço cheio para as linhas somarem o Subtotal (`SP/cart.py:66`, `:387-392`, de 05/11) e a linha repete o par do cardápio (`SP/cart.py:369-378`, de 06/11). Tela: `FE/pages/sacola.vue:229-231` e `:298`; `FE/pages/finalizar.vue:2431`. Decidido em 16/11: a linha mostra o preço com desconto, com o cheio riscado (decisão 1) |
 | **P1-06** | **A revisão não diz o que acontece com o dinheiro.** Antes de "Enviar pedido" a cliente não lê que paga agora, que a loja confere em seguida, nem que o valor volta se a loja não confirmar. A descrição do sheet é "1 item · R$ 5,10". | OMO, CONTR | `IMG/05`; no cartão o sheet é igual (lido em 16/11, 19:26) | `FE/pages/finalizar.vue:2405-2516` não tem nenhuma frase sobre dinheiro; `FE/utils/checkoutFlow.ts:538-540` |
 | **P1-07** | **Quem pagou não sabe até quando a loja responde.** A cliente lê "Pagamento recebido. A loja confirma sua encomenda para amanhã · A partir das 15h e avisa por aqui." O Gestor lê, no mesmo pedido, "Cancela sozinho em 14h27". Nesta frase também falta o "Se não puder, devolvemos o valor" que a frase irmã tem. | CONTR, OMO | `IMG/11`; texto do Gestor lido em 16/11, 19:32 | o prazo só entra na projeção com `cfg.mode == "auto_confirm"` (`PT:1841-1862`), e a loja opera em `auto_cancel` desde a ADR-036 (`config/instances/nelson.json`, canal `web`). No perímetro: o ramo `payment_confirmed` usa a frase sem devolução (`SP/order_tracking.py:1288-1293`) e o ramo `store_checking` usa a frase com devolução (`:1239-1250`, `:1509-1537`) |
 | **P1-08** | **Retirada "a partir das 09h" para um pedido que a loja pode aceitar até as 10h.** Pedido feito com a casa fechada: o checkout oferece o primeiro horário da abertura, e o prazo de aceite começa a contar na abertura. No cartão, a tela não diz sequer que a casa está fechada. | PROM | checkout às 19:25 ("Hoje já encerramos as retiradas", "A partir das 09h · Mais cedo"); acompanhamento às 19:28 ("O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido para amanhã · A partir das 09h"); Gestor: "Cancela sozinho em 14h27" | a grade de retirada não conhece o prazo de aceite (fronteira F-12); o ramo do cartão autorizado volta antes do estado "loja fechada" (`PT:1262` antes de `:1273`) |
@@ -152,9 +154,9 @@ do aceite): do lado da loja a cliente também não fica sabendo. Está em F-6.
 | P2-02 | "Tabatière sai amanhã", "sai às 15:00", "Avisamos quando sair", "Assim que a fornada sair": verbo genérico, e a regra de 16/11 é "fica pronto" | COPY | `IMG/08` | `FE/presentation/cart.ts:211`; `SP/order_tracking.py:1454`, `:1530`, `:1837`; fora do perímetro: `shopman/shop/services/fulfillment_window.py:433`, `:532`, `:538` (F-4) |
 | P2-03 | Termos: o título da aba é "Checkout"; a legenda do calendário diz "Agendamentos até"; "Enviamos um código por SMS para este número" aparece antes de enviar; no pedido cancelado o botão é "Acompanhar"; "Refazer" na lista e "Repetir pedido" no acompanhamento; "amanhã" minúsculo como valor isolado | COPY | R2, R3, R11 | `FE/pages/finalizar.vue:1543-1545`, `:1970`; `FE/pages/entrar.vue:775`; `FE/pages/conta/pedidos.vue:141`, `:149` |
 | P2-04 | O cabeçalho corta "Fechado agora. Abrimos amanhã às 9h" em 375 px: some justamente a hora (213 px disponíveis para 247 px de texto) | MOB | medido em R6 | `FE/components/ShopHeader.vue:114-138` |
-| P2-05 | Dois convites no caminho da compra: instalar o app sobre o produto e "Saber das fornadas antes de todo mundo?" sobre a sacola, cobrindo o botão de finalizar | OMO, FLUXO | `IMG/16`, `IMG/17` | a lista de rotas vetadas não inclui produto (`FE/composables/usePwaInstall.ts:22-26`) nem produto e sacola (`FE/presentation/auth.ts:149-154`); a coordenação é por página, não por visita (`FE/composables/useShopInvite.ts:27-50`). Decisão 3 |
+| P2-05 | Dois convites no caminho da compra: instalar o app sobre o produto e "Saber das fornadas antes de todo mundo?" sobre a sacola, cobrindo o botão de finalizar | OMO, FLUXO | `IMG/16`, `IMG/17` | a lista de rotas vetadas não inclui produto (`FE/composables/usePwaInstall.ts:22-26`) nem produto e sacola (`FE/presentation/auth.ts:149-154`); a coordenação é por página, não por visita (`FE/composables/useShopInvite.ts:27-50`). Decidido em 16/11: convite só depois do pedido enviado (decisão 3) |
 | P2-06 | A primeira adição de quem nunca entrou pode criar uma reserva fantasma: o BFF desiste aos 25 s, o Django já reservou numa sessão que se perde, e a nova tentativa abre outra. Um toque, duas reservas; a fantasma segura o item por 30 min (ou sem prazo, numa fornada futura) | CONTR, PROM | R7: duas reservas de Melonpan com 3 s de diferença para um toque; com duas unidades vendáveis, a fantasma levou uma | `BFF/utils/djangoProxy.ts:31`, `:88-126`, `:289`: a semente cria o `csrftoken`, não a sessão; a sessão nasce na primeira escrita (`shopman/storefront/cart.py:153`) |
-| P2-07 | A reserva da sacola dura 30 minutos e a cliente não sabe; a contagem da vaga na fila usa o relógio do aparelho, sem a correção que o acompanhamento faz | PROM | leitura de código | `FE/pages/sacola.vue:37-45`; correção existente em `FE/presentation/deadline.ts:8-12`. Decisão 4 |
+| P2-07 | A reserva da sacola dura 30 minutos e a cliente não sabe; a contagem da vaga na fila usa o relógio do aparelho, sem a correção que o acompanhamento faz | PROM | leitura de código | `FE/pages/sacola.vue:37-45`; correção existente em `FE/presentation/deadline.ts:8-12`. Decidido em 16/11: a sacola mostra até quando guarda (decisão 4) |
 | P2-08 | O checkout não se atualiza ao voltar para a aba, e "hoje", "amanhã" e os limites do calendário vêm do relógio do aparelho. Corte e virada do dia só aparecem no envio | PROM | leitura de código | `FE/pages/finalizar.vue:346`, `:557`; `FE/utils/checkoutFlow.ts:107-140`; `FE/presentation/cart.ts:117`, `:154`, `:174`, `:187`, `:205` |
 | P2-09 | Cartão pede dois toques: "Enviar pedido" leva ao acompanhamento, e só lá aparece "Pagar com cartão" | FLUXO | R8 | o envio sempre navega para o acompanhamento (`FE/pages/finalizar.vue:1425`) |
 | P2-10 | "Enviar resumo" leva "Retirada: amanhã · A partir das 09h": data relativa num texto que vai ser lido depois, por outra pessoa | COPY | link lido em R10 | `share_text` da projeção (`FE/pages/pedido/[ref]/index.vue:543`) |
@@ -202,8 +204,8 @@ issue #2568, menos a F-6, que já tem a #2547.
 | S1 | **A promessa de quando.** Cardápio, produto, sacola, checkout e acompanhamento dizem a mesma frase, calculada no servidor a partir da produção: "Pronto agora", "Fica pronto hoje às 15h", "Fica pronto amanhã, terça, a partir das 15h". O botão do pão de amanhã é "Encomendar para amanhã". O que a tela promete é o que o envio do pedido confere. | Ela decide na primeira tela, sem montar a sacola para descobrir o dia. Fecha P1-01, P1-02, P1-08. | WP-L01, L02, L03 e L05. Leitura de serviços que já existem. | Nenhum faz: todos vendem contra um número digitado. A Starbucks e a Toast prometem hora por capacidade, não por produção. |
 | S2 | **Loja viva.** A disponibilidade chega por push ao cardápio, ao produto, à busca e à sacola. O item que acaba se transforma na frente da cliente, já com a saída ao lado: a próxima fornada para encomendar, ou a alternativa. O que fica pronto acende. | Acaba o toque em botão morto e a promessa de "tempo real" passa a ser verdade. Fecha P1-03 e P1-04. | WP-L04. O servidor já publica o canal; falta a rota e quem assine. | A Toast marca "Out of Stock" na hora mas admite a corrida da última unidade; a Shopify só revalida no pagamento; o Hotplate reserva, mas não avisa quem está olhando. |
 | S3 | **A linha do tempo do dinheiro.** Antes de pagar: "Você paga agora. A loja confirma em até 1 hora. Se não confirmar, o valor volta na hora para a mesma conta." Depois: "Pix de R$ 5,10 pago às 13:34 · A loja responde até 14:34", e no fim "Devolvido às 14:34". | Nunca fica dúvida sobre o que foi cobrado. Fecha P1-06, P1-07 e P1-10. | WP-L05 e WP-L06, com F-2 e F-3. | Nenhum mostra dinheiro e pedido na mesma linha do tempo. A reclamação mais repetida do iFood e do Rappi é justamente estorno que ninguém vê. |
-| S4 | **A agenda das fornadas.** Uma página "Fornadas da semana": o que fica pronto em cada dia, a que horas, e se ainda dá para encomendar. Reservar o pão de sexta em dois toques, da própria agenda. | Encomendar fica melhor que ir à padaria: ela vê a semana e garante o pão antes de a fila existir. | WP-L10, depois do L01. Lê a produção planejada, sem escrever nela. Depende da decisão 2. | O Hotplate tem o "drop" com contagem regressiva, alimentado à mão; ninguém publica a produção planejada. |
-| S5 | **Reserva com prazo à vista.** A sacola diz até quando guarda os itens ("Guardamos seus itens até 19:18") e renova a cada gesto, sem cronômetro ansioso. Quando vence, diz o que ainda está lá. | Ela sabe o que é dela e por quanto tempo. | WP-L11, depois do L03. Depende da decisão 4. | Só o Hotplate mostra o prazo da reserva, com cronômetro obrigatório de 5 minutos. |
+| S4 | **A agenda das fornadas.** Uma página "Fornadas da semana": o que fica pronto em cada dia, a que horas, e se ainda dá para encomendar. Reservar o pão de sexta em dois toques, da própria agenda. | Encomendar fica melhor que ir à padaria: ela vê a semana e garante o pão antes de a fila existir. | WP-L10. **Não agora** (decisão 2): fica como direção, fora das ondas. Lê a produção planejada, sem escrever nela. | O Hotplate tem o "drop" com contagem regressiva, alimentado à mão; ninguém publica a produção planejada. |
+| S5 | **Reserva com prazo à vista.** A sacola diz até quando guarda os itens ("Guardamos seus itens até 19:18") e renova a cada gesto, sem cronômetro ansioso. Quando vence, diz o que ainda está lá. | Ela sabe o que é dela e por quanto tempo. | WP-L11, depois do L03. Aprovado (decisão 4). | Só o Hotplate mostra o prazo da reserva, com cronômetro obrigatório de 5 minutos. |
 
 ## 7. WPs
 
@@ -257,7 +259,7 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Objetivo:** cada produto e cada linha da sacola carregam, vindos do servidor, quando ficam
   prontos e de onde vem essa resposta.
 - **Achados que fecha:** a base de P1-01, P1-02 e P2-12; a parte de contrato de P1-05.
-- **Dependências:** decisão 1 (só para o campo de total da linha).
+- **Dependências:** nenhuma (a decisão 1 está tomada).
 - **Arquivos:** `shopman/storefront/presentation/promise.py` (novo),
   `shopman/storefront/presentation/catalog.py`, `product_detail.py`, `cart.py`,
   `shopman/storefront/api/serializers.py`, `contracts/projections/*.json`,
@@ -278,8 +280,8 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
   função só, lendo `waitlist.next_batch_availability`, `product_readiness` e a mesma grade de
   retirada que o checkout usa (`fulfillment_window`), sem alterá-los. Casa fechada, corte do
   dia e ausência de dado devolvem a promessa mais conservadora, nunca "hoje". Verbo: "fica
-  pronto". Se a decisão 1 for a opção 1, publique também o total líquido da linha já
-  formatado.
+  pronto". Pela decisão 1, publique também, já formatados, o total da linha com desconto e o
+  total cheio para riscar.
 
 ### WP-L02 · O produto e o cardápio dizem quando
 
@@ -308,7 +310,7 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Objetivo:** a linha da sacola mostra a promessa do servidor e um preço que não se
   contradiz.
 - **Achados que fecha:** P1-05 (sacola), P2-02 (sacola), P2-12.
-- **Dependências:** WP-L01; decisão 1.
+- **Dependências:** WP-L01.
 - **Arquivos:** `surfaces/storefront-nuxt/app/pages/sacola.vue`, `app/presentation/cart.ts`,
   `app/components/CartSummaryBreakdown.vue`, testes.
 - **Fora do escopo:** checkout e revisão (L05); prazo da reserva (L11).
@@ -320,7 +322,10 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Muda tela:** sim (prévia). **Tamanho:** M.
 - **Brief:** leia o achado P1-05, a captura `IMG/03` e os comentários de
   `shopman/storefront/presentation/cart.py:369-392`, que explicam por que a linha ficou com
-  dois valores. Aplique a decisão 1. Troque "Previsto para" e "sai" pela promessa do WP-L01.
+  dois valores. Aplique a decisão 1: unitário e total da linha com desconto, cada um com o
+  cheio riscado ao lado; o Subtotal é a soma das linhas com desconto; o resumo diz quanto a
+  promoção economizou e só subtrai cupom e pontos. Troque "Previsto para" e "sai" pela
+  promessa do WP-L01.
 
 ### WP-L04 · Loja viva
 
@@ -375,7 +380,8 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
   das recusas de estoque, como já se faz com `total_changed`, e trate cada código com destino
   (fechar a revisão, mostrar o item, oferecer a alternativa); nenhuma recusa termina em toast
   sozinho. A frase do dinheiro usa o prazo de 5 ou 60 minutos da política do canal. Título da
-  aba: "Finalizar pedido". Legenda: "Encomendas até". Vocabulário: sacola, nunca carrinho.
+  aba: "Finalizar pedido". Legenda: "Encomendas até". Vocabulário: sacola, nunca carrinho. A
+  linha da revisão e a do recibo seguem a decisão 1, iguais às da sacola.
 
 ### WP-L06 · O dinheiro às claras no acompanhamento
 
@@ -389,7 +395,7 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Arquivos:** `shopman/storefront/presentation/order_tracking.py`,
   `surfaces/storefront-nuxt/app/pages/pedido/[ref]/index.vue`,
   `app/presentation/orderTracking.ts`, `app/pages/conta/pedidos.vue`, testes.
-- **Fora do escopo:** `shopman/shop/projections/order_tracking.py` (F-2, F-3, F-8).
+- **Fora do escopo:** `shopman/shop/projections/order_tracking.py` (F-2, F-3, F-8); o preço da linha no resumo do pedido, que é do #2296 e segue a decisão 1.
 - **Pronto quando:**
   - roteiro: cliente paga uma encomenda e lê o valor, o meio, a hora e a frase da devolução;
     a operadora recusa no Gestor; a cliente lê "Devolvido" com valor e hora no histórico, e a
@@ -442,7 +448,7 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 
 - **Objetivo:** cabeçalho, entrada e convites deixam de atrapalhar.
 - **Achados que fecha:** P2-03 (entrada), P2-04, P2-05.
-- **Dependências:** decisão 3 (só para os convites).
+- **Dependências:** nenhuma (a decisão 3 está tomada).
 - **Arquivos:** `surfaces/storefront-nuxt/app/components/ShopHeader.vue`,
   `app/pages/entrar.vue`, `app/composables/usePwaInstall.ts`, `app/presentation/auth.ts`,
   `app/composables/useShopInvite.ts`, testes.
@@ -456,13 +462,20 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Muda tela:** sim (prévia). **Tamanho:** P.
 - **Brief:** leia os achados P2-04 e P2-05. O estado da casa não trunca: a hora de abertura é
   a parte que fica. Aplique a decisão 3 nas duas listas de rotas e na coordenação entre
-  convites.
+  convites: nenhum convite em produto, sacola ou checkout; o primeiro lugar possível é depois
+  do pedido enviado, e um convite por visita.
 
-### WP-L10 · A agenda das fornadas (depois da decisão 2)
+### WP-L10 · A agenda das fornadas (sem data, fora das ondas)
+
+> Decisão 2, de 16/11/2026: **não agora**. O dono não tinha este plano e pediu para ser
+> convencido antes. A recomendação desta revisão passou a ser esperar: a agenda publica a
+> produção planejada, e hoje um lote cancelado ou atrasado ainda não vira aviso para quem
+> encomendou (F-6). Volta à mesa depois de a promessa de quando (L01 e L02) estar no ar e de a
+> F-6 ter dono. O texto abaixo fica como registro da ideia.
 
 - **Objetivo:** a cliente vê a semana de fornadas e encomenda dali.
 - **Achados que fecha:** nenhum; é o salto S4.
-- **Dependências:** WP-L01, WP-L04 (divide `api/urls.py`); decisão 2.
+- **Dependências:** WP-L01, WP-L04 (divide `api/urls.py`); F-6; nova palavra do dono.
 - **Arquivos:** `shopman/storefront/presentation/batches.py` (novo), view e rota em
   `shopman/storefront/api/`, `surfaces/storefront-nuxt/app/pages/fornadas.vue` (novo),
   entrada na navegação, testes e contrato.
@@ -475,11 +488,11 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Brief:** leia a ideia S4 e o WP-L01. A agenda lê a produção planejada pelos mesmos
   serviços da promessa, nunca escreve. Cada item leva à encomenda com o dia já escolhido.
 
-### WP-L11 · Reserva com prazo à vista (depois da decisão 4)
+### WP-L11 · Reserva com prazo à vista
 
 - **Objetivo:** a sacola diz até quando guarda os itens.
 - **Achados que fecha:** P2-07.
-- **Dependências:** WP-L03; decisão 4.
+- **Dependências:** WP-L03.
 - **Arquivos:** `shopman/storefront/presentation/cart.py`,
   `surfaces/storefront-nuxt/app/pages/sacola.vue`, `app/presentation/cart.ts`, testes.
 - **Fora do escopo:** mudar o prazo (F-5).
@@ -517,24 +530,19 @@ Dois WPs da mesma onda nunca tocam o mesmo arquivo.
 | 1 | L00, L01, L07, L08, L09 | L01 é o único que toca `app/types/shopman.ts` e os contratos |
 | 2 | L02, L03, L05, L06 | todos leem o que o L01 publicou; cada um tem as suas páginas |
 | 3 | L04 | toca a página do produto e o cardápio depois do L02 |
-| 4 | L10, L11 | os dois saltos que esperam decisão; L10 toca `api/urls.py` depois do L04, L11 toca a sacola depois do L03 |
+| 4 | L11 | toca a sacola depois do L03 |
+| sem data | L10 | fora das ondas pela decisão 2 |
 
 ## 10. Decisões do dono
 
-Procurado antes em `docs/coordination/DECISIONS.md` e em `docs/reference/`: nenhuma destas
-está respondida.
+Respondidas pelo dono no chat, em 16/11/2026.
 
-1. **Linha com promoção: qual preço a linha mostra?** Hoje a linha diz "R$ 5,10 cada" e total
-   "R$ 6,00". **Recomendo 1.** (1) A promoção do produto abate na linha: linha a R$ 5,10 com o
-   preço cheio riscado, Subtotal igual à soma das linhas, e o resumo só subtrai cupom e
-   pontos. (2) A linha fica toda no preço cheio (sem "R$ 5,10 cada") e o desconto aparece só
-   no resumo. Bloqueia L01, L03 e L05.
-2. **Agenda das fornadas: fazer?** **Recomendo sim, sem mostrar quantidade** (só "ainda dá" e
-   "esgotada"). Responda sim, sim com quantidade, ou não. Bloqueia L10.
-3. **Convites (instalar o app, avisos pelo WhatsApp) só depois de o pedido ser enviado?**
-   **Recomendo sim.** Hoje aparecem sobre o produto e sobre a sacola. Bloqueia parte do L09.
-4. **A sacola mostra até quando guarda os itens?** **Recomendo sim**, numa linha calma com a
-   hora, sem cronômetro. Bloqueia L11.
+| # | Pergunta | Resposta | Efeito |
+|---|---|---|---|
+| 1 | Linha com promoção: qual preço a linha mostra? | **Com desconto, e com o valor cheio riscado ao lado, para ficar claro.** | A promoção do produto abate na linha (unitário e total), o Subtotal é a soma das linhas com desconto, e o resumo só subtrai cupom e pontos. Vale para sacola, revisão, recibo e acompanhamento. Destrava L01, L03 e L05. O #2296, ainda aberto, adota a régua antiga (linha cheia) no acompanhamento e precisa seguir esta |
+| 2 | Agenda das fornadas: fazer? | **Não agora.** "Não tinha esse plano. Se achar que deve mesmo, me convença primeiro." | O WP-L10 sai das ondas e fica sem data. A recomendação desta revisão passou a ser esperar a promessa de quando (L01, L02) e a F-6 |
+| 3 | Convites só depois de o pedido ser enviado? | **Sim.** | Destrava o L09 |
+| 4 | A sacola mostra até quando guarda os itens? | **Sim.** | Destrava o L11 |
 
 ## 11. Benchmarks
 
