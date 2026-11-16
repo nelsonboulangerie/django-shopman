@@ -8199,7 +8199,17 @@
           "path": "shopman/shop/services/courier.py",
           "symbols": [
             "latest_cancellation",
-            "cancel_ride"
+            "cancel_ride",
+            "ride_cancellable",
+            "cancel_state",
+            "cancel_question",
+            "cancel_consequence",
+            "cancel_asks_reason",
+            "cancel_refused_message",
+            "ride_name",
+            "CANCEL_PENDING_MESSAGE",
+            "CANCEL_UNKNOWN_MESSAGE",
+            "CANCEL_NOT_SENT_MESSAGE"
           ]
         }
       ],
@@ -8566,7 +8576,8 @@
             "dispatch_task_filter",
             "request_group_dispatch",
             "ride_companions",
-            "ride_orders"
+            "ride_orders",
+            "stranded_companions"
           ]
         }
       ],

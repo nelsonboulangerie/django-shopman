@@ -1208,11 +1208,33 @@ nunca mais chama a TaOn. Trilha: evento `courier_dispatch_released`
 
 #### `courier.cancel`
 
-Usa a fila Directive existente. Payload: `order_ref`, `channel_ref`, `actor`,
-`courier_ref` (corrida observada), `reason_id` (inteiro ou null). Dedupe vivo:
-`courier.cancel:{order_ref}:{courier_ref}`. Enfileirar não confirma cancelamento.
-`cancel_attempt` registra `state` (`started`, `unknown`, `accepted`, `not_applied`),
-`updated_at`, e, no início, `started_at`. O handler grava started antes da rede,
+Usa a fila Directive existente. O cancelamento é da CORRIDA, não de um pedido.
+Payload: `order_ref` (o primeiro pedido da corrida), `order_refs` (todos os pedidos
+que a carregam, lidos na solicitação: o `C` vale para cada um), `channel_ref`,
+`actor`, `courier_ref` (corrida observada), `reason_id` (o motivo que o operador
+escolheu, inteiro da lista de depois do aceite, ou null) e `intent`
+(`operator` ou `order_cancelled`). Dedupe vivo: `courier.cancel:{courier_ref}`
+(uma solicitação por corrida, venha de qual pedido vier). Enfileirar não confirma
+cancelamento.
+
+O `motivo_id` enviado à central não é configuração: sai da letra da corrida, lida
+da central antes do POST (`courier_machine.cancel_reason_for`): 10 em D/T/P/G;
+depois do aceite (A/S), o `reason_id` escolhido, ou 12 (`operator`) ou 33
+(`order_cancelled`). Erro 102 da central (motivo da fase errada) relê a letra e
+reenvia uma vez.
+
+`cancel_attempt` registra `state` (`started`, `unknown`, `accepted`, `refused`,
+`not_applied`), `updated_at`, no início `started_at`, e ao fim `letter` (a letra
+lida), `reasons` (os motivos enviados, na ordem) ou `refusal` (o texto da recusa).
+`refused` é a recusa definitiva da central: a corrida segue aberta, e o handler
+abre o aviso crítico "A TaOn não cancelou a corrida B. Cancele pela central da
+TaOn." e emite o SSE `cancel_failed`. `not_applied` é "nada foi enviado" (a
+corrida mudou, foi coletada, ou não há adapter). A tela lê tudo por
+`courier.cancel_state(order)` (`pending` · `unknown` · `failed`), a mesma fonte
+no Painel do pedido (`courier.cancel_state`) e na seção Entregas
+(`DeliveryRideProjection.cancel_state`).
+
+O handler grava started antes da rede,
 accepted antes da adoção local. Replay accepted só reaplica o fato à mesma corrida;
 started/unknown nunca repete o POST. Worker antigo sem handler deve ficar suspenso
 para esse tópico; rollback preserva tarefa/recibo e bloqueia novos cancelamentos

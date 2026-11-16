@@ -457,7 +457,16 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "BEFORE_ACCEPT_STATUSES",
             "CANCELLABLE_STATUSES",
+            "CANCEL_INTENT_OPERATOR",
+            "CANCEL_INTENT_ORDER_CANCELLED",
+            "CANCEL_REASONS_AFTER_ACCEPT",
+            "CANCEL_REASONS_OPERATOR",
+            "CANCEL_REASON_BEFORE_ACCEPT",
+            "CANCEL_REASON_OPERATOR_DEFAULT",
+            "CANCEL_REASON_ORDER_CANCELLED",
+            "CANCEL_REASON_REFUSED_CODE",
             "CourierDispatchResult",
             "CourierError",
             "CourierEstimate",
@@ -475,6 +484,7 @@
             "_cfg",
             "_details_base",
             "_driver",
+            "_error_codes",
             "_estimate_params",
             "_inert",
             "_iso_plus_seconds",
@@ -486,6 +496,7 @@
             "_text",
             "_to_q",
             "cancel",
+            "cancel_reason_for",
             "dispatch",
             "estimate",
             "get_details",
@@ -3325,6 +3336,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_KNOWN_LETTERS",
             "logger"
           ]
         }

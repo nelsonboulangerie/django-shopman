@@ -33,6 +33,7 @@ const showBags = computed(() => beforeHandoff(props.ride));
         </span>
         <template v-if="line.hint"><span aria-hidden="true">·</span><span>{{ line.hint }}</span></template>
       </span>
+      <span v-if="ride.cancel_message" class="mt-0.5 block op-micro" :class="ride.cancel_state === 'failed' ? 'font-medium text-error' : 'text-toned'" data-ride-mirror-cancel>{{ ride.cancel_message }}</span>
       <span v-if="ride.state === 'atStore' && ride.bags && !ride.undeclared.length" class="mt-1 flex items-center gap-1 op-body font-semibold text-primary">
         <NuxtIcon name="i-lucide-package-check" class="size-4" />Entregue {{ ride.bags === 1 ? "a sacola" : `as ${bagsWord(ride.bags)}` }} {{ ride.driver?.name ? `para ${ride.driver.name}` : "para o entregador" }}
       </span>

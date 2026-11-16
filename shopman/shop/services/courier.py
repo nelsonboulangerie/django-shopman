@@ -27,6 +27,10 @@ from shopman.orderman.models import Directive, Order
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.adapters.courier_machine import (
+    BEFORE_ACCEPT_STATUSES,
+    CANCEL_INTENT_OPERATOR,
+    CANCEL_INTENT_ORDER_CANCELLED,
+    CANCEL_REASONS_AFTER_ACCEPT,
     CANCELLABLE_STATUSES,
     TERMINAL_STATUSES,
     CourierError,
@@ -85,6 +89,23 @@ def has_active_ride(order) -> bool:
     """Corrida ativa = id_mch presente e status não-terminal."""
     block = get_block(order)
     return bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES
+
+
+def ride_cancellable(block: dict) -> bool:
+    """A corrida deste bloco ainda pode ser cancelada pela casa? Régua única.
+
+    Antes da coleta: corrida aberta na central (``id_mch``), numa letra que a
+    central cancela (``CANCELLABLE_STATUSES``) e SEM a marca da coleta
+    (``dispatched_at``). A marca é o fato: se uma letra atrasada devolver o
+    status a "aceita" com a sacola já na moto, o cancelar não reaparece. É a
+    mesma pergunta nas quatro portas (a projeção do pedido, a das Entregas, o
+    pedido de cancelamento e o worker que chama a central).
+    """
+    return (
+        bool(block.get("id_mch"))
+        and block.get("status") in CANCELLABLE_STATUSES
+        and not block.get("dispatched_at")
+    )
 
 
 def house_dispatches(order) -> bool:
@@ -238,7 +259,7 @@ def charge_outdated(order) -> dict | None:
     return {
         "sent": _charge_part(sent),
         "current": _charge_part(current),
-        "collected": block.get("status") not in CANCELLABLE_STATUSES,
+        "collected": not ride_cancellable(block),
     }
 
 
@@ -490,14 +511,41 @@ def ride_orders(order) -> list[str]:
     return [str(ref) for ref in refs] if isinstance(refs, list) and refs else [order.ref]
 
 
-def ride_companions(order) -> list:
-    """Os OUTROS pedidos que estão na mesma corrida (mesmo ``id_mch``)."""
+def ride_companions(order, *, alive: bool = False) -> list:
+    """Os OUTROS pedidos que estão na mesma corrida (mesmo ``id_mch``).
+
+    ``alive=True`` conta só quem ainda espera a entrega: pedido cancelado segue
+    com o ``id_mch`` no bloco (a corrida é dos outros), mas não é mais motivo
+    para a corrida seguir aberta.
+    """
     ride_id = get_block(order).get("id_mch")
     others = [ref for ref in ride_orders(order) if ref != order.ref]
     if not ride_id or not others:
         return []
     return [other for other in Order.objects.filter(ref__in=others).order_by("pk")
-            if get_block(other).get("id_mch") == ride_id]
+            if get_block(other).get("id_mch") == ride_id
+            and not (alive and other.status == Order.Status.CANCELLED)]
+
+
+def stranded_companions(order) -> tuple[str, list]:
+    """Quem ficou preso na corrida que este pedido já encerrou.
+
+    A corrida com várias paradas tem uma batida só, no primeiro pedido. Se só
+    ele recebeu o fim (``N``/``C``), a corrida foi para o histórico dele
+    (``attempts[-1]``) e os outros seguem "com corrida" para sempre, segurando
+    letra, cor, troco e maquininha. Devolve a letra final e os pedidos que
+    ainda carregam aquele ``id_mch`` vivo; ``("", [])`` quando ninguém ficou.
+    """
+    attempts = get_block(order).get("attempts") or []
+    last = attempts[-1] if attempts and isinstance(attempts[-1], dict) else {}
+    ride_id, status = last.get("id_mch"), str(last.get("status") or "")
+    refs = [str(ref) for ref in last.get("ride_orders") or [] if ref != order.ref]
+    if not ride_id or not refs or get_block(order).get("id_mch") == ride_id:
+        return "", []
+    stuck = [other for other in Order.objects.filter(ref__in=refs).order_by("pk")
+             if get_block(other).get("id_mch") == ride_id
+             and get_block(other).get("status") not in TERMINAL_STATUSES]
+    return status, stuck
 
 
 def unresolved_dispatch(order, *, exclude_pk=None):
@@ -954,7 +1002,11 @@ def release_unresolved_dispatch(order, *, actor: str, expected_revision: str | N
 
 
 def latest_cancellation(order, *, pending_only=False):
-    """The existing Directive owns queued and unresolved cancellation attempts."""
+    """The existing Directive owns queued and unresolved cancellation attempts.
+
+    O cancelamento é da CORRIDA (``courier_ref``), não do pedido: na corrida com
+    várias paradas qualquer pedido dela enxerga a mesma solicitação.
+    """
     from django.db.models import Q
 
     from shopman.shop.directives import COURIER_CANCEL
@@ -962,16 +1014,97 @@ def latest_cancellation(order, *, pending_only=False):
     ride = get_block(order).get("id_mch")
     if not ride:
         return None
-    tasks = Directive.objects.filter(topic=COURIER_CANCEL, payload__order_ref=order.ref, payload__courier_ref=ride)
+    tasks = Directive.objects.filter(topic=COURIER_CANCEL, payload__courier_ref=ride)
     if pending_only:
         tasks = tasks.filter(Q(status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING)) |
             Q(payload__cancel_attempt__state__in=("started", "unknown", "accepted")))
     return tasks.order_by("-pk").first()
 
 
+#: O que a tela diz de um cancelamento pedido, por estado (:func:`cancel_state`).
+CANCEL_PENDING_MESSAGE = "Pedido de cancelamento enviado. Esperando a TaOn confirmar."
+CANCEL_UNKNOWN_MESSAGE = "Cancelamento sem resultado confirmado. Confira esta corrida na central antes de reenviar."
+CANCEL_NOT_SENT_MESSAGE = "O cancelamento não foi enviado à TaOn. Tente de novo."
+
+
+def ride_name(order) -> str:
+    """Como a frase chama a corrida deste pedido: "a corrida B", ou "a corrida do pedido A47"."""
+    from shopman.shop.services.operator_orders import short_ref
+
+    letter = ride_letter(get_block(order).get("ride_number"))
+    return f"a corrida {letter}" if letter else f"a corrida do pedido {short_ref(order.ref)}"
+
+
+def cancel_refused_message(order) -> str:
+    """A recusa da central, na frase que a tela e o aviso mostram."""
+    return f"A TaOn não cancelou {ride_name(order)}. Cancele pela central da TaOn."
+
+
+def cancel_state(order) -> dict:
+    """Em que pé está o cancelamento da corrida viva deste pedido. Fonte única.
+
+    ``{"state", "message", "at"}``, lido da Directive ``courier.cancel`` da
+    corrida: o Painel do pedido e a seção Entregas mostram a mesma coisa.
+
+    - ``""``: ninguém pediu cancelamento (ou a corrida já não se cancela);
+    - ``pending``: pedido enviado, a central ainda não confirmou. O botão some;
+    - ``unknown``: o envio ficou sem resposta. Não se reenvia: confere-se na central;
+    - ``failed``: a central recusou (ou nada foi enviado). A corrida segue aberta.
+    """
+    empty = {"state": "", "message": "", "at": ""}
+    if not ride_cancellable(get_block(order)):
+        return empty
+    task = latest_cancellation(order)
+    if task is None:
+        return empty
+    state = ((task.payload or {}).get("cancel_attempt") or {}).get("state")
+    at = task.updated_at.isoformat() if task.updated_at else ""
+    # O recibo da tentativa manda: ele é gravado antes de a tarefa mudar de status.
+    if state == "refused":
+        return {"state": "failed", "message": cancel_refused_message(order), "at": at}
+    if state == "not_applied":
+        return {"state": "failed", "message": CANCEL_NOT_SENT_MESSAGE, "at": at}
+    live = task.status in (Directive.Status.QUEUED, Directive.Status.RUNNING)
+    if state == "unknown" or (state == "started" and not live):
+        return {"state": "unknown", "message": CANCEL_UNKNOWN_MESSAGE, "at": at}
+    if live or state in ("started", "accepted"):
+        return {"state": "pending", "message": CANCEL_PENDING_MESSAGE, "at": at}
+    return empty
+
+
+def cancel_question(order) -> str:
+    """A pergunta da confirmação: "Cancelar a corrida B? A05 e C12 voltam para Aguardando."
+
+    Diz o que o toque desfaz: a corrida inteira, com todos os pedidos dela.
+    """
+    return f"Cancelar {ride_name(order)}? {cancel_consequence(order)}"
+
+
+def cancel_consequence(order) -> str:
+    """O que o cancelamento desfaz: "A05 e C12 voltam para Aguardando."."""
+    from shopman.shop.services.operator_orders import short_ref
+
+    codes = [short_ref(ref) for ref in ride_orders(order)]
+    names = codes[0] if len(codes) == 1 else f"{', '.join(codes[:-1])} e {codes[-1]}"
+    return f"{names} {'volta' if len(codes) == 1 else 'voltam'} para Aguardando."
+
+
+def cancel_asks_reason(order) -> bool:
+    """Depois do aceite a central quer saber por quê: a confirmação já traz os motivos."""
+    block = get_block(order)
+    return ride_cancellable(block) and block.get("status") not in BEFORE_ACCEPT_STATUSES
+
+
 @transaction.atomic
-def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_revision: str | None = None) -> Directive:
-    """Record a request for the observed ride; the worker owns remote I/O."""
+def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_revision: str | None = None,
+                intent: str = CANCEL_INTENT_OPERATOR) -> Directive:
+    """Record a request for the observed ride; the worker owns remote I/O.
+
+    ``reason_id`` é o motivo que o operador escolheu (só vale depois do aceite;
+    antes dele a central só aceita o 10 e a escolha nem é perguntada). Sem ele,
+    o worker usa o motivo do ``intent`` (``courier_machine.cancel_reason_for``).
+    A solicitação é da corrida: uma por ``id_mch``, venha de qual pedido vier.
+    """
     from shopman.shop.directives import COURIER_CANCEL, create_deduped
     from shopman.shop.services.operator_orders import OrderStateConflict
 
@@ -980,10 +1113,12 @@ def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_rev
         raise OrderStateConflict("O pedido ou a corrida mudou. Confira antes de solicitar cancelamento.")
     if get_adapter("courier") is None:
         raise ValueError("Nenhum adapter de courier configurado.")
+    if reason_id is not None and reason_id not in CANCEL_REASONS_AFTER_ACCEPT:
+        raise ValueError("Motivo de cancelamento desconhecido. Atualize a tela e escolha de novo.")
     block = get_block(order)
     if not has_active_ride(order):
         raise ValueError("Não há corrida ativa para cancelar.")
-    if block.get("status") not in CANCELLABLE_STATUSES:
+    if not ride_cancellable(block):
         raise ValueError("A corrida já está com o entregador em rota. Combine o retorno por telefone com a central.")
     existing = latest_cancellation(order, pending_only=True)
     if existing is not None:
@@ -991,14 +1126,23 @@ def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_rev
         if state in {"started", "unknown", "accepted"}:
             raise OrderStateConflict("Cancelamento já iniciado. Confira o resultado na central antes de outra solicitação.")
         return existing
+    # A corrida inteira: o pedido pelo qual os gestos dela vão (o primeiro) e
+    # todos os que a carregam, lidos AGORA. Depois do C ninguém mais saberia
+    # quem estava nela (o fim arquiva ``ride_orders``).
+    members = [order, *ride_companions(order)]
+    by_ref = {member.ref: member for member in members}
+    refs = [ref for ref in ride_orders(order) if ref in by_ref]
+    refs += [member.ref for member in members if member.ref not in refs]
     task = create_deduped(COURIER_CANCEL,
-        payload={"order_ref": order.ref, "channel_ref": order.channel_ref or "", "actor": actor,
-            "courier_ref": block["id_mch"], "reason_id": reason_id},
-        dedupe_key=f"courier.cancel:{order.ref}:{block['id_mch']}")
+        payload={"order_ref": refs[0], "order_refs": refs, "channel_ref": by_ref[refs[0]].channel_ref or "",
+            "actor": actor, "courier_ref": block["id_mch"], "reason_id": reason_id, "intent": intent},
+        dedupe_key=f"courier.cancel:{block['id_mch']}")
     if task is None:
         raise OrderStateConflict("Já existe uma solicitação de cancelamento para esta corrida. Atualize o pedido.")
-    order.emit_event(event_type="courier_cancel_requested", actor=actor, payload={"directive_id": task.pk, "id_mch": block["id_mch"]})
-    _emit_sse(order, {"kind": "cancel_queued"})
+    for member in members:
+        member.emit_event(event_type="courier_cancel_requested", actor=actor,
+                          payload={"directive_id": task.pk, "id_mch": block["id_mch"]})
+        _emit_sse(member, {"kind": "cancel_queued"})
     return task
 
 
@@ -1011,9 +1155,10 @@ _CANCELLED_ORDER_ALERT_TYPE = "integration_failed"
 def on_order_cancelled(order) -> None:
     """Pedido cancelado: a corrida dele não pode seguir aberta na central.
 
-    - Antes da coleta (``CANCELLABLE_STATUSES``): enfileira o cancelamento da
+    - Antes da coleta (:func:`ride_cancellable`): enfileira o cancelamento da
       corrida pelo caminho de sempre (:func:`cancel_ride`, Directive
-      ``courier.cancel``, dedupe por corrida). Cancelamento já pedido é no-op.
+      ``courier.cancel``, dedupe por corrida), com o motivo da fase.
+      Cancelamento já pedido é no-op.
     - Depois da coleta (``E``): a central não cancela mais. Aviso crítico ao
       operador, uma vez por pedido.
     - Despacho sem resultado confirmado: pode haver corrida na central que o
@@ -1027,7 +1172,9 @@ def on_order_cancelled(order) -> None:
     try:
         block = get_block(order)
         status = str(block.get("status") or "")
-        companions = ride_companions(order) if has_active_ride(order) else []
+        # Só quem ainda espera a entrega segura a corrida: se os outros já
+        # foram cancelados, esta é a última parada viva e a corrida vai junto.
+        companions = ride_companions(order, alive=True) if has_active_ride(order) else []
         if companions:
             # A corrida leva outros pedidos: cancelar a corrida tiraria o
             # entregador deles também. O operador tira a parada com a central.
@@ -1053,9 +1200,9 @@ def on_order_cancelled(order) -> None:
         if status == "E":
             _alert_cancelled_order(order, f"O entregador já coletou o pedido {code}, que foi cancelado: fale com a central.")
             return
-        if status in CANCELLABLE_STATUSES:
+        if ride_cancellable(block):
             try:
-                cancel_ride(order, actor="lifecycle.on_cancelled")
+                cancel_ride(order, actor="lifecycle.on_cancelled", intent=CANCEL_INTENT_ORDER_CANCELLED)
             except OrderStateConflict:  # silêncio-deliberado: cancelamento desta corrida já pedido, o worker cuida dele
                 pass
             except ValueError:
