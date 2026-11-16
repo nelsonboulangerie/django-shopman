@@ -4,12 +4,12 @@
 //
 // Três camadas, do fundo para a frente (dono, 14/11):
 //  · CHAMADA (na rua): rota e borda da parada na cor da corrida, em traço CONTÍNUO
-//    a 50%. A parada é um LOSANGO, como placa de trânsito (dono, 16/11). O entregador é o único cheio de cor: moto sobre fundo sólido, com o
+//    a 50%. A parada é um OCTÓGONO, como placa de trânsito (dono, 16/11). O entregador é o único cheio de cor: moto sobre fundo sólido, com o
 //    número (dono, 14/11, terceira rodada).
-//  · EDITANDO: rota e borda da parada (losango) na cor da corrida, PONTILHADAS. A
+//  · EDITANDO: rota e borda da parada (octógono) na cor da corrida, PONTILHADAS. A
 //    ativa forte, as outras esmaecidas.
 //  · AGUARDANDO: o pedido sem corrida, REDONDO branco com o código. A forma separa
-//    o que já tem corrida (losango) do que espera (dono, 15 e 16/11). Tocar põe na ativa.
+//    o que já tem corrida (octógono) do que espera (dono, 15 e 16/11). Tocar põe na ativa.
 //
 // O fundo é o Google Maps de verdade (dono, 14/11: "Pq não mostra um mapa de
 // verdade?"), com a chave pública do navegador. As camadas acima são as nossas,
@@ -242,30 +242,28 @@ const places = computed(() => {
       <NuxtIcon name="i-lucide-store" class="size-4" />
     </span>
 
-    <!-- corrida chamada: losango de borda contínua na cor; entregue leva o visto -->
+    <!-- corrida chamada: octógono de borda contínua na cor; entregue leva o visto -->
     <template v-for="r in live" :key="`ls${r.number}`">
       <span v-for="(s, k) in r.stops" :key="s.ref" class="absolute -translate-x-1/2 -translate-y-1/2" :style="at(s)">
         <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Corrida ${r.number}, parada ${k + 1}, pedido ${s.code}`" @click="emit('open', r.number)">
-          <span
-            class="grid size-8 rotate-45 place-items-center rounded-[5px] border-4 border-solid bg-white op-label font-bold tabular-nums text-highlighted shadow-sm"
-            :style="{ borderColor: `color-mix(in srgb, ${rideColor(r.number - 1).bg} ${liveAlpha * 100}%, transparent)` }"
-          >
-            <span class="-rotate-45"><NuxtIcon v-if="s.done" name="i-lucide-check" class="size-3.5" /><template v-else>{{ k + 1 }}</template></span>
+          <span class="relative grid size-9 place-items-center op-label font-bold tabular-nums text-highlighted">
+            <svg class="absolute inset-0 size-full drop-shadow-sm" viewBox="0 0 36 36" aria-hidden="true"><polygon points="32.8,24.1 24.1,32.8 11.9,32.8 3.2,24.1 3.2,11.9 11.9,3.2 24.1,3.2 32.8,11.9" fill="#fff" stroke-width="4" stroke-linejoin="round" :stroke="rideColor(r.number - 1).bg" :stroke-opacity="liveAlpha" /></svg>
+            <span class="relative"><NuxtIcon v-if="s.done" name="i-lucide-check" class="size-3.5" /><template v-else>{{ k + 1 }}</template></span>
           </span>
         </NuxtButton>
       </span>
     </template>
 
-    <!-- editando: losango de borda pontilhada na cor da corrida -->
+    <!-- editando: octógono de borda pontilhada na cor da corrida -->
     <template v-for="r in building" :key="`bs${r.number}`">
       <span v-for="(s, k) in r.stops" :key="s.ref" class="absolute z-10 -translate-x-1/2 -translate-y-1/2" :style="at(s)">
         <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Pedido ${s.code}, corrida ${r.number}`" @click="emit('toggle', s.ref)">
-          <span class="grid size-8 rotate-45 place-items-center rounded-[5px] border-4 border-dotted bg-white op-label font-bold tabular-nums text-highlighted shadow-sm transition hover:scale-110" :style="{ borderColor: rideColor(r.number - 1).bg }"><span class="-rotate-45">{{ k + 1 }}</span></span>
+          <span class="relative grid size-9 place-items-center op-label font-bold tabular-nums text-highlighted transition hover:scale-110"><svg class="absolute inset-0 size-full drop-shadow-sm" viewBox="0 0 36 36" aria-hidden="true"><polygon points="32.8,24.1 24.1,32.8 11.9,32.8 3.2,24.1 3.2,11.9 11.9,3.2 24.1,3.2 32.8,11.9" fill="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 6" :stroke="rideColor(r.number - 1).bg" /></svg><span class="relative">{{ k + 1 }}</span></span>
         </NuxtButton>
       </span>
     </template>
 
-    <!-- aguardando: redondos brancos com o código (parada de corrida é losango) -->
+    <!-- aguardando: redondos brancos com o código (parada de corrida é octógono) -->
     <span v-for="o in waiting" :key="o.ref" class="absolute z-10 -translate-x-1/2 -translate-y-1/2" :style="at(o)">
       <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Pedido ${o.code}, ${o.place}`" @click="emit('toggle', o.ref)">
         <span class="relative grid size-9 place-items-center rounded-full border-2 border-[#b9a888] bg-white op-micro font-semibold tabular-nums text-toned shadow-md transition hover:scale-110">
@@ -293,8 +291,8 @@ const places = computed(() => {
     <!-- legenda pela FORMA, nunca pela cor: a cor é sempre a da corrida -->
     <div v-if="!bare" class="absolute inset-x-3 top-3 mx-auto hidden w-fit flex-wrap justify-center sm:flex items-center gap-x-3 gap-y-1 rounded-md bg-white/90 px-2.5 py-1.5 op-micro text-toned shadow-sm" data-map-legend>
       <span class="flex items-center gap-1"><span class="size-3.5 rounded-full border-2 bg-white" style="border-color:#b9a888" />Aguardando</span>
-      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" stroke="#5f6670" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><span class="mx-0.5 size-3 rotate-45 rounded-[2px] border-[3px] border-dotted bg-white" style="border-color:#5f6670" />Editando</span>
-      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" stroke="#5f6670" stroke-width="3" stroke-linecap="round" /></svg><span class="mx-0.5 size-3 rotate-45 rounded-[2px] border-[3px] bg-white" style="border-color:#5f6670" />Corrida</span>
+      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" stroke="#5f6670" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="#fff" stroke="#5f6670" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 3.2" /></svg>Editando</span>
+      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" stroke="#5f6670" stroke-width="3" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="#fff" stroke="#5f6670" stroke-width="2.5" stroke-linejoin="round" /></svg>Corrida</span>
       <span class="flex items-center gap-1"><span class="grid h-4 w-6 place-items-center rounded-full bg-[#5f6670] text-white"><NuxtIcon name="i-lucide-bike" class="size-3" /></span>Entregador</span>
     </div>
 
