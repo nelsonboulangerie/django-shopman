@@ -11,7 +11,7 @@ import type {
   DeliveryRideProjection,
 } from "~/generated/ordersContract";
 import { rideColor } from "~/presentation/ridePalette";
-import { rideLine, whatsappLink } from "~/presentation/deliveries";
+import { rideLine, rideNotice, whatsappLink } from "~/presentation/deliveries";
 import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
 
 const props = defineProps<{
@@ -24,6 +24,14 @@ const props = defineProps<{
 const emit = defineEmits<{ close: []; back: []; cancel: [] }>();
 const tone = computed(() => rideColor(props.ride.number - 1));
 const line = computed(() => rideLine(props.ride, props.now));
+// O aviso de "não chame de novo" se dispensa, e volta se a causa mudar
+// (outra desistência na mesma corrida).
+const notice = computed(() => rideNotice(props.ride, props.now));
+const noticeDismissedFor = ref("");
+const showNotice = computed(() => notice.value !== null && noticeDismissedFor.value !== notice.value.key);
+function dismissNotice() {
+  noticeDismissedFor.value = notice.value?.key ?? "";
+}
 const located = computed(() =>
   props.ride.stops
     .filter((stop) => stop.latitude !== null && stop.longitude !== null)
@@ -56,6 +64,20 @@ const at = (iso: string) => (iso ? clockHHMM(Date.parse(iso)) : "");
     </header>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
+      <NuxtAlert
+        v-if="notice && showNotice"
+        class="mx-5 mt-4 w-auto"
+        :color="notice.color"
+        variant="subtle"
+        :icon="notice.icon"
+        :title="notice.title"
+        :description="notice.description"
+        close
+        role="status"
+        data-ride-notice
+        @update:open="dismissNotice"
+      />
+
       <div v-if="mapOrigin && located.length" class="relative mx-5 mt-4 h-48 overflow-hidden rounded-xl ring-1 ring-default">
         <CourierDeliveriesMap
           :origin="mapOrigin"
@@ -114,6 +136,7 @@ const at = (iso: string) => (iso ? clockHHMM(Date.parse(iso)) : "");
         <p class="op-micro font-semibold text-muted">O que aconteceu</p>
         <ul class="mt-2 flex flex-col gap-1.5 op-body">
           <li v-if="ride.called_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.called_at) }}</span><span class="text-highlighted">Corrida chamada</span></li>
+          <li v-if="ride.state === 'reopened' && ride.reopened_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.reopened_at) }}</span><span class="font-semibold text-highlighted">{{ ride.reopened_driver || "O entregador" }} desistiu</span></li>
           <li v-if="ride.pickup_eta_at && ride.state === 'coming'" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.pickup_eta_at) }}</span><span class="text-highlighted">Chegada prevista na loja</span></li>
           <li v-if="ride.arrived_pickup_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.arrived_pickup_at) }}</span><span class="text-highlighted">Chegou na loja</span></li>
           <li v-if="ride.picked_up_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.picked_up_at) }}</span><span class="text-highlighted">Saiu com as sacolas</span></li>
@@ -138,10 +161,10 @@ const at = (iso: string) => (iso ? clockHHMM(Date.parse(iso)) : "");
         <NuxtButton class="flex-1 justify-center" color="primary" icon="i-lucide-undo-2" :label="ride.back_action.label" :loading="busy" :disabled="!ride.back_action.enabled" @click="emit('back')" />
       </template>
       <template v-else-if="ride.cancel_action">
-        <p class="min-w-0 flex-1 op-micro text-muted">Antes de ele sair com as sacolas, dá para cancelar.</p>
+        <p class="min-w-0 flex-1 op-micro text-muted">{{ notice?.footer ?? "Antes de ele sair com as sacolas, dá para cancelar." }}</p>
         <NuxtButton color="error" variant="ghost" icon="i-lucide-circle-x" :label="ride.cancel_action.label" :loading="busy" :disabled="!ride.cancel_action.enabled" @click="emit('cancel')" />
       </template>
-      <p v-else class="min-w-0 flex-1 op-micro text-muted">Ele já saiu com as sacolas: cancelar agora só pela central da TaOn.</p>
+      <p v-else class="min-w-0 flex-1 op-micro text-muted">{{ notice?.footer ?? "Ele já saiu com as sacolas: cancelar agora só pela central da TaOn." }}</p>
     </footer>
   </aside>
 </template>
