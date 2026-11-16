@@ -533,6 +533,7 @@
             "set_driver",
             "set_progress",
             "set_status",
+            "set_tracking_links",
             "tracking_links"
           ]
         }
@@ -4925,6 +4926,39 @@
       ]
     },
     {
+      "path": "shopman/shop/management/commands/courier_machine_probe.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "Command",
+            "_LINK_KEYS",
+            "_NEVER",
+            "_RATE_HEADERS",
+            "_SAFE_KEYS",
+            "_SAFE_PREFIXES",
+            "_SAFE_SUFFIXES",
+            "_WRITES",
+            "_items",
+            "_link",
+            "_path",
+            "_point",
+            "_safe",
+            "_shape",
+            "_unwrap"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/management/commands/machine_register_webhook.py",
       "touchpoints": [
         "outro"
@@ -8868,6 +8902,7 @@
         "delivery.courier-ride-quote",
         "delivery.courier-shared-ride",
         "delivery.courier-shared-ride-eligibility",
+        "delivery.courier-stop-tracking-link",
         "shop.services-courier-courier-cancellation",
         "shop.services-courier-courier-status",
         "shop.services-courier-courier-sync"
@@ -8882,6 +8917,10 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_LINK_ORDER_KEYS",
+            "_RIDE_NUMBER_LOCK",
+            "_TRACKING_LINKS_SHARED_SECONDS",
+            "_TRACKING_RETRY_SECONDS",
             "_alert_ride_failed",
             "_alert_sync_failed",
             "_archive_current_ride",
@@ -8889,10 +8928,14 @@
             "_emit_sse",
             "_enrich_accepted",
             "_enrich_finished",
+            "_link_names",
+            "_lock_ride_numbers",
             "_resolve_sync_alert",
+            "_ride_links",
             "_save_block",
             "_sync_alert_marker",
             "_sync_failures_key",
+            "_tracking_for",
             "_tracking_retry",
             "logger"
           ]

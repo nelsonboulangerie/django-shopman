@@ -180,7 +180,11 @@ integração Machine — o despacho agora é API. O teleporte permanece como fal
    tirar a parada com a central). ⚠️ Pendências de homologação: a API não documenta os
    valores de `stops[].status`, então cada pedido só vira "entregue" no `F` da corrida
    inteira (com retorno, depois da volta à loja); o agrupamento automático da própria
-   TaOn (status `U`) segue valendo para corridas chamadas uma a uma.
+   TaOn (status `U`) segue valendo para corridas chamadas uma a uma. ⚠️ Não medido
+   (16/11/2026): o runbook da corrida de prova diz que o `F` chega "na porta", e este
+   item diz "depois da volta à loja". As sondas C1 e C2 da
+   [rodada de homologação](../runbooks/courier-machine-homologacao.md#o-f-chega-na-porta-ou-na-loja-os-documentos-discordam)
+   medem as três horas (`ER`, `F`, volta física) e decidem.
 7. A corrida conjunta é uma saída (Pablo, 2026-10-28: "na realidade vai acontecer"): pedido
    com maquininha ou troco entra nela. A escolha pergunta o troco de cada pedido que pede
    (sai da gaveta pedido a pedido, `courier_out`) e UMA maquininha para a corrida: o

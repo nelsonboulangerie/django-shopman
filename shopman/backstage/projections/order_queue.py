@@ -949,6 +949,9 @@ class TwoZoneQueueProjection:
     # pedido, ``courier.group_refusal``), com o troco e a maquininha que a
     # chamada pergunta. Com duas ou mais, a Saída oferece a corrida.
     ride_candidates: tuple[RideCandidateProjection, ...] = ()
+    # Chamar a corrida desses candidatos (``courier-ride``): quem a tela leu e a
+    # revisão de cada um (``courier_ride_action``). ``None`` sem candidatos.
+    ride_action: Action | None = None
 
     ifood_negotiation_orders: tuple[OrderCardProjection, ...] = ()
     # Os motivos de recusar do quadro: a MESMA lista única do detalhe e do cancelar.
@@ -1392,6 +1395,13 @@ def _courier_actions(order: Order, user, courier_block: dict | None, *, authoriz
             "" if courier_block["can_quote"] else "Confira o estado do pedido e da corrida antes de cotar."),
         method="POST", idempotency="required",
         payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    # Uma corrida para este pedido e os que podem ir junto (o "Vai junto?" da
+    # chamada): a mesma ação das Entregas e do Painel, com a revisão de cada um.
+    offered = [str(row.get("ref") or "") for row in courier_block.get("ride_offer") or []]
+    if offered and (refs is None or "courier-ride" in refs):
+        ride = courier_ride_action([order, *Order.objects.filter(ref__in=offered)], user=user)
+        if ride is not None:
+            extra_actions.append(ride)
     return [action for action in extra_actions if refs is None or action.ref in refs]
 
 
@@ -1522,9 +1532,10 @@ def _courier_block(order: Order) -> dict | None:
             if not cancellation_pending:
                 error = {"message": cancellation.last_error or "Solicitação não aplicada. Confira o estado atual antes de tentar novamente.",
                     "at": cancellation.updated_at.isoformat()}
-        from shopman.shop.services.courier import progress_view
+        from shopman.shop.services.courier import progress_view, proven_tracking
 
         progress = progress_view(block)
+        tracking = proven_tracking(block)
         status_label = COURIER_STATUS_LABELS.get(ride_status, "")
         if ride_status in ("A", "S") and progress["arrived_pickup_at"]:
             status_label = "Entregador na loja"
@@ -1536,8 +1547,9 @@ def _courier_block(order: Order) -> dict | None:
             **progress,
             "active": active,
             "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
-            "tracking_url": str(block.get("tracking_url") or "") if active else "",
-            "confirmation_code": str(block.get("confirmation_code") or ""),
+            # Só o link e o código casados com a parada DESTE pedido (``courier.proven_tracking``).
+            "tracking_url": tracking["url"] if active else "",
+            "confirmation_code": tracking["code"],
             "estimate_display": estimate_display,
             "final_value_display": (
                 _money(int(block["final_value_q"]))
@@ -1938,7 +1950,8 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
 
     return TwoZoneQueueProjection(
         equipment_out=_equipment_out(user=user, devices=devices),
-        ride_candidates=_ride_candidates([*ready_orders, *prep_orders]),
+        ride_candidates=(ride_candidates := _ride_candidates([*ready_orders, *prep_orders])),
+        ride_action=_ride_action_for(ride_candidates, [*ready_orders, *prep_orders], user=user),
         equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
                                   for device in devices if device.active and device.current_order_id is None),
         ifood_negotiation_orders=tuple(
@@ -2465,6 +2478,32 @@ def courier_estimate_display(estimate: dict | None) -> str:
     return " · ".join(parts)
 
 
+def courier_ride_action(orders, *, user=None) -> Action | None:
+    """A ação de chamar UMA corrida para vários destes pedidos (``courier-ride``).
+
+    Uma só para as três telas que juntam entregas (as Entregas, o Painel e o
+    detalhe do pedido): ``payload_schema`` traz quem a tela leu
+    (``expected_actor_id``) e o que ela leu de cada pedido que pode entrar
+    (``base_revisions``: ``{ref: courier.dispatch_revision}``). A tela manda as
+    revisões dos pedidos que escolheu; o servidor confere cada uma com o pedido
+    travado antes de gravar. ``None`` com menos de dois pedidos: não há corrida
+    em grupo a oferecer.
+    """
+    from shopman.shop.services.courier import dispatch_revision
+
+    orders = list(orders)
+    if len(orders) < 2:
+        return None
+    authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
+    return Action(
+        ref="courier-ride", kind="mutation", label="Chamar corrida", enabled=authorized,
+        reason="" if authorized else "Identifique uma pessoa com permissão para gerenciar pedidos.",
+        method="POST", idempotency="required",
+        payload_schema={"expected_actor_id": getattr(user, "pk", None),
+                        "base_revisions": {order.ref: dispatch_revision(order) for order in orders}},
+    )
+
+
 def _ride_candidates(orders) -> tuple[RideCandidateProjection, ...]:
     """As entregas que podem entrar juntas numa corrida (prontas primeiro, depois em preparo).
 
@@ -2479,6 +2518,12 @@ def _ride_candidates(orders) -> tuple[RideCandidateProjection, ...]:
         return ()
     rows = [_ride_candidate(order) for order in orders if _rides_with_others(order)]
     return tuple(rows) if len(rows) >= 2 else ()
+
+
+def _ride_action_for(candidates, orders, *, user=None) -> Action | None:
+    """A ação ``courier-ride`` dos candidatos do Painel (os mesmos de ``ride_candidates``)."""
+    refs = {row.ref for row in candidates}
+    return courier_ride_action([order for order in orders if order.ref in refs], user=user) if refs else None
 
 
 def _rides_with_others(order: Order) -> bool:

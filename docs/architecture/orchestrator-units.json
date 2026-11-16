@@ -8551,7 +8551,10 @@
           "path": "shopman/shop/services/courier.py",
           "symbols": [
             "MAX_RIDE_STOPS",
+            "RideAlreadyCalled",
+            "RideRevisionChanged",
             "_route",
+            "_same_ride_already_called",
             "_stop",
             "dispatch_task_filter",
             "request_group_dispatch",
@@ -8594,9 +8597,13 @@
         {
           "path": "shopman/shop/services/courier.py",
           "symbols": [
+            "RIDE_LETTERS",
             "RIDE_NUMBERS",
+            "_live_ride_numbers",
+            "free_ride_numbers",
             "next_ride_number",
-            "ride_is_live"
+            "ride_is_live",
+            "ride_letter"
           ]
         }
       ],
@@ -8614,6 +8621,43 @@
       "config_surface": [],
       "tests": [
         "shopman/backstage/tests/test_deliveries_projection.py::test_the_number_is_freed_when_the_ride_ends"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "delivery.courier-stop-tracking-link",
+      "question": "Qual link de rastreio é o da parada deste pedido, e quando ele não pode ser mostrado ao cliente?",
+      "owner": "delivery.stop-tracking-link",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.courier:link_for_order",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:link_for_order"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "TRACKING_MATCHES",
+            "link_for_order",
+            "proven_tracking"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_tracking_per_stop.py::test_the_entry_that_names_the_order_wins_whatever_the_list_order",
+        "shopman/shop/tests/test_courier_tracking_per_stop.py::test_one_entry_per_stop_in_the_sent_order_matches_by_position",
+        "shopman/shop/tests/test_courier_tracking_per_stop.py::test_no_proof_no_link_in_a_ride_with_several_stops"
       ],
       "test_gap_reason": null,
       "policy": false,

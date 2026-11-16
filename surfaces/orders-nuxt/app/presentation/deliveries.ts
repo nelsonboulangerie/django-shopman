@@ -7,7 +7,6 @@ import type {
 } from "~/generated/ordersContract";
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
-import { RIDE_PALETTE } from "./ridePalette";
 
 /** Uma corrida que o operador está juntando, antes de chamar (estado só da tela). */
 export interface EditingRide {
@@ -15,9 +14,27 @@ export interface EditingRide {
   refs: string[];
 }
 
-/** O menor número livre: nem das corridas na rua, nem das que estão sendo editadas. */
-export function nextFreeNumber(taken: readonly number[]): number | null {
-  for (let n = 1; n <= RIDE_PALETTE.length; n++) if (!taken.includes(n)) return n;
+/**
+ * A letra da corrida, como o operador a chama: 1 é A, 2 é B, 26 é Z. Corrida se
+ * nomeia por letra em toda tela (decisão do dono, 16/11/2026); o número segue
+ * sendo o que o servidor grava e o que escolhe a cor. Espelha `courier.ride_letter`.
+ */
+export function rideLetter(number: number | null | undefined): string {
+  if (typeof number !== "number" || !Number.isInteger(number) || number < 1) return "";
+  return String.fromCharCode(65 + ((number - 1) % 26));
+}
+
+/**
+ * O menor número livre para uma corrida em edição: dos que o servidor diz livres
+ * (`free_numbers`, as corridas na rua já descontadas, até 26 letras), o primeiro
+ * que nenhuma corrida em edição pegou. Quem grava o número é a chamada; a tela
+ * manda o que mostrava e o servidor o mantém se continuar livre.
+ */
+export function nextFreeNumber(
+  free: readonly number[],
+  editing: readonly number[],
+): number | null {
+  for (const n of free) if (!editing.includes(n)) return n;
   return null;
 }
 
@@ -34,6 +51,8 @@ export function handoffLabel(n: number): string {
 export interface RideCall {
   /** single: um pedido (``courier-dispatch``); group: vários (``courier-ride``). */
   kind: "single" | "group";
+  /** O número (letra e cor) que a corrida tinha na edição. */
+  number: number;
   refs: string[];
   change_out: Record<string, string>;
   machine: string;
@@ -42,7 +61,8 @@ export interface RideCall {
 /**
  * O que vai à TaOn para cada corrida editada com pelo menos um pedido. O troco
  * sugerido da gaveta vai como está (o mesmo do Painel); a maquininha só quando
- * algum pedido é de cartão na porta.
+ * algum pedido é de cartão na porta. Na ordem dos números: o servidor dá o
+ * menor livre a quem chama primeiro, e a corrida fica com o número que mostrava.
  */
 export function rideCalls(
   editing: readonly EditingRide[],
@@ -52,12 +72,14 @@ export function rideCalls(
   const byRef = new Map(stops.map((stop) => [stop.ref, stop]));
   return editing
     .filter((ride) => ride.refs.length > 0)
+    .sort((a, b) => a.number - b.number)
     .map((ride) => {
       const chosen = ride.refs
         .map((ref) => byRef.get(ref))
         .filter((stop): stop is DeliveryStopProjection => Boolean(stop));
       return {
         kind: chosen.length > 1 ? "group" : "single",
+        number: ride.number,
         refs: chosen.map((stop) => stop.ref),
         change_out: Object.fromEntries(
           chosen
