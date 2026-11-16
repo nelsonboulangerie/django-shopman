@@ -60,6 +60,8 @@ watch(
   { immediate: true },
 );
 const route = useRoute();
+// SÓ NO BRANCH DE PRÉVIAS (DEV-2026-030, nunca no main): as prévias abrem sem backend em dev.
+const previewBypass = import.meta.dev && route.path.startsWith("/preview-multisservico");
 const { landingPath } = useGestorAccess();
 const redirectingToRoleLanding = computed(
   () =>
@@ -140,8 +142,9 @@ useOperatorWindowTitle();
       <NuxtRouteAnnouncer />
       <!-- Aviso calmo de conexão (kit) — global, só aparece offline (paridade c/ POS/KDS/hub). -->
       <OfflineBanner />
+      <NuxtPage v-if="previewBypass" />
       <OperatorSuiteShell
-        v-if="surface.showPage && !redirectingToRoleLanding"
+        v-else-if="surface.showPage && !redirectingToRoleLanding"
         storage-key="gestor"
         :sections="sections"
         :current="current"
@@ -205,17 +208,17 @@ useOperatorWindowTitle();
       <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
            alpha subia a tela de senha com a sessão viva. -->
       <OperatorSessionUnavailable
-        v-if="surface.showUnavailable"
+        v-if="surface.showUnavailable && !previewBypass"
         scope="os pedidos"
         @retry="refresh()"
       />
       <OperatorLogin
-        v-if="surface.showLogin"
+        v-if="surface.showLogin && !previewBypass"
         :expired="sessionState === 'expired'"
         :reload-on-success="false"
         @success="restoreAuthenticatedWorkspace"
       />
-      <OperatorLock v-else-if="surface.showLock" :perm="OPERATOR_PERM" />
+      <OperatorLock v-else-if="surface.showLock && !previewBypass" :perm="OPERATOR_PERM" />
       <OperatorPwaRuntime />
     </div>
   </OperatorAppRoot>
