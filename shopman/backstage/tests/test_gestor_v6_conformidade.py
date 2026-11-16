@@ -16,6 +16,7 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 from shopman.orderman.models import Order, OrderItem
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage.presentation.status import OPERATOR_ORDER_STATUS_LABELS, order_status_label
 from shopman.backstage.projections.order_attention import PrepExpectation, prep_expectation, ready_eta
@@ -69,7 +70,7 @@ def test_pix_block_is_written_with_the_charge_times():
 
     assert card.advance_block_label == "Aguardando Pix"
     assert card.advance_block_reason == (
-        f"gerado às {timezone.localtime(created):%H:%M} · expira às {timezone.localtime(created + timedelta(minutes=30)):%H:%M}"
+        f"gerado às {format_clock(created)} · expira às {format_clock(created + timedelta(minutes=30))}"
         " · avança sozinho quando cair"
     )
 

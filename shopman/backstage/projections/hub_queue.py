@@ -37,6 +37,7 @@ roda isolada e, se quebrar, sai do resultado com um aviso no log.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
@@ -148,6 +149,10 @@ class _Collected:
 
 def _iso(value: datetime | None) -> str:
     return value.isoformat() if value else ""
+
+
+#: A hora como o cartão da encomenda a escreve ("9h", "12h45": `format_clock`).
+_CLOCK_RE = re.compile(r"^(\d{1,2})h(\d{2})?$")
 
 
 def _clock(value: datetime | None) -> str:
@@ -353,7 +358,10 @@ def _preorders(user, base: str, label: str, now: datetime, out: _Collected) -> N
     for card in open_pickups:
         if not card.window_start:
             continue
-        hour, minute = (int(part) for part in card.window_start.split(":"))
+        clock = _CLOCK_RE.match(card.window_start)
+        if clock is None:
+            continue
+        hour, minute = int(clock.group(1)), int(clock.group(2) or 0)
         starts_at = timezone.make_aware(datetime.combine(today, time(hour, minute)), tz)
         slack = (starts_at - now).total_seconds()
         if starts_at - now > PREORDER_HORIZON:
