@@ -114,6 +114,25 @@ def test_the_number_is_freed_when_the_ride_ends(shop):
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_the_ride_link_is_offered_only_when_the_ride_has_one_stop(shop):
+    """O link é de UMA parada: com várias, "o link da corrida" seria o de um cliente só."""
+    a, b = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.335, -51.158)
+    alone = _at("EN-C", -23.32, -51.15)
+    _call(a, b)
+    _call(alone)
+    for order in (a, b, alone):
+        courier.apply_status(order, "A", source="test")
+        order.refresh_from_db()
+
+    shared, single = build_deliveries().rides
+    assert [stop.ref for stop in shared.stops] == ["EN-B", "EN-A"]
+    # Cada pedido tem o link da própria parada gravado, e mesmo assim a corrida não oferece um.
+    assert courier.proven_tracking(courier.get_block(a))["url"] != courier.proven_tracking(courier.get_block(b))["url"]
+    assert shared.tracking_url == ""
+    assert single.tracking_url == f"https://rastreio.mock/pedido/{courier.get_block(alone)['id_mch']}"
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_bags_sum_the_declared_volumes_and_name_who_is_missing(shop):
     a, b = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.335, -51.158)
     a.data = {**a.data, "volumes": 2}
