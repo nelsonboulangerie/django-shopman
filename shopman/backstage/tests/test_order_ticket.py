@@ -277,7 +277,7 @@ def test_a_venda_do_DIA_no_PDV_imprime_o_par_de_horas(shop):
 
     papel = _texto(order_ticket(order))
 
-    assert "14:00 ÀS 14:30" in papel
+    assert "14H ÀS 14H30" in papel
 
 
 def test_janela_desconhecida_sai_crua_em_vez_de_sumir(shop):

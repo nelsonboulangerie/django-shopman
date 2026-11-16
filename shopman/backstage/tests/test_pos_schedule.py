@@ -23,7 +23,7 @@ from shopman.shop.models import Channel, Shop
 URL = "/api/v1/backstage/pos/schedule/"
 
 ABERTO_TODO_DIA = {
-    day: {"open": "8h", "close": "18:00"}
+    day: {"open": "08:00", "close": "18:00"}
     for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 }
 
@@ -38,7 +38,7 @@ class POSScheduleTests(TestCase):
             sku="BF",
             name="Baguette de Tradition",
             base_price_q=1600,
-            metadata={"ready_from": "12h"},
+            metadata={"ready_from": "12:00"},
         )
         user = get_user_model().objects.create_user("op", password="x", is_staff=True)
         ct = ContentType.objects.get_for_model(Shift)
@@ -97,7 +97,7 @@ class POSScheduleTests(TestCase):
         )
         self.assertTrue(por_ref["slot-12"]["enabled"])
         self.assertEqual(payload["earliest_window_ref"], "slot-12")
-        self.assertEqual(payload["ready_at"], "12h")
+        self.assertEqual(payload["ready_at"], "12:00")
         self.assertEqual(payload["bottleneck_name"], "Baguette de Tradition")
 
     def test_carrinho_sem_prontidao_nao_restringe(self) -> None:

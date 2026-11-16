@@ -822,7 +822,7 @@ class TestRules:
                 "trigger": "schedule",
                 "template_id": template.pk,
                 "platforms": ["whatsapp"],
-                "schedule": {"type": "recurring", "windows": [["17h30", "18:30"]]},
+                "schedule": {"type": "recurring", "windows": [["17:30", "18:30"]]},
             },
             content_type="application/json",
         )

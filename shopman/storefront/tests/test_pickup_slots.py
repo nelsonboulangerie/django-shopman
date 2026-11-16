@@ -59,7 +59,7 @@ class TestGradeDeHoje:
         ctx = annotate_slots_for_checkout([], now=_at(9, 10))
 
         assert ctx["grid"] == "half_hour"
-        assert _refs(ctx) == ["10:00-10:30", "10h30-11:00", "11:00-11:30", "11:30-12:00"]
+        assert _refs(ctx) == ["10:00-10:30", "10:30-11:00", "11:00-11:30", "11:30-12:00"]
         assert ctx["earliest_slot_ref"] == "10:00-10:30"
         first = ctx["pickup_slots"][0]
         assert first == {

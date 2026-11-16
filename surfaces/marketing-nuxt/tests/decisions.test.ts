@@ -188,7 +188,7 @@ describe("fila de decisões: a casa", () => {
     expect(automaticCheckLine(check(), TZ, NOW)).toEqual({
       title: "Google: resultado incerto.",
       detail:
-        "O sistema consultou sem reenviar: publicado às 09:58 · automático",
+        "O sistema consultou sem reenviar: publicado às 9h58 · automático",
     });
     expect(
       automaticCheckLine(

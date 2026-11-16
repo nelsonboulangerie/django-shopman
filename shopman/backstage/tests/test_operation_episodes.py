@@ -34,7 +34,7 @@ def shop(db):
 
     shop = Shop.objects.create(name="Nelson")
     shop.opening_hours = {
-        name: {"open": "9h", "close": "18:00"}
+        name: {"open": "09:00", "close": "18:00"}
         for name in (
             "monday", "tuesday", "wednesday", "thursday",
             "friday", "saturday", "sunday",

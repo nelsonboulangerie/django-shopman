@@ -19,9 +19,9 @@ describe("a hora do turno é a do balcão (PDV2-24, PDV-19)", () => {
 
   it("o Fim do dia diz quem ABRIU, não quem opera agora", () => {
     expect(shiftOpenedLine({ terminalLabel: "PDV principal", openedAt: opened, openedBy: "admin" }))
-      .toBe("PDV principal · turno aberto às 08:45 por admin");
+      .toBe("PDV principal · turno aberto às 8h45 por admin");
     expect(shiftOpenedLine({ terminalLabel: "PDV principal", openedAt: opened }))
-      .toBe("PDV principal · turno aberto às 08:45");
+      .toBe("PDV principal · turno aberto às 8h45");
   });
 });
 

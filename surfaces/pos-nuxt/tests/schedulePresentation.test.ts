@@ -106,7 +106,7 @@ describe("isScheduled", () => {
 });
 
 const JANELAS: ScheduleWindow[] = [
-  { ref: "09:00-09:30", label: "09:00 às 09:30", enabled: false, reason: "Baguette de Tradition sai às 12:00." },
+  { ref: "09:00-09:30", label: "9h às 9h30", enabled: false, reason: "Baguette de Tradition sai às 12h." },
   { ref: "12:00-12:30", label: "12:00 às 12:30", enabled: true, reason: "" },
 ];
 
@@ -138,7 +138,7 @@ describe("selectedWindowConflict — a escolha que virou impossível sozinha", (
     // O operador escolheu 09:00 e SÓ DEPOIS lançou a baguete. Descobrir isso na
     // tela de pagamento é tarde: o cliente já ouviu o horário.
     expect(selectedWindowConflict(JANELAS, "09:00-09:30")).toBe(
-      "Baguette de Tradition sai às 12:00.",
+      "Baguette de Tradition sai às 12h.",
     );
   });
 
@@ -156,7 +156,7 @@ describe("selectedWindowConflict — a escolha que virou impossível sozinha", (
 describe("readinessNote", () => {
   it("diz o motivo uma vez, em vez de dez vezes nas janelas apagadas", () => {
     expect(readinessNote("Baguette de Tradition", "12:00")).toBe(
-      "Baguette de Tradition sai às 12:00. Antes disso não dá para prometer.",
+      "Baguette de Tradition sai às 12h. Antes disso não dá para prometer.",
     );
   });
 

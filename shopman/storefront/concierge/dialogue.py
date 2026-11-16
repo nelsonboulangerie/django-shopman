@@ -497,12 +497,13 @@ def _slot_by_time(text: str, options: list[dict]) -> int:
         return 0
     wanted = format_clock(f"{match.group(1)}:{match.group(2) or '00'}")
     # O nome da opção é o rótulo da tela ("14h30 às 15h"): bate a primeira hora
-    # inteira, para "14h" não escolher "14h30 às 15h".
-    hits = [
-        index
-        for index, option in enumerate(options, 1)
-        if wanted and str(option.get("name", "")).split(" ")[0] == wanted
-    ]
+    # inteira, para "14h" não escolher "14h30 às 15h". As duas pontas passam pelo
+    # mesmo formatador, então a opção guardada como "14:30 às 15:00" também bate.
+    def starts_at(option: dict) -> str:
+        first = str(option.get("name", "")).split(" ")[0]
+        return format_clock(first, empty=first)
+
+    hits = [index for index, option in enumerate(options, 1) if wanted and starts_at(option) == wanted]
     return hits[0] if len(hits) == 1 else 0
 
 
