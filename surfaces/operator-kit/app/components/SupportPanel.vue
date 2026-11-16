@@ -3,7 +3,9 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useSupport } from "../composables/useSupport";
 import OperatorButton from "./OperatorButton.vue";
+import OperatorQuickFilters from "./OperatorQuickFilters.vue";
 import OperatorScreenState from "./OperatorScreenState.vue";
+import UiDateField from "./UiDateField.vue";
 
 import {
   SUPPORT_FILTERS,
@@ -23,6 +25,7 @@ import {
   typeLabel,
   type SupportFilter,
 } from "../presentation/support";
+import type { QuickFilterItem } from "../presentation/quickFilters";
 import type { SupportDecisionKind, SupportPriority, SupportType } from "../types/support";
 
 const props = withDefaults(
@@ -67,6 +70,13 @@ onBeforeUnmount(() => {
 });
 
 const filter = ref<SupportFilter>("all");
+const filterItems: QuickFilterItem[] = SUPPORT_FILTERS.map((item) => ({ key: item.id, label: item.label }));
+const filterKey = computed<string>({
+  get: () => filter.value,
+  set: (next) => {
+    filter.value = next as SupportFilter;
+  },
+});
 const visibleTickets = computed(() => filterTickets(tickets.value, filter.value));
 
 const newOpen = ref(false);
@@ -178,7 +188,6 @@ async function submitDev(): Promise<void> {
               label="Voltar"
               icon="i-lucide-arrow-left"
               variant="ghost"
-              size="sm"
               @click="clear()"
             />
             <NuxtBadge :color="statusColor(ticket.status)" :label="statusLabel(ticket.status)" size="sm" />
@@ -257,7 +266,7 @@ async function submitDev(): Promise<void> {
                 :rows="2"
                 :placeholder="decisionMode === 'reject' ? 'Motivo da recusa' : 'Motivo do adiamento'"
               />
-              <NuxtInput v-if="decisionMode === 'defer'" v-model="decisionDate" type="date" size="sm" />
+              <UiDateField v-if="decisionMode === 'defer'" v-model="decisionDate" label="Adiar até" />
               <OperatorButton label="Confirmar" size="sm" :loading="pending" @click="submitDecision" />
             </div>
           </section>
@@ -289,18 +298,7 @@ async function submitDev(): Promise<void> {
 
         <div v-else class="flex flex-col gap-4" data-support-list>
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="flex flex-wrap gap-1">
-              <NuxtButton
-                v-for="item in SUPPORT_FILTERS"
-                :key="item.id"
-                size="xs"
-                :variant="filter === item.id ? 'solid' : 'soft'"
-                :color="filter === item.id ? 'primary' : 'neutral'"
-                @click="filter = item.id"
-              >
-                {{ item.label }}
-              </NuxtButton>
-            </div>
+            <OperatorQuickFilters v-model="filterKey" :items="filterItems" label="Fila do Suporte" />
             <OperatorButton
               v-if="capabilities.create"
               label="Novo chamado"
