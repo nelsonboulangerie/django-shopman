@@ -13,6 +13,7 @@ import { computed, reactive, resolveComponent, watch } from "vue";
 import { OPERATOR_APPS, OPERATOR_ICON_FOREGROUND, operatorAppForTile, operatorShortcutIconSrc } from "../../appIdentity";
 import type { OperatorSection } from "../presentation/appBar";
 import { useScreen } from "../composables/useScreen";
+import { SUPPORT_ENTRY_ICON, SUPPORT_ENTRY_LABEL, useSupportEntry } from "../composables/useSupportEntry";
 
 const props = defineProps<{
   sections: readonly OperatorSection[];
@@ -20,6 +21,8 @@ const props = defineProps<{
   operatorName?: string;
 }>();
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
+// O Suporte da casca (no celular, o trocador é o menu de quem opera).
+const supportEntry = useSupportEntry();
 
 const open = useState<boolean>("suite-switcher-open", () => false);
 const screen = useScreen();
@@ -185,6 +188,17 @@ function go(section: OperatorSection) {
             class="min-h-11"
             data-switcher-lock
             @click="open = false; emit('lock')"
+          />
+        </section>
+        <section v-if="supportEntry" aria-label="Suporte" class="border-t border-default pt-3">
+          <NuxtButton
+            :label="SUPPORT_ENTRY_LABEL"
+            :icon="SUPPORT_ENTRY_ICON"
+            color="neutral"
+            variant="ghost"
+            class="min-h-11 w-full justify-start"
+            data-switcher-support
+            @click="open = false; supportEntry()"
           />
         </section>
       </div>
