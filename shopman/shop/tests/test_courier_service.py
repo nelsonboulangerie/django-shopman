@@ -1245,6 +1245,29 @@ def test_reopen_keeps_the_ride_and_forgets_only_the_driver(shop):
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_reopen_forgets_the_link_and_the_caches_of_the_driver_who_left(shop):
+    """O entregador novo pode ter link novo: o próximo aceite busca de novo."""
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["id_mch"]
+    courier.apply_status(order, "A", source="poll")
+    order.refresh_from_db()
+    assert courier.proven_tracking(courier.get_block(order))["url"]
+    cache.set(f"courier:pos:{ride}", {"lat": "-23.3", "lng": "-51.1"}, 120)
+    assert cache.get(f"courier:tracking_links:{ride}") is not None
+
+    courier.record_reopen(order, at="2026-10-13T19:50:00Z")
+    order.refresh_from_db()
+    block = courier.get_block(order)
+    assert not {"tracking_url", "confirmation_code", "tracking_match"} & set(block)
+    assert cache.get(f"courier:tracking_links:{ride}") is None
+    assert cache.get(f"courier:pos:{ride}") is None
+
+    courier.apply_status(order, "A", source="poll")
+    order.refresh_from_db()
+    assert courier.proven_tracking(courier.get_block(order))["url"]
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_reading_after_the_withdrawal_does_not_bring_the_old_driver_back(shop):
     """A leitura segue trazendo o aceite e a desistência de quem saiu, com a letra em D."""
     order = _dispatched_order(shop)
