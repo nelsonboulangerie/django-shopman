@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from shopman.backstage.models import OperatorAlert
 from shopman.orderman.models import Order
+
+from shopman.backstage.models import OperatorAlert
 from shopman.shop.services import closed_day_orders
 
 
