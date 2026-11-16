@@ -12,7 +12,8 @@ Três partes, as mesmas no mapa e na coluna (desenho do dono, 14/11/2026, PR #24
   percurso e as sacolas (volumes declarados).
 
 Só leitura; os gestos usam os endpoints de sempre (``courier-ride``,
-``courier-dispatch``, ``courier-back``, ``courier-cancel``).
+``courier-dispatch``, ``courier-back``, ``courier-cancel``). A corrida de
+vários pedidos sai pela ação ``group_action``, no protocolo de intenção.
 """
 
 from __future__ import annotations
@@ -121,6 +122,16 @@ class DeliveriesProjection:
     #: A chave PÚBLICA do Google Maps (a do navegador, a mesma do PDV e da loja):
     #: com ela o mapa é o de verdade; vazia, o desenho próprio fica no lugar.
     maps_key: str = ""
+    #: Chamar UMA corrida para vários pedidos de Aguardando (``courier-ride``):
+    #: quem a tela leu e a revisão de cada pedido que pode ir junto
+    #: (``order_queue.courier_ride_action``). ``None`` com menos de dois.
+    group_action: Action | None = None
+    #: Os números de corrida livres agora, do menor ao maior (1 a 26, a letra e a
+    #: cor de cada corrida; ``courier.free_ride_numbers``). É daqui que a tela
+    #: tira o número das corridas em edição; quem grava é a chamada.
+    free_numbers: tuple[int, ...] = ()
+    #: O primeiro livre (``None`` quando as 26 letras estão ocupadas).
+    next_number: int | None = None
 
 
 def _point(address: dict) -> tuple[float | None, float | None]:
@@ -271,7 +282,7 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
 
 def build_deliveries(*, user=None) -> DeliveriesProjection:
     from shopman.backstage.models import DeliveryDevice
-    from shopman.backstage.projections.order_queue import _is_delivery, _is_future_preorder
+    from shopman.backstage.projections.order_queue import _is_delivery, _is_future_preorder, courier_ride_action
     from shopman.backstage.services.delivery_devices import PREFIX
     from shopman.shop.adapters import get_adapter
     from shopman.shop.models import Shop
@@ -300,14 +311,20 @@ def build_deliveries(*, user=None) -> DeliveriesProjection:
     waiting.sort(key=lambda order: order.status != Order.Status.READY)
     ride_rows = sorted((_ride(group, user=user) for group in rides.values()), key=lambda ride: (ride.number or 99, ride.called_at))
     devices = DeliveryDevice.objects.filter(active=True, current_order__isnull=True)
+    stops = tuple(_stop(order, with_asks=True, user=user) for order in waiting)
+    joinable = {stop.ref for stop in stops if not stop.group_refusal}
+    free_numbers = tuple(courier.free_ride_numbers())
     return DeliveriesProjection(
         origin=origin,
-        waiting=tuple(_stop(order, with_asks=True, user=user) for order in waiting),
+        waiting=stops,
         rides=tuple(ride_rows),
         max_stops=courier.MAX_RIDE_STOPS,
         machines=tuple({"ref": PREFIX + str(device.ref), "label": device.label} for device in devices),
         courier_on=get_adapter("courier") is not None,
         maps_key=browser_api_key(),
+        group_action=courier_ride_action([order for order in waiting if order.ref in joinable], user=user),
+        free_numbers=free_numbers,
+        next_number=free_numbers[0] if free_numbers else None,
     )
 
 
