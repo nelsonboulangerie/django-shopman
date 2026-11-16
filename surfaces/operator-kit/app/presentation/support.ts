@@ -2,6 +2,7 @@
 // O chamado é o registro; a solicitação é o chamado que pede mudança; o
 // compromisso (DEV-) é o trabalho. `Pedido` aqui nunca aparece: é o Order do cliente.
 
+import { OPERATOR_APPS } from "../../appIdentity";
 import type {
   SupportCapabilities,
   SupportPriority,
@@ -142,7 +143,7 @@ export interface ContextRow {
 }
 
 const CONTEXT_LABELS: Record<string, string> = {
-  app: "App",
+  app: "Aplicativo",
   route: "Tela",
   shop_ref: "Loja",
   sector_ref: "Setor",
@@ -164,7 +165,9 @@ export function contextRows(context: Record<string, unknown> | null | undefined)
   for (const [key, label] of Object.entries(CONTEXT_LABELS)) {
     const value = context[key];
     if (typeof value === "string" || typeof value === "number") {
-      const text = String(value).trim();
+      const raw = String(value).trim();
+      // O app sai pelo nome que o operador conhece (PDV, Cozinha), nunca pelo id.
+      const text = key === "app" ? (OPERATOR_APPS[raw as keyof typeof OPERATOR_APPS]?.label ?? raw) : raw;
       if (text) rows.push({ label, value: text });
     }
   }

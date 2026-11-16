@@ -97,6 +97,7 @@ describe("presentation/support", () => {
       empty: "",
     });
 
+    expect(rows).toContainEqual({ label: "Aplicativo", value: "Central" });
     expect(rows).toContainEqual({ label: "Tela", value: "/pos" });
     expect(rows).toContainEqual({ label: "Posto", value: "pdv-02" });
     expect(rows).toContainEqual({ label: "Terminal", value: "PDV-02" });
