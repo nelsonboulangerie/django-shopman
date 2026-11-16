@@ -77,7 +77,14 @@ const props = defineProps<{
    * de volta fica só no selo. Pede `floorBar`.
    */
   officeUsesFloorBar?: boolean;
+  /**
+   * Liga o "Preciso de ajuda" no pé da barra lateral, entre Atalhos e Bloquear: o
+   * chamado do Suporte abre com este contexto da tela (ADR-045). Sem ele, o item não
+   * aparece.
+   */
+  supportContext?: Record<string, unknown>;
 }>();
+const supportOpen = ref(false);
 
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
 const route = useRoute();
@@ -265,6 +272,20 @@ function footItems(isCollapsed: boolean) {
         shortcuts.open.value = true;
       },
     },
+    ...(props.supportContext
+      ? [
+          {
+            label: "Preciso de ajuda",
+            icon: "i-lucide-life-buoy",
+            tooltip: { text: "Preciso de ajuda" },
+            "aria-label": "Preciso de ajuda",
+            "data-rail-support": "",
+            onSelect: () => {
+              supportOpen.value = true;
+            },
+          },
+        ]
+      : []),
     ...(props.operatorName
       ? [
           {
@@ -378,7 +399,6 @@ function menuDotSize(size: string): ChipProps["size"] {
               />
             </template>
           </NuxtNavigationMenu>
-          <slot name="rail-actions" />
           <div
             class="flex gap-1.5"
             :class="isCollapsed ? 'flex-col items-center' : 'flex-row items-center'"
@@ -461,4 +481,5 @@ function menuDotSize(size: string): ChipProps["size"] {
     :app-label="label.replace(/^Seções d[oa] /, '')"
     rail
   />
+  <SupportPanel v-if="supportContext" v-model:open="supportOpen" :context="supportContext" />
 </template>

@@ -154,11 +154,9 @@ useOperatorWindowTitle();
         floor-bar
         label="Seções do Gestor"
         :operator-name="operator?.name"
+        :support-context="supportContext"
         @lock="lock"
       >
-        <template #rail-actions>
-          <SupportTrigger :context="supportContext" variant="ghost" block />
-        </template>
         <div class="flex min-h-0 flex-1 flex-col">
           <OperatorStationSetup
             v-if="stationSetup.offer.value"

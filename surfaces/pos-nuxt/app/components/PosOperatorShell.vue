@@ -213,12 +213,10 @@ const supportContext = computed(() =>
       floor-bar
       label="Seções do PDV"
       :operator-name="operator?.name"
+      :support-context="supportContext"
       @select="select"
       @lock="lock()"
     >
-      <template #rail-actions>
-        <SupportTrigger :context="supportContext" variant="ghost" block />
-      </template>
       <NuxtPage />
     </OperatorSuiteShell>
 

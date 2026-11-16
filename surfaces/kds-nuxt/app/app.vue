@@ -58,12 +58,10 @@ useOperatorWindowTitle();
         floor-bar
         label="Seções da Cozinha"
         :operator-name="operator?.name"
+        :support-context="supportContext"
         @select="onSelect"
         @lock="lock"
       >
-        <template #rail-actions>
-          <SupportTrigger :context="supportContext" variant="ghost" block />
-        </template>
         <!-- A trava cobre a tela por cima; o quadro segue montado por baixo e volta
              no mesmo estado quando alguém se identifica. -->
         <NuxtPage />
