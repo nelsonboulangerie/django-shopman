@@ -45,7 +45,7 @@ from .concierge import (
 )
 from .contact_release import ContactRelease, ReleasedContactKind
 from .delivery import DeliveryDistanceBand, DeliveryZone
-from .delivery_service import Courier, CourierRate, DeliveryService
+from .delivery_service import Courier, CourierLink, CourierRate, DeliveryService
 from .faq import FAQEntry
 from .ifood_merchant import (
     IFoodInterruption,
@@ -121,6 +121,7 @@ __all__ = [
     "DeliveryService",
     "Courier",
     "CourierRate",
+    "CourierLink",
     "FAQEntry",
     "IFoodInterruption",
     "IFoodInterruptionKind",

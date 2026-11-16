@@ -6115,6 +6115,7 @@
           "responsibility": "configuração",
           "symbols": [
             "Courier",
+            "CourierLink",
             "CourierRate",
             "DeliveryService"
           ]
@@ -9053,6 +9054,48 @@
           "responsibility": "leitura",
           "symbols": [
             "get_block"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/courier_links.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "BAD_DEVICE",
+            "CANCELLED",
+            "EXPIRED",
+            "LINK_GRACE",
+            "LinkAccess",
+            "MIN_DEVICE_KEY",
+            "OK",
+            "OTHER_DEVICE",
+            "REASSIGNED",
+            "REISSUED",
+            "REVOKED",
+            "UNKNOWN"
+          ]
+        },
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_hash",
+            "_live",
+            "close",
+            "issue",
+            "resolve",
+            "revoke"
           ]
         }
       ]

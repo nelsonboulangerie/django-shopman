@@ -122,6 +122,12 @@ class Courier(models.Model):
         help_text="O que o balcão confere antes de entregar as sacolas (ex.: Moto prata · ABC1D23).",
     )
     is_active = models.BooleanField("ativo", default=True)
+    on_shift_on = models.DateField(
+        "na escala em",
+        null=True,
+        blank=True,
+        help_text="Dia em que está na escala. Só quem está na escala de hoje aparece ao chamar o entregador.",
+    )
 
     class Meta:
         ordering = ["name"]
@@ -130,6 +136,10 @@ class Courier(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+    def is_on_shift(self, today) -> bool:
+        """Está na escala de ``today`` (data local da loja)."""
+        return self.is_active and self.on_shift_on == today
 
     def clean(self) -> None:
         super().clean()
@@ -216,3 +226,45 @@ class CourierRate(models.Model):
             ).exclude(pk=self.pk)
             if twin.exists():
                 raise ValidationError({"max_km": "Já existe uma linha com esta distância para o mesmo entregador."})
+
+
+class CourierLink(models.Model):
+    """O link de uma rota para o entregador da casa (plano §4.2 e §4.4).
+
+    O token é a única chave: quem tem o link vê a rota. Por isso ele se prende ao PRIMEIRO
+    celular que o abre (guardamos só o hash da chave do celular), morre quando a rota é
+    cancelada ou trocada de entregador, e vence 2 h depois de a rota fechar. A regra mora em
+    ``shopman.shop.services.courier_links``; aqui fica só o registro.
+    """
+
+    token = models.CharField("token", max_length=64, unique=True, editable=False)
+    courier = models.ForeignKey(Courier, on_delete=models.PROTECT, related_name="links", verbose_name="entregador")
+    ride_ref = models.CharField(
+        "rota",
+        max_length=64,
+        db_index=True,
+        help_text="A rota que o link mostra (o identificador da corrida no sistema).",
+    )
+    order_refs = models.JSONField("pedidos", default=list)
+    created_at = models.DateTimeField("criado em", auto_now_add=True)
+    opened_at = models.DateTimeField("aberto em", null=True, blank=True)
+    last_seen_at = models.DateTimeField("visto por último em", null=True, blank=True)
+    device_hash = models.CharField("celular (hash)", max_length=64, blank=True)
+    expires_at = models.DateTimeField("vence em", null=True, blank=True)
+    revoked_at = models.DateTimeField("revogado em", null=True, blank=True)
+    revoked_reason = models.CharField("motivo da revogação", max_length=40, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "link de rota do entregador"
+        verbose_name_plural = "links de rota do entregador"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ride_ref"],
+                condition=Q(revoked_at__isnull=True),
+                name="shop_courierlink_one_live_per_ride",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.courier} · {self.ride_ref}"
