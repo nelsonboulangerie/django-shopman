@@ -1127,9 +1127,11 @@ intercepta por caminho, `lock_timeout` global, corte do histórico de migrations
    pacotes próprios, depois que as respostas estiverem com clientes.
 7. Abertura: um grupo de até 20 contatos escolhidos por ele, por uma semana, depois todos.
 
-**O que isto NÃO decide.** Se a casa submete à Meta uma mensagem aprovada para responder o
-cliente depois de 24 horas (pergunta 2c do plano, aberta). E a troca do "sim" por uma confirmação
-com código no resumo do pedido, que o pacote da autoridade de compra vai propor: se mudar o que o
-cliente digita, volta ao dono com a frase.
+8. Responder o cliente depois de 24 horas: *"Quero a mensagem"*. A casa submete à Meta uma
+   mensagem aprovada para avisar que a equipe respondeu; o texto passa pelo dono antes de ir.
+
+**O que isto NÃO decide.** A troca do "sim" por uma confirmação com código no resumo do pedido,
+que o pacote da autoridade de compra vai propor: se mudar o que o cliente digita, volta ao dono
+com a frase. E o texto da mensagem aprovada, que ele aprova antes da submissão.
 
 **Fonte.** Conversa de 16/11/2026; PR #2486.
