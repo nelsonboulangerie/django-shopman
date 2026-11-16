@@ -1,5 +1,5 @@
 // Cenário `gallery` do mock visual: um cartão por combinação de estado que o
-// quadro sabe desenhar. As fixtures capturadas do seed só trazem preparo
+// painel sabe desenhar. As fixtures capturadas do seed só trazem preparo
 // bloqueado; aqui cada cartão parte de um deles e troca apenas os campos que a
 // projeção real preencheria naquele estado (mesmos nomes do contrato gerado).
 // Serve para inspeção visual, não para afirmar regra de domínio.

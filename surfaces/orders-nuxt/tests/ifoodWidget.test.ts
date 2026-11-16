@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ifoodChatNotice, ifoodWidgetInit } from "../app/presentation/ifoodWidget";
+import { ifoodChatNotice, ifoodWidgetInit, ifoodWidgetLift } from "../app/presentation/ifoodWidget";
 
 describe("widget do iFood: quando iniciar", () => {
   it("sem ID do widget ou sem loja, não inicia (init vazio apaga a autorização)", () => {
@@ -44,5 +44,20 @@ describe("widget do iFood: o aviso no detalhe do pedido", () => {
       const notice = ifoodChatNotice(state, true)!;
       expect(`${notice.title} ${notice.description}`).not.toMatch(/[—–]/);
     }
+  });
+});
+
+describe("o botão do iFood não tampa a base", () => {
+  it("sobe o que a base ocupa além da margem do Portal, com respiro", () => {
+    // barra das seções (81) + área segura do iPhone (34): 115 + 12 - 96
+    expect(ifoodWidgetLift(115, false)).toBe(31);
+    // barra das seções + barra de ação da tela
+    expect(ifoodWidgetLift(160, false)).toBe(76);
+  });
+
+  it("sem base alta, fica onde o Portal pôs; com a conversa aberta, não sobe", () => {
+    expect(ifoodWidgetLift(0, false)).toBe(0);
+    expect(ifoodWidgetLift(60, false)).toBe(0);
+    expect(ifoodWidgetLift(160, true)).toBe(0);
   });
 });

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Um cartão de pedido no quadro, no desenho da prévia v4 (UX-KIT-V2,
+// Um cartão de pedido no painel, no desenho da prévia v4 (UX-KIT-V2,
 // `docs/plans/suite-ux-v2/fontes/v4/gestor-colunas4.html` e `gestor-fila4.html`):
 //
 //   código grande + nome                         selo do estado · tempo
@@ -56,7 +56,7 @@ const props = withDefaults(
     canOpen?: boolean;
     /** Celular (G17): o Recusar mora no deslize do cartão; a ação principal fica larga. */
     swipeReject?: boolean;
-    /** O Quadro da mesa (D, dono 13/11/2026, prévia `gestor-d`): o cartão enxuto, em
+    /** O Painel da mesa (D, dono 13/11/2026, prévia `gestor-d`): o cartão enxuto, em
      *  quatro linhas (código, selo e valor; quem; itens; o gesto e o ⋮). O que é
      *  exceção (avisos, erro, desfazer, DANFE) só aparece quando existe. */
     compact?: boolean;
@@ -496,7 +496,7 @@ function nuxtIcon(icon: string): string {
 </script>
 
 <template>
-  <!-- O cartão enxuto do Quadro (prévia `gestor-d`): o pedido que espera você ganha a
+  <!-- O cartão enxuto do Painel (prévia `gestor-d`): o pedido que espera você ganha a
        moldura na cor principal (`data-highlight="true"` do tema); o "Próximo" da
        saída, o halo (`ready`). -->
   <NuxtCard
@@ -575,7 +575,7 @@ function nuxtIcon(icon: string): string {
     <!-- as exceções, só quando existem -->
     <OrderCardNotices :notices="notices" />
     <!-- O "pronto sozinho" com Desfazer mora na faixa "O sistema fez", abaixo do
-         cabeçalho do Quadro; aqui não se repete. -->
+         cabeçalho do Painel; aqui não se repete. -->
     <div
       v-if="danfe && !danfe.attention && !handoff"
       class="flex items-center gap-1.5 op-micro text-muted"
@@ -878,7 +878,7 @@ function nuxtIcon(icon: string): string {
           <Icon name="lucide:coins" class="size-3.5 shrink-0" />
           <span class="truncate">{{ card.change_label }}</span>
         </p>
-        <!-- a maquininha na rua: o único sinal dela no quadro é esta linha -->
+        <!-- a maquininha na rua: o único sinal dela no painel é esta linha -->
         <p
           v-if="onRoad"
           class="flex items-center gap-1.5 op-micro font-medium"

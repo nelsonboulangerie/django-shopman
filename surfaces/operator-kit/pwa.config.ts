@@ -105,7 +105,7 @@ export interface ResolvedOperatorPwa extends OperatorPwaCapabilityOptions {
    * recurso. Vem pelo `runtimeConfig` para que nenhum componente reescreva o caminho
    * `/pwa/pwa-64x64.png?v=N` — era assim que a versão do asset envelhecia num app só.
    */
-  identity: { label: string; article: string; install: string; icon: string; iconSrc: string; color: string };
+  identity: { label: string; article: string; icon: string; iconSrc: string; color: string };
 }
 
 /**
@@ -124,7 +124,6 @@ export function resolveOperatorPwa(options: OperatorPwaCapabilityOptions): Resol
     identity: {
       label: identity.label,
       article: identity.article,
-      install: identity.install,
       icon: identity.fallbackIcon,
       iconSrc: operatorAppIconSrc(),
       color: identity.color,

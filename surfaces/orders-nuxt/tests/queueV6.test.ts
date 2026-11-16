@@ -84,14 +84,17 @@ describe("G05: a cópia da Fila não se corta", () => {
   });
 });
 
-describe("Fila · Quadro · Tabela, um controle só (dono, 13/11/2026)", () => {
-  it("os três modos no alternador; a Fila só onde cabe", () => {
+describe("Painel · Fila · Tabela, um controle só de ícones (dono, 14/11/2026)", () => {
+  it("os três modos no alternador, Painel primeiro; a Fila só onde cabe", () => {
     const page = readFileSync(new URL("../app/pages/index.vue", import.meta.url), "utf8");
     const items = page.slice(page.indexOf("const viewTabs"), page.indexOf("function pickView"));
     const control = page.slice(page.lastIndexOf("<NuxtTabs", page.indexOf("data-view-switch")), page.indexOf("/>", page.indexOf("data-view-switch")));
-    expect(items).toContain('value: "queue", label: "Fila"');
-    expect(items).toContain('value: "board", label: "Quadro"');
-    expect(items).toContain('value: "table", label: "Tabela"');
+    expect(items).toContain('value: "board", icon: "i-lucide-columns-3", title: "Painel"');
+    expect(items).toContain('value: "queue", icon: "i-lucide-rows-3", title: "Fila"');
+    expect(items).toContain('value: "table", icon: "i-lucide-table-2", title: "Tabela"');
+    expect(items.indexOf('"board"')).toBeLessThan(items.indexOf('"queue"'));
+    // O nome não aparece na tela: só para o leitor de tela e na dica.
+    expect(control).toContain(`<span class="sr-only">{{ item.title }}</span>`);
     expect(items).toContain("queueAvailable.value");
     expect(control).toContain(':items="viewTabs"');
     expect(control).toContain('@update:model-value="pickView"');
