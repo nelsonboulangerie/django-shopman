@@ -410,7 +410,7 @@ onBeforeRouteLeave(() => {
     confirmDiscard({
       title: "Sair sem salvar as alterações do catálogo?",
       description:
-        "O que você alterou e ainda não salvou se perde (ordem, preço, publicação ou ficha do produto). O que já foi salvo continua salvo.",
+        "O que você alterou e ainda não salvou se perde (ordem, preço, publicação, Tabelão ou ficha do produto). O que já foi salvo continua salvo.",
       confirmLabel: "Descartar e sair",
     })
   );
@@ -1089,11 +1089,14 @@ const detail = ref<ProductDetailProjection | null>(null);
 const detailLoading = ref(false);
 const detailTab = ref("geral");
 const detailDirty = ref(false);
+// Células do Tabelão alteradas e não salvas (o grid informa por update:dirty).
+const bulkGridDirty = ref(0);
 const hasUnsavedDraft = computed(
   () =>
     !!orderDraft.value ||
     !!publicationDraft.value ||
     detailDirty.value ||
+    bulkGridDirty.value > 0 ||
     !!(editing.value && priceInput.value !== editing.value.original) ||
     !!(priceOpen.value && priceInputBulk.value.trim()),
 );
@@ -2543,6 +2546,7 @@ v-for="validity in rowValidities(row, surfaces)" :key="validity.label"
           }
         }
       "
+      @update:dirty="(count) => (bulkGridDirty = count)"
       @save="saveBulkCells"
       @archive="setBulkActive"
     />
