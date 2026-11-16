@@ -276,10 +276,17 @@ def test_triagem_por_modelo_so_conta_sem_o_jev_no_lugar(settings):
 # ── A frase é a que o código monta ───────────────────────────────────────
 
 FALA = (
-    "Oi, meu CPF é 123.456.789-09, o e-mail é maria@exemplo.com, moro na Rua das Flores, 120 "
-    "e sou alérgica a castanha. Tem croissant?"
+    "Oi, meu CPF é 123.456.789-09, o e-mail é maria@exemplo.com, o telefone (43) 99876-5432, "
+    "moro na Rua das Flores, 120, tenho diabetes e sou alérgica a castanha. Tem croissant?"
 )
-TRECHOS_PESSOAIS = ("123.456.789-09", "maria@exemplo.com", "Rua das Flores", "castanha")
+TRECHOS_PESSOAIS = (
+    "123.456.789-09",
+    "maria@exemplo.com",
+    "99876-5432",
+    "Rua das Flores",
+    "diabetes",
+    "castanha",
+)
 
 
 def test_o_jev_recebe_a_mensagem_redigida_como_a_frase_diz():
@@ -295,12 +302,12 @@ def test_o_jev_recebe_a_mensagem_redigida_como_a_frase_diz():
 
     triage.jev_scores(FALA, contender=JevFalso())
 
-    assert USOS["decision"].raw is False
+    assert USOS["decision"].redacts is True and USOS["decision"].keeps_profile is True
     assert enviado and "croissant" in enviado[0]
     for trecho in TRECHOS_PESSOAIS:
         assert trecho not in enviado[0], (
-            f"O Jev recebeu {trecho!r}, e /privacidade diz que ele recebe a mensagem com "
-            "documento, contato, endereço, pagamento e saúde trocados por um aviso."
+            f"O Jev recebeu {trecho!r}, e /privacidade diz que documento, e-mail, telefone, "
+            "endereço, pagamento, alergia ou doença escritos na mensagem não vão."
         )
 
 
@@ -312,10 +319,14 @@ def test_a_leitura_recebe_a_mensagem_como_o_cliente_escreveu():
     pedido = intents.build_request(FALA, memory_note="Pedido aberto do cliente: pedido ABC (novo).", model="m")
     conteudo = pedido["messages"][0]["content"]
 
-    assert USOS["intents"].raw is True
+    assert USOS["intents"].redacts is False
     assert FALA in conteudo
     assert "pedido ABC" in conteudo
-    assert "como você escreveu" in " ".join(USOS["intents"].shares)
+    assert "como você escreveu" in " ".join(USOS["intents"].sends)
+    assert "pedido em aberto" in USOS["intents"].also
+    # Só o texto e o pedido: nada do cadastro vai junto (é o que permite o "só").
+    assert set(pedido) == {"model", "max_tokens", "system", "messages", "output_config"}
+    assert len(pedido["messages"]) == 1
 
 
 def test_a_triagem_recebe_a_mensagem_e_as_seis_anteriores():
@@ -324,9 +335,9 @@ def test_a_triagem_recebe_a_mensagem_e_as_seis_anteriores():
     contexto = [("Cliente", "bom dia"), ("Casa", "Bom dia! Em que posso ajudar?")]
     prompt = triage.build_prompt(FALA, contexto)
 
-    assert USOS["triage"].raw is True
+    assert USOS["triage"].redacts is False
     assert FALA in prompt and "Em que posso ajudar" in prompt
-    assert "seis" in " ".join(USOS["triage"].shares)
+    assert "seis" in " ".join(USOS["triage"].sends)
     assert triage.context_for.__kwdefaults__["limit"] == 6
 
 
@@ -344,25 +355,38 @@ def test_o_laco_antigo_recebe_o_nome_e_o_ultimo_pedido():
     bloco = prompt.dynamic_block(conversa, is_first_turn=False, cart_summary="2 croissants", greeting="")
 
     assert "Maria Souza" in bloco and "ABC123" in bloco and "2 croissants" in bloco
-    # O telefone não vai: a frase diz isso a todo provedor.
-    assert "999990000" not in bloco
-    shares = " ".join(USOS["concierge"].shares)
+    shares = " ".join(USOS["concierge"].sends)
     assert "o seu nome" in shares and "sacola" in shares and "último pedido" in shares
+    # As ferramentas do laço tocam o cadastro: a frase dele não promete que nada fica.
+    assert USOS["concierge"].keeps_profile is False
+    _role, frase = ai_role_and_shares({"concierge"})
+    assert not frase.startswith("só") and "não vão" not in frase
 
 
 # ── O texto que o cliente lê ─────────────────────────────────────────────
 
 
-def test_frase_somada_nao_repete_e_poe_a_condicao_no_fim():
+def test_o_que_nao_vai_vem_logo_depois_do_so():
+    """Decisão do dono (16/11): o cliente lê primeiro o limite e o que NÃO vai."""
+    for purposes in ({"decision"}, {"intents"}, {"triage"}, {"intents", "triage"}):
+        _role, shares = ai_role_and_shares(purposes)
+        frases = shares.split(". ")
+        assert frases[0].startswith("só "), shares
+        assert frases[1].endswith("não vão"), shares
+    _role, jev = ai_role_and_shares({"decision"})
+    assert jev.split(". ")[2].startswith("Documento, e-mail, telefone")
+
+
+def test_frase_somada_nao_repete_e_poe_o_que_vai_a_mais_no_fim():
     _role, shares = ai_role_and_shares({"intents", "triage"})
     assert shares.count("o texto da sua mensagem") == 1
-    assert "(suas e da loja) e, quando você tem pedido em aberto" in shares
+    assert shares.endswith("Se você tem pedido em aberto, vão também o número, o dia e a situação dele")
 
 
 def test_quem_recebe_um_caminho_cru_e_um_redigido_fica_com_a_frase_crua():
     _role, shares = ai_role_and_shares({"decision", "intents"})
     assert "como você escreveu" in shares
-    assert "trocados por um aviso" not in shares
+    assert "troca cada um por um aviso" not in shares
 
 
 def test_frases_de_ia_sem_travessao_nem_jargao():

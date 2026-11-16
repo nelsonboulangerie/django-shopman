@@ -301,24 +301,27 @@ class AIUse:
     pedido é montado, e `shopman/shop/tests/test_privacy_inventory_ai.py` monta o pedido
     de verdade e confere a frase. Mudou o que sai (o WP-03 vai redigir a leitura)? A
     trava reprova até alguém mudar a frase junto.
+
+    A ordem da frase é decisão do dono (16/11/2026: "o cliente precisa se sentir seguro
+    ao ler; o que é verdade não pode estar mal dito"): primeiro o limite ("só ..."),
+    logo depois o que NÃO vai, e por último o que vai a mais em certos casos.
     """
 
     purpose: str
     #: Completa "ajuda o atendimento automático do WhatsApp a ...".
     helps_to: str
-    #: O que sai, completando "Recebe ...", item por item. Item que começa com "quando"
-    #: é condicional e vai para o fim da frase; item repetido entre usos sai uma vez.
-    shares: tuple[str, ...]
-    #: Manda o texto como o cliente escreveu. Quando um provedor recebe um uso cru e um
-    #: redigido, vale o cru: a frase não promete o que um dos caminhos não cumpre.
-    raw: bool
+    #: O que sai, item por item, completando "Recebe ...". Item que começa com "quando"
+    #: é condicional e vai para o fim da lista; item repetido entre usos sai uma vez.
+    sends: tuple[str, ...]
+    #: O pedido não leva nada do cadastro (nome, telefone, endereço): só o texto. É o
+    #: que permite dizer "só" e "os dados do seu cadastro não vão".
+    keeps_profile: bool
+    #: O texto sai depois de `redact_observation_text`. Quando um provedor recebe um uso
+    #: redigido e um cru, vale o cru: a frase não promete o que um caminho não cumpre.
+    redacts: bool
+    #: O que vai a mais só em certos casos, como frase inteira, no fim.
+    also: str = ""
 
-
-_REDACTED_SHARES = (
-    "o texto da sua mensagem, com documento, contato, endereço, pagamento e saúde "
-    "trocados por um aviso antes de sair da loja",
-)
-_RAW_MESSAGE = "o texto da sua mensagem como você escreveu"
 
 #: Ordem: do que menos sai para o que mais sai.
 AI_USES: tuple[AIUse, ...] = (
@@ -327,52 +330,68 @@ AI_USES: tuple[AIUse, ...] = (
     AIUse(
         purpose="decision",
         helps_to="entender o assunto da sua mensagem",
-        shares=_REDACTED_SHARES,
-        raw=False,
+        sends=("o texto da sua mensagem",),
+        keeps_profile=True,
+        redacts=True,
     ),
     # `intent_pilot` (pré-rótulo do gabarito): mensagens já recebidas, pelo
     # `MessageIntentSample.redacted_text`.
     AIUse(
         purpose="labeling",
         helps_to="conferir, com mensagens que a loja já recebeu, se ele entende direito",
-        shares=_REDACTED_SHARES,
-        raw=False,
+        sends=("o texto da sua mensagem",),
+        keeps_profile=True,
+        redacts=True,
     ),
     # `intents.build_request`: a fala do turno e `TurnMemory.prompt_lines` (o pedido em
     # aberto: número, retirada ou entrega, dia e situação). Só quando o porteiro hesita.
     AIUse(
         purpose="intents",
         helps_to="separar o que você pede do que você pergunta",
-        shares=(_RAW_MESSAGE, "quando você tem pedido em aberto, o número, o dia e a situação dele"),
-        raw=True,
+        sends=("o texto da sua mensagem como você escreveu",),
+        keeps_profile=True,
+        redacts=False,
+        also="Se você tem pedido em aberto, vão também o número, o dia e a situação dele",
     ),
     # `triage.build_prompt`: a fala do turno e as falas anteriores de `context_for`
     # (até seis, do cliente e da loja).
     AIUse(
         purpose="triage",
         helps_to="ver se a sua mensagem precisa de alguém da equipe",
-        shares=(_RAW_MESSAGE, "as últimas seis mensagens da conversa (suas e da loja)"),
-        raw=True,
+        sends=(
+            "o texto da sua mensagem como você escreveu",
+            "as seis mensagens anteriores da conversa (suas e da loja)",
+        ),
+        keeps_profile=True,
+        redacts=False,
     ),
     # O laço antigo (`agent.run_agent`): `history_for` (até 40 mensagens), o nome, a
-    # sacola e o último pedido em `prompt.dynamic_block`, e o endereço de entrega nas ferramentas
-    # (`tools.py`). O WP-08 do CONCIERGE-PLANO-DE-ACAO o apaga.
+    # sacola e o último pedido em `prompt.dynamic_block`, e o endereço de entrega nas
+    # ferramentas (`tools.py`), que também tocam o cadastro: daqui não se promete que
+    # nada dele fica. O WP-08 do CONCIERGE-PLANO-DE-ACAO o apaga.
     AIUse(
         purpose="concierge",
         helps_to="escrever a resposta",
-        shares=(
+        sends=(
             "as últimas mensagens da conversa",
             "o seu nome",
             "o que está na sacola",
             "o número do seu último pedido",
             "quando o pedido é para entregar, o endereço da entrega",
         ),
-        raw=True,
+        keeps_profile=False,
+        redacts=False,
     ),
 )
 
-#: Vale para todo uso acima: nenhum pedido leva o número do WhatsApp da conversa.
-_PHONE_STAYS = "O seu telefone do WhatsApp não vai junto"
+#: Logo depois do "só": nenhum pedido com `keeps_profile` leva o cadastro.
+_PROFILE_STAYS = "Os dados do seu cadastro (nome, telefone e endereço) não vão"
+
+#: O que `redact_observation_text` troca por aviso, dito pelo que o cliente escreveria.
+_REDACTION = (
+    "Documento, e-mail, telefone, endereço, pagamento, alergia ou doença que você "
+    "escrever também não vão: a loja troca cada um por um aviso antes de enviar"
+)
 
 _ROLE_PREFIX = "ajuda o atendimento automático do WhatsApp a "
 
@@ -431,22 +450,35 @@ def _purpose_sends(purpose: str) -> bool:
 def _join(parts: list[str], glue: str = "") -> str:
     if len(parts) == 1:
         return parts[0]
-    # "e, quando você tem pedido em aberto, ...": a oração condicional pede a vírgula.
+    # "e, quando o pedido é para entregar, ...": a oração condicional pede a vírgula.
     last = f"e, {parts[-1]}" if parts[-1].startswith("quando") else f"e {glue}{parts[-1]}"
     return f"{f', {glue}'.join(parts[:-1])} {last}"
 
 
 def ai_role_and_shares(purposes) -> tuple[str, str]:
-    """O papel e o "Recebe" de um provedor que recebe estes propósitos."""
+    """O papel e o "Recebe ..." de um provedor que recebe estes propósitos.
+
+    A página escreve "Recebe {shares}." e põe o ponto final.
+    """
     uses = [use for use in AI_USES if use.purpose in set(purposes)]
     role = _ROLE_PREFIX + _join([use.helps_to for use in uses], glue="a ")
+    redacted = all(use.redacts for use in uses)
     # O cru vale: quem recebe um caminho cru não ganha a promessa do redigido.
-    sources = [use for use in uses if use.raw] or uses[-1:]
+    sources = uses if redacted else [use for use in uses if not use.redacts]
+    keeps_profile = all(use.keeps_profile for use in uses)
     items: list[str] = []
     for use in sources:
-        items.extend(item for item in use.shares if item not in items)
+        items.extend(item for item in use.sends if item not in items)
     items.sort(key=lambda item: item.startswith("quando"))
-    return role, f"{_join(items)}. {_PHONE_STAYS}"
+    sentences = [("só " if keeps_profile else "") + _join(items)]
+    if keeps_profile:
+        sentences.append(_PROFILE_STAYS)
+    if redacted:
+        sentences.append(_REDACTION)
+    for use in sources:
+        if use.also and use.also not in sentences:
+            sentences.append(use.also)
+    return role, ". ".join(sentences)
 
 
 def _host_of(protocol: str, base_url: str) -> str:
