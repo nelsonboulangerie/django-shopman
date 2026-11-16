@@ -1099,3 +1099,39 @@ intercepta por caminho, `lock_timeout` global, corte do histórico de migrations
 5. O medidor e freio da porta de IA (E1) entra **antes** da tag `go-live-v1`, sem segurá-la.
 
 **Fonte.** Conversa de 12/11/2026; PR #2311.
+
+---
+
+## D-040 · Concierge: leitura por Jev e DeepSeek, pedido na conversa e o que fica de fora
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-16 · **revisar_em:** 2026-12-16
+
+**Decisão do dono**, respondendo às perguntas do
+[CONCIERGE-PLANO-DE-ACAO](../plans/CONCIERGE-PLANO-DE-ACAO.md) (#2486, DEV-2026-027):
+
+1. Sem chave da Anthropic para a Concierge: *"Pretendo associar JEV a algum outro modelo mais
+   barato, como DeepSeek v4 Pro."* A leitura das mensagens passa a ser Jev mais DeepSeek.
+2. A mensagem do cliente, **já redigida** (sem documento, telefone, e-mail, endereço, cartão nem
+   detalhe de saúde), pode ir à DeepSeek e ao Jev, com as duas declaradas em `/privacidade`, e
+   uma rodada de placar de até US$ 2 está autorizada: *"OK"*. **Isto muda o item 1 da D-039**,
+   que dizia "mensagem de cliente não vai à DeepSeek sem nova decisão": esta é a nova decisão. O
+   cofre de pseudônimos (E10 do ID3A) deixa de ser pré-requisito da Concierge.
+3. A IA não reescreve a resposta da casa: *"Não deve reescrever (a não ser que essa necessidade
+   seja 'provada')."*
+4. No lugar do "vale para todo mundo": *"Melhor seria dar opção de 'Converter/promover a tópico
+   das perguntas frequentes (FAQ)', com sugestão por IA para generalizar."* O rascunho só vale
+   depois de publicado no Admin.
+5. Prazos do "não sei, vou verificar": 10 e 30 minutos, *"configurável via admin"*.
+6. Pedido na conversa: *"idealmente, quero que a Concierge consiga montar o pedido do cliente NA
+   CONVERSA, interagindo com dados reais, via projections ou o que seja."* Entra no plano como
+   pacotes próprios, depois que as respostas estiverem com clientes.
+7. Abertura: um grupo de até 20 contatos escolhidos por ele, por uma semana, depois todos.
+
+8. Responder o cliente depois de 24 horas: *"Quero a mensagem"*. A casa submete à Meta uma
+   mensagem aprovada para avisar que a equipe respondeu; o texto passa pelo dono antes de ir.
+
+**O que isto NÃO decide.** A troca do "sim" por uma confirmação com código no resumo do pedido,
+que o pacote da autoridade de compra vai propor: se mudar o que o cliente digita, volta ao dono
+com a frase. E o texto da mensagem aprovada, que ele aprova antes da submissão.
+
+**Fonte.** Conversa de 16/11/2026; PR #2486.
