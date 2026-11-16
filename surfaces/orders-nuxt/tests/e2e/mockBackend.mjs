@@ -206,6 +206,8 @@ const DELIVERIES = {
       driver: { name: "Diego", phone: "(43) 99999-0001", vehicle: "Moto prata · ABC1D23" },
       position: { latitude: ORIGIN.latitude + 0.003, longitude: ORIGIN.longitude - 0.003 },
       called_at: minutesAgo(9), pickup_eta_at: minutesAhead(4), cost_display: "R$ 9,00", bags: 2,
+      // Link só em corrida de uma parada: com várias, o servidor não prova de quem é.
+      tracking_url: "https://rastreio.example/776753357",
       lead_ref: "WEB-20261116-0B12",
     },
     {
@@ -218,7 +220,7 @@ const DELIVERIES = {
       driver: { name: "Marina", phone: "(43) 99999-0002", vehicle: "Moto preta · XYZ9K88" },
       position: { latitude: ORIGIN.latitude + 0.006, longitude: ORIGIN.longitude - 0.013 },
       called_at: minutesAgo(28), picked_up_at: minutesAgo(12), delivery_eta_at: minutesAhead(11),
-      tracking_url: "https://rastreio.example/776753358", cost_display: "R$ 14,50",
+      cost_display: "R$ 14,50",
       lead_ref: "WEB-20261116-0E02",
     },
   ],
