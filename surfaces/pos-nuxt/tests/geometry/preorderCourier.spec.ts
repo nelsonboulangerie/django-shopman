@@ -115,7 +115,7 @@ test("cancelar a corrida antes da coleta pede o segundo toque (mock: nunca a TaO
   await expect(cancel).toHaveText("Cancelar a corrida", { timeout: 90_000 });
   await cancel.click();
   await cancel.click();
-  await expect(page.locator("[data-pos-courier-state]")).toHaveText("Corrida Cancelada");
+  await expect(page.locator("[data-pos-courier-state]")).toHaveText("Corrida cancelada");
   await expect(page.locator("[data-pos-courier-cancel]")).toHaveCount(0);
 });
 
