@@ -418,7 +418,7 @@ useHead({
         >
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0">
-              <p class="truncate shop-body">{{ product.name }}</p>
+              <p class="line-clamp-2 shop-body">{{ product.name }}</p>
               <p class="shop-price-strong text-ink-foreground">{{ quotePriceDisplay(product.quote) }}</p>
               <p v-if="product.unit_weight_label" class="text-xs text-ink-foreground/70">
                 {{ compactUnitWeightLabel(product.unit_weight_label) }}
