@@ -322,6 +322,15 @@ export function undoLine(source: UndoSource, nowMs: number): UndoLine | null {
 
 // ── Zones (Entrada / Preparo / Saída) ──────────────────────────────────────
 
+/**
+ * O que a contagem da aba de zona conta (o chip da suíte, dono, 14/11 e 16/11/2026):
+ * Entrada e Negociação pedem o gerente (pendência, âmbar); Preparo e Saída só dizem
+ * quantos pedidos estão ali (volume, latão contido).
+ */
+export function zoneCountKind(key: ZoneView["key"]): "volume" | undefined {
+  return key === "prep" || key === "expedition" ? "volume" : undefined;
+}
+
 export interface ZoneView {
   /** As três etapas do painel, mais a aba "Negociação" do painel em abas
    *  (`negotiationZoneView`), que não é etapa nem coluna do desktop. */

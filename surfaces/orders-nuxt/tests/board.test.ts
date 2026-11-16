@@ -47,6 +47,7 @@ import {
   deadlineTone,
   realtimeIndicator,
   situationAfterContinua,
+  zoneCountKind,
 } from "../app/presentation/board";
 import { moneyInput } from "../../operator-kit/app/presentation/custody";
 import type {
@@ -118,6 +119,15 @@ const card = (
     ...over,
   }),
   ...over,
+});
+
+describe("zoneCountKind", () => {
+  it("Entrada e Negociação pedem o gerente (âmbar); Preparo e Saída são volume (latão)", () => {
+    expect(zoneCountKind("intake")).toBeUndefined();
+    expect(zoneCountKind("negotiation")).toBeUndefined();
+    expect(zoneCountKind("prep")).toBe("volume");
+    expect(zoneCountKind("expedition")).toBe("volume");
+  });
 });
 
 describe("statusTone", () => {

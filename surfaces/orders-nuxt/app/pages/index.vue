@@ -33,6 +33,7 @@ import {
   statusTone,
   timerTone,
   triageCards,
+  zoneCountKind,
 } from "~/presentation/board";
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import type { OrderCardProjection } from "~/types/orders";
@@ -584,6 +585,7 @@ const phoneTabItems = computed(() =>
     icon: tab.key === "negotiation" ? "i-lucide-message-square-warning" : undefined,
     iconOnlyOnPhone: tab.key === "negotiation",
     count: triaged(tab.zone).length,
+    countKind: zoneCountKind(tab.key as ZoneView["key"]),
   })),
 );
 // Puxe para atualizar (celular) e o aviso dos gestos no fim da lista.
@@ -1786,7 +1788,7 @@ function compactClear() {
         @update:model-value="pickPhoneZone"
       >
         <template #default="{ item }"><span :class="item.iconOnlyOnPhone ? 'max-sm:sr-only' : undefined">{{ item.label }}</span></template>
-        <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+        <template #trailing="{ item }"><OperatorCountChip :count="item.count" :kind="item.countKind" /></template>
       </NuxtTabs>
     </OperatorToolbar>
 
