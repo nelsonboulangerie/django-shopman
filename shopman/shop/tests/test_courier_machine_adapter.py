@@ -19,7 +19,6 @@ MACHINE = {
     "api_key": "key-1",
     "forma_pagamento": "F",
     "timeout": 5,
-    "cancel_reason_id": 1,
 }
 
 
@@ -205,9 +204,26 @@ def test_api_refusal_is_terminal_with_error_detail():
         return_value=_FakeResponse(400, refusal),
     ):
         with pytest.raises(CourierError) as exc:
-            courier_machine.cancel("999")
+            courier_machine.cancel("999", reason_id=10)
     assert exc.value.transient is False
     assert "Solicitação não encontrada" in str(exc.value)
+    # O código do erro sobe com a exceção: é por ele que o cancelamento reconhece o 102.
+    assert exc.value.codes == (25,)
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_cancel_reason_refused_surfaces_code_102():
+    """Motivo da fase errada: a central devolve 102, e o handler relê a letra e reenvia."""
+    refusal = {"success": False, "errors": [{"code": "102", "message": "Motivo de cancelamento inválido."}]}
+    with patch(
+        "shopman.shop.adapters.courier_machine.requests.request",
+        return_value=_FakeResponse(400, refusal),
+    ) as request:
+        with pytest.raises(CourierError) as exc:
+            courier_machine.cancel("77", reason_id=12)
+    assert exc.value.codes == (courier_machine.CANCEL_REASON_REFUSED_CODE,)
+    assert exc.value.outcome_unknown is False
+    assert request.call_args.kwargs["json"] == {"id_mch": "77", "motivo_id": 12}
 
 
 @override_settings(DEBUG=False, SHOPMAN_MACHINE={**MACHINE, "username": ""})
@@ -297,7 +313,7 @@ def test_inert_in_debug_makes_no_network_call():
         assert courier_machine.get_status("1") == ""
         assert courier_machine.estimate(pickup={"lat": 1, "lng": 1}, dropoff={"lat": 2, "lng": 2}) is None
         assert courier_machine.get_position("1") is None
-        assert courier_machine.cancel("1") is True
+        assert courier_machine.cancel("1", reason_id=10) is True
 
 
 @override_settings(DEBUG=True, SHOPMAN_MACHINE=MACHINE, SHOPMAN_MACHINE_ALLOW_IN_DEBUG=True)
@@ -323,7 +339,7 @@ def test_mock_adapter_dispatch_and_status_cycle():
     assert courier_mock.get_position("MOCK-ORD-9") is not None
     courier_mock.set_status("MOCK-ORD-9", "F")
     with pytest.raises(CourierError):
-        courier_mock.cancel("MOCK-ORD-9")
+        courier_mock.cancel("MOCK-ORD-9", reason_id=10)
     courier_mock.reset()
     with pytest.raises(CourierError):
         courier_mock.get_status("MOCK-ORD-9")

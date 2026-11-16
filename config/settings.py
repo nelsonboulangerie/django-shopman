@@ -1125,7 +1125,6 @@ SHOPMAN_MACHINE = {
     # créditos, D=dinheiro. Confirmar com a central junto com as credenciais.
     "forma_pagamento": os.environ.get("MACHINE_FORMA_PAGAMENTO", "F"),
     "timeout": int(os.environ.get("MACHINE_TIMEOUT", "15")),
-    "cancel_reason_id": int(os.environ.get("MACHINE_CANCEL_REASON_ID", "1")),
     # Parte FIXA do link de rastreio do entregador (tudo antes do pedaço que muda por
     # corrida). O botão "Acompanhar entregador" do template `pedido_saiu_entrega_rastreio`
     # é `<esta base>{{1}}`, e a Meta só aceita a variável no FIM de um prefixo fixo.

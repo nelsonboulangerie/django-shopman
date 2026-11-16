@@ -80,8 +80,7 @@ Medido em 01/10/2026 sobre `origin/main` em `1f1ff5afb`.
   entrega; (3) registrar o webhook (`manage.py machine_register_webhook`, com
   `MACHINE_WEBHOOK_TOKEN`) e observar o primeiro evento real, cujo payload não é
   documentado; (4) confirmar com a central a forma de pagamento
-  (`MACHINE_FORMA_PAGAMENTO`, default `F`) e o motivo de cancelamento
-  (`MACHINE_CANCEL_REASON_ID`). Mais a correção de endereços da outra sessão e um
+  (`MACHINE_FORMA_PAGAMENTO`, default `F`). Mais a correção de endereços da outra sessão e um
   ensaio em homologação antes de apontar para produção.
 - **Dependência externa:** API Key do painel da Machine + **usuário de integração (API) da TaOn**
   com permissão **API - Entrega** (`MACHINE_API_USER`, `MACHINE_API_PASSWORD`, `MACHINE_API_KEY`).

@@ -58,8 +58,9 @@ Status (2 vias → services/courier.apply_status, idempotente):
    https://api.<dominio>`; conferir o primeiro evento real contra o payload documentado (§2.1,
    o endpoint também loga o corpo cru) e então reduzir ou zerar
    `Shop.defaults.delivery.courier_poll_seconds`.
-4. Confirmar com a central: `MACHINE_FORMA_PAGAMENTO` (default `F` faturado) e `motivo_id`
-   válido de cancelamento (`MACHINE_CANCEL_REASON_ID`).
+4. Confirmar com a central: `MACHINE_FORMA_PAGAMENTO` (default `F` faturado). O `motivo_id`
+   do cancelamento não é configuração: sai da fase da corrida
+   (`courier_machine.cancel_reason_for`: 10 antes do aceite; depois, o motivo escolhido).
 5. Ensaio de homologação ponta a ponta:
    [courier-machine-homologacao](../runbooks/courier-machine-homologacao.md).
 

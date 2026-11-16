@@ -209,7 +209,6 @@ SHOPMAN_MACHINE.update(  # noqa: F405
     forma_pagamento="F",
     retorno=False,
     timeout=15,
-    cancel_reason_id=1,
 )
 STRIPE_PUBLISHABLE_KEY = ""
 STRIPE_SECRET_KEY = ""

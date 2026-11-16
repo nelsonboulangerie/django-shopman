@@ -220,9 +220,59 @@ class CourierDispatchHandler:
             if seconds > 0 and locked:
                 # A leitura é da corrida, não do pedido: uma batida só, que aplica a todos.
                 courier.schedule_sync(locked[0], delay_seconds=min(seconds, courier.FIRST_SYNC_SECONDS))
-        for order in locked:
+        self._settle_orders_that_left(locked, courier_ref)
+
+    def _settle_orders_that_left(self, orders, courier_ref) -> None:
+        """A corrida abriu na central enquanto um pedido dela saía da espera.
+
+        O vínculo fica gravado (é o fato: a corrida existe e é desta chamada),
+        mas a corrida não pode seguir aberta e paga para um pedido cancelado:
+
+        - nenhum pedido vivo: a corrida inteira é cancelada na central, uma vez
+          (``courier.cancel_ride``, dedupe por corrida), e o aviso diz o que foi feito;
+        - corrida com pedidos vivos e um cancelado: cada cancelado segue o
+          caminho de sempre (``courier.on_order_cancelled``: devolve o troco
+          dele e avisa para tirar a parada, sem derrubar a corrida dos outros);
+        - pedido que mudou sem ser cancelado (entregue por outro caminho): o
+          aviso de conferência de antes.
+        """
+        from shopman.shop.adapters import alert as alert_adapter
+        from shopman.shop.adapters.courier_machine import CANCEL_INTENT_ORDER_CANCELLED
+        from shopman.shop.services import courier
+        from shopman.shop.services.operator_orders import OrderStateConflict, short_ref
+
+        cancelled = [order for order in orders if order.status == Order.Status.CANCELLED]
+        alive = [order for order in orders if order.status != Order.Status.CANCELLED]
+        for order in alive:
             if order.status not in courier.RIDE_ORDER_STATUSES:
                 self._record_terminal_failure([order], "A central aceitou a corrida enquanto o pedido mudou. Confira a corrida vinculada antes de agir.")
+        if not cancelled:
+            return
+        if alive:
+            for order in cancelled:
+                courier.on_order_cancelled(order)
+            return
+        lead = cancelled[0]
+        if courier.get_block(lead).get("id_mch") != courier_ref:
+            return
+        codes = [short_ref(order.ref) for order in cancelled]
+        subject = (f"O pedido {codes[0]} foi cancelado" if len(codes) == 1
+                   else f"Os pedidos {', '.join(codes[:-1])} e {codes[-1]} foram cancelados")
+        try:
+            courier.cancel_ride(lead, actor="courier.dispatch", intent=CANCEL_INTENT_ORDER_CANCELLED)
+            severity = "warning"
+            message = f"{subject} enquanto a TaOn abria a corrida. Pedimos à TaOn o cancelamento da corrida."
+        except OrderStateConflict:  # silêncio-deliberado: o cancelamento desta corrida já está pedido, o worker cuida dele
+            return
+        except ValueError:
+            severity = "critical"
+            message = f"{subject} enquanto a TaOn abria a corrida. Cancele a corrida pela central da TaOn."
+        try:
+            if not alert_adapter.recent_exists("integration_failed", None, order_ref=lead.ref,
+                                               message_contains="enquanto a TaOn abria a corrida"):
+                alert_adapter.create("integration_failed", severity, message, order_ref=lead.ref)
+        except Exception:
+            logger.warning("courier.alert_failed order=%s", lead.ref, exc_info=True)
 
     @staticmethod
     def _record_terminal_failure(orders, message: str) -> None:
