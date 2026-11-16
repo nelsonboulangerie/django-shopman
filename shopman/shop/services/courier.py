@@ -1018,7 +1018,9 @@ def _reopen(block: dict, *, at: str, source: str) -> str:
 
     A corrida é a mesma (``id_mch``, paradas, custódia, número): só o entregador
     e o que era dele saem. O aceite dele sai de ``status_at`` para o próximo
-    aceite registrar a própria hora, e fica guardado em ``reopens``.
+    aceite registrar a própria hora, e fica guardado em ``reopens``. O link de
+    rastreio e o código da parada saem também: o entregador novo pode ter link
+    novo, e o próximo aceite busca de novo.
     """
     driver = block.get("driver") if isinstance(block.get("driver"), dict) else {}
     name = str(driver.get("name") or "")
@@ -1030,7 +1032,8 @@ def _reopen(block: dict, *, at: str, source: str) -> str:
         entry["accepted_at"] = accepted_at
     block["reopens"] = [*list(block.get("reopens") or []), entry]
     block["status_at"] = status_at
-    block.pop("driver", None)
+    for key in ("driver", "tracking_url", "confirmation_code", "tracking_match"):
+        block.pop(key, None)
     progress = {key: value for key, value in (block.get("progress") or {}).items() if key not in _DRIVER_PROGRESS_KEYS}
     if progress:
         block["progress"] = progress
@@ -1092,8 +1095,13 @@ def record_reopen(order, *, at: str | None = None, source: str = "webhook") -> s
             block["last_provider_at"] = at
         order.emit_event(event_type=_REOPEN_EVENT, actor=source, payload={"id_mch": ride_id, "driver": name})
         _save_block(order, block, emit={"kind": "reopened", "status": "D"})
-    cache.delete(f"courier:pos:{ride_id}")
+    _forget_driver_caches(ride_id)
     return "applied"
+
+
+def _forget_driver_caches(ride_id: str) -> None:
+    """A posição e os links em cache eram do entregador que saiu."""
+    cache.delete_many([f"courier:pos:{ride_id}", f"courier:tracking_links:{ride_id}"])
 
 
 #: Tipo existente (sem migração) e fora da resolução automática da corrida viva:
@@ -1298,7 +1306,7 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
             kind = "ride_ended" if failed_ride else "reopened" if went_back else "status"
             _save_block(order, block, emit={"kind": kind, "status": status})
             if went_back:
-                cache.delete(f"courier:pos:{ride_id}")
+                _forget_driver_caches(ride_id)
     if failed_ride and not source.startswith("operator:"):
         _alert_ride_failed(order, status)
     if failed_ride and not observed.get("dispatched_at"):
