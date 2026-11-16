@@ -1214,12 +1214,6 @@ def _sync_alert_marker(ride_id: str) -> str:
     return f"número {ride_id} na TaOn"
 
 
-def ride_name(block: dict) -> str:
-    """Como a frase chama a corrida: "corrida B", ou só "corrida" sem letra gravada."""
-    letter = ride_letter(block.get("ride_number"))
-    return f"corrida {letter}" if letter else "corrida"
-
-
 #: O que cada marco do progresso lido prova sobre a corrida, na ordem em que acontece.
 _PROGRESS_STEPS = (("accepted_at", "A"), ("picked_up_at", "E"), ("finished_at", "F"))
 
@@ -1375,13 +1369,16 @@ def _alert_sync_failed(order, ride_id: str) -> None:
     from shopman.shop.services.operator_orders import short_ref
 
     marker = _sync_alert_marker(ride_id)
+    # Sem letra gravada, a frase diz só "corrida": o id da TaOn nunca faz de nome.
+    letter = ride_letter(get_block(order).get("ride_number"))
+    name = f"corrida {letter}" if letter else "corrida"
     try:
         if alert_adapter.recent_exists(_SYNC_ALERT_TYPE, None, order_ref=order.ref, message_contains=marker):
             return
         alert_adapter.create(
             _SYNC_ALERT_TYPE,
             "warning",
-            f"A TaOn não está informando o andamento da {ride_name(get_block(order))} do pedido "
+            f"A TaOn não está informando o andamento da {name} do pedido "
             f"{short_ref(order.ref)} ({marker}). "
             "O status na tela pode estar parado: confira no painel da TaOn.",
             order_ref=order.ref,
