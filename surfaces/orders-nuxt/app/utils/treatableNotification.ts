@@ -29,7 +29,7 @@ async function availableRegistration(
 
 /**
  * Mostra o alerta local pelo service worker, sem pedir permissão e sem bloquear
- * som/título do quadro. O Web Push remoto é uma perna independente.
+ * som/título do painel. O Web Push remoto é uma perna independente.
  */
 export async function showTreatableOrderNotification(
   ref_: string,
@@ -45,7 +45,7 @@ export async function showTreatableOrderNotification(
     await registration.showNotification(
       `Pedido para tratar${ref_ ? ` ${ref_}` : ""}`,
       {
-        body: "Há um pedido que já pode ser tratado no quadro.",
+        body: "Há um pedido que já pode ser tratado no painel.",
         tag: "gestor-treatable-order",
         data: { action_url: runtime.actionUrl || "/" },
       },

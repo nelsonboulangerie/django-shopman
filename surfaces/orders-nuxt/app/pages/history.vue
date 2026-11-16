@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Histórico — os pedidos que já saíram do quadro (concluídos, cancelados, devolvidos).
+// Histórico — os pedidos que já saíram do painel (concluídos, cancelados, devolvidos).
 //
 // Pedido do dono (03/10/2026): "acesso a um histórico dos pedidos concluídos e
 // cancelados, com filtro por data, status, forma de pagamento". O período e os
@@ -33,7 +33,7 @@ const { history, pending, error, refresh, readMetadata } = useOrderHistory(
   today,
 );
 
-// O detalhe do pedido volta para cá (e não para o quadro) com o mesmo recorte.
+// O detalhe do pedido volta para cá (e não para o painel) com o mesmo recorte.
 const historyLocation = useState<{
   path: string;
   query: Record<string, string>;

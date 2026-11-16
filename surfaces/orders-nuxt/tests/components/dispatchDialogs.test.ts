@@ -67,7 +67,7 @@ describe("CourierBackDialog — entregador voltou", () => {
   });
 });
 
-describe("quadro de pedidos — nenhum indicador fixo de maquininha", () => {
+describe("painel de pedidos — nenhum indicador fixo de maquininha", () => {
   const page = readFileSync(resolve(process.cwd(), "app/pages/index.vue"), "utf8");
   it("sem linha ao lado da busca, sem banner, sem contador", () => {
     for (const gone of ["Maquininhas disponíveis", "Em trânsito", "Registros antigos", "data-equipment-available", "data-equipment-out", "equipmentOut"]) {

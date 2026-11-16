@@ -84,7 +84,7 @@ export function useOrderDetail(orderRef: string) {
     () => data.value?.order ?? (error.value ? lastConfirmed.value : null),
   );
 
-  // A impressora desta estação, a mesma que o quadro recebe (a Via Pedido sai por ela).
+  // A impressora desta estação, a mesma que o painel recebe (a Via Pedido sai por ela).
   const deviceAgent = computed(() => data.value?.device_agent ?? null);
 
   const busy = ref(false);
@@ -313,7 +313,7 @@ export function useOrderDetail(orderRef: string) {
   }
 
   // Uma corrida para este pedido e os que vão junto (o "Vai junto?" da chamada):
-  // a mesma rota do "Juntar entregas" do quadro, com a custódia de cada um.
+  // a mesma rota do "Juntar entregas" do painel, com a custódia de cada um.
   async function courierRide(body: {
     refs: string[];
     change_out: Record<string, string>;

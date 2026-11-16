@@ -15,6 +15,9 @@ const props = withDefaults(
     nextRef: string;
     phone: boolean;
     wide: boolean;
+    /** Única coluna aberta do Painel: cartões em até duas colunas, para seguirem
+     *  horizontais em vez de esticar na largura toda (dono, 14/11). */
+    twoUp?: boolean;
     canOpen: boolean;
     selecting: boolean;
     canCollapse: boolean;
@@ -115,9 +118,14 @@ const hint = computed(() =>
          02/11/2026). items-start: cada cartão com a altura do
          que tem; esticado até o mais alto da linha, o curto ganhava uma faixa vazia
          acima do rodapé (dono, 08/10/2026). -->
-    <template v-else-if="wide">
+    <template v-else-if="wide || twoUp">
       <div
-        class="grid min-h-0 flex-1 auto-rows-max items-start gap-2 overflow-y-auto px-2 pt-1 pb-2 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]"
+        class="grid min-h-0 flex-1 auto-rows-max items-start gap-2 overflow-y-auto px-2 pt-1 pb-2"
+        :class="
+          wide
+            ? '[grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]'
+            : '[grid-template-columns:repeat(auto-fill,minmax(max(17rem,calc(50%-0.25rem)),1fr))]'
+        "
         data-zone-cards
       >
         <template v-for="{ card, heading: part } in rows" :key="card.ref">
