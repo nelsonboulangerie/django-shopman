@@ -22,7 +22,7 @@ from shopman.shop.models import (
     UserNotificationEvent,
 )
 from shopman.shop.models.user_notification import ACTIVE_NOTIFICATION_STATES
-from shopman.shop.services import kds_alerts
+from shopman.shop.services import kds_alerts, order_acceptance_alerts
 
 logger = logging.getLogger(__name__)
 
@@ -342,6 +342,9 @@ def reconcile_user_notifications(*, user) -> int:
             continue
         if row["source_condition"] in kds_alerts.CONDITIONS:
             changed += kds_alerts.reconcile(row["source_condition"], row["source_ref"])
+            continue
+        if row["source_condition"] in order_acceptance_alerts.CONDITIONS:
+            changed += order_acceptance_alerts.reconcile(row["source_condition"], row["source_ref"])
             continue
         if row["source_condition"] != ANNOUNCEMENT_REVIEW:
             changed += reconcile_condition(
@@ -820,6 +823,7 @@ CONDITION_DESTINATIONS: dict[str, tuple[str, str]] = {
     PRODUCTION_QUALITY_REVIEW: ("production", "Revisar a qualidade do lote"),
     MARKETING_SECOND_CONTROL: ("marketing", "Conferir o disparo"),
     **dict.fromkeys(kds_alerts.CONDITIONS, ("kds", "Abrir a estação")),
+    **dict.fromkeys(order_acceptance_alerts.CONDITIONS, ("gestor", "Abrir o pedido")),
 }
 
 
@@ -855,6 +859,8 @@ def _known_deep_link(source_condition: str, source_ref: str) -> str:
             return f"/second-control/{raw}"
     if source_condition in kds_alerts.CONDITIONS:
         return kds_alerts.deep_link(source_ref)
+    if source_condition in order_acceptance_alerts.CONDITIONS:
+        return order_acceptance_alerts.deep_link(source_ref)
     return ""
 
 

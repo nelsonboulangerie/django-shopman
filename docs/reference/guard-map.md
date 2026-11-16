@@ -84,6 +84,7 @@ As guardas das cláusulas pétreas (C2, C3, C5, C6, C7, C10, C11 e ADR-025) são
 | Sem engolir exceção em silêncio | check_silent_swallow.py | make test-silent-swallow |
 | constraints.txt cobre tudo que a imagem instala | check_constraints.py | make test-constraints |
 | Teto de job cabe a espera declarada | check_workflow_budgets.py | make test-workflow-budgets |
+| PR declara o que deixou de fora, com issue `ficou-de-fora` por item | check_ficou_de_fora.py | CI ficou-de-fora (corpo do PR) |
 | Menu do catálogo monta acima do mínimo | check_menu_smoke.py | make test-framework |
 
 ## 8. Deploy, runtime e prontidão

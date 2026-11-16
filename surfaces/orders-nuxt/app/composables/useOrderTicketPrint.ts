@@ -83,7 +83,7 @@ export function createOrderTicketPrinter(
   return { agent: deviceAgent, isPrinting, print };
 }
 
-/** A tela que conhece a impressora da estação (o quadro, o detalhe) oferece o gesto. */
+/** A tela que conhece a impressora da estação (o painel, o detalhe) oferece o gesto. */
 export function provideOrderTicketPrinter(
   deviceAgent: ComputedRef<StationDeviceAgent | null>,
 ): OrderTicketPrinter {

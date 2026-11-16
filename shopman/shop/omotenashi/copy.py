@@ -967,17 +967,27 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(message="A loja confirma sua encomenda para {when} e avisa por aqui."),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(message="A loja confirma sua encomenda e avisa por aqui."),
+        },
+    },
     "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Pagamento recebido. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
+                message="Pagamento recebido. A loja confirma sua encomenda para {when} e avisa por aqui. Se não puder, devolvemos o valor.",
             ),
         },
     },
     "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Pagamento recebido. Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
+                message="Pagamento recebido. A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor.",
             ),
         },
     },

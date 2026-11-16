@@ -92,16 +92,30 @@ export function linePrice (line: Pick<CartItemProjection, 'price_display' | 'pro
 // precisa confirmar antes do TTL ('ready'). Timeouts são transparentes:
 // deadline explícito + countdown vivo.
 
+// 'reserved': a linha segura reserva planejada, mas o pedido não entra em fila
+// na data em que ele vai sair (data anterior com saldo, ou pedido para depois
+// da fornada). Mesma regra de `reviewWaitlist`: sem selo de espera nem
+// "Previsto para", e a linha também não aparece como indisponível.
 export type CartLineHold = {
-  kind: 'awaiting' | 'ready'
+  kind: 'awaiting' | 'ready' | 'reserved'
   deadlineIso: string | null
   deadlineDisplay: string | null
   plannedForNotice: string | null
 }
 
 type HoldFields = Pick<CartItemProjection, 'is_awaiting_confirmation' | 'is_ready_for_confirmation' | 'confirmation_deadline_iso' | 'confirmation_deadline_display' | 'planned_for_notice'>
+  & Partial<Pick<CartItemProjection, 'planned_for_date' | 'earlier_available_date'>>
 
-export function lineHoldState (line: HoldFields): CartLineHold | null {
+/** O estado de reserva da linha na sacola. `deliveryDate` é a data em que o
+ *  pedido vai sair: na sacola, ainda sem escolha, é o piso que o checkout vai
+ *  pré-selecionar (`cartBatchFloor`). A espera segue a MESMA regra da revisão
+ *  (`reviewWaitlist`): o "Previsto para sexta" não pode aparecer na sacola e
+ *  sumir no "Finalizar" para a mesma data (beta 09/11). */
+export function lineHoldState (
+  line: HoldFields,
+  deliveryDate: string = '',
+  today: string = new Date().toLocaleDateString('en-CA')
+): CartLineHold | null {
   // ⚠️ Havia aqui um `if (line.is_made_to_order) return null`, e ele passou a
   // ESCONDER FILA DE VERDADE quando os dois eixos foram separados.
   //
@@ -114,7 +128,11 @@ export function lineHoldState (line: HoldFields): CartLineHold | null {
   if (line.is_ready_for_confirmation) {
     return { kind: 'ready', deadlineIso: line.confirmation_deadline_iso, deadlineDisplay: line.confirmation_deadline_display, plannedForNotice: null }
   }
-  if (line.is_awaiting_confirmation) return { kind: 'awaiting', deadlineIso: null, deadlineDisplay: null, plannedForNotice: line.planned_for_notice ?? null }
+  if (line.is_awaiting_confirmation) {
+    const wait = reviewWaitlist({ ...line, planned_for_date: line.planned_for_date ?? null }, deliveryDate, today)
+    if (!wait) return { kind: 'reserved', deadlineIso: null, deadlineDisplay: null, plannedForNotice: null }
+    return { kind: 'awaiting', deadlineIso: null, deadlineDisplay: null, plannedForNotice: wait.notice || null }
+  }
   return null
 }
 

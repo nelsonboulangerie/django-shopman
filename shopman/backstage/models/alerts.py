@@ -350,6 +350,11 @@ class OperatorAlert(models.Model):
         # 11/11 aconteceu sem nenhum dos dois.
         ("ai_budget_warning", "IA perto do teto de gasto do dia"),
         ("ai_budget_stopped", "IA parou: teto de gasto do dia atingido"),
+        # O polling do iFood (``ifood_poll --watch``) não tem resposta do iFood há
+        # mais de 2 min: pedido novo não entra, e o iFood cancela em 8 min o que
+        # ninguém aceitar. Fecha sozinho quando o polling volta a responder
+        # (``check_ifood_polling``, DEV-2026-017).
+        ("ifood_poll_stale", "iFood: pedidos pararam de entrar"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),
@@ -421,6 +426,7 @@ class OperatorAlert(models.Model):
         "ifood_negotiation_open",
         "ifood_cancellation_refused",
         "ifood_accept_not_delivered",
+        "ifood_poll_stale",
         "fiscal_return_note_due",
     }
 

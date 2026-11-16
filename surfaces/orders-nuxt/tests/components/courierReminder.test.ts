@@ -103,7 +103,7 @@ describe("o aviso no painel do entregador", () => {
   });
 });
 
-describe("o aviso no cartão do quadro", () => {
+describe("o aviso no cartão do painel", () => {
   function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     return {
       ref: "NB-261013-0042", status: "preparing", status_label: "Em preparo", status_color: "",
@@ -122,7 +122,7 @@ describe("o aviso no cartão do quadro", () => {
   }
   const stubs = { Icon: true, NuxtLink: { template: "<a><slot /></a>" } };
 
-  it("pílula amarela na hora; o Chamar abre o pedido com a pergunta e o Dispensar vai ao quadro", async () => {
+  it("pílula amarela na hora; o Chamar abre o pedido com a pergunta e o Dispensar vai ao painel", async () => {
     nowMs.value = minutes(12);
     const w = mount(OrderCard, { props: { card: card() }, global: { stubs } });
     try {

@@ -557,14 +557,68 @@ def request_dispatch(order, *, actor: str) -> Directive | None:
     )
     if directive is None:
         return None
+    fields = {"ride_number": next_ride_number(exclude_refs=[order.ref])}
     if not get_block(order).get("called_at"):
         # A primeira chamada do pedido, com quem chamou: encerra o lembrete do
         # Gestor (``backstage.services.courier_reminder``) e é o marco "chamada
         # pedida" que a chamada antecipada vai aprender.
-        merge_order_data(order, {"called_at": timezone.now().isoformat(), "called_by": actor}, block="courier")
+        fields.update(called_at=timezone.now().isoformat(), called_by=actor)
+    merge_order_data(order, fields, block="courier")
     order.emit_event(event_type="courier_dispatch_requested", actor=actor)
     logger.info("courier.dispatch_requested order=%s actor=%s", order.ref, actor)
     return directive
+
+
+# ── Número (e cor) da corrida ───────────────────────────────────────
+
+#: Quantas cores a tela tem para as corridas vivas (``ridePalette.ts`` do Gestor).
+RIDE_NUMBERS = 6
+
+
+def ride_is_live(order) -> bool:
+    """A corrida deste pedido ainda ocupa um número na tela.
+
+    Viva: chamada à espera da TaOn, corrida aberta ainda não terminada, ou
+    terminada com o entregador ainda devendo voltar (troco, dinheiro, maquininha).
+    """
+    block = get_block(order)
+    if not block.get("ride_number"):
+        return False
+    status = str(block.get("status") or "")
+    if block.get("id_mch"):
+        if status not in TERMINAL_STATUSES:
+            return True
+        if status != "F":
+            return False
+        from shopman.shop.services import operator_orders
+
+        return bool(operator_orders.courier_return_members(order))
+    from shopman.shop.directives import COURIER_DISPATCH
+
+    return Directive.objects.filter(
+        dispatch_task_filter(order.ref), topic=COURIER_DISPATCH,
+        status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING),
+    ).exists()
+
+
+def next_ride_number(*, exclude_refs=()) -> int:
+    """O menor número livre entre as corridas vivas (1 a :data:`RIDE_NUMBERS`).
+
+    O número é a cor da corrida na tela e não muda enquanto ela vive: fica
+    gravado no pedido (``Order.data["courier"]["ride_number"]``) na chamada.
+    Com as seis ocupadas, repete o da corrida mais antiga; o número desfaz a dúvida.
+    """
+    live: dict[int, str] = {}
+    statuses = (*RIDE_ORDER_STATUSES, Order.Status.DISPATCHED, Order.Status.DELIVERED)
+    for order in Order.objects.filter(status__in=statuses, data__courier__has_key="ride_number").exclude(ref__in=list(exclude_refs)):
+        number = get_block(order).get("ride_number")
+        if isinstance(number, int) and 1 <= number <= RIDE_NUMBERS and ride_is_live(order):
+            called = str(get_block(order).get("called_at") or "")
+            live[number] = min(live.get(number, called), called)
+    for number in range(1, RIDE_NUMBERS + 1):
+        if number not in live:
+            return number
+    return min(live, key=lambda n: live[n])
 
 
 #: Quantos pedidos cabem numa corrida. A API não publica teto; quatro é o que
@@ -637,11 +691,13 @@ def request_group_dispatch(orders, *, actor: str) -> Directive:
     if directive is None:
         raise ValueError("Esta corrida já foi pedida. Atualize a fila.")
     now_iso = timezone.now().isoformat()
+    number = next_ride_number(exclude_refs=refs)
     for order in ordered:
         block = dict(get_block(order))
         if block.get("id_mch"):
             _archive_current_ride(block)
         block.pop("error", None)
+        block["ride_number"] = number
         block.setdefault("called_at", now_iso)
         block.setdefault("called_by", actor)
         _save_block(order, block, emit={"kind": "redispatch"})

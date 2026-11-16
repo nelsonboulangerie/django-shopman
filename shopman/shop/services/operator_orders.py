@@ -617,8 +617,14 @@ def advance_order(
             # (decisão do dono, 06/11/2026): inicia os tickets que esperam no
             # posto, e é o início deles que põe o pedido em preparo. Pedido sem
             # item de cozinha não tem ticket e segue pela transição abaixo.
+            from shopman.shop import lifecycle
             from shopman.shop.services import kds as kds_service
 
+            # Encomenda do dia que ainda não chegou à Cozinha (a hora dela é
+            # hora combinada − preparo − antecedência): o "Iniciar" antecipa a
+            # chegada, para o preparo nascer com ticket e baixa.
+            if lifecycle.release_preorder_now(order):
+                order.refresh_from_db()
             if kds_service.start_order_tickets(order, actor=actor):
                 order.refresh_from_db()
         if order.status != next_status:
@@ -1622,6 +1628,12 @@ def hand_over_at_counter(
         # Receber com a cobrança do cliente ainda viva abriria a cobrança dupla:
         # quem cancela antes é :func:`take_over_before_hand_over`.
         raise ValueError("O Pix ou o link do cliente ainda está ativo. Atualize a encomenda e tente de novo.")
+    # O cliente chegou antes de a encomenda ir para a Cozinha: ela entra no
+    # fluxo do dia agora (ticket e baixa) e é entregue em seguida.
+    from shopman.shop import lifecycle
+
+    if lifecycle.release_preorder_now(order):
+        order.refresh_from_db()
     _mark_ready_at_counter(order, actor=actor)
     order.refresh_from_db()
     received = 0
@@ -1632,6 +1644,7 @@ def hand_over_at_counter(
         )
     elif tenders:
         raise ValueError("Esta encomenda já está paga: não há o que receber.")
+    _fulfill_on_hand_over(order)
     advance_order(order, actor=actor, cash_shift=cash_shift, target_status=Order.Status.COMPLETED)
     logger.info("operator_hand_over_at_counter order=%s received=%s", order.ref, received)
     return received
@@ -1644,6 +1657,25 @@ def hand_over_at_counter(
 COUNTER_HAND_OVER_STATUSES = frozenset({
     Order.Status.ACCEPTED, Order.Status.PREPARING, Order.Status.READY,
 })
+
+
+def _fulfill_on_hand_over(order: Order) -> None:
+    """A mercadoria sai pelo balcão agora: o ledger baixa aqui, se ainda não baixou.
+
+    A baixa da encomenda é do despertador (``lifecycle.activate_preorder``), e
+    ele só ativa o que está pago: a encomenda de Pix pendente (ou de sinal) não
+    arma despertador no aceite, e reagendá-la para hoje não tem o que ativar. O
+    dinheiro que falta entra no acerto do balcão (:func:`settle_delivery_cash`),
+    que não passa por ``on_paid`` — e o pedido concluía com os holds pendentes
+    (beta 09/11). ``stock.fulfill`` é idempotente (hold baixado é sucesso), então
+    a encomenda que o despertador já baixou não baixa duas vezes. Sem
+    ``pending_materialization_ok``: com o pão na mão do cliente, hold de demanda
+    sem estoque é drift, e ``stock.fulfill`` alerta o operador.
+    """
+    from shopman.shop.services import stock
+
+    order.refresh_from_db()
+    stock.fulfill(order)
 
 
 def _mark_ready_at_counter(order: Order, *, actor: str) -> None:
@@ -2336,9 +2368,20 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
         # Na ENTREGA, quem decide o pronto é o operador (decisão do dono,
         # 13/10/2026): ele sabe se a sacola está pronta e chama o entregador na
         # hora. O "Marcar pronto" fica à vista mesmo com ticket na Cozinha.
+        # Com ENTREGADOR DO iFOOD é o iFood quem chama, coleta e conclui (dono,
+        # 12/11/2026, pedido 3417): o pronto sai do KDS, a coleta (DSP) fecha o
+        # pedido sozinha, a conclusão do iFood (CON) encerra, e o Gestor mostra o
+        # andamento do entregador. "Pronto", "Saiu" e "Entregue" ficam no menu,
+        # como reserva para o caso que o sistema não viu.
+        ifood_courier = (
+            order.channel_ref == "ifood"
+            and get_fulfillment_type(order) == "delivery"
+            and str(((order.data or {}).get("ifood") or {}).get("delivered_by") or "").upper() == "IFOOD"
+        )
         priority = (
             "menu"
-            if target == Order.Status.READY and get_fulfillment_type(order) != "delivery" and _kitchen_will_conclude(order)
+            if (target == Order.Status.READY and get_fulfillment_type(order) != "delivery" and _kitchen_will_conclude(order))
+            or (ifood_courier and target in (Order.Status.READY, Order.Status.DISPATCHED, Order.Status.DELIVERED))
             else "primary"
         )
         actions.append(Action(

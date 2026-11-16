@@ -25,7 +25,7 @@ const WRONG_NOTES = [
 ];
 
 export function useVolumeCheck(options: {
-  /** O pedido fixo da tela (o detalhe aberto); vazio no quadro. */
+  /** O pedido fixo da tela (o detalhe aberto); vazio no painel. */
   fixedRef?: () => string;
   /** Só escuta com a tela destravada. */
   enabled: () => boolean;

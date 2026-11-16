@@ -129,19 +129,19 @@ def test_vencido_e_terminal_nao_vencem(tmp_path: Path):
     assert [entry.id for entry in expired] == ["DEV-2026-001"]
 
 
-def test_pr_novo_sem_pedido_reprova():
+def test_pr_novo_sem_compromisso_reprova():
     errors = guard.check_pr_body(
         "## O que muda\n\nnada\n", [], created=dt.date(2026, 11, 13)
     )
 
-    assert any("sem a linha 'Pedido:" in error for error in errors)
+    assert any("sem a linha 'Compromisso:" in error for error in errors)
 
 
-def test_pr_novo_com_pedido_conhecido_passa():
+def test_pr_novo_com_compromisso_conhecido_passa():
     entry = _entry(_row())
 
     errors = guard.check_pr_body(
-        "## Pedido\n\nPedido: DEV-2026-001\n",
+        "## Compromisso\n\nCompromisso: DEV-2026-001\n",
         [entry],
         created=dt.date(2026, 11, 13),
     )
@@ -149,7 +149,7 @@ def test_pr_novo_com_pedido_conhecido_passa():
     assert errors == []
 
 
-def test_pr_antigo_nao_exige_pedido():
+def test_pr_antigo_nao_exige_compromisso():
     errors = guard.check_pr_body(
         "## O que muda\n\nnada\n", [], created=dt.date(2026, 11, 12)
     )
@@ -157,7 +157,7 @@ def test_pr_antigo_nao_exige_pedido():
     assert errors == []
 
 
-def test_pr_de_bot_nao_exige_pedido():
+def test_pr_de_bot_nao_exige_compromisso():
     errors = guard.check_pr_body(
         "## O que muda\n\nbump\n", [], created=dt.date(2026, 11, 13), author="app/dependabot"
     )
@@ -171,7 +171,7 @@ def test_next_id_e_append(tmp_path: Path):
     entry = guard.append_entry(
         root,
         quote="o dono pediu para corrigir o fluxo",
-        tipo="pedido",
+        tipo="solicitacao",
         dono="Engenharia",
         origem="chat 2026-11-12",
         revisar_em="2026-11-19",
@@ -201,9 +201,9 @@ def test_decisoes_legadas_vencidas(tmp_path: Path):
     assert [item["id"] for item in found] == ["D-004"]
 
 
-def test_pedido_com_issue_conhecida_passa():
+def test_compromisso_com_issue_conhecida_passa():
     errors = guard.check_pr_body(
-        "## Pedido\n\nPedido: #2300\n",
+        "## Compromisso\n\nCompromisso: #2300\n",
         [],
         created=dt.date(2026, 11, 13),
         known_issues={2300},

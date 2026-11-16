@@ -277,6 +277,31 @@ describe('cart presentation — planned hold', () => {
     expect(reviewWaitlist(kuro, '2026-11-13', today)).toEqual({ notice: 'Previsto para sexta-feira, 13/11' })
   })
 
+  it('a sacola conta a espera pela mesma regra da revisão (beta 09/11)', () => {
+    const today = '2026-11-09'
+    const kuro = line({
+      name: 'Kuro Pan',
+      is_awaiting_confirmation: true,
+      planned_for_date: '2026-11-13',
+      planned_for_notice: 'Previsto para sexta-feira, 13/11',
+      earlier_available_date: '2026-11-11'
+    })
+    // A sacola, sem data escolhida, conta pelo piso que o "Finalizar" pré-seleciona:
+    // a quarta com saldo. Sem "Previsto para sexta", como na revisão.
+    const floor = cartBatchFloor([kuro], today)!.date
+    expect(reviewWaitlist(kuro, floor, today)).toBeNull()
+    expect(lineHoldState(kuro, floor, today)).toEqual({ kind: 'reserved', deadlineIso: null, deadlineDisplay: null, plannedForNotice: null })
+    // Pedido para sexta, o dia da fornada: a fila continua, nas duas telas.
+    expect(lineHoldState(kuro, '2026-11-13', today)).toEqual({ kind: 'awaiting', deadlineIso: null, deadlineDisplay: null, plannedForNotice: 'Previsto para sexta-feira, 13/11' })
+    // Pedido para depois da fornada: sem fila, nas duas telas.
+    expect(reviewWaitlist(kuro, '2026-11-14', today)).toBeNull()
+    expect(lineHoldState(kuro, '2026-11-14', today)?.kind).toBe('reserved')
+    // Sem data anterior com saldo, a sacola segue mostrando a fornada esperada.
+    const plain = line({ is_awaiting_confirmation: true, planned_for_date: '2026-11-13', planned_for_notice: 'Previsto para sexta-feira, 13/11' })
+    const plainFloor = cartBatchFloor([plain], today)!.date
+    expect(lineHoldState(plain, plainFloor, today)?.plannedForNotice).toBe('Previsto para sexta-feira, 13/11')
+  })
+
   it('carries the expected-batch notice on awaiting lines only', () => {
     const awaiting = line({ is_awaiting_confirmation: true, planned_for_date: '2026-07-17', planned_for_notice: 'Previsto para amanhã' })
     expect(lineHoldState(awaiting)?.plannedForNotice).toBe('Previsto para amanhã')

@@ -13,6 +13,9 @@ withDefaults(defineProps<{ scrollBody?: boolean }>(), { scrollBody: true });
     :toaster="{ position: 'top-right' }"
     :locale="ptBr"
   >
+    <!-- Aviso de carregamento global: todo app que adota o OperatorAppRoot ganha o
+         modal de espera, sem montá-lo por conta própria. -->
+    <OperatorLoadingFeedback />
     <slot />
   </NuxtApp>
 </template>

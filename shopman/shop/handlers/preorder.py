@@ -55,10 +55,10 @@ class PreorderActivateHandler:
             return
 
         if _physical_work_deferred(order):
-            # Tocou antes da data (fuso, relógio, ou uma data trocada por fora do
+            # Tocou antes da hora (fuso, relógio, ou uma data trocada por fora do
             # ``services.reschedule``). Terminar aqui deixaria a encomenda sem
             # despertador: ela nunca iria para a cozinha. A própria directive
-            # volta para a fila na madrugada certa — sem criar outra.
+            # volta para a fila na hora certa — sem criar outra.
             available_at, target = preorder_activation_at(order)
             if available_at is not None and available_at > timezone.now():
                 payload = dict(message.payload or {})

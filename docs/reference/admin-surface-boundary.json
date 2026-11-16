@@ -253,9 +253,9 @@
     },
     {
       "id": "operational-checklists", "frequency": "daily", "audience": "floor_operator", "risk": "high",
-      "surface": "orders", "pages": ["surfaces/orders-nuxt/app/pages/checklists.vue"],
+      "surface": "pos", "pages": ["surfaces/pos-nuxt/app/pages/checklists.vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-operation-checklists"}],
-      "tests": ["shopman/backstage/tests/test_api_operation_checklists.py", "surfaces/orders-nuxt/tests/composables/useOperationChecklists.test.ts"],
+      "tests": ["shopman/backstage/tests/test_api_operation_checklists.py", "surfaces/pos-nuxt/tests/composables/useOperationChecklists.test.ts"],
       "locks": ["operational-checklists"], "admin_models": ["backstage.operationchecklistrun"]
     },
     {

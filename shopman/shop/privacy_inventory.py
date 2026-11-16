@@ -148,6 +148,20 @@ PROCESSORS: tuple[Processor, ...] = (
         wired_by=("setting:SHOPMAN_IFOOD[merchant_id]", "setting:SHOPMAN_IFOOD[client_id]"),
     ),
     Processor(
+        key="digitalocean",
+        name="DigitalOcean",
+        role="hospeda o sistema e o banco de dados da loja, em servidores nos Estados Unidos",
+        shares=(
+            "tudo o que a loja guarda sobre você, porque é lá que ela guarda. Os dados "
+            "viajam e ficam gravados cifrados"
+        ),
+        # Hospedagem não tem adapter: é o chão. O sinal é o ambiente declarado no spec de
+        # deploy (`.do/*.yaml`); na máquina de quem desenvolve ele vale `development`, e
+        # nada sai de casa. O país da frase está amarrado à `region` dos specs por
+        # `test_hospedagem_declara_o_pais_dos_specs_de_deploy`.
+        wired_by=("setting:SHOPMAN_ENVIRONMENT",),
+    ),
+    Processor(
         key="sentry",
         name="Sentry",
         role="recebe o relatório quando uma tela dá erro, para a loja consertar",
@@ -161,7 +175,13 @@ PROCESSORS: tuple[Processor, ...] = (
         key="anthropic",
         name="Anthropic",
         role="responde quando você conversa com o atendimento automático no WhatsApp",
-        shares="o que você escreve na conversa e o seu primeiro nome",
+        # O nome vai no contexto do sistema (`concierge/prompt.py`) e o endereço de entrega
+        # volta nas ferramentas do pedido (`concierge/tools.py`). Os dois saem, e a frase
+        # dizia só "primeiro nome" (achado de 12/11/2026).
+        shares=(
+            "o que você escreve na conversa, o seu nome e, quando o pedido é para "
+            "entregar, o endereço da entrega"
+        ),
         wired_by=("setting:SHOPMAN_CONCIERGE[enabled]",),
     ),
 )
@@ -188,7 +208,7 @@ ADAPTERS_SEM_DADO_DE_CLIENTE: dict[str, str] = {
 #: Valores que existem mas não falam com a internet. Um deployment com o backend de
 #: console não manda e-mail para lugar nenhum, e declarar um operador ali seria mentira
 #: na direção contrária — assustar o cliente com terceiro que não recebe nada.
-_NAO_SAI_DA_CASA = ("console", "locmem", "dummy", "mock", "filebased")
+_NAO_SAI_DA_CASA = ("console", "locmem", "dummy", "mock", "filebased", "development")
 
 
 def _setting_is_set(expression: str) -> bool:
