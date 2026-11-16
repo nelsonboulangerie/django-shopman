@@ -7,6 +7,7 @@ const items = [
   { n: 2, label: "Corrida da casa na Saída" },
   { n: 3, label: "O que o entregador recebe" },
   { n: 4, label: "Mapa em pé e deitado" },
+  { n: 5, label: "Hiperfoco, de ponta a ponta" },
 ];
 </script>
 

@@ -99,7 +99,7 @@ const payTone = (s: CourierStop) => (s.pay === "paid" ? "text-[#0a7a35]" : "text
           <li>Troco: R$ 70,00</li>
           <li class="flex items-center gap-1.5">Maquininha <span class="size-3 rounded-full bg-[#2563eb]" /> azul</li>
         </ul>
-        <button type="button" class="mt-1 min-h-14 rounded-xl text-[19px] font-extrabold" :style="{ background: tone.bg, color: tone.fg }" @click="emit('depart')">Saí da loja</button>
+        <button type="button" class="mt-1 min-h-14 rounded-xl bg-black text-[19px] font-extrabold text-white" @click="emit('depart')">Saí da loja</button>
       </template>
 
       <template v-else-if="ride.phase === 'route' && next">
@@ -115,7 +115,7 @@ const payTone = (s: CourierStop) => (s.pay === "paid" ? "text-[#0a7a35]" : "text
           <a href="#" class="flex min-h-12 items-center justify-center gap-1.5 rounded-xl bg-black/5 text-[16px] font-bold"><NuxtIcon name="i-lucide-phone" class="size-5" />Ligar</a>
           <a href="#" class="flex min-h-12 items-center justify-center gap-1.5 rounded-xl bg-black/5 text-[16px] font-bold"><NuxtIcon name="i-lucide-navigation" class="size-5" />Waze</a>
         </div>
-        <button type="button" class="min-h-14 rounded-xl bg-[#00a03c] text-[19px] font-extrabold text-black" @click="emit('mark', next.code, 'done')">Entreguei {{ next.code }}</button>
+        <button type="button" class="min-h-14 rounded-xl bg-black text-[19px] font-extrabold text-white" @click="emit('mark', next.code, 'done')">Entreguei {{ next.code }}</button>
         <button type="button" class="text-[15px] font-semibold text-black/70 underline" :class="landscape ? 'min-h-10' : 'min-h-11'" @click="emit('mark', next.code, 'failed')">Não consegui entregar</button>
         <p v-if="ride.stops.length > nextIndex && !landscape" class="text-[14px] text-black/60">Depois: {{ ride.stops.slice(nextIndex).map((s) => s.code).join(", ") }}</p>
       </template>
@@ -123,7 +123,7 @@ const payTone = (s: CourierStop) => (s.pay === "paid" ? "text-[#0a7a35]" : "text
       <template v-else>
         <p class="text-[17px] font-bold">Todas as paradas feitas.</p>
         <p class="text-[16px]">Volte à loja com a maquininha azul e o dinheiro.</p>
-        <button type="button" class="min-h-14 rounded-xl text-[19px] font-extrabold" :style="{ background: tone.bg, color: tone.fg }" @click="emit('back')">Voltei à loja</button>
+        <button type="button" class="min-h-14 rounded-xl bg-black text-[19px] font-extrabold text-white" @click="emit('back')">Voltei à loja</button>
       </template>
     </section>
   </div>
