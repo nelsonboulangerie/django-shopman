@@ -4931,6 +4931,39 @@
       ]
     },
     {
+      "path": "shopman/shop/management/commands/courier_machine_probe.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "Command",
+            "_LINK_KEYS",
+            "_NEVER",
+            "_RATE_HEADERS",
+            "_SAFE_KEYS",
+            "_SAFE_PREFIXES",
+            "_SAFE_SUFFIXES",
+            "_WRITES",
+            "_items",
+            "_link",
+            "_path",
+            "_point",
+            "_safe",
+            "_shape",
+            "_unwrap"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/management/commands/machine_register_webhook.py",
       "touchpoints": [
         "outro"
@@ -8894,6 +8927,7 @@
             "_REOPEN_EVENT",
             "_RESTORED_ALERT_MARKER",
             "_RESTORED_ALERT_TYPE",
+            "_RIDE_NUMBER_LOCK",
             "_TRACKING_LINKS_SHARED_SECONDS",
             "_TRACKING_RETRY_SECONDS",
             "_alert_ride_failed",
@@ -8907,6 +8941,7 @@
             "_forget_driver_caches",
             "_last_reopen_at",
             "_link_names",
+            "_lock_ride_numbers",
             "_reopen",
             "_resolve_sync_alert",
             "_ride_links",

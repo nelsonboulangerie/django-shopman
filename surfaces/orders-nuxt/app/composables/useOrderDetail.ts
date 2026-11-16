@@ -323,16 +323,29 @@ export function useOrderDetail(orderRef: string) {
     busy.value = true;
     mutationError.value = "";
     try {
-      await $fetch("/api/v1/backstage/orders/courier-ride/", {
-        method: "POST",
+      // Pelo protocolo de intenção: a ação `courier-ride` do pedido traz quem a
+      // tela leu e a revisão dele e de cada um que pode ir junto.
+      await intentions.executeRide(
+        data.value?.order?.actions?.find(
+          (action) => action.ref === "courier-ride",
+        ),
         body,
-      });
+      );
     } catch (error) {
       mutationError.value = httpErrorMessage(
         error,
         "Não foi possível chamar a corrida. Atualize o pedido.",
       );
       useSonner.error(mutationError.value);
+      // Um pedido da corrida mudou depois que a tela foi lida: a frase do
+      // servidor diz qual, e o pedido é relido para a próxima tentativa.
+      if (httpErrorCode(error) === "revision_changed") {
+        try {
+          await refresh();
+        } catch {
+          // A leitura nova falhou; a recusa já está na tela.
+        }
+      }
       return false;
     } finally {
       busy.value = false;

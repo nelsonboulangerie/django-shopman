@@ -1,4 +1,12 @@
 import type { Action } from "~/generated/ordersContract";
+import {
+  COURIER_RIDE_PATH,
+  courierRideAction,
+  courierRideInputs,
+  courierRideResource,
+  type CourierRideCall,
+  type CourierRideResult,
+} from "~/presentation/courierRide";
 
 type Intention = {
   key: string;
@@ -6,7 +14,10 @@ type Intention = {
   body: Record<string, unknown>;
   method: "POST" | "PATCH";
 };
-type Result = { outcome?: string; detail?: string; count?: number };
+type Result = { outcome?: string; detail?: string; count?: number } & Omit<
+  CourierRideResult,
+  "outcome" | "detail"
+>;
 
 /** O que a incerteza é, dito pelo ato: "se o cancelamento foi gravado". */
 const ORDER_OPERATION_SUBJECT: Record<string, string> = {
@@ -113,7 +124,16 @@ export function useOrderIntention() {
     if (!owner) throw new Error("Identifique-se antes de continuar.");
     let intent = pending.value[resource];
     if (!intent) {
-      if (!action?.enabled || !action.payload_schema.base_revision) {
+      // O que a tela leu: a revisão do pedido, ou a de cada pedido da corrida
+      // (`base_revisions`, na chamada de uma corrida para vários).
+      const observed =
+        action?.payload_schema.base_revision ||
+        Object.keys(
+          (action?.payload_schema.base_revisions as
+            | Record<string, unknown>
+            | undefined) ?? {},
+        ).length > 0;
+      if (!action?.enabled || !observed) {
         throw new Error(
           action?.reason || "Atualize os dados antes de continuar.",
         );
@@ -245,9 +265,32 @@ export function useOrderIntention() {
     );
     return true;
   }
+  /**
+   * Uma corrida da TaOn para vários pedidos (`courier-ride`), pela mesma
+   * intenção das outras ações: quem a tela leu, a revisão de CADA pedido e uma
+   * chave por corrida, guardada até a resposta definitiva (o toque repetido
+   * depois de rede caída reenvia a mesma chave e recebe a mesma corrida).
+   * `action` é a ação `courier-ride` da projeção. Devolve o que o servidor
+   * gravou: o número e a letra da corrida, ou `already_called` quando ela já
+   * existia com estes mesmos pedidos.
+   */
+  async function executeRide(
+    action: Parameters<typeof courierRideAction>[0],
+    call: CourierRideCall,
+  ): Promise<CourierRideResult> {
+    return await executePath(
+      courierRideResource(call.refs),
+      COURIER_RIDE_PATH,
+      courierRideAction(action, call.refs),
+      courierRideInputs(call),
+      undefined,
+      { subject: "a corrida foi chamada", where: "a fila" },
+    );
+  }
   return {
     execute,
     executePath,
+    executeRide,
     checkPath,
     hasPending: computed(() => Object.keys(pending.value).length > 0),
   };

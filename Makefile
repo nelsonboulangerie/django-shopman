@@ -801,6 +801,10 @@ smoke-gateways: ## Smoke local EFI/Stripe/iFood com rollback e matriz de sandbox
 smoke-gateways-sandbox: ## Exige credenciais sandbox/staging para smoke externo
 	$(PYTHON) manage.py smoke_gateways --sandbox-only --require-sandbox $(if $(json),--json,)
 
+.PHONY: taon-probe
+taon-probe: ## Sonda da TaOn, só leitura por padrão (homolog=1 pergunta as credenciais de homologação no terminal; args='--ride <id>')
+	@PYTHON_BIN="$(READINESS_PYTHON)" PYTHONPATH="$(SHOPMAN_PYTHONPATH)" bash scripts/taon_probe.sh $(if $(homolog),--homolog,) $(args)
+
 omotenashi-qa: ## Matriz manual QA mobile/tablet/desktop baseada no seed (strict=1 json=1)
 	$(PYTHON) manage.py omotenashi_qa $(if $(strict),--strict,) $(if $(json),--json,)
 
