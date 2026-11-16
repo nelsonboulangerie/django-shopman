@@ -63,6 +63,7 @@ const {
   receiptHasRejectionReason,
   receiptReady,
   receiptPreferredCostChanges,
+  receiptPriceCheck,
   setReceiptPreferredCost,
   receiptTotalPending,
   readonlyFallback,
@@ -1042,6 +1043,7 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
                 :line-count="receiptLinePreviews.length"
                 :total-cost-q="receiptTotalCostQ"
                 :declared-volumes="receiptInvoiceVolumes"
+                :price-check="receiptPriceCheck"
                 :pending="readonlyFallback || actionPending"
                 :volumes-ring="anchorRing('volumes')"
                 :count-in-thumb="phone"

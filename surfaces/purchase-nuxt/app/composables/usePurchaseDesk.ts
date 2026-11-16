@@ -66,6 +66,7 @@ import {
   reorderRows as buildReorderRows,
   supplierCostRows,
   receiptPreferredCostChanges as buildReceiptPreferredCostChanges,
+  receiptPriceCheck as buildReceiptPriceCheck,
 } from "~/presentation/purchase";
 
 function copy<T>(items: T[]): T[] {
@@ -381,6 +382,11 @@ export function usePurchaseDesk() {
   // se o custo muda (CMP-06). Não é pendência do item: a pergunta vem no gesto.
   const receiptPreferredCostChanges = computed(() =>
     buildReceiptPreferredCostChanges(receiptLinePreviews.value, costs.value, receiptSupplierRef.value, conversions.value),
+  );
+  // O preço medido contra o mesmo custo: é o fato que a conferência por exceção
+  // pode dizer sem inventar ("Preço igual ao custo preferencial em 11 de 12 itens").
+  const receiptPriceCheck = computed(() =>
+    buildReceiptPriceCheck(receiptLinePreviews.value, costs.value, receiptSupplierRef.value, conversions.value),
   );
   const receiptReady = computed(
     () =>
@@ -1629,6 +1635,7 @@ export function usePurchaseDesk() {
     receiptHasRejectionReason,
     receiptReady,
     receiptPreferredCostChanges,
+    receiptPriceCheck,
     setReceiptPreferredCost,
     purchaseRequestStatuses,
     pending,
