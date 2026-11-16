@@ -314,6 +314,18 @@ Na prática, a única fonte é o celular do entregador. Três caminhos, do mais 
 3. **App nativo** com localização em segundo plano. Resolve o limite do caminho 1, mas é
    um app para publicar e manter. Só se o caminho 1 provar que os buracos atrapalham.
 
+**E instalada como PWA?** Ajuda, mas não resolve o segundo plano. Instalado na tela de
+início, o link vira um ícone que abre direto, mantém a tela acesa durante a corrida (Screen
+Wake Lock) e recebe aviso de corrida nova (push; no iPhone, só com o app instalado). Mas nem
+no iPhone nem no Android um PWA recebe posição em segundo plano: com o Waze na frente, a
+posição congela do mesmo jeito. O que contorna isso sem app nativo é a nossa página ser o
+mapa da corrida: a rota desenhada, a próxima parada em destaque e "Abrir no Waze" só como
+opção. Quem navega pela nossa página manda posição o tempo todo.
+
+**Quando entra (decidido por mim, a pedido do dono, 16/11):** logo depois da M2, como frente
+própria (M2b, #2509), na mesma página: PWA instalável, tela acesa, mapa da corrida e posição
+para a casa (mapa das Entregas) e para o cliente (só a parada dele, com a idade visível).
+
 Até lá, a casa acompanha a corrida pelos toques do entregador ("Saí", "Entreguei A47"), com
 a hora prevista refeita a cada parada, e o cliente vê nome e hora (decisão 6 = 1).
 
@@ -397,10 +409,11 @@ Onde aparece:
 | Frente | Entrega no ar | Depende de | Pode começar |
 |---|---|---|---|
 | **M0. Cadastro** | Modelos `DeliveryService` (com `is_default`), `Courier`, `CourierRate` + Admin + a régua pura do valor da corrida da casa (`delivery_rates.ride_value`) + migração de dados com os registros "TaOn" (padrão) e "Entregadores da casa". Nada muda para o operador; o dono já pode cadastrar entregadores e a tabela | nada (não toca os arquivos em voo) | **já** |
-| **M1. Núcleo neutro e contrato** | `DeliveryServiceBackend`/`DeliveryCapabilities` em `protocols.py` (nascem com a TaOn conformada; o entregador da casa é a segunda implementação, na M2, como pede o ADR-001); estado neutro, `ride_ref`, `service` no bloco; a letra da TaOn e o corpo da Machine descem para `courier_machine.py`; `get_adapter` por serviço; nome do serviço vindo do cadastro; `SHOPMAN_MACHINE` vira `config`/`secret` do registro (baseline do ADR-042 diminui); migração de dados dos pedidos com `id_mch`. Tela idêntica | F1a, F1b, F2a, F3, F4a, F4b mergeados (todos mexem em `courier.py`, handlers e projeções) | depois da F4b |
-| **M2. Entregador da casa** | `courier_own_fleet.py`; página do entregador por link (token, prazo); toques "Saí", "Entreguei", "Não consegui", "Voltei"; enviar pelo WhatsApp do dispositivo; via impressa com QR (fecha #2406) | M0, M1 | depois da M1 |
-| **M3. Quem leva no sheet** | Linha "Quem leva" no `CourierCallSheet`, regra de sugestão, cotação por serviço, "Entregadores de hoje"; cartão da Saída da corrida da casa (forma E, com letra e o nome da pessoa) | F5, M2 | depois da F5 e da M2 |
-| **M4. Cliente e B.I.** | Página do pedido da corrida da casa (nome + hora, sem link); custo por serviço e acerto do dia; tempos com `ride_ref` (#2467) | M1, M2; prévia 7 da revisão implementada | depois da M2 |
+| **M1. Núcleo neutro e contrato** (#2524) | `DeliveryServiceBackend`/`DeliveryCapabilities` em `protocols.py` (nascem com a TaOn conformada; o entregador da casa é a segunda implementação, na M2, como pede o ADR-001); estado neutro, `ride_ref`, `service` no bloco; a letra da TaOn e o corpo da Machine descem para `courier_machine.py`; `get_adapter` por serviço; nome do serviço vindo do cadastro; `SHOPMAN_MACHINE` vira `config`/`secret` do registro (baseline do ADR-042 diminui); migração de dados dos pedidos com `id_mch`. Tela idêntica | F1a, F1b, F2a, F3, F4a, F4b mergeados (todos mexem em `courier.py`, handlers e projeções) | depois da F4b |
+| **M2. Entregador da casa** (#2525) | `courier_own_fleet.py`; página do entregador por link (token, prazo); toques "Saí", "Entreguei", "Não consegui", "Voltei"; enviar pelo WhatsApp do dispositivo; via impressa com QR (fecha #2406) | M0, M1 | depois da M1 |
+| **M2b. Localização do entregador da casa** | A página do link como PWA instalável (tela acesa, aviso de corrida nova), mapa da corrida e posição ao vivo para a casa e para o cliente da parada, com idade visível (§4.5.1) | M2 | logo depois da M2 (#2509) |
+| **M3. Quem leva no sheet** (#2526) | Linha "Quem leva" no `CourierCallSheet`, regra de sugestão, cotação por serviço, "Entregadores de hoje"; cartão da Saída da corrida da casa (forma E, com letra e o nome da pessoa) | F5, M2 | depois da F5 e da M2 |
+| **M4. Cliente e B.I.** (#2527) | Página do pedido da corrida da casa (nome + hora, sem link); custo por serviço e acerto do dia; tempos com `ride_ref` (#2467) | M1, M2; prévia 7 da revisão implementada | depois da M2 |
 | **M5. Segunda API de terceiro** | Implementação nova do contrato | o dono nomear o serviço | #2507 |
 
 Notas de coordenação:
