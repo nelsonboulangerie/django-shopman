@@ -274,12 +274,22 @@ def test_triagem_por_modelo_so_conta_sem_o_jev_no_lugar(settings):
 
 
 # ── A frase é a que o código monta ───────────────────────────────────────
+#
+# A frase dos leitores (Jev, pré-rótulo e leitura de partes) é a do dono (16/11/2026):
+# "Nome, documento, e-mail, telefone, endereço, pagamento, alergia ou doença que você
+# escrever não são enviados". Os testes abaixo mandam uma fala com tudo isso pelo caminho
+# de verdade e conferem o que chega ao provedor falso.
+#
+# ⚠️ Dois deles reprovam até o WP-03 do CONCIERGE-PLANO-DE-ACAO entrar, e é de propósito:
+# são o contrato que ele cumpre (a leitura de partes sai redigida; o nome que o cliente
+# escreve sai do texto). O PR deste inventário espera o WP-03 em rascunho.
 
 FALA = (
-    "Oi, meu CPF é 123.456.789-09, o e-mail é maria@exemplo.com, o telefone (43) 99876-5432, "
-    "moro na Rua das Flores, 120, tenho diabetes e sou alérgica a castanha. Tem croissant?"
+    "Oi, aqui é a Maria Souza. Meu CPF é 123.456.789-09, o e-mail é maria@exemplo.com, o "
+    "telefone (43) 99876-5432, moro na Rua das Flores, 120, tenho diabetes e sou alérgica "
+    "a castanha. Tem croissant?"
 )
-TRECHOS_PESSOAIS = (
+TRECHOS_SEM_NOME = (
     "123.456.789-09",
     "maria@exemplo.com",
     "99876-5432",
@@ -287,9 +297,10 @@ TRECHOS_PESSOAIS = (
     "diabetes",
     "castanha",
 )
+TRECHOS_PESSOAIS = ("Maria", *TRECHOS_SEM_NOME)
 
 
-def test_o_jev_recebe_a_mensagem_redigida_como_a_frase_diz():
+def _jev_recebe(fala):
     from shopman.storefront.concierge import triage
     from shopman.storefront.concierge.intent_benchmark import Prediction
 
@@ -300,33 +311,56 @@ def test_o_jev_recebe_a_mensagem_redigida_como_a_frase_diz():
             enviado.append(sample.text)
             return Prediction(intents={})
 
-    triage.jev_scores(FALA, contender=JevFalso())
+    triage.jev_scores(fala, contender=JevFalso())
+    assert enviado
+    return enviado[0]
 
-    assert USOS["decision"].redacts is True and USOS["decision"].keeps_profile is True
-    assert enviado and "croissant" in enviado[0]
-    for trecho in TRECHOS_PESSOAIS:
-        assert trecho not in enviado[0], (
-            f"O Jev recebeu {trecho!r}, e /privacidade diz que documento, e-mail, telefone, "
-            "endereço, pagamento, alergia ou doença escritos na mensagem não vão."
+
+def _leitura_recebe(fala, nota=""):
+    from shopman.storefront.concierge import intents
+
+    pedidos = []
+
+    class Mensagens:
+        def create(self, **pedido):
+            pedidos.append(pedido)
+            return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text='{"acts": []}')])
+
+    intents.read_with_model(fala, memory_note=nota, client=SimpleNamespace(messages=Mensagens()))
+    assert pedidos
+    return str(pedidos[0]["messages"])
+
+
+def _sem(trechos, enviado, quem):
+    for trecho in trechos:
+        assert trecho not in enviado, (
+            f"{quem} recebeu {trecho!r}, e /privacidade diz que nome, documento, e-mail, "
+            "telefone, endereço, pagamento, alergia ou doença escritos na mensagem não são "
+            "enviados."
         )
 
 
-def test_a_leitura_recebe_a_mensagem_como_o_cliente_escreveu():
-    """Hoje a leitura de partes manda a fala crua. O WP-03 vai redigi-la: quando ele
-    entrar, este teste reprova e a frase de `intents` muda junto (para a redigida)."""
-    from shopman.storefront.concierge import intents
+def test_o_jev_nao_recebe_documento_contato_endereco_nem_saude():
+    assert USOS["decision"].redacts is True and USOS["decision"].keeps_profile is True
+    enviado = _jev_recebe(FALA)
+    assert "croissant" in enviado
+    _sem(TRECHOS_SEM_NOME, enviado, "O Jev")
 
-    pedido = intents.build_request(FALA, memory_note="Pedido aberto do cliente: pedido ABC (novo).", model="m")
-    conteudo = pedido["messages"][0]["content"]
 
-    assert USOS["intents"].redacts is False
-    assert FALA in conteudo
-    assert "pedido ABC" in conteudo
-    assert "como você escreveu" in " ".join(USOS["intents"].sends)
-    assert "pedido em aberto" in USOS["intents"].also
-    # Só o texto e o pedido: nada do cadastro vai junto (é o que permite o "só").
-    assert set(pedido) == {"model", "max_tokens", "system", "messages", "output_config"}
-    assert len(pedido["messages"]) == 1
+def test_o_jev_nao_recebe_o_nome_que_o_cliente_escreve():
+    """Contrato do WP-03: o nome que o cliente escreve ("aqui é a Maria") sai do texto.
+    Reprova até ele entrar."""
+    _sem(("Maria", "Souza"), _jev_recebe(FALA), "O Jev")
+
+
+def test_a_leitura_nao_recebe_dado_pessoal():
+    """Contrato do WP-03: a leitura de partes manda o texto redigido, e a nota de estado
+    não leva o número do pedido. Reprova até ele entrar; hoje a fala sai como veio."""
+    assert USOS["intents"].redacts is True
+    _conexao("deepseek", base_url="https://api.deepseek.com/anthropic")
+    enviado = _leitura_recebe(FALA, nota="Pedido aberto do cliente: pedido ABC123 (novo).")
+    assert "croissant" in enviado
+    _sem((*TRECHOS_PESSOAIS, "ABC123"), enviado, "A leitura de partes")
 
 
 def test_a_triagem_recebe_a_mensagem_e_as_seis_anteriores():
@@ -366,27 +400,33 @@ def test_o_laco_antigo_recebe_o_nome_e_o_ultimo_pedido():
 # ── O texto que o cliente lê ─────────────────────────────────────────────
 
 
+def test_a_frase_dos_leitores_e_a_do_dono():
+    for purposes in ({"decision"}, {"intents"}, {"labeling"}, {"decision", "intents", "labeling"}):
+        role, shares = ai_role_and_shares(purposes)
+        assert role == "ajuda o atendimento automático do WhatsApp a entender a sua mensagem"
+        assert shares == (
+            "só o texto da sua mensagem. Nome, documento, e-mail, telefone, endereço, "
+            "pagamento, alergia ou doença que você escrever não são enviados: a loja apaga "
+            "tudo isso do texto antes"
+        )
+        # "Anonimizado" promete, na LGPD, que não dá para saber quem é: não é o que a loja faz.
+        assert "anonimiz" not in shares
+
+
 def test_o_que_nao_vai_vem_logo_depois_do_so():
     """Decisão do dono (16/11): o cliente lê primeiro o limite e o que NÃO vai."""
-    for purposes in ({"decision"}, {"intents"}, {"triage"}, {"intents", "triage"}):
+    for purposes in ({"decision"}, {"triage"}):
         _role, shares = ai_role_and_shares(purposes)
         frases = shares.split(". ")
         assert frases[0].startswith("só "), shares
-        assert frases[1].endswith("não vão"), shares
-    _role, jev = ai_role_and_shares({"decision"})
-    assert jev.split(". ")[2].startswith("Documento, e-mail, telefone")
-
-
-def test_frase_somada_nao_repete_e_poe_o_que_vai_a_mais_no_fim():
-    _role, shares = ai_role_and_shares({"intents", "triage"})
-    assert shares.count("o texto da sua mensagem") == 1
-    assert shares.endswith("Se você tem pedido em aberto, vão também o número, o dia e a situação dele")
+        assert "não vão" in frases[1] or "não são enviados" in frases[1], shares
 
 
 def test_quem_recebe_um_caminho_cru_e_um_redigido_fica_com_a_frase_crua():
-    _role, shares = ai_role_and_shares({"decision", "intents"})
+    _role, shares = ai_role_and_shares({"decision", "triage"})
     assert "como você escreveu" in shares
-    assert "troca cada um por um aviso" not in shares
+    assert "não são enviados" not in shares
+    assert shares.count("o texto da sua mensagem") == 1
 
 
 def test_frases_de_ia_sem_travessao_nem_jargao():

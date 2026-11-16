@@ -329,7 +329,7 @@ AI_USES: tuple[AIUse, ...] = (
     # depois de `redact_observation_text`.
     AIUse(
         purpose="decision",
-        helps_to="entender o assunto da sua mensagem",
+        helps_to="entender a sua mensagem",
         sends=("o texto da sua mensagem",),
         keeps_profile=True,
         redacts=True,
@@ -338,20 +338,20 @@ AI_USES: tuple[AIUse, ...] = (
     # `MessageIntentSample.redacted_text`.
     AIUse(
         purpose="labeling",
-        helps_to="conferir, com mensagens que a loja já recebeu, se ele entende direito",
+        helps_to="entender a sua mensagem",
         sends=("o texto da sua mensagem",),
         keeps_profile=True,
         redacts=True,
     ),
-    # `intents.build_request`: a fala do turno e `TurnMemory.prompt_lines` (o pedido em
-    # aberto: número, retirada ou entrega, dia e situação). Só quando o porteiro hesita.
+    # `intents.read_with_model` → `build_request`: a fala do turno e a nota de estado
+    # (`TurnMemory.prompt_lines`). ⚠️ Redigida a partir do WP-03 do plano; até lá a frase
+    # é promessa, e `test_a_leitura_nao_recebe_dado_pessoal` reprova (o PR espera).
     AIUse(
         purpose="intents",
-        helps_to="separar o que você pede do que você pergunta",
-        sends=("o texto da sua mensagem como você escreveu",),
+        helps_to="entender a sua mensagem",
+        sends=("o texto da sua mensagem",),
         keeps_profile=True,
-        redacts=False,
-        also="Se você tem pedido em aberto, vão também o número, o dia e a situação dele",
+        redacts=True,
     ),
     # `triage.build_prompt`: a fala do turno e as falas anteriores de `context_for`
     # (até seis, do cliente e da loja).
@@ -384,13 +384,15 @@ AI_USES: tuple[AIUse, ...] = (
     ),
 )
 
-#: Logo depois do "só": nenhum pedido com `keeps_profile` leva o cadastro.
+#: Logo depois do "só", nos caminhos crus: nenhum pedido com `keeps_profile` leva o cadastro.
 _PROFILE_STAYS = "Os dados do seu cadastro (nome, telefone e endereço) não vão"
 
-#: O que `redact_observation_text` troca por aviso, dito pelo que o cliente escreveria.
+#: O que `redact_observation_text` apaga, dito pelo que o cliente escreveria. Texto do
+#: dono (16/11/2026), com "anonimizado" fora: na LGPD a palavra promete que não dá para
+#: saber quem é a pessoa, e a loja só apaga dados do texto.
 _REDACTION = (
-    "Documento, e-mail, telefone, endereço, pagamento, alergia ou doença que você "
-    "escrever também não vão: a loja troca cada um por um aviso antes de enviar"
+    "Nome, documento, e-mail, telefone, endereço, pagamento, alergia ou doença que você "
+    "escrever não são enviados: a loja apaga tudo isso do texto antes"
 )
 
 _ROLE_PREFIX = "ajuda o atendimento automático do WhatsApp a "
@@ -461,7 +463,11 @@ def ai_role_and_shares(purposes) -> tuple[str, str]:
     A página escreve "Recebe {shares}." e põe o ponto final.
     """
     uses = [use for use in AI_USES if use.purpose in set(purposes)]
-    role = _ROLE_PREFIX + _join([use.helps_to for use in uses], glue="a ")
+    roles: list[str] = []
+    for use in uses:
+        if use.helps_to not in roles:
+            roles.append(use.helps_to)
+    role = _ROLE_PREFIX + _join(roles, glue="a ")
     redacted = all(use.redacts for use in uses)
     # O cru vale: quem recebe um caminho cru não ganha a promessa do redigido.
     sources = uses if redacted else [use for use in uses if not use.redacts]
@@ -471,10 +477,11 @@ def ai_role_and_shares(purposes) -> tuple[str, str]:
         items.extend(item for item in use.sends if item not in items)
     items.sort(key=lambda item: item.startswith("quando"))
     sentences = [("só " if keeps_profile else "") + _join(items)]
-    if keeps_profile:
-        sentences.append(_PROFILE_STAYS)
     if redacted:
+        # O texto redigido já diz que nome e telefone não vão.
         sentences.append(_REDACTION)
+    elif keeps_profile:
+        sentences.append(_PROFILE_STAYS)
     for use in sources:
         if use.also and use.also not in sentences:
             sentences.append(use.also)
