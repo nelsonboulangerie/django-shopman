@@ -18,7 +18,7 @@ type BoardContext = {
   focusLabel: string;
   /** O recorte da Fila (v4): "Precisa de você", "Todos" ou "Atrasados". */
   scope: QueueScope;
-  /** A ordem da Fila ("Urgência ▾"); a do quadro e da tabela é `sort`. */
+  /** A ordem da Fila ("Urgência ▾"); a do painel e da tabela é `sort`. */
   queueSort: QueueSort;
 };
 const emptyContext = (owner: number | null): BoardContext => ({
@@ -27,7 +27,7 @@ const emptyContext = (owner: number | null): BoardContext => ({
   channel: "all",
   fulfillment: "all",
   sort: "arrival",
-  // O Quadro é a casa do Gestor (dono, 14/11/2026: "O modo Quadro não ia ser o
+  // O Painel é a casa do Gestor (dono, 14/11/2026: "O modo Painel não ia ser o
   // padrão?"). A Fila e a Tabela seguem no mesmo controle e vão para a URL.
   viewMode: "board",
   selected: [],

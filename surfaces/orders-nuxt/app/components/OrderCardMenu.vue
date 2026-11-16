@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // O ⋯ de um pedido: atender, seleção em lote, declarar volumes, imprimir a Via Pedido,
-// voltar para a estação e abrir o pedido. Uma peça só para o cartão do quadro e a linha da Grade (dono,
+// voltar para a estação e abrir o pedido. Uma peça só para o cartão do painel e a linha da Grade (dono,
 // 07/10/2026: as opções sumiam da Grade), para as duas nunca divergirem.
 // É o `OperatorMoreMenu`, o ⋯ único do kit; os volumes, que pedem um número, abrem um modal
 // próprio (o editor não cabe dentro de um menu).

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // O rodapé do cartão do pedido: o próximo gesto (ou o Desfazer da saída tocada), os
 // secundários e o ⋮. Um componente só para o cartão inteiro (celular, Fila) e para o
-// compacto do Quadro (D, dono 13/11/2026): os gestos não mudam com o desenho.
+// compacto do Painel (D, dono 13/11/2026): os gestos não mudam com o desenho.
 import type { OrderCardProjection } from "~/types/orders";
 import type { Affordance, AffordanceRef, UndoLine } from "~/presentation/board";
 import OrderCardMenu from "./OrderCardMenu.vue";

@@ -11,7 +11,6 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import override_settings
-
 from shopman.orderman.models import Order
 
 from shopman.backstage.projections.ifood_store import build_ifood_widget_projection

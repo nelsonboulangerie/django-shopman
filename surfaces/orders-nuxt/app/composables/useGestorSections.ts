@@ -6,8 +6,8 @@ import {
   gestorSettingsSections,
 } from "~/presentation/gestorSections";
 
-/** O que o quadro conta ao rail (selos de Pedidos e Saída, e se o posto é a Saída).
- *  Vale enquanto o quadro está montado; fora dele, `useGestorRailCounts` lê a contagem. */
+/** O que o painel conta ao rail (selos de Pedidos e Saída, e se o posto é a Saída).
+ *  Vale enquanto o painel está montado; fora dele, `useGestorRailCounts` lê a contagem. */
 export interface GestorRailState {
   onBoard: boolean;
   exitPost: boolean;
@@ -24,7 +24,7 @@ export function useGestorRail() {
   }));
 }
 
-/** Os selos fora do quadro: `orders/rail-counts/` a cada minuto enquanto `active()`.
+/** Os selos fora do painel: `orders/rail-counts/` a cada minuto enquanto `active()`.
  *  Leitura que falha não vira zero mentiroso: o selo some até a próxima dar certo. */
 export function useGestorRailCounts(active: () => boolean) {
   const counts = useState<{ intake: number; exit: number }>(
@@ -106,9 +106,16 @@ export function useGestorSections() {
   );
   const { expeditesOnly, catalogOnly } = useGestorAccess();
   const rail = useGestorRail();
-  // Fora do quadro (Catálogo, Clientes, Canais) os selos continuam (G26, v4
-  // `catalogo-produto`: "Pedidos 10"): uma contagem leve, com a régua do quadro.
+  // Fora do painel (Catálogo, Clientes, Canais) os selos continuam (G26, v4
+  // `catalogo-produto`: "Pedidos 10"): uma contagem leve, com a régua do painel.
   const offBoard = useGestorRailCounts(() => !rail.value.onBoard);
+  // O selo de Entregas: entregas do dia sem corrida chamada, relido a cada push
+  // do canal de pedidos (e no poll calmo de fallback).
+  const { data: deliveries, refresh: refreshDeliveries } = useFetch<{ waiting?: number }>(
+    "/api/v1/backstage/deliveries/count/",
+    { key: "orders:rail:deliveries", server: false },
+  );
+  if (import.meta.client) useBackstageEvents("orders", () => void refreshDeliveries(), { pollMs: 60_000 });
 
   const input = computed(() => ({
     channelsAttention: attention.value?.label || "",
@@ -118,6 +125,7 @@ export function useGestorSections() {
     expeditesOnly: expeditesOnly.value,
     catalogOnly: catalogOnly.value,
     intakeCount: rail.value.onBoard ? rail.value.intake : offBoard.value.intake,
+    deliveriesWaiting: deliveries.value?.waiting ?? 0,
   }));
   const sections = computed(() => gestorSections(input.value));
   const settings = computed(() => gestorSettingsSections(input.value));
@@ -128,6 +136,7 @@ export function useGestorSections() {
         ? "feeds"
         : "catalog";
     }
+    if (route.path.startsWith("/deliveries")) return "deliveries";
     return route.path === "/" ? "orders" : undefined;
   });
   // As três perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.

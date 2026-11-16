@@ -655,7 +655,6 @@ def create(
         "fallbackIcon": icon,
         "color": color,
         "article": article,
-        "install": f"Abra {article} {label} direto da tela inicial deste dispositivo.",
     }
 
     repo = Repo(root, dry_run=dry_run)

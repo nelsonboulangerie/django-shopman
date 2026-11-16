@@ -243,7 +243,7 @@ describe("zonesView", () => {
   });
 
   // O pedido do iFood já entregue com negociação aberta não está em etapa nenhuma: no
-  // quadro em abas (celular, tablet em pé) ele ganha a aba "Negociação", senão some.
+  // painel em abas (celular, tablet em pé) ele ganha a aba "Negociação", senão some.
   it("a aba Negociação junta só o que está fora das etapas, e some sem nenhum", () => {
     expect(negotiationZoneView(queue())).toBeNull();
     const zone = negotiationZoneView({
@@ -626,7 +626,7 @@ describe("rowsToCsv", () => {
   });
   // A planilha em português lê a vírgula como decimal: o separador é ponto e vírgula,
   // e a marca de ordem de bytes abre o UTF-8 com acento certo (o escritor do kit,
-  // `readingCsvText`, o mesmo do "Exportar CSV deste quadro").
+  // `readingCsvText`, o mesmo do "Exportar CSV deste painel").
   it("sai como a planilha em português lê: ';' entre colunas, vírgula no valor, BOM", () => {
     const csv = rowsToCsv([
       {

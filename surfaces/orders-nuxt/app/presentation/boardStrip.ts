@@ -1,4 +1,4 @@
-// A coluna recolhida do quadro (D, dono 13/11/2026, variante 5): uma tira estreita que
+// A coluna recolhida do painel (D, dono 13/11/2026, variante 5): uma tira estreita que
 // guarda o lugar da coluna e diz, sem abrir, se ela pede olho: o número na linha do
 // cabeçalho e um ponto no canto (`dot`). Os sinais são os que mudam o que o gerente faz:
 //

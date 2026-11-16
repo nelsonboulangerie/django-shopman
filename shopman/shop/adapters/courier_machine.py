@@ -486,7 +486,9 @@ def tracking_links(courier_ref: str) -> list[dict]:
     Retorna ``[{parada_id, link_rastreio, codigo_confirmacao}]`` (lista vazia
     se inerte ou indisponível). O OpenAPI v1 de entregas documenta a resposta
     como um objeto só, ``{"link": ...}``; a coleção original trazia a lista por
-    parada. Os dois formatos viram a mesma lista até a homologação dizer qual é.
+    parada. O objeto único vira UMA entrada sem ``parada_id``: serve à corrida de
+    um pedido e, numa corrida com várias paradas, não casa com nenhum
+    (``courier.link_for_order``, falha fechada) até a homologação dizer qual é.
     """
     if _inert():
         return []

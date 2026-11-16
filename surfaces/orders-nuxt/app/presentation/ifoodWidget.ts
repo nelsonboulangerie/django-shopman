@@ -87,3 +87,22 @@ export function ifoodChatNotice(
       "As mensagens do cliente chegam no botão do iFood, no canto da tela. Responda por ele.",
   };
 }
+
+/** A margem de baixo do botão do iFood, configurada no Portal do Parceiro (widget
+ * "Shopman Gestor de pedidos", 14/11/2026). O widget não deixa o Gestor mudá-la. */
+export const IFOOD_WIDGET_MARGIN_Y = 96;
+/** O respiro entre o botão do iFood e a barra mais alta da base. */
+export const IFOOD_WIDGET_GAP = 12;
+/** Uma região de toque mais alta que isto é a conversa aberta, não o botão. */
+export const IFOOD_WIDGET_PANEL_MIN_HEIGHT = 200;
+
+/**
+ * Quanto o widget do iFood sobe para não tampar o que fica na base (a barra das
+ * seções, a barra de ação da tela, a área segura do celular). O botão mora a
+ * `IFOOD_WIDGET_MARGIN_Y` do fundo; a base ocupa `obstruction` px. Com a conversa
+ * aberta, nada sobe: o painel é alto e perderia o topo.
+ */
+export function ifoodWidgetLift(obstruction: number, panelOpen: boolean): number {
+  if (panelOpen) return 0;
+  return Math.max(0, Math.ceil(obstruction + IFOOD_WIDGET_GAP - IFOOD_WIDGET_MARGIN_Y));
+}
