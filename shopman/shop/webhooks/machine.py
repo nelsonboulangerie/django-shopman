@@ -10,11 +10,15 @@ em qualquer ambiente (mesmo contrato do EFI, ver ``efi.py``).
 Payload documentado em docs.machine.global (v1, entregas, "Webhooks > Sobre"):
 
 - **status** (um POST por evento): ``{datetime, event_id, company_id,
-  request_id, status_code, status_label, stop_id?, links{request, driver?,
-  enterprise?}}``. ``status_code`` traz a letra da corrida (D/G/P/S/N/A/E/C/F/U)
-  ou um evento que não é estado: ``AP`` (chegou ao local), ``ER`` (parada
-  finalizada), ``L`` (aguardando liberação), ``R`` (aguardando pagamento).
-  Só a letra de estado entra no funil; o evento é aceito e logado.
+  request_id, status_code, status_label, stop_id?, will_reopen?, links{request,
+  driver?, enterprise?}}``. ``status_code`` traz a letra da corrida
+  (D/G/P/S/N/A/E/C/F/U) ou um evento que não é estado: ``AP`` (chegou ao local),
+  ``ER`` (parada finalizada), ``L`` (aguardando liberação), ``R`` (aguardando
+  pagamento). Só a letra de estado entra no funil; o evento é aceito e logado.
+- **will_reopen** (seção "Campo will_reopen" da doc): no ``C`` em que o
+  entregador desistiu, ``true`` diz que a TaOn vai redistribuir a MESMA corrida:
+  "não abra outra solicitação". Aqui o ``C`` não cancela nada
+  (``courier.record_reopen``): a corrida segue chamada, sem entregador.
 - **posicao** (lote a cada 10 s, sem reenvio): ``{event_id, datetime,
   data: [{timestamp, company_id, request_id, driver_id,
   coordinates{latitude, longitude}}]}``, até 500 itens por POST.
@@ -27,14 +31,25 @@ em hexadecimal, do corpo cru inteiro, com a chave da API
 constante. Assinatura ausente ou que não confere → 401. Chave da API vazia →
 401 em TODO POST, com log de erro e alerta ao operador (falha fechada e
 gritando: nunca aceitar sem conferir). O ``GET`` de verificação do cadastro não
-tem corpo e fica só no token. O corpo cru é logado assim que o token confere
-(antes da assinatura, para diagnosticar uma conta divergente), e o
-polling (``courier.sync``) segue como via garantida. Payload não reconhecido →
-202 (nada é perdido: o polling converge).
+tem corpo e fica só no token. O polling (``courier.sync``) segue como via
+garantida. Payload não reconhecido → 202 (nada é perdido: o polling converge).
 
-Status converge no funil ``courier.apply_status`` (idempotente — replay do
-mesmo status é no-op). Posição não toca o Order: vai para o cache
-(``courier:pos:{id_mch}``, TTL 120s), lida pela projection do gestor.
+**O corpo cru nunca vai para o log.** Ele traz dado pessoal do entregador
+(nome, telefone, CPF, ``pix_key``, ``photo_url``, que a doc da TaOn manda não
+logar) e a posição dele a cada 10 s. O log é de lista fechada, depois da
+assinatura conferida: os ids, a letra, ``event_id``, ``stop_id``,
+``will_reopen``, o tamanho e o começo do SHA-256 do corpo; do formato
+desconhecido, só os nomes das chaves. Assinatura que não confere loga o mesmo
+resumo do corpo e os 8 primeiros caracteres da assinatura recebida (o bastante
+para ver se a conta da TaOn é outra, sem guardar o corpo).
+
+Status converge no funil ``courier.apply_status``: a mesma letra de novo é
+no-op e a letra fora de ordem é recusada (``stale``). A idempotência é pelo
+``event_id`` do aviso: dois avisos com a mesma letra (o aceite do segundo
+entregador, depois de uma desistência) são dois fatos. Só o formato deprecado,
+sem ``event_id``, cai na chave antiga (corrida + letra). Posição não toca o
+Order: vai para o cache (``courier:pos:{id_mch}``, TTL 120s), lida pela
+projection do gestor.
 """
 
 from __future__ import annotations
@@ -96,9 +111,6 @@ class MachineWebhookView(APIView):
         if not self._check_auth(request):
             return Response({"error": "Unauthorized"}, status=http.HTTP_401_UNAUTHORIZED)
         body = request.body if isinstance(request.body, bytes) else b""
-        # Logado antes da assinatura: com o token certo e a assinatura errada, o
-        # corpo cru é o que permite descobrir se a conta da Machine é outra.
-        logger.info("machine.webhook raw=%s", body[:2000].decode("utf-8", errors="replace"))
         if not _check_signature(request, body):
             return Response({"error": "Unauthorized"}, status=http.HTTP_401_UNAUTHORIZED)
 
@@ -106,6 +118,8 @@ class MachineWebhookView(APIView):
         if isinstance(event.get("data"), list):
             # Lote de posição (formato documentado atual).
             stored = sum(_cache_position(item) for item in event["data"] if isinstance(item, dict))
+            logger.info("machine.webhook kind=position_batch items=%d stored=%d %s",
+                        len(event["data"]), stored, _body_digest(body))
             return Response(
                 {"status": "ok", "kind": "position_batch", "positions": stored},
                 status=http.HTTP_200_OK,
@@ -113,7 +127,10 @@ class MachineWebhookView(APIView):
 
         ride_ref = _first(event, _ID_KEYS)
         if not ride_ref:
-            # Formato desconhecido: aceito (202) + logado; o polling converge.
+            # Formato desconhecido: aceito (202) + logado (só os nomes das
+            # chaves, nunca os valores); o polling converge.
+            logger.info("machine.webhook kind=unrecognized keys=%s %s",
+                        ",".join(sorted(str(key) for key in event)[:40]), _body_digest(body))
             return Response({"status": "unrecognized"}, status=http.HTTP_202_ACCEPTED)
 
         lat = _first(event, ("lat", "lat_condutor", "lat_cond"))
@@ -125,6 +142,14 @@ class MachineWebhookView(APIView):
         if not ride_status:
             # Evento só de posição: cache atualizado acima, nada mais a fazer.
             return Response({"status": "ok", "kind": "position"}, status=http.HTTP_200_OK)
+        event_id = _first(event, ("event_id",))
+        will_reopen = _truthy(event.get("will_reopen"))
+        at = _first(event, ("datetime",)) or None
+        logger.info(
+            "machine.webhook kind=status request=%s code=%s event=%s stop=%s will_reopen=%s company=%s %s",
+            ride_ref, ride_status, event_id or "-", _first(event, ("stop_id",)) or "-",
+            "yes" if will_reopen else "no", _first(event, ("company_id",)) or "-", _body_digest(body),
+        )
         from shopman.orderman.models import Order
 
         if ride_status not in _RIDE_STATUSES:
@@ -140,43 +165,68 @@ class MachineWebhookView(APIView):
                 courier.schedule_sync(orders[0], delay_seconds=0)
             return Response({"status": "ok", "kind": "event", "code": ride_status}, status=http.HTTP_200_OK)
 
+        from shopman.shop.adapters.courier_machine import TERMINAL_STATUSES
+        from shopman.shop.services import courier
+
         # Corrida com várias paradas: o mesmo id em cada pedido dela.
         orders = list(Order.objects.filter(data__courier__id_mch=str(ride_ref)).order_by("pk"))
-        if not orders:
+        # Corrida que consta como encerrada (N/C) e dá sinal de vida: a TaOn
+        # retomou a mesma corrida (uma desistência que virou "cancelada" aqui).
+        archived = [] if orders or ride_status in TERMINAL_STATUSES else courier.orders_with_archived_ride(str(ride_ref))
+        if not orders and not archived:
             logger.warning("machine.webhook: corrida sem pedido id_mch=%s", ride_ref)
             return Response({"status": "ok", "kind": "unknown_ride"}, status=http.HTTP_200_OK)
 
+        # Um aviso é um fato (``event_id``). A chave antiga (corrida + letra)
+        # descartava como repetição o aceite do segundo entregador.
         claim = webhook_idempotency.claim(
             "webhook:machine",
-            webhook_idempotency.stable_webhook_key(ride_ref, ride_status),
+            webhook_idempotency.stable_webhook_key("event", event_id) if event_id
+            else webhook_idempotency.stable_webhook_key(ride_ref, ride_status),
         )
         if claim.replayed:
+            # Repetição não reaplica, mas pede a leitura completa: se o primeiro
+            # envio se perdeu no meio, a batida converge agora, não em 1 min.
+            if orders:
+                courier.schedule_sync(orders[0], delay_seconds=0)
             return Response({"status": "ok", "kind": "replay"}, status=http.HTTP_200_OK)
         if claim.in_progress:
             return Response(claim.response_body, status=http.HTTP_409_CONFLICT)
 
         try:
-            from shopman.shop.services import courier
+            kind = "status"
+            if archived:
+                orders, kind = _revive_archived(archived, str(ride_ref), ride_status, at=at)
+            if kind == "status" and ride_status == "C" and will_reopen:
+                # O entregador desistiu e a TaOn redistribui a mesma corrida:
+                # nada de cancelar, arquivar ou chamar de novo.
+                outcomes = [courier.record_reopen(order, at=at, source="webhook") for order in orders]
+                kind = "stale" if outcomes and all(outcome == "stale" for outcome in outcomes) else "reopened"
+            elif kind in ("status", "restored"):
+                details = event
+                if len(orders) > 1 and ride_status in ("A", "F"):
+                    # Corrida com várias paradas: os detalhes (entregador, valor final)
+                    # vêm da central UMA vez, não uma consulta por pedido.
+                    from shopman.shop.adapters import get_adapter
 
-            details = event
-            if len(orders) > 1 and ride_status in ("A", "F"):
-                # Corrida com várias paradas: os detalhes (entregador, valor final)
-                # vêm da central UMA vez, não uma consulta por pedido.
-                from shopman.shop.adapters import get_adapter
-
-                adapter = get_adapter("courier")
-                try:
-                    details = {**event, **(adapter.get_details(str(ride_ref)) if adapter else {})}
-                except Exception:  # silêncio-deliberado: cada pedido busca sozinho, como antes
-                    logger.warning("machine.webhook: detalhes da corrida id_mch=%s", ride_ref, exc_info=True)
-            for order in orders:
-                courier.apply_status(order, ride_status, source="webhook", details=details)
-            # O aviso traz só a letra; a leitura completa (entregador, previsão
-            # de chegada, coleta, viagem) vem da batida, agora, não daqui a 1 min.
-            courier.schedule_sync(orders[0], delay_seconds=0)
+                    adapter = get_adapter("courier")
+                    try:
+                        details = {**event, **(adapter.get_details(str(ride_ref)) if adapter else {})}
+                    except Exception:  # silêncio-deliberado: cada pedido busca sozinho, como antes
+                        logger.warning("machine.webhook: detalhes da corrida id_mch=%s", ride_ref, exc_info=True)
+                outcomes = [courier.apply_status(order, ride_status, source="webhook", details=details, at=at)
+                            for order in orders]
+                if kind == "status" and outcomes and all(outcome == "stale" for outcome in outcomes):
+                    # Letra fora de ordem (um aceite atrasado depois da coleta):
+                    # recusada, e o 200 evita a reentrega de algo que não muda nada.
+                    kind = "stale"
+            if orders:
+                # O aviso traz só a letra; a leitura completa (entregador, previsão
+                # de chegada, coleta, viagem) vem da batida, agora, não daqui a 1 min.
+                courier.schedule_sync(orders[0], delay_seconds=0)
             webhook_idempotency.mark_done(
                 claim,
-                response_body={"status": "processed", "id_mch": str(ride_ref), "ride_status": ride_status},
+                response_body={"status": "processed", "id_mch": str(ride_ref), "ride_status": ride_status, "kind": kind},
             )
         except Exception as exc:
             logger.exception("MachineWebhook: error processing id_mch=%s", ride_ref)
@@ -194,7 +244,7 @@ class MachineWebhookView(APIView):
             # 5xx → a Machine (se reentregar) tenta de novo; o polling cobre se não.
             return Response({"status": "retry"}, status=http.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return Response({"status": "ok", "kind": "status"}, status=http.HTTP_200_OK)
+        return Response({"status": "ok", "kind": kind}, status=http.HTTP_200_OK)
 
     def _check_auth(self, request: Request) -> bool:
         expected = _cfg().get("webhook_token") or ""
@@ -235,14 +285,62 @@ def _check_signature(request: Request, body: bytes) -> bool:
         return False
     received = (request.META.get(SIGNATURE_HEADER) or "").strip().lower()
     if not received:
-        logger.warning("MachineWebhook: Signature-V2 ausente, rejeitando")
+        logger.warning("MachineWebhook: Signature-V2 ausente, rejeitando %s", _body_digest(body))
         _alert_signature_failure("signature_missing")
         return False
     if not hmac.compare_digest(received.encode("ascii", "replace"), signature_for(body, key).encode("ascii")):
-        logger.warning("MachineWebhook: Signature-V2 não confere, rejeitando")
+        # O resumo do corpo e o começo da assinatura recebida bastam para ver
+        # se quem assina é outra conta da TaOn; o corpo cru não entra no log.
+        logger.warning("MachineWebhook: Signature-V2 não confere, rejeitando %s signature=%s...",
+                       _body_digest(body), "".join(ch for ch in received[:8] if ch in "0123456789abcdef"))
         _alert_signature_failure("signature_mismatch")
         return False
     return True
+
+
+def _body_digest(body: bytes) -> str:
+    """O corpo, sem o corpo: tamanho e começo do SHA-256 (casa o log com o envio da TaOn)."""
+    return f"size={len(body)} sha256={hashlib.sha256(body).hexdigest()[:12]}"
+
+
+def _truthy(value) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "s", "sim", "yes"}
+    return value is True or value == 1
+
+
+def _revive_archived(archived: list, ride_ref: str, ride_status: str, *, at: str | None) -> tuple[list, str]:
+    """Aviso de corrida viva para um id que consta como encerrado (N/C) no pedido.
+
+    Só retoma com prova de que o aviso é mais novo que o encerramento: a hora
+    do evento ou, sem ela, uma leitura da corrida na central que não esteja em
+    letra final. Sem prova, é aviso atrasado (``stale``) e nada muda. Devolve os
+    pedidos que voltaram a ter a corrida e o que aconteceu.
+    """
+    from shopman.shop.adapters import get_adapter
+    from shopman.shop.adapters.courier_machine import TERMINAL_STATUSES
+    from shopman.shop.services import courier
+
+    event_at = courier.provider_instant(at)
+    ended = [courier.archived_ride_ended_at(order, ride_ref) for order in archived]
+    proven = event_at is not None and all(moment is not None and event_at > moment for moment in ended)
+    if not proven:
+        adapter = get_adapter("courier")
+        read_ride = getattr(adapter, "read_ride", None) if adapter else None
+        try:
+            reading = read_ride(ride_ref) if read_ride else {}
+        except Exception:  # silêncio-deliberado: sem leitura não há prova, e sem prova não retoma
+            logger.warning("machine.webhook: leitura da corrida arquivada id_mch=%s", ride_ref, exc_info=True)
+            reading = {}
+        letter = str(reading.get("status") or "")
+        proven = bool(letter) and letter not in TERMINAL_STATUSES
+    if not proven:
+        logger.info("courier_status_ignored id_mch=%s received=%s reason=archived_ride_without_proof", ride_ref, ride_status)
+        return [], "stale"
+    restored = [order for order in archived if courier.restore_archived_ride(order, ride_ref, source="webhook") == "restored"]
+    for order in restored:
+        order.refresh_from_db()
+    return restored, "restored" if restored else "conflict"
 
 
 def _alert_signature_failure(reason: str) -> None:

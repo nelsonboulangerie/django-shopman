@@ -21,6 +21,10 @@ from shopman.shop.services.observability import operational_event_on_commit
 
 logger = logging.getLogger(__name__)
 
+#: Quantas vezes a mesma chamada espera o limite da TaOn (HTTP 429) antes de
+#: desistir e avisar o operador. Cada espera dura o que a TaOn pedir.
+MAX_RATE_LIMIT_DEFERRALS = 5
+
 
 class CourierDispatchHandler:
     """Abre a solicitação de entrega no adapter courier e grava a corrida no pedido."""
@@ -29,7 +33,7 @@ class CourierDispatchHandler:
 
     def handle(self, *, message: Directive, ctx: dict) -> None:
         from shopman.shop.adapters import get_adapter
-        from shopman.shop.adapters.courier_machine import CourierError
+        from shopman.shop.adapters.courier_machine import CourierError, CourierRateLimited
         from shopman.shop.services import courier
         from shopman.shop.services.order_helpers import get_fulfillment_type
         from shopman.shop.services.remote_mutations import mutation_fingerprint
@@ -83,6 +87,10 @@ class CourierDispatchHandler:
             orders = sorted(orders, key=lambda order: refs.index(order.ref))
             message = Directive.objects.select_for_update().get(pk=message.pk)
             current = (message.payload or {}).get("dispatch_attempt", {})
+            if current.get("state") == "deferred":
+                # A TaOn limitou as chamadas na tentativa anterior e NADA foi
+                # aberto lá: esta é a mesma chamada, de novo, do zero.
+                current = {}
             if current.get("state") == "accepted":
                 self._adopt(orders, message, current["courier_ref"])
                 return
@@ -116,6 +124,11 @@ class CourierDispatchHandler:
 
         try:
             result = adapter.dispatch(body)
+        except CourierRateLimited as exc:
+            if self._defer_rate_limited(message, exc.retry_after):
+                return
+            self._give_up(orders, message, str(exc), keep_single_custody=True)
+            raise DirectiveTerminalError(str(exc)) from exc
         except CourierError as exc:
             if exc.outcome_unknown:
                 self._unknown(orders, message, str(exc))
@@ -133,6 +146,27 @@ class CourierDispatchHandler:
         # links this known ride; it never creates another remote solicitation.
         self._set_attempt(message, "accepted", courier_ref=result.courier_ref)
         self._adopt(orders, message, result.courier_ref)
+
+    def _defer_rate_limited(self, message, retry_after: int) -> bool:
+        """HTTP 429: a TaOn não abriu nada. Devolve a tarefa à fila pelo prazo que ela pediu.
+
+        O recibo sai de ``started`` para ``deferred`` (a chamada não foi
+        aplicada, então repetir não arrisca corrida em dobro) e a mesma tarefa
+        tenta de novo; o operador não vê falha nem precisa tocar em nada.
+        ``False`` quando já esperou vezes demais: aí é falha de verdade.
+        """
+        from datetime import timedelta
+
+        deferrals = int(((message.payload or {}).get("dispatch_attempt") or {}).get("deferrals") or 0) + 1
+        if deferrals > MAX_RATE_LIMIT_DEFERRALS:
+            return False
+        self._set_attempt(message, "deferred", deferrals=deferrals)
+        message.status = Directive.Status.QUEUED
+        message.available_at = timezone.now() + timedelta(seconds=retry_after)
+        message.save(update_fields=["status", "available_at", "updated_at"])
+        logger.warning("courier.dispatch_rate_limited directive=%s retry_after=%s deferrals=%s",
+                       message.pk, retry_after, deferrals)
+        return True
 
     @staticmethod
     def _orders(refs: list[str]) -> list:
