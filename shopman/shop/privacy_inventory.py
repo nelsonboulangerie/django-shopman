@@ -33,8 +33,10 @@ setting, e sim pelas `AIConnection` do banco e pelas rotas de `Shop.ai_routes` (
 em 16/11/2026 o dono trocou a Anthropic pelo Jev (TypeSafe) com a DeepSeek (D-040), e a
 página continuaria dizendo "Anthropic", porque o sinal dela era a chave liga-desliga da
 Concierge. Por isso o operador de IA sai de `ai.resolve`, a mesma função que decide para
-onde o texto vai: um provedor aparece quando uma rota que leva mensagem de cliente
-resolve para uma conexão dele, liberada para isso. Conexão liberada cujo provedor não
+onde o texto vai: um provedor aparece quando um caminho que leva mensagem de cliente
+roda neste deployment e a rota dele resolve para uma conexão do provedor, liberada para
+isso. A frase de cada um diz o que AQUELE caminho manda (`AI_USES`), medido no código
+que monta o pedido. Conexão liberada cujo provedor não
 tem operador declarado em `AI_PROCESSORS` é defeito (`undeclared_ai_connections`), e a
 página a mostra mesmo assim, pelo nome que a casa deu a ela: omitir é a mentira que
 este arquivo existe para impedir.
@@ -218,14 +220,20 @@ ADAPTERS_SEM_DADO_DE_CLIENTE: dict[str, str] = {
 _NAO_SAI_DA_CASA = ("console", "locmem", "dummy", "mock", "filebased", "development")
 
 
-def _setting_is_set(expression: str) -> bool:
-    """Resolve `SENTRY_DSN`, `SHOPMAN_IFOOD[merchant_id]` e `DOORMAN[A][B]`."""
+def _setting_value(expression: str):
+    """O valor de `SENTRY_DSN`, `SHOPMAN_IFOOD[merchant_id]` ou `DOORMAN[A][B]` (None se falta)."""
     name, _, resto = expression.partition("[")
     value = getattr(settings, name.strip(), None)
     for chave in (parte.strip() for parte in resto.split("]") if parte.strip()):
         if not isinstance(value, dict):
-            return False
+            return None
         value = value.get(chave.lstrip("["))
+    return value
+
+
+def _setting_is_set(expression: str) -> bool:
+    """Resolve `SENTRY_DSN`, `SHOPMAN_IFOOD[merchant_id]` e `DOORMAN[A][B]`."""
+    value = _setting_value(expression)
     if isinstance(value, str):
         alvo = value.lower()
         if any(marca in alvo for marca in _NAO_SAI_DA_CASA):
@@ -260,7 +268,7 @@ class AIProcessor:
 
     Não tem `wired_by` nem `shares` fixos, como o `Processor`: quem o liga é uma
     `AIConnection` (reconhecida pelo endereço dela), e o que sai para ele depende de
-    QUAL rota aponta para a conexão (ver `_AGENT_PURPOSE`).
+    QUAIS rotas apontam para a conexão (`AI_USES`).
     """
 
     key: str
@@ -284,27 +292,89 @@ AI_PROCESSORS: tuple[AIProcessor, ...] = (
 #: `ai.JEV_DEFAULT_URL`; o do formato Anthropic é o padrão do SDK.
 _ANTHROPIC_DEFAULT_URL = "https://api.anthropic.com"
 
-#: O laço do agente (`concierge/agent.py`) é o único propósito que manda mais que a
-#: mensagem: o nome vai no contexto do sistema (`concierge/prompt.py`) e o endereço de
-#: entrega volta nas ferramentas do pedido (`concierge/tools.py`). Enquanto ele existir
-#: (o WP-08 do CONCIERGE-PLANO-DE-ACAO o apaga), quem recebe esta rota recebe a frase
-#: larga, a mesma que a Anthropic tinha desde 12/11/2026.
-_AGENT_PURPOSE = "concierge"
 
-_AGENT_ROLE = "responde quando você conversa com o atendimento automático no WhatsApp"
-_AGENT_SHARES = (
-    "o que você escreve na conversa, o seu nome e, quando o pedido é para "
-    "entregar, o endereço da entrega"
+@dataclass(frozen=True)
+class AIUse:
+    """Um propósito que leva mensagem de cliente, e o que ele de fato manda.
+
+    A frase é MEDIDA no código que monta o pedido, não desejada: cada uso cita onde o
+    pedido é montado, e `shopman/shop/tests/test_privacy_inventory_ai.py` monta o pedido
+    de verdade e confere a frase. Mudou o que sai (o WP-03 vai redigir a leitura)? A
+    trava reprova até alguém mudar a frase junto.
+    """
+
+    purpose: str
+    #: Completa "ajuda o atendimento automático do WhatsApp a ...".
+    helps_to: str
+    #: O que sai, completando "Recebe ...", item por item. Item que começa com "quando"
+    #: é condicional e vai para o fim da frase; item repetido entre usos sai uma vez.
+    shares: tuple[str, ...]
+    #: Manda o texto como o cliente escreveu. Quando um provedor recebe um uso cru e um
+    #: redigido, vale o cru: a frase não promete o que um dos caminhos não cumpre.
+    raw: bool
+
+
+_REDACTED_SHARES = (
+    "o texto da sua mensagem, com documento, contato, endereço, pagamento e saúde "
+    "trocados por um aviso antes de sair da loja",
+)
+_RAW_MESSAGE = "o texto da sua mensagem como você escreveu"
+
+#: Ordem: do que menos sai para o que mais sai.
+AI_USES: tuple[AIUse, ...] = (
+    # `triage.jev_scores` (e a sombra, `intent_pilot.shadow_triage`): só o texto,
+    # depois de `redact_observation_text`.
+    AIUse(
+        purpose="decision",
+        helps_to="entender o assunto da sua mensagem",
+        shares=_REDACTED_SHARES,
+        raw=False,
+    ),
+    # `intent_pilot` (pré-rótulo do gabarito): mensagens já recebidas, pelo
+    # `MessageIntentSample.redacted_text`.
+    AIUse(
+        purpose="labeling",
+        helps_to="conferir, com mensagens que a loja já recebeu, se ele entende direito",
+        shares=_REDACTED_SHARES,
+        raw=False,
+    ),
+    # `intents.build_request`: a fala do turno e `TurnMemory.prompt_lines` (o pedido em
+    # aberto: número, retirada ou entrega, dia e situação). Só quando o porteiro hesita.
+    AIUse(
+        purpose="intents",
+        helps_to="separar o que você pede do que você pergunta",
+        shares=(_RAW_MESSAGE, "quando você tem pedido em aberto, o número, o dia e a situação dele"),
+        raw=True,
+    ),
+    # `triage.build_prompt`: a fala do turno e as falas anteriores de `context_for`
+    # (até seis, do cliente e da loja).
+    AIUse(
+        purpose="triage",
+        helps_to="ver se a sua mensagem precisa de alguém da equipe",
+        shares=(_RAW_MESSAGE, "as últimas seis mensagens da conversa (suas e da loja)"),
+        raw=True,
+    ),
+    # O laço antigo (`agent.run_agent`): `history_for` (até 40 mensagens), o nome, a
+    # sacola e o último pedido em `prompt.dynamic_block`, e o endereço de entrega nas ferramentas
+    # (`tools.py`). O WP-08 do CONCIERGE-PLANO-DE-ACAO o apaga.
+    AIUse(
+        purpose="concierge",
+        helps_to="escrever a resposta",
+        shares=(
+            "as últimas mensagens da conversa",
+            "o seu nome",
+            "o que está na sacola",
+            "o número do seu último pedido",
+            "quando o pedido é para entregar, o endereço da entrega",
+        ),
+        raw=True,
+    ),
 )
 
-#: Triagem, leitura de intenções, pré-rótulo e o Jev. ⚠️ A frase é verdade quando o
-#: texto sai redigido (`redact_observation_text`), que é o WP-03 do plano para a
-#: leitura de intenções. Mudou o redator? Releia esta frase.
-_READING_ROLE = "lê a sua mensagem no WhatsApp para o atendimento automático entender o que você pediu"
-_READING_SHARES = (
-    "a sua mensagem, depois que a loja tira dela documento, telefone, e-mail, "
-    "endereço, número de cartão e detalhe de saúde"
-)
+#: Vale para todo uso acima: nenhum pedido leva o número do WhatsApp da conversa.
+_PHONE_STAYS = "O seu telefone do WhatsApp não vai junto"
+
+_ROLE_PREFIX = "ajuda o atendimento automático do WhatsApp a "
 
 
 def _customer_text_purposes() -> tuple[str, ...]:
@@ -312,10 +382,71 @@ def _customer_text_purposes() -> tuple[str, ...]:
 
     Os de `ai.CUSTOMER_TEXT_PURPOSES` e o do Jev (`decision`), que leva mensagem de
     cliente quando a conexão dele está liberada para isso (`ai.jev_endpoint`).
+    Propósito de texto de cliente sem `AIUse` reprova no teste: a página não teria frase.
     """
     from shopman.shop import ai
 
     return tuple(sorted(set(ai.CUSTOMER_TEXT_PURPOSES) | {"decision"}))
+
+
+def _concierge_setting(key: str):
+    return _setting_value(f"SHOPMAN_CONCIERGE[{key}]")
+
+
+def _intents_mode() -> str:
+    """O mesmo que `concierge.intents.mode`: vazio é `cohort`, desconhecido desliga."""
+    mode = str(_concierge_setting("intents_plural") or "cohort").strip().casefold()
+    return mode if mode in {"off", "cohort", "subjects", "all"} else "off"
+
+
+def _concierge_answers() -> bool:
+    """O mesmo que `concierge.service.disabled_reason`, menos a conexão (a rota já conta)."""
+    mode = str(_concierge_setting("operation_mode") or "assist").strip().casefold()
+    return mode == "assist" and bool(_concierge_setting("enabled"))
+
+
+def _purpose_sends(purpose: str) -> bool:
+    """A rota existe; o propósito chega a mandar alguma coisa neste deployment?
+
+    A leitura, a triagem e o laço antigo só rodam quando a Concierge atende, cada um com
+    a sua chave (as mesmas que o turno lê em `concierge/service.py`, `intents.py` e
+    `triage.py`). O Jev e o pré-rótulo rodam também fora do atendimento (a sombra e o
+    piloto): a rota basta.
+    """
+    if purpose in {"decision", "labeling"}:
+        return True
+    if not _concierge_answers():
+        return False
+    if purpose == "intents":
+        return _intents_mode() != "off"
+    if purpose == "concierge":
+        # Em `subjects`, quem está na coorte e fora da lista segue no laço antigo.
+        return _intents_mode() in {"off", "subjects"}
+    if purpose == "triage":
+        classifier = str(_concierge_setting("triage_classifier") or "anthropic").strip().casefold()
+        return bool(_concierge_setting("triage_with_model")) and classifier != "jev"
+    return False
+
+
+def _join(parts: list[str], glue: str = "") -> str:
+    if len(parts) == 1:
+        return parts[0]
+    # "e, quando você tem pedido em aberto, ...": a oração condicional pede a vírgula.
+    last = f"e, {parts[-1]}" if parts[-1].startswith("quando") else f"e {glue}{parts[-1]}"
+    return f"{f', {glue}'.join(parts[:-1])} {last}"
+
+
+def ai_role_and_shares(purposes) -> tuple[str, str]:
+    """O papel e o "Recebe" de um provedor que recebe estes propósitos."""
+    uses = [use for use in AI_USES if use.purpose in set(purposes)]
+    role = _ROLE_PREFIX + _join([use.helps_to for use in uses], glue="a ")
+    # O cru vale: quem recebe um caminho cru não ganha a promessa do redigido.
+    sources = [use for use in uses if use.raw] or uses[-1:]
+    items: list[str] = []
+    for use in sources:
+        items.extend(item for item in use.shares if item not in items)
+    items.sort(key=lambda item: item.startswith("quando"))
+    return role, f"{_join(items)}. {_PHONE_STAYS}"
 
 
 def _host_of(protocol: str, base_url: str) -> str:
@@ -355,9 +486,10 @@ def undeclared_ai_connections() -> tuple[str, ...]:
 def active_ai_processors() -> tuple[Processor, ...]:
     """Os provedores de IA que recebem mensagem de cliente NESTE deployment.
 
-    Para cada propósito que leva mensagem de cliente, pergunta à porta (`ai.resolve`)
-    para onde o texto iria, e conta a conexão só se ela está liberada para isso. Não há
-    sinal paralelo: se a porta não manda, a página não declara; se manda, declara.
+    Para cada propósito que leva mensagem de cliente e chega a rodar aqui
+    (`_purpose_sends`), pergunta à porta (`ai.resolve`) para onde o texto iria, e conta
+    a conexão só se ela está liberada para isso. Não há sinal paralelo: se a porta não
+    manda, a página não declara; se manda, declara o que sai por aquele caminho.
     """
     from shopman.shop import ai
     from shopman.shop.models import AIConnection
@@ -365,6 +497,8 @@ def active_ai_processors() -> tuple[Processor, ...]:
     #: chave do operador → (nome, propósitos, sinais)
     found: dict[str, tuple[str, set[str], list[str]]] = {}
     for purpose in _customer_text_purposes():
+        if not _purpose_sends(purpose):
+            continue
         try:
             resolved = ai.resolve(purpose)
         except ai.AINotConfigured:
@@ -394,14 +528,6 @@ def active_ai_processors() -> tuple[Processor, ...]:
     processors = []
     for key in sorted(found, key=lambda chave: (order.get(chave, len(order)), chave)):
         name, purposes, signals = found[key]
-        agent = _AGENT_PURPOSE in purposes
-        processors.append(
-            Processor(
-                key=key,
-                name=name,
-                role=_AGENT_ROLE if agent else _READING_ROLE,
-                shares=_AGENT_SHARES if agent else _READING_SHARES,
-                wired_by=tuple(signals),
-            )
-        )
+        role, shares = ai_role_and_shares(purposes)
+        processors.append(Processor(key=key, name=name, role=role, shares=shares, wired_by=tuple(signals)))
     return tuple(processors)

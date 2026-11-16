@@ -5,31 +5,50 @@ das mensagens (D-040), e autorizou a mensagem redigida a ir aos dois desde que e
 apareçam na política. A página só declarava a Anthropic, e por um sinal de `settings`
 (a chave liga-desliga da Concierge) que não diz nada sobre para onde o texto vai.
 
-Estes testes provam que o operador de IA agora sai do mesmo lugar que decide o tráfego
-(`ai.resolve` sobre as `AIConnection` e as rotas da loja), e que conexão liberada para
-mensagem de cliente sem operador declarado reprova com o nome dela.
+Estes testes provam que o operador de IA sai do mesmo lugar que decide o tráfego
+(`ai.resolve` sobre as `AIConnection` e as rotas da loja), que conexão liberada sem
+operador declarado reprova com o nome dela, e que a frase de cada caminho é a que o
+código de fato monta (a segunda metade: montar o pedido real e conferir).
 """
 
 from __future__ import annotations
+
+from types import SimpleNamespace
 
 import pytest
 
 from shopman.shop.models import AIConnection, AIProtocol, Shop
 from shopman.shop.privacy_inventory import (
-    _AGENT_SHARES,
     AI_PROCESSORS,
+    AI_USES,
+    _customer_text_purposes,
     active_ai_processors,
     active_processors,
+    ai_role_and_shares,
     undeclared_ai_connections,
 )
 
 NOMES_DE_IA = ("Anthropic", "DeepSeek", "TypeSafe")
+USOS = {use.purpose: use for use in AI_USES}
 
 
 @pytest.fixture(autouse=True)
-def _sem_conexoes(db):
+def _sem_conexoes(db, settings):
     AIConnection.objects.all().delete()
     _rotas({})
+    # A Concierge atendendo com as chaves de fábrica (`config/settings.py`).
+    settings.SHOPMAN_CONCIERGE = {
+        **(getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}),
+        "enabled": True,
+        "operation_mode": "assist",
+        "intents_plural": "cohort",
+        "triage_with_model": True,
+        "triage_classifier": "anthropic",
+    }
+
+
+def _concierge(settings, **chaves):
+    settings.SHOPMAN_CONCIERGE = {**settings.SHOPMAN_CONCIERGE, **chaves}
 
 
 def _conexao(ref, *, name="", base_url="", protocol=AIProtocol.ANTHROPIC, liberada=True, ativa=True):
@@ -59,6 +78,14 @@ def _por_nome():
 
 def _texto_da_pagina():
     return " ".join(f"{p.name} {p.role} {p.shares}" for p in active_processors())
+
+
+def _deepseek_e_jev():
+    """DeepSeek e Jev liberados; o resto do formato Anthropic vai para uma não liberada."""
+    _conexao("deepseek", name="DeepSeek da casa", base_url="https://api.deepseek.com/anthropic")
+    _conexao("anthropic-catalogo", liberada=False)
+    _conexao("jev", protocol=AIProtocol.JEV)
+    _conexao("jev-placar", protocol=AIProtocol.JEV, liberada=False)
 
 
 # ── A trava ──────────────────────────────────────────────────────────────
@@ -93,6 +120,14 @@ def test_so_conta_conexao_ativa_e_liberada():
     assert undeclared_ai_connections() == ()
 
 
+def test_todo_proposito_de_texto_de_cliente_tem_frase():
+    sem_frase = set(_customer_text_purposes()) - set(USOS)
+    assert not sem_frase, (
+        f"Estes propósitos levam mensagem de cliente e não têm AIUse: {sorted(sem_frase)}. "
+        "Sem frase, /privacidade não sabe dizer o que sai por eles."
+    )
+
+
 @pytest.mark.parametrize(
     # Não é `base_url`: o pytest-base-url reserva o nome.
     ("protocol", "endereco", "esperado"),
@@ -123,10 +158,7 @@ def test_dominio_parecido_nao_passa_por_declarado():
 
 
 def test_deepseek_e_typesafe_so_aparecem_quando_uma_rota_de_texto_de_cliente_aponta():
-    _conexao("deepseek", name="DeepSeek da casa", base_url="https://api.deepseek.com/anthropic")
-    _conexao("anthropic-catalogo", liberada=False)
-    _conexao("jev", protocol=AIProtocol.JEV)
-    _conexao("jev-placar", protocol=AIProtocol.JEV, liberada=False)
+    _deepseek_e_jev()
 
     # Liberadas, mas nenhuma rota de texto de cliente aponta para elas.
     _rotas(
@@ -187,15 +219,6 @@ def test_conexao_sem_chave_nao_aparece():
     assert active_ai_processors() == ()
 
 
-def test_a_conexao_unica_do_formato_conta_como_rota():
-    """Sem rota, a porta usa a única conexão ativa do formato (`ai._route`). Então uma
-    DeepSeek sozinha recebe também o laço do agente, e a frase é a larga: a página
-    segue a porta, não o nome da rota."""
-    _conexao("deepseek", base_url="https://api.deepseek.com/anthropic")
-
-    assert _por_nome()["DeepSeek"].shares == _AGENT_SHARES
-
-
 def test_conexao_nao_declarada_aparece_pelo_nome_em_vez_de_sumir():
     """Falhar gritando: omitir da página quem recebe a mensagem é a mentira que o
     inventário existe para impedir. A trava acima reprova; a página, enquanto isso,
@@ -203,40 +226,152 @@ def test_conexao_nao_declarada_aparece_pelo_nome_em_vez_de_sumir():
     _conexao("barato", name="Modelo Barato", base_url="https://api.provedor-novo.example/anthropic")
     _rotas({"intents": {"connection": "barato"}})
 
-    assert list(_por_nome()) == ["Modelo Barato"]
+    assert "Modelo Barato" in _por_nome()
 
 
-# ── O que a frase promete ────────────────────────────────────────────────
+# ── Cada caminho só conta quando roda ────────────────────────────────────
 
 
-def test_quem_le_a_mensagem_recebe_a_frase_da_mensagem_redigida():
-    _conexao("deepseek", base_url="https://api.deepseek.com/anthropic")
-    _conexao("anthropic-catalogo", liberada=False)
-    _rotas({"default": {"connection": "anthropic-catalogo"}, "intents": {"connection": "deepseek"}})
+def test_concierge_desligada_so_o_jev_continua_declarado(settings):
+    """A sombra do Jev roda com a Concierge observando; a leitura e a triagem, não."""
+    _deepseek_e_jev()
+    _rotas(
+        {
+            "default": {"connection": "deepseek"},
+            "labeling": {"connection": "anthropic-catalogo"},
+            "decision": {"connection": "jev"},
+        }
+    )
+    assert list(_por_nome()) == ["DeepSeek", "TypeSafe"]
 
-    shares = _por_nome()["DeepSeek"].shares
-    for tirado in ("documento", "telefone", "e-mail", "endereço", "cartão", "saúde"):
-        assert tirado in shares
+    _concierge(settings, operation_mode="observe")
+
+    assert list(_por_nome()) == ["TypeSafe"]
 
 
-def test_o_laco_do_agente_nao_promete_menos_do_que_a_anthropic_declarava():
-    """O laço antigo da Concierge (propósito `concierge`) manda nome e endereço de
-    entrega. Enquanto ele existir, quem recebe essa rota recebe a frase larga."""
-    _conexao("anthropic")
-    _rotas({"concierge": {"connection": "anthropic"}, "intents": {"connection": "anthropic"}})
+def test_laco_antigo_so_conta_quando_a_chave_o_liga(settings):
+    _deepseek_e_jev()
+    _rotas({"default": {"connection": "anthropic-catalogo"}, "concierge": {"connection": "deepseek"}})
 
-    anthropic = _por_nome()["Anthropic"]
-    assert anthropic.shares == _AGENT_SHARES
-    assert "nome" in anthropic.shares and "endereço da entrega" in anthropic.shares
+    # Padrão (`cohort`): o turno vai pela leitura de partes, o laço antigo não roda.
+    assert active_ai_processors() == ()
+
+    _concierge(settings, intents_plural="off")
+    assert _por_nome()["DeepSeek"].shares == ai_role_and_shares({"concierge"})[1]
+    assert "o seu nome" in _por_nome()["DeepSeek"].shares
+
+
+def test_triagem_por_modelo_so_conta_sem_o_jev_no_lugar(settings):
+    _deepseek_e_jev()
+    _rotas({"default": {"connection": "anthropic-catalogo"}, "triage": {"connection": "deepseek"}})
+    assert list(_por_nome()) == ["DeepSeek"]
+
+    _concierge(settings, triage_classifier="jev")
+    assert active_ai_processors() == ()
+
+    _concierge(settings, triage_classifier="anthropic", triage_with_model=False)
+    assert active_ai_processors() == ()
+
+
+# ── A frase é a que o código monta ───────────────────────────────────────
+
+FALA = (
+    "Oi, meu CPF é 123.456.789-09, o e-mail é maria@exemplo.com, moro na Rua das Flores, 120 "
+    "e sou alérgica a castanha. Tem croissant?"
+)
+TRECHOS_PESSOAIS = ("123.456.789-09", "maria@exemplo.com", "Rua das Flores", "castanha")
+
+
+def test_o_jev_recebe_a_mensagem_redigida_como_a_frase_diz():
+    from shopman.storefront.concierge import triage
+    from shopman.storefront.concierge.intent_benchmark import Prediction
+
+    enviado = []
+
+    class JevFalso:
+        def scores(self, sample, categories):
+            enviado.append(sample.text)
+            return Prediction(intents={})
+
+    triage.jev_scores(FALA, contender=JevFalso())
+
+    assert USOS["decision"].raw is False
+    assert enviado and "croissant" in enviado[0]
+    for trecho in TRECHOS_PESSOAIS:
+        assert trecho not in enviado[0], (
+            f"O Jev recebeu {trecho!r}, e /privacidade diz que ele recebe a mensagem com "
+            "documento, contato, endereço, pagamento e saúde trocados por um aviso."
+        )
+
+
+def test_a_leitura_recebe_a_mensagem_como_o_cliente_escreveu():
+    """Hoje a leitura de partes manda a fala crua. O WP-03 vai redigi-la: quando ele
+    entrar, este teste reprova e a frase de `intents` muda junto (para a redigida)."""
+    from shopman.storefront.concierge import intents
+
+    pedido = intents.build_request(FALA, memory_note="Pedido aberto do cliente: pedido ABC (novo).", model="m")
+    conteudo = pedido["messages"][0]["content"]
+
+    assert USOS["intents"].raw is True
+    assert FALA in conteudo
+    assert "pedido ABC" in conteudo
+    assert "como você escreveu" in " ".join(USOS["intents"].shares)
+
+
+def test_a_triagem_recebe_a_mensagem_e_as_seis_anteriores():
+    from shopman.storefront.concierge import triage
+
+    contexto = [("Cliente", "bom dia"), ("Casa", "Bom dia! Em que posso ajudar?")]
+    prompt = triage.build_prompt(FALA, contexto)
+
+    assert USOS["triage"].raw is True
+    assert FALA in prompt and "Em que posso ajudar" in prompt
+    assert "seis" in " ".join(USOS["triage"].shares)
+    assert triage.context_for.__kwdefaults__["limit"] == 6
+
+
+def test_o_laco_antigo_recebe_o_nome_e_o_ultimo_pedido():
+    from shopman.storefront.concierge import prompt
+
+    conversa = SimpleNamespace(
+        customer_name="Maria Souza",
+        phone="+5543999990000",
+        quote={},
+        last_order_ref="ABC123",
+        _commercial_authority=False,
+        _channel_off=False,
+    )
+    bloco = prompt.dynamic_block(conversa, is_first_turn=False, cart_summary="2 croissants", greeting="")
+
+    assert "Maria Souza" in bloco and "ABC123" in bloco and "2 croissants" in bloco
+    # O telefone não vai: a frase diz isso a todo provedor.
+    assert "999990000" not in bloco
+    shares = " ".join(USOS["concierge"].shares)
+    assert "o seu nome" in shares and "sacola" in shares and "último pedido" in shares
+
+
+# ── O texto que o cliente lê ─────────────────────────────────────────────
+
+
+def test_frase_somada_nao_repete_e_poe_a_condicao_no_fim():
+    _role, shares = ai_role_and_shares({"intents", "triage"})
+    assert shares.count("o texto da sua mensagem") == 1
+    assert "(suas e da loja) e, quando você tem pedido em aberto" in shares
+
+
+def test_quem_recebe_um_caminho_cru_e_um_redigido_fica_com_a_frase_crua():
+    _role, shares = ai_role_and_shares({"decision", "intents"})
+    assert "como você escreveu" in shares
+    assert "trocados por um aviso" not in shares
 
 
 def test_frases_de_ia_sem_travessao_nem_jargao():
-    _conexao("anthropic")
+    _conexao("anthropic", liberada=True)
     _conexao("deepseek", base_url="https://api.deepseek.com/anthropic")
     _conexao("jev", protocol=AIProtocol.JEV)
     _rotas(
         {
-            "concierge": {"connection": "anthropic"},
+            "default": {"connection": "anthropic"},
             "intents": {"connection": "deepseek"},
             "decision": {"connection": "jev"},
         }
@@ -244,9 +379,10 @@ def test_frases_de_ia_sem_travessao_nem_jargao():
     processors = active_ai_processors()
     assert {processor.key for processor in processors} == {p.key for p in AI_PROCESSORS}
 
-    proibidas = ("gateway", "endpoint", "webhook", "api", "backend", "token", "payload", "prompt")
-    for processor in processors:
-        frase = f"{processor.role} {processor.shares}"
+    proibidas = ("gateway", "endpoint", "webhook", "api", "backend", "token", "payload", "prompt", "modelo")
+    combinacoes = [{use.purpose} for use in AI_USES] + [{use.purpose for use in AI_USES}]
+    frases = [f"{p.role} {p.shares}" for p in processors] + [" ".join(ai_role_and_shares(c)) for c in combinacoes]
+    for frase in frases:
         assert "—" not in frase and "–" not in frase, frase
-        achadas = [palavra for palavra in proibidas if palavra in frase.lower().split()]
-        assert not achadas, f"jargão em {processor.key}: {achadas}: {frase}"
+        achadas = [palavra for palavra in proibidas if palavra in frase.lower().replace(",", " ").split()]
+        assert not achadas, f"jargão: {achadas}: {frase}"
