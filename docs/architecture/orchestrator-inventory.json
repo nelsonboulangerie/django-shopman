@@ -14140,6 +14140,28 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/management/commands/reconcile_ifood_orders.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "APPLY_WINDOW",
+            "Command",
+            "LOOKBACK"
+          ]
+        }
+      ]
     }
   ]
 }

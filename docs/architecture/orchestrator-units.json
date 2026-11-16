@@ -1850,7 +1850,7 @@
       ],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/test_ifood_merchant.py::test_grade_recusada_pelo_ifood_nao_repete",
+        "shopman/shop/tests/test_ifood_merchant.py::test_grade_recusada_pelo_ifood_nao_repete_e_avisa",
         "shopman/shop/tests/test_ifood_merchant.py::test_sem_resposta_do_ifood_a_directive_repete"
       ],
       "test_gap_reason": null,
