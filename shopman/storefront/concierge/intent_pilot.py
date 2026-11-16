@@ -23,7 +23,7 @@ janela; o placar guardado não tem texto e fica.
 
 **O viés declarado:** o gabarito nasce da sugestão de um modelo. A pessoa corrige
 o que discorda, mas sugestão ancora. Por isso o modelo que sugere
-(``AI_ASSIST_MODEL``) não entra no placar automático, que mede outros
+(a rota de IA ``labeling``) não entra no placar automático, que mede outros
 (``DEFAULT_LLM_MODELS``), a regex e os embeddings.
 """
 
@@ -143,7 +143,7 @@ def propose_labels(*, limit: int = PROPOSE_BATCH, model: str | None = None, cont
     """
     from shopman.storefront.models import IntentCategory, MessageIntentSample, SampleStatus
 
-    contender = contender or LLMContender(model=model or settings.AI_ASSIST_MODEL)
+    contender = contender or LLMContender(model=model, purpose="labeling")
     categories = load_categories()
     if not categories:
         return 0
@@ -322,8 +322,8 @@ class IntentPilotMeasureHandler:
 #
 # A Concierge em ``observe`` não decide nada ao vivo, e a entrada promete que
 # nenhuma mensagem sai da casa no caminho do webhook. A sombra roda aqui, no
-# ciclo do piloto, com o mesmo portão do comparador (``typesafe`` aprovado e
-# ``JEV_API_KEY``). A decisão do Jev é a que a triagem tomaria com
+# ciclo do piloto, com o mesmo portão do comparador (a conexão do Jev liberada
+# para mensagem de cliente). A decisão do Jev é a que a triagem tomaria com
 # ``triage_classifier = "jev"`` (``triage.best_jev_intent``), menos a trava do
 # sensível, que a sombra guarda separada para a casa ver onde ela agiria.
 

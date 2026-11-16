@@ -180,3 +180,19 @@ describe("Fim do dia só para quem fecha o dia", () => {
     expect(SHELL_SECTIONS).toContain("canCloseDay: pos.value?.can_close_day === true");
   });
 });
+
+// Rotinas (abertura, rotina e fechamento da loja) moram no PDV, perto do caixa e do fim
+// do dia (dono, 13/11/2026); saíram do Gestor.
+describe("Rotinas no PDV", () => {
+  it("aparecem só para quem executa rotina, antes de Ajustes, fora da barra de baixo", () => {
+    expect(posSections({ ...base, preorders: { allowed: true } }).map((s) => s.key)).not.toContain("checklists");
+    const sections = posSections({ ...base, preorders: { allowed: true }, canOperateChecklists: true });
+    const keys = sections.map((s) => s.key);
+    expect(keys.indexOf("checklists")).toBe(keys.indexOf("settings") - 1);
+    const rotinas = sections.find((s) => s.key === "checklists")!;
+    expect(rotinas).toMatchObject({ label: "Rotinas", to: "/checklists" });
+    expect(rotinas.quick).toBeUndefined();
+    expect(posCurrentSection("/checklists")).toBe("checklists");
+    expect(posSwitcherSections(sections).find((s) => s.key === "checklists")?.form).toBe("office");
+  });
+});

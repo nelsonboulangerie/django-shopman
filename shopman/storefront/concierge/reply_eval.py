@@ -221,10 +221,8 @@ def run(cases: list[dict], *, classifier: str = "rules", model: str = "", client
         "triage_classifier": "jev" if classifier == "jev" else "anthropic",
         "triage_with_model": classifier != "rules",
     }
-    if model:
-        config["triage_model"] = model
     report = Report(classifier=classifier if not model else f"{classifier}:{model}")
-    with override_settings(SHOPMAN_CONCIERGE=config):
+    with override_settings(SHOPMAN_CONCIERGE=config), triage.model_override(model):
         for case in cases:
             meter = metrics.TurnMeter()
             context = [(line["who"], line["text"]) for line in case.get("previous", [])]
@@ -571,7 +569,7 @@ def run_plural(cases: list[dict], *, reader: str = "local", client=None) -> Plur
     if reader == "model" and client is None:
         client = intents.build_client()
         if client is None:
-            raise ValueError("leitura com o modelo indisponível neste ambiente (AI_ASSIST_API_KEY vazia).")
+            raise ValueError("leitura com o modelo indisponível neste ambiente (sem conexão de IA para intents).")
     report = PluralReport(reader=reader)
     team = intents.TEAM_ACTS | intents.OTHER_DESK_ACTS
     config = {**(getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}), "triage_with_model": False}

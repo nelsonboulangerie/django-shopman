@@ -131,7 +131,6 @@ MULTIPLE_PARTS_DESCRIPTION = (
     "diferentes (cumprimento e agradecimento não contam)"
 )
 
-DEFAULT_MODEL = "claude-haiku-4-5"
 READ_TIMEOUT_S = 4.0
 MAX_ACTS = 6
 MAX_QTY = 99
@@ -424,7 +423,7 @@ def build_request(text: str, *, memory_note: str = "", model: str = "") -> dict:
     if memory_note:
         content = f"Estado da conversa (da casa, não do cliente):\n{memory_note}\n\n{content}"
     return {
-        "model": model or str(_config().get("intents_model") or DEFAULT_MODEL),
+        "model": model or _model(),
         "max_tokens": 600,
         "system": [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
         "messages": [{"role": "user", "content": content}],
@@ -432,13 +431,28 @@ def build_request(text: str, *, memory_note: str = "", model: str = "") -> dict:
     }
 
 
-def build_client():
-    import anthropic
+def _model() -> str:
+    """O modelo da rota de IA ``intents`` (o Haiku, semeado na migração)."""
+    from shopman.shop import ai
 
-    api_key = (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
-    if not api_key:
+    return ai.resolve("intents").model
+
+
+def _ai_ready() -> bool:
+    from shopman.shop import ai
+
+    return ai.is_configured("intents")
+
+
+def build_client():
+    """O cliente da conexão de IA do propósito ``intents``, ou None sem conexão."""
+    from shopman.shop import ai
+
+    try:
+        client, _model_name = ai.anthropic_client("intents", timeout=READ_TIMEOUT_S, max_retries=0)
+    except ai.AINotConfigured:
         return None
-    return anthropic.Anthropic(api_key=api_key, timeout=READ_TIMEOUT_S, max_retries=0)
+    return client
 
 
 def parse_acts(raw: str, text: str) -> list[Act]:
@@ -996,7 +1010,7 @@ def run(conversation, *, binding, decision, client=None):
 
     rules_intent, rules_source = triage.classify_rules(text)
     meter = getattr(conversation, "_meter", None)
-    has_key = bool((getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip())
+    has_key = _ai_ready()
     reader = client
     if meter is not None and (client is not None or has_key):
         reader = meter.wrap(client, "intents", factory=build_client)
@@ -1139,7 +1153,7 @@ def _answer_again(conversation, *, binding, decision, memory, channel_ref: str, 
             return AgentOutcome(reply_text=copy(REPEAT_ASK_COPY_KEY), layer=LAYER_INTENTS, memory=memory,
                                 intents={"acts": [], "source": "memory", "reason": "asked_again_nothing"})
         rules_intent, rules_source = triage.classify_rules(text)
-        has_key = bool((getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip())
+        has_key = _ai_ready()
         found = plan(text, rules_intent=rules_intent, rules_source=rules_source, memory_note=memory.prompt_lines(),
                      client=client, use_model=client is not None or has_key)
         found.reason = f"asked_again:{found.reason}"

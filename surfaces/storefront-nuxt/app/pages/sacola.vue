@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cartHoldBanner, holdBannerVariant, holdCountdown, lineHoldState, linePrice } from '~/presentation/cart'
+import { cartBatchFloor, cartHoldBanner, holdBannerVariant, holdCountdown, lineHoldState, linePrice } from '~/presentation/cart'
 import { metaForCartLine } from '~/composables/useCartState'
 import type { CartItemProjection } from '~/types/shopman'
 import { formatCount } from '~/utils/display'
@@ -49,8 +49,13 @@ onBeforeUnmount(() => {
   if (holdPollTimer) clearInterval(holdPollTimer)
 })
 
+// A data em que o pedido vai sair, enquanto o cliente não escolheu: o piso que
+// o "Finalizar" pré-seleciona. A linha conta a espera pela mesma data que a
+// revisão vai contar.
+const orderDate = computed(() => cartBatchFloor(cart.value.items)?.date || '')
+
 function holdFor (line: CartItemProjection) {
-  return lineHoldState(line)
+  return lineHoldState(line, orderDate.value)
 }
 
 // Lixeira e "Usar N disponíveis" mostram que estão em andamento até a sacola
@@ -253,7 +258,7 @@ useSeoMeta({
                       </p>
                       <p class="mt-1 shop-meta">{{ cart.awaiting_confirmation_notice || 'Envie o pedido para garantir a sua prioridade.' }}</p>
                     </div>
-                    <div v-else class="mt-2" data-cart-line-ready>
+                    <div v-else-if="holdFor(line)!.kind === 'ready'" class="mt-2" data-cart-line-ready>
                       <UiBadge variant="default">
                         <Icon name="lucide:party-popper" class="mr-1 size-3.5" />
                         Confirme{{ holdFor(line)!.deadlineDisplay ? ` até ${holdFor(line)!.deadlineDisplay}` : '' }}

@@ -17,6 +17,7 @@ from django.test import override_settings
 from django.utils import timezone
 
 from shopman.shop.models import Conversation, Shop
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import dialogue, service
 from shopman.storefront.concierge.dialogue import Facts, OrderFact
 from shopman.storefront.concierge.dialogue_eval import load_labels, registry_copy, render, run
@@ -266,8 +267,9 @@ def test_thanks_without_recent_event_keeps_the_simple_courtesy():
 
 
 @pytest.mark.django_db(transaction=True)
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_turn_writes_the_list_and_the_next_turn_resolves_the_ordinal(conversation, outbox, alpha_menu):
+    configure_ai("sk-teste")
     _listed("PAIN-CHOC", "Pain au Chocolat", description="Folhado amanteigado com chocolate", stock="5")
     _receive(conversation, "tem folhado amanteigado?", "d1")
     first = ScriptedClient(
@@ -291,8 +293,9 @@ def test_turn_writes_the_list_and_the_next_turn_resolves_the_ordinal(conversatio
 
 
 @pytest.mark.django_db(transaction=True)
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_yes_after_no_match_calls_the_team_without_the_model(conversation, outbox):
+    configure_ai("sk-teste")
     _receive(conversation, "vocês vendem bicicletas?", "t1")
     first = ScriptedClient(
         _response(_tool("search_storefront", {"query": "bicicleta"}), stop_reason="tool_use"),
@@ -308,8 +311,9 @@ def test_yes_after_no_match_calls_the_team_without_the_model(conversation, outbo
 
 
 @pytest.mark.django_db(transaction=True)
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_revoked_turn_does_not_write_memory(conversation, outbox):
+    configure_ai("sk-teste")
     _receive(conversation, "tem pão?", "r1")
 
     class NewInputDuringModel(ScriptedClient):

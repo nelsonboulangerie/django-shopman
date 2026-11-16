@@ -67,3 +67,4 @@ altera o status da sucessora nem cria uma relação circular.
 | [043](adr-043-build-once-promote-e-convivencia-v1-v2.md) | Construir uma vez, promover o mesmo digest; V1/V2 dentro da mesma superfície | Aceito | Deploy e superfícies | 2026-11-02 | Release |
 | [044](adr-044-substituibilidade-na-borda.md) | Substituibilidade vive na borda de capability; kernel é substituível só por quem implementa o contrato | Aceito | Arquitetura dos kernels | 2026-11-10 | Fronteiras |
 | [045](adr-045-envelope-de-fato-operacional.md) | Envelope de fato operacional (ator, dispositivo, workstation, setor, business_date, correlação, causalidade) | Aceito | Suite | 2026-11-10 | Operação |
+| [046](adr-046-suporte-helpdesk-interno.md) | Suporte: helpdesk interno com gate de dev | Aceito | Backstage e Hub | 2026-11-12 | Operação |

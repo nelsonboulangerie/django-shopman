@@ -1052,22 +1052,31 @@ def _alert_unknown_sku(order, sku: str, item: dict | None = None) -> None:
     """Pedido já commitado (caminho brando) carregou SKU fora do catálogo em
     canal gated — o operador precisa saber que não há reserva possível.
 
-    No iFood o SKU é o ``externalCode`` do item; sem ele, a ingestão usa o id da
-    linha (``ifood_orders._map_items``). O aviso diz QUAL item e qual dos dois
-    casos, porque o conserto é ligar o item do iFood a um produto da casa
+    No iFood a ingestão troca o código do item pelo SKU da casa quando há
+    vínculo confirmado (``ifood_item_sku``); chega aqui o item sem vínculo, com
+    o ``externalCode`` ou, sem ele, o id da linha. O aviso diz QUAL item e qual
+    dos casos, porque o conserto é ligar o item do iFood a um produto da casa
     (``backstage.projections.alerts`` leva à revisão de vínculos do canal).
     """
     from shopman.shop.services.ifood_ingest import IFOOD_CHANNEL_REF
+    from shopman.shop.services.ifood_item_sku import SOURCE_AMBIGUOUS
     from shopman.shop.services.observability import create_operator_alert
 
     item = item or {}
     name = str(item.get("name") or "").strip()
+    link = (item.get("meta") or {}).get("catalog_link") or {}
     if getattr(order, "channel_ref", "") == IFOOD_CHANNEL_REF and name:
         why = "veio sem código externo" if sku == str(item.get("line_id") or "") else f"veio com o código {sku}"
-        message = (
-            f'Pedido {order.ref}: o item "{name}" do iFood {why} e não tem produto da casa ligado. '
-            "Saiu sem reserva de estoque."
-        )
+        if link.get("source") == SOURCE_AMBIGUOUS:
+            message = (
+                f'Pedido {order.ref}: o item "{name}" do iFood está ligado a mais de um produto da casa. '
+                "Saiu sem reserva de estoque."
+            )
+        else:
+            message = (
+                f'Pedido {order.ref}: o item "{name}" do iFood {why} e não tem produto da casa ligado. '
+                "Saiu sem reserva de estoque."
+            )
     else:
         message = (
             f"Pedido {order.ref} contém SKU fora do catálogo ({sku}) em canal "

@@ -123,11 +123,14 @@ def test_an_authorized_card_also_keeps_the_queue_quiet(channel):
     assert tracking.waitlist_state == "none"
 
 
-def test_once_paid_the_queue_tells_its_story(channel):
-    """A contraprova, e o coração da política: pago, a fila volta a falar.
+def test_once_paid_the_batch_wait_is_told_with_the_payment(channel):
+    """Pago, a espera pela fornada continua dita, mas não pela fila.
 
-    Sem esta metade, "calar a fila" viraria "apagar a fila", e a decisão de
-    28/08 (fornada do dia não cobra para garantir vaga) morreria por acidente.
+    Pedido pago não é entrada de fila (laudo de 09/11): não há o que confirmar
+    nem cobrar, e o painel da fila diria "Nada foi cobrado ainda" a quem pagou.
+    Quem fala é a cascata do acompanhamento, com a espera da fornada
+    (``planned_batch``) e o pagamento recebido. A decisão de 28/08 (fornada do
+    dia não cobra para garantir vaga) segue de pé: quem não pagou vê a fila.
     """
     from shopman.payman import PaymentService
 
@@ -143,12 +146,16 @@ def test_once_paid_the_queue_tells_its_story(channel):
         payment={"method": "pix", "intent_ref": "INT-FILA-3"},
         ref="WEB-FILA-3",
     )
-    _planned_hold(order)
+    hold = _planned_hold(order)
+    # A cascata lê a fornada pelos holds adotados no commit.
+    order.data["hold_ids"] = [{"sku": hold.sku, "hold_id": hold.hold_id, "qty": 1.0}]
+    order.save(update_fields=["data"])
 
     tracking = build_tracking(order)
 
-    assert tracking.waitlist_state == waitlist.FERMATA
-    assert tracking.waitlist_planned_for is not None
+    assert tracking.waitlist_state == waitlist.NONE
+    assert tracking.promise.fulfillment_wait_kind == "planned_batch"
+    assert tracking.promise.fulfillment_wait_until is not None
 
 
 def test_the_confirmation_window_is_never_silenced(channel):

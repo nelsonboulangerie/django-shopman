@@ -27,6 +27,7 @@ from shopman.offerman.models import Collection, CollectionItem, Listing, Listing
 from shopman.orderman.models import Directive, Order, Session
 
 from shopman.shop.models import Channel, Conversation, ConversationBinding, ConversationMessage, FAQEntry, Shop
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import agent as agent_module
 from shopman.storefront.concierge import service, tools
 from shopman.storefront.concierge.contracts import (
@@ -93,7 +94,6 @@ CONCIERGE_SETTINGS = {
     "contract_version": 3,
     "suggest_add_ons": True,
     "enabled": True,
-    "model": "claude-sonnet-5",
     "effort": "low",
     "max_tokens": 512,
     "channel_ref": CHANNEL,
@@ -191,7 +191,7 @@ def customer():
 
 @pytest.fixture
 def conversation(surface, customer, settings):
-    settings.AI_ASSIST_API_KEY = "isolated-fixture"
+    configure_ai("isolated-fixture", model="claude-sonnet-5")
     settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
     conversation = Conversation.objects.create(
         phone=PHONE,
@@ -216,7 +216,7 @@ def conversation(surface, customer, settings):
 @pytest.fixture
 def ctx(conversation, settings):
     settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
-    settings.AI_ASSIST_API_KEY = "isolated-fixture"
+    configure_ai("isolated-fixture", model="claude-sonnet-5")
     context = ToolContext(conversation=conversation, channel_ref=CHANNEL)
     _create_inbound(conversation, "autoridade da fixture", "fixture-authority")
     _reclaim(context)
@@ -1053,8 +1053,9 @@ def test_order_status_reads_the_customer_orders_through_the_projection(ctx, djan
     assert tools.order_status(ctx, "XYZ-000")["orders"] == []
 
 
-@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True}, AI_ASSIST_API_KEY="fixture")
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True})
 def test_send_web_link_carries_the_cart_to_the_store_channel(ctx, conversation, monkeypatch):
+    configure_ai("fixture")
     tools.set_item(ctx, SKU, 2)
     chat_key = Conversation.objects.get(pk=conversation.pk).session_key
 
@@ -1591,8 +1592,9 @@ def test_allergy_without_saying_to_what_asks_to_what(conversation, house_notice,
     assert house_notice not in outcome.reply_text and "Croissant" not in outcome.reply_text
 
 
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_the_answer_to_to_what_is_answered_with_the_product_from_the_first_message(conversation, house_notice, outbox):
+    configure_ai("sk-teste")
     binding = _binding(conversation)
     _receive(conversation, "tenho alergia, posso comer o croissant?", "ask-1")
     first = service.run_turn(conversation.pk, binding.pk, client=ScriptedClient())
@@ -1610,8 +1612,9 @@ def test_the_answer_to_to_what_is_answered_with_the_product_from_the_first_messa
     )
 
 
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_an_answer_to_to_what_that_still_does_not_say_goes_to_the_team(conversation, house_notice, outbox):
+    configure_ai("sk-teste")
     binding = _binding(conversation)
     _receive(conversation, "tenho alergia", "ask-vague-1")
     service.run_turn(conversation.pk, binding.pk, client=ScriptedClient())
@@ -1624,8 +1627,9 @@ def test_an_answer_to_to_what_that_still_does_not_say_goes_to_the_team(conversat
     assert result.handoff and conversation.flags["triage"]["destination"] == "team"
 
 
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_yes_to_the_team_offer_calls_the_team(conversation, house_notice, outbox):
+    configure_ai("sk-teste")
     binding = _binding(conversation)
     _receive(conversation, "tem castanha no panetone?", "offer-1")
     first = service.run_turn(conversation.pk, binding.pk, client=ScriptedClient())
@@ -1987,8 +1991,9 @@ def test_history_window_starts_at_a_customer_message(conversation):
 # ── O turno inteiro ──────────────────────────────────────────────────
 
 
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_receive_inbound_queues_one_deferred_directive_per_conversation(surface, customer, monkeypatch):
+    configure_ai("sk-teste")
     monkeypatch.setattr(service, "identify", lambda conversation, binding, profile=None: conversation)
     first = service.receive_inbound(_event(text="oi", event_id="m1"))
     again = service.receive_inbound(_event(text="oi", event_id="m1"))
@@ -2023,10 +2028,10 @@ def test_receive_inbound_queues_one_deferred_directive_per_conversation(surface,
             }
         },
     },
-    AI_ASSIST_API_KEY="sk-teste",
 )
 def test_pilot_allowlist_keeps_everyone_else_out_without_side_effects(surface, monkeypatch):
     """A admissão usa o subject autenticado; perfil e telefone não concedem acesso."""
+    configure_ai("sk-teste")
     monkeypatch.setattr(service, "identify", lambda conversation, binding, profile=None: conversation)
     by_id = service.receive_inbound(_event(text="oi", event_id="a"))
     by_phone_in_body = service.receive_inbound(
@@ -2054,14 +2059,16 @@ def test_pilot_allowlist_keeps_everyone_else_out_without_side_effects(surface, m
     assert Conversation.objects.count() == 1
 
 
-@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "enabled": False}, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "enabled": False})
 def test_receive_inbound_is_silent_when_disabled(surface):
+    configure_ai("sk-teste")
     result = service.receive_inbound(_event(text="oi", event_id="disabled", subject="1"))
     assert result.reason == "disabled" and not Conversation.objects.exists()
 
 
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_run_turn_answers_everything_pending_and_persists_the_transcript(conversation, outbox):
+    configure_ai("sk-teste")
     for i, text in enumerate(("oi", "tem pão?")):
         _receive(conversation, text, f"m{i}")
     client = ScriptedClient(
@@ -2089,8 +2096,9 @@ def test_run_turn_answers_everything_pending_and_persists_the_transcript(convers
 
 
 @pytest.mark.django_db(transaction=True)
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_run_turn_sends_the_pix_code_as_its_own_message(ctx, outbox, django_capture_on_commit_callbacks):
+    configure_ai("sk-teste")
     conversation = ctx.conversation
     review = _pickup_ready(ctx)
     _accept_review(ctx, review)
@@ -2113,8 +2121,9 @@ def test_run_turn_sends_the_pix_code_as_its_own_message(ctx, outbox, django_capt
     assert outbox.sent == result.replies
 
 
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation, outbox):
+    configure_ai("sk-teste")
     _receive(conversation, "quero falar com alguém", "m1")
     client = ScriptedClient()
     binding = _binding(conversation)
@@ -2147,8 +2156,9 @@ def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation
     assert conversation.state == Conversation.State.HANDOFF and outbox.flags == [True]
 
 
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_run_turn_falls_back_to_house_copy_when_the_model_fails(conversation, outbox, monkeypatch):
+    configure_ai("sk-teste")
     monkeypatch.setattr(service, "copy_message", lambda key: f"[{key}]")
     _receive(conversation, "tem pão?", "m1")
     binding = _binding(conversation)
@@ -2172,9 +2182,10 @@ def test_run_turn_falls_back_to_house_copy_when_the_model_fails(conversation, ou
     assert OperatorAlert.objects.filter(type="concierge_handoff", audience="orders").count() == 1
 
 
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_run_turn_takes_the_location_pin_as_a_conversation_turn(ctx, outbox, monkeypatch):
     """O pin não é "mídia não suportada": o turno roda e a entrega pergunta só o número."""
+    configure_ai("sk-teste")
     from dataclasses import replace
 
     from shopman.storefront.concierge.contracts import LOCATION_TEXT
@@ -2200,8 +2211,9 @@ def test_run_turn_takes_the_location_pin_as_a_conversation_turn(ctx, outbox, mon
     assert any("me diga o número (ou S/N)" in text for text in outbox.sent)
 
 
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_run_turn_answers_media_and_daily_limit_without_the_model(conversation, outbox, monkeypatch):
+    configure_ai("sk-teste")
     monkeypatch.setattr(service, "copy_message", lambda key: f"[{key}]")
     _receive(
         conversation,

@@ -108,7 +108,10 @@ def test_real_combo_observations_options_and_customizations_reach_kds():
             assert customization["groupName"] in item["notes"]
     canonical_meta = payload["items"][1]["meta"]
     stored = order.items.get(sku=combo["externalCode"])
-    assert stored.meta == canonical_meta
+    # A ingestão só acrescenta de qual código do iFood o SKU saiu (#2326).
+    assert stored.meta == {**canonical_meta, "catalog_link": {
+        "source": "unbound", "remote_sku": combo["externalCode"], "remote_item_id": combo["id"],
+    }}
     assert stored.meta["observations"] == combo["observations"]
     assert len(stored.meta["options"][-1]["customizations"]) == 3
     assert raw == original  # presentation does not rewrite the source contract

@@ -4,7 +4,7 @@ import { historyApiQuery, type HistoryQuery } from "~/presentation/history";
 import type { OrderHistoryResponse } from "~/types/history";
 
 // Histórico do Gestor: pedidos fechados, filtrados e paginados NO SERVIDOR
-// (/api/v1/backstage/orders/history/). Permissão: `shop.manage_orders`, a mesma do quadro.
+// (/api/v1/backstage/orders/history/). Permissão: `shop.manage_orders`, a mesma do painel.
 const URL = "/api/v1/backstage/orders/history/";
 
 export function useOrderHistory(query: Ref<HistoryQuery>, today: Ref<string>) {

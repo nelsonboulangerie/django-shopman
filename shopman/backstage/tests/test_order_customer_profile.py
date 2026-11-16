@@ -75,6 +75,21 @@ class CustomerProfileTests(TestCase):
         self.assertEqual(perfil.orders_label, "Primeira compra")
         self.assertEqual(perfil.last_order_display, "")
 
+    def test_primeira_compra_nao_afirma_habito_que_o_cliente_ainda_nao_tem(self) -> None:
+        """Pedido iFood 3417 (12/11): o insight recalculado no próprio pedido dizia
+        "ticket médio R$ 49,20 · costuma levar Queijo Camembert", o total e o item
+        DESTE pedido, ao lado de "Primeira compra"."""
+        customer = Customer.objects.create(ref="CLI-1B", first_name="Pablo")
+        CustomerInsight.objects.create(customer=customer, total_orders=1, average_ticket_q=4920)
+        order = _order("W-1B", customer_ref="CLI-1B")
+
+        perfil = build_operator_order(order).customer_profile
+
+        assert perfil is not None
+        self.assertTrue(perfil.is_first_order)
+        self.assertEqual(perfil.average_ticket_display, "")
+        self.assertEqual(perfil.favorite_product, "")
+
     def test_sem_insight_o_vazio_sai_vazio_e_nunca_zero(self) -> None:
         """Cliente importado/semeado não tem insight, e isso é estado NORMAL.
 

@@ -379,6 +379,8 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/order_attention.py",
             # Histórico do Gestor (pedidos fechados, filtros no servidor).
             ROOT / "shopman/backstage/projections/order_history.py",
+            # Seção Entregas do Gestor (corridas da TaOn: aguardando, editando, corridas).
+            ROOT / "shopman/backstage/projections/deliveries.py",
             # Comprovante de entrega dos avisos ao cliente, no detalhe do pedido.
             ROOT / "shopman/backstage/projections/notification_receipts.py",
             # Itens a preço de tabela e o desconto (cupom) em linha própria, no detalhe do pedido.
@@ -419,6 +421,7 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/bi_change.py",
             ROOT / "shopman/backstage/projections/bi_delivery_cost.py",
             ROOT / "shopman/backstage/projections/bi_delivery_timing.py",
+            ROOT / "shopman/backstage/projections/bi_preorder_kitchen.py",
             ROOT / "shopman/backstage/projections/bi_payments.py",
             ROOT / "shopman/backstage/projections/bi_profiles.py",
             ROOT / "shopman/backstage/projections/sales_series.py",

@@ -82,7 +82,7 @@ def disabled_reason() -> str:
     """Por que o concierge não atende, ou vazio quando atende.
 
     Duas chaves, dois motivos com nome: a chave de ligar (``SHOPMAN_CONCIERGE_ENABLED``)
-    e a credencial da Anthropic (``AI_ASSIST_API_KEY``). Um ``disabled`` sem motivo
+    e a conexão de IA do propósito ``concierge`` (``shopman.shop.ai``). Um ``disabled`` sem motivo
     custou uma noite: a chave estava ligada e a credencial, vazia no painel.
     """
     if config().get("contract_version") != 3:
@@ -94,7 +94,9 @@ def disabled_reason() -> str:
         return "operation_mode_gate"
     if not config().get("enabled"):
         return "switch_off"
-    if not (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip():
+    from shopman.shop import ai
+
+    if not ai.is_configured("concierge"):
         return "ai_key_missing"
     return ""
 

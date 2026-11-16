@@ -43,6 +43,9 @@ _KITCHEN_VIBRATION = {
     NotificationSeverity.WARNING: [120, 90, 120, 90, 120],
     NotificationSeverity.ACTION_REQUIRED: [400],
 }
+#: O pedido que espera aceite (iFood cancela em 8 min) vibra forte e longo: três
+#: toques de 400 ms, para não passar por notificação qualquer no bolso (#2324).
+_CRITICAL_ORDER_VIBRATION = [400, 150, 400, 150, 400]
 
 
 class _NoRedirectPushSession(Session):
@@ -194,6 +197,8 @@ def _push_payload(notification: UserNotification) -> dict:
     }
     if notification.category == "kitchen" and notification.severity in _KITCHEN_VIBRATION:
         payload["vibrate"] = _KITCHEN_VIBRATION[notification.severity]
+    elif notification.category == "order" and notification.severity == NotificationSeverity.CRITICAL:
+        payload["vibrate"] = _CRITICAL_ORDER_VIBRATION
     return payload
 
 

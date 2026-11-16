@@ -29,7 +29,6 @@ import re
 import time
 from datetime import date, timedelta
 
-from django.conf import settings
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -74,7 +73,7 @@ class ScenariosNotConfigured(Exception):
 def is_configured() -> bool:
     from shopman.shop.services.copy_assist import is_configured as assist_configured
 
-    return assist_configured()
+    return assist_configured("scenarios")
 
 
 # ── Entradas: só camada de leitura ──────────────────────────────────────────
@@ -222,10 +221,11 @@ def generate(*, focus: str, requested_by=None, date_from: date | None = None, da
     não há credencial. Qualquer outra falha vira relatório ``failed``.
     """
     from shopman.backstage.models import BIScenarioReport
+    from shopman.shop import ai
     from shopman.shop.services.copy_assist import CopyAssistError, suggest
 
     if not is_configured():
-        raise ScenariosNotConfigured("Cenários com IA não configurados. Defina AI_ASSIST_API_KEY.")
+        raise ScenariosNotConfigured(f"Cenários com IA não configurados: {ai.explain('scenarios')}.")
     date_to = date_to or timezone.localdate()
     date_from = date_from or (date_to - timedelta(days=DEFAULT_WINDOW_DAYS - 1))
 
@@ -235,13 +235,13 @@ def generate(*, focus: str, requested_by=None, date_from: date | None = None, da
         focus=focus,
         window_from=date_from,
         window_to=date_to,
-        model=str(getattr(settings, "AI_ASSIST_MODEL", "") or ""),
+        model=ai.resolve("scenarios").model,
         inputs=inputs,
         inputs_hash=inputs_hash(inputs),
     )
     started = time.monotonic()
     try:
-        raw = suggest(build_prompt(inputs), max_tokens=MAX_TOKENS, voice=ANALYST_VOICE)
+        raw = suggest(build_prompt(inputs), max_tokens=MAX_TOKENS, voice=ANALYST_VOICE, purpose="scenarios")
         report.raw_text = raw
         report.scenarios = [scenario.model_dump() for scenario in parse_response(raw).scenarios]
         report.status = BIScenarioReport.Status.DONE

@@ -115,3 +115,54 @@ def test_evidence_requires_order_management_permission(client, context, django_u
         response = client.get(reverse("api-backstage-order-ifood-handshake-evidence", args=[order.ref]), {"dispute_id": "dispute", "index": "0"})
         assert response.status_code == 403
         fetch.assert_not_called()
+
+
+def _with_refund_alternative(order):
+    order.data["ifood"]["handshakes"]["dispute"]["raw"]["alternatives"] = [
+        {"id": "alt-refund", "type": "REFUND", "metadata": {"maxAmount": {"value": "1500", "currency": "BRL"}}},
+        {"id": "alt-time", "type": "ADDITIONAL_TIME", "metadata": {
+            "allowedsAdditionalTimeInMinutes": [10], "allowedsAdditionalTimeReasons": ["HIGH_STORE_DEMAND", "NEW_REASON"]}},
+    ]
+    order.save(update_fields=["data"])
+
+
+def test_projection_offers_counterproposal_only_when_ifood_offered_one(context):
+    user, order = context
+    negotiation = build_two_zone_queue(user=user).ifood_negotiation_orders[0].ifood_negotiations[0]
+    assert [action.ref for action in negotiation.actions] == ["accept", "reject"]
+    assert negotiation.alternatives == ()
+    _with_refund_alternative(order)
+    negotiation = build_two_zone_queue(user=user).ifood_negotiation_orders[0].ifood_negotiations[0]
+    assert [action.ref for action in negotiation.actions] == ["accept", "reject", "alternative"]
+    assert all(action.enabled for action in negotiation.actions)
+    refund, extra_time = negotiation.alternatives
+    assert (refund.label, refund.max_amount_q, refund.max_amount_display) == ("Reembolsar parte do valor", 1500, "R$ 15,00")
+    assert extra_time.minutes_options == (10,)
+    assert [(c.value, c.label) for c in extra_time.reason_options] == [
+        ("HIGH_STORE_DEMAND", "Alta demanda na loja"), ("NEW_REASON", "Motivo do iFood: NEW_REASON")]
+    denied = build_two_zone_queue(user=None).ifood_negotiation_orders[0].ifood_negotiations[0]
+    assert not any(action.enabled for action in denied.actions)
+
+
+def test_counterproposal_is_queued_and_field_errors_use_canonical_dialect(client, context):
+    user, order = context
+    _with_refund_alternative(order)
+    url = reverse("api-backstage-order-ifood-handshake", args=[order.ref])
+    body = {"expected_actor_id": user.pk, "base_revision": operator_orders.operational_revision(order),
+            "dispute_id": "dispute", "decision": "alternative", "alternative_id": "alt-refund"}
+    malformed = client.post(url, {**body, "amount_q": "12,50"}, content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+    assert malformed.status_code == 400
+    assert malformed.json()["field"] == "amount_q" and malformed.json()["errors"]["amount_q"]
+    above = client.post(url, {**body, "amount_q": 1501}, content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+    assert above.status_code == 400
+    assert above.json()["field"] == "amount_q"
+    assert above.json()["detail"] == "Informe um valor de R$ 0,01 até R$ 15,00."
+    assert not Directive.objects.filter(topic="ifood.handshake_response").exists()
+    with patch.object(hs.requests, "post") as external:
+        ok = client.post(url, {**body, "amount_q": "1200"}, content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+        external.assert_not_called()
+    assert ok.status_code == 200, ok.content
+    order.refresh_from_db()
+    response = order.data["ifood"]["handshakes"]["dispute"]["response"]
+    assert response["path"] == "alternatives/alt-refund"
+    assert response["body"] == {"type": "REFUND", "metadata": {"amount": {"value": "1200", "currency": "BRL"}}}

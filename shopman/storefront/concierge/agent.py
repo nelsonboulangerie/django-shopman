@@ -111,10 +111,17 @@ def _config() -> dict:
 
 
 def build_client():
-    import anthropic
+    """O cliente da conexão de IA do propósito ``concierge`` (``shopman.shop.ai``)."""
+    from shopman.shop import ai
 
-    api_key = (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
-    return anthropic.Anthropic(api_key=api_key, timeout=45.0, max_retries=2)
+    client, _model = ai.anthropic_client("concierge", timeout=45.0, max_retries=2)
+    return client
+
+
+def _model() -> str:
+    from shopman.shop import ai
+
+    return ai.resolve("concierge").model
 
 
 # ── Memória ───────────────────────────────────────────────────────────
@@ -348,7 +355,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     from .prompt import build_system
 
     cfg = _config()
-    model = str(cfg.get("model") or "claude-sonnet-5")
+    model = _model()
     max_tokens = int(cfg.get("max_tokens") or 1024)
     max_iterations = max(1, int(cfg.get("max_iterations") or 6))
     effort = str(cfg.get("effort") or "").strip()

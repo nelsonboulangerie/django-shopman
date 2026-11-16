@@ -82,7 +82,8 @@ diferentes ao mesmo tempo. As regras valem para todos, humanos incluídos:
   branch, nunca no principal; branch na fila de merge recusa push (ajuste = PR de
   seguimento).
 - **Relate o que é fato.** Contagem de testes não é evidência; saída de comando é.
-  O que ficou de fora se diz com nome e motivo.
+  O que ficou de fora se diz com nome, motivo **e o número da issue** que o carrega
+  (ver "Nada fica de fora em silêncio", abaixo).
 - **Tarefa sugerida (o "chip") abre uma SESSÃO NOVA — e sessão nova não sabe o que
   já existe.** Medido em 19/09/2026: um chip de tarefa sugerida abriu a segunda
   sessão do mesmo trabalho de retratos do Marketing, e saíram **três PRs (#869,
@@ -134,7 +135,24 @@ Trabalho parcial no fim da sessão vira commit + push + **PR draft** com `WIP:` 
 título. Nunca fica só na worktree: worktree é invisível para `gh pr list`, para as
 outras sessões e para o Pablo. Draft custa 20 segundos; redescobrir custa dias.
 
+**Nada fica de fora em silêncio** (dono, 12/11/2026: "Você decide não fazer, por
+algum motivo, e fica por isso mesmo... COMO saberei o que ficou para trás?"). Deixar
+algo para depois é legítimo; deixar só num parágrafo do relatório não é, porque o
+relatório some no chat e o trabalho dorme sem dono. Toda coisa que um PR decide NÃO
+fazer (follow-up, "PR de seguimento", tela que faltou, caso não coberto) vira, **no
+mesmo turno**, uma issue com o label `ficou-de-fora` (o que falta, por quê, de qual
+PR, quando está pronto), e o PR cita cada uma na seção `## Ficou de fora` do corpo,
+ou escreve `nada`. Quem fecha a issue é o PR que faz o trabalho (`Closes #N`).
+Decidir **não fazer nunca** também é decisão: escreva na issue e feche como
+`not planned`, para que fique registrado e não volte como pendência.
+
 **Mecanismo, não lembrete:**
+
+- Check `Ficou de fora declarado` (`.github/workflows/ficou-de-fora.yml`,
+  `scripts/check_ficou_de_fora.py`) — reprova o PR sem a seção, com item sem `#issue`,
+  ou com issue sem o label. Robô, draft e PR anterior a 12/11/2026 são isentos.
+- `make inflight` lista as issues `ficou-de-fora` abertas, da mais velha para a
+  mais nova: é o inventário do que está adiado.
 
 - `make inflight` — o inventário do que está em voo e dormindo: worktrees sujas,
   branches locais sem PR, PRs verdes fora da fila, vermelhos, conflitantes. Rode
@@ -148,7 +166,7 @@ outras sessões e para o Pablo. Draft custa 20 segundos; redescobrir custa dias.
   legítima, desde que dita e com o trabalho publicado. Não contorne: publique.
 - `AGENTS.md` é link para este arquivo: o Codex lê a mesma regra.
 
-## ⛔ O PEDIDO: a fala do dono vira linha antes do primeiro edit
+## ⛔ A SOLICITAÇÃO: a fala do dono vira linha antes do primeiro edit
 
 Vale para Claude, Codex, DSH e humano. Sessão não tem memória; o repo tem.
 
@@ -160,9 +178,9 @@ número na linha):**
 make intake q="<as primeiras palavras dele, literais>" dono="Engenharia"
 ```
 
-O comando devolve `C-AAAA-NNN` e a linha `Pedido: C-AAAA-NNN`. O PR cita essa linha;
+O comando devolve `DEV-AAAA-NNN` e a linha `Compromisso: DEV-AAAA-NNN`. O PR cita essa linha;
 a CI reprova PR novo sem ela. O relatório final lista os IDs tocados e o estado de
-cada um. Pedido que não virou trabalho também é linha (`ABERTO`, `revisar_em` curto).
+cada um. Solicitação que não virou trabalho também é linha (`ABERTO`, `revisar_em` curto).
 
 **Adiamento tem gate próprio.** A seção `## Ficou de fora` do template declara o
 que ficou, e cada item vira issue aberta com label `ficou-de-fora` (check

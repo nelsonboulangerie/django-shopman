@@ -389,6 +389,28 @@ export interface BIDeliveryCostReport {
   days: BIDeliveryCostDay[];
 }
 
+/** Uma encomenda: quando chegou à Cozinha, quando começou, quando ficou pronta. */
+export interface BIPreorderKitchenRow {
+  ref: string;
+  released_at: string;
+  started_at: string | null;
+  ready_at: string | null;
+  wait_minutes: number | null;
+  prep_minutes: number | null;
+}
+
+/** BIPreorderKitchenReport(date_from: 'str', date_to: 'str', orders: 'int', started: 'int', ready: 'int', wait_median_minutes: 'float | None', prep_median_minutes: 'float | None', rows: 'tuple[BIPreorderKitchenRow, ...]') */
+export interface BIPreorderKitchenReport {
+  date_from: string;
+  date_to: string;
+  orders: number;
+  started: number;
+  ready: number;
+  wait_median_minutes: number | null;
+  prep_median_minutes: number | null;
+  rows: BIPreorderKitchenRow[];
+}
+
 /** BIExploreRow(key: 'str', label: 'str', key2: 'str', label2: 'str', value: 'float') */
 export interface BIExploreRow {
   key: string;

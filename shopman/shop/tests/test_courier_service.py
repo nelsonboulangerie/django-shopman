@@ -256,6 +256,7 @@ def test_accepted_ride_enriches_driver_and_tracking(shop):
     assert block["status"] == "A"
     assert block["driver"]["name"] == "Entregador Mock"
     assert block["tracking_url"].startswith("https://rastreio.mock/")
+    assert block["tracking_match"] == "single"
     assert order.status == Order.Status.READY  # aceite ainda não é coleta
 
 
@@ -757,11 +758,29 @@ def test_notification_context_includes_courier_tracking(shop):
             "id_mch": "1",
             "status": "E",
             "tracking_url": "https://rastreio.mock/pedido/x",
+            "tracking_match": "single",
         }
     )
     ctx = _build_context(order, {"order_ref": order.ref}, "order_dispatched")
     assert ctx["courier_tracking_url"] == "https://rastreio.mock/pedido/x"
     assert ctx["courier_tracking_suffix"] == "\nAcompanhe o entregador: https://rastreio.mock/pedido/x"
+
+
+def test_notification_context_drops_a_link_recorded_without_proof(shop):
+    """Link sem ``tracking_match`` pode ser o da parada de outro cliente: o sufixo some."""
+    from shopman.shop.services.notification import _build_context
+
+    order = _delivery_order(
+        ref="CR-UNPROVEN",
+        courier={
+            "provider": "machine", "id_mch": "1", "status": "E",
+            "ride_orders": ["CR-OTHER", "CR-UNPROVEN"],
+            "tracking_url": "https://rastreio.mock/pedido/de-outro",
+        },
+    )
+    ctx = _build_context(order, {"order_ref": order.ref}, "order_dispatched")
+    assert ctx["courier_tracking_url"] == ""
+    assert ctx["courier_tracking_suffix"] == ""
 
 
 def test_notification_context_suppresses_suffix_without_ride(shop):
@@ -1167,3 +1186,11 @@ def test_new_call_after_cancel_carries_the_new_charge(shop):
     block = courier.get_block(order)
     assert block["door_charge_note"].endswith("Cobrar R$ 50,00 em dinheiro · sem troco")
     assert courier.charge_outdated(order) is None
+
+
+def test_ride_letter_names_the_ride_as_the_operator_says_it():
+    """Corrida é letra na tela e na mensagem; o número só grava e escolhe a cor."""
+    assert [courier.ride_letter(n) for n in (1, 2, 6, 26)] == ["A", "B", "F", "Z"]
+    assert courier.ride_letter(27) == "A"
+    assert [courier.ride_letter(v) for v in (0, -1, None, "2", True, 1.0)] == [""] * 6
+

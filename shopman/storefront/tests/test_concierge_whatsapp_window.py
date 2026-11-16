@@ -11,6 +11,7 @@ from django.urls import reverse
 from shopman.orderman.models import Order, Session
 
 from shopman.shop.models import Conversation, ConversationBinding, OutboundAttempt
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import agent, service, tools, transport, webhook
 from shopman.storefront.concierge.contracts import HandoffOutcome, SendOutcome
 from shopman.storefront.tests.test_concierge_engine import surface as surface_fixture
@@ -58,7 +59,7 @@ CONFIG = {
 @pytest.fixture(autouse=True)
 def configured(settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = CONFIG
-    settings.AI_ASSIST_API_KEY = "fake"
+    configure_ai("fake")
     monkeypatch.setattr(
         agent,
         "run_agent",

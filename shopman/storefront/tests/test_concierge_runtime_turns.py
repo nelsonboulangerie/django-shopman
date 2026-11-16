@@ -14,6 +14,7 @@ from shopman.orderman.models import Directive
 
 from shopman.shop.models import Conversation, ConversationBinding
 from shopman.shop.models import ConversationMessage as Message
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import agent, service
 from shopman.storefront.concierge.contracts import WindowEvidence
 from shopman.storefront.tests.support.concierge_transport_v3 import (
@@ -28,7 +29,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 @pytest.fixture(autouse=True)
 def isolated_runtime(settings, monkeypatch):
-    settings.AI_ASSIST_API_KEY = "synthetic-key"
+    configure_ai("synthetic-key")
     settings.SHOPMAN_CONCIERGE = {
         "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,

@@ -8,14 +8,14 @@ from shopman.offerman.models import Product
 from shopman.shop.models import AnnouncementTemplate, Campaign, Shop, Trigger
 from shopman.shop.services import campaign as campaign_service
 from shopman.shop.services import copy_assist
+from shopman.shop.tests.ai_support import configure_ai, configure_jev
 
 pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
 def configured(settings):
-    settings.AI_ASSIST_API_KEY = "sk-teste"
-    settings.AI_ASSIST_PROVIDER = "anthropic"
+    configure_ai("sk-teste")
     return settings
 
 
@@ -81,21 +81,23 @@ def test_catalog_reads_the_canonical_shop_voice(configured, monkeypatch):
     assert seen == ["A VOZ DA CASA"]
 
 
-def test_without_a_key_nothing_is_offered(settings):
-    settings.AI_ASSIST_API_KEY = ""
+def test_without_a_key_nothing_is_offered():
+    configure_ai("")
     assert copy_assist.is_configured() is False
 
 
-def test_without_a_key_asking_says_it_is_configuration_not_failure(settings):
-    settings.AI_ASSIST_API_KEY = ""
+def test_without_a_key_asking_says_it_is_configuration_not_failure():
+    configure_ai("")
     with pytest.raises(copy_assist.CopyAssistNotConfigured):
         copy_assist.suggest("escreva algo")
 
 
-def test_an_unknown_provider_is_refused(settings):
-    settings.AI_ASSIST_API_KEY = "sk-teste"
-    settings.AI_ASSIST_PROVIDER = "papagaio"
-    with pytest.raises(copy_assist.CopyAssistError):
+def test_a_connection_in_another_format_does_not_serve_copy():
+    """Só o Jev com chave: o texto do catálogo pede o formato Anthropic, e diz que falta."""
+    configure_ai("")
+    configure_jev("jev-chave")
+    assert copy_assist.is_configured() is False
+    with pytest.raises(copy_assist.CopyAssistNotConfigured):
         copy_assist.suggest("escreva algo")
 
 

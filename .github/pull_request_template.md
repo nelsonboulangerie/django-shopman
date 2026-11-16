@@ -1,15 +1,24 @@
-## Pedido
+## Compromisso
 
-<!-- O pedido que autoriza este PR. Se veio de conversa, rode
+<!-- O compromisso de dev que autoriza este PR. Se veio de conversa, rode
      `make intake q="<a fala do dono>"` e cole o ID devolvido.
-     PR de manutenção sem pedido: `Pedido: nenhum` e diga o motivo.
+     PR de manutenção sem compromisso: `Compromisso: nenhum` e diga o motivo.
      O CI reprova PR novo sem esta linha. -->
 
-Pedido: C-...
+Compromisso: DEV-...
 
 ## O que muda
 
 <!-- Descreva resumidamente o que esta PR faz e por quê. -->
+
+## Ficou de fora
+
+<!-- OBRIGATÓRIO (check "Ficou de fora declarado"). Escreva `nada`, ou um item por
+     linha citando a issue que o carrega:  - <o que falta> (#123)
+     Toda issue daqui leva o label `ficou-de-fora`:
+       gh issue create --label ficou-de-fora --title "<o que falta>" \
+         --body "Deixado de fora por #<este PR>. Motivo: <por quê>. Pronto quando: <critério>."
+     Parágrafo no relatório não conta: some no chat e o trabalho dorme. -->
 
 ## Checklist Omotenashi
 

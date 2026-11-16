@@ -18,6 +18,7 @@ from django.core.management import call_command
 
 from shopman.shop.models import ConversationMessage
 from shopman.shop.services.ai_pricing import usage_cost
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import metrics, reply_eval, service
 from shopman.storefront.tests import test_concierge_engine as engine
 from shopman.storefront.tests.test_concierge_engine import ScriptedClient, _binding, _receive, _response, _text, _tool
@@ -205,7 +206,7 @@ def test_eval_command_prints_the_scoreboard():
 
 
 def test_eval_refuses_a_provider_it_cannot_reach(settings):
-    settings.AI_ASSIST_API_KEY = ""
+    configure_ai("")
     with pytest.raises(ValueError, match="indisponível"):
         reply_eval.run(reply_eval.load_golden()[:1], classifier="model")
 

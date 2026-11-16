@@ -737,7 +737,7 @@ inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branche
 # dono ANTES do primeiro edit e devolve o ID que o PR cita. `commitments`
 # mostra o que venceu, incluindo as decisões legadas de DECISIONS.md.
 dono ?= Engenharia
-tipo ?= pedido
+tipo ?= solicitacao
 origem ?= chat
 gatilho ?= -
 
@@ -748,7 +748,7 @@ commitments: ## O que o repo deve: ledger válido, vencidos e decisões legadas 
 	$(PYTHON) scripts/check_commitments.py --no-fail-overdue $(if $(issues),--with-issues,)
 
 intake: ## Registra a fala do dono e devolve o ID: make intake q="..." [dono=...] [tipo=...]
-	@test -n "$(q)" || (echo 'uso: make intake q="<fala literal do dono>" [dono="Engenharia"] [tipo=pedido] [revisar_em=YYYY-MM-DD]' >&2; exit 2)
+	@test -n "$(q)" || (echo 'uso: make intake q="<fala literal do dono>" [dono="Engenharia"] [tipo=solicitacao] [revisar_em=YYYY-MM-DD]' >&2; exit 2)
 	$(PYTHON) scripts/check_commitments.py --add --quote "$(q)" --dono "$(dono)" --tipo "$(tipo)" --origem "$(origem)" --gatilho "$(gatilho)" $(if $(revisar_em),--revisar-em "$(revisar_em)",)
 
 commitments-pr: ## Gate de nascimento: make commitments-pr body=<arquivo> [created=YYYY-MM-DD] [author=login]
@@ -800,6 +800,10 @@ smoke-gateways: ## Smoke local EFI/Stripe/iFood com rollback e matriz de sandbox
 
 smoke-gateways-sandbox: ## Exige credenciais sandbox/staging para smoke externo
 	$(PYTHON) manage.py smoke_gateways --sandbox-only --require-sandbox $(if $(json),--json,)
+
+.PHONY: taon-probe
+taon-probe: ## Sonda da TaOn, só leitura por padrão (homolog=1 pergunta as credenciais de homologação no terminal; args='--ride <id>')
+	@PYTHON_BIN="$(READINESS_PYTHON)" PYTHONPATH="$(SHOPMAN_PYTHONPATH)" bash scripts/taon_probe.sh $(if $(homolog),--homolog,) $(args)
 
 omotenashi-qa: ## Matriz manual QA mobile/tablet/desktop baseada no seed (strict=1 json=1)
 	$(PYTHON) manage.py omotenashi_qa $(if $(strict),--strict,) $(if $(json),--json,)

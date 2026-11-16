@@ -17,6 +17,7 @@ from shopman.shop.models import (
     ConversationMessage,
     OutboundAttempt,
 )
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import agent, service, transport
 from shopman.storefront.concierge.contracts import HandoffOutcome, SendOutcome, WindowEvidence
 from shopman.storefront.concierge.handler import ConciergeTurnHandler
@@ -32,7 +33,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture(autouse=True)
 def concierge_v3(settings, monkeypatch):
-    settings.AI_ASSIST_API_KEY = "test-only"
+    configure_ai("test-only")
     settings.SHOPMAN_CONCIERGE = {
         "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,

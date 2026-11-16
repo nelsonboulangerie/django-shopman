@@ -84,7 +84,7 @@ export function useOrderDetail(orderRef: string) {
     () => data.value?.order ?? (error.value ? lastConfirmed.value : null),
   );
 
-  // A impressora desta estação, a mesma que o quadro recebe (a Via Pedido sai por ela).
+  // A impressora desta estação, a mesma que o painel recebe (a Via Pedido sai por ela).
   const deviceAgent = computed(() => data.value?.device_agent ?? null);
 
   const busy = ref(false);
@@ -313,7 +313,7 @@ export function useOrderDetail(orderRef: string) {
   }
 
   // Uma corrida para este pedido e os que vão junto (o "Vai junto?" da chamada):
-  // a mesma rota do "Juntar entregas" do quadro, com a custódia de cada um.
+  // a mesma rota do "Juntar entregas" do painel, com a custódia de cada um.
   async function courierRide(body: {
     refs: string[];
     change_out: Record<string, string>;
@@ -323,16 +323,29 @@ export function useOrderDetail(orderRef: string) {
     busy.value = true;
     mutationError.value = "";
     try {
-      await $fetch("/api/v1/backstage/orders/courier-ride/", {
-        method: "POST",
+      // Pelo protocolo de intenção: a ação `courier-ride` do pedido traz quem a
+      // tela leu e a revisão dele e de cada um que pode ir junto.
+      await intentions.executeRide(
+        data.value?.order?.actions?.find(
+          (action) => action.ref === "courier-ride",
+        ),
         body,
-      });
+      );
     } catch (error) {
       mutationError.value = httpErrorMessage(
         error,
         "Não foi possível chamar a corrida. Atualize o pedido.",
       );
       useSonner.error(mutationError.value);
+      // Um pedido da corrida mudou depois que a tela foi lida: a frase do
+      // servidor diz qual, e o pedido é relido para a próxima tentativa.
+      if (httpErrorCode(error) === "revision_changed") {
+        try {
+          await refresh();
+        } catch {
+          // A leitura nova falhou; a recusa já está na tela.
+        }
+      }
       return false;
     } finally {
       busy.value = false;

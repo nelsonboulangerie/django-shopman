@@ -416,9 +416,6 @@ envs:
     type: GENERAL
   # Concierge v3 nasce contida no template de produção. Ativação exige conta,
   # coorte, chave dedicada e autorização explícita no ambiente real.
-  - key: AI_ASSIST_API_KEY
-    scope: RUN_TIME
-    type: SECRET
   - key: SHOPMAN_CONCIERGE_ENABLED
     value: "false"
     scope: RUN_TIME

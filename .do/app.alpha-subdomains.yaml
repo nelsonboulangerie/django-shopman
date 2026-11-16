@@ -594,19 +594,8 @@ envs:
   scope: RUN_TIME
   value: 'false'
   type: GENERAL
-- key: AI_ASSIST_API_KEY
-  scope: RUN_TIME
-  type: SECRET
-# Jev (TypeSafe): aprovado pelo dono em 02/10/2026 (D-028). Segredo sem value: o
-# cifrado do painel permanece. A lista de provedores é quem libera texto redigido
-# de cliente para fora (comparador, sombra e triagem da Concierge).
-- key: JEV_API_KEY
-  scope: RUN_TIME
-  type: SECRET
-- key: SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED
-  scope: RUN_TIME
-  value: anthropic,typesafe
-  type: GENERAL
+# IA (Anthropic, DeepSeek, Jev...) não mora no spec: conexões, chaves cifradas e
+# rotas ficam no Admin (Conexões de IA e Loja → rotas de IA), ADR-042.
 # Concierge de WhatsApp (docs/guides/whatsapp-concierge.md). O switch global e a
 # connection são independentes; a chave do ingresso é exclusiva do Concierge.
 - key: SHOPMAN_CONCIERGE_ENABLED

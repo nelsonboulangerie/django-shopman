@@ -1,6 +1,6 @@
 // Presentation — as seções do PDV no shell da suíte (`OperatorSuiteShell`, fase 2).
 // A barra lateral (mesa), a gaveta (☰) e a barra inferior (celular e tablet em pé)
-// mostram as MESMAS seções: Comandas, Encomendas, Caixa e Tela do cliente; Ajustes
+// mostram as MESMAS seções: Comandas, Encomendas, Caixa, Tela do cliente e Rotinas; Ajustes
 // depois de um traço; no pé, Terminal (a saúde da estação, com o sinal quando algo
 // pede atenção). Avisos, Atalhos, Bloquear e o operador são o pé da suíte (kit).
 // A barra inferior leva Comandas, Encomendas, Caixa e Fim do dia, e o "Mais" abre a
@@ -32,6 +32,9 @@ export interface PosSectionsInput {
    * não fecha.
    */
   canCloseDay?: boolean;
+  /** Abertura, rotina e fechamento da loja (`backstage.perform_operation_task`).
+   *  Moram no PDV, perto do caixa e do fim do dia (dono, 13/11/2026). Ausente = não. */
+  canOperateChecklists?: boolean;
 }
 
 /** Comandas em uso: o número que o selo das Comandas conta. */
@@ -94,6 +97,16 @@ export function posSections(input: PosSectionsInput): OperatorSection[] {
           quick: true,
         }]
       : []),
+    // Rotinas (abertura, rotina e fechamento da loja): no rail e no "Mais" do
+    // celular; a barra de baixo segue com as quatro do balcão.
+    ...(input.canOperateChecklists
+      ? [{
+          key: "checklists",
+          label: "Rotinas",
+          icon: "lucide:list-checks",
+          to: "/checklists",
+        }]
+      : []),
     // Ajustes no grupo de cima, depois de um traço, abaixo do Caixa (v4
     // `salao-mesas4.html`); na barra de baixo, no "Mais" (a gaveta).
     {
@@ -150,6 +163,7 @@ export function posCurrentSection(path: string): string {
   if (path.startsWith("/session")) return "cash";
   if (path.startsWith("/preorders")) return "preorders";
   if (path.startsWith("/settings")) return "settings";
+  if (path.startsWith("/checklists")) return "checklists";
   return "board";
 }
 

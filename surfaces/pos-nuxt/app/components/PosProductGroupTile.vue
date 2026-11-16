@@ -59,7 +59,10 @@ function choose(product: POSProductProjection) {
         <span v-if="group.allBlocked" class="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold text-muted-foreground"><span class="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />Esgotado</span>
       </span>
     </span>
-    <strong class="shrink-0 op-title tnum whitespace-nowrap" :class="group.allBlocked ? 'text-muted-foreground' : ''">{{ group.priceLabel }}</strong>
+    <span class="flex max-w-[45%] shrink-0 flex-wrap items-baseline justify-end gap-x-1 text-right" :class="group.allBlocked ? 'text-muted-foreground' : ''" data-pos-group-price>
+      <span v-if="group.priceFrom" class="op-micro text-muted-foreground">a partir de</span>
+      <strong class="op-title tnum whitespace-nowrap">{{ group.price }}</strong>
+    </span>
     <span v-if="qty > 0" class="grid h-7 min-w-7 shrink-0 place-items-center rounded-full bg-primary px-1.5 op-label font-bold tabular-nums text-primary-foreground" :aria-label="`${qty} no pedido`">{{ qty }}</span>
   </NuxtButton>
   <!-- Cartão de escolha no desenho do tile da v4: a mesma faixa de 92 px, a pílula
@@ -97,8 +100,13 @@ function choose(product: POSProductProjection) {
 
     <div class="flex min-w-0 flex-col gap-0.5 px-3 py-2">
       <p class="truncate op-label font-semibold" :class="group.allBlocked ? 'text-muted-foreground' : ''" :title="group.name">{{ group.name }}</p>
-      <span class="flex min-w-0 items-center justify-between gap-1.5">
-        <strong class="op-title tnum whitespace-nowrap" :class="group.allBlocked ? 'text-muted-foreground' : ''">{{ group.priceLabel }}</strong>
+      <!-- "a partir de" e o valor em pedaços separados: na mesma linha quando cabe; se
+           não cabe, o valor desce inteiro para a linha de baixo, nunca cortado. -->
+      <span class="flex min-w-0 items-end justify-between gap-1.5">
+        <span class="flex min-w-0 flex-wrap items-baseline gap-x-1" :class="group.allBlocked ? 'text-muted-foreground' : ''" data-pos-group-price>
+          <span v-if="group.priceFrom" class="op-micro text-muted-foreground">a partir de</span>
+          <strong class="op-title tnum whitespace-nowrap">{{ group.price }}</strong>
+        </span>
         <span
           v-if="group.allBlocked"
           class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold text-muted-foreground"

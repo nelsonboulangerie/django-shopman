@@ -600,6 +600,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("check_geoip_freshness"),
         # A loja no iFood contra a casa: calado quando IFOOD_MERCHANT_SYNC está fora.
         call("check_ifood_store"),
+        # O sinal de vida do polling do iFood: calado sem credencial.
+        call("check_ifood_polling"),
         call("check_card_machines_out"),
         call("sweep_danfe_print_jobs"),
         call("sweep_kitchen_print_jobs"),

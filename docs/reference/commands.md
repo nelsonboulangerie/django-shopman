@@ -1048,6 +1048,51 @@ python manage.py reconcile_user_notifications
 
 ---
 
+### check_ifood_polling
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/check_ifood_polling.py`
+
+O sinal de vida do `ifood_poll --watch` (componente `ifood-poll-worker`). A
+integração direta do iFood entra só por polling, e o iFood cancela em 8 minutos o
+pedido que ninguém aceitou. Cada resposta do iFood ao poll (200 com lista, ou 204)
+grava a hora em `worker_heartbeat` (`ifood_poll`, Redis compartilhado). Passados
+2 minutos sem resposta, abre o `OperatorAlert` crítico `ifood_poll_stale`, com
+e-mail síncrono (`critical_alerts.deliver_now`); quando o polling volta, resolve o
+alerta aberto. Sem credencial OAuth do iFood, ou com cache por processo (dev/CI),
+volta calado. Roda no `maintenance_worker`, depois do `check_ifood_store`. A sonda
+gêmea é `ifood_polling` do Watchman (perfis `diagnostic` e `ifood`, fora da
+prontidão):
+
+```bash
+python manage.py check_ifood_polling
+python manage.py watchman check --profile ifood
+```
+
+---
+
+### courier_machine_probe
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/courier_machine_probe.py`
+
+Sonda de homologação da TaOn (Machine). Sem `--write` só faz `GET`: lê a conta
+(webhooks, categorias, se a mesma API Key abre a v2), uma corrida pelas vias da v1
+e da v2 (`--ride`, `--recent`), cota com paradas para achar o separador de
+`latlng_paradas` (`--stop=`) e lista as corridas abertas há pouco (`--window`). O
+laudo mostra formato e não conteúdo: nome, telefone, CPF, placa, endereço,
+coordenada e código de confirmação saem mascarados. As quatro sondas que escrevem
+(`--cancel`, `--attach`, `--remove-stop`, `--boost`) pedem `--write`, uma corrida
+só e o mesmo id em `--confirm`. Usa a credencial que o adaptador já lê. Roteiro em
+[courier-machine-homologacao](../runbooks/courier-machine-homologacao.md).
+
+```bash
+python manage.py courier_machine_probe --recent 3 --out /tmp/taon-laudo.txt
+make taon-probe homolog=1 args='--ride <id>'   # homologação: pergunta as credenciais no terminal
+```
+
+---
+
 ### fiscal_audit_catalog
 
 **App:** `shopman.shop`
@@ -1584,8 +1629,9 @@ do `seed` / `setup_bi_reference`, já confirmadas (curadoria do dono).
 
 **Propósito:** Piloto do de-para de produto ([BI-JEV-PILOT](../plans/BI-JEV-PILOT.md)). Mede três
 concorrentes contra os `ProductAlias` **confirmados**: `fuzzy` (o `suggest_aliases` de hoje), `jev`
-(TypeSafe Jev, `JEV_API_KEY`), `llm:<modelo>` (um por `--llm-model`, com a credencial de
-`AI_ASSIST_*`; preço da tabela `LLM_PRICES`, em `shopman/shop/services/ai_pricing.py`) e `embed` (embeddings locais via `fastembed`, que não
+(TypeSafe Jev, a conexão de IA `decision`), `llm:<modelo>` (um por `--llm-model`, pela conexão de
+IA `benchmark`; preço da tabela `LLM_PRICES` ou o cadastrado na conexão, `model_prices` em
+`shopman/shop/services/ai_pricing.py`) e `embed` (embeddings locais via `fastembed`, que não
 está na imagem: `pip install fastembed` no console antes). Não grava alias.
 
 **Uso:**
@@ -1604,7 +1650,7 @@ teto deles e sai no relatório. O `embed` procura no catálogo inteiro (corte `-
 
 **Propósito:** Responde "o Concierge, ligado, consegue atender?". Sem rede, repete o system check
 `SHOPMAN_W022`/`SHOPMAN_W023` (`shopman/storefront/checks.py`): modo `assist`, contrato 3,
-`AI_ASSIST_API_KEY`, conexão ativa, coorte de assinantes, `CONCIERGE_API_KEY`,
+conexão de IA do `concierge` (`shopman/shop/ai.py`), conexão ativa, coorte de assinantes, `CONCIERGE_API_KEY`,
 `MANYCHAT_API_TOKEN`, campo de atendimento humano e fuso da janela de 24 horas. Com `--live`,
 pergunta ao ManyChat (`getCustomFields`) se o campo que a triagem usa para calar o bot existe.
 Desligado, só informa o modo e sai com 0; com pendência, sai com 1. Não confere o grafo do flow
@@ -1617,9 +1663,10 @@ cobre o Concierge.
 **Propósito:** Um ciclo do piloto de intenções ([INTENT-PILOT-PLAN](../plans/completed/INTENT-PILOT-PLAN.md)),
 e roda sozinho no `maintenance_worker`: garante o vocabulário, sorteia mensagens recentes (até 40
 por dia, fila aberta de até 200, dentro da retenção da observação), pré-marca as intenções com
-`AI_ASSIST_MODEL` (estado "sugerida", se `anthropic` estiver aprovado e houver chave) e, com 30
-conferidas, mede e guarda o placar (`IntentPilotReport`) no máximo uma vez por semana. Com
-`typesafe` aprovado e `JEV_API_KEY`, grava a sombra do Jev em até 60 mensagens novas por ciclo
+o modelo da rota de IA `labeling` (estado "sugerida", se a conexão estiver liberada para mensagem
+de cliente e tiver chave) e, com 30
+conferidas, mede e guarda o placar (`IntentPilotReport`) no máximo uma vez por semana. Com a
+conexão do Jev liberada e com chave, grava a sombra do Jev em até 60 mensagens novas por ciclo
 (ver `concierge_triage_shadow`). `--measure-now` força o placar.
 `SHOPMAN_INTENT_PILOT_ENABLED=false` desliga.
 
@@ -1638,9 +1685,9 @@ Concierge atender: `CONCIERGE_TRIAGE_CLASSIFIER=jev`.
 saiu do `maintenance_worker` em 11/11/2026, depois de gastar cerca de US$ 1.180 de API em loop. Com pelo
 menos 20 `ProductAlias` confirmados e o último placar com mais de 7 dias (ou com `--now`), mede `fuzzy`
 e `embed`. Os pagos (`llm:claude-haiku-4-5`, `llm:claude-opus-5`, `jev`) só entram com
-`SHOPMAN_ALIAS_BENCHMARK_PAID_ENABLED=true`. Valem sempre os tetos de casos
-(`SHOPMAN_ALIAS_BENCHMARK_MAX_CASES`, default 60) e de gasto estimado
-(`SHOPMAN_ALIAS_BENCHMARK_BUDGET_USD`, default US$ 1). A vaga da semana é reservada antes de medir:
+`--paid`. Valem sempre os tetos de casos (`--max-cases`, default 60) e de gasto estimado
+(`--budget-usd`, default US$ 1). As travas são flags, nunca settings: nenhuma variável de ambiente
+religa o gasto. A vaga da semana é reservada antes de medir:
 uma medição interrompida aparece como tal no Admin e não recomeça sozinha. Grava `AliasBenchmarkReport`
 (Admin → B.I. → Placar do de-para, só leitura, só agregado).
 
@@ -1677,9 +1724,8 @@ python manage.py benchmark_intent_classifiers --llm-model claude-haiku-4-5 --llm
 ```
 
 **Comportamento:** todos recebem o texto **redigido** (`redact_observation_text`). `llm` e `jev`
-mandam esse texto para fora e só entram se o provedor estiver em
-`SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED` (default `anthropic`, decisão do dono em 23/09; `typesafe`
-fora); sem isso saem do placar dizendo por quê. Só mensagens **conferidas** contam. O CSV não leva
+mandam esse texto para fora e só entram se a conexão de IA deles estiver liberada para mensagem de cliente
+(Anthropic aprovada pelo dono em 23/09, Jev em 02/10); sem isso saem do placar dizendo por quê. Só mensagens **conferidas** contam. O CSV não leva
 texto de cliente, só o número da amostra.
 
 ### refresh_bi_daily_series

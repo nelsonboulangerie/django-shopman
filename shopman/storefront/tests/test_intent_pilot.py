@@ -18,6 +18,7 @@ from django.urls import reverse
 
 from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage, Shop
 from shopman.shop.services.ai_pricing import Price
+from shopman.shop.tests.ai_support import configure_ai, configure_jev
 from shopman.storefront.concierge.intent_benchmark import (
     Category,
     ContenderNotConfigured,
@@ -202,15 +203,15 @@ def test_embedding_marks_every_intent_above_the_cut():
     assert set(prediction.intents) == {"order", "hours_delivery"}
 
 
-def test_external_contenders_need_their_provider_approved(settings):
-    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset({"anthropic"})
-    settings.AI_ASSIST_API_KEY = "k"
-    settings.JEV_API_KEY = "k"
+@pytest.mark.django_db
+def test_external_contenders_need_their_connection_cleared_for_customer_text():
+    configure_ai("k", customer_text=True)
+    configure_jev("k", customer_text=False)
     assert LLMContender(client=object()).name.startswith("llm:")  # aprovado pelo dono em 23/09
-    with pytest.raises(ContenderNotConfigured, match="typesafe"):
+    with pytest.raises(ContenderNotConfigured, match="'jev' não está liberada"):
         JevContender(session=object())  # fornecedor novo: fora até ele decidir
-    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset()
-    with pytest.raises(ContenderNotConfigured, match="anthropic"):
+    configure_ai("k", customer_text=False)
+    with pytest.raises(ContenderNotConfigured, match="'anthropic' não está liberada"):
         LLMContender(client=object())
 
 
@@ -230,8 +231,7 @@ class _FakeClient:
         self.messages = SimpleNamespace(create=create)
 
 
-def test_llm_returns_several_intents_and_drops_the_unsure(settings):
-    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset({"anthropic"})
+def test_llm_returns_several_intents_and_drops_the_unsure():
     client = _FakeClient(
         '{"intents": [{"ref": "order", "confidence": 0.9}, {"ref": "hours_delivery", "confidence": 0.8},'
         ' {"ref": "human", "confidence": 0.2}]}'
@@ -243,8 +243,9 @@ def test_llm_returns_several_intents_and_drops_the_unsure(settings):
     assert "<<<\nQuero pão, abre domingo?\n>>>" in client.calls[0]["messages"][0]["content"]
 
 
-def test_llm_intent_outside_the_list_is_an_error(settings):
-    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset({"anthropic"})
+@pytest.mark.django_db
+def test_llm_intent_outside_the_list_is_an_error():
+    configure_ai("k")
     contender = LLMContender(client=_FakeClient('{"intents": [{"ref": "elogio", "confidence": 0.9}]}'))
     with pytest.raises(ContenderResponseError):
         contender.predict(Sample(1, "Amei!", frozenset()), CATS)
@@ -259,10 +260,10 @@ class _FakeSession:
         return SimpleNamespace(status_code=200, text="", json=lambda: self.payload)
 
 
-def test_jev_asks_one_noul_per_intent_in_one_call(settings):
+@pytest.mark.django_db
+def test_jev_asks_one_noul_per_intent_in_one_call():
     """Pedido e resposta no formato de https://docs.typesafe.ai/api.md."""
-    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset({"typesafe"})
-    settings.JEV_API_KEY = "k"
+    configure_jev("k")
     session = _FakeSession({
         "model": "jev-1.13.0",
         "answers": {
@@ -276,7 +277,7 @@ def test_jev_asks_one_noul_per_intent_in_one_call(settings):
     prediction = JevContender(session=session).predict(Sample(1, "Quero pão, abre domingo?", frozenset()), CATS)
     body = session.sent[0]
     assert set(body) == {"model", "state", "questions"}
-    assert body["model"] == settings.JEV_MODEL
+    assert body["model"] == "jev-latest"
     assert body["state"] == {"customer_message": "Quero pão, abre domingo?"}
     assert set(body["questions"]) == {"order", "hours_delivery", "allergy", "human"}
     for question in body["questions"].values():
@@ -293,9 +294,9 @@ def test_jev_noul_parser_reads_the_documented_shape_and_names_unknown_ones():
         parse_jev_boolean({"answers": {"q": {"answer": True, "confidence": 0.8}}}, question="q")
 
 
-def test_jev_http_error_says_why_and_what_was_sent_without_the_message(settings):
-    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset({"typesafe"})
-    settings.JEV_API_KEY = "k"
+@pytest.mark.django_db
+def test_jev_http_error_says_why_and_what_was_sent_without_the_message():
+    configure_jev("k")
 
     class _Rejecting:
         def post(self, url, *, json, headers, timeout):
@@ -338,7 +339,8 @@ def test_gold_ignores_pending_and_inactive_intents(categories):
 
 @pytest.mark.django_db
 def test_command_reports_without_external_contenders_and_csv_has_no_text(categories, settings, tmp_path, capsys):
-    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset()
+    configure_ai("k", customer_text=False)
+    configure_jev("k", customer_text=False)
     with pytest.raises(CommandError, match="Gabarito vazio"):
         call_command("benchmark_intent_classifiers", contender=["regex"])
     _labeled("Quero falar com um atendente e fazer um pedido", "human", "order", categories=categories)
@@ -407,7 +409,7 @@ def test_confirming_suggestions_in_bulk_signs_them(admin_client, categories):
 def test_cycle_samples_within_caps_and_waits_for_the_key(settings, monkeypatch):
     from shopman.storefront.concierge import intent_pilot
 
-    settings.AI_ASSIST_API_KEY = ""
+    configure_ai("")
     conversation = _conversation()
     for index in range(5):
         _inbound(f"mensagem número {index}", conversation)
@@ -415,7 +417,7 @@ def test_cycle_samples_within_caps_and_waits_for_the_key(settings, monkeypatch):
 
     first = intent_pilot.run_cycle()
     assert first.categories_created == 12 and first.sampled == 3
-    assert "AI_ASSIST_API_KEY" in first.proposal_skipped  # sem chave, a fila espera gente
+    assert "sem chave" in first.proposal_skipped or "nenhuma conexão" in first.proposal_skipped  # sem chave, a fila espera gente
     assert intent_pilot.run_cycle().sampled == 0  # teto do dia
 
 
@@ -424,7 +426,8 @@ def test_measure_keeps_an_aggregate_report_without_customer_text(categories, set
     from shopman.storefront.concierge import intent_pilot
     from shopman.storefront.models import IntentPilotReport
 
-    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset()
+    configure_ai("k", customer_text=False)
+    configure_jev("k", customer_text=False)
     monkeypatch.setattr(intent_pilot, "MIN_LABELED_TO_MEASURE", 2)
     _labeled("Quero falar com um atendente sobre meu pedido", "human", "order", categories=categories)
     _labeled("Tem vaga de padeiro?", "job", categories=categories)
@@ -565,7 +568,8 @@ def test_measure_now_needs_the_observation_permission(categories):
 def test_report_list_shows_who_was_left_out(admin_client, categories, settings, monkeypatch):
     from shopman.storefront.concierge import intent_pilot
 
-    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset()
+    configure_ai("k", customer_text=False)
+    configure_jev("k", customer_text=False)
     monkeypatch.setattr(intent_pilot, "MIN_LABELED_TO_MEASURE", 1)
     _labeled("Vocês abrem domingo?", "hours_delivery", categories=categories)
     intent_pilot.maybe_measure()

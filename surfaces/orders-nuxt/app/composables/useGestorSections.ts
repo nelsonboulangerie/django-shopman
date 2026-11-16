@@ -5,10 +5,9 @@ import {
   gestorSections,
   gestorSettingsSections,
 } from "~/presentation/gestorSections";
-import { useOperatorResourceKey } from "./useOperatorResourceKey";
 
-/** O que o quadro conta ao rail (selos de Pedidos e Saída, e se o posto é a Saída).
- *  Vale enquanto o quadro está montado; fora dele, `useGestorRailCounts` lê a contagem. */
+/** O que o painel conta ao rail (selos de Pedidos e Saída, e se o posto é a Saída).
+ *  Vale enquanto o painel está montado; fora dele, `useGestorRailCounts` lê a contagem. */
 export interface GestorRailState {
   onBoard: boolean;
   exitPost: boolean;
@@ -25,7 +24,7 @@ export function useGestorRail() {
   }));
 }
 
-/** Os selos fora do quadro: `orders/rail-counts/` a cada minuto enquanto `active()`.
+/** Os selos fora do painel: `orders/rail-counts/` a cada minuto enquanto `active()`.
  *  Leitura que falha não vira zero mentiroso: o selo some até a próxima dar certo. */
 export function useGestorRailCounts(active: () => boolean) {
   const counts = useState<{ intake: number; exit: number }>(
@@ -68,11 +67,17 @@ export function useGestorSections() {
     "operator-session",
   );
   const operatorId = computed(() => session.value?.operator?.id ?? null);
+  // As perguntas de permissão têm chave ESTÁVEL, sem o operador: no servidor o rail
+  // monta antes de a sessão do operador chegar ("unidentified") e, no navegador, a
+  // sessão já vem no payload; com o operador na chave, o navegador não achava a
+  // resposta do servidor e desenhava o rail sem Catálogo e Canais (hidratação
+  // divergente, PR #2331). Trocar de operador relê pelo `watch: [operatorId]`.
+  const ACCESS_KEY = (resource: string) => `orders:rail:${resource}`;
   // Clientes só para quem pode usar a seção (`shop.manage_customers`, 24/09/2026).
   const { data: customersAccess, status: customersStatus } = useFetch<{ authorized?: boolean }>(
     "/api/v1/backstage/operator/session/",
     {
-      key: useOperatorResourceKey("customers-access"),
+      key: ACCESS_KEY("customers-access"),
       query: { perm: "shop.manage_customers" },
       server: true,
       watch: [operatorId],
@@ -82,17 +87,8 @@ export function useGestorSections() {
   const { data: workstationsAccess, status: workstationsStatus } = useFetch<{ authorized?: boolean }>(
     "/api/v1/backstage/operator/session/",
     {
-      key: useOperatorResourceKey("workstations-access"),
+      key: ACCESS_KEY("workstations-access"),
       query: { perm: "cashman.manage_operators" },
-      server: true,
-      watch: [operatorId],
-    },
-  );
-  const { data: checklistsAccess, status: checklistsStatus } = useFetch<{ authorized?: boolean }>(
-    "/api/v1/backstage/operator/session/",
-    {
-      key: useOperatorResourceKey("operation-checklists-access"),
-      query: { perm: "backstage.perform_operation_task" },
       server: true,
       watch: [operatorId],
     },
@@ -102,7 +98,7 @@ export function useGestorSections() {
   const { data: catalogAccess, status: catalogStatus } = useFetch<{ authorized?: boolean }>(
     "/api/v1/backstage/operator/session/",
     {
-      key: useOperatorResourceKey("catalog-access"),
+      key: ACCESS_KEY("catalog-access"),
       query: { perm: "shop.manage_catalog" },
       server: true,
       watch: [operatorId],
@@ -110,24 +106,29 @@ export function useGestorSections() {
   );
   const { expeditesOnly, catalogOnly } = useGestorAccess();
   const rail = useGestorRail();
-  // Fora do quadro (Catálogo, Clientes, Canais) os selos continuam (G26, v4
-  // `catalogo-produto`: "Pedidos 10"): uma contagem leve, com a régua do quadro.
+  // Fora do painel (Catálogo, Clientes, Canais) os selos continuam (G26, v4
+  // `catalogo-produto`: "Pedidos 10"): uma contagem leve, com a régua do painel.
   const offBoard = useGestorRailCounts(() => !rail.value.onBoard);
+  // O selo de Entregas: entregas do dia sem corrida chamada, relido a cada push
+  // do canal de pedidos (e no poll calmo de fallback).
+  const { data: deliveries, refresh: refreshDeliveries } = useFetch<{ waiting?: number }>(
+    "/api/v1/backstage/deliveries/count/",
+    { key: "orders:rail:deliveries", server: false },
+  );
+  if (import.meta.client) useBackstageEvents("orders", () => void refreshDeliveries(), { pollMs: 60_000 });
 
   const input = computed(() => ({
     channelsAttention: attention.value?.label || "",
     canManageCustomers: customersAccess.value?.authorized === true,
     canManageWorkstations: workstationsAccess.value?.authorized === true,
     canManageCatalog: catalogAccess.value?.authorized === true,
-    canOperateChecklists: checklistsAccess.value?.authorized === true,
     expeditesOnly: expeditesOnly.value,
     catalogOnly: catalogOnly.value,
     intakeCount: rail.value.onBoard ? rail.value.intake : offBoard.value.intake,
-    exitCount: rail.value.onBoard ? rail.value.exit : offBoard.value.exit,
+    deliveriesWaiting: deliveries.value?.waiting ?? 0,
   }));
   const sections = computed(() => gestorSections(input.value));
   const settings = computed(() => gestorSettingsSections(input.value));
-  // No quadro, quem diz se a tela é "Pedidos" ou "Saída" é a arrumação do posto.
   const route = useRoute();
   const current = computed(() => {
     if (catalogOnly.value) {
@@ -135,26 +136,28 @@ export function useGestorSections() {
         ? "feeds"
         : "catalog";
     }
-    return route.path === "/" ? (rail.value.exitPost ? "exit" : "orders") : undefined;
+    if (route.path.startsWith("/deliveries")) return "deliveries";
+    return route.path === "/" ? "orders" : undefined;
   });
-  // As quatro perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.
+  // As três perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.
   const ready = computed(() =>
     accessResolved([
       customersStatus.value,
       workstationsStatus.value,
-      checklistsStatus.value,
       catalogStatus.value,
     ]),
   );
-  // A URL direta numa seção que o acesso não inclui: só depois de as quatro
+  // A URL direta numa seção que o acesso não inclui: só depois de as três
   // perguntas responderem com sucesso (enquanto carrega, a página monta como antes).
   const accessReady = computed(() =>
-    [customersStatus, workstationsStatus, checklistsStatus, catalogStatus].every(
+    [customersStatus, workstationsStatus, catalogStatus].every(
       (s) => s.value === "success",
     ),
   );
   const denied = computed(() =>
-    accessReady.value ? deniedSettingsSection(route.path, settings.value) : "",
+    accessReady.value
+      ? deniedSettingsSection(route.path, [...sections.value, ...settings.value])
+      : "",
   );
   return { sections, settings, current, ready, denied };
 }

@@ -8,6 +8,7 @@ import pytest
 from django.utils import timezone
 
 from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage, OutboundAttempt
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import agent, service
 from shopman.storefront.concierge.contracts import SendOutcome
 from shopman.storefront.tests.support.concierge_transport_v3 import (
@@ -38,7 +39,7 @@ def conversation(settings, monkeypatch):
             )
         },
     }
-    settings.AI_ASSIST_API_KEY = "fake"
+    configure_ai("fake")
     reset_adapter()
     monkeypatch.setattr(service, "_alert", lambda *args, **kwargs: None)
     result = service.receive_inbound(
