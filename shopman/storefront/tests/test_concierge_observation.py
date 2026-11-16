@@ -18,6 +18,7 @@ from shopman.orderman.models import Directive
 
 from shopman.shop.management.commands.maintenance_worker import MAINTENANCE_COMMANDS
 from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.admin.concierge import ConversationAdmin
 from shopman.storefront.concierge import agent, service, transport, webhook
 
@@ -61,7 +62,7 @@ CONFIG = {
 @pytest.fixture(autouse=True)
 def configured(settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = deepcopy(CONFIG)
-    settings.AI_ASSIST_API_KEY = ""
+    configure_ai("")
     monkeypatch.setattr(webhook.timezone, "now", lambda: NOW)
     cache.clear()
     yield
@@ -226,7 +227,7 @@ def test_explicit_all_subjects_is_separate_gate(settings):
 def test_observed_history_never_becomes_a_future_turn(settings):
     assert _post().json()["status"] == "observed"
     settings.SHOPMAN_CONCIERGE["enabled"] = True
-    settings.AI_ASSIST_API_KEY = "fixture"
+    configure_ai("fixture")
     binding = ConversationBinding.objects.select_related("conversation").get()
 
     assert service.is_allowed(binding)
@@ -357,7 +358,7 @@ def test_invalid_header_is_rejected_and_body_cannot_select_observation(monkeypat
 
 def test_observation_mode_blocks_legacy_assist_even_when_ai_is_enabled(settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE["enabled"] = True
-    settings.AI_ASSIST_API_KEY = "configured-but-forbidden"
+    configure_ai("configured-but-forbidden")
 
     def forbidden(*args, **kwargs):
         raise AssertionError("atendimento executado durante observação")
@@ -439,7 +440,7 @@ def test_output_cancelled_by_observation_cannot_be_retried_later(settings, monke
         enabled=True,
         output_retry_enabled=True,
     )
-    settings.AI_ASSIST_API_KEY = "fixture"
+    configure_ai("fixture")
 
     monkeypatch.setattr(
         transport,
@@ -461,7 +462,7 @@ def test_observed_verified_event_cannot_be_replayed_as_assist(settings):
     assert _post(**body).json()["status"] == "observed"
     settings.SHOPMAN_CONCIERGE["operation_mode"] = "assist"
     settings.SHOPMAN_CONCIERGE["enabled"] = True
-    settings.AI_ASSIST_API_KEY = "fixture"
+    configure_ai("fixture")
 
     response = Client().post(
         reverse("concierge:connection-events", args=[CONNECTION_KEY]),
@@ -600,7 +601,7 @@ def test_periodic_cleanup_realigns_before_purging(settings, capsys):
 
 def _assist(settings):
     settings.SHOPMAN_CONCIERGE.update(operation_mode="assist", enabled=True)
-    settings.AI_ASSIST_API_KEY = "fixture"
+    configure_ai("fixture")
     policy = settings.SHOPMAN_CONCIERGE["connections"][CONNECTION_KEY]["options"]["observation"]
     policy["allow_all_subjects"] = True
 

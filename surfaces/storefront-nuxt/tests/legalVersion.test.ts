@@ -85,9 +85,14 @@ function resumo (): string {
  * 2026-11-06: §7 dos termos com a regra do dono para cancelar. Antes do preparo o
  * cliente cancela na tela, pago ou não, e o valor volta inteiro; depois, não cancela
  * e fala com o responsável. A solicitação com protocolo deixou de existir.
+ *
+ * 2026-11-12: a lista "Com quem divide" ganhou a hospedagem (DigitalOcean, servidores
+ * nos Estados Unidos) e a frase da Anthropic passou a dizer nome e endereço da
+ * entrega. A lista sai de `shopman/shop/privacy_inventory.py`, não dos `.vue`: o
+ * resumo do texto fica o mesmo, mas o cliente lê terceiro novo, então a versão muda.
  */
 const RESUMO_PUBLICADO = '5474a59ea5b890e1'
-const VERSAO_PUBLICADA = '2026-11-06'
+const VERSAO_PUBLICADA = '2026-11-12'
 
 describe('páginas legais — o relógio', () => {
   it('a versão declarada no servidor é a mesma que esta trava conhece', () => {

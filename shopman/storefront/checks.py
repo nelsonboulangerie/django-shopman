@@ -29,8 +29,12 @@ sendo o ensaio manual do checklist (``docs/plans/WHATSAPP-CONCIERGE-PLAN.md``).
 
 from __future__ import annotations
 
+import logging
+
 from django.conf import settings
 from django.core.checks import Warning, register
+
+logger = logging.getLogger(__name__)
 
 MANYCHAT_PROVIDER = "manychat"
 
@@ -65,11 +69,13 @@ def concierge_findings(config: dict | None = None) -> list[tuple[str, str, str]]
             "CONCIERGE_CONTRACT_VERSION não é 3: o Concierge não responde.",
             "Defina CONCIERGE_CONTRACT_VERSION=3.",
         ))
-    if not (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip():
+    ai_problem = _concierge_ai_problem()
+    if ai_problem:
         findings.append((
             "SHOPMAN_W022",
-            "Concierge ligado sem AI_ASSIST_API_KEY: o webhook responde disabled (ai_key_missing).",
-            "Configure AI_ASSIST_API_KEY (segredo) no app.",
+            f"Concierge ligado sem conexão de IA utilizável ({ai_problem}): o webhook responde "
+            "disabled (ai_key_missing).",
+            "Cadastre a conexão em Admin → Conexões de IA e libere-a para mensagem de cliente.",
         ))
 
     connections = configured_connections(config)
@@ -126,3 +132,14 @@ def concierge_findings(config: dict | None = None) -> list[tuple[str, str, str]]
 @register(deploy=True)
 def check_concierge_readiness(app_configs, **kwargs):
     return [Warning(message, hint=hint, id=check_id) for check_id, message, hint in concierge_findings()]
+
+
+def _concierge_ai_problem() -> str:
+    """O motivo da porta de IA, ou vazio. Banco fora do ar no check não vira achado."""
+    try:
+        from shopman.shop import ai
+
+        return ai.explain("concierge")
+    except Exception:  # noqa: BLE001 - check roda antes do migrate, sem tabela
+        logger.debug("concierge.check.ai_unreadable", exc_info=True)
+        return ""

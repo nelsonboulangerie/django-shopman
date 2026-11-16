@@ -48,6 +48,11 @@ def fail_reads(courier_ref: str, message: str = "[67] O usuário informado não 
     _rides.setdefault(courier_ref, {})["read_error"] = message
 
 
+def set_tracking_links(courier_ref: str, links) -> None:
+    """Simula a resposta de ``/obterLinkRastreio`` (lista fora de ordem, com ``id_externo``, formato único)."""
+    _rides.setdefault(courier_ref, {})["tracking_links"] = links
+
+
 def rides() -> dict[str, dict]:
     """Estado interno (payloads despachados) — para asserts em testes."""
     return _rides
@@ -136,14 +141,25 @@ def cancel(courier_ref: str, *, reason_id: int | None = None) -> bool:
 
 
 def tracking_links(courier_ref: str) -> list[dict]:
-    if courier_ref not in _rides:
+    """Uma entrada por parada, na ordem enviada (o formato da coleção original da TaOn).
+
+    Corrida de uma parada mantém o link de sempre; com várias, cada parada tem o
+    seu. ``set_tracking_links`` troca a resposta para o teste do casamento.
+    """
+    ride = _rides.get(courier_ref)
+    if ride is None:
         return []
+    if "tracking_links" in ride:
+        return [dict(entry) for entry in ride["tracking_links"]]
+    stops = (ride.get("payload") or {}).get("paradas") or [{}]
+    base = f"https://rastreio.mock/pedido/{courier_ref}"
     return [
         {
-            "parada_id": "1",
-            "link_rastreio": f"https://rastreio.mock/pedido/{courier_ref}",
-            "codigo_confirmacao": 1234,
+            "parada_id": str(index),
+            "link_rastreio": base if len(stops) == 1 else f"{base}/parada/{index}",
+            "codigo_confirmacao": 1233 + index,
         }
+        for index, _ in enumerate(stops, start=1)
     ]
 
 

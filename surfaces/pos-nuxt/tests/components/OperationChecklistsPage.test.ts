@@ -1,13 +1,17 @@
+// Rotinas no PDV (dono, 13/11/2026: abertura, rotina e fechamento moram perto do
+// caixa). A tela é a mesma que vivia no Gestor; aqui no runtime Nuxt do PDV.
+import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, defineComponent, h, reactive, ref } from "vue";
-import { mount } from "@vue/test-utils";
+import { ref } from "vue";
 
 import type { OperationChecklistBoard } from "../../app/types/operationChecklists";
 
-const completeTask = vi.fn(async () => true);
-const superviseTask = vi.fn(async () => true);
-const completeRun = vi.fn(async () => true);
-const start = vi.fn(async () => true);
+const { completeTask, superviseTask, completeRun, start } = vi.hoisted(() => ({
+  completeTask: vi.fn(async () => true),
+  superviseTask: vi.fn(async () => true),
+  completeRun: vi.fn(async () => true),
+  start: vi.fn(async () => true),
+}));
 
 const board = ref<OperationChecklistBoard>({
   business_date: "2026-10-17",
@@ -81,11 +85,7 @@ const board = ref<OperationChecklistBoard>({
 
 const taskErrors = ref<Record<number, { field: string; message: string }>>({});
 
-vi.stubGlobal("computed", computed);
-vi.stubGlobal("reactive", reactive);
-vi.stubGlobal("useHead", vi.fn());
-vi.stubGlobal("httpErrorMessage", () => "Falha");
-vi.stubGlobal("useOperationChecklists", () => ({
+mockNuxtImport("useOperationChecklists", () => () => ({
   board,
   pending: ref(false),
   error: ref(null),
@@ -99,26 +99,17 @@ vi.stubGlobal("useOperationChecklists", () => ({
   completeRun,
 }));
 
-const { default: OperationChecklistsPage } =
-  await import("../../app/pages/checklists.vue");
-
-const OperatorPageHeader = defineComponent({
-  setup(_, { slots }) {
-    return () => h("header", [slots.default?.(), slots.filters?.()]);
-  },
-});
+const { default: OperationChecklistsPage } = await import("~/pages/checklists.vue");
 
 describe("OperationChecklistsPage", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("envia referência de foto e oferece a dupla conferência na própria superfície", async () => {
-    const wrapper = mount(OperationChecklistsPage, {
-      global: { components: { OperatorPageHeader } },
-    });
+    const wrapper = await mountSuspended(OperationChecklistsPage);
 
     const photo = wrapper.get('[data-checklist-task="showcase-photo"]');
     await photo
-      .get('input[aria-label="Foto (link ou referência)"]')
+      .get("input")
       .setValue("drive://abertura/vitrine-01");
     await photo.get("button").trigger("click");
     expect(completeTask).toHaveBeenCalledWith(3, 9, {
@@ -145,9 +136,7 @@ describe("OperationChecklistsPage", () => {
         message: "Cole o link ou o código da foto para concluir esta tarefa.",
       },
     };
-    const wrapper = mount(OperationChecklistsPage, {
-      global: { components: { OperatorPageHeader } },
-    });
+    const wrapper = await mountSuspended(OperationChecklistsPage);
     const photo = wrapper.get('[data-checklist-task="showcase-photo"]');
     expect(photo.text()).toContain(
       "Cole o link ou o código da foto para concluir esta tarefa.",
@@ -156,10 +145,8 @@ describe("OperationChecklistsPage", () => {
   });
 
   // Beta 05/11 (GES-16): "de 2026-11-05" no lugar da data como a casa escreve.
-  it("o dia da loja sai como a casa escreve, nunca em ISO", () => {
-    const wrapper = mount(OperationChecklistsPage, {
-      global: { components: { OperatorPageHeader } },
-    });
+  it("o dia da loja sai como a casa escreve, nunca em ISO", async () => {
+    const wrapper = await mountSuspended(OperationChecklistsPage);
     expect(wrapper.text()).toContain("Abertura, rotina e fechamento de Sáb 17/10.");
     expect(wrapper.text()).not.toContain("2026-10-17");
   });

@@ -134,9 +134,12 @@ export function hasCustomerContact(
   order: OperatorOrderDetail,
   adminUrl: string,
 ): boolean {
+  // A central do iFood (relé) não conta: ela mora no rodapé do detalhe.
+  if (order.customer_relay_phone) {
+    return Boolean(order.customer_whatsapp_url || order.customer_email || adminUrl);
+  }
   return Boolean(
     order.customer_phone_uri ||
-    order.customer_relay_phone ||
     order.customer_whatsapp_url ||
     order.customer_email ||
     adminUrl,

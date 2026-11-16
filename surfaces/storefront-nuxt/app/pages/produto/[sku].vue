@@ -294,10 +294,13 @@ useHead({
             </div>
 
             <div class="flex items-start justify-between gap-3">
-              <h1 class="shop-title line-clamp-2">{{ product.name }}</h1>
+              <!-- O nome é o que o cliente compra: no celular ele aparece inteiro
+                 (a coluna ocupa a largura toda e a página rola). Na coluna estreita
+                 do desktop cabe até 3 linhas; só o que passar disso trunca. -->
+              <h1 class="shop-title text-balance lg:line-clamp-3" :title="product.name">{{ product.name }}</h1>
               <FavoriteHeart :sku="product.sku" :name="product.name" :initial="product.is_favorite" class="-mr-1 shrink-0" />
             </div>
-            <p class="mt-2 line-clamp-2 shop-muted">{{ product.short_description }}</p>
+            <p class="mt-2 line-clamp-3 shop-muted" :title="product.short_description">{{ product.short_description }}</p>
             <p v-if="longDescription" class="mt-2 shop-muted">{{ longDescription }}</p>
             <DietaryWarningBadges :warnings="product.dietary_warnings" class="mt-3" />
 
@@ -415,7 +418,7 @@ useHead({
         >
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0">
-              <p class="truncate shop-body">{{ product.name }}</p>
+              <p class="line-clamp-2 shop-body">{{ product.name }}</p>
               <p class="shop-price-strong text-ink-foreground">{{ quotePriceDisplay(product.quote) }}</p>
               <p v-if="product.unit_weight_label" class="text-xs text-ink-foreground/70">
                 {{ compactUnitWeightLabel(product.unit_weight_label) }}

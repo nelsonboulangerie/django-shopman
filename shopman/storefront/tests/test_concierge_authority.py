@@ -8,6 +8,7 @@ from django.test import override_settings
 from shopman.orderman.models import Order, Session
 
 from shopman.shop.models import ConversationMessage as Message
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import tools
 from shopman.storefront.tests.test_concierge_engine import (
     CONCIERGE_SETTINGS,
@@ -178,8 +179,9 @@ def test_h03_channel_catalog_never_falls_back_to_web(ctx):
     assert tools._catalog_channel_ref("whatsapp") == "whatsapp"
 
 
-@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True}, AI_ASSIST_API_KEY="fixture")
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True})
 def test_d12_mint_failure_rolls_back_transfer_and_preserves_slot(ctx, monkeypatch):
+    configure_ai("fixture")
     # ctx fixture sets config before method decorator; override is active during body.
     _pickup_ready(ctx)
     key = ctx.conversation.session_key
@@ -192,8 +194,9 @@ def test_d12_mint_failure_rolls_back_transfer_and_preserves_slot(ctx, monkeypatc
     assert Session.objects.count() == 1
 
 
-@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True}, AI_ASSIST_API_KEY="fixture")
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True})
 def test_h08_exact_stock_transfer_preserves_all_quantity_and_fulfillment(ctx, monkeypatch):
+    configure_ai("fixture")
     from types import SimpleNamespace
     assert tools.set_item(ctx, SKU, 10)["ok"]
     assert tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-12")["ok"]
@@ -371,8 +374,9 @@ def test_h03_delivery_fee_is_in_review_order_and_payment_once(ctx, monkeypatch, 
     assert order.items.filter(sku="__DELIVERY_FEE__").count() == 1
 
 
-@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True}, AI_ASSIST_API_KEY="fixture")
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True})
 def test_d15_transfer_retry_returns_same_destination_without_recopied_cart(ctx, monkeypatch):
+    configure_ai("fixture")
     from types import SimpleNamespace
     tools.set_item(ctx, SKU, 2)
     minted = []

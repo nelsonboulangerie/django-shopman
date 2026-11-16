@@ -29,6 +29,7 @@ import { settledRefresh } from "~/utils/settledRefresh";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { COURIER_CALL_HASH } from "~/presentation/courier";
 import { contactRequestNotice } from "~/presentation/contactRequest";
+import { ifoodChatNotice } from "~/presentation/ifoodWidget";
 import { orderTicketMenuItem } from "~/presentation/orderTicket";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
@@ -537,6 +538,10 @@ const volumeCheck = useVolumeCheck({
 // celular. Ela fica só no que é comportamento: a direção da gaveta (aberta depois de
 // montar) e a posição do dispositivo (`useOutsideStore`).
 const { belowMd: isPhone } = useScreen();
+// "Marcar como entregue" ao lado de "Entregador voltou": a alternativa ao primário.
+const courierBackAdvance = computed(() =>
+  primary.value?.key === "courier-back" ? advanceAction.value : undefined,
+);
 function menuDo(fn: () => unknown) {
   menuOpen.value = false;
   void fn();
@@ -549,7 +554,9 @@ const detailMenuItems = computed(() => [
     "data-action": "refresh",
     onSelect: () => refresh(),
   },
-  ...(menuAdvance.value
+  // No celular o avanço secundário mora aqui; do `md` para cima ele é botão à vista no
+  // cabeçalho (dono, 14/11/2026: o que é útil não fica escondido com espaço de sobra).
+  ...(menuAdvance.value && isPhone.value
     ? [
         {
           label: menuAdvance.value.label,
@@ -574,17 +581,17 @@ const detailMenuItems = computed(() => [
         },
       ]
     : []),
-  ...(primary.value?.key === "courier-back" && advanceAction.value
+  ...(courierBackAdvance.value && isPhone.value
     ? [
         {
-          label: advanceAction.value.label,
+          label: courierBackAdvance.value.label,
           // O que saiu pode ser só o troco, só a maquininha ou o dinheiro a
           // receber: a frase vale para qualquer combinação.
           description: "O que saiu com o entregador continua em aberto.",
           icon: "i-lucide-check",
           "data-action": "advance",
-          disabled: busy.value || !advanceAction.value.enabled,
-          title: advanceAction.value.reason || undefined,
+          disabled: busy.value || !courierBackAdvance.value.enabled,
+          title: courierBackAdvance.value.reason || undefined,
           onSelect: () => menuDo(onAdvance),
         },
       ]
@@ -747,6 +754,12 @@ const thumbAction = computed(() => {
   };
 });
 // O estado escrito que vale em toda largura (as pílulas de pagamento são só do celular).
+// O chat do cliente iFood (DEV-2026-019): o widget sobe na casca (app.vue); o
+// detalhe só diz onde ele está, ou que não carregou.
+const ifoodWidget = useIFoodWidget();
+const ifoodChat = computed(() =>
+  ifoodChatNotice(ifoodWidget.state.value, order.value?.channel_ref === "ifood"),
+);
 // O aceite que não chegou ao iFood (P1-3): o fato, o prazo dele contando e o reenvio.
 const acceptNotice = computed(() =>
   order.value ? ifoodAcceptNotice(order.value, nowMs.value) : null,
@@ -948,6 +961,7 @@ const outside = useOutsideStore(
             <p class="flex min-w-0 items-center gap-1.5">
               <span class="truncate text-lg font-semibold leading-tight text-highlighted">{{ code.code }}</span>
               <NuxtBadge v-if="order?.status_label" :color="statusColor(order.status)" :label="order.status_label" class="shrink-0" />
+              <NuxtBadge v-if="order?.ifood_logistics_label" color="info" icon="i-lucide-bike" :label="order.ifood_logistics_label" class="min-w-0 truncate" data-detail-ifood-logistics />
             </p>
             <p v-if="order" class="flex min-w-0 items-center gap-1 text-xs text-muted">
               <Icon :name="channelIcon" class="size-3.5 shrink-0" /><span class="truncate">{{ order.channel_name || order.channel_ref }}</span>
@@ -1011,6 +1025,14 @@ const outside = useOutsideStore(
           :label="order.status_label"
           data-detail-status
         />
+        <!-- Pedido com entregador do iFood: onde está o entregador, ao lado do status. -->
+        <NuxtBadge
+          v-if="order?.ifood_logistics_label"
+          color="info"
+          icon="i-lucide-bike"
+          :label="order.ifood_logistics_label"
+          data-detail-ifood-logistics
+        />
         <!-- `min-w-0`: sem ele o invólucro segura a largura do rótulo completo e o
              selo não encolhe (cortava "Atualiza sozinho a cada" a 800 px). -->
         <span class="hidden min-w-0 md:inline-flex">
@@ -1056,6 +1078,35 @@ const outside = useOutsideStore(
           :aria-expanded="menuOpen"
           data-action="menu"
           @click="menuOpen = !menuOpen"
+        />
+        <!-- O avanço que não é o gesto do momento (o pronto com a Cozinha ou o iFood
+             conduzindo; o entregue ao lado do "Entregador voltou"): à vista, secundário. -->
+        <NuxtButton
+          v-if="menuAdvance"
+          type="button"
+          icon="i-lucide-check"
+          :label="menuAdvance.label"
+          color="neutral"
+          variant="outline"
+          :disabled="busy || !menuAdvance.enabled"
+          :title="menuAdvance.reason || undefined"
+          data-action="advance-secondary"
+          @click="onMenuAdvance"
+        />
+        <NuxtButton
+          v-else-if="courierBackAdvance"
+          type="button"
+          icon="i-lucide-check"
+          :label="courierBackAdvance.label"
+          color="neutral"
+          variant="outline"
+          :disabled="busy || !courierBackAdvance.enabled"
+          :title="
+            courierBackAdvance.reason ||
+            'O que saiu com o entregador continua em aberto.'
+          "
+          data-action="advance-secondary"
+          @click="onAdvance"
         />
         <NuxtButton
           v-if="rejectAction"
@@ -1412,6 +1463,18 @@ const outside = useOutsideStore(
         </template>
 
         <template v-if="!outside.away.value" #after-profile>
+          <!-- chat do cliente iFood: o widget do iFood mora no canto da tela (casca);
+               aqui só se diz onde ele está, ou que não carregou (DEV-2026-019). -->
+          <NuxtAlert
+            v-if="ifoodChat"
+            :color="ifoodChat.tone"
+            variant="subtle"
+            :icon="ifoodChat.icon"
+            :title="ifoodChat.title"
+            :description="ifoodChat.description"
+            data-ifood-chat
+            :data-ifood-chat-state="ifoodWidget.state.value"
+          />
           <!-- corrida de entrega (logística externa) -->
           <OrderCourierPanel
             v-if="order.courier"

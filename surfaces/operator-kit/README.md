@@ -77,6 +77,7 @@ O layer contribui, via auto-import do Nuxt:
 | `server/utils/apiVersion.ts` | `warnOnApiVersionMismatch` | warning estruturado de major divergente do contrato |
 | `app/composables/useConnectivity.ts` | `useConnectivity` | sinal offline + reconciliação no reconnect/foco |
 | `app/components/OfflineBanner.vue` | `<OfflineBanner>` | faixa "Sem conexão" (colocar no layout raiz); não cobre nada: os shells do kit descem a altura dela (`--operator-offline-inset`) |
+| `app/components/OperatorLoadingFeedback.vue` | `<OperatorLoadingFeedback>` | aviso de espera de navegação ("Carregando…"); montado UMA vez pelo `OperatorAppRoot`, nenhum app o monta |
 | `app/plugins/errorReporter.client.ts` | — | captura erro não-tratado → telemetria (inerte em dev) |
 | `app/utils/deviceActivity.ts` | `deviceActivityClock`, `createDeviceActivityClock`, `deviceActivityCookieDomain` | relógio de atividade do DISPOSITIVO: cookie `shopman_operator_activity` (epoch ms) no domínio-pai (`<app>.<zona>` → `.<zona>`; localhost/IP/zona recusada pelo navegador → host-only), throttle de 5 s no próprio cookie, valor no futuro ignorado; o BFF não o repassa ao Django |
 | `app/plugins/deviceActivity.client.ts` | — | todo toque real (pointerdown/keydown/wheel/touchstart/pointermove, na captura) em qualquer app marca o relógio; rota com `definePageMeta({ operatorActivity: false })` fica fora (tela do cliente do PDV). É o que faz a trava do PDV contar a ociosidade do dispositivo, não só a dele |
@@ -1341,6 +1342,7 @@ cabeçalho, logo abaixo da toolbar.
 | aviso de uma tela ("33 produtos sem vocação", "2 pedidos atrasados") | `alerts` do `OperatorPageHeader` |
 | o conteúdo não veio (erro ao carregar, vazio, carregando) | `OperatorScreenState`, no lugar do conteúdo |
 | sem rede no app inteiro | `OfflineBanner` (do app) |
+| navegação demorando (espera, não erro) | `OperatorLoadingFeedback` (modal), montado uma vez pelo `OperatorAppRoot` |
 | prazo correndo que interrompe ("o pedido cancela em 2 min") | `OperatorUrgentAlert` (modal) |
 | resultado de uma ação ("Pedido aceito", "Não deu para aceitar") | toast (`useSonner`/`useToast`), ou o erro escrito junto do controle |
 | alerta da operação que fica (capacidade, canal parado) | caixa de Avisos (`provideOperatorInboxAlerts`) |
@@ -1353,6 +1355,23 @@ do erro; um aviso inteiro e "e mais N") e `tests/catalog/phone-header.spec.ts` (
 navegador, a 320, 390 e 1440 px: um aviso visível, "e mais 2 avisos" abre os três, a saída
 do aviso no tamanho da suíte e sem rolagem lateral). Primeiro uso do estado: o B.I. (oito
 erros de leitura, em sete telas); do aviso: a bancada do catálogo.
+
+### Espera de navegação (`OperatorLoadingFeedback`)
+
+A irmã do `NavigationFeedback` da loja, adaptada ao tema do balcão: quando uma navegação
+demora, um modal diz "Carregando…", para o operador não confundir espera com travamento.
+Montado UMA vez pelo `OperatorAppRoot` (que todo app de operador adota): nenhum app o monta
+nem o configura.
+
+- **Só aparece depois de 200 ms** (navegação rápida não pisca o aviso); quando aparece,
+  fica **ao menos 320 ms** (não some num clarão); um **watchdog de 15 s** solta sozinho se a
+  navegação não terminar. `page:start` começa a espera, `page:finish` encerra, e erro ou
+  cancelamento (`app:error`, `router.onError`, bfcache `pageshow`) soltam na hora.
+- **Estritamente observacional**: `pointer-events-none`, nunca engole clique nem navegação.
+- A frase é única e neutra ("Carregando…" / "Só um instante."); o anúncio acessível vai no
+  `role="status"` `sr-only`, e o modal em si é `aria-hidden`.
+- Trava: `tests/components/OperatorLoadingFeedback.test.ts` (o limiar de 200 ms, o mínimo
+  visível, o watchdog e a soltura por erro/bfcache).
 
 ### Tabela (`OperatorTable` + `OperatorTableView`)
 

@@ -533,6 +533,7 @@
             "set_driver",
             "set_progress",
             "set_status",
+            "set_tracking_links",
             "tracking_links"
           ]
         }
@@ -1771,6 +1772,26 @@
       ]
     },
     {
+      "path": "shopman/shop/admin/ai_connection.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "AIConnectionAdmin",
+            "AIConnectionForm"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/admin/attributes.py",
       "touchpoints": [
         "admin"
@@ -2090,6 +2111,7 @@
             "GOOGLE_MERCHANT_KEY",
             "GoogleMerchantForm",
             "GoogleMerchantRegistrationForm",
+            "MAX_PREORDER_KITCHEN_MINUTES",
             "MONTH_CHOICES",
             "NOTIFICATION_BACKEND_CHOICES",
             "NotificationTemplateAdmin",
@@ -2143,6 +2165,7 @@
             "_oklch_raw_to_hex",
             "_opening_field",
             "_parse_markup_by_collection",
+            "_parse_prep_minutes_by_sku",
             "_people",
             "_production_suggestion_defaults",
             "_q_to_reais",
@@ -2173,6 +2196,45 @@
           "responsibility": "configuração",
           "symbols": [
             "FontPreviewWidget"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/ai.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "AINotConfigured",
+            "CUSTOMER_TEXT_PURPOSES",
+            "EXTRAS",
+            "EXTRAS_BY_HOST",
+            "FittedClient",
+            "JEV_DEFAULT_URL",
+            "PURPOSES",
+            "Resolved",
+            "_FittedMessages",
+            "_protocol_for",
+            "_route",
+            "_routes",
+            "_with_text",
+            "_without_cache_control",
+            "anthropic_client",
+            "explain",
+            "extras_for",
+            "fit_request",
+            "is_configured",
+            "jev_endpoint",
+            "resolve"
           ]
         }
       ]
@@ -3650,9 +3712,17 @@
         "notification.push-handler"
       ],
       "responsibilities": [
-        "composição"
+        "composição",
+        "infraestrutura"
       ],
-      "support_claims": []
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_CRITICAL_ORDER_VIBRATION"
+          ]
+        }
+      ]
     },
     {
       "path": "shopman/shop/handlers/payment_refund.py",
@@ -3888,6 +3958,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "KITCHEN_RELEASED_AT_KEY",
             "STALE_ALERT_FRACTION_OF_DEADLINE",
             "_alert_coupon_over_redeemed",
             "_alert_if_card_authorization_held",
@@ -3898,9 +3969,11 @@
             "_create_alert",
             "_dispatch_physical_work",
             "_handle_confirmation",
+            "_has_live_preorder_alarm",
             "_ifood_cancellation_pending",
             "_mark_phase_complete",
             "_mark_preparing_after_physical_work_dispatch",
+            "_notify_new_order_awaiting_acceptance",
             "_on_accepted",
             "_on_cancelled",
             "_on_commit",
@@ -3919,13 +3992,17 @@
             "_record_availability_decision",
             "_record_coupon_use",
             "_release_coupon_use",
+            "_resolve_acceptance_alerts",
             "_schedule_confirmation_timeout",
             "_schedule_preorder_activation",
             "_schedule_stale_alert_before_deadline",
             "_settle_cancelled_payment",
+            "_stamp_kitchen_released",
             "_verify_holds",
             "acceptance_timeout_minutes",
-            "logger"
+            "kitchen_release_at",
+            "logger",
+            "release_preorder_now"
           ]
         }
       ]
@@ -4234,6 +4311,30 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "Command"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/management/commands/check_ifood_polling.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "Command",
+            "MESSAGE_MARKER",
+            "RESOLVED_BY",
+            "_message",
+            "logger"
           ]
         }
       ]
@@ -4820,6 +4921,39 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "Command"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/management/commands/courier_machine_probe.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "Command",
+            "_LINK_KEYS",
+            "_NEVER",
+            "_RATE_HEADERS",
+            "_SAFE_KEYS",
+            "_SAFE_PREFIXES",
+            "_SAFE_SUFFIXES",
+            "_WRITES",
+            "_items",
+            "_link",
+            "_path",
+            "_point",
+            "_safe",
+            "_shape",
+            "_unwrap"
           ]
         }
       ]
@@ -5661,6 +5795,26 @@
           "responsibility": "configuração",
           "symbols": [
             "ProductAffinity"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/ai_connection.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "AIConnection",
+            "AIProtocol"
           ]
         }
       ]
@@ -6854,6 +7008,7 @@
             "_earlier_available_dates",
             "_earliest_fulfillable_date",
             "_empty_cart",
+            "_future_cart_date",
             "_line_availability",
             "_made_to_order_skus",
             "_planned_holds",
@@ -7541,6 +7696,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/preorder_kitchen_policy.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.preorder-kitchen-policy"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/realtime.py",
       "touchpoints": [
         "outro"
@@ -7793,6 +7962,29 @@
       ]
     },
     {
+      "path": "shopman/shop/secret_box.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_INFO",
+            "_fernet",
+            "logger",
+            "open_secret",
+            "seal_secret"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/sentinels.py",
       "touchpoints": [
         "outro"
@@ -7943,6 +8135,7 @@
             "CACHE_WRITE_FACTOR",
             "LLM_PRICES",
             "Price",
+            "model_prices",
             "usage_cost"
           ]
         }
@@ -8705,9 +8898,11 @@
         "delivery.courier-handoff-charge",
         "delivery.courier-quote",
         "delivery.courier-return",
+        "delivery.courier-ride-number",
         "delivery.courier-ride-quote",
         "delivery.courier-shared-ride",
         "delivery.courier-shared-ride-eligibility",
+        "delivery.courier-stop-tracking-link",
         "shop.services-courier-courier-cancellation",
         "shop.services-courier-courier-status",
         "shop.services-courier-courier-sync"
@@ -8722,6 +8917,10 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_LINK_ORDER_KEYS",
+            "_RIDE_NUMBER_LOCK",
+            "_TRACKING_LINKS_SHARED_SECONDS",
+            "_TRACKING_RETRY_SECONDS",
             "_alert_ride_failed",
             "_alert_sync_failed",
             "_archive_current_ride",
@@ -8729,10 +8928,14 @@
             "_emit_sse",
             "_enrich_accepted",
             "_enrich_finished",
+            "_link_names",
+            "_lock_ride_numbers",
             "_resolve_sync_alert",
+            "_ride_links",
             "_save_block",
             "_sync_alert_marker",
             "_sync_failures_key",
+            "_tracking_for",
             "_tracking_retry",
             "logger"
           ]
@@ -9774,11 +9977,14 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_LOGISTICS_ALIASES",
+            "_LOGISTICS_CODES",
             "_alert_patched",
             "_alert_unhandled_event",
             "_apply_patch",
             "_brl",
             "_cfg",
+            "_collected_by_ifood_courier",
             "_describe_patch",
             "_fiscal_authorized_explanation",
             "_money_q",
@@ -9791,9 +9997,43 @@
             "_process_placed",
             "_process_remote_progress",
             "_reconcile_locked",
+            "_record_logistics",
+            "_record_poll_success",
             "_record_remote",
             "_refresh_financials",
-            "logger"
+            "logger",
+            "polling_configured"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/ifood_poll_health.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "DISABLED",
+            "FRESH",
+            "MISSING",
+            "POLL_HEARTBEAT",
+            "PollHealth",
+            "STALE",
+            "STALE_AFTER",
+            "UNKNOWN",
+            "_LOCMEM_BACKEND",
+            "_shared_cache",
+            "current",
+            "last_success",
+            "record_success"
           ]
         }
       ]
@@ -9840,7 +10080,12 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "ALTERNATIVE_TYPES",
+            "MONEY_ALTERNATIVES",
+            "TIME_ALTERNATIVE",
             "_alert_text",
+            "_alternative_body",
+            "_cents",
             "_evidence_urls",
             "_expiry",
             "_extra",
@@ -9849,6 +10094,10 @@
             "_open",
             "_records",
             "_save",
+            "_selected_alternative",
+            "_sent_alternative",
+            "alternative_summary",
+            "alternatives",
             "logger"
           ]
         }
@@ -9910,6 +10159,33 @@
       ]
     },
     {
+      "path": "shopman/shop/services/ifood_item_sku.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-ifood-ingest"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ItemLink",
+            "PROVIDER",
+            "_bindings_by_remote_id",
+            "_existing_skus",
+            "_resolve",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/ifood_merchant.py",
       "touchpoints": [
         "service"
@@ -9961,6 +10237,7 @@
             "_cfg",
             "_compose_address",
             "_item_preparation_notes",
+            "_map_additional_fees",
             "_map_benefits",
             "_map_customer",
             "_map_delivery",
@@ -10420,6 +10697,7 @@
             "_URL",
             "_WARNING_CODES",
             "_actor_ref",
+            "_ai_configured",
             "_current_facts",
             "_field_hash",
             "_fold",
@@ -13082,6 +13360,33 @@
       ]
     },
     {
+      "path": "shopman/shop/services/order_acceptance_alerts.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-order-acceptance-alerts"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_canceller",
+            "_clock",
+            "_close",
+            "_notify",
+            "_order_label",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/user_notifications.py",
       "touchpoints": [
         "service"
@@ -13538,6 +13843,7 @@
           "symbols": [
             "CacheCheck",
             "DatabaseCheck",
+            "IfoodPollingCheck",
             "LegacyCheck",
             "MigrationsCheck",
             "PoolCheck",

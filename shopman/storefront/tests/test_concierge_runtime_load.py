@@ -17,6 +17,7 @@ from shopman.orderman.models import Order
 
 from shopman.shop.models import Conversation, ConversationBinding, OutboundAttempt
 from shopman.shop.models import ConversationMessage as Message
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import agent, service
 from shopman.storefront.concierge.contracts import WindowEvidence
 from shopman.storefront.tests.support.concierge_transport_v3 import connection, reset_adapter
@@ -41,7 +42,7 @@ def test_hundred_conversations_ten_thousand_history_and_burst_conserve_inputs(se
             )
         },
     }
-    settings.AI_ASSIST_API_KEY = "synthetic-key"
+    configure_ai("synthetic-key")
     adapter = reset_adapter()
     monkeypatch.setattr(service, "_alert", lambda *args, **kwargs: None)
     conversations = Conversation.objects.bulk_create(

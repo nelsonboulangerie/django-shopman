@@ -15,7 +15,6 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from django.test import override_settings
 
 from shopman.backstage.services import recipe_capture
 from shopman.backstage.services.recipe_capture import (
@@ -23,6 +22,10 @@ from shopman.backstage.services.recipe_capture import (
     RecipeCaptureNotConfigured,
     read_recipe,
 )
+from shopman.shop.models import Shop
+from shopman.shop.tests.ai_support import configure_ai, configure_jev
+
+pytestmark = pytest.mark.django_db
 
 FRENCH_NOTE = (
     "Pain de campagne\n"
@@ -82,8 +85,8 @@ def provider(monkeypatch):
     _FakeAnthropic.calls = []
     _FakeAnthropic.instances = 0
     monkeypatch.setattr("anthropic.Anthropic", _FakeAnthropic)
-    with override_settings(AI_ASSIST_API_KEY="sk-ant-teste", AI_ASSIST_PROVIDER="anthropic", AI_ASSIST_MODEL="claude-opus-5"):
-        yield _FakeAnthropic
+    configure_ai("sk-ant-teste", model="claude-opus-5")
+    return _FakeAnthropic
 
 
 # ── Anotação ────────────────────────────────────────────────────────────────
@@ -122,10 +125,11 @@ def test_the_note_travels_in_the_user_block_under_the_house_system_prompt(provid
     assert "'fr'" in blocks[0]["text"]
 
 
-def test_the_model_falls_back_to_the_house_default_when_unset(provider):
-    with override_settings(AI_ASSIST_MODEL=""):
+def test_without_a_model_it_is_configuration_and_no_client_is_built(provider):
+    configure_ai("sk-ant-teste", model="")
+    with pytest.raises(RecipeCaptureNotConfigured, match="sem modelo"):
         read_recipe(text=FRENCH_NOTE)
-    assert provider.calls[0]["model"] == recipe_capture.DEFAULT_MODEL
+    assert provider.instances == 0
 
 
 # ── Foto ────────────────────────────────────────────────────────────────────
@@ -259,10 +263,10 @@ def test_an_empty_reply_is_an_error(provider):
 
 
 def test_without_a_key_it_is_configuration_not_failure_and_no_client_is_built(provider):
-    with override_settings(AI_ASSIST_API_KEY=""):
-        assert recipe_capture.is_configured() is False
-        with pytest.raises(RecipeCaptureNotConfigured):
-            read_recipe(text=FRENCH_NOTE)
+    configure_ai("")
+    assert recipe_capture.is_configured() is False
+    with pytest.raises(RecipeCaptureNotConfigured):
+        read_recipe(text=FRENCH_NOTE)
     assert provider.instances == 0
 
 
@@ -270,10 +274,15 @@ def test_with_a_key_it_is_configured(provider):
     assert recipe_capture.is_configured() is True
 
 
-def test_an_unknown_provider_is_refused(provider):
-    with override_settings(AI_ASSIST_PROVIDER="papagaio"):
-        with pytest.raises(RecipeCaptureError, match="papagaio"):
-            read_recipe(text=FRENCH_NOTE)
+def test_a_route_to_a_connection_in_another_format_is_refused(provider):
+    """A rota da receita apontando para o Jev: formato errado é configuração, e nada é chamado."""
+    configure_jev()
+    shop = Shop.objects.first() or Shop.objects.create(name="Loja")
+    shop.ai_routes = {"recipe": {"connection": "jev"}}
+    shop.save()
+    with pytest.raises(RecipeCaptureNotConfigured, match="outro formato"):
+        read_recipe(text=FRENCH_NOTE)
+    assert provider.instances == 0
 
 
 def test_a_rate_limit_from_the_sdk_becomes_a_short_message(provider, monkeypatch):

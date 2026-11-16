@@ -146,9 +146,13 @@ describe("orderDetail · ícones e links", () => {
   it("sem nenhum caminho até a pessoa, o bloco de contato não existe", () => {
     expect(hasCustomerContact(contact(), "")).toBe(false);
     expect(hasCustomerContact(contact(), "https://admin.exemplo/x")).toBe(true);
+    // A central do iFood mora no rodapé do detalhe, não no bloco de contato.
     expect(
-      hasCustomerContact(contact({ customer_relay_phone: "0800" }), ""),
-    ).toBe(true);
+      hasCustomerContact(
+        contact({ customer_relay_phone: "0800", customer_phone_uri: "tel:0800" }),
+        "",
+      ),
+    ).toBe(false);
     expect(hasCustomerContact(contact({ customer_email: "a@b.c" }), "")).toBe(
       true,
     );

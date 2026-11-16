@@ -58,6 +58,11 @@ TENANT_PREFIXES = (
     "COMTELE",
     "MACHINE",
     "TAON",
+    # IA: conexão, chave e modelo moram em ``AIConnection``/``Shop.ai_routes``
+    # (``shopman/shop/ai.py``). Estes dois prefixos não estavam aqui, e a chave da
+    # IA escapou da trava por env até 12/11/2026.
+    "AI_",
+    "JEV",
 )
 TENANT_NAME = re.compile(rf"^(?:{'|'.join(TENANT_PREFIXES)})")
 SETTINGS_MODULE = re.compile(r"^config/settings[a-z0-9_]*\.py$")

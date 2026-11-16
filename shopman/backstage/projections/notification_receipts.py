@@ -244,6 +244,11 @@ def build_notification_receipts(order) -> tuple[NotificationReceiptProjection, .
     O aviso que não se aplica ao pedido (``notification_not_required``) fica de
     fora: ele não falhou nem deixou de sair, ele não existe para este pedido.
     """
+    # No iFood quem avisa o cliente é o app do iFood, e o contato que chega é
+    # mascarado: nenhum aviso nosso pode sair. Listar cada um como "Não enviado"
+    # fazia o pedido parecer com defeito (pedido 3417, 12/11).
+    if getattr(order, "channel_ref", "") == "ifood":
+        return ()
     directives = list(
         Directive.objects.filter(topic=notification_svc.TOPIC, payload__order_ref=order.ref)
         .order_by("-created_at", "-pk")[:MAX_RECEIPTS]

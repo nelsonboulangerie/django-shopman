@@ -22,8 +22,8 @@
       "baselines": "surfaces/pos-nuxt/tests/visual/baselines"
     }
   ],
-  "themeFingerprint": "sha256:bd54a156e3acf8b3bb2d5e49e25b5c877f787437f237fae175173a0b15931319",
-  "acceptedOn": "2026-11-03",
-  "owner": "Pablo Valentini (prévia do #2122 aprovada em 03/11/2026)",
+  "themeFingerprint": "sha256:a449c5114dba7d314645e67bd1ed79f5e22ad395a6979ae1a9108900d33ffc5a",
+  "acceptedOn": "2026-11-13",
+  "owner": "Pablo, 13/11/2026: faixa do cabeçalho variante 3 (descolada, invertida) e conexão ● hh:mm; retratos do PDV promovidos da CI (run 43524721747)",
   "note": "Em 02/11/2026, pedidos do dono no Gestor a 390 px (#2094, #2095): o traço da aba ativa assenta na faixa da toolbar; o próximo da Saída ganha a moldura do KDS (borda 2, fundo e halo) em dourado (\"deveria ser dourada mesmo\"); o X do aviso fica no canto superior direito no celular. Conferido em capturas locais do Gestor; as baselines do PDV e do Marketing não usam esses estados. Aceites do dono preservados na integração. Em 28/10/2026 (\"Aceito a mudança do tema\"), PR #2021: botões do aviso que empilham no celular ocupam a largura toda, rótulo centralizado; a régua é a tela (max-sm), não o aviso. Nenhuma baseline muda: os contratos visuais do PDV, KDS, B.I. e Marketing passaram na CI sem diferença. Em 27/10/2026, após prévia local de Compras, PDV, Pedidos e B.I.: remoção do CSS do UiNativeSelect aposentado, sem consumidor de produção e sem mudança nos retratos canônicos. Aceite anterior (10/10/2026), PR #1637: operator-fit.css entra no tema; abas (pílula e sublinhada) rolam de lado em vez de cortar em reticência; o mês do calendário quebra linha. Muda só onde o rótulo não cabia: as 4 baselines da prévia simulada do Marketing a 390 px, promovidas da CI no mesmo PR (o PDV não tem job visual na CI e não tem aba cortada). Aceite anterior (10/10/2026, \"1) aplica em todos\"): descrição do Alert à cor plena."
 }

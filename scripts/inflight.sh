@@ -20,6 +20,7 @@
 #   ⚠️ CONFLITO      PR não funde com o main — resolva no branch
 #   ◷  RODANDO       check pendente
 #   📝 DRAFT         WIP declarado (estado aceitável de fim de sessão)
+#   📌 FICOU DE FORA issue aberta com o label ficou-de-fora: adiado de propósito, com dono
 #   ✓  ENTREGUE      branch mergeada ou merge no-op — não aparece, só conta
 #
 # Uso:  make inflight   (ou)   scripts/inflight.sh
@@ -208,6 +209,24 @@ printf '%s' "${OPEN}" | jq -r '
     ),
     "\($bots) PR(s) do Dependabot omitidos (freeze, issue #574)\t\t\t\t"
 ' | { printf 'STATUS\tPR\tATUALIZADO\tBRANCH\tTÍTULO\n'; cat; } | column -t -s $'\t'
+
+echo
+echo "${bold}Ficou de fora — o que um PR decidiu NÃO fazer e ainda espera dono${reset}"
+echo "${dim}(issues abertas com o label ficou-de-fora; a trava é scripts/check_ficou_de_fora.py)${reset}"
+echo
+n_left=0
+if command -v gh >/dev/null 2>&1; then
+  LEFT="$(gh issue list --label ficou-de-fora --state open --limit 200 \
+    --json number,title,createdAt 2>/dev/null || echo '[]')"
+  n_left="$(printf '%s' "${LEFT}" | jq 'length')"
+  if [ "${n_left}" -gt 0 ]; then
+    printf '%s' "${LEFT}" | jq -r 'sort_by(.createdAt) | .[]
+      | "#\(.number)\t\(.createdAt[:10])\t\(.title[:80])"' \
+      | { printf 'ISSUE\tDESDE\tO QUE FALTA\n'; cat; } | column -t -s $'\t'
+  else
+    echo "${green}nenhuma${reset}"
+  fi
+fi
 
 echo
 if [ "${n_red}" -eq 0 ]; then

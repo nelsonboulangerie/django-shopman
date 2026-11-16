@@ -71,7 +71,33 @@ def build_ifood_store_projection(*, user=None, now: datetime | None = None) -> I
     )
 
 
+@dataclass(frozen=True)
+class IFoodWidgetProjection:
+    """O widget oficial do iFood no Gestor (chat, notificações e rastreio).
+
+    ``widget_id`` vazio = desligado: a tela não carrega nada do iFood. O widget
+    roda no navegador e se autoriza sozinho, por dispositivo, no Portal do
+    Parceiro; o servidor só diz qual widget e qual loja.
+    """
+
+    widget_id: str = ""
+    merchant_ids: tuple[str, ...] = ()
+
+
+def build_ifood_widget_projection() -> IFoodWidgetProjection:
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    widget_id = (shop.ifood_widget_id if shop else "").strip()
+    merchant = ifood_merchant.merchant_id()
+    if not widget_id or not merchant:
+        return IFoodWidgetProjection()
+    return IFoodWidgetProjection(widget_id=widget_id, merchant_ids=(merchant,))
+
+
 __all__ = [
     "IFoodStoreProjection",
+    "IFoodWidgetProjection",
     "build_ifood_store_projection",
+    "build_ifood_widget_projection",
 ]

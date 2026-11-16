@@ -41,8 +41,8 @@ class LegalProjection:
 #: A versão vigente dos documentos legais. **Mexeu no texto de `privacidade.vue` ou de
 #: `termos.vue`? Mexa aqui.** `surfaces/storefront-nuxt/tests/legalVersion.test.ts`
 #: reprova se um mudar sem o outro — foi a promessa quebrada que originou a trava.
-LEGAL_VERSION = "2026-11-06"
-LEGAL_UPDATED_AT = "6 de novembro de 2026"
+LEGAL_VERSION = "2026-11-12"
+LEGAL_UPDATED_AT = "12 de novembro de 2026"
 
 
 #: Cópias permanentes das versões publicadas: versão → SHA-256 de cada arquivo em

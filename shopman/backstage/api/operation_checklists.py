@@ -1,4 +1,4 @@
-"""Daily operational-checklist API for the Gestor surface."""
+"""Daily operational-checklist API for the PDV surface (Rotinas, dono 13/11/2026)."""
 
 from __future__ import annotations
 
@@ -98,7 +98,7 @@ class OperationChecklistStartView(APIView):
                 business_date=data["business_date"],
                 shift_ref=data["shift_ref"],
                 user=request.user,
-                context={"surface": "orders-nuxt"},
+                context={"surface": "pos-nuxt"},
             )
         except OperationChecklistError as exc:
             return _domain_error(exc)

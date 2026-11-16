@@ -322,3 +322,44 @@ class TestTheCartReservesOnItsDate:
         assert body["error_code"] != "cart_date_mismatch", body
         assert body["available_qty"] == 2
         assert _active_holds(croissant.sku) == []
+
+
+# ── O teto da linha lê a MESMA data em que a sacola reserva ──────────────────
+
+
+def _line_ceiling(channel, key: str, sku: str):
+    from shopman.shop.projections.cart import build_cart
+
+    cart = build_cart(key, channel_ref=channel.ref)
+    (line,) = [line for line in cart.lines if line.sku == sku]
+    return line.is_available, line.available_qty
+
+
+class TestTheCartCeilingFollowsItsDate:
+    """Beta 09/11 (P1): o teto da sacola de amanhã era o estoque de HOJE.
+
+    A reserva já saía na data da sacola; a projeção perguntava a
+    disponibilidade sem data e devolvia o teto do pronto de hoje.
+    """
+
+    def test_cart_for_tomorrow_is_capped_by_tomorrows_batch_not_todays_shelf(
+        self, shop_window, croissant,
+    ):
+        _bread_of_the_day(croissant)
+        _ready(croissant, "10")
+        _plan(croissant, "3", _tomorrow())
+        key = _cart_for(shop_window, _tomorrow())
+        _add(shop_window, key, croissant, 1)
+
+        assert _line_ceiling(shop_window, key, croissant.sku) == (True, 3)
+
+    def test_cart_for_tomorrow_is_not_capped_by_todays_sold_out_shelf(
+        self, shop_window, croissant,
+    ):
+        _bread_of_the_day(croissant)
+        _sell_out_today(shop_window, croissant, "2")
+        _plan(croissant, "6", _tomorrow())
+        key = _cart_for(shop_window, _tomorrow())
+        _add(shop_window, key, croissant, 1)
+
+        assert _line_ceiling(shop_window, key, croissant.sku) == (True, 6)

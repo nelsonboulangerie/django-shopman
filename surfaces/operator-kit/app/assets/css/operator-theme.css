@@ -35,6 +35,15 @@
   --color-rail-foreground: var(--rail-foreground);
 }
 
+/* A FAIXA INVERTIDA (D, dono 13/11/2026, variante 3: "descolada, invertida"). Um
+   bloco com `.op-inverse` desenha com a paleta da polaridade oposta, como a barra
+   flutuante: no claro ele é escuro e vice-versa. Os componentes dentro dele (o aviso,
+   os botões, o fechar) continuam os oficiais e só leem os tokens trocados. Para isso
+   a paleta clara também vale no `.op-inverse` sob o `.dark`, a escura no `.op-inverse`
+   fora dele, e a ponte `--ui-*` é declarada de novo no bloco (variável resolve onde é
+   declarada; herdada da raiz, ficaria com a polaridade de fora). O fundo da faixa é o
+   `--op-inverse-surface`: o texto da tela de fora, lido na raiz. */
+.dark .op-inverse,
 :root {
   --radius: 0.625rem; /* soft (10px) — levemente mais arredondado que o antigo 8px */
 
@@ -105,6 +114,10 @@
   --sidebar-border: #dec9bb;
   --sidebar-ring: #6b5019;
 
+}
+
+.op-inverse,
+:root {
   /* Ponte Nuxt UI -> Shopman. O componente continua usando sua anatomia e seus
      estados oficiais; apenas a linguagem visual (marca, superfícies, texto e
      bordas) muda. Estes nomes são a API semântica oficial do Nuxt UI 4. */
@@ -142,6 +155,7 @@
   --ui-border-inverted: var(--foreground);
 }
 
+:root:not(.dark) .op-inverse,
 .dark {
   --background: #221610; /* marrom-burgundy quase-preto */
   --foreground: #f0e6d2; /* creme */
@@ -199,4 +213,20 @@
   --ui-text-inverted: var(--primary-foreground);
   --ui-bg-inverted: var(--foreground);
   --ui-border-inverted: var(--foreground);
+}
+
+/* O fundo da faixa invertida: o texto da tela de fora, lido na raiz (e só nela; dentro
+   do `.op-inverse` ele não é declarado de novo, e chega herdado). */
+:root {
+  --op-inverse-surface: var(--foreground);
+}
+
+/* O aviso em faixa (`OperatorBand`): o fundo é a cor de texto da tela de fora, como a
+   barra flutuante (`bg-inverted` + `shadow-lg`), sem o anel do `outline` do Nuxt UI.
+   Fora de camada, para vencer as utilidades do aviso. */
+[data-operator-band] {
+  background: var(--op-inverse-surface);
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.1),
+    0 4px 6px -4px rgb(0 0 0 / 0.1);
 }

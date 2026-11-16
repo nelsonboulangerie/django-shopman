@@ -1401,6 +1401,32 @@
           }
         },
         {
+          "id": "deliveries",
+          "source_files": [
+            "app/pages/deliveries.vue"
+          ],
+          "routes": [
+            "/deliveries"
+          ],
+          "variants": [
+            "map",
+            "editing",
+            "rides",
+            "detail"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
+        },
+        {
           "id": "settings",
           "source_files": [
             "app/pages/settings.vue"
@@ -1444,32 +1470,6 @@
             "field",
             "selection",
             "overlay",
-            "navigation",
-            "data-display",
-            "feedback"
-          ],
-          "status": "pending",
-          "runner": {
-            "config": "playwright.visual.config.ts"
-          }
-        },
-        {
-          "id": "operation-checklists",
-          "source_files": [
-            "app/pages/checklists.vue"
-          ],
-          "routes": [
-            "/checklists"
-          ],
-          "variants": [
-            "not-started",
-            "in-progress",
-            "supervision",
-            "completed"
-          ],
-          "families": [
-            "action",
-            "field",
             "navigation",
             "data-display",
             "feedback"
@@ -1797,6 +1797,32 @@
             "feedback"
           ],
           "status": "pending"
+        },
+        {
+          "id": "operation-checklists",
+          "source_files": [
+            "app/pages/checklists.vue"
+          ],
+          "routes": [
+            "/checklists"
+          ],
+          "variants": [
+            "not-started",
+            "in-progress",
+            "supervision",
+            "completed"
+          ],
+          "families": [
+            "action",
+            "field",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         }
       ]
     },

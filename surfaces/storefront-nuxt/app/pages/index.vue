@@ -221,7 +221,7 @@ useHead({
             <NuxtLink
               v-if="activeOrder"
               :to="`/pedido/${encodeURIComponent(activeOrder.ref)}`"
-              class="-mx-4 block bg-cta px-4 py-3 text-cta-foreground transition hover:bg-cta/95 sm:mx-0 sm:rounded-lg"
+              class="-mx-4 mb-4 block bg-cta px-4 py-3 text-cta-foreground transition hover:bg-cta/95 sm:mx-0 sm:rounded-lg"
               data-home-active-order
             >
               <div class="flex items-center gap-3">

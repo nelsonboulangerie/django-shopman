@@ -2456,7 +2456,7 @@ def ai_assist_field(sku: str, field: str, current_value: str = "") -> str:
     """Sugestão de IA para UM campo de UM produto. Devolve o texto limpo.
 
     Levanta ``CatalogError`` (campo inválido / produto inexistente),
-    ``AiAssistNotConfigured`` (sem ``AI_ASSIST_API_KEY`` → 503 na camada HTTP) ou
+    ``AiAssistNotConfigured`` (sem conexão de IA → 503 na camada HTTP) ou
     ``AiAssistError`` (falha do provedor). ``hashtags`` volta como string separada
     por espaço — a superfície já normaliza texto livre em lista.
     """

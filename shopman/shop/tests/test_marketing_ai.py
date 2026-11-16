@@ -22,15 +22,14 @@ from shopman.shop.models import (
 )
 from shopman.shop.services import campaign as campaign_service
 from shopman.shop.services import copy_assist, marketing_ai
+from shopman.shop.tests.ai_support import configure_ai
 
 pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
 def enabled(settings):
-    settings.AI_ASSIST_API_KEY = "test-key"
-    settings.AI_ASSIST_PROVIDER = "anthropic"
-    settings.AI_ASSIST_MODEL = "test-model"
+    configure_ai("test-key", model="test-model")
     settings.SHOPMAN_MARKETING_AI_ASSIST_V2 = True
     settings.SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED = True
     settings.SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS = 2
@@ -80,8 +79,7 @@ def _valid_response() -> str:
 
 
 def test_two_human_gates_and_credential_are_all_required(settings):
-    settings.AI_ASSIST_API_KEY = "key"
-    settings.AI_ASSIST_PROVIDER = "anthropic"
+    configure_ai("key")
     settings.SHOPMAN_MARKETING_AI_ASSIST_V2 = True
     settings.SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED = False
     assert marketing_ai.is_available() is False

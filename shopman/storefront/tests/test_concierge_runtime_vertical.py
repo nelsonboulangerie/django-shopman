@@ -6,6 +6,7 @@ from shopman.orderman.dispatch import _process_directive
 from shopman.orderman.models import Directive, IdempotencyKey, Order, Session
 from shopman.payman.models import PaymentIntent
 
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import agent, service, transport
 from shopman.storefront.tests import test_concierge_engine as fixtures
 from shopman.storefront.tests.test_concierge_engine import (
@@ -30,7 +31,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 def test_j01_j07_real_core_keeps_one_order_after_lost_confirmation_response(conversation, settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
-    settings.AI_ASSIST_API_KEY = "synthetic-key"
+    configure_ai("synthetic-key")
     sent = []
     def send(binding, text):
         sent.append(text)

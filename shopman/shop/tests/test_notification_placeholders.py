@@ -218,7 +218,7 @@ def _produced_keys() -> set[str]:
     """Tudo que o contexto de um pedido oferece a um template."""
     order = _order()
     order.data["payment"] = {"method": "pix", "copy_paste": "0002012..."}
-    order.data["courier"] = {"tracking_url": "https://courier.test/x"}
+    order.data["courier"] = {"tracking_url": "https://courier.test/x", "tracking_match": "single"}
     context = _build_context(order, {"order_ref": "ORD-1", "reason": "sem estoque"}, "order_accepted")
     keys = set(derive_context(context))
     # Só existe com magic link (o pedido da loja não tem `customer.uuid`); é sempre

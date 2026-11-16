@@ -750,7 +750,7 @@ class IngredientOptionsView(_RecipeBookBase):
 class RecipeCaptureView(_RecipeBookBase):
     """Lê uma anotação ou foto e devolve o rascunho. Nada é gravado aqui.
 
-    503 sem ``AI_ASSIST_API_KEY``: a tela mostra "sem leitura automática neste
+    503 sem conexão de IA para ``recipe``: a tela mostra "sem leitura automática neste
     ambiente" e aponta a porta manual, não um erro.
     """
 

@@ -15,7 +15,8 @@ comportamento do despertador (``lifecycle.activate_preorder``):
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from contextlib import contextmanager
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -58,6 +59,16 @@ def shop_and_channel(db):
         name="Loja Online",
         config={"payment": {"timing": "external", "method": "cash"}},
     )
+
+
+@contextmanager
+def _on_the_day(day: date):
+    """O relógio no fim do dia da encomenda: depois da hora de ir à Cozinha."""
+    late = timezone.make_aware(datetime.combine(day, time(23, 30)))
+    with patch("django.utils.timezone.localdate", return_value=day), patch(
+        "django.utils.timezone.now", return_value=late
+    ):
+        yield
 
 
 @pytest.fixture
@@ -116,7 +127,7 @@ def test_activate_on_the_date_with_demand_hold_waits_materialization(tomorrow):
     hold = _demand_hold(tomorrow)
     order = _preorder(tomorrow, hold)
 
-    with patch("django.utils.timezone.localdate", return_value=tomorrow):
+    with _on_the_day(tomorrow):
         activate_preorder(order)
 
     hold.refresh_from_db()
@@ -128,28 +139,31 @@ def test_activate_on_the_date_with_demand_hold_waits_materialization(tomorrow):
     )
 
 
-def test_activation_on_the_day_notifies_the_customer(
+def test_activation_on_the_day_sends_to_kitchen_without_starting_preparation(
     tomorrow, django_capture_on_commit_callbacks
 ):
-    """WP-D: quando o despertador dispara o preparo na data, o cliente recebe
-    o ``order_preparing`` pelo lifecycle normal (PREPARING → _on_preparing) —
-    a promessa do tracking ("no dia, avisamos você quando o preparo começar")
-    tem um envio real por trás, nunca só a tela."""
+    """Decisão do dono (09/11/2026): chegar à Cozinha NÃO é "Em preparo".
+
+    O despertador cria os tickets e baixa; o pedido fica Aceito até o "Iniciar"
+    do posto, e é esse ato (PREPARING → _on_preparing) que avisa o cliente do
+    preparo. A ativação só carimba a chegada (``kitchen_released_at``)."""
     hold = _demand_hold(tomorrow)
     order = _preorder(tomorrow, hold)
 
     with (
-        patch("django.utils.timezone.localdate", return_value=tomorrow),
-        patch("shopman.shop.lifecycle._dispatch_physical_work", return_value=True),
+        _on_the_day(tomorrow),
+        patch("shopman.shop.lifecycle._dispatch_physical_work", return_value=True) as dispatch,
         patch("shopman.shop.services.notification.send") as send,
     ):
         with django_capture_on_commit_callbacks(execute=True):
             activate_preorder(order)
 
+    assert dispatch.called
     order.refresh_from_db()
-    assert order.status == Order.Status.PREPARING
+    assert order.status == Order.Status.ACCEPTED
+    assert order.data.get("kitchen_released_at")
     events = [call.args[1] for call in send.call_args_list]
-    assert "order_preparing" in events
+    assert "order_preparing" not in events
 
 
 def test_materialization_completes_the_deferred_fulfill(
@@ -167,7 +181,7 @@ def test_materialization_completes_the_deferred_fulfill(
     hold = _demand_hold(tomorrow)
     order = _preorder(tomorrow, hold)
 
-    with patch("django.utils.timezone.localdate", return_value=tomorrow):
+    with _on_the_day(tomorrow):
         # Despertador tocou (demanda ainda flutuante — sem baixa)…
         activate_preorder(order)
 
@@ -250,7 +264,7 @@ def test_activate_on_the_date_blocks_unpaid_digital_preorder(tomorrow):
     hold = Hold.objects.get(pk=int(hold.split(":")[1]))
     order = _unpaid_pix_preorder(tomorrow, hold)
 
-    with patch("django.utils.timezone.localdate", return_value=tomorrow):
+    with _on_the_day(tomorrow):
         with patch("shopman.shop.lifecycle._dispatch_physical_work") as dispatch:
             activate_preorder(order)
 
@@ -277,7 +291,7 @@ def test_activate_on_the_date_runs_when_digital_preorder_is_paid(tomorrow):
     hold = Hold.objects.get(pk=int(hold.split(":")[1]))
     order = _unpaid_pix_preorder(tomorrow, hold)
 
-    with patch("django.utils.timezone.localdate", return_value=tomorrow):
+    with _on_the_day(tomorrow):
         with patch(
             "shopman.shop.lifecycle._payment_is_captured", return_value=True
         ):

@@ -227,6 +227,7 @@ POLICY: dict[str, Rule] = {
     "shop.CatalogImageUpload": _purge("cache do imagePath do catálogo iFood; derivado do merchant remoto"),
     "shop.IFoodStoreStatus": _keep("estado da loja no iFood"),
     "shop.OperatorPasskey": _keep("passkey dos operadores"),
+    "shop.AIConnection": _keep("conexões de IA da loja (chave cifrada)"),
     "shop.PushSubscription": _keep("aviso no dispositivo do operador"),
     "shop.AnnouncementTemplate": _keep(_CONFIG),
     "shop.Campaign": _keep(_CONFIG),

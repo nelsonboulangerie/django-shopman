@@ -51,13 +51,6 @@ export interface OperatorAppIdentity {
    * verbo fique no componente e a gramática no app: "Instale {artigo} {rótulo}".
    */
   article: string;
-  /**
-   * A frase do convite de instalação — o que ESTE app passa a fazer da tela inicial.
-   * Os oito apps mostravam "Abra o caixa direto da tela inicial", copy do balcão, sob o
-   * título "Instale Shopman" (o componente lia uma chave que o manifesto não tem e caía
-   * no nome da marca). Como o benefício é de cada app, ele mora com a identidade.
-   */
-  install: string;
   /** App escuro por padrão (só a Cozinha): muda a tela de abertura, não a cor do app. */
   dark?: boolean;
 }

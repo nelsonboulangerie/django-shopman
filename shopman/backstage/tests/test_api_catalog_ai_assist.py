@@ -18,6 +18,7 @@ from shopman.offerman.models import Collection, CollectionItem, Product
 from shopman.backstage.services import catalog as catalog_service
 from shopman.backstage.services.exceptions import AiAssistNotConfigured
 from shopman.shop.models import Shop
+from shopman.shop.tests.ai_support import configure_ai
 
 URL = "/api/v1/backstage/catalog/ai-assist/"
 
@@ -63,9 +64,7 @@ def _fake_message(text: str) -> MagicMock:
 @pytest.fixture
 def anthropic_create(settings):
     """Mocka ``Anthropic().messages.create`` com a chave configurada."""
-    settings.AI_ASSIST_API_KEY = "sk-ant-test"
-    settings.AI_ASSIST_PROVIDER = "anthropic"
-    settings.AI_ASSIST_MODEL = "claude-opus-4-8"
+    configure_ai("sk-ant-test", model="claude-opus-4-8")
     with patch("anthropic.Anthropic") as client_cls:
         create = client_cls.return_value.messages.create
         create.return_value = _fake_message("Sugestão do assistente.")
@@ -179,13 +178,13 @@ def test_assist_does_not_persist_anything(client, operator, product, anthropic_c
 
 
 def test_missing_api_key_returns_503(client, operator, product, settings):
-    settings.AI_ASSIST_API_KEY = ""
+    configure_ai("")
     client.force_login(operator)
     resp = client.post(
         URL, data={"sku": "PAO", "field": "short_description"}, content_type="application/json"
     )
     assert resp.status_code == 503
-    assert "AI_ASSIST_API_KEY" in resp.json()["detail"]
+    assert "Conexões de IA" in resp.json()["detail"]
 
 
 def test_unassistable_field_returns_400(client, operator, product, anthropic_create):
@@ -236,6 +235,6 @@ def test_staff_without_permission_is_blocked(client, db, shop, product, anthropi
 
 def test_service_raises_not_configured_by_type(db, shop, product, settings):
     """A camada HTTP mapeia por TIPO para 503 — a falta de chave não é 400."""
-    settings.AI_ASSIST_API_KEY = ""
+    configure_ai("")
     with pytest.raises(AiAssistNotConfigured):
         catalog_service.ai_assist_field("PAO", "short_description")

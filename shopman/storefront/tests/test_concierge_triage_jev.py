@@ -18,6 +18,7 @@ import pytest
 from django.core.management import call_command
 
 from shopman.shop.models import ConversationMessage
+from shopman.shop.tests.ai_support import configure_jev
 from shopman.storefront.concierge import intent_pilot, triage
 from shopman.storefront.concierge.intent_benchmark import ContenderNotConfigured, Prediction
 from shopman.storefront.tests.test_concierge_engine import CONCIERGE_SETTINGS
@@ -140,11 +141,11 @@ def test_provider_failure_stops_the_batch_without_stamping():
     assert not ConversationMessage.objects.filter(envelope__has_key="triage_shadow").exists()
 
 
-def test_shadow_needs_the_approved_provider(settings):
-    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset({"anthropic"})
+def test_shadow_needs_the_connection_cleared_for_customer_text():
+    configure_jev("jev-chave", customer_text=False)
     _inbound("que horas vocês abrem?")
 
-    with pytest.raises(ContenderNotConfigured):
+    with pytest.raises(ContenderNotConfigured, match="não está liberada"):
         intent_pilot.shadow_triage()
 
 

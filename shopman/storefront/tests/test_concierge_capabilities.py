@@ -7,6 +7,7 @@ import pytest
 from django.utils import timezone
 
 from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage, OutboundAttempt
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import agent, service, transport
 from shopman.storefront.concierge.contracts import WindowEvidence
 from shopman.storefront.tests.support.concierge_transport_v3 import (
@@ -27,7 +28,7 @@ def channel(request, settings, monkeypatch):
     provider = "future-provider" if is_tiktok else "manychat"
     account = "tiktok-business" if is_tiktok else "manychat-account"
     subject = "subject:cliente-α" if is_tiktok else "123456"
-    settings.AI_ASSIST_API_KEY = "test-only"
+    configure_ai("test-only")
     settings.SHOPMAN_CONCIERGE = {
         "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,

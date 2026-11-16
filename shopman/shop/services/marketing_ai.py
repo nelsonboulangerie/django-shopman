@@ -219,9 +219,14 @@ def is_available() -> bool:
     return bool(
         getattr(settings, "SHOPMAN_MARKETING_AI_ASSIST_V2", False)
         and getattr(settings, "SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED", False)
-        and str(getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
-        and str(getattr(settings, "AI_ASSIST_PROVIDER", "") or "").strip() == "anthropic"
+        and _ai_configured()
     )
+
+
+def _ai_configured() -> bool:
+    from shopman.shop import ai
+
+    return ai.is_configured("marketing")
 
 
 def validate_instruction(value: str) -> str:
@@ -281,8 +286,11 @@ def suggest(
     from shopman.shop.services import copy_assist
 
     facts, facts_hash = _current_facts(announcement)
-    provider = str(settings.AI_ASSIST_PROVIDER)
-    model = str(settings.AI_ASSIST_MODEL)
+    from shopman.shop import ai
+
+    resolved = ai.resolve("marketing")
+    provider = resolved.ref
+    model = resolved.model
     body = unicodedata.normalize("NFKC", str(current_body or "")).strip()
     try:
         if len(body) > MAX_CURRENT_BODY_CHARS:
@@ -320,6 +328,7 @@ def suggest(
             max_tokens=900,
             voice=SYSTEM_BOUNDARY,
             timeout=float(getattr(settings, "SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS", 12)),
+            purpose="marketing",
         )
     except Exception as exc:
         logger.warning(

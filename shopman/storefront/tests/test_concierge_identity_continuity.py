@@ -8,6 +8,7 @@ from django.utils import timezone
 from shopman.guestman.models import Customer
 
 from shopman.shop.models import Conversation, ConversationBinding
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import service, transport
 from shopman.storefront.concierge.contracts import (
     IdentityResolution,
@@ -41,7 +42,7 @@ def identity_context(settings):
         last_name="Canônico",
         phone="+5543999990001",
     )
-    settings.AI_ASSIST_API_KEY = "test-only"
+    configure_ai("test-only")
     settings.SHOPMAN_CONCIERGE = {
         "enabled": True,
         "contract_version": 3,

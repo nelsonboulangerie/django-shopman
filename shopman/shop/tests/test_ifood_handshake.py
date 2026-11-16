@@ -325,3 +325,109 @@ def test_open_deadline_is_the_shortest_open_window(order):
     order.refresh_from_db()
     received, expires = hs.open_deadline(order)
     assert received <= timezone.now() < expires
+
+
+# ── Contraproposta (Plataforma de Negociação, issue #2329) ──
+
+ALTERNATIVES = [
+    {"id": "alt-refund", "type": "REFUND", "metadata": {"maxAmount": {"value": "1500", "currency": "BRL"}}},
+    {"id": "alt-time", "type": "ADDITIONAL_TIME", "metadata": {
+        "allowedsAdditionalTimeInMinutes": [10, 20], "allowedsAdditionalTimeReasons": ["HIGH_STORE_DEMAND"]}},
+    {"id": "alt-new", "type": "SOMETHING_NEW", "metadata": {}},
+]
+
+
+def with_alternatives(order):
+    evt = event()
+    evt["metadata"]["alternatives"] = ALTERNATIVES
+    ingest(evt)
+    order.refresh_from_db()
+
+
+def deliver(payload):
+    with patch.object(hs.ifood_auth, "headers_with_reason", return_value=({"Authorization": "local-test"}, "")), patch.object(
+        hs.requests, "post", return_value=Mock(status_code=201, json=lambda: {}),
+    ) as post:
+        hs.deliver_response(payload)
+    return post
+
+
+def test_refund_counterproposal_posts_to_alternative_with_amount_as_string(order):
+    with_alternatives(order)
+    hs.enqueue_response(order, dispute_id="dispute-1", decision="alternative", alternative_id="alt-refund", amount_q=1500, actor="op")
+    post = deliver(Directive.objects.get(topic=IFOOD_HANDSHAKE_RESPONSE).payload)
+    post.assert_called_once_with(
+        "https://merchant-api.ifood.com.br/order/v1.0/disputes/dispute-1/alternatives/alt-refund",
+        headers={"Authorization": "local-test"},
+        json={"type": "REFUND", "metadata": {"amount": {"value": "1500", "currency": "BRL"}}}, timeout=30)
+    assert record(order)["state"] == "sent"
+    assert hs.projection(order)[0]["response_notice"] == "Contraproposta enviada (reembolso de R$ 15,00); aguardando a decisão do cliente no iFood."
+
+
+def test_additional_time_counterproposal_body(order):
+    with_alternatives(order)
+    hs.enqueue_response(order, dispute_id="dispute-1", decision="alternative", alternative_id="alt-time",
+                        minutes=20, reason="HIGH_STORE_DEMAND", actor="op")
+    post = deliver(Directive.objects.get(topic=IFOOD_HANDSHAKE_RESPONSE).payload)
+    assert post.call_args.args[0].endswith("/disputes/dispute-1/alternatives/alt-time")
+    assert post.call_args.kwargs["json"] == {"type": "ADDITIONAL_TIME", "metadata": {
+        "additionalTimeInMinutes": 20, "additionalTimeReason": "HIGH_STORE_DEMAND"}}
+
+
+@pytest.mark.parametrize("kwargs,field", [
+    ({"alternative_id": "alt-refund", "amount_q": 1501}, "amount_q"),
+    ({"alternative_id": "alt-refund", "amount_q": 0}, "amount_q"),
+    ({"alternative_id": "alt-refund"}, "amount_q"),
+    ({"alternative_id": "alt-refund", "amount_q": 500, "minutes": 10}, "minutes"),
+    ({"alternative_id": "alt-time", "minutes": 15, "reason": "HIGH_STORE_DEMAND"}, "minutes"),
+    ({"alternative_id": "alt-time", "minutes": 10, "reason": "TRAFFIC"}, "reason"),
+    ({"alternative_id": "alt-time", "minutes": 10, "reason": "HIGH_STORE_DEMAND", "amount_q": 100}, "amount_q"),
+    ({"alternative_id": "missing", "amount_q": 100}, "alternative_id"),
+    ({"alternative_id": "alt-new"}, "alternative_id"),
+    ({}, "alternative_id"),
+])
+def test_invalid_counterproposal_never_enqueues(order, kwargs, field):
+    with_alternatives(order)
+    with pytest.raises(hs.HandshakeValidationError) as exc:
+        hs.enqueue_response(order, dispute_id="dispute-1", decision="alternative", actor="op", **kwargs)
+    assert exc.value.field == field
+    assert record(order)["state"] == "open"
+    assert not Directive.objects.filter(topic=IFOOD_HANDSHAKE_RESPONSE).exists()
+
+
+def test_unknown_alternative_type_is_refused_with_its_name(order):
+    with_alternatives(order)
+    with pytest.raises(hs.HandshakeValidationError, match="SOMETHING_NEW"):
+        hs.enqueue_response(order, dispute_id="dispute-1", decision="alternative", alternative_id="alt-new", actor="op")
+
+
+def test_accept_refuses_counterproposal_fields(order):
+    with_alternatives(order)
+    with pytest.raises(hs.HandshakeValidationError):
+        hs.enqueue_response(order, dispute_id="dispute-1", decision="accept", reason="CUSTOMER_SATISFACTION", amount_q=100, actor="op")
+
+
+def test_projection_normalizes_only_sendable_alternatives(order):
+    evt = event()
+    evt["metadata"]["alternatives"] = ALTERNATIVES + [
+        {"id": "alt-bad-max", "type": "BENEFIT", "metadata": {"maxAmount": {"value": "12.50"}}},
+        {"type": "REFUND", "metadata": {"maxAmount": {"value": "100"}}},
+        {"id": "alt-no-minutes", "type": "ADDITIONAL_TIME", "metadata": {"allowedsAdditionalTimeReasons": ["X"]}},
+    ]
+    ingest(evt)
+    order.refresh_from_db()
+    projected = hs.projection(order)[0]
+    assert projected["alternatives"] == [
+        {"id": "alt-refund", "type": "REFUND", "max_amount_q": 1500},
+        {"id": "alt-time", "type": "ADDITIONAL_TIME", "minutes": [10, 20], "reasons": ["HIGH_STORE_DEMAND"]},
+    ]
+    assert projected["alternatives_available"] is True
+
+
+def test_accepted_counterproposal_shows_what_the_customer_chose(order):
+    with_alternatives(order)
+    settled = event("HSS", "settled-alternative")
+    settled["metadata"]["selectedDisputeAlternative"] = {"type": "ADDITIONAL_TIME", "metadata": {"additionalTimeInMinutes": 20}}
+    ingest(settled)
+    order.refresh_from_db()
+    assert hs.projection(order)[0]["response_notice"].startswith("O cliente aceitou a contraproposta: mais 20 minutos.")

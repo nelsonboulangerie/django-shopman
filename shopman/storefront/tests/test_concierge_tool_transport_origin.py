@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 from shopman.shop.models import Conversation, ConversationBinding
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import agent, service, tools
 
 pytestmark = pytest.mark.django_db
@@ -51,7 +52,8 @@ def causal_conversation():
 
 
 def test_agent_loads_causal_binding_into_tool_context(causal_conversation, monkeypatch, settings):
-    settings.SHOPMAN_CONCIERGE = {"model": "test-model", "adaptive_thinking": False}
+    settings.SHOPMAN_CONCIERGE = {"adaptive_thinking": False}
+    configure_ai("k", model="test-model")
     captured = []
     monkeypatch.setattr(service, "assert_turn_authority", lambda conversation, **kwargs: conversation)
     monkeypatch.setattr(

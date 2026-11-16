@@ -469,6 +469,23 @@ class Shop(models.Model):
         ),
     )
 
+    # ── iFood: o widget oficial (chat com o cliente) no Gestor de pedidos ──
+    # Decisão do dono, 12/11/2026 (DEV-2026-019, issue #2321): a API do iFood não
+    # tem chat; o caminho do iFood é o widget embutido. Vazio, o Gestor não carrega
+    # nada do iFood no navegador.
+    ifood_widget_id = models.CharField(
+        "ID do widget do iFood",
+        max_length=64,
+        blank=True,
+        help_text=(
+            "O ID do widget cadastrado no Portal do Desenvolvedor do iFood (menu Widgets, "
+            "com o Chat ligado). Preenchido, o Gestor de pedidos mostra o botão do iFood "
+            "com o chat dos clientes, as notificações e o rastreio. Vazio, não mostra. "
+            "Cada dispositivo autoriza o widget uma vez, com um login de dono ou "
+            "administrador no Portal do Parceiro."
+        ),
+    )
+
     # ── Defaults de negócio (cascata: canal ← AQUI ← hardcoded) ──
     defaults = models.JSONField(
         "configurações padrão",
@@ -490,6 +507,23 @@ class Shop(models.Model):
             '  "payment": {"pix": "shopman.shop.adapters.payment_efi", "card": "shopman.shop.adapters.payment_stripe"},\n'
             '  "notification": {"default": "shopman.shop.adapters.notification_manychat"},\n'
             '  "fiscal": "shopman.shop.adapters.fiscal_nfce"\n'
+            "}"
+        ),
+    )
+
+    # ── IA: qual conexão e qual modelo cada função usa (``shopman.shop.ai``) ──
+    ai_routes = models.JSONField(
+        "rotas de IA",
+        default=dict,
+        blank=True,
+        help_text=(
+            'Por propósito, a conexão de IA e o modelo. Propósito sem rota usa a rota "default"; '
+            "sem ela, a única conexão ativa do formato. Propósitos: concierge, triage, intents, "
+            "labeling, copy, marketing, recipe, scenarios, benchmark, decision.\n\n"
+            "Exemplo:\n"
+            "{\n"
+            '  "default": {"connection": "anthropic"},\n'
+            '  "copy": {"connection": "deepseek", "model": "deepseek-flash"}\n'
             "}"
         ),
     )

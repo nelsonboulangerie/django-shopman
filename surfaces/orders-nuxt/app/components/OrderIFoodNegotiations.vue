@@ -2,8 +2,11 @@
 import { computed, reactive, watch } from "vue";
 import type {
   Action,
+  IFoodNegotiationAlternative,
   IFoodNegotiationProjection,
 } from "~/generated/ordersContract";
+import { parseMoneyCell } from "../../../operator-kit/app/presentation/gridEdit";
+import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 
 const props = defineProps<{
   orderRef: string;
@@ -15,6 +18,11 @@ type Draft = {
   decision: string;
   reason: string;
   detail: string;
+  /** Contraproposta: qual alternativa, o valor digitado (reais) ou o tempo e o motivo. */
+  alternativeId: string;
+  amount: string;
+  minutes: string;
+  timeReason: string;
   confirmed: boolean;
   revision: string;
   busy: boolean;
@@ -29,6 +37,10 @@ function draft(id: string): Draft {
     decision: "",
     reason: "",
     detail: "",
+    alternativeId: "",
+    amount: "",
+    minutes: "",
+    timeReason: "",
     confirmed: false,
     revision: "",
     busy: false,
@@ -47,6 +59,14 @@ function choose(item: IFoodNegotiationProjection, value: string) {
     decision: value,
     reason: "",
     detail: "",
+    // Uma alternativa só: já vem escolhida (o óbvio não se pergunta).
+    alternativeId:
+      value === "alternative" && item.alternatives.length === 1
+        ? item.alternatives[0]!.id
+        : "",
+    amount: "",
+    minutes: "",
+    timeReason: "",
     confirmed: false,
     error: "",
     revision: String(
@@ -74,9 +94,62 @@ function reasonLabel(value: string) {
   );
 }
 function reasons(item: IFoodNegotiationProjection) {
-  return draft(item.id).decision === "accept"
-    ? item.accept_reasons
-    : item.reject_reasons;
+  const decision = draft(item.id).decision;
+  if (decision === "alternative") return [];
+  return decision === "accept" ? item.accept_reasons : item.reject_reasons;
+}
+function isMoney(alternative?: IFoodNegotiationAlternative) {
+  return alternative?.type === "REFUND" || alternative?.type === "BENEFIT";
+}
+function chosenAlternative(item: IFoodNegotiationProjection) {
+  const id = draft(item.id).alternativeId;
+  return item.alternatives.find((alternative) => alternative.id === id);
+}
+function alternativeOption(alternative: IFoodNegotiationAlternative) {
+  return isMoney(alternative)
+    ? `${alternative.label} (até ${alternative.max_amount_display})`
+    : alternative.label;
+}
+function chooseAlternative(item: IFoodNegotiationProjection, value: string) {
+  Object.assign(draft(item.id), {
+    alternativeId: value,
+    amount: "",
+    minutes: "",
+    timeReason: "",
+    confirmed: false,
+  });
+}
+/** Centavos do valor digitado; null quando vazio ou ilegível. */
+function amountQ(item: IFoodNegotiationProjection) {
+  return parseMoneyCell(draft(item.id).amount);
+}
+/** O que impede a contraproposta de seguir, dito para o operador; "" quando pronta. */
+function alternativeProblem(item: IFoodNegotiationProjection) {
+  const alternative = chosenAlternative(item);
+  if (!alternative) return "Escolha a contraproposta.";
+  const d = draft(item.id);
+  if (isMoney(alternative)) {
+    if (!d.amount.trim()) return `Informe o valor, até ${alternative.max_amount_display}.`;
+    const cents = amountQ(item);
+    if (cents === null || cents <= 0 || cents > alternative.max_amount_q)
+      return `Informe um valor de R$ 0,01 até ${alternative.max_amount_display}.`;
+    return "";
+  }
+  if (!alternative.minutes_options.includes(Number(d.minutes)))
+    return "Escolha quantos minutos a mais.";
+  if (!alternative.reason_options.some((option) => option.value === d.timeReason))
+    return "Escolha o motivo do tempo a mais.";
+  return "";
+}
+/** "reembolso de R$ 5,00" / "mais 20 minutos": o que vai ao iFood, numa frase. */
+function alternativeSummary(item: IFoodNegotiationProjection) {
+  const alternative = chosenAlternative(item);
+  if (!alternative || alternativeProblem(item)) return "";
+  if (isMoney(alternative)) {
+    const noun = alternative.type === "REFUND" ? "reembolso" : "benefício";
+    return `${noun} de R$ ${moneyInput(amountQ(item) ?? 0)}`;
+  }
+  return `mais ${draft(item.id).minutes} minutos`;
 }
 function changed(item: IFoodNegotiationProjection) {
   return (
@@ -95,8 +168,10 @@ const firstOpenId = computed(
 function canSend(item: IFoodNegotiationProjection) {
   const d = draft(item.id);
   const validReason =
-    (d.decision === "accept" && !reasons(item).length) ||
-    reasons(item).includes(d.reason);
+    d.decision === "alternative"
+      ? !alternativeProblem(item)
+      : (d.decision === "accept" && !reasons(item).length) ||
+        reasons(item).includes(d.reason);
   return (
     item.can_respond &&
     !!actionFor(item)?.enabled &&
@@ -110,6 +185,12 @@ function canSend(item: IFoodNegotiationProjection) {
   );
 }
 function consequence(item: IFoodNegotiationProjection) {
+  if (draft(item.id).decision === "alternative") {
+    const summary = alternativeSummary(item);
+    return summary
+      ? `Enviar ao iFood a contraproposta: ${summary}. O cliente decide se aceita, e o resultado chega pelo iFood.`
+      : "";
+  }
   const projected = actionFor(item)?.confirmation.description;
   if (typeof projected === "string" && projected) return projected;
   return draft(item.id).decision === "accept"
@@ -158,6 +239,17 @@ function safeEvidence(url: string) {
     return false;
   }
 }
+function alternativeBody(item: IFoodNegotiationProjection) {
+  const d = draft(item.id);
+  const alternative = chosenAlternative(item);
+  return isMoney(alternative)
+    ? { alternative_id: d.alternativeId, amount_q: amountQ(item) }
+    : {
+        alternative_id: d.alternativeId,
+        minutes: Number(d.minutes),
+        reason: d.timeReason,
+      };
+}
 async function submit(item: IFoodNegotiationProjection, retry = false) {
   const d = draft(item.id);
   if (d.busy || (retry ? !d.uncertain : !canSend(item))) return;
@@ -169,10 +261,12 @@ async function submit(item: IFoodNegotiationProjection, retry = false) {
       `${props.orderRef}:ifood-handshake:${item.id}`,
       `/api/v1/backstage/orders/${encodeURIComponent(props.orderRef)}/ifood-handshake/`,
       d.action,
-      {
-        reason: d.reason,
-        detail_reason: d.decision === "accept" ? d.detail.trim() : "",
-      },
+      d.decision === "alternative"
+        ? alternativeBody(item)
+        : {
+            reason: d.reason,
+            detail_reason: d.decision === "accept" ? d.detail.trim() : "",
+          },
     );
     d.uncertain = false;
     d.sent = true;
@@ -244,12 +338,14 @@ watch(
                 trailing-icon="i-lucide-external-link"
               />
             </div>
+            <!-- O iFood ofereceu contraproposta, mas nenhuma de um tipo que o Gestor
+                 sabe enviar: aí, e só aí, a saída é o canal do iFood. -->
             <p
-              v-if="item.alternatives_available"
+              v-if="item.alternatives_available && !item.alternatives.length"
               class="text-sm text-muted-foreground"
             >
-              Há contrapropostas disponíveis. Para negociar uma alternativa, use o
-              canal do iFood.
+              O iFood ofereceu uma contraproposta que o Gestor não envia. Para
+              usá-la, use o canal do iFood.
             </p>
             <NuxtAlert
               v-if="item.response_notice"
@@ -286,7 +382,9 @@ watch(
                         label:
                           action.ref === 'accept'
                             ? 'Aceitar solicitação'
-                            : 'Recusar solicitação',
+                            : action.ref === 'alternative'
+                              ? 'Fazer contraproposta'
+                              : 'Recusar solicitação',
                         value: action.ref,
                         disabled: !action.enabled,
                       }))
@@ -314,6 +412,84 @@ watch(
                     "
                   />
                 </NuxtFormField>
+                <template v-if="draft(item.id).decision === 'alternative'">
+                  <NuxtFormField label="Contraproposta">
+                    <NuxtSelect
+                      class="w-full"
+                      data-alternative-select
+                      :model-value="draft(item.id).alternativeId || undefined"
+                      placeholder="Selecione a contraproposta"
+                      :items="
+                        item.alternatives.map((alternative) => ({
+                          label: alternativeOption(alternative),
+                          value: alternative.id,
+                        }))
+                      "
+                      @update:model-value="chooseAlternative(item, String($event ?? ''))"
+                    />
+                  </NuxtFormField>
+                  <NuxtFormField
+                    v-if="isMoney(chosenAlternative(item))"
+                    label="Valor"
+                    :hint="`até ${chosenAlternative(item)!.max_amount_display}`"
+                  >
+                    <NuxtInput
+                      v-model="draft(item.id).amount"
+                      class="w-full"
+                      type="text"
+                      inputmode="decimal"
+                      icon="i-lucide-circle-dollar-sign"
+                      data-alternative-amount
+                      placeholder="0,00"
+                      :aria-label="`Valor da contraproposta, até ${chosenAlternative(item)!.max_amount_display}`"
+                      @update:model-value="draft(item.id).confirmed = false"
+                    />
+                  </NuxtFormField>
+                  <template v-else-if="chosenAlternative(item)">
+                    <NuxtFormField label="Tempo a mais">
+                      <NuxtSelect
+                        class="w-full"
+                        data-alternative-minutes
+                        :model-value="draft(item.id).minutes || undefined"
+                        placeholder="Selecione os minutos"
+                        :items="
+                          chosenAlternative(item)!.minutes_options.map((minutes) => ({
+                            label: `${minutes} minutos`,
+                            value: String(minutes),
+                          }))
+                        "
+                        @update:model-value="
+                          draft(item.id).minutes = String($event ?? '');
+                          draft(item.id).confirmed = false;
+                        "
+                      />
+                    </NuxtFormField>
+                    <NuxtFormField label="Motivo do tempo a mais">
+                      <NuxtSelect
+                        class="w-full"
+                        data-alternative-reason
+                        :model-value="draft(item.id).timeReason || undefined"
+                        placeholder="Selecione um motivo"
+                        :items="
+                          chosenAlternative(item)!.reason_options.map((option) => ({
+                            label: option.label,
+                            value: option.value,
+                          }))
+                        "
+                        @update:model-value="
+                          draft(item.id).timeReason = String($event ?? '');
+                          draft(item.id).confirmed = false;
+                        "
+                      />
+                    </NuxtFormField>
+                  </template>
+                  <p
+                    v-if="alternativeProblem(item)"
+                    class="text-sm text-muted-foreground"
+                  >
+                    {{ alternativeProblem(item) }}
+                  </p>
+                </template>
                 <NuxtFormField
                   v-if="draft(item.id).decision === 'accept'"
                   label="Detalhes adicionais"
@@ -344,7 +520,7 @@ watch(
                   description="A negociação foi atualizada. Selecione novamente a decisão para revisar os dados atuais."
                 />
                 <NuxtCheckbox
-                  v-if="draft(item.id).decision"
+                  v-if="draft(item.id).decision && consequence(item)"
                   v-model="draft(item.id).confirmed"
                   :label="`${consequence(item)} Confirmo esta consequência.`"
                 />

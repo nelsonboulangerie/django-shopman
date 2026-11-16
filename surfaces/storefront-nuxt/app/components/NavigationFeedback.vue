@@ -44,7 +44,7 @@ function copyForDestination (destination?: URL): WaitCopy {
   if (path.startsWith('/conta') || path.startsWith('/entrar') || path.startsWith('/a')) {
     return { title: 'Abrindo sua conta…', detail: 'Só um instante.' }
   }
-  if (path === '/') return { title: 'Abrindo o início…', detail: 'Só um instante.' }
+  if (path === '/') return { title: 'Abrindo a página inicial…', detail: 'Só um instante.' }
   return { title: 'Atualizando a tela…', detail: 'Só um instante.' }
 }
 
