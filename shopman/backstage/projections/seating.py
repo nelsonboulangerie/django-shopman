@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 
 from django.utils import formats, timezone
+from shopman.utils.formatting import format_local
 
 from shopman.backstage.models import FixtureKind, SeatingFixture, SeatingSpot, SpotShape
 from shopman.backstage.services import seating as seating_service
@@ -131,7 +132,7 @@ def history(limit: int = HISTORY_LIMIT) -> list[dict]:
         rows.append({
             "id": entry.pk,
             "at": entry.action_time.isoformat(),
-            "at_label": formats.date_format(local, "d/m/Y H:i"),
+            "at_label": format_local(local, "%d/%m/%Y {clock}"),
             "who": (user.get_full_name().strip() or user.get_username()) if user else "",
             "ref": payload.get("ref") or entry.object_id,
             "action": str(payload.get("action", "admin")).rsplit(".", 1)[-1],

@@ -16,6 +16,8 @@
 //
 // Sem rede e sem DOM: o componente é dono do I/O, isto é dono da frase e dos
 // dois caminhos de um toque.
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
+
 
 /** O cadastro em jogo, do lado da tela. */
 export interface CustomerDecisionParty {
@@ -710,7 +712,7 @@ export function mergeUndoDeadlineLabel(raw: string | null | undefined, now: Date
   const deadline = new Date(String(raw || ""));
   if (Number.isNaN(deadline.getTime())) return "";
 
-  const hour = deadline.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const hour = formatClock(deadline);
   const days = Math.round(
     (new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate()).getTime()
       - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime())

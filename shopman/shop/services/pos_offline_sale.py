@@ -51,6 +51,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 from shopman.utils.monetary import format_money, monetary_mult
 
 logger = logging.getLogger(__name__)
@@ -619,7 +620,7 @@ def record_duplicate_on_paid_order(*, plan: TabPlan, payload: dict, captured_at:
 
 def _clock(iso: str) -> str:
     instant = _parse_instant(iso)
-    return timezone.localtime(instant).strftime("%H:%M") if instant else ""
+    return format_clock(instant) if instant else ""
 
 
 def _money(amount_q: int) -> str:

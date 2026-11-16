@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.services import notification
 
@@ -24,7 +25,7 @@ def _when(raw: object) -> str:
     if parsed is None:
         return ""
     local = timezone.localtime(parsed) if timezone.is_aware(parsed) else parsed
-    return local.strftime("%Hh%M")
+    return format_clock(local)
 
 
 def build_pos_payment_delivery(order) -> dict:

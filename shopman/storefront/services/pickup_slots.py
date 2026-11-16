@@ -76,7 +76,7 @@ def annotate_slots_for_checkout(
     hoje já não comporta a antecedência). Nada de horário morto oferecido.
     """
     from shopman.shop.services import fulfillment_window
-    from shopman.shop.services.product_readiness import format_clock
+    from shopman.shop.services.product_readiness import clock_hhmm
 
     day = _day_from(delivery_date, now=now) or fulfillment_window._local_today(now=now)
     context = fulfillment_window.annotate(day, list(cart_skus or []), now=now)
@@ -89,7 +89,7 @@ def annotate_slots_for_checkout(
             {
                 "ref": ref,
                 "label": str(window.get("label") or "").strip() or ref,
-                "starts_at": format_clock(start) if start else "",
+                "starts_at": clock_hhmm(start) if start else "",
                 "enabled": bool(window.get("enabled")),
                 "reason": str(window.get("reason") or ""),
                 "is_earliest": ref == earliest,

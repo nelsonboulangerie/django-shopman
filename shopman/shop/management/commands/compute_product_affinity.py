@@ -40,6 +40,7 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
+from shopman.utils.formatting import format_local
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ class Command(BaseCommand):
             )
             if last and last >= fresh_since:
                 self.stdout.write(
-                    f"Tabela calculada em {last:%d/%m %H:%M}, "
+                    f"Tabela calculada em {format_local(last, '%d/%m {clock}')}, "
                     f"dentro das {min_interval}h. Nada a fazer (--force ignora)."
                 )
                 return

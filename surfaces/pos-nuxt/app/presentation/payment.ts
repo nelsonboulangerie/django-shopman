@@ -16,6 +16,7 @@ import type {
   POSPaymentTenderDraft,
 } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const PAYMENT_ICONS: Record<string, string> = {
   cash: "lucide:banknote",
@@ -473,10 +474,7 @@ export function paymentDeadlineLabel(iso: string, now: Date = new Date()): strin
   if (!iso) return "";
   const deadline = new Date(iso);
   if (Number.isNaN(deadline.getTime())) return "";
-  const minutes = deadline.getMinutes();
-  const hora = minutes === 0
-    ? `${deadline.getHours()}h`
-    : `${deadline.getHours()}h${String(minutes).padStart(2, "0")}`;
+  const hora = formatClock(deadline);
   // Dias entre as MEIAS-NOITES locais: "amanhã" é o dia civil seguinte, não
   // "daqui a 24 h" — às 23h, um link que vence às 0h30 já é "amanhã".
   const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();

@@ -22,6 +22,7 @@ import logging
 from datetime import datetime, timedelta
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.adapters import kds as kds_adapter
 
@@ -150,8 +151,7 @@ def notify_late_ticket(ticket) -> int:
     if promised is not None:
         if timezone.now() < promised:
             return 0
-        clock = timezone.localtime(promised)
-        clock_label = f"{clock.hour}h" if clock.minute == 0 else f"{clock.hour}h{clock.minute:02d}"
+        clock_label = format_clock(promised)
         title = f"Atrasado: {code} era para as {clock_label}"
         message = f"{_station_label(instance)}, combinado para as {clock_label}. {_items_line(ticket)}"
     else:

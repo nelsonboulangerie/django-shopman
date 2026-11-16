@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+from shopman.utils.formatting import format_clock
+
 from shopman.shop.handlers._resilient import resilient_receiver
 
 logger = logging.getLogger(__name__)
@@ -421,7 +423,7 @@ def _deadline_note(deadline_at: str | None) -> str:
         from django.utils import timezone as _tz
 
         local = _tz.localtime(datetime.fromisoformat(deadline_at))
-        return f" Confirme até as {local.strftime('%H:%M')}."
+        return f" Confirme até as {format_clock(local)}."
     except Exception:
         logger.debug("stock_receivers._deadline_note degraded", exc_info=True)
         return ""

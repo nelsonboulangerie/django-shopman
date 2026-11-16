@@ -21,6 +21,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError, InvalidTransition
 from shopman.orderman.models import Directive
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.directives import CONFIRMATION_TIMEOUT, ORDER_STALE_NEW_ALERT
 
@@ -190,7 +191,7 @@ class StaleNewOrderAlertHandler:
         if deadline:
             # Prazo de aceite (``auto_cancel``): vencido, o pedido é cancelado e o
             # que o cliente pagou volta para ele. O Gestor lê o relógio e a consequência.
-            clock = timezone.localtime(deadline).strftime("%H:%M")
+            clock = format_clock(deadline)
             message = (
                 f"O pedido {order.ref} espera aceite. Se ninguém aceitar até {clock}, ele é "
                 "cancelado sozinho e o que o cliente pagou é devolvido."

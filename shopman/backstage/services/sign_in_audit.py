@@ -43,6 +43,8 @@ from __future__ import annotations
 
 import logging
 
+from shopman.utils.formatting import format_clock
+
 logger = logging.getLogger(__name__)
 
 #: Atributo que a view deixa no ``request`` para dizer por qual porta a pessoa
@@ -598,14 +600,13 @@ def notify_pin_locked(user, locked_until) -> None:
     não sabia de nada (beta 05/11, CEN-01). Chamado na transição para bloqueado,
     não a cada recusa. Nunca levanta: o aviso não derruba a trava que o motivou.
     """
-    from django.utils import timezone
 
     from shopman.shop.models import NotificationCategory, UserNotification
     from shopman.shop.services.campaign import push_user_notification
 
     try:
         nome = user.get_full_name().strip() or user.get_username()
-        hora = timezone.localtime(locked_until).strftime("%H:%M")
+        hora = format_clock(locked_until)
         avisos = [
             UserNotification(
                 user=user,

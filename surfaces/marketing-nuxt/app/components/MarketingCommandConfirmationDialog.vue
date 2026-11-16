@@ -25,6 +25,7 @@ import { clientCount, formatCount } from "~/presentation/decisions";
 import { platformResultLabel } from "~/presentation/marketingResult";
 import { scenesFromFrozenCommand } from "~/presentation/simulatedPreview";
 import { scheduleSummary } from "~/utils/marketingSchedule";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
   command: PendingMarketingDecision | PendingCampaignFireCommand | null;
@@ -149,13 +150,13 @@ const credentialDigits = computed({
   },
 });
 
-/** "Agora, às 10:04 · 86 clientes no WhatsApp". */
+/** "Agora, às 10h04 · 86 clientes no WhatsApp". */
 const whenLine = computed(() => {
   const current = challenge.value;
   if (!current || !sealed.value) return "";
   const when = current.scheduled_for
     ? scheduleSummary(current.scheduled_for, props.shopTimezone)
-    : `Agora, às ${new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: props.shopTimezone || undefined }).format(new Date())}`;
+    : `Agora, às ${formatClock(new Date(), props.shopTimezone)}`;
   return includesDirectMessages.value ? `${when} · ${clientCount(current.audience_count)} no WhatsApp` : when;
 });
 

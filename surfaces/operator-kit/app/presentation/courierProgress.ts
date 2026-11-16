@@ -9,6 +9,7 @@
 // aviso de desde quando.
 
 import { STORE_TIME_ZONE } from "./dates";
+import { formatClock } from "./clock";
 
 export interface CourierProgressInput {
   status: string;
@@ -23,7 +24,7 @@ export interface CourierProgressView {
   pickup: string;
   /** "Entrega prevista ~16:05". */
   delivery: string;
-  /** "A TaOn não informa a corrida desde 15:42." (vazio com a leitura em dia). */
+  /** "A TaOn não informa a corrida desde 15h42." (vazio com a leitura em dia). */
   stale: string;
 }
 
@@ -35,13 +36,9 @@ function epoch(iso: string | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-/** "15:50", no fuso da loja (o dispositivo pode estar em outro). */
+/** "15h50", no fuso da loja (o dispositivo pode estar em outro). */
 export function clockHHMM(ms: number): string {
-  return new Date(ms).toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: STORE_TIME_ZONE,
-  });
+  return formatClock(new Date(ms), STORE_TIME_ZONE);
 }
 
 export function courierProgress(

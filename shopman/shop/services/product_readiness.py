@@ -90,8 +90,12 @@ def parse_clock(raw) -> time | None:
     return time(hour, minute)
 
 
-def format_clock(value: time | None) -> str:
-    return value.strftime("%H:%M") if isinstance(value, time) else ""
+def clock_hhmm(value: time | None) -> str:
+    """O ``"HH:MM"`` que se grava e trafega (``ready_from``, ``starts_at``): quem lê é código.
+
+    Para a tela, a hora é ``shopman.utils.formatting.format_clock`` ("12h45").
+    """
+    return value.strftime("%H:%M") if isinstance(value, time) else ""  # hora-ok: contrato HH:MM, lido por código
 
 
 def declared_ready_times(skus: list[str]) -> dict[str, time]:

@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import date
 
+from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 
 from shopman.shop.projections.types import Action
@@ -658,7 +659,6 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
 
     surfaces, cells_index = _build_surfaces()
     from django.db.models import Max, Min, Q, Subquery
-    from django.utils import timezone
     from shopman.offerman.models import ListingItem
     from shopman.offerman.smart_collection import resolve_products
 
@@ -673,7 +673,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
     for entry in ListingItem.history.filter(history_id__in=Subquery(latest), is_sellable=False,
             history_change_reason__endswith=":after").select_related("history_user"):
         actor = entry.history_user.get_username() if entry.history_user else "sistema"
-        pause_audit[entry.id] = f"Pausado por {actor} em {timezone.localtime(entry.history_date):%d/%m/%Y %H:%M}"
+        pause_audit[entry.id] = f"Pausado por {actor} em {format_local(entry.history_date, '%d/%m/%Y {clock}')}"
     display_surfaces, display_index = _build_display_surfaces()
     surfaces = surfaces + display_surfaces
 

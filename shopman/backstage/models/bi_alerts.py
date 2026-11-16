@@ -40,6 +40,7 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from shopman.utils.formatting import format_local
 
 from .alerts import OperatorAlert
 
@@ -166,4 +167,4 @@ class BIAlertEvent(models.Model):
         ordering = ["-fired_at"]
 
     def __str__(self):
-        return f"{self.rule.label} · {self.fired_at:%d/%m %H:%M}"
+        return f"{self.rule.label} · {format_local(self.fired_at, '%d/%m {clock}')}"

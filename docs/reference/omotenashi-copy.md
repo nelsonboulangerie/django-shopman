@@ -327,6 +327,9 @@ elas; reescrevê-las criaria uma segunda fonte que envelhece sozinha.
   Storefront de fora por decisão do dono. É a única destas quatro que tem trava, e desde
   18/09/2026 são duas, uma por metade do sistema (§5.1).
 
+- **Hora é "12h45"**, na suíte inteira, com um formatador por metade e trava nas duas (dono, 16/11/2026). A regra, os casos de borda e o que fica de fora estão em
+  [`suite-vocabulary.md`](suite-vocabulary.md), §2.7.
+
 ### 4.2 O vocabulário fechado, por domínio
 
 O Marketing fechou o dele, e é o modelo:

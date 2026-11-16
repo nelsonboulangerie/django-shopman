@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -490,12 +491,18 @@ _TIME_RE = re.compile(r"\b(\d{1,2})\s*(?:[:h]\s*(\d{2}))?\b")
 
 
 def _slot_by_time(text: str, options: list[dict]) -> int:
-    """"14:30" escolhe o horário que começa às 14:30 (só quando um único bate)."""
+    """"14:30" ou "14h30" escolhe o horário que começa às 14h30 (só quando um único bate)."""
     match = _TIME_RE.search(str(text or ""))
     if not match:
         return 0
-    wanted = f"{int(match.group(1)):02d}:{match.group(2) or '00'}"
-    hits = [index for index, option in enumerate(options, 1) if str(option.get("name", "")).startswith(wanted)]
+    wanted = format_clock(f"{match.group(1)}:{match.group(2) or '00'}")
+    # O nome da opção é o rótulo da tela ("14h30 às 15h"): bate a primeira hora
+    # inteira, para "14h" não escolher "14h30 às 15h".
+    hits = [
+        index
+        for index, option in enumerate(options, 1)
+        if wanted and str(option.get("name", "")).split(" ")[0] == wanted
+    ]
     return hits[0] if len(hits) == 1 else 0
 
 

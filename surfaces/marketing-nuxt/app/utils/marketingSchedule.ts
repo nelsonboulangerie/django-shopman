@@ -1,3 +1,5 @@
+import { formatClock, formatDateClock } from "../../../operator-kit/app/presentation/clock";
+
 export type ScheduleFold = "earlier" | "later" | "";
 export type ScheduleProblem =
   | ""
@@ -71,7 +73,7 @@ function formatter(timeZone: string) {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    hour: "2-digit",
+    hour: "2-digit",  // hora-ok: cálculo no fuso da loja, não exibição
     minute: "2-digit",
     hourCycle: "h23",
   });
@@ -104,10 +106,12 @@ function sameWall(left: WallParts, right: WallParts): boolean {
 function offsetText(minutes: number): string {
   const sign = minutes >= 0 ? "+" : "-";
   const absolute = Math.abs(minutes);
+  // hora-ok: deslocamento do fuso em ISO ("-03:00"), lido por código
   return `${sign}${String(Math.floor(absolute / 60)).padStart(2, "0")}:${String(absolute % 60).padStart(2, "0")}`;
 }
 
 function localText(parts: WallParts): string {
+  // hora-ok: instante local em ISO para o campo de data e hora, lido por código
   return `${String(parts.year).padStart(4, "0")}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}T${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
 }
 
@@ -226,7 +230,7 @@ export function resolveScheduleInput(options: {
     return {
       ...problem(
         "quiet_hours",
-        "O WhatsApp fica em silêncio das 20:00 às 08:00.",
+        "O WhatsApp fica em silêncio das 20h às 8h.",
       ),
       candidate,
       candidates,
@@ -281,11 +285,8 @@ export function scheduleSummary(instant: string, timeZone: string): string {
   const epochMs = Date.parse(instant);
   if (!Number.isFinite(epochMs)) return "";
   try {
-    return new Intl.DateTimeFormat("pt-BR", {
-      timeZone,
-      dateStyle: "full",
-      timeStyle: "short",
-    }).format(new Date(epochMs));
+    // "segunda-feira, 16 de novembro de 2026 às 12h45": a data por extenso e a hora da casa.
+    return formatDateClock(epochMs, { dateStyle: "full" }, { timeZone, joiner: " às " });
   } catch {
     return "";
   }
@@ -300,13 +301,7 @@ export function expirySummary(expiresAt: string, timeZone: string, nowMs = Date.
   const relative = minutes < 60
     ? `${minutes} min`
     : `${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
-  const absolute = new Intl.DateTimeFormat("pt-BR", {
-    timeZone,
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(expiresMs));
+  const absolute = formatDateClock(expiresMs, { day: "2-digit", month: "2-digit" }, { timeZone });
   return `Expira em ${relative} · ${absolute} (${timeZone})`;
 }
 
@@ -314,7 +309,7 @@ export function expirySummary(expiresAt: string, timeZone: string, nowMs = Date.
  * O silêncio do WhatsApp atravessa o prazo do anúncio? Agora é silêncio e as 08:00
  * seguintes já caem depois do vencimento: nem Imediato nem Agendado servem enquanto o
  * WhatsApp estiver no anúncio (beta 05/11, ge:MKT-07). Devolve a hora do vencimento
- * (HH:MM, no fuso da loja) quando cruza; vazio quando não cruza.
+ * ("12h45", no fuso da loja) quando cruza; vazio quando não cruza.
  */
 export function quietHoursOutlastDeadline(options: {
   timeZone: string;
@@ -330,7 +325,7 @@ export function quietHoursOutlastDeadline(options: {
     options.timeZone,
   )[0];
   if (!opening || opening.epochMs < expiryMs) return "";
-  return localInputFromInstant(options.expiresAt, options.timeZone).slice(11, 16);
+  return formatClock(options.expiresAt, options.timeZone);
 }
 
 export function isQuietHoursNow(timeZone: string, nowMs = Date.now()): boolean {

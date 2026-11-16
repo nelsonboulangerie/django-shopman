@@ -14,6 +14,7 @@ import type {
   POSOfflineReviewSaleProjection,
 } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
+import { formatClock, formatDateClock } from "../../../operator-kit/app/presentation/clock";
 
 // A hora do turno é a do BALCÃO, não a do dispositivo: um celular em outro fuso
 // lia outra abertura (beta 05/11, PDV2-24). A mesma régua da leitura X/Z.
@@ -133,9 +134,7 @@ export function formatOpenedAt(raw: string | null | undefined): string {
   const date = new Date(raw);
   return Number.isNaN(date.getTime())
     ? raw
-    : date.toLocaleString("pt-BR", {
-        day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: STORE_TIME_ZONE,
-      });
+    : formatDateClock(date, { day: "2-digit", month: "2-digit" }, { timeZone: STORE_TIME_ZONE });
 }
 
 /**
@@ -343,7 +342,7 @@ export function formatRequestedAt(raw: string | null | undefined): string {
   const date = new Date(raw);
   return Number.isNaN(date.getTime())
     ? raw
-    : date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    : formatClock(date);
 }
 
 /** The lobby's single screen state — drives which card the antesala shows. */
@@ -688,7 +687,7 @@ export function shiftOpenedLine(input: {
   const at = new Date(input.openedAt);
   const time = Number.isNaN(at.getTime())
     ? ""
-    : at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: STORE_TIME_ZONE });
+    : formatClock(at, STORE_TIME_ZONE);
   const opened = time ? `turno aberto às ${time}${input.openedBy ? ` por ${input.openedBy}` : ""}` : "";
   return [input.terminalLabel, opened].filter(Boolean).join(" · ");
 }

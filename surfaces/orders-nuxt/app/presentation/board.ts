@@ -30,6 +30,7 @@ import {
 // do pedido é o mesmo no Gestor e no PDV; o board lê as mesmas peças.
 import { joinFacts } from "../../../operator-kit/app/presentation/orderDetail";
 import { readingCsvText } from "../../../operator-kit/app/presentation/readingChart";
+import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
 
 export {
   joinFacts,
@@ -143,20 +144,13 @@ export interface CardAuthorizationNotice {
   expired: boolean;
 }
 
-const CARD_DEADLINE = new Intl.DateTimeFormat("pt-BR", {
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  timeZone: "America/Sao_Paulo",
-});
-
 /** "20/10 às 15h25", no fuso da loja. */
 export function cardDeadlineLabel(iso: string): string {
-  const parts = Object.fromEntries(
-    CARD_DEADLINE.formatToParts(new Date(iso)).map((p) => [p.type, p.value]),
+  return formatDateClock(
+    iso,
+    { day: "2-digit", month: "2-digit" },
+    { timeZone: "America/Sao_Paulo", joiner: " às " },
   );
-  return `${parts.day}/${parts.month} às ${parts.hour}h${parts.minute}`;
 }
 
 function plural(n: number, one: string, many: string): string {

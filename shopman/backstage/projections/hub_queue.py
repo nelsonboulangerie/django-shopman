@@ -44,6 +44,7 @@ from urllib.parse import quote, urlencode
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage import permissions
 
@@ -150,7 +151,7 @@ def _iso(value: datetime | None) -> str:
 
 
 def _clock(value: datetime | None) -> str:
-    return timezone.localtime(value).strftime("%H:%M") if value else ""
+    return format_clock(value) if value else ""
 
 
 def _plural(count: int, singular: str, plural: str) -> str:

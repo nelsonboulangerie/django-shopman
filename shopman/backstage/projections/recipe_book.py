@@ -43,6 +43,7 @@ from shopman.craftsman.services.recipe_book import (
     reference_for,
     suggest_anchor_kind,
 )
+from shopman.utils.formatting import format_local
 
 from shopman.backstage.services import recipe_book as recipe_book_service
 from shopman.backstage.services import (
@@ -778,7 +779,7 @@ def _delta_tone(left: Decimal | None, right: Decimal | None, delta: Decimal | No
 def _datetime_display(value) -> str:
     if not value:
         return ""
-    return timezone.localtime(value).strftime("%d/%m/%Y %H:%M")
+    return format_local(value, "%d/%m/%Y {clock}")
 
 
 def _date_display(value) -> str:

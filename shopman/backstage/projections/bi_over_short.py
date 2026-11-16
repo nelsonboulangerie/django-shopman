@@ -802,7 +802,8 @@ def _minutes(value: time) -> int:
 
 
 def _hhmm(value: time) -> str:
-    return f"{value.hour:02d}:{value.minute:02d}"
+    """O ``"HH:MM"`` do contrato do B.I.: a tela ordena e calcula com ele, e formata ao exibir."""
+    return f"{value.hour:02d}:{value.minute:02d}"  # hora-ok: contrato HH:MM, lido por código
 
 
 def _round_units(value: Decimal | None) -> Decimal:

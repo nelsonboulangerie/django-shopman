@@ -31,6 +31,7 @@ from datetime import datetime
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +232,7 @@ def _canceller(order) -> str:
 
 
 def _clock(moment: datetime) -> str:
-    return timezone.localtime(moment).strftime("%H:%M")
+    return format_clock(moment)
 
 
 __all__ = [

@@ -24,6 +24,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.module_loading import import_string
 from django.utils.text import slugify
+from shopman.utils.formatting import format_local
 
 from shopman.backstage.projections.purchase import build_purchase
 from shopman.shop.adapters.purchase_invoice_nfe import INVOICE_PRODUCT_MAP_KEYS
@@ -302,7 +303,7 @@ def _format_receipt_moment(raw: str) -> str:
         momento = timezone.localtime(datetime.fromisoformat(raw))
     except ValueError:
         return ""
-    return momento.strftime("%d/%m às %H:%M")
+    return format_local(momento, "%d/%m às {clock}")
 
 
 def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user, attestation=None) -> None:

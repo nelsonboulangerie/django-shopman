@@ -265,7 +265,7 @@ class ProductAdminForm(forms.ModelForm):
             raise forms.ValidationError("Use o formato HH:MM. Ex.: 12:00.") from None
         if not (0 <= hour <= 23 and 0 <= minute <= 59):
             raise forms.ValidationError("Hora fora do dia. Use de 00:00 a 23:59.")
-        return f"{hour:02d}:{minute:02d}"
+        return f"{hour:02d}:{minute:02d}"  # hora-ok: valor de campo de formulário, gravado como HH:MM
 
     def clean(self):
         cleaned = super().clean()

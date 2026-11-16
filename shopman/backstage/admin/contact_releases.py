@@ -18,8 +18,8 @@ gesto no cadastro do cliente, não nesta trilha.
 from __future__ import annotations
 
 from django.contrib import admin
-from django.utils import timezone
 from shopman.utils import unfold_badge
+from shopman.utils.formatting import format_local
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
@@ -27,7 +27,7 @@ from shopman.shop.models import ContactRelease
 
 
 def _quando(momento) -> str:
-    return timezone.localtime(momento).strftime("%d/%m/%Y às %H:%M")
+    return format_local(momento, "%d/%m/%Y às {clock}")
 
 
 @admin.register(ContactRelease)

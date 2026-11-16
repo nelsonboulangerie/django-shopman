@@ -33,6 +33,7 @@ from django.utils import timezone
 from shopman.guestman.contrib.merge.models import MergeAudit, MergeStatus
 from shopman.guestman.exceptions import CustomerError
 from shopman.utils import unfold_badge
+from shopman.utils.formatting import format_local
 from unfold.admin import ModelAdmin
 from unfold.decorators import action, display
 from unfold.enums import ActionVariant
@@ -69,7 +70,7 @@ def _restante(deadline) -> str:
 
 
 def _quando(momento) -> str:
-    return timezone.localtime(momento).strftime("%d/%m/%Y às %H:%M")
+    return format_local(momento, "%d/%m/%Y às {clock}")
 
 
 def _de_volta_para_a_lista(request: HttpRequest) -> HttpResponse:

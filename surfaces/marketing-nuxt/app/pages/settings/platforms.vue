@@ -11,6 +11,7 @@ import { platformIcon } from "~/presentation/campaign";
 import { canaryText } from "~/presentation/platformReadiness";
 import { receiptStateLabel } from "~/presentation/marketingResult";
 import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
+import { formatDateClock } from "../../../../operator-kit/app/presentation/clock";
 
 const { platforms, loading, error, load: loadPlatforms } = usePlatforms();
 const route = useRoute();
@@ -221,10 +222,7 @@ function alertColor(color: ToneColor): "info" | "error" | "warning" | "success" 
 
 function checkedAt(value: string): string {
   if (!value) return "sem verificação registrada";
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return formatDateClock(value, { dateStyle: "short" });
 }
 
 // "Sem modelo" é a primeira opção da lista, não um cartão à parte: ela é uma

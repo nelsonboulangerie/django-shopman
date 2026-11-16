@@ -7,6 +7,7 @@ import type {
 } from "~/generated/ordersContract";
 import { parseMoneyCell } from "../../../operator-kit/app/presentation/gridEdit";
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
   orderRef: string;
@@ -211,9 +212,9 @@ function requestLabel(value: string) {
 function dateLabel(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "Prazo não informado";
-  // "08/10 às 07:49": o ano e os segundos não ajudam a decidir (dono, 08/10/2026).
+  // "08/10 às 7h49": o ano e os segundos não ajudam a decidir (dono, 08/10/2026).
   const day = parsed.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-  const time = parsed.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const time = formatClock(parsed);
   return `${day} às ${time}`;
 }
 function timeoutLabel(value: string) {

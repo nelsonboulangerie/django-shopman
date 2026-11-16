@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from django.db.models import Sum
-from django.utils import timezone
+from shopman.utils.formatting import format_local
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,6 @@ def _customer_ratings() -> tuple[str, int, int, list[RatingRowProjection]]:
     """
     try:
         from django.utils.dateparse import parse_datetime
-        from django.utils.formats import date_format
         from shopman.orderman.models import Order
     except ImportError:
         return "—", 0, 0, []
@@ -185,7 +184,7 @@ def _customer_ratings() -> tuple[str, int, int, list[RatingRowProjection]]:
             stars="★" * score + "☆" * (5 - score),
             comment=str(rating_data.get("comment") or "").strip(),
             order_ref=order.ref,
-            submitted_at_display=date_format(submitted_at, "d/m H:i") if submitted_at else "—",
+            submitted_at_display=format_local(submitted_at, "%d/%m {clock}") if submitted_at else "—",
             is_low=score <= 2,
         ))
 
@@ -196,13 +195,12 @@ def _customer_ratings() -> tuple[str, int, int, list[RatingRowProjection]]:
     low_count = sum(1 for s in scores if s <= 2)
     # ``rows`` já vem em ordem decrescente de criação do pedido (a query ordena
     # por -created_at), então os primeiros são os mais recentes — os "últimos
-    # comentários". Sem re-sort pela string "d/m H:i", que não ordena no tempo.
+    # comentários". Sem re-sort pela string de exibição, que não ordena no tempo.
     return f"{average:.1f}", len(scores), low_count, rows[:8]
 
 
 def _operator_alerts(user=None) -> list[OperatorAlertProjection]:
     try:
-        from django.utils.formats import date_format
 
         from shopman.backstage.models import OperatorAlert
         from shopman.backstage.services.alerts import visible_alert_audiences
@@ -223,7 +221,7 @@ def _operator_alerts(user=None) -> list[OperatorAlertProjection]:
                 severity=a.severity,
                 message=a.message,
                 order_ref=a.order_ref or "",
-                created_at_display=date_format(timezone.localtime(a.created_at), "d/m H:i") if a.created_at else "—",
+                created_at_display=format_local(a.created_at, "%d/%m {clock}") if a.created_at else "—",
             )
             for a in qs
         ]

@@ -16,6 +16,7 @@ import {
   timeTone,
   type TimeTone,
 } from "../../../operator-kit/app/presentation/timeTone";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 // ── Timer tone (urgency of the started clock) ──────────────────────────────
 
@@ -98,7 +99,7 @@ const STORE_DATE_TIME = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
-  hour: "2-digit",
+  hour: "2-digit",  // hora-ok: cálculo no fuso da loja, não exibição
   hourCycle: "h23",
 });
 
@@ -364,14 +365,14 @@ export function rowDueTime(row: ProductionMatrixRowProjection): string {
   return times[0] ?? "";
 }
 
-/** O chip das encomendas: "6 un. para 08:30" (ou "6 un." sem hora marcada). */
+/** O chip das encomendas: "6 un. para 8h30" (ou "6 un." sem hora marcada). */
 export function commitmentChipLabel(row: ProductionMatrixRowProjection): string {
   const units = QTY_FORMAT.format(rowCommittedUnits(row));
   const due = rowDueTime(row);
-  return due ? `${units} un. para ${due}` : `${units} un.`;
+  return due ? `${units} un. para ${formatClock(due)}` : `${units} un.`;
 }
 
-/** A hora do plano mais recente entre os planejados ("15:12"), ou "". */
+/** A hora do plano mais recente entre os planejados ("15h12"), ou "". */
 export function latestPlanTime(rows: ProductionMatrixRowProjection[]): string {
   const times = rows
     .flatMap((row) => [
@@ -382,7 +383,7 @@ export function latestPlanTime(rows: ProductionMatrixRowProjection[]): string {
     .map((order) => order.created_at_time ?? "")
     .filter(Boolean)
     .sort();
-  return times.at(-1) ?? "";
+  return formatClock(times.at(-1) ?? "");
 }
 
 /** Planejou exatamente o que a sugestão dizia. */

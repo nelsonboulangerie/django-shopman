@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import quote, urlencode
 
-from django.utils import timezone
+from shopman.utils.formatting import format_local
 
 from shopman.backstage.alert_specs import deadline_for, deadline_kind, spec_for
 from shopman.backstage.projections.production import (
@@ -108,7 +108,7 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
             audience=alert.audience,
             message=readable_message(alert.message),
             order_ref=alert.order_ref,
-            created_at_display=timezone.localtime(alert.created_at).strftime("%d/%m às %H:%M"),
+            created_at_display=format_local(alert.created_at, "%d/%m às {clock}"),
             respond_by_iso=_deadline_iso(alert),
             deadline_kind=deadline_kind(alert),
             origin_label=_spec_value(alert, "origin"),

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.db import models
+from shopman.utils.formatting import format_local
 
 
 class IFoodInterruptionKind(models.TextChoices):
@@ -87,7 +88,7 @@ class IFoodInterruption(models.Model):
         ordering = ("-requested_at",)
 
     def __str__(self) -> str:
-        return f"{self.get_kind_display()} {self.starts_at:%d/%m %H:%M}–{self.ends_at:%d/%m %H:%M}"
+        return f"{self.get_kind_display()} {format_local(self.starts_at, '%d/%m {clock}')}–{format_local(self.ends_at, '%d/%m {clock}')}"
 
 
 class IFoodStoreStatus(models.Model):

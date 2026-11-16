@@ -4,6 +4,8 @@
 //
 // Fonte: a conexão da caixa pessoal (`useMarketingNotificationInbox`, SSE que só
 // invalida, com poll de 60 s de segurança) e o `generated_at` da leitura da tela.
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
+
 
 export type MarketingRealtime = "connecting" | "live" | "polling";
 
@@ -16,16 +18,11 @@ export interface MarketingLiveStatus {
   detail: string;
 }
 
-/** "10:03", no fuso da loja. Vazio quando não há leitura. */
+/** "10h03", no fuso da loja. Vazio quando não há leitura. */
 export function readTime(instant: string | null | undefined, timeZone: string): string {
   const ms = instant ? Date.parse(instant) : Number.NaN;
   if (!Number.isFinite(ms)) return "";
-  return new Intl.DateTimeFormat("pt-BR", {
-    timeZone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(new Date(ms));
+  return formatClock(ms, timeZone);
 }
 
 export function marketingLiveStatus(input: {

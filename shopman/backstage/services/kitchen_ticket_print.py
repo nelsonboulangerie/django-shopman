@@ -73,6 +73,7 @@ from datetime import timedelta
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +210,7 @@ def paper_states(ticket_pks) -> dict[int, PaperState]:
             continue
         if job.status in _PAPER_STATES:
             when = job.confirmed_at or job.updated_at
-            out[pk] = PaperState(label=f"impresso às {timezone.localtime(when).strftime('%H:%M')}")
+            out[pk] = PaperState(label=f"impresso às {format_clock(when)}")
         elif job.status == PrintJob.Status.QUEUED:
             out[pk] = PaperState(label="na fila da impressora")
         elif job.status in {PrintJob.Status.FAILED, PrintJob.Status.EXPIRED}:

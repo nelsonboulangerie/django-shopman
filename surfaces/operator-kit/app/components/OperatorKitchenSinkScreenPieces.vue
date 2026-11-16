@@ -210,7 +210,7 @@ const rows = [
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
               <p class="text-base font-semibold">Pedido 1048</p>
-              <p class="text-sm text-muted">Ana Souza · Retirada às 10:30</p>
+              <p class="text-sm text-muted">Ana Souza · Retirada às 10h30</p>
             </div>
             <OperatorMoreMenu
               :items="orderMenu"
@@ -253,7 +253,7 @@ const rows = [
               next-label="Próximo pedido"
             />
           </div>
-          <p class="text-sm text-muted">{{ openOrder?.customer }} · Retirada às 10:30</p>
+          <p class="text-sm text-muted">{{ openOrder?.customer }} · Retirada às 10h30</p>
         </NuxtCard>
         <p class="op-micro text-muted">
           A lista de origem: {{ trailOrders.map((order) => order.ref).join(", ") }}.
@@ -455,7 +455,7 @@ const rows = [
           />
         </NuxtCard>
         <OperatorScreenState state="error" what="a fila" @retry="said('Tentar de novo')" />
-        <OperatorScreenState state="offline" since="10:42" />
+        <OperatorScreenState state="offline" since="10h42" />
       </div>
     </NuxtCard>
   </section>

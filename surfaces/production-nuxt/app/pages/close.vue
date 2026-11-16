@@ -30,6 +30,7 @@ import {
   productionContextKeysBlocked,
   resolveQuantityKeyboardShortcut,
 } from "~/presentation/keyboard";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 // A trilha da lista de lotes abertos (`OperatorRecordNav` no lote).
 const CLOSE_LOTS_TRAIL = "production-close-lots";
@@ -205,7 +206,7 @@ function onLotCode(code: string) {
 function seenAtLabel(order: QCOrderCardProjection): string {
   const seenAt = oven.get(ovenKey(order))?.seenAt;
   if (!seenAt) return "";
-  return new Date(seenAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return formatClock(new Date(seenAt));
 }
 
 // Sair do lote substitui a entrada dele no histórico: o voltar do navegador não

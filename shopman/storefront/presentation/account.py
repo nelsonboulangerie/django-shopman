@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from django.utils import timezone
+from shopman.utils.formatting import format_local
 
 from shopman.shop.projections import customer as customer_projection
 from shopman.shop.projections import customer_context
@@ -365,7 +366,7 @@ def _fmt_datetime(dt) -> str:
     """Format a datetime as 'DD/MM/AAAA às HH:MM'."""
     try:
         local = timezone.localtime(dt)
-        return local.strftime("%d/%m/%Y às %H:%M")
+        return format_local(local, "%d/%m/%Y às {clock}")
     except Exception:
         logger.debug("account_projection_datetime_format_failed dt=%r", dt, exc_info=True)
         return str(dt)

@@ -53,6 +53,7 @@ obrigou a escrever, e ela já está aplicada na trava do `operator-kit`:
 | **Em lote** · **Na hora** | o **modo de produção** da receita (`Recipe.production_mode`). *Em lote*: planejado e estocado, sai por ordem de produção (pão, creme, recheio, molho). *Na hora*: feito quando vende, vai à estação de Preparo e baixa os insumos na venda (café, chá, croque). Revenda é o produto sem receita, não um modo. ⛔ *fornada* para o modo; ⛔ *inativa*/*Arquivada* para dizer "na hora" (Arquivada é só arquivamento) | 20/10/2026 | ADR-040, "Modo de produção" |
 | **etapa** | a unidade do modo de fazer de uma receita (`Recipe.steps`, `RecipeVersion.steps`) e o avanço dela no lote (evento `step_advanced` = "Etapa avançada"). Decisão do dono: era "Etapas" no modelo e no Admin e "Passos" nas telas de receita. ⛔ **"passo" como nome da etapa de receita ou de produção** ("Passos", "Passos lidos", "Adicionar passo", "Passo 3" da receita). "Passo" continua certo para o que não é etapa: o passo do login, o passo a passo de instalação, "próximo passo" de uma instrução | 01/10 | trava: 3ª regra de `guardrails.vocabulary.test.ts` (texto do `production-nuxt`) + `test_vocabulario_etapa_da_receita.py` (literais do `craftsman` e dos arquivos `recipe`/`production` do backstage) |
 | **Grupo** (de clientes) | o conjunto comercial do cliente (`guestman.PriceTier`: varejo, atacado, staff), o mesmo nome no Gestor, no Marketing, no PDV e no Admin: "Grupo" no filtro e no público, "Exclusiva do grupo" na campanha, "Grupos de clientes" no Admin. Decisão do dono: o Marketing dizia *Faixa de preço* e o Gestor dizia *Grupos* para a mesma coisa; ficou **Grupo** nos dois. ⛔ **"Faixa de preço"** em texto de tela (o `Shop.price_range`, o "$$" do Google, é outra coisa e continua). O identificador `price_tier` fica: é o nome do modelo. A *lane* de processamento continua nomeada **plataforma**, nunca *faixa* | 20/10/2026 (substitui a de ≤22/09) | trava: `surfaces/marketing-nuxt/tests/operatorLanguage.test.ts` ("grupo é o conjunto do cliente") |
+| **hora: "12h45"** | toda hora que alguém LÊ, na suíte inteira (operador e cliente): "12h45", "9h05", "9h". ⛔ "12:45" em tela, aviso, alerta e comprovante. Regra completa na §2.7 | 16/11 | trava: `guardrails.clock.test.ts` (kit, loja e status) + `test_formato_de_hora.py` |
 | **Tela do cliente** | o monitor do balcão do **PDV** | 22/09 | — |
 | **Painel de retirada** | o painel público da **Cozinha** (rota `/pickup` não muda: URL é em inglês) | 22/09 | — |
 | **RevPASH · RFM** | traduzir no texto de tela; identificador, campo e comentário continuam em inglês | 22/09 | — |
@@ -177,6 +178,57 @@ Mora num ponto só: `surfaces/operator-kit/app/presentation/badgeCase.ts`, aplic
 `NuxtBadge` do kit; nenhum app chama à mão. A trava é
 `surfaces/operator-kit/tests/badgeCase.test.ts`. A frase que não cabe em selo (o
 detalhe, o motivo) vai fora dele, em texto.
+
+### 2.7 Hora: "12h45" (dono, 16/11/2026)
+
+Toda hora que o operador ou o cliente **lê** se escreve como a casa fala: **"12h45"**. Vale
+para os onze apps de `surfaces/` (a loja incluída: aqui não há voz própria, a decisão foi
+"na suíte inteira"), para o que o servidor escreve (notificação, alerta, projeção,
+comprovante, Admin, a concierge) e para seed e copy configurável.
+
+| Caso | Escreve-se | Não se escreve |
+|---|---|---|
+| hora e minuto | **12h45** · **9h05** | 12:45 · 09h05 · 9h5 |
+| hora cheia | **9h** · **12h** · **0h** | 9h00 · 09h · 9:00 |
+| intervalo | **das 12h às 14h30** · **12h às 14h30** | 12:00 às 14:30 |
+| data e hora | **16/11, 12h45** · **16/11 às 12h45** | 16/11 12:45 |
+| com segundos, só onde o segundo é a informação | **12h45min30s** | 12:45:30 |
+
+Três escolhas de borda, todas tiradas do que a casa já escrevia antes da regra (horário de
+funcionamento da loja, "Aberto até 19h"; a hora combinada na Cozinha, "17h" e "14h30"):
+
+- **Sem zero à esquerda na hora** ("9h05"), minuto sempre com dois dígitos.
+- **Hora cheia sem minuto** ("9h"). É a forma mais curta e não tem segunda leitura: "9h"
+  só pode ser nove horas.
+- **Duração não é hora.** "12 min", "1 h 20 min", "há 3 h" seguem como estão: são quanto
+  tempo, não que horas.
+
+**Um formatador por metade, e mais nada formata hora:**
+
+- servidor: `shopman.utils.formatting.format_clock` (e `format_local` com a marca
+  `{clock}`, para data e hora juntas);
+- apps de operador: `surfaces/operator-kit/app/presentation/clock.ts` (`formatClock`,
+  `formatDateClock`, `formatClockRange`, `formatClockSeconds`);
+- loja e página de status: o módulo **gêmeo**, byte a byte, em `app/utils/clock.ts` de
+  cada uma (não estendem o kit e buildam sozinhas).
+
+**Fica de fora, por decisão escrita:**
+
+- **Formato de máquina.** O `"HH:MM"` que se grava e trafega (`opens_at`, `ready_from`, o
+  ref `"14:00-14:30"`, a janela de campanha), ISO, payload de terceiro, chave de cache e
+  log. Quem lê é código: a tela ordena e calcula com ele, e formata só ao exibir. Cada
+  linha leva o marcador `hora-ok: <motivo>`, e a trava exige o motivo.
+- **Campo de formulário.** O `<input type="time">`, o `UInputTime` e os campos de hora do
+  Admin mostram e aceitam a forma do campo. A mensagem de erro que ensina a digitar
+  ("Use o formato HH:MM. Ex.: 12:00.") acompanha o campo.
+- **Carimbo técnico com segundos.** A coluna de auditoria do Admin, o DANFE (leiaute
+  legal), o backup e o log. Não é hora de relance, é registro.
+- **Migração aplicada** (é história) e **exportação de dado** (CSV é dado, não leitura).
+
+**A trava** reprova o formatador antigo, não a frase: `toLocaleTimeString(`,
+`hour: "2-digit"`, `timeStyle`, `%H:%M`, `"H:i"`, `|time` e a hora montada à mão. O que
+ela não vê é a hora escrita por extenso numa string ("das 20:00 às 08:00"): isso é olho
+de quem escreve e de quem revisa.
 
 ---
 

@@ -67,6 +67,7 @@ import {
   supplierCostRows,
   receiptPreferredCostChanges as buildReceiptPreferredCostChanges,
 } from "~/presentation/purchase";
+import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
 
 function copy<T>(items: T[]): T[] {
   return items.map((item) => ({ ...item }));
@@ -95,13 +96,7 @@ function receiptLineCopy(lines: ReceiptLine[]): ReceiptLine[] {
 }
 
 function todayStamp(): string {
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date());
+  return formatDateClock(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 function centsInput(cents: number): string {

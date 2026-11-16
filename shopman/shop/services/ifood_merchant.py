@@ -48,6 +48,7 @@ from datetime import date, datetime, time, timedelta
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from shopman.utils.formatting import format_clock, format_local
 
 from shopman.shop.services import business_calendar, ifood_http
 
@@ -663,7 +664,7 @@ def _alert_sync_failed(record, exc: MerchantAPIError) -> None:
         type=ALERT_SYNC_FAILED,
         severity="error",
         message=(
-            f"{record.get_kind_display()}: a pausa de {local_start:%d/%m %H:%M} a {local_end:%d/%m %H:%M} "
+            f"{record.get_kind_display()}: a pausa de {format_local(local_start, '%d/%m {clock}')} a {format_local(local_end, '%d/%m {clock}')} "
             f"não foi gravada no iFood. {_format_api_error_copy(exc)}"
         ),
         dedupe_key=f"{ALERT_SYNC_FAILED}:{record.pk}",
@@ -875,7 +876,7 @@ def _alert_divergence(row, *, expected: bool, why_closed: str, problems: list[di
         "problems": [p.get("code") for p in problems],
     }
     if expected:
-        head = f"O iFood está fechado desde {since:%H:%M}, com a loja aberta: nenhum pedido do iFood entra."
+        head = f"O iFood está fechado desde {format_clock(since)}, com a loja aberta: nenhum pedido do iFood entra."
         create_operator_alert(
             type=ALERT_CLOSED_WHILE_OPEN,
             severity="error",
@@ -884,7 +885,7 @@ def _alert_divergence(row, *, expected: bool, why_closed: str, problems: list[di
             **context,
         )
         return ALERT_CLOSED_WHILE_OPEN
-    head = f"O iFood está recebendo pedidos desde {since:%H:%M}, com a loja fechada ({why_closed})."
+    head = f"O iFood está recebendo pedidos desde {format_clock(since)}, com a loja fechada ({why_closed})."
     create_operator_alert(
         type=ALERT_OPEN_WHILE_CLOSED,
         severity="error",

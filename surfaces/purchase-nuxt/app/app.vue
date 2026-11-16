@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { baseSectionOf, purchaseSections } from "~/presentation/purchaseSections";
 import type { PurchaseView } from "~/types/purchase";
+import { formatClock } from "../../operator-kit/app/presentation/clock";
 
 // Compras no shell da suíte (WP-FASE2-UX-OPERADOR, onda do Compras), como o Gestor:
 // barra lateral em três estados na mesa e, com o trocador (modelo de navegação,
@@ -38,7 +39,7 @@ watch(
   [pending, backendReady],
   ([isPending, ready]) => {
     if (!isPending && ready) {
-      readAt.value = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      readAt.value = formatClock(new Date());
     }
   },
   { immediate: true },

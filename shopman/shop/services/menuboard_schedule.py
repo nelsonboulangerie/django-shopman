@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 AUTOMATIC_LEAD_MINUTES = 15
 AUTOMATIC_LAG_MINUTES = 15
@@ -133,7 +134,8 @@ def resolve_menuboard_automatic_state(
 
 
 def _hour(value: datetime) -> str:
-    return f"{value.hour}h{value.minute:02d}" if value.minute else f"{value.hour}h"
+    # ``value`` já chega no fuso do quadro: a hora sai dele, sem reconverter.
+    return format_clock(value.time())
 
 
 def _moment(value: datetime, *, now: datetime) -> str:

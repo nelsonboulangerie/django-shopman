@@ -292,7 +292,7 @@ def reschedule_command(
                 code="delivery_wave_in_quiet_hours",
                 detail="Uma etapa do WhatsApp cairia no período de silêncio.",
                 field_errors={
-                    "publish_at": ("Escolha um horário entre 08:00 e 20:00.",),
+                    "publish_at": ("Escolha um horário entre 8h e 20h.",),
                 },
             )
         artifact, snapshot = _latest_graph(announcement)

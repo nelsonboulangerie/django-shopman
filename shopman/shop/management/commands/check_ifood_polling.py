@@ -19,6 +19,7 @@ import logging
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ def _message(health) -> str:
     else:
         local = timezone.localtime(health.last_success)
         minutes = max(1, (health.age_seconds or 0) // 60)
-        when = f"a última leitura do iFood foi às {local:%H:%M} (há {minutes} min)"
+        when = f"a última leitura do iFood foi às {format_clock(local)} (há {minutes} min)"
     return (
         f"{MESSAGE_MARKER}: {when}. O iFood cancela o pedido que não for aceito em "
         "8 minutos. Enquanto isso, aceite os pedidos novos pelo Portal do Parceiro "

@@ -62,7 +62,7 @@
                         {% endcomponent %}
                         {% for change in omotenashi_health.recent_changes %}
                             {% component "unfold/components/text.html" with class="text-xs text-base-400" %}
-                                {{ change.key }} · {{ change.history_user__username|default:"?" }} · {{ change.history_date|date:"d/m H:i" }}
+                                {{ change.key }} · {{ change.history_user__username|default:"?" }} · {{ change.history_date_display }}
                             {% endcomponent %}
                         {% endfor %}
                     {% endcomponent %}

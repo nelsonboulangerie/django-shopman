@@ -18,6 +18,7 @@ from django.conf import settings
 from django.utils import timezone
 from shopman.offerman.models import Collection, Product
 from shopman.orderman.models import Session
+from shopman.utils.formatting import format_clock, format_local
 from shopman.utils.monetary import format_money, monetary_mult
 
 from shopman.backstage.constants import POS_CHANNEL_REF
@@ -843,7 +844,7 @@ def _kitchen_tickets_by_line(session_key: str) -> dict[str, list[dict]]:
             "prints": prints,
             "status": ticket.status,
             "status_label": labels.get(ticket.status, ticket.status),
-            "fired_at_display": timezone.localtime(ticket.created_at).strftime("%H:%M"),
+            "fired_at_display": format_clock(ticket.created_at),
             "paper_label": paper.label if paper else "",
             "paper_failed": bool(paper and paper.failed),
             "items": [
@@ -1278,8 +1279,8 @@ def _price_window_projection(offer) -> POSPriceWindowProjection | None:
         active=offer.active,
         label=offer.label,
         discount_percent=offer.discount_percent,
-        starts_at=offer.start.strftime("%H:%M"),
-        ends_at=offer.end.strftime("%H:%M"),
+        starts_at=offer.start.strftime("%H:%M"),  # hora-ok: contrato HH:MM, lido por código
+        ends_at=offer.end.strftime("%H:%M"),  # hora-ok: contrato HH:MM, lido por código
         next_change_at=offer.next_change_at().isoformat(),
     )
 
@@ -2428,7 +2429,7 @@ def _card_machine_lookup_display(item) -> str:
     parts = []
     paid_at = parse_datetime(item.paid_at) if item.paid_at else None
     if paid_at is not None:
-        parts.append(f"Aprovado em {timezone.localtime(paid_at).strftime('%d/%m às %H:%M')}")
+        parts.append(f"Aprovado em {format_local(paid_at, '%d/%m às {clock}')}")
     if item.nsu:
         parts.append(f"NSU {item.nsu}")
     if item.authorization:
@@ -2480,7 +2481,7 @@ def _offline_review_sales(cash_shift) -> tuple[POSOfflineReviewSaleProjection, .
             catalog_price_display=money(row.get("catalog_line_total_q")),
             charged_price_display=money(row.get("charged_line_total_q")),
             operator=row.get("operator") or "",
-            captured_at_display=timezone.localtime(captured).strftime("%H:%M") if captured else "",
+            captured_at_display=format_clock(captured) if captured else "",
         ))
     return tuple(rows)
 
@@ -2810,7 +2811,7 @@ def _parse_dt(value, *, fallback):
 
 
 def _format_time(value) -> str:
-    return timezone.localtime(value).strftime("%H:%M")
+    return format_clock(value)
 
 
 def _qty_int(value) -> int:
@@ -3415,8 +3416,8 @@ def _recent_moment_display(moment) -> str:
     """``14:10`` hoje; ``27/09 14:10`` em outro dia (a lista alcança dias atrás)."""
     local = timezone.localtime(moment)
     if local.date() == timezone.localdate():
-        return local.strftime("%H:%M")
-    return local.strftime("%d/%m %H:%M")
+        return format_clock(local)
+    return format_local(local, "%d/%m {clock}")
 
 
 def _recent_handoff_display(order) -> str:
@@ -3435,7 +3436,7 @@ def _recent_handoff_display(order) -> str:
         return ""
     day = "hoje" if local.date() == timezone.localdate() else local.strftime("%d/%m")
     verb = "Saiu para entrega" if get_fulfillment_type(order) == "delivery" else "Retirada"
-    return f"{verb} {day} às {local.strftime('%H:%M')}"
+    return f"{verb} {day} às {format_clock(local)}"
 
 
 def _preorder_days() -> tuple[int, list]:

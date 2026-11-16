@@ -645,8 +645,8 @@ onMounted(() => {
                   color="error"
                   variant="soft"
                   icon="i-lucide-lock"
-                  title="Expirou às 15:40"
-                  description="Gerado às 15:43. Resolva o bloqueio antes de iniciar."
+                  title="Expirou às 15h40"
+                  description="Gerado às 15h43. Resolva o bloqueio antes de iniciar."
                 />
                 <div class="flex items-center justify-between gap-3 op-body">
                   <span class="text-muted"><Icon name="lucide:hourglass" class="mr-1 inline size-4" />Pix</span>

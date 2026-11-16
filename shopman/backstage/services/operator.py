@@ -22,6 +22,7 @@ import logging
 
 from django.contrib.auth import get_user_model
 from shopman.doorman.models import PinCredential
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -123,9 +124,8 @@ def pin_locked_message(locked_until) -> str:
     CERTO de quem estava bloqueado, e a pessoa seguia tentando, o que estende o
     bloqueio (ele é progressivo).
     """
-    from django.utils import timezone
 
-    hora = timezone.localtime(locked_until).strftime("%H:%M")
+    hora = format_clock(locked_until)
     return f"PIN bloqueado por tentativas até {hora}. Peça a um gerente para desbloquear."
 
 

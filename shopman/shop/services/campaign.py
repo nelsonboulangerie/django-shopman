@@ -34,6 +34,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.directives import ANNOUNCEMENT_NOTIFY, ANNOUNCEMENT_PUBLISH, create_deduped
 from shopman.shop.models import (
@@ -1662,7 +1663,7 @@ def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
         #: ⚠️ Não confundir com `content["image_url"]`, que é a imagem DO ANÚNCIO (card
         #: do gestor e post externo). Consumidores diferentes, nomes diferentes.
         "product_image_url": product_image_url(sku),
-        "time": timezone.localtime().strftime("%Hh%M"),
+        "time": format_clock(timezone.localtime()),
         "store_name": _brand_name(),
         # O RÓTULO do grau, nunca a ref: `{{quality}}` cai em copy de cliente, e
         # "excellent" no meio de uma frase em português é jargão vazando

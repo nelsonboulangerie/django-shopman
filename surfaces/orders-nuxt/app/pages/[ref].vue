@@ -33,6 +33,7 @@ import { ifoodChatNotice } from "~/presentation/ifoodWidget";
 import { orderTicketMenuItem } from "~/presentation/orderTicket";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 definePageMeta({ key: (route) => route.path });
 const route = useRoute();
@@ -855,10 +856,7 @@ onMounted(() => {
 const readClock = computed(() => {
   const at = clockReady.value ? readMetadata?.value?.generated_at : "";
   return at
-    ? new Date(at).toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+    ? formatClock(new Date(at))
     : "";
 });
 const channelIcon = computed(

@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 from django.conf import settings
 from django.db.models import Count, Q
 from django.utils import timezone
+from shopman.utils.formatting import format_clock, format_local
 
 #: A conferência com o iFood roda no maintenance-worker a cada ~5 min; duas voltas
 #: sem ela é o worker parado, não atraso.
@@ -95,8 +96,8 @@ class ChannelHealthBoardProjection:
 def _hhmm(value: datetime, now: datetime) -> str:
     local = timezone.localtime(value)
     if local.date() == timezone.localtime(now).date():
-        return local.strftime("%H:%M")
-    return local.strftime("%d/%m às %H:%M")
+        return format_clock(local)
+    return format_local(local, "%d/%m às {clock}")
 
 
 def _plural(count: int, one: str, many: str) -> str:

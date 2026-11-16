@@ -53,6 +53,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from shopman.utils.formatting import format_local
 
 from config.management.commands.seed import (
     STOCK_VITRINE,
@@ -450,6 +451,6 @@ class Command(BaseCommand):
         for sub in pendentes:
             quem = sub.customer_ref or _mask(sub.contact_phone)
             self.stdout.write(
-                f"  {sub.sku:<6} {sub.alert_type:<17} {quem:<20} desde {sub.subscribed_at:%d/%m %H:%M}"
+                f"  {sub.sku:<6} {sub.alert_type:<17} {quem:<20} desde {format_local(sub.subscribed_at, '%d/%m {clock}')}"
             )
         self.stdout.write("")

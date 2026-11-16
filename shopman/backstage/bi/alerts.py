@@ -22,6 +22,7 @@ from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Count
 from django.utils import timezone
+from shopman.utils.formatting import format_local
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +220,7 @@ def import_silence(rule, *, now) -> Reading:
             value=round(age_days, 1), baseline=float(expected), fired=True,
             message=(
                 f"último lote de '{rule.source}' há {age_days:.0f} dias "
-                f"({timezone.localtime(last):%d/%m %H:%M}); esperado a cada {expected} dias"
+                f"({format_local(last, '%d/%m {clock}')}); esperado a cada {expected} dias"
             ),
         )
     return Reading(

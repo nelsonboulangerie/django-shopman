@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { MarketingDraftState } from "~/composables/useMarketingDraft";
 import type { MarketingDraftConflict } from "~/utils/marketingDraft";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
   state: MarketingDraftState;
@@ -21,8 +22,7 @@ defineEmits<{
 
 const savedTime = computed(() =>
   props.savedAt
-    ? new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" })
-        .format(new Date(props.savedAt))
+    ? formatClock(props.savedAt)
     : "",
 );
 

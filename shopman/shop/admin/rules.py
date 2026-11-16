@@ -36,7 +36,7 @@ def _param_field_name(param_name: str) -> str:
 
 def _format_time(value) -> str:
     if isinstance(value, time):
-        return value.strftime("%H:%M")
+        return value.strftime("%H:%M")  # hora-ok: valor de campo de formulário e do JSON salvo
     raw = str(value or "").strip()
     return raw[:5]
 

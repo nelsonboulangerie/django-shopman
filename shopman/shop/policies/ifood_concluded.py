@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from shopman.utils.formatting import format_clock
+
 
 def concluded_refusal(order, *, verb: str = "cancelar") -> str:
     """Recusa de antemão quando o iFood já CONCLUIU o pedido (fato ``remote_concluded``).
@@ -27,7 +29,7 @@ def concluded_refusal(order, *, verb: str = "cancelar") -> str:
         try:
             moment = datetime.fromisoformat(str(observed_at))
             if timezone.is_aware(moment):
-                when = f" às {timezone.localtime(moment):%H:%M}"
+                when = f" às {format_clock(moment)}"
         except ValueError:
             when = ""
     return f"O iFood já concluiu este pedido{when}. Não dá mais para {verb}."

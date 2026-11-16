@@ -20,6 +20,7 @@ import logging
 from datetime import date, datetime, time, timedelta
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ def _detect_sales_silence(day: date) -> list:
                     started_at=previous,
                     ended_at=following,
                     signal=(
-                        f"nenhuma venda entre {previous:%H:%M} e {following:%H:%M}"
+                        f"nenhuma venda entre {format_clock(previous)} e {format_clock(following)}"
                     ),
                 )
             )

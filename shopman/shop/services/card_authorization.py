@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from shopman.utils.formatting import format_local
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +124,7 @@ def expires_at(order) -> datetime | None:
 def deadline_label(when: datetime) -> str:
     """"20/10 às 14h30", no fuso da loja."""
     local = timezone.localtime(when)
-    return local.strftime("%d/%m às %Hh%M")
+    return format_local(local, "%d/%m às {clock}")
 
 
 def watch(order) -> None:

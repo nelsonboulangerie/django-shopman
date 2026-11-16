@@ -6,6 +6,7 @@ import {
   scenesFromDraftArtifacts,
 } from "~/presentation/simulatedPreview";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
   body: string;
@@ -312,10 +313,7 @@ const factTime = computed(() => {
   if (!raw) return "";
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return "";
-  return new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(parsed);
+  return formatClock(parsed);
 });
 const shortHash = computed(
   () => selected.value?.artifact_hash.slice(0, 8) || "",

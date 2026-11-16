@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from shopman.utils.formatting import format_clock
 from shopman.utils.monetary import format_money
 
 from shopman.shop.omotenashi import resolve_copy
@@ -509,9 +510,8 @@ def _deadline_display(deadline_iso: str | None) -> str | None:
     try:
         from datetime import datetime
 
-        from django.utils import timezone as _tz
 
-        return _tz.localtime(datetime.fromisoformat(deadline_iso)).strftime("%H:%M")
+        return format_clock(datetime.fromisoformat(deadline_iso))
     except Exception:
         logger.debug("cart._deadline_display degraded", exc_info=True)
         return None

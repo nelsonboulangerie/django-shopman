@@ -23,6 +23,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 from .bi_production import _normalize_window, _previous_window, _qty
 
@@ -290,7 +291,7 @@ def _sales_previous(
         revenue_total_q=revenue_total,
         average_ticket_q=revenue_total // orders_total if orders_total else 0,
         revenue_by_day=tuple(day_revenue.get(day, 0) for day in iter_days(prev_from, prev_to)),
-        partial_until=now.strftime("%H:%M") if base_today is not None else "",
+        partial_until=format_clock(now) if base_today is not None else "",
     )
 
 

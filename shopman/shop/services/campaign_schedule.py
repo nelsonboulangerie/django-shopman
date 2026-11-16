@@ -33,6 +33,7 @@ from __future__ import annotations
 from datetime import datetime, time, timedelta
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.services import marketing_time
 
@@ -90,7 +91,7 @@ def describe(schedule: dict | None) -> str:
     if not windows:
         return "Publica na hora"
     faixas = ", ".join(
-        f"{start.strftime('%H:%M')} às {end.strftime('%H:%M')}" for start, end in windows
+        f"{format_clock(start)} às {format_clock(end)}" for start, end in windows
     )
     weekdays = _weekdays(schedule.get("weekdays"))
     timezone_suffix = (
@@ -295,14 +296,15 @@ def describe_occurrence(schedule: dict | None) -> str:
             return "Data inválida"
         localized = marketing_time.local(moment, timezone_name=timezone_name)
         suffix = f" ({timezone_name})" if schedule.get("timezone") else ""
-        return f"Uma vez, em {localized.strftime('%d/%m às %H:%M')}{suffix}"
+        # ``localized`` já está no fuso do agendamento: a hora sai dele, sem reconverter.
+        return f"Uma vez, em {localized:%d/%m} às {format_clock(localized.time())}{suffix}"
     if kind != RECURRING:
         return ""
 
     windows = _windows(schedule.get("windows"))
     if not windows:
         return "Horário inválido"
-    faixas = ", ".join(start.strftime("%H:%M") for start, _end in windows)
+    faixas = ", ".join(format_clock(start) for start, _end in windows)
     weekdays = _weekdays(schedule.get("weekdays"))
     dias = (
         "todo dia" if weekdays == ALL_WEEKDAYS

@@ -197,7 +197,7 @@ class EntryInline(BaseTabularInline):
 
     @display(description=_("Quando"))
     def at_display(self, obj):
-        return format_local(obj.at, "%d/%m %H:%M")
+        return format_local(obj.at, "%d/%m {clock}")
 
     @display(description=_("Tipo"))
     def kind_badge(self, obj):

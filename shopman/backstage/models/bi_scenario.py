@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.db import models
+from shopman.utils.formatting import format_local
 
 
 class BIScenarioReport(models.Model):
@@ -64,4 +65,4 @@ class BIScenarioReport(models.Model):
         ordering = ["-generated_at"]
 
     def __str__(self):
-        return f"{self.get_focus_display()} · {self.generated_at:%d/%m %H:%M} · {self.get_status_display()}"
+        return f"{self.get_focus_display()} · {format_local(self.generated_at, '%d/%m {clock}')} · {self.get_status_display()}"

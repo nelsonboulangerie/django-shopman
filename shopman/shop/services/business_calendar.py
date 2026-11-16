@@ -8,6 +8,7 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -322,7 +323,7 @@ def delivery_slots_for(
         if earliest is None or starts >= earliest:
             slots.append({
                 "ref": f"{_fmt_hhmm(starts)}-{_fmt_hhmm(finishes)}",
-                "label": f"{_fmt_hhmm(starts)} às {_fmt_hhmm(finishes)}",
+                "label": f"{_fmt_hour(starts)} às {_fmt_hour(finishes)}",
             })
         cursor += step
     return slots
@@ -576,10 +577,9 @@ def _next_open_at(shop, *, local_now: datetime) -> datetime | None:
 
 
 def _fmt_hhmm(value: time) -> str:
-    return value.strftime("%H:%M")
+    """O ``"HH:MM"`` do contrato (``opens_at``, ``closes_at``, ref do horário): quem lê é código."""
+    return value.strftime("%H:%M")  # hora-ok: contrato HH:MM, lido por código
 
 
 def _fmt_hour(value: time) -> str:
-    if value.minute:
-        return f"{value.hour}h{value.minute:02d}"
-    return f"{value.hour}h"
+    return format_clock(value)

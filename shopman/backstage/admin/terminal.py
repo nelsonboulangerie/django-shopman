@@ -17,6 +17,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from shopman.cashman.models import Terminal
 from shopman.utils import unfold_badge, unfold_link
+from shopman.utils.formatting import format_local
 from unfold.widgets import (
     UnfoldAdminDecimalFieldWidget,
     UnfoldAdminIntegerFieldWidget,
@@ -717,13 +718,12 @@ class TerminalAdmin(_CashmanTerminalAdmin):
         )
         if not dispositivos:
             return format_html("{} {}", unfold_badge("nenhum dispositivo", "base"), unfold_link(url, "Ver a lista"))
-        from django.utils import timezone
 
         def _linha(device) -> str:
             nome = device.label or (device.user_agent or "sem identificação")[:60]
             if device.last_used_at is None:
                 return f"{nome} · nunca usado"
-            return f"{nome} · usado em {timezone.localtime(device.last_used_at):%d/%m %H:%M}"
+            return f"{nome} · usado em {format_local(device.last_used_at, '%d/%m {clock}')}"
 
         linhas = format_html("".join("<li>{}</li>" for _ in dispositivos), *[_linha(d) for d in dispositivos])
         badge = unfold_badge(

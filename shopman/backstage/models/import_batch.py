@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.db import models
+from shopman.utils.formatting import format_local
 
 
 class ImportBatch(models.Model):
@@ -112,4 +113,4 @@ class ImportBatch(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.source} · {self.file_name or 'sem arquivo'} · {self.imported_at:%d/%m/%Y %H:%M}"
+        return f"{self.source} · {self.file_name or 'sem arquivo'} · {format_local(self.imported_at, '%d/%m/%Y {clock}')}"

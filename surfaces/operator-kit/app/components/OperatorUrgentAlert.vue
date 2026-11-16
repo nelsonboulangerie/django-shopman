@@ -23,6 +23,7 @@ import {
   respondInLabel,
   urgentAlerts,
 } from "../presentation/suiteChrome";
+import { formatClock } from "../presentation/clock";
 
 const source = useOperatorInboxAlerts();
 const toast = useToast();
@@ -45,7 +46,7 @@ function clock(iso: string): string {
   const at = new Date(iso);
   return Number.isNaN(at.getTime())
     ? ""
-    : at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    : formatClock(at);
 }
 
 async function seen() {

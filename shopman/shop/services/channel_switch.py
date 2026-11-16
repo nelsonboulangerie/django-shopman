@@ -48,6 +48,7 @@ from datetime import datetime, time, timedelta
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +249,7 @@ _WEEKDAY_ABBR_PT = ("seg.", "ter.", "qua.", "qui.", "sex.", "sáb.", "dom.")
 
 
 def _hour(value: time) -> str:
-    return f"{value.hour}h{value.minute:02d}" if value.minute else f"{value.hour}h"
+    return format_clock(value)
 
 
 def moment(value: datetime | None, *, now: datetime | None = None) -> str:

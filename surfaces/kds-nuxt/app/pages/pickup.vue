@@ -5,6 +5,7 @@
 // / futuro customer display do PDV — aqui é chrome neutro, copy acolhedor. Read público.
 import { realtimeIndicator } from "~/presentation/board";
 import { PICKUP_DENSITY_CLASSES, pickupCode, pickupColumn } from "~/presentation/pickup";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const { status, realtime } = useKdsCustomerBoard();
 const preparing = computed(() => status.value?.preparing ?? []);
@@ -33,10 +34,7 @@ const now = ref<Date | null>(null);
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 const clockTime = computed(() =>
   now.value
-    ? now.value.toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+    ? formatClock(now.value)
     : "",
 );
 onMounted(() => {

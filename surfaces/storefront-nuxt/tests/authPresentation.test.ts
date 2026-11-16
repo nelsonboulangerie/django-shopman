@@ -96,8 +96,8 @@ describe('resendCooldown', () => {
 })
 
 describe('otpValidUntilDisplay', () => {
-  it('formats the expiry as local HH:mm', () => {
-    expect(otpValidUntilDisplay('2026-06-12T21:49:58.528337+00:00')).toMatch(/^\d{2}:\d{2}$/)
+  it('escreve o vencimento como a casa escreve a hora (12h45)', () => {
+    expect(otpValidUntilDisplay('2026-06-12T21:49:58.528337+00:00')).toMatch(/^\d{1,2}h(\d{2})?$/)
   })
 
   it('returns empty for blank or invalid input', () => {
