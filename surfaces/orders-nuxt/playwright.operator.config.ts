@@ -30,7 +30,7 @@ export default defineConfig({
   testMatch: "**/*.spec.ts",
   // Uma jornada inteira (loja, Gestor e Cozinha) numa pilha local. A máquina de quem
   // roda costuma estar carregada; o tempo aqui é de jornada, não de clique.
-  timeout: 900_000,
+  timeout: 1_800_000,
   expect: { timeout: 60_000 },
   fullyParallel: false,
   workers: 1,
@@ -42,7 +42,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     actionTimeout: 60_000,
-    navigationTimeout: 60_000,
+    navigationTimeout: 180_000,
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {

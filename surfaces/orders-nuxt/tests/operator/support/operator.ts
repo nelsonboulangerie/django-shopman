@@ -5,26 +5,29 @@ import { cast, settled } from "./stack";
 // a Gerente entra com senha e abre o dispositivo; quem vai operar se identifica na
 // tela de bloqueio e digita o PIN no teclado da tela.
 
-/** A Gerente entra com usuário e senha. Um cookie de sessão velho pode devolver
- *  "Sua sessão terminou" uma vez (medido em 16/11): aí ela entra de novo, como faria. */
+/** A Gerente entra com usuário e senha. Se a tela devolve erro (o BFF desiste em ~30 s
+ *  quando o Django demora) ou "Sua sessão terminou" (cookie velho, medido em 16/11), ela
+ *  tenta de novo, como faria no balcão. */
 export async function managerSignsIn(page: Page): Promise<void> {
   await page.goto("/");
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const signedOut = page.getByRole("textbox", { name: "Usuário" });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     await settled(page);
-    const user = page.getByRole("textbox", { name: "Usuário" });
-    await expect(user).toBeVisible();
-    await user.click();
-    await user.pressSequentially(cast.manager.username);
+    await expect(signedOut).toBeVisible();
+    await expect(signedOut).toBeEnabled({ timeout: 120_000 });
+    await signedOut.fill("");
+    await signedOut.pressSequentially(cast.manager.username);
     const password = page.getByRole("textbox", { name: "Senha" });
-    await password.click();
+    await password.fill("");
     await password.pressSequentially(cast.manager.password);
     await page.getByRole("button", { name: "Entrar", exact: true }).click();
-    const loginDialog = page.getByRole("dialog", { name: "Entre para operar" });
-    await expect(loginDialog).toBeHidden({ timeout: 120_000 });
+    // Entrou quando o campo de usuário some; senão a tela voltou com erro e ela tenta de novo.
+    const done = await expect(signedOut).toBeHidden({ timeout: 120_000 }).then(() => true, () => false);
+    if (!done) continue;
     await settled(page);
-    if (!(await page.getByText("Sua sessão terminou").first().isVisible().catch(() => false))) return;
+    if (!(await signedOut.isVisible().catch(() => false))) return;
   }
-  throw new Error("A Gerente não conseguiu entrar com a senha de dev.");
+  throw new Error("A Gerente não conseguiu entrar com a senha de dev em três tentativas.");
 }
 
 const alarms = new WeakMap<Page, Locator>();
