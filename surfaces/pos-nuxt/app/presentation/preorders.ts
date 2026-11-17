@@ -1031,16 +1031,17 @@ export interface MoneyBadge {
  * O dinheiro da linha em duas peças: o valor e o selo semântico do estado (dono,
  * 03/11/2026: "A receber" e "Pago" viram selos).
  *
- * Pendência financeira ("A receber", "Conferir pagamento") em `error` e À FRENTE
- * do valor: teste pedido pelo dono na prévia do #2597 ("colocar o badge 'A
- * receber' à frente/à esquerda do valor [...] Poderiamos testar usar esses badges
- * de pendências financeiras na cor Danger"). Os outros selos seguem depois do valor.
+ * Pendência financeira ("A receber", "Conferir pagamento") À FRENTE do valor:
+ * teste pedido pelo dono na prévia do #2597 ("colocar o badge 'A receber' à
+ * frente/à esquerda do valor [...]"). Variante em âmbar (`warning`), para
+ * comparar com a vermelha ("Preciso ver o ambar na posição à esquerda,
+ * comparativamente"). Os outros selos seguem depois do valor.
  */
 export function moneyBadge(card: Pick<PreorderCard, "balance_q" | "balance_display" | "total_q" | "total_display" | "payment_state">): MoneyBadge {
-  if (card.balance_q === null) return { amount: card.total_display, of: "", label: "Conferir pagamento", tone: "error", pending: true };
+  if (card.balance_q === null) return { amount: card.total_display, of: "", label: "Conferir pagamento", tone: "warning", pending: true };
   if (card.balance_q > 0) {
     const partial = card.balance_q < card.total_q;
-    return { amount: partial ? card.balance_display : card.total_display, of: partial ? `de ${card.total_display}` : "", label: "A receber", tone: "error", pending: true };
+    return { amount: partial ? card.balance_display : card.total_display, of: partial ? `de ${card.total_display}` : "", label: "A receber", tone: "warning", pending: true };
   }
   if (card.payment_state === "on_account") return { amount: card.total_display, of: "", label: "Na conta da casa", tone: "info", pending: false };
   return { amount: card.total_display, of: "", label: "Pago", tone: "success", pending: false };
