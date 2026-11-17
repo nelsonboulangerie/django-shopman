@@ -44,7 +44,7 @@ def concierge_findings(config: dict | None = None) -> list[tuple[str, str, str]]
     """(id, mensagem, dica) de cada peça que falta. Vazio quando desligado ou pronto."""
     from shopman.storefront.concierge.transport import configured_connections
 
-    config = config if config is not None else (getattr(settings, "SHOPMAN_CONCIERGE", {}) or {})
+    config = config if config is not None else _concierge_config()
     if not config.get("enabled"):
         return []
 
@@ -127,7 +127,7 @@ def concierge_notices(config: dict | None = None) -> list[tuple[str, str, str]]:
     Sem conexão de IA a Concierge responde pelo caminho sem modelo (WP-03 do plano da
     Concierge): é aviso, nunca pendência que reprova o ``concierge_check``.
     """
-    config = config if config is not None else (getattr(settings, "SHOPMAN_CONCIERGE", {}) or {})
+    config = config if config is not None else _concierge_config()
     if not config.get("enabled"):
         return []
     notices: list[tuple[str, str, str]] = []
@@ -151,6 +151,10 @@ def check_concierge_readiness(app_configs, **kwargs):
         Warning(message, hint=hint, id=check_id)
         for check_id, message, hint in (*concierge_findings(), *concierge_notices())
     ]
+
+
+def _concierge_config() -> dict:
+    return getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}
 
 
 def _ai_problem(purpose: str) -> str:
