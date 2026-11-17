@@ -2,7 +2,7 @@
 
 > **Estado:** estudo, somente leitura. Nenhum código. **Não é plano vigente**: não altera o
 > [CONCIERGE-PLANO-DE-ACAO](../plans/CONCIERGE-PLANO-DE-ACAO.md) nem os WPs em voo da Concierge.
-> **Compromisso:** DEV-2026-041.
+> **Compromisso:** DEV-2026-045.
 > **Para quem:** a sessão que vai formular o plano de implementação (a) do framework em si,
 > possivelmente como pacote Python dedicado e independente, e (b) da camada adaptadora da Nice.
 > A seção 15 é o guia de uso; o Apêndice A é a base da suíte de conformidade.

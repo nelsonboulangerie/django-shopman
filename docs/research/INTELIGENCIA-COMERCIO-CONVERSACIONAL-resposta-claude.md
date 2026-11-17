@@ -2,7 +2,7 @@
 
 > **Estado:** estudo, somente leitura. Nenhum código. **Não é plano vigente**: não altera o
 > [CONCIERGE-PLANO-DE-ACAO](../plans/CONCIERGE-PLANO-DE-ACAO.md) nem os WPs em voo da Concierge.
-> **Compromisso:** DEV-2026-041.
+> **Compromisso:** DEV-2026-045.
 > **O que é:** a resposta independente do Claude (Fable 5.2) ao prompt "Arquitetura de Inteligência
 > Comercial Conversacional de Próxima Geração", escrita sem ler as respostas dos outros agentes,
 > para ser comparada com elas.
