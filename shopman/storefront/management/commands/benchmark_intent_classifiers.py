@@ -87,11 +87,7 @@ class Command(BaseCommand):
         )
         boards = run(samples, categories, contenders, prices=prices)
         self.stdout.write(self.style.SUCCESS("\n═══ Placar das intenções ═══"))
-        self.stdout.write(render_report(boards, samples, categories))
-        for model in unpriced:
-            self.stdout.write(self.style.WARNING(
-                f"Custo de llm:{model} zerado: modelo fora da tabela; passe --llm-price-in/--llm-price-out."
-            ))
+        self.stdout.write(render_report(boards, samples, categories, unpriced=unpriced))
         self.stdout.write("Nada foi gravado: o comando só mede.")
         if options["csv"]:
             self._write_csv(boards, options["csv"])

@@ -374,7 +374,7 @@ def jev_http_error(response, body: dict) -> str:
 @dataclass
 class Scoreboard:
     contender: str
-    price: Price
+    price: Price | None  # ``None``: modelo sem preço cadastrado, custo desconhecido (N21)
     total: int = 0
     exact: int = 0
     multi_total: int = 0  # amostras com 2+ intenções no gabarito
@@ -429,7 +429,10 @@ class Scoreboard:
         return precision, recall, f1
 
     @property
-    def cost_usd(self) -> float:
+    def cost_usd(self) -> float | None:
+        """US$ gastos na medição, ou ``None``: custo desconhecido não é custo zero."""
+        if self.price is None:
+            return None
         return self.price.cost(self.input_tokens, self.output_tokens)
 
     def latency(self, quantile: float) -> float | None:
@@ -440,9 +443,18 @@ class Scoreboard:
         return statistics.quantiles(self.latencies, n=100, method="inclusive")[int(quantile * 100) - 1]
 
 
-def run(samples: list[Sample], categories: list[Category], contenders: list, *, prices: dict[str, Price]) -> list[Scoreboard]:
+def _price_of(contender, prices: dict[str, Price | None]) -> Price | None:
+    """O preço do concorrente; fora do dicionário, só o que roda na casa custa zero de fato."""
+    if contender.name in prices:
+        return prices[contender.name]
+    return Price() if isinstance(contender, (RegexContender, EmbeddingContender)) else None
+
+
+def run(
+    samples: list[Sample], categories: list[Category], contenders: list, *, prices: dict[str, Price | None]
+) -> list[Scoreboard]:
     """Cada amostra, para cada concorrente. Erro de um caso não para o piloto."""
-    boards = [Scoreboard(contender=c.name, price=prices.get(c.name, Price())) for c in contenders]
+    boards = [Scoreboard(contender=c.name, price=_price_of(c, prices)) for c in contenders]
     for contender in contenders:
         if hasattr(contender, "prepare"):
             contender.prepare(categories)
@@ -463,11 +475,24 @@ def _pct(value) -> str:
     return "—" if value is None else f"{value:.0%}"
 
 
-def render_report(boards: list[Scoreboard], samples: list[Sample], categories: list[Category]) -> str:
+def unknown_cost(boards: list[Scoreboard], unpriced=()) -> list[str]:
+    """Os concorrentes de custo desconhecido: quem tem preço ``None`` e os modelos sem preço."""
+    names = {board.contender for board in boards if board.price is None}
+    names.update(f"llm:{model}" for model in unpriced)
+    return sorted(names)
+
+
+def render_report(
+    boards: list[Scoreboard], samples: list[Sample], categories: list[Category], *, unpriced=()
+) -> str:
     """O placar em texto corrido — um bloco por concorrente, legível fora do terminal.
 
     É o mesmo texto no console (``benchmark_intent_classifiers``) e no Admin
     (``IntentPilotReport``): quem confere não precisa de tabela alinhada.
+
+    Custo desconhecido não vira zero (N21, K34): o concorrente sem preço sai
+    como "custo desconhecido", a lista deles abre o placar, e o placar se recusa
+    a comparar custo enquanto ela não estiver vazia.
     """
     multi = sum(1 for sample in samples if len(sample.gold) >= 2)
     empty = sum(1 for sample in samples if not sample.gold)
@@ -477,10 +502,23 @@ def render_report(boards: list[Scoreboard], samples: list[Sample], categories: l
         f"{len(samples)} mensagens conferidas ({multi} com 2+ intenções, {empty} sem intenção da lista).",
         "",
     ]
+    unknown = unknown_cost(boards, unpriced)
+    if unknown:
+        lines += [
+            f"Sem preço cadastrado, custo desconhecido: {', '.join(unknown)}.",
+            "Comparação de custo vetada enquanto houver concorrente sem preço: este placar não diz "
+            "quem sai mais barato. Cadastre o preço (ou passe --llm-price-in/--llm-price-out) e meça de novo.",
+            "",
+        ]
     for board in boards:
         precision, recall, f1 = board.micro()
         p50, p95 = board.latency(0.5), board.latency(0.95)
-        per_thousand = board.cost_usd / board.total * 1000 if board.total else 0.0
+        cost = board.cost_usd
+        if cost is None:
+            cost_text = "custo desconhecido (sem preço cadastrado)"
+        else:
+            per_thousand = cost / board.total * 1000 if board.total else 0.0
+            cost_text = f"custo: US$ {per_thousand:.4f} por 1.000 mensagens"
         exact = board.exact / board.total if board.total else None
         multi_exact = board.multi_exact / board.multi_total if board.multi_total else None
         lines.append(f"■ {board.contender}")
@@ -493,7 +531,7 @@ def render_report(boards: list[Scoreboard], samples: list[Sample], categories: l
             f"F1 {'—' if f1 is None else f'{f1:.2f}'.replace('.', ',')}"
         )
         latency = "—" if p50 is None else f"{p50:.0f} ms típico, {p95:.0f} ms no pior caso"
-        lines.append(f"  tempo: {latency} · custo: US$ {per_thousand:.4f} por 1.000 mensagens")
+        lines.append(f"  tempo: {latency} · {cost_text}")
         misses = [
             f"{names.get(ref, ref)} {_pct(board.recall([ref]))}"
             for ref in names
@@ -547,16 +585,27 @@ def build_contenders(
 
 
 def prices_for(contenders, *, llm_price_in=None, llm_price_out=None, jev_price_in=0.042):
-    """({nome: Price}, [modelos sem preço na tabela])."""
-    from shopman.shop.services.ai_pricing import model_prices
+    """({nome: Price ou ``None``}, [modelos sem preço na tabela]).
 
-    prices, unpriced = {"jev": Price(jev_price_in, 0.0)}, []
+    A distinção é a do freio (``ai_governor.prices_for``): fora da tabela o preço
+    é *estimado*. O freio estima pelo mais caro para errar do lado seguro; o
+    placar compara, e comparar com preço inventado mente. Aqui o estimado vira
+    ``None``: custo desconhecido, nunca zero (N21).
+    """
+    from shopman.shop.ai_governor import prices_for as governor_prices
+
+    prices: dict[str, Price | None] = {"jev": Price(jev_price_in, 0.0)}
+    unpriced: list[str] = []
     for contender in contenders:
         if isinstance(contender, LLMContender):
-            table_in, table_out = model_prices(contender.model) or (None, None)
+            (table_in, table_out), estimated = governor_prices(contender.model)
+            if estimated:
+                table_in = table_out = None
             price_in = llm_price_in if llm_price_in is not None else table_in
             price_out = llm_price_out if llm_price_out is not None else table_out
             if price_in is None or price_out is None:
                 unpriced.append(contender.model)
-            prices[contender.name] = Price(price_in or 0.0, price_out or 0.0)
+                prices[contender.name] = None
+            else:
+                prices[contender.name] = Price(price_in, price_out)
     return prices, unpriced
