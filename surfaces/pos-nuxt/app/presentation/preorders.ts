@@ -478,7 +478,7 @@ export function filterEmptyMessage(mode: PreordersMode): string {
 export const TO_RECEIVE_CLASS = "text-sm font-semibold tabular-nums text-foreground";
 /** A mesma frase quando é atalho para o filtro "A receber": o mesmo peso, com o
  *  sublinhado pontilhado dizendo que se toca. Sem cor nova (amarelo demais é ruído). */
-export const TO_RECEIVE_LINK_CLASS = `${TO_RECEIVE_CLASS} h-auto p-0 underline decoration-dotted underline-offset-4 hover:decoration-solid`;
+export const TO_RECEIVE_LINK_CLASS = `${TO_RECEIVE_CLASS} inline-flex min-h-8 items-center px-0 py-1 underline decoration-dotted underline-offset-4 hover:decoration-solid`;
 
 /** "A receber R$ 62,00". A frase única do que falta cobrar. */
 export function toReceiveLabel(display: string): string {
@@ -740,7 +740,7 @@ export interface TodayIndicator {
 
 const TODAY_CAPTIONS: Record<TodayFact["key"], string> = {
   leaving: "Entregar",
-  to_receive: "A Receber",
+  to_receive: "A receber",
   tickets: "Sem Via",
   check: "Conferir",
 };

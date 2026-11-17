@@ -450,7 +450,7 @@ const compactOptions = computed<OperatorHeaderAction[]>(() => [
   ...deskActions.value,
 ]);
 // Limpar volta à chegada da tela: sem busca, sem recortes, no dia de hoje.
-// O atalho do indicador de Hoje: o dia de hoje, com o recorte do fato (A Receber, Sem
+// O atalho do indicador de Hoje: o dia de hoje, com o recorte do fato (A receber, Sem
 // Via, Conferir). Limpar volta a tudo.
 function applyTodayFilter(filter: Partial<PreorderFilters>) {
   typed.value = "";
@@ -519,7 +519,7 @@ function refreshAll() {
     <!-- HOJE no celular (dono, 03/11/2026: "só indicadores, e o toque mostra mais"): uma
          faixa branca, como a linha do chão. Cada fato é um indicador com ícone, valor e
          uma legenda curta (lê-se sem tocar); o que pede gesto é atalho para o recorte
-         dele (A Receber, Sem Via, Conferir), e a seta abre as frases inteiras. -->
+         dele (A receber, Sem Via, Conferir), e a seta abre as frases inteiras. -->
     <template v-if="!searching && todayLine.length" #compact-below>
       <div class="flex items-stretch border-b border-default bg-card md:hidden" role="group" :aria-label="todaySummaryLabel" data-compact-today>
         <span class="flex items-center px-3 text-sm font-semibold text-primary">{{ todaySummaryLabel }}</span>
