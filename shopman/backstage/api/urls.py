@@ -87,6 +87,7 @@ from .ifood_store import (
     IFoodMerchantsView,
     IFoodMerchantView,
     IFoodOpeningHoursView,
+    IFoodOpeningHoursWriteView,
     IFoodStoreView,
     IFoodWidgetView,
 )
@@ -793,6 +794,11 @@ urlpatterns = [
         name="api-backstage-ifood-interruption",
     ),
     path("ifood/opening-hours/", IFoodOpeningHoursView.as_view(), name="api-backstage-ifood-opening-hours"),
+    path(
+        "ifood/opening-hours/write/",
+        IFoodOpeningHoursWriteView.as_view(),
+        name="api-backstage-ifood-opening-hours-write",
+    ),
     # Catalog matrix (produto × superfície)
     path(
         "catalog/channels/<str:ref>/review/",

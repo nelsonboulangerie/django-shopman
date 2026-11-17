@@ -16,10 +16,10 @@ Parceiro): é o que destrava o 409 de "já existe outra pausa no mesmo horário"
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
 from django.utils import timezone
-from shopman.utils.formatting import format_local
+from shopman.utils.formatting import format_clock, format_local
 
 from shopman.shop.services import business_calendar, ifood_merchant
 
@@ -122,6 +122,16 @@ def api_error_copy(exc: ifood_merchant.MerchantAPIError) -> str:
     if exc.status == 400:
         return "O iFood recusou o pedido por estar fora do formato dele (HTTP 400)."
     return f"O iFood recusou o pedido (HTTP {exc.status})."
+
+
+def _moment(value: datetime | None, tz, now: datetime | None = None) -> str:
+    """ "às 14h05" hoje; "em 16/11 às 14h05" em outro dia. Lê depois de "Consultado"."""
+    if value is None:
+        return ""
+    local = timezone.localtime(value, timezone=tz)
+    today = timezone.localtime(now or timezone.now(), timezone=tz).date()
+    clock = format_clock(local.time())
+    return f"às {clock}" if local.date() == today else f"em {local:%d/%m} às {clock}"  # hora-ok: dia/mês da frase
 
 
 def _when(value: datetime | None, tz) -> str:
@@ -358,7 +368,7 @@ def build_merchant(*, now: datetime | None = None) -> MerchantProjection:
         available=available,
         operations=operations,
         status_error=status_error,
-        checked_at_display=_when(now, tz),
+        checked_at_display=_moment(now, tz, now),
     )
 
 
@@ -437,7 +447,9 @@ def build_interruptions(*, now: datetime | None = None) -> InterruptionsProjecti
     try:
         remote = ifood_merchant.list_interruptions()
     except ifood_merchant.MerchantAPIError as exc:
-        return InterruptionsProjection(refused=refused, error=api_error_copy(exc), checked_at_display=_when(now, tz))
+        return InterruptionsProjection(
+            refused=refused, error=api_error_copy(exc), checked_at_display=_moment(now, tz, now)
+        )
     ours = _ours_by_ifood_id([str(item.get("id")) for item in remote if item.get("id")])
     rows = []
     for item in remote:
@@ -491,7 +503,7 @@ def build_interruptions(*, now: datetime | None = None) -> InterruptionsProjecti
         )
     rows.sort(key=lambda pair: pair[0])
     return InterruptionsProjection(
-        items=tuple(row for _, row in rows), refused=refused, checked_at_display=_when(now, tz)
+        items=tuple(row for _, row in rows), refused=refused, checked_at_display=_moment(now, tz, now)
     )
 
 
@@ -530,6 +542,11 @@ class OpeningHoursProjection:
     governs: bool = False
     error: str = ""
     checked_at_display: str = ""
+    #: A última gravação do horário no iFood (``IFoodStoreStatus.synced_at``). O iFood
+    #: confirma o PUT na hora e o GET mostra o novo minutos depois (medido em
+    #: 17/11/2026): gravado há pouco + diferente = esperando o iFood, não defeito.
+    written_at_display: str = ""
+    written_recently: bool = False
 
 
 def _shift_phrase(shifts: list[tuple[time, time]]) -> str:
@@ -555,10 +572,25 @@ def _remote_by_day(remote: list[dict]) -> dict[str, list[tuple[time, time]]]:
     return out
 
 
+#: Quanto tempo depois de gravar a diferença ainda é "o iFood ainda não mostra".
+WRITE_SETTLE = timedelta(minutes=90)
+
+
+def _last_write(now: datetime, tz) -> tuple[str, bool]:
+    from shopman.shop.models import IFoodStoreStatus
+
+    row = IFoodStoreStatus.objects.filter(merchant_id=ifood_merchant.merchant_id()).first()
+    written = getattr(row, "synced_at", None)
+    if written is None:
+        return "", False
+    return _moment(written, tz, now), now - written < WRITE_SETTLE
+
+
 def build_opening_hours(*, now: datetime | None = None) -> OpeningHoursProjection:
     now = now or timezone.now()
     tz = business_calendar.shop_timezone()
     house = business_calendar.weekly_shifts()
+    written_at_display, written_recently = _last_write(now, tz)
     try:
         remote = ifood_merchant.get_opening_hours()
     except ifood_merchant.MerchantAPIError as exc:
@@ -569,7 +601,9 @@ def build_opening_hours(*, now: datetime | None = None) -> OpeningHoursProjectio
             ),
             governs=ifood_merchant.governs(),
             error=api_error_copy(exc),
-            checked_at_display=_when(now, tz),
+            checked_at_display=_moment(now, tz, now),
+            written_at_display=written_at_display,
+            written_recently=written_recently,
         )
     by_day = _remote_by_day(remote)
     days = tuple(
@@ -586,8 +620,19 @@ def build_opening_hours(*, now: datetime | None = None) -> OpeningHoursProjectio
         days=days,
         matches=ifood_merchant.shifts_match(ifood_merchant.desired_shifts(), remote),
         governs=ifood_merchant.governs(),
-        checked_at_display=_when(now, tz),
+        checked_at_display=_moment(now, tz, now),
+        written_at_display=written_at_display,
+        written_recently=written_recently,
     )
+
+
+def write_opening_hours(*, now: datetime | None = None) -> OpeningHoursProjection:
+    """Grava agora no iFood o horário da casa (o mesmo ``sync_store`` da fila) e relê.
+
+    Levanta ``MerchantAPIError`` com a recusa do iFood (400 de turno sobreposto, 403).
+    """
+    ifood_merchant.sync_store(now=now)
+    return build_opening_hours(now=now)
 
 
 __all__ = [
@@ -602,4 +647,5 @@ __all__ = [
     "build_merchants",
     "build_opening_hours",
     "remove_portal_interruption",
+    "write_opening_hours",
 ]

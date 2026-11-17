@@ -90,6 +90,7 @@ class IFoodWidgetView(APIView):
 # GET    /api/v1/backstage/ifood/interruptions/             → pausas no iFood (e as recusadas)
 # DELETE /api/v1/backstage/ifood/interruptions/<id>/        → remove pausa feita no Portal
 # GET    /api/v1/backstage/ifood/opening-hours/             → horário no iFood × horário da casa
+# POST   /api/v1/backstage/ifood/opening-hours/write/       → grava agora o horário da casa no iFood
 #
 # Integração desligada (sem client_id/merchant_id/chave): ``{"enabled": false}``.
 
@@ -190,3 +191,26 @@ class IFoodOpeningHoursView(_IFoodLiveView):
         from shopman.backstage.projections.ifood_merchant_console import build_opening_hours
 
         return _live(build_opening_hours)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"], summary="Grava agora o horário da casa no iFood", responses={200: _LIVE_RESPONSE}
+    )
+)
+class IFoodOpeningHoursWriteView(_IFoodLiveView):
+    """Só gerente (a régua do toggle do canal): o horário decide quando a loja vende."""
+
+    required_permission = ("shop.manage_orders", "cashman.adjust_shift")
+
+    def post(self, request):
+        from shopman.backstage.projections.ifood_merchant_console import api_error_copy, write_opening_hours
+        from shopman.shop.services import ifood_merchant
+
+        if not ifood_merchant.enabled():
+            return Response({"detail": "A integração com o iFood está desligada."}, status=404)
+        try:
+            projection = write_opening_hours()
+        except ifood_merchant.MerchantAPIError as exc:
+            return Response({"detail": api_error_copy(exc)}, status=502)
+        return Response({"enabled": True, **asdict(projection)})

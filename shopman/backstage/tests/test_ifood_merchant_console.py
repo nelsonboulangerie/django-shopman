@@ -294,3 +294,31 @@ def test_pausa_aceita_que_a_lista_do_ifood_nao_traz_aparece_marcada(fake):
     items = console.build_interruptions().items
 
     assert [(i.id, i.in_effect, i.listed_by_ifood, i.removable) for i in items] == [("p-aceita", True, False, False)]
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_gerente_grava_o_horario_e_a_tela_sabe_que_acabou_de_gravar(client, fake):
+    client.force_login(_user("manage_orders", "adjust_shift"))
+
+    body = client.post(reverse("api-backstage-ifood-opening-hours-write")).json()
+
+    assert sorted((s["dayOfWeek"], s["start"], s["duration"]) for s in fake.shifts) == [
+        ("SATURDAY", "10:00:00", 540),
+        ("SUNDAY", "09:00:00", 180),
+        ("SUNDAY", "13:00:00", 180),
+        ("SUNDAY", "17:00:00", 360),
+    ]
+    assert body["written_recently"] is True and body["written_at_display"]
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_caixa_nao_grava_horario_e_400_vira_frase(client, fake):
+    client.force_login(_user("manage_orders"))
+    assert client.post(reverse("api-backstage-ifood-opening-hours-write")).status_code == 403
+
+    get_user_model().objects.all().delete()
+    client.force_login(_user("manage_orders", "adjust_shift"))
+    fake.override[("PUT", f"{BASE}/opening-hours")] = _Resp(400, {"message": "overlap"})
+    refused = client.post(reverse("api-backstage-ifood-opening-hours-write"))
+    assert refused.status_code == 502
+    assert "fora do formato" in refused.json()["detail"]

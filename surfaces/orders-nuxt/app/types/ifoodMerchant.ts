@@ -99,4 +99,8 @@ export interface IFoodOpeningHours {
   governs: boolean;
   error: string;
   checked_at_display: string;
+  /** A última gravação do horário no iFood ("17/11 13h40"). */
+  written_at_display: string;
+  /** Gravado há pouco: diferença ainda é o iFood atualizando, não defeito. */
+  written_recently: boolean;
 }

@@ -90,7 +90,34 @@ export function useIFoodMerchant() {
     }
   }
 
+  const writing = ref(false);
+  const writeError = ref("");
+  /** Grava agora o horário da casa no iFood (só gerente) e mostra a releitura. */
+  async function writeHours(): Promise<boolean> {
+    if (writing.value) return false;
+    writing.value = true;
+    writeError.value = "";
+    try {
+      hours.data.value = await $fetch<IFoodOpeningHours>(
+        `${BASE}/opening-hours/write/`,
+        { method: "POST" },
+      );
+      return true;
+    } catch (failure) {
+      writeError.value = httpErrorMessage(
+        failure,
+        "Não foi possível gravar o horário no iFood.",
+      );
+      return false;
+    } finally {
+      writing.value = false;
+    }
+  }
+
   return {
+    writeHours,
+    writing,
+    writeError,
     merchants: merchants.data,
     merchant: merchant.data,
     interruptions: interruptions.data,
