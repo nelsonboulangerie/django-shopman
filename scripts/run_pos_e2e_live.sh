@@ -192,10 +192,10 @@ done
 # ── Sobe tudo ──────────────────────────────────────────────────────────────────
 trap cleanup EXIT INT TERM
 
-manage runserver --noreload "127.0.0.1:${DJANGO_PORT}" >"${DJANGO_LOG}" 2>&1 &
+"${PYTHON_BIN}" manage.py runserver --noreload "127.0.0.1:${DJANGO_PORT}" >"${DJANGO_LOG}" 2>&1 &
 PIDS+=($!)
 DJANGO_PID=$!
-manage process_directives --watch >"${WORKER_LOG}" 2>&1 &
+"${PYTHON_BIN}" manage.py process_directives --watch >"${WORKER_LOG}" 2>&1 &
 PIDS+=($!)
 
 HOST=127.0.0.1 PORT="${POS_PORT}" NUXT_DJANGO_BASE_URL="${DJANGO_URL}" NUXT_PUBLIC_DJANGO_BASE_URL="${DJANGO_URL}" \

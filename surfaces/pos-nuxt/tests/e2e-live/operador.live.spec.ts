@@ -7,6 +7,7 @@ import {
   managerBindsStation,
   managerSignsIn,
   operatorUnlocksWithPin,
+  seesOperator,
   seesTabs,
   test,
 } from "./support/operator";
@@ -36,7 +37,7 @@ for (const device of ["phone", "counter"] as const) {
       await operatorUnlocksWithPin(page, cast.cashier);
       await seesTabs(page);
       // Quem opera agora é a Caixa, e não a Gerente que iniciou o dispositivo.
-      await expect(page.getByText(cast.cashier.name, { exact: true }).first()).toBeVisible();
+      await seesOperator(page, cast.cashier);
       await capture(page, testInfo, "caixa-no-quadro");
     });
   });

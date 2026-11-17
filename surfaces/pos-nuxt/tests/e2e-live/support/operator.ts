@@ -81,7 +81,8 @@ export async function capture(page: Page, testInfo: TestInfo, name: string): Pro
   await page.screenshot({ path });
   await testInfo.attach(name, { path, contentType: "image/png" });
   if (stack.shots) {
-    const dir = join(stack.shots, testInfo.project.name, slug(testInfo.title));
+    // O describe entra no nome: é ele que diz o tamanho (375 px, 1366 px).
+    const dir = join(stack.shots, testInfo.project.name, slug(testInfo.titlePath.slice(-2).join(" ")));
     mkdirSync(dir, { recursive: true });
     await page.screenshot({ path: join(dir, file) });
   }
@@ -122,26 +123,32 @@ export async function managerBindsStation(page: Page, station = MAIN_STATION): P
     await page.getByRole("option", { name: station }).first().click();
     await expect(choice).toContainText(station);
   }
-  await dialog.getByRole("button", { name: /^Vincular/ }).click();
+  await dialog.getByRole("button", { name: "Vincular a este posto", exact: true }).click();
+  // Posto que já tem outro dispositivo (o celular e o balcão no mesmo PDV principal):
+  // o servidor pede a segunda palavra, e o botão vira "Vincular também a este posto".
+  const shared = dialog.getByRole("button", { name: "Vincular também a este posto", exact: true });
+  const next = await Promise.race([
+    shared.waitFor({ state: "visible", timeout: 90_000 }).then(() => "shared", () => "gone"),
+    dialog.waitFor({ state: "hidden", timeout: 90_000 }).then(() => "gone", () => "stuck"),
+  ]);
+  if (next === "shared") await shared.click();
   // Vincular recarrega o app no posto; na máquina carregada isso passa de 20 s.
   await expect(dialog).toBeHidden({ timeout: 90_000 });
   await settled(page);
 }
 
-/** Trava o dispositivo para o próximo operador, pelo caminho que a tela mostra: no
- *  balcão o "Bloquear" do rail; no celular o rail é gaveta, aberta pelo "Mais" da
- *  barra de baixo, ou o trocador de seções traz "Trocar ou bloquear"
+/** Trava o dispositivo para o próximo operador, pelo caminho que a tela mostra: o
+ *  "Bloquear" do rail, quando há rail; senão o trocador de seções do cabeçalho
+ *  ("… trocar de seção ou de app"), que traz "Trocar ou bloquear" no pé
  *  (operator-kit OperatorSuiteShell / OperatorSwitcher). */
 export async function lockDevice(page: Page): Promise<void> {
-  const lock = page
-    .getByLabel("Bloquear ou trocar de operador")
-    .or(page.getByRole("button", { name: "Trocar ou bloquear", exact: true }))
-    .locator("visible=true")
-    .first();
-  if (!(await lock.isVisible().catch(() => false))) {
-    await page.getByLabel("Mais: o menu completo").locator("visible=true").first().click();
+  const rail = page.getByLabel("Bloquear ou trocar de operador").locator("visible=true").first();
+  if (await rail.isVisible().catch(() => false)) {
+    await rail.click();
+  } else {
+    await page.getByRole("button", { name: /trocar de seção ou de app/ }).locator("visible=true").first().click();
+    await page.getByRole("button", { name: "Trocar ou bloquear", exact: true }).click({ timeout: 30_000 });
   }
-  await lock.click({ timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "Identifique-se para operar" })).toBeVisible({ timeout: 30_000 });
 }
 
@@ -156,6 +163,17 @@ export async function operatorUnlocksWithPin(page: Page, who: Person): Promise<v
   await page.getByRole("button", { name: "Confirmar", exact: true }).click();
   await expect(lock).toBeHidden({ timeout: 60_000 });
   await settled(page);
+}
+
+/** Quem opera agora é `who`, como a pessoa confere: no balcão o nome está no rail; no
+ *  celular abre o trocador de seções, lê "Operando: <nome>" no pé e fecha. */
+export async function seesOperator(page: Page, who: Person): Promise<void> {
+  const onRail = page.getByText(who.name, { exact: true }).locator("visible=true").first();
+  if (await onRail.isVisible().catch(() => false)) return;
+  await page.getByRole("button", { name: /trocar de seção ou de app/ }).locator("visible=true").first().click();
+  await expect(page.getByLabel("Quem opera")).toContainText(`Operando: ${who.name}`, { timeout: 30_000 });
+  await page.keyboard.press("Escape");
+  await expect(page.getByLabel("Quem opera")).toBeHidden();
 }
 
 /** O quadro de comandas do PDV está na tela. */

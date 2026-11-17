@@ -71,10 +71,13 @@ dispositivo novo em folha:
 
 1. "Entre para operar o caixa": a Gerente (`joyce`) entra com usuário e senha;
 2. no diálogo "Vincular este dispositivo a um posto de trabalho?", que sobe sozinho,
-   vincula o dispositivo ao posto "PDV principal";
-3. trava: no balcão pelo "Bloquear" do rail; no celular pelo "Mais" da barra de baixo;
+   vincula o dispositivo ao posto "PDV principal" (no segundo dispositivo do mesmo posto
+   o servidor pede a segunda palavra, "Vincular também a este posto", e ela confirma);
+3. trava: no balcão pelo "Bloquear" do rail; no celular pelo trocador de seções do
+   cabeçalho, "Trocar ou bloquear";
 4. a Caixa (`fran`) toca no próprio nome, digita o PIN no teclado da tela e confirma;
-5. o quadro de comandas aparece, com a Fran operando.
+5. o quadro de comandas aparece, com a Fran operando (no celular, conferida no
+   "Operando: Fran" do trocador).
 
 ### Regras da casa (não negociáveis)
 
@@ -132,7 +135,7 @@ O que a fixture oferece:
 |---|---|
 | `test` (`device`, `freshDevice`, `cashierAtCounter`) | o `test` do Playwright com o tamanho do dispositivo, um dispositivo novo e a Caixa já operando |
 | `newDevice(browser, "phone" \| "counter", url?)` | um segundo dispositivo (a Gerente noutro balcão, a Cozinha em `stack.kitchen`) |
-| `managerSignsIn`, `managerBindsStation`, `lockDevice`, `operatorUnlocksWithPin`, `seesTabs` | os gestos da J0, para jornada que troca de operador no meio (J3, J7, J9, J10) |
+| `managerSignsIn`, `managerBindsStation`, `lockDevice`, `operatorUnlocksWithPin`, `seesOperator`, `seesTabs` | os gestos da J0, para jornada que troca de operador no meio (J3, J7, J9, J10) |
 | `cast`, `MAIN_STATION`, `stack` | o elenco, o posto do seed e as URLs da pilha |
 | `capture(page, testInfo, nome)` | captura numerada do passo, anexada ao relatório |
 | `settled(page)` | espera o Nuxt hidratar antes de digitar |
@@ -161,6 +164,9 @@ jornada procurar algo pelo texto.
   `shop.0053`) estourou com carga 90, mesmo com o banco vazio (17/11). O script tenta o
   `migrate` de novo até três vezes; cada migração é atômica e a nova tentativa continua de
   onde parou.
+- **Processo em segundo plano por função de shell não morre no fim**: `manage runserver &`
+  guarda o PID do subshell, e o Python ficava órfão na porta 8052. O script chama o
+  Python direto para o `runserver` e o worker.
 
 ## Sonda: texto cortado
 
