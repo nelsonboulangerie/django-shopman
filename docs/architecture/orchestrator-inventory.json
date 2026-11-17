@@ -14246,7 +14246,8 @@
             "ALERT_TYPE",
             "EVENT_TYPE",
             "OPEN_STATUSES",
-            "ORDER_REFERENCE_PREFIX"
+            "ORDER_REFERENCE_PREFIX",
+            "logger"
           ]
         }
       ]
