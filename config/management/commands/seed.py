@@ -7410,7 +7410,7 @@ class Command(BaseCommand):
         preorder_data = {
             "fulfillment_type": "delivery",
             "delivery_date": tomorrow,
-            "delivery_time_slot": "manha",
+            "delivery_time_slot": "slot-09",
             "is_preorder": True,
             "customer": {"name": "Cliente Encomenda QA"},
             # Pedido sem forma de pagamento não existe (dono, 06/11, GES-03).

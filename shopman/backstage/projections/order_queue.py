@@ -2165,18 +2165,9 @@ def _is_future_preorder(order: Order) -> bool:
 
 def _commitment_date_display(commitment) -> str:
     """Display curto da data combinada para o badge do card do operador."""
-    from datetime import timedelta
+    from shopman.backstage.projections.order_attention import commitment_day_label
 
-    from django.utils import formats
-
-    today = timezone.localdate()
-    if commitment == today:
-        return "hoje"
-    if commitment == today + timedelta(days=1):
-        return "amanhã"
-    if commitment == today - timedelta(days=1):
-        return "ontem"
-    return f"{formats.date_format(commitment, 'D')}, {formats.date_format(commitment, 'd/m')}"
+    return commitment_day_label(commitment)
 
 
 _WAITLIST_LABELS = {

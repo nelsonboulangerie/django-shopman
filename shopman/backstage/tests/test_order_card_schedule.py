@@ -14,6 +14,7 @@ prometendo. Esta suíte prende:
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import Permission, User
@@ -74,6 +75,18 @@ def test_encomenda_de_outro_dia_sem_janela_diz_que_nao_ha_horario():
     card = build_order_card(order)
 
     assert (card.schedule_label, card.schedule_state) == ("Amanhã · sem horário combinado", "future")
+
+
+def test_janela_fora_da_grade_nao_vaza_o_ref():
+    """O ref que a grade da casa não conhece não aparece cru, e grita no log."""
+    order = _order("G01-MANHA", day=_today() + timedelta(days=1), slot="manha")
+
+    with patch("shopman.shop.services.fulfillment_window.logger") as log:
+        card = build_order_card(order)
+
+    assert card.schedule_label == "Amanhã · horário não reconhecido"
+    assert "manha" not in card.schedule_label
+    assert log.error.called and "manha" in log.error.call_args.args
 
 
 def test_encomenda_para_daqui_a_dois_dias_diz_a_data():
