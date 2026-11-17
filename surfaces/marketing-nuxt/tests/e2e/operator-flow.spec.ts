@@ -154,7 +154,7 @@ test("a fila de decisões leva cada cartão ao lugar exato da decisão", async (
   await expect(
     page.getByRole("heading", { level: 1, name: "Agendados" }),
   ).toBeVisible();
-  await expect(page.getByText(/^Envia .*17:30$/)).toBeVisible();
+  await expect(page.getByText(/^Envia .*17h30$/)).toBeVisible();
 });
 
 test("Ajustes tem as próprias seções, uma rota por lugar", async ({

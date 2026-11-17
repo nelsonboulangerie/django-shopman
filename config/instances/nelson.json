@@ -2008,6 +2008,8 @@
           "shop.manage_catalog",
           "shop.manage_rules",
           "shop.view_coupon",
+          "shop.view_courier",
+          "shop.view_courierrate",
           "shop.view_promotion",
           "shop.view_ruleconfig"
         ]
@@ -2246,6 +2248,7 @@
           "shop.view_deliveryattempt",
           "shop.view_deliverydistanceband",
           "shop.view_deliveryreconciliation",
+          "shop.view_deliveryservice",
           "shop.view_deliverytarget",
           "shop.view_deliveryzone",
           "shop.view_faqentry",

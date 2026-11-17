@@ -42,7 +42,7 @@ describe("cadastro de Postos: apresentação", () => {
   it("o uso do dispositivo diz quando, no fuso da loja", () => {
     expect(deviceUsageLine(device, copy)).toBe("Ainda não usado");
     expect(deviceUsageLine({ ...device, last_used_at: "2026-10-03T17:20:00Z" }, copy)).toBe(
-      "Usado por último em 03/10, 14:20",
+      "Usado por último em 03/10, 14h20",
     );
   });
 

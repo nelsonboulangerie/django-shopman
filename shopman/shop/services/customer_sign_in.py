@@ -15,6 +15,7 @@ from django.contrib.sessions.models import Session
 from django.core import signing
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils import timezone
+from shopman.utils.formatting import format_local
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ def record(*, request, user, method: str):
         label = _device_label(request)
         city = _approximate_city(request)
         method_label = METHOD_LABELS.get(method, "acesso à conta")
-        when = timezone.localtime(now).strftime("%d/%m/%Y às %H:%M")
+        when = format_local(now, "%d/%m/%Y às {clock}")
         lines = [f"{label} · {when}"]
         if city:
             lines.append(f"Próximo a {city}")
@@ -191,7 +192,7 @@ def list_accesses(*, user, current_session_key: str = "") -> list[dict]:
             "method_label": str(data.get("method_label") or "acesso à conta"),
             "approximate_city": str(data.get("approximate_city") or ""),
             "created_at": notification.created_at.isoformat(),
-            "created_at_display": timezone.localtime(notification.created_at).strftime("%d/%m/%Y às %H:%M"),
+            "created_at_display": format_local(notification.created_at, "%d/%m/%Y às {clock}"),
             "is_active": ref in active,
             "is_current": bool(current_ref and hmac.compare_digest(ref, current_ref)),
         })

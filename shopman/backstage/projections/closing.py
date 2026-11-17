@@ -17,6 +17,7 @@ from django.db.models import Sum
 from django.utils import timezone
 from shopman.offerman.models import Product
 from shopman.stockman import Quant
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage.models import DayClosing
 
@@ -176,7 +177,7 @@ def build_day_closing() -> DayClosingProjection:
         by = existing.closed_by.get_username() if existing.closed_by else "?"
         # Hora da LOJA: o banco devolve UTC, e 08:33 em Brasília saía "11:33"
         # (beta 05/11, PDV-05). O Admin converte; a projeção também.
-        at = timezone.localtime(existing.closed_at).strftime("%H:%M") if existing.closed_at else ""
+        at = format_clock(existing.closed_at) if existing.closed_at else ""
         closing_display = f"Fechado por {by} às {at}"
         production_summary = _closing_data(existing).get("production_summary") or production_summary
         raw_errors = _closing_data(existing).get("reconciliation_errors") or ()
@@ -297,7 +298,7 @@ def _pending_episodes(day) -> tuple:
                 id=episode.pk,
                 signal=episode.detected_signal,
                 window_display=(
-                    f"{start:%H:%M} → {end:%H:%M}" if end else f"desde {start:%H:%M}"
+                    f"{format_clock(start)} → {format_clock(end)}" if end else f"desde {format_clock(start)}"
                 ),
             )
         )

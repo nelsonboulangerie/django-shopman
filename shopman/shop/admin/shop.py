@@ -14,6 +14,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 from shopman.utils import unfold_component
+from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin
 from unfold.contrib.forms.widgets import ArrayWidget
@@ -372,7 +373,7 @@ def _dynamic_collection_choices() -> tuple[tuple[str, str], ...]:
 
 def _format_admin_time(value) -> str:
     if isinstance(value, time):
-        return value.strftime("%H:%M")
+        return value.strftime("%H:%M")  # hora-ok: valor de campo de formulário e do JSON salvo
     raw = str(value or "").strip()
     if not raw:
         return ""
@@ -637,7 +638,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             widget=UnfoldAdminIntegerFieldWidget,
             help_text=(
                 "Em minutos. A hora em que cada produto costuma ficar pronto é arredondada "
-                "para cima nesse passo. Ex.: com 30, 11:07 vira 11:30."
+                "para cima nesse passo. Ex.: com 30, 11h07 vira 11h30."
             ),
         ),
         "defaults_pickup_history_days": forms.IntegerField(
@@ -2818,10 +2819,11 @@ _INTEGRATIONS_FIELDSETS = (
     (
         "Inteligência artificial",
         {
-            "fields": ("ai_routes",),
+            "fields": ("ai_routes", "ai_limits"),
             "description": (
-                "Qual conexão de IA e qual modelo cada função usa. As conexões (provedor, endereço, "
-                "chave) ficam em Conexões de IA. Sem rota para uma função, vale a rota default."
+                "Qual conexão de IA e qual modelo cada função usa, e quanto a IA pode gastar por "
+                "dia. As conexões (provedor, endereço, chave) ficam em Conexões de IA. Sem rota "
+                "para uma função, vale a rota default. O gasto de cada dia fica em Gasto de IA."
             ),
         },
     ),
@@ -3281,7 +3283,31 @@ class ShopOperationAdmin(_ShopSingletonAdmin):
         obj.defaults = defaults
         obj.save(update_fields=["defaults"])
         self.message_user(request, "Calendário atualizado.", level=messages.SUCCESS)
+        if form.cleaned_data["decision"] == "closed":
+            self._warn_orders_on_closed_days(request, form.cleaned_data)
         return HttpResponseRedirect(reverse("admin:shop_shopoperation_change", args=[obj.pk]))
+
+    def _warn_orders_on_closed_days(self, request, cleaned_data):
+        """Fechar um dia não mexe nos pedidos: avisa quem precisa remarcar."""
+        from shopman.shop.services.closed_day_orders import (
+            alert_orders_on_closed_day,
+            open_orders_committed_between,
+        )
+
+        orders = open_orders_committed_between(cleaned_data["starts_on"], cleaned_data.get("ends_on"))
+        if not orders:
+            return
+        alert_orders_on_closed_day(orders, reason=str(cleaned_data.get("label") or "").strip())
+        refs = ", ".join(order.ref for order in orders)
+        count = len(orders)
+        noun = "pedido em aberto está marcado" if count == 1 else "pedidos em aberto estão marcados"
+        self.message_user(
+            request,
+            f"Atenção: {count} {noun} para o período fechado ({refs}). "
+            "Nenhum foi cancelado nem remarcado. O Gestor de pedidos recebeu um aviso "
+            "por pedido para remarcar ou falar com o cliente.",
+            level=messages.WARNING,
+        )
 
     @action(
         description="Remover decisão do calendário",
@@ -3463,7 +3489,7 @@ class ShopIntegrationsAdmin(_ShopSingletonAdmin):
         merged = dict(current) if isinstance(current, dict) else {}
         merged["registration"] = {
             "gcp_ids": list(result.gcp_ids),
-            "at": timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+            "at": format_local(timezone.localtime(), "%d/%m/%Y {clock}"),
         }
         defaults[GOOGLE_MERCHANT_KEY] = merged
         obj.defaults = defaults
