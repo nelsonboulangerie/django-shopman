@@ -21,7 +21,7 @@ export const POS_TERMINAL_CHANNELS: readonly PosEventChannel[] = [
   // vira "Pronto" ou "Cancelado" sem ninguém apertar "Atualizar".
   { path: "/sse/tabs", event: "backstage-tabs-update" },
   // O estoque do canal do PDV mexeu (outro balcão vendeu a última unidade, a
-  // fornada entrou): o tile troca o selo "Esgotado" sem ninguém tocar.
+  // lote entrou): o tile troca o selo "Esgotado" sem ninguém tocar.
   { path: "/sse/stock", event: "stock-update" },
 ];
 

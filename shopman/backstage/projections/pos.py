@@ -988,7 +988,7 @@ def build_pos_availability() -> list[dict]:
     """Só os selos da grade: ``[{sku, sold_out, sold_out_reason}]`` por produto do PDV.
 
     É a releitura do aviso de estoque (SSE ``stock-update`` no canal do PDV): outro
-    balcão vendeu a última unidade, a Produção lançou a fornada, e o tile troca o
+    balcão vendeu a última unidade, a Produção lançou o lote, e o tile troca o
     selo sem ninguém tocar. A leitura inteira (preço, coleção, escolhas, turno,
     comandas) não muda com o estoque, e custa segundos de CPU a cada aviso.
 

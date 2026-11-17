@@ -35,7 +35,7 @@ def pos_stock_events_view(request):
     tem a régua da tela que o evento faz reler (``cashman.operate_pos``, a mesma do
     ``POSView``): o canal ``stock-*`` é efêmero e sem gate no channel manager, e
     aberto a qualquer um ele entregaria o ritmo da loja (o que está esgotando,
-    quando a fornada entra), o vazamento que a trava do menuboard já fecha. Sem a
+    quando o lote entra), o vazamento que a trava do menuboard já fecha. Sem a
     permissão, 404 antes de delegar, para o ``EventSource`` falhar limpo e a grade
     seguir no poll (mesmo motivo do stream pessoal acima).
     """

@@ -63,7 +63,7 @@ describe("mergeAvailability — o selo troca sem ninguém tocar (WP-E4)", () => 
     expect(next[2]).toBe(grid[2]);
   });
 
-  it("a fornada entrou: o esgotado volta a vender", () => {
+  it("o lote entrou: o esgotado volta a vender", () => {
     const next = mergeAvailability(grid, [{ sku: "CROISSANT", sold_out: false, sold_out_reason: "" }]);
     expect(next[2]!.sold_out).toBe(false);
   });

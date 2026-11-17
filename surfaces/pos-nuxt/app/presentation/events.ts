@@ -13,7 +13,7 @@ export type PosRefreshScope = "tabs" | "availability" | "all";
  * quadro de comandas, e chega a todas as estações a cada salvar de qualquer
  * balcão: reler a projeção inteira nele enchia o servidor. O aviso de ESTOQUE
  * (`/sse/stock`) muda só os selos da grade ("Esgotado", "Sem caixa"), e chega a
- * cada venda, reserva e fornada. O resto (caixa, poll, volta à aba) relê tudo.
+ * cada venda, reserva e lote. O resto (caixa, poll, volta à aba) relê tudo.
  */
 export function refreshScopeForChannel(path: string | undefined): PosRefreshScope {
   if (path === "/sse/tabs") return "tabs";
