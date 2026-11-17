@@ -3193,7 +3193,8 @@
           "path": "shopman/shop/handlers/returns.py",
           "symbols": [
             "ReturnResult",
-            "ReturnService"
+            "ReturnService",
+            "returned_qty_by_line"
           ]
         }
       ],
