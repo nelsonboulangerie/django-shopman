@@ -12,6 +12,7 @@ import {
 } from "../../../operator-kit/app/presentation/appLaunch";
 import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 import type { HubTileProjection } from "~/types/hub";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 // Presentation pura da Central — sem estado, sem Nuxt; testável isolada.
 
@@ -210,10 +211,10 @@ export const HUB_REFRESH_LABEL = `Atualiza sozinho a cada ${QUEUE_POLL_MS / 1000
 /** O curto do mesmo selo, quando a barra aperta (kit `OperatorLiveStatus`, degrau 2). */
 export const HUB_REFRESH_SHORT_LABEL = `A cada ${QUEUE_POLL_MS / 1000} s`;
 
-/** "10:42": a hora de uma leitura, no fuso do dispositivo (o da loja). */
+/** "10h42": a hora de uma leitura, no fuso do dispositivo (o da loja). */
 export function readClockLabel(ms: number, timeZone?: string): string {
   if (!Number.isFinite(ms)) return "";
-  return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(new Date(ms));
+  return formatClock(ms, timeZone);
 }
 
 /**
@@ -249,14 +250,14 @@ export function tileAriaLabel(
 export const HUB_SECTIONS = [{ key: "home", label: "Início", icon: "lucide:house", to: "/" }];
 
 /**
- * A linha fina sob a saudação: "10:03 · Sábado, 3 de outubro". A hora é a do servidor
+ * A linha fina sob a saudação: "10h03 · Sábado, 3 de outubro". A hora é a do servidor
  * (`nowMs` já corrigido pelo `serverClockOffset`), mostrada no fuso do dispositivo (o da
  * loja). `timeZone` existe para o teste fixar o fuso.
  */
 export function hubDateLine(nowMs: number, timeZone?: string): string {
   if (!Number.isFinite(nowMs)) return "";
   const date = new Date(nowMs);
-  const time = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(date);
+  const time = formatClock(date, timeZone);
   const day = new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "numeric", month: "long", timeZone }).format(date);
   return `${time} · ${day.charAt(0).toUpperCase()}${day.slice(1)}`;
 }
