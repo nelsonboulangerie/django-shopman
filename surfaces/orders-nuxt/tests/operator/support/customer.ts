@@ -52,7 +52,8 @@ export async function customerOrdersPickupToday(page: Page, testInfo: TestInfo, 
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
   await expect(page.getByText("Horário da retirada")).toBeVisible();
   await page.getByRole("radio", { name: /^Hoje/ }).click().catch(() => undefined);
-  await page.getByRole("radio", { name: /^\d{2}:\d{2} às \d{2}:\d{2}$/ }).first().click();
+  // O primeiro horário livre de hoje, no formato da casa ("10h às 10h30").
+  await page.getByRole("radio", { name: /^\d{1,2}h(\d{2})? às \d{1,2}h(\d{2})?$/ }).first().click();
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
   await page.getByRole("radio", { name: /^Pix/ }).click();
   await capture(page, testInfo, "loja-finalizar");

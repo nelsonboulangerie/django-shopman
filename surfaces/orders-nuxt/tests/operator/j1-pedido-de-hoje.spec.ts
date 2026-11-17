@@ -66,8 +66,8 @@ test("J1: pedido de retirada para hoje, da loja à entrega", async ({ browser, b
   await cashierDelivers(gestor, ref);
   await capture(gestor, testInfo, "gestor-entregue");
 
-  // O cliente vê, no próprio acompanhamento, que retirou.
+  // O cliente vê, no próprio acompanhamento, que o pedido terminou.
   await store.reload();
-  await expect(store.getByText(/Retirado|Entregue/).first()).toBeVisible({ timeout: 60_000 });
+  await expect(store.getByText("Concluído", { exact: true }).first()).toBeVisible({ timeout: 60_000 });
   await capture(store, testInfo, "loja-retirado");
 });
