@@ -7,6 +7,8 @@
 //      "escritório" são palavras de quem desenha, não de quem opera (dono, 02/11/2026);
 //   2. Outros apps: cada um com a pendência mais urgente (a mesma da Central), e a Central;
 //   3. Quem opera: o nome, e Trocar ou bloquear.
+// O Suporte entra entre as seções e os outros apps: no celular precisa aparecer sem rolar
+// (prévia de 17/11/2026), e no fim da folha só aparecia rolando a 844 px.
 // Celular e tablet: folha de baixo. Computador: painel da esquerda, ao lado da barra.
 import { computed, reactive, resolveComponent, watch } from "vue";
 
@@ -126,6 +128,18 @@ function go(section: OperatorSection) {
           </div>
         </section>
 
+        <section v-if="supportEntry" aria-label="Suporte">
+          <NuxtButton
+            :label="SUPPORT_ENTRY_LABEL"
+            :icon="SUPPORT_ENTRY_ICON"
+            color="neutral"
+            variant="ghost"
+            class="min-h-11 w-full justify-start"
+            data-switcher-support
+            @click="open = false; supportEntry()"
+          />
+        </section>
+
         <section aria-label="Outros apps">
           <h3 class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Outros apps</h3>
           <p v-if="hubError && !apps.length" class="text-sm text-muted">
@@ -188,17 +202,6 @@ function go(section: OperatorSection) {
             class="min-h-11"
             data-switcher-lock
             @click="open = false; emit('lock')"
-          />
-        </section>
-        <section v-if="supportEntry" aria-label="Suporte" class="border-t border-default pt-3">
-          <NuxtButton
-            :label="SUPPORT_ENTRY_LABEL"
-            :icon="SUPPORT_ENTRY_ICON"
-            color="neutral"
-            variant="ghost"
-            class="min-h-11 w-full justify-start"
-            data-switcher-support
-            @click="open = false; supportEntry()"
           />
         </section>
       </div>
