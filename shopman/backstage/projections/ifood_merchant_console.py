@@ -21,6 +21,7 @@ from datetime import datetime, time, timedelta
 from django.utils import timezone
 from shopman.utils.formatting import format_clock, format_local
 
+from shopman.shop.projections import opening_hours
 from shopman.shop.services import business_calendar, ifood_merchant
 
 #: Rótulos dos campos do detalhe da loja (``GET /merchants/{id}``). Campo que o iFood
@@ -528,22 +529,6 @@ def build_interruptions(*, now: datetime | None = None) -> InterruptionsProjecti
     )
 
 
-class PauseNotRemovable(Exception):
-    """A pausa é do Gestor ou do calendário: removê-la direto voltaria na próxima gravação."""
-
-
-def remove_portal_interruption(interruption_id: str) -> None:
-    """Remove no iFood uma pausa feita fora do Gestor (Portal do Parceiro).
-
-    A pausa do Gestor sai ligando o iFood de novo (toggle do canal) e a do calendário sai
-    pelo calendário: apagar qualquer uma delas aqui seria desfeito pela próxima
-    gravação, e o gestor veria a pausa "voltar sozinha".
-    """
-    if interruption_id in _ours_by_ifood_id([interruption_id]):
-        raise PauseNotRemovable(interruption_id)
-    ifood_merchant.delete_interruption(interruption_id)
-
-
 # ── Horário ───────────────────────────────────────────────────────────────────
 
 
@@ -571,7 +556,7 @@ class OpeningHoursProjection:
 
 
 def _shift_phrase(shifts: list[tuple[time, time]]) -> str:
-    return business_calendar.format_shifts(shifts) if shifts else "Fechado"
+    return opening_hours.format_shifts(shifts) if shifts else "Fechado"
 
 
 def _remote_by_day(remote: list[dict]) -> dict[str, list[tuple[time, time]]]:
@@ -647,26 +632,14 @@ def build_opening_hours(*, now: datetime | None = None) -> OpeningHoursProjectio
     )
 
 
-def write_opening_hours(*, now: datetime | None = None) -> OpeningHoursProjection:
-    """Grava agora no iFood o horário da casa (o mesmo ``sync_store`` da fila) e relê.
-
-    Levanta ``MerchantAPIError`` com a recusa do iFood (400 de turno sobreposto, 403).
-    """
-    ifood_merchant.sync_store(now=now)
-    return build_opening_hours(now=now)
-
-
 __all__ = [
     "InterruptionsProjection",
     "MerchantProjection",
     "MerchantsProjection",
     "OpeningHoursProjection",
-    "PauseNotRemovable",
     "api_error_copy",
     "build_interruptions",
     "build_merchant",
     "build_merchants",
     "build_opening_hours",
-    "remove_portal_interruption",
-    "write_opening_hours",
 ]

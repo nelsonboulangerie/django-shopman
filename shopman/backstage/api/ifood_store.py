@@ -159,12 +159,8 @@ class IFoodInterruptionDetailView(_IFoodLiveView):
     required_permission = ("shop.manage_orders", "cashman.adjust_shift")
 
     def delete(self, request, interruption_id: str):
-        from shopman.backstage.projections.ifood_merchant_console import (
-            PauseNotRemovable,
-            api_error_copy,
-            build_interruptions,
-            remove_portal_interruption,
-        )
+        from shopman.backstage.projections.ifood_merchant_console import api_error_copy, build_interruptions
+        from shopman.backstage.services.ifood_store import PauseNotRemovable, remove_portal_interruption
         from shopman.shop.services import ifood_merchant
 
         if not ifood_merchant.enabled():
@@ -204,13 +200,14 @@ class IFoodOpeningHoursWriteView(_IFoodLiveView):
     required_permission = ("shop.manage_orders", "cashman.adjust_shift")
 
     def post(self, request):
-        from shopman.backstage.projections.ifood_merchant_console import api_error_copy, write_opening_hours
+        from shopman.backstage.projections.ifood_merchant_console import api_error_copy, build_opening_hours
+        from shopman.backstage.services.ifood_store import write_opening_hours
         from shopman.shop.services import ifood_merchant
 
         if not ifood_merchant.enabled():
             return Response({"detail": "A integração com o iFood está desligada."}, status=404)
         try:
-            projection = write_opening_hours()
+            write_opening_hours()
         except ifood_merchant.MerchantAPIError as exc:
             return Response({"detail": api_error_copy(exc)}, status=502)
-        return Response({"enabled": True, **asdict(projection)})
+        return Response({"enabled": True, **asdict(build_opening_hours())})

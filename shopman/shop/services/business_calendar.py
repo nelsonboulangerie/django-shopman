@@ -10,6 +10,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from django.utils import timezone
 from shopman.utils.formatting import format_clock
 
+from shopman.shop.projections.opening_hours import split_by_breaks
+
 logger = logging.getLogger(__name__)
 
 DAY_NAMES_PT = {
@@ -268,7 +270,9 @@ def closed_weekdays(*, shop=None) -> list[int]:
     return out
 
 
-def available_dates(*, max_count: int = 3, horizon_days: int = 30, now: datetime | None = None, shop=None) -> list[date]:
+def available_dates(
+    *, max_count: int = 3, horizon_days: int = 30, now: datetime | None = None, shop=None
+) -> list[date]:
     """As próximas ``max_count`` datas em que a loja realmente opera.
 
     Pula dias da semana fechados e exceções (feriados/férias) — nunca devolve
@@ -351,10 +355,12 @@ def delivery_slots_for(
         finishes = (cursor + step).time()
         inside_a_shift = any(s_start <= starts and finishes <= s_end for s_start, s_end in shifts)
         if inside_a_shift and (earliest is None or starts >= earliest):
-            slots.append({
-                "ref": f"{_fmt_hhmm(starts)}-{_fmt_hhmm(finishes)}",
-                "label": f"{_fmt_hour(starts)} às {_fmt_hour(finishes)}",
-            })
+            slots.append(
+                {
+                    "ref": f"{_fmt_hhmm(starts)}-{_fmt_hhmm(finishes)}",
+                    "label": f"{_fmt_hour(starts)} às {_fmt_hour(finishes)}",
+                }
+            )
         cursor += step
     return slots
 
@@ -398,76 +404,6 @@ def weekly_shifts(*, shop=None) -> dict[str, list[tuple[time, time]]]:
         if window is not None:
             out[name] = split_by_breaks(window, (getattr(shop, "opening_hours", None) or {}).get(name))
     return out
-
-
-def day_breaks(entry) -> list[tuple[time, time]]:
-    """Os intervalos de um dia da grade (``{"open", "close", "breaks": [...]}``).
-
-    Cada intervalo é ``{"start": "12:00", "end": "13:00"}``. Só vale intervalo
-    inteiro DENTRO do expediente, sem sobrepor outro: o formulário do Admin recusa
-    o resto (``clean_breaks``). Se um intervalo inválido chegar por outro caminho,
-    ele é ignorado e o log grita, em vez de inventar um turno.
-    """
-    if not isinstance(entry, dict):
-        return []
-    try:
-        opens_at = time.fromisoformat(str(entry["open"]))
-        closes_at = time.fromisoformat(str(entry["close"]))
-    except (KeyError, TypeError, ValueError):
-        return []
-    raw = entry.get("breaks") or []
-    if not isinstance(raw, list):
-        logger.error("business_calendar: breaks fora do formato (lista esperada): %r", raw)
-        return []
-    out: list[tuple[time, time]] = []
-    for item in raw:
-        start = _calendar_time((item or {}).get("start")) if isinstance(item, dict) else None
-        end = _calendar_time((item or {}).get("end")) if isinstance(item, dict) else None
-        if start is None or end is None or not (opens_at < start < end < closes_at):
-            logger.error("business_calendar: intervalo inválido ignorado: %r", item)
-            continue
-        out.append((start, end))
-    out.sort()
-    clean: list[tuple[time, time]] = []
-    for start, end in out:
-        if clean and start < clean[-1][1]:
-            logger.error("business_calendar: intervalo sobreposto ignorado: %s-%s", start, end)
-            continue
-        clean.append((start, end))
-    return clean
-
-
-def split_by_breaks(window: tuple[time, time], entry) -> list[tuple[time, time]]:
-    """O expediente ``window`` partido pelos intervalos de ``entry``."""
-    opens_at, closes_at = window
-    shifts: list[tuple[time, time]] = []
-    cursor = opens_at
-    for start, end in day_breaks(entry):
-        if start <= cursor or end >= closes_at:
-            continue
-        shifts.append((cursor, start))
-        cursor = end
-    shifts.append((cursor, closes_at))
-    return shifts
-
-
-def format_shifts(shifts: list[tuple[time, time]]) -> str:
-    """``"9h às 12h, 13h às 16h e 17h às 23h"`` — a frase do horário de um dia."""
-    parts = [f"{_fmt_hour(start)} às {_fmt_hour(end)}" for start, end in shifts]
-    if len(parts) <= 1:
-        return "".join(parts)
-    return f"{', '.join(parts[:-1])} e {parts[-1]}"
-
-
-def entry_shifts(entry) -> list[tuple[time, time]]:
-    """Os turnos de uma linha crua da grade (``{"open", "close", "breaks"}``)."""
-    if not isinstance(entry, dict):
-        return []
-    opens_at = _calendar_time(entry.get("open"))
-    closes_at = _calendar_time(entry.get("close"))
-    if opens_at is None or closes_at is None or opens_at >= closes_at:
-        return []
-    return split_by_breaks((opens_at, closes_at), entry)
 
 
 def calendar_closure_on(day: date, *, shop=None) -> tuple[bool, str]:
@@ -636,8 +572,7 @@ def _closed_dates(shop) -> list:
 def _has_regular_hours(shop) -> bool:
     hours = getattr(shop, "opening_hours", None)
     return isinstance(hours, dict) and any(
-        isinstance(value, dict) and value.get("open") and value.get("close")
-        for value in hours.values()
+        isinstance(value, dict) and value.get("open") and value.get("close") for value in hours.values()
     )
 
 

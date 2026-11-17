@@ -6192,11 +6192,7 @@
           "path": "shopman/shop/services/business_calendar.py",
           "symbols": [
             "_day_shifts",
-            "day_breaks",
-            "entry_shifts",
-            "format_shifts",
             "shifts_for",
-            "split_by_breaks",
             "weekly_shifts"
           ]
         }

@@ -7503,6 +7503,30 @@
       ]
     },
     {
+      "path": "shopman/shop/projections/opening_hours.py",
+      "touchpoints": [
+        "projection"
+      ],
+      "out_of_extraction": true,
+      "unit_ids": [],
+      "responsibilities": [
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "_time",
+            "day_breaks",
+            "entry_shifts",
+            "format_shifts",
+            "logger",
+            "split_by_breaks"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/projections/order_tracking.py",
       "touchpoints": [
         "projection"

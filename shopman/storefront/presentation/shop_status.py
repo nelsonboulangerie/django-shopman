@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from shopman.utils.formatting import format_clock
 
-from shopman.shop.services.business_calendar import entry_shifts, format_shifts
+from shopman.shop.projections.opening_hours import entry_shifts, format_shifts
 
 DAY_NAMES_PT = {
     "monday": "Segunda",

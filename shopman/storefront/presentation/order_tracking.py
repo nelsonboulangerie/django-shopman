@@ -26,6 +26,7 @@ from shopman.utils.formatting import format_clock, format_local
 from shopman.utils.monetary import format_money
 
 from shopman.shop.projections.copy import CopyCatalog, build_copy
+from shopman.shop.projections.opening_hours import entry_shifts, format_shifts
 from shopman.shop.projections.order_tracking import (
     TrackingData,
     TrackingFulfillmentData,
@@ -41,7 +42,6 @@ from shopman.shop.projections.types import (
     OrderItemProjection,
     TimelineEventProjection,
 )
-from shopman.shop.services.business_calendar import entry_shifts, format_shifts
 from shopman.storefront.presentation.status import (
     customer_status_label,
     order_status_label,

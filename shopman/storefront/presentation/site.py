@@ -127,7 +127,7 @@ def build_pages(shop) -> SitePagesProjection:
 
 def build_opening_hours(opening_hours: dict | None) -> tuple[OpeningHoursSpecProjection, ...]:
     """Agrupa os dias com o mesmo horário, na ordem da semana; dia ausente é fechado."""
-    from shopman.shop.services.business_calendar import entry_shifts
+    from shopman.shop.projections.opening_hours import entry_shifts
 
     groups: dict[tuple[str, str], list[str]] = {}
     for day in DAY_ORDER:

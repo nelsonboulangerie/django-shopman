@@ -84,7 +84,7 @@ class BusinessHoursRule(BaseRule):
             except (KeyError, ValueError):
                 open_time = self.start
                 close_time = self.end
-            from shopman.shop.services.business_calendar import split_by_breaks
+            from shopman.shop.projections.opening_hours import split_by_breaks
 
             # Intervalo entre turnos (``breaks``) também é fora do horário.
             shifts = split_by_breaks((open_time, close_time), day_hours)

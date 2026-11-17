@@ -17,6 +17,7 @@ import pytest
 from django.test import override_settings
 
 from shopman.shop.models import Shop
+from shopman.shop.projections import opening_hours
 from shopman.shop.services import business_calendar, ifood_merchant
 
 pytestmark = pytest.mark.django_db
@@ -89,11 +90,11 @@ def test_janela_de_entrega_nao_cai_no_intervalo(shop):
 def test_intervalo_fora_do_dia_e_ignorado_sem_inventar_turno():
     entry = {"open": "09:00", "close": "18:00", "breaks": [{"start": "08:00", "end": "10:00"}]}
 
-    assert business_calendar.entry_shifts(entry) == [(time(9), time(18))]
+    assert opening_hours.entry_shifts(entry) == [(time(9), time(18))]
 
 
 def test_a_frase_do_dia_lista_os_turnos():
-    assert business_calendar.format_shifts(business_calendar.entry_shifts(HOMOLOGACAO["sunday"])) == (
+    assert opening_hours.format_shifts(opening_hours.entry_shifts(HOMOLOGACAO["sunday"])) == (
         "9h às 12h, 13h às 16h e 17h às 23h"
     )
 

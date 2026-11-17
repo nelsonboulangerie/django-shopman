@@ -168,14 +168,14 @@ const registry = computed(
   () => detail.value?.detail.filter((r) => r.label !== "ID da loja") ?? [],
 );
 const copied = ref(false);
-async function copyId() {
-  try {
-    await navigator.clipboard.writeText(storeId.value);
-    copied.value = true;
-    setTimeout(() => (copied.value = false), 2000);
-  } catch {
-    copied.value = false;
-  }
+function copyId() {
+  void navigator.clipboard
+    .writeText(storeId.value)
+    .then(() => {
+      copied.value = true;
+      setTimeout(() => (copied.value = false), 2000);
+    })
+    .catch(() => (copied.value = false));
 }
 
 const runtimeConfig = useRuntimeConfig();
