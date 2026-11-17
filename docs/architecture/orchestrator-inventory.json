@@ -9115,16 +9115,20 @@
             "REASSIGNED",
             "REISSUED",
             "REVOKED",
+            "UNCLAIMED",
             "UNKNOWN"
           ]
         },
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_check",
             "_hash",
             "_live",
+            "claim",
             "close",
             "issue",
+            "release",
             "resolve",
             "revoke"
           ]
