@@ -110,8 +110,12 @@ const props = defineProps<{
   discountType: "percent" | "fixed";
   discountValue: string;
   discountReason: string;
-  managerUsername: string;
-  managerPin: string;
+  /**
+   * O gerente assinou O QUE ESTÁ NA TELA (o retrato de `usePosSale`). Muda o
+   * desconto, um item ou a forma, e isto volta a `false` sozinho: a tela pede
+   * o gerente de novo, com o valor novo (P0-1). O PIN não passa por aqui.
+   */
+  managerApproved: boolean;
   managerApprovalError: string;
   /** O PIN do gerente está sendo conferido no servidor (`checkManager`). */
   managerCheckBusy?: boolean;
@@ -209,8 +213,6 @@ const emit = defineEmits<{
   "update:discountType": ["percent" | "fixed"];
   "update:discountValue": [string];
   "update:discountReason": [string];
-  "update:managerUsername": [string];
-  "update:managerPin": [string];
   "update:fulfillmentType": ["pickup" | "delivery"];
   "update:fulfillmentConfirmed": [boolean];
   "update:paymentCollection": ["terminal" | "on_delivery"];
@@ -220,6 +222,7 @@ const emit = defineEmits<{
   /**
    * Confere o PIN do gerente ANTES de seguir (beta test de 05/11/2026): o
    * diálogo só fecha com `done(true)`. Recusado, ele fica aberto com o erro.
+   * Quem guarda a assinatura (na memória, presa ao retrato) é o `usePosSale`.
    */
   checkManager: [string, string, (ok: boolean) => void];
   /** O diálogo do gerente fechou sem assinar: o erro velho não volta na próxima abertura. */
@@ -290,10 +293,7 @@ const emit = defineEmits<{
 const supportsFiscalDocument = computed(() => !!props.checkoutContract?.capabilities?.supports_fiscal_document);
 const savedAddresses = computed(() => props.customerLookup?.saved_addresses || []);
 const needsReview = computed(() => !props.review);
-const approvalBlocking = computed(() =>
-  !!props.review?.requires_manager_approval
-  && (!props.managerUsername.trim() || !props.managerPin.trim()),
-);
+const approvalBlocking = computed(() => !!props.review?.requires_manager_approval && !props.managerApproved);
 const managerThresholdQ = computed(() => props.review?.manager_approval_threshold_q || 0);
 // O desconto MANUAL (linha + venda) que o teto mede: é o número que o gerente assina.
 const manualDiscountQ = computed(() => (props.review?.line_discount_q || 0) + (props.review?.order_discount_q || 0));
@@ -1283,8 +1283,6 @@ function onManagerAuthorize(username: string, pin: string) {
   // e nada adiante (maquininha, "Recebi o Pix") chegou a acontecer.
   emit("checkManager", username, pin, (ok) => {
     if (!ok) return;
-    emit("update:managerUsername", username);
-    emit("update:managerPin", pin);
     managerAuthOpen.value = false;
     proceed();
   });
