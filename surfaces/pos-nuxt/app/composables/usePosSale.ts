@@ -195,7 +195,8 @@ function readCloseOutcomeUncertain(): CloseGuardRead {
       try {
         storage.setItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY, JSON.stringify(marker));
       } catch {
-        // Ler continua valendo: o corpo em memória já está sem o PIN.
+        // silêncio-deliberado: a leitura continua valendo (o corpo em memória já
+        // está sem o PIN) e a próxima leitura tenta regravar de novo.
       }
     }
     return { marker, storageAvailable: true };
@@ -4144,7 +4145,12 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   function newClientRequestId(): string {
-    const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    // `randomUUID` só existe em contexto seguro (HTTPS ou localhost); o
+    // `getRandomValues` existe em qualquer um. `Math.random` não entra: a chave e
+    // o dono do marcador andam junto da assinatura do gerente (CodeQL
+    // js/insecure-randomness, WP-E1).
+    const random = globalThis.crypto.randomUUID?.()
+      || Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
     return `pos:${random}`;
   }
 

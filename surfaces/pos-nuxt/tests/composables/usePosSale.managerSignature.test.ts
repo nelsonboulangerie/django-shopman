@@ -86,8 +86,25 @@ async function saleWithDiscount(actionCall: ReturnType<typeof vi.fn>, value: str
   h.sale.cart.discountType = "fixed";
   h.sale.cart.discountValue = value;
   h.sale.cart.discountReason = "cortesia";
-  await h.sale.submitSale(); // prepara: revisão com o desconto
+  await nextTick(); // o desconto dispara a revisão automática; ela vem antes
+  await h.sale.submitSale(); // prepara: abre o pagamento e revisa
+  await reviewed(h);
   return h;
+}
+
+/** A revisão do carrinho de agora chegou (a automática roda por timer). */
+async function reviewed(h: ReturnType<typeof makeSale>) {
+  await vi.waitFor(() => expect(h.sale.review.value).not.toBeNull(), { timeout: 5_000 });
+}
+
+/** Toca em concluir até o fechamento sair (sem revisão viva, o toque revisa). */
+async function closeOnce(h: ReturnType<typeof makeSale>, actionCall: ReturnType<typeof vi.fn>) {
+  const before = bodiesTo(actionCall, "/sale/close/").length;
+  for (let attempt = 0; attempt < 3 && bodiesTo(actionCall, "/sale/close/").length === before; attempt += 1) {
+    await reviewed(h);
+    await h.sale.submitSale();
+  }
+  expect(bodiesTo(actionCall, "/sale/close/")).toHaveLength(before + 1);
 }
 
 describe("usePosSale — a assinatura do gerente vale para o retrato que ele viu (WP-E1)", () => {
@@ -161,7 +178,7 @@ describe("usePosSale — o PIN do gerente nunca fica no navegador (P1-4)", () =>
     await h.sale.checkManagerApproval("joyce", PIN);
     await h.sale.saveTab();
 
-    await h.sale.submitSale();
+    await closeOnce(h, actionCall);
 
     const [close] = bodiesTo(actionCall, "/sale/close/");
     expect(close?.manager_approval).toEqual({ username: "joyce", pin: PIN });
@@ -191,10 +208,10 @@ describe("usePosSale — o PIN do gerente nunca fica no navegador (P1-4)", () =>
     const h = await saleWithDiscount(actionCall, "6,00");
     await h.sale.checkManagerApproval("joyce", PIN);
 
-    await h.sale.submitSale();
+    await closeOnce(h, actionCall);
     expect(h.sale.managerApproved.value).toBe(false);
 
-    await h.sale.submitSale();
+    await closeOnce(h, actionCall);
     const [first, second] = bodiesTo(actionCall, "/sale/close/");
     expect(first?.manager_approval).toEqual({ username: "joyce", pin: PIN });
     expect(second).not.toHaveProperty("manager_approval");
@@ -216,7 +233,7 @@ describe("usePosSale — o PIN do gerente nunca fica no navegador (P1-4)", () =>
     const h = await saleWithDiscount(actionCall, "6,00");
     await h.sale.checkManagerApproval("joyce", PIN);
 
-    await h.sale.submitSale();
+    await closeOnce(h, actionCall);
 
     expect(h.sale.managerApprovalError.value).toBe("Revise o gerente e o PIN.");
     expect(h.sale.managerApproved.value).toBe(false);
