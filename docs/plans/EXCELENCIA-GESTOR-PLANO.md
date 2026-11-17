@@ -550,7 +550,7 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
   e do produto.
 - **Achados que fecha:** P1-08.
 - **Dependências:** a regra da retenção escrita nos Termos da loja e mostrada à cliente antes
-  de pagar a encomenda (frente da loja); o lado do `shop` no `main`
+  de pagar a encomenda (frente da loja, #2613); o lado do `shop` no `main`
   (política, serviço, régua do pagamento, conciliação, perda, transição dos canais: fronteira,
   frente da coordenação); a #2604; WP-G12 (mesmos arquivos).
 - **Arquivos:** `operations.py` e `urls.py` (a rota), `pages/[ref].vue`, `OrderCardMenu.vue`,
@@ -682,7 +682,10 @@ confirmar o destino de cada linha, o dinheiro por extenso e o texto que o client
    valha, confere?"
 2. O pedido pago espera o corte do dia para o botão aparecer: **sim** (padrão).
 3. Tolerância do não pago: **60 minutos** depois da hora combinada (padrão).
-4. Corte do dia: **30 minutos antes de fechar** (padrão).
+4. Corte do dia: **no fechamento** (padrão de 0 minuto antes de fechar). A recomendação era
+   30 minutos antes, mas os Termos da loja já prometem que a loja "guarda até o fim do
+   expediente do dia combinado" (`surfaces/storefront-nuxt/app/pages/termos.vue`), e o gesto
+   não pode chegar antes da promessa (#2613).
 5. O fechamento do dia segura enquanto houver pedido pronto não resolvido: **sim**, lista e
    resolve com uma autorização só (padrão).
 
@@ -693,8 +696,9 @@ Admin (`Shop.defaults["no_show"]`), nunca em env, e a casa troca sem código.
 **Pré-requisito que a resposta do dono criou.** Reter o valor da perda só vale se a regra
 estiver escrita nos Termos da loja (ou política comercial equivalente) e aparecer à cliente
 **antes de pagar a encomenda**. Sem isso o WP-G11 não liga a retenção. É frente da loja
-(Storefront e documentos legais), fora deste plano; a coordenação levanta o que os termos já
-dizem.
+(Storefront e documentos legais), fora deste plano, na issue #2613: a cláusula do pedido não
+retirado, a linha no checkout antes do pagamento, a versão nova dos Termos arquivada e a
+leitura de advogado ou contador antes de publicar.
 
 Para o contador, não para o dono: valor retido de pedido que não saiu pede algum documento?
 
