@@ -28,7 +28,7 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div
       v-if="clientId && now"
-      class="pointer-events-none fixed bottom-2 right-2 z-[2147483647] flex flex-col items-end rounded-md bg-black/85 px-2.5 py-1 text-right font-mono text-[11px] leading-snug text-white shadow-lg"
+      class="pointer-events-none fixed bottom-2 right-2 z-[2147483647] flex flex-col items-end rounded-md bg-black/85 px-2.5 py-1 text-right font-mono text-xs leading-snug text-white shadow-lg"
       data-ifood-homologation-band
     >
       <span>Homologação iFood · {{ homologationClock(now) }}</span>
