@@ -9,6 +9,24 @@ const props = {
   scheduleLabel: "Sábado, 10h às 10h30",
   scheduleWindow: "10h às 10h30",
   loading: false,
+  fulfillmentOptions: [
+    { ref: "pickup" as const, label: "Retirada", description: "No balcão da loja", requires_address: false },
+    { ref: "delivery" as const, label: "Entrega", description: "No endereço do cliente", requires_address: true },
+  ],
+  fulfillmentType: "pickup" as const,
+  fulfillmentConfirmed: false,
+  scheduleDate: "",
+  scheduleTimeSlot: "",
+  schedule: {
+    today: "2099-09-10",
+    availableDates: ["2099-09-10", "2099-09-11", "2099-09-12", "2099-09-13"],
+    maxDate: "2099-10-10",
+    windows: [{ ref: "slot-10", label: "10h às 10h30", enabled: true }],
+    bottleneckName: "",
+    readyAt: "",
+    pending: false,
+    failed: false,
+  },
 };
 
 type Wrapper = Awaited<ReturnType<typeof mountSuspended>>;
@@ -42,27 +60,44 @@ describe("assistente da encomenda", () => {
     expect(w.emitted("customer")).toHaveLength(1);
   });
 
-  it("anda sozinho quando a etapa da vez fica pronta, e a ação de cada etapa abre o diálogo dela", async () => {
+  it("anda sozinho quando a etapa da vez fica pronta; recebimento e dia se escolhem no cartão, sem diálogo", async () => {
     const w = await mountSuspended(PosOrderEntry, { props });
     await w.setProps({ issue: "fulfillment" });
     expect(visibleStep(w)).toEqual(["fulfillment"]);
     expect(footer(w)).toBe("Etapa 2 de 3: Recebimento");
-    await button(w, "Escolher entrega ou retirada")!.trigger("click");
-    expect(w.emitted("fulfillment")).toHaveLength(1);
-    await w.setProps({ issue: "address", delivery: true });
+    // As formas de receber são os botões da etapa: o toque é a resposta.
+    const options = w.findAll("[data-order-fulfillment]");
+    expect(options.map((o) => o.text())).toEqual(["RetiradaNo balcão da loja", "EntregaNo endereço do cliente"]);
+    expect(options.map((o) => o.attributes("aria-checked"))).toEqual(["false", "false"]);
+    await options[1]!.trigger("click");
+    expect(w.emitted("pickFulfillment")).toEqual([["delivery"]]);
+    expect(w.emitted("fulfillment")).toBeUndefined();
+    await w.setProps({ issue: "address", delivery: true, fulfillmentType: "delivery", fulfillmentConfirmed: true });
     expect(visibleStep(w)).toEqual(["address"]);
     expect(footer(w)).toBe("Etapa 3 de 4: Endereço");
+    // O endereço (CEP, mapa, taxa) segue no formulário de entrega.
     await button(w, "Informar endereço")!.trigger("click");
-    expect(w.emitted("fulfillment")).toHaveLength(2);
+    expect(w.emitted("fulfillment")).toHaveLength(1);
     await w.setProps({ issue: "schedule" });
     expect(visibleStep(w)).toEqual(["schedule"]);
-    await button(w, "Escolher data e horário")!.trigger("click");
+    // A etapa da data à vista pede a agenda; o dia se escolhe ali mesmo.
     expect(w.emitted("schedule")).toHaveLength(1);
+    const day = w.find("[data-order-step='schedule'] [data-day-option='tomorrow']");
+    await day.trigger("click");
+    expect(w.emitted("update:scheduleDate")).toEqual([["2099-09-11"]]);
     expect(button(w, "Montar encomenda")!.attributes("disabled")).toBeDefined();
-    await w.setProps({ issue: "" });
+    await w.setProps({ issue: "", scheduleDate: "2099-09-11" });
+    await w.find("[data-schedule-slot='slot-10']").trigger("click");
+    expect(w.emitted("update:scheduleTimeSlot")).toContainEqual(["slot-10"]);
     expect(w.text()).toContain("Sábado, 10h às 10h30");
     await button(w, "Montar encomenda")!.trigger("click");
     expect(w.emitted("complete")).toHaveLength(1);
+  });
+
+  it("sem dia escolhido, a etapa não mostra horário de dia nenhum", async () => {
+    const w = await mountSuspended(PosOrderEntry, { props: { ...props, issue: "schedule" as const } });
+    expect(w.find("[data-schedule-waiting-day]").text()).toBe("Escolha o dia para ver os horários.");
+    expect(w.find("[data-schedule-slot]").exists()).toBe(false);
   });
 
   it("Voltar e a trilha levam a uma etapa feita; Continuar devolve", async () => {
@@ -118,7 +153,7 @@ describe("assistente da encomenda", () => {
     const w = await mountSuspended(PosOrderEntry, { props: { ...props, issue: "fulfillment" as const }, attachTo: document.body });
     (w.vm as unknown as { focusCurrent: () => void }).focusCurrent();
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(document.activeElement?.textContent).toContain("Escolher entrega ou retirada");
+    expect(document.activeElement?.getAttribute("data-order-fulfillment")).toBe("pickup");
     w.unmount();
   });
 });

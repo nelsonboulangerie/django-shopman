@@ -260,13 +260,60 @@ export interface WindowGroup {
 /** O rótulo do grupo sem janela combinada. Nunca uma linha em branco. */
 export const NO_WINDOW_LABEL = "Sem horário combinado";
 
+/** O título do grupo das que já foram entregues, no fim do dia. */
+export const DELIVERED_GROUP_LABEL = "Entregues";
+
 /**
- * As encomendas de um dia agrupadas pela janela, na ordem em que o servidor as
- * entregou (a ordem do painel: janela, e o sem-janela no fim do dia).
+ * A próxima ação primeiro (P1-11 do laudo de 16/11). A lista abre com o que
+ * falta entregar: a entregue já saiu e desce para o fim do dia, e, dentro da
+ * mesma janela, a que está PRONTA (a que se entrega agora) vem antes da que
+ * ainda espera a cozinha; a que saiu para entrega vem por último entre as
+ * abertas, porque o gesto dela é de outra pessoa. Fora isso vale a ordem do
+ * servidor (a janela, e o sem-janela no fim do dia): a promessa de horário
+ * continua sendo o eixo. Ordenação estável: empate fica como o servidor mandou.
+ */
+const NEXT_ACTION_RANK: Record<PreorderSituation, number> = {
+  ready: 0,
+  to_pay: 1,
+  check_payment: 1,
+  paid: 1,
+  on_account: 1,
+  out_for_delivery: 2,
+  delivered: 3,
+};
+
+export function nextActionFirst<T extends Pick<PreorderCard, "situation" | "window_label">>(orders: readonly T[]): T[] {
+  const windowIndex = new Map<string, number>();
+  for (const order of orders) {
+    const label = order.window_label || NO_WINDOW_LABEL;
+    if (!windowIndex.has(label)) windowIndex.set(label, windowIndex.size);
+  }
+  return orders
+    .map((order, index) => ({ order, index }))
+    .sort((a, b) => {
+      const delivered = Number(a.order.situation === "delivered") - Number(b.order.situation === "delivered");
+      if (delivered) return delivered;
+      const byWindow = windowIndex.get(a.order.window_label || NO_WINDOW_LABEL)! - windowIndex.get(b.order.window_label || NO_WINDOW_LABEL)!;
+      if (byWindow) return byWindow;
+      const byRank = NEXT_ACTION_RANK[a.order.situation] - NEXT_ACTION_RANK[b.order.situation];
+      return byRank || a.index - b.index;
+    })
+    .map(({ order }) => order);
+}
+
+/**
+ * As encomendas de um dia agrupadas pela janela, a próxima ação primeiro
+ * (`nextActionFirst`): as abertas por janela, na ordem do servidor, e as
+ * entregues juntas num grupo só no fim ("Entregues"), em vez de abrirem o dia.
  */
 export function groupByWindow(orders: readonly PreorderCard[]): WindowGroup[] {
   const groups: WindowGroup[] = [];
-  for (const order of orders) {
+  const delivered: PreorderCard[] = [];
+  for (const order of nextActionFirst(orders)) {
+    if (order.situation === "delivered") {
+      delivered.push(order);
+      continue;
+    }
     const label = order.window_label || NO_WINDOW_LABEL;
     const last = groups[groups.length - 1];
     if (last && last.label === label) {
@@ -275,6 +322,7 @@ export function groupByWindow(orders: readonly PreorderCard[]): WindowGroup[] {
     }
     groups.push({ key: `${order.window_start || "none"}:${label}`, label, orders: [order] });
   }
+  if (delivered.length) groups.push({ key: "delivered", label: DELIVERED_GROUP_LABEL, orders: delivered });
   return groups;
 }
 
@@ -444,8 +492,11 @@ export function checkCount(cards: readonly FilterCard[], filters: PreorderFilter
  */
 export function checkPaymentNotice(count: number): string {
   if (count <= 0) return "";
-  const subject = count === 1 ? "1 encomenda está" : `${count} encomendas estão`;
-  return `${subject} com o pagamento a conferir: o sistema não conseguiu ler o que foi pago, `
+  if (count === 1) {
+    return "1 encomenda está com o pagamento a conferir: o sistema não conseguiu ler o que foi pago, "
+      + "e ela não entra em A receber nem em Pagas.";
+  }
+  return `${count} encomendas estão com o pagamento a conferir: o sistema não conseguiu ler o que foi pago, `
     + "e elas não entram em A receber nem em Pagas.";
 }
 

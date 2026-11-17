@@ -90,3 +90,74 @@ describe("assistente da encomenda × orderSetupIssue", () => {
     expect(step()).toBe("1. Cliente");
   });
 });
+
+// JORNADA J5 (WP-E10): a Caixa cria a encomenda de outro dia escolhendo Retirada e
+// o dia NO PRÓPRIO CARTÃO, com o cartão ligado ao carrinho como a tela de venda o
+// liga (`pickFulfillment` e `v-model:scheduleDate`). Nenhum diálogo no meio.
+describe("jornada J5: retirada e dia escolhidos no cartão", () => {
+  it("cliente, Retirada no cartão, Amanhã no cartão: a encomenda fica pronta para montar", async () => {
+    const sale = makeSale();
+    instances.push(sale);
+    sale.sale.setSalesMode("order");
+    const { cart, orderSetupIssue } = sale.sale;
+    const Host = defineComponent({
+      setup: () => () => render(PosOrderEntry, {
+        issue: orderSetupIssue.value,
+        delivery: cart.fulfillmentConfirmed && cart.fulfillmentType === "delivery",
+        customerName: cart.customerName,
+        fulfillmentLabel: cart.fulfillmentType,
+        scheduleLabel: cart.deliveryDate,
+        scheduleWindow: cart.deliveryTimeSlot,
+        loading: false,
+        fulfillmentOptions: [
+          { ref: "pickup", label: "Retirada", description: "No balcão", requires_address: false },
+          { ref: "delivery", label: "Entrega", description: "No endereço", requires_address: true },
+        ],
+        fulfillmentType: cart.fulfillmentType,
+        fulfillmentConfirmed: cart.fulfillmentConfirmed,
+        scheduleDate: cart.deliveryDate,
+        scheduleTimeSlot: cart.deliveryTimeSlot,
+        schedule: {
+          today: "2099-09-10",
+          availableDates: ["2099-09-10", "2099-09-11", "2099-09-12"],
+          maxDate: "2099-10-10",
+          windows: [],
+          bottleneckName: "",
+          readyAt: "",
+          pending: false,
+          failed: false,
+        },
+        onPickFulfillment: (type: "pickup" | "delivery") => {
+          cart.fulfillmentType = type;
+          cart.fulfillmentConfirmed = true;
+        },
+        "onUpdate:scheduleDate": (iso: string) => { cart.deliveryDate = iso; },
+        "onUpdate:scheduleTimeSlot": (slot: string) => { cart.deliveryTimeSlot = slot; },
+      }),
+    });
+    const w = await mountSuspended(Host);
+    const settle = async () => { await nextTick(); await nextTick(); };
+    const step = () => w.find("[aria-current='step']").attributes("aria-label");
+
+    cart.customerRef = "CUST-A";
+    cart.customerName = "Ana";
+    await settle();
+    expect(step()).toBe("2. Recebimento");
+
+    await w.find("[data-order-fulfillment='pickup']").trigger("click");
+    await settle();
+    expect(cart.fulfillmentType).toBe("pickup");
+    expect(cart.fulfillmentConfirmed).toBe(true);
+    expect(step()).toBe("3. Data e horário");
+
+    await w.find("[data-order-step='schedule'] [data-day-option='tomorrow']").trigger("click");
+    await settle();
+    expect(cart.deliveryDate).toBe("2099-09-11");
+    expect(orderSetupIssue.value).toBe("");
+    expect(step()).toBe("3. Data e horário, pronta");
+    const montar = w.findAll("button").find((b) => b.text().includes("Montar encomenda"))!;
+    expect(montar.attributes("disabled")).toBeUndefined();
+    // Nenhum diálogo foi aberto para chegar aqui.
+    expect(document.querySelector("[role='dialog']")).toBeNull();
+  });
+});

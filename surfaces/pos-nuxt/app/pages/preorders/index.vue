@@ -75,6 +75,7 @@ import {
   fromActiveFilters,
   fromPanelFilters,
   groupByWindow,
+  nextActionFirst,
   hasFilters,
   listSummary,
   moveTargets,
@@ -151,7 +152,9 @@ const filters = computed<PreorderFilters>({
 const hasPeriodFilters = computed(() => hasFilters(filters.value));
 const todaySummaryLabel = computed(() => hasPeriodFilters.value ? "Hoje, sem filtros" : "Hoje");
 const allCards = computed(() => flattenDays(list.value?.days ?? []));
-const days = computed<PreorderDay[]>(() => filterDays(list.value?.days ?? [], filters.value));
+// A próxima ação primeiro: a pronta abre o dia, a entregue desce para o fim (P1-11).
+const days = computed<PreorderDay[]>(() => filterDays(list.value?.days ?? [], filters.value)
+  .map((entry) => ({ ...entry, orders: nextActionFirst(entry.orders) })));
 const shownCount = computed(() => flattenDays(days.value).length);
 const day = computed(() => days.value[0] ?? null);
 const summary = computed(() => (list.value ? listSummary(list.value.count, list.value.total_display) : ""));
