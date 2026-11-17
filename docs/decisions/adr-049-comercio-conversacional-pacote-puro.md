@@ -3,7 +3,7 @@
 **Status:** Aceito
 **Data:** 2026-11-17
 **Escopo:** `packages/conversational-commerce/`, o adaptador da Concierge no orquestrador, `scripts/wheel_suite.py`
-**Origem:** compromisso DEV-2026-041; pesquisa `docs/research/INTELIGENCIA-COMERCIO-CONVERSACIONAL-v2.md` (11.4 e 15.4); plano `docs/plans/COMERCIO-CONVERSACIONAL-FRAMEWORK-PLANO.md` (seção 2, decisões 1a a 10; WP F0)
+**Origem:** compromisso DEV-2026-045; pesquisa `docs/research/INTELIGENCIA-COMERCIO-CONVERSACIONAL-v2.md` (11.4 e 15.4); plano `docs/plans/COMERCIO-CONVERSACIONAL-FRAMEWORK-PLANO.md` (seção 2, decisões 1a a 10; WP F0)
 
 ---
 
