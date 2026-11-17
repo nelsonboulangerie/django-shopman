@@ -14239,6 +14239,32 @@
       ]
     },
     {
+      "path": "shopman/shop/services/production_promise.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "preorder.production-promise-lost"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "EVENT_TYPE",
+            "OPEN_STATUSES",
+            "ORDER_REFERENCE_PREFIX",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/closed_day_orders.py",
       "touchpoints": [
         "service"
