@@ -113,7 +113,7 @@ resposta quer dizer que cada request abre conexão nova com o Postgres; `desc` a
 em `cache` aponta leitura repetida da mesma chave; `gc` alto e esporádico é coleta
 completa (geração 2). Os estágios não se somam de forma exata entre si (uma coleta
 pode cair no meio de uma consulta), mas todos cabem em `projection`. Pelo host da
-loja o BFF acrescenta `bff;dur=` (e `csrf;dur=` quando semeia o token).
+loja o BFF acrescenta `bff;dur=` (e `seed;dur=` quando semeia token e sessão antes da primeira escrita).
 
 O log `storefront_catalog_observation` (cardápio e Continuum) traz os mesmos
 números em campos: `connect_ms`/`connect_count`, `cache_ms`/`cache_calls`,
