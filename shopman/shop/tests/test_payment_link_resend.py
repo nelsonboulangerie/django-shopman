@@ -310,12 +310,13 @@ class TestProvaDeEnvio:
         order = _order("PDV-N2")
         notification_svc.send(order, "payment_link_sent")
         (directive,) = _directives(order)
-        directive.payload["notification_delivery"] = {"status": "accepted", "recorded_at": timezone.now().isoformat()}
+        # Hora fixa, com minutos: no minuto :00 a tela escreve "10h", e o teste
+        # que lia o relógio reprovava uma vez por hora.
+        recorded = timezone.localtime().replace(hour=10, minute=37, second=0, microsecond=0)
+        directive.payload["notification_delivery"] = {"status": "accepted", "recorded_at": recorded.isoformat()}
         directive.save(update_fields=["payload"])
         _settled(directive)
-        directive.refresh_from_db()
-        local = timezone.localtime(directive.updated_at)
-        assert self._notice(order) == f"Link aceito pelo provedor às {local.hour}h{local.minute:02d}, sem comprovante de entrega."
+        assert self._notice(order) == "Link aceito pelo provedor às 10h37, sem comprovante de entrega."
 
     def test_entregue_so_com_comprovante(self):
         order = _order("PDV-N2B")
