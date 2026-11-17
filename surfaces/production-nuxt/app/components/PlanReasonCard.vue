@@ -15,6 +15,7 @@ import {
   suggestionMath,
 } from "~/presentation/planningReason";
 import type { ProductionSuggestionProjection } from "~/types/production";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
   suggestion: ProductionSuggestionProjection;
@@ -166,7 +167,7 @@ const HISTORY_TONE = {
             class="flex flex-col items-center gap-1"
             :title="
               day.outcome === 'soldout'
-                ? `${day.date_display}: acabou${day.soldout_at ? ` às ${day.soldout_at}` : ''}`
+                ? `${day.date_display}: acabou${day.soldout_at ? ` às ${formatClock(day.soldout_at)}` : ''}`
                 : day.outcome === 'leftover'
                   ? `${day.date_display}: sobrou`
                   : `${day.date_display}: vendeu o planejado`

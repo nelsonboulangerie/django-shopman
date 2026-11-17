@@ -830,7 +830,7 @@ function rideDetail(ref) {
       ...preorderDetail.actions,
       action("courier-dispatch", "Chamar entregador", block.can_dispatch, `Chamar um entregador da TaOn para o pedido ${ref.replace("NB-", "")}? A corrida é cobrada da casa.`),
       action("courier-dispatch-again", "Chamar de novo", block.can_dispatch_again, "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu antes de chamar de novo."),
-      { ...action("courier-cancel", "Solicitar cancelamento da corrida", block.can_cancel), confirmation: { required: true } },
+      { ...action("courier-cancel", "Cancelar corrida", block.can_cancel), confirmation: { required: true } },
       ...(RIDES[ref].returnLines && !RIDES[ref].returned
         ? [{ ...action("courier-back", "Entregador voltou", true), priority: "primary", confirmation: { required: true } }]
         : []),

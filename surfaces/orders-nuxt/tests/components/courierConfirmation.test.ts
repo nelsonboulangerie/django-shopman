@@ -12,19 +12,21 @@ const { default: Panel } = await import("../../app/components/OrderCourierPanel.
 
 describe("confirmação da corrida observada", () => {
   it("mudança de contexto exige conferir novamente antes de solicitar", async () => {
-    const action = { ...fixtureActions({ can_confirm: true })[0]!, ref: "courier-cancel" };
+    const action = { ...fixtureActions({ can_confirm: true })[0]!, ref: "courier-cancel", label: "Cancelar corrida" };
     const wrapper = mount(Panel, { props: {
-      courier: { status: "A", status_label: "Aceita", can_cancel: true, attempts_count: 0 } as CourierBlock,
+      courier: { status: "D", status_label: "Procurando entregador", can_cancel: true, attempts_count: 0 } as CourierBlock,
       busy: false, cancelAction: action,
     }, global: { stubs: { Icon: true } } });
-    const button = wrapper.get("button");
-    await button.trigger("click");
-    expect(button.text()).toContain("Confirmar solicitação?");
+    // O primeiro toque só arma a confirmação.
+    await wrapper.get("[data-courier-cancel]").trigger("click");
+    expect(wrapper.find("[data-courier-cancel-confirm]").exists()).toBe(true);
+    // A corrida mudou com a confirmação aberta: desarma, e o toque de antes não vale.
     await wrapper.setProps({ cancelAction: { ...action, payload_schema: { ...action.payload_schema, base_revision: "another-ride" } } });
-    expect(button.text()).toContain("Solicitar cancelamento");
-    await button.trigger("click");
+    expect(wrapper.find("[data-courier-cancel-confirm]").exists()).toBe(false);
+    expect(wrapper.get("[data-courier-cancel]").text()).toContain("Cancelar corrida");
+    await wrapper.get("[data-courier-cancel]").trigger("click");
     expect(wrapper.emitted("cancel")).toBeUndefined();
-    await button.trigger("click");
+    await wrapper.get("[data-courier-cancel-go]").trigger("click");
     expect(wrapper.emitted("cancel")).toHaveLength(1);
   });
 });

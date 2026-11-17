@@ -46,6 +46,7 @@ import {
 import type { GoogleBusinessOptions } from "~/presentation/googleBusinessPost";
 import { useFileDialog } from "@vueuse/core";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
   announcement: Announcement;
@@ -373,7 +374,7 @@ const othersBesideDirectMessage = computed(
 );
 const quietOutlastsDeadlineText = computed(() => {
   if (!quietOutlastsDeadline.value) return "";
-  const head = `O WhatsApp só envia a partir das 08:00 e este anúncio vence às ${quietOutlastsDeadline.value}.`;
+  const head = `O WhatsApp só envia a partir das 8h e este anúncio vence às ${quietOutlastsDeadline.value}.`;
   return othersBesideDirectMessage.value
     ? `${head} Tire o WhatsApp para postar agora.`
     : `${head} Escolha outra plataforma para postar agora.`;
@@ -499,12 +500,7 @@ const draftOrigin = computed(() => {
 function clockOf(instant: string): string {
   const ms = Date.parse(instant);
   if (!Number.isFinite(ms)) return "";
-  return new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-    timeZone: timezoneName.value,
-  }).format(new Date(ms));
+  return formatClock(ms, timezoneName.value);
 }
 
 // "Tirar outra" (MKT-17): a câmera do dispositivo, sem sair do fluxo. A foto vai ao
@@ -654,7 +650,7 @@ const continueBlockedReason = computed(() => {
       : scheduleResolution.value.detail || "Escolha a data e a hora do disparo.";
   }
   if (nowFallsInQuietHours.value)
-    return "O WhatsApp está em silêncio até as 08:00. Escolha Agendado para marcar a hora.";
+    return "O WhatsApp está em silêncio até as 8h. Escolha Agendado para marcar a hora.";
   return "";
 });
 
@@ -975,7 +971,7 @@ defineExpose({
           color="info"
           variant="subtle"
           role="status"
-          title="Ensaio local: o silêncio das 20:00 às 08:00 está suspenso e nenhuma mensagem é enviada deste computador."
+          title="Ensaio local: o silêncio das 20h às 8h está suspenso e nenhuma mensagem é enviada deste computador."
         />
         <NuxtAlert
           v-else-if="quietOutlastsDeadlineText"
@@ -991,7 +987,7 @@ defineExpose({
           color="warning"
           variant="subtle"
           role="status"
-          :title="`O WhatsApp está em silêncio das 20:00 às 08:00 (${timezoneName}). Envio imediato fica indisponível até as 08:00. Em Agendado, o próximo horário permitido já vem preenchido.`"
+          :title="`O WhatsApp está em silêncio das 20h às 8h (${timezoneName}). Envio imediato fica indisponível até as 8h. Em Agendado, o próximo horário permitido já vem preenchido.`"
         />
 
         <div v-if="scheduling" class="space-y-2">
@@ -1027,7 +1023,7 @@ defineExpose({
           <p v-if="scheduleResolution.problem === 'ambiguous'" class="text-xs text-muted-foreground">{{ scheduleResolution.detail }}</p>
           <p v-if="schedulePreview && scheduleResolution.ok" class="text-xs text-muted-foreground">
             Será entregue em {{ schedulePreview }} · UTC{{ scheduleResolution.candidate?.offset }}.
-            {{ quietHoursSuspendedForLocalSimulation ? "Ensaio local sem efeito externo." : "WhatsApp respeita o silêncio das 20:00 às 08:00." }}
+            {{ quietHoursSuspendedForLocalSimulation ? "Ensaio local sem efeito externo." : "WhatsApp respeita o silêncio das 20h às 8h." }}
           </p>
         </div>
       </div>

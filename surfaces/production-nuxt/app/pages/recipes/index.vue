@@ -366,7 +366,7 @@ watch(
                   :label="entry.production_mode_label"
                 />
                 <NuxtBadge v-if="!entry.is_active" color="neutral" label="Arquivada" />
-                <!-- O selo é curto (sai em iniciais maiúsculas); quem tomou o SKU vai na frase ao lado. -->
+                <!-- O selo é curto (sai em sentença); quem tomou o SKU vai na frase ao lado. -->
                 <NuxtBadge v-if="entry.ficha_status_label" color="neutral" :label="entry.ficha_status_label" />
                 <span v-if="entry.ficha_status_detail" data-recipe-ficha-detail>{{ entry.ficha_status_detail }}</span>
                 <NuxtBadge

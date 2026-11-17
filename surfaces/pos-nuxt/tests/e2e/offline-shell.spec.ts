@@ -56,7 +56,7 @@ test.describe("PDV — a venda abre sem conexão", () => {
     await page.getByText("#15", { exact: true }).last().click();
     await page.getByRole("button", { name: /Croissant R\$ 11,50/ }).first().click();
     await page.getByRole("button", { name: /Pagamento/ }).click();
-    await expect(page.getByText(/^Total pelos preços das \d\d:\d\d/)).toBeVisible();
+    await expect(page.getByText(/^Total pelos preços das \d{1,2}h(\d\d)?/)).toBeVisible();
     await page.locator('[data-payment-method="cash"]').click();
     await page.getByRole("button", { name: "Validar" }).click();
     await expect(page.locator("[data-sale-result-offline]")).toBeVisible();

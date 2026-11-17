@@ -16,7 +16,7 @@ describe("courierProgress", () => {
       NOW,
     );
     expect(view.pickup).toBe("Chega para coletar em ~7 min");
-    expect(view.delivery).toBe("Entrega prevista ~15:58");
+    expect(view.delivery).toBe("Entrega prevista ~15h58");
     expect(view.stale).toBe("");
   });
 
@@ -35,7 +35,7 @@ describe("courierProgress", () => {
       },
       NOW,
     );
-    expect(view.pickup).toBe("Chegou à loja às 15:50");
+    expect(view.pickup).toBe("Chegou à loja às 15h50");
   });
 
   it("depois da coleta só a entrega prevista; corrida encerrada não promete nada", () => {
@@ -44,7 +44,7 @@ describe("courierProgress", () => {
       NOW,
     );
     expect(picked.pickup).toBe("");
-    expect(picked.delivery).toBe("Entrega prevista ~16:01");
+    expect(picked.delivery).toBe("Entrega prevista ~16h01");
     const done = courierProgress(
       { status: "F", delivery_eta_at: "2026-10-13T19:01:00+00:00", sync_since: "2026-10-13T18:42:00+00:00" },
       NOW,
@@ -54,7 +54,7 @@ describe("courierProgress", () => {
 
   it("TaOn sem notícias: diz desde quando, sem travessão", () => {
     const view = courierProgress({ status: "D", sync_since: "2026-10-13T18:41:46+00:00" }, NOW);
-    expect(view.stale).toBe("A TaOn não informa a corrida desde 15:41.");
+    expect(view.stale).toBe("A TaOn não informa a corrida desde 15h41.");
     expect(view.stale).not.toMatch(/[—–]/);
   });
 

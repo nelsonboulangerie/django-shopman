@@ -8,6 +8,7 @@ caso continua no ``--csv`` do comando, para quem roda à mão.
 from __future__ import annotations
 
 from django.db import models
+from shopman.utils.formatting import format_local
 
 
 class AliasBenchmarkReport(models.Model):
@@ -24,4 +25,4 @@ class AliasBenchmarkReport(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"Placar de {self.created_at:%d/%m/%Y %H:%M}"
+        return f"Placar de {format_local(self.created_at, '%d/%m/%Y {clock}')}"

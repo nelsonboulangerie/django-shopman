@@ -1085,6 +1085,7 @@ export interface TrackingCopyProjection {
   rating_contact_message: string
   rating_contact_done: string
   cancellation_contact_title: string
+  cancellation_contact_done_title: string
   cancellation_contact_message: string
   rating_google_title: string
   rating_google_share_title: string

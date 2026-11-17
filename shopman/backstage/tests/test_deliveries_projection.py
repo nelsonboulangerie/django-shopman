@@ -1,7 +1,8 @@
 """A seção Entregas do Gestor: o que aguarda entregador e as corridas vivas.
 
-Usa o adapter mock da TaOn (sem rede). O número da corrida é a cor dela na tela:
-nasce na chamada, não muda enquanto a corrida vive e volta a ficar livre depois.
+Usa o adapter mock da TaOn (sem rede). O número da corrida dá a cor e a LETRA dela
+na tela (corrida se nomeia por letra): nasce na chamada, não muda enquanto a corrida
+vive e volta a ficar livre depois.
 """
 
 from __future__ import annotations
@@ -87,14 +88,16 @@ def test_a_called_ride_leaves_waiting_and_shows_as_one_ride_with_its_number(shop
     assert [stop.ref for stop in deliveries.waiting] == ["EN-C"]
     (ride,) = deliveries.rides
     assert ride.number == 1
+    assert ride.letter == "A"
     assert ride.state == "searching"
     # As paradas na ordem do percurso (a mais perto da loja primeiro).
     assert [stop.ref for stop in ride.stops] == ["EN-B", "EN-A"]
     assert courier.get_block(a)["ride_number"] == courier.get_block(b)["ride_number"] == 1
 
     _call(alone)
-    numbers = [ride.number for ride in build_deliveries().rides]
-    assert numbers == [1, 2]
+    rides = build_deliveries().rides
+    assert [ride.number for ride in rides] == [1, 2]
+    assert [ride.letter for ride in rides] == ["A", "B"]
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
@@ -172,3 +175,74 @@ def test_pickup_orders_never_show(shop):
     order.save(update_fields=["data"])
     assert Order.objects.count() == 1
     assert build_deliveries().waiting == ()
+
+
+# ── cancelar a corrida: a mesma régua e o mesmo estado do Painel do pedido ──
+
+
+def _gestor():
+    user = get_user_model().objects.create_user("gestor-cancel", password="x", is_staff=True)
+    user.user_permissions.add(Permission.objects.get(codename="manage_orders"))
+    return user
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_cancel_action_carries_the_question_and_the_reasons_only_after_accept(shop):
+    a, b = _at("NB-261116-A05", -23.335, -51.158), _at("NB-261116-C12", -23.30, -51.16)
+    _call(a, b)
+    user = _gestor()
+
+    ride = build_deliveries(user=user).rides[0]
+    assert ride.cancel_state == ""
+    assert ride.cancel_action.label == "Cancelar corrida"
+    assert ride.cancel_action.confirmation == {
+        "required": True,
+        "description": "Cancelar a corrida A? A05 e C12 voltam para Aguardando.",
+        "confirm_label": "Cancelar a corrida A",
+    }
+
+    for order in (a, b):
+        courier.apply_status(order, "A", source="poll")
+    ride = build_deliveries(user=user).rides[0]
+    assert [reason["id"] for reason in ride.cancel_action.confirmation["reasons"]] == [12, 37, 40]
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_requested_cancellation_shows_as_pending_and_takes_the_button_away(shop):
+    a, b = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.335, -51.158)
+    _call(a, b)
+    courier.cancel_ride(b, actor="operator:ana")  # pedido por qualquer pedido da corrida
+
+    ride = build_deliveries(user=_gestor()).rides[0]
+    assert ride.cancel_state == "pending"
+    assert ride.cancel_message == "Pedido de cancelamento enviado. Esperando a TaOn confirmar."
+    assert ride.cancel_action is None
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_refused_cancellation_says_so_and_matches_the_order_panel(shop, monkeypatch):
+    from shopman.orderman.exceptions import DirectiveTerminalError
+
+    from shopman.backstage.projections.order_queue import _courier_block
+    from shopman.shop.adapters.courier_machine import CourierError
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+
+    order = _at("EN-A", -23.30, -51.16)
+    _call(order)
+
+    def refuse(courier_ref, *, reason_id):
+        raise CourierError("Machine recusou (400): [67] não pode", transient=False, codes=(67,))
+
+    monkeypatch.setattr(courier_mock, "cancel", refuse)
+    task = courier.cancel_ride(order, actor="operator:ana")
+    with pytest.raises(DirectiveTerminalError):
+        CourierCancelHandler().handle(message=task, ctx={})
+
+    ride = build_deliveries(user=_gestor()).rides[0]
+    assert ride.cancel_state == "failed"
+    assert ride.cancel_message == "A TaOn não cancelou a corrida A. Cancele pela central da TaOn."
+    assert ride.cancel_action is not None  # a corrida segue aberta: dá para tentar de novo
+    # Paridade: a seção Entregas e o Painel do pedido leem a mesma fonte.
+    order.refresh_from_db()
+    panel = _courier_block(order)["cancel_state"]
+    assert (panel["state"], panel["message"]) == (ride.cancel_state, ride.cancel_message)
