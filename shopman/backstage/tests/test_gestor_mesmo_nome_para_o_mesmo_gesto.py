@@ -26,7 +26,7 @@ def test_o_acerto_diz_o_caixa_e_a_hora_do_turno_nao_o_id():
 
     frase = order_queue._settlement_description(shift)
 
-    assert frase == "O dinheiro entra no caixa Balcão, no turno aberto às 08:05."
+    assert frase == "O dinheiro entra no caixa Balcão, no turno aberto às 8h05."
     assert "42" not in frase
 
 

@@ -7,6 +7,7 @@
 
 import type { CashMovementRow, ShiftReading } from "~/types/cashReport";
 import { formatBRL } from "~/utils/posIntent";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 // Fuso da loja fixado: a leitura X/Z é sempre lida no horário do balcão, não no
 // do servidor. Sem isto, o mesmo instante vira "08:02" no dev (BRT) e "11:02" na
@@ -19,11 +20,7 @@ export function timeDisplay(raw: string | null | undefined): string {
   const date = new Date(raw);
   return Number.isNaN(date.getTime())
     ? ""
-    : date.toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: STORE_TIME_ZONE,
-      });
+    : formatClock(date, STORE_TIME_ZONE);
 }
 
 /** Período do turno: "08:02 às 12:30" fechado, "desde 08:02" aberto. */

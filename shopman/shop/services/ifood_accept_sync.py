@@ -31,6 +31,7 @@ from dataclasses import dataclass
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.directives import IFOOD_STATUS_CALLBACK
 
@@ -158,7 +159,7 @@ def notice_text(order) -> str:
     """A frase inteira, para o alerta e para o detalhe: o fato, o prazo e o gesto."""
     when = deadline(order)
     if when is not None and when > timezone.now():
-        clock = timezone.localtime(when).strftime("%H:%M")
+        clock = format_clock(when)
         deadline_line = f" Se não receber até {clock}, o iFood cancela o pedido sozinho."
     elif when is not None:
         deadline_line = " O prazo do iFood para o aceite já passou: confira no iFood se o pedido segue ativo."

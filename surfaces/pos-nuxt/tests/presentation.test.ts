@@ -852,7 +852,7 @@ describe("presentation/cash — pedido de troco (o dinheiro não anda)", () => {
     expect(formatRequestedAt(null)).toBe("");
     expect(formatRequestedAt("")).toBe("");
     expect(formatRequestedAt("not-a-date")).toBe("not-a-date");
-    expect(formatRequestedAt("2026-06-06T13:05:00")).toMatch(/13:05/);
+    expect(formatRequestedAt("2026-06-06T13:05:00")).toMatch(/13h05/);
   });
 });
 

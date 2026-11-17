@@ -17,6 +17,7 @@ import pytest
 from django.apps import apps
 from django.utils import timezone
 from shopman.orderman.models import Directive, Order
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.models import Channel, Shop
@@ -207,7 +208,7 @@ def test_titulo_e_corpo_do_aviso_dizem_a_mesma_hora():
     assert alert.respond_by == deadline
     assert deadline_kind(alert) == "external"
     assert deadline_for(alert) == deadline
-    assert timezone.localtime(deadline).strftime("%H:%M") in alert.message
+    assert format_clock(deadline) in alert.message
 
 
 # ── O canal ─────────────────────────────────────────────────────────────────

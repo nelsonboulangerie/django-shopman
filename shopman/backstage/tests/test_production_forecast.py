@@ -14,6 +14,7 @@ from unittest.mock import patch
 import pytest
 from django.utils import timezone
 from shopman.craftsman.models import Recipe, WorkOrder
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage.projections.production import build_production_forecast
 
@@ -71,7 +72,7 @@ def test_planned_row_gets_eta_from_historical_finish_time(recipe):
     row = forecast.rows[0]
     assert row.status == "scheduled"
     assert row.status_label == "Planejado"
-    assert row.eta_display == "08:00"
+    assert row.eta_display == "8h"
     assert row.eta_is_actual is False
     assert row.qty == "12"
     assert row.history_days == 5
@@ -91,7 +92,7 @@ def test_started_row_eta_is_start_plus_median_duration(recipe):
     row = build_production_forecast(target).rows[0]
     assert row.status == "in_progress"
     assert row.status_label == "Previsto"
-    assert row.eta_display == "09:30"
+    assert row.eta_display == "9h30"
 
 
 def test_started_row_without_history_falls_back_to_recipe_sla(recipe):
@@ -105,7 +106,7 @@ def test_started_row_without_history_falls_back_to_recipe_sla(recipe):
         started_at=_at(target, 6, 0),
     )
     row = build_production_forecast(target).rows[0]
-    assert row.eta_display == "08:00"  # 06:00 + max_started_minutes (120)
+    assert row.eta_display == "8h"  # 06:00 + max_started_minutes (120)
     assert row.history_days == 0
 
 
@@ -127,7 +128,7 @@ def test_finished_row_is_confirmed_with_real_time_and_qty(recipe):
     # Beta 05/11: "Confirmado" no Letreiro contradizia "Para confirmar" na
     # Qualidade. O lote finalizado é Fechado (suite-vocabulary).
     assert row.status_label == "Fechado"
-    assert row.eta_display == timezone.localtime(finished_at).strftime("%H:%M")
+    assert row.eta_display == format_clock(finished_at)
     assert row.eta_is_actual is True
     assert row.qty == "10"
 
@@ -163,7 +164,7 @@ def test_confirmed_ttl_only_applies_to_the_current_date(recipe):
     # Olhando um dia passado, o quadro é o registro do dia inteiro.
     row = build_production_forecast(yesterday).rows[0]
     assert row.status == "arrived"
-    assert row.eta_display == "07:45"
+    assert row.eta_display == "7h45"
 
 
 def test_planned_past_eta_today_is_delayed(recipe):

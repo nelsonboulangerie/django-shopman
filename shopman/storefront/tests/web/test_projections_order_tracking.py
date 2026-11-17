@@ -9,6 +9,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.projections.types import (
     OrderItemProjection,
@@ -161,7 +162,7 @@ class TestPreorderTracking:
 
         proj = build_order_tracking(order)
 
-        assert proj.when_display == "amanhã · 14:00 às 14:30"
+        assert proj.when_display == "amanhã · 14h às 14h30"
 
     def test_on_the_day_the_preorder_rejoins_the_normal_flow(self, order):
         order, _ = self._make_preorder(order, days_ahead=0)
@@ -1507,7 +1508,7 @@ class TestStatusColours:
 
         proj = build_order_tracking(order)
 
-        expected_eta = (timezone.localtime(preparing_at) + timezone.timedelta(minutes=30)).strftime("%H:%M")
+        expected_eta = format_clock(timezone.localtime(preparing_at) + timezone.timedelta(minutes=30))
         assert proj.eta_display == expected_eta
         assert proj.promise.message == f"Deve ficar pronto às {proj.eta_display}. Avisamos quando estiver."
 
@@ -1646,7 +1647,7 @@ class TestTrackingSummary:
         proj = build_order_tracking(order)
 
         assert proj.when_display is None
-        assert proj.schedule_display == "hoje · 19:30 às 20:00"
+        assert proj.schedule_display == "hoje · 19h30 às 20h"
 
 
 class TestShareSummary:
@@ -1669,7 +1670,7 @@ class TestShareSummary:
 
         assert text.splitlines()[0].startswith(f"Pedido {order_items.ref} na ")
         assert "10× " in text and "2× " in text
-        assert "Entrega: hoje · 19:30 às 20:00" in text
+        assert "Entrega: hoje · 19h30 às 20h" in text
         assert "Endereço: Rua Pará, 100 - Centro - Londrina/PR" in text
         assert "http" not in text
         assert "/pedido/" not in text
@@ -1696,8 +1697,8 @@ class TestDispatchedEtaRespectsTheWindow:
 
         proj = build_order_tracking(order)
 
-        assert proj.eta_display == f"10:00 de {tomorrow:%d/%m}"
-        assert "10:00" in proj.promise.message
+        assert proj.eta_display == f"10h de {tomorrow:%d/%m}"
+        assert "10h" in proj.promise.message
 
 
 @pytest.mark.parametrize("entries", [
@@ -1749,7 +1750,7 @@ def test_eta_on_another_day_keeps_its_date():
     from shopman.storefront.presentation.order_tracking import _eta_display
 
     future = timezone.localtime(timezone.now()) + timezone.timedelta(days=2)
-    assert _eta_display(future.isoformat()) == future.strftime("%H:%M de %d/%m")
+    assert _eta_display(future.isoformat()) == f"{format_clock(future)} de {future:%d/%m}"
 
 
 def test_historical_customer_cancellation_event_is_read_in_portuguese_without_rewriting(order):

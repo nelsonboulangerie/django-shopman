@@ -32,6 +32,7 @@ from importlib import import_module
 from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from shopman.utils.formatting import format_local
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
@@ -1659,7 +1660,7 @@ def card_machine_refund_message(pending: PendingCardMachineRefund) -> str:
     clues = [f"pedido {pending.order_ref}", reason]
     paid_at = parse_datetime(pending.paid_at) if pending.paid_at else None
     if paid_at is not None:
-        clues.append(f"aprovado em {timezone.localtime(paid_at).strftime('%d/%m às %H:%M')}")
+        clues.append(f"aprovado em {format_local(paid_at, '%d/%m às {clock}')}")
     if pending.nsu:
         clues.append(f"NSU {pending.nsu}")
     if pending.authorization:

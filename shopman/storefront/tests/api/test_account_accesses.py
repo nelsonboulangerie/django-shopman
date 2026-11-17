@@ -6,6 +6,7 @@ from django.contrib.sessions.middleware import SessionMiddleware
 from django.test import Client, RequestFactory
 from shopman.doorman.models import CustomerUser
 from shopman.guestman.models import Customer
+from shopman.utils.formatting import format_local
 
 from shopman.shop.models import NotificationCategory, UserNotification
 from shopman.shop.services import customer_sign_in
@@ -103,7 +104,7 @@ def test_customer_can_see_and_end_another_active_session(person_and_user):
         "method_label": "dispositivo reconhecido",
         "approximate_city": "Londrina, PR · Brasil",
         "created_at": UserNotification.objects.get().created_at.isoformat(),
-        "created_at_display": UserNotification.objects.get().created_at.astimezone().strftime("%d/%m/%Y às %H:%M"),
+        "created_at_display": format_local(UserNotification.objects.get().created_at, "%d/%m/%Y às {clock}"),
         "is_active": True,
         "is_current": False,
     }

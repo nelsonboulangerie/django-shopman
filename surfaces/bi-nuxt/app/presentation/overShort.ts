@@ -13,6 +13,7 @@ import type {
   ReadingChartSeries,
 } from "../../../operator-kit/app/presentation/readingChart";
 import { csvMoney, formatInt, formatQty, shortDate } from "./bi";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 /** Custo da sobra em reais inteiros ("R$ 158"), como na prévia: centavo não decide produção. */
 export function formatCostWhole(cents: number): string {
@@ -215,7 +216,7 @@ function productAnswer(report: Pick<BIOverShortReport, "rows">): string {
   const parts: string[] = [];
   if (short.length) {
     const first = short[0]!;
-    parts.push(`faltou ${nameList(short)}${first.soldout_at ? ` (acabou às ${first.soldout_at})` : ""}`);
+    parts.push(`faltou ${nameList(short)}${first.soldout_at ? ` (acabou às ${formatClock(first.soldout_at)})` : ""}`);
   }
   if (over.length) {
     const first = over[0]!;
@@ -270,7 +271,7 @@ function lastHour(closesAt: string): string {
   const minutes = (h ?? 0) * 60 + (m ?? 0) - 60;
   const hour = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return rest ? `${hour}h${String(rest).padStart(2, "0")}` : `${hour}h`;
+  return formatClock(`${hour}:${String(rest).padStart(2, "0")}`);
 }
 
 // ── Cada produto ─────────────────────────────────────────────────────────────
@@ -284,9 +285,9 @@ export function outcomeText(row: BIOverShortRow): string {
   return left > 0 ? `sobrou ${formatQty(row.leftover)}` : "zerou";
 }
 
-/** "10:40", "não acabou". */
+/** "10h40", "não acabou". */
 export function soldoutText(row: BIOverShortRow): string {
-  return row.soldout_at || "não acabou";
+  return formatClock(row.soldout_at) || "não acabou";
 }
 
 /** "faltou 3 de 4" (quantas vezes o veredito de hoje se repetiu nos dias de comparação). */
@@ -381,10 +382,10 @@ function joinNames(names: readonly string[]): string {
   return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
 }
 
-/** "iFood, Meta e Google indisponíveis às 10:40" (o "(automático)" fica com a tela). */
+/** "iFood, Meta e Google indisponíveis às 10h40" (o "(automático)" fica com a tela). */
 export function unavailableText(item: BIOverShortUnavailable): string {
   const verb = item.channels.length === 1 ? "indisponível" : "indisponíveis";
-  return `${joinNames(item.channels)} ${verb} às ${item.at}`;
+  return `${joinNames(item.channels)} ${verb} às ${formatClock(item.at)}`;
 }
 
 /** "5 clientes" (o "Me avise" do site, por produto e dia). */
