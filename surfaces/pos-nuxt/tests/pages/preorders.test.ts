@@ -751,6 +751,21 @@ describe("Encomendas — a semana no centro", () => {
     expect(wrapper.find("[data-preorders-to-receive]").text()).toBe("A receber R$ 36,00");
   });
 
+  it("D4: para quem não audita o caixa, a aba conta encomendas e não soma dinheiro", async () => {
+    // O servidor manda as somas `null` para a Caixa e o Gerente (contagem cega).
+    const hidden = { total_q: null, total_display: null, to_receive_q: null, to_receive_display: null };
+    week = { ...week, ...hidden, days: week.days.map((d) => ({ ...d, ...hidden })) };
+    const wrapper = await mount(PreordersPage);
+    const columns = wrapper.find("[data-week-grid]").findAll("[data-week-day]");
+    expect(columns[0]!.find("[data-week-day-total]").text()).toBe("2 encomendas");
+    expect(columns[0]!.find("[data-week-day-to-receive]").text()).toBe("A receber em 1 encomenda");
+    expect(wrapper.find("[data-preorders-total]").text()).toBe("2 encomendas");
+    expect(wrapper.find("[data-preorders-to-receive]").text()).toBe("A receber em 1 encomenda");
+    // O valor de CADA encomenda segue no cartão: é com ele que o balcão recebe.
+    expect(wrapper.find('[data-week-grid] [data-preorder="NB-7"] [data-preorder-money]').text()).toBe("R$ 36,00");
+    expect(wrapper.text()).not.toContain("R$ 60,00");
+  });
+
   it("o card da grade: o valor e o selo semântico do estado (dono, 03/11), e o sinal da Via Pedido impressa", async () => {
     const wrapper = await mount(PreordersPage);
     const grid = wrapper.find("[data-week-grid]");

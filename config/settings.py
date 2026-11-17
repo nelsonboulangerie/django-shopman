@@ -1523,6 +1523,7 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_RATES": {
         "anon": _ANON_THROTTLE_RATE or None,
+        "pos_customer_search": "30/minute",
         "marketing_audience_user": "30/minute",
         "marketing_audience_shop": "120/minute",
         "marketing_dangerous_user": "10/minute",

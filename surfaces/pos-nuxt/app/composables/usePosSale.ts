@@ -68,6 +68,7 @@ import {
 } from "~/utils/posTabLifecycle";
 import { saleTotalView } from "~/presentation/saleTotal";
 import { composedAddressLine, emptyAddressDraft } from "~/presentation/address";
+import { customerSearchErrorMessage } from "~/presentation/customerSearch";
 import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, receiptItemFromCart, type PosReceiptSnapshot } from "~/presentation/receipt";
 import {
   applyLinePrices,
@@ -3066,6 +3067,10 @@ export function usePosSale(deps: PosSaleDeps) {
   // and runs the full lookup (memory + saved address).
   const customerSearchResults = ref<POSCustomerSearchResult[]>([]);
   const customerSearchBusy = ref(false);
+  // A busca FALHOU (rede, servidor, limite de buscas): não é "nenhum cadastro".
+  // A lista vazia de antes dizia que a pessoa não existe e oferecia cadastrá-la
+  // de novo (P1-8). Vazio quando a última busca respondeu.
+  const customerSearchError = ref("");
   // O cliente associado foi CRIADO agora (resolve just-in-time devolveu
   // created=true) — a confirmação do modal distingue novo × encontrado.
   const customerResolvedNew = ref(false);
@@ -3085,6 +3090,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // Só número (telefone, CPF) pede 4 dígitos, a mesma régua do servidor
     // (`CUSTOMER_SEARCH_MIN_DIGITS`): com "11" a lista varria a base (beta 07/11).
     const onlyNumber = !/\p{L}/u.test(q);
+    customerSearchError.value = "";
     if (q.length < 2 || (onlyNumber && q.replace(/\D/g, "").length < 4)) {
       customerSearchResults.value = [];
       customerSearchBusy.value = false;
@@ -3092,23 +3098,22 @@ export function usePosSale(deps: PosSaleDeps) {
     }
     customerSearchBusy.value = true;
     try {
-      const path = concreteActionHref(
-        actions.value,
-        "customer_search",
-        "/api/v1/backstage/pos/customer/search/?q={query}",
-        { query: q },
-      );
+      // POST: o termo (nome, telefone, CPF, e-mail) viaja no CORPO, fora do log
+      // de acesso e do cache, como o telefone do lookup (#2335).
+      const path = concreteActionHref(actions.value, "customer_search", "/api/v1/backstage/pos/customer/search/", {});
       const response = await $fetch<POSCustomerSearchResponse>(apiPath(path), {
-        method: "GET",
+        method: "POST",
+        body: { q },
         credentials: "include",
         headers: requestHeaders,
         signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
       });
       if (seq !== customerSearchSeq) return;
       customerSearchResults.value = response.results || [];
-    } catch {
+    } catch (error) {
       if (seq !== customerSearchSeq) return;
       customerSearchResults.value = [];
+      customerSearchError.value = customerSearchErrorMessage(httpError(error).status);
     } finally {
       if (seq === customerSearchSeq) customerSearchBusy.value = false;
     }
@@ -4629,6 +4634,7 @@ export function usePosSale(deps: PosSaleDeps) {
     customerReleaseBusy,
     customerSearchResults,
     customerSearchBusy,
+    customerSearchError,
     customerResolvedNew,
     pendingCustomerPrefs,
     applyCustomerPreference,

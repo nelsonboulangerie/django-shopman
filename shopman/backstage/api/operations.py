@@ -94,9 +94,11 @@ from shopman.backstage.api.production_freshness import (
     validate_override_proof,
 )
 from shopman.backstage.api.telemetry import OperationalObservationMixin
+from shopman.backstage.api.throttles import POSCustomerSearchThrottle
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.models import SignInMethod, SignInOutcome
 from shopman.backstage.parsing import as_bool
+from shopman.backstage.permissions import can_audit_cash
 from shopman.backstage.projections.cash_session import build_cash_session_report
 from shopman.backstage.projections.closing import build_day_closing
 from shopman.backstage.projections.hub import purchase_surface_url
@@ -3530,7 +3532,11 @@ class POSPreorderListView(APIView):
         date_from, date_to = preorders.parse_range(
             request.GET.get("date_from"), request.GET.get("date_to"), week=request.GET.get("week"),
         )
-        projection = preorders.build_preorder_list(date_from=date_from, date_to=date_to)
+        projection = preorders.build_preorder_list(
+            date_from=date_from,
+            date_to=date_to,
+            show_money_sums=can_audit_cash(request.user),
+        )
         return Response({"ok": True, **asdict(projection)})
 
 
@@ -6909,18 +6915,28 @@ class POSCustomerLookupView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Search customers by any unique key (name/phone/CPF/email)",
         responses={200: OpenApiResponse(description="List of matching customers.")},
     ),
 )
 class POSCustomerSearchView(APIView):
+    """A busca de cliente do PDV: leitura pura, mas por POST e com limite.
+
+    O termo viaja no CORPO, como o telefone do lookup: na query string ele ficava
+    no log de acesso e no cache (#2335). E a busca tem teto por operador (#2336):
+    sem ele, "aa", "ab", "ac"... percorria a base de clientes inteira, ainda que
+    mascarada. A régua é ``pos_customer_search`` em ``DEFAULT_THROTTLE_RATES``.
+    """
+
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
+    throttle_classes = [POSCustomerSearchThrottle]
 
-    def get(self, request):
-        query = (request.query_params.get("q") or "").strip()
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        query = str(body.get("q") or "").strip()
         results = build_pos_customer_search(query)
         return Response({"results": [projection_data(result) for result in results]})
 

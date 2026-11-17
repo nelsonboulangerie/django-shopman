@@ -66,6 +66,9 @@ import {
   flipDay,
   todayIndicators,
   NO_FILTERS,
+  cardsToReceive,
+  dayCountLine,
+  dayHasToReceive,
   dayToReceiveLine,
   filterDays,
   filterDimensions,
@@ -85,7 +88,6 @@ import {
   periodParams,
   periodSelectionOf,
   periodSummaryLabel,
-  preorderCountLabel,
   printPlan,
   QUICK_FILTERS,
   quickFilterItems,
@@ -156,7 +158,7 @@ const shownCount = computed(() => flattenDays(days.value).length);
 const day = computed(() => days.value[0] ?? null);
 const summary = computed(() => (list.value ? listSummary(list.value.count, list.value.total_display) : ""));
 const toReceive = computed(() => (list.value && list.value.count
-  ? toReceiveLine(list.value.to_receive_q, list.value.to_receive_display)
+  ? toReceiveLine(list.value.to_receive_q, list.value.to_receive_display, cardsToReceive(allCards.value))
   : ""));
 // O resumo do período some quando o período é só hoje: a linha "Hoje" já diz.
 const showSummary = computed(() => !!summary.value && !periodIsToday(view.value, today.value));
@@ -253,7 +255,7 @@ function narrowWeekday(day: PreorderDay): string {
   return w.charAt(0).toUpperCase() + w.slice(1);
 }
 function narrowDayLabel(day: PreorderDay): string {
-  const parts = [dayColumnTitle(day), day.orders_count ? `${preorderCountLabel(day.orders_count)}, ${day.total_display}` : "Nenhuma encomenda"];
+  const parts = [dayColumnTitle(day), dayCountLine(day, ", ")];
   const receive = dayToReceiveLine(day);
   if (receive) parts.push(receive);
   return day.orders.length ? `${parts.join(". ")}. Abrir o dia.` : `${parts.join(". ")}.`;
@@ -916,7 +918,7 @@ function refreshAll() {
                   <span class="text-xs tabular-nums text-muted" aria-hidden="true">{{ weekDay.day_display }}</span>
                   <!-- Deitada (celular), a linha tem espaço para a conta por extenso. -->
                   <span class="min-w-0 truncate text-xs tabular-nums text-muted md:hidden" aria-hidden="true">
-                    {{ weekDay.orders_count ? `${preorderCountLabel(weekDay.orders_count)} · ${weekDay.total_display}` : "Nenhuma encomenda" }}
+                    {{ dayCountLine(weekDay) }}
                   </span>
                   <OperatorCountChip
                     v-if="weekDay.orders_count"
@@ -925,7 +927,7 @@ function refreshAll() {
                     data-week-day-count
                   />
                   <NuxtIcon
-                    v-if="weekDay.to_receive_q > 0"
+                    v-if="dayHasToReceive(weekDay)"
                     name="i-lucide-hand-coins"
                     class="size-4 text-warning"
                     aria-hidden="true"
@@ -961,8 +963,7 @@ function refreshAll() {
                       {{ dayColumnTitle(weekDay) }}
                     </span>
                     <span class="text-xs font-normal tabular-nums text-muted" data-week-day-total>
-                      <template v-if="weekDay.orders_count">{{ preorderCountLabel(weekDay.orders_count) }} · {{ weekDay.total_display }}</template>
-                      <template v-else>Nenhuma encomenda</template>
+                      {{ dayCountLine(weekDay) }}
                     </span>
                     <span v-if="dayToReceiveLine(weekDay)" :class="TO_RECEIVE_CLASS" data-week-day-to-receive>
                       {{ dayToReceiveLine(weekDay) }}

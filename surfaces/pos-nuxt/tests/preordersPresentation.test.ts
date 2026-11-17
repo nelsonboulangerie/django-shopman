@@ -26,6 +26,7 @@ import {
   checkPaymentNotice,
   customerLine,
   dayColumnTitle,
+  dayCountLine,
   dayToReceiveLine,
   filterChips,
   filterDays,
@@ -37,6 +38,7 @@ import {
   hasFilters,
   itemsCountLabel,
   listSummary,
+  cardsToReceive,
   matchesFilters,
   dayOpen,
   flipDay,
@@ -267,6 +269,27 @@ describe("contagens — zero é frase, nunca '0'", () => {
     expect(toReceiveLine(0, "R$ 0,00")).toBe("Nada a receber");
     expect(dayToReceiveLine(day({ to_receive_q: 1200, to_receive_display: "R$ 12,00" }))).toBe("A receber R$ 12,00");
     expect(dayToReceiveLine(day())).toBe("");
+  });
+
+  it("D4: sem a soma (Caixa e Gerente), conta encomendas e nunca inventa dinheiro", () => {
+    // O servidor manda as somas `null` para quem não audita o caixa.
+    const hidden = { total_q: null, total_display: null, to_receive_q: null, to_receive_display: null };
+    const deve = card({ ref: "D" });
+    const pago = card({ ref: "P", payment_state: "paid", balance_q: 0 });
+    expect(listSummary(20, null)).toBe("20 encomendas");
+    expect(listSummary(20, "R$ 4.241,00")).toBe("20 encomendas · R$ 4.241,00");
+    expect(cardsToReceive([deve, pago, card({ ref: "D2" })])).toBe(2);
+    expect(toReceiveLine(null, null, 2)).toBe("A receber em 2 encomendas");
+    expect(toReceiveLine(null, null, 0)).toBe("Nada a receber");
+    const caixaDay = day({ ...hidden, orders_count: 2, orders: [deve, pago] });
+    expect(dayCountLine(caixaDay)).toBe("2 encomendas");
+    expect(dayCountLine(day({ orders_count: 2, total_display: "R$ 72,00" }))).toBe("2 encomendas · R$ 72,00");
+    expect(dayToReceiveLine(caixaDay)).toBe("A receber em 1 encomenda");
+    expect(dayToReceiveLine(day({ ...hidden, orders: [pago] }))).toBe("");
+    const facts = todayFacts(caixaDay);
+    expect(facts.find((f) => f.key === "to_receive")).toMatchObject({ text: "A receber em 1 encomenda", urgent: true });
+    expect(todayIndicators(facts).find((i) => i.key === "to_receive")?.value).toBe("1");
+    expect(facts.map((f) => f.text).join(" ")).not.toMatch(/R\$/);
   });
 });
 

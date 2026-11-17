@@ -191,8 +191,20 @@ export function preorderCountLabel(count: number): string {
 }
 
 /** O resumo do topo de uma lista: "3 encomendas · R$ 120,00". Vazio sem nada. */
-export function listSummary(count: number, totalDisplay: string): string {
-  return count > 0 ? `${preorderCountLabel(count)} · ${totalDisplay}` : "";
+/**
+ * "20 encomendas · R$ 4.241,00", ou só "20 encomendas" para quem não audita o
+ * caixa: a soma em dinheiro do período é apuração (D4, contagem cega), e o
+ * servidor a manda `null` para a Caixa e o Gerente.
+ */
+export function listSummary(count: number, totalDisplay: string | null): string {
+  if (count <= 0) return "";
+  return totalDisplay ? `${preorderCountLabel(count)} · ${totalDisplay}` : preorderCountLabel(count);
+}
+
+/** A conta de um dia da grade: a contagem, e a soma só para quem a recebe. */
+export function dayCountLine(day: Pick<PreorderDay, "orders_count" | "total_display">, separator = " · "): string {
+  if (!day.orders_count) return "Nenhuma encomenda";
+  return day.total_display ? `${preorderCountLabel(day.orders_count)}${separator}${day.total_display}` : preorderCountLabel(day.orders_count);
 }
 
 /**
@@ -470,14 +482,42 @@ export function toReceiveLabel(display: string): string {
   return `A receber ${display}`;
 }
 
-/** O "A receber" do período; sem nada, a frase inteira. Zero não é código. */
-export function toReceiveLine(toReceiveQ: number, toReceiveDisplay: string): string {
+/**
+ * Sem a soma (quem não audita o caixa), o "a receber" diz EM QUANTAS encomendas
+ * há saldo: o balcão sabe que tem o que cobrar sem ler o gabarito da gaveta.
+ */
+function toReceiveCountLabel(count: number): string {
+  return `A receber em ${preorderCountLabel(count)}`;
+}
+
+/** Quantas encomendas têm saldo a cobrar (a mesma régua do destaque do cartão). */
+export function cardsToReceive(cards: readonly Pick<PreorderCard, "payment_state" | "balance_q">[]): number {
+  return cards.filter(balanceStandsOut).length;
+}
+
+/**
+ * O "A receber" do período; sem nada, a frase inteira. Zero não é código.
+ * `toReceiveQ` nulo: a soma não veio (quem não audita), e a linha conta
+ * encomendas (`cardsCount`) em vez de somar dinheiro.
+ */
+export function toReceiveLine(toReceiveQ: number | null, toReceiveDisplay: string | null, cardsCount = 0): string {
+  if (toReceiveQ === null || toReceiveDisplay === null) {
+    return cardsCount > 0 ? toReceiveCountLabel(cardsCount) : "Nada a receber";
+  }
   return toReceiveQ > 0 ? toReceiveLabel(toReceiveDisplay) : "Nada a receber";
 }
 
+/** O dia tem saldo a cobrar? Pela soma, quando ela veio; senão, pelos cartões. */
+export function dayHasToReceive(day: Pick<PreorderDay, "to_receive_q" | "orders">): boolean {
+  return day.to_receive_q === null ? cardsToReceive(day.orders) > 0 : day.to_receive_q > 0;
+}
+
 /** O "A receber" de um dia da grade, só quando há o que receber. */
-export function dayToReceiveLine(day: Pick<PreorderDay, "to_receive_q" | "to_receive_display">): string {
-  return day.to_receive_q > 0 ? toReceiveLabel(day.to_receive_display) : "";
+export function dayToReceiveLine(day: Pick<PreorderDay, "to_receive_q" | "to_receive_display" | "orders">): string {
+  if (!dayHasToReceive(day)) return "";
+  return day.to_receive_q === null || day.to_receive_display === null
+    ? toReceiveCountLabel(cardsToReceive(day.orders))
+    : toReceiveLabel(day.to_receive_display);
 }
 
 /** O saldo pede destaque na linha: é o que o balcão cobra. */
@@ -723,8 +763,11 @@ export function todayIndicators(facts: readonly TodayFact[]): TodayIndicator[] {
   return facts.map((fact) => {
     const count = /^(\d+)/.exec(fact.text)?.[1];
     const money = /R\$\s?[\d.,]+/.exec(fact.text)?.[0];
+    // Sem a soma (quem não audita o caixa), o "a receber" urgente mostra EM
+    // QUANTAS encomendas: "A receber em 2 encomendas" vira [moedas 2].
+    const pending = /(\d+)\s+encomenda/.exec(fact.text)?.[1];
     const value = fact.key === "to_receive"
-      ? (fact.urgent && money ? money : "✓")
+      ? (fact.urgent ? (money ?? pending ?? "✓") : "✓")
       : fact.key === "leaving"
         ? (count ?? "✓")
         : (fact.urgent && count ? count : "✓");
@@ -758,8 +801,8 @@ export function todayFacts(day: PreorderDay | null): TodayFact[] {
     { key: "leaving", text: `${pending.length} para entregar`, urgent: false },
     {
       key: "to_receive",
-      text: day.to_receive_q > 0 ? toReceiveLabel(day.to_receive_display) : "Nada a receber",
-      urgent: day.to_receive_q > 0,
+      text: dayToReceiveLine(day) || "Nada a receber",
+      urgent: dayHasToReceive(day),
     },
     {
       key: "tickets",
