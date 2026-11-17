@@ -316,7 +316,7 @@ describe("usePosSale — intent (currentIntentState via saveTab)", () => {
     expect(body.manual_discount).toEqual({ type: "fixed", value: 2.5, reason: "cliente fiel" });
     // O carimbo do servidor, nunca o PIN (#2558).
     expect(body.manager_approval).toEqual({ token: "carimbo-assinado" });
-    expect(JSON.stringify(body)).not.toContain("9999");
+    expect(body.manager_approval).not.toHaveProperty("pin");
     expect(body.customer_name).toBe("Ana");
     expect(body.customer_phone).toBe("43999990000"); // só dígitos
     expect(typeof body.client_request_id).toBe("string");

@@ -14781,7 +14781,14 @@
             "validate_manager_override",
             "_MANAGER_PIN_VERDICTS",
             "manager_pin_checked_before_transaction",
-            "_check_manager_pin"
+            "_check_manager_pin",
+            "SaleApprovalScope",
+            "SALE_APPROVAL_MAX_AGE_S",
+            "_SALE_APPROVAL_SALT",
+            "issue_sale_approval",
+            "_redeem_sale_approval",
+            "_sale_approval_max_age_s",
+            "_sale_approval_refused"
           ]
         }
       ],
