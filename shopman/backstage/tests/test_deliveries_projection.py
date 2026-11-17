@@ -1,7 +1,8 @@
 """A seção Entregas do Gestor: o que aguarda entregador e as corridas vivas.
 
-Usa o adapter mock da TaOn (sem rede). O número da corrida é a cor dela na tela:
-nasce na chamada, não muda enquanto a corrida vive e volta a ficar livre depois.
+Usa o adapter mock da TaOn (sem rede). O número da corrida dá a cor e a LETRA dela
+na tela (corrida se nomeia por letra): nasce na chamada, não muda enquanto a corrida
+vive e volta a ficar livre depois.
 """
 
 from __future__ import annotations
@@ -87,14 +88,16 @@ def test_a_called_ride_leaves_waiting_and_shows_as_one_ride_with_its_number(shop
     assert [stop.ref for stop in deliveries.waiting] == ["EN-C"]
     (ride,) = deliveries.rides
     assert ride.number == 1
+    assert ride.letter == "A"
     assert ride.state == "searching"
     # As paradas na ordem do percurso (a mais perto da loja primeiro).
     assert [stop.ref for stop in ride.stops] == ["EN-B", "EN-A"]
     assert courier.get_block(a)["ride_number"] == courier.get_block(b)["ride_number"] == 1
 
     _call(alone)
-    numbers = [ride.number for ride in build_deliveries().rides]
-    assert numbers == [1, 2]
+    rides = build_deliveries().rides
+    assert [ride.number for ride in rides] == [1, 2]
+    assert [ride.letter for ride in rides] == ["A", "B"]
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)

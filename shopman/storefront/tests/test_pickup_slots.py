@@ -64,7 +64,7 @@ class TestGradeDeHoje:
         first = ctx["pickup_slots"][0]
         assert first == {
             "ref": "10:00-10:30",
-            "label": "10:00 às 10:30",
+            "label": "10h às 10h30",
             "starts_at": "10:00",
             "enabled": True,
             "reason": "",
@@ -112,7 +112,7 @@ class TestGradeDeHoje:
 
         by_ref = {slot["ref"]: slot for slot in ctx["pickup_slots"]}
         assert by_ref["14:00-14:30"]["enabled"] is False
-        assert by_ref["14:00-14:30"]["reason"] == "Fendu sai às 15:00."
+        assert by_ref["14:00-14:30"]["reason"] == "Fendu sai às 15h."
         assert by_ref["15:00-15:30"]["enabled"] is True
         assert ctx["earliest_slot_ref"] == "15:00-15:30"
 
@@ -150,7 +150,7 @@ class TestEncomenda:
 
         by_ref = {slot["ref"]: slot for slot in ctx["pickup_slots"]}
         assert by_ref["slot-09"]["enabled"] is False
-        assert by_ref["slot-09"]["reason"] == "Fendu sai às 11:37."
+        assert by_ref["slot-09"]["reason"] == "Fendu sai às 11h37."
         assert ctx["earliest_slot_ref"] == "slot-12"
 
     def test_turnos_vem_da_configuracao_da_casa(self):
@@ -202,5 +202,5 @@ class TestConferencia:
 
         error = validate_pickup_slot_selection("14:00-14:30", cart_skus=["FEN"], now=_at(13, 0))
 
-        assert error == "Fendu sai às 15:00. Escolha 15:00 às 15:30 ou mais tarde."
+        assert error == "Fendu sai às 15h. Escolha 15h às 15h30 ou mais tarde."
         assert validate_pickup_slot_selection("15:00-15:30", cart_skus=["FEN"], now=_at(13, 0)) is None

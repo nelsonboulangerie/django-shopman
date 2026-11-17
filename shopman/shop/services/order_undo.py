@@ -41,6 +41,7 @@ from datetime import datetime, timedelta
 from django.db import transaction
 from django.utils import timezone
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ def _parse(value) -> datetime | None:
 
 def _clock(value) -> str:
     moment = _parse(value)
-    return timezone.localtime(moment).strftime("%H:%M") if moment else ""
+    return format_clock(moment) if moment else ""
 
 
 # ── "Pronto" automático ──────────────────────────────────────────────────

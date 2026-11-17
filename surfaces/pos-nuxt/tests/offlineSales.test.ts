@@ -67,7 +67,7 @@ describe("offlineSaleReview", () => {
     expect(review.change_q).toBe(3000);
     expect(review.offline?.prices_at).toBe("2026-10-10T17:05:00.000Z");
     expect(review.warnings[0]?.code).toBe("offline_prices");
-    expect(review.warnings[0]?.message).toMatch(/^Total pelos preços das \d\d:\d\d\./);
+    expect(review.warnings[0]?.message).toMatch(/^Total pelos preços das \d{1,2}h(\d\d)?\./);
     expect(review.requires_manager_approval).toBe(false);
   });
 });

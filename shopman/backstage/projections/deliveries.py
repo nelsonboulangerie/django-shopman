@@ -7,8 +7,9 @@ Três partes, as mesmas no mapa e na coluna (desenho do dono, 14/11/2026, PR #24
 - **Editando**: não mora aqui. É estado da tela (as corridas que o operador
   está juntando antes de chamar), nada é gravado até o "Chamar".
 - **Corridas**: as chamadas e vivas, agrupadas pela corrida da TaOn (``id_mch``),
-  com o número que a corrida ganhou na chamada (a cor dela na tela,
-  ``courier.next_ride_number``), o entregador, a posição, as paradas na ordem do
+  com o número que a corrida ganhou na chamada (``courier.next_ride_number``):
+  ele dá a cor e a LETRA dela na tela (``courier.ride_letter``; corrida se nomeia
+  por letra, nunca por número), o entregador, a posição, as paradas na ordem do
   percurso e as sacolas (volumes declarados).
 
 Só leitura; os gestos usam os endpoints de sempre (``courier-ride``,
@@ -82,7 +83,10 @@ class DeliveryRideProjection:
     """Uma corrida chamada, viva: do "procurando" à volta do entregador."""
 
     key: str
+    #: O número gravado na chamada: escolhe a cor. Nunca se mostra.
     number: int
+    #: O nome da corrida na tela e na fala: A, B, C… (``courier.ride_letter``).
+    letter: str
     #: searching · late · coming · atStore · route · back
     state: str
     status_label: str
@@ -256,6 +260,7 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
     return DeliveryRideProjection(
         key=str(block.get("id_mch") or f"call:{lead.ref}"),
         number=int(block.get("ride_number") or 0),
+        letter=courier.ride_letter(block.get("ride_number")),
         state=state,
         status_label=_STATE_LABELS[state],
         stops=stops,

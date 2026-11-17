@@ -9,6 +9,8 @@
 // Aqui só mora o formato. A oferta de datas e a compatibilidade das janelas vêm
 // prontas do servidor (`/pos/schedule/`) — a tela não decide o que a casa pode
 // prometer.
+import { formatClock, formatClockRange } from "../../../operator-kit/app/presentation/clock";
+
 
 /** Uma janela de meia hora, já anotada pelo servidor para este carrinho. */
 export interface ScheduleWindow {
@@ -127,7 +129,7 @@ export function humanizeWindowRef(ref: string): string {
   const fromHour = /^slot-(\d{1,2})$/.exec(value);
   if (fromHour) return `a partir das ${Number(fromHour[1])}h`;
   const range = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(value);
-  if (range) return `${Number(range[1])}:${range[2]} às ${Number(range[3])}:${range[4]}`;
+  if (range) return formatClockRange(`${range[1]}:${range[2]}`, `${range[3]}:${range[4]}`);
   return value ? "horário combinado" : "";
 }
 
@@ -232,5 +234,5 @@ export function lastBookableDate(availableDates: readonly string[]): string {
  */
 export function readinessNote(bottleneckName: string, readyAt: string): string {
   if (!bottleneckName || !readyAt) return "";
-  return `${bottleneckName} sai às ${readyAt}. Antes disso não dá para prometer.`;
+  return `${bottleneckName} sai às ${formatClock(readyAt) || readyAt}. Antes disso não dá para prometer.`;
 }
