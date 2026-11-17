@@ -10,13 +10,24 @@ Para cada pacote de ``packages/``:
 1. constrói o wheel de TODOS os pacotes (``pip wheel --no-deps``), para que as
    dependências ``shopman-*`` declaradas no ``pyproject`` resolvam pelo wheel
    irmão, nunca pela árvore de código;
-2. cria um venv limpo e instala ``<distribuição>[dev]`` desse diretório de
-   wheels mais o PyPI. Só entra o que o pacote DECLARA;
+2. cria um venv limpo e instala ``<distribuição>[<extra de teste>]`` desse
+   diretório de wheels mais o PyPI. Só entra o que o pacote DECLARA;
 3. roda a suíte do pacote importada do site-packages do venv
-   (``pytest --pyargs shopman.<pacote>.tests``), num diretório de trabalho que
+   (``pytest --pyargs <módulo>.tests``), num diretório de trabalho que
    só tem os arquivos de apoio da raiz do pacote (settings, urls, conftest).
    O código-fonte do repositório não está no ``sys.path``: se a suíte precisa
    de algo que o pacote não declara, ela quebra aqui.
+
+Dois tipos de pacote, lidos do ``pyproject`` de cada um (``_profile``):
+
+- **App Django da suíte** (``shopman.<pacote>``, ``DJANGO_SETTINGS_MODULE`` no
+  ``[tool.pytest.ini_options]``): extra ``[dev]``, mais ``pytest`` e
+  ``pytest-django``. É o caso dos 13 irmãos, e nada nele mudou.
+- **Pacote puro** (fora do namespace ``shopman.``, sem
+  ``DJANGO_SETTINGS_MODULE``; hoje só o ``conversational-commerce``, ADR-049):
+  extra ``[testing]``, mais ``pytest`` e nada de ``pytest-django``. Aqui o
+  script também exige que o Django NÃO esteja instalado no venv: o pacote
+  promete não depender dele, e é este venv que prova.
 
 O ``pythonpath`` do ``[tool.pytest.ini_options]`` do pacote é ignorado de
 propósito: é ele que, na árvore, deixa a suíte enxergar pacote irmão sem
@@ -35,7 +46,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGES_ROOT = REPO_ROOT / "packages"
-TEST_DEPENDENCIES = ("pytest", "pytest-django")
+TEST_DEPENDENCIES = ("pytest",)
+DJANGO_TEST_DEPENDENCIES = ("pytest-django",)
+# Extra que traz a suíte: ``dev`` nos apps Django da suíte, ``testing`` no
+# pacote puro. Pacote sem nenhum dos dois não entra no gate (erro, não pulo).
+TEST_EXTRAS = ("dev", "testing")
 
 # Pacote cujo wheel instala, mas cuja suíte precisa de algo que o pacote não
 # declara, com a causa escrita. A dívida medida em 19/10/2026 (laudo de
@@ -76,6 +91,34 @@ def _distribution(package: str) -> str:
     return pyproject["project"]["name"]
 
 
+def _profile(package: str) -> tuple[str, str, bool]:
+    """(módulo importável, extra de teste, é app Django?) do pacote.
+
+    Falha alto quando o pyproject não cabe em nenhum dos dois tipos: um pacote
+    mal declarado não pode entrar no gate por um caminho mais frouxo.
+    """
+    pyproject = tomllib.loads((PACKAGES_ROOT / package / "pyproject.toml").read_text())
+    includes = pyproject["tool"]["setuptools"]["packages"]["find"]["include"]
+    if len(includes) != 1 or not includes[0].endswith("*"):
+        raise SystemExit(f"{package}: packages.find.include deve ter um padrão só, '<módulo>*': {includes}")
+    module = includes[0].removesuffix("*")
+    is_django = "DJANGO_SETTINGS_MODULE" in pyproject["tool"]["pytest"]["ini_options"]
+    if module.startswith("shopman.") or is_django:
+        # App Django da suíte: o contrato de sempre, sem afrouxar nada.
+        if module != f"shopman.{package}" or not is_django:
+            raise SystemExit(
+                f"{package}: app da suíte precisa ser 'shopman.{package}' com DJANGO_SETTINGS_MODULE "
+                f"(achei módulo {module!r}, Django={is_django})"
+            )
+    elif "." in module:
+        raise SystemExit(f"{package}: pacote puro precisa de módulo de topo, achei {module!r}")
+    extras = pyproject["project"].get("optional-dependencies", {})
+    extra = next((name for name in TEST_EXTRAS if name in extras), None)
+    if extra is None:
+        raise SystemExit(f"{package}: sem extra de teste ({' ou '.join(TEST_EXTRAS)}) no pyproject")
+    return module, extra, is_django
+
+
 def build_wheels(workdir: Path, dist_dir: Path) -> None:
     """Constrói fora da árvore: o setuptools deixa ``build/`` e ``*.egg-info`` onde roda."""
     for package_dir in sorted(p for p in PACKAGES_ROOT.iterdir() if (p / "pyproject.toml").exists()):
@@ -88,15 +131,26 @@ def build_wheels(workdir: Path, dist_dir: Path) -> None:
 
 
 def run_package(package: str, workdir: Path, dist_dir: Path) -> int:
+    module, extra, is_django = _profile(package)
     venv = workdir / f"venv-{package}"
     _run([sys.executable, "-m", "venv", str(venv)])
     python = venv / "bin" / "python"
     _run([str(python), "-m", "pip", "install", "--quiet", "--upgrade", "pip"])
+    test_dependencies = TEST_DEPENDENCIES + (DJANGO_TEST_DEPENDENCIES if is_django else ())
     _run([
         str(python), "-m", "pip", "install", "--quiet",
         "--find-links", str(dist_dir),
-        f"{_distribution(package)}[dev]", *TEST_DEPENDENCIES,
+        f"{_distribution(package)}[{extra}]", *test_dependencies,
     ])
+    if not is_django:
+        django_spec = subprocess.run(
+            [str(python), "-c", "import importlib.util; print(importlib.util.find_spec('django') is not None)"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        if django_spec != "False":
+            print(f"ERRO: {package} é pacote puro e o venv limpo dele tem Django instalado", flush=True)
+            return 1
+        print(f"{package}: venv limpo sem Django", flush=True)
 
     rundir = workdir / f"run-{package}"
     rundir.mkdir()
@@ -106,7 +160,6 @@ def run_package(package: str, workdir: Path, dist_dir: Path) -> int:
     lines += [f"{key} = {_toml_value(value)}" for key, value in _pytest_config(package).items()]
     (rundir / "pyproject.toml").write_text("\n".join(lines) + "\n")
 
-    module = f"shopman.{package}"
     origin = subprocess.run(
         [str(python), "-c", f"import {module}; print({module}.__file__)"],
         cwd=rundir, check=True, capture_output=True, text=True,

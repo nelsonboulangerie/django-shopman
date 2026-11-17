@@ -16,9 +16,9 @@ RELEASE_COMPOSE := $(COMPOSE) --profile release
 NUXT_DIR := surfaces/storefront-nuxt
 PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
-SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils:$(CURDIR)/packages/watchman
+SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils:$(CURDIR)/packages/watchman:$(CURDIR)/packages/conversational-commerce
 
-.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-backstage-seed test-backstage-heavy test-backstage-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow constitution-guards deploy-spec-drift adr-governance docs-governance orchestrator-governance canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-watchman test-conversational-commerce test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-backstage-seed test-backstage-heavy test-backstage-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow constitution-guards deploy-spec-drift adr-governance docs-governance orchestrator-governance canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -71,19 +71,20 @@ install: ## Instala deps + apps da suite em modo editável
 	$(PYTHON) -m pip install -c constraints.txt -e packages/buyman
 	$(PYTHON) -m pip install -c constraints.txt -e packages/fiscalman
 	$(PYTHON) -m pip install -c constraints.txt -e packages/cashman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/conversational-commerce
 	$(PYTHON) -m pip install -c constraints.txt -e .
 	@echo "✓ Dependências instaladas"
 
 # ── Testes ────────────────────────────────────────────────────────────
 
-# Os 13 pacotes independentes juntos. Existe para a matriz do CI ter um alvo só com
+# Os 14 pacotes independentes juntos. Existe para a matriz do CI ter um alvo só com
 # tudo que é rápido — na prática ~1 min somado, contra ~12 do framework. Sem
 # ele, ou o CI listava treze entradas de matriz (treze `make install`, cada um
 # custando mais que o teste) ou os cores voltavam a esperar o framework.
-test-cores: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman ## Todos os pacotes do Core
+test-cores: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman test-conversational-commerce ## Todos os pacotes do Core
 	@echo "✓ Cores passaram"
 
-test: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman test-framework test-counter-agent ## Roda todos os testes
+test: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman test-conversational-commerce test-framework test-counter-agent ## Roda todos os testes
 	@echo "✓ Todos os testes passaram"
 
 # ── Por que NÃO tem `-x` (fail-fast) em nenhum alvo ───────────────────────
@@ -113,6 +114,15 @@ test-utils: ## Testes do shopman.utils
 test-watchman: ## Testes do shopman.watchman
 	@echo "── Watchman ──"
 	cd packages/watchman && $(PYTHON) -m pytest -q
+
+# Pacote puro, sem Django (ADR-049). `PYTHONPATH` fixo no próprio pacote: a
+# `.venv` pode ter uma instalação editável apontando para OUTRO checkout, e a
+# suíte passaria testando o código errado. `-p no:django`: a `.venv` tem
+# pytest-django, e carregá-lo aqui apagaria a prova de que o pacote não precisa
+# de Django. A suíte bloqueia a rede (conftest do pacote).
+test-conversational-commerce: ## Testes do conversational_commerce (sem Django, sem rede)
+	@echo "── Conversational commerce ──"
+	cd packages/conversational-commerce && PYTHONPATH="$(CURDIR)/packages/conversational-commerce" $(PYTHON) -m pytest -q -p no:django
 
 test-offerman: ## Testes do shopman.offering
 	@echo "── Offerman ──"
