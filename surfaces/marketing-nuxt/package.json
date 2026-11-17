@@ -17,6 +17,7 @@
     "test:a11y": "playwright test --config playwright.config.ts tests/e2e/a11y.spec.ts",
     "test:visual": "playwright test --config playwright.config.ts tests/visual/marketing-matrix.spec.ts",
     "test:browser-contract": "playwright test --config playwright.config.ts tests/e2e tests/visual/marketing-matrix.spec.ts",
+    "test:browser-functional": "playwright test --config playwright.config.ts tests/e2e",
     "test:security": "vitest run --project unit --run tests/securityDelivery.test.ts tests/operatorLanguage.test.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
