@@ -144,7 +144,6 @@ useOperatorWindowTitle();
       <NuxtRouteAnnouncer />
       <!-- Aviso calmo de conexão (kit) — global, só aparece offline (paridade c/ POS/KDS/hub). -->
       <OfflineBanner />
-      <HomologationBand />
       <OperatorSuiteShell
         v-if="surface.showPage && !redirectingToRoleLanding"
         storage-key="gestor"

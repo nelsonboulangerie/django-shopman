@@ -74,9 +74,6 @@ export default defineNuxtConfig({
         process.env.NUXT_PUBLIC_DJANGO_BASE_URL ||
         process.env.NUXT_DJANGO_BASE_URL ||
         "http://127.0.0.1:8000",
-      // Faixa da homologação do iFood (HomologationBand): só o runtime local de
-      // teste define a env; vazio, a faixa não existe.
-      homologationClientId: process.env.NUXT_PUBLIC_HOMOLOGATION_CLIENT_ID || "",
     },
   },
 

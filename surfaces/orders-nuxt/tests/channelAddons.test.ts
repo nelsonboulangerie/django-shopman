@@ -4,7 +4,6 @@ import {
   choiceRule,
   parsePriceQ,
 } from "~/presentation/channelAddons";
-import { homologationClock } from "~/presentation/homologationBand";
 
 describe("parsePriceQ", () => {
   it.each([
@@ -31,13 +30,5 @@ describe("choiceRule", () => {
   it("rotula o estado", () => {
     expect(addonStatusLabel(true)).toBe("Ativo");
     expect(addonStatusLabel(false)).toBe("Pausado");
-  });
-});
-
-describe("homologationClock", () => {
-  it("mostra Brasília com segundos e o UTC do log do iFood", () => {
-    expect(homologationClock(new Date("2026-11-17T14:05:09Z"))).toBe(
-      "17/11/2026 11:05:09 (Brasília) · 14:05:09 UTC",
-    );
   });
 });
