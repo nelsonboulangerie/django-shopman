@@ -35,6 +35,13 @@
   "name": "Croissant do Contrato",
   "nutrition": null,
   "option_groups": [],
+  "promise": {
+    "date": "<today>",
+    "day_label": "hoje",
+    "kind": "ready",
+    "ready_at": "10:30",
+    "text": "Pronto agora"
+  },
   "qty_in_cart": 0,
   "quote": {
     "adjustments": [],

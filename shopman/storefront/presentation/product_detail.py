@@ -31,8 +31,10 @@ from shopman.shop.projections.types import (
 )
 from shopman.storefront.identity import customer_pricing_hints
 from shopman.storefront.presentation.catalog import unit_weight_label, viewer_collection_access
+from shopman.storefront.presentation.promise import PromiseProjection, promise_for
 from shopman.storefront.presentation.status import availability_label as resolve_availability_label
 from shopman.storefront.presentation.types import ComponentProjection
+from shopman.storefront.services.promise_facts import read_promise_facts
 
 from .catalog import (
     CatalogItemProjection,
@@ -210,6 +212,11 @@ class ProductDetailProjection:
     # público de ``catalog_context.option_groups``. Vazio = adiciona direto.
     option_groups: tuple[dict, ...] = ()
 
+    # Quando fica pronto: a MESMA promessa do card do cardápio
+    # (``presentation/promise``), nunca uma frase montada no aparelho a partir
+    # do estado da loja em cache. ``None`` = nada a prometer.
+    promise: PromiseProjection | None = None
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Builder
@@ -352,6 +359,12 @@ def build_product_detail(
     )
 
     is_made_to_order = _is_made_to_order(product)
+    promise = promise_for(
+        product.sku,
+        read_promise_facts([product.sku], channel_ref=channel_ref, own_holds={product.sku: own_hold}),
+        orderable=can_add_to_cart,
+        made_to_order=is_made_to_order,
+    )
 
     return ProductDetailProjection(
         sku=product.sku,
@@ -394,6 +407,7 @@ def build_product_detail(
         category_color=str(primary_meta.get("color") or "") or None,
         category_icon=str(primary_meta.get("icon") or "") or None,
         option_groups=tuple(catalog_context.option_groups(product)),
+        promise=promise,
     )
 
 

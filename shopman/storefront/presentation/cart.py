@@ -24,6 +24,8 @@ from shopman.shop.projections import cart as cart_data
 from shopman.shop.projections import catalog_context
 from shopman.shop.projections.types import Action, Availability
 from shopman.storefront.presentation.catalog import notify_subscribed_skus
+from shopman.storefront.presentation.promise import PromiseProjection, promise_for
+from shopman.storefront.services.promise_facts import PromiseFacts, read_promise_facts
 
 if TYPE_CHECKING:
     from django.http import HttpRequest  # noqa: F401
@@ -113,6 +115,19 @@ class CartItemProjection:
     # traz) e se a linha tem escolha. Linha com escolha muda pela ``line_id``.
     options_summary: str = ""
     has_options: bool = False
+
+    # O total da linha como a cliente paga, e o cheio para riscar ao lado
+    # (decisão do dono 1, 16/11/2026): com promoção do produto, a linha mostra
+    # o total com desconto e o cheio riscado; sem promoção, ``line_total_display``
+    # é o total cheio e ``line_total_struck_display`` é ``None``. Cupom não
+    # abate aqui: é do pedido e mora no resumo.
+    line_total_display: str = ""
+    line_total_struck_display: str | None = None
+
+    # Quando fica pronto: a mesma promessa do card e do produto
+    # (``presentation/promise``). Na linha que espera uma fornada, o dia é o da
+    # reserva. ``None`` = nada a prometer (linha indisponível ou sem dado).
+    promise: PromiseProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -264,10 +279,14 @@ def build_cart(
     # Quem já pediu o aviso vê "Anotado" também na sacola — mesmo dono da
     # pergunta que o card e a PDP usam.
     subscribed_skus = notify_subscribed_skus(request)
+    promise_facts = read_promise_facts(
+        [line.sku for line in data.lines], channel_ref=channel_ref, day_known=True
+    )
     items = tuple(
         _present_line(
             line, image_by_sku, planned_notice_template, made_to_order_label,
             subscribed_skus=subscribed_skus,
+            promise_facts=promise_facts,
         )
         for line in data.lines
     )
@@ -348,6 +367,7 @@ def _present_line(
     planned_notice_template: str = "",
     made_to_order_label: str = "",
     subscribed_skus: frozenset[str] | set[str] = frozenset(),
+    promise_facts: PromiseFacts | None = None,
 ) -> CartItemProjection:
     # ``is_available`` already reflects the own-hold correction. When false,
     # the stock really fell behind what this session reserved — surface the
@@ -376,6 +396,14 @@ def _present_line(
         and line.unit_price_q < line.list_price_q
     ):
         promo_price_display = _money(line.unit_price_q)
+
+    # Decisão 1: com promoção, a linha fala o total com desconto e risca o cheio.
+    if promo_price_display is not None:
+        line_total_display = _money(line.line_total_q)
+        line_total_struck_display: str | None = _money(line.list_total_q)
+    else:
+        line_total_display = _money(line.list_total_q)
+        line_total_struck_display = None
 
     return CartItemProjection(
         line_id=line.line_id,
@@ -412,6 +440,38 @@ def _present_line(
         notes=line.notes,
         options_summary=line.options_summary,
         has_options=line.has_options,
+        line_total_display=line_total_display,
+        line_total_struck_display=line_total_struck_display,
+        promise=_line_promise(line, promise_facts),
+    )
+
+
+def _line_promise(
+    line: cart_data.CartLineProjection, facts: PromiseFacts | None,
+) -> PromiseProjection | None:
+    """A promessa da linha, pela mesma função do card e do produto.
+
+    A linha já tem dia: a da fornada que ela reservou (``planned_for_date``), ou
+    hoje, quando a reserva é do pronto de hoje (ou o item não tem estoque
+    controlado). A grade do checkout decide o resto: casa fechada ou corte do
+    dia levam a promessa para o próximo dia com horário.
+    """
+    if facts is None:
+        return None
+    from datetime import date
+
+    planned_for = facts.today
+    if line.planned_for_date:
+        try:
+            planned_for = date.fromisoformat(line.planned_for_date)
+        except ValueError:
+            return None
+    return promise_for(
+        line.sku,
+        facts,
+        orderable=line.is_available,
+        planned_for=planned_for,
+        made_to_order=line.is_made_to_order,
     )
 
 
