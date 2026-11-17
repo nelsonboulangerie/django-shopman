@@ -24,6 +24,7 @@ from unittest.mock import patch
 import pytest
 from django.utils import timezone
 from shopman.orderman.models import Directive, Order
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.services import notification as notification_svc
 from shopman.shop.services.notification import NotificationResendRefused, resend_payment_link
@@ -310,12 +311,12 @@ class TestProvaDeEnvio:
         order = _order("PDV-N2")
         notification_svc.send(order, "payment_link_sent")
         (directive,) = _directives(order)
-        directive.payload["notification_delivery"] = {"status": "accepted", "recorded_at": timezone.now().isoformat()}
+        recorded = timezone.now()
+        directive.payload["notification_delivery"] = {"status": "accepted", "recorded_at": recorded.isoformat()}
         directive.save(update_fields=["payload"])
         _settled(directive)
-        directive.refresh_from_db()
-        local = timezone.localtime(directive.updated_at)
-        assert self._notice(order) == f"Link aceito pelo provedor às {local.hour}h{local.minute:02d}, sem comprovante de entrega."
+        # A hora é a do aceite gravado, no formato da casa ("20h" na hora cheia, "20h05" fora dela).
+        assert self._notice(order) == f"Link aceito pelo provedor às {format_clock(recorded)}, sem comprovante de entrega."
 
     def test_entregue_so_com_comprovante(self):
         order = _order("PDV-N2B")
