@@ -23,12 +23,12 @@
 // Legível e tocável (revisão das Entregas, 16/11/2026, F7a): toda parada leva a LETRA
 // da corrida num selo no canto (a cor nunca vem sozinha); a linha tem um contorno na
 // tinta da corrida por baixo, para o amarelo e o laranja lerem sobre o papel; as cores
-// do mapa são fixas (ele é claro também no tema escuro); todo alvo tem 44 px; pinos no
+// do mapa são fixas por tema (acompanham o claro e o escuro, dono 17/11); todo alvo tem 44 px; pinos no
 // mesmo ponto se abrem em círculo; o enquadramento não corre atrás da moto e, depois
 // que o operador mexe no mapa, "Ver tudo" devolve o quadro inteiro. Loja sem
 // coordenada não se desenha (antes ia parar na casa de um cliente).
 import { rideColor } from "~/presentation/ridePalette";
-import { MAP_TOKENS, fitKey, spreadOverlaps } from "~/presentation/deliveriesMap";
+import { PIN_TEXT, fitKey, googleMapStyles, lineOutline, mapTokens, spreadOverlaps } from "~/presentation/deliveriesMap";
 import { rideLetter } from "~/presentation/deliveries";
 import { metroLines } from "~/presentation/metroLines";
 import type { GMap, GOverlayView } from "~/composables/useGoogleMap";
@@ -66,6 +66,10 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ toggle: [ref: string]; fill: [place: string]; open: [number: number] }>();
 
+// O tema da tela decide as cores do mapa (dono, 17/11).
+const colorMode = useColorMode();
+const dark = computed(() => colorMode.value === "dark");
+const tokens = computed(() => mapTokens(dark.value));
 const liveAlpha = computed(() => props.liveOpacity ?? 0.5);
 const OCTAGON = "32.8,24.1 24.1,32.8 11.9,32.8 3.2,24.1 3.2,11.9 11.9,3.2 24.1,3.2 32.8,11.9";
 
@@ -152,11 +156,8 @@ async function mountRealMap() {
     clickableIcons: false,
     keyboardShortcuts: false,
     gestureHandling: "greedy",
-    // Sem comércio, ônibus e rótulos de lugar: o que importa são as nossas paradas.
-    styles: [
-      { featureType: "poi", stylers: [{ visibility: "off" }] },
-      { featureType: "transit", stylers: [{ visibility: "off" }] },
-    ],
+    // Sem comércio, ônibus e rótulos de lugar; no escuro, o papel escuro.
+    styles: googleMapStyles(dark.value),
   });
   const view = new libs.maps.OverlayView();
   view.onAdd = () => {
@@ -185,6 +186,8 @@ watch(layer, (el) => {
   if (el && mapLibs) mapLibs.maps.OverlayView.preventMapHitsAndGesturesFrom(el);
 });
 watch(framePoints, () => fit());
+// Trocar o tema com a tela aberta repinta o Google sem recriar o mapa.
+watch(dark, (value) => map?.setOptions({ styles: googleMapStyles(value) }));
 
 onMounted(() => {
   observer = new ResizeObserver(([entry]) => {
@@ -244,13 +247,13 @@ const places = computed(() => {
 </script>
 
 <template>
-  <div ref="box" class="relative size-full overflow-hidden" :style="{ background: MAP_TOKENS.paper }" data-deliveries-map :data-map-real="real ? '' : undefined">
+  <div ref="box" class="relative size-full overflow-hidden" :style="{ background: tokens.paper }" data-deliveries-map :data-map-real="real ? '' : undefined">
     <div ref="canvas" class="absolute inset-0" :class="real ? '' : 'invisible'" />
     <svg v-if="!real" class="absolute inset-0 size-full" aria-hidden="true">
       <defs>
         <pattern id="deliv-streets" width="46" height="46" patternUnits="userSpaceOnUse" patternTransform="rotate(-12)">
-          <path d="M46 0H0V46" fill="none" stroke="#fff" stroke-width="5" />
-          <path d="M46 0H0V46" fill="none" stroke="#e4dccd" stroke-width="1" />
+          <path d="M46 0H0V46" fill="none" :stroke="tokens.street" stroke-width="5" />
+          <path d="M46 0H0V46" fill="none" :stroke="tokens.streetEdge" stroke-width="1" />
         </pattern>
       </defs>
       <rect width="100%" height="100%" fill="url(#deliv-streets)" />
@@ -268,7 +271,7 @@ const places = computed(() => {
         :key="`o${l.live ? 'l' : 'b'}${l.id}`"
         :d="l.d"
         fill="none"
-        :stroke="rideColor(l.id - 1).ink"
+        :stroke="lineOutline(tokens, rideColor(l.id - 1))"
         stroke-width="7"
         stroke-linecap="round"
         stroke-linejoin="round"
@@ -299,11 +302,11 @@ const places = computed(() => {
       :style="{ left: `${label.x}px`, top: `${label.y}px` }"
     >
       <NuxtButton color="neutral" variant="ghost" class="min-h-11 p-0" :aria-label="active ? `Pôr ${label.place} na corrida ${rideLetter(active)}` : `Pôr ${label.place} numa corrida nova`" @click="emit('fill', label.place)">
-        <span class="whitespace-nowrap rounded-full px-2 py-0.5 op-micro font-semibold shadow-sm" :style="{ background: MAP_TOKENS.chip, color: MAP_TOKENS.text }">{{ label.place }}</span>
+        <span class="whitespace-nowrap rounded-full px-2 py-0.5 op-micro font-semibold shadow-sm" :style="{ background: tokens.chip, color: tokens.text }">{{ label.place }}</span>
       </NuxtButton>
     </span>
 
-    <span v-if="origin" class="absolute z-10 grid size-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full shadow-lg ring-4 ring-white" :style="{ ...at(origin), background: MAP_TOKENS.store, color: MAP_TOKENS.storeText }" title="A loja" data-map-store>
+    <span v-if="origin" class="absolute z-10 grid size-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full shadow-lg ring-4 ring-white" :style="{ ...at(origin), background: tokens.store, color: tokens.storeText }" title="A loja" data-map-store>
       <NuxtIcon name="i-lucide-store" class="size-4" />
     </span>
 
@@ -313,7 +316,7 @@ const places = computed(() => {
         <NuxtButton color="neutral" variant="ghost" class="p-1" :aria-label="`Corrida ${rideLetter(r.number)}, parada ${k + 1}, pedido ${s.code}${s.done ? ', entregue' : ''}`" @click="emit('open', r.number)">
           <span class="relative grid size-9 place-items-center op-label font-bold tabular-nums" :style="{ color: s.done ? rideColor(r.number - 1).fg : rideColor(r.number - 1).ink }">
             <svg class="absolute inset-0 size-full drop-shadow-sm" viewBox="0 0 36 36" aria-hidden="true">
-              <polygon v-if="s.done" :points="OCTAGON" :fill="rideColor(r.number - 1).bg" stroke-width="4" stroke-linejoin="round" :stroke="rideColor(r.number - 1).bg" />
+              <polygon v-if="s.done" :points="OCTAGON" :fill="rideColor(r.number - 1).bg" stroke-width="4" stroke-linejoin="round" :stroke="dark ? lineOutline(tokens, rideColor(r.number - 1)) : rideColor(r.number - 1).bg" />
               <polygon v-else :points="OCTAGON" fill="#fff" stroke-width="4" stroke-linejoin="round" :stroke="rideColor(r.number - 1).bg" :stroke-opacity="liveAlpha" />
             </svg>
             <span class="relative"><NuxtIcon v-if="s.done" name="i-lucide-check" class="size-3.5" /><template v-else>{{ k + 1 }}</template></span>
@@ -344,7 +347,7 @@ const places = computed(() => {
       <NuxtButton color="neutral" variant="ghost" class="p-1" :aria-label="`Pedido ${o.code}, ${o.place}${o.preparing ? ', em preparo' : ''}`" @click="emit('toggle', o.ref)">
         <span class="relative grid size-9 place-items-center rounded-full border-2 border-black bg-white op-micro font-semibold tabular-nums text-black shadow-md transition hover:scale-110">
           {{ o.code }}
-          <span v-if="o.preparing" class="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-white ring-1 ring-black/20" :style="{ color: MAP_TOKENS.text }" title="Em preparo"><NuxtIcon name="i-lucide-chef-hat" class="size-2.5" /></span>
+          <span v-if="o.preparing" class="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-white ring-1 ring-black/20" :style="{ color: PIN_TEXT }" title="Em preparo"><NuxtIcon name="i-lucide-chef-hat" class="size-2.5" /></span>
         </span>
       </NuxtButton>
     </span>
@@ -365,12 +368,12 @@ const places = computed(() => {
     </Teleport>
 
     <!-- legenda pela FORMA, nunca pela cor: a cor é sempre a da corrida -->
-    <div v-if="!bare" class="absolute inset-x-3 top-3 mx-auto flex w-fit flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md px-2.5 py-1.5 op-micro shadow-sm" :style="{ background: MAP_TOKENS.chip, color: MAP_TOKENS.text }" data-map-legend>
+    <div v-if="!bare" class="absolute inset-x-3 top-3 mx-auto flex w-fit flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md px-2.5 py-1.5 op-micro shadow-sm" :style="{ background: tokens.chip, color: tokens.text }" data-map-legend>
       <span class="flex items-center gap-1"><span class="size-3.5 rounded-full border-2 border-black bg-white" />Aguardando</span>
-      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" stroke="#5f6670" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><defs><pattern id="legend-stripe" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="3" fill="#fff" /><rect width="1.1" height="3" fill="#5f6670" /></pattern></defs><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="url(#legend-stripe)" stroke="#5f6670" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 3.2" /></svg>Editando</span>
-      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" stroke="#5f6670" stroke-width="3" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="#fff" stroke="#5f6670" stroke-width="2.5" stroke-linejoin="round" /></svg>Corrida</span>
-      <span class="flex items-center gap-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="#5f6670" stroke="#5f6670" stroke-width="2.5" stroke-linejoin="round" /></svg>Entregue</span>
-      <span class="flex items-center gap-1"><span class="grid h-4 w-6 place-items-center rounded-full bg-[#5f6670] text-white"><NuxtIcon name="i-lucide-bike" class="size-3" /></span>Entregador</span>
+      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" :stroke="tokens.neutral" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><defs><pattern id="legend-stripe" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="3" fill="#fff" /><rect width="1.1" height="3" :fill="tokens.neutral" /></pattern></defs><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="url(#legend-stripe)" :stroke="tokens.neutral" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 3.2" /></svg>Editando</span>
+      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" :stroke="tokens.neutral" stroke-width="3" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="#fff" :stroke="tokens.neutral" stroke-width="2.5" stroke-linejoin="round" /></svg>Corrida</span>
+      <span class="flex items-center gap-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" :fill="tokens.neutral" :stroke="tokens.neutral" stroke-width="2.5" stroke-linejoin="round" /></svg>Entregue</span>
+      <span class="flex items-center gap-1"><span class="grid h-4 w-6 place-items-center rounded-full" :style="{ background: tokens.neutral, color: tokens.chip }"><NuxtIcon name="i-lucide-bike" class="size-3" /></span>Entregador</span>
     </div>
 
     <!-- Depois do gesto do operador o mapa fica onde ele deixou; isto devolve o quadro inteiro. -->

@@ -1,16 +1,56 @@
-// O mapa das Entregas (revisão das Entregas, F7a): cores fixas de mapa claro com
+// O mapa das Entregas (revisão das Entregas, F7a): cores fixas por tema (claro e escuro) com
 // contraste provado, pinos sobrepostos abertos em círculo e enquadramento pelas
 // paradas, nunca pela moto.
 import { describe, expect, it } from "vitest";
-import { MAP_TOKENS, contrast, fitKey, spreadOverlaps } from "../app/presentation/deliveriesMap";
+import { MAP_DARK, MAP_LIGHT, PIN_TEXT, contrast, fitKey, googleMapStyles, lineOutline, mapTokens, spreadOverlaps } from "../app/presentation/deliveriesMap";
 import { rideColor } from "../app/presentation/ridePalette";
 
 describe("cores do mapa", () => {
-  it("o texto lê sobre a etiqueta e sobre o papel (AA, 4,5:1)", () => {
-    expect(contrast(MAP_TOKENS.text, MAP_TOKENS.chip)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(MAP_TOKENS.text, MAP_TOKENS.paper)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(MAP_TOKENS.neutral, MAP_TOKENS.chip)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(MAP_TOKENS.storeText, MAP_TOKENS.store)).toBeGreaterThanOrEqual(4.5);
+  const themes = [["claro", false], ["escuro", true]] as const;
+
+  it.each(themes)("tema %s: o texto lê sobre a etiqueta e sobre o papel (AA, 4,5:1)", (_, dark) => {
+    const t = mapTokens(dark);
+    expect(contrast(t.text, t.chip)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(t.text, t.paper)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(t.neutral, t.chip)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(t.chip, t.neutral)).toBeGreaterThanOrEqual(4.5); // o ícone do entregador na legenda
+    expect(contrast(t.storeText, t.store)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(themes)("tema %s: a loja e a linha de toda corrida destacam do papel (3:1)", (_, dark) => {
+    const t = mapTokens(dark);
+    expect(contrast(t.store, t.paper)).toBeGreaterThanOrEqual(3);
+    for (let i = 0; i < 6; i += 1) {
+      const outline = lineOutline(t, rideColor(i));
+      expect(contrast(outline, t.paper), `corrida ${i + 1}`).toBeGreaterThanOrEqual(3);
+      // a cor da corrida não se perde dentro do próprio contorno
+      if (outline !== rideColor(i).bg && outline !== rideColor(i).ink) {
+        expect(contrast(rideColor(i).bg, outline), `corrida ${i + 1} no halo`).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it.each(themes)("tema %s: o pino branco destaca do papel (3:1)", (_, dark) => {
+    expect(contrast("#ffffff", mapTokens(dark).paper)).toBeGreaterThanOrEqual(dark ? 3 : 1);
+    expect(contrast(PIN_TEXT, "#ffffff")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("mapTokens devolve o conjunto do tema", () => {
+    expect(mapTokens(false)).toBe(MAP_LIGHT);
+    expect(mapTokens(true)).toBe(MAP_DARK);
+    expect(mapTokens(true).store).toBe("#ffffff");
+    expect(lineOutline(MAP_LIGHT, rideColor(2))).toBe(rideColor(2).ink);
+    expect(lineOutline(MAP_DARK, rideColor(0))).toBe(MAP_DARK.halo); // azul
+    expect(lineOutline(MAP_DARK, rideColor(5))).toBe(MAP_DARK.halo); // preto
+    expect(lineOutline(MAP_DARK, rideColor(2))).toBe(rideColor(2).bg); // amarelo lê sozinho
+  });
+
+  it("o Google escuro leva o papel escuro; os dois apagam comércio e ônibus", () => {
+    const off = (s: Record<string, unknown>[]) => s.filter((r) => r.featureType === "poi" || r.featureType === "transit");
+    expect(off(googleMapStyles(false))).toHaveLength(2);
+    expect(off(googleMapStyles(true))).toHaveLength(2);
+    expect(JSON.stringify(googleMapStyles(false))).not.toContain(MAP_DARK.paper);
+    expect(JSON.stringify(googleMapStyles(true))).toContain(MAP_DARK.paper);
   });
 
   it("o número da parada (tinta da corrida) lê sobre o octógono branco em toda corrida", () => {
@@ -19,8 +59,10 @@ describe("cores do mapa", () => {
     }
   });
 
-  it("as cores são fixas: nenhuma vem de token do tema", () => {
-    for (const value of Object.values(MAP_TOKENS)) expect(value).toMatch(/^#[0-9a-f]{6}$/i);
+  it("as cores são fixas por tema: nenhuma vem de token do tema", () => {
+    for (const t of [MAP_LIGHT, MAP_DARK]) {
+      for (const value of Object.values(t)) expect(value).toMatch(/^(#[0-9a-f]{6})?$/i);
+    }
   });
 
   it("contraste é simétrico e vai de 1 a 21", () => {
