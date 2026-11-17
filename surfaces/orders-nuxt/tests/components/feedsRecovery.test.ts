@@ -124,7 +124,7 @@ it("todo card tem o mesmo toggle, e o toggle abre o modal em vez de mudar direto
   expect(integration.text()).toContain("Envio de catálogo desativado");
   expect(integration.text()).toContain("1 sincronizados · 1 pendentes · 1 com erro");
   expect(integration.text()).toContain("2 retirados · 3 não enviados");
-  expect(integration.findAll("a").map(link => link.attributes("href"))).toEqual(["/channels/ifood/catalog", "/catalog"]);
+  expect(integration.findAll("a").map(link => link.attributes("href"))).toEqual(["/channels/ifood/store", "/channels/ifood/catalog", "/catalog"]);
   // Um toggle por card (venda e exibição): título com o toggle, corpo e ações, tudo no corpo do cartão.
   expect(wrapper.findAll("[data-channel-switch]")).toHaveLength(2);
   for (const card of wrapper.findAll("[data-channel-card]")) {

@@ -41,6 +41,7 @@ from shopman.shop.projections.types import (
     OrderItemProjection,
     TimelineEventProjection,
 )
+from shopman.shop.services.business_calendar import entry_shifts, format_shifts
 from shopman.storefront.presentation.status import (
     customer_status_label,
     order_status_label,
@@ -1669,14 +1670,11 @@ def _format_opening_hours(opening_hours: dict) -> str:
     if not opening_hours:
         return ""
 
-    def _fmt_time(value: str) -> str:
-        return format_clock(value if ":" in value else f"{value}:00")
-
     day_hours: list[tuple[str, str]] = []
     for day in DAY_ORDER:
-        info = opening_hours.get(day)
-        if info and info.get("open") and info.get("close"):
-            day_hours.append((day, f"{_fmt_time(info['open'])} às {_fmt_time(info['close'])}"))
+        shifts = entry_shifts(opening_hours.get(day))
+        if shifts:
+            day_hours.append((day, format_shifts(shifts)))
         else:
             day_hours.append((day, "Fechado"))
 

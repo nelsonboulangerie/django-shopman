@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from shopman.utils.formatting import format_clock
 
+from shopman.shop.services.business_calendar import entry_shifts, format_shifts
+
 DAY_NAMES_PT = {
     "monday": "Segunda",
     "tuesday": "Terça",
@@ -154,16 +156,12 @@ def _format_opening_hours() -> list[dict]:
     if not shop or not shop.opening_hours:
         return []
 
-    def _fmt_time(t: str) -> str:
-        """'06:00' -> '6h', '20:00' -> '20h', '07:30' -> '7h30'."""
-        return format_clock(t if ":" in t else f"{t}:00")
-
     # Build (day, hours_str) pairs in order
     day_hours: list[tuple[str, str]] = []
     for day in DAY_ORDER:
-        info = shop.opening_hours.get(day)
-        if info and info.get("open") and info.get("close"):
-            day_hours.append((day, f"{_fmt_time(info['open'])} às {_fmt_time(info['close'])}"))
+        shifts = entry_shifts(shop.opening_hours.get(day))
+        if shifts:
+            day_hours.append((day, format_shifts(shifts)))
         else:
             day_hours.append((day, "Fechado"))
 

@@ -371,6 +371,56 @@ def _dynamic_collection_choices() -> tuple[tuple[str, str], ...]:
     return tuple(choices)
 
 
+OPENING_BREAKS_HELP = (
+    "Pausas dentro do horário, separadas por vírgula (ex.: 12:00-13:00, 16:00-17:00). "
+    "Cada pausa divide o dia em turnos; a loja, o checkout e o iFood ficam fechados nela."
+)
+
+
+def _format_breaks(entry) -> str:
+    breaks = entry.get("breaks") if isinstance(entry, dict) else None
+    if not isinstance(breaks, list):
+        return ""
+    return ", ".join(
+        f"{_format_admin_time(item.get('start'))}-{_format_admin_time(item.get('end'))}"
+        for item in breaks
+        if isinstance(item, dict)
+    )
+
+
+def _parse_breaks(raw: str, *, opens_at, closes_at, label: str) -> list[dict]:
+    """``"12:00-13:00, 16:00-17:00"`` → ``[{"start": "12:00", "end": "13:00"}, ...]``.
+
+    Recusa o que o iFood recusaria (turno sobreposto) e o que não forma turno:
+    pausa fora do horário do dia, que encosta na abertura ou no fechamento, ou
+    que se sobrepõe a outra.
+    """
+    from datetime import time as time_type
+
+    parsed: list[tuple] = []
+    for chunk in [part.strip() for part in (raw or "").split(",") if part.strip()]:
+        try:
+            start_raw, end_raw = (piece.strip() for piece in chunk.split("-"))
+            start, end = time_type.fromisoformat(start_raw), time_type.fromisoformat(end_raw)
+        except ValueError:
+            raise forms.ValidationError(
+                f"Em {label}, o intervalo “{chunk}” não está no formato 12:00-13:00."
+            ) from None
+        if start >= end:
+            raise forms.ValidationError(f"Em {label}, o intervalo “{chunk}” termina antes de começar.")
+        if opens_at and closes_at and not (opens_at < start and end < closes_at):
+            raise forms.ValidationError(
+                f"Em {label}, o intervalo “{chunk}” precisa ficar dentro do horário, "
+                "sem encostar na abertura nem no fechamento."
+            )
+        parsed.append((start, end))
+    parsed.sort()
+    for (_, previous_end), (start, _) in zip(parsed, parsed[1:], strict=False):
+        if start < previous_end:
+            raise forms.ValidationError(f"Em {label}, dois intervalos se sobrepõem.")
+    return [{"start": _format_admin_time(start), "end": _format_admin_time(end)} for start, end in parsed]
+
+
 def _format_admin_time(value) -> str:
     if isinstance(value, time):
         return value.strftime("%H:%M")  # hora-ok: valor de campo de formulário e do JSON salvo
@@ -1404,6 +1454,48 @@ class ShopForm(forms.ModelForm):
         input_formats=["%H:%M"],
         widget=UnfoldAdminTimeWidget(format="%H:%M"),
     )
+    opening_hours_monday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_tuesday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_wednesday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_thursday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_friday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_saturday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_sunday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
 
     # Lista de URLs editada como inputs add/remove (ArrayWidget). Declarado
     # explicitamente para entregar a lista crua ao widget — o JSONField default
@@ -1466,6 +1558,7 @@ class ShopForm(forms.ModelForm):
                 self.fields[_opening_field(day, "status")].initial = "open" if opens_at and closes_at else "closed"
                 self.fields[_opening_field(day, "open")].initial = opens_at
                 self.fields[_opening_field(day, "close")].initial = closes_at
+                self.fields[_opening_field(day, "breaks")].initial = _format_breaks(entry)
 
         self._set_defaults_initial(_shop_defaults(self.instance))
         self._set_integrations_initial(getattr(self.instance, "integrations", None) or {})
@@ -1740,6 +1833,12 @@ class ShopForm(forms.ModelForm):
                     raise forms.ValidationError(
                         f"Em {label}, o horário de abertura precisa ser anterior ao fechamento."
                     )
+                cleaned_data[_opening_field(day, "breaks")] = _parse_breaks(
+                    cleaned_data.get(_opening_field(day, "breaks")) or "",
+                    opens_at=opens_at,
+                    closes_at=closes_at,
+                    label=label,
+                )
         self._clean_defaults(cleaned_data)
         return cleaned_data
 
@@ -1880,6 +1979,11 @@ class ShopForm(forms.ModelForm):
                 day: {
                     "open": _format_admin_time(self.cleaned_data.get(_opening_field(day, "open"))),
                     "close": _format_admin_time(self.cleaned_data.get(_opening_field(day, "close"))),
+                    **(
+                        {"breaks": self.cleaned_data[_opening_field(day, "breaks")]}
+                        if self.cleaned_data.get(_opening_field(day, "breaks"))
+                        else {}
+                    ),
                 }
                 for day, _label in OPENING_HOUR_DAYS
                 if self.cleaned_data.get(_opening_field(day, "status")) == "open"
@@ -2540,13 +2644,13 @@ _OPERATION_FIELDSETS = (
             "fields": (
                 "currency",
                 "timezone",
-                ("opening_hours_monday_status", "opening_hours_monday_open", "opening_hours_monday_close"),
-                ("opening_hours_tuesday_status", "opening_hours_tuesday_open", "opening_hours_tuesday_close"),
-                ("opening_hours_wednesday_status", "opening_hours_wednesday_open", "opening_hours_wednesday_close"),
-                ("opening_hours_thursday_status", "opening_hours_thursday_open", "opening_hours_thursday_close"),
-                ("opening_hours_friday_status", "opening_hours_friday_open", "opening_hours_friday_close"),
-                ("opening_hours_saturday_status", "opening_hours_saturday_open", "opening_hours_saturday_close"),
-                ("opening_hours_sunday_status", "opening_hours_sunday_open", "opening_hours_sunday_close"),
+                ("opening_hours_monday_status", "opening_hours_monday_open", "opening_hours_monday_close", "opening_hours_monday_breaks"),
+                ("opening_hours_tuesday_status", "opening_hours_tuesday_open", "opening_hours_tuesday_close", "opening_hours_tuesday_breaks"),
+                ("opening_hours_wednesday_status", "opening_hours_wednesday_open", "opening_hours_wednesday_close", "opening_hours_wednesday_breaks"),
+                ("opening_hours_thursday_status", "opening_hours_thursday_open", "opening_hours_thursday_close", "opening_hours_thursday_breaks"),
+                ("opening_hours_friday_status", "opening_hours_friday_open", "opening_hours_friday_close", "opening_hours_friday_breaks"),
+                ("opening_hours_saturday_status", "opening_hours_saturday_open", "opening_hours_saturday_close", "opening_hours_saturday_breaks"),
+                ("opening_hours_sunday_status", "opening_hours_sunday_open", "opening_hours_sunday_close", "opening_hours_sunday_breaks"),
                 ("staff_hours_start", "staff_hours_end"),
             ),
             "description": (

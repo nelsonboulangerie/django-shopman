@@ -325,9 +325,14 @@ def scheduled_line(channel, *, now: datetime | None = None) -> str:
 
 def _today_end(now: datetime, state) -> tuple[datetime, str]:
     """O fim de "por hoje": o fechamento de hoje, se ainda vem; senão a meia-noite."""
+    from shopman.shop.services import business_calendar
+
     local = timezone.localtime(now)
     if state is not None and state.closes_at and state.closure_source != "after_close":
-        closes = time.fromisoformat(state.closes_at)
+        # O fim do DIA, não do turno: com intervalo (almoço), o ``closes_at`` do
+        # estado aberto é o fim do turno em curso.
+        window = business_calendar.selling_hours_for(local.date())
+        closes = window[1] if window else time.fromisoformat(state.closes_at)
         end = datetime.combine(local.date(), closes, tzinfo=local.tzinfo)
         if end > now:
             return end, f"até as {_hour(closes)}"

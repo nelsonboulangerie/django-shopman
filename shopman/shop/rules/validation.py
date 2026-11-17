@@ -37,7 +37,8 @@ class BusinessHoursRule(BaseRule):
 
     Comportamento (WP-S6): se ``Shop.opening_hours`` estiver vazio/ausente, não
     marca fora do horário — alinhado ao storefront (``_shop_status`` trata como
-    sempre aberto). Com grade configurada, usa ``open``/``close`` por dia da semana.
+    sempre aberto). Com grade configurada, usa ``open``/``close`` por dia da semana,
+    menos os intervalos (``breaks``).
     """
 
     code = "shop.business_hours"
@@ -83,7 +84,11 @@ class BusinessHoursRule(BaseRule):
             except (KeyError, ValueError):
                 open_time = self.start
                 close_time = self.end
-            return not (open_time <= now_time < close_time)
+            from shopman.shop.services.business_calendar import split_by_breaks
+
+            # Intervalo entre turnos (``breaks``) também é fora do horário.
+            shifts = split_by_breaks((open_time, close_time), day_hours)
+            return not any(start <= now_time < end for start, end in shifts)
 
         # Sem grade no Shop: não inferir janela pelos defaults da regra (evita
         # divergência com o vitrine, que assume "sempre aberto" sem horários).

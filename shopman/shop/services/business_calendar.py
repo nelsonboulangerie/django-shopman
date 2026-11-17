@@ -88,11 +88,26 @@ def current_business_state(*, now: datetime | None = None, shop=None) -> Busines
     opens_at, closes_at = day_window
     current_time = local_now.time()
     if opens_at <= current_time < closes_at:
+        shifts = _day_shifts(shop, local_now.date())
+        shift = next((s for s in shifts if s[0] <= current_time < s[1]), None)
+        if shift is None:
+            # Intervalo entre turnos (almoço, por exemplo): fechado agora, volta
+            # no começo do próximo turno do mesmo dia.
+            resume = next(s[0] for s in shifts if s[0] > current_time)
+            return BusinessCalendarState(
+                is_open=False,
+                opens_at=_fmt_hhmm(resume),
+                closes_at=_fmt_hhmm(closes_at),
+                message=f"Fechado. Voltamos às {_fmt_hour(resume)}",
+                next_open_at=datetime.combine(local_now.date(), resume, tzinfo=local_now.tzinfo),
+                closure_source="break",
+                resolved_at=local_now,
+            )
         return BusinessCalendarState(
             is_open=True,
-            opens_at=_fmt_hhmm(opens_at),
-            closes_at=_fmt_hhmm(closes_at),
-            message=f"Aberto até {_fmt_hour(closes_at)}",
+            opens_at=_fmt_hhmm(shift[0]),
+            closes_at=_fmt_hhmm(shift[1]),
+            message=f"Aberto até {_fmt_hour(shift[1])}",
             next_open_at=None,
             resolved_at=local_now,
         )
@@ -226,6 +241,19 @@ def selling_hours_for(day: date, *, shop=None) -> tuple[time, time] | None:
     return _day_window(shop, day)
 
 
+def shifts_for(day: date, *, shop=None) -> list[tuple[time, time]]:
+    """Os turnos de venda de ``day``: o expediente (``selling_hours_for``) menos os
+    intervalos declarados no dia da semana (``Shop.opening_hours[dia]["breaks"]``).
+
+    Dia sem intervalo devolve um turno só, igual ao expediente. Lista vazia = dia
+    sem expediente. Horário especial (``closed_dates`` com hora) é um turno só.
+    """
+    shop = _load_shop(shop)
+    if not shop:
+        return []
+    return _day_shifts(shop, day)
+
+
 def closed_weekdays(*, shop=None) -> list[int]:
     """Índices de dia da semana (0=segunda … 6=domingo) sem expediente regular."""
     shop = _load_shop(shop)
@@ -317,10 +345,12 @@ def delivery_slots_for(
     cursor = datetime.combine(day, opens_at)
     end = datetime.combine(day, closes_at)
     step = timedelta(minutes=DELIVERY_SLOT_MINUTES)
+    shifts = _day_shifts(shop, day) if shop else [window]
     while cursor + step <= end:
         starts = cursor.time()
         finishes = (cursor + step).time()
-        if earliest is None or starts >= earliest:
+        inside_a_shift = any(s_start <= starts and finishes <= s_end for s_start, s_end in shifts)
+        if inside_a_shift and (earliest is None or starts >= earliest):
             slots.append({
                 "ref": f"{_fmt_hhmm(starts)}-{_fmt_hhmm(finishes)}",
                 "label": f"{_fmt_hour(starts)} às {_fmt_hour(finishes)}",
@@ -351,6 +381,93 @@ def weekly_windows(*, shop=None) -> dict[str, tuple[time, time]]:
         if window is not None:
             out[name] = window
     return out
+
+
+def weekly_shifts(*, shop=None) -> dict[str, list[tuple[time, time]]]:
+    """A grade semanal em turnos: ``{"sunday": [(09:00, 12:00), (13:00, 16:00)], ...}``.
+
+    É a leitura que o iFood espelha (um turno do iFood por turno da casa). Mesma
+    fonte de ``weekly_windows``: o turno é o expediente do dia menos os intervalos.
+    """
+    shop = _load_shop(shop)
+    if not shop:
+        return {}
+    out: dict[str, list[tuple[time, time]]] = {}
+    for name in DAY_ORDER:
+        window = _weekday_window(shop, name)
+        if window is not None:
+            out[name] = split_by_breaks(window, (getattr(shop, "opening_hours", None) or {}).get(name))
+    return out
+
+
+def day_breaks(entry) -> list[tuple[time, time]]:
+    """Os intervalos de um dia da grade (``{"open", "close", "breaks": [...]}``).
+
+    Cada intervalo é ``{"start": "12:00", "end": "13:00"}``. Só vale intervalo
+    inteiro DENTRO do expediente, sem sobrepor outro: o formulário do Admin recusa
+    o resto (``clean_breaks``). Se um intervalo inválido chegar por outro caminho,
+    ele é ignorado e o log grita, em vez de inventar um turno.
+    """
+    if not isinstance(entry, dict):
+        return []
+    try:
+        opens_at = time.fromisoformat(str(entry["open"]))
+        closes_at = time.fromisoformat(str(entry["close"]))
+    except (KeyError, TypeError, ValueError):
+        return []
+    raw = entry.get("breaks") or []
+    if not isinstance(raw, list):
+        logger.error("business_calendar: breaks fora do formato (lista esperada): %r", raw)
+        return []
+    out: list[tuple[time, time]] = []
+    for item in raw:
+        start = _calendar_time((item or {}).get("start")) if isinstance(item, dict) else None
+        end = _calendar_time((item or {}).get("end")) if isinstance(item, dict) else None
+        if start is None or end is None or not (opens_at < start < end < closes_at):
+            logger.error("business_calendar: intervalo inválido ignorado: %r", item)
+            continue
+        out.append((start, end))
+    out.sort()
+    clean: list[tuple[time, time]] = []
+    for start, end in out:
+        if clean and start < clean[-1][1]:
+            logger.error("business_calendar: intervalo sobreposto ignorado: %s-%s", start, end)
+            continue
+        clean.append((start, end))
+    return clean
+
+
+def split_by_breaks(window: tuple[time, time], entry) -> list[tuple[time, time]]:
+    """O expediente ``window`` partido pelos intervalos de ``entry``."""
+    opens_at, closes_at = window
+    shifts: list[tuple[time, time]] = []
+    cursor = opens_at
+    for start, end in day_breaks(entry):
+        if start <= cursor or end >= closes_at:
+            continue
+        shifts.append((cursor, start))
+        cursor = end
+    shifts.append((cursor, closes_at))
+    return shifts
+
+
+def format_shifts(shifts: list[tuple[time, time]]) -> str:
+    """``"9h às 12h, 13h às 16h e 17h às 23h"`` — a frase do horário de um dia."""
+    parts = [f"{_fmt_hour(start)} às {_fmt_hour(end)}" for start, end in shifts]
+    if len(parts) <= 1:
+        return "".join(parts)
+    return f"{', '.join(parts[:-1])} e {parts[-1]}"
+
+
+def entry_shifts(entry) -> list[tuple[time, time]]:
+    """Os turnos de uma linha crua da grade (``{"open", "close", "breaks"}``)."""
+    if not isinstance(entry, dict):
+        return []
+    opens_at = _calendar_time(entry.get("open"))
+    closes_at = _calendar_time(entry.get("close"))
+    if opens_at is None or closes_at is None or opens_at >= closes_at:
+        return []
+    return split_by_breaks((opens_at, closes_at), entry)
 
 
 def calendar_closure_on(day: date, *, shop=None) -> tuple[bool, str]:
@@ -529,6 +646,16 @@ def _day_window(shop, day: date) -> tuple[time, time] | None:
     if special is not None:
         return special
     return _weekday_window(shop, DAY_ORDER[day.weekday()])
+
+
+def _day_shifts(shop, day: date) -> list[tuple[time, time]]:
+    window = _day_window(shop, day)
+    if window is None:
+        return []
+    if special_hours_for(day, _closed_dates(shop)) is not None:
+        return [window]
+    entry = (getattr(shop, "opening_hours", None) or {}).get(DAY_ORDER[day.weekday()])
+    return split_by_breaks(window, entry)
 
 
 def _calendar_time(value) -> time | None:

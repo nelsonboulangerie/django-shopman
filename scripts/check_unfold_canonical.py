@@ -388,6 +388,8 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/ifood.py",
             ROOT / "shopman/backstage/projections/ifood_handshake.py",
             ROOT / "shopman/backstage/projections/ifood_store.py",
+            # A loja no iFood ao vivo (módulo Merchant): lojas, detalhe, status, pausas, horário.
+            ROOT / "shopman/backstage/projections/ifood_merchant_console.py",
             ROOT / "shopman/backstage/projections/kds.py",
             ROOT / "shopman/backstage/projections/catalog.py",
             ROOT / "shopman/backstage/projections/catalog_bindings.py",

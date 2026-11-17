@@ -299,19 +299,26 @@ def _shifts_from_body(body) -> list[dict]:
 
 
 def desired_shifts(shop=None) -> list[dict]:
-    """A grade semanal da casa no formato do iFood: um turno por dia aberto."""
+    """A grade semanal da casa no formato do iFood: um turno do iFood por turno da casa.
+
+    Dia com intervalo (``breaks``) vira dois ou mais turnos no mesmo dia, que é
+    como o iFood expressa "domingo das 9h às 12h e das 13h às 16h". Os turnos
+    nunca se sobrepõem: o formulário do Admin recusa intervalo sobreposto, que o
+    iFood recusaria com 400.
+    """
     shifts = []
-    for day, (opens_at, closes_at) in business_calendar.weekly_windows(shop=shop).items():
-        duration = (closes_at.hour * 60 + closes_at.minute) - (opens_at.hour * 60 + opens_at.minute)
-        if duration <= 0:
-            continue
-        shifts.append(
-            {
-                "dayOfWeek": _IFOOD_DAYS[day],
-                "start": opens_at.strftime("%H:%M:%S"),
-                "duration": duration,
-            }
-        )
+    for day, day_shifts in business_calendar.weekly_shifts(shop=shop).items():
+        for opens_at, closes_at in day_shifts:
+            duration = (closes_at.hour * 60 + closes_at.minute) - (opens_at.hour * 60 + opens_at.minute)
+            if duration <= 0:
+                continue
+            shifts.append(
+                {
+                    "dayOfWeek": _IFOOD_DAYS[day],
+                    "start": opens_at.strftime("%H:%M:%S"),  # hora-ok: contrato do iFood
+                    "duration": duration,
+                }
+            )
     return shifts
 
 
