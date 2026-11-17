@@ -399,6 +399,8 @@ class InterruptionRow:
     in_effect: bool
     #: "Hoje, das 14h04 às 14h34"; em dias diferentes, "De 20/11 às 18h até 21/11 às 8h".
     period_display: str
+    #: Quando a loja volta: "às 14h34" hoje, "em 18/11 às 8h" em outro dia.
+    resume_display: str
     #: Só a pausa feita fora do Gestor se remove aqui; a do Gestor sai ligando o iFood de novo.
     removable: bool
     #: ``False``: o iFood aceitou a pausa (devolveu o id), mas a lista dele ainda não a traz.
@@ -486,6 +488,7 @@ def build_interruptions(*, now: datetime | None = None) -> InterruptionsProjecti
                     origin_label=_ORIGIN_LABELS[origin],
                     in_effect=bool(starts_at and starts_at <= now),
                     period_display=_period(starts_at, ends_at, tz, now),
+                    resume_display=_moment(ends_at, tz, now),
                     removable=origin == ORIGIN_PORTAL and bool(remote_id),
                 ),
             )
@@ -513,6 +516,7 @@ def build_interruptions(*, now: datetime | None = None) -> InterruptionsProjecti
                     origin_label=_ORIGIN_LABELS[origin],
                     in_effect=record.starts_at <= now,
                     period_display=_period(record.starts_at, record.ends_at, tz, now),
+                    resume_display=_moment(record.ends_at, tz, now),
                     removable=False,
                     listed_by_ifood=False,
                 ),

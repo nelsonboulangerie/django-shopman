@@ -169,6 +169,7 @@ def test_pausas_dizem_de_onde_vieram(fake):
     projection = console.build_interruptions()
 
     assert projection.items[0].period_display == "Hoje, das 10h30 às 12h"
+    assert projection.items[0].resume_display == "às 12h"
     assert [(i.id, i.origin_label, i.in_effect, i.removable) for i in projection.items] == [
         ("p-portal", "Portal do Parceiro", True, True),
         ("p-gestor", "iFood desligado no Gestor", False, False),

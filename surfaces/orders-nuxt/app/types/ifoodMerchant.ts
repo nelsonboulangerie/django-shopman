@@ -66,6 +66,8 @@ export interface IFoodInterruptionRow {
   in_effect: boolean;
   /** "Hoje, das 14h04 às 14h34". */
   period_display: string;
+  /** Quando a loja volta: "às 14h34" ou "em 18/11 às 8h". */
+  resume_display: string;
   removable: boolean;
   /** false: o iFood aceitou a pausa (devolveu o id), mas a lista dele ainda não a traz. */
   listed_by_ifood: boolean;

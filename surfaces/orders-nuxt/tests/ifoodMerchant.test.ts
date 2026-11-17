@@ -11,6 +11,8 @@ import {
   pauseOrigin,
   pausePeriod,
   storeHeadline,
+  tabFromQuery,
+  visibleChecks,
 } from "../app/presentation/ifoodMerchant";
 import type {
   IFoodInterruptionRow,
@@ -50,6 +52,7 @@ const pause = (over: Partial<IFoodInterruptionRow> = {}): IFoodInterruptionRow =
   origin_label: "Portal do Parceiro",
   in_effect: true,
   period_display: "Hoje, das 11h às 11h30",
+  resume_display: "às 11h30",
   removable: true,
   listed_by_ifood: true,
   ...over,
@@ -71,21 +74,28 @@ const week = (over: Partial<IFoodOpeningHours> = {}): IFoodOpeningHours => ({
 });
 
 describe("a resposta do topo", () => {
-  it("diz se o iFood está recebendo pedido, com o motivo", () => {
+  it("aberta: a resposta, sem texto cru do iFood", () => {
     expect(storeHeadline(detail())).toMatchObject({
       title: "O iFood está recebendo pedidos",
       tone: "success",
       badge: "Aberta",
-      reason: "Loja aberta",
+      reason: "Aberta no iFood",
     });
-    const closed = storeHeadline(
-      detail({
-        available: false,
-        operations: [{ ...detail().operations[0]!, title: "Loja fechada", description: "Em pausa programada" }],
-      }),
-    );
-    expect(closed).toMatchObject({ title: "O iFood não está recebendo pedidos", tone: "warning" });
-    expect(closed.reason).toBe("Loja fechada: Em pausa programada");
+  });
+  it("fechada por pausa: diz quando volta", () => {
+    const pausedChecks = [
+      { code: "unavailabilities", label: "Pausas", state: "CLOSED", state_label: "Fechada", title: "Em Pausa programada", description: "" },
+    ];
+    const closed = detail({
+      available: false,
+      operations: [{ ...detail().operations[0]!, title: "Loja fechada", checks: pausedChecks }],
+    });
+    expect(storeHeadline(closed, [pause()])).toMatchObject({
+      title: "O iFood não está recebendo pedidos",
+      tone: "warning",
+      reason: "Fechada por uma pausa (volta às 11h30)",
+    });
+    expect(visibleChecks(closed)).toEqual([]);
   });
   it("sem resposta do status, diz que não deu para saber", () => {
     expect(storeHeadline(detail({ status_error: "403" })).tone).toBe("neutral");
@@ -137,5 +147,14 @@ describe("aviso do horário", () => {
     expect(hoursAlert(week({ matches: true }), () => {})).toBeNull();
     expect(hoursAlert(week({ governs: false }), () => {})).toBeNull();
     expect(hoursAlert(week({ error: "403" }), () => {})).toBeNull();
+  });
+});
+
+describe("abas", () => {
+  it("a aba vem da query, e o que não existe cai em Agora", () => {
+    expect(tabFromQuery("hours")).toBe("hours");
+    expect(tabFromQuery(["registry"])).toBe("registry");
+    expect(tabFromQuery("qualquer")).toBe("now");
+    expect(tabFromQuery(undefined)).toBe("now");
   });
 });

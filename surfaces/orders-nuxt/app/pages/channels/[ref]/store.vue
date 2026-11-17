@@ -1,10 +1,14 @@
 <script setup lang="ts">
-// A loja no iFood, ao vivo (módulo Merchant). A tela responde, antes de tudo, a
-// pergunta do operador: "o iFood está recebendo pedidos agora?". Logo abaixo, o que
-// é rotina (pausas e horário); o cadastro da loja no iFood fica no fim, recolhido.
-// Desligar e ligar é o toggle "Ativo" do canal (o mesmo diálogo de período, motivo e
-// gerente da aba Canais). Só a pausa feita fora do Gestor (Portal do Parceiro) se
-// remove aqui: é o que destrava o 409 de "já existe outra pausa no mesmo horário".
+// A loja no iFood, ao vivo (módulo Merchant). A integração CORRELACIONA (dono,
+// 17/11/2026): cada coisa que a API do iFood permite se liga a um controle que o
+// Shopman já tem, e a tela mostra o reflexo no iFood ao lado. Nenhum conceito novo:
+//   - o toggle "Ativo" do canal (o MESMO da aba Canais, mesmo diálogo, mesmos verbos
+//     Ligar e Desligar) cria e tira a pausa no iFood;
+//   - o horário da casa (Admin, com os intervalos) é o horário do iFood;
+//   - o calendário da casa (feriados, fechamentos) vira pausa do calendário no iFood.
+// Três abas, com a aba na query (`?tab=hours`) para cada cenário abrir direto nela:
+// Agora (estado e pausas), Horário (casa × iFood) e Cadastro (a loja no iFood).
+// O aviso de horário divergente mora no cabeçalho, acima das abas: vale para todas.
 import { IFOOD_CHANNEL_REF } from "~/presentation/ifoodStore";
 import {
   checkLook,
@@ -14,8 +18,12 @@ import {
   pauseListingNote,
   pauseOrigin,
   pausePeriod,
+  STORE_TABS,
   storeHeadline,
+  tabFromQuery,
   toneText,
+  visibleChecks,
+  type StoreTab,
 } from "~/presentation/ifoodMerchant";
 import type {
   IFoodInterruptions,
@@ -23,11 +31,20 @@ import type {
   IFoodMerchants,
   IFoodOpeningHours,
 } from "~/types/ifoodMerchant";
+import type { ChannelSwitchProjection } from "~/types/feeds";
 import type { OperatorScreenAlert } from "../../../../../operator-kit/app/presentation/screenState";
 
 definePageMeta({ key: (route) => route.path });
 const route = useRoute();
+const router = useRouter();
 const supported = String(route.params.ref) === IFOOD_CHANNEL_REF;
+
+const tab = computed<StoreTab>({
+  get: () => tabFromQuery(route.query.tab),
+  set: (value) =>
+    void router.replace({ query: { ...route.query, tab: value === "now" ? undefined : value } }),
+});
+const tabItems = STORE_TABS.map((t) => ({ ...t }));
 
 const {
   merchants,
@@ -63,12 +80,14 @@ const week = computed(() =>
 );
 
 const headline = computed(() =>
-  detail.value ? storeHeadline(detail.value) : null,
+  detail.value ? storeHeadline(detail.value, pauses.value?.items ?? []) : null,
 );
+const checks = computed(() => (detail.value ? visibleChecks(detail.value) : []));
 const storeName = computed(() => merchantLine(list.value, detail.value));
 const operation = computed(() => detail.value?.operations[0] ?? null);
 
-// O toggle do canal iFood, o mesmo da aba Canais.
+// O toggle "Ativo" do canal iFood: o MESMO controle da aba Canais (cor, rótulo,
+// diálogo de período e motivo, gerente). Ligado aqui = ligado lá.
 const {
   board,
   isBusy,
@@ -80,6 +99,10 @@ const ifoodSwitch = computed(
     board.value?.catalog_channels.find((c) => c.ref === IFOOD_CHANNEL_REF)
       ?.switch ?? null,
 );
+const switchColor = (sw: ChannelSwitchProjection | null | undefined) =>
+  sw?.closed_by_shop ? "neutral" : "success";
+const switchLabel = (sw: ChannelSwitchProjection) =>
+  sw.is_active ? "iFood: ligado. Desligar…" : "iFood: desligado. Ligar…";
 const switchOpen = ref(false);
 async function submitSwitch(
   request: Parameters<typeof switchChannel>[1],
@@ -97,7 +120,7 @@ const confirm = useConfirm();
 async function askRemove(id: string, period: string) {
   const ok = await confirm({
     title: "Remover esta pausa no iFood?",
-    description: `A pausa de ${period} sai do iFood agora, e a loja volta a receber pedidos se estiver no horário.`,
+    description: `A pausa (${period}) sai do iFood agora, e a loja volta a receber pedidos se estiver no horário.`,
     confirmLabel: "Remover a pausa",
     cancelLabel: "Manter",
   });
@@ -225,78 +248,93 @@ const phoneHeaderActions = computed(() => [
         description="Sem ela, o horário e as pausas do iFood seguem o Portal do Parceiro."
       />
       <div v-else class="flex flex-col gap-4">
-        <!-- 1. A resposta: o iFood está recebendo pedidos? -->
-        <NuxtCard data-ifood-headline>
-          <div v-if="headline" class="flex flex-col gap-4">
-            <div class="flex flex-wrap items-start gap-3">
-              <NuxtIcon
-                :name="headline.icon"
-                class="mt-0.5 size-7 shrink-0"
-                :class="toneText(headline.tone)"
-              />
-              <div class="min-w-0 flex-1 space-y-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <h2 class="text-base font-semibold" data-ifood-availability>
-                    {{ headline.title }}
-                  </h2>
-                  <NuxtBadge :color="headline.tone" :label="headline.badge" />
-                </div>
-                <p class="text-sm">{{ headline.reason }}</p>
-                <p class="text-xs text-muted">
-                  <template v-if="operation"
-                    >{{ operation.operation }} pelo
-                    {{ operation.sales_channel }} ·
-                  </template>
-                  Consultado {{ detail?.checked_at_display }}
-                </p>
-              </div>
-              <NuxtButton
-                v-if="ifoodSwitch"
-                :label="
-                  ifoodSwitch.is_active ? 'Desligar o iFood…' : 'Ligar o iFood…'
-                "
-                :icon="ifoodSwitch.is_active ? 'i-lucide-pause' : 'i-lucide-play'"
-                :color="ifoodSwitch.is_active ? 'neutral' : 'primary'"
-                :disabled="!ifoodSwitch.enabled || isBusy(IFOOD_CHANNEL_REF)"
-                :title="ifoodSwitch.enabled ? '' : ifoodSwitch.disabled_reason"
-                class="w-full sm:w-auto"
-                data-ifood-switch
-                @click="switchOpen = true"
-              />
-            </div>
-            <ChannelSwitchState v-if="ifoodSwitch" :sw="ifoodSwitch" />
-            <ul
-              v-if="operation?.checks.length"
-              class="grid gap-2 sm:grid-cols-2"
-              aria-label="O que o iFood confere"
-            >
-              <li
-                v-for="check in operation.checks"
-                :key="check.code"
-                class="flex items-start gap-2 text-sm"
-                data-ifood-check
-              >
-                <NuxtIcon
-                  :name="checkLook(check).icon"
-                  class="mt-0.5 size-4 shrink-0"
-                  :class="toneText(checkLook(check).tone)"
-                />
-                <span class="min-w-0">
-                  <span class="font-medium">{{ check.label }}</span>
-                  <span class="block text-xs text-muted">{{ check.title }}</span>
-                </span>
-              </li>
-            </ul>
-          </div>
-          <div v-else class="space-y-3">
-            <NuxtSkeleton class="h-7 w-2/3" />
-            <NuxtSkeleton class="h-4 w-1/2" />
-            <NuxtSkeleton class="h-16 w-full" />
-          </div>
-        </NuxtCard>
+        <NuxtTabs
+          v-model="tab"
+          :items="tabItems"
+          :content="false"
+          variant="link"
+          aria-label="Partes da loja no iFood"
+          data-ifood-tabs
+        />
 
-        <div class="grid items-start gap-4 lg:grid-cols-2">
-          <!-- 2. Pausas: a rotina -->
+        <!-- AGORA: o iFood está recebendo pedidos? O toggle do canal e as pausas. -->
+        <template v-if="tab === 'now'">
+          <NuxtCard data-ifood-headline>
+            <div v-if="headline" class="flex flex-col gap-4">
+              <div class="flex flex-wrap items-start gap-3">
+                <NuxtIcon
+                  :name="headline.icon"
+                  class="mt-0.5 size-7 shrink-0"
+                  :class="toneText(headline.tone)"
+                />
+                <div class="min-w-0 flex-1 space-y-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h2 class="text-base font-semibold" data-ifood-availability>
+                      {{ headline.title }}
+                    </h2>
+                    <NuxtBadge :color="headline.tone" :label="headline.badge" />
+                  </div>
+                  <p class="text-sm" data-ifood-reason>{{ headline.reason }}</p>
+                  <p class="text-xs text-muted">
+                    <template v-if="operation"
+                      >{{ operation.operation }} pelo
+                      {{ operation.sales_channel }} ·
+                    </template>
+                    Consultado {{ detail?.checked_at_display }}
+                  </p>
+                </div>
+                <label
+                  v-if="ifoodSwitch"
+                  class="flex items-center gap-2 text-sm font-medium"
+                  data-ifood-switch-row
+                >
+                  Ativo
+                  <NuxtSwitch
+                    :color="switchColor(ifoodSwitch)"
+                    :model-value="ifoodSwitch.is_active"
+                    :disabled="isBusy(IFOOD_CHANNEL_REF) || !ifoodSwitch.enabled"
+                    :aria-label="switchLabel(ifoodSwitch)"
+                    :title="
+                      ifoodSwitch.enabled
+                        ? switchLabel(ifoodSwitch)
+                        : ifoodSwitch.disabled_reason
+                    "
+                    data-ifood-switch
+                    @update:model-value="switchOpen = true"
+                  />
+                </label>
+              </div>
+              <ChannelSwitchState v-if="ifoodSwitch" :sw="ifoodSwitch" />
+              <ul
+                v-if="checks.length"
+                class="grid gap-2 sm:grid-cols-2"
+                aria-label="O que o iFood confere"
+              >
+                <li
+                  v-for="check in checks"
+                  :key="check.code"
+                  class="flex items-start gap-2 text-sm"
+                  data-ifood-check
+                >
+                  <NuxtIcon
+                    :name="checkLook(check).icon"
+                    class="mt-0.5 size-4 shrink-0"
+                    :class="toneText(checkLook(check).tone)"
+                  />
+                  <span class="min-w-0">
+                    <span class="font-medium">{{ check.label }}</span>
+                    <span class="block text-xs text-muted">{{ check.title }}</span>
+                  </span>
+                </li>
+              </ul>
+            </div>
+            <div v-else class="space-y-3">
+              <NuxtSkeleton class="h-7 w-2/3" />
+              <NuxtSkeleton class="h-4 w-1/2" />
+              <NuxtSkeleton class="h-16 w-full" />
+            </div>
+          </NuxtCard>
+
           <NuxtCard data-ifood-pauses>
             <template #header>
               <div class="flex items-center gap-2">
@@ -304,8 +342,8 @@ const phoneHeaderActions = computed(() => [
                 <h2 class="text-base font-semibold">Pausas no iFood</h2>
               </div>
               <p class="mt-1 text-xs text-muted">
-                Desligar o iFood por um período vira pausa no iFood; ligar de novo tira
-                a pausa.
+                Desligar o canal por um período vira pausa no iFood; ligar de novo tira
+                a pausa. Feriados e fechamentos do calendário da casa também viram pausa.
               </p>
             </template>
             <template v-if="pauses && !pauses.error">
@@ -362,138 +400,151 @@ const phoneHeaderActions = computed(() => [
             </template>
             <NuxtSkeleton v-else-if="!pauses" class="h-16 w-full" />
           </NuxtCard>
+        </template>
 
-          <!-- 3. Horário: o do iFood ao lado do da casa -->
-          <NuxtCard data-ifood-hours>
-            <template #header>
-              <div class="flex items-center gap-2">
-                <NuxtIcon name="i-lucide-calendar-clock" class="size-5 text-muted" />
-                <h2 class="text-base font-semibold">Horário de funcionamento</h2>
+        <!-- HORÁRIO: o horário da casa (com os intervalos) é o do iFood. -->
+        <NuxtCard v-else-if="tab === 'hours'" data-ifood-hours>
+          <template #header>
+            <div class="flex items-center gap-2">
+              <NuxtIcon name="i-lucide-calendar-clock" class="size-5 text-muted" />
+              <h2 class="text-base font-semibold">Horário de funcionamento</h2>
+            </div>
+            <p class="mt-1 text-xs text-muted">
+              O horário do iFood é o horário da casa, o mesmo que a loja online e o
+              checkout usam. Salvar o horário da casa grava no iFood.
+            </p>
+          </template>
+          <template v-if="week">
+            <div
+              class="grid grid-cols-[minmax(0,5.5rem)_1fr_1fr] gap-x-3 text-sm"
+              role="table"
+              aria-label="Horário por dia, no iFood e na casa"
+            >
+              <div role="row" class="contents">
+                <span role="columnheader" class="pb-2 text-xs font-medium text-muted">Dia</span>
+                <span role="columnheader" class="pb-2 text-xs font-medium text-muted">No iFood</span>
+                <span role="columnheader" class="pb-2 text-xs font-medium text-muted">Na casa</span>
               </div>
-            </template>
-            <template v-if="week">
               <div
-                class="grid grid-cols-[minmax(0,5.5rem)_1fr_1fr] gap-x-3 text-sm"
-                role="table"
-                aria-label="Horário por dia, no iFood e na casa"
+                v-for="d in week.days"
+                :key="d.day"
+                role="row"
+                class="contents"
+                data-ifood-hours-day
               >
-                <div role="row" class="contents">
-                  <span role="columnheader" class="pb-2 text-xs font-medium text-muted">Dia</span>
-                  <span role="columnheader" class="pb-2 text-xs font-medium text-muted">No iFood</span>
-                  <span role="columnheader" class="pb-2 text-xs font-medium text-muted">Na casa</span>
-                </div>
-                <div
-                  v-for="d in week.days"
-                  :key="d.day"
-                  role="row"
-                  class="contents"
-                  data-ifood-hours-day
+                <span role="cell" class="border-t border-default py-2 font-medium">{{
+                  d.label
+                }}</span>
+                <span
+                  role="cell"
+                  class="flex flex-wrap items-center gap-1.5 border-t border-default py-2"
                 >
-                  <span role="cell" class="border-t border-default py-2 font-medium">{{
-                    d.label
-                  }}</span>
-                  <span
-                    role="cell"
-                    class="flex flex-wrap items-center gap-1.5 border-t border-default py-2"
-                  >
-                    <template v-if="!week.error">
-                      {{ d.ifood }}
-                      <NuxtBadge v-if="!d.matches" color="warning" label="Diferente" />
-                    </template>
-                    <span v-else class="text-muted">Sem resposta</span>
-                  </span>
-                  <span role="cell" class="border-t border-default py-2 text-muted">{{
-                    d.house
-                  }}</span>
-                </div>
+                  <template v-if="!week.error">
+                    {{ d.ifood }}
+                    <NuxtBadge v-if="!d.matches" color="warning" label="Diferente" />
+                  </template>
+                  <span v-else class="text-muted">Sem resposta</span>
+                </span>
+                <span role="cell" class="border-t border-default py-2 text-muted">{{
+                  d.house
+                }}</span>
               </div>
-              <p class="mt-3 text-xs text-muted">
-                Consultado {{ week.checked_at_display
-                }}<template v-if="week.written_at_display">
-                  · gravado no iFood {{ week.written_at_display }}</template
-                >
-              </p>
+            </div>
+            <p class="mt-3 text-xs text-muted">
+              Consultado {{ week.checked_at_display
+              }}<template v-if="week.written_at_display">
+                · gravado no iFood {{ week.written_at_display }}</template
+              >
+            </p>
+          </template>
+          <NuxtSkeleton v-else class="h-48 w-full" />
+          <template #footer>
+            <div class="flex flex-wrap gap-2">
+              <NuxtButton
+                label="Gravar no iFood"
+                icon="i-lucide-upload"
+                color="neutral"
+                variant="outline"
+                :loading="writing"
+                :disabled="!week || !week.governs"
+                data-ifood-hours-write
+                @click="writeHours()"
+              />
+              <NuxtButton
+                label="Mudar o horário da casa"
+                icon="i-lucide-external-link"
+                color="neutral"
+                variant="ghost"
+                :to="adminHours"
+                target="_blank"
+              />
+            </div>
+          </template>
+        </NuxtCard>
+
+        <!-- CADASTRO: a loja no iFood, consulta rara. -->
+        <template v-else>
+          <NuxtCard data-ifood-merchants>
+            <template #header>
+              <h2 class="text-base font-semibold">Lojas vinculadas a este app</h2>
             </template>
-            <NuxtSkeleton v-else class="h-48 w-full" />
-            <template #footer>
-              <div class="flex flex-wrap gap-2">
+            <ul v-if="list && !list.error" class="divide-y divide-default">
+              <li
+                v-for="m in list.merchants"
+                :key="m.id"
+                class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 first:pt-0 last:pb-0"
+                data-ifood-merchant-row
+              >
+                <span class="text-sm font-medium">{{ m.name }}</span>
+                <span class="min-w-0 break-all font-mono text-xs text-muted">{{ m.id }}</span>
+                <NuxtBadge v-if="m.is_current" color="success" label="Esta loja" />
+              </li>
+              <li v-if="!list.merchants.length" class="py-2 text-sm text-muted">
+                O iFood não devolveu nenhuma loja vinculada a este app.
+              </li>
+            </ul>
+            <NuxtSkeleton v-else-if="!list" class="h-10 w-full" />
+          </NuxtCard>
+
+          <NuxtCard data-ifood-detail>
+            <template #header>
+              <h2 class="text-base font-semibold">Cadastro da loja no iFood</h2>
+            </template>
+            <div v-if="detail && !detail.detail_error" class="space-y-4">
+              <div v-if="storeId" class="flex flex-wrap items-center gap-2 text-sm">
+                <span class="text-muted">ID da loja</span>
+                <span class="min-w-0 break-all font-mono text-xs">{{ storeId }}</span>
                 <NuxtButton
-                  label="Gravar no iFood"
-                  icon="i-lucide-upload"
-                  color="neutral"
-                  variant="outline"
-                  :loading="writing"
-                  :disabled="!week || !week.governs"
-                  data-ifood-hours-write
-                  @click="writeHours()"
-                />
-                <NuxtButton
-                  label="Mudar o horário da casa"
-                  icon="i-lucide-external-link"
+                  :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
+                  :aria-label="copied ? 'ID copiado' : 'Copiar o ID da loja'"
                   color="neutral"
                   variant="ghost"
-                  :to="adminHours"
-                  target="_blank"
+                  square
+                  @click="copyId()"
                 />
               </div>
-            </template>
-          </NuxtCard>
-        </div>
-
-        <!-- 4. O cadastro, recolhido: consulta rara -->
-        <NuxtCard data-ifood-detail>
-          <NuxtCollapsible>
-            <NuxtButton
-              label="Cadastro da loja no iFood"
-              icon="i-lucide-id-card"
-              trailing-icon="i-lucide-chevron-down"
-              color="neutral"
-              variant="ghost"
-              class="-mx-2.5 justify-start"
-              block
-            />
-            <template #content>
-              <p v-if="detail?.detail_error" class="mt-3 text-sm text-error">
-                {{ detail.detail_error }}
-              </p>
-              <div v-else-if="detail" class="mt-3 space-y-4">
+              <dl class="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
                 <div
-                  v-if="storeId"
-                  class="flex flex-wrap items-center gap-2 text-sm"
+                  v-for="row in registry"
+                  :key="row.label"
+                  class="grid grid-cols-[minmax(0,8.5rem)_1fr] gap-x-3"
                 >
-                  <span class="text-muted">ID da loja</span>
-                  <span class="min-w-0 break-all font-mono text-xs">{{ storeId }}</span>
-                  <NuxtButton
-                    :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-                    :aria-label="copied ? 'ID copiado' : 'Copiar o ID da loja'"
-                    color="neutral"
-                    variant="ghost"
-                    square
-                    @click="copyId()"
-                  />
-                </div>
-                <dl class="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-                  <div
-                    v-for="row in registry"
-                    :key="row.label"
-                    class="grid grid-cols-[minmax(0,8.5rem)_1fr] gap-x-3"
+                  <dt class="text-muted">{{ row.label }}</dt>
+                  <dd
+                    class="min-w-0 break-words"
+                    :title="row.code ? `Código do iFood: ${row.code}` : undefined"
                   >
-                    <dt class="text-muted">{{ row.label }}</dt>
-                    <dd
-                      class="min-w-0 break-words"
-                      :title="row.code ? `Código do iFood: ${row.code}` : undefined"
-                    >
-                      {{ row.value }}
-                      <span v-if="row.hint" class="block text-xs text-muted">{{
-                        row.hint
-                      }}</span>
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-            </template>
-          </NuxtCollapsible>
-        </NuxtCard>
+                    {{ row.value }}
+                    <span v-if="row.hint" class="block text-xs text-muted">{{
+                      row.hint
+                    }}</span>
+                  </dd>
+                </div>
+              </dl>
+            </div>
+            <NuxtSkeleton v-else-if="!detail" class="h-40 w-full" />
+          </NuxtCard>
+        </template>
       </div>
     </div>
 

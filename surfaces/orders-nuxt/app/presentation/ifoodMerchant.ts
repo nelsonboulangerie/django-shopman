@@ -21,7 +21,33 @@ export interface StoreHeadline {
   badge: string;
 }
 
-export function storeHeadline(detail: IFoodMerchantDetail): StoreHeadline {
+/**
+ * O motivo do fechamento em frase da casa, nunca o texto cru do iFood ("Em Pausa
+ * programada"): a pausa diz quando volta; o horário e a conexão dizem o que é.
+ */
+function closedReason(
+  detail: IFoodMerchantDetail,
+  pauses: IFoodInterruptionRow[],
+): string {
+  const op = detail.operations[0];
+  const failing = new Set(
+    (op?.checks ?? []).filter((c) => c.state !== "OK").map((c) => c.code),
+  );
+  const pause = pauses.find((p) => p.in_effect);
+  if (pause || failing.has("unavailabilities"))
+    return pause?.resume_display
+      ? `Fechada por uma pausa (volta ${pause.resume_display})`
+      : "Fechada por uma pausa";
+  if (failing.has("opening-hours")) return "Fechada pelo horário de funcionamento";
+  if (failing.has("is-connected"))
+    return "O iFood não está recebendo o sinal da casa (polling parado)";
+  return op?.title || "Loja fechada no iFood";
+}
+
+export function storeHeadline(
+  detail: IFoodMerchantDetail,
+  pauses: IFoodInterruptionRow[] = [],
+): StoreHeadline {
   if (detail.status_error || detail.available === null) {
     return {
       title: "Não deu para saber se o iFood está recebendo pedidos",
@@ -31,12 +57,10 @@ export function storeHeadline(detail: IFoodMerchantDetail): StoreHeadline {
       badge: "Sem resposta",
     };
   }
-  const op = detail.operations[0];
-  const reason = op ? [op.title, op.description].filter(Boolean).join(": ") : "";
   if (detail.available) {
     return {
       title: "O iFood está recebendo pedidos",
-      reason: reason || "Loja aberta no iFood.",
+      reason: "Aberta no iFood",
       tone: "success",
       icon: "i-lucide-circle-check",
       badge: "Aberta",
@@ -44,11 +68,31 @@ export function storeHeadline(detail: IFoodMerchantDetail): StoreHeadline {
   }
   return {
     title: "O iFood não está recebendo pedidos",
-    reason: reason || "Loja fechada no iFood.",
+    reason: closedReason(detail, pauses),
     tone: "warning",
     icon: "i-lucide-circle-pause",
     badge: "Fechada",
   };
+}
+
+/** As validações do topo, sem a de pausas: a pausa já tem o seu lugar na aba. */
+export function visibleChecks(detail: IFoodMerchantDetail): IFoodStatusCheck[] {
+  return (detail.operations[0]?.checks ?? []).filter(
+    (c) => c.code !== "unavailabilities",
+  );
+}
+
+/** As abas da tela, com o valor que vai na query (`?tab=hours`). */
+export const STORE_TABS = [
+  { value: "now", label: "Agora", icon: "i-lucide-radio" },
+  { value: "hours", label: "Horário", icon: "i-lucide-calendar-clock" },
+  { value: "registry", label: "Cadastro", icon: "i-lucide-id-card" },
+] as const;
+export type StoreTab = (typeof STORE_TABS)[number]["value"];
+
+export function tabFromQuery(raw: unknown): StoreTab {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return STORE_TABS.some((t) => t.value === value) ? (value as StoreTab) : "now";
 }
 
 /** "Teste - Nelson Boulangerie · loja de teste": a loja deste app, numa linha. */
@@ -112,7 +156,7 @@ export function pauseHint(pause: IFoodInterruptionRow): string {
   if (pause.removable) return "";
   if (pause.origin === "calendar")
     return "Sai sozinha quando o dia deixa de estar fechado no calendário da loja.";
-  return "Sai quando o iFood é ligado de novo.";
+  return "Sai quando o canal iFood é ligado de novo (Ativo).";
 }
 
 /** Dias em que o iFood e a casa discordam. */
