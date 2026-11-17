@@ -77,6 +77,39 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     // IncomingMessage não entrega body de forma confiável sob vitest.)
   })
 
+  describe('link do entregador da casa (/rota, DEV-2026-030)', () => {
+    it('repassa X-Courier-Device e não leva cookie nem semeia CSRF no POST', async () => {
+      const { event, res } = makeEvent({
+        method: 'POST',
+        path: '/api/v1/courier/rides/tok/events/',
+        headers: {
+          cookie: 'sessionid=s1; _ga=x',
+          'x-courier-device': 'k'.repeat(43),
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ action: 'depart' })
+      })
+
+      await proxyDjangoPath(event, '/api/v1/courier/rides/tok/events/')
+
+      expect(calls).toHaveLength(1) // sem a ida da semente de CSRF
+      const { url, options } = calls[0]!
+      expect(url).toBe(`${DJANGO}/api/v1/courier/rides/tok/events/`)
+      expect(options.headers['x-courier-device']).toBe('k'.repeat(43))
+      expect(options.headers.cookie).toBeUndefined()
+      expect(options.headers['x-csrftoken']).toBeUndefined()
+      expect(res.getHeader('set-cookie')).toBeUndefined()
+    })
+
+    it('X-Courier-Device só atravessa para o link do entregador', async () => {
+      const { event } = makeEvent({ path: '/api/v1/cart/', headers: { 'x-courier-device': 'k'.repeat(43) } })
+
+      await proxyDjangoPath(event, '/api/v1/cart/')
+
+      expect(calls[0]!.options.headers['x-courier-device']).toBeUndefined()
+    })
+  })
+
   describe('gêmea pública (cache de borda)', () => {
     it.each([
       ['/api/v1/storefront/home', `${DJANGO}/api/v1/storefront/public/home/`],

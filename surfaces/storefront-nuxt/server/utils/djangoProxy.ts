@@ -189,6 +189,13 @@ export function hasPathTraversal (path: string): boolean {
   return true // não estabilizou em 3 voltas: recusa
 }
 
+const COURIER_LINK_PATH = /^\/api\/v1\/courier\/rides\//
+
+/** A chamada é da página do entregador da casa? (sem cookie, com `X-Courier-Device`) */
+export function isCourierLinkPath (fullPath: string): boolean {
+  return COURIER_LINK_PATH.test(fullPath)
+}
+
 export async function proxyDjangoApi (event: H3Event, path: string) {
   return proxyDjangoPath(event, `/api/v1/${path}`)
 }
@@ -225,11 +232,18 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
     const value = getRequestHeader(event, name)
     if (value) headers[name] = value
   }
+  // A página do entregador da casa (`/rota/<token>`, DEV-2026-030): quem abre é o token e
+  // a chave do celular, nunca a sessão de cliente que o mesmo navegador tenha na loja.
+  const courierLink = isCourierLinkPath(upstreamPath)
+  if (courierLink) {
+    const device = getRequestHeader(event, 'x-courier-device')
+    if (device) headers['x-courier-device'] = device
+  }
   // Authenticated API responses must never become a shared-cache snapshot.
   setResponseHeader(event, 'cache-control', 'private, no-store')
 
-  // A gêmea pública recusa cookie: nada do visitante vai junto.
-  let cookie = twinPath ? undefined : getRequestHeader(event, 'cookie')
+  // A gêmea pública e o link do entregador recusam cookie: nada do visitante vai junto.
+  let cookie = twinPath || courierLink ? undefined : getRequestHeader(event, 'cookie')
   if (cookie) headers.cookie = cookie
 
   const contentType = getRequestHeader(event, 'content-type')
@@ -286,7 +300,9 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   // navegador sem `csrftoken` paga esta ida a mais, e o `bff;dur` sozinho não
   // distingue o clique 1 do clique 2.
   let csrfSeedTiming = ''
-  if (isUnsafeMethod && !headers['x-csrftoken']) {
+  // O link do entregador não usa sessão (o Django não confere CSRF ali): semear o
+  // `csrftoken` só deixaria um cookie no celular dele.
+  if (isUnsafeMethod && !courierLink && !headers['x-csrftoken']) {
     const seedStarted = performance.now()
     const csrf = await ensureDjangoCsrfCookie(event, djangoBaseUrl, cookie)
     csrfSeedTiming = `csrf;dur=${Math.max(0, performance.now() - seedStarted).toFixed(2)}`
@@ -338,7 +354,7 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   )
 
   const setCookie = response.headers.get('set-cookie')
-  if (setCookie) {
+  if (setCookie && !courierLink) {
     for (const cookieHeader of splitCookiesString(setCookie)) {
       appendResponseHeader(event, 'set-cookie', storefrontSetCookieHeader(cookieHeader))
     }
