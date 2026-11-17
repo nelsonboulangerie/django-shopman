@@ -1,25 +1,29 @@
-"""Os fatos por trás da promessa de quando, lidos de onde a casa já os decide.
+"""Quando o item fica pronto: UM fato, para a Loja e para o Google.
 
-A frase "Fica pronto amanhã, terça, a partir das 15h" é escrita em
-``presentation/promise.py``. Este módulo só junta o que ela precisa saber, e
-junta lendo os MESMOS serviços que o checkout e o envio do pedido consultam,
-sem alterá-los:
+A Loja escreve a frase ("Fica pronto amanhã, terça, a partir das 15h") em
+``storefront/presentation/promise.py``; o envio ao Google
+(``adapters/catalog_projection_google``) manda o ``pickupSla`` de cada item. Os
+dois leem o dia daqui, de :func:`ready_window`, e por isso nunca divergem: o
+Google cruza o inventário local com a página do produto, e a divergência sozinha
+nega a "retirada no mesmo dia" (recusa de 01/11/2026, issue #2652).
+
+Mora no ``shop`` porque o ``storefront`` importa o ``shop``, nunca o contrário; e
+em ``projections`` porque a apresentação da Loja só lê ``shop.projections``
+(regra R-A de ``test_import_boundaries``). Só lê: nenhuma escrita, nenhuma
+reserva.
+
+Os fatos vêm dos MESMOS serviços que o checkout e o envio do pedido consultam:
 
 - **o dia da fornada**: ``waitlist.next_batch_availability_for_skus``, a mesma
   pergunta que a reserva faz (``reserve_target_date``) quando o pronto de hoje
   não cobre;
 - **o pronto de hoje**: a leitura de estoque de hoje do canal
-  (``availability.stock_on_dates``), memorizada por request, a mesma que o
-  cardápio já fez;
+  (``availability.stock_on_dates``);
 - **a hora de pronto**: ``product_readiness.ready_times_for``, a régua que corta
   os horários do checkout;
-- **a grade do dia**: ``pickup_slots.annotate_slots_for_checkout``, a chamada
-  exata que o checkout faz para montar os horários de retirada (meia hora hoje,
-  turno da casa nos outros dias, nada em dia fechado ou depois do corte).
-
-Mora em ``storefront/services`` e não na apresentação porque a apresentação não
-lê ``shop.services`` (regra R-A de ``test_import_boundaries``). Só lê: nenhuma
-escrita, nenhuma reserva.
+- **a grade do dia**: ``fulfillment_window.annotate``, a chamada que monta os
+  horários de retirada do checkout (meia hora hoje, turno da casa nos outros
+  dias, nada em dia fechado ou depois do corte).
 """
 
 from __future__ import annotations
@@ -32,12 +36,11 @@ from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 #: Até quantos dias à frente se procura um dia com horário para entregar a
-#: promessa. Passado disso não há promessa: a tela não diz "hoje" nem inventa
-#: uma data.
+#: promessa. Passado disso não há promessa: ninguém diz "hoje" nem inventa data.
 SEARCH_DAYS = 14
 
 
-@dataclass
+@dataclass(frozen=True)
 class PromiseFacts:
     """O que a promessa precisa saber, para um conjunto de SKUs, num instante."""
 
@@ -52,6 +55,7 @@ class PromiseFacts:
     #: A prontidão não pôde ser apurada. O checkout recusa todo horário nesse
     #: caso, então nenhuma promessa sai.
     readiness_unavailable: bool = False
+    #: Grade lida por dia, memorizada nesta leitura (o dicionário muda, o fato não).
     _grids: dict[date, tuple[time, ...]] = field(default_factory=dict)
 
     def grid(self, day: date) -> tuple[time, ...]:
@@ -79,20 +83,72 @@ class PromiseFacts:
         return None
 
 
+@dataclass(frozen=True)
+class ReadyWindow:
+    """O primeiro horário em que a casa entrega o item.
+
+    ``target`` é o dia em que o item existe (hoje, ou o da fornada); ``day`` é o
+    dia do primeiro horário com retirada a partir dele, que pode ser posterior
+    (casa fechada, corte do dia).
+    """
+
+    target: date
+    day: date
+    start: time
+    ready_at: time | None
+
+
+def ready_window(
+    sku: str,
+    facts: PromiseFacts,
+    *,
+    orderable: bool,
+    planned_for: date | None = None,
+) -> ReadyWindow | None:
+    """Quando ``sku`` fica pronto para retirada, ou ``None`` quando não há promessa.
+
+    ``orderable`` é a decisão de venda que quem pergunta já tomou (o botão
+    Adicionar acende; o item vai disponível ao Google). ``planned_for`` é o dia
+    da fornada que uma linha da sacola já reservou: ali a data é fato da
+    reserva, não estimativa.
+
+    Sem promessa: item que não se vende, prontidão que não pôde ser apurada,
+    fornada que não se achou, ou nenhum dia com horário na busca. Nunca "hoje"
+    por falta de dado.
+    """
+    if not orderable or facts.readiness_unavailable:
+        return None
+
+    if planned_for is not None:
+        target = max(planned_for, facts.today)
+    elif facts.today_orderable.get(sku, True):
+        target = facts.today
+    else:
+        target = facts.next_batch.get(sku)
+        if target is None:
+            return None
+
+    ready_at = facts.ready_at.get(sku)
+    found = facts.first_window(target, ready_at)
+    if found is None:
+        return None
+    day, start = found
+    return ReadyWindow(target=target, day=day, start=start, ready_at=ready_at)
+
+
 def _read_grid(day: date, *, now: datetime) -> tuple[time, ...]:
-    from shopman.shop.services.product_readiness import parse_clock
-    from shopman.storefront.services.pickup_slots import annotate_slots_for_checkout
+    from shopman.shop.services import fulfillment_window
 
     try:
-        context = annotate_slots_for_checkout([], delivery_date=day.isoformat(), now=now)
+        context = fulfillment_window.annotate(day, [], now=now)
     except Exception:
-        logger.warning("promise_facts: grid unavailable for %s", day, exc_info=True)
+        logger.warning("ready_promise: grid unavailable for %s", day, exc_info=True)
         return ()
     starts: list[time] = []
-    for slot in context.get("pickup_slots") or []:
-        start = parse_clock(slot.get("starts_at"))
-        if start is not None and slot.get("enabled", True):
-            starts.append(start)
+    for window in context.get("windows") or []:
+        start = fulfillment_window._window_start(window)
+        if start is not None and window.get("enabled"):
+            starts.append(start.replace(second=0, microsecond=0))
     return tuple(sorted(starts))
 
 
@@ -115,27 +171,37 @@ def read_promise_facts(
 
     current = now or timezone.now()
     today = timezone.localtime(current).date() if timezone.is_aware(current) else current.date()
-    facts = PromiseFacts(now=current, today=today)
     unique = list(dict.fromkeys(sku for sku in skus if sku))
     if not unique:
-        return facts
+        return PromiseFacts(now=current, today=today)
 
+    today_orderable: dict[str, bool] = {}
+    next_batch: dict[str, date] = {}
     if not day_known:
-        facts.today_orderable = _today_orderable(
+        today_orderable = _today_orderable(
             unique, channel_ref=channel_ref, today=today, own_holds=own_holds or {}
         )
-        waiting = [sku for sku in unique if not facts.today_orderable.get(sku, True)]
+        waiting = [sku for sku in unique if not today_orderable.get(sku, True)]
         if waiting:
-            facts.next_batch = _next_batches(waiting, channel_ref=channel_ref)
+            next_batch = _next_batches(waiting, channel_ref=channel_ref)
 
     from shopman.shop.services.product_readiness import ReadinessUnavailable, ready_times_for
 
+    ready_at: dict[str, time] = {}
+    readiness_unavailable = False
     try:
-        facts.ready_at = ready_times_for(unique)
+        ready_at = ready_times_for(unique)
     except ReadinessUnavailable:
-        logger.warning("promise_facts: readiness unavailable for %s", unique, exc_info=True)
-        facts.readiness_unavailable = True
-    return facts
+        logger.warning("ready_promise: readiness unavailable for %s", unique, exc_info=True)
+        readiness_unavailable = True
+    return PromiseFacts(
+        now=current,
+        today=today,
+        next_batch=next_batch,
+        today_orderable=today_orderable,
+        ready_at=ready_at,
+        readiness_unavailable=readiness_unavailable,
+    )
 
 
 def _today_orderable(
@@ -158,7 +224,7 @@ def _today_orderable(
     try:
         reading = stock_on_dates(skus, [today], **waitlist.scope_kwargs(channel_ref))[today]
     except Exception:
-        logger.warning("promise_facts: today stock unavailable for %s", skus, exc_info=True)
+        logger.warning("ready_promise: today stock unavailable for %s", skus, exc_info=True)
         return {}
     out: dict[str, bool] = {}
     for sku in skus:
@@ -181,6 +247,6 @@ def _next_batches(skus: list[str], *, channel_ref: str) -> dict[str, date]:
     try:
         found = waitlist.next_batch_availability_for_skus(skus, channel_ref=channel_ref)
     except Exception:
-        logger.warning("promise_facts: next batch unavailable for %s", skus, exc_info=True)
+        logger.warning("ready_promise: next batch unavailable for %s", skus, exc_info=True)
         return {}
     return {sku: batch_day for sku, (batch_day, _info) in found.items()}
