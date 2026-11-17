@@ -1833,7 +1833,8 @@
         {
           "path": "shopman/shop/handlers/ifood_merchant.py",
           "symbols": [
-            "IFoodMerchantSyncHandler"
+            "IFoodMerchantSyncHandler",
+            "_LastError"
           ]
         }
       ],
@@ -1942,7 +1943,10 @@
         {
           "path": "shopman/shop/handlers/ifood_status.py",
           "symbols": [
-            "IFoodStatusCallbackHandler"
+            "IFoodStatusCallbackHandler",
+            "STATUS_NOT_DELIVERED_ALERT",
+            "_STEP_COPY",
+            "alert_status_not_delivered"
           ]
         }
       ],
@@ -9985,7 +9989,9 @@
             "KEY",
             "TERMINAL_STATUSES",
             "REFUSED_ALERT_TYPE",
-            "_REASON_KEYS"
+            "_REASON_KEYS",
+            "NOT_DELIVERED_ALERT_TYPE",
+            "record_not_delivered"
           ]
         }
       ],
@@ -10176,7 +10182,17 @@
             "_ACK_BATCH",
             "_CHANGE_TYPE_LABEL",
             "_BLOCK_EXPLANATION",
-            "_RECONCILING"
+            "_RECONCILING",
+            "CANCELLED_NOT_APPLIED_ALERT",
+            "_CAN_CODE_KEYS",
+            "_CAN_ORIGIN_COPY",
+            "_CAN_ORIGIN_KEYS",
+            "_CAN_REASON_KEYS",
+            "_alert_cancelled_not_applied",
+            "_first_text",
+            "_record_cancellation_facts",
+            "cancellation_facts",
+            "cancellation_reason_copy"
           ]
         }
       ],
@@ -10533,7 +10549,10 @@
             "expected_available",
             "check_store",
             "problem_copy",
-            "_alert_divergence"
+            "_alert_divergence",
+            "ALERT_STATUS_UNREADABLE_WINDOW_MINUTES",
+            "_alert_status_unreadable",
+            "alert_store_write_failed"
           ]
         }
       ],

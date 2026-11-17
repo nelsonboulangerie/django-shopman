@@ -14266,7 +14266,9 @@
             "ALERT_TYPE",
             "APPLY_WINDOW",
             "Command",
-            "LOOKBACK"
+            "LOOKBACK",
+            "_alert_behind",
+            "_latest_fact_at"
           ]
         }
       ]
