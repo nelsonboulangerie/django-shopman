@@ -10,6 +10,12 @@ export interface NewCustomer {
   name: string
 }
 
+/** O link da sacola: "Sacola, 1 item" na barra de baixo (celular). No cabeçalho do desktop o
+ *  nome é só "Ver sacola", sem a contagem (#2609); quando o #2609 fechar, sai a segunda forma. */
+function bagLink (page: Page) {
+  return page.getByRole('link', { name: /^(Sacola, 1 item|Ver sacola)$/ }).first()
+}
+
 /** No cardápio, abre o produto pelo nome e o põe na sacola pela página dele. */
 export async function addReadyProductFromMenu (page: Page, testInfo: TestInfo, product: string): Promise<void> {
   await page.goto('/menu')
@@ -21,11 +27,14 @@ export async function addReadyProductFromMenu (page: Page, testInfo: TestInfo, p
   await expect(page).toHaveURL(/\/produto\//)
   await settled(page)
   await expect(page.getByRole('heading', { name: product, level: 1 })).toBeVisible()
-  await page.getByRole('button', { name: /^Adicionar/ }).first().click()
-  await expect(page.getByRole('link', { name: /^Sacola, 1 item/ }).first()).toBeVisible()
+  // O "Adicionar" do produto da página (na barra fixa do celular ou ao lado do preço no
+  // desktop); os de "Você também pode gostar" se chamam "Adicionar <outro produto>".
+  await page.getByRole('button', { name: 'Adicionar', exact: true }).first().click()
+  // Na sacola: o botão vira o seletor de quantidade, com 1.
+  await expect(page.getByRole('group', { name: `Quantidade de ${product}` })).toContainText('1')
   await capture(page, testInfo, 'produto')
 
-  await page.getByRole('link', { name: /^Sacola, 1 item/ }).first().click()
+  await bagLink(page).click()
   await expect(page.getByRole('heading', { name: 'Sua sacola' })).toBeVisible()
   await expect(page.getByText(product).first()).toBeVisible()
   await capture(page, testInfo, 'sacola')
@@ -56,14 +65,14 @@ export async function checkoutSigningInByCode (page: Page, testInfo: TestInfo, w
   await settled(page)
 }
 
-/** Finalizar, uma etapa por vez: retirada, hoje, o primeiro horário, Pix; revisar e enviar.
+/** Finalizar, uma etapa por vez: retirada, hoje, o primeiro horário (no formato da casa, "10h30 às 11h"), Pix; revisar e enviar.
  *  Devolve o código do pedido, como a loja o mostra no endereço do acompanhamento. */
 export async function placePickupTodayWithPix (page: Page, testInfo: TestInfo): Promise<string> {
   await page.getByRole('radio', { name: /^Retirada/ }).click()
   await page.getByRole('button', { name: 'Continuar', exact: true }).click()
   await expect(page.getByText('Horário da retirada')).toBeVisible()
   await page.getByRole('radio', { name: /^Hoje/ }).click().catch(() => undefined)
-  await page.getByRole('radio', { name: /^\d{2}:\d{2} às \d{2}:\d{2}$/ }).first().click()
+  await page.getByRole('radio', { name: /^\d{1,2}h(\d{2})? às \d{1,2}h(\d{2})?$/ }).first().click()
   await page.getByRole('button', { name: 'Continuar', exact: true }).click()
   await page.getByRole('radio', { name: /^Pix/ }).click()
   await capture(page, testInfo, 'finalizar')
@@ -82,5 +91,7 @@ export async function paysPixOnTracking (page: Page, testInfo: TestInfo): Promis
   await capture(page, testInfo, 'pix')
   await page.getByRole('button', { name: 'Simular pagamento' }).click()
   await expect(page.getByText('Pagamento recebido').first()).toBeVisible({ timeout: 60_000 })
+  // Pago e ainda sem aceite: a loja diz que está conferindo.
+  await expect(page.getByText(/^Estamos conferindo a disponibilidade/).first()).toBeVisible()
   await capture(page, testInfo, 'pago')
 }

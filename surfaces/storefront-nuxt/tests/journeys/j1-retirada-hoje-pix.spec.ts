@@ -55,8 +55,13 @@ test('J1: a cliente nova pede retirada para hoje com Pix e vê a loja aceitar', 
   }
 
   await test.step('o acompanhamento da cliente muda sozinho', async () => {
-    await expect(page.getByText('Pagamento recebido').first()).toBeHidden({ timeout: 60_000 })
-    await expect(page.getByText(/Aceito|Confirmado, já vamos separar/).first()).toBeVisible()
+    // O título do aviso segue "Pagamento recebido" (o pagamento é o fato da cliente); a
+    // frase troca de "conferindo" para "aceito" e o histórico ganha o passo "Aceito".
+    await expect(page.getByText('Pedido aceito. Acompanhe o andamento por aqui.').first()).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByText(/^Estamos conferindo a disponibilidade/)).toHaveCount(0)
+    // O passo do histórico. O título do passo está fora da árvore de acessibilidade
+    // (aria-hidden, #2609): até o #2609 fechar, a suíte o acha pelo slot do componente.
+    await expect(page.getByRole('tabpanel', { name: 'Histórico' }).locator('[data-slot="timeline-title"]', { hasText: /^Aceito/ })).toBeVisible()
     expect(await page.evaluate(() => (window as Window & { __j1SameVisit?: boolean }).__j1SameVisit)).toBe(true)
     await capture(page, testInfo, 'aceito')
   })
