@@ -109,8 +109,13 @@ class DeliveryRideProjection:
     #: "Entregador voltou" (``courier-back``) e o que a mão recebe.
     back_action: Action | None = None
     back_lines: tuple[str, ...] = ()
-    #: Cancelar a corrida (``courier-cancel``), só antes da coleta.
+    #: Cancelar a corrida (``courier-cancel``), só antes da coleta. A confirmação
+    #: traz a pergunta e, depois do aceite, os motivos (``confirmation.reasons``).
     cancel_action: Action | None = None
+    #: O cancelamento pedido desta corrida: "" · pending · unknown · failed
+    #: (``courier.cancel_state``, a mesma fonte do Painel do pedido) e a frase.
+    cancel_state: str = ""
+    cancel_message: str = ""
 
 
 @dataclass(frozen=True)
@@ -149,12 +154,13 @@ def _authorized(user) -> bool:
     return bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
 
 
-def _action(ref: str, label: str, revision: str, user, *, confirm: bool = True) -> Action:
+def _action(ref: str, label: str, revision: str, user, *, confirm: bool = True,
+            confirmation: dict | None = None) -> Action:
     authorized = _authorized(user)
     return Action(
         ref=ref, kind="mutation", label=label, enabled=authorized,
         reason="" if authorized else "Identifique uma pessoa com permissão para gerenciar pedidos.",
-        method="POST", idempotency="required", confirmation={"required": confirm},
+        method="POST", idempotency="required", confirmation=confirmation or {"required": confirm},
         payload_schema={"base_revision": revision, "expected_actor_id": getattr(user, "pk", None)},
     )
 
@@ -224,8 +230,13 @@ _STATE_LABELS = {
 
 
 def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
-    from shopman.backstage.projections.order_queue import _money, _trip_fields
-    from shopman.shop.adapters.courier_machine import CANCELLABLE_STATUSES
+    from shopman.backstage.projections.order_queue import (
+        _money,
+        _trip_fields,
+        courier_can_cancel,
+        courier_cancel_confirmation,
+        courier_cancel_state,
+    )
     from shopman.shop.services import courier, operator_orders
 
     by_ref = {order.ref: order for order in orders}
@@ -255,8 +266,8 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
     cost_q = block.get("final_value_q") if block.get("final_value_q") is not None else estimate.get("value_q")
     pending = [stop for stop in stops if not stop.done]
     trip = _trip_fields(lead) if back else {}
-    status = str(block.get("status") or "")
-    can_cancel = bool(block.get("id_mch")) and status in CANCELLABLE_STATUSES
+    cancel = courier_cancel_state(lead)
+    can_cancel = courier_can_cancel(lead, cancel)
     return DeliveryRideProjection(
         key=str(block.get("id_mch") or f"call:{lead.ref}"),
         number=int(block.get("ride_number") or 0),
@@ -281,7 +292,10 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
         lead_ref=lead.ref,
         back_action=_action("courier-back", "Entregador voltou", operator_orders.trip_revision(lead), user) if back else None,
         back_lines=tuple(trip.get("courier_return_lines", ())),
-        cancel_action=_action("courier-cancel", "Cancelar corrida", courier.dispatch_revision(lead), user) if can_cancel else None,
+        cancel_action=_action("courier-cancel", "Cancelar corrida", courier.dispatch_revision(lead), user,
+                              confirmation=courier_cancel_confirmation(lead)) if can_cancel else None,
+        cancel_state=cancel["state"],
+        cancel_message=cancel["message"],
     )
 
 
