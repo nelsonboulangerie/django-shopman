@@ -155,6 +155,7 @@ useHead({ title: "Avaliações do iFood" });
 
       <NuxtAlert
         v-if="listError"
+        class="max-w-4xl"
         color="error"
         variant="subtle"
         icon="i-lucide-triangle-alert"
@@ -165,6 +166,7 @@ useHead({ title: "Avaliações do iFood" });
 
       <NuxtAlert
         v-if="list && !list.enabled"
+        class="max-w-4xl"
         color="neutral"
         variant="subtle"
         icon="i-lucide-plug-zap"
@@ -306,9 +308,13 @@ useHead({ title: "Avaliações do iFood" });
             <section v-if="detail.questions.length" class="space-y-2">
               <h3 class="text-sm font-semibold">Respostas do cliente ao questionário</h3>
               <ul class="space-y-1 text-sm">
-                <li v-for="(question, i) in detail.questions" :key="i">
-                  <span class="text-muted-foreground">{{ question.title }}:</span>
-                  {{ question.answers.join(", ") || "-" }}
+                <li
+                  v-for="(question, i) in detail.questions"
+                  :key="i"
+                  class="flex flex-wrap gap-x-1.5"
+                >
+                  <span class="text-muted-foreground">{{ question.title }}</span>
+                  <span class="font-medium">{{ question.answers.join(", ") || "Sem resposta" }}</span>
                 </li>
               </ul>
             </section>
@@ -353,7 +359,7 @@ useHead({ title: "Avaliações do iFood" });
               >
                 {{ hint.label }}
               </p>
-              <p v-if="!detail.can_reply" class="text-xs text-warning">
+              <p v-if="!detail.can_reply && !replyDone" class="text-xs text-warning">
                 O iFood só aceita resposta em avaliação aguardando resposta. Esta está
                 {{ detail.status_label.toLowerCase() }}.
               </p>
