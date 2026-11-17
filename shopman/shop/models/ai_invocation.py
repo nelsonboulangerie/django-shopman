@@ -14,6 +14,7 @@ mesmo sufixo mentiria. Nenhum campo guarda o texto enviado ao provedor.
 from __future__ import annotations
 
 from django.db import models
+from shopman.utils.formatting import format_local
 
 
 class AiOutcome(models.TextChoices):
@@ -49,7 +50,7 @@ class AiInvocation(models.Model):
         indexes = [models.Index(fields=["purpose", "created_at"], name="shop_aiinv_purpose_created")]
 
     def __str__(self) -> str:
-        return f"{self.purpose} {self.outcome} {self.created_at:%d/%m %H:%M}"
+        return f"{self.purpose} {self.outcome} {format_local(self.created_at, '%d/%m {clock}')}"
 
     @property
     def cost_usd(self) -> float:

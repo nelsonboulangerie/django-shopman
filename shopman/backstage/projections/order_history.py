@@ -29,6 +29,7 @@ from django.db.models.fields.json import KT
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock, format_local
 from shopman.utils.monetary import format_money
 
 from shopman.backstage.presentation.status import order_status_label, payment_method_label
@@ -381,8 +382,8 @@ def _row(order, channel_labels: dict[str, str], today: date) -> OrderHistoryRowP
         total_q=total_q,
         total_display=f"R$ {format_money(total_q)}",
         closed_at=closed_local.isoformat(),
-        closed_display=closed_local.strftime("%d/%m %H:%M"),
-        closed_label=f"{status_label} {_day_words(closed_local.date(), today)} às {closed_local:%H:%M}",
+        closed_display=format_local(closed_local, "%d/%m {clock}"),
+        closed_label=f"{status_label} {_day_words(closed_local.date(), today)} às {format_clock(closed_local)}",
         money_outcome=money_outcome,
         money_outcome_pending=money_outcome_pending,
     )

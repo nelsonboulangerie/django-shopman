@@ -17,6 +17,7 @@ from typing import Any
 from django.apps import apps
 from django.db.models import Exists, OuterRef, Q, Sum
 from django.utils import timezone
+from shopman.utils.formatting import format_clock, format_local
 
 from shopman.shop.purchase_policy import PurchasePolicy, resolve_purchase_policy
 from shopman.shop.services.sku_records import SkuRoles, sku_roles_map
@@ -592,8 +593,8 @@ def _receipt_history() -> tuple[ReceiptHistoryProjection, ...]:
                 lines=int(corpo.get("lines") or 0),
                 totalCostQ=int(corpo.get("total_cost_q") or 0),
                 operator=str(corpo.get("operator") or ""),
-                receivedAtDisplay=timezone.localtime(linha.created_at).strftime("%d/%m %H:%M"),
-                receivedAtTime=timezone.localtime(linha.created_at).strftime("%H:%M"),
+                receivedAtDisplay=format_local(linha.created_at, "%d/%m {clock}"),
+                receivedAtTime=format_clock(linha.created_at),
                 receivedToday=timezone.localtime(linha.created_at).date() == timezone.localdate(),
             )
         )

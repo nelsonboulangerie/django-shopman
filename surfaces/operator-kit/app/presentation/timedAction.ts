@@ -5,6 +5,8 @@
 // de foco, recarga da lista), a aba pode dormir em segundo plano, e o fim continua no
 // mesmo instante. O tamanho da janela (`since` ou `duration`) só decide quanto do fundo
 // ainda está cheio.
+import { formatClockSeconds } from "./clock";
+
 
 export type Instant = number | string;
 
@@ -75,13 +77,9 @@ export function remainingSeconds(remainingMs: number): number {
   return Math.max(0, Math.ceil(remainingMs / 1000));
 }
 
-/** A hora do fim, como o leitor de tela ouve: "10:42:15". */
+/** A hora do fim, como o leitor de tela ouve: "10h42min15s". */
 export function deadlineClock(untilMs: number): string {
-  return new Date(untilMs).toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  return formatClockSeconds(untilMs);
 }
 
 /** A descrição fixa do botão (não muda a cada segundo). */

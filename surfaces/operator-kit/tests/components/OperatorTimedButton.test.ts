@@ -58,7 +58,7 @@ describe("OperatorTimedButton", () => {
     const description = button.get("[data-timed-description]");
     expect(el.attributes("aria-describedby")).toBe(description.attributes("id"));
     const before = description.text();
-    expect(before).toMatch(/^Disponível até \d{2}:\d{2}:\d{2}\.$/);
+    expect(before).toMatch(/^Disponível até \d{1,2}h\d{2}min\d{2}s\.$/);
     vi.advanceTimersByTime(2000);
     await button.vm.$nextTick();
     expect(description.text()).toBe(before);

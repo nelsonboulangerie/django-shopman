@@ -163,8 +163,8 @@ def test_row_contract(client, manager, orders):
     assert row["status_tone"] == "danger"
     assert row["channel_label"] == "iFood"
     assert row["total_display"] == "R$ 25,00"
-    assert row["closed_display"].endswith("12:00")
-    assert row["closed_label"] == "Cancelado hoje às 12:00"
+    assert row["closed_display"].endswith("12h")
+    assert row["closed_label"] == "Cancelado hoje às 12h"
     # iFood: o dinheiro não passa pela casa, a linha não inventa destino.
     assert row["money_outcome"] == ""
 
@@ -256,7 +256,7 @@ def test_search_that_finds_nothing_says_where_it_looked(client, manager, orders)
     ).json()["history"]
     assert [row["ref"] for row in wider["items"]] == ["H-ONTEM"]
     assert wider["total_label"] == f"1 pedido de {(orders - timedelta(days=27)):%d/%m} até hoje"
-    assert wider["items"][0]["closed_label"] == "Concluído ontem às 12:00"
+    assert wider["items"][0]["closed_label"] == "Concluído ontem às 12h"
 
 
 def test_period_words():
@@ -285,7 +285,7 @@ def test_day_is_the_stamp_of_the_current_status(client, manager, orders):
     five_days_ago = (orders - timedelta(days=5)).isoformat()
     assert "H-RET" not in _refs(_get(client, manager, date_from=five_days_ago, date_to=five_days_ago))
     row = next(r for r in _get(client, manager, q="H-RET").json()["history"]["items"])
-    assert row["closed_label"] == "Devolvido hoje às 12:00"
+    assert row["closed_label"] == "Devolvido hoje às 12h"
 
 
 def _paid(order, method, amount_q=2500, refund_q=0):
