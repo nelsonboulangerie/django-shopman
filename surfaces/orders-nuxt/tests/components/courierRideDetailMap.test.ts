@@ -72,4 +72,17 @@ describe("Entregas: o detalhe da corrida e o mapa", () => {
       expect(map.props("origin")).toBeNull();
     } finally { w.unmount(); }
   });
+
+  it("o círculo da parada lê no tema escuro: fundo branco com a tinta da corrida, nunca a cor de texto do tema", () => {
+    const w = mountDetail();
+    try {
+      const steps = w.findAll("[data-ride-stop-step]");
+      expect(steps).toHaveLength(3);
+      for (const step of steps) {
+        expect(step.classes()).toContain("bg-white");
+        expect(step.classes()).not.toContain("text-highlighted");
+        expect(step.attributes("style")).toContain("color: #008933");
+      }
+    } finally { w.unmount(); }
+  });
 });

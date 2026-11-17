@@ -42,22 +42,28 @@ export interface PlacedMarker {
   key: string;
   x: number;
   y: number;
+  /** Largura e altura do que se desenha (a moto é mais larga que a parada). */
+  w?: number;
+  h?: number;
 }
 
 /**
- * Marcadores que caem quase no mesmo pixel (duas paradas no mesmo prédio, a moto
- * em cima da parada) se abrem num círculo pequeno, para cada um ter o seu toque.
- * Devolve o deslocamento de cada chave; quem está sozinho não sai do lugar.
+ * Marcadores que se cobrem (duas paradas no mesmo prédio, a moto em cima da parada)
+ * se abrem num círculo pequeno, para cada um ter o seu toque. Dois se cobrem quando
+ * as caixas se tocam; quem está sozinho não sai do lugar.
  */
 export function spreadOverlaps(
   markers: readonly PlacedMarker[],
-  minDistance = 40,
+  size = 40,
   radius = 22,
 ): Map<string, { dx: number; dy: number }> {
   const out = new Map<string, { dx: number; dy: number }>();
+  const touches = (a: PlacedMarker, b: PlacedMarker) =>
+    Math.abs(a.x - b.x) < ((a.w ?? size) + (b.w ?? size)) / 2 &&
+    Math.abs(a.y - b.y) < ((a.h ?? size) + (b.h ?? size)) / 2;
   const groups: PlacedMarker[][] = [];
   for (const marker of markers) {
-    const group = groups.find((g) => g.some((m) => Math.hypot(m.x - marker.x, m.y - marker.y) < minDistance));
+    const group = groups.find((g) => g.some((m) => touches(m, marker)));
     if (group) group.push(marker);
     else groups.push([marker]);
   }
@@ -66,9 +72,12 @@ export function spreadOverlaps(
       out.set(group[0]!.key, { dx: 0, dy: 0 });
       continue;
     }
+    // Abre o bastante para as caixas deixarem de se tocar.
+    const widest = Math.max(...group.map((m) => m.w ?? size));
+    const r = Math.max(radius, Math.ceil(widest / 2) + 4);
     group.forEach((marker, i) => {
       const angle = -Math.PI / 2 + (2 * Math.PI * i) / group.length;
-      out.set(marker.key, { dx: Math.round(Math.cos(angle) * radius), dy: Math.round(Math.sin(angle) * radius) });
+      out.set(marker.key, { dx: Math.round(Math.cos(angle) * r), dy: Math.round(Math.sin(angle) * r) });
     });
   }
   return out;

@@ -74,3 +74,23 @@ describe("enquadramento", () => {
     expect(fitKey([a])).not.toBe(fitKey([a, { latitude: -21.2, longitude: -47.9 }]));
   });
 });
+
+describe("a moto, mais larga que a parada", () => {
+  it("encostada de lado numa parada, se separa dela", () => {
+    const out = spreadOverlaps([
+      { key: "stop", x: 100, y: 100 },
+      { key: "courier:2", x: 70, y: 70, w: 64, h: 40 },
+    ]);
+    const s = out.get("stop")!, c = out.get("courier:2")!;
+    const dx = Math.abs(100 + s.dx - (70 + c.dx)), dy = Math.abs(100 + s.dy - (70 + c.dy));
+    expect(dx >= (40 + 64) / 2 || dy >= (40 + 40) / 2).toBe(true);
+  });
+
+  it("longe o bastante, não se mexe", () => {
+    const out = spreadOverlaps([
+      { key: "stop", x: 100, y: 100 },
+      { key: "courier:2", x: 30, y: 100, w: 64, h: 40 },
+    ]);
+    expect(out.get("courier:2")).toEqual({ dx: 0, dy: 0 });
+  });
+});

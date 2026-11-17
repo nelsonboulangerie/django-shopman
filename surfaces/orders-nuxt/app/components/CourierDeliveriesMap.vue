@@ -221,7 +221,7 @@ const offsets = computed(() =>
     ...props.building.flatMap((r) => r.stops.map((s) => ({ key: s.ref, ...px(s) }))),
     ...props.live.flatMap((r) => [
       ...r.stops.map((s) => ({ key: s.ref, ...px(s) })),
-      ...(r.courier ? [{ key: `courier:${r.number}`, ...px(r.courier) }] : []),
+      ...(r.courier ? [{ key: `courier:${r.number}`, ...px(r.courier), w: 64, h: 40 }] : []),
     ]),
   ]),
 );
