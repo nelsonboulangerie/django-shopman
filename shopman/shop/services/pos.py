@@ -1136,7 +1136,7 @@ def review_sale(
             "code": "item_low_stock",
             "field": "items",
             "sku": sku,
-            "message": f"{name}: {_availability_shortfall(decision)}",
+            "message": f"{name}: {_availability_shortfall(decision, requested_qty=qty, target_date=target_date)}",
         })
     if not_ready:
         started = _started_lot_qty([sku for _name, sku, _missing in not_ready], target_date)
@@ -1355,7 +1355,7 @@ def _lot_stage(started_qty: Decimal, missing: Decimal) -> str:
     return "Previsto" if started_qty >= missing else "Planejado"
 
 
-def _availability_shortfall(decision: dict) -> str:
+def _availability_shortfall(decision: dict, *, requested_qty=None, target_date=None) -> str:
     """Por que este item não foi aprovado — na língua do balcão.
 
     Três causas distintas saíam com a MESMA frase ("só N em estoque"), o que
@@ -1368,6 +1368,17 @@ def _availability_shortfall(decision: dict) -> str:
     if decision.get("reason_code") == "not_in_listing":
         return "fora do cardápio do balcão. A venda vale; confira o cadastro."
     available = decision.get("available_qty") or 0
+    if target_date is not None and target_date > timezone.localdate():
+        # ENCOMENDA (#2559): o número é o PLANO da data, não o estoque, e a venda
+        # não é de balcão. Na encomenda PDV-261116-K16 a frase dizia "só 44 em
+        # estoque. A venda de balcão vale" para 200 baguetes pedidas contra 22
+        # planejadas. O que passa do plano fica registrado como demanda e a
+        # Produção recebe o aviso no fechamento (``stock.alert_demand_over_plan``).
+        asked = f"{_qty_display(requested_qty)} pedidas, " if requested_qty is not None else ""
+        return (
+            f"{asked}{_qty_display(available)} planejadas para {target_date.strftime('%d/%m')}. "
+            "O que passa do plano fica como encomenda sem fornada, e a Produção é avisada."
+        )
     return f"só {_qty_display(available)} em estoque. A venda de balcão vale; confira o estoque depois."
 
 
