@@ -22,7 +22,7 @@ def test_a_data_nova_sai_por_extenso_com_a_janela_e_sem_ponto():
     day = timezone.localdate() + timedelta(days=5)
     nota = _status_note(_order(day, "14:00-14:30"), "order_rescheduled", None)
 
-    assert nota.endswith("14:00 às 14:30")
+    assert nota.endswith("14h às 14h30")
     assert day.strftime("%d/%m") in nota
     assert not nota.endswith(".")
 

@@ -802,7 +802,7 @@ describe("OperatorLiveStatus", () => {
     });
     mounted.push(wrapper as unknown as VueWrapper);
     expect(wrapper.find("[data-op-fit-variant='short']").exists()).toBe(false);
-    expect(wrapper.find("[data-op-fit-variant='only']").text()).toBe("Última Leitura às 10:04");
+    expect(wrapper.find("[data-op-fit-variant='only']").text()).toBe("Última leitura às 10:04");
     expect(wrapper.find("[data-live-sign]").exists()).toBe(false);
     expect(wrapper.get("[data-live-fit]").attributes("style")).toContain("min-width: 1.625rem");
   });
@@ -812,7 +812,7 @@ describe("OperatorLiveStatus", () => {
       props: { tone: "late", time: "10:04", label: "Sem atualizar" },
     });
     mounted.push(wrapper as unknown as VueWrapper);
-    expect(wrapper.text().trim()).toBe("Última Leitura às 10:04");
+    expect(wrapper.text().trim()).toBe("Última leitura às 10:04");
     expect(live(wrapper).attributes("class")).toContain("bg-warning/10");
     expect(dot(wrapper as unknown as VueWrapper).classes()).toContain(
       "bg-warning",
@@ -825,7 +825,7 @@ describe("OperatorLiveStatus", () => {
       props: { tone: "off", time: "22:03", label: "Atualização falhou" },
     });
     mounted.push(wrapper as unknown as VueWrapper);
-    expect(wrapper.text().trim()).toBe("Sem Conexão");
+    expect(wrapper.text().trim()).toBe("Sem conexão");
     expect(wrapper.text()).not.toMatch(NO_ENGLISH_SWITCH);
     expect(wrapper.text()).not.toContain("22:03");
     expect(live(wrapper).attributes("aria-label")).toContain("Atualização falhou");

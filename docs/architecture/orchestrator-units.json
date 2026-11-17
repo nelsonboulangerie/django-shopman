@@ -8199,7 +8199,17 @@
           "path": "shopman/shop/services/courier.py",
           "symbols": [
             "latest_cancellation",
-            "cancel_ride"
+            "cancel_ride",
+            "ride_cancellable",
+            "cancel_state",
+            "cancel_question",
+            "cancel_consequence",
+            "cancel_asks_reason",
+            "cancel_refused_message",
+            "ride_name",
+            "CANCEL_PENDING_MESSAGE",
+            "CANCEL_UNKNOWN_MESSAGE",
+            "CANCEL_NOT_SENT_MESSAGE"
           ]
         }
       ],
@@ -8559,7 +8569,8 @@
             "dispatch_task_filter",
             "request_group_dispatch",
             "ride_companions",
-            "ride_orders"
+            "ride_orders",
+            "stranded_companions"
           ]
         }
       ],
@@ -8585,7 +8596,7 @@
     },
     {
       "id": "delivery.courier-ride-number",
-      "question": "Que número (e cor) a corrida ganha na tela, e quando ele volta a ficar livre?",
+      "question": "Que número a corrida ganha (a letra e a cor dela na tela), e quando ele volta a ficar livre?",
       "owner": "delivery.ride-number",
       "responsibility": "composição",
       "public_entrypoint": "shopman.shop.services.courier:next_ride_number",

@@ -62,6 +62,7 @@ _WIDGET_RESPONSE = inline_serializer(
     fields={
         "widget_id": serializers.CharField(),
         "merchant_ids": serializers.ListField(child=serializers.CharField()),
+        "has_order_in_progress": serializers.BooleanField(),
     },
 )
 

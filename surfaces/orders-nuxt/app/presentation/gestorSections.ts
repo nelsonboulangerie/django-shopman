@@ -2,8 +2,9 @@
 // ou Postos é o servidor; aqui só se monta a lista a partir da resposta.
 //
 // Dois andares (SUITE-UX §3, D de 13/11/2026): a OPERAÇÃO no rail (Pedidos, o painel
-// com Fila · Painel · Tabela; Histórico; e, para quem cuida do catálogo, Catálogo e
-// Canais) e um item só no pé, **Ajustes**, que abre a página com Clientes e Postos.
+// com Fila · Painel · Tabela; Histórico; Clientes, para quem gere clientes; e, para quem
+// cuida do catálogo, Catálogo e Canais) e um item só no pé, **Ajustes**, que abre a
+// página com Postos.
 // Rotinas (abertura, rotina e fechamento) moram no PDV, perto do caixa. O ponto de canal desligado mora em Canais (ou em Ajustes, para quem não vê
 // Canais).
 //
@@ -52,7 +53,7 @@ export const SETTINGS_ROUTES = [
 ];
 
 /** As telas da operação, no rail: não acendem Ajustes. */
-const RAIL_ROUTES = ["/history", "/catalog", "/feeds", "/channels"];
+const RAIL_ROUTES = ["/history", "/customers", "/catalog", "/feeds", "/channels"];
 
 function badge(count: number | undefined) {
   return count ? { badge: String(count) } : {};
@@ -60,6 +61,7 @@ function badge(count: number | undefined) {
 
 export function gestorSections({
   channelsAttention,
+  canManageCustomers,
   canManageCatalog = false,
   expeditesOnly = false,
   catalogOnly = false,
@@ -126,6 +128,20 @@ export function gestorSections({
       to: "/history",
       group: "Operação",
     },
+    // Clientes sobe para o rail logo depois de Histórico: é o que o gerente procura
+    // quando um cliente liga no meio do turno (dono, 16/11/2026). Sem a permissão (ou
+    // sem resposta ainda) o item não existe, como era em Ajustes.
+    ...(canManageCustomers
+      ? [
+          {
+            key: "customers",
+            label: "Clientes",
+            icon: "lucide:users",
+            to: "/customers",
+            group: "Operação",
+          },
+        ]
+      : []),
     // Catálogo é operação, não cadastro: a disponibilidade dos itens por canal muda
     // ao longo do dia (dono, 13/11/2026).
     ...(canManageCatalog
@@ -153,7 +169,7 @@ export function gestorSections({
       label: "Ajustes",
       icon: "lucide:settings-2",
       to: "/settings",
-      // Só as telas que moram em Ajustes: Histórico, Catálogo e Canais são do rail.
+      // Só as telas que moram em Ajustes: Histórico, Clientes, Catálogo e Canais são do rail.
       match: SETTINGS_ROUTES.filter((route) => !RAIL_ROUTES.includes(route)),
       // Sem Canais no rail (quem não cuida do catálogo), o aviso de canal fica aqui.
       attention: canManageCatalog ? undefined : channelsAttention || undefined,
@@ -171,7 +187,6 @@ export interface GestorSettingsEntry extends OperatorSection {
 /** O andar Ajustes: as seções que saíram do rail, cada uma a um toque. */
 export function gestorSettingsSections({
   channelsAttention,
-  canManageCustomers,
   canManageWorkstations = false,
   catalogOnly = false,
 }: GestorSectionsInput): GestorSettingsEntry[] {
@@ -196,19 +211,7 @@ export function gestorSettingsSections({
     ];
   }
   return [
-    // Histórico e Catálogo moram no rail (operação), não aqui.
-    ...(canManageCustomers
-      ? [
-          {
-            key: "customers",
-            label: "Clientes",
-            icon: "lucide:users",
-            to: "/customers",
-            description: "Cadastro, histórico e unificações",
-          },
-        ]
-      : []),
-    // Canais mora no rail (operação), não aqui.
+    // Histórico, Clientes, Catálogo e Canais moram no rail (operação), não aqui.
     // Onde cada dispositivo fica (UX-POSTO1).
     ...(canManageWorkstations
       ? [
@@ -267,7 +270,9 @@ export const GESTOR_FLOOR_SECTIONS: readonly string[] = ["orders", "deliveries",
 /**
  * O trocador (modelo de navegação, 31/10/2026): a operação e o que mora em Ajustes, cada
  * seção com a sua forma, sem o item Ajustes (o trocador já mostra o que mora nele).
- * Chão: a operação (Pedidos, Histórico, Catálogo e Canais), que vai para a barra de baixo no celular,
+ * Clientes está no rail, mas não no chão: a barra de baixo já tem as cinco vagas do kit
+ * (`QUICK_BAR_MAX`), e no celular Clientes fica na gaveta.
+ * Chão: Pedidos, Entregas, Histórico, Catálogo e Canais, que vão para a barra de baixo no celular,
  * ao alcance do polegar (`quick`; dono, 03/11/2026: "seção vai para baixo"). No topo da
  * tela fica só a subdivisão da seção (as colunas do painel). Escritório: o resto.
  */
