@@ -89,16 +89,21 @@ def held_supply_by_sku(order) -> dict[str, dict[str, Decimal]]:
     encomenda para uma data sem plano que cubra. É a diferença que a decisão de
     disponibilidade e o aviso à Produção precisam enxergar.
     """
-    from shopman.stockman.models import Hold
-
-    entries = [e for e in (order.data or {}).get("hold_ids") or () if isinstance(e, dict)]
-    pks = hold_pks(entries)
-    if not pks:
+    hold_ids = [
+        entry.get("hold_id")
+        for entry in (order.data or {}).get("hold_ids") or ()
+        if isinstance(entry, dict) and entry.get("hold_id")
+    ]
+    if not hold_ids:
         return {}
+    # Pela porta do estoque, como o resto deste módulo: o formato do id é dela.
+    backing = get_adapter("stock").hold_backing(hold_ids)
     supply: dict[str, dict[str, Decimal]] = {}
-    for hold in Hold.objects.filter(pk__in=pks).only("pk", "sku", "quant_id", "quantity"):
-        bucket = supply.setdefault(hold.sku, {"backed": Decimal("0"), "demand": Decimal("0")})
-        bucket["demand" if hold.quant_id is None else "backed"] += hold.quantity
+    for info in (backing or {}).values():
+        if not isinstance(info, dict):
+            continue
+        bucket = supply.setdefault(info["sku"], {"backed": Decimal("0"), "demand": Decimal("0")})
+        bucket["backed" if info["backed"] else "demand"] += Decimal(str(info["quantity"]))
     return supply
 
 
