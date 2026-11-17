@@ -99,8 +99,8 @@ describe("qualityGate", () => {
         card(2, { closed_by: "Joana", closed_at_display: "06:10" }),
         card(3, { closed_by: "Rafael", closed_at_display: "09:00" }),
       ]),
-    ).toEqual({ names: "Rafael · Joana", window: "entre 06:10 e 13:40" });
-    expect(closersSummary([card(1)])).toEqual({ names: "Rafael", window: "às 07:25" });
+    ).toEqual({ names: "Rafael · Joana", window: "entre 6h10 e 13h40" });
+    expect(closersSummary([card(1)])).toEqual({ names: "Rafael", window: "às 7h25" });
   });
 
   it("soma o 'Me avise' por produto e cala quando a fila não foi lida", () => {

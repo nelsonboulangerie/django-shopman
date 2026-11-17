@@ -57,7 +57,7 @@ beforeAll(() => {
       refresh,
     }),
     useMarketingLiveStatus: () =>
-      computed(() => ({ tone: "live", label: "Ao vivo", time: "10:03", detail: "" })),
+      computed(() => ({ tone: "live", label: "Ao vivo", time: "10h03", detail: "" })),
   });
 });
 
@@ -144,7 +144,7 @@ describe("MarketingDecisionQueue", () => {
     expect(wrapper.text()).toContain("2 pedem você");
     expect(cards[0]!.text()).toContain("Lote pronto: Croissant");
     expect(cards[0]!.text()).toContain("Instagram, Facebook e WhatsApp (86 clientes)");
-    expect(cards[0]!.text()).toContain("Decide até 10:15");
+    expect(cards[0]!.text()).toContain("Decide até 10h15");
     expect(cards[0]!.text()).toContain("faltam 12 min");
     // O mais urgente tem destaque (v4: o anel na cor da ação).
     expect(cards[0]!.attributes("data-decision-focus")).toBe("true");
@@ -176,14 +176,14 @@ describe("MarketingDecisionQueue", () => {
     expect(failure.get("[role='alert']").text()).toContain(
       "A conexão com a plataforma caiu antes do envio.",
     );
-    expect(failure.text()).toContain("Repetir até 11:40");
+    expect(failure.text()).toContain("Repetir até 11h40");
   });
 
   it("mostra o incerto conferido sozinho e a linha de agendados", () => {
     const wrapper = render();
 
     expect(wrapper.get("[data-automatic-check]").text()).toContain(
-      "O sistema consultou sem reenviar: publicado às 09:58 · automático",
+      "O sistema consultou sem reenviar: publicado às 9h58 · automático",
     );
     const line = wrapper.get("[data-decisions-scheduled-line]");
     expect(line.text()).toContain("+2 agendados hoje · 3 campanhas ligadas");

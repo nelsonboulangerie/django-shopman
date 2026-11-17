@@ -509,6 +509,10 @@ constitution-guards: ## Gate: cláusulas pétreas da Constituição + mapa de gu
 	$(PYTHON) scripts/constitution_guards.py $(if $(strict),--strict,)
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_constitution_guards.py -q
 
+ai-port: ## Gate: nenhuma chamada a modelo fora da porta de IA (ID3A)
+	$(PYTHON) scripts/check_ai_port.py
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_ai_port.py -q
+
 test-workflow-budgets: ## Gate: teto do job cabe a espera declarada do job (alpha-smoke)
 	$(PYTHON) scripts/check_workflow_budgets.py
 	$(PYTHON) -m pytest shopman/shop/tests/test_workflow_budget_gate.py -q

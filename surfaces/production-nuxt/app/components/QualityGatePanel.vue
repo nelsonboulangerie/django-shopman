@@ -22,6 +22,7 @@ import {
   qualityGate,
   reviewedSummary,
 } from "~/presentation/qualityGate";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
   orders: QCOrderCardProjection[];
@@ -119,7 +120,7 @@ function oneReleased(order: QCOrderCardProjection): number {
 
 function closedLine(order: QCOrderCardProjection): string {
   const who = order.closed_by ? ` · fechado por ${order.closed_by}` : "";
-  const when = order.closed_at_display ? ` ${order.closed_at_display}` : "";
+  const when = order.closed_at_display ? ` ${formatClock(order.closed_at_display)}` : "";
   return `Lote ${order.ref}${who}${when}`;
 }
 

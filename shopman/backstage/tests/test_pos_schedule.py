@@ -93,7 +93,7 @@ class POSScheduleTests(TestCase):
         por_ref = {w["ref"]: w for w in payload["windows"]}
         self.assertFalse(por_ref["slot-09"]["enabled"])
         self.assertEqual(
-            por_ref["slot-09"]["reason"], "Baguette de Tradition sai às 12:00."
+            por_ref["slot-09"]["reason"], "Baguette de Tradition sai às 12h."
         )
         self.assertTrue(por_ref["slot-12"]["enabled"])
         self.assertEqual(payload["earliest_window_ref"], "slot-12")

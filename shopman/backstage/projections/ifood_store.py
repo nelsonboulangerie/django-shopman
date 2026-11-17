@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.services import business_calendar, ifood_merchant
 
@@ -35,7 +36,8 @@ class IFoodStoreProjection:
 
 
 def _hhmm(value: datetime | None, tz) -> str:
-    return timezone.localtime(value, timezone=tz).strftime("%H:%M") if value else ""
+    # A hora sai no fuso da loja do iFood, já escolhido aqui: por isso o ``.time()``.
+    return format_clock(timezone.localtime(value, timezone=tz).time()) if value else ""
 
 
 def build_ifood_store_projection(*, user=None, now: datetime | None = None) -> IFoodStoreProjection:

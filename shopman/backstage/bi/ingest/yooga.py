@@ -40,6 +40,7 @@ from typing import Annotated, Any
 from django.db import transaction
 from django.utils import timezone
 from pydantic import BaseModel, BeforeValidator, ConfigDict, ValidationError
+from shopman.utils.formatting import format_local
 from shopman.utils.phone import normalize_phone
 
 from shopman.shop.environment import is_production
@@ -297,7 +298,7 @@ def ingest(
         ).first()
         if done is not None:
             raise AlreadyImported(
-                f"Este arquivo já foi importado em {timezone.localtime(done.imported_at):%d/%m/%Y %H:%M} "
+                f"Este arquivo já foi importado em {format_local(done.imported_at, '%d/%m/%Y {clock}')} "
                 f"(lote #{done.pk}). Para recarregar do zero use --rebuild."
             )
 

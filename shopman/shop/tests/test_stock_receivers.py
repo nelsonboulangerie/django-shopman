@@ -13,6 +13,7 @@ from shopman.offerman.models import Product
 from shopman.orderman.models import Order, Session
 from shopman.stockman import HoldStatus
 from shopman.stockman.models import Hold
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.handlers._stock_receivers import on_holds_materialized
 
@@ -199,7 +200,7 @@ def test_stock_arrived_renders_a_real_message_in_every_channel():
         )
     context = notify.call_args.kwargs["context"]
 
-    local_deadline = timezone.localtime(deadline).strftime("%H:%M")
+    local_deadline = format_clock(deadline)
     for templates in (MANYCHAT_TEMPLATES, SMS_TEMPLATES, BODY_TEMPLATES):
         body = render_message("stock_arrived", context, templates)
         assert product.name in body

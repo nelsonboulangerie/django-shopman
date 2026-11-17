@@ -29,6 +29,7 @@ from django.utils import timezone
 from shopman.orderman.models import Directive, Order
 from shopman.payman import PaymentService
 from shopman.payman.models import PaymentIntent
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.models import Channel, Shop
 from shopman.shop.tests.test_card_authorization_expiry import STRIPE_MANUAL, FakeStripe
@@ -354,6 +355,6 @@ def test_aviso_de_pedido_parado_diz_o_prazo_e_o_estorno():
     StaleNewOrderAlertHandler().handle(message=directive, ctx={})
 
     alert = OperatorAlert.objects.get(type="stale_new_order", order_ref=order.ref)
-    clock = timezone.localtime(deadline).strftime("%H:%M")
+    clock = format_clock(deadline)
     assert clock in alert.message
     assert "devolvido" in alert.message

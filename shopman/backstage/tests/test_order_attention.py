@@ -16,6 +16,7 @@ from django.urls import reverse
 from django.utils import timezone
 from shopman.offerman.models import Product
 from shopman.orderman.models import Order, OrderEvent, OrderItem
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage.models import KDSInstance, KDSTicket, OutageReason, ShelfOutage
 from shopman.backstage.projections.order_queue import build_two_zone_queue
@@ -257,7 +258,7 @@ def test_open_ifood_negotiation_is_what_the_order_waits_even_after_delivery(oper
     # entre a criação e a conferência, "17:43" viraria "17:44" e o teste mentiria.
     raw_expires = order.data["ifood"]["handshakes"]["dispute-1"]["raw"]["expiresAt"]
     expires = timezone.localtime(datetime.fromisoformat(raw_expires))
-    assert card.goal_label == f"responder até {expires:%H:%M}"
+    assert card.goal_label == f"responder até {format_clock(expires)}"
     assert card.attention_since_iso
 
 
@@ -414,7 +415,7 @@ def test_hora_combinada_mede_o_inicio_contra_o_combinado(operator):
     since = datetime.fromisoformat(card.attention_since_iso)
     # A meta chega ao combinado menos o preparo (meta da estação, 15).
     assert abs((since + timedelta(minutes=card.goal_minutes)) - (promised - timedelta(minutes=15))) < timedelta(minutes=1)
-    assert card.goal_label == f"combinado para as {timezone.localtime(promised):%H:%M}"
+    assert card.goal_label == f"combinado para as {format_clock(promised)}"
     assert (timezone.now() - since).total_seconds() / (card.goal_minutes * 60) < 0.8
 
 

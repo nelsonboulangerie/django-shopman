@@ -1,4 +1,5 @@
 import { posLiveStatus, type PosRealtimeState } from "~/presentation/events";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 /** Estado do tempo real do balcão, escrito pelo shell de operador. */
 export function usePosLiveState() {
@@ -18,7 +19,7 @@ export function usePosLiveStatus() {
     const date = new Date(live.value.lastRead);
     return Number.isNaN(date.getTime())
       ? ""
-      : date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      : formatClock(date);
   });
   return { view, time };
 }
