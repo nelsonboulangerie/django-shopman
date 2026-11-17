@@ -222,7 +222,7 @@ async function submitPrice(addon: ChannelAddon) {
                     :src="addon.image_url"
                     :alt="addon.name"
                     class="size-12 rounded-md object-cover"
-                  >
+                  />
                   <div
                     v-else
                     class="grid size-12 place-items-center rounded-md bg-elevated text-muted-foreground"
