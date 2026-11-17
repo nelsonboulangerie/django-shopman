@@ -149,9 +149,6 @@ def _hour_pair(slot_ref: str) -> tuple[time, time] | None:
     return hora_inicio, hora_fim
 
 
-UNKNOWN_WINDOW_LABEL = "horário não reconhecido"
-
-
 def window_label(slot_ref: str | None) -> str:
     """Rótulo humano da janela combinada — tolerando os DOIS vocabulários da chave.
 
@@ -166,7 +163,7 @@ def window_label(slot_ref: str | None) -> str:
     de entrega) e na retirada de hoje no balcão (par de horas numa retirada).
 
     Ref que nenhuma das duas grades conhece (a casa tirou a janela do Admin, ou
-    o dado nasceu errado) sai como :data:`UNKNOWN_WINDOW_LABEL` e grita no log
+    o dado nasceu errado) sai como "horário não reconhecido" e grita no log
     como erro. Nunca o ref cru ("manha" na tela é identificador vazando), e
     nunca em branco (em branco o compromisso some e o card diria "sem horário
     combinado", que é falso: houve um combinado, só não se sabe ler).
@@ -181,7 +178,7 @@ def window_label(slot_ref: str | None) -> str:
         if str(slot.get("ref") or "") == ref:
             return str(slot.get("label") or "").strip() or ref
     logger.error("fulfillment_window: slot ref %r is not in the house grid", ref)
-    return UNKNOWN_WINDOW_LABEL
+    return "horário não reconhecido"
 
 
 def window_start_time(slot_ref: str | None) -> time | None:
