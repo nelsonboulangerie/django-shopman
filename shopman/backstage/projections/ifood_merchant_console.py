@@ -304,6 +304,8 @@ class InterruptionRow:
     in_effect: bool
     #: Só a pausa feita fora do Gestor se remove aqui; a do Gestor sai ligando o iFood de novo.
     removable: bool
+    #: ``False``: o iFood aceitou a pausa (devolveu o id), mas a lista dele ainda não a traz.
+    listed_by_ifood: bool = True
 
 
 @dataclass(frozen=True)
@@ -385,6 +387,33 @@ def build_interruptions(*, now: datetime | None = None) -> InterruptionsProjecti
                     origin_label=_ORIGIN_LABELS[origin],
                     in_effect=bool(starts_at and starts_at <= now),
                     removable=origin == ORIGIN_PORTAL and bool(remote_id),
+                ),
+            )
+        )
+    # A pausa que o iFood aceitou e a lista dele não traz. Medido na loja de teste em
+    # 17/11/2026: o POST devolve 201 com id, a validação ``unavailabilities`` fecha a
+    # loja, e o ``GET /interruptions`` segue ``[]``. Esconder a pausa seria mentir que
+    # a loja está aberta; a linha diz de onde veio a certeza.
+    listed = {row.id for _, row in rows}
+    for record in IFoodInterruption.objects.filter(
+        merchant_id=ifood_merchant.merchant_id(), state=S.ACTIVE, ends_at__gt=now
+    ).exclude(ifood_id=""):
+        if record.ifood_id in listed:
+            continue
+        origin = _origin(record)
+        rows.append(
+            (
+                record.starts_at,
+                InterruptionRow(
+                    id=record.ifood_id,
+                    description=record.description,
+                    starts_at_display=_when(record.starts_at, tz),
+                    ends_at_display=_when(record.ends_at, tz),
+                    origin=origin,
+                    origin_label=_ORIGIN_LABELS[origin],
+                    in_effect=record.starts_at <= now,
+                    removable=False,
+                    listed_by_ifood=False,
                 ),
             )
         )

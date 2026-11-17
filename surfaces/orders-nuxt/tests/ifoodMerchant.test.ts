@@ -7,6 +7,7 @@ import {
   hoursLine,
   operationColor,
   pauseHint,
+  pauseListingNote,
   pausePeriod,
 } from "../app/presentation/ifoodMerchant";
 import type {
@@ -36,6 +37,7 @@ const pause = (over: Partial<IFoodInterruptionRow> = {}): IFoodInterruptionRow =
   origin_label: "Portal do Parceiro",
   in_effect: true,
   removable: true,
+  listed_by_ifood: true,
   ...over,
 });
 
@@ -74,6 +76,13 @@ describe("pausas", () => {
     expect(pauseHint(pause())).toBe("");
     expect(pauseHint(pause({ origin: "switch", removable: false }))).toContain("ligue o iFood de novo");
     expect(pauseHint(pause({ origin: "calendar", removable: false }))).toContain("calendário");
+  });
+});
+
+describe("pausa aceita fora da lista do iFood", () => {
+  it("diz que o iFood aceitou e ainda não lista", () => {
+    expect(pauseListingNote(pause())).toBe("");
+    expect(pauseListingNote(pause({ listed_by_ifood: false }))).toContain("ainda não a mostra");
   });
 });
 

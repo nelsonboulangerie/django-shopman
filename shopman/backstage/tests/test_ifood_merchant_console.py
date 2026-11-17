@@ -262,3 +262,22 @@ def test_caixa_nao_remove_pausa(client, fake):
 
     assert client.delete(reverse("api-backstage-ifood-interruption", args=["p-portal"])).status_code == 403
     assert not fake.writes()
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_pausa_aceita_que_a_lista_do_ifood_nao_traz_aparece_marcada(fake):
+    """Medido em 17/11/2026: POST 201 com id, a loja fecha, e o GET da lista vem vazio."""
+    IFoodInterruption.objects.create(
+        kind=IFoodInterruptionKind.CALENDAR,
+        state=IFoodInterruptionState.ACTIVE,
+        merchant_id=MID,
+        ifood_id="p-aceita",
+        description="iFood desligado no Gestor",
+        starts_at=datetime(2026, 11, 21, 10, 50, tzinfo=TZ),
+        ends_at=datetime(2026, 11, 21, 11, 20, tzinfo=TZ),
+        calendar_key="off:y",
+    )
+
+    items = console.build_interruptions().items
+
+    assert [(i.id, i.in_effect, i.listed_by_ifood, i.removable) for i in items] == [("p-aceita", True, False, False)]

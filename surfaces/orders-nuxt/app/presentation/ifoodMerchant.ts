@@ -38,6 +38,13 @@ export function pausePeriod(pause: IFoodInterruptionRow): string {
   return `${pause.starts_at_display} até ${pause.ends_at_display}`;
 }
 
+/** A pausa que o iFood aceitou e a lista dele ainda não mostra. */
+export function pauseListingNote(pause: IFoodInterruptionRow): string {
+  return pause.listed_by_ifood
+    ? ""
+    : "O iFood aceitou esta pausa, mas a lista de pausas dele ainda não a mostra.";
+}
+
 /** O que fazer com a pausa: removê-la aqui (Portal) ou ligar o iFood de novo (Gestor). */
 export function pauseHint(pause: IFoodInterruptionRow): string {
   if (pause.removable) return "";

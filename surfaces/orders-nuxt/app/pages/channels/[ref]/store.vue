@@ -11,8 +11,9 @@ import {
   checkColor,
   hoursLine,
   operationColor,
-  pausePeriod,
   pauseHint,
+  pauseListingNote,
+  pausePeriod,
 } from "~/presentation/ifoodMerchant";
 import type {
   IFoodInterruptions,
@@ -280,6 +281,9 @@ const phoneHeaderActions = computed(() => [
                   </p>
                   <p class="text-xs text-muted-foreground">
                     {{ pause.origin_label }} · {{ pause.description }}
+                  </p>
+                  <p v-if="pauseListingNote(pause)" class="text-xs text-muted-foreground" data-ifood-pause-unlisted>
+                    {{ pauseListingNote(pause) }}
                   </p>
                   <p v-if="pauseHint(pause)" class="text-xs text-muted-foreground">
                     {{ pauseHint(pause) }}

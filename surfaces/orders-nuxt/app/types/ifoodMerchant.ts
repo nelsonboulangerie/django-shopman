@@ -60,6 +60,8 @@ export interface IFoodInterruptionRow {
   origin_label: string;
   in_effect: boolean;
   removable: boolean;
+  /** false: o iFood aceitou a pausa (devolveu o id), mas a lista dele ainda não a traz. */
+  listed_by_ifood: boolean;
 }
 
 export interface IFoodRefusedPause {
