@@ -33,6 +33,7 @@ import { ifoodChatNotice } from "~/presentation/ifoodWidget";
 import { orderTicketMenuItem } from "~/presentation/orderTicket";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 definePageMeta({ key: (route) => route.path });
 const route = useRoute();
@@ -760,6 +761,14 @@ const ifoodWidget = useIFoodWidget();
 const ifoodChat = computed(() =>
   ifoodChatNotice(ifoodWidget.state.value, order.value?.channel_ref === "ifood"),
 );
+// No detalhe de um pedido iFood o botão do iFood aparece sempre, mesmo depois da
+// entrega: o cliente também escreve depois (DEV-2026-023).
+watch(
+  () => order.value?.channel_ref === "ifood",
+  (isIFood) => ifoodWidget.setViewingIFoodOrder(isIFood),
+  { immediate: true },
+);
+onBeforeUnmount(() => ifoodWidget.setViewingIFoodOrder(false));
 // O aceite que não chegou ao iFood (P1-3): o fato, o prazo dele contando e o reenvio.
 const acceptNotice = computed(() =>
   order.value ? ifoodAcceptNotice(order.value, nowMs.value) : null,
@@ -855,10 +864,7 @@ onMounted(() => {
 const readClock = computed(() => {
   const at = clockReady.value ? readMetadata?.value?.generated_at : "";
   return at
-    ? new Date(at).toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+    ? formatClock(new Date(at))
     : "";
 });
 const channelIcon = computed(

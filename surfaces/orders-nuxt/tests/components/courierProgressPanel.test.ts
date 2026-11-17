@@ -42,7 +42,7 @@ describe("andamento da corrida", () => {
     );
     const progress = wrapper.get('[data-testid="courier-progress"]').text();
     expect(progress).toContain("Chega para coletar em ~7 min");
-    expect(progress).toContain("Entrega prevista ~15:58");
+    expect(progress).toContain("Entrega prevista ~15h58");
     expect(wrapper.find('[data-testid="courier-stale"]').exists()).toBe(false);
     wrapper.unmount();
   });
@@ -52,7 +52,7 @@ describe("andamento da corrida", () => {
       ride({ status: "D", status_label: "Procurando entregador", sync_since: "2026-10-13T18:41:46+00:00" }),
     );
     const stale = wrapper.get('[data-testid="courier-stale"]');
-    expect(stale.text()).toContain("A TaOn não informa a corrida desde 15:41.");
+    expect(stale.text()).toContain("A TaOn não informa a corrida desde 15h41.");
     expect(stale.text()).toContain("Confira no painel da TaOn.");
     wrapper.unmount();
   });
