@@ -25,6 +25,7 @@ from shopman.craftsman import craft
 from shopman.craftsman.models import ProductionMode, Recipe, RecipeItem, WorkOrder, WorkOrderEvent
 from shopman.stockman import Position
 from shopman.utils import units
+from shopman.utils.formatting import format_clock, format_local
 from shopman.utils.units import UnitError
 
 from shopman.backstage.presentation.status import order_status_label
@@ -2231,7 +2232,7 @@ def build_qc_kiosk(
             status=str(wo.status),
             planned_qty=_qty(wo.quantity),
             started_qty=_qty(started_qty) if started_qty is not None else "",
-            started_at_display=(timezone.localtime(wo.started_at).strftime("%H:%M") if wo.started_at else ""),
+            started_at_display=(format_clock(wo.started_at) if wo.started_at else ""),
             elapsed_minutes=elapsed,
             can_close=(
                 access.can_close_qc
@@ -2436,7 +2437,9 @@ def _qc_gate_facts(finished_orders: list[WorkOrder], *, selected_date: date) -> 
         facts[wo.pk] = {
             "quality_exception": not clean,
             "closed_by": names.get(str(event.actor or ""), "") if event else "",
-            "closed_at_display": (timezone.localtime(wo.finished_at).strftime("%H:%M") if wo.finished_at else ""),
+            "closed_at_display": (
+                timezone.localtime(wo.finished_at).strftime("%H:%M") if wo.finished_at else ""  # hora-ok: contrato HH:MM, a tela ordena por ele e formata ao exibir
+            ),
             "typical_loss_qty": typical.get(wo.recipe_id, ""),
             "alert_waiting_count": None if waiting is None else int(waiting.get(wo.output_sku, 0)),
         }
@@ -2565,7 +2568,7 @@ def _qc_closed_partitions(
             loss,
             tuple(projected),
             len(correction_rows),
-            timezone.localtime(last_at).strftime("%d/%m %H:%M") if last_at else "",
+            format_local(last_at, "%d/%m {clock}") if last_at else "",
         )
     return result
 
@@ -2922,7 +2925,7 @@ def _order_due_time(order) -> str:
     except Exception:
         logger.debug("production.order_due_time_failed ref=%s", order.ref, exc_info=True)
         return ""
-    return start.strftime("%H:%M") if start else ""
+    return start.strftime("%H:%M") if start else ""  # hora-ok: contrato HH:MM, a tela ordena por ele e formata ao exibir
 
 
 def _prime_base_recipe_usages(recipes: list[Recipe]) -> None:
@@ -3020,7 +3023,9 @@ def _build_wo_card(
         order_commitments=order_commitments,
         can_void=(access.can_void and wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)),
         position_name=_position_names().get(wo.position_ref or "", ""),
-        created_at_time=timezone.localtime(wo.created_at).strftime("%H:%M") if wo.created_at else "",
+        created_at_time=(
+            timezone.localtime(wo.created_at).strftime("%H:%M") if wo.created_at else ""  # hora-ok: contrato HH:MM, a tela ordena por ele e formata ao exibir
+        ),
     )
 
 
@@ -3681,7 +3686,11 @@ def _suggestion_recent_days(days) -> tuple[SuggestionDayProjection, ...]:
                 continue
         if soldout_at:
             outcome = "soldout"
-            soldout_display = soldout_at.strftime("%H:%M") if hasattr(soldout_at, "strftime") else str(soldout_at)[:5]
+            soldout_display = (
+                soldout_at.strftime("%H:%M")  # hora-ok: contrato HH:MM, a tela ordena por ele e formata ao exibir
+                if hasattr(soldout_at, "strftime")
+                else str(soldout_at)[:5]
+            )
         else:
             soldout_display = ""
             # Sobra que pesa: acima da mesma régua que desconta a perda na fórmula.
@@ -4655,7 +4664,7 @@ def _format_datetime(dt) -> str:
     if dt is None:
         return ""
     local = timezone.localtime(dt)
-    return local.strftime("%d/%m às %H:%M")
+    return format_local(local, "%d/%m às {clock}")
 
 
 # ── Painel de previsão da produção (estilo "painel de aeroporto") ──────
@@ -4751,7 +4760,7 @@ def _forecast_history(recipe_ids: list[int], before: date) -> dict[int, tuple[in
 
 
 def _forecast_eta_display(eta) -> str:
-    return timezone.localtime(eta).strftime("%H:%M") if eta else "—"
+    return format_clock(eta) if eta else "—"
 
 
 def build_production_forecast(
@@ -4843,7 +4852,7 @@ def build_production_forecast(
     return ProductionForecastProjection(
         selected_date=target.isoformat(),
         selected_date_display=target.strftime("%d/%m/%Y"),
-        generated_at_display=now.strftime("%H:%M"),
+        generated_at_display=format_clock(now),
         rows=tuple(row for _, row in rows),
         access=access,
     )

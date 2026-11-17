@@ -134,7 +134,7 @@ class ExpiryStatusFilter(admin.SimpleListFilter):
 
 def _format_datetime(dt):
     """DD/MM/AA · HH:MM na hora da loja (o banco devolve UTC; ADM-04)."""
-    return format_local(dt, '%d/%m/%y · %H:%M', empty='-')
+    return format_local(dt, '%d/%m/%y · {clock}', empty='-')
 
 
 def _format_date(d):

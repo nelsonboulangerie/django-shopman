@@ -177,7 +177,7 @@ def test_agendamento_vira_uma_linha_com_a_janela():
     fim = hoje.replace(hour=22, minute=9, second=0, microsecond=0)
     order = _scheduled(delivery_start_at=inicio.isoformat(), delivery_end_at=fim.isoformat())
 
-    assert proj.schedule_label(order) == "Agendado · Hoje 21:09–22:09"
+    assert proj.schedule_label(order) == "Agendado · Hoje 21h09–22h09"
 
 
 @pytest.mark.django_db
@@ -194,7 +194,7 @@ def test_agendamento_de_outro_dia_mostra_a_data():
     fim = amanha.replace(hour=9, minute=0, second=0, microsecond=0)
     order = _scheduled(delivery_start_at=inicio.isoformat(), delivery_end_at=fim.isoformat())
 
-    assert proj.schedule_label(order) == f"Agendado · {inicio:%d/%m} 08:00–09:00"
+    assert proj.schedule_label(order) == f"Agendado · {inicio:%d/%m} 8h–9h"
 
 
 @pytest.mark.django_db
@@ -205,7 +205,7 @@ def test_agendamento_sem_fim_de_janela_nao_inventa_horario():
 
     inicio = timezone.localtime().replace(hour=15, minute=30, second=0, microsecond=0)
 
-    assert proj.schedule_label(_scheduled(delivery_start_at=inicio.isoformat())) == "Agendado · Hoje a partir de 15:30"
+    assert proj.schedule_label(_scheduled(delivery_start_at=inicio.isoformat())) == "Agendado · Hoje a partir de 15h30"
 
 
 def test_agendamento_sem_janela_nenhuma_ainda_se_declara():

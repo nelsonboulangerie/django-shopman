@@ -525,7 +525,7 @@ test.describe("cartão de anúncio", () => {
     // A prévia da v4 fica recolhida. O estado assentado visível é o rascunho salvo;
     // abri-la aqui faria o retrato voltar à anatomia anterior.
     await expect(
-      page.getByText("Rascunho salvo neste dispositivo às 10:30."),
+      page.getByText("Rascunho salvo neste dispositivo às 10h30."),
     ).toBeVisible();
     await expect(page.getByTestId("preview-status")).toHaveCount(0);
     await expectStableScreenshot(page, "announcement-card__long-edit", V320);
@@ -811,7 +811,7 @@ test.describe("listas operacionais", () => {
     // ⚠️ O aviso do rascunho entra depois do nome digitado e empurra o grupo; sem
     // esperá-lo o retrato saía com e sem ele (CI 37979530461).
     await expect(
-      dialog.getByText("Rascunho salvo neste dispositivo às 10:30."),
+      dialog.getByText("Rascunho salvo neste dispositivo às 10h30."),
     ).toBeVisible();
     await group.evaluate((element) => element.scrollIntoView({ block: "start" }));
     await expectStableScreenshot(
@@ -852,7 +852,7 @@ test.describe("listas operacionais", () => {
     await expect(period.getByRole("spinbutton")).toHaveCount(6);
     await expect(page.locator("input[type='date']:not([aria-hidden='true'])")).toHaveCount(0);
     await expect(
-      page.getByText("Rascunho salvo neste dispositivo às 10:30."),
+      page.getByText("Rascunho salvo neste dispositivo às 10h30."),
     ).toBeVisible();
   });
 

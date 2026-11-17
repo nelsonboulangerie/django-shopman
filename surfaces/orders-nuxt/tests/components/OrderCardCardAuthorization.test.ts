@@ -72,7 +72,7 @@ describe("cardAuthorizationNotice", () => {
       title: "A autorização do cartão vence em 6 dias",
       expired: false,
     });
-    expect(notice!.description).toContain("Até 19/10 às 16h00");
+    expect(notice!.description).toContain("Até 19/10 às 16h.");
     expect(notice!.description).toContain("Aceite para cobrar ou recuse");
     expect(notice!.description).not.toMatch(/—|–/);
   });

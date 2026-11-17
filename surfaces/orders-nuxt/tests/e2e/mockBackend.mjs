@@ -172,6 +172,67 @@ const DETAIL_EXTRA = {
   ],
 };
 
+// A seção Entregas: três entregas aguardando e duas corridas na rua (A a caminho da
+// loja, B em rota). Sem chave do Google Maps: o mapa é o desenho próprio. O número da
+// corrida escolhe a cor; o que a tela escreve é a LETRA (`letter`); a URL leva a chave.
+const minutesAgo = (n) => new Date(Date.now() - n * 60_000).toISOString();
+const minutesAhead = (n) => new Date(Date.now() + n * 60_000).toISOString();
+const ORIGIN = { latitude: -23.3273, longitude: -51.1762 };
+function deliveryStop(ref, customer, place, dLat, dLng, extra = {}) {
+  return {
+    ref, code: ref.slice(-3), customer, place, address: `Rua das Entregas, 100, ${place}`,
+    latitude: ORIGIN.latitude + dLat, longitude: ORIGIN.longitude + dLng,
+    stage: "Pronto", volumes: 1, done: false, change_out_suggested_q: 0, needs_machine: false,
+    change_label: "", group_refusal: "", error: "", dispatch_action: null, ...extra,
+  };
+}
+const RIDE_BASE = {
+  driver: null, position: null, called_by: "Admin", pickup_eta_at: "", arrived_pickup_at: "",
+  picked_up_at: "", delivery_eta_at: "", tracking_url: "", cost_display: "", bags: 0, undeclared: [],
+  back_action: null, back_lines: [], cancel_action: null,
+};
+const DELIVERIES = {
+  origin: ORIGIN,
+  waiting: [
+    deliveryStop("WEB-20261116-0A47", "Ana", "Gleba Palhano", 0.006, 0.004),
+    deliveryStop("WEB-20261116-0C03", "Caio", "Gleba Palhano", 0.008, 0.007, { change_label: "Troco para R$ 50,00", change_out_suggested_q: 2000 }),
+    deliveryStop("WEB-20261116-0D12", "Dora", "Centro", -0.007, 0.01, { stage: "Em preparo" }),
+  ],
+  rides: [
+    {
+      ...RIDE_BASE,
+      key: "776753357", number: 1, letter: "A", state: "coming", status_label: "A caminho da loja",
+      stops: [deliveryStop("WEB-20261116-0B12", "Bia", "Jardim Higienópolis", -0.004, -0.008, { volumes: 2 })],
+      driver: { name: "Diego", phone: "(43) 99999-0001", vehicle: "Moto prata · ABC1D23" },
+      position: { latitude: ORIGIN.latitude + 0.003, longitude: ORIGIN.longitude - 0.003 },
+      called_at: minutesAgo(9), pickup_eta_at: minutesAhead(4), cost_display: "R$ 9,00", bags: 2,
+      // Link só em corrida de uma parada: com várias, o servidor não prova de quem é.
+      tracking_url: "https://rastreio.example/776753357",
+      lead_ref: "WEB-20261116-0B12",
+    },
+    {
+      ...RIDE_BASE,
+      key: "776753358", number: 2, letter: "B", state: "route", status_label: "Em rota",
+      stops: [
+        deliveryStop("WEB-20261116-0E02", "Edu", "Aeroporto", 0.004, -0.012, { done: true }),
+        deliveryStop("WEB-20261116-0F09", "Flora", "Aeroporto", 0.009, -0.015),
+      ],
+      driver: { name: "Marina", phone: "(43) 99999-0002", vehicle: "Moto preta · XYZ9K88" },
+      position: { latitude: ORIGIN.latitude + 0.006, longitude: ORIGIN.longitude - 0.013 },
+      called_at: minutesAgo(28), picked_up_at: minutesAgo(12), delivery_eta_at: minutesAhead(11),
+      cost_display: "R$ 14,50",
+      lead_ref: "WEB-20261116-0E02",
+    },
+  ],
+  max_stops: 4,
+  // Os números livres vêm do servidor: 1 e 2 estão na rua, sobram 3 a 26 (C a Z).
+  free_numbers: Array.from({ length: 24 }, (_, i) => i + 3),
+  next_number: 3,
+  machines: [],
+  courier_on: true,
+  maps_key: "",
+};
+
 function queueCard(ref) {
   return Object.values(QUEUE.queue).flat().find((card) => card && typeof card === "object" && card.ref === ref);
 }
@@ -188,6 +249,7 @@ const server = createServer((req, res) => {
 
   if (/\/operator\/session\/?(\?|$)/.test(url)) return json(res, 200, SESSION);
   if (/\/operator\/eligible\/?(\?|$)/.test(url)) return json(res, 200, { operators: [] });
+  if (/\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, DELIVERIES);
   if (/\/orders\/?(\?|$)/.test(url)) return json(res, 200, QUEUE);
   const detail = url.match(/\/orders\/([A-Z0-9-]+)\/?(\?|$)/);
   if (detail) {

@@ -1002,7 +1002,11 @@ useSeoMeta({
               class="space-y-2 rounded-lg border border-border p-4"
               data-cancellation-contact
             >
-              <p class="font-semibold">{{ tracking.copy.cancellation_contact_title }}</p>
+              <!-- Pedido de contato já feito: "Quer cancelar?" é pergunta e mente ali.
+                   O título vira a confirmação do que aconteceu. -->
+              <p class="font-semibold">
+                {{ cancellationContact.requested ? tracking.copy.cancellation_contact_done_title : tracking.copy.cancellation_contact_title }}
+              </p>
               <p v-if="cancellationContact.requested" class="text-sm text-muted-foreground" role="status">
                 {{ tracking.copy.rating_contact_done }}
               </p>
