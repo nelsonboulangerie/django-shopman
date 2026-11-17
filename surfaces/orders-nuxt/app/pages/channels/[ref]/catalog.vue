@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { realtimeIndicator } from "~/presentation/board";
 import { channelHasBindingReview } from "~/presentation/ifoodStore";
+import {
+  channelCatalogTabs,
+  pickChannelCatalogTab,
+  snapshotLabel,
+} from "~/presentation/channelCatalog";
 import { httpError } from "../../../../../operator-kit/app/utils/httpError";
 import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
 
@@ -29,6 +34,16 @@ const {
   changeCategory,
 } = useCatalogBindings(channel);
 const notFound = computed(() => httpError(error.value).status === 404);
+// Três trabalhos, três abas (subdivisão é aba no topo): organizar categorias,
+// cadastrar complementos (só iFood) e revisar vínculos. A aba vive na URL.
+const tabs = channelCatalogTabs(channel);
+const tab = computed(() => pickChannelCatalogTab(route.query.tab, channel));
+function selectTab(value: string | number) {
+  void navigateTo(
+    { query: { ...route.query, tab: String(value) } },
+    { replace: true },
+  );
+}
 const fileName = ref("");
 const rawJson = ref("");
 const fileError = ref("");
@@ -115,7 +130,7 @@ onBeforeRouteLeave(
       cancelLabel: "Continuar revisando",
     }),
 );
-useHead({ title: "Revisão de vínculos" });
+useHead({ title: "Catálogo do canal" });
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
@@ -172,7 +187,9 @@ const phoneHeaderActions = computed(() => [
       <NuxtEmpty
         icon="i-lucide-link-2-off"
         :title="
-          notFound ? 'Canal não encontrado' : 'Este canal não tem vínculos para revisar'
+          notFound
+            ? 'Canal não encontrado'
+            : 'Este canal não tem vínculos para revisar'
         "
         :description="
           notFound
@@ -180,7 +197,12 @@ const phoneHeaderActions = computed(() => [
             : 'A revisão de vínculos é do catálogo do iFood. Os produtos deste canal se ajustam no Catálogo.'
         "
         :actions="[
-          { label: 'Voltar para Canais', to: '/feeds', color: 'neutral', variant: 'outline' },
+          {
+            label: 'Voltar para Canais',
+            to: '/feeds',
+            color: 'neutral',
+            variant: 'outline',
+          },
           ...(notFound
             ? []
             : [
@@ -195,14 +217,23 @@ const phoneHeaderActions = computed(() => [
         data-channel-catalog-unsupported
       />
     </div>
-    <div v-else class="min-h-0 min-w-0 flex-1 space-y-4 overflow-auto p-4 sm:p-6">
+    <div
+      v-else
+      class="min-h-0 min-w-0 flex-1 space-y-4 overflow-auto p-4 sm:p-6"
+    >
       <!-- A confirmação remota é do iFood: na Loja online a frase falava de um
            canal que não é este (beta 05/11, GES-16). -->
-      <p class="max-w-4xl text-sm text-muted-foreground" data-channel-catalog-intro>
-        Organize as categorias e confira a identidade dos anúncios.
+      <p
+        class="max-w-4xl text-sm text-muted-foreground"
+        data-channel-catalog-intro
+      >
         <template v-if="channel === 'ifood'">
-          Alterações de categoria exigem confirmação do iFood; os vínculos de
-          produto abaixo continuam locais.
+          Organize as categorias, cadastre os complementos e confira a
+          identidade dos anúncios. Categoria e complemento só ficam gravados
+          com a confirmação do iFood; os vínculos de produto são locais.
+        </template>
+        <template v-else>
+          Organize as categorias e confira a identidade dos anúncios.
         </template>
       </p>
       <NuxtAlert
@@ -238,119 +269,134 @@ const phoneHeaderActions = computed(() => [
         aria-label="Carregando inventários"
       />
       <template v-if="board">
+        <NuxtTabs
+          :items="tabs"
+          :model-value="tab"
+          :content="false"
+          variant="link"
+          aria-label="Partes do catálogo do canal"
+          data-channel-catalog-tabs
+          @update:model-value="selectTab"
+        />
         <CatalogCategoryManager
+          v-if="tab === 'categories'"
           :board="board"
           :busy="busy"
           :stale="stale"
           :change="changeCategory"
         />
-        <CatalogAddonManager v-if="channel === 'ifood'" :channel="channel" />
-        <NuxtCollapsible>
-          <NuxtButton
-            icon="i-lucide-upload"
-            label="Carregar inventário para revisão"
-            color="neutral"
-            variant="outline"
-          />
-          <template #content>
-            <NuxtCard variant="soft" class="mt-2">
-              <div class="max-w-2xl space-y-3">
-                <p class="text-sm text-muted-foreground">
-                  Selecione a captura completa gerada pelo coletor iFood. O
-                  arquivo será guardado no sistema; nenhum produto será alterado
-                  ou vinculado automaticamente.
-                </p>
-                <NuxtFormField label="Arquivo da captura (.json)">
-                  <NuxtInput
-                    class="w-full"
-                    type="file"
-                    accept=".json,application/json"
-                    :disabled="busy || reading || Boolean(error)"
-                    @change="readFile"
+        <CatalogAddonManager v-else-if="tab === 'addons'" :channel="channel" />
+        <!-- v-show: a seleção de vínculos em andamento sobrevive à troca de aba. -->
+        <div v-show="tab === 'bindings'" class="space-y-4">
+          <NuxtCollapsible>
+            <NuxtButton
+              icon="i-lucide-upload"
+              label="Carregar inventário para revisão"
+              color="neutral"
+              variant="outline"
+            />
+            <template #content>
+              <NuxtCard variant="soft" class="mt-2">
+                <div class="max-w-2xl space-y-3">
+                  <p class="text-sm text-muted-foreground">
+                    Selecione a captura completa gerada pelo coletor iFood. O
+                    arquivo será guardado no sistema; nenhum produto será
+                    alterado ou vinculado automaticamente.
+                  </p>
+                  <NuxtFormField label="Arquivo da captura (.json)">
+                    <NuxtInput
+                      class="w-full"
+                      type="file"
+                      accept=".json,application/json"
+                      :disabled="busy || reading || Boolean(error)"
+                      @change="readFile"
+                    />
+                  </NuxtFormField>
+                  <p v-if="fileName" class="break-all text-sm">
+                    {{ fileName }}
+                  </p>
+                  <NuxtAlert
+                    v-if="fileError"
+                    color="error"
+                    variant="subtle"
+                    icon="i-lucide-circle-alert"
+                    :description="fileError"
                   />
-                </NuxtFormField>
-                <p v-if="fileName" class="break-all text-sm">{{ fileName }}</p>
-                <NuxtAlert
-                  v-if="fileError"
-                  color="error"
-                  variant="subtle"
-                  icon="i-lucide-circle-alert"
-                  :description="fileError"
-                />
-                <NuxtButton
-                  label="Guardar inventário para revisão"
-                  :disabled="
-                    !rawJson ||
-                    busy ||
-                    reading ||
-                    Boolean(error) ||
-                    !board.import_action?.enabled
-                  "
-                  @click="storeSnapshot"
-                />
-              </div>
-            </NuxtCard>
-          </template>
-        </NuxtCollapsible>
-        <NuxtEmpty
-          v-if="!board.snapshots.length && !error"
-          icon="i-lucide-package-search"
-          title="Nenhum inventário guardado"
-          description="Carregue uma captura para começar a revisão."
-        />
-        <NuxtFormField
-          v-if="board.snapshots.length"
-          label="Inventário em revisão"
-        >
-          <NuxtSelect
-            :model-value="board.selected_snapshot?.id"
-            :items="
-              board.snapshots.map((snapshot) => ({
-                value: snapshot.id,
-                label: `Captura #${snapshot.id} · ${snapshot.captured_at} · ${snapshot.context} · ${snapshot.item_count} anúncios`,
-              }))
-            "
-            :disabled="busy || Boolean(error)"
-            class="w-full"
-            @update:model-value="(value) => selectSnapshot(Number(value))"
+                  <NuxtButton
+                    label="Guardar inventário para revisão"
+                    :disabled="
+                      !rawJson ||
+                      busy ||
+                      reading ||
+                      Boolean(error) ||
+                      !board.import_action?.enabled
+                    "
+                    @click="storeSnapshot"
+                  />
+                </div>
+              </NuxtCard>
+            </template>
+          </NuxtCollapsible>
+          <NuxtEmpty
+            v-if="!board.snapshots.length && !error"
+            icon="i-lucide-package-search"
+            title="Nenhum inventário guardado"
+            description="Carregue uma captura para começar a revisão."
           />
-        </NuxtFormField>
-        <NuxtCollapsible v-if="board.selected_snapshot">
-          <NuxtButton
-            icon="i-lucide-info"
-            label="Origem e identificação da captura"
-            color="neutral"
-            variant="ghost"
+          <NuxtFormField
+            v-if="board.snapshots.length"
+            label="Inventário em revisão"
+          >
+            <NuxtSelect
+              :model-value="board.selected_snapshot?.id"
+              :items="
+                board.snapshots.map((snapshot) => ({
+                  value: snapshot.id,
+                  label: snapshotLabel(snapshot),
+                }))
+              "
+              :disabled="busy || Boolean(error)"
+              class="w-full"
+              @update:model-value="(value) => selectSnapshot(Number(value))"
+            />
+          </NuxtFormField>
+          <NuxtCollapsible v-if="board.selected_snapshot">
+            <NuxtButton
+              icon="i-lucide-info"
+              label="Origem e identificação da captura"
+              color="neutral"
+              variant="ghost"
+            />
+            <template #content>
+              <NuxtCard variant="soft" class="mt-2">
+                <dl class="space-y-1 break-all text-xs text-muted-foreground">
+                  <dt>Loja externa declarada</dt>
+                  <dd>{{ board.selected_snapshot.account_ref }}</dd>
+                  <dt>Catálogo e contexto</dt>
+                  <dd>
+                    {{ board.selected_snapshot.catalog_ref }} ·
+                    {{ board.selected_snapshot.context }}
+                  </dd>
+                  <dt>Identificação única do arquivo</dt>
+                  <dd>{{ board.selected_snapshot.sha256 }}</dd>
+                </dl>
+                <p class="mt-3 text-xs text-muted-foreground">
+                  {{ board.notice }}
+                </p>
+              </NuxtCard>
+            </template>
+          </NuxtCollapsible>
+          <CatalogBindingReview
+            v-if="board.selected_snapshot"
+            :key="board.selected_snapshot.id"
+            :board="board"
+            :busy="busy"
+            :stale="stale"
+            :confirm="bind"
+            :initial-search="initialSearch"
+            @dirty-change="dirty = $event"
           />
-          <template #content>
-            <NuxtCard variant="soft" class="mt-2">
-              <dl class="space-y-1 break-all text-xs text-muted-foreground">
-                <dt>Loja externa declarada</dt>
-                <dd>{{ board.selected_snapshot.account_ref }}</dd>
-                <dt>Catálogo e contexto</dt>
-                <dd>
-                  {{ board.selected_snapshot.catalog_ref }} ·
-                  {{ board.selected_snapshot.context }}
-                </dd>
-                <dt>Identificação única do arquivo</dt>
-                <dd>{{ board.selected_snapshot.sha256 }}</dd>
-              </dl>
-              <p class="mt-3 text-xs text-muted-foreground">
-                {{ board.notice }}
-              </p>
-            </NuxtCard>
-          </template>
-        </NuxtCollapsible>
-        <CatalogBindingReview
-          v-if="board.selected_snapshot"
-          :key="board.selected_snapshot.id"
-          :board="board"
-          :busy="busy"
-          :stale="stale"
-          :confirm="bind"
-          :initial-search="initialSearch"
-          @dirty-change="dirty = $event"
-        />
+        </div>
       </template>
     </div>
   </main>

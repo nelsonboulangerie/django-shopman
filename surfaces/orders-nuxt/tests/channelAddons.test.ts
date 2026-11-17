@@ -5,6 +5,12 @@ import {
   parsePriceQ,
 } from "~/presentation/channelAddons";
 
+import {
+  channelCatalogTabs,
+  pickChannelCatalogTab,
+  snapshotLabel,
+} from "~/presentation/channelCatalog";
+
 describe("parsePriceQ", () => {
   it.each([
     ["12,50", 1250],
@@ -30,5 +36,34 @@ describe("choiceRule", () => {
   it("rotula o estado", () => {
     expect(addonStatusLabel(true)).toBe("Ativo");
     expect(addonStatusLabel(false)).toBe("Pausado");
+  });
+});
+
+describe("abas do catálogo do canal", () => {
+  it("Complementos só no iFood", () => {
+    expect(channelCatalogTabs("ifood").map((t) => t.value)).toEqual([
+      "categories",
+      "addons",
+      "bindings",
+    ]);
+    expect(channelCatalogTabs("web").map((t) => t.value)).toEqual([
+      "categories",
+      "bindings",
+    ]);
+  });
+  it("aba desconhecida ou de outro canal volta para Categorias", () => {
+    expect(pickChannelCatalogTab("addons", "ifood")).toBe("addons");
+    expect(pickChannelCatalogTab("addons", "web")).toBe("categories");
+    expect(pickChannelCatalogTab(undefined, "ifood")).toBe("categories");
+  });
+  it("rotula a captura com data de Brasília, sem o ISO cru", () => {
+    expect(
+      snapshotLabel({
+        id: 1,
+        captured_at: "2026-11-17T15:26:44.058036+00:00",
+        context: "DEFAULT",
+        item_count: 9,
+      }),
+    ).toBe("Captura nº 1 · 17/11/2026 12:26 · DEFAULT · 9 anúncios");
   });
 });
