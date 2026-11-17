@@ -50,8 +50,11 @@ class ConsoleIFood(FakeIFood):
                         "corporateName": "NB LTDA",
                         "averageTicket": 50,
                         "exclusive": False,
+                        "type": "STORE",
+                        "status": "DISABLED",
+                        "createdAt": "2024-02-22T13:21:00.238212Z",
                         "address": {"city": "Londrina", "state": "PR"},
-                        "operations": [{"name": "DELIVERY", "salesChannel": {"name": "IFOOD", "enabled": True}}],
+                        "operations": [{"name": "delivery", "salesChannels": [{"name": "ifood-app", "enabled": True}]}],
                     },
                 )
         return super().request(method, path, label=label, idempotent=idempotent, **kwargs)
@@ -103,11 +106,21 @@ def test_detalhe_mostra_todos_os_campos_e_status_mostra_as_validacoes(fake):
     assert rows["Nome"] == "Teste - Nelson Boulangerie"
     assert rows["Cidade"] == "Londrina"
     assert rows["Exclusiva do iFood"] == "Não"
-    assert rows["Operação 1 · canal de venda"] == "IFOOD"  # campo sem rótulo próprio também aparece
+    assert rows["Tipo"] == "Loja"
+    assert rows["Situação"] == "Desativada no cadastro do iFood"
+    assert rows["Cadastrada em"] == "22/02/2024"
+    assert rows["Operação"] == "Entrega"
+    assert rows["Canal de venda"] == "App do iFood"
+    assert rows["Ativo no iFood"] == "Sim"
+    situation = next(row for row in projection.detail if row.label == "Situação")
+    assert situation.code == "DISABLED" and "Disponibilidade" in situation.hint
     assert projection.available is False
     operation = projection.operations[0]
     assert (operation.state_label, operation.title) == ("Fechada", "Loja fechada")
-    assert [(c.code, c.state) for c in operation.checks] == [("opening-hours", "CLOSED"), ("is-connected", "OK")]
+    assert [(c.label, c.state_label, c.code) for c in operation.checks] == [
+        ("Horário de funcionamento", "Fechada", "opening-hours"),
+        ("Conexão com a casa", "Ok", "is-connected"),
+    ]
 
 
 @override_settings(SHOPMAN_IFOOD=ON)

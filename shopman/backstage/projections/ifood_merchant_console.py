@@ -46,15 +46,37 @@ _DETAIL_LABELS = {
     "address.longitude": "Longitude",
     "test": "Loja de teste",
 }
-#: Pedaços do caminho de campo aninhado, para o que não tem rótulo próprio:
-#: ``operations 1.salesChannels 1.enabled`` → ``Operação 1 · canal de venda 1 · ativo``.
-_PATH_WORDS = (
-    ("operations ", "Operação "),
-    (".salesChannels ", " · canal de venda "),
-    (".salesChannel", " · canal de venda"),
-    (".name", ""),
-    (".enabled", " · ativo"),
-)
+#: Valores do iFood que chegam como código e viram palavra de gente. O código vai
+#: junto, em texto secundário, para quem for conferir com o iFood.
+_VALUE_WORDS = {
+    "type": {"STORE": "Loja", "RESTAURANT": "Restaurante", "MARKET": "Mercado"},
+    "status": {
+        "AVAILABLE": "Ativa no cadastro do iFood",
+        "UNAVAILABLE": "Indisponível no cadastro do iFood",
+        "DISABLED": "Desativada no cadastro do iFood",
+    },
+    "test": {"TEST": "Sim"},
+}
+#: Explicação curta da linha que confundiria sem ela.
+_DETAIL_HINTS = {
+    "status": "É o cadastro da loja no iFood. Se ela recebe pedido agora, quem diz é a Disponibilidade.",
+}
+_OPERATION_WORDS = {"delivery": "Entrega", "takeout": "Retirada", "indoor": "No salão"}
+_CHANNEL_WORDS = {"ifood-app": "App do iFood", "IFOOD": "App do iFood"}
+_CHECK_LABELS = {
+    "unavailabilities": "Pausas",
+    "is-connected": "Conexão com a casa",
+    "opening-hours": "Horário de funcionamento",
+    "catalog": "Cardápio",
+    "delivery-area": "Área de entrega",
+}
+_CHECK_STATE_LABELS = {
+    "OK": "Ok",
+    "WARNING": "Alerta",
+    "CLOSED": "Fechada",
+    "UNAVAILABLE": "Indisponível",
+    "ERROR": "Erro",
+}
 _STATE_LABELS = {
     "OK": "Aberta",
     "WARNING": "Aberta, com alerta",
@@ -150,12 +172,17 @@ def build_merchants() -> MerchantsProjection:
 class DetailRow:
     label: str
     value: str
+    #: O código do iFood por trás da palavra (``DISABLED``), em texto secundário.
+    code: str = ""
+    hint: str = ""
 
 
 @dataclass(frozen=True)
 class StatusCheck:
     code: str
+    label: str
     state: str
+    state_label: str
     title: str
     description: str
 
@@ -209,21 +236,61 @@ def _display(value) -> str:
     return str(value)
 
 
+def _date(value) -> str:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return _display(value)
+    return format_local(timezone.localtime(parsed, timezone=business_calendar.shop_timezone()), "%d/%m/%Y")
+
+
+def _row(key: str, value) -> DetailRow:
+    words = _VALUE_WORDS.get(key, {})
+    raw = str(value) if value not in (None, "") else ""
+    if key == "createdAt":
+        shown, code = _date(value), ""
+    elif raw in words:
+        shown, code = words[raw], raw
+    else:
+        shown, code = _display(value), ""
+    return DetailRow(label=_DETAIL_LABELS[key], value=shown, code=code, hint=_DETAIL_HINTS.get(key, ""))
+
+
+def _operation_rows(operations) -> list[DetailRow]:
+    """Operação e canal de venda em rótulos de gente; o número só quando há mais de um."""
+    rows: list[DetailRow] = []
+    operations = [op for op in operations or [] if isinstance(op, dict)]
+    for index, op in enumerate(operations, start=1):
+        suffix = f" {index}" if len(operations) > 1 else ""
+        name = str(op.get("name") or "")
+        rows.append(
+            DetailRow(label=f"Operação{suffix}", value=_OPERATION_WORDS.get(name, name or "(vazio)"), code=name)
+        )
+        channels = op.get("salesChannels") or ([op["salesChannel"]] if isinstance(op.get("salesChannel"), dict) else [])
+        for channel in channels:
+            if not isinstance(channel, dict):
+                continue
+            cname = str(channel.get("name") or "")
+            rows.append(
+                DetailRow(
+                    label=f"Canal de venda{suffix}", value=_CHANNEL_WORDS.get(cname, cname or "(vazio)"), code=cname
+                )
+            )
+            if "enabled" in channel:
+                rows.append(DetailRow(label=f"Ativo no iFood{suffix}", value=_display(channel.get("enabled"))))
+    return rows
+
+
 def _detail_rows(body: dict) -> tuple[DetailRow, ...]:
+    body = dict(body or {})
+    operations = body.pop("operations", None)
     pairs = _flatten(body)
     known = [(key, value) for key, value in pairs if key in _DETAIL_LABELS]
     known.sort(key=lambda pair: list(_DETAIL_LABELS).index(pair[0]))
-    rest = [(key, value) for key, value in pairs if key not in _DETAIL_LABELS]
-    return tuple(
-        DetailRow(label=_DETAIL_LABELS.get(key) or _path_label(key), value=_display(value))
-        for key, value in [*known, *rest]
-    )
-
-
-def _path_label(key: str) -> str:
-    for raw, word in _PATH_WORDS:
-        key = key.replace(raw, word)
-    return key
+    # Campo que o iFood mandar e não tiver rótulo aparece com o nome dele: "detalhes
+    # completos" é tudo, e esconder seria pior que mostrar o nome técnico.
+    rest = [DetailRow(label=key, value=_display(value)) for key, value in pairs if key not in _DETAIL_LABELS]
+    return (*(_row(key, value) for key, value in known), *_operation_rows(operations), *rest)
 
 
 def _message(block) -> tuple[str, str]:
@@ -235,22 +302,27 @@ def _operation(op: dict) -> OperationStatus:
     state = str(op.get("state") or "").upper()
     title, description = _message(op.get("message"))
     sales = op.get("salesChannel")
+    channel = str(sales.get("name") if isinstance(sales, dict) else sales or "")
     checks = []
     for validation in op.get("validations") or []:
         if not isinstance(validation, dict):
             continue
         vtitle, vdescription = _message(validation.get("message"))
+        code = str(validation.get("id") or validation.get("code") or "")
+        vstate = str(validation.get("state") or "").upper()
         checks.append(
             StatusCheck(
-                code=str(validation.get("id") or validation.get("code") or ""),
-                state=str(validation.get("state") or "").upper(),
+                code=code,
+                label=_CHECK_LABELS.get(code, vtitle or code),
+                state=vstate,
+                state_label=_CHECK_STATE_LABELS.get(vstate, vstate or "Sem estado"),
                 title=vtitle,
                 description=vdescription,
             )
         )
     return OperationStatus(
-        operation=str(op.get("operation") or ""),
-        sales_channel=str(sales.get("name") if isinstance(sales, dict) else sales or ""),
+        operation=_OPERATION_WORDS.get(str(op.get("operation") or ""), str(op.get("operation") or "")),
+        sales_channel=_CHANNEL_WORDS.get(channel, channel),
         available=op.get("available") is True,
         state=state,
         state_label=_STATE_LABELS.get(state, state or "Sem estado"),

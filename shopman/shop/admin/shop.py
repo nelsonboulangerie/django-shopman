@@ -1457,43 +1457,43 @@ class ShopForm(forms.ModelForm):
     opening_hours_monday_breaks = forms.CharField(
         label="Intervalos",
         required=False,
-        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
         help_text=OPENING_BREAKS_HELP,
     )
     opening_hours_tuesday_breaks = forms.CharField(
         label="Intervalos",
         required=False,
-        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
         help_text=OPENING_BREAKS_HELP,
     )
     opening_hours_wednesday_breaks = forms.CharField(
         label="Intervalos",
         required=False,
-        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
         help_text=OPENING_BREAKS_HELP,
     )
     opening_hours_thursday_breaks = forms.CharField(
         label="Intervalos",
         required=False,
-        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
         help_text=OPENING_BREAKS_HELP,
     )
     opening_hours_friday_breaks = forms.CharField(
         label="Intervalos",
         required=False,
-        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
         help_text=OPENING_BREAKS_HELP,
     )
     opening_hours_saturday_breaks = forms.CharField(
         label="Intervalos",
         required=False,
-        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
         help_text=OPENING_BREAKS_HELP,
     )
     opening_hours_sunday_breaks = forms.CharField(
         label="Intervalos",
         required=False,
-        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "12:00-13:00"}),
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
         help_text=OPENING_BREAKS_HELP,
     )
 

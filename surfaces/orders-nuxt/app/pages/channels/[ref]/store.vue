@@ -184,7 +184,11 @@ const phoneHeaderActions = computed(() => [
             <dl v-else-if="detail" class="mt-2 grid grid-cols-[minmax(0,13rem)_1fr] gap-x-3 gap-y-1 text-sm">
               <template v-for="row in detail.detail" :key="row.label">
                 <dt class="break-words text-muted-foreground">{{ row.label }}</dt>
-                <dd class="min-w-0 break-words">{{ row.value }}</dd>
+                <dd class="min-w-0 break-words">
+                  {{ row.value }}
+                  <span v-if="row.code" class="font-mono text-xs text-muted-foreground">({{ row.code }})</span>
+                  <span v-if="row.hint" class="block text-xs text-muted-foreground">{{ row.hint }}</span>
+                </dd>
               </template>
             </dl>
             <NuxtSkeleton v-else class="mt-2 h-40 w-full" />
@@ -224,9 +228,10 @@ const phoneHeaderActions = computed(() => [
                       :key="check.code"
                       class="flex flex-wrap items-center gap-2"
                     >
-                      <NuxtBadge :color="checkColor(check.state)" :label="check.state" />
-                      <span class="font-mono">{{ check.code }}</span>
+                      <NuxtBadge :color="checkColor(check.state)" :label="check.state_label" />
+                      <span class="font-medium">{{ check.label }}</span>
                       <span class="text-muted-foreground">{{ check.title }}</span>
+                      <span class="font-mono text-muted-foreground">({{ check.code }})</span>
                     </li>
                   </ul>
                 </div>
@@ -324,7 +329,7 @@ const phoneHeaderActions = computed(() => [
         <NuxtCard as="section" aria-labelledby="ifood-hours" data-ifood-hours>
           <h2 id="ifood-hours" class="font-semibold">Horário de funcionamento no iFood</h2>
           <p class="text-xs text-muted-foreground">
-            O horário da casa se cadastra no Admin (Configurações › Operação); salvar grava no iFood.
+            O horário da casa se cadastra no Admin, em Configuração › A loja › Horários e operação; salvar grava no iFood.
           </p>
           <template v-if="week">
             <p v-if="week.error" class="mt-2 text-sm text-error" data-section-error>

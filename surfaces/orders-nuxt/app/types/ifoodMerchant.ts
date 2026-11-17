@@ -21,8 +21,12 @@ export interface IFoodMerchants {
 }
 
 export interface IFoodStatusCheck {
+  /** id da validação no iFood (``is-connected``), em texto secundário. */
   code: string;
+  /** Nome de gente da validação ("Conexão com a casa"). */
+  label: string;
   state: string;
+  state_label: string;
   title: string;
   description: string;
 }
@@ -41,7 +45,8 @@ export interface IFoodOperationStatus {
 export interface IFoodMerchantDetail {
   enabled: true;
   merchant_id: string;
-  detail: { label: string; value: string }[];
+  /** ``code``: o código do iFood por trás da palavra (``DISABLED``); ``hint``: explicação curta. */
+  detail: { label: string; value: string; code: string; hint: string }[];
   detail_error: string;
   available: boolean | null;
   operations: IFoodOperationStatus[];
