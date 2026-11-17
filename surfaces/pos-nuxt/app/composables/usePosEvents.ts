@@ -13,14 +13,16 @@ export interface PosEventChannel {
   event: string;
 }
 
-/** Os canais que o balcão assina, e o evento nomeado de cada um. Dois streams
- *  porque são duas PERMISSÕES e dois assuntos — não porque a tela precise
- *  distinguir: os dois desembocam no mesmo refetch. */
+/** Os canais que o balcão assina, e o evento nomeado de cada um. Um stream por
+ *  assunto: cada um relê só o que muda com ele (`refreshScopeForChannel`). */
 export const POS_TERMINAL_CHANNELS: readonly PosEventChannel[] = [
   { path: "/sse/cash", event: "backstage-cash-update" },
   // A cozinha mexeu numa comanda deste balcão: o selo "Na cozinha" da linha
   // vira "Pronto" ou "Cancelado" sem ninguém apertar "Atualizar".
   { path: "/sse/tabs", event: "backstage-tabs-update" },
+  // O estoque do canal do PDV mexeu (outro balcão vendeu a última unidade, a
+  // fornada entrou): o tile troca o selo "Esgotado" sem ninguém tocar.
+  { path: "/sse/stock", event: "stock-update" },
 ];
 
 /** O canal dos PEDIDOS (o mesmo do Gestor, `shop.manage_orders`): as Encomendas
@@ -32,15 +34,16 @@ export const POS_ORDER_CHANNELS: readonly PosEventChannel[] = [
 /**
  * Tempo real entre estações do PDV: SSE push + poll de fallback + wake.
  *
- * EventSource same-origin no BFF: /sse/cash (canal `backstage-cash-main`) e
- * /sse/tabs (canal `backstage-tabs-main`, a cozinha mexendo numa comanda). O canal anuncia o que OUTRA estação fez e esta
+ * EventSource same-origin no BFF: /sse/cash (canal `backstage-cash-main`),
+ * /sse/tabs (canal `backstage-tabs-main`, a cozinha mexendo numa comanda) e
+ * /sse/stock (canal `stock-<canal do PDV>`, o estoque da grade). O canal anuncia o que OUTRA estação fez e esta
  * precisa ver sem F5: pedido de troco (pedido/atendido/cancelado), devolução
  * pendente/entregue, turno aberto/fechado. Todo evento dispara o MESMO
  * `onPush` — o refetch da Projection do terminal, que é o fetch canônico onde
  * pendências, turno e comandas já vivem (ADR-016: o push é sinal, o fetch é a
  * verdade).
  *
- * `channels` troca os streams (padrão: cash + tabs). As Encomendas assinam o
+ * `channels` troca os streams (padrão: cash + tabs + stock). As Encomendas assinam o
  * canal dos pedidos (`POS_ORDER_CHANNELS`) com a mesma mecânica.
  *
  * Fallback: poll calmo (60s) só enquanto o SSE não está vivo — se o stream
