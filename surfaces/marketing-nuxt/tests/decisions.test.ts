@@ -14,7 +14,7 @@ import {
 import type { AutomaticCheck, DecisionItem } from "~/types/decisions";
 
 const TZ = "America/Sao_Paulo";
-// 03/10/2026 10:03 em São Paulo.
+// 03/10/2026 10h03 em São Paulo.
 const NOW = Date.parse("2026-10-03T10:03:00-03:00");
 
 function item(over: Partial<DecisionItem> = {}): DecisionItem {
@@ -76,7 +76,7 @@ describe("fila de decisões: o cartão", () => {
   it("mostra o prazo com hora e quanto falta, no fuso da loja", () => {
     const shown = deadlinePresentation(item(), TZ, NOW);
     expect(shown).toEqual({
-      label: "Decide até 10:15",
+      label: "Decide até 10h15",
       detail: "faltam 12 min",
       tone: "urgent",
     });
@@ -100,8 +100,8 @@ describe("fila de decisões: o cartão", () => {
       reach: { posts: 0, people: 142 },
     });
     expect(deadlinePresentation(scheduled, TZ, NOW)).toMatchObject({
-      label: "Envia hoje às 17:30",
-      detail: "decide até 17:00",
+      label: "Envia hoje às 17h30",
+      detail: "decide até 17h",
     });
     expect(departureVerb(["instagram"])).toBe("Publica");
     expect(departureVerb(["whatsapp"])).toBe("Envia");
@@ -127,7 +127,7 @@ describe("fila de decisões: o cartão", () => {
       "A conexão com a plataforma caiu antes do envio. Nada foi disparado.",
     );
     expect(deadlinePresentation(failed, TZ, NOW).label).toBe(
-      "Repetir até 11:40",
+      "Repetir até 11h40",
     );
     expect(
       failureReason(
@@ -188,7 +188,7 @@ describe("fila de decisões: a casa", () => {
     expect(automaticCheckLine(check(), TZ, NOW)).toEqual({
       title: "Google: resultado incerto.",
       detail:
-        "O sistema consultou sem reenviar: publicado às 09:58 · automático",
+        "O sistema consultou sem reenviar: publicado às 9h58 · automático",
     });
     expect(
       automaticCheckLine(
@@ -197,7 +197,7 @@ describe("fila de decisões: a casa", () => {
         NOW,
       ).detail,
     ).toBe(
-      "O sistema consultou sem reenviar: publicado ontem às 18:10 · automático",
+      "O sistema consultou sem reenviar: publicado ontem às 18h10 · automático",
     );
     expect(
       automaticCheckLine(check({ state: "checking", checked_at: null }), TZ, NOW)

@@ -4,9 +4,11 @@
 > Primeiro vertical da ID3A. Interno primeiro; o tronco externo é fase posterior.
 > O código entra em slices, cada um em seu PR. Nada aqui autoriza merge sem os gates da casa.
 
+> **Vocabulário:** `Pedido` é o Order do cliente. `Chamado` é o `HELP-AAAA`. `Solicitação` é o chamado que pede mudança. `Compromisso` é o `DEV-AAAA`.
+
 ## 1. Objetivo
 
-Dar ao operador, ao gerente e ao dono um lugar único para dúvida, queixa, bug, pedido e
+Dar ao operador, ao gerente e ao dono um lugar único para dúvida, queixa, defeito, solicitação e
 ideia, com contexto automático, thread, estado e prova. O que precisar de código vira
 `DEV-` no ledger e só muda com aprovação do dono. O que for dúvida morre resolvido ali.
 
@@ -20,7 +22,7 @@ surface nova, substituto do ledger de dev.
 | 0 | ADR-046 + esta spec | aprovadas e na fila |
 | 1 | Backend: models, migração, permissões, API, testes | criar/ler/responder/triar via API, com permissão |
 | 2 | Hub: `/support` lista + detalhe + thread + composer | operador cria e acompanha no celular |
-| 3 | Gate de dev: aprovação → `DEV-` → PR cita `Pedido:` | um pedido real fecha o ciclo |
+| 3 | Gate de dev: aprovação → `DEV-` → PR cita `Compromisso:` | uma solicitação real fecha o ciclo |
 | 4 | IA de triagem (ID3A): sugestão de tipo/fila/prioridade | erro com confiança medida; fallback humano |
 | 5 | Canais (Telegram/WhatsApp) e tronco externo | só depois do interno estável |
 
@@ -33,7 +35,7 @@ A fase 1 pode entrar antes do go-live; as fases 4 e 5, depois. A fase 1 não dep
 - **SupportTicket**
   - `ref` (`HELP-0001`, único), `shop` (FK/Schema, ADR-042), `requester` (FK user),
     `requester_role`, `audience` (`internal`/`external`, default `internal`),
-    `type` (`question`, `complaint`, `bug`, `request`, `idea`, `decision`),
+    `type` (`question`, `complaint`, `bug`, `request` (Solicitação), `idea`, `decision`),
     `status`, `priority`, `subject`, `description`,
     `context` JSON (envelope operacional, sem PII),
     `assignee` (FK user, opcional), `sla_due`, `review_at`,
@@ -67,7 +69,7 @@ NEW → TRIAGE → WAITING_REQUESTER ↔ TRIAGE
 - `NEW`: capturado, sem triagem. Dono: fila do Suporte.
 - `TRIAGE`: gerente/IA classificando. Dono: gerente.
 - `WAITING_REQUESTER`: pergunta única pendente. Dono: requester.
-- `WAITING_OWNER`: pedido de produto aguardando decisão. Dono: Pablo.
+- `WAITING_OWNER`: solicitação de produto aguardando decisão. Dono: Pablo.
 - `APPROVED`: aprovado; gera/liga `DEV-`. Dono: engenharia.
 - `REJECTED`: recusado com motivo. Terminal.
 - `IN_DEV`: `DEV-` com PR. Dono: engenharia.
@@ -114,7 +116,7 @@ Projeções: lista e detalhe são projections puras em `shopman/backstage/projec
 - **Lista**: “Meus chamados” (operador) / “Todos” (gerente/dono), filtros por estado e tipo.
 - **Detalhe**: cabeçalho de contexto, thread, composer, status, ações por papel.
 - **Composer**: um campo. O contexto vai num bloco recolhível; o operador só escreve a
-  exceção. Sem dois botões “Pedido/Ideia”; a sugestão da IA aparece como chip editável.
+  exceção. Sem dois botões “Solicitação/Ideia”; a sugestão da IA aparece como chip editável.
 - **Aprovação**: o dono vê “Aprovar”, “Recusar”, “Adiar” com motivo; a tela mostra o
   `DEV-` gerado e o PR quando existir.
 - **Mobile**: PWA do hub; `MoreBelow`, `useNextFocus`, alvos ≥ 48 px; SSE para updates.
@@ -150,14 +152,14 @@ Payload (JSON, sem PII):
 
 ## 9. Gate de dev
 
-1. Pedido de produto aprovado pelo dono (`APPROVED`).
+1. Solicitação de produto aprovada pelo dono (`APPROVED`).
 2. Aprovação cria/liga a linha `DEV-AAAA` no `docs/coordination/COMMITMENTS.md`
-   (`tipo=pedido`, `origem=HELP-…`, `dono=Engenharia`, `revisar_em`).
-3. O PR cita `Pedido: DEV-AAAA`; o CI reprova sem a linha.
+   (`tipo=solicitacao`, `origem=HELP-…`, `dono=Engenharia`, `revisar_em`).
+3. O PR cita `Compromisso: DEV-AAAA`; o CI reprova sem a linha.
 4. O merge atualiza o `DEV-` para `FEITO` com `prova: #PR` e fecha/atualiza o ticket.
-5. O requester recebe o changelog (“seu pedido foi atendido no PR #…”).
+5. O requester recebe o changelog (“sua solicitação foi atendida no PR #…”).
 
-Pedido explícito do dono nasce `APPROVED` com `approved_by=Pablo`,
+Solicitação explícita do dono nasce `APPROVED` com `approved_by=Pablo`,
 `approval_basis="solicitado pelo dono"`. Ideia nasce `TRIAGE`. Ambíguo: uma pergunta.
 
 ## 10. IA (ID3A) — opcional na v1
@@ -174,7 +176,7 @@ Pedido explícito do dono nasce `APPROVED` com `approved_by=Pablo`,
 
 - Modelo: `ref` único, transições válidas, `DEFERRED` exige data, `REJECTED` exige motivo.
 - API: permissões por papel, isolamento por loja, idempotência, erros canônicos.
-- Gate: aprovação cria `DEV-`; PR sem `Pedido:` reprova; `DEV-` fechado com prova.
+- Gate: aprovação cria `DEV-`; PR sem `Compromisso:` reprova; `DEV-` fechado com prova.
 - UI: vitest de composables/projection; Playwright do fluxo operador→gerente→dono.
 - Offline: ticket criado sem rede sincroniza uma vez só.
 - Carga: lista com 1k tickets; SSE com 100 clientes.
@@ -183,7 +185,7 @@ Pedido explícito do dono nasce `APPROVED` com `approved_by=Pablo`,
 
 - tempo até triagem; tempo até primeira resposta; tempo até decisão do dono;
 - tickets sem dono; tickets vencidos; `DEFERRED` vencidos;
-- pedidos aprovados sem `DEV-`; `DEV-` sem PR; PR sem prova;
+- solicitações aprovadas sem `DEV-`; `DEV-` sem PR; PR sem prova;
 - custo por ticket (IA), aceitação da sugestão, erro com confiança;
 - taxa de captura offline; duplicados.
 

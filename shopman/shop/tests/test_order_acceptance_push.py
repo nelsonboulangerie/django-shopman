@@ -19,6 +19,7 @@ from django.contrib.auth.models import Permission
 from django.test import override_settings
 from django.utils import timezone
 from shopman.orderman.models import Directive, Order
+from shopman.utils.formatting import format_clock
 
 from shopman.shop import lifecycle
 from shopman.shop.config import ChannelConfig
@@ -102,7 +103,7 @@ def ifood_order():
 
 def _clock(order) -> str:
     deadline = order_acceptance_alerts.external_deadline(order)
-    return timezone.localtime(deadline).strftime("%H:%M")
+    return format_clock(deadline)
 
 
 def _push_directives():

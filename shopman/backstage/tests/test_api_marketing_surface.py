@@ -832,7 +832,7 @@ class TestRules:
         assert body["fires_on_its_own"] is True
         assert body["exhausted"] is False
         assert body["updated_at"]
-        assert "17:30" in body["schedule_label"], body["schedule_label"]
+        assert "17h30" in body["schedule_label"], body["schedule_label"]
 
     def test_patching_into_the_impossible_pairing_is_refused(self, client, gestor, rule):
         """Editar também precisa do guarda — senão a regra entra pela porta de trás."""
