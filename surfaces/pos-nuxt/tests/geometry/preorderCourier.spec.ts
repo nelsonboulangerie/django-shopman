@@ -96,7 +96,7 @@ test("chamar o entregador muda o estado na hora (mock: nunca a TaOn)", async ({ 
   await expect(page.locator("[data-pos-courier-state]")).toHaveText("Não atendida", { timeout: 90_000 });
   await page.locator("[data-pos-courier-call]").click();
   await page.locator("[data-pos-courier-confirm-call]").click();
-  await expect(page.locator("[data-pos-courier-state]")).toHaveText("Procurando Entregador");
+  await expect(page.locator("[data-pos-courier-state]")).toHaveText("Procurando entregador");
   await expect(page.locator("[data-pos-courier-call]")).toHaveCount(0);
 });
 
@@ -104,7 +104,7 @@ test("o andamento da TaOn: chega para coletar, entrega prevista e o aviso de sem
   await open(page, "/preorders/NB-1053", { width: 1366, height: 768 }, "light");
   const progress = page.locator("[data-pos-courier-progress]");
   await expect(progress).toContainText(/Chega para coletar em ~\d+ min/, { timeout: 90_000 });
-  await expect(progress).toContainText(/Entrega prevista ~\d{2}:\d{2}/);
+  await expect(progress).toContainText(/Entrega prevista ~\d{1,2}h(\d{2})?/);
   await open(page, "/preorders/NB-1057", { width: 1366, height: 768 }, "light");
   await expect(page.locator("[data-pos-courier-stale]")).toContainText("A TaOn não informa a corrida desde", { timeout: 90_000 });
 });
@@ -115,7 +115,7 @@ test("cancelar a corrida antes da coleta pede o segundo toque (mock: nunca a TaO
   await expect(cancel).toHaveText("Cancelar a corrida", { timeout: 90_000 });
   await cancel.click();
   await cancel.click();
-  await expect(page.locator("[data-pos-courier-state]")).toHaveText("Corrida Cancelada");
+  await expect(page.locator("[data-pos-courier-state]")).toHaveText("Corrida cancelada");
   await expect(page.locator("[data-pos-courier-cancel]")).toHaveCount(0);
 });
 

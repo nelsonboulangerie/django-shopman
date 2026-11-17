@@ -14,6 +14,7 @@ import type {
   DecisionReach,
   ScheduledItem,
 } from "~/types/decisions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const PLATFORM_LABELS: Record<string, string> = {
   instagram: "Instagram",
@@ -210,7 +211,7 @@ function zonedParts(ms: number, timeZone: string) {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    hour: "2-digit",
+    hour: "2-digit",  // hora-ok: cálculo no fuso da loja, não exibição
     minute: "2-digit",
     hourCycle: "h23",
   }).formatToParts(new Date(ms));
@@ -218,7 +219,7 @@ function zonedParts(ms: number, timeZone: string) {
   return {
     day: `${get("year")}-${get("month")}-${get("day")}`,
     dayMonth: `${get("day")}/${get("month")}`,
-    time: `${get("hour")}:${get("minute")}`,
+    time: formatClock(`${get("hour")}:${get("minute")}`),
   };
 }
 

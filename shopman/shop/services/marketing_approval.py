@@ -170,13 +170,13 @@ def approve_command(
                 next_allowed = base_window.next_allowed_at
                 raise RejectCommand(
                     code=("scheduled_in_quiet_hours" if normalized_publish_at is not None else "quiet_hours_active"),
-                    detail=("O WhatsApp fica em silêncio das 20:00 às 08:00. Escolha o próximo horário permitido."),
+                    detail=("O WhatsApp fica em silêncio das 20h às 8h. Escolha o próximo horário permitido."),
                     outcome={
                         "next_allowed_at": next_allowed.isoformat() if next_allowed else "",
                         "publish_timezone": effective_timezone,
                     },
                     field_errors={
-                        "publish_at": ("Escolha um horário entre 08:00 e 20:00.",),
+                        "publish_at": ("Escolha um horário entre 8h e 20h.",),
                     },
                 )
 
@@ -435,7 +435,7 @@ def approve_command(
                 detail="Uma etapa do WhatsApp cairia no período de silêncio.",
                 outcome={"quiet_wave_count": len(quiet_rows)},
                 field_errors={
-                    "publish_at": ("Antecipe o horário para concluir antes das 20:00.",),
+                    "publish_at": ("Antecipe o horário para concluir antes das 20h.",),
                 },
             )
 

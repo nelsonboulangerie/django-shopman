@@ -171,21 +171,21 @@ class TestDescribe:
         assert campaign_schedule.describe(schedule) == "Publica na hora"
 
     def test_janela_unica(self):
-        assert campaign_schedule.describe(MANHA) == "Publica entre 07:00 às 11:00"
+        assert campaign_schedule.describe(MANHA) == "Publica entre 7h às 11h"
 
     def test_duas_janelas(self):
         assert campaign_schedule.describe(DOIS_TURNOS) == (
-            "Publica entre 07:00 às 11:00, 15:00 às 18:00"
+            "Publica entre 7h às 11h, 15h às 18h"
         )
 
     def test_semana_toda_nao_lista_os_dias(self):
         """Sem restrição de dia, listar "seg, ter, qua…" só polui o card."""
         schedule = {**MANHA, "weekdays": [0, 1, 2, 3, 4, 5, 6]}
-        assert campaign_schedule.describe(schedule) == "Publica entre 07:00 às 11:00"
+        assert campaign_schedule.describe(schedule) == "Publica entre 7h às 11h"
 
     def test_dias_restritos_aparecem(self):
         schedule = {**MANHA, "weekdays": [0, 5]}
-        assert campaign_schedule.describe(schedule) == "Publica entre 07:00 às 11:00 (seg, sáb)"
+        assert campaign_schedule.describe(schedule) == "Publica entre 7h às 11h (seg, sáb)"
 
 
 class TestDescribeOccurrence:
@@ -195,16 +195,16 @@ class TestDescribeOccurrence:
         schedule = {"type": "once", "at": _at(hour=17, minute=30).isoformat()}
         text = campaign_schedule.describe_occurrence(schedule)
         assert text.startswith("Uma vez, em ")
-        assert text.endswith(" às 17:30")
+        assert text.endswith(" às 17h30")
 
     def test_todo_dia(self):
         schedule = {"type": "recurring", "windows": [["17:30", "18:30"]]}
-        assert campaign_schedule.describe_occurrence(schedule) == "Todo dia, às 17:30"
+        assert campaign_schedule.describe_occurrence(schedule) == "Todo dia, às 17h30"
 
     def test_dias_restritos_abrem_com_maiuscula(self):
         """"seg" é minúsculo dentro de "(seg, sáb)"; abrindo a linha, sobe."""
         schedule = {"type": "recurring", "windows": [["07:00", "08:00"]], "weekdays": [0, 5]}
-        assert campaign_schedule.describe_occurrence(schedule) == "Seg, sáb, às 07:00"
+        assert campaign_schedule.describe_occurrence(schedule) == "Seg, sáb, às 7h"
 
     def test_ate_quando(self):
         schedule = {
@@ -212,7 +212,7 @@ class TestDescribeOccurrence:
             "windows": [["07:00", "08:00"]],
             "ends_on": "2026-12-24",
         }
-        assert campaign_schedule.describe_occurrence(schedule) == "Todo dia, às 07:00 (até 24/12)"
+        assert campaign_schedule.describe_occurrence(schedule) == "Todo dia, às 7h (até 24/12)"
 
     @pytest.mark.parametrize(
         ("schedule", "expected"),

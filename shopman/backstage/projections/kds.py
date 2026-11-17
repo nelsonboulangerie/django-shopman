@@ -23,6 +23,7 @@ from django.db.models import Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock, format_local
 
 from shopman.shop.services import operator_orders
 from shopman.shop.services.fulfillment_window import promised_at, window_label
@@ -1349,7 +1350,7 @@ def _due_time_display(source, promised, *, is_delivery: bool) -> str:
     slot = str(((getattr(source, "data", None) or {}).get("delivery_time_slot")) or "").strip()
     label = window_label(slot) if slot else ""
     if not label:
-        return f"{verb} às {timezone.localtime(promised):%H:%M}"
+        return f"{verb} às {format_clock(promised)}"
     if label[:2].isdigit():
         return f"{verb} das {label}"
     return f"{verb} {label[:1].lower()}{label[1:]}"
@@ -1357,10 +1358,7 @@ def _due_time_display(source, promised, *, is_delivery: bool) -> str:
 
 def _clock(moment) -> str:
     """ "17h" / "14h30": a hora como a casa fala; vazio sem hora."""
-    if moment is None:
-        return ""
-    local = timezone.localtime(moment)
-    return f"{local.hour}h" if local.minute == 0 else f"{local.hour}h{local.minute:02d}"
+    return format_clock(moment)
 
 
 def _volumes_fields(source) -> dict:
@@ -1479,11 +1477,11 @@ def _format_datetime(dt) -> str:
     if dt is None:
         return ""
     local = timezone.localtime(dt)
-    return local.strftime("%d/%m às %H:%M")
+    return format_local(local, "%d/%m às {clock}")
 
 
 def _format_time(dt) -> str:
     if dt is None:
         return ""
     local = timezone.localtime(dt)
-    return local.strftime("%H:%M")
+    return format_clock(local)

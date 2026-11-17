@@ -372,10 +372,10 @@ class TestSms02PromisedWindow:
 
         proj = build_order_tracking(order)
 
-        assert proj.promise.message == "Entrega combinada para amanhã, 15:00 às 15:30. Avisamos quando sair."
+        assert proj.promise.message == "Entrega combinada para amanhã, 15h às 15h30. Avisamos quando sair."
         # Este teste prova o limite da janela; a data acompanha o horário
         # quando a apresentação distingue uma previsão de outro dia.
-        assert proj.eta_display.split(" de ")[0] == "15:00"
+        assert proj.eta_display.split(" de ")[0] == "15h"
 
     def test_ready_pickup_before_the_window_says_when_to_come(self, order):
         tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
@@ -437,7 +437,7 @@ class TestPickupTabShowsTheChosenTime:
 
         assert pickup is not None
         assert pickup.address == "Rua das Flores, 100, Londrina"
-        assert pickup.when_display == "hoje · 19:30 às 20:00"
+        assert pickup.when_display == "hoje · 19h30 às 20h"
 
     def test_preorder_pickup_shows_the_house_turn(self, order, shop_instance):
         shop_instance.formatted_address = "Rua das Flores, 100, Londrina"
