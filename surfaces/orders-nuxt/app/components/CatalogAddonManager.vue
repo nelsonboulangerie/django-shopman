@@ -173,7 +173,7 @@ async function submitPrice(addon: ChannelAddon) {
           :title="
             receipt.ok
               ? `Gravado no iFood às ${receipt.at}`
-              : `O iFood recusou às ${receipt.at}`
+              : `Não foi gravado (${receipt.at})`
           "
           :description="receipt.message"
           close
