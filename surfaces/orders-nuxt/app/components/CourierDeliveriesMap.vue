@@ -317,7 +317,7 @@ const places = computed(() => {
               <polygon v-else :points="OCTAGON" fill="#fff" stroke-width="4" stroke-linejoin="round" :stroke="rideColor(r.number - 1).bg" :stroke-opacity="liveAlpha" />
             </svg>
             <span class="relative"><NuxtIcon v-if="s.done" name="i-lucide-check" class="size-3.5" /><template v-else>{{ k + 1 }}</template></span>
-            <span class="absolute -top-1.5 -right-1.5 grid size-4 place-items-center rounded-[4px] text-[10px] leading-none font-bold ring-1 ring-white" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }" aria-hidden="true" data-stop-letter>{{ rideLetter(r.number) }}</span>
+            <span class="absolute -top-1.5 -right-1.5 grid size-4.5 place-items-center rounded-[4px] op-micro leading-none font-bold ring-1 ring-white" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }" aria-hidden="true" data-stop-letter>{{ rideLetter(r.number) }}</span>
           </span>
         </NuxtButton>
       </span>
@@ -333,7 +333,7 @@ const places = computed(() => {
               <polygon :points="OCTAGON" :fill="`url(#stripe-b${r.number})`" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 6" :stroke="rideColor(r.number - 1).bg" />
             </svg>
             <span class="relative">{{ k + 1 }}</span>
-            <span class="absolute -top-1.5 -right-1.5 grid size-4 place-items-center rounded-[4px] text-[10px] leading-none font-bold ring-1 ring-white" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }" aria-hidden="true" data-stop-letter>{{ rideLetter(r.number) }}</span>
+            <span class="absolute -top-1.5 -right-1.5 grid size-4.5 place-items-center rounded-[4px] op-micro leading-none font-bold ring-1 ring-white" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }" aria-hidden="true" data-stop-letter>{{ rideLetter(r.number) }}</span>
           </span>
         </NuxtButton>
       </span>

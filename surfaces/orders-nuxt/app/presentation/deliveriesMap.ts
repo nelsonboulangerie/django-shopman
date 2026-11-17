@@ -51,8 +51,8 @@ export interface PlacedMarker {
  */
 export function spreadOverlaps(
   markers: readonly PlacedMarker[],
-  minDistance = 28,
-  radius = 18,
+  minDistance = 40,
+  radius = 22,
 ): Map<string, { dx: number; dy: number }> {
   const out = new Map<string, { dx: number; dy: number }>();
   const groups: PlacedMarker[][] = [];
