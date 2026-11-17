@@ -421,12 +421,20 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "door_charge_note": "Pedido A47 · Cobrar R$ 58,00 em dinheiro · troco para R$ 100,00",  // a observação que FOI à TaOn na abertura (recibo `dispatch_attempt.note`); a TaOn não altera corrida aberta, e `courier.charge_outdated` compara com a de agora para o aviso "O pedido mudou depois da chamada" (Gestor e PDV); sai no arquivamento
   "last_event_at": "iso",
   "last_source": "webhook",        // "webhook" | "poll" | "dispatch" | "operator:<nome>"
-  "status_at": {"D": "iso", "A": "iso", "S": "iso", "E": "iso"},  // 1ª vez de cada letra (D na abertura); o B.I. mede daqui a chegada do entregador
+  "status_at": {"D": "iso", "A": "iso", "S": "iso", "E": "iso"},  // 1ª vez de cada letra (D na abertura); o B.I. mede daqui a chegada do entregador. Na desistência (`reopens`) o `A`/`S` de quem saiu sai daqui, e o próximo aceite grava a própria hora
+  "last_provider_at": "iso",       // `datetime` do último aviso do WEBHOOK aplicado (`apply_status`/`record_reopen`); aviso mais velho que este chegou fora de ordem e é recusado (`courier_status_ignored`). A leitura (poll) não lê nem grava. Sai no arquivamento
+  "reopens": [                     // desistências do entregador na MESMA corrida (`courier.record_reopen`: webhook `C` com `will_reopen`; ou `apply_status` quando uma aceita volta a procurar antes da coleta). A corrida NÃO é arquivada: mantém `id_mch`, volta a `D`, perde `driver` e o andamento dele. Enquanto o status for D/G/P, a última entrada é a frase da tela (`courier.reopen_view`: "Diego desistiu às 14:32. A TaOn já procura outro."). Vai com a corrida para `attempts` no arquivamento
+    {"at": "iso",                  // quando (o `datetime` do aviso; sem ele, a hora em que chegou)
+     "driver": "Diego",            // o nome de quem saiu ("" quando o aceite dele nunca chegou aqui)
+     "source": "webhook",          // "webhook" | "poll"
+     "accepted_at": "iso"}         // o `status_at.A` dele, quando havia (para o B.I.)
+  ],
   "attempts": [                    // corridas anteriores (N/C ou canceladas p/ re-despacho)
     {"id_mch": "184501", "status": "N", "requested_at": "iso", "status_at": {"D": "iso", "N": "iso"}, "ended_at": "iso",
      "final_value_q": 1200,        // só quando a TaOn fechou valor (inclusive taxa de cancelamento): o B.I. soma o custo daqui
      "estimate": {...},            // só da corrida terminada (F), cotação para quando falta o valor final
-     "ride_orders": ["NB-A", "NB-B"]}  // só da corrida com várias paradas
+     "ride_orders": ["NB-A", "NB-B"],  // só da corrida com várias paradas
+     "reopens": [...]}             // só quando houve desistência nela (mesmo formato de `courier.reopens`)
   ],
   "error": {"message": "...", "at": "iso"},  // falha terminal do despacho; limpo no re-despacho
   "progress": {                    // andamento lido da central (`courier.apply_snapshot`); só chaves com valor; sai no arquivamento
@@ -1186,8 +1194,12 @@ Write-back em `Order.data["courier"]` (ver detalhamento). `dedupe_key` =
 `courier.dispatch:{primeiro}:{tentativa}:{demais refs com +}`).
 
 `dispatch_attempt` (recibo da tentativa, escrito pelo handler): `state` ∈ `started`,
-`unknown`, `accepted`, `not_applied`, `inert`, `released`. `started`/`unknown`/`accepted`
-sem vínculo travam outra chamada (`courier.unresolved_dispatch`). `released` é o gesto
+`unknown`, `accepted`, `not_applied`, `inert`, `released`, `deferred`. `started`/`unknown`/`accepted`
+sem vínculo travam outra chamada (`courier.unresolved_dispatch`). `deferred` é a espera
+do limite de chamadas da TaOn (HTTP 429 com `Retry-After`): a TaOn não abriu nada, o
+recibo sai de `started`, a MESMA tarefa volta à fila pelo prazo pedido (teto de 300 s) e
+tenta de novo do zero, sem falha na tela; `deferrals` conta as esperas, e depois de
+`courier_dispatch.MAX_RATE_LIMIT_DEFERRALS` (5) vira falha terminal com aviso. `released` é o gesto
 "Chamar de novo" do Gestor (`courier.release_unresolved_dispatch`): quem conferiu na
 central libera a chamada sem resposta da TaOn, com `released_from`, `released_by`,
 `released_at`, e uma chamada nova é enfileirada no mesmo gesto; a tentativa liberada
@@ -1240,7 +1252,12 @@ depois `/solicitacaoStatus`; a via que responder é lembrada no cache) e aplica 
 `courier.apply_snapshot`. Auto-reagendável a cada `Shop.defaults.delivery.courier_poll_seconds`
 (default 60; `0` desliga). Morre em status terminal (F/N/C) ou com a corrida mais velha
 que `courier.MAX_POLL_HOURS` (6 h). O webhook de status agenda uma batida imediata
-(`delay_seconds=0`). Leitura que falha grava `courier.sync` e vira aviso.
+(`delay_seconds=0`), inclusive quando o aviso é repetição. Leitura que falha grava
+`courier.sync` e vira aviso. Leitura limitada pela TaOn (HTTP 429) não é falha: não
+grava `courier.sync`, não conta para o aviso e a próxima batida espera o `Retry-After`
+(sem tentar as outras vias de leitura enquanto isso). A leitura só conclui `C`
+(cancelada) quando a letra lida é `C`: `cancellation[]`/`cancelled_at` guarda a
+desistência de um entregador, e a corrida segue viva.
 
 #### `loyalty.earn`
 
@@ -2979,7 +2996,7 @@ cancelada, encolheu); o KDS o mostra como qualquer cancelamento, com "Recebi o c
 ### courier.dispatch — recibo da tentativa externa
 
 `Directive.payload.dispatch_attempt` é escrito pelo CourierDispatchHandler: `state`
-(`started`, `unknown`, `not_applied`, `accepted`, `inert`), `started_at`, `updated_at`,
+(`started`, `unknown`, `not_applied`, `accepted`, `inert`, `deferred`), `started_at`, `updated_at`,
 `fingerprint` do payload exato, `note` (a observação da parada que foi à TaOn, adotada em `courier.door_charge_note`), `notes` (`{order_ref: observação}`, uma por parada) e `stops` (os pedidos na ordem das paradas que foi à TaOn, adotada em `courier.ride_orders`) e, quando recebido, `courier_ref`. Não duplica endereço/
 telefone. A tentativa started é persistida antes do POST; accepted com referência é
 persistido antes da adoção local. Retry de accepted só adota o fato; started/unknown

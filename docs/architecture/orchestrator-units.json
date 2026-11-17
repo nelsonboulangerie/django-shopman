@@ -8414,7 +8414,14 @@
             "_BEFORE_READY_STATUSES",
             "_STATUS_EVENT",
             "_PROGRESS_STEPS",
-            "_STATUS_RANK"
+            "_STATUS_RANK",
+            "_status_out_of_order",
+            "record_reopen",
+            "reopen_view",
+            "progress_since",
+            "restore_archived_ride",
+            "orders_with_archived_ride",
+            "archived_ride_ended_at"
           ]
         }
       ],

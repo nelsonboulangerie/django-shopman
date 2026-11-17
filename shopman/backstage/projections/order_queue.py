@@ -1502,6 +1502,9 @@ COURIER_STATUS_LABELS = {
     "U": "Junto com outra corrida",
 }
 
+#: A corrida voltou a procurar depois de um entregador desistir (``courier.reopen_view``).
+COURIER_REOPENED_LABEL = "Procurando outro entregador"
+
 
 def _courier_dispatch_question(order: Order) -> str:
     """A pergunta do toque de confirmação: quem vem, para qual pedido, quem paga.
@@ -1576,19 +1579,26 @@ def _courier_block(order: Order) -> dict | None:
 
         if unresolved is not None:
             error = {"message": COURIER_NO_ANSWER_MESSAGE, "at": unresolved.updated_at.isoformat()}
-        from shopman.shop.services.courier import progress_view, proven_tracking
+        from shopman.shop.services.courier import progress_view, proven_tracking, reopen_view
 
         progress = progress_view(block)
         tracking = proven_tracking(block)
+        reopened = reopen_view(block) if active else {"at": "", "driver": ""}
         status_label = COURIER_STATUS_LABELS.get(ride_status, "")
         if ride_status in ("A", "S") and progress["arrived_pickup_at"]:
             status_label = "Entregador na loja"
+        if reopened["at"]:
+            status_label = COURIER_REOPENED_LABEL
         return {
             "provider": str(block.get("provider") or ("machine" if adapter_on else "")),
             "status": ride_status,
             "status_label": "Sem resposta da TaOn" if unresolved is not None else status_label,
             # O andamento, em instantes ISO; a tela conta os minutos com o relógio dela.
             **progress,
+            # O entregador desistiu e a TaOn procura outro para a MESMA corrida:
+            # quando, e quem saiu. Vazios fora disso.
+            "reopened_at": reopened["at"],
+            "reopened_driver": reopened["driver"],
             "active": active,
             "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
             # Só o link e o código casados com a parada DESTE pedido (``courier.proven_tracking``).
@@ -2730,7 +2740,10 @@ def _card_courier_label(order: Order) -> str:
         return ""
     from shopman.shop.services import courier
 
-    others = [operator_orders.short_ref(ref) for ref in courier.ride_orders(order) if ref != order.ref]
+    if courier.reopen_view(courier.get_block(order))["at"]:
+        # O entregador desistiu e a TaOn redistribui a mesma corrida.
+        label = COURIER_REOPENED_LABEL
+    others =[operator_orders.short_ref(ref) for ref in courier.ride_orders(order) if ref != order.ref]
     return f"{label} · corrida com {', '.join(others)}" if others else label
 
 
@@ -3477,6 +3490,9 @@ _EVENT_LABELS = {
     "fiscal_requeued": "NFC-e enviada de novo",
     "courier_dispatch_requested": "Entregador da TaOn chamado",
     "courier_ride_opened": "Corrida aberta na TaOn",
+    # A mesma corrida segue chamada: a TaOn redistribui sozinha (``will_reopen``).
+    "courier_ride_reopened": "O entregador desistiu e a TaOn procura outro",
+    "courier_ride_restored": "A TaOn retomou a corrida que constava como encerrada",
     "courier_dispatch_released": "Chamada da TaOn feita de novo",
     "courier_cancel_requested": "Cancelamento da corrida pedido à TaOn",
     "courier_reminder_dismissed": "Lembrete de chamar o entregador dispensado",
