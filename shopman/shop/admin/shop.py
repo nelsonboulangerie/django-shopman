@@ -372,8 +372,8 @@ def _dynamic_collection_choices() -> tuple[tuple[str, str], ...]:
 
 
 OPENING_BREAKS_HELP = (
-    "Pausas dentro do horário, separadas por vírgula (ex.: 12:00-13:00, 16:00-17:00). "
-    "Cada pausa divide o dia em turnos; a loja, o checkout e o iFood ficam fechados nela."
+    "Intervalos dentro do horário, separados por vírgula (ex.: 12:00-13:00, 16:00-17:00). "
+    "Cada intervalo divide o dia em turnos; a loja, o checkout e o iFood ficam fechados nele."
 )
 
 
