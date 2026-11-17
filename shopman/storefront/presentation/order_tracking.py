@@ -1571,7 +1571,7 @@ def _timeline_label(event_type: str, label_key: str) -> str:
         return "Entregue"
     label = EVENT_LABELS.get(event_type)
     if label is None:
-        label = event_type.replace(".", " ").replace("_", " ").title()
+        label = event_type.replace(".", " ").replace("_", " ").capitalize()
     return label
 
 

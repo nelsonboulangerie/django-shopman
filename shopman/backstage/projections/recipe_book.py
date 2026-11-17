@@ -132,7 +132,7 @@ class RecipeEntryCardProjection:
     #: publicada), ``replaced`` (publicada, mas outra receita usa o mesmo SKU),
     #: ``off`` (publicada e sem ficha ativa) ou vazio (sem SKU e sem ficha).
     ficha_status: str
-    #: O selo da lista, curto (o selo sai em iniciais maiúsculas); vazio em ``in_use``.
+    #: O selo da lista, curto (o selo sai em sentença); vazio em ``in_use``.
     ficha_status_label: str
     #: A frase ao lado do selo, quando há quem dizer: ``<ficha> usa este SKU`` em
     #: ``replaced``. Frase não vai dentro do selo.
