@@ -30,6 +30,7 @@ import {
   productionGlobalKeysBlocked,
   resolveProductionGlobalShortcut,
 } from "~/presentation/keyboard";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = withDefaults(
   defineProps<{
@@ -84,10 +85,7 @@ provideOperatorShortcuts(PRODUCTION_SHORTCUT_GROUPS, PRODUCTION_SHORTCUTS_DESCRI
 // vez. Nasce no cliente (o SSR não sabe a hora local de quem lê).
 const readClock = ref("");
 function stamp() {
-  readClock.value = new Date().toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  readClock.value = formatClock(new Date());
 }
 watch(
   () => props.pending,

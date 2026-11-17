@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from django.db import models
 from django.utils import timezone
+from shopman.utils.formatting import format_local
 
 
 class EpisodeStatus(models.TextChoices):
@@ -108,7 +109,7 @@ class OperationEpisode(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.kind or self.detected_signal} ({self.started_at:%d/%m %H:%M})"
+        return f"{self.kind or self.detected_signal} ({format_local(self.started_at, '%d/%m {clock}')})"
 
     @property
     def day(self):

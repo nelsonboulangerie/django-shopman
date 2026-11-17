@@ -101,7 +101,7 @@ _TRANSACTION_COLORS = {
 
 def _format_datetime(dt):
     """Format datetime as DD/MM/AA · HH:MM."""
-    return format_local(dt, "%d/%m/%y · %H:%M", empty="—")
+    return format_local(dt, "%d/%m/%y · {clock}", empty="—")
 
 
 # =============================================================================
