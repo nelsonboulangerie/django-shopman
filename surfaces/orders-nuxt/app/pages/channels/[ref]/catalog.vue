@@ -5,6 +5,7 @@ import {
   pickChannelCatalogTab,
   snapshotLabel,
 } from "~/presentation/channelCatalog";
+import { splitIfoodReason } from "~/presentation/channelAddons";
 import { httpError } from "../../../../../operator-kit/app/utils/httpError";
 import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
 
@@ -27,6 +28,7 @@ const {
   selected,
   busy,
   message,
+  messageFailed,
   importSnapshot,
   bind,
   changeCategory,
@@ -229,13 +231,24 @@ const phoneHeaderActions = computed(() => [
         O que o iFood mostra é reflexo do Catálogo da casa: cada coleção vira
         uma categoria e cada produto, um item.
       </p>
+      <!-- Só sobra recusa aqui (a confirmação de categoria é selo no cartão):
+           a frase traduzida e, em letra pequena, o que o iFood respondeu. -->
       <NuxtAlert
         v-if="message"
-        color="info"
+        :color="messageFailed ? 'error' : 'info'"
         variant="subtle"
-        icon="i-lucide-info"
-        :description="message"
-      />
+        :icon="messageFailed ? 'i-lucide-circle-alert' : 'i-lucide-info'"
+        :title="messageFailed ? 'O iFood não gravou a alteração' : undefined"
+        :description="splitIfoodReason(message).text"
+        close
+        @update:open="message = ''"
+      >
+        <template v-if="splitIfoodReason(message).original" #actions>
+          <p class="text-xs text-muted-foreground">
+            Resposta do iFood: {{ splitIfoodReason(message).original }}
+          </p>
+        </template>
+      </NuxtAlert>
       <NuxtAlert
         v-if="error"
         color="error"

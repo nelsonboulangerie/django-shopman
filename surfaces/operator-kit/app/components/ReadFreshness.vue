@@ -64,7 +64,7 @@ const sourceClock = computed(() =>
     class="flex flex-wrap gap-x-3 gap-y-1 text-xs font-normal text-muted-foreground"
     :class="
       source
-        ? 'whitespace-nowrap leading-4'
+        ? 'leading-4'
         : inline
           ? 'max-w-52 whitespace-normal leading-4'
           : 'px-4 py-1'

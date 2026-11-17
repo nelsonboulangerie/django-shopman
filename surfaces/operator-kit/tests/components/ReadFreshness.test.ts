@@ -61,7 +61,8 @@ describe("ReadFreshness: leitura útil e transporte são estados distintos", () 
       vi.advanceTimersByTime(9000);
       await nextTick();
       expect(wrapper.get("[data-read-freshness-source]").text()).toBe("Lido do iFood às 13h55 (há 9 s)");
-      expect(wrapper.get("[data-read-freshness]").classes()).toContain("whitespace-nowrap");
+      // Curta o bastante para uma linha: sem o teto de largura da frase longa.
+      expect(wrapper.get("[data-read-freshness]").classes()).not.toContain("max-w-52");
     } finally {
       wrapper.unmount();
       vi.useRealTimers();

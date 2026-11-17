@@ -521,6 +521,16 @@ def _register_catalog_signals() -> None:
         product_updated.connect(on_product_updated, weak=False)
         price_changed.connect(on_price_changed, weak=False)
         availability_changed.connect(on_availability_changed, weak=False)
+        # A coleção primária é a categoria no canal: trocar reenvia o item.
+        from django.db.models.signals import post_delete, post_save
+        from shopman.offerman.models import CollectionItem
+
+        from shopman.shop.handlers.catalog_projection import on_collection_membership_changed
+
+        post_save.connect(on_collection_membership_changed, sender=CollectionItem, weak=False,
+                          dispatch_uid="shop.catalog.collection_membership.save")
+        post_delete.connect(on_collection_membership_changed, sender=CollectionItem, weak=False,
+                            dispatch_uid="shop.catalog.collection_membership.delete")
         logger.info("shopman.handlers: connected offerman catalog projection signals.")
     except ImportError:
         pass

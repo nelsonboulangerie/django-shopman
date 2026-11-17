@@ -20,11 +20,28 @@ export function parsePriceQ(text: string): number | null {
 
 /** "Opcional, até 2" | "Obrigatório, 1" | "Obrigatório, de 1 a 3". */
 export function choiceRule(min: number, max: number): string {
-  if (min === 0) return max === 1 ? "Opcional, escolhe 1" : `Opcional, até ${max}`;
+  if (min === 0)
+    return max === 1 ? "Opcional, escolhe 1" : `Opcional, até ${max}`;
   if (min === max) return `Obrigatório, escolhe ${min}`;
   return `Obrigatório, de ${min} a ${max}`;
 }
 
 export function addonStatusLabel(active: boolean): string {
   return active ? "Ativo" : "Pausado";
+}
+
+/** Separador que o servidor põe entre a frase do operador e o texto original do iFood. */
+export const IFOOD_ORIGINAL_MARK = " | iFood: ";
+
+/** "A foto não foi aceita… | iFood: image could not…" → frase e original (letra pequena). */
+export function splitIfoodReason(message: string): {
+  text: string;
+  original: string;
+} {
+  const at = message.indexOf(IFOOD_ORIGINAL_MARK);
+  if (at < 0) return { text: message, original: "" };
+  return {
+    text: message.slice(0, at),
+    original: message.slice(at + IFOOD_ORIGINAL_MARK.length),
+  };
 }

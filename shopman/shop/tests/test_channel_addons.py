@@ -233,6 +233,14 @@ def test_ifood_refusal_is_shown_with_ifoods_own_reason(group):
     with patch.object(adapter.requests, "put", return_value=refused), pytest.raises(adapter.IFoodRejected) as exc:
         adapter._upsert_item(_item(), adapter._get_config("ifood"), {"Authorization": "x"}, channel="ifood")
 
-    assert str(exc.value) == (
-        "O iFood recusou (HTTP 400): each value in optionIds must be a UUID (OptionGroupDto.optionIds)"
+    friendly, original = str(exc.value).split(adapter.IFOOD_ORIGINAL_MARK)
+    assert friendly == "O grupo de complementos não foi aceito pelo iFood."
+    assert original == "each value in optionIds must be a UUID (OptionGroupDto.optionIds)"
+    assert "HTTP" not in friendly
+
+
+def test_photo_refusal_is_translated():
+    text = adapter.ifood_rejection_text(
+        [{"code": "InvalidImage", "field": "ProductDto.imagePath", "message": "image could not be processed"}], "",
     )
+    assert text.startswith("A foto não foi aceita pelo iFood: formato, tamanho ou endereço inválido.")

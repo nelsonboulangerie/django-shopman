@@ -7,6 +7,7 @@ import {
   addonStatusLabel,
   choiceRule,
   parsePriceQ,
+  splitIfoodReason,
 } from "~/presentation/channelAddons";
 import type { ChannelAddon } from "~/composables/useChannelAddons";
 
@@ -173,13 +174,26 @@ async function submitPrice(addon: ChannelAddon) {
           :title="
             receipt.ok
               ? `Gravado no iFood às ${receipt.at}`
-              : `Não foi gravado (${receipt.at})`
+              : `O iFood recusou às ${receipt.at}`
           "
-          :description="receipt.message"
+          :description="splitIfoodReason(receipt.message).text"
           close
           data-addon-receipt
           @update:open="receipt = null"
-        />
+        >
+          <template
+            v-if="!receipt.ok && splitIfoodReason(receipt.message).original"
+            #actions
+          >
+            <p
+              class="text-xs text-muted-foreground"
+              data-addon-receipt-original
+            >
+              Resposta do iFood:
+              {{ splitIfoodReason(receipt.message).original }}
+            </p>
+          </template>
+        </NuxtAlert>
         <NuxtAlert
           v-if="error"
           color="error"

@@ -3,6 +3,7 @@ import {
   addonStatusLabel,
   choiceRule,
   parsePriceQ,
+  splitIfoodReason,
 } from "~/presentation/channelAddons";
 
 import {
@@ -65,5 +66,22 @@ describe("abas do catálogo do canal", () => {
         item_count: 9,
       }),
     ).toBe("Captura nº 1 · 17/11/2026 12:26 · DEFAULT · 9 anúncios");
+  });
+});
+
+describe("splitIfoodReason", () => {
+  it("separa a frase do operador do texto original do iFood", () => {
+    expect(
+      splitIfoodReason(
+        "A foto não foi aceita pelo iFood: formato, tamanho ou endereço inválido. | iFood: image could not be processed (ProductDto.imagePath)",
+      ),
+    ).toEqual({
+      text: "A foto não foi aceita pelo iFood: formato, tamanho ou endereço inválido.",
+      original: "image could not be processed (ProductDto.imagePath)",
+    });
+    expect(splitIfoodReason("Informe o nome.")).toEqual({
+      text: "Informe o nome.",
+      original: "",
+    });
   });
 });

@@ -60,6 +60,8 @@ export function useCatalogBindings(channel: string) {
   );
   const busy = ref(false);
   const message = ref("");
+  // Recusa (vermelho, com a resposta do iFood) ou confirmação (neutro).
+  const messageFailed = ref(false);
   const intentions = useOrderIntention();
 
   async function execute(
@@ -72,6 +74,7 @@ export function useCatalogBindings(channel: string) {
     if (busy.value || stale.value || !board.value) return false;
     busy.value = true;
     message.value = "";
+    messageFailed.value = false;
     try {
       const result = await intentions.executePath(resource, path, action, body);
       const snapshotId = (result as { snapshot_id?: unknown }).snapshot_id;
@@ -89,6 +92,7 @@ export function useCatalogBindings(channel: string) {
       }
       return true;
     } catch (failure) {
+      messageFailed.value = true;
       message.value = httpErrorMessage(
         failure,
         failure instanceof Error
@@ -154,6 +158,7 @@ export function useCatalogBindings(channel: string) {
     selected,
     busy,
     message,
+    messageFailed,
     importSnapshot,
     bind,
     changeCategory,

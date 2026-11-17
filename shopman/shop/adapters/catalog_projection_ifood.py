@@ -99,12 +99,40 @@ class IFoodRejected(Exception):
     """O iFood recusou a escrita; a mensagem é a que ele mesmo devolveu."""
 
 
+_REJECTION_REASONS = (
+    # (pedaço do campo ou do código, frase para o operador)
+    ("imagepath", "A foto não foi aceita pelo iFood: formato, tamanho ou endereço inválido."),
+    ("image", "A foto não foi aceita pelo iFood: formato, tamanho ou endereço inválido."),
+    ("price", "O preço não foi aceito pelo iFood."),
+    ("categoryid", "A categoria não foi aceita pelo iFood. Confira a categoria da coleção."),
+    ("template", "A categoria não aceita este tipo de item."),
+    ("name", "O nome não foi aceito pelo iFood."),
+    ("optiongroup", "O grupo de complementos não foi aceito pelo iFood."),
+    ("option", "Um complemento não foi aceito pelo iFood."),
+    ("notanuuid", "O iFood recusou a identificação do item."),
+)
+#: Separa a frase do operador do texto original do iFood; a tela mostra o original em letra pequena.
+IFOOD_ORIGINAL_MARK = " | iFood: "
+
+
+def ifood_rejection_text(details: list[dict], message: str) -> str:
+    """Frase do operador + o texto original do iFood depois de ``IFOOD_ORIGINAL_MARK``."""
+    original = "; ".join(
+        f"{d.get('message')} ({d.get('field')})" if d.get("field") else str(d.get("message"))
+        for d in details
+        if d.get("message")
+    ) or message
+    keys = " ".join(f"{d.get('field', '')} {d.get('code', '')}" for d in details).lower()
+    friendly = next((text for key, text in _REJECTION_REASONS if key in keys), "O iFood recusou o envio.")
+    return f"{friendly}{IFOOD_ORIGINAL_MARK}{original}" if original else friendly
+
+
 def _raise_for_ifood(resp) -> None:
     """Como ``raise_for_status``, mas com o motivo que o iFood escreveu.
 
-    O iFood responde ``{"error": {"message", "details": [{"field", "message"}]}}``;
-    a tela mostra isso ("image could not be processed, em ProductDto.imagePath")
-    em vez de "400 Client Error ... for url" com o endereço da API.
+    O iFood responde ``{"error": {"message", "details": [{"field", "code", "message"}]}}``.
+    A tela mostra a frase traduzida ("A foto não foi aceita pelo iFood…") e, em letra
+    pequena, o texto original dele; nunca "400 Client Error ... for url".
     """
     status = getattr(resp, "status_code", None)
     if not isinstance(status, int):
@@ -117,12 +145,7 @@ def _raise_for_ifood(resp) -> None:
     except Exception:  # silêncio-deliberado: corpo não-JSON cai na mensagem genérica.
         error = {}
     details = [d for d in (error.get("details") or []) if isinstance(d, dict)]
-    reason = "; ".join(
-        f"{d.get('message')} ({d.get('field')})" if d.get("field") else str(d.get("message"))
-        for d in details
-        if d.get("message")
-    ) or str(error.get("message") or "")
-    raise IFoodRejected(f"O iFood recusou (HTTP {status}): {reason or 'sem motivo informado'}")
+    raise IFoodRejected(ifood_rejection_text(details, str(error.get("message") or "")))
 
 
 def _get_config(channel: str = "ifood") -> dict:

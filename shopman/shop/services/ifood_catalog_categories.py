@@ -90,6 +90,10 @@ def set_collection_category(*, channel_ref: str, collection_ref: str, category_r
     config["ifood_catalog"] = managed
     channel.config = config
     channel.save(update_fields=["config"])
+    # A coleção mudou de categoria: os itens dela que já estão no canal vão de novo.
+    from shopman.shop.handlers.catalog_projection import enqueue_collection_items
+
+    enqueue_collection_items(channel.ref, collection_ref)
     return {str(key): str(value) for key, value in mapping.items()}
 
 
@@ -142,13 +146,19 @@ def _request(
         raise IFoodCategoryConflict(
             "O iFood recusou a categoria por conflito. Atualize a lista e reconcilie a categoria existente."
         )
+    if response.status_code >= 400:
+        from shopman.shop.adapters.catalog_projection_ifood import ifood_rejection_text
+
+        try:
+            error = (response.json() or {}).get("error") or {}
+        except (ValueError, TypeError, AttributeError):
+            error = {}
+        details = [d for d in (error.get("details") or []) if isinstance(d, dict)]
+        raise IFoodCategoryOperationError(ifood_rejection_text(details, str(error.get("message") or "")))
     try:
-        response.raise_for_status()
         body = response.json()
-    except (requests.RequestException, ValueError, TypeError):
-        raise IFoodCategoryOperationError(
-            f"A operação de categoria retornou HTTP {response.status_code}."
-        ) from None
+    except (ValueError, TypeError):
+        raise IFoodCategoryOperationError("O iFood respondeu algo que não dá para ler.") from None
     return body
 
 
