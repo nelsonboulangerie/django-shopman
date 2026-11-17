@@ -82,7 +82,7 @@ class TestDetection:
         episode = OperationEpisode.objects.get(detector="sales_silence")
         assert episode.needs_answer
         assert episode.kind is None, "o sistema nunca chuta o motivo"
-        assert "10:00" in episode.detected_signal and "15:00" in episode.detected_signal
+        assert "entre 10h e 15h" in episode.detected_signal
 
     def test_slow_morning_is_not_an_episode(self, ontem):
         """Sem venda ANTES do silêncio, é só a manhã começando devagar."""
@@ -220,7 +220,7 @@ class TestTheQuestionOnlyShowsWhenThereIsASignal:
 
         assert projection.has_pending_episodes
         assert projection.pending_episodes[0].signal
-        assert projection.pending_episodes[0].window_display == "10:00 → 15:00"
+        assert projection.pending_episodes[0].window_display == "10h → 15h"
         assert {o.ref for o in projection.episode_options} == {
             "falta-de-energia", "evento-na-regiao",
         }

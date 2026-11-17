@@ -14,6 +14,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 from shopman.utils import unfold_component
+from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin
 from unfold.contrib.forms.widgets import ArrayWidget
@@ -372,7 +373,7 @@ def _dynamic_collection_choices() -> tuple[tuple[str, str], ...]:
 
 def _format_admin_time(value) -> str:
     if isinstance(value, time):
-        return value.strftime("%H:%M")
+        return value.strftime("%H:%M")  # hora-ok: valor de campo de formulário e do JSON salvo
     raw = str(value or "").strip()
     if not raw:
         return ""
@@ -637,7 +638,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             widget=UnfoldAdminIntegerFieldWidget,
             help_text=(
                 "Em minutos. A hora em que cada produto costuma ficar pronto é arredondada "
-                "para cima nesse passo. Ex.: com 30, 11:07 vira 11:30."
+                "para cima nesse passo. Ex.: com 30, 11h07 vira 11h30."
             ),
         ),
         "defaults_pickup_history_days": forms.IntegerField(
@@ -3488,7 +3489,7 @@ class ShopIntegrationsAdmin(_ShopSingletonAdmin):
         merged = dict(current) if isinstance(current, dict) else {}
         merged["registration"] = {
             "gcp_ids": list(result.gcp_ids),
-            "at": timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+            "at": format_local(timezone.localtime(), "%d/%m/%Y {clock}"),
         }
         defaults[GOOGLE_MERCHANT_KEY] = merged
         obj.defaults = defaults

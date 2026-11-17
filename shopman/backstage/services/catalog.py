@@ -23,6 +23,7 @@ from dataclasses import asdict
 from math import isfinite
 
 from django.db import transaction
+from shopman.utils.formatting import format_clock, format_local
 
 from shopman.backstage.services.exceptions import CatalogError
 from shopman.shop.services import attributes
@@ -488,7 +489,7 @@ def bulk_set(
                 paused_before, paused_after = set(before["paused_skus"]), set(after["paused_skus"])
                 for sku in paused_before ^ paused_after:
                     if sku in paused_after:
-                        provenance[sku] = f"Pausado por {actor or 'sistema'} em {timezone.localtime():%d/%m/%Y %H:%M}"
+                        provenance[sku] = f"Pausado por {actor or 'sistema'} em {format_local(timezone.localtime(), '%d/%m/%Y {clock}')}"
                     else:
                         provenance.pop(sku, None)
                 display["pause_audit"] = provenance
@@ -979,7 +980,6 @@ def _channel_availability_payload(sku: str) -> list[dict]:
     dele é ``not_listed``, e pausado ou oculto ali é ``paused``. Sem isso a aba
     Geral dizia "À venda" onde a Loja respondia 404.
     """
-    from django.utils import timezone
     from shopman.offerman.models import Collection, ListingItem
 
     from shopman.backstage.models import ShelfOutage
@@ -1027,7 +1027,7 @@ def _channel_availability_payload(sku: str) -> list[dict]:
                 "name": channel.name or channel.ref,
                 "kind": "sale" if sale else "display",
                 "state": state,
-                "since": timezone.localtime(outage.started_at).strftime("%H:%M") if outage else "",
+                "since": format_clock(outage.started_at) if outage else "",
                 "automatic": (not sale) or channel.ref in _AUTOMATIC_CHANNELS,
                 # "volta ~10:40 (lote no forno)": só o esgotado volta com o lote; a
                 # pausa é decisão de alguém e não volta sozinha.
@@ -1439,12 +1439,12 @@ def _apply_labelling(product, data: dict) -> None:
         # agiria como se ninguém tivesse respondido).
         raw = str(data.get("ready_from") or "").strip()
         if raw:
-            from shopman.shop.services.product_readiness import format_clock, parse_clock
+            from shopman.shop.services.product_readiness import clock_hhmm, parse_clock
 
             parsed = parse_clock(raw)
             if parsed is None:
                 raise CatalogError("Pronto a partir de: use o formato HH:MM. Ex.: 12:00.")
-            metadata["ready_from"] = format_clock(parsed)
+            metadata["ready_from"] = clock_hhmm(parsed)
         else:
             metadata.pop("ready_from", None)
 

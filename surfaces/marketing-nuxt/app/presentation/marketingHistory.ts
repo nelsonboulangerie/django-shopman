@@ -3,6 +3,7 @@ import type {
   MarketingActionProjectionV2,
 } from "~/types/campaign";
 import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const TRIGGER_LABELS: Record<
   AnnouncementProjectionV2["facts"]["trigger"],
@@ -103,12 +104,12 @@ export function historyWhen(instant: string, timeZone: string, nowMs = Date.now(
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
-      hour: "2-digit",
+      hour: "2-digit",  // hora-ok: cálculo no fuso da loja, não exibição
       minute: "2-digit",
       hourCycle: "h23",
     }).formatToParts(new Date(value));
     const get = (type: string) => formatted.find((part) => part.type === type)?.value ?? "";
-    return { year: get("year"), day: `${get("year")}-${get("month")}-${get("day")}`, short: `${get("day")}/${get("month")}`, time: `${get("hour")}:${get("minute")}` };
+    return { year: get("year"), day: `${get("year")}-${get("month")}-${get("day")}`, short: `${get("day")}/${get("month")}`, time: formatClock(`${get("hour")}:${get("minute")}`) };
   };
   const at = parts(ms);
   const today = parts(nowMs);

@@ -342,6 +342,64 @@ para mobile, inclusive em modo horizontal". Vira critério de pronto da M2b (pr�
 Até lá, a casa acompanha a corrida pelos toques do entregador ("Saí", "Entreguei A47"), com
 a hora prevista refeita a cada parada, e o cliente vê nome e hora (decisão 6 = 1).
 
+### 4.5.2 As telas do entregador da casa: hiperfoco (APROVADAS pelo dono, 16/11/2026)
+
+Prévia de referência: `/preview-multisservico/5` no branch `claude/entregas-multisservico-previas`
+(PR draft #2511, não se mergeia). Vale para a M2 (página do link) e a M2b (mapa e posição).
+
+**Princípio.** Uma tela por momento, e a tela muda sozinha quando o momento muda: no balcão,
+dirigindo (carro ou moto), na entrega. Em cada uma, só o que importa ali. Uma rota de duas
+entregas custa 3 toques: "Saí da loja", "Entreguei A47", "Entreguei C03". Cada exceção custa
+no máximo um toque a mais, e só quando acontece. **Hiperfoco é sagrado:** nenhuma configuração
+nem navegação dentro da corrida; tema e "Adicionar à tela inicial" moram na tela inicial.
+
+**Nomes.** Ao entregador: "Corrida para você: Rota A" (vários pedidos) ou "Corrida para você:
+Pedido B12" (um só). No Gestor e na sacola continua "Corrida A". Telas: "Pegue no balcão",
+"Qual entrega é esta?", "Qual o problema?", "Como pagou?", "Entregue no caixa".
+
+**Linguagem (rigor; nada fora destas peças):**
+- Texto: 3 tamanhos. Grande 28/800 (título da tela e dinheiro), normal 18/500 (o fato),
+  pequeno 15/500 (o apoio). Na versão de produção os tamanhos acompanham a fonte do celular
+  (rem), e o botão principal fica preso no rodapé.
+- Código do pedido: sempre o mesmo badge neutro, na linha de cima, à esquerda. O que é de um
+  pedido (sacolas, troco, maquininha) mora dentro do bloco dele.
+- Paleta própria, neutra (não o tema do backstage): branco, preto e dois cinzas claros.
+  Claro: tela #ffffff, bloco #f5f5f5, badge #d4d4d4, forte #000000. Escuro (espelho): tela
+  #000000, bloco #262626, badge #525252, forte #ffffff. Texto sempre preto ou branco.
+- Sem borda nem fio. Botão principal: o forte, um por tela. Secundários: iguais, em bloco
+  ("Ligar" e "Problema"). Tudo alinhado à esquerda; centralizado só o texto de botão.
+- Cor da rota só no quadrado da letra e na linha do mapa. Maquininha pelo nome ("Maquininha
+  Azul"), sem bolinha de cor.
+- Tema: o entregador escolhe na tela inicial (Claro, Escuro, Do celular) e o sistema lembra no
+  celular e no cadastro dele. O aviso que passa na frente usa o forte, oposto ao tema.
+
+**Os momentos:**
+
+| Momento | Como a tela sabe | Toque |
+|---|---|---|
+| Tela inicial (sem corrida) | Não há corrida | nenhum |
+| A chamada chega | O balcão enviou; primeira vez pelo link no WhatsApp | nenhum |
+| No balcão | A 60 m da loja; cada pedido diz se está pronto; "Dica" de arrumação da bag | Saí da loja |
+| Esperando um pedido | Algum pedido não ficou pronto; o botão só aparece com tudo pronto | nenhum |
+| Dirigindo | Depois de Saí e de cada entrega; endereço em destaque, manobra no topo, "Abrir no Waze" | nenhum |
+| Na entrega | A entrega aberta mais perto, parado há 15 s; só sai com o toque ou a 200 m por 30 s | Entreguei A47 |
+| Desfazer | 10 s depois de Entreguei; o cliente só é avisado depois | Desfazer |
+| Qual entrega é esta? | Duas entregas abertas a menos de 150 m | a entrega |
+| Problema (folha) | Ele toca "Problema": pagou de outro jeito, ninguém atendeu, não achou, recusou, pedido com problema | o caso |
+| Como pagou? (folha) | "Pagou de outro jeito": cartão ou Pix na maquininha, ou dinheiro; o acerto se refaz | como pagou |
+| Espera curta | "Ninguém atendeu": 2 a 3 min enquanto a loja liga | nenhum |
+| Cancelado | A loja cancelou com ele na rua; passa na frente de tudo | Entendi |
+| Voltando | Depois da última entrega: só o acerto (dinheiro e maquininha) | nenhum |
+| Fechada | O balcão conferiu no Gestor; volta à tela inicial | nenhum |
+
+**Cliente**, um fato por vez: "Diego está a caminho. Deve chegar por volta de 12h46.", aos 80 m
+"Diego está chegando.", e "Entregue às 12h47." (depois do Desfazer).
+
+**Critério de pronto da M2/M2b (além do §4.5.1):** antes da fila, uma auditoria por script nas
+telas reais, nos dois temas, confere: só os 3 tamanhos, só as cores da paleta, código sempre na
+linha de cima, nada centralizado fora de botão, nada transbordando a 340 × 700, e o contraste
+WCAG de todo texto (na prévia: 14,2:1 no claro, 7,8:1 no escuro). E a prévia local ao dono.
+
 ### 4.6 Cancelar
 
 Antes da saída: um toque e uma confirmação no Gestor; o link do entregador passa a dizer

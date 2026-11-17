@@ -55,6 +55,8 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, time
 
+from shopman.utils.formatting import format_clock
+
 logger = logging.getLogger(__name__)
 
 
@@ -168,7 +170,7 @@ def window_label(slot_ref: str | None) -> str:
         return ""
     par = _hour_pair(ref)
     if par is not None:
-        return f"{par[0]:%H:%M} às {par[1]:%H:%M}"
+        return f"{format_clock(par[0])} às {format_clock(par[1])}"
     for slot in canonical_slots():
         if str(slot.get("ref") or "") == ref:
             return str(slot.get("label") or "").strip() or ref
@@ -394,7 +396,7 @@ def annotate(
     este carrinho não cabe neste dia. Quem consome precisa saber distinguir os
     dois para dizer a frase certa.
     """
-    from shopman.shop.services.product_readiness import ReadinessUnavailable, format_clock
+    from shopman.shop.services.product_readiness import ReadinessUnavailable, clock_hhmm
 
     is_today = day == _local_today(now=now, shop=shop)
     raw = _grid_for(day, now=now, shop=shop)
@@ -438,7 +440,7 @@ def annotate(
     return {
         "windows": windows,
         "earliest_ref": earliest_ref,
-        "ready_at": format_clock(ready_at),
+        "ready_at": clock_hhmm(ready_at),
         "bottleneck_sku": sku,
         "bottleneck_name": name,
         # Qual grade veio: a tela fala "horário" numa e "turno" na outra.
@@ -486,7 +488,6 @@ def validate(
     # a configuração da casa. Só quando o ref não está na grade é que ele tenta
     # se explicar sozinho — o que funciona para a meia hora ("14:00-14:30") e é
     # justamente o caso do pedido antigo, depois de a casa mudar o expediente.
-    from shopman.shop.services.product_readiness import format_clock
 
     conhecido = next((w for w in context["windows"] if w.get("ref") == ref), None)
     start = _window_start(conhecido) if conhecido else _window_start({"ref": ref})

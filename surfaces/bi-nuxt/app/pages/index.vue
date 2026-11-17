@@ -53,6 +53,7 @@ import {
   todayIso,
   type PeriodSelection,
 } from "../../../operator-kit/app/presentation/dates";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const {
   report: day,
@@ -513,7 +514,7 @@ const csv = computed(() => overShortCsv(filtered.value));
                   {{ outcomeText(row.original) }}
                 </p>
                 <p class="text-xs tnum text-muted lg:hidden">
-                  {{ row.original.soldout_at ? `acabou às ${row.original.soldout_at}` : "não acabou" }} · {{ historyText(row.original) }} · {{ versusTypicalText(row.original) }}
+                  {{ row.original.soldout_at ? `acabou às ${formatClock(row.original.soldout_at)}` : "não acabou" }} · {{ historyText(row.original) }} · {{ versusTypicalText(row.original) }}
                 </p>
               </div>
             </template>

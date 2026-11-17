@@ -6,22 +6,19 @@ import type {
   WorkstationManageRow,
 } from "../../../operator-kit/app/types/operator";
 import type { WorkstationCopy } from "../../../operator-kit/app/presentation/workstation";
+import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
 
-const WHEN = new Intl.DateTimeFormat("pt-BR", {
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  timeZone: "America/Sao_Paulo",
-});
-
-/** "Usado por último em 03/10, 14:20" ou "Ainda não usado". */
+/** "Usado por último em 03/10, 14h20" ou "Ainda não usado". */
 export function deviceUsageLine(
   device: WorkstationDevice,
   copy: Partial<WorkstationCopy>,
 ): string {
   if (!device.last_used_at) return copy.manage_device_never_used ?? "";
-  const when = WHEN.format(new Date(device.last_used_at));
+  const when = formatDateClock(
+    device.last_used_at,
+    { day: "2-digit", month: "2-digit" },
+    { timeZone: "America/Sao_Paulo" },
+  );
   return (copy.manage_device_last_used ?? "{when}").replace("{when}", when);
 }
 

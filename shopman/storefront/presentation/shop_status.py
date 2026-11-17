@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from shopman.utils.formatting import format_clock
+
 DAY_NAMES_PT = {
     "monday": "Segunda",
     "tuesday": "Terça",
@@ -134,10 +136,7 @@ def _closing_soon(state, *, threshold_min: int = 60) -> bool:
 
 def _human_time(hhmm: str | None) -> str:
     """Format a "HH:MM" clock string as "19h" / "19h30", matching opening hours."""
-    if not hhmm or ":" not in hhmm:
-        return hhmm or ""
-    hour, minute = hhmm.split(":", 1)
-    return f"{int(hour)}h" if minute == "00" else f"{int(hour)}h{minute}"
+    return format_clock(hhmm, empty=hhmm or "")
 
 
 def _format_opening_hours() -> list[dict]:
@@ -157,12 +156,7 @@ def _format_opening_hours() -> list[dict]:
 
     def _fmt_time(t: str) -> str:
         """'06:00' -> '6h', '20:00' -> '20h', '07:30' -> '7h30'."""
-        parts = t.split(":")
-        h = int(parts[0])
-        m = int(parts[1]) if len(parts) > 1 else 0
-        if m:
-            return f"{h}h{m:02d}"
-        return f"{h}h"
+        return format_clock(t if ":" in t else f"{t}:00")
 
     # Build (day, hours_str) pairs in order
     day_hours: list[tuple[str, str]] = []

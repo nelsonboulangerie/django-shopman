@@ -29,6 +29,7 @@ from decimal import Decimal
 from django.db.models import CharField, Count, Func, Q, Value
 from django.db.models.functions import Concat, Lower, Trim
 from django.utils import timezone
+from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 
 from shopman.shop.projections.types import Action
@@ -406,7 +407,7 @@ def _elapsed_label(moment) -> str:
 
 
 def _local(moment) -> str:
-    return timezone.localtime(moment).strftime("%d/%m/%Y às %H:%M") if moment else ""
+    return format_local(moment, "%d/%m/%Y às {clock}") if moment else ""
 
 
 def _order_stats(refs: list[str]) -> dict[str, tuple[int, object]]:
