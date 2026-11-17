@@ -39,6 +39,7 @@ from functools import wraps
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 
 from shopman.shop.models import Conversation
@@ -1541,7 +1542,7 @@ def order_status(ctx: ToolContext, order_ref: str = "") -> dict:
                 "payment_url": projection.payment_url,
                 "requires_payment_gate": projection.requires_payment_gate,
                 "supports_access_link": projection.supports_access_link,
-                "created_at": timezone.localtime(order.created_at).strftime("%d/%m %H:%M"),
+                "created_at": format_local(order.created_at, "%d/%m {clock}"),
             }
         )
     if order_ref and not orders:

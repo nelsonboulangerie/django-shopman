@@ -15,10 +15,10 @@ quiser" acontecer sem depender de lembrar de um caminho.
 
 from __future__ import annotations
 
-from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from shopman.utils.formatting import format_local
 
 from shopman.backstage.models import SignInEvent
 from shopman.backstage.services.sign_in_audit import ANOMALY_LABELS, station_display, station_labels
@@ -43,7 +43,7 @@ def _sign_in_dict(event: SignInEvent, labels: dict[str, str]) -> dict:
         "station_display": station_display(event.station_ref, labels),
         "ip_address": event.ip_address or "",
         "created_at": event.created_at.isoformat(),
-        "created_at_display": timezone.localtime(event.created_at).strftime("%d/%m às %H:%M"),
+        "created_at_display": format_local(event.created_at, "%d/%m às {clock}"),
         # O realce viaja como DADO, e não como uma lista separada: a tela mostra
         # uma lista só e o olho para no que é anômalo, sem que nada tenha sido
         # escondido num silo.

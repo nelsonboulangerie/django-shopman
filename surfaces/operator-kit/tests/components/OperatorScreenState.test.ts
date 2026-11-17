@@ -138,7 +138,7 @@ describe("OperatorPageHeader: o lugar do aviso da tela", () => {
       });
       const full = document.querySelector<HTMLElement>("[data-page-header-eyebrow]")!;
       // O selo leva iniciais maiúsculas (NuxtBadge, #2130); o nome lido não.
-      expect(full.textContent).toContain("Posto PDV Principal · Este Dispositivo");
+      expect(full.textContent).toContain("Posto PDV principal · Este dispositivo");
       expect(full.className).toContain("max-xl:hidden");
       expect(full.className).toContain("whitespace-nowrap");
       const icon = document.querySelector<HTMLElement>("[data-page-header-eyebrow-icon]")!;

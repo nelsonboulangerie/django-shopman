@@ -170,9 +170,15 @@ def test_information_in_the_same_turn_does_not_erase_the_recap_question():
 
 def test_slot_by_time():
     state = _state({"tool": "list_fulfillment_slots", "date": "2026-10-03", "slots": [
-        {"ref": "a", "name": "14:00 às 14:30"}, {"ref": "b", "name": "14:30 às 15:00"}]})
+        {"ref": "a", "name": "14h às 14h30"}, {"ref": "b", "name": "14h30 às 15h"}]})
     resolution = _resolve("14:30", state)
-    assert resolution.outcome == "resolved" and resolution.text == "14:30 às 15:00"
+    assert resolution.outcome == "resolved" and resolution.text == "14h30 às 15h"
+    # "14h" escolhe a que começa às 14h, não a das 14h30; e a opção guardada no
+    # formato de máquina ("14:30 às 15:00") bate do mesmo jeito.
+    assert _resolve("14h", state).text == "14h às 14h30"
+    old = _state({"tool": "list_fulfillment_slots", "date": "2026-10-03", "slots": [
+        {"ref": "a", "name": "14:00 às 14:30"}, {"ref": "b", "name": "14:30 às 15:00"}]})
+    assert _resolve("14h30", old).text == "14:30 às 15:00"
 
 
 # ── Vencimento pelo que acontece ──────────────────────────────────────
