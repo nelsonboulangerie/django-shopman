@@ -117,11 +117,15 @@ function confirm() {
   <NuxtModal
     :open="open"
     title="Registrar devolução"
-    description="Escolha o que volta, quanto e o motivo. Um gerente autoriza com o PIN."
     data-order-return-dialog
     @update:open="(value: boolean) => emit('update:open', value)"
   >
     <template #body>
+      <!-- A instrução mora no corpo, não no subtítulo do cabeçalho: lá ela passava por
+           baixo do X no celular (prévia da coordenação, 390 px). -->
+      <p class="mb-4 text-sm text-muted" data-return-instructions>
+        Escolha o que volta, quanto e o motivo. Um gerente autoriza com o PIN.
+      </p>
       <OperatorScreenState
         v-if="loading && !preview"
         state="loading"
@@ -163,7 +167,7 @@ function confirm() {
             :data-return-line="line.line_id"
           >
             <div class="min-w-0 flex-1">
-              <p class="truncate text-sm font-medium">{{ line.name }}</p>
+              <p class="text-sm font-medium break-words" data-return-line-name>{{ line.name }}</p>
               <p class="text-xs text-muted">
                 {{ returnLineHint(line) }} · {{ line.unit_refund_display }} cada
               </p>
