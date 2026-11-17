@@ -771,6 +771,11 @@ describe("Encomendas — a semana no centro", () => {
     const grid = wrapper.find("[data-week-grid]");
     expect(grid.find('[data-preorder="NB-7"] [data-preorder-money]').text()).toBe("R$ 36,00");
     expect(grid.find('[data-preorder="NB-7"] [data-preorder-money-badge]').text()).toBe("A receber");
+    // Pendência financeira: o selo vem ANTES do valor; o "Pago" segue depois (teste do dono, #2597).
+    const order = (ref: string) => grid.find(`[data-preorder="${ref}"] [data-preorder-money-badge]`).element
+      .compareDocumentPosition(grid.find(`[data-preorder="${ref}"] [data-preorder-money]`).element);
+    expect(order("NB-7") & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(order("NB-8") & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-money]').text()).toBe("R$ 24,00");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-money-badge]').text()).toBe("Pago");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-printed]').exists()).toBe(true);

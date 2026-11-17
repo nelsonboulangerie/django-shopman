@@ -734,10 +734,10 @@ describe("selos da linha (dono, 03/11/2026)", () => {
   it("o dinheiro vira valor + selo semântico", async () => {
     const { moneyBadge } = await import("../app/presentation/preorders");
     const base = { total_q: 6000, total_display: "R$ 60,00", balance_display: "R$ 0,00", payment_state: "to_receive" as const };
-    expect(moneyBadge({ ...base, balance_q: 6000, balance_display: "R$ 60,00" })).toEqual({ amount: "R$ 60,00", of: "", label: "A receber", tone: "warning" });
-    expect(moneyBadge({ ...base, balance_q: 2000, balance_display: "R$ 20,00" })).toEqual({ amount: "R$ 20,00", of: "de R$ 60,00", label: "A receber", tone: "warning" });
-    expect(moneyBadge({ ...base, balance_q: 0, payment_state: "paid" })).toMatchObject({ label: "Pago", tone: "success" });
-    expect(moneyBadge({ ...base, balance_q: null })).toMatchObject({ label: "Conferir pagamento", tone: "warning" });
+    expect(moneyBadge({ ...base, balance_q: 6000, balance_display: "R$ 60,00" })).toEqual({ amount: "R$ 60,00", of: "", label: "A receber", tone: "error", pending: true });
+    expect(moneyBadge({ ...base, balance_q: 2000, balance_display: "R$ 20,00" })).toEqual({ amount: "R$ 20,00", of: "de R$ 60,00", label: "A receber", tone: "error", pending: true });
+    expect(moneyBadge({ ...base, balance_q: 0, payment_state: "paid" })).toMatchObject({ label: "Pago", tone: "success", pending: false });
+    expect(moneyBadge({ ...base, balance_q: null })).toMatchObject({ label: "Conferir pagamento", tone: "error", pending: true });
   });
 });
 

@@ -1022,19 +1022,27 @@ export interface MoneyBadge {
   of: string;
   label: string;
   tone: BadgeTone;
+  /** Pendência financeira (falta receber, ou o pagamento está a conferir): o selo
+   *  vem ANTES do valor, para se distinguir dos outros selos da linha. */
+  pending: boolean;
 }
 
 /**
  * O dinheiro da linha em duas peças: o valor e o selo semântico do estado (dono,
- * 03/11/2026: "A receber" e "Pago" viram selos). Amarelo só para o que pede gesto.
+ * 03/11/2026: "A receber" e "Pago" viram selos).
+ *
+ * Pendência financeira ("A receber", "Conferir pagamento") em `error` e À FRENTE
+ * do valor: teste pedido pelo dono na prévia do #2597 ("colocar o badge 'A
+ * receber' à frente/à esquerda do valor [...] Poderiamos testar usar esses badges
+ * de pendências financeiras na cor Danger"). Os outros selos seguem depois do valor.
  */
 export function moneyBadge(card: Pick<PreorderCard, "balance_q" | "balance_display" | "total_q" | "total_display" | "payment_state">): MoneyBadge {
-  if (card.balance_q === null) return { amount: card.total_display, of: "", label: "Conferir pagamento", tone: "warning" };
+  if (card.balance_q === null) return { amount: card.total_display, of: "", label: "Conferir pagamento", tone: "error", pending: true };
   if (card.balance_q > 0) {
     const partial = card.balance_q < card.total_q;
-    return { amount: partial ? card.balance_display : card.total_display, of: partial ? `de ${card.total_display}` : "", label: "A receber", tone: "warning" };
+    return { amount: partial ? card.balance_display : card.total_display, of: partial ? `de ${card.total_display}` : "", label: "A receber", tone: "error", pending: true };
   }
-  if (card.payment_state === "on_account") return { amount: card.total_display, of: "", label: "Na conta da casa", tone: "info" };
-  return { amount: card.total_display, of: "", label: "Pago", tone: "success" };
+  if (card.payment_state === "on_account") return { amount: card.total_display, of: "", label: "Na conta da casa", tone: "info", pending: false };
+  return { amount: card.total_display, of: "", label: "Pago", tone: "success", pending: false };
 }
 
