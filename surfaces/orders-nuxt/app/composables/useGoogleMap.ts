@@ -35,6 +35,8 @@ export interface GMap {
   fitBounds(bounds: GLatLngBounds, padding?: number | Record<string, number>): void;
   setZoom(zoom: number): void;
   getZoom(): number | undefined;
+  /** O gesto do operador (arrastar, dar zoom) chega como evento do mapa. */
+  addListener(event: string, handler: () => void): unknown;
 }
 export interface GMapsLibrary {
   Map: new (element: HTMLElement, options: Record<string, unknown>) => GMap;
