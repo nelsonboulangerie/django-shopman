@@ -406,9 +406,11 @@ def test_os_quatro_estados_da_vitrine_qa_dizem_a_mesma_promessa_no_card_no_produ
             assert promises[sku] is not None, sku
             assert (promises[sku]["kind"], promises[sku]["text"]) == (kind, text), sku
 
-        # A linha da sacola repete a promessa do card.
+        # A linha da sacola repete a promessa do card. Uma sacola por produto:
+        # o de hoje e o da fornada de amanhã são pedidos diferentes (a loja
+        # recusa as duas datas na mesma sacola).
         for sku in ("MELON", "TABAT"):
-            assert _cart_promise(client, sku) == promises[sku], sku
+            assert _cart_promise(Client(), sku) == promises[sku], sku
 
 
 @pytest.mark.django_db
@@ -426,6 +428,8 @@ def test_a_promessa_e_o_horario_mais_cedo_que_o_checkout_oferece():
         promises = _promises_from_api(Client())
         for sku in ("MELON", "TABAT"):
             promise = promises[sku]
-            checkout = annotate_slots_for_checkout([sku], delivery_date=promise["date"])
+            checkout = annotate_slots_for_checkout(
+                [sku], delivery_date=promise["date"], now=CLOCKS["aberta"],
+            )
             [earliest] = [s for s in checkout["pickup_slots"] if s["is_earliest"]]
             assert earliest["starts_at"] == promise["ready_at"], sku
