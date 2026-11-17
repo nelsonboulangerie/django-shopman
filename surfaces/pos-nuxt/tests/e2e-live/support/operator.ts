@@ -109,17 +109,18 @@ export async function managerSignsIn(page: Page, who = cast.manager): Promise<vo
   await settled(page);
 }
 
-/** A Gerente diz em que posto este dispositivo fica (oferta "Vincular a este posto"). */
+/** A Gerente diz em que posto este dispositivo fica. No PDV a oferta é um diálogo
+ *  ("Vincular este dispositivo a um posto de trabalho?", operator-kit
+ *  OperatorStationSetup), que sobe sozinho logo depois do login dela. */
 export async function managerBindsStation(page: Page, station = MAIN_STATION): Promise<void> {
-  const offer = page.getByRole("button", { name: "Vincular a este posto" }).first();
-  await expect(offer).toBeVisible({ timeout: 60_000 });
-  await offer.click();
   const dialog = page.getByRole("dialog", { name: /Vincular este dispositivo/ });
-  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeVisible({ timeout: 60_000 });
+  // Com um posto só, ele já vem escolhido; com mais de um, ela escolhe pelo nome.
   const choice = dialog.getByRole("combobox").first();
-  if (await choice.isVisible().catch(() => false)) {
+  if (!(await choice.textContent())?.includes(station)) {
     await choice.click();
-    await page.getByRole("option", { name: station, exact: true }).first().click();
+    await page.getByRole("option", { name: station }).first().click();
+    await expect(choice).toContainText(station);
   }
   await dialog.getByRole("button", { name: /^Vincular/ }).click();
   // Vincular recarrega o app no posto; na máquina carregada isso passa de 20 s.
@@ -127,9 +128,20 @@ export async function managerBindsStation(page: Page, station = MAIN_STATION): P
   await settled(page);
 }
 
-/** Trava o dispositivo para o próximo operador (menu do operador). */
+/** Trava o dispositivo para o próximo operador, pelo caminho que a tela mostra: no
+ *  balcão o "Bloquear" do rail; no celular o rail é gaveta, aberta pelo "Mais" da
+ *  barra de baixo, ou o trocador de seções traz "Trocar ou bloquear"
+ *  (operator-kit OperatorSuiteShell / OperatorSwitcher). */
 export async function lockDevice(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Bloquear ou trocar de operador" }).first().click();
+  const lock = page
+    .getByLabel("Bloquear ou trocar de operador")
+    .or(page.getByRole("button", { name: "Trocar ou bloquear", exact: true }))
+    .locator("visible=true")
+    .first();
+  if (!(await lock.isVisible().catch(() => false))) {
+    await page.getByLabel("Mais: o menu completo").locator("visible=true").first().click();
+  }
+  await lock.click({ timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "Identifique-se para operar" })).toBeVisible({ timeout: 30_000 });
 }
 

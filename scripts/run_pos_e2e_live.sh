@@ -139,7 +139,16 @@ if [[ "${PDV_LIVE_SKIP_SEED:-}" != "1" ]]; then
     createdb "${DB_NAME}"
   fi
   echo "── migrate"
-  manage migrate --noinput >"${LOG_DIR}/migrate.log" 2>&1 || { tail -40 "${LOG_DIR}/migrate.log" >&2; exit 1; }
+  # Migração com trava de produção (`SET LOCAL statement_timeout = '30s'`, ex.:
+  # shop.0053) estoura em máquina carregada mesmo com tabela vazia (medido 17/11,
+  # carga 90). Cada migração é atômica: tentar de novo continua de onde parou.
+  migrated=0
+  for attempt in 1 2 3; do
+    if manage migrate --noinput >"${LOG_DIR}/migrate.log" 2>&1; then migrated=1; break; fi
+    grep -q "statement timeout" "${LOG_DIR}/migrate.log" || break
+    echo "   (tempo esgotado numa migração; tentativa ${attempt} de 3, continuando)"
+  done
+  [ "$migrated" = 1 ] || { tail -40 "${LOG_DIR}/migrate.log" >&2; exit 1; }
   echo "── seed --flush (o elenco de setup_operators vem junto: joyce, fran, diofer)"
   manage seed --flush >"${LOG_DIR}/seed.log" 2>&1 || { tail -40 "${LOG_DIR}/seed.log" >&2; exit 1; }
 fi

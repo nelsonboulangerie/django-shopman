@@ -16,8 +16,12 @@ contra o mock. Duas famílias:
 Da raiz do repositório (ou da worktree):
 
 ```bash
-scripts/run_pos_e2e_live.sh
+lockf /tmp/shopman-pesado.lock scripts/run_pos_e2e_live.sh
 ```
+
+O `lockf` é a trava única da máquina (coordenação, 17/11/2026): build, seed, pilha e
+Playwright de todas as frentes esperam a vez nela, para não haver dois pesados juntos.
+Na CI, ou numa máquina só sua, o script roda sem ele.
 
 O script, em ordem:
 
@@ -66,8 +70,9 @@ Playwright.
 dispositivo novo em folha:
 
 1. "Entre para operar o caixa": a Gerente (`joyce`) entra com usuário e senha;
-2. vincula o dispositivo ao posto "PDV principal";
-3. trava ("Bloquear ou trocar de operador");
+2. no diálogo "Vincular este dispositivo a um posto de trabalho?", que sobe sozinho,
+   vincula o dispositivo ao posto "PDV principal";
+3. trava: no balcão pelo "Bloquear" do rail; no celular pelo "Mais" da barra de baixo;
 4. a Caixa (`fran`) toca no próprio nome, digita o PIN no teclado da tela e confirma;
 5. o quadro de comandas aparece, com a Fran operando.
 
@@ -152,6 +157,10 @@ jornada procurar algo pelo texto.
   vínculo, que recarregam a página inteira), não de clique.
 - **Digitar antes da hidratação perde o texto**: os gestos esperam `settled` antes de
   preencher.
+- **Migração com trava de produção** (`SET LOCAL statement_timeout = '30s'`, ex.:
+  `shop.0053`) estourou com carga 90, mesmo com o banco vazio (17/11). O script tenta o
+  `migrate` de novo até três vezes; cada migração é atômica e a nova tentativa continua de
+  onde parou.
 
 ## Sonda: texto cortado
 
