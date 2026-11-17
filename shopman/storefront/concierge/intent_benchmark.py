@@ -299,11 +299,10 @@ class JevContender:
         """
         started = time.perf_counter()
         body = self.build_request(sample, categories)
-        response = self.session.post(
-            self.url,
-            json=body,
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            timeout=self.timeout,
+        from shopman.shop import ai
+
+        response = ai.jev_post(
+            self.session, self.url, self.api_key, body, timeout=self.timeout, model=self.model
         )
         latency_ms = (time.perf_counter() - started) * 1000
         if response.status_code >= 400:

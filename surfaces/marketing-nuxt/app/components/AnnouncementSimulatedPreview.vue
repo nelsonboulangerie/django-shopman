@@ -10,6 +10,7 @@
 // ⚠️ Nada é buscado aqui. Os retratos chegam prontos de quem abre, para que abrir (ou não
 // abrir) esta sobreposição jamais entre no caminho de quem só quer confirmar.
 import type { SimulatedScene } from "~/presentation/simulatedPreview";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = withDefaults(
   defineProps<{
@@ -40,10 +41,7 @@ watch(open, (isOpen) => {
   if (!isOpen) return;
   if (!props.scenes.some((candidate) => candidate.key === activeKey.value))
     activeKey.value = props.scenes[0]?.key || "";
-  shownAt.value = new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date());
+  shownAt.value = formatClock(new Date());
 });
 
 /** Uma explicação por formato, dita pelo verbo do formato: postagem se publica,

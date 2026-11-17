@@ -1,3 +1,5 @@
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
+
 /** O post do Google Meu Negócio, como o operador escolhe e como o Google mostra.
  *
  *  ⚠️ O rótulo é o que o GOOGLE mostra em pt-BR no botão do post — nunca o nome da
@@ -188,14 +190,10 @@ export function googlePeriodLabel(start: unknown, end: unknown): string {
     day: "2-digit",
     month: "2-digit",
   });
-  const hour = new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
   const sameDay = first.toDateString() === last.toDateString();
   return sameDay
-    ? `${day.format(first)}, ${hour.format(first)} – ${hour.format(last)}`
-    : `${day.format(first)}, ${hour.format(first)} – ${day.format(last)}, ${hour.format(last)}`;
+    ? `${day.format(first)}, ${formatClock(first)} – ${formatClock(last)}`
+    : `${day.format(first)}, ${formatClock(first)} – ${day.format(last)}, ${formatClock(last)}`;
 }
 
 /** Hora LOCAL da loja, sem fuso ("2026-09-27T08:00"): é o que o Google recebe. */

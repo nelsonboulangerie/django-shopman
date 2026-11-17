@@ -1113,7 +1113,7 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
     const ana = wrapper.find('[data-week-grid] [data-preorder="NB-7"]');
     expect(ana.find("[data-preorder-window]").text()).toBe("09:00");
     expect(ana.find("[data-preorder-fulfillment]").text()).toBe("Retirada");
-    expect(ana.find("[data-preorder-channel]").text()).toBe("Loja Online");
+    expect(ana.find("[data-preorder-channel]").text()).toBe("Loja online");
     expect(ana.text()).toContain("2x Pão · NB-7");
     // "A pagar" já está no dinheiro: o selo não repete.
     expect(ana.find("[data-preorder-situation]").exists()).toBe(false);
