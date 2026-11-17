@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 from decimal import Decimal
 
@@ -185,4 +186,5 @@ class TestEntradasDeHoje:
         )
         [entrada] = build_purchase().receiptHistory
         assert entrada.receivedToday is True
-        assert len(entrada.receivedAtTime) == 5
+        # A hora sai no formato da casa ("9h", "9h05", "12h45"), não "HH:MM".
+        assert re.fullmatch(r"\d{1,2}h(\d{2})?", entrada.receivedAtTime)

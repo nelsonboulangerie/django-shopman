@@ -16,7 +16,7 @@
   "totals": {
     "settings": 310,
     "env": 24,
-    "settings_env": 171
+    "settings_env": 170
   },
   "files": {
     "config/asgi.py": {
@@ -42,7 +42,7 @@
       "env": 1
     },
     "config/settings.py": {
-      "settings_env": 170
+      "settings_env": 169
     },
     "config/settings_test.py": {
       "settings_env": 1
