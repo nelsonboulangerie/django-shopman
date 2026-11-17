@@ -382,12 +382,13 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
-  async function courierCancel(): Promise<boolean> {
-    const ok = await act("courier-cancel");
-    if (ok)
-      useSonner.success(
-        "Cancelamento da corrida pedido. Falta a central confirmar.",
-      );
+  /** `reasonId`: o motivo escolhido na confirmação (só depois do aceite). */
+  async function courierCancel(reasonId?: number): Promise<boolean> {
+    const ok = await act(
+      "courier-cancel",
+      reasonId ? { reason_id: reasonId } : undefined,
+    );
+    if (ok) useSonner.success("Pedido de cancelamento enviado à TaOn.");
     return ok;
   }
 
