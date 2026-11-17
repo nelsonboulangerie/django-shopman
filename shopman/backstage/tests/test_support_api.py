@@ -308,3 +308,25 @@ def test_refs_are_sequential(client, operator):
 
     assert first.ref == "HELP-0001"
     assert second.ref == "HELP-0002"
+
+
+def test_capabilities_for_operator_manager_owner(client, operator, manager, owner):
+    url = reverse("api-backstage-support-capabilities")
+
+    client.force_login(operator)
+    caps = client.get(url).json()
+    assert caps["create"] is True
+    assert caps["triage"] is False
+    assert caps["approve"] is False
+
+    client.force_login(manager)
+    caps = client.get(url).json()
+    assert caps["triage"] is True
+    assert caps["view_all"] is True
+    assert caps["approve"] is False
+
+    client.force_login(owner)
+    caps = client.get(url).json()
+    assert caps["approve"] is True
+    assert caps["link_dev"] is True
+    assert caps["audit"] is True
