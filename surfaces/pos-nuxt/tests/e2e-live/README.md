@@ -79,3 +79,27 @@ PDV_LIVE_URL=http://127.0.0.1:3312 PDV_LIVE_USER=<usuário> PDV_LIVE_PASSWORD=<s
 Variáveis: `PDV_LIVE_LINES` (itens por venda, padrão 10), `PDV_LIVE_TAP_MS`
 (intervalo entre toques, padrão 250), `PDV_LIVE_PAUSE_MS` (do último toque ao
 Pagamento, padrão 300), `PDV_LIVE_ROUNDS`.
+
+# Jornada J4 — a grade ouve o estoque
+
+`j4-grade-ouve-o-estoque.live.spec.ts` abre **dois dispositivos** do mesmo balcão.
+A Caixa vende a última unidade de um pão no dispositivo A, em dinheiro; o
+dispositivo B, sem ninguém tocar nele, precisa mostrar o tile "Esgotado" em até
+5 s (aviso `stock-update` → `/sse/stock` → releitura `pos/?only=availability`).
+Depois, o B ainda vende o que é feito na hora (o café): esgotar o pão não trava a
+grade.
+
+Antes de rodar, deixe UMA unidade do pão no estoque do canal do PDV (no banco
+descartável da sonda), por exemplo com o `manage.py shell` do Django da pilha:
+
+```python
+from decimal import Decimal
+from shopman.stockman.service import StockService  # ou o Admin do Estoque
+# zere o saldo do SKU e dê entrada de 1 unidade na posição de venda
+```
+
+```bash
+PDV_LIVE_URL=http://127.0.0.1:3312 PDV_LIVE_USER=<usuário> PDV_LIVE_PASSWORD=<senha> \
+  PDV_LIVE_LAST_UNIT="Baguete Gergelim" PDV_LIVE_MADE_TO_ORDER="Cappuccino" \
+  PDV_LIVE_SHOTS=/tmp/j4 npx playwright test -c playwright.live.config.ts j4-grade
+```
