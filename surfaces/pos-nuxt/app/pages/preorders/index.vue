@@ -56,6 +56,7 @@ import {
   SEARCH_MIN_CHARS,
   SEARCH_PLACEHOLDER,
   TO_RECEIVE_CLASS,
+  TO_RECEIVE_LINK_CLASS,
   canDropOn,
   canMoveCard,
   canSearch,
@@ -157,6 +158,7 @@ const days = computed<PreorderDay[]>(() => filterDays(list.value?.days ?? [], fi
 const shownCount = computed(() => flattenDays(days.value).length);
 const day = computed(() => days.value[0] ?? null);
 const summary = computed(() => (list.value ? listSummary(list.value.count, list.value.total_display) : ""));
+const periodHasToReceive = computed(() => (list.value?.to_receive_q ?? cardsToReceive(allCards.value)) > 0);
 const toReceive = computed(() => (list.value && list.value.count
   ? toReceiveLine(list.value.to_receive_q, list.value.to_receive_display, cardsToReceive(allCards.value))
   : ""));
@@ -667,14 +669,24 @@ function refreshAll() {
       >
         <p v-if="todayLine.length" class="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm" data-preorders-today>
           <span class="font-semibold text-primary" data-preorders-today-label>{{ todaySummaryLabel }}</span>
-          <span
-            v-for="fact in todayLine"
-            :key="fact.key"
-            :class="fact.key === 'to_receive' && fact.urgent
-              ? TO_RECEIVE_CLASS
-              : fact.key === 'check' ? 'tabular-nums text-warning' : 'tabular-nums text-muted'"
-            :data-preorders-today-fact="fact.key"
-          >{{ fact.text }}</span>
+          <template v-for="fact in todayLine" :key="fact.key">
+            <!-- O que falta receber é ATALHO (dono, prévia do #2597): o toque liga o
+                 filtro "A receber" e mostra só essas encomendas. -->
+            <NuxtButton
+              v-if="fact.key === 'to_receive' && fact.urgent"
+              color="neutral"
+              variant="link"
+              :class="TO_RECEIVE_LINK_CLASS"
+              :aria-label="`${fact.text}. Mostrar só essas.`"
+              data-preorders-today-fact="to_receive"
+              @click="applyTodayFilter({ pay: 'to_receive' })"
+            >{{ fact.text }}</NuxtButton>
+            <span
+              v-else
+              :class="fact.key === 'check' ? 'tabular-nums text-warning' : 'tabular-nums text-muted'"
+              :data-preorders-today-fact="fact.key"
+            >{{ fact.text }}</span>
+          </template>
         </p>
         <div
           v-if="list && list.count && showSummary"
@@ -682,7 +694,16 @@ function refreshAll() {
           data-preorders-summary
         >
           <span class="text-sm font-semibold text-muted">{{ periodSummaryLabel(view.mode, hasPeriodFilters) }}</span>
-          <p v-if="toReceive" :class="TO_RECEIVE_CLASS" data-preorders-to-receive>{{ toReceive }}</p>
+          <NuxtButton
+            v-if="toReceive && periodHasToReceive"
+            color="neutral"
+            variant="link"
+            :class="TO_RECEIVE_LINK_CLASS"
+            :aria-label="`${toReceive}. Mostrar só essas.`"
+            data-preorders-to-receive
+            @click="update({ pay: 'to_receive' })"
+          >{{ toReceive }}</NuxtButton>
+          <p v-else-if="toReceive" :class="TO_RECEIVE_CLASS" data-preorders-to-receive>{{ toReceive }}</p>
           <p class="text-xs tabular-nums text-muted" data-preorders-total>{{ summary }}</p>
         </div>
       </div>
@@ -965,9 +986,6 @@ function refreshAll() {
                     <span class="text-xs font-normal tabular-nums text-muted" data-week-day-total>
                       {{ dayCountLine(weekDay) }}
                     </span>
-                    <span v-if="dayToReceiveLine(weekDay)" :class="TO_RECEIVE_CLASS" data-week-day-to-receive>
-                      {{ dayToReceiveLine(weekDay) }}
-                    </span>
                   </span>
                   <!-- Na grade, recolher estreita a coluna (‹); na lista e no celular, sobe (˄). -->
                   <NuxtIcon
@@ -978,6 +996,17 @@ function refreshAll() {
                   />
                   <NuxtIcon v-if="weekDay.orders.length" name="i-lucide-chevron-up" class="mt-0.5 size-5 shrink-0 text-muted md:hidden" aria-hidden="true" />
                 </NuxtButton>
+                <!-- O que falta receber no dia é ATALHO, fora do botão de recolher (botão
+                     não mora dentro de botão): o toque mostra só essas encomendas do dia. -->
+                <NuxtButton
+                  v-if="dayToReceiveLine(weekDay)"
+                  color="neutral"
+                  variant="link"
+                  :class="['-mt-1 justify-start px-3', TO_RECEIVE_LINK_CLASS]"
+                  :aria-label="`${dayColumnTitle(weekDay)}: ${dayToReceiveLine(weekDay)}. Mostrar só essas.`"
+                  data-week-day-to-receive
+                  @click="update({ pay: 'to_receive', mode: 'day', date: weekDay.date })"
+                >{{ dayToReceiveLine(weekDay) }}</NuxtButton>
                 <!-- R7: o dia vazio diz "Nenhuma encomenda" uma vez só, no cabeçalho. -->
                 <div
                   v-if="weekDay.orders.length && dayOpen(weekDay, flippedDays)"

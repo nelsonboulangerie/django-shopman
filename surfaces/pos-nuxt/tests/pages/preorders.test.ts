@@ -758,9 +758,9 @@ describe("Encomendas — a semana no centro", () => {
     const wrapper = await mount(PreordersPage);
     const columns = wrapper.find("[data-week-grid]").findAll("[data-week-day]");
     expect(columns[0]!.find("[data-week-day-total]").text()).toBe("2 encomendas");
-    expect(columns[0]!.find("[data-week-day-to-receive]").text()).toBe("A receber em 1 encomenda");
+    expect(columns[0]!.find("[data-week-day-to-receive]").text()).toBe("1 encomenda com pagamento pendente");
     expect(wrapper.find("[data-preorders-total]").text()).toBe("2 encomendas");
-    expect(wrapper.find("[data-preorders-to-receive]").text()).toBe("A receber em 1 encomenda");
+    expect(wrapper.find("[data-preorders-to-receive]").text()).toBe("1 encomenda com pagamento pendente");
     // O valor de CADA encomenda segue no cartão: é com ele que o balcão recebe.
     expect(wrapper.find('[data-week-grid] [data-preorder="NB-7"] [data-preorder-money]').text()).toBe("R$ 36,00");
     expect(wrapper.text()).not.toContain("R$ 60,00");
@@ -770,7 +770,7 @@ describe("Encomendas — a semana no centro", () => {
     const wrapper = await mount(PreordersPage);
     const grid = wrapper.find("[data-week-grid]");
     expect(grid.find('[data-preorder="NB-7"] [data-preorder-money]').text()).toBe("R$ 36,00");
-    expect(grid.find('[data-preorder="NB-7"] [data-preorder-money-badge]').text()).toBe("A Receber");
+    expect(grid.find('[data-preorder="NB-7"] [data-preorder-money-badge]').text()).toBe("A receber");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-money]').text()).toBe("R$ 24,00");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-money-badge]').text()).toBe("Pago");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-printed]').exists()).toBe(true);
@@ -875,10 +875,10 @@ describe("Encomendas — um controle por estado, uma porta por destino", () => {
     const day = wrapper.find("[data-week-day-to-receive]");
     for (const node of [period, day]) {
       expect(node.text()).toBe("A receber R$ 36,00");
-      expect(node.classes().join(" ")).toBe(TO_RECEIVE_CLASS);
+      expect(node.classes()).toEqual(expect.arrayContaining(TO_RECEIVE_CLASS.split(" ")));
     }
     // Na linha da semana o estado do dinheiro é um selo semântico (dono, 03/11/2026).
-    expect(wrapper.find('[data-preorder="NB-7"] [data-preorder-money-badge]').text()).toBe("A Receber");
+    expect(wrapper.find('[data-preorder="NB-7"] [data-preorder-money-badge]').text()).toBe("A receber");
   });
 
   it("R4: o selo de situação é a peça do kit, na linha e no detalhe", async () => {
@@ -1087,7 +1087,27 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
     const today = wrapper.find("[data-preorders-today]");
     expect(today.findAll("[data-preorders-today-fact]").map((f) => f.text()))
       .toEqual(["2 para entregar", "A receber R$ 36,00", "1 sem Via Pedido"]);
-    expect(today.find('[data-preorders-today-fact="to_receive"]').classes().join(" ")).toBe(TO_RECEIVE_CLASS);
+    expect(today.find('[data-preorders-today-fact="to_receive"]').classes()).toEqual(expect.arrayContaining(TO_RECEIVE_CLASS.split(" ")));
+  });
+
+  it("o que falta receber é atalho: o toque liga o filtro 'A receber' (dono, prévia do #2597)", async () => {
+    const wrapper = await mount(PreordersPage);
+    expect(wrapper.find("[data-preorders-to-receive]").attributes("aria-label")).toBe("A receber R$ 36,00. Mostrar só essas.");
+    await wrapper.find("[data-preorders-to-receive]").trigger("click");
+    await flushPromises();
+    expect(route.query.pay).toBe("to_receive");
+
+    route.query = {};
+    await flushPromises();
+    await wrapper.find("[data-week-day-to-receive]").trigger("click");
+    await flushPromises();
+    expect(route.query).toMatchObject({ pay: "to_receive", date: "2026-09-26" });
+
+    route.query = {};
+    await flushPromises();
+    await wrapper.find('[data-preorders-today] [data-preorders-today-fact="to_receive"]').trigger("click");
+    await flushPromises();
+    expect(route.query.pay).toBe("to_receive");
   });
 
   it("'Hoje' é sempre de hoje: fora da semana de hoje, vem da leitura do selo, sem pergunta nova", async () => {

@@ -476,6 +476,9 @@ export function filterEmptyMessage(mode: PreordersMode): string {
 
 /** O peso do "A receber" onde quer que ele apareça. */
 export const TO_RECEIVE_CLASS = "text-sm font-semibold tabular-nums text-foreground";
+/** A mesma frase quando é atalho para o filtro "A receber": o mesmo peso, com o
+ *  sublinhado pontilhado dizendo que se toca. Sem cor nova (amarelo demais é ruído). */
+export const TO_RECEIVE_LINK_CLASS = `${TO_RECEIVE_CLASS} h-auto p-0 underline decoration-dotted underline-offset-4 hover:decoration-solid`;
 
 /** "A receber R$ 62,00". A frase única do que falta cobrar. */
 export function toReceiveLabel(display: string): string {
@@ -483,11 +486,12 @@ export function toReceiveLabel(display: string): string {
 }
 
 /**
- * Sem a soma (quem não audita o caixa), o "a receber" diz EM QUANTAS encomendas
- * há saldo: o balcão sabe que tem o que cobrar sem ler o gabarito da gaveta.
+ * Sem a soma (quem não audita o caixa), a linha diz QUANTAS encomendas têm
+ * pagamento pendente: o balcão sabe que tem o que cobrar sem ler o gabarito da
+ * gaveta. Frase do dono (prévia do #2597): "3 encomendas com pagamento pendente".
  */
 function toReceiveCountLabel(count: number): string {
-  return `A receber em ${preorderCountLabel(count)}`;
+  return `${preorderCountLabel(count)} com pagamento pendente`;
 }
 
 /** Quantas encomendas têm saldo a cobrar (a mesma régua do destaque do cartão). */
@@ -763,11 +767,10 @@ export function todayIndicators(facts: readonly TodayFact[]): TodayIndicator[] {
   return facts.map((fact) => {
     const count = /^(\d+)/.exec(fact.text)?.[1];
     const money = /R\$\s?[\d.,]+/.exec(fact.text)?.[0];
-    // Sem a soma (quem não audita o caixa), o "a receber" urgente mostra EM
-    // QUANTAS encomendas: "A receber em 2 encomendas" vira [moedas 2].
-    const pending = /(\d+)\s+encomenda/.exec(fact.text)?.[1];
+    // Sem a soma (quem não audita o caixa), o "a receber" urgente mostra
+    // QUANTAS encomendas: "2 encomendas com pagamento pendente" vira [moedas 2].
     const value = fact.key === "to_receive"
-      ? (fact.urgent ? (money ?? pending ?? "✓") : "✓")
+      ? (fact.urgent ? (money ?? count ?? "✓") : "✓")
       : fact.key === "leaving"
         ? (count ?? "✓")
         : (fact.urgent && count ? count : "✓");
@@ -1029,9 +1032,9 @@ export function moneyBadge(card: Pick<PreorderCard, "balance_q" | "balance_displ
   if (card.balance_q === null) return { amount: card.total_display, of: "", label: "Conferir pagamento", tone: "warning" };
   if (card.balance_q > 0) {
     const partial = card.balance_q < card.total_q;
-    return { amount: partial ? card.balance_display : card.total_display, of: partial ? `de ${card.total_display}` : "", label: "A Receber", tone: "warning" };
+    return { amount: partial ? card.balance_display : card.total_display, of: partial ? `de ${card.total_display}` : "", label: "A receber", tone: "warning" };
   }
-  if (card.payment_state === "on_account") return { amount: card.total_display, of: "", label: "Na Conta da Casa", tone: "info" };
+  if (card.payment_state === "on_account") return { amount: card.total_display, of: "", label: "Na conta da casa", tone: "info" };
   return { amount: card.total_display, of: "", label: "Pago", tone: "success" };
 }
 

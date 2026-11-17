@@ -279,15 +279,15 @@ describe("contagens — zero é frase, nunca '0'", () => {
     expect(listSummary(20, null)).toBe("20 encomendas");
     expect(listSummary(20, "R$ 4.241,00")).toBe("20 encomendas · R$ 4.241,00");
     expect(cardsToReceive([deve, pago, card({ ref: "D2" })])).toBe(2);
-    expect(toReceiveLine(null, null, 2)).toBe("A receber em 2 encomendas");
+    expect(toReceiveLine(null, null, 2)).toBe("2 encomendas com pagamento pendente");
     expect(toReceiveLine(null, null, 0)).toBe("Nada a receber");
     const caixaDay = day({ ...hidden, orders_count: 2, orders: [deve, pago] });
     expect(dayCountLine(caixaDay)).toBe("2 encomendas");
     expect(dayCountLine(day({ orders_count: 2, total_display: "R$ 72,00" }))).toBe("2 encomendas · R$ 72,00");
-    expect(dayToReceiveLine(caixaDay)).toBe("A receber em 1 encomenda");
+    expect(dayToReceiveLine(caixaDay)).toBe("1 encomenda com pagamento pendente");
     expect(dayToReceiveLine(day({ ...hidden, orders: [pago] }))).toBe("");
     const facts = todayFacts(caixaDay);
-    expect(facts.find((f) => f.key === "to_receive")).toMatchObject({ text: "A receber em 1 encomenda", urgent: true });
+    expect(facts.find((f) => f.key === "to_receive")).toMatchObject({ text: "1 encomenda com pagamento pendente", urgent: true });
     expect(todayIndicators(facts).find((i) => i.key === "to_receive")?.value).toBe("1");
     expect(facts.map((f) => f.text).join(" ")).not.toMatch(/R\$/);
   });
@@ -734,8 +734,8 @@ describe("selos da linha (dono, 03/11/2026)", () => {
   it("o dinheiro vira valor + selo semântico", async () => {
     const { moneyBadge } = await import("../app/presentation/preorders");
     const base = { total_q: 6000, total_display: "R$ 60,00", balance_display: "R$ 0,00", payment_state: "to_receive" as const };
-    expect(moneyBadge({ ...base, balance_q: 6000, balance_display: "R$ 60,00" })).toEqual({ amount: "R$ 60,00", of: "", label: "A Receber", tone: "warning" });
-    expect(moneyBadge({ ...base, balance_q: 2000, balance_display: "R$ 20,00" })).toEqual({ amount: "R$ 20,00", of: "de R$ 60,00", label: "A Receber", tone: "warning" });
+    expect(moneyBadge({ ...base, balance_q: 6000, balance_display: "R$ 60,00" })).toEqual({ amount: "R$ 60,00", of: "", label: "A receber", tone: "warning" });
+    expect(moneyBadge({ ...base, balance_q: 2000, balance_display: "R$ 20,00" })).toEqual({ amount: "R$ 20,00", of: "de R$ 60,00", label: "A receber", tone: "warning" });
     expect(moneyBadge({ ...base, balance_q: 0, payment_state: "paid" })).toMatchObject({ label: "Pago", tone: "success" });
     expect(moneyBadge({ ...base, balance_q: null })).toMatchObject({ label: "Conferir pagamento", tone: "warning" });
   });
@@ -785,5 +785,5 @@ it("o total geral deixa explícito que não acompanha os recortes", () => {
 });
 
 it("o selo do dinheiro também preserva conta da casa após a entrega", () => {
-  expect(moneyBadge(card({ balance_q: 0, payment_state: "on_account", situation: "delivered" }))).toMatchObject({ label: "Na Conta da Casa", tone: "info" });
+  expect(moneyBadge(card({ balance_q: 0, payment_state: "on_account", situation: "delivered" }))).toMatchObject({ label: "Na conta da casa", tone: "info" });
 });
