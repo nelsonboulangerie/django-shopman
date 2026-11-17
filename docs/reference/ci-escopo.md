@@ -83,3 +83,5 @@ só existe pelas baselines visuais e pelo WebKit, que ficam na fila.
   `skipped` **só** no `pull_request`; em qualquer outro evento continua reprovando.
 - `python scripts/check_canonical_docs.py` confere que os 29 obrigatórios seguem
   produzidos em `pull_request` + `merge_group`.
+
+<!-- PR de teste da medição: só docs -->
