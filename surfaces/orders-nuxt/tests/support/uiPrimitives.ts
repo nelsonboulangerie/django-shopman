@@ -26,6 +26,9 @@ import OperatorTimedButton from "../../../operator-kit/app/components/OperatorTi
 import UiTabs from "../../../operator-kit/app/components/Ui/Tabs/Tabs.vue";
 import UiTabsList from "../../../operator-kit/app/components/Ui/Tabs/List.vue";
 import UiTabsTrigger from "../../../operator-kit/app/components/Ui/Tabs/Trigger.vue";
+// A confirmação de "Cancelar corrida" entra de verdade: é ela que garante que um
+// toque nunca cancela, no Painel do pedido e no detalhe da corrida.
+import CourierCancelConfirm from "../../app/components/CourierCancelConfirm.vue";
 
 const popoverToggleKey = Symbol("popover-toggle");
 const formFieldLabelKey = Symbol("form-field-label");
@@ -959,6 +962,8 @@ config.global.components = {
   NuxtKbd: textPrimitive("NuxtKbd", "kbd"),
   NuxtLink,
   NuxtSkeleton: textPrimitive("NuxtSkeleton"),
+  NuxtSeparator: textPrimitive("NuxtSeparator", "hr"),
+  CourierCancelConfirm,
   NuxtTimeline: textPrimitive("NuxtTimeline"),
   OperatorOrderDetail,
   OperatorMoreMenu,
