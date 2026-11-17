@@ -11,10 +11,10 @@ describe("ao vivo do cabeçalho", () => {
   const base = { generatedAt: "2026-10-03T10:03:00-03:00", timeZone: "America/Sao_Paulo" };
 
   it("ao vivo é só o ponto e a hora da leitura, no fuso da loja", () => {
-    expect(readTime(base.generatedAt, base.timeZone)).toBe("10:03");
+    expect(readTime(base.generatedAt, base.timeZone)).toBe("10h03");
     expect(marketingLiveStatus({ ...base, realtime: "live", failed: false })).toMatchObject({
       tone: "live",
-      time: "10:03",
+      time: "10h03",
     });
   });
 
@@ -29,7 +29,7 @@ describe("ao vivo do cabeçalho", () => {
     const status = marketingLiveStatus({ ...base, realtime: "live", failed: true });
     expect(status.tone).toBe("off");
     expect(status.label).toBe("Sem conexão");
-    expect(status.detail).toContain("10:03");
+    expect(status.detail).toContain("10h03");
   });
 
   it("sem leitura, sem hora inventada", () => {

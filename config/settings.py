@@ -1229,6 +1229,9 @@ LANGUAGE_CODE = "pt-br"
 TIME_ZONE = "America/Sao_Paulo"
 USE_I18N = True
 USE_TZ = True
+# A hora que o Django formata sozinho (coluna de data do Admin) sai como a casa
+# escreve, "12h45": ver config/formats/pt_BR/formats.py.
+FORMAT_MODULE_PATH = ["config.formats"]
 
 # Catálogo de tradução do projeto. O django-unfold não embarca traduções, então
 # suas strings próprias ("Add new item", filtros, etc.) caem para o inglês — aqui

@@ -3,6 +3,7 @@
 // texto. Números em gráfico usam tokens de texto, nunca a cor da série.
 import { dayMonthIn } from "../../../operator-kit/app/presentation/dates";
 import { readingCsvMoney } from "../../../operator-kit/app/presentation/readingChart";
+import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
 
 const moneyFmt = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const intFmt = new Intl.NumberFormat("pt-BR");
@@ -725,10 +726,10 @@ export interface ScenarioReportLike {
   scenarios: readonly unknown[];
 }
 
-/** "Vendas · 19/08 14:05 · janela 23/07 a 19/08" */
+/** "Vendas · 19/08 14h05 · janela 23/07 a 19/08" */
 export function scenarioReportHeadline(report: ScenarioReportLike): string {
   const stamp = new Date(report.generated_at);
-  const when = `${String(stamp.getDate()).padStart(2, "0")}/${String(stamp.getMonth() + 1).padStart(2, "0")} ${String(stamp.getHours()).padStart(2, "0")}:${String(stamp.getMinutes()).padStart(2, "0")}`;
+  const when = formatDateClock(stamp, { day: "2-digit", month: "2-digit" }, { joiner: " " });
   return `${report.focus_label} · ${when} · janela ${shortDate(report.window_from)} a ${shortDate(report.window_to)}`;
 }
 

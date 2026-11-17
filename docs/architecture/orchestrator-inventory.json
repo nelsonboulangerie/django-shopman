@@ -6135,6 +6135,7 @@
           "responsibility": "configuração",
           "symbols": [
             "Courier",
+            "CourierLink",
             "CourierRate",
             "DeliveryService"
           ]
@@ -9084,6 +9085,48 @@
           "responsibility": "leitura",
           "symbols": [
             "get_block"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/courier_links.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "BAD_DEVICE",
+            "CANCELLED",
+            "EXPIRED",
+            "LINK_GRACE",
+            "LinkAccess",
+            "MIN_DEVICE_KEY",
+            "OK",
+            "OTHER_DEVICE",
+            "REASSIGNED",
+            "REISSUED",
+            "REVOKED",
+            "UNKNOWN"
+          ]
+        },
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_hash",
+            "_live",
+            "close",
+            "issue",
+            "resolve",
+            "revoke"
           ]
         }
       ]
@@ -13026,7 +13069,7 @@
         {
           "responsibility": "leitura",
           "symbols": [
-            "format_clock",
+            "clock_hhmm",
             "product_names"
           ]
         }
@@ -14248,6 +14291,29 @@
           "symbols": [
             "app_name",
             "urlpatterns"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/closed_day_orders.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "preorder.closed-day-orders"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "OPEN_STATUSES"
           ]
         }
       ]

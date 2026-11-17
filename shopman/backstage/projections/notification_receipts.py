@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Directive
+from shopman.utils.formatting import format_local
 
 from shopman.shop.services import notification as notification_svc
 
@@ -132,7 +133,7 @@ def _time_display(raw, fallback=None) -> str:
         return ""
     if timezone.is_naive(moment):
         moment = timezone.make_aware(moment)
-    return timezone.localtime(moment).strftime("%d/%m às %H:%M")
+    return format_local(moment, "%d/%m às {clock}")
 
 
 def _template_label(template: str) -> str:
