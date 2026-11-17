@@ -13,6 +13,10 @@ memória de processo e é controlável pelo teste/dev:
 from __future__ import annotations
 
 from .courier_machine import (  # noqa: F401 — mesma semântica de status
+    BEFORE_ACCEPT_STATUSES,
+    CANCEL_REASON_BEFORE_ACCEPT,
+    CANCEL_REASON_REFUSED_CODE,
+    CANCEL_REASONS_AFTER_ACCEPT,
     CANCELLABLE_STATUSES,
     TERMINAL_STATUSES,
     CourierDispatchResult,
@@ -130,12 +134,26 @@ def get_position(courier_ref: str) -> dict | None:
     return None
 
 
-def cancel(courier_ref: str, *, reason_id: int | None = None) -> bool:
+def cancel(courier_ref: str, *, reason_id: int) -> bool:
+    """Cancela como a central: o motivo tem de ser o da fase, senão erro 102.
+
+    Antes do aceite só o 10; depois do aceite, a lista de
+    ``CANCEL_REASONS_AFTER_ACCEPT``. Os motivos recebidos ficam em
+    ``rides()[ref]["cancel_reasons"]``, para o teste conferir o que foi enviado.
+    """
     ride = _rides.get(courier_ref)
     if ride is None:
         raise CourierError("Solicitação não encontrada.", transient=False)
     if ride.get("status") in TERMINAL_STATUSES:
         raise CourierError("Solicitação já finalizada/cancelada.", transient=False)
+    ride.setdefault("cancel_reasons", []).append(reason_id)
+    before_accept = (ride.get("status") or "D") in BEFORE_ACCEPT_STATUSES
+    accepted = reason_id == CANCEL_REASON_BEFORE_ACCEPT if before_accept else reason_id in CANCEL_REASONS_AFTER_ACCEPT
+    if not accepted:
+        raise CourierError(
+            f"Machine recusou (400): [{CANCEL_REASON_REFUSED_CODE}] Motivo de cancelamento inválido para o status.",
+            transient=False, codes=(CANCEL_REASON_REFUSED_CODE,),
+        )
     ride["status"] = "C"
     return True
 
