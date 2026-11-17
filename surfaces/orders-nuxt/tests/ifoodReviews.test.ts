@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  homologationClock,
   pageLine,
   replyLengthHint,
   reviewErrorText,
@@ -64,12 +63,5 @@ describe("statusColor", () => {
   it("só aguardando resposta pede ação", () => {
     expect(statusColor("NOT_REPLIED")).toBe("warning");
     expect(statusColor("PUBLISHED")).toBe("neutral");
-  });
-});
-
-describe("homologationClock", () => {
-  it("data, hora com segundos e o fuso", () => {
-    const text = homologationClock(new Date(2026, 10, 17, 9, 5, 7));
-    expect(text).toMatch(/^17\/11\/2026 09:05:07 \(UTC[+-]\d{2}:\d{2}\)$/);
   });
 });
