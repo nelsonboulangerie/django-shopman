@@ -136,12 +136,34 @@ _OPERATOR_COPY = {
 }
 
 
+#: Recusas que o iFood documenta, ditas com precisão em português. A mensagem
+#: original segue junto (``ifood_message``) para a homologação ver a recusa dele.
+_KNOWN_MESSAGES = (
+    ("pagesize must be", "O iFood mostra no máximo 50 avaliações por página."),
+    ("text must be between", "A resposta precisa ter de 10 a 300 caracteres."),
+    (
+        "must have status not_replied",
+        "Esta avaliação não aceita mais resposta: o iFood só aceita enquanto ela aguarda resposta.",
+    ),
+    ("review not found", "O iFood não encontrou uma avaliação com este ID."),
+    (
+        "inappropriate content",
+        "O iFood recusou o texto da resposta: revise palavras ofensivas, dados do cliente ou links.",
+    ),
+)
+
+
 def _raise_for(resp, *, label: str):
     if resp is None:
         raise ReviewAPIError("O iFood não respondeu. Tente de novo em instantes.", status=0)
     message = ifood_error_message(resp)
     status = resp.status_code
-    copy = _OPERATOR_COPY.get(status) or "O iFood está com problema para responder. Tente de novo em instantes."
+    lowered = message.lower()
+    copy = (
+        next((text for key, text in _KNOWN_MESSAGES if key in lowered), "")
+        or _OPERATOR_COPY.get(status)
+        or ("O iFood está com problema para responder. Tente de novo em instantes.")
+    )
     logger.warning("ifood_review.%s: HTTP %s %s", label, status, message)
     raise ReviewAPIError(copy, status=status, ifood_message=message)
 
@@ -198,6 +220,31 @@ def list_reviews(
     )
 
 
+#: Quantas páginas de 50 a busca por situação lê no máximo. A fila de quem
+#: responde é curta por natureza (``NOT_REPLIED`` dura 5 dias, ``REPLIED`` mais 5),
+#: e o teto impede que um período largo vire dezenas de chamadas.
+COLLECT_MAX_PAGES = 10
+
+
+def collect_reviews(
+    *, status: str, date_from: datetime | None = None, date_to: datetime | None = None
+) -> tuple[tuple[dict, ...], bool]:
+    """Todas as avaliações numa situação, no período. ``(avaliações, cortou)``.
+
+    O iFood não filtra a lista por situação: a busca lê as páginas do período
+    (50 por página, o máximo dele) e filtra aqui. ``cortou`` diz que o teto de
+    páginas chegou antes do fim, para a tela não afirmar que mostrou tudo.
+    """
+    found: list[dict] = []
+    for page in range(1, COLLECT_MAX_PAGES + 1):
+        result = list_reviews(page=page, page_size=IFOOD_MAX_PAGE_SIZE, date_from=date_from, date_to=date_to)
+        found.extend(r for r in result.reviews if r.get("status") == status)
+        last = result.page_count if result.page_count is not None else page
+        if page >= last or len(result.reviews) < IFOOD_MAX_PAGE_SIZE:
+            return tuple(found), False
+    return tuple(found), True
+
+
 def get_review(review_id: str) -> dict:
     review_id = str(review_id or "").strip()
     resp = ifood_http.request("GET", f"{_base()}/reviews/{review_id}", label="review_detail", idempotent=True)
@@ -235,11 +282,13 @@ __all__ = [
     "REPLYABLE_STATUS",
     "REPLY_MAX_CHARS",
     "REPLY_MIN_CHARS",
+    "COLLECT_MAX_PAGES",
     "ReviewAPIError",
     "ReviewPage",
     "ReviewUnavailable",
     "enabled",
     "get_review",
+    "collect_reviews",
     "ifood_error_message",
     "list_reviews",
     "reply",

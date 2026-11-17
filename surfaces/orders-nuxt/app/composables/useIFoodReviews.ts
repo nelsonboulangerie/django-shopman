@@ -22,6 +22,8 @@ export function useIFoodReviews() {
   const pageSize = ref(10);
   const dateFrom = ref("");
   const dateTo = ref("");
+  /** Situação da aba ("" = Todas, paginada pelo iFood). */
+  const status = ref("");
 
   const list = ref<IFoodReviewList | null>(null);
   const listError = ref<ReviewErrorText | null>(null);
@@ -46,6 +48,7 @@ export function useIFoodReviews() {
     };
     if (dateFrom.value) query.date_from = dateFrom.value;
     if (dateTo.value) query.date_to = dateTo.value;
+    if (status.value) query.status = status.value;
     try {
       list.value = await $fetch<IFoodReviewList>(BASE, { query });
     } catch (error) {
@@ -127,6 +130,7 @@ export function useIFoodReviews() {
     pageSize,
     dateFrom,
     dateTo,
+    status,
     list,
     listError,
     loading,

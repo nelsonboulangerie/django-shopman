@@ -1,6 +1,7 @@
 """Backstage API — avaliações dos clientes no iFood (módulo Review).
 
 GET  /api/v1/backstage/ifood/reviews/?page=&page_size=&date_from=&date_to=  → uma página
+     ...?status=NOT_REPLIED|REPLIED                                     → todas da situação (abas)
 GET  /api/v1/backstage/ifood/reviews/summary/                               → nota e contagens
 GET  /api/v1/backstage/ifood/reviews/<review_id>/                           → detalhe
 POST /api/v1/backstage/ifood/reviews/<review_id>/reply/  {"text": "..."}   → resposta
@@ -15,7 +16,7 @@ resposta e 5xx do iFood viram 502.
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import status as http
@@ -23,9 +24,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.backstage.projections.ifood_reviews import (
+    STATUS_TAB_DEFAULT_DAYS,
     build_review_list_projection,
     build_summary_projection,
     project_review,
+    with_order_refs,
 )
 from shopman.shop.services import business_calendar, ifood_review
 
@@ -91,11 +94,18 @@ class IFoodReviewListView(_ReviewView):
             )
         except ValueError:
             return _bad("date_from", "Data em formato inválido.")
+        status = (request.query_params.get("status") or "").strip().upper()
+        if status and status not in ifood_review.STATUSES:
+            return _bad("status", "Situação desconhecida.")
+        if status and date_from is None:
+            # A aba por situação olha os últimos dias quando não há período.
+            today = datetime.now(business_calendar.shop_timezone()).date()
+            date_from = _day_bound((today - timedelta(days=STATUS_TAB_DEFAULT_DAYS)).isoformat(), end=False)
         if date_from and date_to and date_from > date_to:
             return _bad("date_to", "A data final é anterior à inicial.")
         try:
             projection = build_review_list_projection(
-                page=page, page_size=page_size, date_from=date_from, date_to=date_to
+                page=page, page_size=page_size, date_from=date_from, date_to=date_to, status=status
             )
         except ifood_review.ReviewAPIError as exc:
             return _error(exc)
@@ -122,7 +132,7 @@ class IFoodReviewDetailView(_ReviewView):
             raw = ifood_review.get_review(review_id)
         except ifood_review.ReviewAPIError as exc:
             return _error(exc)
-        return Response(asdict(project_review(raw)))
+        return Response(asdict(with_order_refs([project_review(raw)])[0]))
 
 
 class IFoodReviewReplyView(_ReviewView):

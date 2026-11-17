@@ -37,6 +37,10 @@ export interface IFoodReview {
   questions: IFoodReviewQuestion[];
   survey_id: string;
   can_reply: boolean;
+  /** Prazo para responder ("21/11"), só enquanto aguarda resposta. */
+  reply_by_display: string;
+  /** O pedido no Gestor, quando ele chegou pela integração. */
+  order_ref: string;
 }
 
 export interface IFoodReviewList {
@@ -47,6 +51,9 @@ export interface IFoodReviewList {
   total: number | null;
   page_count: number | null;
   reviews: IFoodReview[];
+  /** Aba por situação: lista inteira, e `truncated` diz se o teto de leitura cortou. */
+  status: string;
+  truncated: boolean;
   reply_min_chars: number;
   reply_max_chars: number;
   ifood_max_page_size: number;

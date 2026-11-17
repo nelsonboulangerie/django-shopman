@@ -188,7 +188,7 @@ def test_id_inexistente_mostra_a_recusa_do_ifood(operator, fake):
 
     assert resp.status_code == 404
     assert resp.json() == {
-        "detail": "O iFood não encontrou esta avaliação.",
+        "detail": "O iFood não encontrou uma avaliação com este ID.",
         "ifood_status": 404,
         "ifood_message": "Review not found",
     }
@@ -221,7 +221,7 @@ def test_responder_publicada_mostra_o_409_do_ifood(operator, fake):
     )
 
     assert resp.status_code == 409
-    assert resp.json()["detail"] == "O iFood só aceita resposta em avaliação que está aguardando resposta."
+    assert resp.json()["detail"].startswith("Esta avaliação não aceita mais resposta")
     assert resp.json()["ifood_message"] == "Review must have status NOT_REPLIED to receive an answer"
 
 
@@ -291,3 +291,38 @@ def test_mensagem_de_erro_nas_tres_formas_documentadas():
 def test_nota_inteira_sai_sem_casa_decimal():
     assert project_review(_review("r", score=4.0)).score_display == "4"
     assert project_review(_review("r", score=4.5)).score_display == "4,5"
+
+
+# ── Abas por situação, pedido no Gestor e prazo ────────────────────────────────
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_aba_por_situacao_junta_as_paginas_e_filtra(operator, fake):
+    body = operator.get(reverse("api-backstage-ifood-reviews"), {"status": "not_replied"}).json()
+
+    assert {r["id"] for r in body["reviews"]} == {"r1", "r2"}
+    assert body["status"] == "NOT_REPLIED" and body["truncated"] is False
+    params = fake.calls[0][2]["params"]
+    assert params["pageSize"] == 50 and params["dateFrom"]  # período padrão das abas
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_situacao_desconhecida_nem_sai_daqui(operator, fake):
+    assert operator.get(reverse("api-backstage-ifood-reviews"), {"status": "x"}).status_code == 400
+    assert fake.calls == []
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_avaliacao_aponta_o_pedido_do_gestor_e_o_prazo(operator, fake):
+    from shopman.orderman.models import Order
+
+    Order.objects.create(ref="IF-77", channel_ref="ifood", external_ref="o-r1", total_q=1000)
+    reviews = {r["id"]: r for r in operator.get(reverse("api-backstage-ifood-reviews")).json()["reviews"]}
+
+    assert reviews["r1"]["order_ref"] == "IF-77"
+    assert reviews["r2"]["order_ref"] == ""
+    # Criada em 10/11 10:00 UTC: o iFood espera a resposta por 5 dias.
+    assert reviews["r1"]["reply_by_display"] == "15/11"
+    assert reviews["r5"]["reply_by_display"] == ""
+    detail = operator.get(reverse("api-backstage-ifood-review", args=["r1"])).json()
+    assert detail["order_ref"] == "IF-77"

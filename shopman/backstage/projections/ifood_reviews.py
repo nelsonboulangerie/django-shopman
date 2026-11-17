@@ -9,8 +9,8 @@ ao lado da palavra, porque são eles que a homologação confere.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 
 from django.utils.dateparse import parse_datetime
 from shopman.utils.formatting import format_local
@@ -30,6 +30,11 @@ STATUS_LABELS = {
 }
 VISIBILITY_LABELS = {"PUBLIC": "Pública", "PRIVATE": "Privada"}
 REPLY_FROM_LABELS = {"MERCHANT": "Loja", "CUSTOMER": "Cliente"}
+#: Prazo do iFood para responder uma avaliação que aguarda resposta.
+REPLY_WINDOW = timedelta(days=5)
+#: Período padrão das abas por situação: aguardando resposta dura 5 dias, e a
+#: respondida, mais 5 até o iFood publicar. Quinze dias cobrem as duas com folga.
+STATUS_TAB_DEFAULT_DAYS = 15
 
 
 @dataclass(frozen=True)
@@ -71,6 +76,10 @@ class ReviewProjection:
     questions: tuple[ReviewQuestion, ...] = ()
     survey_id: str = ""
     can_reply: bool = False
+    # Prazo para responder ("21/11"), só enquanto aguarda resposta.
+    reply_by_display: str = ""
+    # O pedido no Gestor (ref local), quando ele chegou pela integração.
+    order_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -82,6 +91,10 @@ class ReviewListProjection:
     total: int | None = None
     page_count: int | None = None
     reviews: tuple[ReviewProjection, ...] = ()
+    # Aba por situação: a lista vem inteira (sem página) e ``truncated`` diz se o
+    # teto de leitura cortou antes do fim.
+    status: str = ""
+    truncated: bool = False
     reply_min_chars: int = ifood_review.REPLY_MIN_CHARS
     reply_max_chars: int = ifood_review.REPLY_MAX_CHARS
     ifood_max_page_size: int = ifood_review.IFOOD_MAX_PAGE_SIZE
@@ -91,6 +104,24 @@ def _when(value) -> tuple[str, str]:
     raw = str(value or "")
     parsed: datetime | None = parse_datetime(raw) if raw else None
     return raw, (format_local(parsed, "%d/%m/%Y às {clock}") if parsed else "")
+
+
+def _reply_by(status: str, raw_created: str) -> str:
+    if status != ifood_review.REPLYABLE_STATUS or not raw_created:
+        return ""
+    created = parse_datetime(raw_created)
+    return format_local(created + REPLY_WINDOW, "%d/%m") if created else ""
+
+
+def with_order_refs(reviews: list[ReviewProjection]) -> tuple[ReviewProjection, ...]:
+    """Liga cada avaliação ao pedido local que veio do iFood (``external_ref``)."""
+    from shopman.orderman.models import Order
+
+    ids = {r.order_id for r in reviews if r.order_id}
+    if not ids:
+        return tuple(reviews)
+    refs = dict(Order.objects.filter(channel_ref="ifood", external_ref__in=ids).values_list("external_ref", "ref"))
+    return tuple(replace(r, order_ref=refs.get(r.order_id, "")) for r in reviews)
 
 
 def _score(value) -> float | None:
@@ -161,6 +192,7 @@ def project_review(raw: dict) -> ReviewProjection:
         questions=tuple(questions),
         survey_id=str(raw.get("surveyId") or ""),
         can_reply=status == ifood_review.REPLYABLE_STATUS,
+        reply_by_display=_reply_by(status, created_at),
     )
 
 
@@ -170,10 +202,27 @@ def build_review_list_projection(
     page_size: int = ifood_review.DEFAULT_PAGE_SIZE,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    status: str = "",
 ) -> ReviewListProjection:
-    """Uma página de avaliações. Recusa do iFood sobe como ``ReviewAPIError``."""
+    """Uma página de avaliações, ou todas de uma situação (abas).
+
+    Recusa do iFood sobe como ``ReviewAPIError``.
+    """
     if not ifood_review.enabled():
         return ReviewListProjection(enabled=False)
+    if status:
+        raws, truncated = ifood_review.collect_reviews(status=status, date_from=date_from, date_to=date_to)
+        reviews = with_order_refs([project_review(raw) for raw in raws])
+        return ReviewListProjection(
+            enabled=True,
+            page=1,
+            page_size=len(reviews),
+            total=len(reviews),
+            page_count=1,
+            reviews=reviews,
+            status=status,
+            truncated=truncated,
+        )
     result = ifood_review.list_reviews(page=page, page_size=page_size, date_from=date_from, date_to=date_to)
     return ReviewListProjection(
         enabled=True,
@@ -181,7 +230,7 @@ def build_review_list_projection(
         page_size=page_size,
         total=result.total,
         page_count=result.page_count,
-        reviews=tuple(project_review(raw) for raw in result.reviews),
+        reviews=with_order_refs([project_review(raw) for raw in result.reviews]),
     )
 
 

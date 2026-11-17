@@ -8,7 +8,24 @@ import type { IFoodReviewError, IFoodReviewSummary } from "~/types/ifoodReviews"
  */
 export const IFOOD_REVIEW_POLICY_URL = "https://portal.ifood.com.br/evaluation-policies";
 
-/** A recusa como o operador lê: a frase da casa e, embaixo, o que o iFood respondeu. */
+/** As abas, com a situação que cada uma pede ao servidor ("" = todas, paginada). */
+export type ReviewTab = "waiting" | "replied" | "all";
+export const REVIEW_TABS: { value: ReviewTab; label: string; status: string }[] = [
+  { value: "waiting", label: "Aguardando resposta", status: "NOT_REPLIED" },
+  { value: "replied", label: "Respondidas", status: "REPLIED" },
+  { value: "all", label: "Todas", status: "" },
+];
+
+/** A aba da query (`?tab=replied`); sem ou desconhecida, a fila de quem responde. */
+export function reviewTabFromQuery(value: unknown): ReviewTab {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return REVIEW_TABS.some((t) => t.value === raw) ? (raw as ReviewTab) : "waiting";
+}
+
+/**
+ * A recusa como o operador lê: UMA frase em português e, em letra pequena, a
+ * mensagem original do iFood (a homologação confere a recusa dele).
+ */
 export interface ReviewErrorText {
   title: string;
   ifood: string;
@@ -19,15 +36,8 @@ export function reviewErrorText(
   fallback: string,
 ): ReviewErrorText {
   const title = data?.detail?.trim() || fallback;
-  const status = data?.ifood_status ?? 0;
   const message = data?.ifood_message?.trim() ?? "";
-  if (!status) return { title, ifood: "" };
-  return {
-    title,
-    ifood: message
-      ? `Resposta do iFood (HTTP ${status}): ${message}`
-      : `Resposta do iFood: HTTP ${status}`,
-  };
+  return { title, ifood: message ? `Mensagem do iFood: ${message}` : "" };
 }
 
 /** Contador da resposta: orienta pelo limite do iFood, sem impedir o envio. */
@@ -40,18 +50,22 @@ export function replyLengthHint(text: string, min: number, max: number): {
   return { label: `${length} de ${min} a ${max} caracteres`, outside };
 }
 
-/** "Nota 4,3 · 142 avaliações (53 contam na nota)". Sem dado, string vazia. */
+function reviewsCount(n: number): string {
+  return `${n} ${n === 1 ? "avaliação" : "avaliações"}`;
+}
+
+/**
+ * "Nota 4,3 · 142 avaliações". Quando nem todas contam (o iFood só conta os
+ * últimos 3 meses), diz quantas e por quê. Sem dado, string vazia.
+ */
 export function summaryLine(summary: IFoodReviewSummary | null | undefined): string {
   if (!summary || summary.score_display === "") return "";
-  const parts = [`Nota ${summary.score_display}`];
-  if (summary.total_reviews !== null) {
-    const total = summary.total_reviews;
-    parts.push(`${total} ${total === 1 ? "avaliação" : "avaliações"}`);
-  }
-  const line = parts.join(" · ");
-  return summary.valid_reviews !== null
-    ? `${line} (${summary.valid_reviews} contam na nota)`
-    : line;
+  const total = summary.total_reviews;
+  const valid = summary.valid_reviews;
+  if (total === null) return `Nota ${summary.score_display}`;
+  const line = `Nota ${summary.score_display} · ${reviewsCount(total)}`;
+  if (valid === null || valid === total) return line;
+  return `${line} (a nota usa as ${valid} dos últimos 3 meses)`;
 }
 
 /** "Página 1 de 5 · 45 avaliações" (ou só a página, sem contagem do iFood). */
@@ -61,9 +75,7 @@ export function pageLine(
   total: number | null,
 ): string {
   const of = pageCount ? ` de ${pageCount}` : "";
-  const count =
-    total === null ? "" : ` · ${total} ${total === 1 ? "avaliação" : "avaliações"}`;
-  return `Página ${page}${of}${count}`;
+  return `Página ${page}${of}${total === null ? "" : ` · ${reviewsCount(total)}`}`;
 }
 
 /** Cor do selo da situação: só "Aguardando resposta" pede ação. */
@@ -72,4 +84,11 @@ export function statusColor(status: string): "warning" | "success" | "neutral" |
   if (status === "REPLIED") return "success";
   if (status === "DISCARDED" || status === "INVALID") return "error";
   return "neutral";
+}
+
+/** O vazio de cada aba, dito pelo que a aba promete. */
+export function emptyTitle(tab: ReviewTab): string {
+  if (tab === "waiting") return "Nenhuma avaliação aguardando resposta";
+  if (tab === "replied") return "Nenhuma avaliação respondida no período";
+  return "Nenhuma avaliação no período";
 }
