@@ -388,8 +388,8 @@ Nice no framework só informa e encaminha (não escreve). Alternativa: só o Ger
 
 Experimentos X2 a X6 da v2 11.5 (calibração do leitor com chamada paga, oferecer para separar,
 substituto na indisponibilidade, controle permanente) e os degraus D3 a D7 depois do N9 ficam
-para um plano que nasce quando o N8 e o N5 tiverem duas semanas de registro. Rastreado na issue
-`ficou-de-fora` aberta por este PR. O X3 (compromissos sobre o "vou verificar") não fica de
+para um plano que nasce quando o N8 e o N5 tiverem duas semanas de registro. Rastreado na
+issue #2631 (`ficou-de-fora`). O X3 (compromissos sobre o "vou verificar") não fica de
 fora: é o N7.
 
 ## 11. Arquivos lidos
