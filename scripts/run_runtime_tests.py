@@ -82,6 +82,10 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/storefront/tests/test_concierge_consent_race.py",
     "shopman/storefront/tests/test_concierge_payment_race.py",
     "shopman/storefront/tests/test_concierge_boundary_races.py",
+    # Posse da conversa reconferida no instante do efeito (#2625): a transferência
+    # para a equipe concorre com pedido, desconto, cancelamento e acréscimo, com
+    # barreira entre a conferência e a gravação (K11) e dentro da gravação (K12).
+    "shopman/storefront/tests/test_concierge_posse_no_efeito.py",
     "shopman/storefront/tests/test_concierge_whatsapp_window.py",
     "shopman/storefront/tests/test_concierge_runtime_turns.py",
     "shopman/storefront/tests/test_concierge_runtime_fulfillment.py",
