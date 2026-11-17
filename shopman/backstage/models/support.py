@@ -33,7 +33,7 @@ class SupportTicket(models.Model):
         (TYPE_QUESTION, "Dúvida"),
         (TYPE_COMPLAINT, "Queixa"),
         (TYPE_BUG, "Defeito"),
-        (TYPE_REQUEST, "Pedido"),
+        (TYPE_REQUEST, "Solicitação"),
         (TYPE_IDEA, "Ideia"),
         (TYPE_DECISION, "Decisão"),
     ]

@@ -39,6 +39,7 @@ from shopman.utils.contrib.admin_unfold.base import (
     BaseModelAdmin,
     BaseTabularInline,
 )
+from shopman.utils.formatting import format_local
 from unfold.contrib.filters.admin import ChoicesDropdownFilter, ChoicesRadioFilter, RangeDateFilter
 from unfold.decorators import action, display
 from unfold.sections import TableSection
@@ -530,7 +531,7 @@ class WorkOrderEventSection(TableSection):
     operator.short_description = _("Operador")
 
     def created_at(self, obj):
-        return timezone.localtime(obj.created_at).strftime("%d/%m %H:%M")
+        return format_local(obj.created_at, "%d/%m {clock}")
 
     created_at.short_description = _("Registrado em")
 
@@ -817,7 +818,7 @@ class WorkOrderAdmin(BaseModelAdmin):
             fact = [str(event.get_kind_display())]
             if payload.get("oven_ref"):
                 fact.append(str(payload["oven_ref"]))
-            fact.append(timezone.localtime(event.created_at).strftime("%d/%m %H:%M"))
+            fact.append(format_local(event.created_at, "%d/%m {clock}"))
             facts.append(" · ".join(fact))
         return "; ".join(facts)
 

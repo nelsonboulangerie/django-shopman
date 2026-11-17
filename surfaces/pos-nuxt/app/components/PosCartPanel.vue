@@ -48,6 +48,7 @@ import {
 
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import OperatorFitGroup from "../../../operator-kit/app/components/OperatorFitGroup.vue";
+import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
   items: POSCartItem[];
@@ -2177,11 +2178,9 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                   class="text-muted-foreground"
                 >
                   {{
-                    new Date(item.authorship.updated_at).toLocaleString("pt-BR", {
+                    formatDateClock(item.authorship.updated_at, {
                       day: "2-digit",
                       month: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
                     })
                   }}
                 </p></ClientOnly

@@ -40,7 +40,7 @@
         "backstage.importbatch", "backstage.operationchecklistrun", "backstage.operationepisode",
         "backstage.operatoralert", "backstage.printjob", "backstage.recipeversionrating",
         "backstage.signinevent", "customer_merge.mergeaudit", "orderman.directive", "orderman.order",
-        "orderman.session", "payman.paymentintent", "shop.audiencesnapshot", "shop.contactrelease", "shop.instanceapplyrecord",
+        "orderman.session", "payman.paymentintent", "shop.aiinvocation", "shop.aispendday", "shop.audiencesnapshot", "shop.contactrelease", "shop.instanceapplyrecord",
         "shop.marketingauditevent", "shop.marketingcommandreceipt", "shop.marketingplatformauditevent",
         "shop.marketingsecurityevent", "storefront.intentpilotreport", "storefront.stockalertdelivery",
         "storefront.stockalertoccurrence"
@@ -57,8 +57,8 @@
         "backstage.bialertrule", "backstage.consumptionrole", "backstage.operationchecklisttemplate",
         "backstage.operationepisodekind", "backstage.operationtasktemplate", "backstage.productconsumptiontag",
         "backstage.reciperatingcriterion", "backstage.seatingspot", "backstage.timertag", "guestman.pricetier",
-        "refs.ref", "shop.attributedefinition", "shop.channel", "shop.coupon", "shop.deliverydistanceband",
-        "shop.deliveryzone", "shop.faqentry", "shop.notificationtemplate", "shop.omotenashicopy",
+        "refs.ref", "shop.attributedefinition", "shop.channel", "shop.coupon", "shop.courier",
+        "shop.courierrate", "shop.deliverydistanceband", "shop.deliveryservice", "shop.deliveryzone", "shop.faqentry", "shop.notificationtemplate", "shop.omotenashicopy",
         "shop.promotion", "shop.qualitydefect", "shop.qualitygrade", "shop.ruleconfig",
         "storefront.intentcategory", "storefront.messageintentsample"
       ]

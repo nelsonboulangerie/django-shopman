@@ -22,6 +22,7 @@ from urllib.parse import urlencode
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from shopman.utils.formatting import format_clock, format_local
 from shopman.utils.monetary import format_money
 
 from shopman.shop.projections.copy import CopyCatalog, build_copy
@@ -187,6 +188,7 @@ class OrderTrackingCopyProjection:
     rating_contact_message: str
     rating_contact_done: str
     cancellation_contact_title: str
+    cancellation_contact_done_title: str
     cancellation_contact_message: str
     rating_google_title: str
     rating_google_share_title: str
@@ -728,7 +730,8 @@ def _eta_display(eta_at: str | None) -> str | None:
         return None
     try:
         local = timezone.localtime(dt)
-        return local.strftime("%H:%M" if local.date() == timezone.localdate() else "%H:%M de %d/%m")
+        clock = format_clock(local)
+        return clock if local.date() == timezone.localdate() else f"{clock} de {local:%d/%m}"
     except Exception:
         logger.debug("order_tracking._eta_display degraded", exc_info=True)
         return None
@@ -787,7 +790,7 @@ def _fmt_timestamp(iso: str | None) -> str:
     if dt is None:
         return str(iso)
     try:
-        return timezone.localtime(dt).strftime("%d/%m às %H:%M")
+        return format_local(dt, "%d/%m às {clock}")
     except Exception:
         logger.debug("order_tracking._fmt_timestamp degraded", exc_info=True)
         return str(iso)
@@ -1568,7 +1571,7 @@ def _timeline_label(event_type: str, label_key: str) -> str:
         return "Entregue"
     label = EVENT_LABELS.get(event_type)
     if label is None:
-        label = event_type.replace(".", " ").replace("_", " ").title()
+        label = event_type.replace(".", " ").replace("_", " ").capitalize()
     return label
 
 
@@ -1667,12 +1670,7 @@ def _format_opening_hours(opening_hours: dict) -> str:
         return ""
 
     def _fmt_time(value: str) -> str:
-        parts = value.split(":")
-        hour = int(parts[0])
-        minute = int(parts[1]) if len(parts) > 1 else 0
-        if minute:
-            return f"{hour}h{minute:02d}"
-        return f"{hour}h"
+        return format_clock(value if ":" in value else f"{value}:00")
 
     day_hours: list[tuple[str, str]] = []
     for day in DAY_ORDER:
@@ -1785,6 +1783,10 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         cancellation_contact_title=copy.title(
             "TRACKING_CANCELLATION_CONTACT_TITLE",
             "Quer cancelar?",
+        ),
+        cancellation_contact_done_title=copy.title(
+            "TRACKING_CANCELLATION_CONTACT_DONE_TITLE",
+            "Contato solicitado",
         ),
         cancellation_contact_message=copy.message(
             "TRACKING_CANCELLATION_CONTACT_MESSAGE",

@@ -5,6 +5,7 @@
 // Copy: inequívoco primeiro (docs/reference/omotenashi-copy.md).
 import type { ChannelSwitchProjection } from "~/types/feeds";
 import type { ChannelSwitchRequest } from "~/composables/useFeedBoard";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 export const CUSTOM_PERIOD = "custom";
 
@@ -170,10 +171,7 @@ export function rangeLine(draft: ChannelSwitchDraft): string {
     const weekday = ["dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."][
       parsed.getDay()
     ];
-    const [hour, minute] = (time || "00:00").split(":");
-    const clock =
-      minute === "00" ? `${Number(hour)}h` : `${Number(hour)}h${minute}`;
-    return `${weekday} ${day}/${month} às ${clock}`;
+    return `${weekday} ${day}/${month} às ${formatClock(time || "00:00")}`;
   };
   const start = `de ${when(draft.startDate, draft.startTime)}`;
   return draft.endDate

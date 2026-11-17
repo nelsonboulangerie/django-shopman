@@ -78,7 +78,7 @@ class TestAnnotate:
 
         por_ref = {w["ref"]: w for w in ctx["windows"]}
         assert por_ref["09:00-09:30"]["enabled"] is False
-        assert por_ref["11:30-12:00"]["enabled"] is False, "a janela COMEÇA às 11:30"
+        assert por_ref["11:30-12:00"]["enabled"] is False, "a janela COMEÇA às 11h30"
         assert por_ref["12:00-12:30"]["enabled"] is True
         assert ctx["earliest_ref"] == "12:00-12:30"
         assert ctx["ready_at"] == "12:00"
@@ -89,7 +89,7 @@ class TestAnnotate:
         ctx = fulfillment_window.annotate(HOJE, ["BF"], now=AGORA)
 
         nove = next(w for w in ctx["windows"] if w["ref"] == "09:00-09:30")
-        assert nove["reason"] == "Baguette de Tradition sai às 12:00."
+        assert nove["reason"] == "Baguette de Tradition sai às 12h."
 
     def test_o_motivo_fala_do_produto_nao_do_sku(self, loja, baguete):
         ctx = fulfillment_window.annotate(HOJE, ["BF"], now=AGORA)
@@ -119,8 +119,8 @@ class TestValidate:
     def test_recusa_a_janela_antes_do_preparo(self, loja, baguete):
         erro = fulfillment_window.validate(HOJE, "09:00-09:30", ["BF"], now=AGORA)
         assert erro is not None
-        assert "Baguette de Tradition sai às 12:00." in erro
-        assert "12:00 às 12:30" in erro, "o erro diz o que fazer, não só o que deu errado"
+        assert "Baguette de Tradition sai às 12h." in erro
+        assert "12h às 12h30" in erro, "o erro diz o que fazer, não só o que deu errado"
 
     def test_o_expediente_nao_fecha_a_porta(self, loja):
         """23:00 num dia que fecha às 18h passa — e isso é deliberado.
@@ -137,13 +137,13 @@ class TestValidate:
         """O eixo que importa não depende da grade existir."""
         erro = fulfillment_window.validate(DOMINGO, "09:00-09:30", ["BF"], now=AGORA)
         assert erro is not None
-        assert "Baguette de Tradition sai às 12:00." in erro
+        assert "Baguette de Tradition sai às 12h." in erro
         assert "outra data" in erro, "sem grade nesse dia, a saída é trocar o dia"
 
     def test_horario_ILEGIVEL_e_recusado_quando_ha_prontidao(self, loja, baguete):
         """⚠️ Este teste já afirmou o contrário, e afirmava um BURACO.
 
-        "09:00-09:30" era recusado, mas "09:00 às 09:30" — o RÓTULO que a
+        "09:00-09:30" era recusado, mas "9h às 9h30" — o RÓTULO que a
         própria tela mostra — passava e era gravado. A guarda era derrotável
         pela string que o sistema exibe: bastava uma fila offline, um cliente
         novo ou um copiar-colar.
@@ -151,14 +151,14 @@ class TestValidate:
         # Nenhum passa. Dois caminhos de recusa, e os dois servem: o que ainda
         # se lê como hora ("09:00") cai na prontidão; o que não se lê cai no
         # "não reconhecido".
-        for ilegivel in ("manhã", "09:00 às 09:30", "9"):
+        for ilegivel in ("manhã", "9h às 9h30", "9"):
             erro = fulfillment_window.validate(HOJE, ilegivel, ["BF"], now=AGORA)
             assert erro is not None, f"{ilegivel!r} passou"
             assert "não reconhecido" in erro, f"{ilegivel!r}: {erro}"
 
         erro_hora = fulfillment_window.validate(HOJE, "09:00", ["BF"], now=AGORA)
         assert erro_hora is not None
-        assert "Baguette de Tradition sai às 12:00." in erro_hora
+        assert "Baguette de Tradition sai às 12h." in erro_hora
 
     def test_mas_sem_prontidao_no_carrinho_o_ilegivel_passa(self, loja, croissant):
         """Sem promessa a proteger, recusar seria negar venda por nada."""
@@ -268,7 +268,7 @@ class TestDuasGrades:
 
         por_ref = {w["ref"]: w for w in ctx["windows"]}
         assert por_ref["slot-09"]["enabled"] is False
-        assert por_ref["slot-09"]["reason"] == "Baguette de Tradition sai às 12:00."
+        assert por_ref["slot-09"]["reason"] == "Baguette de Tradition sai às 12h."
         assert por_ref["slot-12"]["enabled"] is True
         assert ctx["earliest_ref"] == "slot-12"
 
@@ -298,7 +298,7 @@ class TestDuasGrades:
         erro = fulfillment_window.validate(QUINTA, "slot-09", ["BF"], now=AGORA)
 
         assert erro is not None
-        assert "Baguette de Tradition sai às 12:00." in erro
+        assert "Baguette de Tradition sai às 12h." in erro
         assert "A partir das 12h" in erro
         assert fulfillment_window.validate(QUINTA, "slot-12", ["BF"], now=AGORA) is None
 
@@ -374,14 +374,14 @@ class TestSlotCanonicoEmPedidoQueVirouHoje:
 
         assert erro is not None
         assert "não reconhecido" not in erro
-        assert "Baguette de Tradition sai às 12:00" in erro
+        assert "Baguette de Tradition sai às 12h" in erro
 
     def test_hoje_o_canonico_compativel_com_o_preparo_passa(self, loja, baguete):
         assert fulfillment_window.validate(HOJE, "slot-12", [baguete.sku], now=AGORA) is None
         assert fulfillment_window.validate(HOJE, "slot-15", [baguete.sku], now=AGORA) is None
 
     def test_o_ilegivel_continua_recusado(self, loja, baguete):
-        erro = fulfillment_window.validate(HOJE, "09:00 às 09:30", [baguete.sku], now=AGORA)
+        erro = fulfillment_window.validate(HOJE, "9h às 9h30", [baguete.sku], now=AGORA)
 
         assert erro is not None
         assert "não reconhecido" in erro
