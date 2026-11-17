@@ -18,6 +18,7 @@ import type {
   ProductionSuggestionProjection,
   SuggestionMaterialShortageProjection,
 } from "~/types/production";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 export type SuggestionSignalKind = "material" | "soldout" | "leftover";
 
@@ -212,9 +213,9 @@ export function suggestionHistory(
   const recent = s.recent_days ?? [];
   const recentSoldout = recent.filter((day) => day.outcome === "soldout");
   if (recentSoldout.length > 0) {
-    // "acabou às 10:40 em 3 dos últimos 4 sábados" (v4 pino 3), com um ponto por dia.
+    // "acabou às 10h40 em 3 dos últimos 4 sábados" (v4 pino 3), com um ponto por dia.
     const time = medianTime(recentSoldout.map((day) => day.soldout_at).filter(Boolean));
-    const when = time ? ` às ${time}` : " antes de fechar";
+    const when = time ? ` às ${formatClock(time)}` : " antes de fechar";
     lines.push({
       kind: "soldout",
       text:
@@ -277,7 +278,7 @@ export function carriedNoteText(note: PlanCarryNoteProjection): string {
   if (note.verdict === "short") {
     const lost = asNumber(note.lost_estimate) > 0 ? `, ~${display(note.lost_estimate)} vendas perdidas` : "";
     return note.soldout_at
-      ? `${when} acabou às ${note.soldout_at}${lost}`
+      ? `${when} acabou às ${formatClock(note.soldout_at)}${lost}`
       : `${when} faltou${lost}`;
   }
   return `${when} sobraram ${display(note.leftover)} de ${display(note.made)} feitas`;

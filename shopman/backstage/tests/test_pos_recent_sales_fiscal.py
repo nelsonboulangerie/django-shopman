@@ -21,6 +21,7 @@ from django.test import TestCase
 from django.utils import timezone
 from shopman.cashman.models import Shift
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock, format_local
 
 from shopman.shop.models import Channel, Shop
 from shopman.shop.tests.danfe_fixtures import xml_for_key
@@ -234,9 +235,9 @@ class POSRecentSalesFiscalTests(TestCase):
         by_ref = {sale["order_ref"]: sale for sale in sales}
         local = timezone.localtime(agora)
         retirada = by_ref["PDV-ENC-RET"]
-        self.assertEqual(retirada["created_at_display"], timezone.localtime(tres_dias).strftime("%d/%m %H:%M"))
-        self.assertEqual(retirada["handoff_display"], f"Retirada hoje às {local.strftime('%H:%M')}")
-        entrega = (local - timedelta(minutes=5)).strftime("%H:%M")
+        self.assertEqual(retirada["created_at_display"], format_local(tres_dias, "%d/%m {clock}"))
+        self.assertEqual(retirada["handoff_display"], f"Retirada hoje às {format_clock(local)}")
+        entrega = format_clock(local - timedelta(minutes=5))
         self.assertEqual(by_ref["PDV-ENC-ENTREGA"]["handoff_display"], f"Saiu para entrega hoje às {entrega}")
         self.assertEqual(by_ref["PDV-HOJE"]["handoff_display"], "")
         # A emissão avulsa vale no dia da SAÍDA, não no do pagamento.
@@ -267,7 +268,7 @@ class POSRecentSalesFiscalTests(TestCase):
 
         [venda] = self._recent_sales_at(agora)
 
-        self.assertEqual(venda["handoff_display"], "Retirada hoje às 20:00")
+        self.assertEqual(venda["handoff_display"], "Retirada hoje às 20h")
         self.assertTrue(venda["can_emit_fiscal"])
 
     def test_entrega_das_23h57_vista_as_00h02_e_de_ontem(self) -> None:
@@ -288,7 +289,7 @@ class POSRecentSalesFiscalTests(TestCase):
 
         [venda] = self._recent_sales_at(agora)
 
-        self.assertEqual(venda["handoff_display"], "Saiu para entrega 30/09 às 23:57")
+        self.assertEqual(venda["handoff_display"], "Saiu para entrega 30/09 às 23h57")
         self.assertFalse(venda["can_emit_fiscal"])
 
     def test_danfe_escpos_returns_printable_bytes(self) -> None:

@@ -43,6 +43,7 @@ from shopman.craftsman.services.recipe_book import (
     reference_for,
     suggest_anchor_kind,
 )
+from shopman.utils.formatting import format_local
 
 from shopman.backstage.services import recipe_book as recipe_book_service
 from shopman.backstage.services import (
@@ -131,7 +132,7 @@ class RecipeEntryCardProjection:
     #: publicada), ``replaced`` (publicada, mas outra receita usa o mesmo SKU),
     #: ``off`` (publicada e sem ficha ativa) ou vazio (sem SKU e sem ficha).
     ficha_status: str
-    #: O selo da lista, curto (o selo sai em iniciais maiúsculas); vazio em ``in_use``.
+    #: O selo da lista, curto (o selo sai em sentença); vazio em ``in_use``.
     ficha_status_label: str
     #: A frase ao lado do selo, quando há quem dizer: ``<ficha> usa este SKU`` em
     #: ``replaced``. Frase não vai dentro do selo.
@@ -778,7 +779,7 @@ def _delta_tone(left: Decimal | None, right: Decimal | None, delta: Decimal | No
 def _datetime_display(value) -> str:
     if not value:
         return ""
-    return timezone.localtime(value).strftime("%d/%m/%Y %H:%M")
+    return format_local(value, "%d/%m/%Y {clock}")
 
 
 def _date_display(value) -> str:

@@ -17,6 +17,8 @@ export type IFoodWidgetState = "off" | "loading" | "ready" | "failed";
 export interface IFoodWidgetInit {
   widgetId: string;
   merchantIds: string[];
+  /** Sempre falso: quem decide mostrar o botão é `ifoodWidgetVisible`. */
+  autoShow: false;
 }
 
 /** Os parâmetros do `init`, ou null. O iFood perde a sessão do dispositivo quando o
@@ -30,7 +32,21 @@ export function ifoodWidgetInit(
     .filter(Boolean)
     .slice(0, 10);
   if (!widgetId || !merchantIds.length) return null;
-  return { widgetId, merchantIds };
+  return { widgetId, merchantIds, autoShow: false };
+}
+
+/** O botão do iFood aparece? (decisão do dono, 14/11, DEV-2026-023)
+ *
+ * Só enquanto houver pedido iFood aberto e ainda não entregue: sem pedido em
+ * curso ele não polui o Gestor; com pedido em curso, a mensagem nova do cliente
+ * aparece em qualquer tela. No detalhe de um pedido iFood ele aparece sempre,
+ * porque o cliente também escreve depois da entrega ("faltou um item"). Esconder
+ * o botão esconde também os avisos de mensagem nova do iFood. */
+export function ifoodWidgetVisible(
+  hasOrderInProgress: boolean,
+  viewingIFoodOrder: boolean,
+): boolean {
+  return hasOrderInProgress || viewingIFoodOrder;
 }
 
 export interface IFoodChatNotice {

@@ -270,7 +270,7 @@ describe("AnnouncementResultPanel", () => {
     expect(wrapper.text()).toContain("Fuso e horário permitido");
     expect(wrapper.text()).toContain("Horário de São Paulo");
     expect(wrapper.text()).toContain(
-      "WhatsApp respeita o silêncio 20:00–08:00",
+      "WhatsApp respeita o silêncio das 20h às 8h",
     );
     expect(wrapper.text()).toContain("Validade");
     expect(wrapper.text()).toContain("Este anúncio não expira antes do envio");
@@ -305,7 +305,7 @@ describe("AnnouncementResultPanel", () => {
     });
 
     expect(wrapper.text()).toContain(
-      "Ensaio local: silêncio 20:00–08:00 suspenso",
+      "Ensaio local: silêncio das 20h às 8h suspenso",
     );
     expect(wrapper.text()).toContain("sem efeito externo");
   });

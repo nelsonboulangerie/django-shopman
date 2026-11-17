@@ -1,4 +1,4 @@
-"""Conexões de IA: o cadastro de provedor, endereço, chave e modelo.
+"""Conexões de IA: o cadastro de provedor, endereço, chave e modelo; e o que a IA gastou.
 
 A chave entra por um campo de senha e nunca volta à tela: o formulário só a
 substitui (vazio mantém a atual) e a lista mostra os quatro últimos caracteres.
@@ -9,7 +9,7 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 from unfold.widgets import UnfoldAdminPasswordWidget, UnfoldBooleanSwitchWidget
 
-from shopman.shop.models import AIConnection
+from shopman.shop.models import AIConnection, AiInvocation, AiSpendDay
 
 
 class AIConnectionForm(forms.ModelForm):
@@ -71,3 +71,39 @@ class AIConnectionAdmin(ModelAdmin):
     @admin.display(description="chave")
     def key_display(self, obj):
         return f"…{obj.api_key_last4}" if obj and obj.api_key_last4 else "sem chave"
+
+
+class _ReadOnlyAdmin(ModelAdmin):
+    """Registro do medidor: ninguém edita, ninguém apaga pela tela."""
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AiSpendDay)
+class AiSpendDayAdmin(_ReadOnlyAdmin):
+    list_display = ("date", "scope", "spent_display", "calls", "errors", "denied")
+    list_filter = ("scope",)
+    date_hierarchy = "date"
+
+    @admin.display(description="gasto (US$)", ordering="spent_usd_micros")
+    def spent_display(self, obj):
+        return f"{obj.spent_usd:.4f}"
+
+
+@admin.register(AiInvocation)
+class AiInvocationAdmin(_ReadOnlyAdmin):
+    list_display = ("created_at", "purpose", "model", "outcome", "cost_display", "tokens_in", "tokens_out", "latency_ms")
+    list_filter = ("outcome", "purpose", "model")
+    search_fields = ("purpose", "model", "connection_ref", "error_type")
+    date_hierarchy = "created_at"
+
+    @admin.display(description="custo (US$)", ordering="cost_usd_micros")
+    def cost_display(self, obj):
+        return f"{obj.cost_usd:.6f}"
