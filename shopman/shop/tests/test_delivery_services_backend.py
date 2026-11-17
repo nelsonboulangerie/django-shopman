@@ -42,8 +42,10 @@ def test_ride_opened_before_the_m1_has_no_service_and_still_works():
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK)
-def test_ride_of_the_house_has_no_central_until_m2():
-    assert delivery_services.courier_backend({"service": "casa"}) is None
+def test_ride_of_the_house_resolves_the_house_module():
+    from shopman.shop.adapters import courier_own_fleet
+
+    assert delivery_services.courier_backend({"service": "casa"}) is courier_own_fleet
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK)
@@ -51,7 +53,7 @@ def test_capabilities_come_from_the_service():
     caps = delivery_services.capabilities({"service": "taon"})
     assert isinstance(caps, DeliveryCapabilities)
     assert caps.quote and caps.customer_tracking and not caps.assign
-    assert delivery_services.capabilities({"service": "casa"}) is None
+    assert delivery_services.capabilities({"service": "casa"}).assign
 
 
 @pytest.mark.parametrize(
@@ -85,10 +87,10 @@ def test_new_ride_takes_the_default_service():
     assert delivery_services.new_ride_service_ref() == ""
 
 
-def test_the_house_cannot_be_the_default_before_its_page_exists():
+def test_the_house_cannot_be_the_default_because_auto_dispatch_needs_a_central():
     casa = DeliveryService.objects.get(ref="casa")
     DeliveryService.objects.filter(ref="taon").update(is_default=False)
     casa.is_default = True
     with pytest.raises(ValidationError) as err:
         casa.full_clean()
-    assert "chega com a página do entregador" in str(err.value)
+    assert "despacho automático" in str(err.value)
