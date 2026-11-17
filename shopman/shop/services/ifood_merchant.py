@@ -781,7 +781,9 @@ def summarize_status(operations: list[dict]) -> tuple[bool, str, list[dict]]:
         for validation in op.get("validations") or []:
             if not isinstance(validation, dict):
                 continue
-            code = str(validation.get("code") or "")
+            # O ``id`` é o nome estável da validação (``is-connected``); o ``code`` real
+            # muda com o estado (``is.not.connected.config``). Medido em 17/11/2026.
+            code = str(validation.get("id") or validation.get("code") or "")
             vstate = str(validation.get("state") or "").upper()
             if vstate == "OK" or not code or code in seen:
                 continue

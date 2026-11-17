@@ -435,7 +435,8 @@ _CLOSED_NO_POLLING = [{
     "available": False,
     "state": "ERROR",
     "validations": [
-        {"code": "is-connected", "state": "ERROR", "message": {"title": "Desconectado"}},
+        # Formato real (17/11/2026): ``id`` estável, ``code`` muda com o estado.
+        {"id": "is-connected", "code": "is.not.connected.config", "state": "ERROR", "message": {"title": "Desconectado"}},
         {"code": "opening-hours", "state": "OK", "message": {"title": "Dentro do horário"}},
     ],
 }]

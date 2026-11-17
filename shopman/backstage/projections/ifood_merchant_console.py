@@ -242,7 +242,7 @@ def _operation(op: dict) -> OperationStatus:
         vtitle, vdescription = _message(validation.get("message"))
         checks.append(
             StatusCheck(
-                code=str(validation.get("code") or ""),
+                code=str(validation.get("id") or validation.get("code") or ""),
                 state=str(validation.get("state") or "").upper(),
                 title=vtitle,
                 description=vdescription,
