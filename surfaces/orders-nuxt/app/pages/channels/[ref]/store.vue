@@ -181,9 +181,9 @@ const phoneHeaderActions = computed(() => [
             <p v-if="detail?.detail_error" class="mt-2 text-sm text-error" data-section-error>
               {{ detail.detail_error }}
             </p>
-            <dl v-else-if="detail" class="mt-2 grid grid-cols-[minmax(0,10rem)_1fr] gap-x-3 gap-y-1 text-sm">
+            <dl v-else-if="detail" class="mt-2 grid grid-cols-[minmax(0,13rem)_1fr] gap-x-3 gap-y-1 text-sm">
               <template v-for="row in detail.detail" :key="row.label">
-                <dt class="truncate text-muted-foreground" :title="row.label">{{ row.label }}</dt>
+                <dt class="break-words text-muted-foreground">{{ row.label }}</dt>
                 <dd class="min-w-0 break-words">{{ row.value }}</dd>
               </template>
             </dl>
