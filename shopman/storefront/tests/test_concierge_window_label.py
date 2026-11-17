@@ -26,7 +26,8 @@ def test_a_meia_hora_sai_como_par_de_horas_em_qualquer_recebimento(fulfillment_t
 
 
 def test_ref_desconhecido_nao_sai_cru_e_vazio_sai_vazio():
-    assert _slot_label("pickup", "manhã") == "horário não reconhecido"
+    """O cliente não lê frase de erro do sistema: lê "horário a confirmar"."""
+    assert _slot_label("pickup", "manhã") == "horário a confirmar"
     assert _slot_label("pickup", "") == ""
 
 

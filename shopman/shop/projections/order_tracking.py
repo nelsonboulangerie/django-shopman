@@ -349,7 +349,7 @@ def _slot_label(slot_ref: str | None) -> str | None:
         return None
     from shopman.shop.services.fulfillment_window import window_label
 
-    return window_label(slot_ref) or None
+    return window_label(slot_ref, for_customer=True) or None
 
 
 def as_customer_sees(order):
