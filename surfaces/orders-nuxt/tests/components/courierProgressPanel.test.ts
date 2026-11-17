@@ -65,7 +65,7 @@ describe("andamento da corrida", () => {
       }),
     );
     expect(wrapper.get('[data-testid="courier-waiting"]').text()).toBe(
-      "Diego desistiu às 14:32. A TaOn já procura outro.",
+      "Diego desistiu às 14h32. A TaOn já procura outro.",
     );
     expect(wrapper.text()).toContain("Procurando outro entregador");
     // A corrida segue chamada: nenhum botão de chamar outra.
