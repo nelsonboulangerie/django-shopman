@@ -37,6 +37,8 @@ from dataclasses import dataclass
 from datetime import date, time, timedelta
 from typing import TYPE_CHECKING
 
+from shopman.utils.formatting import format_clock
+
 if TYPE_CHECKING:
     from shopman.storefront.services.promise_facts import PromiseFacts
 
@@ -121,12 +123,12 @@ def _local_clock(value) -> time:
 
 
 def _clock(value: time) -> str:
-    return value.strftime("%H:%M")
+    return value.strftime("%H:%M")  # hora-ok: contrato HH:MM de ready_at, lido por código
 
 
 def _hour(value: time) -> str:
-    """``15:00`` → ``15h``; ``15:30`` → ``15h30``."""
-    return f"{value.hour}h" if value.minute == 0 else f"{value.hour}h{value.minute:02d}"
+    """A hora da frase pelo formatador da casa: ``15:00`` → ``15h``; ``15:30`` → ``15h30``."""
+    return format_clock(value)
 
 
 def _day_label(day: date, *, today: date) -> str:
