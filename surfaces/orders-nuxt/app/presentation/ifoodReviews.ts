@@ -2,6 +2,12 @@
 // Copy: inequívoco primeiro (docs/reference/omotenashi-copy.md).
 import type { IFoodReviewError, IFoodReviewSummary } from "~/types/ifoodReviews";
 
+/**
+ * Política de Avaliações do iFood: o link fica na tela mesmo quando o iFood não
+ * responde (exigência da homologação). Espelho de ``POLICY_URL`` na projeção.
+ */
+export const IFOOD_REVIEW_POLICY_URL = "https://portal.ifood.com.br/evaluation-policies";
+
 /** A recusa como o operador lê: a frase da casa e, embaixo, o que o iFood respondeu. */
 export interface ReviewErrorText {
   title: string;

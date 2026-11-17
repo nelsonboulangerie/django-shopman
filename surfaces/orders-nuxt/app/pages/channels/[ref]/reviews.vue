@@ -5,6 +5,7 @@
 // regras do iFood (limite de página, tamanho e situação da resposta): orienta e
 // deixa o iFood decidir (ver `shopman/shop/services/ifood_review.py`).
 import {
+  IFOOD_REVIEW_POLICY_URL,
   pageLine,
   replyLengthHint,
   statusColor,
@@ -95,8 +96,7 @@ useHead({ title: "Avaliações do iFood" });
           sem a resposta da loja.
         </p>
         <NuxtLink
-          v-if="list?.policy_url"
-          :to="list.policy_url"
+          :to="list?.policy_url || IFOOD_REVIEW_POLICY_URL"
           target="_blank"
           external
           class="inline-flex items-center gap-1 font-medium text-primary underline"
