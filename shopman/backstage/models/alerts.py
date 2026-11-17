@@ -207,6 +207,9 @@ class OperatorAlert(models.Model):
         # receita perdida que some sem ninguém ver.
         ("loyalty_redeem_uncovered", "Desconto de pontos sem baixa no saldo"),
         ("production_late", "Produção atrasada"),
+        # Encomenda fechada com mais do que o plano da data cobre: o que passa
+        # ficou como demanda sem fornada (#2559). Um aviso por pedido e item.
+        ("order_demand_over_plan", "Encomenda acima do plano de produção"),
         ("production_low_yield", "Lote fechado com aproveitamento baixo"),
         ("production_stock_short", "Produção sem insumo suficiente"),
         # Falta PREVISTA (production_stock_short) vs. falta REAL: esta é a
@@ -376,6 +379,7 @@ class OperatorAlert(models.Model):
         ("operations", "Operação geral"),
     ]
     PRODUCTION_TYPES = {
+        "order_demand_over_plan",
         "production_late",
         "production_low_yield",
         "production_stock_short",
