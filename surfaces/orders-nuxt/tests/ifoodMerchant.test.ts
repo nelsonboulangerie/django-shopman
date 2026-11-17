@@ -49,6 +49,7 @@ const pause = (over: Partial<IFoodInterruptionRow> = {}): IFoodInterruptionRow =
   origin: "portal",
   origin_label: "Portal do Parceiro",
   in_effect: true,
+  period_display: "Hoje, das 11h às 11h30",
   removable: true,
   listed_by_ifood: true,
   ...over,
@@ -107,7 +108,7 @@ describe("a resposta do topo", () => {
 
 describe("pausas", () => {
   it("período, origem e como sai", () => {
-    expect(pausePeriod(pause())).toBe("21/11 11h até 21/11 11h30");
+    expect(pausePeriod(pause())).toBe("Hoje, das 11h às 11h30");
     expect(pauseOrigin(pause({ description: "Portal do Parceiro" }))).toBe("Portal do Parceiro");
     expect(pauseOrigin(pause({ description: "Reforma" }))).toBe("Portal do Parceiro: Reforma");
     expect(pauseHint(pause())).toBe("");

@@ -134,6 +134,19 @@ def _moment(value: datetime | None, tz, now: datetime | None = None) -> str:
     return f"às {clock}" if local.date() == today else f"em {local:%d/%m} às {clock}"  # hora-ok: dia/mês da frase
 
 
+def _period(starts_at: datetime | None, ends_at: datetime | None, tz, now: datetime) -> str:
+    if starts_at is None or ends_at is None:
+        return f"Desde {_when(starts_at, tz)}" if starts_at else ""
+    start = timezone.localtime(starts_at, timezone=tz)
+    end = timezone.localtime(ends_at, timezone=tz)
+    today = timezone.localtime(now, timezone=tz).date()
+    if start.date() == end.date():
+        days = (start.date() - today).days
+        day = {0: "Hoje", 1: "Amanhã"}.get(days, f"{start:%d/%m}")  # hora-ok: dia/mês da frase
+        return f"{day}, das {format_clock(start.time())} às {format_clock(end.time())}"
+    return f"De {_when(starts_at, tz)} até {_when(ends_at, tz)}"
+
+
 def _when(value: datetime | None, tz) -> str:
     return format_local(timezone.localtime(value, timezone=tz), "%d/%m {clock}") if value else ""
 
@@ -384,6 +397,8 @@ class InterruptionRow:
     origin: str
     origin_label: str
     in_effect: bool
+    #: "Hoje, das 14h04 às 14h34"; em dias diferentes, "De 20/11 às 18h até 21/11 às 8h".
+    period_display: str
     #: Só a pausa feita fora do Gestor se remove aqui; a do Gestor sai ligando o iFood de novo.
     removable: bool
     #: ``False``: o iFood aceitou a pausa (devolveu o id), mas a lista dele ainda não a traz.
@@ -470,6 +485,7 @@ def build_interruptions(*, now: datetime | None = None) -> InterruptionsProjecti
                     origin=origin,
                     origin_label=_ORIGIN_LABELS[origin],
                     in_effect=bool(starts_at and starts_at <= now),
+                    period_display=_period(starts_at, ends_at, tz, now),
                     removable=origin == ORIGIN_PORTAL and bool(remote_id),
                 ),
             )
@@ -496,6 +512,7 @@ def build_interruptions(*, now: datetime | None = None) -> InterruptionsProjecti
                     origin=origin,
                     origin_label=_ORIGIN_LABELS[origin],
                     in_effect=record.starts_at <= now,
+                    period_display=_period(record.starts_at, record.ends_at, tz, now),
                     removable=False,
                     listed_by_ifood=False,
                 ),

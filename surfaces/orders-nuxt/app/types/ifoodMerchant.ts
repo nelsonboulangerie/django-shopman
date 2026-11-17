@@ -64,6 +64,8 @@ export interface IFoodInterruptionRow {
   origin: IFoodPauseOrigin;
   origin_label: string;
   in_effect: boolean;
+  /** "Hoje, das 14h04 às 14h34". */
+  period_display: string;
   removable: boolean;
   /** false: o iFood aceitou a pausa (devolveu o id), mas a lista dele ainda não a traz. */
   listed_by_ifood: boolean;

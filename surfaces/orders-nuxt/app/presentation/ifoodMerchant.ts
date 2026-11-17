@@ -88,10 +88,9 @@ export function toneText(tone: Tone): string {
   }[tone];
 }
 
-/** "21/11 11h até 21/11 11h30" — o intervalo da pausa. */
+/** "Hoje, das 14h04 às 14h34": o período da pausa, como o servidor já escreveu. */
 export function pausePeriod(pause: IFoodInterruptionRow): string {
-  if (!pause.ends_at_display) return `desde ${pause.starts_at_display}`;
-  return `${pause.starts_at_display} até ${pause.ends_at_display}`;
+  return pause.period_display;
 }
 
 /** De onde veio a pausa, e a descrição só quando diz algo a mais. */
