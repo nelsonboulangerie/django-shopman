@@ -17,7 +17,8 @@ base `docs/coordination/ROUNDS/EXCELENCIA-base.md`. Medido em 16/11/2026 contra 
   a ação pronta. Nenhum dos cinco benchmarks liga produção real a pedido aceito.
 - **14 WPs em 6 ondas**. O primeiro a delegar é o **WP-G01** (a encomenda se anuncia), junto
   com o **WP-G00** (harness de operador de verdade).
-- **4 decisões do dono**, no fim.
+- **4 decisões do dono**, no fim. Em 17/11/2026 ele respondeu sim à 2, à 3 e à 4; a 1 segue
+  aberta.
 - **O que este PR deixou de fora tem issue**: execução do plano (#2546), o lado de fronteira do
   P0 (#2547), o pedido de hoje com hora combinada (#2548), as demais fronteiras (#2549) e as
   jornadas ainda não percorridas pela UI (#2550).
@@ -548,11 +549,12 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Muda tela:** sim (prévia). **Tamanho:** M.
 - **Brief:** leia o P1-08 e a resposta do dono à decisão 1. Gesto de Gerente, com PIN.
 
-### WP-G12 · Registrar devolução (depois da decisão 2)
+### WP-G12 · Registrar devolução (decisão 2: sim, 17/11/2026)
 
 - **Objetivo:** a devolução ganha a porta que o Histórico e a referência já anunciam.
 - **Achados que fecha:** P1-17.
-- **Dependências:** decisão 2; WP-G11 (mesmos arquivos).
+- **Dependências:** nenhuma pendente. Divide arquivos com o WP-G11 (que espera a decisão 1 e
+  entra depois), com o WP-G07 e com o WP-G13: nunca ao mesmo tempo que eles.
 - **Arquivos:** `operations.py` e `urls.py` (rota sobre `ReturnService.initiate_return`),
   `pages/[ref].vue`, `components/OrderReturnDialog.vue` (novo), testes;
   `docs/reference/cenarios-de-pedido.md` (a linha que hoje mente).
@@ -560,11 +562,11 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Brief:** leia o P1-17 e `shopman/shop/handlers/returns.py`. Itens, quantidade, motivo e
   PIN de Gerente; o diálogo diz o valor que volta antes de confirmar.
 
-### WP-G13 · Tentar o estorno de novo (depois da decisão 3)
+### WP-G13 · Tentar o estorno de novo (decisão 3: sim, 17/11/2026)
 
 - **Objetivo:** o Gerente resolve o estorno que falhou sem o Dono e sem o Admin.
 - **Achados que fecha:** P1-15 (a parte da ação).
-- **Dependências:** decisão 3; WP-G05 e WP-G12 (mesmos arquivos).
+- **Dependências:** WP-G05 e WP-G12 (mesmos arquivos).
 - **Arquivos:** `operations.py` e `urls.py` (rota sobre `payment.refund_intent_at_gateway`),
   `OrderDetailPending.vue`, testes.
 - **Muda tela:** sim (prévia). **Tamanho:** P.
@@ -599,7 +601,7 @@ um WP por onda escreve nele.
 | 2 | **G05** (o detalhe tem o gesto) · **G06** (recusar e bloquear) | G05 |
 | 3 | **G07** (avisar o cliente) · **G08** (promessa em risco) | G08 |
 | 4 | **G09** (contrato limpo) · **G10** (agenda com cobertura) | G09 |
-| 5 | **G11 → G12 → G13**, em fila (mesmos arquivos), cada um depois da sua decisão | nenhum |
+| 5 | **G12 → G13**, em fila (mesmos arquivos), liberados em 17/11/2026; **G11** entra depois, quando a decisão 1 sair | nenhum |
 
 Conferência dos arquivos por onda:
 
@@ -618,7 +620,30 @@ Conferência dos arquivos por onda:
 ## 10. Decisões do dono
 
 Procurado antes em `docs/coordination/DECISIONS.md`, `docs/reference/` e ADR-035 e ADR-036:
-nenhuma das quatro tem resposta escrita.
+nenhuma das quatro tinha resposta escrita.
+
+**Respostas do dono em 17/11/2026** (fala literal, dada à coordenação: "2) ok 3) ok 4) ok.
+Precisa de template aprovado no Manychat?"):
+
+| Decisão | Resposta | Efeito |
+|---|---|---|
+| 1. "Não retirado" | **Aberta.** O dono não aceitou a pergunta como está: quer um mapa de decisões por caso (horário e perda do produto, forma e estado do pagamento, motivo para o B.I.). A coordenação monta a proposta. | WP-G11 segue bloqueado. |
+| 2. Devolução pelo Gestor | **Sim.** | WP-G12 liberado. |
+| 3. Gerente tenta de novo o estorno que falhou | **Sim.** | WP-G13 liberado. |
+| 4. Três mensagens prontas pelo WhatsApp do próprio operador | **Sim.** | WP-G07 liberado. |
+
+**Sobre o modelo aprovado (pergunta do dono na decisão 4): não precisa.** A mensagem sai do
+WhatsApp do próprio operador, por um link que abre o aplicativo com o texto pronto
+(`wa.me/<telefone>?text=...`), e quem toca em enviar é a pessoa. Ela não passa pela API do
+WhatsApp nem pelo ManyChat, e modelo aprovado pela Meta só é exigido de mensagem que a empresa
+inicia pela API. Se um dia o envio virar automático, aí sim passa a exigir modelo, e isso é
+outra decisão.
+
+**Ordem depois das respostas.** Decisão liberada não desfaz a fila dos arquivos: G12 e G07
+escrevem em `pages/[ref].vue`, e G12 e G13 escrevem em `operations.py` e `urls.py`. Como o G11
+espera a decisão 1, o G12 passa à frente dele. A fila fica **G12, depois G13**, e o **G07 depois
+do G05 e do G12** (mesmo `[ref].vue`), nunca dois ao mesmo tempo. O G11, quando vier, entra
+depois do que estiver em voo nesses arquivos.
 
 1. **Pedido pronto que ninguém veio buscar: criar o gesto "Não retirado"?** Recomendo **sim**:
    gesto do Gerente, com PIN, que encerra o pedido e devolve o produto ao balcão. Sobre o
