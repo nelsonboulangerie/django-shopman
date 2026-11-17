@@ -1,7 +1,7 @@
 # COMERCIO-CONVERSACIONAL-ADAPTADOR-NICE-PLANO: a Nice sobre o framework, sem mover a Concierge
 
 > **Estado:** plano de implementação. Nenhum código de produção neste PR.
-> **Compromisso:** DEV-2026-041.
+> **Compromisso:** DEV-2026-045.
 > **Deriva de:** `docs/research/INTELIGENCIA-COMERCIO-CONVERSACIONAL-v2.md`, seção 11 (o mapa do
 > adaptador) e 15.7 (convivência), lida de `origin/claude/conversational-commerce-intelligence-eca993`
 > enquanto o PR #2623 não estiver no `main`.

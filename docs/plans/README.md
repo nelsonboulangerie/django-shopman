@@ -30,7 +30,7 @@ as tabelas abaixo são a classificação semântica explícita.
 
 | Plano | Estado |
 |-------|--------|
-| [`COMERCIO-CONVERSACIONAL-FRAMEWORK-PLANO.md`](COMERCIO-CONVERSACIONAL-FRAMEWORK-PLANO.md) | Framework genérico de comércio conversacional (DEV-2026-041): pacote Python puro `conversational-commerce`, 12 WPs (F0 a F11) até o degrau D1; nada implementado. |
+| [`COMERCIO-CONVERSACIONAL-FRAMEWORK-PLANO.md`](COMERCIO-CONVERSACIONAL-FRAMEWORK-PLANO.md) | Framework genérico de comércio conversacional (DEV-2026-045): pacote Python puro `conversational-commerce`, 12 WPs (F0 a F11) até o degrau D1; nada implementado. |
 | [`COMERCIO-CONVERSACIONAL-ADAPTADOR-NICE-PLANO.md`](COMERCIO-CONVERSACIONAL-ADAPTADOR-NICE-PLANO.md) | A Nice sobre o framework sem mover a Concierge: 9 WPs (N1 a N9), decisão em sombra como primeiro passo no ar; duas decisões do dono bloqueiam o N9. |
 | [`WP-RELEASE-01-versoes-de-apps-sem-quebra.md`](WP-RELEASE-01-versoes-de-apps-sem-quebra.md) | Estratégia executável para build imutável, promoção alpha → produção, convivência V1/V2, canário e rollback; Marketing V2 será o piloto. |
 | [`SUITE-UX-PLAN.md`](SUITE-UX-PLAN.md) | Medição das três varreduras de 22/09 (navegação e cabeçalhos · primitivas · fronteira e copy) e o redesenho da suíte em 9 WPs. Diagnóstico: nenhum app está mal desenhado, **o que não existe é o entre** — o token de 44px é respeitado 214× no Gestor e **zero** em cinco apps. WP-UX-1 (barra de seções canônica) entregue; WP-UX-3, 4 e 7 entregues (#976, #977, #978, 22/09); 5 decisões de vocabulário e produto esperando o dono na §4. |

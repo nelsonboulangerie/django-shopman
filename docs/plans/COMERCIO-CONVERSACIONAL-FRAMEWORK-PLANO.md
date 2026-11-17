@@ -1,7 +1,7 @@
 # COMERCIO-CONVERSACIONAL-FRAMEWORK-PLANO: o núcleo genérico em pacotes delegáveis
 
 > **Estado:** plano de implementação. Nenhum código de produção neste PR.
-> **Compromisso:** DEV-2026-041.
+> **Compromisso:** DEV-2026-045.
 > **Deriva de:** `docs/research/INTELIGENCIA-COMERCIO-CONVERSACIONAL-v2.md` (PR #2623; enquanto
 > não estiver no `main`, ler de `origin/claude/conversational-commerce-intelligence-eca993`).
 > Seções usadas: 15 (guia), 4.1 a 4.7, 5, 10, Apêndice A. Quando este plano disser "v2 4.7",
@@ -323,7 +323,7 @@ escreve no PR e para. Trabalha num worktree, a partir do `origin/main`. Não toc
 da lista do seu WP (precisou: para e escreve no PR). Roda a suíte do pacote pelo alvo do
 Makefile, que fixa `PYTHONPATH` no próprio pacote, para não pegar a instalação editável do
 checkout principal. Toda divergência com a v2 vai para o `spec/` como `[DIVERGE]`. Nenhuma
-chamada a modelo, paga ou não. PR cita `Compromisso: DEV-2026-041` e a seção `## Ficou de
+chamada a modelo, paga ou não. PR cita `Compromisso: DEV-2026-045` e a seção `## Ficou de
 fora`.
 
 Prova padrão dos WPs F1 a F11, abreviada como **(suíte)**:
