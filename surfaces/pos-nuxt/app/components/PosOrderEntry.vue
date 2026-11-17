@@ -42,9 +42,8 @@ const props = defineProps<{
   loading: boolean;
   /** As formas de receber que a loja oferece (retirada, entrega). */
   fulfillmentOptions?: POSFulfillmentOptionProjection[];
-  /** A forma escolhida; só vale com `fulfillmentConfirmed`. */
-  fulfillmentType?: "pickup" | "delivery";
-  fulfillmentConfirmed?: boolean;
+  /** A forma já escolhida pelo operador; vazia enquanto ele não escolheu. */
+  chosenFulfillment?: "pickup" | "delivery" | "";
   /** O dia e a janela escolhidos (vazios até o operador escolher). */
   scheduleDate?: string;
   scheduleTimeSlot?: string;
@@ -114,7 +113,7 @@ function act(key: OrderSetupStepKey) {
   else emit("fulfillment");
 }
 function fulfillmentChosen(ref: string) {
-  return Boolean(props.fulfillmentConfirmed) && props.fulfillmentType === ref;
+  return Boolean(props.chosenFulfillment) && props.chosenFulfillment === ref;
 }
 function isReady(key: OrderSetupStepKey) {
   return steps.value.find((step) => step.key === key)?.ready ?? false;

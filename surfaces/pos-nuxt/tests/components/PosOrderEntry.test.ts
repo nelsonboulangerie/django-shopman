@@ -13,8 +13,7 @@ const props = {
     { ref: "pickup" as const, label: "Retirada", description: "No balcão da loja", requires_address: false },
     { ref: "delivery" as const, label: "Entrega", description: "No endereço do cliente", requires_address: true },
   ],
-  fulfillmentType: "pickup" as const,
-  fulfillmentConfirmed: false,
+  chosenFulfillment: "",
   scheduleDate: "",
   scheduleTimeSlot: "",
   schedule: {
@@ -72,7 +71,7 @@ describe("assistente da encomenda", () => {
     await options[1]!.trigger("click");
     expect(w.emitted("pickFulfillment")).toEqual([["delivery"]]);
     expect(w.emitted("fulfillment")).toBeUndefined();
-    await w.setProps({ issue: "address", delivery: true, fulfillmentType: "delivery", fulfillmentConfirmed: true });
+    await w.setProps({ issue: "address", delivery: true, chosenFulfillment: "delivery" });
     expect(visibleStep(w)).toEqual(["address"]);
     expect(footer(w)).toBe("Etapa 3 de 4: Endereço");
     // O endereço (CEP, mapa, taxa) segue no formulário de entrega.

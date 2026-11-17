@@ -113,8 +113,7 @@ describe("jornada J5: retirada e dia escolhidos no cartão", () => {
           { ref: "pickup", label: "Retirada", description: "No balcão", requires_address: false },
           { ref: "delivery", label: "Entrega", description: "No endereço", requires_address: true },
         ],
-        fulfillmentType: cart.fulfillmentType,
-        fulfillmentConfirmed: cart.fulfillmentConfirmed,
+        chosenFulfillment: cart.fulfillmentConfirmed ? cart.fulfillmentType : "",
         scheduleDate: cart.deliveryDate,
         scheduleTimeSlot: cart.deliveryTimeSlot,
         schedule: {
