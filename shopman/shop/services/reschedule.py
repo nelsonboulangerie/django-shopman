@@ -147,7 +147,10 @@ def reschedule(order, *, date, slot, actor: str, reason: str = "", notify: bool 
             _replace_reminder(locked, new_day, today=today)
             _relink_production(locked)
         else:
-            # Só a janela mudou: o lembrete congela a janela no texto.
+            # Só a janela mudou: o lembrete congela a janela no texto, e o
+            # despertador acompanha a hora (chegada à Cozinha = hora combinada −
+            # preparo − antecedência).
+            activated_now = _move_activation(locked, new_day, today=today)
             _replace_reminder(locked, new_day, today=today)
 
         event_payload = {
@@ -359,6 +362,14 @@ def _move_activation(order, day: date_type, *, today: date_type) -> bool:
     # Data nova é hoje. Só há o que ativar quando o despertador existia: é ele
     # que prova que o pedido estava aceito, pago e esperando o dia.
     if live is None:
+        return False
+    # Hoje ainda tem hora: o card chega à Cozinha em hora combinada − preparo −
+    # antecedência. O despertador vai para lá; passada a hora, ativa agora.
+    available_at, target = lifecycle.preorder_activation_at(order)
+    if available_at is not None and available_at > timezone.now():
+        live.available_at = available_at
+        live.payload = {**(live.payload or {}), "delivery_date": target.isoformat()}
+        live.save(update_fields=["available_at", "payload", "updated_at"])
         return False
     live.status = "done"
     live.last_error = ""

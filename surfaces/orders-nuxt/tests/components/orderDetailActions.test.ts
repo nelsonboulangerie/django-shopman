@@ -57,6 +57,11 @@ vi.stubGlobal("useVolumeCheck", () => ({
 vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
 vi.stubGlobal("useNowTick", () => ref(Date.now()));
 vi.stubGlobal("useScreen", () => ({ ready: ref(true), belowSm: ref(false), belowMd: ref(false), belowLg: ref(false), belowXl: ref(false) }));
+// O widget do iFood sobe na casca (app.vue); o detalhe só lê o estado dele.
+const ifoodWidgetState = ref<"off" | "loading" | "ready" | "failed">("off");
+beforeEach(() => { ifoodWidgetState.value = "off"; });
+const setViewingIFoodOrder = vi.fn();
+vi.stubGlobal("useIFoodWidget", () => ({ state: ifoodWidgetState, start: vi.fn(), setViewingIFoodOrder }));
 vi.stubGlobal("useOutsideStore", () => ({ askConsent: ref(false), away: ref(false), allow: vi.fn(), decline: vi.fn(), showAll: vi.fn() }));
 vi.stubGlobal("useOrderDetail", () => ({
   order: computed(() => detalhe.value),
@@ -726,6 +731,37 @@ describe("detalhe iFood", () => {
   });
 });
 
+describe("chat do cliente iFood (widget do iFood, DEV-2026-019)", () => {
+  it("pedido do iFood com o widget pronto: diz que o chat está no botão do iFood", () => {
+    ifoodWidgetState.value = "ready";
+    const w = abrir(order({ channel_ref: "ifood" }));
+    expect(w.get("[data-ifood-chat]").attributes("data-ifood-chat-state")).toBe("ready");
+    expect(w.get("[data-ifood-chat]").text()).toContain("botão do iFood");
+  });
+
+  it("o widget não carregou: manda responder pelo Gestor do iFood", () => {
+    ifoodWidgetState.value = "failed";
+    const w = abrir(order({ channel_ref: "ifood" }));
+    expect(w.get("[data-ifood-chat]").text()).toContain("Gestor do iFood");
+  });
+
+  it("o detalhe de pedido iFood avisa que o botão do iFood deve aparecer; o de outro canal, não", () => {
+    setViewingIFoodOrder.mockClear();
+    abrir(order({ channel_ref: "ifood" })).unmount();
+    expect(setViewingIFoodOrder.mock.calls.map((c) => c[0])).toEqual([true, false]);
+    setViewingIFoodOrder.mockClear();
+    abrir(order({ channel_ref: "web" }));
+    expect(setViewingIFoodOrder).toHaveBeenCalledWith(false);
+    expect(setViewingIFoodOrder).not.toHaveBeenCalledWith(true);
+  });
+
+  it("widget desligado na loja, ou pedido de outro canal: nada aparece", () => {
+    expect(abrir(order({ channel_ref: "ifood" })).find("[data-ifood-chat]").exists()).toBe(false);
+    ifoodWidgetState.value = "ready";
+    expect(abrir(order({ channel_ref: "web" })).find("[data-ifood-chat]").exists()).toBe(false);
+  });
+});
+
 describe("segunda assinatura no cancelamento", () => {
   // 21/09: cancelando pedido do iFood com o prazo correndo, o diálogo caía no
   // campo livre e o gerente tinha de digitar o próprio nome. No PDV ele já era
@@ -745,16 +781,17 @@ describe("segunda assinatura no cancelamento", () => {
 
 describe("contato de pedido do iFood", () => {
   // 21/09: o detalhe oferecia WhatsApp para o 0800 da central do iFood.
-  it("relé mostra a central e o código, sem WhatsApp", () => {
+  // 12/11/2026: a central vira rodapé pró-forma, um link discreto, sem botão.
+  it("relé mostra a central e o código no rodapé, sem WhatsApp", () => {
     const w = abrir(order({
       customer_phone: "", customer_whatsapp_url: "",
       customer_phone_uri: "tel:08007053040,89338721",
       customer_relay_phone: "0800 705 3040", customer_relay_code: "89338721",
     }));
     expect(w.find("[data-contact-whatsapp]").exists()).toBe(false);
-    expect(w.get("[data-contact-relay-code]").text()).toBe("Código 89338721");
-    expect(w.get("[data-contact-phone]").text()).toContain("Ligar pela central");
-    expect(w.get("[data-contact-phone]").attributes("href")).toBe("tel:08007053040,89338721");
+    expect(w.get("[data-contact-relay-code]").text()).toBe("89338721");
+    expect(w.get("[data-contact-relay] [data-contact-phone]").text()).toBe("0800 705 3040");
+    expect(w.get("[data-contact-relay] [data-contact-phone]").attributes("href")).toBe("tel:08007053040,89338721");
   });
   it("código vencido diz que a central não repassa e não oferece ligação", () => {
     const w = abrir(order({
@@ -762,7 +799,7 @@ describe("contato de pedido do iFood", () => {
       customer_relay_phone: "0800 705 3040", customer_relay_code: "",
     }));
     expect(w.find("[data-contact-phone]").exists()).toBe(false);
-    expect(w.get("[data-contact-relay-expired]").text()).toContain("Código vencido");
+    expect(w.get("[data-contact-relay-expired]").text()).toContain("o código venceu");
   });
 });
 
@@ -822,6 +859,19 @@ describe("detalhe do pedido: achados do beta 05/11", () => {
     w.unmount();
   });
 
+  // Com o iFood (ou a Cozinha) conduzindo, o pronto vem como "menu": do md para cima
+  // ele fica à vista, secundário, em vez de escondido no ⋯ (dono, 14/11/2026).
+  it("pronto que não é o gesto do momento fica à vista no desktop", async () => {
+    const w = abrir(order({
+      status: "preparing", channel_ref: "ifood", can_confirm: false,
+      actions: [mutation("advance", "Marcar pronto", { priority: "menu" })] as never,
+    }));
+    expect(w.get('[data-action="advance-secondary"]').text()).toContain("Marcar pronto");
+    await w.get('[data-action="menu"]').trigger("click");
+    expect(w.find("[data-detail-menu] [data-action='advance']").exists()).toBe(false);
+    w.unmount();
+  });
+
   // GES-12: o detalhe dizia "Marcar como entregue" e escondia troco e maquininha.
   it("na rua com troco: o gesto é Entregador voltou e a custódia aparece", async () => {
     const w = abrir(order({
@@ -837,8 +887,13 @@ describe("detalhe do pedido: achados do beta 05/11", () => {
     await flushPromises();
     const dialog = w.findComponent({ name: "CourierBackDialog" });
     expect(dialog.props("card")).toMatchObject({ courier_return_lines: ["R$ 50,00 em dinheiro"] });
+    // Com espaço (md+), o "Marcar como entregue" fica à vista ao lado do primário, e não
+    // escondido no ⋯ (dono, 14/11/2026).
+    const secondary = w.get('[data-action="advance-secondary"]');
+    expect(secondary.text()).toContain("Marcar como entregue");
+    expect(secondary.attributes("title")).toBe("O que saiu com o entregador continua em aberto.");
     await w.get('[data-action="menu"]').trigger("click");
-    expect(w.get("[data-detail-menu] [data-action='advance']").text()).toContain("O que saiu com o entregador continua em aberto.");
+    expect(w.find("[data-detail-menu] [data-action='advance']").exists()).toBe(false);
     w.unmount();
   });
 

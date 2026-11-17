@@ -469,6 +469,23 @@ class Shop(models.Model):
         ),
     )
 
+    # ── iFood: o widget oficial (chat com o cliente) no Gestor de pedidos ──
+    # Decisão do dono, 12/11/2026 (DEV-2026-019, issue #2321): a API do iFood não
+    # tem chat; o caminho do iFood é o widget embutido. Vazio, o Gestor não carrega
+    # nada do iFood no navegador.
+    ifood_widget_id = models.CharField(
+        "ID do widget do iFood",
+        max_length=64,
+        blank=True,
+        help_text=(
+            "O ID do widget cadastrado no Portal do Desenvolvedor do iFood (menu Widgets, "
+            "com o Chat ligado). Preenchido, o Gestor de pedidos mostra o botão do iFood "
+            "com o chat dos clientes, as notificações e o rastreio. Vazio, não mostra. "
+            "Cada dispositivo autoriza o widget uma vez, com um login de dono ou "
+            "administrador no Portal do Parceiro."
+        ),
+    )
+
     # ── Defaults de negócio (cascata: canal ← AQUI ← hardcoded) ──
     defaults = models.JSONField(
         "configurações padrão",
@@ -511,6 +528,24 @@ class Shop(models.Model):
         ),
     )
 
+    ai_limits = models.JSONField(
+        "freio de IA",
+        default=dict,
+        blank=True,
+        help_text=(
+            "Liga ou desliga toda IA paga da loja e diz quanto ela pode gastar por dia, em US$. "
+            '"enabled": false desliga tudo na hora. "usd_per_day" é o teto da loja (padrão 3). '
+            '"purposes" dá um teto próprio a uma função. Nenhum teto passa de 20 sem mudança no '
+            "código. A 80% do teto chega um aviso; no teto, a IA para até o dia seguinte.\n\n"
+            "Exemplo:\n"
+            "{\n"
+            '  "enabled": true,\n'
+            '  "usd_per_day": 3,\n'
+            '  "purposes": {"benchmark": 1}\n'
+            "}"
+        ),
+    )
+
     class Meta:
         verbose_name = "loja"
         verbose_name_plural = "loja"
@@ -535,6 +570,12 @@ class Shop(models.Model):
             ("manage_catalog", "Pode criar/editar Product, Listing e Collection"),
             ("manage_customers", "Pode criar/editar Customer, grupos e loyalty"),
             ("view_reports", "Pode acessar dashboard e relatórios analíticos"),
+            ("create_support_ticket", "Pode abrir chamado no Suporte"),
+            ("triage_support_tickets", "Pode triar chamados do Suporte"),
+            ("view_all_support_tickets", "Pode ver todos os chamados do Suporte"),
+            ("approve_support_requests", "Pode aprovar pedidos de produto do Suporte"),
+            ("link_support_dev", "Pode ligar chamado aprovado a um compromisso DEV-"),
+            ("view_support_audit", "Pode ver a auditoria do Suporte"),
         ]
 
     def __str__(self):

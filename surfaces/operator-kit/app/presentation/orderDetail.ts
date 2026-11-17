@@ -9,6 +9,7 @@ import type {
   OrderDetailAction,
   OrderDetailCustomerProfile,
 } from "../types/orderDetail";
+import { formatClock } from "./clock";
 
 // ── Tom (cor funcional; o cromo fica neutro) ────────────────────────────────
 
@@ -110,13 +111,13 @@ export function profileHabits(
   );
 }
 
-/** Até quando o código do iFood leva à pessoa ("Vale até 14:32"). Depois disso a
+/** Até quando o código do iFood leva à pessoa ("Vale até 14h32"). Depois disso a
  *  central não repassa. Vazio quando não há prazo legível. */
 export function relayExpiresLabel(iso: string): string {
   if (!iso) return "";
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return "";
-  return `Vale até ${at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+  return `Vale até ${formatClock(at)}`;
 }
 
 /** Fallback do cadastro no Admin para superfícies que ainda não têm ficha própria. */
@@ -134,9 +135,12 @@ export function hasCustomerContact(
   order: OperatorOrderDetail,
   adminUrl: string,
 ): boolean {
+  // A central do iFood (relé) não conta: ela mora no rodapé do detalhe.
+  if (order.customer_relay_phone) {
+    return Boolean(order.customer_whatsapp_url || order.customer_email || adminUrl);
+  }
   return Boolean(
     order.customer_phone_uri ||
-    order.customer_relay_phone ||
     order.customer_whatsapp_url ||
     order.customer_email ||
     adminUrl,

@@ -30,6 +30,7 @@ import {
 // do pedido é o mesmo no Gestor e no PDV; o board lê as mesmas peças.
 import { joinFacts } from "../../../operator-kit/app/presentation/orderDetail";
 import { readingCsvText } from "../../../operator-kit/app/presentation/readingChart";
+import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
 
 export {
   joinFacts,
@@ -143,20 +144,13 @@ export interface CardAuthorizationNotice {
   expired: boolean;
 }
 
-const CARD_DEADLINE = new Intl.DateTimeFormat("pt-BR", {
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  timeZone: "America/Sao_Paulo",
-});
-
 /** "20/10 às 15h25", no fuso da loja. */
 export function cardDeadlineLabel(iso: string): string {
-  const parts = Object.fromEntries(
-    CARD_DEADLINE.formatToParts(new Date(iso)).map((p) => [p.type, p.value]),
+  return formatDateClock(
+    iso,
+    { day: "2-digit", month: "2-digit" },
+    { timeZone: "America/Sao_Paulo", joiner: " às " },
   );
-  return `${parts.day}/${parts.month} às ${parts.hour}h${parts.minute}`;
 }
 
 function plural(n: number, one: string, many: string): string {
@@ -323,7 +317,7 @@ export function undoLine(source: UndoSource, nowMs: number): UndoLine | null {
 // ── Zones (Entrada / Preparo / Saída) ──────────────────────────────────────
 
 export interface ZoneView {
-  /** As três etapas do quadro, mais a aba "Negociação" do quadro em abas
+  /** As três etapas do painel, mais a aba "Negociação" do painel em abas
    *  (`negotiationZoneView`), que não é etapa nem coluna do desktop. */
   key: "intake" | "prep" | "expedition" | "negotiation";
   title: string;
@@ -353,6 +347,25 @@ export function zoneEmptyText(key: ZoneView["key"]): string {
 
 /** Group the two-zone queue projection into the three action columns the board
  *  renders. Expedition merges pickup + delivery (ready) + delivery-in-transit. */
+/** Prontos em duas partes (dono, 13/11/2026): "A coletar" (no balcão, esperando o
+ *  cliente ou o entregador) e "Saiu para entrega" (em trânsito, o controle do que
+ *  ainda está na rua). Retirado pelo cliente vai direto para o Histórico. A ordem de
+ *  cada parte é a que veio; o rótulo vai no primeiro cartão de cada uma. */
+export interface ExitRow {
+  card: OrderCardProjection;
+  /** O rótulo da parte que começa neste cartão; vazio no resto. */
+  heading: string;
+}
+
+export function exitRows(cards: OrderCardProjection[]): ExitRow[] {
+  const toCollect = cards.filter((card) => card.status !== "dispatched");
+  const onRoad = cards.filter((card) => card.status === "dispatched");
+  return [
+    ...toCollect.map((card, i) => ({ card, heading: i === 0 ? "A coletar" : "" })),
+    ...onRoad.map((card, i) => ({ card, heading: i === 0 ? "Saiu para entrega" : "" })),
+  ];
+}
+
 export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {
   const expedition = [
     ...queue.expedition_pickup,
@@ -362,24 +375,24 @@ export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {
   return [
     {
       key: "intake",
-      title: "Entrada",
-      subtitle: "Novos: aceitar ou recusar",
+      title: "Novos",
+      subtitle: "Aceitar ou recusar",
       icon: "lucide:inbox",
       cards: queue.intake,
       count: queue.intake.length,
     },
     {
       key: "prep",
-      title: "Preparo",
-      subtitle: "Confirmados e em preparo",
+      title: "Em preparo",
+      subtitle: "Confirmados e na cozinha",
       icon: "lucide:cooking-pot",
       cards: queue.prep,
       count: queue.prep.length,
     },
     {
       key: "expedition",
-      title: "Saída",
-      subtitle: "Retirada, coleta e entrega",
+      title: "Prontos",
+      subtitle: "A coletar e saiu para entrega",
       icon: "lucide:package-check",
       cards: expedition,
       count: expedition.length,
@@ -387,9 +400,9 @@ export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {
   ];
 }
 
-/** A aba "Negociação" do quadro em abas (celular e tablet em pé): o pedido do iFood
+/** A aba "Negociação" do painel em abas (celular e tablet em pé): o pedido do iFood
  *  com negociação aberta que não está em etapa nenhuma (já entregue, o cliente reclamou
- *  depois). No desktop ele entra no "Precisa de você" da Fila; no quadro em abas, sem
+ *  depois). No desktop ele entra no "Precisa de você" da Fila; no painel em abas, sem
  *  esta aba, ele não aparecia em lugar nenhum. O que ainda está numa etapa já mostra a
  *  negociação no próprio cartão, e não se repete aqui. Sem nenhum, a aba não existe. */
 export function negotiationZoneView(
@@ -398,7 +411,7 @@ export function negotiationZoneView(
   const inStage = new Set(
     zonesView(queue).flatMap((zone) => zone.cards.map((card) => card.ref)),
   );
-  // O contrato gerado tipa `timer_class` como texto; o cartão do quadro, como a régua.
+  // O contrato gerado tipa `timer_class` como texto; o cartão do painel, como a régua.
   const cards = (
     (queue.ifood_negotiation_orders ?? []) as OrderCardProjection[]
   ).filter((card) => !inStage.has(card.ref));
@@ -796,8 +809,8 @@ export function triageCards(
   return sortCards(filtered, opts.sort);
 }
 
-/** "queue": a Grade, os cartões da Fila "Precisa de você" (abre nela no desktop);
- *  "board": o quadro de três colunas; "table": a Lista, a tabela densa. */
+/** "queue": a Grade, os cartões da Fila "Precisa de você" (um toque no controle de modo);
+ *  "board": o painel de três colunas; "table": a Lista, a tabela densa. */
 export type ViewMode = "queue" | "board" | "table";
 
 export interface FlatRow {

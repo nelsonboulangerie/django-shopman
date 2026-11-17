@@ -45,52 +45,72 @@ def test_other_channels_never_inherit_ifood_notice_or_payment_summary():
 
 
 def test_missing_payment_does_not_claim_online_payment():
-    assert ifood.payment_summary(_order()) == ("iFood: pagamento não informado.",)
+    assert ifood.payment_headline(_order()) == "Pagamento não informado pelo iFood"
+    assert ifood.payment_summary(_order()) == ()
 
 
 def test_online_payment_preserves_card_brand():
-    summary = ifood.payment_summary(_order(payments={
+    order = _order(payments={
         "prepaid_q": 3000, "pending_q": 0,
         "methods": [{"method": "CREDIT", "value_q": 3000, "prepaid": True, "brand": "VISA"}],
-    }))
-    assert summary == ("Pago online no iFood: R$ 30,00", "Crédito VISA: R$ 30,00 (online)")
+    })
+    # Pago online é uma frase só: bandeira e banco não mudam o despacho (3417, 12/11),
+    # e nada se repete abaixo dela (dono, 14/11).
+    assert ifood.payment_headline(order) == "Pago online no iFood: nada a cobrar"
+    assert ifood.payment_summary(order) == ()
 
 
 def test_offline_credit_is_pending_and_keeps_its_brand():
-    summary = ifood.payment_summary(_order(payments={
+    order = _order(payments={
         "prepaid_q": 0, "pending_q": 3000,
         "methods": [{"method": "CREDIT", "value_q": 3000, "prepaid": False, "brand": "ELO"}],
-    }))
-    assert summary == ("Pagamento pendente no iFood: R$ 30,00", "Crédito ELO: R$ 30,00 (pendente)")
+    })
+    assert ifood.payment_headline(order) == "Cobrar na entrega: R$ 30,00 em crédito ELO"
+    assert ifood.payment_summary(order) == ()
 
 
 def test_mixed_payment_cash_change_uses_cash_part_not_order_total():
-    summary = ifood.payment_summary(_order(payments={
+    order = _order(payments={
         "prepaid_q": 1000, "pending_q": 2000,
         "methods": [
             {"method": "CREDIT", "value_q": 1000, "prepaid": True, "brand": "VISA"},
             {"method": "CASH", "value_q": 2000, "prepaid": False, "change_for_q": 5000},
         ],
-    }))
-    assert summary[:2] == ("Pago online no iFood: R$ 10,00", "Pagamento pendente no iFood: R$ 20,00")
-    assert summary[-1] == "Dinheiro: R$ 20,00 (pendente); troco para R$ 50,00, troco R$ 30,00"
+    })
+    assert ifood.payment_headline(order) == (
+        "Cobrar na entrega: R$ 20,00 em dinheiro; troco para R$ 50,00 (levar R$ 30,00)"
+    )
+    assert ifood.payment_summary(order) == ("Já pago online no iFood: R$ 10,00",)
+
+
+def test_split_collection_lists_each_form_once():
+    order = _order(payments={
+        "prepaid_q": 0, "pending_q": 3000,
+        "methods": [
+            {"method": "DEBIT", "value_q": 1000, "prepaid": False, "brand": "VISA"},
+            {"method": "CASH", "value_q": 2000, "prepaid": False},
+        ],
+    })
+    assert ifood.payment_headline(order) == "Cobrar na entrega: R$ 30,00"
+    assert ifood.payment_summary(order) == ("Débito VISA: R$ 10,00", "Dinheiro: R$ 20,00")
 
 
 def test_invalid_cash_change_does_not_invent_negative_change():
-    summary = ifood.payment_summary(_order(payments={
+    headline = ifood.payment_headline(_order(payments={
         "pending_q": 3000,
         "methods": [{"method": "CASH", "value_q": 3000, "prepaid": False, "change_for_q": 1000}],
     }))
-    assert "troco para R$ 10,00" in summary[-1]
-    assert "troco R$ -" not in summary[-1]
+    assert "troco para R$ 10,00" in headline
+    assert "levar" not in headline
 
 
 def test_prepaid_cash_does_not_prompt_second_collection_or_change():
-    summary = ifood.payment_summary(_order(payments={
+    order = _order(payments={
         "prepaid_q": 3000,
         "methods": [{"method": "CASH", "value_q": 3000, "prepaid": True, "change_for_q": 5000}],
-    }))
-    assert not any("troco" in line or "pendente" in line for line in summary)
+    })
+    assert ifood.payment_headline(order) == "Pago online no iFood: nada a cobrar"
+    assert ifood.payment_summary(order) == ()
 
 
 @pytest.mark.parametrize("payments,expected,tone", [
@@ -129,6 +149,9 @@ def test_builders_override_legacy_paid_with_ifood_evidence_without_local_collect
     # nos dois: é estado do pedido, não evidência financeira.
     if hasattr(projected, "ifood_payment_summary"):
         assert projected.ifood_payment_summary == ifood.payment_summary(order)
+        # No detalhe a linha do pagamento é a frase inteira, sem "· status" repetido.
+        assert projected.payment_method_label == ifood.payment_headline(order)
+        assert projected.payment_status_label == ""
     else:
         assert projected.ifood_pickup_code == ifood.pickup_code(order)
     assert projected.ifood_cancellation_notice == ifood.cancellation_notice(order)
@@ -163,7 +186,8 @@ def test_batched_board_retains_ifood_payment_evidence():
     # é lá que a evidência tem de continuar inteira.
     assert not hasattr(card, "ifood_payment_summary")
     detail = order_queue.build_operator_order(Order.objects.get(ref="IFOOD-BOARD"))
-    assert detail.ifood_payment_summary == ("Pagamento pendente no iFood: R$ 30,00",)
+    assert detail.payment_method_label == "Cobrar na entrega: R$ 30,00"
+    assert detail.ifood_payment_summary == ()
 
 
 # ── P2-29: a hora da retirada (``takeout.takeoutDateTime``) ──────────────────
@@ -182,10 +206,10 @@ def test_immediate_takeout_shows_when_the_customer_comes():
     from django.utils import timezone
 
     today = timezone.localtime().replace(hour=19, minute=40, second=0, microsecond=0)
-    assert ifood.schedule_label(_takeout(today.isoformat())) == "Retirada às 19:40"
+    assert ifood.schedule_label(_takeout(today.isoformat())) == "Retirada às 19h40"
     other_day = today + timedelta(days=1)
-    assert ifood.schedule_label(_takeout(other_day.isoformat())) == f"Retirada {other_day:%d/%m} às 19:40"
-    assert f"Retirada prevista: {today:%d/%m/%Y} às 19:40" in ifood.operation_summary(_takeout(today.isoformat()))
+    assert ifood.schedule_label(_takeout(other_day.isoformat())) == f"Retirada {other_day:%d/%m} às 19h40"
+    assert f"Retirada prevista: {today:%d/%m/%Y} às 19h40" in ifood.operation_summary(_takeout(today.isoformat()))
 
 
 def test_takeout_time_is_silent_when_scheduled_delivery_or_without_timezone():
@@ -197,3 +221,16 @@ def test_takeout_time_is_silent_when_scheduled_delivery_or_without_timezone():
     assert ifood.schedule_label(_takeout("")) == ""
     assert ifood.schedule_label(_takeout(aware, timing="SCHEDULED")) == "Agendado"
     assert not any("Retirada prevista" in line for line in ifood.operation_summary(_takeout(aware, timing="SCHEDULED")))
+
+
+@pytest.mark.django_db
+def test_courier_line_says_ifood_picks_the_courier_until_it_does():
+    order = _order(payments={"prepaid_q": 3000})
+    order.ref = "IFOOD-COURIER-LINE"
+    order.data["fulfillment_type"] = "delivery"
+    order.data["ifood"]["delivered_by"] = "IFOOD"
+    assert "Entregador do iFood: o iFood designa perto da hora de sair" in ifood.operation_summary(order)
+    # Designado, quem diz o nome e o andamento é o selo do cabeçalho: a linha sai.
+    order.data["ifood"]["logistics"] = {"ASSIGN_DRIVER": {"metadata": {"workerName": "Marcos"}}}
+    assert ifood.logistics_label(order) == "Entregador do iFood designado: Marcos"
+    assert not any(line.startswith("Entregador do iFood") for line in ifood.operation_summary(order))

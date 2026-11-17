@@ -345,6 +345,20 @@ class OperatorAlert(models.Model):
         # do iFood) e a ação mora no pedido: "Tentar de novo". Fecha quando o
         # ``confirm`` passa, quando o iFood confirma ou quando o pedido acaba.
         ("ifood_accept_not_delivered", "iFood não recebeu o aceite"),
+        # O gestor fechou no calendário um dia que já tinha pedido em aberto
+        # marcado (encomenda paga, inclusive). Fechar não cancela nem remarca:
+        # o aviso, um por pedido, é para alguém remarcar ou falar com o cliente.
+        ("order_on_closed_day", "Pedido marcado para dia fechado"),
+        # O freio da IA (ID3A, E1): a 80% do teto diário de gasto chega o aviso; no
+        # teto, a IA paga para até o dia seguinte. O gasto de US$ 1.180 de 28/10 a
+        # 11/11 aconteceu sem nenhum dos dois.
+        ("ai_budget_warning", "IA perto do teto de gasto do dia"),
+        ("ai_budget_stopped", "IA parou: teto de gasto do dia atingido"),
+        # O polling do iFood (``ifood_poll --watch``) não tem resposta do iFood há
+        # mais de 2 min: pedido novo não entra, e o iFood cancela em 8 min o que
+        # ninguém aceitar. Fecha sozinho quando o polling volta a responder
+        # (``check_ifood_polling``, DEV-2026-017).
+        ("ifood_poll_stale", "iFood: pedidos pararam de entrar"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),
@@ -377,6 +391,8 @@ class OperatorAlert(models.Model):
     #: O financeiro de UM pedido (pagamento falhou, abaixo do total, contestação,
     #: pago depois de cancelar) é do gerente e mora em ``ORDER_TYPES``.
     FINANCE_TYPES = {
+        "ai_budget_warning",
+        "ai_budget_stopped",
         "payment_reconciliation_failed",
         "payment_ledger_drift",
         "cash_shift_open_at_closing",
@@ -414,7 +430,9 @@ class OperatorAlert(models.Model):
         "ifood_negotiation_open",
         "ifood_cancellation_refused",
         "ifood_accept_not_delivered",
+        "ifood_poll_stale",
         "fiscal_return_note_due",
+        "order_on_closed_day",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)

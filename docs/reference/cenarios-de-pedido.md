@@ -20,9 +20,11 @@ na §8.
 
 **Premissas do dono que este mapa não reabre:**
 
-- Não existe entregador da casa: toda entrega dos canais próprios sai pela **TaOn**, inclusive
-  a cobrada na porta (valor e troco vão na observação da corrida). No iFood quem entrega é o
-  **iFood**, sempre (`deliveredBy=IFOOD`).
+- Quem leva a entrega dos canais próprios é escolhido por corrida: o serviço padrão do Admin
+  (hoje a **TaOn**) vem marcado, e os **entregadores da casa** livres são opção no mesmo gesto
+  (dono, 16/11/2026, DEV-2026-030; substitui a premissa de 13/10, "não existe entregador da
+  casa"). A cobrança na porta vai com quem levar. No iFood quem entrega é o **iFood**, sempre
+  (`deliveredBy=IFOOD`).
 - Encomenda: a casa dita o fluxo (cliente → recebimento → quando → produtos).
 - "Via Recibo primeiro, Nota depois": a NFC-e acompanha a **saída** da mercadoria.
 - Entrega sem CPF é aceita em todo canal e a nota sai presencial (ADR-035, 13/10/2026).
@@ -69,7 +71,7 @@ stateDiagram-v2
     new --> accepted: Aceitar (Gestor) · immediate (PDV) · iFood confirma
     new --> cancelled: Recusar (Gestor, com motivo) · Pix venceu · sem estoque · iFood CAN
     accepted --> completed: venda de balcão já entregue (system:counter_handoff, só PDV)
-    accepted --> preparing: KDS Iniciar · "Iniciar preparo" (atalho do Gestor, mesmo ato) · despertador 00:05 da encomenda
+    accepted --> preparing: KDS Iniciar · "Iniciar preparo" (atalho do Gestor, mesmo ato)
     accepted --> ready: (existe no mapa; nenhum botão usa)
     preparing --> ready: último ticket Pronto (KDS) · "Marcar pronto" (Gestor)
     ready --> preparing: Desfazer o Pronto · reabrir ticket
@@ -366,8 +368,9 @@ antes": é o modo Encomendas com data **Hoje** e janela **A combinar**
    `target_date`; a sugestão de produção soma (`craftsman/.../contrib/demand/backend.py:127`) e o
    lote mostra os pedidos que esperam por ele (`projections/production.py:3019`).
 4. **Na véspera:** `preorder_reminder` ao cliente (`reschedule.py:452`).
-5. **No dia, 00:05:** o despertador `preorder.activate` (`lifecycle.py:983-1018`) dá a baixa e
-   cria os tickets do KDS ("Encomenda · cliente" no card).
+5. **No dia, na hora da Cozinha** (hora combinada − preparo − antecedência; sem hora combinada,
+   a abertura): o despertador `preorder.activate` (`lifecycle.preorder_activation_at`) dá a baixa e
+   cria os tickets do KDS ("Encomenda · cliente" no card). O pedido segue Aceito até o "Iniciar".
 6. **KDS** prepara e separa → `ready` → aviso de pronto.
 7. **PDV › Encomendas** (Dia/Semana, "A receber × Pagas", "Falta imprimir", "Imprimir N vias"):
    **Cliente veio buscar** → Entregar → `completed`, NFC-e.

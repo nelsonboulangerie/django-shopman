@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from django.utils import formats, timezone
+from shopman.utils.formatting import format_clock
 from shopman.utils.monetary import format_money
 
 logger = logging.getLogger(__name__)
@@ -112,7 +113,7 @@ class PreorderCardProjection:
     commitment_date: str  # ISO
     commitment_date_display: str  # "hoje" · "amanhã" · "sáb, 27/09"
     window_label: str  # "" quando não houve janela combinada
-    window_start: str  # "HH:MM" ou ""
+    window_start: str  # "12h45" (como a tela lê) ou ""
     status: str
     situation: str
     situation_label: str
@@ -590,7 +591,7 @@ def _card(order, *, reads, channel_labels: dict[str, str]) -> PreorderCardProjec
         commitment_date=commitment.isoformat(),
         commitment_date_display=_date_display(commitment, timezone.localdate()),
         window_label=window_label(slot),
-        window_start=start.strftime("%H:%M") if start else "",
+        window_start=format_clock(start) if start else "",
         status=order.status,
         situation=situation,
         situation_label=SITUATION_LABELS[situation],

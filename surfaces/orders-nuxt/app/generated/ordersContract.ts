@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py + shopman/backstage/projections/deliveries.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -60,7 +60,24 @@ export interface Action {
   confirmation: Record<string, unknown>;
 }
 
-/** IFoodNegotiationProjection(id: str, type: str, action: str, message: str, expires_at: str, timeout_action: str, state: str, can_respond: bool, response_notice: str, items: tuple[str, ...], evidence_urls: tuple[str, ...], accept_reasons: tuple[str, ...], reject_reasons: tuple[str, ...], alternatives_available: bool, actions: tuple[shopman.shop.projections.types.Action, ...]) */
+/** IFoodNegotiationChoice(value: str, label: str) */
+export interface IFoodNegotiationChoice {
+  value: string;
+  label: string;
+}
+
+/** Uma contraproposta que o operador pode enviar. */
+export interface IFoodNegotiationAlternative {
+  id: string;
+  type: string;
+  label: string;
+  max_amount_q: number;
+  max_amount_display: string;
+  minutes_options: number[];
+  reason_options: IFoodNegotiationChoice[];
+}
+
+/** IFoodNegotiationProjection(id: str, type: str, action: str, message: str, expires_at: str, timeout_action: str, state: str, can_respond: bool, response_notice: str, items: tuple[str, ...], evidence_urls: tuple[str, ...], accept_reasons: tuple[str, ...], reject_reasons: tuple[str, ...], alternatives_available: bool, alternatives: tuple[shopman.backstage.projections.ifood_handshake.IFoodNegotiationAlternative, ...], actions: tuple[shopman.shop.projections.types.Action, ...]) */
 export interface IFoodNegotiationProjection {
   id: string;
   type: string;
@@ -76,6 +93,7 @@ export interface IFoodNegotiationProjection {
   accept_reasons: string[];
   reject_reasons: string[];
   alternatives_available: boolean;
+  alternatives: IFoodNegotiationAlternative[];
   actions: Action[];
 }
 
@@ -307,6 +325,7 @@ export interface OrderItemProjection {
   qty: string;
   unit_price_display: string;
   total_display: string;
+  notes: string;
 }
 
 /** Uma linha de desconto do detalhe: "Cupom BEMVINDO", "−R$ 5,00". */
@@ -543,6 +562,8 @@ export interface OrderCardProjection {
   waitlist_label: string;
   ifood_cancellation_notice: string;
   ifood_pickup_code: string;
+  ifood_pickup_code_label: string;
+  ifood_logistics_label: string;
   ifood_schedule_label: string;
   ifood_remote_ahead_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
@@ -728,6 +749,7 @@ export interface OperatorOrderProjection {
   ifood_cancellation_notice: string;
   ifood_payment_summary: string[];
   ifood_operation_summary: string[];
+  ifood_logistics_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
   ifood_accept_failed: boolean;
   ifood_accept_notice: string;
@@ -816,6 +838,7 @@ export interface TwoZoneQueueProjection {
   equipment_out: EquipmentOutProjection[];
   equipment_available: EquipmentOptionProjection[];
   ride_candidates: RideCandidateProjection[];
+  ride_action: Action | null;
   ifood_negotiation_orders: OrderCardProjection[];
   cancel_reasons: CancelReasonProjection[];
   awareness: QueueAwarenessProjection | null;
@@ -1138,4 +1161,79 @@ export interface OrderHistoryProjection {
   total: number;
   has_next: boolean;
   total_label: string;
+}
+
+/** DeliveryPointProjection(latitude: 'float', longitude: 'float') */
+export interface DeliveryPointProjection {
+  latitude: number;
+  longitude: number;
+}
+
+/** Um pedido de entrega: na lista Aguardando ou como parada de uma corrida. */
+export interface DeliveryStopProjection {
+  ref: string;
+  code: string;
+  customer: string;
+  place: string;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  stage: string;
+  volumes: number;
+  done: boolean;
+  change_out_suggested_q: number;
+  needs_machine: boolean;
+  change_label: string;
+  group_refusal: string;
+  error: string;
+  dispatch_action: Action | null;
+}
+
+/** DeliveryDriverProjection(name: 'str', phone: 'str', vehicle: 'str') */
+export interface DeliveryDriverProjection {
+  name: string;
+  phone: string;
+  vehicle: string;
+}
+
+/** Uma corrida chamada, viva: do "procurando" à volta do entregador. */
+export interface DeliveryRideProjection {
+  key: string;
+  number: number;
+  letter: string;
+  state: string;
+  status_label: string;
+  stops: DeliveryStopProjection[];
+  driver: DeliveryDriverProjection | null;
+  position: DeliveryPointProjection | null;
+  called_at: string;
+  called_by: string;
+  pickup_eta_at: string;
+  arrived_pickup_at: string;
+  picked_up_at: string;
+  delivery_eta_at: string;
+  tracking_url: string;
+  cost_display: string;
+  bags: number;
+  undeclared: string[];
+  lead_ref: string;
+  back_action: Action | null;
+  back_lines: string[];
+  cancel_action: Action | null;
+  cancel_state: string;
+  cancel_message: string;
+}
+
+/** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None) */
+export interface DeliveriesProjection {
+  origin: DeliveryPointProjection | null;
+  waiting: DeliveryStopProjection[];
+  rides: DeliveryRideProjection[];
+  max_stops: number;
+  machines: Record<string, unknown>[];
+  courier_on: boolean;
+  maps_key: string;
+  group_action: Action | null;
+  free_numbers: number[];
+  next_number: number | null;
 }

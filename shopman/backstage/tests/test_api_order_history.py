@@ -161,7 +161,7 @@ def test_row_contract(client, manager, orders):
     assert row["status_tone"] == "danger"
     assert row["channel_label"] == "iFood"
     assert row["total_display"] == "R$ 25,00"
-    assert row["closed_display"].endswith("12:00")
+    assert row["closed_display"].endswith("12h")
 
 
 def test_pagination(client, manager, orders, monkeypatch):

@@ -53,6 +53,7 @@ obrigou a escrever, e ela já está aplicada na trava do `operator-kit`:
 | **Em lote** · **Na hora** | o **modo de produção** da receita (`Recipe.production_mode`). *Em lote*: planejado e estocado, sai por ordem de produção (pão, creme, recheio, molho). *Na hora*: feito quando vende, vai à estação de Preparo e baixa os insumos na venda (café, chá, croque). Revenda é o produto sem receita, não um modo. ⛔ *fornada* para o modo; ⛔ *inativa*/*Arquivada* para dizer "na hora" (Arquivada é só arquivamento) | 20/10/2026 | ADR-040, "Modo de produção" |
 | **etapa** | a unidade do modo de fazer de uma receita (`Recipe.steps`, `RecipeVersion.steps`) e o avanço dela no lote (evento `step_advanced` = "Etapa avançada"). Decisão do dono: era "Etapas" no modelo e no Admin e "Passos" nas telas de receita. ⛔ **"passo" como nome da etapa de receita ou de produção** ("Passos", "Passos lidos", "Adicionar passo", "Passo 3" da receita). "Passo" continua certo para o que não é etapa: o passo do login, o passo a passo de instalação, "próximo passo" de uma instrução | 01/10 | trava: 3ª regra de `guardrails.vocabulary.test.ts` (texto do `production-nuxt`) + `test_vocabulario_etapa_da_receita.py` (literais do `craftsman` e dos arquivos `recipe`/`production` do backstage) |
 | **Grupo** (de clientes) | o conjunto comercial do cliente (`guestman.PriceTier`: varejo, atacado, staff), o mesmo nome no Gestor, no Marketing, no PDV e no Admin: "Grupo" no filtro e no público, "Exclusiva do grupo" na campanha, "Grupos de clientes" no Admin. Decisão do dono: o Marketing dizia *Faixa de preço* e o Gestor dizia *Grupos* para a mesma coisa; ficou **Grupo** nos dois. ⛔ **"Faixa de preço"** em texto de tela (o `Shop.price_range`, o "$$" do Google, é outra coisa e continua). O identificador `price_tier` fica: é o nome do modelo. A *lane* de processamento continua nomeada **plataforma**, nunca *faixa* | 20/10/2026 (substitui a de ≤22/09) | trava: `surfaces/marketing-nuxt/tests/operatorLanguage.test.ts` ("grupo é o conjunto do cliente") |
+| **hora: "12h45"** | toda hora que alguém LÊ, na suíte inteira (operador e cliente): "12h45", "9h05", "9h". ⛔ "12:45" em tela, aviso, alerta e comprovante. Regra completa na §2.7 | 16/11 | trava: `guardrails.clock.test.ts` (kit, loja e status) + `test_formato_de_hora.py` |
 | **Tela do cliente** | o monitor do balcão do **PDV** | 22/09 | — |
 | **Painel de retirada** | o painel público da **Cozinha** (rota `/pickup` não muda: URL é em inglês) | 22/09 | — |
 | **RevPASH · RFM** | traduzir no texto de tela; identificador, campo e comentário continuam em inglês | 22/09 | — |
@@ -72,6 +73,8 @@ obrigou a escrever, e ela já está aplicada na trava do `operator-kit`:
 | **gaveta** · **barra inferior** | no celular, a **gaveta** é a barra lateral aberta pelo ☰: o menu COMPLETO do app. A **barra inferior** é o menu RÁPIDO, de 3 a 5 vagas; uma delas é **Mais** (abre a gaveta) só quando sobra seção. Regra única para todo app, exceção só declarada com motivo | 08/10 | `quickBarLayout`/`quickBarProblems` (`operator-kit/app/presentation/suiteChrome.ts`), README do kit, "Barra lateral e barra inferior" |
 | **Seção · N pendências** | a descrição de contagem de uma seção, a MESMA na barra lateral, na gaveta e na barra inferior: "Saída · 2 pendências", "Pedidos · 1 pendência", ou "Seção · estado" ("Canais · 1 desligado"). ⛔ contagem por extenso própria de cada app no item de navegação ("Saída, 2 pedidos na Saída") | 08/10 | `sectionDescription` (`suiteChrome.ts`), testes do kit |
 | **Screen** (código) · **tela** (categoria) | a coisa. `display` é **papel** (`Channel.CommercePolicy.DISPLAY`, `SubjectType.DISPLAY`); `painel` é dashboard; `board` sai do vocabulário de tela | 24/09 | [`WP-TELAS-DE-PAREDE.md`](../plans/WP-TELAS-DE-PAREDE.md) |
+| **Painel · Fila · Tabela** (Gestor de pedidos) | os três modos de ver os pedidos, nesta ordem, só com ícone (Painel: três colunas, `columns-3`; Fila: faixas, `rows-3`; Tabela: `table-2`); o nome fica na dica e no aria. **Painel** é a casa, as três colunas Novos · Em preparo · Prontos; com uma coluna só aberta, os cartões ficam em até duas colunas. ⛔ *Quadro* (o modo), *Lista* (colide com a Fila) | 14/11 | `orders-nuxt/tests/queueV6.test.ts` |
+| **Corrida A · B · C** (Entregas do Gestor) | corrida se nomeia por **letra** (A, B, C… até Z), em toda tela, aria e mensagem: "Corrida B", "Chamar a corrida A". O **número** só grava (`courier.ride_number`, 1 a 26) e escolhe a letra e a cor (a cor repete a cada 6); nunca se escreve para o operador, e a URL do detalhe leva a chave da corrida (`?ride=<chave>`), não o número. A letra vem de `courier.ride_letter` (servidor) e `rideLetter` (Gestor). O número da **parada** dentro da corrida (1, 2, 3, na ordem do percurso) continua número. O id da corrida na TaOn não é nome: aparece só como referência para achar no painel da central ("número 776753357 na TaOn"). ⛔ *Corrida 2*, *corrida nº 2* | 16/11 | `orders-nuxt/tests/deliveries.test.ts` ("nenhuma tela do Gestor escreve o número da corrida"), `shop/tests/test_courier_service.py` |
 
 ---
 
@@ -159,23 +162,79 @@ directive, servidor* e os nomes de pacote (*offerman, stockman, craftsman, order
 guestman, doorman, payman, buyman, fiscalman, cashman*). "Projeção" em português fica: é
 a tela de previsão do B.I.
 
-### 2.6 Maiúsculas no selo: nome tem, frase não (dono, 03/11, 04/11 e 07/11/2026)
+### 2.6 Maiúscula no selo: só a primeira letra da sentença (dono, 16/11/2026)
 
-Selo (o `NuxtBadge` da suíte) que é **nome** leva maiúscula em cada palavra, e artigo,
-preposição e unidade no meio ficam minúsculos. Selo que é **frase** leva só a primeira
-maiúscula, como qualquer frase da casa. É frase a parte do selo que tem **"não"**, que
-tem **vírgula** ou que tem **cinco palavras ou mais**. Cada parte de um selo composto
-(separado por " · ") é julgada sozinha. Marca e sigla ("iFood", "PDV", "NFC-e") e
-palavra com número ficam como são.
+Selo (o `NuxtBadge` da suíte) é sentença: **só a primeira letra é maiúscula**, como
+qualquer frase da casa. Dono, 16/11/2026: "'Procurando Outro Entregador' ->
+'Procurando outro entregador'. A regra é clara: Maiúscula para primeira letra da
+sentença!", e vale para todo selo. Cada parte de um selo composto (separado por " · ")
+é uma sentença. Nome próprio ("Cozinha", "Diego"), marca e sigla ("iFood", "PDV",
+"NFC-e") e palavra com número ficam como são.
 
-| É nome (cada palavra maiúscula) | É frase (só a primeira) |
+| Certo | Errado |
 |---|---|
-| **Loja Online** · **A Receber** · **Pagar na Retirada** · **Saiu para Entrega** · **Pronto pela Cozinha** | **Falhou em todos os canais** · **Não enviado** · **Não atendida** · **NFC-e não solicitada** · **Aceito pelo provedor, sem comprovante** |
+| **Procurando outro entregador** · **Loja online** · **A receber** · **Pagar na retirada** · **Saiu para entrega** · **Pronto pela Cozinha** · **Pix · Não pago** | ⛔ *Procurando Outro Entregador* · *Loja Online* · *A Receber* · *Saiu para Entrega* |
+
+⛔ **Revertido em 16/11/2026**: a regra de 03/11, 04/11 e 07/11/2026 ("Maiúsculas no
+selo: nome tem, frase não") dava maiúscula a cada palavra do selo curto ("Loja Online",
+"A Receber", "Pagar na Retirada") e só a primeira ao selo-frase. Não volta.
 
 Mora num ponto só: `surfaces/operator-kit/app/presentation/badgeCase.ts`, aplicado pelo
-`NuxtBadge` do kit; nenhum app chama à mão. A trava é
+`NuxtBadge` do kit; nenhum app chama à mão. Quem escreve o texto do selo escreve em
+sentença; o kit só garante a primeira maiúscula. A trava é
 `surfaces/operator-kit/tests/badgeCase.test.ts`. A frase que não cabe em selo (o
 detalhe, o motivo) vai fora dele, em texto.
+
+### 2.7 Hora: "12h45" (dono, 16/11/2026)
+
+Toda hora que o operador ou o cliente **lê** se escreve como a casa fala: **"12h45"**. Vale
+para os onze apps de `surfaces/` (a loja incluída: aqui não há voz própria, a decisão foi
+"na suíte inteira"), para o que o servidor escreve (notificação, alerta, projeção,
+comprovante, Admin, a concierge) e para seed e copy configurável.
+
+| Caso | Escreve-se | Não se escreve |
+|---|---|---|
+| hora e minuto | **12h45** · **9h05** | 12:45 · 09h05 · 9h5 |
+| hora cheia | **9h** · **12h** · **0h** | 9h00 · 09h · 9:00 |
+| intervalo | **das 12h às 14h30** · **12h às 14h30** | 12:00 às 14:30 |
+| data e hora | **16/11, 12h45** · **16/11 às 12h45** | 16/11 12:45 |
+| com segundos, só onde o segundo é a informação | **12h45min30s** | 12:45:30 |
+
+Três escolhas de borda, todas tiradas do que a casa já escrevia antes da regra (horário de
+funcionamento da loja, "Aberto até 19h"; a hora combinada na Cozinha, "17h" e "14h30"):
+
+- **Sem zero à esquerda na hora** ("9h05"), minuto sempre com dois dígitos.
+- **Hora cheia sem minuto** ("9h"). É a forma mais curta e não tem segunda leitura: "9h"
+  só pode ser nove horas.
+- **Duração não é hora.** "12 min", "1 h 20 min", "há 3 h" seguem como estão: são quanto
+  tempo, não que horas.
+
+**Um formatador por metade, e mais nada formata hora:**
+
+- servidor: `shopman.utils.formatting.format_clock` (e `format_local` com a marca
+  `{clock}`, para data e hora juntas);
+- apps de operador: `surfaces/operator-kit/app/presentation/clock.ts` (`formatClock`,
+  `formatDateClock`, `formatClockRange`, `formatClockSeconds`);
+- loja e página de status: o módulo **gêmeo**, byte a byte, em `app/utils/clock.ts` de
+  cada uma (não estendem o kit e buildam sozinhas).
+
+**Fica de fora, por decisão escrita:**
+
+- **Formato de máquina.** O `"HH:MM"` que se grava e trafega (`opens_at`, `ready_from`, o
+  ref `"14:00-14:30"`, a janela de campanha), ISO, payload de terceiro, chave de cache e
+  log. Quem lê é código: a tela ordena e calcula com ele, e formata só ao exibir. Cada
+  linha leva o marcador `hora-ok: <motivo>`, e a trava exige o motivo.
+- **Campo de formulário.** O `<input type="time">`, o `UInputTime` e os campos de hora do
+  Admin mostram e aceitam a forma do campo. A mensagem de erro que ensina a digitar
+  ("Use o formato HH:MM. Ex.: 12:00.") acompanha o campo.
+- **Carimbo técnico com segundos.** A coluna de auditoria do Admin, o DANFE (leiaute
+  legal), o backup e o log. Não é hora de relance, é registro.
+- **Migração aplicada** (é história) e **exportação de dado** (CSV é dado, não leitura).
+
+**A trava** reprova o formatador antigo, não a frase: `toLocaleTimeString(`,
+`hour: "2-digit"`, `timeStyle`, `%H:%M`, `"H:i"`, `|time` e a hora montada à mão. O que
+ela não vê é a hora escrita por extenso numa string ("das 20:00 às 08:00"): isso é olho
+de quem escreve e de quem revisa.
 
 ---
 

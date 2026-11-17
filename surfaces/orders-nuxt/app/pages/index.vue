@@ -37,6 +37,7 @@ import {
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import type { OrderCardProjection } from "~/types/orders";
 import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
+import { boardStrip, type BoardStrip } from "~/presentation/boardStrip";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import type { OperatorBulkItem } from "../../../operator-kit/app/presentation/bulkBar";
@@ -60,6 +61,7 @@ import {
 } from "~/presentation/queue";
 import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const {
   readMetadata,
@@ -105,7 +107,7 @@ const { canManageOrders } = useGestorAccess();
 
 // A DANFE da sacola sai sozinha pelo servidor; o card imprime ou reimprime à mão.
 const danfePrint = useDanfePrint(deviceAgent, refresh);
-// A Via Pedido no ⋯ de cada pedido (cartão e Grade), pela impressora desta estação.
+// A Via Pedido no ⋯ de cada pedido (cartão e Fila), pela impressora desta estação.
 provideOrderTicketPrinter(deviceAgent);
 
 function handleSoundAction() {
@@ -132,10 +134,7 @@ const liveTone = computed(() =>
 const readClock = computed(() => {
   const at = readMetadata.value?.generated_at;
   return at
-    ? new Date(at).toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+    ? formatClock(new Date(at))
     : "";
 });
 
@@ -187,7 +186,7 @@ watch(
 );
 const queueViewport = ref<HTMLElement | null>(null);
 // Conferência das sacolas (P1-13): o leitor do posto Saída bipa o QR da Via
-// Pedido em qualquer ponto do quadro. Só avisa; a saída segue no cartão.
+// Pedido em qualquer ponto do painel. Só avisa; a saída segue no cartão.
 const volumeCheck = useVolumeCheck({
   enabled: () => !stationLocked.value,
   onChecked: () => refresh(),
@@ -260,6 +259,14 @@ const fulfillment_ = computed(() => fulfillmentCounts(allCards.value));
 const sortLabel = computed(
   () => SORT_OPTIONS.find((o) => o.key === sort.value)?.label ?? "Chegada",
 );
+const boardOrderHint = computed(() => {
+  const by: Record<string, string> = {
+    arrival: "Por chegada",
+    urgency: "Mais urgente primeiro",
+    recent: "Mais recentes primeiro",
+  };
+  return `${by[sort.value] ?? sortLabel.value}, em cada coluna`;
+});
 const sortMenuItems = computed(() =>
   (view.value === "queue" ? QUEUE_SORT_OPTIONS : SORT_OPTIONS).map(
     (option) => ({
@@ -281,18 +288,29 @@ const sortMenuItems = computed(() =>
 );
 
 function triaged(zone: ZoneView): OrderCardProjection[] {
-  return triageCards(zone.cards, {
+  const cards = triageCards(zone.cards, {
     query: query.value,
     channel: channel.value,
     sort: sort.value,
     fulfillment: fulfillment.value,
   });
+  return view.value === "board" ? inBoardScope(cards) : cards;
+}
+// Os recortes do Painel (D, prévia `gestor-d`): Todos · Precisa de você · Atrasados,
+// com a régua da Fila, em cada coluna. O Painel abre em Todos; a Fila tem o seu.
+const boardScope = ref<QueueScope>("all");
+function inBoardScope(cards: OrderCardProjection[]): OrderCardProjection[] {
+  if (boardScope.value === "all") return cards;
+  const keep = new Set(
+    queueItems(cards, nowMs.value, { scope: boardScope.value }).map((item) => item.card.ref),
+  );
+  return cards.filter((card) => keep.has(card.ref));
 }
 // flat rows for the dense table view, honouring the same triage + zone order.
 const tableRows = computed(() =>
   flattenZones(zones.value.map((z) => ({ ...z, cards: triaged(z) }))),
 );
-// A Lista (dono, 07/10/2026): linhas integradas num card branco; a linha principal tem
+// A Tabela (dono, 07/10/2026): linhas integradas num card branco; a linha principal tem
 // só o gesto do momento e o ⋯; o resto (detalhes e todas as ações) abre na própria
 // linha. A coluna de seleção fica sempre: marcar uma linha liga a barra de lote.
 // A seleção e a seta de abrir são da `OperatorTable`; Pedido é a chave (fixada) e
@@ -323,7 +341,7 @@ watch(
   },
 );
 const supervisionExpanded = ref<Record<string, boolean>>({});
-/** O gesto do momento numa linha da Lista: o primário (ou o travado, com o cadeado). */
+/** O gesto do momento numa linha da Tabela: o primário (ou o travado, com o cadeado). */
 function rowPrimary(card: OrderCardProjection) {
   return (
     cardAffordances(card).find(
@@ -383,7 +401,7 @@ function stopSelection() {
   selected.value = new Set();
 }
 const isSelected = (ref_: string) => selected.value.has(ref_);
-// A seleção da Lista é a mesma da barra de lote: a tabela marca, o Set guarda.
+// A seleção da Tabela é a mesma da barra de lote: a tabela marca, o Set guarda.
 const supervisionRowSelection = computed<Record<string, boolean>>({
   get: () => Object.fromEntries([...selected.value].map((ref_) => [ref_, true])),
   set: (next) => {
@@ -493,13 +511,13 @@ const screen = useScreen();
 const isPhone = screen.belowMd;
 const hydrated = screen.ready;
 // Tablet em pé: três colunas de ~240 px cortavam selo e prazo do cartão. Abaixo do
-// lg, com mais de uma coluna aberta, o quadro usa as abas do celular.
+// lg, com mais de uma coluna aberta, o painel usa as abas do celular.
 const isNarrowTablet = computed(
   () => screen.belowLg.value && !screen.belowMd.value,
 );
 // A aba "Negociação" (só quando há): o pedido do iFood já fora das etapas com
 // negociação aberta. É ação pendente do gerente; a Fila do desktop o mostra, e no
-// quadro em abas ele ficava sem lugar. A Saída do celular é do posto, não do gerente.
+// painel em abas ele ficava sem lugar. A Saída do celular é do posto, não do gerente.
 const negotiationZone = computed(() =>
   queue.value ? negotiationZoneView(queue.value) : null,
 );
@@ -541,7 +559,9 @@ const phoneTabs = computed(() => {
         { key: "prep", title: "Em preparo" },
       ]
     : [
-        ...(isPhone.value ? zones.value : desktopZones.value),
+        // Em abas, as três etapas aparecem sempre: recolher é gesto das colunas, e a
+        // aba do Preparo não pode sumir do tablet porque ele abre recolhido na mesa.
+        ...zones.value,
         ...(negotiationZone.value ? [negotiationZone.value] : []),
       ].map((zone) => ({
         key: zone.key,
@@ -599,7 +619,7 @@ function onSwipe(card: OrderCardProjection, key: string) {
 }
 
 // ── colunas ajustáveis e recolhíveis, lembradas por posto (SUITE-UX §16) ──
-// O tablet do passe fica só com a Saída: é o mesmo quadro, com Entrada e Preparo
+// O tablet do passe fica só com a Saída: é o mesmo painel, com Entrada e Preparo
 // recolhidas numa faixa. Nenhuma ação muda; muda só o que cabe na tela.
 const boardLayout = useBoardLayout();
 // O sinal de canal decide se a segunda linha do cabeçalho existe. Montar sempre o
@@ -612,6 +632,22 @@ const hasChannelQueueSignal = computed(() =>
 const desktopZones = computed(() =>
   zones.value.filter((zone) => boardLayout.isOpen(zone.key)),
 );
+// As tiras das colunas recolhidas, presas à coluna aberta seguinte (ou, no fim, à
+// última): a ordem Entrada · Preparo · Saída não muda quando uma recolhe.
+const boardStrips = computed(() => {
+  const out: Record<string, { before: BoardStrip[]; after: BoardStrip[] }> = {};
+  let pending: BoardStrip[] = [];
+  let last = "";
+  for (const zone of zones.value) {
+    if (boardLayout.isOpen(zone.key)) {
+      out[zone.key] = { before: pending, after: [] };
+      pending = [];
+      last = zone.key;
+    } else pending.push(boardStrip(zone, triaged(zone), nowMs.value));
+  }
+  if (last && pending.length) out[last]!.after = pending;
+  return out;
+});
 const boardAsTabs = computed(
   () =>
     isPhone.value || (isNarrowTablet.value && desktopZones.value.length > 1),
@@ -640,11 +676,19 @@ const boardSplitterPersistenceKey = computed(
   () =>
     `orders-board:${boardLayout.station.value || "device"}:${desktopZones.value.map((zone) => zone.key).join("-")}`,
 );
+// Abriu ou recolheu uma coluna: a largura guardada no navegador para esse conjunto
+// sai antes de o Splitter montar, e as abertas voltam a dividir o espaço por igual.
+const boardSplitter = ref<{ reset: () => void } | null>(null);
+watch(
+  boardSplitterPersistenceKey,
+  () => boardSplitter.value?.reset(),
+  { flush: "pre" },
+);
 // O índice de estações da Cozinha (estação de Saída) e o posto de saída chegam com
-// `?columns=expedition`: o quadro abre só com a Saída, e a arrumação fica no posto.
+// `?columns=expedition`: o painel abre só com a Saída, e a arrumação fica no posto.
 // O parâmetro sai da URL depois de aplicado, para o operador poder abrir as outras.
 // O rail usa o mesmo parâmetro: "Pedidos" abre as três colunas (`?columns=all`) e
-// "Saída" abre o posto do passe, inclusive com o quadro já na tela.
+// "Saída" abre o posto do passe, inclusive com o painel já na tela.
 function applyColumnsQuery() {
   const wanted = route.query[BOARD_COLUMNS_QUERY];
   if (wanted !== "expedition" && wanted !== "all") return;
@@ -665,9 +709,10 @@ watch(
   },
 );
 // O posto de saída é tablet de toque: todo alvo do cartão sobe para 48 px.
-// A Fila "Precisa de você" (V4-G4) é a casa do desktop e do tablet deitado. O celular e
+// A Fila "Precisa de você" (V4-G4) segue no desktop e no tablet deitado; a casa é o
+// Painel. O celular e
 // o tablet em pé seguem com as colunas em abas, e o posto Saída com a Saída larga: lá a
-// escolha "Grade" vira a Lista. Antes de montar (SSR), vale a escolha guardada.
+// escolha "Fila" vira o Painel. Antes de montar (SSR), vale a escolha guardada.
 const queueAvailable = computed(
   () => !boardLayout.exitPost.value && !screen.belowLg.value,
 );
@@ -676,15 +721,20 @@ const view = computed(() =>
     ? "board"
     : viewMode.value,
 );
+// Três modos de ver o MESMO trabalho, só com ícone (dono, 14/11): Painel, a casa,
+// primeiro; depois Fila e Tabela. O nome fica escondido na tela (leitor de tela e
+// teste o acham) e aparece na dica: o NuxtTabs não repassa aria-label do item.
 const viewTabs = computed(() => [
+  { value: "board", icon: "i-lucide-columns-3", title: "Painel" },
   ...(queueAvailable.value
-    ? [{ value: "queue", label: "Grade", icon: "i-lucide-layout-grid" }]
+    ? [{ value: "queue", icon: "i-lucide-rows-3", title: "Fila" }]
     : []),
-  { value: "table", label: "Lista", icon: "i-lucide-list" },
+  { value: "table", icon: "i-lucide-table-2", title: "Tabela" },
 ]);
 function pickView(value: string | number) {
   const next = String(value);
-  if (next === "queue" || next === "table") viewMode.value = next;
+  if (next === "queue" || next === "board" || next === "table")
+    viewMode.value = next;
 }
 const exitPostView = computed(
   () => view.value === "board" && boardLayout.exitPost.value && !isPhone.value,
@@ -701,8 +751,8 @@ const compactHeader = computed(
     (exitPostView.value || (screen.belowXl.value && !isPhone.value)),
 );
 
-// O rail conta o que o quadro vê: pedidos novos em Pedidos e o que está na Saída, e
-// acende "Saída" quando o posto está só com ela. Fora do quadro, a contagem leve do rail.
+// O rail conta o que o painel vê: pedidos novos em Pedidos e o que está na Saída, e
+// acende "Saída" quando o posto está só com ela. Fora do painel, a contagem leve do rail.
 const rail = useGestorRail();
 watch(
   () => ({
@@ -765,7 +815,7 @@ const shortcutHint = (key: string) =>
   String(BOARD_ZONE_KEYS.indexOf(key as (typeof BOARD_ZONE_KEYS)[number]) + 1);
 
 // ── a Fila "Precisa de você" (V4-G4) ────────────────────────────────────────
-// Os mesmos recortes do quadro (busca, canal, Entrega/Retirada), mais as encomendas
+// Os mesmos recortes do painel (busca, canal, Entrega/Retirada), mais as encomendas
 // que ainda pedem aceite. O foco começa no mais urgente; ↑/↓ andam, Enter faz o gesto.
 // A Fila também recebe o pedido em negociação no iFood, inclusive o já entregue (o
 // cliente reclama depois): ele espera uma resposta como qualquer outro (dono, 07/10).
@@ -789,7 +839,7 @@ const queueOrder = computed(() => {
   return scope.value === "attention" ? order.slice(0, QUEUE_FOCUS) : order;
 });
 // A trilha do anterior/próximo do pedido (fase 2, `OperatorRecordNav`): a ordem que
-// esta tela mostra, com o recorte (escopo, busca, canal, ordenação). Na Grade, todos
+// esta tela mostra, com o recorte (escopo, busca, canal, ordenação). Na Fila, todos
 // do escopo, não só os em foco: "3 de 18" conta o que o escopo tem.
 const { remember: rememberTrail } = useRecordTrail(ORDERS_QUEUE_TRAIL);
 const trailRefs = computed(() =>
@@ -825,6 +875,31 @@ const queueScopeTabs = computed(() =>
     count: scopeCounts.value[option.key],
   })),
 );
+const boardScopeCounts = computed(() =>
+  queueScopeCounts(
+    zones.value.flatMap((zone) => zone.cards),
+    nowMs.value,
+  ),
+);
+const boardScopeTabs = computed(() =>
+  (["all", "attention", "late"] as const).map((key) => ({
+    key,
+    label: QUEUE_SCOPES.find((option) => option.key === key)!.label,
+    count: boardScopeCounts.value[key],
+  })),
+);
+function pickBoardScope(value: string | number) {
+  if (value === "attention" || value === "all" || value === "late")
+    boardScope.value = value;
+}
+// O que a Saída do sistema fez sozinho e ainda se desfaz: a faixa abaixo do cabeçalho.
+const systemUndoLines = computed(() =>
+  (queue.value?.awareness?.system_actions ?? []).filter(
+    (line) => Boolean(line.undo_action) && Date.parse(line.undo_until_iso) > nowMs.value,
+  ),
+);
+const boardDesk = computed(() => view.value === "board" && !boardAsTabs.value);
+const showSystemBand = computed(() => boardDesk.value && systemUndoLines.value.length > 0);
 function pickScope(value: string | number) {
   if (value === "attention" || value === "all" || value === "late")
     scope.value = value;
@@ -1008,7 +1083,7 @@ function onKeydown(e: KeyboardEvent) {
   const column =
     view.value === "board" ? queueColumnForKey(e.key, boardLayout.keys) : null;
   if (column) {
-    // Com um diálogo aberto a tecla é do diálogo, não do quadro atrás dele.
+    // Com um diálogo aberto a tecla é do diálogo, não do painel atrás dele.
     if (
       typing ||
       rejectRef.value ||
@@ -1068,7 +1143,7 @@ function onKeydown(e: KeyboardEvent) {
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
-// reject dialog: o MESMO `OrderReasonDialog` do detalhe (beta 06/11: o quadro tinha
+// reject dialog: o MESMO `OrderReasonDialog` do detalhe (beta 06/11: o painel tinha
 // um diálogo próprio, com texto livre). Uma lista de motivos em qualquer canal; no
 // iFood o diálogo esconde o que o iFood não oferece.
 const rejectRef = ref<string | null>(null);
@@ -1328,13 +1403,6 @@ const attention = computed(() => {
     what: card?.status_label || "Pedido para tratar",
   };
 });
-// O navegador só deixa tocar som depois do primeiro toque na tela, e qualquer toque já
-// liga. Em vez de "Som bloqueado" pendurado no aviso, a tela pede o toque uma vez.
-const startDismissed = ref(false);
-function startTap() {
-  startDismissed.value = true;
-  handleSoundAction();
-}
 // Ver: abre a zona do pedido. Na Saída, fica nela se o pedido é da Saída ou do preparo;
 // senão sai do posto e abre Pedidos (o selo muda junto).
 function seeAttention() {
@@ -1353,7 +1421,7 @@ watch(error, (now, before) => {
   if (now && now !== before) queueFailures.value += 1;
 });
 // O ⋮ da linha do chão: as ações da fila e, em grupos próprios, Ordenar e Ver como (não
-// são filtro: ficam fora do painel). No celular a Grade não existe: Colunas ou Lista.
+// são filtro: ficam fora do painel). No celular a Fila não existe: Painel ou Tabela.
 const compactOptions = computed(() => [
   phoneHeaderActions.value.map(({ priority: _p, ...item }) => item),
   ...(phoneExitMode.value
@@ -1367,8 +1435,8 @@ const compactOptions = computed(() => [
           { type: "label" as const, label: "Ver como" },
           ...(
             [
-              { key: "board", label: "Colunas", icon: "i-lucide-columns-3" },
-              { key: "table", label: "Lista", icon: "i-lucide-list" },
+              { key: "board", label: "Painel", icon: "i-lucide-columns-3" },
+              { key: "table", label: "Tabela", icon: "i-lucide-table-2" },
             ] as const
           ).map((option) => ({
             label: option.label,
@@ -1395,7 +1463,7 @@ function compactClear() {
          enquanto há pedido novo esperando. No posto Saída (`gestor-colunas4.html`):
          "Visão: Saída", "Mostrar as 3 colunas" e o som; o resto no ⋯. -->
     <OperatorCompactBar
-      :title="phoneExitMode ? 'Saída' : 'Pedidos'"
+      title="Pedidos"
       :tone="liveTone"
       :time="readClock"
       :conn-label="error ? 'Atualização falhou' : realtimeView.label"
@@ -1403,7 +1471,7 @@ function compactClear() {
       search-button-label="Buscar por código, cliente ou item"
       :filter-active="channel !== 'all' || fulfillment !== 'all'"
       :filter-label="compactFilterLabel"
-      :summary="visibleCount + ' de ' + compactTotal + ' pedidos no quadro.'"
+      :summary="visibleCount + ' de ' + compactTotal + ' pedidos no painel.'"
       :options="compactOptions"
       @clear="compactClear"
     >
@@ -1438,28 +1506,8 @@ function compactClear() {
         <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square class="size-11 justify-center text-inverted" aria-label="Fechar o aviso" data-attention-close @click="notices.close(`attention:${attentionRef}`)" />
       </div>
     </div>
-    <!-- O som pede um toque do navegador uma vez; a tela pede, ao abrir (celular). Qualquer
-         toque já libera o som (o kit escuta o primeiro gesto); o botão é a porta para quem
-         chega pelo teclado. -->
-    <NuxtModal
-      :open="isPhone && soundOn && soundBlocked && !startDismissed"
-      fullscreen
-      :close="false"
-      title="Toque para começar"
-      description="O som dos avisos de pedido liga junto."
-      data-sound-start
-      @update:open="(v) => { if (!v) startTap(); }"
-    >
-      <template #content>
-        <div class="flex h-full flex-col items-center justify-center gap-4 p-6 text-center" @pointerdown="startTap">
-          <p class="text-xl font-semibold text-highlighted">Toque para começar</p>
-          <p class="text-muted">O som dos avisos de pedido liga junto.</p>
-          <NuxtButton label="Começar" class="min-h-11" data-sound-start-button @click="startTap" />
-        </div>
-      </template>
-    </NuxtModal>
     <OperatorPageHeader
-      :title="exitPostView ? 'Saída' : 'Pedidos'"
+      title="Pedidos"
       :filters-wrap="false"
       :phone-actions="phoneHeaderActions"
       actions-from="md"
@@ -1481,7 +1529,7 @@ function compactClear() {
         <OperatorSuiteSearch
           ref="searchInput"
           :model-value="query"
-          screen-label="filtrando o quadro"
+          screen-label="filtrando o painel"
           :placeholder="
             exitPostView
               ? 'Código ou cliente'
@@ -1497,7 +1545,7 @@ function compactClear() {
       <template #actions>
         <!-- a visão deste posto e o caminho de volta às três colunas -->
         <template
-          v-if="view === 'board' && !boardLayout.allOpen.value"
+          v-if="view === 'board' && boardAsTabs && !boardLayout.allOpen.value"
         >
           <NuxtButton
             icon="i-lucide-columns-3"
@@ -1510,9 +1558,17 @@ function compactClear() {
           />
         </template>
         <!-- Uma corrida da TaOn para várias entregas prontas: some com menos de duas. -->
-        <CourierRideMenu :choices="rideCandidates" @done="refresh()" />
-        <!-- Onde está a maquininha: some quando todas estão na loja. -->
+        <CourierRideMenu
+          v-if="!(view === 'board' && !boardAsTabs && boardLayout.isOpen('expedition'))"
+          :choices="rideCandidates"
+          :action="queue?.ride_action"
+          @done="refresh()"
+          @stale="refresh()"
+        />
+        <!-- Onde está a maquininha: some quando todas estão na loja (no Painel, mora na
+             linha de baixo). -->
         <EquipmentOutMenu
+          v-if="!boardDesk"
           :items="queue?.equipment_out ?? []"
           :is-busy="isBusy"
           @back="equipmentBack"
@@ -1557,9 +1613,13 @@ function compactClear() {
           />
         </NuxtFieldGroup>
         <template v-if="!compactHeader">
-          <!-- ordenar: na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
-               no quadro e na tabela, a ordem deles -->
-          <NuxtDropdownMenu :items="sortMenuItems" :content="{ align: 'end' }">
+          <!-- ordenar (no Painel, mora no ⋮ e a ordem em vigor aparece na linha de baixo): na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
+               no painel e na tabela, a ordem deles -->
+          <NuxtDropdownMenu
+            v-if="!boardDesk"
+            :items="sortMenuItems"
+            :content="{ align: 'end' }"
+          >
             <NuxtButton
               icon="i-lucide-arrow-up-down"
               trailing-icon="i-lucide-chevron-down"
@@ -1573,10 +1633,9 @@ function compactClear() {
             />
           </NuxtDropdownMenu>
 
-          <!-- visão: dois segmentos genéricos, Grade G (os cartões da Fila) | Lista L (a
-               tabela densa, com seleção em lote), nomes que servem a qualquer tela com
-               muitos registros (dono, 07/10/2026). As três colunas (Entrada, Preparo,
-               Saída) moram no ⋯ e na tecla V, e o posto Saída abre nelas. -->
+          <!-- visão: Painel · Fila · Tabela, um controle só, só com ícone (dono,
+               14/11/2026). A Fila some abaixo do lg (não cabe); o dispositivo lembra a
+               escolha. -->
           <NuxtTabs
             :model-value="view"
             :items="viewTabs"
@@ -1585,8 +1644,12 @@ function compactClear() {
             aria-label="Visão do Gestor"
             data-view-switch
             @update:model-value="pickView"
-          />
-          <!-- Exibir (linhas e colunas) só existe com a Lista na tela. -->
+          >
+            <!-- o nome, só para o leitor de tela: o NuxtTabs não repassa aria-label do
+                 item, e o rótulo visível ocuparia espaço. -->
+            <template #trailing="{ item }"><span class="sr-only">{{ item.title }}</span></template>
+          </NuxtTabs>
+          <!-- Exibir (linhas e colunas) só existe com a Tabela na tela. -->
           <OperatorTableView v-if="view === 'table'" table-key="orders-queue" />
         </template>
       </template>
@@ -1609,6 +1672,7 @@ function compactClear() {
           :attention-pending="attentionPending"
           :selecting="selecting"
           :full="compactHeader"
+          :sort-in-menu="boardDesk"
           @refresh="refresh()"
           @acknowledge="acknowledgeAttention"
           @select="selecting ? stopSelection() : startSelection()"
@@ -1635,26 +1699,55 @@ function compactClear() {
         />
       </template>
       <!-- na Fila (v4): "Precisa de você N · Todos N · ● Atrasados N", o recorte do que
-           muda o trabalho; no quadro e na tabela, "Todos" tira os recortes. É o primário
+           muda o trabalho; no painel e na tabela, "Todos" tira os recortes. É o primário
            da toolbar: no celular fica na linha, ao lado do "Filtros". -->
       <template
-        v-if="view === 'queue' && !(isPhone && phoneExitMode)"
+        v-if="(view === 'queue' && !(isPhone && phoneExitMode)) || boardDesk"
         #filters-primary
       >
-        <!-- A Fila só existe do `lg` para cima (`queueAvailable`): o CSS diz o mesmo, e o
-             celular não desenha os escopos antes de montar. -->
+        <!-- Um controle só para os recortes (o da Fila e o do Painel, cada um com o seu
+             estado). A Fila só existe do `lg` para cima (`queueAvailable`): o CSS diz o
+             mesmo, e o celular não desenha os escopos antes de montar. -->
         <OperatorQuickFilters
-          class="max-lg:hidden"
-          :model-value="scope"
-          :items="queueScopeTabs"
-          label="Recortes da fila"
-          data-queue-scopes
-          @update:model-value="pickScope(String($event))"
+          :class="view === 'queue' ? 'max-lg:hidden' : undefined"
+          :model-value="view === 'queue' ? scope : boardScope"
+          :items="view === 'queue' ? queueScopeTabs : boardScopeTabs"
+          :label="view === 'queue' ? 'Recortes da fila' : 'Recortes do painel'"
+          :data-queue-scopes="view === 'queue' ? '' : undefined"
+          :data-board-scopes="view === 'queue' ? undefined : ''"
+          @update:model-value="
+            view === 'queue'
+              ? pickScope(String($event))
+              : pickBoardScope(String($event))
+          "
         />
       </template>
-      <template v-if="hasChannelQueueSignal" #feedback>
-        <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
-        <ChannelQueueSignal :attention="channelAttention" />
+      <!-- À direita da linha de baixo, no Painel: a ordem em vigor (trocar fica no ⋮) e
+           a maquininha na rua, que só aparece enquanto alguma está fora. -->
+      <template v-if="boardDesk" #filters-end>
+        <div class="flex items-center gap-2">
+          <EquipmentOutMenu
+            :items="queue?.equipment_out ?? []"
+            :is-busy="isBusy"
+            @back="equipmentBack"
+          />
+          <span class="op-micro text-muted-foreground" data-board-order-hint>
+            {{ boardOrderHint }}
+          </span>
+        </div>
+      </template>
+      <template v-if="hasChannelQueueSignal || showSystemBand" #feedback>
+        <div class="flex flex-col gap-2">
+          <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
+          <ChannelQueueSignal v-if="hasChannelQueueSignal" :attention="channelAttention" />
+          <OrderSystemBand
+            v-if="showSystemBand"
+            :lines="systemUndoLines"
+            :busy="isBusy"
+            :server-now="queue?.intake[0]?.server_now_iso"
+            @undo="(ref_) => onAction(ref_, 'undo_ready')"
+          />
+        </div>
       </template>
       <!-- Com o modo de seleção ligado, a barra de seleção toma o lugar da toolbar. -->
       <template v-if="selecting" #selection>
@@ -1719,6 +1812,20 @@ function compactClear() {
         @switch="volumeCheck.switchTo"
         @dismiss-alarm="volumeCheck.dismissAlarm"
         @end="volumeCheck.end"
+      />
+      <!-- O navegador só deixa tocar som depois do primeiro toque na tela, e qualquer toque
+           já liga (o kit escuta o primeiro gesto). O aviso não bloqueia a fila (dono,
+           14/11): fecha no X e volta enquanto o som seguir mudo. -->
+      <NuxtAlert
+        v-if="isPhone && soundOn && soundBlocked && notices.isOpen('sound-blocked')"
+        v-bind="notices.closeProps"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-volume-x"
+        title="Som dos pedidos desligado"
+        description="Toque na tela para ligar."
+        data-sound-blocked
+        @update:open="notices.onOpen('sound-blocked', $event)"
       />
       <!-- A fila é lida só no cliente (`server: false`): o servidor e a hidratação
            desenham o esqueleto também, senão o cliente hidratava um nó que o servidor
@@ -1793,20 +1900,32 @@ function compactClear() {
           @switch="(ref_) => (switchRef = ref_)"
         />
 
-        <!-- O quadro usa o Splitter oficial do kit no desktop. No celular, as tabs
+        <!-- O painel usa o Splitter oficial do kit no desktop. No celular, as tabs
              mantêm uma coluna por vez: nenhuma alça ou faixa paralela ao Nuxt UI. -->
         <template v-else-if="view === 'board'">
           <OperatorSplitter
             v-if="!boardAsTabs"
             id="orders-board-columns"
+            ref="boardSplitter"
             :persistence-key="boardSplitterPersistenceKey"
             :items="boardSplitterItems"
             class="min-h-full flex-1"
             handle-label="Ajustar largura das colunas"
+            quiet
             data-board-columns
             @layout="boardLayout.applySizes"
           >
             <template v-for="zone in desktopZones" :key="zone.key" #[zone.key]>
+              <!-- As colunas recolhidas ficam no lugar delas, como tira: as que vêm
+                   antes desta coluna aberta (e, na última, as que vêm depois). -->
+              <div class="flex h-full min-h-0 w-full min-w-0 gap-2.5 px-1">
+              <OrderBoardStrip
+                v-for="closed in boardStrips[zone.key]?.before ?? []"
+                :key="closed.key"
+                :strip="closed"
+                :shortcut="shortcutHint(closed.key)"
+                @open="boardLayout.open(closed.key)"
+              />
               <OrderBoardColumn
                 :zone="zone"
                 :cards="triaged(zone)"
@@ -1814,6 +1933,7 @@ function compactClear() {
                 :next-ref="zoneNext(zone)"
                 :phone="false"
                 :wide="wideColumn(zone.key)"
+                :two-up="desktopZones.length === 1 && !wideColumn(zone.key)"
                 :can-open="canManageOrders"
                 :selecting="selecting"
                 :can-collapse="boardLayout.canCollapse(zone.key)"
@@ -1835,7 +1955,21 @@ function compactClear() {
                 @station-recall="recallStation"
                 @volumes="declareVolumes"
                 @swipe="onSwipe"
+              >
+                <!-- Uma corrida da TaOn para várias entregas prontas, na coluna delas:
+                     some com menos de duas. -->
+                <template v-if="zone.key === 'expedition'" #heading-actions>
+                  <CourierRideMenu :choices="rideCandidates" :action="queue?.ride_action" @done="refresh()" @stale="refresh()" />
+                </template>
+              </OrderBoardColumn>
+              <OrderBoardStrip
+                v-for="closed in boardStrips[zone.key]?.after ?? []"
+                :key="closed.key"
+                :strip="closed"
+                :shortcut="shortcutHint(closed.key)"
+                @open="boardLayout.open(closed.key)"
               />
+              </div>
             </template>
           </OperatorSplitter>
 
@@ -1871,7 +2005,7 @@ function compactClear() {
           />
         </template>
 
-        <!-- A Lista: a tabela da suíte (`OperatorTable`, compacta por padrão), com a
+        <!-- A Tabela: a tabela da suíte (`OperatorTable`, compacta por padrão), com a
              linha que abre os detalhes e as outras ações. -->
         <OperatorTable
           v-else
@@ -1886,7 +2020,7 @@ function compactClear() {
           view-key="orders-queue"
           empty-icon="i-lucide-inbox"
           empty-title="Nenhum pedido precisa de você agora."
-          caption="Lista dos pedidos em andamento"
+          caption="Tabela dos pedidos em andamento"
           data-supervision-table
         >
           <template #order-cell="{ row }">
@@ -2097,53 +2231,14 @@ function compactClear() {
           </template>
         </OperatorTable>
 
-        <!-- Encomendas: pedidos confirmados para datas futuras, fora das colunas
-             do dia. Agrupados pela data combinada; no dia, o despertador devolve
-             o pedido ao fluxo normal do board. -->
-        <section v-if="preordersCount" class="mt-6" data-preorders-section>
-          <div class="flex items-center gap-2 border-b pb-2">
-            <Icon
-              name="lucide:calendar-clock"
-              class="size-4 text-muted-foreground"
-            />
-            <h2 class="text-sm font-bold uppercase tracking-wide">Encomendas</h2>
-            <OperatorCountChip :count="preordersCount" />
-            <span
-              class="ms-auto hidden text-end text-xs text-muted-foreground sm:block"
-              >Confirmados para os próximos dias</span
-            >
-          </div>
-          <div class="mt-3 grid gap-4 lg:grid-cols-3">
-            <div
-              v-for="group in triagedPreorders"
-              :key="group.date"
-              class="flex min-w-0 flex-col gap-3"
-            >
-              <h3
-                class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-              >
-                {{ group.label }}
-              </h3>
-              <OrderCard
-                v-for="card in group.cards"
-                :key="card.ref"
-                :card="card"
-                :busy="isBusy(card.ref)"
-                :error="actionError(card.ref)"
-                :selected="isSelected(card.ref)"
-                :selecting="selecting"
-                :danfe-printing="danfePrint.isPrinting(card.ref)"
-                :can-open="canManageOrders"
-                @action="(action) => onAction(card.ref, action)"
-                @dismiss-error="clearActionError(card.ref)"
-                @toggle-select="toggleSelect(card.ref)"
-                @toggle-assign="onToggleAssign(card)"
-                @select-mode="startSelection(card.ref)"
-                @print-danfe="danfePrint.printDanfe(card.ref)"
-              />
-            </div>
-          </div>
-        </section>
+        <!-- Encomendas: os pedidos dos próximos dias, fora das colunas do dia, numa lista
+             simples (dono, 13/11/2026). No dia, o despertador devolve o pedido ao
+             fluxo normal do painel. -->
+        <OrderPreorderList
+          v-if="preordersCount"
+          :groups="triagedPreorders"
+          :count="preordersCount"
+        />
       </template>
     </section>
 

@@ -31,7 +31,20 @@ SCENARIOS = {
 
 
 class HandshakeValidationError(ValueError):
-    pass
+    """Recusa da resposta do operador; ``field`` aponta a entrada (dialeto de erro)."""
+
+    def __init__(self, message, *, field=""):
+        super().__init__(message)
+        self.field = field
+
+
+# Contraproposta (Plataforma de Negociação): o iFood oferece as alternativas no
+# HANDSHAKE_DISPUTE (``alternatives: [{id, type, metadata}]``) e a loja responde uma
+# delas em ``disputes/{id}/alternatives/{alternativeId}``. Só estes três tipos têm
+# corpo conhecido; tipo novo é recusado, nunca adivinhado.
+MONEY_ALTERNATIVES = ("REFUND", "BENEFIT")
+TIME_ALTERNATIVE = "ADDITIONAL_TIME"
+ALTERNATIVE_TYPES = (*MONEY_ALTERNATIVES, TIME_ALTERNATIVE)
 
 
 def _records(order):
@@ -153,14 +166,96 @@ def _evidence_urls(raw):
     return urls
 
 
+def _cents(value):
+    """``"500"`` ou ``500`` em centavos; ``None`` para o resto (bool, decimal, vazio)."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    text = str(value if value is not None else "")
+    return int(text) if text.isascii() and text.isdigit() and len(text) < 15 else None
+
+
+def alternatives(raw):
+    """As contrapropostas que o Gestor sabe enviar, normalizadas.
+
+    ``[{id, type, max_amount_q?, minutes?, reasons?}]``. Entrada malformada (sem id,
+    teto que não é inteiro positivo, lista de minutos vazia) e tipo desconhecido
+    ficam de fora: a tela não oferece o que o envio recusaria."""
+    rows = []
+    for entry in (raw or {}).get("alternatives") or []:
+        if not isinstance(entry, dict) or not entry.get("id") or entry.get("type") not in ALTERNATIVE_TYPES:
+            continue
+        metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+        row = {"id": str(entry["id"]), "type": entry["type"]}
+        if entry["type"] in MONEY_ALTERNATIVES:
+            ceiling = metadata.get("maxAmount")
+            max_q = _cents(ceiling.get("value")) if isinstance(ceiling, dict) else None
+            if not max_q or max_q <= 0:
+                continue
+            row["max_amount_q"] = max_q
+        else:
+            minutes = [m for m in metadata.get("allowedsAdditionalTimeInMinutes") or []
+                       if isinstance(m, int) and not isinstance(m, bool) and m > 0]
+            reasons = [r for r in metadata.get("allowedsAdditionalTimeReasons") or [] if isinstance(r, str) and r]
+            if not minutes or not reasons:
+                continue
+            row.update(minutes=minutes, reasons=reasons)
+        rows.append(row)
+    return rows
+
+
+def alternative_summary(kind, metadata):
+    """``"reembolso de R$ 5,00"`` / ``"mais 15 minutos"``; ``""`` quando não dá para dizer."""
+    from shopman.utils.monetary import format_money
+
+    metadata = metadata if isinstance(metadata, dict) else {}
+    if kind in MONEY_ALTERNATIVES:
+        amount = metadata.get("amount")
+        value = _cents(amount.get("value")) if isinstance(amount, dict) else None
+        if value is None:
+            return ""
+        noun = "reembolso" if kind == "REFUND" else "benefício"
+        return f"{noun} de R$ {format_money(value)}"
+    if kind == TIME_ALTERNATIVE:
+        minutes = metadata.get("additionalTimeInMinutes")
+        if isinstance(minutes, int) and not isinstance(minutes, bool) and minutes > 0:
+            return f"mais {minutes} minutos"
+    return ""
+
+
+def _selected_alternative(settlements):
+    for item in reversed(list(settlements)):
+        selected = item.get("selectedDisputeAlternative")
+        if isinstance(selected, dict):
+            summary = alternative_summary(selected.get("type"), selected.get("metadata"))
+            if summary:
+                return summary
+    return ""
+
+
+def _sent_alternative(record):
+    response = record.get("response") or {}
+    if response.get("decision") != "alternative":
+        return ""
+    body = response.get("body") or {}
+    return alternative_summary(body.get("type"), body.get("metadata"))
+
+
 def _notice(record):
     if record.get("state") == "settled":
         labels = {"ACCEPTED": "Solicitação aceita pelo iFood.", "REJECTED": "Solicitação recusada pelo iFood.", "EXPIRED": "Negociação encerrada por prazo no iFood."}
         outcomes = [item.get("status") for item in record.get("settlements", {}).values() if item.get("status") in labels]
         if outcomes:
+            selected = _selected_alternative(record.get("settlements", {}).values())
+            if selected and outcomes[-1] == "ACCEPTED":
+                return f"O cliente aceitou a contraproposta: {selected}. O estado do pedido é atualizado pelos eventos oficiais do pedido."
             return labels[outcomes[-1]] + " O estado do pedido é atualizado pelos eventos oficiais do pedido."
     if _open(record):
         return ""
+    sent = _sent_alternative(record)
+    if sent and record.get("state") in {"sent", "awaiting_customer"}:
+        return f"Contraproposta enviada ({sent}); aguardando a decisão do cliente no iFood."
     return {
         "queued": "Resposta do operador aguardando envio ao iFood.",
         "sending": "Envio iniciado; aguarde a confirmação do iFood. Não repita a decisão.",
@@ -197,7 +292,7 @@ def projection(order):
             "items": _items(raw),
             "evidence_urls": _evidence_urls(raw),
             "accept_reasons": _extra(raw, "acceptCancellationReasons", []) or [],
-            "reject_reasons": list(REJECT_REASONS), "alternatives": raw.get("alternatives", []),
+            "reject_reasons": list(REJECT_REASONS), "alternatives": alternatives(raw),
             "alternatives_available": bool(raw.get("alternatives")),
             "can_respond": _open(record),
             "response_notice": _notice(record),
@@ -242,8 +337,42 @@ def persist_event(order, event, *, settlement):
     return True
 
 
+def _alternative_body(raw, *, alternative_id, amount_q, minutes, reason):
+    """O corpo da contraproposta, validado contra as alternativas gravadas do iFood."""
+    from shopman.utils.monetary import format_money
+
+    offered = [entry for entry in (raw.get("alternatives") or [])
+               if isinstance(entry, dict) and str(entry.get("id") or "") == alternative_id and alternative_id]
+    if not offered:
+        raise HandshakeValidationError("Escolha uma contraproposta oferecida pelo iFood nesta negociação.", field="alternative_id")
+    kind = offered[0].get("type")
+    if kind not in ALTERNATIVE_TYPES:
+        raise HandshakeValidationError(
+            f"O Gestor não sabe enviar a contraproposta do tipo {kind or 'sem tipo'}. Responda esta no portal do iFood.",
+            field="alternative_id",
+        )
+    normalized = next((row for row in alternatives(raw) if row["id"] == alternative_id), None)
+    if normalized is None:
+        raise HandshakeValidationError("A contraproposta veio incompleta do iFood. Responda esta no portal do iFood.", field="alternative_id")
+    if kind in MONEY_ALTERNATIVES:
+        if minutes is not None or reason:
+            raise HandshakeValidationError("Contraproposta de valor não leva tempo nem motivo.", field="minutes")
+        ceiling = normalized["max_amount_q"]
+        if not isinstance(amount_q, int) or isinstance(amount_q, bool) or not 0 < amount_q <= ceiling:
+            raise HandshakeValidationError(f"Informe um valor de R$ 0,01 até R$ {format_money(ceiling)}.", field="amount_q")
+        return {"type": kind, "metadata": {"amount": {"value": str(amount_q), "currency": "BRL"}}}
+    if amount_q is not None:
+        raise HandshakeValidationError("Contraproposta de tempo não leva valor.", field="amount_q")
+    if minutes not in normalized["minutes"] or isinstance(minutes, bool):
+        raise HandshakeValidationError("Escolha um dos tempos oferecidos pelo iFood.", field="minutes")
+    if reason not in normalized["reasons"]:
+        raise HandshakeValidationError("Escolha um dos motivos oferecidos pelo iFood.", field="reason")
+    return {"type": kind, "metadata": {"additionalTimeInMinutes": minutes, "additionalTimeReason": reason}}
+
+
 @transaction.atomic
-def enqueue_response(order, *, dispute_id, decision, reason="", detail_reason="", actor, expected_revision=None):
+def enqueue_response(order, *, dispute_id, decision, reason="", detail_reason="", alternative_id="",
+                     amount_q=None, minutes=None, actor, expected_revision=None):
     from shopman.shop.services.operator_orders import operational_revision
 
     locked = Order.objects.select_for_update().get(pk=order.pk)
@@ -255,20 +384,30 @@ def enqueue_response(order, *, dispute_id, decision, reason="", detail_reason=""
     record = records.get(dispute_id)
     if not record or not _open(record):
         raise HandshakeValidationError("Negociação encerrada, vencida, não suportada ou já respondida.")
-    if decision not in {"accept", "reject"}:
-        raise HandshakeValidationError("Escolha aceitar ou rejeitar.")
+    if decision not in {"accept", "reject", "alternative"}:
+        raise HandshakeValidationError("Escolha aceitar, recusar ou fazer uma contraproposta.", field="decision")
     if not isinstance(reason, str) or not isinstance(detail_reason, str) or len(detail_reason) > 250:
-        raise HandshakeValidationError("Motivo inválido; detalhe limitado a 250 caracteres.")
-    allowed = (_extra(record["raw"], "acceptCancellationReasons", []) or []) if decision == "accept" else REJECT_REASONS
-    if (allowed and reason not in allowed) or (not allowed and reason):
-        raise HandshakeValidationError("Escolha um motivo permitido pelo iFood.")
-    if decision == "reject" and detail_reason:
-        raise HandshakeValidationError("Detalhamento disponível somente no aceite.")
-    body = {"reason": reason} if reason else {}
-    if detail_reason:
-        body["detailReason"] = detail_reason
+        raise HandshakeValidationError("Motivo inválido; detalhe limitado a 250 caracteres.", field="reason")
+    if decision == "alternative":
+        if detail_reason:
+            raise HandshakeValidationError("Detalhamento disponível somente no aceite.", field="detail_reason")
+        body = _alternative_body(record["raw"], alternative_id=str(alternative_id or ""), amount_q=amount_q,
+                                 minutes=minutes, reason=reason)
+        path = f"alternatives/{quote(str(alternative_id), safe='')}"
+    else:
+        if alternative_id or amount_q is not None or minutes is not None:
+            raise HandshakeValidationError("Valor e tempo só valem numa contraproposta.", field="alternative_id")
+        allowed = (_extra(record["raw"], "acceptCancellationReasons", []) or []) if decision == "accept" else REJECT_REASONS
+        if (allowed and reason not in allowed) or (not allowed and reason):
+            raise HandshakeValidationError("Escolha um motivo permitido pelo iFood.", field="reason")
+        if decision == "reject" and detail_reason:
+            raise HandshakeValidationError("Detalhamento disponível somente no aceite.", field="detail_reason")
+        body = {"reason": reason} if reason else {}
+        if detail_reason:
+            body["detailReason"] = detail_reason
+        path = decision
     request_id = uuid4().hex
-    record.update(state="queued", response={"id": request_id, "decision": decision, "body": body,
+    record.update(state="queued", response={"id": request_id, "decision": decision, "path": path, "body": body,
                                           "actor": str(actor), "requested_at": timezone.now().isoformat()})
     _save(locked, records)
     create_deduped(IFOOD_HANDSHAKE_RESPONSE, payload={"order_ref": locked.ref, "dispute_id": dispute_id,
@@ -302,7 +441,9 @@ def deliver_response(payload):
         if headers:
             cfg = getattr(settings, "SHOPMAN_IFOOD", {}) or {}
             base = str(cfg.get("api_base") or "https://merchant-api.ifood.com.br").rstrip("/")
-            url = f"{base}/order/v1.0/disputes/{quote(payload['dispute_id'], safe='')}/{response['decision']}"
+            # ``path`` foi montado e validado sob o lock do enqueue: ``accept``,
+            # ``reject`` ou ``alternatives/<id>`` (contraproposta).
+            url = f"{base}/order/v1.0/disputes/{quote(payload['dispute_id'], safe='')}/{response['path']}"
             http = requests.post(url, headers=headers, json=response["body"], timeout=int(cfg.get("timeout") or 30))
             if http.status_code == 201:
                 state = "sent"

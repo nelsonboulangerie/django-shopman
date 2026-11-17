@@ -23,6 +23,7 @@
 import type { OrderDetailAction } from "../../../operator-kit/app/types/orderDetail";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
+import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import {
   courierBadgeColor as badgeColor,
   COURIER_BACK_DIFFERENT_LINE,
@@ -70,6 +71,13 @@ const showStale = computed(
 // O pedido mudou depois da chamada (editar a encomenda é daqui): a corrida leva a
 // cobrança antiga, e cancelar para chamar de novo é no Gestor (P2-28).
 const chargeNotice = computed(() => courierChargeNotice(props.courier.charge_outdated, { cancelHere: false }));
+// O cancelamento pedido (no PDV ou no Gestor): esperando a TaOn, sem resposta, ou recusado.
+const cancelNotice = computed(() =>
+  courierCancelNotice(props.courier.cancel_state?.state, props.courier.cancel_state?.message),
+);
+const cancelDismissedFor = ref("");
+const cancelNoticeKey = computed(() => `${props.courier.cancel_state?.state ?? ""}:${props.courier.cancel_state?.at ?? ""}`);
+const showCancelNotice = computed(() => Boolean(cancelNotice.value) && cancelDismissedFor.value !== cancelNoticeKey.value);
 
 // ── Chamar: confirmação inline (a pergunta e a custódia) ──
 const confirming = ref(false);
@@ -203,6 +211,18 @@ async function callAgain() {
         title="Falha ao abrir a corrida"
         :description="courier.error.message"
         data-pos-courier-error
+      />
+
+      <NuxtAlert
+        v-if="showCancelNotice && cancelNotice"
+        :color="cancelNotice.color"
+        variant="subtle"
+        :icon="cancelNotice.icon"
+        :title="cancelNotice.message"
+        close
+        role="status"
+        data-pos-courier-cancel-state
+        @update:open="cancelDismissedFor = cancelNoticeKey"
       />
 
       <NuxtAlert

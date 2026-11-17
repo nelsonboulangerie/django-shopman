@@ -9,8 +9,10 @@ function action(ref: string): Action {
   return { ref, label: ref, enabled: true, reason: "", method: "POST", payload_schema: { expected_actor_id: 7, base_revision: "r1", dispute_id: "dispute-1", decision: ref }, confirmation: { description: ref === "accept" ? "Aceitar cancela este pedido conforme a solicitação." : "Recusar envia a decisão ao iFood." } } as Action;
 }
 function negotiation(over: Partial<IFoodNegotiationProjection> = {}): IFoodNegotiationProjection {
-  return { id: "dispute-1", type: "AFTER_DELIVERY", action: "CANCELLATION", message: "Faltou o café.", expires_at: "2030-09-15T18:15:00Z", timeout_action: "ACCEPT_CANCELLATION", state: "open", can_respond: true, response_notice: "", items: ["1× Café"], evidence_urls: [], accept_reasons: ["PRODUCT_QUALITY"], reject_reasons: ["ORDER_DELIVERED"], alternatives_available: false, actions: [action("accept"), action("reject")], ...over };
+  return { id: "dispute-1", type: "AFTER_DELIVERY", action: "CANCELLATION", message: "Faltou o café.", expires_at: "2030-09-15T18:15:00Z", timeout_action: "ACCEPT_CANCELLATION", state: "open", can_respond: true, response_notice: "", items: ["1× Café"], evidence_urls: [], accept_reasons: ["PRODUCT_QUALITY"], reject_reasons: ["ORDER_DELIVERED"], alternatives_available: false, alternatives: [], actions: [action("accept"), action("reject")], ...over };
 }
+const REFUND = { id: "alt-refund", type: "REFUND", label: "Reembolsar parte do valor", max_amount_q: 1500, max_amount_display: "R$ 15,00", minutes_options: [], reason_options: [] };
+const TIME = { id: "alt-time", type: "ADDITIONAL_TIME", label: "Pedir mais tempo de entrega", max_amount_q: 0, max_amount_display: "", minutes_options: [10, 20], reason_options: [{ value: "HIGH_STORE_DEMAND", label: "Alta demanda na loja" }] };
 function render(item = negotiation()) { return mount(OrderIFoodNegotiations, { props: { orderRef: "IFOOD-123", negotiations: [item] } }); }
 beforeEach(() => { executePath.mockReset(); executePath.mockResolvedValue({ outcome: "applied" }); });
 describe("OrderIFoodNegotiations", () => {
@@ -83,5 +85,38 @@ describe("OrderIFoodNegotiations", () => {
     const w = render(negotiation({ evidence_urls: ["javascript:alert(1)", "http://example.com/a", "https://example.com/evidence"], message: "<img src=x onerror=alert(1)>", alternatives_available: true, timeout_action: "UNKNOWN" }));
     expect(w.findAll("a")).toHaveLength(1); expect(w.get("a").attributes("rel")).toBe("noopener noreferrer"); expect(w.find("img").exists()).toBe(false);
     expect(w.text()).toContain("use o canal do iFood"); expect(w.text()).toContain("consequência do vencimento não foi informada");
+  });
+  it("contraproposta de reembolso: valor limitado ao teto, confirmação e corpo da alternativa", async () => {
+    const w = render(negotiation({ alternatives_available: true, alternatives: [REFUND], actions: [action("accept"), action("reject"), action("alternative")] }));
+    expect(w.text()).not.toContain("canal do iFood");
+    await w.get("select").setValue("alternative");
+    // Uma alternativa só: já vem escolhida, e o valor diz o teto.
+    expect((w.get("[data-alternative-select]").element as HTMLSelectElement).value).toBe("alt-refund");
+    expect(w.text()).toContain("até R$ 15,00");
+    expect(w.find('[role="checkbox"]').exists()).toBe(false);
+    await w.get("[data-alternative-amount]").setValue("15,01");
+    expect(w.text()).toContain("Informe um valor de R$ 0,01 até R$ 15,00.");
+    expect(w.find('[role="checkbox"]').exists()).toBe(false);
+    await w.get("[data-alternative-amount]").setValue("12,50");
+    expect(w.text()).toContain("Enviar ao iFood a contraproposta: reembolso de R$ 12,50.");
+    expect(w.get('button[type="submit"]').attributes("disabled")).toBeDefined();
+    await w.get('[role="checkbox"]').trigger("click");
+    await w.get("form").trigger("submit"); await flushPromises();
+    expect(executePath).toHaveBeenCalledWith("IFOOD-123:ifood-handshake:dispute-1", "/api/v1/backstage/orders/IFOOD-123/ifood-handshake/", expect.objectContaining({ ref: "alternative" }), { alternative_id: "alt-refund", amount_q: 1250 });
+  });
+  it("contraproposta de tempo: minutos e motivo da lista do iFood", async () => {
+    const w = render(negotiation({ alternatives_available: true, alternatives: [REFUND, TIME], actions: [action("accept"), action("reject"), action("alternative")] }));
+    await w.get("select").setValue("alternative");
+    expect((w.get("[data-alternative-select]").element as HTMLSelectElement).value).toBe("");
+    expect(w.text()).toContain("Reembolsar parte do valor (até R$ 15,00)");
+    await w.get("[data-alternative-select]").setValue("alt-time");
+    expect(w.find("[data-alternative-amount]").exists()).toBe(false);
+    await w.get("[data-alternative-minutes]").setValue("20");
+    expect(w.text()).toContain("Escolha o motivo do tempo a mais.");
+    await w.get("[data-alternative-reason]").setValue("HIGH_STORE_DEMAND");
+    expect(w.text()).toContain("contraproposta: mais 20 minutos.");
+    await w.get('[role="checkbox"]').trigger("click");
+    await w.get("form").trigger("submit"); await flushPromises();
+    expect(executePath.mock.calls[0]?.[3]).toEqual({ alternative_id: "alt-time", minutes: 20, reason: "HIGH_STORE_DEMAND" });
   });
 });

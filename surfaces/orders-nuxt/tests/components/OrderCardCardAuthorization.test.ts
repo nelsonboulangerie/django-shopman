@@ -1,5 +1,5 @@
 // P1-4: cartão da loja online autorizado e ninguém aceita. A reserva vence no Stripe
-// (7 dias) e o dinheiro some do pedido. O cartão do quadro avisa com o prazo e dá os
+// (7 dias) e o dinheiro some do pedido. O cartão do painel avisa com o prazo e dá os
 // dois gestos que resolvem (Aceitar, Recusar), na cor do aviso (D8).
 import { describe, expect, it, vi } from "vitest";
 import { computed, ref } from "vue";
@@ -72,7 +72,7 @@ describe("cardAuthorizationNotice", () => {
       title: "A autorização do cartão vence em 6 dias",
       expired: false,
     });
-    expect(notice!.description).toContain("Até 19/10 às 16h00");
+    expect(notice!.description).toContain("Até 19/10 às 16h.");
     expect(notice!.description).toContain("Aceite para cobrar ou recuse");
     expect(notice!.description).not.toMatch(/—|–/);
   });

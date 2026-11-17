@@ -21,6 +21,7 @@ from .bi import (
     BIForecastView,
     BIOverShortCarryView,
     BIOverShortView,
+    BIPreorderKitchenView,
     BIProductionView,
     BISalesView,
     BIScenariosView,
@@ -80,7 +81,7 @@ from .feeds import (
     FeedSwitchView,
 )
 from .hub import HubView
-from .ifood_store import IFoodStoreView
+from .ifood_store import IFoodStoreView, IFoodWidgetView
 from .kds import (
     KDSBoardView,
     KDSCustomerStatusView,
@@ -161,6 +162,8 @@ from .operation_checklists import (
 from .operations import (
     CourierTicketEscposView,
     DayClosingView,
+    DeliveriesCountView,
+    DeliveriesView,
     OperationEpisodeAnswerView,
     OperatorBadgeLostView,
     OperatorEligibleView,
@@ -357,6 +360,15 @@ from .saved_views import SavedViewDetailView, SavedViewListView
 from .search import SuiteSearchView
 from .seating import POSSeatingView
 from .sign_ins import SignInListView
+from .support import (
+    SupportCapabilitiesView,
+    SupportTicketDecisionView,
+    SupportTicketDetailView,
+    SupportTicketLinkDevView,
+    SupportTicketListCreateView,
+    SupportTicketMessageView,
+    SupportTicketTriageView,
+)
 from .telemetry import ClientErrorView, ClientPwaUpdateView, MarketingVitalView
 from .tenant import OperatorTenantView
 from .timer_tags import ProductionTimerTagsView
@@ -729,6 +741,7 @@ urlpatterns = [
     path("bi/production/", BIProductionView.as_view(), name="api-backstage-bi-production"),
     path("bi/delivery-cost/", BIDeliveryCostView.as_view(), name="api-backstage-bi-delivery-cost"),
     path("bi/delivery-timing/", BIDeliveryTimingView.as_view(), name="api-backstage-bi-delivery-timing"),
+    path("bi/preorder-kitchen/", BIPreorderKitchenView.as_view(), name="api-backstage-bi-preorder-kitchen"),
     path("bi/over-short/", BIOverShortView.as_view(), name="api-backstage-bi-over-short"),
     path("bi/over-short/carry/", BIOverShortCarryView.as_view(), name="api-backstage-bi-over-short-carry"),
     path("bi/sales/", BISalesView.as_view(), name="api-backstage-bi-sales"),
@@ -758,8 +771,11 @@ urlpatterns = [
     # ⚠️ ANTES de `orders/<str:ref>/…`: `board-layout` casaria com `<str:ref>`.
     path("orders/board-layout/", OrderBoardLayoutView.as_view(), name="api-backstage-order-board-layout"),
     path("orders/rail-counts/", OrderRailCountsView.as_view(), name="api-backstage-order-rail-counts"),
+    path("deliveries/", DeliveriesView.as_view(), name="api-backstage-deliveries"),
+    path("deliveries/count/", DeliveriesCountView.as_view(), name="api-backstage-deliveries-count"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
     path("ifood/store/", IFoodStoreView.as_view(), name="api-backstage-ifood-store"),
+    path("ifood/widget/", IFoodWidgetView.as_view(), name="api-backstage-ifood-widget"),
     # Catalog matrix (produto × superfície)
     path(
         "catalog/channels/<str:ref>/review/",
@@ -974,6 +990,42 @@ urlpatterns = [
     # Operator alerts
     path("alerts/", AlertListView.as_view(), name="api-backstage-alerts"),
     path("alerts/<int:pk>/ack/", AlertAckView.as_view(), name="api-backstage-alert-ack"),
+    # Suporte (helpdesk interno)
+    path(
+        "support/capabilities/",
+        SupportCapabilitiesView.as_view(),
+        name="api-backstage-support-capabilities",
+    ),
+    path(
+        "support/tickets/",
+        SupportTicketListCreateView.as_view(),
+        name="api-backstage-support-tickets",
+    ),
+    path(
+        "support/tickets/<str:ref>/",
+        SupportTicketDetailView.as_view(),
+        name="api-backstage-support-ticket",
+    ),
+    path(
+        "support/tickets/<str:ref>/messages/",
+        SupportTicketMessageView.as_view(),
+        name="api-backstage-support-ticket-messages",
+    ),
+    path(
+        "support/tickets/<str:ref>/triage/",
+        SupportTicketTriageView.as_view(),
+        name="api-backstage-support-ticket-triage",
+    ),
+    path(
+        "support/tickets/<str:ref>/decision/",
+        SupportTicketDecisionView.as_view(),
+        name="api-backstage-support-ticket-decision",
+    ),
+    path(
+        "support/tickets/<str:ref>/link-dev/",
+        SupportTicketLinkDevView.as_view(),
+        name="api-backstage-support-ticket-link-dev",
+    ),
     # Notificações PESSOAIS (vs. alerts, que são da loja): o gestor recebe o
     # pedido de aprovação onde estiver. Push pelo canal SSE ``user-<id>``.
     # O histórico de acessos da PRÓPRIA conta (a trilha de todos é a tela de

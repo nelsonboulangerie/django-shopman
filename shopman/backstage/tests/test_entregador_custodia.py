@@ -365,8 +365,13 @@ def test_corrida_recusada_nao_tira_nada_da_gaveta(client, operator):
 
 
 def _ride(client, refs, **body):
-    return client.post(reverse("api-backstage-order-courier-ride"), {"refs": refs, **body},
-        content_type="application/json")
+    """A chamada como a tela a faz: quem ela leu, a revisão de cada pedido e uma chave."""
+    import uuid
+
+    revisions = {order.ref: courier.dispatch_revision(order) for order in Order.objects.filter(ref__in=refs)}
+    return client.post(reverse("api-backstage-order-courier-ride"),
+        {"refs": refs, "base_revisions": revisions, "expected_actor_id": int(client.session["_auth_user_id"]), **body},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=uuid.uuid4().hex)
 
 
 def test_corrida_conjunta_leva_troco_de_cada_pedido_e_uma_maquininha_so(client, operator, machines):
@@ -418,11 +423,12 @@ def test_corrida_conjunta_sem_maquininha_ou_sem_troco_nao_chama_nem_tira_da_gave
     _order("RIDE-B", method="cash", total_q=7400, change_for_q=10000)
 
     response = _ride(client, ["RIDE-A", "RIDE-B"], change_out={"RIDE-B": "26,00"})
-    assert response.status_code == 409
+    assert response.status_code == 400
+    assert response.json()["outcome"] == "not_applied"
     assert "Pedido A" in response.json()["detail"]
 
     response = _ride(client, ["RIDE-A", "RIDE-B"], machine=f"{PREFIX}{machines[0].ref}")
-    assert response.status_code == 409
+    assert response.status_code == 400
     assert response.json()["code"] == "change_out_required"
     assert "O pedido B pede troco" in response.json()["detail"]
 

@@ -15,13 +15,14 @@ import { BUCKET_SPAN_LABELS, bucketLabel, bucketRows, formatInt, formatMinutes, 
 export const PRODUCTION_VIEWS = [
   { value: "day", label: "Sobrou ou faltou", icon: "i-lucide-scale" },
   { value: "lots", label: "Lotes no período", icon: "i-lucide-layers" },
+  { value: "preorders", label: "Encomendas na Cozinha", icon: "i-lucide-calendar-clock" },
 ] as const;
 
 export type ProductionView = (typeof PRODUCTION_VIEWS)[number]["value"];
 
-/** A aba da URL (`?view=lots`); qualquer outro valor é o dia. */
+/** A aba da URL (`?view=lots`, `?view=preorders`); qualquer outro valor é o dia. */
 export function productionView(raw: unknown): ProductionView {
-  return raw === "lots" ? "lots" : "day";
+  return raw === "lots" || raw === "preorders" ? raw : "day";
 }
 
 const sum = (values: readonly (string | number)[]) => values.reduce((total: number, v) => total + Number(v), 0);

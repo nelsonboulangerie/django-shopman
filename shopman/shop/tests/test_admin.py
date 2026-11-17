@@ -396,6 +396,99 @@ class TestShopAdminCalendar:
             }
         ]
 
+    def _record_decision(self, rf, admin_user, shop, monkeypatch, **fields):
+        from shopman.shop.admin.shop import CalendarDecisionForm
+        from shopman.shop.models import ShopOperation
+
+        data = {
+            "_form_submitted": "1",
+            "ends_on": "",
+            "label": "Feriado",
+            "decision": "closed",
+            "opens_at": "",
+            "closes_at": "",
+            **fields,
+        }
+        request = rf.post("/", data=data)
+        request.user = admin_user
+        form = CalendarDecisionForm(request, shop.pk, data=request.POST)
+        assert form.is_valid(), form.errors
+        model_admin = admin.site._registry[ShopOperation]
+        sent = []
+        monkeypatch.setattr(
+            model_admin,
+            "message_user",
+            lambda _request, message, level=None, **kwargs: sent.append((level, str(message))),
+        )
+        response = model_admin.record_calendar_decision(request, object_id=str(shop.pk))
+        assert response.status_code == 302
+        return sent
+
+    def test_closing_a_day_with_open_orders_warns_and_alerts(self, rf, admin_user, shop, monkeypatch):
+        from django.contrib import messages
+        from shopman.orderman.models import Order
+
+        Order.objects.create(
+            ref="ENC-PAGA", channel_ref="web", status="accepted", total_q=5000,
+            data={"delivery_date": "2026-12-24", "payment": {"status": "captured"}},
+        )
+        Order.objects.create(
+            ref="ENC-NOVA", channel_ref="web", status="new", total_q=3000,
+            data={"delivery_date": "2026-12-26"},
+        )
+        Order.objects.create(
+            ref="ENC-CANC", channel_ref="web", status="cancelled", total_q=3000,
+            data={"delivery_date": "2026-12-24"},
+        )
+        Order.objects.create(
+            ref="ENC-FORA", channel_ref="web", status="accepted", total_q=3000,
+            data={"delivery_date": "2026-12-27"},
+        )
+
+        sent = self._record_decision(
+            rf, admin_user, shop, monkeypatch,
+            starts_on="2026-12-24", ends_on="2026-12-26", label="Natal",
+        )
+
+        warnings = [text for level, text in sent if level == messages.WARNING]
+        assert len(warnings) == 1
+        assert "2 pedidos em aberto" in warnings[0]
+        assert "ENC-NOVA" in warnings[0] and "ENC-PAGA" in warnings[0]
+        assert "ENC-CANC" not in warnings[0] and "ENC-FORA" not in warnings[0]
+        assert "—" not in warnings[0]
+        alerts = OperatorAlert.objects.filter(type="order_on_closed_day").order_by("order_ref")
+        assert [a.order_ref for a in alerts] == ["ENC-NOVA", "ENC-PAGA"]
+        assert all(a.audience == "orders" for a in alerts)
+        assert "24/12/2026" in alerts.get(order_ref="ENC-PAGA").message
+        assert "Dedupe" not in alerts[0].message
+        assert Order.objects.get(ref="ENC-PAGA").status == "accepted"
+        assert Order.objects.get(ref="ENC-PAGA").data["delivery_date"] == "2026-12-24"
+
+        # Registrar de novo a mesma decisão não duplica o aviso.
+        self._record_decision(
+            rf, admin_user, shop, monkeypatch,
+            starts_on="2026-12-24", ends_on="2026-12-26", label="Natal",
+        )
+        assert OperatorAlert.objects.filter(type="order_on_closed_day").count() == 2
+
+    def test_opening_a_day_with_orders_does_not_warn(self, rf, admin_user, shop, monkeypatch):
+        from django.contrib import messages
+        from shopman.orderman.models import Order
+
+        Order.objects.create(
+            ref="ENC-ABERTO", channel_ref="web", status="accepted", total_q=5000,
+            data={"delivery_date": "2026-12-25"},
+        )
+
+        sent = self._record_decision(
+            rf, admin_user, shop, monkeypatch,
+            starts_on="2026-12-25", decision="special", label="Natal aberto",
+            opens_at="09:00", closes_at="13:00",
+        )
+
+        assert [level for level, _ in sent] == [messages.SUCCESS]
+        assert not OperatorAlert.objects.filter(type="order_on_closed_day").exists()
+
     def test_form_saves_defaults_from_structured_fields(self, shop):
         from shopman.shop.admin.shop import ShopForm
 
@@ -945,6 +1038,129 @@ class TestShopAdminLoyaltyDefaults:
         form = ShopForm(data=data, instance=shop)
         assert not form.is_valid()
         assert "defaults_loyalty_tier_gold_threshold" in form.errors
+
+
+class TestShopAdminPreorderKitchen:
+    """``Shop.defaults["preorder_kitchen"]`` editável na página de Pedidos, sem JSON."""
+
+    def test_change_page_shows_preorder_kitchen_fields(self, db, admin_user, shop):
+        client = Client()
+        client.force_login(admin_user)
+        resp = client.get(reverse("admin:shop_shopordering_change", args=[shop.pk]))
+        assert resp.status_code == 200
+        assert b'name="defaults_preorder_kitchen_lead_minutes"' in resp.content
+        assert b'name="defaults_preorder_kitchen_default_prep_minutes"' in resp.content
+        assert b'name="defaults_preorder_kitchen_prep_minutes_by_sku"' in resp.content
+        assert "Encomenda na Cozinha" in resp.content.decode()
+
+    def test_initial_shows_effective_policy(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        shop.defaults = {"preorder_kitchen": {"lead_minutes": 10, "prep_minutes_by_sku": {"BOLO": 90, "BAGUETE": 20}}}
+        shop.save(update_fields=["defaults"])
+
+        form = ShopForm(instance=shop)
+        assert form.fields["defaults_preorder_kitchen_lead_minutes"].initial == 10
+        # Chave ausente mostra o padrão declarado da política.
+        assert form.fields["defaults_preorder_kitchen_default_prep_minutes"].initial == 30
+        assert form.fields["defaults_preorder_kitchen_prep_minutes_by_sku"].initial == "BAGUETE: 20; BOLO: 90"
+
+    def test_form_saves_policy_into_shop_defaults(self, shop):
+        from shopman.offerman.models import Product
+
+        from shopman.shop.admin.shop import ShopForm
+
+        Product.objects.create(sku="BAGUETE", name="Baguete", unit="un", base_price_q=1000)
+        Product.objects.create(sku="BOLO", name="Bolo", unit="un", base_price_q=5000)
+        shop.defaults = {"preorder_kitchen": {"future_key": "kept"}}
+        shop.save(update_fields=["defaults"])
+        data = _shop_form_data(shop)
+        data["defaults_preorder_kitchen_lead_minutes"] = "20"
+        data["defaults_preorder_kitchen_default_prep_minutes"] = "40"
+        data["defaults_preorder_kitchen_prep_minutes_by_sku"] = "BAGUETE: 25; BOLO: 90"
+
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+
+        assert saved.defaults["preorder_kitchen"] == {
+            "future_key": "kept",
+            "lead_minutes": 20,
+            "default_prep_minutes": 40,
+            "prep_minutes_by_sku": {"BAGUETE": 25, "BOLO": 90},
+        }
+
+    def test_blank_fields_save_declared_defaults(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_preorder_kitchen_lead_minutes"] = ""
+        data["defaults_preorder_kitchen_default_prep_minutes"] = ""
+        data["defaults_preorder_kitchen_prep_minutes_by_sku"] = ""
+
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+
+        assert saved.defaults["preorder_kitchen"] == {
+            "lead_minutes": 15,
+            "default_prep_minutes": 30,
+            "prep_minutes_by_sku": {},
+        }
+
+    def test_invalid_values_are_refused_with_message(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_preorder_kitchen_lead_minutes"] = "-5"
+        data["defaults_preorder_kitchen_default_prep_minutes"] = "9999"
+        data["defaults_preorder_kitchen_prep_minutes_by_sku"] = "NAO-EXISTE: 20; BAGUETE vinte"
+
+        form = ShopForm(data=data, instance=shop)
+        assert not form.is_valid()
+        assert "defaults_preorder_kitchen_lead_minutes" in form.errors
+        assert "defaults_preorder_kitchen_default_prep_minutes" in form.errors
+        errors = " ".join(form.errors["defaults_preorder_kitchen_prep_minutes_by_sku"])
+        assert "BAGUETE vinte" in errors
+        assert "SKU desconhecido: NAO-EXISTE" in errors
+        shop.refresh_from_db()
+        assert "preorder_kitchen" not in (shop.defaults or {})
+
+    def test_saving_moves_the_kitchen_arrival_time(self, shop):
+        """Combinada às 17h: 16h15 com o padrão; 15h30 depois de 80 min de preparo e 10 de antecedência."""
+        from datetime import datetime, timedelta
+
+        from django.core.cache import cache
+        from django.utils import timezone
+        from shopman.offerman.models import Product
+        from shopman.orderman.models import Order, OrderItem
+
+        from shopman.shop.admin.shop import ShopForm
+        from shopman.shop.lifecycle import preorder_activation_at
+
+        day = timezone.localdate() + timedelta(days=3)
+        Product.objects.create(sku="BOLO", name="Bolo", unit="un", base_price_q=5000)
+        order = Order.objects.create(
+            ref="ENC-ADMIN", channel_ref="balcao", session_key="sk-enc-admin", status=Order.Status.ACCEPTED,
+            total_q=5000, data={"delivery_date": day.isoformat(), "is_preorder": True, "delivery_time_slot": "17:00-17:30"},
+        )
+        OrderItem.objects.create(order=order, line_id="L0", sku="BOLO", qty=1, unit_price_q=5000, line_total_q=5000)
+
+        def at(hour, minute):
+            return timezone.make_aware(datetime.combine(day, time(hour, minute)))
+
+        cache.clear()
+        assert preorder_activation_at(order)[0] == at(16, 15)
+
+        data = _shop_form_data(shop)
+        data["defaults_preorder_kitchen_lead_minutes"] = "10"
+        data["defaults_preorder_kitchen_prep_minutes_by_sku"] = "BOLO: 80"
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        form.save()
+        cache.clear()
+
+        assert preorder_activation_at(order)[0] == at(15, 30)
 
 
 class TestShopAdminPurchaseDefaults:

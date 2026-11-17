@@ -24,12 +24,17 @@ const props = withDefaults(
     keyboardResizeBy?: number;
     handleLabel?: string;
     disabled?: boolean;
+    /** Sem a linha desenhada entre os painéis (o Quadro do Gestor, dono 13/11/2026:
+     *  "sem linha entre elas"): o vão continua sendo a alça, com o cursor de ajuste,
+     *  o foco e as setas do teclado. */
+    quiet?: boolean;
   }>(),
   {
     orientation: "horizontal",
     keyboardResizeBy: 2,
     handleLabel: "Redimensionar painéis",
     disabled: false,
+    quiet: false,
   },
 );
 
@@ -144,6 +149,7 @@ defineExpose({ reset });
     <template #resize-handle="{ index }">
       <span class="sr-only">{{ handleLabel }} {{ index + 1 }}</span>
       <NuxtSeparator
+        v-if="!quiet"
         :orientation="orientation === 'horizontal' ? 'vertical' : 'horizontal'"
       />
     </template>

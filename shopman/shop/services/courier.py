@@ -27,6 +27,10 @@ from shopman.orderman.models import Directive, Order
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.adapters.courier_machine import (
+    BEFORE_ACCEPT_STATUSES,
+    CANCEL_INTENT_OPERATOR,
+    CANCEL_INTENT_ORDER_CANCELLED,
+    CANCEL_REASONS_AFTER_ACCEPT,
     CANCELLABLE_STATUSES,
     TERMINAL_STATUSES,
     CourierError,
@@ -85,6 +89,23 @@ def has_active_ride(order) -> bool:
     """Corrida ativa = id_mch presente e status não-terminal."""
     block = get_block(order)
     return bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES
+
+
+def ride_cancellable(block: dict) -> bool:
+    """A corrida deste bloco ainda pode ser cancelada pela casa? Régua única.
+
+    Antes da coleta: corrida aberta na central (``id_mch``), numa letra que a
+    central cancela (``CANCELLABLE_STATUSES``) e SEM a marca da coleta
+    (``dispatched_at``). A marca é o fato: se uma letra atrasada devolver o
+    status a "aceita" com a sacola já na moto, o cancelar não reaparece. É a
+    mesma pergunta nas quatro portas (a projeção do pedido, a das Entregas, o
+    pedido de cancelamento e o worker que chama a central).
+    """
+    return (
+        bool(block.get("id_mch"))
+        and block.get("status") in CANCELLABLE_STATUSES
+        and not block.get("dispatched_at")
+    )
 
 
 def house_dispatches(order) -> bool:
@@ -238,7 +259,7 @@ def charge_outdated(order) -> dict | None:
     return {
         "sent": _charge_part(sent),
         "current": _charge_part(current),
-        "collected": block.get("status") not in CANCELLABLE_STATUSES,
+        "collected": not ride_cancellable(block),
     }
 
 
@@ -490,14 +511,41 @@ def ride_orders(order) -> list[str]:
     return [str(ref) for ref in refs] if isinstance(refs, list) and refs else [order.ref]
 
 
-def ride_companions(order) -> list:
-    """Os OUTROS pedidos que estão na mesma corrida (mesmo ``id_mch``)."""
+def ride_companions(order, *, alive: bool = False) -> list:
+    """Os OUTROS pedidos que estão na mesma corrida (mesmo ``id_mch``).
+
+    ``alive=True`` conta só quem ainda espera a entrega: pedido cancelado segue
+    com o ``id_mch`` no bloco (a corrida é dos outros), mas não é mais motivo
+    para a corrida seguir aberta.
+    """
     ride_id = get_block(order).get("id_mch")
     others = [ref for ref in ride_orders(order) if ref != order.ref]
     if not ride_id or not others:
         return []
     return [other for other in Order.objects.filter(ref__in=others).order_by("pk")
-            if get_block(other).get("id_mch") == ride_id]
+            if get_block(other).get("id_mch") == ride_id
+            and not (alive and other.status == Order.Status.CANCELLED)]
+
+
+def stranded_companions(order) -> tuple[str, list]:
+    """Quem ficou preso na corrida que este pedido já encerrou.
+
+    A corrida com várias paradas tem uma batida só, no primeiro pedido. Se só
+    ele recebeu o fim (``N``/``C``), a corrida foi para o histórico dele
+    (``attempts[-1]``) e os outros seguem "com corrida" para sempre, segurando
+    letra, cor, troco e maquininha. Devolve a letra final e os pedidos que
+    ainda carregam aquele ``id_mch`` vivo; ``("", [])`` quando ninguém ficou.
+    """
+    attempts = get_block(order).get("attempts") or []
+    last = attempts[-1] if attempts and isinstance(attempts[-1], dict) else {}
+    ride_id, status = last.get("id_mch"), str(last.get("status") or "")
+    refs = [str(ref) for ref in last.get("ride_orders") or [] if ref != order.ref]
+    if not ride_id or not refs or get_block(order).get("id_mch") == ride_id:
+        return "", []
+    stuck = [other for other in Order.objects.filter(ref__in=refs).order_by("pk")
+             if get_block(other).get("id_mch") == ride_id
+             and get_block(other).get("status") not in TERMINAL_STATUSES]
+    return status, stuck
 
 
 def unresolved_dispatch(order, *, exclude_pk=None):
@@ -523,11 +571,13 @@ def ensure_dispatch_resolved(order) -> None:
         raise ValueError("Há um despacho sem resultado confirmado. Confira a solicitação na central antes de abrir outra corrida.")
 
 
-def request_dispatch(order, *, actor: str) -> Directive | None:
+def request_dispatch(order, *, actor: str, ride_number: int | None = None) -> Directive | None:
     """Enfileira o despacho da corrida (Directive ``courier.dispatch``).
 
     No-op quando: adapter ausente, pedido não é entrega, corrida ativa em
     andamento, ou já existe directive de despacho na fila (idempotente).
+    ``ride_number``: o número que a tela mostrava para esta corrida; vale se
+    ainda estiver livre (:func:`next_ride_number`).
     """
     from shopman.shop.directives import COURIER_DISPATCH
 
@@ -557,14 +607,133 @@ def request_dispatch(order, *, actor: str) -> Directive | None:
     )
     if directive is None:
         return None
-    if not get_block(order).get("called_at"):
-        # A primeira chamada do pedido, com quem chamou: encerra o lembrete do
-        # Gestor (``backstage.services.courier_reminder``) e é o marco "chamada
-        # pedida" que a chamada antecipada vai aprender.
-        merge_order_data(order, {"called_at": timezone.now().isoformat(), "called_by": actor}, block="courier")
+    with transaction.atomic():
+        # O pedido antes da trava dos números, na mesma ordem da corrida em
+        # grupo: quem segura a trava nunca espera por linha de pedido.
+        Order.objects.select_for_update().get(pk=order.pk)
+        fields = {"ride_number": next_ride_number(exclude_refs=[order.ref], prefer=ride_number)}
+        if not get_block(order).get("called_at"):
+            # A primeira chamada do pedido, com quem chamou: encerra o lembrete do
+            # Gestor (``backstage.services.courier_reminder``) e é o marco "chamada
+            # pedida" que a chamada antecipada vai aprender.
+            fields.update(called_at=timezone.now().isoformat(), called_by=actor)
+        merge_order_data(order, fields, block="courier")
     order.emit_event(event_type="courier_dispatch_requested", actor=actor)
     logger.info("courier.dispatch_requested order=%s actor=%s", order.ref, actor)
     return directive
+
+
+# ── Número da corrida: a letra e a cor dela na tela ─────────────────
+
+#: Quantas cores a tela tem para as corridas vivas (``ridePalette.ts`` do Gestor).
+#: A cor repete a cada seis corridas; a letra desfaz a dúvida.
+RIDE_NUMBERS = 6
+
+#: Quantas corridas vivas têm nome próprio: uma letra cada, de A a Z.
+RIDE_LETTERS = 26
+
+#: Chave do advisory lock que serializa a escolha do número da corrida.
+_RIDE_NUMBER_LOCK = 0x52494445  # "RIDE"
+
+
+def ride_is_live(order) -> bool:
+    """A corrida deste pedido ainda ocupa uma letra (e uma cor) na tela.
+
+    Viva: chamada à espera da TaOn, corrida aberta ainda não terminada, ou
+    terminada com o entregador ainda devendo voltar (troco, dinheiro, maquininha).
+    """
+    block = get_block(order)
+    if not block.get("ride_number"):
+        return False
+    status = str(block.get("status") or "")
+    if block.get("id_mch"):
+        if status not in TERMINAL_STATUSES:
+            return True
+        if status != "F":
+            return False
+        from shopman.shop.services import operator_orders
+
+        return bool(operator_orders.courier_return_members(order))
+    from shopman.shop.directives import COURIER_DISPATCH
+
+    return Directive.objects.filter(
+        dispatch_task_filter(order.ref), topic=COURIER_DISPATCH,
+        status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING),
+    ).exists()
+
+
+def ride_letter(number) -> str:
+    """A letra da corrida, como o operador a chama: 1 é A, 2 é B, 26 é Z.
+
+    Corrida se nomeia por LETRA em toda tela e em toda mensagem (decisão do dono,
+    16/11/2026); o número segue sendo o que se grava (``courier.ride_number``) e
+    o que escolhe a cor. Sem número válido devolve vazio, e quem escreve a frase
+    decide o que dizer sem a letra.
+    """
+    if isinstance(number, bool) or not isinstance(number, int) or number < 1:
+        return ""
+    return chr(ord("A") + (number - 1) % 26)
+
+
+def _live_ride_numbers(exclude_refs=()) -> dict[int, str]:
+    """Os números ocupados por corridas vivas, cada um com a chamada mais antiga."""
+    live: dict[int, str] = {}
+    statuses = (*RIDE_ORDER_STATUSES, Order.Status.DISPATCHED, Order.Status.DELIVERED)
+    for order in Order.objects.filter(status__in=statuses, data__courier__has_key="ride_number").exclude(ref__in=list(exclude_refs)):
+        number = get_block(order).get("ride_number")
+        if isinstance(number, int) and not isinstance(number, bool) and 1 <= number <= RIDE_LETTERS and ride_is_live(order):
+            called = str(get_block(order).get("called_at") or "")
+            live[number] = min(live.get(number, called), called)
+    return live
+
+
+def free_ride_numbers(*, exclude_refs=()) -> list[int]:
+    """Os números livres agora, do menor ao maior (leitura, sem trava).
+
+    É o que a tela usa para dar letra e cor à corrida que o operador ainda está
+    juntando; quem grava é a chamada, por :func:`next_ride_number`.
+    """
+    live = _live_ride_numbers(exclude_refs)
+    return [number for number in range(1, RIDE_LETTERS + 1) if number not in live]
+
+
+def _lock_ride_numbers() -> None:
+    """Uma escolha de número por vez, até o fim da transação de quem chama.
+
+    Sem a trava, duas chamadas simultâneas (dois dispositivos, ou o operador e a
+    chamada automática) liam o mesmo "menor livre" e duas corridas saíam com a
+    mesma letra e a mesma cor. Advisory lock de transação: solta sozinho no
+    commit ou no rollback. Fora do Postgres (banco de desenvolvimento em
+    arquivo) a escrita já é uma por vez.
+    """
+    from django.db import connection
+
+    if connection.vendor != "postgresql":
+        return
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [_RIDE_NUMBER_LOCK])
+
+
+def next_ride_number(*, exclude_refs=(), prefer: int | None = None) -> int:
+    """O número da corrida que está sendo chamada (1 a :data:`RIDE_LETTERS`).
+
+    O número é a letra e a cor da corrida na tela e não muda enquanto ela vive:
+    fica gravado no pedido (``Order.data["courier"]["ride_number"]``) na chamada.
+    ``prefer`` é o número que a tela mostrava enquanto o operador juntava a
+    corrida: vale se continuar livre; senão, o menor livre. Com as 26 letras
+    ocupadas, repete a da corrida mais antiga.
+
+    Chame dentro da transação que grava o número: a trava
+    (:func:`_lock_ride_numbers`) só protege até o commit.
+    """
+    _lock_ride_numbers()
+    live = _live_ride_numbers(exclude_refs)
+    if isinstance(prefer, int) and not isinstance(prefer, bool) and 1 <= prefer <= RIDE_LETTERS and prefer not in live:
+        return prefer
+    for number in range(1, RIDE_LETTERS + 1):
+        if number not in live:
+            return number
+    return min(live, key=lambda n: live[n])
 
 
 #: Quantos pedidos cabem numa corrida. A API não publica teto; quatro é o que
@@ -592,8 +761,59 @@ def group_refusal(order) -> str:
     return ""
 
 
+class RideRevisionChanged(ValueError):
+    """Um pedido da corrida mudou depois que a tela foi lida (``refs``: quais)."""
+
+    def __init__(self, refs: list[str]):
+        from shopman.shop.services.operator_orders import short_ref
+
+        self.refs = list(refs)
+        codes = [short_ref(ref) for ref in self.refs]
+        if len(codes) == 1:
+            message = f"O pedido {codes[0]} mudou depois que você abriu esta tela. Confira e chame de novo."
+        else:
+            message = f"Os pedidos {', '.join(codes[:-1])} e {codes[-1]} mudaram depois que você abriu esta tela. Confira e chame de novo."
+        super().__init__(message)
+
+
+class RideAlreadyCalled(ValueError):
+    """Estes mesmos pedidos já estão na mesma corrida, chamada ou aberta.
+
+    Não é recusa: quem pediu de novo (outro dispositivo, ou a tela que perdeu a
+    resposta) queria esta corrida, e ela existe. ``ride_number`` é o dela.
+    """
+
+    def __init__(self, *, ride_number: int | None, directive_id: int | None = None):
+        self.ride_number = ride_number
+        self.directive_id = directive_id
+        letter = ride_letter(ride_number)
+        super().__init__(f"A corrida {letter} já tinha sido chamada." if letter else "Esta corrida já tinha sido chamada.")
+
+
+def _same_ride_already_called(ordered) -> RideAlreadyCalled | None:
+    """A corrida com EXATAMENTE estes pedidos já existe (na fila ou aberta)?"""
+    from shopman.shop.directives import COURIER_DISPATCH
+
+    refs = {order.ref for order in ordered}
+    lead = ordered[0]
+    number = get_block(lead).get("ride_number")
+    number = number if isinstance(number, int) and not isinstance(number, bool) else None
+    task = Directive.objects.filter(
+        dispatch_task_filter(lead.ref), topic=COURIER_DISPATCH,
+        status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING),
+    ).order_by("-pk").first()
+    if task is not None and set((task.payload or {}).get("order_refs") or []) == refs:
+        return RideAlreadyCalled(ride_number=number, directive_id=task.pk)
+    ride_id = get_block(lead).get("id_mch")
+    if ride_id and all(has_active_ride(order) and get_block(order).get("id_mch") == ride_id
+                       and set(ride_orders(order)) == refs for order in ordered):
+        return RideAlreadyCalled(ride_number=number)
+    return None
+
+
 @transaction.atomic
-def request_group_dispatch(orders, *, actor: str) -> Directive:
+def request_group_dispatch(orders, *, actor: str, expected_revisions: dict[str, str] | None = None,
+                           ride_number: int | None = None) -> Directive:
     """Uma corrida para vários pedidos: uma solicitação na TaOn, uma parada por pedido.
 
     Junta entregas próximas e dilui o custo da casa (o frete do cliente não
@@ -603,8 +823,16 @@ def request_group_dispatch(orders, *, actor: str) -> Directive:
     (``backstage.services.orders.courier_group_dispatch``). Uma tarefa
     ``courier.dispatch`` só, com ``ride_members``; a corrida aberta é gravada em
     cada pedido, com ``ride_orders`` na ordem das paradas.
+
+    ``expected_revisions`` (``{ref: dispatch_revision}``) é o que a tela leu de
+    cada pedido: conferido com os pedidos travados, ANTES de qualquer gravação.
+    Endereço, pagamento ou corrida que mudou por outra porta recusa com
+    :class:`RideRevisionChanged`, dizendo qual pedido. A corrida que já existe
+    com estes mesmos pedidos levanta :class:`RideAlreadyCalled` (nada a fazer).
+    ``ride_number``: o número que a tela mostrava; vale se continuar livre.
     """
     from shopman.shop.directives import COURIER_DISPATCH, create_deduped
+    from shopman.shop.services.operator_orders import short_ref
 
     refs = list(dict.fromkeys(order.ref for order in orders))
     if len(refs) < 2:
@@ -616,6 +844,13 @@ def request_group_dispatch(orders, *, actor: str) -> Directive:
         raise ValueError("Algum pedido não existe mais. Atualize a fila.")
     by_ref = {order.ref: order for order in locked}
     ordered = [by_ref[ref] for ref in refs]
+    already = _same_ride_already_called(ordered)
+    if already is not None:
+        raise already
+    if expected_revisions is not None:
+        changed = [ref for ref in refs if expected_revisions.get(ref) != dispatch_revision(by_ref[ref])]
+        if changed:
+            raise RideRevisionChanged(changed)
     refusals = [reason for reason in (group_refusal(order) for order in ordered) if reason]
     if refusals:
         raise ValueError(" ".join(refusals))
@@ -624,7 +859,7 @@ def request_group_dispatch(orders, *, actor: str) -> Directive:
     )
     for order in ordered:
         if pending.filter(dispatch_task_filter(order.ref)).exists():
-            raise ValueError(f"O pedido {order.ref} já está sendo chamado. Atualize a fila.")
+            raise ValueError(f"O pedido {short_ref(order.ref)} já está sendo chamado. Atualize a fila.")
 
     lead = ordered[0]
     attempt_n = len(get_block(lead).get("attempts") or []) + 1
@@ -637,11 +872,13 @@ def request_group_dispatch(orders, *, actor: str) -> Directive:
     if directive is None:
         raise ValueError("Esta corrida já foi pedida. Atualize a fila.")
     now_iso = timezone.now().isoformat()
+    number = next_ride_number(exclude_refs=refs, prefer=ride_number)
     for order in ordered:
         block = dict(get_block(order))
         if block.get("id_mch"):
             _archive_current_ride(block)
         block.pop("error", None)
+        block["ride_number"] = number
         block.setdefault("called_at", now_iso)
         block.setdefault("called_by", actor)
         _save_block(order, block, emit={"kind": "redispatch"})
@@ -693,7 +930,7 @@ def dispatch_revision(order) -> str:
 
 
 @transaction.atomic
-def redispatch(order, *, actor: str, expected_revision: str | None = None) -> Directive:
+def redispatch(order, *, actor: str, expected_revision: str | None = None, ride_number: int | None = None) -> Directive:
     """Re-despacho manual pelo operador após corrida N/C ou erro terminal."""
     from shopman.shop.services.operator_orders import OrderStateConflict
 
@@ -718,7 +955,7 @@ def redispatch(order, *, actor: str, expected_revision: str | None = None) -> Di
     block.pop("error", None)
     _save_block(order, block, emit={"kind": "redispatch"})
 
-    directive = request_dispatch(order, actor=actor)
+    directive = request_dispatch(order, actor=actor, ride_number=ride_number)
     if directive is None:
         raise ValueError("Não foi possível enfileirar o re-despacho.")
     return directive
@@ -765,7 +1002,11 @@ def release_unresolved_dispatch(order, *, actor: str, expected_revision: str | N
 
 
 def latest_cancellation(order, *, pending_only=False):
-    """The existing Directive owns queued and unresolved cancellation attempts."""
+    """The existing Directive owns queued and unresolved cancellation attempts.
+
+    O cancelamento é da CORRIDA (``courier_ref``), não do pedido: na corrida com
+    várias paradas qualquer pedido dela enxerga a mesma solicitação.
+    """
     from django.db.models import Q
 
     from shopman.shop.directives import COURIER_CANCEL
@@ -773,16 +1014,97 @@ def latest_cancellation(order, *, pending_only=False):
     ride = get_block(order).get("id_mch")
     if not ride:
         return None
-    tasks = Directive.objects.filter(topic=COURIER_CANCEL, payload__order_ref=order.ref, payload__courier_ref=ride)
+    tasks = Directive.objects.filter(topic=COURIER_CANCEL, payload__courier_ref=ride)
     if pending_only:
         tasks = tasks.filter(Q(status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING)) |
             Q(payload__cancel_attempt__state__in=("started", "unknown", "accepted")))
     return tasks.order_by("-pk").first()
 
 
+#: O que a tela diz de um cancelamento pedido, por estado (:func:`cancel_state`).
+CANCEL_PENDING_MESSAGE = "Pedido de cancelamento enviado. Esperando a TaOn confirmar."
+CANCEL_UNKNOWN_MESSAGE = "Cancelamento sem resultado confirmado. Confira esta corrida na central antes de reenviar."
+CANCEL_NOT_SENT_MESSAGE = "O cancelamento não foi enviado à TaOn. Tente de novo."
+
+
+def ride_name(order) -> str:
+    """Como a frase chama a corrida deste pedido: "a corrida B", ou "a corrida do pedido A47"."""
+    from shopman.shop.services.operator_orders import short_ref
+
+    letter = ride_letter(get_block(order).get("ride_number"))
+    return f"a corrida {letter}" if letter else f"a corrida do pedido {short_ref(order.ref)}"
+
+
+def cancel_refused_message(order) -> str:
+    """A recusa da central, na frase que a tela e o aviso mostram."""
+    return f"A TaOn não cancelou {ride_name(order)}. Cancele pela central da TaOn."
+
+
+def cancel_state(order) -> dict:
+    """Em que pé está o cancelamento da corrida viva deste pedido. Fonte única.
+
+    ``{"state", "message", "at"}``, lido da Directive ``courier.cancel`` da
+    corrida: o Painel do pedido e a seção Entregas mostram a mesma coisa.
+
+    - ``""``: ninguém pediu cancelamento (ou a corrida já não se cancela);
+    - ``pending``: pedido enviado, a central ainda não confirmou. O botão some;
+    - ``unknown``: o envio ficou sem resposta. Não se reenvia: confere-se na central;
+    - ``failed``: a central recusou (ou nada foi enviado). A corrida segue aberta.
+    """
+    empty = {"state": "", "message": "", "at": ""}
+    if not ride_cancellable(get_block(order)):
+        return empty
+    task = latest_cancellation(order)
+    if task is None:
+        return empty
+    state = ((task.payload or {}).get("cancel_attempt") or {}).get("state")
+    at = task.updated_at.isoformat() if task.updated_at else ""
+    # O recibo da tentativa manda: ele é gravado antes de a tarefa mudar de status.
+    if state == "refused":
+        return {"state": "failed", "message": cancel_refused_message(order), "at": at}
+    if state == "not_applied":
+        return {"state": "failed", "message": CANCEL_NOT_SENT_MESSAGE, "at": at}
+    live = task.status in (Directive.Status.QUEUED, Directive.Status.RUNNING)
+    if state == "unknown" or (state == "started" and not live):
+        return {"state": "unknown", "message": CANCEL_UNKNOWN_MESSAGE, "at": at}
+    if live or state in ("started", "accepted"):
+        return {"state": "pending", "message": CANCEL_PENDING_MESSAGE, "at": at}
+    return empty
+
+
+def cancel_question(order) -> str:
+    """A pergunta da confirmação: "Cancelar a corrida B? A05 e C12 voltam para Aguardando."
+
+    Diz o que o toque desfaz: a corrida inteira, com todos os pedidos dela.
+    """
+    return f"Cancelar {ride_name(order)}? {cancel_consequence(order)}"
+
+
+def cancel_consequence(order) -> str:
+    """O que o cancelamento desfaz: "A05 e C12 voltam para Aguardando."."""
+    from shopman.shop.services.operator_orders import short_ref
+
+    codes = [short_ref(ref) for ref in ride_orders(order)]
+    names = codes[0] if len(codes) == 1 else f"{', '.join(codes[:-1])} e {codes[-1]}"
+    return f"{names} {'volta' if len(codes) == 1 else 'voltam'} para Aguardando."
+
+
+def cancel_asks_reason(order) -> bool:
+    """Depois do aceite a central quer saber por quê: a confirmação já traz os motivos."""
+    block = get_block(order)
+    return ride_cancellable(block) and block.get("status") not in BEFORE_ACCEPT_STATUSES
+
+
 @transaction.atomic
-def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_revision: str | None = None) -> Directive:
-    """Record a request for the observed ride; the worker owns remote I/O."""
+def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_revision: str | None = None,
+                intent: str = CANCEL_INTENT_OPERATOR) -> Directive:
+    """Record a request for the observed ride; the worker owns remote I/O.
+
+    ``reason_id`` é o motivo que o operador escolheu (só vale depois do aceite;
+    antes dele a central só aceita o 10 e a escolha nem é perguntada). Sem ele,
+    o worker usa o motivo do ``intent`` (``courier_machine.cancel_reason_for``).
+    A solicitação é da corrida: uma por ``id_mch``, venha de qual pedido vier.
+    """
     from shopman.shop.directives import COURIER_CANCEL, create_deduped
     from shopman.shop.services.operator_orders import OrderStateConflict
 
@@ -791,10 +1113,12 @@ def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_rev
         raise OrderStateConflict("O pedido ou a corrida mudou. Confira antes de solicitar cancelamento.")
     if get_adapter("courier") is None:
         raise ValueError("Nenhum adapter de courier configurado.")
+    if reason_id is not None and reason_id not in CANCEL_REASONS_AFTER_ACCEPT:
+        raise ValueError("Motivo de cancelamento desconhecido. Atualize a tela e escolha de novo.")
     block = get_block(order)
     if not has_active_ride(order):
         raise ValueError("Não há corrida ativa para cancelar.")
-    if block.get("status") not in CANCELLABLE_STATUSES:
+    if not ride_cancellable(block):
         raise ValueError("A corrida já está com o entregador em rota. Combine o retorno por telefone com a central.")
     existing = latest_cancellation(order, pending_only=True)
     if existing is not None:
@@ -802,14 +1126,23 @@ def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_rev
         if state in {"started", "unknown", "accepted"}:
             raise OrderStateConflict("Cancelamento já iniciado. Confira o resultado na central antes de outra solicitação.")
         return existing
+    # A corrida inteira: o pedido pelo qual os gestos dela vão (o primeiro) e
+    # todos os que a carregam, lidos AGORA. Depois do C ninguém mais saberia
+    # quem estava nela (o fim arquiva ``ride_orders``).
+    members = [order, *ride_companions(order)]
+    by_ref = {member.ref: member for member in members}
+    refs = [ref for ref in ride_orders(order) if ref in by_ref]
+    refs += [member.ref for member in members if member.ref not in refs]
     task = create_deduped(COURIER_CANCEL,
-        payload={"order_ref": order.ref, "channel_ref": order.channel_ref or "", "actor": actor,
-            "courier_ref": block["id_mch"], "reason_id": reason_id},
-        dedupe_key=f"courier.cancel:{order.ref}:{block['id_mch']}")
+        payload={"order_ref": refs[0], "order_refs": refs, "channel_ref": by_ref[refs[0]].channel_ref or "",
+            "actor": actor, "courier_ref": block["id_mch"], "reason_id": reason_id, "intent": intent},
+        dedupe_key=f"courier.cancel:{block['id_mch']}")
     if task is None:
         raise OrderStateConflict("Já existe uma solicitação de cancelamento para esta corrida. Atualize o pedido.")
-    order.emit_event(event_type="courier_cancel_requested", actor=actor, payload={"directive_id": task.pk, "id_mch": block["id_mch"]})
-    _emit_sse(order, {"kind": "cancel_queued"})
+    for member in members:
+        member.emit_event(event_type="courier_cancel_requested", actor=actor,
+                          payload={"directive_id": task.pk, "id_mch": block["id_mch"]})
+        _emit_sse(member, {"kind": "cancel_queued"})
     return task
 
 
@@ -822,9 +1155,10 @@ _CANCELLED_ORDER_ALERT_TYPE = "integration_failed"
 def on_order_cancelled(order) -> None:
     """Pedido cancelado: a corrida dele não pode seguir aberta na central.
 
-    - Antes da coleta (``CANCELLABLE_STATUSES``): enfileira o cancelamento da
+    - Antes da coleta (:func:`ride_cancellable`): enfileira o cancelamento da
       corrida pelo caminho de sempre (:func:`cancel_ride`, Directive
-      ``courier.cancel``, dedupe por corrida). Cancelamento já pedido é no-op.
+      ``courier.cancel``, dedupe por corrida), com o motivo da fase.
+      Cancelamento já pedido é no-op.
     - Depois da coleta (``E``): a central não cancela mais. Aviso crítico ao
       operador, uma vez por pedido.
     - Despacho sem resultado confirmado: pode haver corrida na central que o
@@ -838,7 +1172,9 @@ def on_order_cancelled(order) -> None:
     try:
         block = get_block(order)
         status = str(block.get("status") or "")
-        companions = ride_companions(order) if has_active_ride(order) else []
+        # Só quem ainda espera a entrega segura a corrida: se os outros já
+        # foram cancelados, esta é a última parada viva e a corrida vai junto.
+        companions = ride_companions(order, alive=True) if has_active_ride(order) else []
         if companions:
             # A corrida leva outros pedidos: cancelar a corrida tiraria o
             # entregador deles também. O operador tira a parada com a central.
@@ -864,9 +1200,9 @@ def on_order_cancelled(order) -> None:
         if status == "E":
             _alert_cancelled_order(order, f"O entregador já coletou o pedido {code}, que foi cancelado: fale com a central.")
             return
-        if status in CANCELLABLE_STATUSES:
+        if ride_cancellable(block):
             try:
-                cancel_ride(order, actor="lifecycle.on_cancelled")
+                cancel_ride(order, actor="lifecycle.on_cancelled", intent=CANCEL_INTENT_ORDER_CANCELLED)
             except OrderStateConflict:  # silêncio-deliberado: cancelamento desta corrida já pedido, o worker cuida dele
                 pass
             except ValueError:
@@ -916,7 +1252,8 @@ def _archive_current_ride(block: dict) -> None:
     )
     block["attempts"] = attempts
     for key in ("id_mch", "status", "status_at", "dispatched_at", "finished_at", "driver",
-                "tracking_url", "confirmation_code", "final_value_q", "progress", "sync", "door_charge_note",
+                "tracking_url", "confirmation_code", "tracking_match", "final_value_q", "progress", "sync",
+                "door_charge_note",
                 "ride_orders"):
         block.pop(key, None)
 
@@ -943,7 +1280,7 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
         return
     enrichment = dict(observed)
     if status == "A" and observed.get("status") != status and not observed.get("driver"):
-        _enrich_accepted(enrichment, details)
+        _enrich_accepted(enrichment, details, order_ref=order.ref)
     if status == "F" and observed.get("status") != status:
         _enrich_finished(enrichment, details)
 
@@ -959,7 +1296,7 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
             return
         if previous != status:
             now_iso = timezone.now().isoformat()
-            for key in ("driver", "tracking_url", "confirmation_code", "final_value_q"):
+            for key in ("driver", "tracking_url", "confirmation_code", "tracking_match", "final_value_q"):
                 if key in enrichment:
                     block[key] = enrichment[key]
             block.update(status=status, last_event_at=now_iso, last_source=source)
@@ -1049,8 +1386,135 @@ def _collected_before_ready(order, *, ride_id: str) -> None:
         order.refresh_from_db()
 
 
-def _enrich_accepted(block: dict, details: dict | None) -> None:
-    """Corrida aceita: busca entregador + link de rastreio (best-effort)."""
+#: Como o link de rastreio foi casado com a parada DESTE pedido
+#: (``courier.tracking_match``). Sem uma destas provas o link não é gravado.
+TRACKING_MATCHES = ("id", "stop", "single", "position")
+
+#: Onde a TaOn pode dizer de qual pedido é a parada. Só ``id_externo`` é enviado
+#: por nós na abertura; vale como prova a igualdade exata com a ref do pedido.
+_LINK_ORDER_KEYS = ("id_externo", "numero_pedido")
+
+#: Por quanto tempo os pedidos de uma corrida dividem a MESMA leitura dos links
+#: (o tempo de uma batida passar por todos), e o intervalo entre duas tentativas
+#: quando o link ainda não veio.
+_TRACKING_LINKS_SHARED_SECONDS = 60
+_TRACKING_RETRY_SECONDS = 300
+
+
+def _link_names(entry: dict, order_ref: str) -> bool:
+    return any(str(entry.get(key) or "").strip() == order_ref for key in _LINK_ORDER_KEYS)
+
+
+def link_for_order(order_ref: str, ride_refs, links, *, stop_id: str = "") -> dict:
+    """O link de rastreio e o código da parada DESTE pedido, ou ``{}`` (falha fechada).
+
+    Corrida com várias paradas tem um link por parada, e cada um mostra a entrega
+    de UM cliente. Gravar o da parada errada entrega a rota de uma pessoa a outra
+    (16/11/2026: todo pedido da corrida recebia ``links[0]``). O casamento só vale
+    com prova, nesta ordem:
+
+    1. ``id``: a entrada nomeia o pedido (``id_externo``/``numero_pedido`` igual à
+       ref). Se a lista nomeia outros pedidos da corrida e não este, não há link.
+    2. ``stop``: a entrada tem o ``parada_id`` já gravado no pedido (``courier.stop_id``).
+    3. ``single``: a corrida é de um pedido só; não há outro cliente na rota.
+    4. ``position``: uma entrada por parada, na ordem enviada à TaOn
+       (``ride_orders``), e só quando os tamanhos batem e nenhuma parada ou link
+       se repete.
+
+    Fora disso (lista de outro tamanho, o formato único ``{"link"}`` numa corrida
+    de várias paradas) devolve vazio, e o aviso e o botão do cliente somem sozinhos.
+    """
+    refs = [str(ref) for ref in ride_refs or [] if ref] or [order_ref]
+    entries = [entry for entry in links or [] if isinstance(entry, dict)]
+    if not entries or order_ref not in refs:
+        return {}
+
+    def proven(entry: dict, match: str) -> dict:
+        link = str(entry.get("link_rastreio") or "").strip()
+        code = entry.get("codigo_confirmacao")
+        code = str(code).strip() if code is not None else ""
+        if not link and not code:
+            return {}
+        return {"tracking_url": link, "confirmation_code": code, "tracking_match": match}
+
+    named = [entry for entry in entries if _link_names(entry, order_ref)]
+    if len(named) == 1:
+        return proven(named[0], "id")
+    if named or any(_link_names(entry, other) for entry in entries for other in refs):
+        # A lista fala em pedidos e não aponta UM para este: não se adivinha.
+        return {}
+    if stop_id:
+        same_stop = [entry for entry in entries if str(entry.get("parada_id") or "").strip() == stop_id]
+        if len(same_stop) == 1:
+            return proven(same_stop[0], "stop")
+    if len(refs) == 1:
+        return proven(entries[0], "single")
+    if len(entries) != len(refs) or refs.count(order_ref) != 1:
+        return {}
+    stop_ids = [str(entry.get("parada_id") or "").strip() for entry in entries]
+    urls = [str(entry.get("link_rastreio") or "").strip() for entry in entries]
+    if any(stop_ids) and (not all(stop_ids) or len(set(stop_ids)) != len(stop_ids)):
+        return {}
+    if len({url for url in urls if url}) != len([url for url in urls if url]):
+        return {}
+    return proven(entries[refs.index(order_ref)], "position")
+
+
+def proven_tracking(block) -> dict:
+    """``{"url", "code"}`` da parada deste pedido; vazios quando o casamento não foi provado.
+
+    Porta única de leitura do link e do código (aviso de saída, página do pedido,
+    Gestor). Link gravado sem ``tracking_match`` é tratado como ausente: não há
+    como saber de qual parada ele é.
+    """
+    empty = {"url": "", "code": ""}
+    if not isinstance(block, dict):
+        return empty
+    match = block.get("tracking_match")
+    if match not in TRACKING_MATCHES:
+        return empty
+    refs = block.get("ride_orders")
+    if match == "single" and isinstance(refs, list) and len(refs) > 1:
+        return empty
+    return {"url": str(block.get("tracking_url") or ""), "code": str(block.get("confirmation_code") or "")}
+
+
+def _ride_links(ride_id: str) -> list[dict]:
+    """Os links da corrida, buscados UMA vez por corrida (os pedidos dela dividem a leitura)."""
+    key = f"courier:tracking_links:{ride_id}"
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    adapter = get_adapter("courier")
+    if adapter is None:
+        return []
+    links = [dict(entry) for entry in adapter.tracking_links(ride_id) or [] if isinstance(entry, dict)]
+    # Vale também para a lista vazia (a TaOn ainda não gerou os links): os pedidos
+    # da corrida passam pela mesma leitura sem cada um bater de novo.
+    cache.set(key, links, _TRACKING_LINKS_SHARED_SECONDS)
+    return links
+
+
+def _tracking_for(order_ref: str, block: dict, ride_id: str) -> dict:
+    """Busca os links da corrida e devolve só o da parada deste pedido (ou ``{}``)."""
+    try:
+        links = _ride_links(str(ride_id))
+    except CourierError as exc:
+        logger.warning("courier.tracking_failed id_mch=%s: %s", ride_id, exc)
+        return {}
+    if not links:
+        return {}
+    refs = block.get("ride_orders") if isinstance(block.get("ride_orders"), list) else None
+    found = link_for_order(order_ref, refs, links, stop_id=str(block.get("stop_id") or ""))
+    if not found and cache.add(f"courier:tracking_unmatched:{ride_id}:{order_ref}", 1, MAX_POLL_HOURS * 3600):
+        # Uma vez por pedido da corrida, sem link e sem dado pessoal: só o tamanho do que não casou.
+        logger.warning("courier.tracking_unmatched id_mch=%s order=%s stops=%s links=%s",
+                       ride_id, order_ref, len(refs or [order_ref]), len(links))
+    return found
+
+
+def _enrich_accepted(block: dict, details: dict | None, *, order_ref: str) -> None:
+    """Corrida aceita: busca entregador + link de rastreio da parada (best-effort)."""
     adapter = get_adapter("courier")
     if adapter is None:
         return
@@ -1069,14 +1533,7 @@ def _enrich_accepted(block: dict, details: dict | None) -> None:
             }
     except CourierError as exc:
         logger.warning("courier.details_failed id_mch=%s: %s", block.get("id_mch"), exc)
-    try:
-        links = adapter.tracking_links(block["id_mch"])
-        if links:
-            block["tracking_url"] = str(links[0].get("link_rastreio") or "")
-            code = links[0].get("codigo_confirmacao")
-            block["confirmation_code"] = str(code) if code is not None else ""
-    except CourierError as exc:
-        logger.warning("courier.tracking_failed id_mch=%s: %s", block.get("id_mch"), exc)
+    block.update(_tracking_for(order_ref, block, block["id_mch"]))
 
 
 def _enrich_finished(block: dict, details: dict | None) -> None:
@@ -1137,7 +1594,12 @@ def _sync_failures_key(ride_id: str) -> str:
 
 
 def _sync_alert_marker(ride_id: str) -> str:
-    return f"corrida {ride_id}"
+    """O trecho do aviso que identifica a corrida na TaOn (dedupe e resolução).
+
+    É a referência para achá-la no painel da central, não o nome dela: na casa a
+    corrida se chama pela letra (:func:`ride_letter`).
+    """
+    return f"número {ride_id} na TaOn"
 
 
 #: O que cada marco do progresso lido prova sobre a corrida, na ordem em que acontece.
@@ -1192,7 +1654,7 @@ def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
         apply_status(order, step, source=source, details=snapshot, at=at)
     cache.delete(_sync_failures_key(ride_id))
     order.refresh_from_db()
-    tracking = _tracking_retry(ride_id, status, known=bool(get_block(order).get("tracking_url")))
+    tracking = _tracking_retry(order.ref, get_block(order), ride_id, status)
 
     had_sync = False
     with transaction.atomic():
@@ -1216,7 +1678,7 @@ def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
             if final_value_q is not None and final_value_q != block.get("final_value_q"):
                 block["final_value_q"] = int(final_value_q)
                 changed = True
-            if tracking and not block.get("tracking_url"):
+            if tracking and not proven_tracking(block)["url"]:
                 block.update(tracking)
                 changed = True
             if changed:
@@ -1235,28 +1697,18 @@ def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
         _resolve_sync_alert(ride_id)
 
 
-def _tracking_retry(ride_id: str, status: str, *, known: bool) -> dict:
-    """Link de rastreio que faltou no aceite: tenta de novo, no máximo a cada 5 min."""
-    if known or status not in ("A", "S", "E"):
+def _tracking_retry(order_ref: str, block: dict, ride_id: str, status: str) -> dict:
+    """Link de rastreio que faltou no aceite: tenta de novo, no máximo a cada 5 min por corrida.
+
+    A corrida com várias paradas faz UMA leitura: o primeiro pedido busca e os
+    outros casam a própria parada na mesma lista (``_ride_links``).
+    """
+    if proven_tracking(block)["url"] or status not in ("A", "S", "E"):
         return {}
-    gate = f"courier:tracking_retry:{ride_id}"
-    if not cache.add(gate, 1, 300):
+    if cache.get(f"courier:tracking_links:{ride_id}") is None and not cache.add(
+            f"courier:tracking_retry:{ride_id}", 1, _TRACKING_RETRY_SECONDS):
         return {}
-    adapter = get_adapter("courier")
-    if adapter is None:
-        return {}
-    try:
-        links = adapter.tracking_links(ride_id)
-    except CourierError as exc:
-        logger.warning("courier.tracking_failed id_mch=%s: %s", ride_id, exc)
-        return {}
-    if not links:
-        return {}
-    code = links[0].get("codigo_confirmacao")
-    return {
-        "tracking_url": str(links[0].get("link_rastreio") or ""),
-        "confirmation_code": str(code) if code is not None else "",
-    }
+    return _tracking_for(order_ref, block, ride_id)
 
 
 def record_sync_failure(order, exc: Exception, *, ride_id: str) -> None:
@@ -1295,13 +1747,17 @@ def _alert_sync_failed(order, ride_id: str) -> None:
     from shopman.shop.services.operator_orders import short_ref
 
     marker = _sync_alert_marker(ride_id)
+    # Sem letra gravada, a frase diz só "corrida": o id da TaOn nunca faz de nome.
+    letter = ride_letter(get_block(order).get("ride_number"))
+    name = f"corrida {letter}" if letter else "corrida"
     try:
         if alert_adapter.recent_exists(_SYNC_ALERT_TYPE, None, order_ref=order.ref, message_contains=marker):
             return
         alert_adapter.create(
             _SYNC_ALERT_TYPE,
             "warning",
-            f"A TaOn não está informando o andamento da {marker} do pedido {short_ref(order.ref)}. "
+            f"A TaOn não está informando o andamento da {name} do pedido "
+            f"{short_ref(order.ref)} ({marker}). "
             "O status na tela pode estar parado: confira no painel da TaOn.",
             order_ref=order.ref,
         )

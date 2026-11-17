@@ -11,6 +11,15 @@ Compromisso: DEV-...
 
 <!-- Descreva resumidamente o que esta PR faz e por quê. -->
 
+## Ficou de fora
+
+<!-- OBRIGATÓRIO (check "Ficou de fora declarado"). Escreva `nada`, ou um item por
+     linha citando a issue que o carrega:  - <o que falta> (#123)
+     Toda issue daqui leva o label `ficou-de-fora`:
+       gh issue create --label ficou-de-fora --title "<o que falta>" \
+         --body "Deixado de fora por #<este PR>. Motivo: <por quê>. Pronto quando: <critério>."
+     Parágrafo no relatório não conta: some no chat e o trabalho dorme. -->
+
 ## Checklist Omotenashi
 
 - [ ] **Copy**: mudanças em texto UI usam `{% omotenashi KEY %}`, ou têm `{# copy-ok: <razão> #}` justificando a exceção.

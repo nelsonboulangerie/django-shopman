@@ -34,7 +34,7 @@ describe("PosCourierPanel: cancelar a corrida e entregador voltou", () => {
   it("antes da coleta, Cancelar a corrida pede o segundo toque e só então emite", async () => {
     const wrapper = await mountSuspended(PosCourierPanel, {
       props: { courier: courier({ can_cancel: true }), card, busy: false,
-        cancelAction: action("courier-cancel", "Solicitar cancelamento da corrida") },
+        cancelAction: action("courier-cancel", "Cancelar corrida") },
     });
     const cancel = () => wrapper.find("[data-pos-courier-cancel]");
     expect(cancel().text()).toBe("Cancelar a corrida");
@@ -48,9 +48,30 @@ describe("PosCourierPanel: cancelar a corrida e entregador voltou", () => {
   it("depois da coleta (sem can_cancel) não há Cancelar a corrida", async () => {
     const wrapper = await mountSuspended(PosCourierPanel, {
       props: { courier: courier({ status: "E", can_cancel: false }), card, busy: false,
-        cancelAction: action("courier-cancel", "Solicitar cancelamento da corrida", false) },
+        cancelAction: action("courier-cancel", "Cancelar corrida", false) },
     });
     expect(wrapper.find("[data-pos-courier-cancel]").exists()).toBe(false);
+  });
+
+  it("cancelamento pedido: a frase do servidor aparece (espera), sem se passar por falha de abrir a corrida", async () => {
+    const message = "Pedido de cancelamento enviado. Esperando a TaOn confirmar.";
+    const wrapper = await mountSuspended(PosCourierPanel, {
+      props: { courier: courier({ cancel_state: { state: "pending", message, at: "2026-11-16T17:20:00Z" } }), card, busy: false,
+        cancelAction: action("courier-cancel", "Cancelar corrida", false) },
+    });
+    expect(wrapper.get("[data-pos-courier-cancel-state]").text()).toContain(message);
+    expect(wrapper.find("[data-pos-courier-error]").exists()).toBe(false);
+    expect(wrapper.find("[data-pos-courier-cancel]").exists()).toBe(false);
+  });
+
+  it("recusa da TaOn: o aviso diz que a corrida segue aberta, com a letra dela", async () => {
+    const message = "A TaOn não cancelou a corrida B. Cancele pela central da TaOn.";
+    const wrapper = await mountSuspended(PosCourierPanel, {
+      props: { courier: courier({ can_cancel: true, cancel_state: { state: "failed", message, at: "2026-11-16T17:21:00Z" } }), card,
+        busy: false, cancelAction: action("courier-cancel", "Cancelar corrida") },
+    });
+    expect(wrapper.get("[data-pos-courier-cancel-state]").text()).toContain(message);
+    expect(wrapper.find("[data-pos-courier-cancel]").exists()).toBe(true);
   });
 
   it("Entregador voltou mostra a lista do que deve estar na mão e fecha a saída no Conferido", async () => {
@@ -83,7 +104,7 @@ describe("PosCourierPanel: cancelar a corrida e entregador voltou", () => {
   it("sem permissão (ação apagada), os botões vêm desligados", async () => {
     const wrapper = await mountSuspended(PosCourierPanel, {
       props: { courier: courier({ status: "A", can_cancel: true }), card, busy: false,
-        cancelAction: action("courier-cancel", "Solicitar cancelamento da corrida", false),
+        cancelAction: action("courier-cancel", "Cancelar corrida", false),
         backAction: action("courier-back", "Entregador voltou", false) },
     });
     expect(wrapper.find("[data-pos-courier-cancel]").attributes("disabled")).toBeDefined();

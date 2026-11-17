@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import quote, urlencode
 
-from django.utils import timezone
+from shopman.utils.formatting import format_local
 
 from shopman.backstage.alert_specs import deadline_for, deadline_kind, spec_for
 from shopman.backstage.projections.production import (
@@ -108,7 +108,7 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
             audience=alert.audience,
             message=readable_message(alert.message),
             order_ref=alert.order_ref,
-            created_at_display=timezone.localtime(alert.created_at).strftime("%d/%m às %H:%M"),
+            created_at_display=format_local(alert.created_at, "%d/%m às {clock}"),
             respond_by_iso=_deadline_iso(alert),
             deadline_kind=deadline_kind(alert),
             origin_label=_spec_value(alert, "origin"),
@@ -156,9 +156,9 @@ _ALERT_HOMES: dict[str, tuple[str, str, str]] = {
     "stock_discrepancy": ("production", "/plan", "Abrir o plano"),
     "stock_low": ("production", "/plan", "Abrir o plano"),
     # Gestor: o card filtrado no quadro, quando o gesto mora no card.
-    "order_production_quality_risk": ("orders", "/", "Abrir o pedido no quadro"),
+    "order_production_quality_risk": ("orders", "/", "Abrir o pedido no painel"),
     "danfe_print_failed": ("orders", "/", "Imprimir a DANFE no card"),
-    "dispatch_unchecked_volumes": ("orders", "/", "Abrir o pedido no quadro"),
+    "dispatch_unchecked_volumes": ("orders", "/", "Abrir o pedido no painel"),
     # Gestor: a loja no iFood (o interruptor do canal mora na Fila).
     "ifood_store_closed_while_open": ("orders", "/", "Conferir o iFood na Fila"),
     "ifood_store_open_while_closed": ("orders", "/", "Conferir o iFood na Fila"),

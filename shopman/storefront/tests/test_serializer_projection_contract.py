@@ -68,7 +68,8 @@ MIRROR_CONTRACTS = [
     (api_serializers.PriceQuoteSerializer, PriceQuoteProjection, set()),
     # Timeline do storefront mostra só label/hora; actor/detail servem a outras superfícies.
     (api_serializers.TimelineEventSerializer, TimelineEventProjection, {"actor", "detail"}),
-    (api_serializers.OrderItemSerializer, OrderItemProjection, set()),
+    # A instrução do item é do balcão (Gestor/cozinha); a loja não a repete.
+    (api_serializers.OrderItemSerializer, OrderItemProjection, {"notes"}),
     (api_serializers.PickupInfoSerializer, PickupInfoProjection, set()),
     (
         api_serializers.CancellationContactProjectionSerializer,

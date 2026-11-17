@@ -37,6 +37,7 @@ from typing import NamedTuple
 
 from django.utils import timezone
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage.projections.feeds import ChannelSwitchProjection, ManagerOptionProjection
 from shopman.shop.config import STAGE_GOAL_DEFAULTS
@@ -208,7 +209,7 @@ def card_attention(
             "attention": kind,
             "attention_since_iso": _iso(received),
             "goal_minutes": goal,
-            "goal_label": f"responder até {timezone.localtime(expires):%H:%M}",
+            "goal_label": f"responder até {format_clock(expires)}",
         }
     if kind == "ifood_accept":
         from shopman.shop.services import ifood_accept_sync
@@ -221,7 +222,7 @@ def card_attention(
                 "attention": kind,
                 "attention_since_iso": _iso(order.created_at),
                 "goal_minutes": goal,
-                "goal_label": f"aceite até {timezone.localtime(expires):%H:%M}",
+                "goal_label": f"aceite até {format_clock(expires)}",
             }
         return {
             "attention": kind,
@@ -299,7 +300,7 @@ def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_con
     minutes = max(1, math.ceil((deadline - since).total_seconds() / 60))
     return {
         "goal_minutes": minutes,
-        "goal_label": "no balcão" if kind == "handoff" else f"combinado para as {clock:%H:%M}",
+        "goal_label": "no balcão" if kind == "handoff" else f"combinado para as {format_clock(clock)}",
     }
 
 
@@ -450,7 +451,7 @@ MAX_MENU_OUTAGES = 5
 
 
 def _clock(moment) -> str:
-    return timezone.localtime(moment).strftime("%H:%M") if moment else ""
+    return format_clock(moment) if moment else ""
 
 
 def _parse(value) -> datetime | None:

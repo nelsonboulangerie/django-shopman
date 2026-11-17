@@ -1408,15 +1408,20 @@ def _courier_tracking_url(order) -> str:
     """O link da TaOn para o cliente seguir o entregador, ou ``""``.
 
     Vem de ``order.data.courier.tracking_url`` (gravado no aceite da corrida,
-    ``services/courier._enrich_accepted``), o mesmo que vai no aviso de saída.
-    Só link http(s): o valor vem de terceiro e vira ``href`` na página.
+    ``services/courier._enrich_accepted``), o mesmo que vai no aviso de saída, e
+    só quando o link foi casado com a parada DESTE pedido
+    (``courier.proven_tracking``): na corrida com várias paradas, o link de outra
+    parada mostraria a entrega de outro cliente. Só link http(s): o valor vem de
+    terceiro e vira ``href`` na página.
     """
+    from shopman.shop.services.courier import proven_tracking
+
     courier = (order.data or {}).get("courier")
     if not isinstance(courier, dict):
         return ""
     if str(courier.get("status") or "") in _COURIER_ENDED_STATUSES:
         return ""
-    url = str(courier.get("tracking_url") or "").strip()
+    url = proven_tracking(courier)["url"].strip()
     if not url.lower().startswith(("https://", "http://")):
         return ""
     return url

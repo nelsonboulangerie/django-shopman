@@ -425,17 +425,27 @@ def test_board_offers_one_ride_for_ready_deliveries_and_calls_it(client, operato
     queue = client.get(reverse("api-backstage-orders")).json()["queue"]
     assert [row["ref"] for row in queue["ride_candidates"]] == ["CRB-R1", "CRB-R2"]
 
-    response = client.post(reverse("api-backstage-order-courier-ride"),
-                           {"refs": ["CRB-R1", "CRB-R2"]}, content_type="application/json")
+    # A fila entrega a ação pronta: quem a tela leu e a revisão de cada candidato.
+    action = queue["ride_action"]
+    assert action["ref"] == "courier-ride" and action["enabled"]
+    assert set(action["payload_schema"]["base_revisions"]) == {"CRB-R1", "CRB-R2"}
+    body = {**action["payload_schema"], "refs": ["CRB-R1", "CRB-R2"]}
+
+    response = client.post(reverse("api-backstage-order-courier-ride"), body,
+                           content_type="application/json", HTTP_IDEMPOTENCY_KEY="ride-1")
     assert response.status_code == 200, response.content
     task = Directive.objects.get(pk=response.json()["directive_id"])
     assert task.payload["order_refs"] == ["CRB-R1", "CRB-R2"]
+    assert (response.json()["ride_number"], response.json()["ride_letter"]) == (1, "A")
 
-    # A mesma corrida de novo é recusada, com o motivo.
-    again = client.post(reverse("api-backstage-order-courier-ride"),
-                        {"refs": [first.ref, second.ref]}, content_type="application/json")
-    assert again.status_code == 409
-    assert "sendo chamado" in again.json()["detail"]
+    # A mesma corrida pedida de novo (outra chave, em outra ordem) já existe: é
+    # feito, não recusa, e nenhuma segunda tarefa nasce.
+    again = client.post(reverse("api-backstage-order-courier-ride"), {**body, "refs": [second.ref, first.ref]},
+                        content_type="application/json", HTTP_IDEMPOTENCY_KEY="ride-2")
+    assert again.status_code == 200, again.content
+    assert again.json()["already_called"] is True
+    assert again.json()["ride_letter"] == "A"
+    assert Directive.objects.filter(topic=COURIER_DISPATCH).count() == 1
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
@@ -443,9 +453,12 @@ def test_one_ride_refuses_the_order_with_the_card_machine_by_name(client, operat
     _delivery_order(ref="CRB-R1", payment={"method": "pix", "status": "captured"})
     _delivery_order(ref="CRB-R3", payment={"method": "credit", "collection": "on_delivery"})
     client.force_login(operator)
+    revisions = {ref: courier.dispatch_revision(Order.objects.get(ref=ref)) for ref in ("CRB-R1", "CRB-R3")}
     response = client.post(reverse("api-backstage-order-courier-ride"),
-                           {"refs": ["CRB-R1", "CRB-R3"]}, content_type="application/json")
-    assert response.status_code == 409
+                           {"refs": ["CRB-R1", "CRB-R3"], "base_revisions": revisions, "expected_actor_id": operator.pk},
+                           content_type="application/json", HTTP_IDEMPOTENCY_KEY="ride-machine")
+    assert response.status_code == 400
+    assert response.json()["outcome"] == "not_applied"
     assert "maquininha" in response.json()["detail"]
     assert not Directive.objects.filter(topic=COURIER_DISPATCH).exists()
 

@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 describe("Saída larga", () => {
   it("a grade não estica os cartões até o mais alto da linha", () => {
     const column = readFileSync(new URL("../app/components/OrderBoardColumn.vue", import.meta.url), "utf8");
-    const grid = column.slice(column.indexOf('v-else-if="wide"'), column.indexOf("data-zone-cards"));
+    const grid = column.slice(column.indexOf('v-else-if="wide || twoUp"'), column.indexOf("data-zone-cards"));
     expect(grid).toMatch(/class="grid [^"]*\bitems-start\b/);
     // E o cartão não se estica sozinho: `h-full` preenchia a linha da grade.
     const card = readFileSync(new URL("../app/components/OrderCard.vue", import.meta.url), "utf8");

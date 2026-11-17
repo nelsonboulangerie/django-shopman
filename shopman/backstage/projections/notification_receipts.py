@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Directive
+from shopman.utils.formatting import format_local
 
 from shopman.shop.services import notification as notification_svc
 
@@ -132,7 +133,7 @@ def _time_display(raw, fallback=None) -> str:
         return ""
     if timezone.is_naive(moment):
         moment = timezone.make_aware(moment)
-    return timezone.localtime(moment).strftime("%d/%m às %H:%M")
+    return format_local(moment, "%d/%m às {clock}")
 
 
 def _template_label(template: str) -> str:
@@ -244,6 +245,11 @@ def build_notification_receipts(order) -> tuple[NotificationReceiptProjection, .
     O aviso que não se aplica ao pedido (``notification_not_required``) fica de
     fora: ele não falhou nem deixou de sair, ele não existe para este pedido.
     """
+    # No iFood quem avisa o cliente é o app do iFood, e o contato que chega é
+    # mascarado: nenhum aviso nosso pode sair. Listar cada um como "Não enviado"
+    # fazia o pedido parecer com defeito (pedido 3417, 12/11).
+    if getattr(order, "channel_ref", "") == "ifood":
+        return ()
     directives = list(
         Directive.objects.filter(topic=notification_svc.TOPIC, payload__order_ref=order.ref)
         .order_by("-created_at", "-pk")[:MAX_RECEIPTS]

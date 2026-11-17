@@ -1048,6 +1048,51 @@ python manage.py reconcile_user_notifications
 
 ---
 
+### check_ifood_polling
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/check_ifood_polling.py`
+
+O sinal de vida do `ifood_poll --watch` (componente `ifood-poll-worker`). A
+integração direta do iFood entra só por polling, e o iFood cancela em 8 minutos o
+pedido que ninguém aceitou. Cada resposta do iFood ao poll (200 com lista, ou 204)
+grava a hora em `worker_heartbeat` (`ifood_poll`, Redis compartilhado). Passados
+2 minutos sem resposta, abre o `OperatorAlert` crítico `ifood_poll_stale`, com
+e-mail síncrono (`critical_alerts.deliver_now`); quando o polling volta, resolve o
+alerta aberto. Sem credencial OAuth do iFood, ou com cache por processo (dev/CI),
+volta calado. Roda no `maintenance_worker`, depois do `check_ifood_store`. A sonda
+gêmea é `ifood_polling` do Watchman (perfis `diagnostic` e `ifood`, fora da
+prontidão):
+
+```bash
+python manage.py check_ifood_polling
+python manage.py watchman check --profile ifood
+```
+
+---
+
+### courier_machine_probe
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/courier_machine_probe.py`
+
+Sonda de homologação da TaOn (Machine). Sem `--write` só faz `GET`: lê a conta
+(webhooks, categorias, se a mesma API Key abre a v2), uma corrida pelas vias da v1
+e da v2 (`--ride`, `--recent`), cota com paradas para achar o separador de
+`latlng_paradas` (`--stop=`) e lista as corridas abertas há pouco (`--window`). O
+laudo mostra formato e não conteúdo: nome, telefone, CPF, placa, endereço,
+coordenada e código de confirmação saem mascarados. As quatro sondas que escrevem
+(`--cancel`, `--attach`, `--remove-stop`, `--boost`) pedem `--write`, uma corrida
+só e o mesmo id em `--confirm`. Usa a credencial que o adaptador já lê. Roteiro em
+[courier-machine-homologacao](../runbooks/courier-machine-homologacao.md).
+
+```bash
+python manage.py courier_machine_probe --recent 3 --out /tmp/taon-laudo.txt
+make taon-probe homolog=1 args='--ride <id>'   # homologação: pergunta as credenciais no terminal
+```
+
+---
+
 ### fiscal_audit_catalog
 
 **App:** `shopman.shop`

@@ -201,7 +201,8 @@ def test_stock_and_kitchen_wait_until_due_then_fulfill_only_once(settings):
             lifecycle.activate_preorder(order)
         order.refresh_from_db()
         hold.refresh_from_db()
-        assert order.status == Order.Status.PREPARING
+        # Chegar à Cozinha não é "Em preparo", nem no iFood (dono, 09/11/2026).
+        assert order.status == Order.Status.ACCEPTED
         assert hold.status == HoldStatus.FULFILLED
         assert hold.quant.quantity == Decimal("1")
         assert kitchen.called

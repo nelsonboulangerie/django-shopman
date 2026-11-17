@@ -243,7 +243,7 @@ describe("zonesView", () => {
   });
 
   // O pedido do iFood já entregue com negociação aberta não está em etapa nenhuma: no
-  // quadro em abas (celular, tablet em pé) ele ganha a aba "Negociação", senão some.
+  // painel em abas (celular, tablet em pé) ele ganha a aba "Negociação", senão some.
   it("a aba Negociação junta só o que está fora das etapas, e some sem nenhum", () => {
     expect(negotiationZoneView(queue())).toBeNull();
     const zone = negotiationZoneView({
@@ -626,7 +626,7 @@ describe("rowsToCsv", () => {
   });
   // A planilha em português lê a vírgula como decimal: o separador é ponto e vírgula,
   // e a marca de ordem de bytes abre o UTF-8 com acento certo (o escritor do kit,
-  // `readingCsvText`, o mesmo do "Exportar CSV deste quadro").
+  // `readingCsvText`, o mesmo do "Exportar CSV deste painel").
   it("sai como a planilha em português lê: ';' entre colunas, vírgula no valor, BOM", () => {
     const csv = rowsToCsv([
       {
@@ -942,7 +942,7 @@ describe("maquininhas na rua", () => {
         out_at: "2026-10-28T17:20:00Z",
         shared_with: [],
       }),
-    ).toBe("Pedido A47 · Maria · saiu às 14:20");
+    ).toBe("Pedido A47 · Maria · saiu às 14h20");
     expect(
       equipmentOutLine({
         order_ref: "WEB-A47",
@@ -1070,5 +1070,25 @@ describe("a pergunta da corrida com várias paradas", () => {
     expect(courierRideQuestion(["WEB-A47", "WEB-B12", "WEB-C03"])).toBe(
       "Uma corrida da TaOn leva os pedidos A47, B12 e C03, na ordem do percurso. A corrida é paga pela casa e o frete dos clientes não muda.",
     );
+  });
+});
+
+// Prontos em duas partes (dono, 13/11/2026): "A coletar" e "Saiu para entrega".
+describe("exitRows", () => {
+  it("o que espera no balcão primeiro, o que está na rua depois, um rótulo por parte", async () => {
+    const { exitRows } = await import("../app/presentation/board");
+    const rows = exitRows([
+      { ref: "R1", status: "dispatched" },
+      { ref: "B1", status: "ready" },
+      { ref: "B2", status: "ready" },
+      { ref: "R2", status: "dispatched" },
+    ] as never);
+    expect(rows.map((r) => [r.card.ref, r.heading])).toEqual([
+      ["B1", "A coletar"],
+      ["B2", ""],
+      ["R1", "Saiu para entrega"],
+      ["R2", ""],
+    ]);
+    expect(exitRows([{ ref: "R1", status: "dispatched" }] as never)[0]!.heading).toBe("Saiu para entrega");
   });
 });

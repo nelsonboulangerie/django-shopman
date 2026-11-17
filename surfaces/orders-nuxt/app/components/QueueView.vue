@@ -46,6 +46,7 @@ import {
   courierReminderLine,
 } from "~/presentation/courier";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = withDefaults(
   defineProps<{
@@ -183,7 +184,7 @@ function cardAuth(card: OrderCardProjection) {
 function clock(iso: string): string {
   const at = iso ? new Date(iso) : null;
   return at && !Number.isNaN(at.getTime())
-    ? at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    ? formatClock(at)
     : "";
 }
 function readyStation(card: OrderCardProjection) {
@@ -529,7 +530,7 @@ function switchHint(row: {
             <span class="shrink-0 op-title tnum xl:self-end">{{
               item.card.total_display
             }}</span>
-            <!-- o gesto da linha e o ⋯ do pedido (as mesmas opções do cartão do quadro) -->
+            <!-- o gesto da linha e o ⋯ do pedido (as mesmas opções do cartão do painel) -->
             <div class="flex min-w-0 flex-1 items-center gap-1.5">
               <NuxtButton
                 v-if="item.kind === 'negotiation'"
