@@ -776,6 +776,12 @@ describe("Encomendas — a semana no centro", () => {
       .compareDocumentPosition(grid.find(`[data-preorder="${ref}"] [data-preorder-money]`).element);
     expect(order("NB-7") & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(order("NB-8") & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    // A linha com pendência financeira leva a faixa âmbar à esquerda; a paga, não.
+    const row = (ref: string) => grid.find(`[data-preorder-card="${ref}"]`);
+    expect(row("NB-7").attributes("data-preorder-pending")).toBe("");
+    expect(row("NB-7").classes()).toEqual(expect.arrayContaining(["border-l-3", "border-warning"]));
+    expect(row("NB-8").attributes("data-preorder-pending")).toBeUndefined();
+    expect(row("NB-8").classes()).toEqual(expect.arrayContaining(["border-l-3", "border-transparent"]));
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-money]').text()).toBe("R$ 24,00");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-money-badge]').text()).toBe("Pago");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-printed]').exists()).toBe(true);

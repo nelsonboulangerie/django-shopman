@@ -82,11 +82,21 @@ const situationColor = computed(() => situationTone(props.card.situation));
 </script>
 
 <template>
+  <!-- Pendência financeira ("A receber", "Conferir pagamento"): faixa âmbar de 3 px
+       na borda esquerda, em todo layout (grade, lista, celular). Dono, prévia do
+       #2597: "a linha ou algo assim deveria ter algum tipo de destaque". Sem fundo
+       pintado; o token `warning` dá 4,9:1 a 5,9:1 no claro e 6,3:1 a 7,5:1 no
+       escuro contra as superfícies da linha (não-texto pede 3:1). As outras linhas
+       levam a mesma borda transparente, para o conteúdo não desalinhar. -->
   <div
-    class="@container flex min-w-0 items-stretch transition"
-    :class="layout ? 'hover:bg-elevated/60' : 'rounded-md bg-elevated/50 hover:bg-elevated'"
+    class="@container flex min-w-0 items-stretch border-l-3 transition"
+    :class="[
+      layout ? 'hover:bg-elevated/60' : 'rounded-md bg-elevated/50 hover:bg-elevated',
+      money.pending ? 'border-warning' : 'border-transparent',
+    ]"
     :draggable="movable ? 'true' : undefined"
     :data-preorder-card="card.ref"
+    :data-preorder-pending="money.pending ? '' : undefined"
     :data-preorder-movable="movable ? '' : undefined"
   >
     <NuxtLink
