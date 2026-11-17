@@ -10,6 +10,10 @@ e ela cobre três buracos:
 - produto que entrou numa coleção do canal não dispara sinal nenhum;
 - envio que falhou de vez (credencial vencida, queda longa) fica para trás.
 
+No Google, também reenvia os itens visíveis na virada do dia (o corte da grade de
+retirada e a meia-noite local), porque o ``pickupSla`` muda sem o estoque mudar
+(``services/pickup_turn``, issue #2655).
+
 Por isso ele reenvia todo SKU do canal cujo último envio passou de
 ``--min-interval-hours`` (24h), e retira o que saiu da composição. Barato quando
 não há nada a fazer: lê a composição e o estado de sync, sem calcular estoque. Roda
@@ -76,6 +80,20 @@ class Command(BaseCommand):
             sent, retracted = self._reconcile(ref, options)
             if sent or retracted:
                 self.stdout.write(f"{ref}: {sent} reenviado(s), {retracted} retirado(s).")
+            if display_catalog.resolve_channel(ref)[1] == "google_merchant":
+                turned = self._turn_of_the_day(ref)
+                if turned:
+                    self.stdout.write(f"{ref}: virada do dia, {turned} item(ns) reenviado(s) com a nova retirada.")
+
+    def _turn_of_the_day(self, ref: str) -> int:
+        """No corte e à meia-noite, o ``pickupSla`` muda sem o estoque mudar: reenvia."""
+        from shopman.shop.services import pickup_turn
+
+        try:
+            return pickup_turn.resend_on_turn(ref)
+        except Exception as exc:
+            self.stderr.write(f"{ref}: virada do dia não reenviou: {exc}")
+            return 0
 
     def _reconcile(self, ref: str, options) -> tuple[int, int]:
         from shopman.shop.handlers.catalog_projection import enqueue_project

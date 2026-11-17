@@ -656,6 +656,77 @@ class TestDailySync:
         call_command("sync_platform_catalogs", stdout=StringIO())
         assert [(d.payload["sku"], d.payload["trigger"]) for d in _queued()] == [("SUMIU", "left_channel")]
 
+    def _turn_world(self):
+        from django.core.cache import cache
+
+        from shopman.shop.models import CatalogSyncState, Shop
+        from shopman.shop.services import pickup_turn
+
+        shop = Shop.load()
+        shop.opening_hours = {
+            day: {"open": "07:00", "close": "18:00"}
+            for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday")
+        }
+        shop.save(update_fields=["opening_hours"])
+        cache.delete(pickup_turn.CACHE_KEY.format(ref="google"))
+        CatalogSyncState.objects.update_or_create(
+            sku="PAO", channel_ref="google", defaults={"status": "synced", "last_synced_at": timezone.now()},
+        )
+        return pickup_turn
+
+    def _done(self):
+        from shopman.shop.models import CatalogSyncState
+
+        Directive.objects.filter(topic=CATALOG_PROJECT_SKU).update(status="done")
+        CatalogSyncState.objects.filter(sku="PAO", channel_ref="google").update(status="synced")
+
+    def test_the_cutoff_and_midnight_resend_the_pickup(self, push, stocked):
+        """Corte e meia-noite mudam o pickupSla sem mudar o estoque: o item volta à fila (#2655)."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        sp = ZoneInfo("America/Sao_Paulo")
+        pickup_turn = self._turn_world()
+        tuesday = datetime(2026, 11, 17, 10, 0, tzinfo=sp)
+
+        # Primeira volta depois do deploy: sem fase guardada, reenvia (a nova retirada chega já).
+        assert pickup_turn.resend_on_turn("google", now=tuesday) == 1
+        assert [d.payload["trigger"] for d in _queued()] == ["day_turn"]
+        self._done()
+
+        # Mesma fase: nada.
+        assert pickup_turn.resend_on_turn("google", now=tuesday.replace(hour=15)) == 0
+        assert _queued() == []
+
+        # Depois do corte (a casa fecha às 18h): "pronto hoje" virou "pronto amanhã".
+        assert pickup_turn.current_phase(now=tuesday.replace(hour=19)) == "2026-11-17:closed"
+        assert pickup_turn.resend_on_turn("google", now=tuesday.replace(hour=19)) == 1
+        self._done()
+        assert pickup_turn.resend_on_turn("google", now=tuesday.replace(hour=23)) == 0
+
+        # Meia-noite local: a fornada de amanhã virou de hoje.
+        wednesday = datetime(2026, 11, 18, 0, 5, tzinfo=sp)
+        assert pickup_turn.current_phase(now=wednesday) == "2026-11-18:open"
+        assert pickup_turn.resend_on_turn("google", now=wednesday) == 1
+
+    def test_the_turn_spares_what_is_already_queued_and_what_is_hidden(self, push, stocked):
+        from shopman.backstage.services import feeds
+
+        pickup_turn = self._turn_world()
+        from shopman.shop.handlers.catalog_projection import enqueue_project
+
+        enqueue_project("PAO", "google", trigger="daily_resync")
+        assert pickup_turn.resend_on_turn("google") == 0
+        assert [d.payload["trigger"] for d in _queued()] == ["daily_resync"]
+        self._done()
+
+        from django.core.cache import cache
+
+        feeds.set_item_hidden("google", "PAO", hidden=True)
+        Directive.objects.filter(topic=CATALOG_PROJECT_SKU).update(status="done")
+        cache.delete(pickup_turn.CACHE_KEY.format(ref="google"))
+        assert pickup_turn.resend_on_turn("google") == 0
+
     def test_dry_run_prints_the_api_payload_without_credentials(self, settings, stocked):
         settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, service_account_b64="")
         out = StringIO()
