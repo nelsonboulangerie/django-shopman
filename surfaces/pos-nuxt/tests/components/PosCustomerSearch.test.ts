@@ -69,6 +69,7 @@ describe("PosCustomerSearch — Enter decide", () => {
     const wrapper = await mount({ error: "Não consegui buscar agora. Tente de novo." });
     const input = await type(wrapper, "529.982.247-25");
     vi.advanceTimersByTime(400);
+    await wrapper.vm.$nextTick(); // o debounce acabou: a tela sai do "Buscando…"
     expect(wrapper.find("[data-customer-search-error]").text()).toContain("Não consegui buscar agora. Tente de novo.");
     expect(wrapper.text()).not.toContain("Nenhum cadastro");
     const searchesBefore = wrapper.emitted("search")?.length ?? 0;
