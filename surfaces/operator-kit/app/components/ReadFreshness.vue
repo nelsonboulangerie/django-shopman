@@ -19,6 +19,7 @@ import { computed } from "vue";
 
 import { useNowTick } from "../composables/useNowTick";
 import { STORE_TIME_ZONE } from "../presentation/dates";
+import { formatClockSeconds } from "../presentation/clock";
 
 const props = defineProps<{
   /** O carimbo da leitura: `generated_at` em ISO, como as projeções o mandam. */
@@ -41,9 +42,7 @@ const clock = computed(() =>
   props.metadata?.generated_at
     ? // A hora da casa, não a do processo: o SSR (UTC no servidor) e o navegador
       // escreveriam horas diferentes e a hidratação descasaria.
-      new Date(props.metadata.generated_at).toLocaleTimeString("pt-BR", {
-        timeZone: STORE_TIME_ZONE,
-      })
+      formatClockSeconds(props.metadata.generated_at, STORE_TIME_ZONE)
     : "",
 );
 </script>

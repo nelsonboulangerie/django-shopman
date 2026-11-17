@@ -470,7 +470,7 @@ describe("presentation/bi — cenários com IA", () => {
   };
 
   it("o cabeçalho diz foco, quando e a janela que a IA viu", () => {
-    expect(scenarioReportHeadline(report)).toMatch(/^Vendas · \d{2}\/\d{2} \d{2}:\d{2} · janela 23\/07 a 19\/08$/);
+    expect(scenarioReportHeadline(report)).toMatch(/^Vendas · \d{2}\/\d{2} \d{1,2}h(\d{2})? · janela 23\/07 a 19\/08$/);
   });
 
   it("custo e latência ficam declarados; falha é falha, não cenário", () => {

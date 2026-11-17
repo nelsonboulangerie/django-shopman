@@ -6,11 +6,11 @@ import NuxtBadge from "../../app/components/NuxtBadge.vue";
 import BadgeInTemplate from "../support/BadgeInTemplate.vue";
 
 // O selo do kit substitui o do Nuxt UI pelo mesmo nome: todo `<NuxtBadge>` da suíte sai
-// com iniciais maiúsculas, venha o texto do `label` ou de dentro do selo.
+// em sentença (só a primeira letra maiúscula), venha o texto do `label` ou de dentro do selo.
 describe("NuxtBadge do kit", () => {
-  it("o label sai com iniciais maiúsculas", async () => {
+  it("o label sai em sentença", async () => {
     const badge = await mountSuspended(NuxtBadge, { props: { label: "loja online", color: "neutral" } });
-    expect(badge.text()).toBe("Loja Online");
+    expect(badge.text()).toBe("Loja online");
     expect(badge.get('[data-slot="base"]').classes().join(" ")).toContain("rounded");
   });
 
@@ -18,14 +18,14 @@ describe("NuxtBadge do kit", () => {
     const badge = await mountSuspended(NuxtBadge, {
       slots: { default: () => ["a receber"] },
     });
-    expect(badge.text()).toBe("A Receber");
+    expect(badge.text()).toBe("A receber");
   });
 
   it("texto dentro de um elemento do selo também, e o resto fica como está", async () => {
     const badge = await mountSuspended(NuxtBadge, {
       slots: { default: () => h("span", { "data-x": "" }, "pago na retirada") },
     });
-    expect(badge.get("[data-x]").text()).toBe("Pago na Retirada");
+    expect(badge.get("[data-x]").text()).toBe("Pago na retirada");
   });
 
   it("número e marca não mudam", async () => {
@@ -35,7 +35,7 @@ describe("NuxtBadge do kit", () => {
 
   it("`<NuxtBadge>` escrito num template resolve para o selo do kit, não o do Nuxt UI", async () => {
     const page = await mountSuspended(BadgeInTemplate);
-    expect(page.get("[data-a]").text()).toBe("Loja Online");
-    expect(page.get("[data-b]").text()).toBe("Pago na Retirada");
+    expect(page.get("[data-a]").text()).toBe("Loja online");
+    expect(page.get("[data-b]").text()).toBe("Pago na retirada");
   });
 });

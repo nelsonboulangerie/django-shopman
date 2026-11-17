@@ -206,10 +206,10 @@ def test_immediate_takeout_shows_when_the_customer_comes():
     from django.utils import timezone
 
     today = timezone.localtime().replace(hour=19, minute=40, second=0, microsecond=0)
-    assert ifood.schedule_label(_takeout(today.isoformat())) == "Retirada às 19:40"
+    assert ifood.schedule_label(_takeout(today.isoformat())) == "Retirada às 19h40"
     other_day = today + timedelta(days=1)
-    assert ifood.schedule_label(_takeout(other_day.isoformat())) == f"Retirada {other_day:%d/%m} às 19:40"
-    assert f"Retirada prevista: {today:%d/%m/%Y} às 19:40" in ifood.operation_summary(_takeout(today.isoformat()))
+    assert ifood.schedule_label(_takeout(other_day.isoformat())) == f"Retirada {other_day:%d/%m} às 19h40"
+    assert f"Retirada prevista: {today:%d/%m/%Y} às 19h40" in ifood.operation_summary(_takeout(today.isoformat()))
 
 
 def test_takeout_time_is_silent_when_scheduled_delivery_or_without_timezone():

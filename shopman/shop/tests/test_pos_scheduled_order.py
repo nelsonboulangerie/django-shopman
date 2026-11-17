@@ -185,7 +185,7 @@ def test_commit_recusa_janela_antes_do_preparo(balcao):
             ),
         )
 
-    assert "Baguette de Tradition sai às 12:00." in str(erro.value)
+    assert "Baguette de Tradition sai às 12h." in str(erro.value)
     assert Order.objects.count() == 0
 
 
@@ -278,7 +278,7 @@ def test_review_desabilita_a_manha_e_aponta_a_primeira_possivel(balcao):
     # Encomenda → slots canônicos da casa (a grade de meia hora é só de HOJE).
     por_ref = {s["ref"]: s for s in review.delivery_slots}
     assert por_ref["slot-09"]["enabled"] is False
-    assert por_ref["slot-09"]["reason"] == "Baguette de Tradition sai às 12:00."
+    assert por_ref["slot-09"]["reason"] == "Baguette de Tradition sai às 12h."
     assert por_ref["slot-12"]["enabled"] is True
     assert review.delivery_earliest_slot == "slot-12"
 

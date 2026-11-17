@@ -112,6 +112,9 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Pedidos e entrega", "shop_shopordering", "Pedido mínimo, frete grátis, prazos e janelas de retirada.", "receipt_long"),
             _model("Zonas de entrega", "shop_deliveryzone", "Bairros e regiões atendidos, com a taxa de cada um.", "pin_drop"),
             _model("Faixas de distância", "shop_deliverydistanceband", "Taxa por quilômetro, quando a cobrança é por distância.", "straighten"),
+            _model("Serviços de entrega", "shop_deliveryservice", "Quem leva as entregas da casa e qual vem marcado ao chamar o entregador.", "two_wheeler"),
+            _model("Entregadores da casa", "shop_courier", "Quem entrega pela casa: nome, WhatsApp e veículo.", "badge"),
+            _model("Valores dos entregadores", "shop_courierrate", "Quanto a casa paga por corrida: a tabela por distância e o combinado com cada um.", "payments"),
         ),
     ),
     SettingsGroup(

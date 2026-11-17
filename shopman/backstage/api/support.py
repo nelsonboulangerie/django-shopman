@@ -75,6 +75,18 @@ def _can_view(user, ticket: SupportTicket) -> bool:
     return user.has_perm("shop.view_all_support_tickets")
 
 
+def _capabilities(user) -> dict:
+    """O que ESTA pessoa pode fazer no Suporte, para a tela não oferecer 403."""
+    return {
+        "create": user.has_perm("shop.create_support_ticket"),
+        "triage": user.has_perm("shop.triage_support_tickets"),
+        "view_all": user.has_perm("shop.view_all_support_tickets"),
+        "approve": user.has_perm("shop.approve_support_requests"),
+        "link_dev": user.has_perm("shop.link_support_dev"),
+        "audit": user.has_perm("shop.view_support_audit"),
+    }
+
+
 def _role(user) -> str:
     if user.has_perm("shop.approve_support_requests"):
         return "owner"
@@ -240,6 +252,13 @@ def _sla_for(ticket_type: str):
         SupportTicket.TYPE_DECISION,
     ) else 1
     return timezone.now() + timedelta(days=days)
+
+
+class SupportCapabilitiesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(_capabilities(request.user))
 
 
 class SupportTicketListCreateView(APIView):

@@ -17,6 +17,7 @@ from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from shopman.utils.formatting import format_local
 
 from shopman.shop.observability import ServerTimingMixin
 from shopman.shop.omotenashi import resolve_copy
@@ -145,7 +146,7 @@ def _fmt_dt(value) -> str:
     if not value:
         return ""
     try:
-        return timezone.localtime(value).strftime("%d/%m/%Y às %H:%M")
+        return format_local(value, "%d/%m/%Y às {clock}")
     except Exception:
         logger.debug("account._fmt_dt degraded; using fallback", exc_info=True)
         return str(value)

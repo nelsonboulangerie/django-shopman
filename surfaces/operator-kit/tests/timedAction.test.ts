@@ -63,14 +63,12 @@ describe("leitura do tempo", () => {
 
   it("descrição fixa e anúncio só de abrir e fechar, sem travessão", () => {
     const until = T0 + 5000;
-    const clock = new Date(until).toLocaleTimeString("pt-BR", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-    expect(timedDescription(until, false)).toBe(`Disponível até ${clock}.`);
+    // A hora da casa com segundos ("10h42min15s"), no fuso do dispositivo.
+    expect(timedDescription(until, false)).toMatch(/^Disponível até \d{1,2}h\d{2}min\d{2}s\.$/);
     expect(timedDescription(until, true)).toBe("O prazo acabou.");
-    expect(timedAnnouncement("Desfazer", until, false)).toBe(`Desfazer: disponível até ${clock}.`);
+    expect(timedAnnouncement("Desfazer", until, false)).toMatch(
+      /^Desfazer: disponível até \d{1,2}h\d{2}min\d{2}s\.$/,
+    );
     expect(timedAnnouncement("Desfazer", until, true)).toBe("Desfazer: o prazo acabou.");
     for (const text of [timedDescription(until, false), timedAnnouncement("Desfazer", until, true)])
       expect(text).not.toMatch(/[—–]/);

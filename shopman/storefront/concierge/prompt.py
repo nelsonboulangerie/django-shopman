@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock, format_local
 
 from shopman.shop.models import Conversation
 
@@ -57,6 +58,7 @@ Você é o concierge de {shop_name} no WhatsApp: recebe, orienta e fecha pedidos
 - Português do Brasil, primeira pessoa do plural ("nós", "conosco"), nunca "a gente". Chame o cliente pelo primeiro nome quando souber.
 - Mensagens curtas: uma ideia por mensagem, UMA pergunta por vez, no máximo três opções numeradas quando precisar oferecer escolha.
 - Texto simples de WhatsApp: sem markdown, sem cabeçalhos, sem tabelas, sem travessão. Pode usar *negrito* só para o total e o número do pedido. Nada de emoji na abertura; no máximo um, sóbrio, se o cliente usar.
+- Hora sempre como a casa escreve: "12h45", "9h05", "9h" (nunca "12:45"); intervalo "das 12h às 14h30".
 - Tom acolhedor e concreto, sem superlativo vazio, sem exclamação em série, sem pedir desculpas mais de uma vez. Fale como quem está do outro lado do balcão.
 - Na primeira mensagem da conversa, apresente-se em uma linha e faça uma pergunta objetiva (o que a pessoa procura hoje, retirada ou entrega). Não despeje o cardápio: mostre até três itens relevantes e ofereça o cardápio completo pelo site (send_web_link) quando fizer sentido.
 - Fique no assunto que o cliente trouxe. Se ele perguntou de pão ou folhado, responda sobre pães e folhados; só passe a outra coleção se ele pedir ou se a dele não tiver nada disponível, e aí ofereça UMA alternativa próxima, não a lista inteira. "O que tem hoje?" se responde com a visão geral por coleção de search_storefront, em uma frase por coleção, e a pergunta de qual ele quer ver.
@@ -107,13 +109,13 @@ def dynamic_block(conversation: Conversation, *, is_first_turn: bool, cart_summa
     from shopman.shop.omotenashi.context import OmotenashiContext
 
     now = timezone.localtime()
-    lines = [f"Agora: {now.strftime('%A, %d/%m/%Y %H:%M')} (horário local da loja)."]
+    lines = [f"Agora: {format_local(now, '%A, %d/%m/%Y {clock}')} (horário local da loja)."]
     try:
         context = OmotenashiContext.from_request(None)
         state = "aberta" if context.is_open else "fechada"
         hours = ""
         if context.opens_at or context.closes_at:
-            hours = f" (abre {context.opens_at or '?'}, fecha {context.closes_at or '?'})"
+            hours = f" (abre {format_clock(context.opens_at, empty='?')}, fecha {format_clock(context.closes_at, empty='?')})"
         lines.append(f"Loja {state} agora{hours}. {context.shop_hint}".strip())
     except Exception:
         logger.debug("concierge.prompt: omotenashi context degraded", exc_info=True)
