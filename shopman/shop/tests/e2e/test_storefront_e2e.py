@@ -110,6 +110,101 @@ class TestCustomerStore:
         expect(page.get_by_text(re.compile(r"R\$")).first).to_be_visible()
         expect(page.get_by_role("button", name=ADD_TO_CART).first).to_be_visible()
 
+    def test_02b_pdp_html_says_when_and_where_without_javascript(
+        self, page, store_base_url, django_db_blocker
+    ):
+        """#2652: o robô do Google lê a página sem JavaScript. O HTML do servidor
+        já traz quando fica pronto (a promessa do WP-L01) e em qual loja (nome e
+        endereço da ``Shop``), e o JSON-LD de Offer diz o mesmo dia e a mesma loja.
+        """
+        import html as html_lib
+
+        from shopman.shop.tests.e2e.conftest import _in_thread
+
+        def _promised_product():
+            from shopman.storefront.presentation.catalog import build_catalog
+            from shopman.storefront.presentation.product_detail import build_product_detail
+
+            with django_db_blocker.unblock():
+                for item in build_catalog(channel_ref="web").items:
+                    if item.promise is None:
+                        continue
+                    detail = build_product_detail(sku=item.sku, channel_ref="web")
+                    if detail is not None and detail.promise and detail.pickup_store:
+                        return detail
+            return None
+
+        detail = _in_thread(_promised_product)
+        if detail is None:
+            pytest.skip("Nenhum produto com promessa e loja com endereço no seed.")
+
+        response = page.request.get(f"{store_base_url}{storefront_links.path_product(detail.sku)}")
+        assert response.status == 200
+        body = html_lib.unescape(response.text())
+        assert detail.promise.text in body
+        assert detail.pickup_store.name in body
+        assert detail.pickup_store.address in body
+        today = detail.promise.day_label == "hoje"
+        availability = "Disponível" if today else "Indisponível"
+        assert f"{availability} hoje na {detail.pickup_store.name}" in body
+
+        offers = [
+            ld["offers"]
+            for ld in (
+                json.loads(raw)
+                for raw in re.findall(
+                    r'<script type="application/ld\+json"[^>]*>(.*?)</script>', body, re.S
+                )
+            )
+            if ld.get("@type") == "Product"
+        ]
+        assert offers, "A página do produto publica o JSON-LD de Product"
+        offer = offers[0]
+        assert offer["availability"] == (
+            "https://schema.org/InStock" if today else "https://schema.org/PreOrder"
+        )
+        assert offer["availableAtOrFrom"]["name"] == detail.pickup_store.name
+
+    def test_02c_tomorrow_bread_is_offered_as_an_order_for_its_day(
+        self, page, store_base_url, django_db_blocker
+    ):
+        """J2 do plano da Loja (WP-L02): o pão que só fica pronto em outro dia diz
+        o dia e a hora antes de qualquer toque, o botão é "Encomendar para …" e,
+        depois do toque, a página repete o dia.
+        """
+        from shopman.shop.tests.e2e.conftest import _in_thread
+
+        def _future_item():
+            from shopman.storefront.presentation.catalog import build_catalog
+
+            with django_db_blocker.unblock():
+                for item in build_catalog(channel_ref="web").items:
+                    if (
+                        item.promise is not None
+                        and item.promise.day_label != "hoje"
+                        and not item.option_groups
+                    ):
+                        return item
+            return None
+
+        item = _in_thread(_future_item)
+        if item is None:
+            pytest.skip("Nenhum produto do seed fica pronto em outro dia agora.")
+
+        page.goto(
+            f"{store_base_url}{storefront_links.path_product(item.sku)}", wait_until="networkidle"
+        )
+        expect(page.locator("[data-pdp-ready-promise]").first).to_have_text(
+            re.compile(re.escape(item.promise.text))
+        )
+        day_word = item.promise.day_label.split(",")[0].strip()
+        order_button = page.get_by_role("button", name=f"Encomendar para {day_word}").first
+        expect(order_button).to_be_visible()
+        order_button.click()
+        expect(page.locator("[data-pdp-in-cart-when]").first).to_have_text(
+            re.compile(re.escape(f"na sacola, para {item.promise.day_label}"))
+        )
+
     def test_02a_search_escape_restores_trigger_focus(self, page, store_base_url):
         """Search keeps the keyboard user in context after closing the overlay."""
         page.goto(f"{store_base_url}{storefront_links.path_menu()}", wait_until="networkidle")

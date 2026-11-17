@@ -176,8 +176,22 @@ def test_storefront_catalog_matches_shared_contract(canonical_catalog):
 
 def test_storefront_product_detail_matches_shared_contract(canonical_catalog):
     from shopman.storefront.api.projections import projection_data
+    from shopman.shop.models import Shop
     from shopman.storefront.presentation.product_detail import build_product_detail
 
+    # A página do produto nomeia a loja onde se retira (#2652): o contrato traz
+    # o objeto, com o endereço montado pela ``Shop``.
+    Shop.objects.filter(pk=Shop.load().pk).update(
+        route="Rua do Contrato",
+        street_number="100",
+        neighborhood="Centro",
+        city="Londrina",
+        state_code="PR",
+        postal_code="86000-000",
+    )
+    from django.core.cache import cache
+
+    cache.clear()
     payload = projection_data(
         build_product_detail(sku="CROISSANT-CONTRATO", channel_ref="web")
     )

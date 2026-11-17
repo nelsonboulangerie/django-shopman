@@ -149,6 +149,21 @@ describe('menu presentation — tileBadge', () => {
       .toEqual({ label: 'Esgotado', variant: 'destructive' })
   })
 
+  it('troca "Lista de espera" pela promessa de quando (WP-L02)', () => {
+    const tomorrow = item({
+      availability: 'planned_ok',
+      availability_label: 'Lista de espera',
+      promise: { kind: 'batch', date: '2026-11-18', ready_at: '15:00', day_label: 'amanhã, quarta', text: 'Fica pronto amanhã, quarta, a partir das 15h' }
+    })
+    expect(tileBadge(tomorrow)).toEqual({ label: 'Fica pronto amanhã', variant: 'outline' })
+    const later = item({
+      availability: 'planned_ok',
+      availability_label: 'Lista de espera',
+      promise: { kind: 'batch', date: '2026-11-17', ready_at: '15:30', day_label: 'hoje', text: 'Fica pronto hoje às 15h30' }
+    })
+    expect(tileBadge(later)).toEqual({ label: 'Fica pronto hoje às 15h30', variant: 'outline' })
+  })
+
   it('gives the paused item the same badge as any other unavailable one', () => {
     // Para o cliente não existe motivo: pausado pela casa e esgotado saem iguais
     // (AVAILABILITY-PLAN §2). O flag `is_paused` segue no contrato — ele decide o
