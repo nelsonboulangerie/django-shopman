@@ -16,8 +16,9 @@ Regras:
 
 IDs:
 
-  SHOPMAN_W022  Concierge ligado que não vai responder (modo, contrato, chave da
-                Anthropic, conexão ativa ou lista de assinantes)
+  SHOPMAN_W022  Concierge ligado que não vai responder (modo, contrato, conexão
+                ativa ou lista de assinantes), ou que responde sem leitura por
+                modelo (sem conexão de IA: aviso, ``concierge_notices``)
   SHOPMAN_W023  Concierge ligado que responde, mas sem uma peça do ManyChat
                 (token da API, chave do ingresso, campo de atendimento humano,
                 fuso da janela de 24 horas)
@@ -69,15 +70,6 @@ def concierge_findings(config: dict | None = None) -> list[tuple[str, str, str]]
             "CONCIERGE_CONTRACT_VERSION não é 3: o Concierge não responde.",
             "Defina CONCIERGE_CONTRACT_VERSION=3.",
         ))
-    ai_problem = _concierge_ai_problem()
-    if ai_problem:
-        findings.append((
-            "SHOPMAN_W022",
-            f"Concierge ligado sem conexão de IA utilizável ({ai_problem}): o webhook responde "
-            "disabled (ai_key_missing).",
-            "Cadastre a conexão em Admin → Conexões de IA e libere-a para mensagem de cliente.",
-        ))
-
     connections = configured_connections(config)
     if not connections:
         findings.append((
@@ -129,17 +121,44 @@ def concierge_findings(config: dict | None = None) -> list[tuple[str, str, str]]
     return findings
 
 
+def concierge_notices(config: dict | None = None) -> list[tuple[str, str, str]]:
+    """O que funciona pior, mas não impede a Concierge de responder.
+
+    Sem conexão de IA a Concierge responde pelo caminho sem modelo (WP-03 do plano da
+    Concierge): é aviso, nunca pendência que reprova o ``concierge_check``.
+    """
+    config = config if config is not None else (getattr(settings, "SHOPMAN_CONCIERGE", {}) or {})
+    if not config.get("enabled"):
+        return []
+    notices: list[tuple[str, str, str]] = []
+    for purpose, what in (("intents", "a leitura de partes"), ("concierge", "o agente com modelo")):
+        problem = _ai_problem(purpose)
+        if problem:
+            notices.append((
+                "SHOPMAN_W022",
+                f"Concierge sem leitura por modelo: {what} está sem conexão de IA utilizável "
+                f"({problem}). Ela responde pelo caminho sem modelo (porteiro, divisão local e "
+                "executores).",
+                "Para ler com modelo, cadastre a conexão em Admin → Conexões de IA e libere-a "
+                "para mensagem de cliente.",
+            ))
+    return notices
+
+
 @register(deploy=True)
 def check_concierge_readiness(app_configs, **kwargs):
-    return [Warning(message, hint=hint, id=check_id) for check_id, message, hint in concierge_findings()]
+    return [
+        Warning(message, hint=hint, id=check_id)
+        for check_id, message, hint in (*concierge_findings(), *concierge_notices())
+    ]
 
 
-def _concierge_ai_problem() -> str:
-    """O motivo da porta de IA, ou vazio. Banco fora do ar no check não vira achado."""
+def _ai_problem(purpose: str) -> str:
+    """O motivo da porta de IA do propósito, ou vazio. Banco fora do ar no check não vira achado."""
     try:
         from shopman.shop import ai
 
-        return ai.explain("concierge")
+        return ai.explain(purpose)
     except Exception:  # noqa: BLE001 - check roda antes do migrate, sem tabela
         logger.debug("concierge.check.ai_unreadable", exc_info=True)
         return ""
