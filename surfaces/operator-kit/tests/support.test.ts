@@ -8,6 +8,7 @@ import {
   filterTickets,
   formatAge,
   isTerminal,
+  operatorSupportContext,
   statusColor,
   supportQueue,
   ticketTitle,
@@ -91,6 +92,7 @@ describe("presentation/support", () => {
       app: "hub",
       route: "/pos",
       workstation_ref: "pdv-02",
+      terminal_ref: "PDV-02",
       focus: { kind: "order", ref: "ORD-1" },
       empty: "",
     });
@@ -98,6 +100,7 @@ describe("presentation/support", () => {
     expect(rows).toContainEqual({ label: "Aplicativo", value: "Central" });
     expect(rows).toContainEqual({ label: "Tela", value: "/pos" });
     expect(rows).toContainEqual({ label: "Posto", value: "pdv-02" });
+    expect(rows).toContainEqual({ label: "Terminal", value: "PDV-02" });
     expect(rows).toContainEqual({ label: "Em foco", value: "order ORD-1" });
     expect(rows.some((row) => row.label === "empty")).toBe(false);
   });
@@ -116,6 +119,14 @@ describe("presentation/support", () => {
     expect(isTerminal("closed")).toBe(true);
     expect(isTerminal("rejected")).toBe(true);
     expect(isTerminal("in_dev")).toBe(false);
+  });
+
+  it("contexto genérico carrega app, rota e extras", () => {
+    expect(operatorSupportContext("kds", "/", { workstation_ref: "kds-01" })).toEqual({
+      app: "kds",
+      route: "/",
+      workstation_ref: "kds-01",
+    });
   });
 
   it("filtro separa as duas filas", () => {

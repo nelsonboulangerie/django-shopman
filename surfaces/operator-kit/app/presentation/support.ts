@@ -148,6 +148,7 @@ const CONTEXT_LABELS: Record<string, string> = {
   shop_ref: "Loja",
   sector_ref: "Setor",
   workstation_ref: "Posto",
+  terminal_ref: "Terminal",
   device_ref: "Dispositivo",
   business_date: "Dia operacional",
   last_error_id: "Erro",
@@ -177,4 +178,13 @@ export function contextRows(context: Record<string, unknown> | null | undefined)
     if (kind || ref) rows.push({ label: "Em foco", value: [kind, ref].filter(Boolean).join(" ") });
   }
   return rows;
+}
+
+/** Contexto base de qualquer app de operador: app, rota e o que a tela souber. */
+export function operatorSupportContext(
+  app: string,
+  route: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return { app, route, ...extra };
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { operatorSupportContext } from "../../operator-kit/app/presentation/support";
 import { operatorAlertToInbox } from "../../operator-kit/app/presentation/suiteChrome";
 import { gestorSwitcherSections } from "~/presentation/gestorSections";
 
@@ -60,6 +61,9 @@ watch(
   { immediate: true },
 );
 const route = useRoute();
+
+// O chamado do Gestor leva app e tela; o resto o servidor sabe.
+const supportContext = computed(() => operatorSupportContext("orders", route.path));
 const { landingPath } = useGestorAccess();
 const redirectingToRoleLanding = computed(
   () =>
@@ -150,6 +154,7 @@ useOperatorWindowTitle();
         floor-bar
         label="Seções do Gestor"
         :operator-name="operator?.name"
+        :support-context="supportContext"
         @lock="lock"
       >
         <div class="flex min-h-0 flex-1 flex-col">
