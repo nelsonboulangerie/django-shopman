@@ -21,13 +21,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    v-if="clientId && now"
-    class="pointer-events-none fixed inset-x-0 bottom-0 z-[100] flex flex-wrap justify-center gap-x-4 bg-black/85 px-3 py-1 font-mono text-xs text-white"
-    data-ifood-homologation-band
-  >
-    <span>Homologação iFood</span>
-    <span>{{ homologationClock(now) }}</span>
-    <span>client_id {{ clientId }}</span>
-  </div>
+  <!-- Teleport para o body, acima de qualquer modal (o login do Gestor inclusive):
+       a faixa precisa aparecer nítida em todo quadro do vídeo. Canto inferior
+       direito e compacta, para não cobrir a barra lateral (operador, avisos) nem o
+       rodapé dos painéis; sem clique (pointer-events-none). -->
+  <Teleport to="body">
+    <div
+      v-if="clientId && now"
+      class="pointer-events-none fixed bottom-2 right-2 z-[2147483647] flex flex-col items-end rounded-md bg-black/85 px-2.5 py-1 text-right font-mono text-[11px] leading-snug text-white shadow-lg"
+      data-ifood-homologation-band
+    >
+      <span>Homologação iFood · {{ homologationClock(now) }}</span>
+      <span>client_id {{ clientId }}</span>
+    </div>
+  </Teleport>
 </template>
