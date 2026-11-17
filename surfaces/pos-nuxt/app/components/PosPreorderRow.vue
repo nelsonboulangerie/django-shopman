@@ -92,7 +92,9 @@ const situationColor = computed(() => situationTone(props.card.situation));
     class="@container flex min-w-0 items-stretch border-l-3 transition"
     :class="[
       layout ? 'hover:bg-elevated/60' : 'rounded-md bg-elevated/50 hover:bg-elevated',
-      money.pending ? 'border-warning' : 'border-transparent',
+      // Só a cor da borda ESQUERDA: `border-warning` pintava as quatro e
+      // escurecia o separador do `divide-y` da lista (prévia do #2597).
+      money.pending ? 'border-l-warning' : 'border-l-transparent',
     ]"
     :draggable="movable ? 'true' : undefined"
     :data-preorder-card="card.ref"

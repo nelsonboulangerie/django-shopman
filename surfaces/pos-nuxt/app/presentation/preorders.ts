@@ -978,8 +978,10 @@ export interface PhonePill {
 
 /**
  * As duas pílulas do cartão do celular (v3 `depois-pdv-celular` 3): o preparo
- * (só quando diz algo que o dinheiro não diz) e o pagamento, na voz do balcão
- * ("Pago", "Pagar na retirada", "Pagar na entrega").
+ * (só quando diz algo que o dinheiro não diz) e o pagamento com o MESMO nome do
+ * selo da linha no computador (`moneyBadge`): "A receber", "Conferir pagamento",
+ * "Na conta da casa", "Pago". Um campo, um nome (prévia do #2597: o celular
+ * dizia "Pagar na retirada" onde o computador dizia "A receber").
  */
 export function phoneCardPills(
   card: Pick<PreorderCard, "situation" | "situation_label" | "balance_q" | "fulfillment_type">,
@@ -987,10 +989,9 @@ export function phoneCardPills(
   const pills: PhonePill[] = [];
   if (rowShowsSituation(card.situation)) pills.push({ label: card.situation_label, tone: situationTone(card.situation) });
   if (card.balance_q === null) pills.push({ label: "Conferir pagamento", tone: "warning" });
-  else if (card.situation === "on_account") pills.push({ label: "Conta da casa", tone: "neutral" });
-  else if (card.balance_q > 0) {
-    pills.push({ label: card.fulfillment_type === "delivery" ? "Pagar na entrega" : "Pagar na retirada", tone: "warning" });
-  } else pills.push({ label: "Pago", tone: "success" });
+  else if (card.situation === "on_account") pills.push({ label: "Na conta da casa", tone: "info" });
+  else if (card.balance_q > 0) pills.push({ label: "A receber", tone: "warning" });
+  else pills.push({ label: "Pago", tone: "success" });
   return pills;
 }
 
