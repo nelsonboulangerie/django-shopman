@@ -6996,8 +6996,8 @@ def _pos_customer_integrity_response(exc: Exception, *, action: str) -> Response
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Check a manager approval (PIN or badge) without recording anything",
-        responses={200: OpenApiResponse(description="The approving manager's username.")},
+        summary="Check a manager approval (PIN or badge) and issue the single-use sale approval token",
+        responses={200: OpenApiResponse(description="The approving manager's username and the signed approval token.")},
     ),
 )
 class POSManagerApprovalCheckView(APIView):
@@ -7010,8 +7010,8 @@ class POSManagerApprovalCheckView(APIView):
 
     É o MESMO desafio do fechamento (``validate_manager_override``: permissão
     ``cashman.adjust_shift``, ``PinCredential`` com trava progressiva), então
-    errar aqui conta na mesma trava. Não grava nada: o fechamento confere de
-    novo, porque é ele que assina a linha.
+    errar aqui conta na mesma trava. Não grava nada no livro: devolve o carimbo
+    assinado (``issue_sale_approval``) que o fechamento resgata e confere.
     """
 
     permission_classes = [HasBackstagePermission]
@@ -7030,7 +7030,15 @@ class POSManagerApprovalCheckView(APIView):
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=422)
-        return Response({"approved_by": approver.get_username()})
+        # O que sai daqui é o CARIMBO, não um "pode": preso ao operador, à comanda
+        # e aos números que o diálogo mostrou ao gerente (#2558). O PIN fica no
+        # diálogo; o fechamento resgata o carimbo uma vez e recusa valor diferente
+        # do assinado.
+        scope = pos_tabs_service.SaleApprovalScope.from_request((request.data or {}).get("scope"))
+        token = pos_tabs_service.issue_sale_approval(
+            approver, operator_username=_username(request), scope=scope,
+        )
+        return Response({"approved_by": approver.get_username(), "token": token})
 
 
 @extend_schema_view(

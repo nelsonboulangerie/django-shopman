@@ -998,8 +998,13 @@ export function usePosSale(deps: PosSaleDeps) {
     discountType: "percent" as "percent" | "fixed",
     discountValue: "",
     discountReason: "",
-    managerUsername: "",
-    managerPin: "",
+    /**
+     * O CARIMBO da autorização do gerente (#2558), nunca o PIN. O servidor o
+     * emite no diálogo, preso a esta comanda e aos números que o gerente viu, e o
+     * fechamento o gasta uma vez: valor diferente do assinado é recusa, e o
+     * diálogo volta com o valor novo.
+     */
+    managerApprovalToken: "",
     clientRequestId: "",
     /**
      * Comanda aberta SEM CONEXÃO: só o número, na tela, sem sessão no servidor
@@ -2037,8 +2042,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.discountType = "percent";
     cart.discountValue = "";
     cart.discountReason = "";
-    cart.managerUsername = "";
-    cart.managerPin = "";
+    cart.managerApprovalToken = "";
     cart.clientRequestId = "";
     cart.localTab = false;
     customerLookup.value = null;
@@ -2120,8 +2124,7 @@ export function usePosSale(deps: PosSaleDeps) {
       cart.discountType = "percent";
       cart.discountValue = "";
       cart.discountReason = "";
-      cart.managerUsername = "";
-      cart.managerPin = "";
+      cart.managerApprovalToken = "";
     }
     if (!sameTab || !receiptIdentityChoices.value.length) cart.clientRequestId = "";
     if (!cart.customerRef) customerLookup.value = null;
@@ -2329,9 +2332,7 @@ export function usePosSale(deps: PosSaleDeps) {
     const manualDiscount = discountValueNum > 0
       ? { type: cart.discountType, value: discountValueNum, reason: cart.discountReason || "cortesia" }
       : null;
-    const managerApproval = cart.managerUsername.trim() && cart.managerPin.trim()
-      ? { username: cart.managerUsername.trim(), pin: cart.managerPin.trim() }
-      : null;
+    const managerApproval = cart.managerApprovalToken ? { token: cart.managerApprovalToken } : null;
     const resolvedPayment = resolvePayment(cart.paymentTenders, paymentTotalQ.value);
     return {
       // A comanda aberta sem conexão não existe no servidor: a venda sobe como
@@ -2623,8 +2624,22 @@ export function usePosSale(deps: PosSaleDeps) {
     managerApprovalError.value = "";
     try {
       const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
-      await action.call(path, { body: { manager_approval: { username, pin } } });
-      return true;
+      // O que o gerente VIU no diálogo vai junto, e o carimbo que volta vale só
+      // para isso (#2558): o PIN não fica no carrinho.
+      const current = review.value;
+      const reasons = current?.approval_reasons || [];
+      const scope = {
+        tab_ref: cart.localTab ? "" : cart.tabRef,
+        discount_q: reasons.includes("discount_over_threshold")
+          ? (current?.line_discount_q || 0) + (current?.order_discount_q || 0)
+          : 0,
+        account_over_q: reasons.includes("house_account_over_limit")
+          ? current?.house_account_limit?.over_q || 0
+          : 0,
+      };
+      const answer = await action.call<{ token?: string }>(path, { body: { manager_approval: { username, pin }, scope } });
+      cart.managerApprovalToken = answer?.token || "";
+      return !!cart.managerApprovalToken;
     } catch (error) {
       const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
       managerApprovalError.value = failure?.recovery || failure?.message
@@ -3758,8 +3773,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (failure?.code === "manager_approval_invalid" || failure?.code === "manager_approval_required") {
         // Aprovação recusada: limpa o gerente/PIN e reabre o diálogo com a mensagem,
         // em vez de deixar o CTA reenviar as mesmas credenciais erradas.
-        cart.managerUsername = "";
-        cart.managerPin = "";
+        cart.managerApprovalToken = "";
         managerApprovalError.value = failure.recovery || failure.message || "Aprovação gerencial inválida.";
       } else if (failure?.focus === "customer") {
         // Recusa que se resolve identificando o cliente (ex.: agendado sem
