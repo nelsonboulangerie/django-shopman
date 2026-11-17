@@ -10,7 +10,9 @@ import {
   cartTotalQ,
   concreteActionHref,
   newLineId,
+  approvalPortrait,
   resolvePayment,
+  type ApprovalPortraitInput,
 } from "../app/utils/posIntent";
 import {
   draftAssociationTargetStates,
@@ -64,7 +66,6 @@ describe("POS sale intent", () => {
       saveReceiptTaxId: false,
       saveReceiptTaxIdConfirmed: false,
       manualDiscount: null,
-      managerApproval: null,
       clientRequestId: "pos:test-1",
       items: [
         { line_id: "L-abc12345", sku: "PAO", name: "Pao", price_q: 1200, qty: 2, notes: "" },
@@ -125,7 +126,7 @@ describe("POS sale intent", () => {
       deliveryDate: "", deliveryTimeSlot: "", deliveryFeeOverrideQ: null, orderNotes: "",
       paymentMethod: "cash", paymentCollection: "terminal" as const, paymentTenders: [],
       tenderedQ: null, changeForQ: 0, receiptChannels: ["email"],
-      receiptEmail: "ana@example.com", manualDiscount: null, managerApproval: null,
+      receiptEmail: "ana@example.com", manualDiscount: null,
       saveReceiptTaxIdConfirmed: false,
       clientRequestId: "pos:test-2",
       items: [{ line_id: "L-1", sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "" }],
@@ -153,7 +154,7 @@ describe("POS sale intent", () => {
       deliveryDate: "", deliveryTimeSlot: "", deliveryFeeOverrideQ: null, orderNotes: "",
       paymentMethod: "cash", paymentCollection: "terminal" as const, paymentTenders: [],
       tenderedQ: null, changeForQ: 0, receiptChannels: ["email"],
-      receiptEmail: "ana@example.com", manualDiscount: null, managerApproval: null,
+      receiptEmail: "ana@example.com", manualDiscount: null,
       saveReceiptContact: false, saveReceiptTaxId: false, saveReceiptTaxIdConfirmed: false,
       clientRequestId: "pos:test-3",
       items: [{ line_id: "L-1", sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "" }],
@@ -278,13 +279,59 @@ describe("POS sale intent", () => {
   });
 
   it("serializes manual discount as a canonical intent for backend review", () => {
-    expect(buildPosSaleIntent(baseIntentState({
+    const intent = buildPosSaleIntent(baseIntentState({
       manualDiscount: { type: "percent", value: "10", reason: "fidelidade" },
-      managerApproval: { username: "gerente", password: "secret" },
-    }))).toMatchObject({
+    }));
+    expect(intent).toMatchObject({
       manual_discount: { type: "percent", value: "10", reason: "fidelidade" },
-      manager_approval: { username: "gerente", password: "secret" },
     });
+    // O intent vai a `tabs/save`, `sale/review`, ao guarda e à fila sem conexão:
+    // a assinatura do gerente nunca mora nele (P1-4, WP-E1).
+    expect(intent).not.toHaveProperty("manager_approval");
+  });
+});
+
+describe("o retrato da assinatura do gerente (P0-1, WP-E1)", () => {
+  const base = (): ApprovalPortraitInput => ({
+    tabRef: "M1",
+    tabSessionKey: "sess-1",
+    items: [
+      { line_id: "L-a0000001", sku: "PAO", name: "Pão", price_q: 1200, qty: 2, notes: "" },
+    ],
+    discountType: "fixed",
+    discountValue: "6,00",
+    paymentCollection: "terminal",
+    paymentTenders: [{ method: "credit", amount_q: 1735, collection: "terminal" }],
+    customerRef: "",
+    deliveryFeeOverrideQ: null,
+  });
+
+  it("o desconto que o gerente viu muda: R$ 6 vira R$ 30, é outro retrato", () => {
+    expect(approvalPortrait({ ...base(), discountValue: "30,00" })).not.toBe(approvalPortrait(base()));
+    expect(approvalPortrait({ ...base(), discountType: "percent" })).not.toBe(approvalPortrait(base()));
+  });
+
+  it("item, quantidade, desconto de linha, forma, comanda e cliente também mudam o retrato", () => {
+    const original = approvalPortrait(base());
+    const item = base().items[0]!;
+    expect(approvalPortrait({ ...base(), items: [{ ...item, qty: 3 }] })).not.toBe(original);
+    expect(approvalPortrait({ ...base(), items: [item, { ...item, line_id: "L-a0000002" }] })).not.toBe(original);
+    expect(approvalPortrait({ ...base(), items: [{ ...item, discount: { value: 10, reason: "x", type: "percent" } }] })).not.toBe(original);
+    expect(approvalPortrait({ ...base(), paymentTenders: [{ method: "debit", amount_q: 1735, collection: "terminal" }] })).not.toBe(original);
+    expect(approvalPortrait({ ...base(), paymentTenders: [{ method: "credit", amount_q: 935, collection: "terminal" }] })).not.toBe(original);
+    expect(approvalPortrait({ ...base(), paymentCollection: "on_delivery" })).not.toBe(original);
+    expect(approvalPortrait({ ...base(), tabRef: "M2" })).not.toBe(original);
+    expect(approvalPortrait({ ...base(), customerRef: "CLI-1" })).not.toBe(original);
+    expect(approvalPortrait({ ...base(), deliveryFeeOverrideQ: 0 })).not.toBe(original);
+  });
+
+  it("o que não muda o valor assinado não pede o gerente de novo", () => {
+    const original = approvalPortrait(base());
+    const item = base().items[0]!;
+    // Nome, observação, preço carimbado pelo servidor e o "Recebi o Pix".
+    expect(approvalPortrait({ ...base(), items: [{ ...item, name: "Pão francês", notes: "bem assado", price_q: 1300, list_price_q: 1300 }] })).toBe(original);
+    expect(approvalPortrait({ ...base(), paymentTenders: [{ method: "credit", amount_q: 1735, collection: "terminal", reference: "NSU 1", pix_confirmed: true, _virgin: true }] })).toBe(original);
+    expect(approvalPortrait({ ...base(), discountValue: "6" })).toBe(original);
   });
 });
 
@@ -412,7 +459,6 @@ function baseIntentState(overrides: Record<string, unknown> = {}) {
     receiptChannels: [],
     receiptEmail: "",
     manualDiscount: null,
-    managerApproval: null,
     clientRequestId: "pos:test-base",
     items: [
       { line_id: "L-base0001", sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "" },

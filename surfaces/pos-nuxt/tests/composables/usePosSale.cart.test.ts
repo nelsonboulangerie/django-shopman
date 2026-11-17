@@ -284,7 +284,7 @@ describe("usePosSale — openTab / preserveDraft", () => {
 });
 
 describe("usePosSale — intent (currentIntentState via saveTab)", () => {
-  it("monta o intent com entrega, desconto manual e aprovação do gerente", async () => {
+  it("monta o intent com entrega e desconto manual, sem a assinatura do gerente", async () => {
     const actionCall = vi.fn().mockResolvedValue({});
     const h = makeSale({ projection: freeCartProjection(), actionCall });
     const pao = h.handles.posValue.value!.products[0]!;
@@ -300,8 +300,6 @@ describe("usePosSale — intent (currentIntentState via saveTab)", () => {
       discountType: "fixed",
       discountValue: "2,50",
       discountReason: "cliente fiel",
-      managerUsername: "gerente",
-      managerPin: "9999",
       customerName: "Ana",
       customerPhone: "(43) 99999-0000",
     });
@@ -315,7 +313,8 @@ describe("usePosSale — intent (currentIntentState via saveTab)", () => {
     expect(body.delivery_fee_q).toBeUndefined();
     expect(body.delivery_fee_override_q).toBe(500);
     expect(body.manual_discount).toEqual({ type: "fixed", value: 2.5, reason: "cliente fiel" });
-    expect(body.manager_approval).toEqual({ username: "gerente", pin: "9999" });
+    // O autosave nunca leva o PIN (P1-4, WP-E1): só o POST do fechamento leva.
+    expect(body).not.toHaveProperty("manager_approval");
     expect(body.customer_name).toBe("Ana");
     expect(body.customer_phone).toBe("43999990000"); // só dígitos
     expect(typeof body.client_request_id).toBe("string");
