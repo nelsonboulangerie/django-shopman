@@ -18,7 +18,7 @@ base `docs/coordination/ROUNDS/EXCELENCIA-base.md`. Medido em 16/11/2026 contra 
 - **14 WPs em 6 ondas**. O primeiro a delegar é o **WP-G01** (a encomenda se anuncia), junto
   com o **WP-G00** (harness de operador de verdade).
 - **4 decisões do dono**, no fim. Em 17/11/2026 ele respondeu sim à 2 e à 3, escolheu a API
-  na 4 e deu a direção da 1, que virou um mapa com cinco perguntas ainda abertas.
+  na 4 e decidiu a 1: no pedido não retirado, a casa fica só com o valor da perda.
 - **O que este PR deixou de fora tem issue**: execução do plano (#2546), o lado de fronteira do
   P0 (#2547), o pedido de hoje com hora combinada (#2548), as demais fronteiras (#2549) e as
   jornadas ainda não percorridas pela UI (#2550).
@@ -544,12 +544,13 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Brief:** leia o salto S3 e o `production-nuxt` só para saber para onde o atalho aponta.
   Leitura do plano por dia e produto, sem escrever. Em tela de operador é "lote".
 
-### WP-G11 · Não retirado (decisão 1: mapa proposto em 17/11/2026, cinco respostas pendentes)
+### WP-G11 · Não retirado (decisão 1: a casa fica só com a perda, 17/11/2026)
 
 - **Objetivo:** o pedido pronto que ninguém veio buscar tem saída, com o destino do dinheiro
   e do produto.
 - **Achados que fecha:** P1-08.
-- **Dependências:** as cinco respostas do dono ao mapa (seção 10); o lado do `shop` no `main`
+- **Dependências:** a regra da retenção escrita nos Termos da loja e mostrada à cliente antes
+  de pagar a encomenda (frente da loja); o lado do `shop` no `main`
   (política, serviço, régua do pagamento, conciliação, perda, transição dos canais: fronteira,
   frente da coordenação); a #2604; WP-G12 (mesmos arquivos).
 - **Arquivos:** `operations.py` e `urls.py` (a rota), `pages/[ref].vue`, `OrderCardMenu.vue`,
@@ -612,7 +613,7 @@ um WP por onda escreve nele.
 | 2 | **G05** (o detalhe tem o gesto) · **G06** (recusar e bloquear) | G05 |
 | 3 | **G07** (avisar o cliente, depois do G12) · **G08** (promessa em risco) | G08 |
 | 4 | **G09** (contrato limpo) · **G10** (agenda com cobertura) | G09 |
-| 5 | **G12 → G11 → G13**, em fila (mesmos arquivos). G12 e G13 liberados em 17/11/2026; o G11 espera as cinco respostas do mapa e o lado do `shop`, e se demorar o G13 passa à frente | nenhum |
+| 5 | **G12 → G11 → G13**, em fila (mesmos arquivos). G12 e G13 liberados em 17/11/2026; o G11 espera os Termos da loja e o lado do `shop`, e se demorar o G13 passa à frente | nenhum |
 
 Conferência dos arquivos por onda:
 
@@ -639,7 +640,7 @@ transcript dela):
 
 | Decisão | Resposta | Efeito |
 |---|---|---|
-| 1. "Não retirado" | **Direção dada, regra em proposta.** "Dependendo do horário isso vira perda! Precisa de alguma regra para isso. Sugestões? Sobre o dinheiro, depende de como está o status do pagamento e da forma de pagamento: estorno, retorno do troco para o Caixa, simples cancelamento com motivo (BI)... um mapa de decisões." O mapa está abaixo; as cinco perguntas dele ainda esperam o sim do dono. | WP-G11 espera as cinco respostas e o lado do `shop`. |
+| 1. "Não retirado" | **Decidida no principal: a casa fica só com o valor da perda.** "Dependendo do horário isso vira perda! Precisa de alguma regra para isso. Sugestões? Sobre o dinheiro, depende de como está o status do pagamento e da forma de pagamento: estorno, retorno do troco para o Caixa, simples cancelamento com motivo (BI)... um mapa de decisões." O mapa e as respostas estão abaixo. | WP-G11 espera os Termos da loja e o lado do `shop`. |
 | 2. Devolução pelo Gestor | **Sim** ("2) ok"). | WP-G12 liberado (PR #2607). |
 | 3. Gerente tenta de novo o estorno que falhou | **Sim** ("3) ok"). | WP-G13 liberado. |
 | 4. Três mensagens prontas de "Avisar o cliente" | **Pela API, não pelo WhatsApp do operador.** "API, claro! Deve ser ridiculamente facil para o operador, alem de sempre buscarmos as soluções mais simples, robustas e ELEGANTES!!!" | WP-G07 muda de desenho (abaixo). |
@@ -652,7 +653,7 @@ com o texto pronto) fica só como plano B, quando o envio pela API falha, e a te
 falhou. Pré-requisito: a #2421 (o ManyChat responde sucesso sem entregar) resolvida antes ou
 dentro do WP-G07, porque "enviado" que não chegou é pior que não enviar.
 
-**Decisão 1, o mapa proposto (coordenação, 17/11/2026).** A regra cabe numa frase: **o dinheiro
+**Decisão 1, o mapa (coordenação, 17/11/2026).** A regra cabe numa frase: **o dinheiro
 segue o produto.** Produto que volta a ser vendável devolve o dinheiro ao cliente; produto que
 vira perda deixa com a casa o valor daquela perda. O pedido termina sempre como cancelado, com
 motivo próprio (`not_picked_up`), e a retenção fica escrita num bloco só
@@ -673,18 +674,28 @@ Hora: o botão aparece, para o **não pago**, depois da hora combinada mais a to
 Quem faz é o Gerente, escolhido da lista, com PIN, numa autorização só; a tela mostra antes de
 confirmar o destino de cada linha, o dinheiro por extenso e o texto que o cliente recebe.
 
-**As cinco perguntas do mapa, que só o dono responde** (recomendação em negrito):
+**As cinco perguntas do mapa, e como ficaram em 17/11/2026:**
 
-1. Pedido pago em que parte virou perda: **1, a casa fica com o valor do que virou perda e
-   devolve o resto**; 2, devolve tudo sempre e a casa assume a perda.
-2. O pedido pago espera o corte do dia para o botão aparecer? **Sim**; não = mesma tolerância
-   do não pago.
-3. Tolerância do não pago: **1, 60 minutos depois da hora combinada**; 2, 30 minutos.
-4. Corte do dia: **1, 30 minutos antes de fechar**; 2, na hora de fechar.
-5. O fechamento do dia segura enquanto houver pedido pronto não resolvido? **Sim**, lista e
-   resolve com uma autorização só; não = só avisa.
+1. Pedido pago em que parte virou perda: **a casa fica só com o valor do que virou perda e
+   devolve o resto.** Resposta literal do dono: "Sim, só a perda. Mas isso precisa estar
+   amparado em algum documento do tipo Políticas comerciais, Termos de serviço ou algo que o
+   valha, confere?"
+2. O pedido pago espera o corte do dia para o botão aparecer: **sim** (padrão).
+3. Tolerância do não pago: **60 minutos** depois da hora combinada (padrão).
+4. Corte do dia: **30 minutos antes de fechar** (padrão).
+5. O fechamento do dia segura enquanto houver pedido pronto não resolvido: **sim**, lista e
+   resolve com uma autorização só (padrão).
 
-Os valores de 2 a 4 ficam editáveis no Admin (`Shop.defaults["no_show"]`), nunca em env.
+Só a 1 tem a palavra escrita do dono. As de 2 a 5 entram como padrão pela recomendação: a
+coordenação informa que ele as viu e não discordou. Os valores de 2 a 4 ficam editáveis no
+Admin (`Shop.defaults["no_show"]`), nunca em env, e a casa troca sem código.
+
+**Pré-requisito que a resposta do dono criou.** Reter o valor da perda só vale se a regra
+estiver escrita nos Termos da loja (ou política comercial equivalente) e aparecer à cliente
+**antes de pagar a encomenda**. Sem isso o WP-G11 não liga a retenção. É frente da loja
+(Storefront e documentos legais), fora deste plano; a coordenação levanta o que os termos já
+dizem.
+
 Para o contador, não para o dono: valor retido de pedido que não saiu pede algum documento?
 
 **O que o mapa mediu e muda o WP-G11.** O gesto no Gestor é a parte pequena. Antes dele, o
@@ -698,8 +709,8 @@ de validade renovada (#2604); entra antes do WP-G11 ou junto.
 **Ordem depois das respostas.** Decisão liberada não desfaz a fila dos arquivos: G12, G11 e
 G07 escrevem em `pages/[ref].vue`, e G12, G11 e G13 escrevem em `operations.py` e `urls.py`.
 A fila fica **G12, depois G11, depois G13**, e o **G07 depois do G05 e do G12**, nunca dois ao
-mesmo tempo. O G11 só começa com as cinco respostas e com o lado do `shop` no `main`; se ele
-demorar, o G13 passa à frente.
+mesmo tempo. O G11 só começa com a regra nos Termos da loja e com o lado do `shop` no `main`;
+se ele demorar, o G13 passa à frente.
 
 As perguntas como foram feitas em 16/11/2026:
 
