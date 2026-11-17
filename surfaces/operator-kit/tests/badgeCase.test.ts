@@ -2,18 +2,25 @@ import { describe, expect, it } from "vitest";
 
 import { badgeCase } from "../app/presentation/badgeCase";
 
-// Selo leva iniciais maiúsculas na suíte inteira (dono, 03/11 e 04/11/2026).
+// Selo é sentença: só a primeira letra maiúscula (dono, 16/11/2026). Reverte as
+// iniciais maiúsculas de 03/11 e 04/11/2026 ("Loja Online", "A Receber").
 describe("badgeCase", () => {
-  it("cada palavra maiúscula, artigo e preposição no meio em minúscula", () => {
-    expect(badgeCase("Loja online")).toBe("Loja Online");
-    expect(badgeCase("a receber")).toBe("A Receber");
-    expect(badgeCase("Pagar na retirada")).toBe("Pagar na Retirada");
-    expect(badgeCase("Saiu para entrega")).toBe("Saiu para Entrega");
-    expect(badgeCase("Turno aberto · parcial")).toBe("Turno Aberto · Parcial");
-    expect(badgeCase("Pronto pela Cozinha")).toBe("Pronto pela Cozinha");
+  it("só a primeira letra da sentença maiúscula", () => {
+    expect(badgeCase("procurando outro entregador")).toBe("Procurando outro entregador");
+    expect(badgeCase("Procurando outro entregador")).toBe("Procurando outro entregador");
+    expect(badgeCase("loja online")).toBe("Loja online");
+    expect(badgeCase("a receber")).toBe("A receber");
+    expect(badgeCase("Saiu para entrega")).toBe("Saiu para entrega");
+    expect(badgeCase("Turno aberto · parcial")).toBe("Turno aberto · Parcial");
   });
 
-  it("marca, sigla, número e unidade ficam como são", () => {
+  it("o resto fica como foi escrito: nome próprio e sigla no meio", () => {
+    expect(badgeCase("Pronto pela Cozinha")).toBe("Pronto pela Cozinha");
+    expect(badgeCase("pedido do iFood")).toBe("Pedido do iFood");
+    expect(badgeCase("NFC-e não solicitada")).toBe("NFC-e não solicitada");
+  });
+
+  it("marca, sigla, número e unidade no começo ficam como são", () => {
     expect(badgeCase("iFood")).toBe("iFood");
     expect(badgeCase("PDV")).toBe("PDV");
     expect(badgeCase("NB-1042")).toBe("NB-1042");
@@ -21,11 +28,10 @@ describe("badgeCase", () => {
     expect(badgeCase("vendido por kg")).toBe("Vendido por kg");
   });
 
-  it("frase não é nome: só a primeira maiúscula (beta 06/11)", () => {
-    expect(badgeCase("Falhou em todos os canais")).toBe("Falhou em todos os canais");
-    expect(badgeCase("não mostrar valores")).toBe("Não mostrar valores");
-    expect(badgeCase("NFC-e não solicitada")).toBe("NFC-e não solicitada");
-    expect(badgeCase("Aceito pelo provedor, sem comprovante")).toBe("Aceito pelo provedor, sem comprovante");
-    expect(badgeCase("Pix · não pago")).toBe("Pix · Não pago");
+  it("a regra de iniciais de 03/11 não volta", () => {
+    for (const label of ["loja online", "a receber", "pagar na retirada", "saiu para entrega"]) {
+      const rest = badgeCase(label).split(" ").slice(1);
+      expect(rest.every((word) => word === word.toLowerCase())).toBe(true);
+    }
   });
 });

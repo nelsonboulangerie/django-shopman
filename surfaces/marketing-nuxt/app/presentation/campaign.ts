@@ -10,6 +10,7 @@ import type {
   Announcement,
   PlatformResult,
 } from "~/types/campaign";
+import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
 
 /** Rótulos das origens de audiência, na ordem em que a frase os lê. */
 const AUDIENCE_LABELS: ReadonlyArray<readonly [string, string]> = [
@@ -456,17 +457,12 @@ export function platformsSummary(
   return platforms.map((ref) => labels[ref] ?? ref).join(", ");
 }
 
-/** Hora local curta ("18/07 às 07:30"). ISO vazio → string vazia, sem "Invalid Date". */
+/** Hora local curta ("18/07, 7h30"). ISO vazio → string vazia, sem "Invalid Date". */
 export function shortDateTime(iso: string): string {
   if (!iso) return "";
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateClock(parsed, { day: "2-digit", month: "2-digit" });
 }
 
 /**

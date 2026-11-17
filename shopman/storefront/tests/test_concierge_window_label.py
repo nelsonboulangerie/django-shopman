@@ -22,7 +22,7 @@ def test_o_canonico_sai_com_o_rotulo_da_casa_em_qualquer_recebimento(fulfillment
 
 @pytest.mark.parametrize("fulfillment_type", ["delivery", "pickup"])
 def test_a_meia_hora_sai_como_par_de_horas_em_qualquer_recebimento(fulfillment_type):
-    assert _slot_label(fulfillment_type, "14:00-14:30") == "14:00 às 14:30"
+    assert _slot_label(fulfillment_type, "14:00-14:30") == "14h às 14h30"
 
 
 def test_ref_desconhecido_sai_cru_e_vazio_sai_vazio():

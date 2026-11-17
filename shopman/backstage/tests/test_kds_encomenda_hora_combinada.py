@@ -148,9 +148,9 @@ def test_a_meia_hora_do_dia_e_o_ifood_agendado_dizem_a_hora_deles(forno, relogio
 
     cards = _cards(forno)
 
-    assert cards["POS-1-D11"].due_time_display == "entrega das 11:30 às 12:00"
+    assert cards["POS-1-D11"].due_time_display == "entrega das 11h30 às 12h"
     assert cards["POS-1-D11"].due_clock_display == "11h30"
-    assert cards["IFOOD-1-A17"].due_time_display == "entrega às 10:30"
+    assert cards["IFOOD-1-A17"].due_time_display == "entrega às 10h30"
     assert cards["IFOOD-1-A17"].due_in_seconds == 30 * 60
 
 

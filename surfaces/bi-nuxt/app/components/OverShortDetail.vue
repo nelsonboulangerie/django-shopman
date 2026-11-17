@@ -24,6 +24,7 @@ import {
   unavailableText,
   verdictMeta,
 } from "~/presentation/overShort";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
   row: BIOverShortRow;
@@ -87,7 +88,7 @@ const historyEntries = computed(() =>
         data-over-short-lot
       >
         <span class="font-mono text-primary">{{ lot.ref }}</span>
-        <span v-if="lot.finished_at" class="tnum text-muted-foreground">saiu {{ lot.finished_at }}</span>
+        <span v-if="lot.finished_at" class="tnum text-muted-foreground">saiu {{ formatClock(lot.finished_at) }}</span>
         <span class="ml-auto tnum font-semibold">{{ formatQty(lot.qty) }} un.</span>
       </NuxtButton>
       <p class="mt-1 op-micro" :class="missingLot ? 'font-medium text-foreground' : 'text-muted-foreground'" data-over-short-lots-line>
@@ -111,7 +112,7 @@ const historyEntries = computed(() =>
         empty-title="Nenhuma venda registrada neste dia"
       />
       <p v-if="row.soldout_at" class="mt-0.5 text-xs" :class="row.verdict === 'short' ? 'text-error' : 'text-muted'">
-        acabou {{ row.soldout_at }}
+        acabou {{ formatClock(row.soldout_at) }}
       </p>
     </div>
 
@@ -127,7 +128,7 @@ const historyEntries = computed(() =>
       </ul>
       <template v-if="row.verdict === 'short'">
         <p class="op-label leading-6">
-          Acabou às <b>{{ row.soldout_at }}</b> com {{ formatQty(row.sold) }} vendidas.
+          Acabou às <b>{{ formatClock(row.soldout_at) }}</b> com {{ formatQty(row.sold) }} vendidas.
           <template v-if="row.lost_estimate">
             No ritmo até ali, o dia venderia ~{{ formatQty(String(demandEstimate)) }}: <b>~{{ formatQty(row.lost_estimate) }} vendas perdidas</b> <span class="op-micro text-muted-foreground">(estimativa)</span>.
           </template>

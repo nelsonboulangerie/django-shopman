@@ -468,6 +468,7 @@ function buildSchedule(): Record<string, unknown> {
   const [rawHour, rawMinute] = fireAt.value.split(":");
   const hour = Number(rawHour) || 0;
   const minute = Number(rawMinute) || 0;
+  // hora-ok: o "HH:MM" da janela que o servidor grava, lido por código
   const end = `${String((hour + 1) % 24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
   return {
     ...preserved,
