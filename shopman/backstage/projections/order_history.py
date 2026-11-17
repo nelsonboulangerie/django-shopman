@@ -9,7 +9,9 @@ Três regras moldam o formato:
 
 1. **O momento do histórico é o de quando o pedido FECHOU** (concluído,
    cancelado ou devolvido), não o de quando entrou. É o que o gestor procura:
-   "o que fechou ontem". Sem carimbo de fechamento, vale a última atualização.
+   "o que fechou ontem". O carimbo é o do estado ATUAL: o concluído que depois
+   foi devolvido conta no dia da devolução, não no da entrega. Sem esse carimbo,
+   vale a última atualização.
 2. **Venda de balcão do PDV fica de fora**, pela mesma régua do quadro
    (``is_pos_counter_order``): ela é do PDV e do caixa, e inundaria a lista.
 3. **Cada recorte traz as opções com contagem** (``facets``), contadas com os
@@ -22,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
-from django.db.models import Count, Q, TextField, Value
+from django.db.models import Case, Count, DateTimeField, F, Q, TextField, Value, When
 from django.db.models.fields.json import KT
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -89,12 +91,26 @@ class OrderHistoryRowProjection:
     # ISO do fechamento, e o rótulo local curto ("03/10 14:32").
     closed_at: str
     closed_display: str
+    # A mesma hora, dita com o que aconteceu e o dia: "Cancelado ontem às 18:10".
+    closed_label: str
+    # O destino do dinheiro do pedido que não foi entregue (cancelado, devolvido):
+    # "R$ 18,70 estornado", "R$ 18,70 a estornar", "Nada foi cobrado". Vazio no
+    # concluído e quando o dinheiro não passa pela casa (iFood).
+    money_outcome: str
+    # O dinheiro ainda não voltou ao cliente: a tela destaca.
+    money_outcome_pending: bool
 
 
 @dataclass(frozen=True)
 class OrderHistoryProjection:
     date_from: str
     date_to: str
+    #: O "hoje" da casa, dito pelo servidor: a tela resolve os períodos a partir dele
+    #: e vira o dia com ele, em vez de confiar no relógio do dispositivo.
+    today: str
+    #: O período em palavras, sempre, mesmo quando é o padrão: "hoje",
+    #: "de 20/10 até hoje". Uma busca que não acha nada precisa dizer onde procurou.
+    period_label: str
     query: str
     #: O recorte por produto ("Abrir os 44 pedidos" do B.I.): o SKU e o nome dele.
     sku: str
@@ -105,7 +121,7 @@ class OrderHistoryProjection:
     page_size: int
     total: int
     has_next: bool
-    # "48 pedidos" / "Nenhum pedido com esses filtros".
+    # "48 pedidos hoje" / "Nenhum pedido com “Maria” hoje".
     total_label: str
 
 
@@ -149,7 +165,17 @@ def _base_queryset(filters: HistoryFilters):
             # descartaria (NOT NULL = NULL) todo pedido que não veio do PDV.
             origin=Coalesce(KT("data__origin_channel"), Value(""), output_field=TextField()),
             pos_sales_mode=Coalesce(KT("data__pos__sales_mode"), Value(""), output_field=TextField()),
-            closed_at=Coalesce("completed_at", "cancelled_at", "returned_at", "updated_at"),
+            # O carimbo do estado ATUAL: um Coalesce na ordem fixa pegava o
+            # ``completed_at`` do pedido devolvido depois de concluído.
+            closed_at=Coalesce(
+                Case(
+                    When(status="completed", then=F("completed_at")),
+                    When(status="cancelled", then=F("cancelled_at")),
+                    When(status="returned", then=F("returned_at")),
+                    output_field=DateTimeField(),
+                ),
+                "updated_at",
+            ),
             payment_method=Coalesce(KT("data__payment__method"), Value(""), output_field=TextField()),
             fulfillment=Coalesce(KT("data__fulfillment_type"), KT("data__delivery_method"), Value(""), output_field=TextField()),
         )
@@ -270,7 +296,66 @@ def _facets(base, facet_qs: dict[str, Q], filters: HistoryFilters) -> tuple[Hist
     )
 
 
-def _row(order, channel_labels: dict[str, str]) -> OrderHistoryRowProjection:
+def _day_words(day: date, today: date) -> str:
+    """O dia dito como o operador fala: "hoje", "ontem", "em 12/11"."""
+    if day == today:
+        return "hoje"
+    if day == today - timedelta(days=1):
+        return "ontem"
+    if day.year == today.year:
+        return f"em {day:%d/%m}"
+    return f"em {day:%d/%m/%Y}"
+
+
+def _short_day(day: date, today: date) -> str:
+    return f"{day:%d/%m}" if day.year == today.year else f"{day:%d/%m/%Y}"
+
+
+def period_words(date_from: date, date_to: date, today: date) -> str:
+    """O período em palavras: "hoje", "ontem", "em 12/11", "de 20/10 até hoje"."""
+    if date_from == date_to:
+        return _day_words(date_from, today)
+    start = _short_day(date_from, today)
+    if date_to == today:
+        return f"de {start} até hoje"
+    if date_to == today - timedelta(days=1):
+        return f"de {start} até ontem"
+    return f"de {start} a {_short_day(date_to, today)}"
+
+
+#: Os meios cujo estorno o próprio sistema pede ao gateway ("estornado"); nos
+#: outros alguém da casa devolve ("devolvido").
+_GATEWAY_METHODS = frozenset({"pix", "card", "link"})
+
+
+def _money_outcome(order, method: str) -> tuple[str, bool]:
+    """Para onde foi o dinheiro do pedido que não foi entregue.
+
+    Lido dos pagamentos do pedido (todos, inclusive o Pix registrado à parte):
+    quanto entrou e quanto já voltou. "Pix · R$ 18,70" num cancelado lia igual a
+    um concluído, e o gestor não sabia se o cliente tinha o dinheiro de volta.
+    """
+    if order.status not in {"cancelled", "returned"} or order.channel_ref == "ifood":
+        return "", False
+    from shopman.payman import PaymentService
+
+    captured_q = refunded_q = 0
+    for intent in PaymentService.get_by_order(order.ref).filter(status__in=("captured", "refunded")):
+        captured_q += PaymentService.captured_total(intent.ref)
+        refunded_q += PaymentService.refunded_total(intent.ref)
+    if captured_q <= 0:
+        return ("Nada foi cobrado", False) if method else ("", False)
+    gateway = method in _GATEWAY_METHODS
+    done, todo = ("estornado", "a estornar") if gateway else ("devolvido", "a devolver")
+    money = f"R$ {format_money(captured_q)}"
+    if refunded_q >= captured_q:
+        return f"{money} {done}", False
+    if refunded_q > 0:
+        return f"R$ {format_money(refunded_q)} de {money} {done}, R$ {format_money(captured_q - refunded_q)} {todo}", True
+    return f"{money} {todo}", True
+
+
+def _row(order, channel_labels: dict[str, str], today: date) -> OrderHistoryRowProjection:
     data = order.data or {}
     customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
     customer_label = _format_customer_display(
@@ -279,10 +364,12 @@ def _row(order, channel_labels: dict[str, str]) -> OrderHistoryRowProjection:
     method = order.payment_method or ""
     closed_local = timezone.localtime(order.closed_at)
     total_q = order_composition.effective_total_q(order)
+    status_label = order_status_label(order.status)
+    money_outcome, money_outcome_pending = _money_outcome(order, method)
     return OrderHistoryRowProjection(
         ref=order.ref,
         status=order.status,
-        status_label=order_status_label(order.status),
+        status_label=status_label,
         status_tone=_STATUS_TONES.get(order.status, "neutral"),
         channel_ref=order.channel_ref,
         channel_label=channel_labels.get(order.channel_ref, order.channel_ref),
@@ -295,6 +382,9 @@ def _row(order, channel_labels: dict[str, str]) -> OrderHistoryRowProjection:
         total_display=f"R$ {format_money(total_q)}",
         closed_at=closed_local.isoformat(),
         closed_display=closed_local.strftime("%d/%m %H:%M"),
+        closed_label=f"{status_label} {_day_words(closed_local.date(), today)} às {closed_local:%H:%M}",
+        money_outcome=money_outcome,
+        money_outcome_pending=money_outcome_pending,
     )
 
 
@@ -311,21 +401,27 @@ def build_order_history(filters: HistoryFilters) -> OrderHistoryProjection:
     channel_labels = {option.value: option.label for option in facets[1].options}
     channel_labels.update(_channel_labels({order.channel_ref for order in orders} - set(channel_labels)))
 
+    today = timezone.localdate()
+    period_label = period_words(filters.date_from, filters.date_to, today)
     if total:
-        total_label = "1 pedido" if total == 1 else f"{total} pedidos"
+        total_label = ("1 pedido" if total == 1 else f"{total} pedidos") + f" {period_label}"
+    elif filters.query and not (facet_qs or filters.sku):
+        total_label = f"Nenhum pedido com “{filters.query}” {period_label}"
     elif facet_qs or filters.query or filters.sku:
-        total_label = "Nenhum pedido com esses filtros"
+        total_label = f"Nenhum pedido com esses filtros {period_label}"
     else:
-        total_label = "Nenhum pedido fechado neste período"
+        total_label = f"Nenhum pedido fechado {period_label}"
 
     return OrderHistoryProjection(
         date_from=filters.date_from.isoformat(),
         date_to=filters.date_to.isoformat(),
+        today=today.isoformat(),
+        period_label=period_label,
         query=filters.query,
         sku=filters.sku,
         sku_name=_product_name(filters.sku),
         facets=facets,
-        items=tuple(_row(order, channel_labels) for order in orders),
+        items=tuple(_row(order, channel_labels, today) for order in orders),
         page=page,
         page_size=PAGE_SIZE,
         total=total,
