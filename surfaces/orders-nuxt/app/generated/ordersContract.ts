@@ -1202,6 +1202,7 @@ export interface DeliveryDriverProjection {
 export interface DeliveryRideProjection {
   key: string;
   number: number;
+  letter: string;
   state: string;
   status_label: string;
   stops: DeliveryStopProjection[];

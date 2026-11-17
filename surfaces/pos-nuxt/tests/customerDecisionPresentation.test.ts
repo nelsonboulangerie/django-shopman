@@ -408,7 +408,7 @@ describe("customerMergeDescription", () => {
     });
     expect(frase).toBe(
       "2 contatos e 3 pedidos passaram para este cadastro. "
-      + "Dá para desfazer até amanhã às 14:30, com o gerente, em Clientes → Unificações de cadastro.",
+      + "Dá para desfazer até amanhã às 14h30, com o gerente, em Clientes → Unificações de cadastro.",
     );
   });
 
@@ -419,7 +419,7 @@ describe("customerMergeDescription", () => {
       now: agora,
     });
     expect(frase).toContain("1 contato e 1 pedido passaram para este cadastro.");
-    expect(frase).toContain("hoje às 23:05");
+    expect(frase).toContain("hoje às 23h05");
   });
 
   it("sem prazo utilizável NÃO promete desfazer", () => {
@@ -436,15 +436,15 @@ describe("customerMergeDescription", () => {
       undoDeadline: iso(new Date(2026, 8, 9, 9, 5)),
       now: agora,
     });
-    expect(frase).toBe("Dá para desfazer até amanhã às 09:05, com o gerente, em Clientes → Unificações de cadastro.");
+    expect(frase).toBe("Dá para desfazer até amanhã às 9h05, com o gerente, em Clientes → Unificações de cadastro.");
   });
 
   it("o prazo se lê de relance: hoje, amanhã, ou a data", () => {
-    expect(mergeUndoDeadlineLabel(iso(new Date(2026, 8, 8, 23, 59)), agora)).toBe("hoje às 23:59");
-    expect(mergeUndoDeadlineLabel(iso(new Date(2026, 8, 9, 0, 1)), agora)).toBe("amanhã às 00:01");
+    expect(mergeUndoDeadlineLabel(iso(new Date(2026, 8, 8, 23, 59)), agora)).toBe("hoje às 23h59");
+    expect(mergeUndoDeadlineLabel(iso(new Date(2026, 8, 9, 0, 1)), agora)).toBe("amanhã às 0h01");
     // A janela é de 24h, então isto não acontece hoje — mas a frase não pode
     // virar "amanhã" se um dia a política mudar.
-    expect(mergeUndoDeadlineLabel(iso(new Date(2026, 8, 11, 8, 0)), agora)).toBe("11/09 às 08:00");
+    expect(mergeUndoDeadlineLabel(iso(new Date(2026, 8, 11, 8, 0)), agora)).toBe("11/09 às 8h");
     expect(mergeUndoDeadlineLabel("", agora)).toBe("");
     expect(mergeUndoDeadlineLabel(null, agora)).toBe("");
   });

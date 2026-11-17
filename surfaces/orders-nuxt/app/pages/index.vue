@@ -63,6 +63,7 @@ import {
 } from "~/presentation/queue";
 import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const {
   readMetadata,
@@ -135,10 +136,7 @@ const liveTone = computed(() =>
 const readClock = computed(() => {
   const at = readMetadata.value?.generated_at;
   return at
-    ? new Date(at).toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+    ? formatClock(new Date(at))
     : "";
 });
 

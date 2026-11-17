@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from django.db.models import Q
 from django.utils import timezone
 from shopman.orderman.models import Order, OrderItem
+from shopman.utils.formatting import format_clock, format_local
 from shopman.utils.monetary import format_money
 from shopman.utils.phone import normalize_phone
 
@@ -1165,7 +1166,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         schedule_label=_schedule_label(order),
         context=context,
         channel_name=_channel_name(order.channel_ref or ""),
-        opened_line=f"aberto às {timezone.localtime(order.created_at):%H:%M}" if order.created_at else "",
+        opened_line=f"aberto às {format_clock(order.created_at)}" if order.created_at else "",
         transferred_from_label=transferred_from_label(order.data or {}),
     )
 
@@ -2911,10 +2912,10 @@ def _payment_wait_copy(order: Order, method: str, *, awaiting_acceptance: bool =
     lapsed = bool(expires and expires <= timezone.now())
     parts = []
     if created:
-        parts.append(f"{'gerado' if is_pix else 'link gerado'} às {timezone.localtime(created):%H:%M}")
+        parts.append(f"{'gerado' if is_pix else 'link gerado'} às {format_clock(created)}")
     if expires:
         verb = ("expirou" if is_pix else "venceu") if lapsed else ("expira" if is_pix else "vence")
-        parts.append(f"{verb} às {timezone.localtime(expires):%H:%M}")
+        parts.append(f"{verb} às {format_clock(expires)}")
     if lapsed:
         # Cobrança vencida não "cai" mais: prometer o avanço sozinho seria mentir.
         return (PIX_LAPSED_LABEL if is_pix else PAYMENT_LAPSED_LABEL), " · ".join(parts)
@@ -3046,7 +3047,7 @@ def _settlement_description(shift) -> str:
     """
     opened = timezone.localtime(shift.opened_at)
     terminal = shift.terminal.label or shift.terminal.ref
-    return f"O dinheiro entra no caixa {terminal}, no turno aberto às {opened:%H:%M}."
+    return f"O dinheiro entra no caixa {terminal}, no turno aberto às {format_clock(opened)}."
 
 
 def _can_settle_delivery_cash(order: Order, payment_data: dict) -> bool:
@@ -3124,7 +3125,7 @@ def _format_time_of_day(dt) -> str:
     if dt is None:
         return ""
     local = timezone.localtime(dt)
-    hour = f"{local.hour}h{local.minute:02d}"
+    hour = format_clock(local)
     if local.date() == timezone.localdate():
         return f"às {hour}"
     return f"em {local:%d/%m} às {hour}"
@@ -3757,4 +3758,4 @@ def _format_datetime(dt) -> str:
     if dt is None:
         return ""
     local = timezone.localtime(dt)
-    return local.strftime("%d/%m às %H:%M")
+    return format_local(local, "%d/%m às {clock}")

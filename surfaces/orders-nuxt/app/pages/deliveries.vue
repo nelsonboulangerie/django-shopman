@@ -3,8 +3,9 @@
 //
 // Mapa à esquerda, coluna à direita, as MESMAS três partes nos dois:
 //  1. Aguardando: entregas do dia sem corrida chamada (projeção ``deliveries``).
-//  2. Editando: as corridas que o operador está juntando, cada uma com o seu número
-//     e cor. Estado só da tela: nada é gravado até "Chamar".
+//  2. Editando: as corridas que o operador está juntando, cada uma com a sua letra
+//     e cor (a letra é o nome da corrida; o número só escolhe a cor e a letra).
+//     Estado só da tela: nada é gravado até "Chamar".
 //  3. Corridas: as chamadas, vivas. No mapa a rota fica a 50% e só a moto leva a
 //     cor cheia; na coluna, cada uma é um espelho que abre o detalhe (`?ride=<chave>`).
 import type {
@@ -19,6 +20,7 @@ import {
   needsMachine,
   nextFreeNumber,
   rideCalls,
+  rideLetter,
   type EditingRide,
 } from "~/presentation/deliveries";
 
@@ -56,7 +58,7 @@ function ensureEditing() {
 }
 watch(freeNumbers, (free) => {
   // Uma corrida chamada enquanto se editava (em outro dispositivo) pode ter pego o
-  // número: a editada troca para um livre.
+  // número (e com ele a letra): a editada troca para um livre.
   for (const ride of editing.value) {
     if (free.includes(ride.number)) continue;
     const next = nextFreeNumber(free, editing.value.filter((r) => r !== ride).map((r) => r.number));
@@ -136,7 +138,7 @@ const machineItems = computed(() => machines.value.map((m) => ({ label: String(m
 const sending = ref(false);
 const failure = ref("");
 const callLabel = computed(() =>
-  ready.value.length === 1 ? `Chamar a corrida ${ready.value[0]!.number}` : `Chamar ${ready.value.length} corridas`,
+  ready.value.length === 1 ? `Chamar a corrida ${rideLetter(ready.value[0]!.number)}` : `Chamar ${ready.value.length} corridas`,
 );
 const canCall = computed(
   () => ready.value.length > 0 && !sending.value && (!wantsMachine.value || Boolean(machineRef.value)),
@@ -336,12 +338,12 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
               >
                 <div class="flex w-full items-center gap-2 px-3 py-2.5">
                   <NuxtButton color="neutral" variant="ghost" class="min-w-0 flex-1 justify-start gap-2 p-0 text-left" :aria-pressed="ride.number === active" @click="active = ride.number">
-                    <span class="grid h-6 min-w-6 shrink-0 place-items-center rounded-md px-1.5 op-micro font-bold" :style="{ background: rideColor(ride.number - 1).bg, color: rideColor(ride.number - 1).fg }">{{ ride.number }}</span>
-                    <span class="op-label font-semibold text-highlighted">Corrida {{ ride.number }}</span>
+                    <span class="grid h-6 min-w-6 shrink-0 place-items-center rounded-md px-1.5 op-micro font-bold" :style="{ background: rideColor(ride.number - 1).bg, color: rideColor(ride.number - 1).fg }">{{ rideLetter(ride.number) }}</span>
+                    <span class="op-label font-semibold text-highlighted">Corrida {{ rideLetter(ride.number) }}</span>
                     <span class="op-micro tabular-nums text-muted">{{ ride.refs.length }} de {{ maxStops }}</span>
                     <span v-if="ride.number !== active && ride.refs.length" class="ml-1 min-w-0 flex-1 truncate op-micro text-muted">{{ ride.refs.map((ref) => byRef.get(ref)?.code ?? ref).join(" → ") }}</span>
                   </NuxtButton>
-                  <NuxtButton icon="i-lucide-trash-2" color="neutral" variant="ghost" square :aria-label="`Desfazer a corrida ${ride.number}`" @click="drop(ride.number)" />
+                  <NuxtButton icon="i-lucide-trash-2" color="neutral" variant="ghost" square :aria-label="`Desfazer a corrida ${rideLetter(ride.number)}`" @click="drop(ride.number)" />
                 </div>
                 <ol v-if="ride.number === active" class="flex flex-col gap-1 px-3 pb-3">
                   <li v-if="!ride.refs.length" class="rounded-lg border border-dashed border-default px-3 py-3 text-center op-body text-muted">Toque nos pedidos no mapa ou na lista.</li>
@@ -405,7 +407,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
       :open="Boolean(openRide && data)"
       side="right"
       class="sm:max-w-lg"
-      :title="openRide ? `Corrida ${openRide.number}` : 'Corrida'"
+      :title="openRide ? `Corrida ${openRide.letter}` : 'Corrida'"
       description="O andamento da corrida, o entregador e as paradas."
       @update:open="(value: boolean) => { if (!value) close(); }"
     >

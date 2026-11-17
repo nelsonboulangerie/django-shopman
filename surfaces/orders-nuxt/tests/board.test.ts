@@ -990,7 +990,7 @@ describe("maquininhas na rua", () => {
         out_at: "2026-10-28T17:20:00Z",
         shared_with: [],
       }),
-    ).toBe("Pedido A47 · Maria · saiu às 14:20");
+    ).toBe("Pedido A47 · Maria · saiu às 14h20");
     expect(
       equipmentOutLine({
         order_ref: "WEB-A47",
