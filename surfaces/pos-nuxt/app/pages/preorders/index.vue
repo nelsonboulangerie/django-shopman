@@ -252,13 +252,20 @@ function toggleDay(date: string) {
 const NuxtButtonComponent = resolveComponent("NuxtButton");
 
 
+// O cabeçalho do dia conta o dia INTEIRO, como o `orders_count` do servidor e a
+// frase do período: o toque em "N encomendas com pagamento pendente" limpa os
+// filtros, e a lista tem de mostrar exatamente as N (prévia do #2597).
+const wholeDays = computed(() => new Map((list.value?.days ?? []).map((day) => [day.date, day])));
+function wholeDay(day: PreorderDay): PreorderDay {
+  return wholeDays.value.get(day.date) ?? day;
+}
 function narrowWeekday(day: PreorderDay): string {
   const w = day.weekday_display || "";
   return w.charAt(0).toUpperCase() + w.slice(1);
 }
 function narrowDayLabel(day: PreorderDay): string {
   const parts = [dayColumnTitle(day), dayCountLine(day, ", ")];
-  const receive = dayToReceiveLine(day);
+  const receive = dayToReceiveLine(wholeDay(day));
   if (receive) parts.push(receive);
   return day.orders.length ? `${parts.join(". ")}. Abrir o dia.` : `${parts.join(". ")}.`;
 }
@@ -455,6 +462,13 @@ const compactOptions = computed<OperatorHeaderAction[]>(() => [
 function applyTodayFilter(filter: Partial<PreorderFilters>) {
   typed.value = "";
   update({ ...NO_FILTERS, ...filter, q: "", mode: "day", date: today.value, to: "" });
+}
+// As frases "N encomendas com pagamento pendente" do período e da grade contam o
+// período inteiro, sem filtro: o toque limpa os outros filtros e a busca, como o
+// atalho de Hoje, para a lista mostrar exatamente as N da frase.
+function showToReceive(patch: Partial<PreordersView> = {}) {
+  typed.value = "";
+  update({ ...NO_FILTERS, pay: "to_receive", q: "", ...patch });
 }
 function compactClear() {
   typed.value = "";
@@ -701,7 +715,7 @@ function refreshAll() {
             :class="TO_RECEIVE_LINK_CLASS"
             :aria-label="`${toReceive}. Mostrar só essas.`"
             data-preorders-to-receive
-            @click="update({ pay: 'to_receive' })"
+            @click="showToReceive()"
           >{{ toReceive }}</NuxtButton>
           <p v-else-if="toReceive" :class="TO_RECEIVE_CLASS" data-preorders-to-receive>{{ toReceive }}</p>
           <p class="text-xs tabular-nums text-muted" data-preorders-total>{{ summary }}</p>
@@ -948,7 +962,7 @@ function refreshAll() {
                     data-week-day-count
                   />
                   <NuxtIcon
-                    v-if="dayHasToReceive(weekDay)"
+                    v-if="dayHasToReceive(wholeDay(weekDay))"
                     name="i-lucide-hand-coins"
                     class="size-4 text-warning"
                     aria-hidden="true"
@@ -999,14 +1013,14 @@ function refreshAll() {
                 <!-- O que falta receber no dia é ATALHO, fora do botão de recolher (botão
                      não mora dentro de botão): o toque mostra só essas encomendas do dia. -->
                 <NuxtButton
-                  v-if="dayToReceiveLine(weekDay)"
+                  v-if="dayToReceiveLine(wholeDay(weekDay))"
                   color="neutral"
                   variant="ghost"
                   :class="['-mt-1 justify-start px-3', TO_RECEIVE_LINK_CLASS]"
-                  :aria-label="`${dayColumnTitle(weekDay)}: ${dayToReceiveLine(weekDay)}. Mostrar só essas.`"
+                  :aria-label="`${dayColumnTitle(weekDay)}: ${dayToReceiveLine(wholeDay(weekDay))}. Mostrar só essas.`"
                   data-week-day-to-receive
-                  @click="update({ pay: 'to_receive', mode: 'day', date: weekDay.date })"
-                >{{ dayToReceiveLine(weekDay) }}</NuxtButton>
+                  @click="showToReceive({ mode: 'day', date: weekDay.date })"
+                >{{ dayToReceiveLine(wholeDay(weekDay)) }}</NuxtButton>
                 <!-- R7: o dia vazio diz "Nenhuma encomenda" uma vez só, no cabeçalho. -->
                 <div
                   v-if="weekDay.orders.length && dayOpen(weekDay, flippedDays)"

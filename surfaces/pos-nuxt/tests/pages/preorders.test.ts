@@ -1115,6 +1115,32 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
     expect(route.query.pay).toBe("to_receive");
   });
 
+  it("o atalho conta o período sem filtro e mostra exatamente essas: limpa os outros filtros (prévia do #2597)", async () => {
+    // Para a Caixa a frase é contagem: "1 encomenda com pagamento pendente" (NB-7, retirada).
+    const hidden = { total_q: null, total_display: null, to_receive_q: null, to_receive_display: null };
+    week = { ...week, ...hidden, days: week.days.map((d) => ({ ...d, ...hidden })) };
+    const wrapper = await mount(PreordersPage);
+    const shown = () => wrapper.findAll("[data-preorder]").map((row) => row.attributes("data-preorder"));
+    const pending = wrapper.find("[data-preorders-to-receive]").text();
+    expect(pending).toBe("1 encomenda com pagamento pendente");
+
+    for (const shortcut of ["[data-preorders-to-receive]", "[data-week-day-to-receive]"]) {
+      // Outro filtro ligado: "Entregas" esconde a NB-7, que é retirada; a frase segue contando 1.
+      route.query = { fulfillment: "delivery" };
+      await flushPromises();
+      expect(shown()).toEqual(["NB-8"]);
+      expect(wrapper.find("[data-preorders-to-receive]").text()).toBe(pending);
+
+      await wrapper.find(shortcut).trigger("click");
+      await flushPromises();
+      expect(route.query.pay).toBe("to_receive");
+      expect(route.query.fulfillment).toBeUndefined();
+      expect(route.query.q).toBeUndefined();
+      // A lista mostra exatamente a 1 que a frase contou.
+      expect(shown()).toEqual(["NB-7"]);
+    }
+  });
+
   it("'Hoje' é sempre de hoje: fora da semana de hoje, vem da leitura do selo, sem pergunta nova", async () => {
     week = { ...week, days: week.days.map((d) => ({ ...d, is_today: false })) };
     clearNuxtData();
