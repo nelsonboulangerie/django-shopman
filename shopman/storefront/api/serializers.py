@@ -282,6 +282,8 @@ class OrderItemSerializer(serializers.Serializer):
     qty = serializers.IntegerField()
     unit_price_display = serializers.CharField()
     total_display = serializers.CharField()
+    # Valor cheio riscado ao lado (linha com promoção); vazio sem promoção.
+    full_total_display = serializers.CharField(allow_blank=True, required=False)
 
 
 class FulfillmentSerializer(serializers.Serializer):

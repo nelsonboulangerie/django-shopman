@@ -516,23 +516,10 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
     )
 
 
-def _shows_list_prices(data: TrackingData) -> bool:
-    """A conta mostra a linha cheia só quando há desconto selado para abater.
-
-    Na régua da sacola: linha a preço de lista, Subtotal = soma das linhas, e
-    o desconto aparece uma vez só, embaixo (beta 09/11). Pedido sem desconto
-    (ou editado depois, sem conta selada) mostra o que foi cobrado.
-    """
-    return bool(data.discount_lines)
-
-
-def _item_total_q(item, data: TrackingData) -> int:
-    return (item.list_line_total_q or item.line_total_q) if _shows_list_prices(data) else item.line_total_q
-
-
 def _list_subtotal_q(data: TrackingData) -> int:
-    """A soma das linhas que o Resumo mostra: o que vem antes dos descontos."""
-    return sum(_item_total_q(item, data) for item in data.items)
+    """A soma das linhas da conta (com a promoção já abatida): o que vem antes
+    do cupom, dos pontos e da entrega."""
+    return sum(item.bill_line_total_q or item.line_total_q for item in data.items)
 
 
 def _schedule_display(data: TrackingData, when_display: str | None) -> str | None:
@@ -1569,8 +1556,9 @@ def _present_items(data: TrackingData) -> tuple[OrderItemProjection, ...]:
             sku=item.sku,
             name=item.name,
             qty=item.qty,
-            unit_price_display=f"R$ {format_money((item.list_unit_price_q or item.unit_price_q) if _shows_list_prices(data) else item.unit_price_q)}",
-            total_display=f"R$ {format_money(_item_total_q(item, data))}",
+            unit_price_display=f"R$ {format_money(item.bill_unit_price_q or item.unit_price_q)}",
+            total_display=f"R$ {format_money(item.bill_line_total_q or item.line_total_q)}",
+            full_total_display=f"R$ {format_money(item.full_line_total_q)}" if item.full_line_total_q else "",
         )
         for item in data.items
     )
