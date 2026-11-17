@@ -202,3 +202,4 @@ export function useAlerts() {
     isAccepting,
   };
 }
+// medição do escopo da CI (PR de teste, não mergear)
