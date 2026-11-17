@@ -16,6 +16,7 @@
     "test:component": "vitest run --project component",
     "test:e2e": "playwright test",
     "test:pwa": "playwright test tests/e2e/pwa.spec.ts",
+    "test:journeys": "playwright test --config=playwright.journeys.config.ts",
     "test:ux": "node scripts/ux-smoke.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
