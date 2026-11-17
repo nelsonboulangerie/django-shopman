@@ -18,6 +18,7 @@
 // precisa de "menos na tela do cliente", o lugar dela não é este arquivo.
 //
 import { refreshScopeForChannel } from "~/presentation/events";
+import { posSupportContext } from "~/presentation/supportContext";
 import { posCorridorRoute } from "~/presentation/sections";
 
 // Resiliência de rede (kit): reconciliação ao reconectar/reganhar foco — o tablet do
@@ -143,6 +144,15 @@ const { sections, switcherSections, current, select } = usePosShell(pos);
 const route = useRoute();
 const corridor = computed(() => posCorridorRoute(route.path));
 
+// O que o chamado leva junto: app, tela, posto e terminal. Refs, nunca PII.
+const supportContext = computed(() =>
+  posSupportContext({
+    route: route.path,
+    station: stationRef.value,
+    terminal: pos.value?.terminal_ref ?? "",
+  }),
+);
+
 </script>
 
 <template>
@@ -203,6 +213,7 @@ const corridor = computed(() => posCorridorRoute(route.path));
       floor-bar
       label="Seções do PDV"
       :operator-name="operator?.name"
+      :support-context="supportContext"
       @select="select"
       @lock="lock()"
     >

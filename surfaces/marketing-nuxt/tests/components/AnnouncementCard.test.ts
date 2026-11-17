@@ -377,7 +377,7 @@ describe("AnnouncementCard", () => {
     // O aviso mora junto da escolha de hora, que é onde ele serve. O envio continua
     // abrindo em Imediato: quem decide é o gestor, a tela só conta o fato.
     expect(wrapper.text()).toContain(
-      "O WhatsApp está em silêncio das 20:00 às 08:00",
+      "O WhatsApp está em silêncio das 20h às 8h",
     );
     expect(
       (wrapper.get("[data-testid=publish-now]").element as HTMLButtonElement)
@@ -438,7 +438,7 @@ describe("AnnouncementCard", () => {
         .disabled,
     ).toBe(true);
     expect(wrapper.text()).toContain(
-      "WhatsApp está em silêncio das 20:00 às 08:00",
+      "WhatsApp está em silêncio das 20h às 8h",
     );
 
     await wrapper.get("[data-testid=delivery-scheduled]").trigger("click");
@@ -885,7 +885,7 @@ describe("AnnouncementCard — decisão montada pela página", () => {
 
     expect(card.canContinue).toBe(false);
     expect(card.continueBlockedReason).toBe(
-      "O WhatsApp só envia a partir das 08:00 e este anúncio vence às 07:45. Tire o WhatsApp para postar agora.",
+      "O WhatsApp só envia a partir das 8h e este anúncio vence às 7h45. Tire o WhatsApp para postar agora.",
     );
     const alert = wrapper.get("[data-quiet-outlasts-deadline]");
     const remove = alert.findAll("button").find((button) => button.text() === "Tirar o WhatsApp");
@@ -914,7 +914,7 @@ describe("AnnouncementCard — decisão montada pela página", () => {
 
     expect(card.canContinue).toBe(false);
     expect(card.continueBlockedReason).toBe(
-      "O WhatsApp só envia a partir das 08:00 e este anúncio vence às 07:45. Escolha outra plataforma para postar agora.",
+      "O WhatsApp só envia a partir das 8h e este anúncio vence às 7h45. Escolha outra plataforma para postar agora.",
     );
     const alert = wrapper.get("[data-quiet-outlasts-deadline]");
     expect(alert.findAll("button").some((button) => button.text() === "Tirar o WhatsApp")).toBe(false);

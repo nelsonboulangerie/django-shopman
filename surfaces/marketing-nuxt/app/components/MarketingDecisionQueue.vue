@@ -120,9 +120,9 @@ function deadline(item: DecisionItem) {
   return deadlinePresentation(item, shopTimezone.value, nowMs.value);
 }
 
-/** "Decide até 10:15" → ["Decide até ", "10:15"]: a hora vai em negrito (v4). */
+/** "Decide até 10h15" → ["Decide até ", "10h15"]: a hora vai em negrito (v4). */
 function splitClock(label: string): [string, string] {
-  const match = /^(.*?)((?:amanhã, |\d{2}\/\d{2}, )?\d{2}:\d{2})$/.exec(label);
+  const match = /^(.*?)((?:amanhã, |\d{2}\/\d{2}, )?\d{1,2}h(?:\d{2})?)$/.exec(label);
   return match ? [match[1]!, match[2]!] : [label, ""];
 }
 

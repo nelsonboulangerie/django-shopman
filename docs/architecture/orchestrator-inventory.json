@@ -457,7 +457,16 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "BEFORE_ACCEPT_STATUSES",
             "CANCELLABLE_STATUSES",
+            "CANCEL_INTENT_OPERATOR",
+            "CANCEL_INTENT_ORDER_CANCELLED",
+            "CANCEL_REASONS_AFTER_ACCEPT",
+            "CANCEL_REASONS_OPERATOR",
+            "CANCEL_REASON_BEFORE_ACCEPT",
+            "CANCEL_REASON_OPERATOR_DEFAULT",
+            "CANCEL_REASON_ORDER_CANCELLED",
+            "CANCEL_REASON_REFUSED_CODE",
             "CourierDispatchResult",
             "CourierError",
             "CourierEstimate",
@@ -472,6 +481,7 @@
             "_cfg",
             "_details_base",
             "_driver",
+            "_error_codes",
             "_estimate_params",
             "_inert",
             "_iso_plus_seconds",
@@ -482,6 +492,7 @@
             "_text",
             "_to_q",
             "cancel",
+            "cancel_reason_for",
             "dispatch",
             "estimate",
             "get_details",
@@ -1879,14 +1890,25 @@
       "out_of_extraction": false,
       "unit_ids": [],
       "responsibilities": [
-        "configuração"
+        "configuração",
+        "infraestrutura"
       ],
       "support_claims": [
         {
           "responsibility": "configuração",
           "symbols": [
+            "CourierAdmin",
+            "CourierRateAdmin",
+            "CourierRateInline",
             "DeliveryDistanceBandAdmin",
+            "DeliveryServiceAdmin",
             "DeliveryZoneAdmin"
+          ]
+        },
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_brl"
           ]
         }
       ]
@@ -3377,6 +3399,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_KNOWN_LETTERS",
             "logger"
           ]
         }
@@ -6085,6 +6108,28 @@
           "symbols": [
             "DeliveryDistanceBand",
             "DeliveryZone"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/delivery_service.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "Courier",
+            "CourierLink",
+            "CourierRate",
+            "DeliveryService"
           ]
         }
       ]
@@ -9026,6 +9071,48 @@
       ]
     },
     {
+      "path": "shopman/shop/services/courier_links.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "BAD_DEVICE",
+            "CANCELLED",
+            "EXPIRED",
+            "LINK_GRACE",
+            "LinkAccess",
+            "MIN_DEVICE_KEY",
+            "OK",
+            "OTHER_DEVICE",
+            "REASSIGNED",
+            "REISSUED",
+            "REVOKED",
+            "UNKNOWN"
+          ]
+        },
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_hash",
+            "_live",
+            "close",
+            "issue",
+            "resolve",
+            "revoke"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/critical_alerts.py",
       "touchpoints": [
         "service"
@@ -9318,6 +9405,39 @@
           "symbols": [
             "_digits",
             "_join"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/delivery_rates.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato",
+        "infraestrutura",
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "RideValue"
+          ]
+        },
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_pick"
+          ]
+        },
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "ride_value"
           ]
         }
       ]
@@ -12899,7 +13019,7 @@
         {
           "responsibility": "leitura",
           "symbols": [
-            "format_clock",
+            "clock_hhmm",
             "product_names"
           ]
         }
@@ -14114,6 +14234,29 @@
           "symbols": [
             "app_name",
             "urlpatterns"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/closed_day_orders.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "preorder.closed-day-orders"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "OPEN_STATUSES"
           ]
         }
       ]

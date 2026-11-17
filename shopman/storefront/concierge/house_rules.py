@@ -880,7 +880,7 @@ RULES: tuple[HouseRule, ...] = (
         ),
         must_pass=(
             "Pedido ORD-20261003-0001 registrado. Total: R$ 52,00.",
-            "Retirada: 03/10 das 16:00 às 16:30.",
+            "Retirada: 03/10 das 16h às 16h30.",
         ),
         output_check=_check_personal_data,
     ),
