@@ -151,8 +151,8 @@ def test_feriado_vira_interrupcao_de_meia_noite_a_meia_noite_no_fuso_da_loja(fak
 
     assert len(fake.interruptions) == 1
     created = fake.interruptions[0]
-    assert created["start"] == "2026-12-25T00:00:00-03:00"
-    assert created["end"] == "2026-12-26T00:00:00-03:00"
+    assert created["start"] == "2026-12-25T00:00:00"
+    assert created["end"] == "2026-12-26T00:00:00"
     assert "Natal" in created["description"]
     record = IFoodInterruption.objects.get()
     assert record.state == IFoodInterruptionState.ACTIVE
@@ -316,8 +316,8 @@ def test_desligar_por_1h_vira_interrupcao_com_o_fim_do_periodo(fake):
     ifood_merchant.sync_store(now=TUESDAY_10H)
 
     (interruption,) = fake.interruptions
-    assert interruption["start"] == "2026-12-22T10:01:00-03:00"  # já começou: próximo minuto
-    assert interruption["end"] == "2026-12-22T11:00:00-03:00"
+    assert interruption["start"] == "2026-12-22T10:01:00"  # já começou: próximo minuto
+    assert interruption["end"] == "2026-12-22T11:00:00"
     assert interruption["description"] == ifood_merchant.CHANNEL_OFF_DESCRIPTION
 
 
@@ -328,12 +328,12 @@ def test_sem_prazo_vira_blocos_de_7_dias_renovados_pela_conferencia(fake):
     _switch(False, "open")
 
     ifood_merchant.sync_store(now=TUESDAY_10H)
-    assert [i["end"] for i in fake.interruptions] == ["2026-12-29T10:00:00-03:00"]
+    assert [i["end"] for i in fake.interruptions] == ["2026-12-29T10:00:00"]
 
     # A menos de um dia do fim, o bloco seguinte é pedido, emendado no fim do atual.
     ifood_merchant.sync_store(now=TUESDAY_10H + timedelta(days=6, hours=12))
     assert [(i["start"], i["end"]) for i in fake.interruptions][-1] == (
-        "2026-12-29T10:00:00-03:00", "2027-01-05T10:00:00-03:00",
+        "2026-12-29T10:00:00", "2027-01-05T10:00:00",
     )
     assert len(fake.interruptions) == 2
 
@@ -366,8 +366,8 @@ def test_feriado_dentro_do_desligamento_nao_sai_sobreposto(fake):
 
     spans = sorted((i["start"], i["end"]) for i in fake.interruptions)
     assert spans == [
-        ("2026-12-22T10:01:00-03:00", "2026-12-26T00:00:00-03:00"),  # o desligamento cobre o Natal
-        ("2027-01-01T00:00:00-03:00", "2027-01-02T00:00:00-03:00"),  # o Ano-novo segue do calendário
+        ("2026-12-22T10:01:00", "2026-12-26T00:00:00"),  # o desligamento cobre o Natal
+        ("2027-01-01T00:00:00", "2027-01-02T00:00:00"),  # o Ano-novo segue do calendário
     ]
 
 
@@ -382,7 +382,7 @@ def test_agendamento_vira_interrupcao_com_inicio_futuro(fake):
     ifood_merchant.sync_store(now=TUESDAY_10H)
 
     (interruption,) = fake.interruptions
-    assert (interruption["start"], interruption["end"]) == ("2026-12-23T14:00:00-03:00", "2026-12-23T16:00:00-03:00")
+    assert (interruption["start"], interruption["end"]) == ("2026-12-23T14:00:00", "2026-12-23T16:00:00")
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
@@ -395,7 +395,7 @@ def test_ligar_por_hoje_com_o_canal_desligado_volta_a_fechar_no_fechamento(fake)
     ifood_merchant.sync_store(now=TUESDAY_10H)
 
     (interruption,) = fake.interruptions
-    assert interruption["start"] == "2026-12-22T18:00:00-03:00"
+    assert interruption["start"] == "2026-12-22T18:00:00"
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
@@ -414,7 +414,7 @@ def test_loja_sem_grade_desligada_no_gestor_fecha_o_ifood_sem_gravar_horario(fak
 def test_desligar_retira_a_pausa_manual_antiga(fake):
     _shop()
     _ifood()
-    fake.interruptions.append({"id": "int-antiga", "start": "2026-12-22T09:30:00-03:00", "end": "2026-12-22T11:00:00-03:00"})
+    fake.interruptions.append({"id": "int-antiga", "start": "2026-12-22T09:30:00", "end": "2026-12-22T11:00:00"})
     IFoodInterruption.objects.create(
         kind="manual", merchant_id=MID, ifood_id="int-antiga", description="Pausa pelo gestor: x", reason="x",
         state=IFoodInterruptionState.ACTIVE, starts_at=datetime(2026, 12, 22, 9, 30, tzinfo=TZ),

@@ -31,9 +31,12 @@ Este módulo faz três coisas, todas atrás de ``SHOPMAN_IFOOD["merchant_sync_en
 (``is-connected``), mas o polling também traz cancelamento e alteração de pedido
 já aceito. Fechar é sempre interrupção ou horário.
 
-Fuso: a documentação diz que o iFood interpreta a interrupção no fuso da LOJA e
-ignora o do payload. Mandamos a hora local da loja com o deslocamento dela
-(``2026-12-25T00:00:00-03:00``) — correto nas duas leituras possíveis.
+Fuso: o iFood lê início e fim da interrupção como hora LOCAL da loja. Medido na
+loja de teste em 17/11/2026 (#2618): ``12:51:00-03:00`` voltou como ``15:51:00`` (ele
+converte para UTC e descarta o deslocamento) e a loja NÃO fechou às 12:51; ``12:53:00``
+sem deslocamento voltou igual e a validação ``unavailabilities`` fechou a loja às
+12:53. Por isso mandamos a hora local da loja SEM deslocamento
+(``2026-12-25T00:00:00``) e lemos a resposta sem fuso como hora local.
 
 Chamadas passam por ``ifood_http.request`` (retry da recusa de borda, token do
 ``ifood_auth``), o mesmo caminho do polling e dos callbacks de pedido.
@@ -467,7 +470,8 @@ CHANNEL_OFF_DESCRIPTION = "iFood desligado no Gestor"
 
 
 def _ifood_datetime(value: datetime, tz) -> str:
-    return timezone.localtime(value, timezone=tz).isoformat(timespec="seconds")
+    """Hora local da loja, sem deslocamento: é como o iFood lê (ver a nota de fuso no topo)."""
+    return timezone.localtime(value, timezone=tz).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
 def _parse_remote_datetime(value, tz) -> datetime | None:
