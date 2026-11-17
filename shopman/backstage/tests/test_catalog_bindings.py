@@ -522,10 +522,11 @@ def test_postgres_parallel_confirmations_keep_binding_audit_and_receipts_consist
         assert audit['after']['snapshot_id'] == snapshot.pk
 
 
-def test_category_is_created_in_ifood_and_confirmed_by_reading_it_back(
+def test_category_is_created_from_a_house_collection_and_linked_to_it(
     client, channel, operator, snapshot, settings,
 ):
     settings.SHOPMAN_IFOOD = {"merchant_id": "merchant-A"}
+    collection = Collection.objects.create(ref="homologacao", name="Teste Homologação")
     client.force_login(operator)
     before = [{"id": "category-A", "name": "Padaria", "index": 0, "status": "AVAILABLE"}]
     created = {"id": "category-new", "name": "Teste Homologação", "index": 1, "status": "AVAILABLE"}
@@ -533,7 +534,7 @@ def test_category_is_created_in_ifood_and_confirmed_by_reading_it_back(
         "action": "create",
         "snapshot_id": snapshot.pk,
         "catalog_ref": snapshot.catalog_ref,
-        "name": "  Teste   Homologação ",
+        "collection_ref": collection.ref,
         "expected_actor_id": operator.pk,
         "base_revision": remote_category_revision(before),
     }
@@ -548,6 +549,7 @@ def test_category_is_created_in_ifood_and_confirmed_by_reading_it_back(
 
     assert response.status_code == 200, response.content
     assert response.json()["category"] == created
+    # O nome vem da coleção; não existe nome digitado.
     assert create.call_args.kwargs == {
         "channel_ref": channel.ref,
         "catalog_ref": snapshot.catalog_ref,
@@ -555,6 +557,8 @@ def test_category_is_created_in_ifood_and_confirmed_by_reading_it_back(
         "status": "AVAILABLE",
         "template": "DEFAULT",
     }
+    channel.refresh_from_db()
+    assert channel.config["ifood_catalog"]["category_map"] == {"homologacao": "category-new"}
 
 
 def test_category_change_is_refused_when_ifood_changed_since_the_read(
@@ -564,11 +568,12 @@ def test_category_change_is_refused_when_ifood_changed_since_the_read(
     client.force_login(operator)
     seen = [{"id": "category-A", "name": "Padaria", "index": 0, "status": "AVAILABLE"}]
     now = [{"id": "category-A", "name": "Pães", "index": 0, "status": "AVAILABLE"}]
+    Collection.objects.create(ref="doces", name="Doces")
     body = {
         "action": "create",
         "snapshot_id": snapshot.pk,
         "catalog_ref": snapshot.catalog_ref,
-        "name": "Doces",
+        "collection_ref": "doces",
         "expected_actor_id": operator.pk,
         "base_revision": remote_category_revision(seen),
     }

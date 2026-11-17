@@ -15,22 +15,15 @@ const editing = ref<Record<string, "name" | "index">>({});
 const names = ref<Record<string, string>>({});
 const positions = ref<Record<string, number>>({});
 const mappings = ref<Record<string, string>>({});
-const creating = ref(false);
-const newName = ref("");
-
-async function saveNew() {
-  const name = newName.value.trim();
-  if (!name || blocked.value) return;
-  if (
-    await props.change({
-      action: "create",
-      catalog_ref: props.board.catalog_ref,
-      name,
-    })
-  ) {
-    creating.value = false;
-    newName.value = "";
-  }
+// A categoria do iFood nasce de uma coleção da casa (o iFood é reflexo do
+// Catálogo): mesmo nome, já ligada a ela. Não há nome digitado aqui.
+async function createFromCollection(collectionRef: string) {
+  if (blocked.value) return;
+  await props.change({
+    action: "create",
+    catalog_ref: props.board.catalog_ref,
+    collection_ref: collectionRef,
+  });
 }
 
 const blocked = computed(
@@ -113,49 +106,14 @@ async function saveMapping(collectionRef: string, current: string) {
           <div class="max-w-3xl space-y-1">
             <h2 class="op-title">Categorias do iFood</h2>
             <p class="text-sm text-muted-foreground">
-              Organize as categorias e escolha onde cada coleção da casa
-              aparece. Toda alteração externa só termina depois da confirmação
-              pelo iFood.
+              Cada coleção da casa aparece no iFood como uma categoria: escolha
+              uma que já existe ou crie no iFood com o nome da coleção. Toda
+              alteração só termina depois da confirmação pelo iFood.
             </p>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <NuxtBadge
-              color="neutral"
-              :label="`${board.categories.length} categorias`"
-            />
-            <NuxtButton
-              v-if="!creating"
-              label="Nova categoria"
-              icon="i-lucide-plus"
-              color="neutral"
-              variant="outline"
-              :disabled="blocked"
-              data-category-new
-              @click="creating = true"
-            />
-          </div>
-        </div>
-
-        <div
-          v-if="creating"
-          class="flex flex-wrap items-end gap-2"
-          data-category-new-form
-        >
-          <NuxtFormField label="Nome da nova categoria" class="min-w-64 flex-1">
-            <NuxtInput v-model="newName" class="w-full" />
-          </NuxtFormField>
-          <NuxtButton
-            label="Criar no iFood"
-            :loading="busy"
-            :disabled="blocked || !newName.trim()"
-            @click="saveNew"
-          />
-          <NuxtButton
-            label="Cancelar"
+          <NuxtBadge
             color="neutral"
-            variant="ghost"
-            :disabled="busy"
-            @click="creating = false"
+            :label="`${board.categories.length} categorias`"
           />
         </div>
 
@@ -311,7 +269,25 @@ async function saveMapping(collectionRef: string, current: string) {
                     }}
                   </p>
                 </div>
-                <NuxtFormField label="Categoria no iFood">
+                <NuxtButton
+                  v-if="!collection.category_ref"
+                  label="Criar no iFood com este nome"
+                  icon="i-lucide-plus"
+                  color="neutral"
+                  variant="outline"
+                  class="self-start"
+                  :loading="busy"
+                  :disabled="blocked"
+                  data-category-from-collection
+                  @click="createFromCollection(collection.ref)"
+                />
+                <NuxtFormField
+                  :label="
+                    collection.category_ref
+                      ? 'Categoria no iFood'
+                      : 'Ou escolha uma categoria que já existe'
+                  "
+                >
                   <NuxtSelect
                     class="w-full"
                     :model-value="

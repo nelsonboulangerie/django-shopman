@@ -5,6 +5,7 @@ import hashlib
 from django.conf import settings
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from shopman.offerman.models import Collection
 
 from shopman.backstage.api.permissions import HasBackstagePermission
 from shopman.backstage.api.projections import projection_data, read_data
@@ -215,13 +216,23 @@ class CatalogCategoryView(_Base):
                         "As categorias mudaram no iFood desde a última leitura. A lista foi atualizada; confira e repita."
                     )
                 if action == "create":
-                    name = data.get("name")
-                    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 128:
-                        raise service.CatalogBindingError("Informe um nome de até 128 caracteres.")
-                    name = " ".join(name.split())
+                    # A categoria do iFood é o reflexo de uma coleção da casa: nasce
+                    # com o nome da coleção e já fica ligada a ela. Não há nome
+                    # digitado aqui, para não abrir um cadastro paralelo ao Catálogo.
+                    collection_ref = data.get("collection_ref")
+                    collection = (
+                        Collection.objects.filter(ref=collection_ref.strip(), is_active=True).first()
+                        if isinstance(collection_ref, str) and collection_ref.strip() and len(collection_ref) <= 50
+                        else None
+                    )
+                    if collection is None:
+                        raise service.CatalogBindingError("Escolha uma coleção ativa da casa.")
+                    name = " ".join(collection.name.split())[:128]
                     rows = current.get("categories") if isinstance(current, dict) else current
                     if any(isinstance(row, dict) and row.get("name") == name for row in rows or []):
-                        raise service.CatalogBindingConflict("Já existe uma categoria com este nome no iFood.")
+                        raise service.CatalogBindingConflict(
+                            "Já existe uma categoria com o nome desta coleção no iFood. Escolha-a na lista."
+                        )
                     created = category_service.create_category(
                         channel_ref=ref, catalog_ref=catalog_ref, name=name,
                         status="AVAILABLE", template="DEFAULT",
@@ -231,7 +242,10 @@ class CatalogCategoryView(_Base):
                     category = _remote_category(rows, created_ref) if created_ref else None
                     if category is None or category.get("name") != name:
                         raise service.CatalogBindingError("O iFood não confirmou a nova categoria.")
-                    return {"action": action, "category": category}
+                    category_service.set_collection_category(
+                        channel_ref=ref, collection_ref=collection.ref, category_ref=created_ref,
+                    )
+                    return {"action": action, "collection_ref": collection.ref, "category": category}
                 if action == "rename":
                     name = data.get("name")
                     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 128:
