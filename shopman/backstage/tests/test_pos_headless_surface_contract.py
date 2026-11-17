@@ -1056,6 +1056,17 @@ class POSHeadlessSurfaceContractTests(TestCase):
         manager = get_user_model().objects.create_user(username="pos-manager-api", password="secret", is_staff=True)
         _grant_adjust_shift_perm(manager)
         PinCredential.set_for(manager, "4321")
+        # O PIN é conferido no diálogo, que devolve o carimbo preso ao desconto
+        # que o gerente viu (#2558); o fechamento leva o carimbo, nunca o PIN.
+        checked = self.client.post(
+            "/api/v1/backstage/pos/manager-approval/check/",
+            data=json.dumps({
+                "manager_approval": {"username": "pos-manager-api", "pin": "4321"},
+                "scope": {"tab_ref": "", "discount_q": 100},
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(checked.status_code, 200, checked.content)
         payload = {
             "intent_version": POS_SALE_INTENT_VERSION,
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
@@ -1063,7 +1074,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "payment_method": "cash",
             "payment_collection": "terminal",
             "manual_discount": {"type": "fixed", "value": "1,00", "reason": "cortesia"},
-            "manager_approval": {"username": "pos-manager-api", "pin": "4321"},
+            "manager_approval": {"token": checked.json()["token"]},
             "client_request_id": "pos-headless-manager-approval-002",
         }
 

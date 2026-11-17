@@ -110,8 +110,8 @@ const props = defineProps<{
   discountType: "percent" | "fixed";
   discountValue: string;
   discountReason: string;
-  managerUsername: string;
-  managerPin: string;
+  /** O gerente já assinou ESTA venda (há carimbo do servidor). O PIN não chega aqui. */
+  managerApproved: boolean;
   managerApprovalError: string;
   /** O PIN do gerente está sendo conferido no servidor (`checkManager`). */
   managerCheckBusy?: boolean;
@@ -209,8 +209,6 @@ const emit = defineEmits<{
   "update:discountType": ["percent" | "fixed"];
   "update:discountValue": [string];
   "update:discountReason": [string];
-  "update:managerUsername": [string];
-  "update:managerPin": [string];
   "update:fulfillmentType": ["pickup" | "delivery"];
   "update:fulfillmentConfirmed": [boolean];
   "update:paymentCollection": ["terminal" | "on_delivery"];
@@ -291,8 +289,7 @@ const supportsFiscalDocument = computed(() => !!props.checkoutContract?.capabili
 const savedAddresses = computed(() => props.customerLookup?.saved_addresses || []);
 const needsReview = computed(() => !props.review);
 const approvalBlocking = computed(() =>
-  !!props.review?.requires_manager_approval
-  && (!props.managerUsername.trim() || !props.managerPin.trim()),
+  !!props.review?.requires_manager_approval && !props.managerApproved,
 );
 const managerThresholdQ = computed(() => props.review?.manager_approval_threshold_q || 0);
 // O desconto MANUAL (linha + venda) que o teto mede: é o número que o gerente assina.
@@ -1283,8 +1280,6 @@ function onManagerAuthorize(username: string, pin: string) {
   // e nada adiante (maquininha, "Recebi o Pix") chegou a acontecer.
   emit("checkManager", username, pin, (ok) => {
     if (!ok) return;
-    emit("update:managerUsername", username);
-    emit("update:managerPin", pin);
     managerAuthOpen.value = false;
     proceed();
   });

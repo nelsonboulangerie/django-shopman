@@ -300,8 +300,7 @@ describe("usePosSale — intent (currentIntentState via saveTab)", () => {
       discountType: "fixed",
       discountValue: "2,50",
       discountReason: "cliente fiel",
-      managerUsername: "gerente",
-      managerPin: "9999",
+      managerApprovalToken: "carimbo-assinado",
       customerName: "Ana",
       customerPhone: "(43) 99999-0000",
     });
@@ -315,7 +314,9 @@ describe("usePosSale — intent (currentIntentState via saveTab)", () => {
     expect(body.delivery_fee_q).toBeUndefined();
     expect(body.delivery_fee_override_q).toBe(500);
     expect(body.manual_discount).toEqual({ type: "fixed", value: 2.5, reason: "cliente fiel" });
-    expect(body.manager_approval).toEqual({ username: "gerente", pin: "9999" });
+    // O carimbo do servidor, nunca o PIN (#2558).
+    expect(body.manager_approval).toEqual({ token: "carimbo-assinado" });
+    expect(JSON.stringify(body)).not.toContain("9999");
     expect(body.customer_name).toBe("Ana");
     expect(body.customer_phone).toBe("43999990000"); // só dígitos
     expect(typeof body.client_request_id).toBe("string");
@@ -494,6 +495,32 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
     const call = actionCall.mock.calls.find((c) => String(c[0]).includes("/clear/"))!;
     expect(call[1]).toMatchObject({ method: "DELETE" });
     expect(h.sale.cart.tabSessionKey).toBe("");
+    h.handles.dispose();
+  });
+});
+
+describe("usePosSale — autorização do gerente presa ao que ele viu (#2558)", () => {
+  it("o diálogo manda o desconto e a comanda; guarda o carimbo, não o PIN", async () => {
+    const actionCall = vi.fn().mockResolvedValue({ approved_by: "joyce", token: "carimbo-6" });
+    const h = makeSale({ projection: freeCartProjection(), actionCall });
+    h.sale.cart.tabRef = "M1";
+    h.sale.review.value = {
+      approval_reasons: ["discount_over_threshold"],
+      line_discount_q: 100,
+      order_discount_q: 500,
+      house_account_limit: null,
+    } as never;
+
+    const ok = await h.sale.checkManagerApproval("joyce", "4321");
+
+    expect(ok).toBe(true);
+    const [path, opts] = actionCall.mock.calls.find((c) => String(c[0]).includes("manager-approval/check"))!;
+    expect(String(path)).toContain("manager-approval/check");
+    expect((opts as { body: Record<string, unknown> }).body.scope).toEqual({
+      tab_ref: "M1", discount_q: 600, account_over_q: 0,
+    });
+    expect(h.sale.cart.managerApprovalToken).toBe("carimbo-6");
+    expect(JSON.stringify(h.sale.cart)).not.toContain("4321");
     h.handles.dispose();
   });
 });
