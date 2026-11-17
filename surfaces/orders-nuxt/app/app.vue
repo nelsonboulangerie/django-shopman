@@ -186,6 +186,8 @@ useOperatorWindowTitle();
             </section>
           </main>
           <NuxtPage v-else :key="workspaceOwner ?? 'unidentified'" />
+          <!-- o botão do iFood só aparece com pedido iFood em andamento (DEV-2026-023) -->
+          <ClientOnly><IFoodWidgetSync v-if="ifoodWidget.state.value !== 'off'" /></ClientOnly>
         </div>
       </OperatorSuiteShell>
       <OperatorSurfaceForbidden v-else-if="surface.showForbidden" :perm="OPERATOR_PERM" />
