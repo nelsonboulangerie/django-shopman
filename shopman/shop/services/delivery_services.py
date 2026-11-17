@@ -40,12 +40,16 @@ def courier_backend(block: dict | None = None):
     """O módulo que fala com o serviço da corrida, ou None quando não há serviço ligado.
 
     Sem bloco (ou corrida aberta antes da M1, sem ``service``) vale a central de entregas
-    configurada, como sempre. Serviço sem módulo próprio ainda (o entregador da casa, até
-    a M2) responde None: não há central para chamar.
+    configurada, como sempre. A corrida dos entregadores da casa resolve
+    ``adapters.courier_own_fleet`` (M2).
     """
     ref = str((block or {}).get("service") or "")
     if ref:
         kind = _kind(ref)
+        if kind == DeliveryService.KIND_OWN_FLEET:
+            from shopman.shop.adapters import courier_own_fleet
+
+            return courier_own_fleet
         if kind is not None and kind not in DeliveryService.KINDS_WITH_BACKEND:
             return None
     return get_adapter("courier")

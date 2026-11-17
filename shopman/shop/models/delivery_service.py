@@ -33,9 +33,11 @@ class DeliveryService(models.Model):
         (KIND_MACHINE, "Central de entregas por API (TaOn)"),
         (KIND_OWN_FLEET, "Entregadores da casa"),
     ]
-    #: Tipos que já têm módulo de serviço (``services/delivery_services``). O entregador da
-    #: casa entra aqui com a página do entregador (M2); até lá ele não pode ser o padrão.
-    KINDS_WITH_BACKEND = frozenset({KIND_MACHINE})
+    #: Tipos que têm módulo de serviço (``services/delivery_services``).
+    KINDS_WITH_BACKEND = frozenset({KIND_MACHINE, KIND_OWN_FLEET})
+    #: Tipos que podem ser o padrão: o padrão é também o que o despacho automático chama, e
+    #: só uma central abre corrida sozinha. A casa precisa do operador escolhendo a pessoa.
+    KINDS_FOR_DEFAULT = frozenset({KIND_MACHINE})
 
     ref = models.SlugField(
         "identificador",
@@ -76,9 +78,9 @@ class DeliveryService(models.Model):
         super().clean()
         if self.is_default and not self.is_active:
             raise ValidationError({"is_default": "O serviço padrão precisa estar ativo."})
-        if self.is_default and self.kind not in self.KINDS_WITH_BACKEND:
+        if self.is_default and self.kind not in self.KINDS_FOR_DEFAULT:
             raise ValidationError(
-                {"is_default": "Entregadores da casa como padrão chega com a página do entregador. Por ora, deixe a TaOn como padrão."}
+                {"is_default": "O padrão também é o que o despacho automático chama, e os entregadores da casa dependem de o operador escolher a pessoa. Deixe uma central como padrão."}
             )
         if self.is_default:
             other = DeliveryService.objects.filter(is_default=True).exclude(pk=self.pk).first()
