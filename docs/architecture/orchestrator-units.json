@@ -3366,7 +3366,7 @@
       "directives": [],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/integration/test_production_void_announces_lost_order.py::test_cancelar_o_unico_lote_avisa_o_gestor_e_marca_o_pedido"
+        "shopman/shop/tests/integration/test_production_void_announces_lost_order.py::test_o_mesmo_cancelamento_nao_avisa_duas_vezes"
       ],
       "test_gap_reason": null,
       "policy": false,
