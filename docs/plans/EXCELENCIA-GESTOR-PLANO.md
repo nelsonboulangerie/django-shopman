@@ -607,7 +607,9 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
     `TWO_DAY` a `SEVEN_DAY` e `MULTI_WEEK` além disso (valores da Merchant API, conferidos na
     referência de `LocalInventoryAttributes` em 17/11/2026). Arquivos:
     `shop/adapters/catalog_projection_google.py`, `shop/services/display_catalog.py` (o item
-    passa a carregar o dia de pronto), `shop/tests/test_catalog_projection_google.py`.
+    passa a carregar o dia de pronto), um service novo do `shop` com o fato de quando fica
+    pronto, `storefront/services/promise_facts.py` (passa a ler do `shop`),
+    `shop/tests/test_catalog_projection_google.py` e os testes do fato.
   - **G14b · a aba Canais (muda tela, prévia local do dono antes da fila).** O card do Google
     ganha dois itens no checklist: "Retirada no mesmo dia" e "Disponibilidade na loja", cada
     um com o estado que o Google devolve. Arquivos: `backstage/projections/channel_health.py`,
@@ -615,27 +617,33 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
     `presentation/channelHealth.ts`, `types/channelHealth.ts`,
     `components/ChannelHealthChecklist.vue` e os testes deles.
 - **Muda tela:** G14a não; G14b sim (prévia). **Tamanho:** M (G14a) + M (G14b).
-- **Fronteira declarada:** o G14a escreve em `shop/adapters` e num service do `shop`
-  (`display_catalog.py`), que as regras comuns deixam fora. É exceção atribuída pela
-  coordenação em 17/11/2026 e vale só para esses dois arquivos.
-- **Três coisas que a sessão mede antes de escrever, porque o plano não as provou:**
-  1. **De onde vem o fato.** O WP-L01 junta a promessa em
-     `shopman/storefront/services/promise_facts.py`, e o `shop` não importa o `storefront`. O
-     envio ao Google precisa ler os mesmos services do `shop` que o L01 lê
-     (`waitlist.next_batch_availability_for_skus`, `availability.stock_on_dates`,
-     `product_readiness.ready_times_for`) ou o fato desce para o `shop` num lugar só. O que
-     não pode: uma segunda conta do dia de pronto. A prova é um teste que, para os mesmos
-     SKUs e o mesmo instante, compara o dia que vai ao Google com o dia do `ready_promise`.
-  2. **Quando o envio se refaz.** "Pronto hoje" vira "pronto amanhã" quando passa o corte do
-     dia ou quando um lote é cancelado. Medir a cadência do envio ao Google e dizer no PR em
-     quanto tempo o `pickupSla` acompanha a virada.
-  3. **O que o Google devolve sobre os recursos.** A Merchant API tem
+- **Fronteira declarada:** o G14a escreve em `shop/adapters`, em services do `shop`
+  (`display_catalog.py` e o service novo do fato) e num arquivo da Loja (`promise_facts.py`),
+  que as regras comuns deixam fora. É exceção atribuída pela coordenação em 17/11/2026 e vale
+  só para esses arquivos.
+- **Decidido pela coordenação em 17/11/2026:**
+  1. **O fato desce para o `shop`.** O WP-L01 junta a promessa em
+     `shopman/storefront/services/promise_facts.py`, e a regra de dependência só deixa o
+     `storefront` importar o `shop`, nunca o contrário. O G14a move o fato de quando fica
+     pronto para um service do `shop`, e o `storefront` passa a ler de lá. Um lugar só: nunca
+     uma segunda conta do dia de pronto. Antes de tocar em `promise_facts.py`, a sessão avisa
+     a sessão da Loja. A prova é um teste que, para os mesmos SKUs e o mesmo instante, compara
+     o dia que vai ao Google com o dia do `ready_promise`, e os testes do WP-L01 seguem verdes
+     sem mudar o que a Loja mostra.
+  2. **Sem motivo na API, Canais mostra o estado e o atalho.** A Merchant API tem
      `accounts/{conta}/omnichannelSettings` (leitura), com `pickup.state` e `inStock.state`
      em `ACTIVE`, `FAILED`, `RUNNING` ou `ACTION_REQUIRED`. Pela referência (17/11/2026)
-     **o recurso não traz o motivo da recusa em texto**. Conferir com uma leitura na conta
-     real se o motivo vem por outro recurso (só leitura, e usar a credencial da conta pede a
-     palavra do dono, pela coordenação); se não vier, Canais mostra o estado e diz onde o
-     motivo está (Merchant Center), e o PR declara isso em vez de inventar texto.
+     **o recurso não traz o motivo da recusa em texto**. Se nenhum outro recurso trouxer,
+     Canais mostra o estado e o atalho para o Merchant Center, onde o motivo está, e o PR
+     declara isso em vez de inventar texto.
+  3. **Quem lê o estado é o próprio app, nunca um agente com credencial.** A leitura entra no
+     app, pela conta de serviço que a produção já usa para o envio (só leitura, no
+     `sync_platform_catalogs` ou numa ação do Admin). Nos testes, respostas gravadas. A
+     medição real se faz olhando Canais depois do deploy.
+- **Uma coisa que a sessão mede antes de escrever, porque o plano não a provou:** quando o
+  envio se refaz. "Pronto hoje" vira "pronto amanhã" quando passa o corte do dia ou quando um
+  lote é cancelado. Medir a cadência do envio ao Google e dizer no PR em quanto tempo o
+  `pickupSla` acompanha a virada.
 - **Critérios de pronto:**
   - item que só fica pronto amanhã vai com `NEXT_DAY`; o de hoje, com `SAME_DAY`; teste por
     caso, com relógio congelado antes e depois do corte;
@@ -647,8 +655,7 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
   - Canais mostra os dois recursos com estado legível ao operador, sem nome de API nem
     variável (defeito D6 de `docs/reference/omotenashi-copy.md`), e a leitura que falha diz
     que falhou em vez de mostrar "aprovado";
-  - nenhuma chamada ao Google nos testes (respostas gravadas); na conta real, só leitura e
-    só com a palavra do dono.
+  - nenhuma chamada ao Google nos testes (respostas gravadas); nenhum agente lê a conta real.
 - **Fora deste WP:** pedir a revisão dos dois recursos no Merchant Center. É ação do dono,
   pela coordenação, e só depois de G14a, G14b e WP-L02 no ar (pedir antes repete a recusa).
 - **Brief:** leia a issue #2652 inteira (corpo e os dois comentários), o cabeçalho de
@@ -700,7 +707,8 @@ Conferência dos arquivos por onda:
 - Onda 4: G09 fica com `pages/index.vue`, `QueueView.vue`, `board.ts`, `queue.ts` e
   `kitchen.ts`; G10 com
   `OrderPreorderList.vue`, `operations.py` e `urls.py`.
-- Fora das ondas: G14a fica com `catalog_projection_google.py` e `display_catalog.py`; G14b
+- Fora das ondas: G14a fica com `catalog_projection_google.py`, `display_catalog.py`, o
+  service novo do fato no `shop` e `promise_facts.py` (da Loja, com aviso à sessão dela); G14b
   com `channel_health.py`, `channelHealth.ts` e `ChannelHealthChecklist.vue`. Nenhum outro WP
   deste plano abre esses arquivos.
 
