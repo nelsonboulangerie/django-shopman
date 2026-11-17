@@ -1200,6 +1200,7 @@ export interface DeliveryDriverProjection {
 export interface DeliveryRideProjection {
   key: string;
   number: number;
+  letter: string;
   state: string;
   status_label: string;
   stops: DeliveryStopProjection[];
@@ -1219,6 +1220,8 @@ export interface DeliveryRideProjection {
   back_action: Action | null;
   back_lines: string[];
   cancel_action: Action | null;
+  cancel_state: string;
+  cancel_message: string;
 }
 
 /** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None) */

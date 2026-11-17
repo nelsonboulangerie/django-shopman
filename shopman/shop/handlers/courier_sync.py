@@ -43,6 +43,11 @@ class CourierSyncHandler:
 
         block = courier.get_block(order)
         if not block.get("id_mch"):
+            # O primeiro pedido já encerrou a corrida (N/C arquiva e tira o
+            # ``id_mch``), mas a batida é uma só para a corrida inteira: quem
+            # ainda a carrega recebe o mesmo fim, senão fica "com corrida" para
+            # sempre, com a letra, o troco e a maquininha presos.
+            self._release_stranded(order)
             return
         # F may already be durable while the local delivery/custody step failed.
         # Recover before deciding the terminal heartbeat has nothing left to do.
@@ -95,5 +100,26 @@ class CourierSyncHandler:
         still_active = bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES
         if still_active and seconds > 0:
             courier.schedule_sync(order, delay_seconds=seconds)
+        elif not block.get("id_mch"):
+            # A leitura encerrou a corrida neste pedido; se algum companheiro não
+            # recebeu o fim (falha local no meio), ele recebe agora.
+            self._release_stranded(order)
+
+    @staticmethod
+    def _release_stranded(order) -> None:
+        from shopman.shop.services import courier
+
+        status, stuck = courier.stranded_companions(order)
+        if not stuck:
+            return
+        logger.warning("courier.sync_stranded lead=%s status=%s orders=%s", order.ref, status,
+                       ",".join(other.ref for other in stuck))
+        if status in ("N", "C"):
+            for other in stuck:
+                courier.apply_status(other, status, source="poll:reconcile")
+            return
+        # O fim do primeiro não diz o da corrida (letra inesperada no histórico):
+        # a batida passa a ser de quem ainda a carrega, e a central responde.
+        courier.schedule_sync(stuck[0], delay_seconds=0)
 
 __all__ = ["CourierSyncHandler"]

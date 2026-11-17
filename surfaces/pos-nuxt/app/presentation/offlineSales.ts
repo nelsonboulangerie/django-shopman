@@ -11,6 +11,7 @@
 
 import type { POSCartItem, POSSaleReviewProjection } from "~/types/pos";
 import { cartTotalQ, formatBRL } from "~/utils/posIntent";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 /** Formas que se recebem sem rede: dinheiro, e a maquininha com chip e 4G próprios. */
 export const OFFLINE_PAYMENT_METHODS = ["cash", "credit", "debit", "external"] as const;
@@ -133,7 +134,7 @@ export function offlinePaymentLabel(methods: string[]): string {
 export function clockLabel(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return formatClock(date);
 }
 
 /**

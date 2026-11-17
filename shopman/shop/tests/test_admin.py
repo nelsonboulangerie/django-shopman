@@ -396,6 +396,99 @@ class TestShopAdminCalendar:
             }
         ]
 
+    def _record_decision(self, rf, admin_user, shop, monkeypatch, **fields):
+        from shopman.shop.admin.shop import CalendarDecisionForm
+        from shopman.shop.models import ShopOperation
+
+        data = {
+            "_form_submitted": "1",
+            "ends_on": "",
+            "label": "Feriado",
+            "decision": "closed",
+            "opens_at": "",
+            "closes_at": "",
+            **fields,
+        }
+        request = rf.post("/", data=data)
+        request.user = admin_user
+        form = CalendarDecisionForm(request, shop.pk, data=request.POST)
+        assert form.is_valid(), form.errors
+        model_admin = admin.site._registry[ShopOperation]
+        sent = []
+        monkeypatch.setattr(
+            model_admin,
+            "message_user",
+            lambda _request, message, level=None, **kwargs: sent.append((level, str(message))),
+        )
+        response = model_admin.record_calendar_decision(request, object_id=str(shop.pk))
+        assert response.status_code == 302
+        return sent
+
+    def test_closing_a_day_with_open_orders_warns_and_alerts(self, rf, admin_user, shop, monkeypatch):
+        from django.contrib import messages
+        from shopman.orderman.models import Order
+
+        Order.objects.create(
+            ref="ENC-PAGA", channel_ref="web", status="accepted", total_q=5000,
+            data={"delivery_date": "2026-12-24", "payment": {"status": "captured"}},
+        )
+        Order.objects.create(
+            ref="ENC-NOVA", channel_ref="web", status="new", total_q=3000,
+            data={"delivery_date": "2026-12-26"},
+        )
+        Order.objects.create(
+            ref="ENC-CANC", channel_ref="web", status="cancelled", total_q=3000,
+            data={"delivery_date": "2026-12-24"},
+        )
+        Order.objects.create(
+            ref="ENC-FORA", channel_ref="web", status="accepted", total_q=3000,
+            data={"delivery_date": "2026-12-27"},
+        )
+
+        sent = self._record_decision(
+            rf, admin_user, shop, monkeypatch,
+            starts_on="2026-12-24", ends_on="2026-12-26", label="Natal",
+        )
+
+        warnings = [text for level, text in sent if level == messages.WARNING]
+        assert len(warnings) == 1
+        assert "2 pedidos em aberto" in warnings[0]
+        assert "ENC-NOVA" in warnings[0] and "ENC-PAGA" in warnings[0]
+        assert "ENC-CANC" not in warnings[0] and "ENC-FORA" not in warnings[0]
+        assert "—" not in warnings[0]
+        alerts = OperatorAlert.objects.filter(type="order_on_closed_day").order_by("order_ref")
+        assert [a.order_ref for a in alerts] == ["ENC-NOVA", "ENC-PAGA"]
+        assert all(a.audience == "orders" for a in alerts)
+        assert "24/12/2026" in alerts.get(order_ref="ENC-PAGA").message
+        assert "Dedupe" not in alerts[0].message
+        assert Order.objects.get(ref="ENC-PAGA").status == "accepted"
+        assert Order.objects.get(ref="ENC-PAGA").data["delivery_date"] == "2026-12-24"
+
+        # Registrar de novo a mesma decisão não duplica o aviso.
+        self._record_decision(
+            rf, admin_user, shop, monkeypatch,
+            starts_on="2026-12-24", ends_on="2026-12-26", label="Natal",
+        )
+        assert OperatorAlert.objects.filter(type="order_on_closed_day").count() == 2
+
+    def test_opening_a_day_with_orders_does_not_warn(self, rf, admin_user, shop, monkeypatch):
+        from django.contrib import messages
+        from shopman.orderman.models import Order
+
+        Order.objects.create(
+            ref="ENC-ABERTO", channel_ref="web", status="accepted", total_q=5000,
+            data={"delivery_date": "2026-12-25"},
+        )
+
+        sent = self._record_decision(
+            rf, admin_user, shop, monkeypatch,
+            starts_on="2026-12-25", decision="special", label="Natal aberto",
+            opens_at="09:00", closes_at="13:00",
+        )
+
+        assert [level for level, _ in sent] == [messages.SUCCESS]
+        assert not OperatorAlert.objects.filter(type="order_on_closed_day").exists()
+
     def test_form_saves_defaults_from_structured_fields(self, shop):
         from shopman.shop.admin.shop import ShopForm
 

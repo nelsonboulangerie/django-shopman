@@ -216,7 +216,6 @@ MACHINE_GENERAL_ENVS = (
     "MACHINE_API_BASE",
     "MACHINE_DETAILS_BASE",
     "MACHINE_FORMA_PAGAMENTO",
-    "MACHINE_CANCEL_REASON_ID",
     "MACHINE_TIMEOUT",
 )
 MACHINE_SECRET_ENVS = ("MACHINE_API_USER", "MACHINE_API_PASSWORD", "MACHINE_API_KEY", "MACHINE_WEBHOOK_TOKEN")
@@ -244,7 +243,7 @@ def _shopman_machine_from_settings_py(environ: dict) -> dict:
 
 
 def test_alpha_machine_envs_repeat_the_code_defaults_and_arm_the_adapter_with_credentials():
-    """As seis GENERAL da Machine no spec do alpha são o padrão do código; o interruptor
+    """As GENERAL da Machine no spec do alpha são o padrão do código; o interruptor
     está ligado, como no vivo (D-020), e só existe junto das quatro credenciais SECRET.
 
     ``SHOPMAN_COURIER_ADAPTER`` sem as credenciais faria o ``check --deploy`` do release

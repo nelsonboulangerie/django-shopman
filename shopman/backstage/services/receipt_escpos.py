@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import logging
 
+from shopman.utils.formatting import format_local
+
 logger = logging.getLogger(__name__)
 
 ESC = 0x1B
@@ -211,9 +213,8 @@ def _wrap(text: str, width: int) -> list[str]:
 
 
 def _local(quando) -> str:
-    from django.utils import timezone
 
-    return timezone.localtime(quando).strftime("%d/%m/%Y %H:%M")
+    return format_local(quando, "%d/%m/%Y {clock}")
 
 
 def _qr(data: str, *, module: int = 6) -> bytes:

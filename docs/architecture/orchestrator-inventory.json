@@ -457,7 +457,16 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "BEFORE_ACCEPT_STATUSES",
             "CANCELLABLE_STATUSES",
+            "CANCEL_INTENT_OPERATOR",
+            "CANCEL_INTENT_ORDER_CANCELLED",
+            "CANCEL_REASONS_AFTER_ACCEPT",
+            "CANCEL_REASONS_OPERATOR",
+            "CANCEL_REASON_BEFORE_ACCEPT",
+            "CANCEL_REASON_OPERATOR_DEFAULT",
+            "CANCEL_REASON_ORDER_CANCELLED",
+            "CANCEL_REASON_REFUSED_CODE",
             "CourierDispatchResult",
             "CourierError",
             "CourierEstimate",
@@ -472,6 +481,7 @@
             "_cfg",
             "_details_base",
             "_driver",
+            "_error_codes",
             "_estimate_params",
             "_inert",
             "_iso_plus_seconds",
@@ -482,6 +492,7 @@
             "_text",
             "_to_q",
             "cancel",
+            "cancel_reason_for",
             "dispatch",
             "estimate",
             "get_details",
@@ -1786,7 +1797,10 @@
           "responsibility": "configuração",
           "symbols": [
             "AIConnectionAdmin",
-            "AIConnectionForm"
+            "AIConnectionForm",
+            "AiInvocationAdmin",
+            "AiSpendDayAdmin",
+            "_ReadOnlyAdmin"
           ]
         }
       ]
@@ -1876,14 +1890,25 @@
       "out_of_extraction": false,
       "unit_ids": [],
       "responsibilities": [
-        "configuração"
+        "configuração",
+        "infraestrutura"
       ],
       "support_claims": [
         {
           "responsibility": "configuração",
           "symbols": [
+            "CourierAdmin",
+            "CourierRateAdmin",
+            "CourierRateInline",
             "DeliveryDistanceBandAdmin",
+            "DeliveryServiceAdmin",
             "DeliveryZoneAdmin"
+          ]
+        },
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_brl"
           ]
         }
       ]
@@ -2234,7 +2259,60 @@
             "fit_request",
             "is_configured",
             "jev_endpoint",
+            "jev_post",
             "resolve"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/ai_governor.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "AIBudgetExceeded",
+            "AIDisabled",
+            "CHARS_PER_TOKEN",
+            "DEFAULT_MAX_OUTPUT_TOKENS",
+            "DEFAULT_PURPOSE_USD_PER_DAY",
+            "DEFAULT_SHOP_USD_PER_DAY",
+            "HARD_CAP_USD_PER_DAY",
+            "JEV_PRICES",
+            "Lease",
+            "Limits",
+            "SHOP_SCOPE",
+            "WARNING_FRACTION",
+            "_alert_if_near_cap",
+            "_alert_once",
+            "_alert_stopped",
+            "_budget_message",
+            "_micros",
+            "_record",
+            "_scope_label",
+            "_scopes",
+            "_today",
+            "_token",
+            "_usd",
+            "actual_usd",
+            "check",
+            "estimate_input_tokens",
+            "estimate_usd",
+            "limits",
+            "logger",
+            "metered",
+            "prices_for",
+            "reserve",
+            "settle",
+            "usage_tokens"
           ]
         }
       ]
@@ -3321,6 +3399,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_KNOWN_LETTERS",
             "logger"
           ]
         }
@@ -5820,6 +5899,27 @@
       ]
     },
     {
+      "path": "shopman/shop/models/ai_invocation.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "AiInvocation",
+            "AiOutcome",
+            "AiSpendDay"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/models/attributes.py",
       "touchpoints": [
         "model"
@@ -6008,6 +6108,28 @@
           "symbols": [
             "DeliveryDistanceBand",
             "DeliveryZone"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/delivery_service.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "Courier",
+            "CourierLink",
+            "CourierRate",
+            "DeliveryService"
           ]
         }
       ]
@@ -8949,6 +9071,48 @@
       ]
     },
     {
+      "path": "shopman/shop/services/courier_links.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "BAD_DEVICE",
+            "CANCELLED",
+            "EXPIRED",
+            "LINK_GRACE",
+            "LinkAccess",
+            "MIN_DEVICE_KEY",
+            "OK",
+            "OTHER_DEVICE",
+            "REASSIGNED",
+            "REISSUED",
+            "REVOKED",
+            "UNKNOWN"
+          ]
+        },
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_hash",
+            "_live",
+            "close",
+            "issue",
+            "resolve",
+            "revoke"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/critical_alerts.py",
       "touchpoints": [
         "service"
@@ -9241,6 +9405,39 @@
           "symbols": [
             "_digits",
             "_join"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/delivery_rates.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato",
+        "infraestrutura",
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "RideValue"
+          ]
+        },
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_pick"
+          ]
+        },
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "ride_value"
           ]
         }
       ]
@@ -12822,7 +13019,7 @@
         {
           "responsibility": "leitura",
           "symbols": [
-            "format_clock",
+            "clock_hhmm",
             "product_names"
           ]
         }
@@ -14037,6 +14234,29 @@
           "symbols": [
             "app_name",
             "urlpatterns"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/closed_day_orders.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "preorder.closed-day-orders"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "OPEN_STATUSES"
           ]
         }
       ]
