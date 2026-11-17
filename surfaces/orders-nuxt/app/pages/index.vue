@@ -29,7 +29,6 @@ import {
   rideChoices,
   rowsToCsv,
   schedulePromise,
-  PROMISE_BADGE_UI,
   SORT_OPTIONS,
   splitRef,
   statusTone,
@@ -2054,10 +2053,11 @@ function compactClear() {
                 class="mt-1 max-w-full self-start"
                 :color="schedulePromise(row.original.card)!.color"
                 :icon="schedulePromise(row.original.card)!.icon"
-                :label="schedulePromise(row.original.card)!.label"
-                :ui="PROMISE_BADGE_UI"
                 :data-table-promise="schedulePromise(row.original.card)!.state"
-              />
+              >
+                <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
+                <span class="whitespace-normal text-start">{{ schedulePromise(row.original.card)!.label }}</span>
+              </NuxtBadge>
             </div>
           </template>
           <template #stage-cell="{ row }">

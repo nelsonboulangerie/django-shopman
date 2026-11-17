@@ -647,9 +647,12 @@ describe("o aceite que não chegou ao iFood (P1-3)", () => {
 });
 
 describe("OrderCard — o selo do combinado não corta (WP-G01)", () => {
-  it("o rótulo quebra a linha em vez de cortar o dia e a hora", async () => {
-    const { PROMISE_BADGE_UI } = await import("../../app/presentation/board");
-    expect(PROMISE_BADGE_UI.label).toContain("whitespace-normal");
-    expect(PROMISE_BADGE_UI.label).toContain("text-clip");
+  it("o texto quebra a linha em vez de cortar o dia e a hora", () => {
+    const w = mountCard({
+      card: card({ schedule_label: "Qua, 18/11 · A partir das 15h", schedule_state: "future" }),
+      compact: true,
+    });
+    const text = w.get("[data-card-promise] span.whitespace-normal");
+    expect(text.text()).toBe("Encomenda · Qua, 18/11 · A partir das 15h");
   });
 });

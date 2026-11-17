@@ -30,7 +30,6 @@ import {
   kitchenWaiting,
   productionLines,
   schedulePromise,
-  PROMISE_BADGE_UI,
   undoLine,
   type AffordanceRef,
   type Tone,
@@ -573,10 +572,11 @@ function nuxtIcon(icon: string): string {
       class="max-w-full self-start"
       :color="promise.color"
       :icon="promise.icon"
-      :label="promise.label"
-      :ui="PROMISE_BADGE_UI"
       :data-card-promise="promise.state"
-    />
+    >
+      <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
+      <span class="whitespace-normal text-start">{{ promise.label }}</span>
+    </NuxtBadge>
     <p
       v-if="card.items_summary"
       class="truncate op-micro text-muted"
@@ -825,10 +825,11 @@ function nuxtIcon(icon: string): string {
             v-if="promise"
             :color="promise.color"
             :icon="promise.icon"
-            :label="promise.label"
-            :ui="PROMISE_BADGE_UI"
             :data-card-promise="promise.state"
-          />
+          >
+            <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
+            <span class="whitespace-normal text-start">{{ promise.label }}</span>
+          </NuxtBadge>
           <!-- fila de espera: o pedido não está parado, está esperando o lote -->
           <NuxtBadge
             v-if="card.waitlist_label"

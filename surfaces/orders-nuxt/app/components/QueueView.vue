@@ -25,7 +25,6 @@ import {
   cardDeadlineLabel,
   confirmationRemainingLabel,
   schedulePromise,
-  PROMISE_BADGE_UI,
   splitRef,
   undoLine,
 } from "~/presentation/board";
@@ -352,10 +351,11 @@ function switchHint(row: {
               class="max-w-full self-start"
               :color="schedulePromise(item.card)!.color"
               :icon="schedulePromise(item.card)!.icon"
-              :label="schedulePromise(item.card)!.label"
-              :ui="PROMISE_BADGE_UI"
               :data-queue-promise="schedulePromise(item.card)!.state"
-            />
+            >
+              <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
+              <span class="whitespace-normal text-start">{{ schedulePromise(item.card)!.label }}</span>
+            </NuxtBadge>
             <p class="op-body text-foreground/85">
               {{ item.card.items_summary }}
             </p>
