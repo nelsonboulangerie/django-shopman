@@ -96,7 +96,9 @@ def _projected_item(sku: str, channel_ref: str):
 
 def _raise_remote(result) -> None:
     if not result.success:
-        raise AddonRemoteError("O iFood não confirmou: " + "; ".join(result.errors))
+        # O adapter prefixa o SKU ("PAO: ..."); aqui o produto já está na tela.
+        reasons = [str(error).split(": ", 1)[-1] if ": " in str(error) else str(error) for error in result.errors]
+        raise AddonRemoteError("; ".join(reasons) or "O iFood não confirmou o envio.")
 
 
 def _push_item(sku: str, channel_ref: str) -> None:

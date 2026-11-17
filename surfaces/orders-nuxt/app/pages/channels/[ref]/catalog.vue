@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { realtimeIndicator } from "~/presentation/board";
 import { channelHasBindingReview } from "~/presentation/ifoodStore";
 import {
   channelCatalogTabs,
@@ -25,7 +24,6 @@ const {
   stale,
   refresh,
   readMetadata,
-  realtime,
   selected,
   busy,
   message,
@@ -136,7 +134,7 @@ useHead({ title: "Catálogo do canal" });
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
 const phoneHeaderActions = computed(() => [
   {
-    label: "Atualizar revisão",
+    label: "Consultar o iFood",
     icon: "i-lucide-refresh-cw",
     onSelect: () => void refresh(),
   },
@@ -164,7 +162,7 @@ const phoneHeaderActions = computed(() => [
       <template #filters>
         <NuxtButton
           icon="i-lucide-refresh-cw"
-          label="Atualizar revisão"
+          label="Consultar o iFood"
           color="neutral"
           variant="outline"
           :loading="pending"
@@ -172,11 +170,12 @@ const phoneHeaderActions = computed(() => [
         />
       </template>
       <template #filters-end>
+        <!-- A leitura é do iFood: dita pela fonte, numa linha (auditoria 17/11). -->
         <ReadFreshness
           inline
+          source="do iFood"
           :metadata="readMetadata"
           :failed="Boolean(error)"
-          :realtime-label="realtimeIndicator(realtime).label"
         />
       </template>
     </OperatorPageHeader>
@@ -227,14 +226,8 @@ const phoneHeaderActions = computed(() => [
         class="max-w-4xl text-sm text-muted-foreground"
         data-channel-catalog-intro
       >
-        <template v-if="channel === 'ifood'">
-          Organize as categorias, cadastre os complementos e confira a
-          identidade dos anúncios. Categoria e complemento só ficam gravados
-          com a confirmação do iFood; os vínculos de produto são locais.
-        </template>
-        <template v-else>
-          Organize as categorias e confira a identidade dos anúncios.
-        </template>
+        O que o iFood mostra é reflexo do Catálogo da casa: cada coleção vira
+        uma categoria e cada produto, um item.
       </p>
       <NuxtAlert
         v-if="message"

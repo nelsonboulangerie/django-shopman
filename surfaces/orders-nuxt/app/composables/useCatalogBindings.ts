@@ -80,7 +80,7 @@ export function useCatalogBindings(channel: string) {
         typeof snapshotId === "number"
       )
         selected.value = String(snapshotId);
-      message.value = successMessage;
+      if (successMessage) message.value = successMessage;
       try {
         await refresh();
       } catch {
@@ -138,11 +138,9 @@ export function useCatalogBindings(channel: string) {
       `${base}/categories/`,
       board.value?.category_action,
       body,
-      body.action === "map"
-        ? "Coleção ligada à categoria confirmada no iFood."
-        : body.action === "create"
-          ? "Categoria criada no iFood com o nome da coleção, já ligada a ela."
-          : "Alteração confirmada pela leitura atual do iFood.",
+      // A confirmação de categoria aparece no próprio cartão (selo com a hora),
+      // não numa faixa no topo da página.
+      "",
     );
   }
   return {

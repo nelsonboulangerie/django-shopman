@@ -38,6 +38,12 @@ type AddonsResponse = {
  * (mesma chave se a rede cair) e só termina com a leitura do iFood confirmando;
  * a resposta traz a frase da confirmação, que a tela mostra com a hora.
  */
+function clockNow() {
+  return new Date()
+    .toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    .replace(":", "h");
+}
+
 export function useChannelAddons(channel: string) {
   const base = `/api/v1/backstage/catalog/channels/${encodeURIComponent(channel)}/addons/`;
   const sku = ref("");
@@ -49,7 +55,9 @@ export function useChannelAddons(channel: string) {
   });
   const board = computed(() => data.value?.addons ?? null);
   const busy = ref(false);
-  const receipt = ref<{ message: string; at: string; ok: boolean } | null>(null);
+  const receipt = ref<{ message: string; at: string; ok: boolean } | null>(
+    null,
+  );
   const intentions = useOrderIntention();
 
   async function run(target: string, inputs: Record<string, unknown>) {
@@ -67,15 +75,18 @@ export function useChannelAddons(channel: string) {
       receipt.value = {
         ok: true,
         message: result.message || "Confirmado no iFood.",
-        at: new Date().toLocaleTimeString("pt-BR"),
+        at: clockNow(),
       };
       await refresh();
       return true;
     } catch (failure) {
       receipt.value = {
         ok: false,
-        message: httpErrorMessage(failure, "O iFood não confirmou. Nada foi gravado."),
-        at: new Date().toLocaleTimeString("pt-BR"),
+        message: httpErrorMessage(
+          failure,
+          "O iFood não confirmou. Nada foi gravado.",
+        ),
+        at: clockNow(),
       };
       if (httpError(failure).status === 409) await refresh();
       return false;
@@ -99,6 +110,7 @@ export function useChannelAddons(channel: string) {
   }
 
   return {
+    clockNow,
     sku,
     board,
     pending,
@@ -108,9 +120,25 @@ export function useChannelAddons(channel: string) {
     receipt,
     uploadPhoto,
     createGroup: (name: string, min: number, max: number) =>
-      run(`group:new`, { action: "create_group", name, min_choices: min, max_choices: max }),
-    addAddon: (groupId: number, name: string, priceQ: number, imageUrl: string) =>
-      run(`group:${groupId}:add`, { action: "add", group_id: groupId, name, price_q: priceQ, image_url: imageUrl }),
+      run(`group:new`, {
+        action: "create_group",
+        name,
+        min_choices: min,
+        max_choices: max,
+      }),
+    addAddon: (
+      groupId: number,
+      name: string,
+      priceQ: number,
+      imageUrl: string,
+    ) =>
+      run(`group:${groupId}:add`, {
+        action: "add",
+        group_id: groupId,
+        name,
+        price_q: priceQ,
+        image_url: imageUrl,
+      }),
     editAddon: (addonId: number, name: string, imageUrl: string | null) =>
       run(`addon:${addonId}:edit`, {
         action: "edit",
@@ -119,8 +147,16 @@ export function useChannelAddons(channel: string) {
         ...(imageUrl ? { image_url: imageUrl } : {}),
       }),
     changePrice: (addonId: number, priceQ: number) =>
-      run(`addon:${addonId}:price`, { action: "price", addon_id: addonId, price_q: priceQ }),
+      run(`addon:${addonId}:price`, {
+        action: "price",
+        addon_id: addonId,
+        price_q: priceQ,
+      }),
     setActive: (addonId: number, active: boolean) =>
-      run(`addon:${addonId}:status`, { action: "status", addon_id: addonId, active }),
+      run(`addon:${addonId}:status`, {
+        action: "status",
+        addon_id: addonId,
+        active,
+      }),
   };
 }

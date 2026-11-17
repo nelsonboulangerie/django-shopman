@@ -18,6 +18,7 @@ const {
   error,
   busy,
   receipt,
+  clockNow,
   uploadPhoto,
   createGroup,
   addAddon,
@@ -71,7 +72,7 @@ async function submitAddon(groupId: number) {
     receipt.value = {
       ok: false,
       message: httpErrorMessage(failure, "Não foi possível guardar a foto."),
-      at: new Date().toLocaleTimeString("pt-BR"),
+      at: clockNow(),
     };
     return;
   } finally {
@@ -115,13 +116,23 @@ async function submitEdit(addon: ChannelAddon) {
     receipt.value = {
       ok: false,
       message: httpErrorMessage(failure, "Não foi possível guardar a foto."),
-      at: new Date().toLocaleTimeString("pt-BR"),
+      at: clockNow(),
     };
     return;
   } finally {
     editing.uploading = false;
   }
   if (await editAddon(addon.id, editing.name.trim(), imageUrl)) stopEdit();
+}
+// O giro fica só no complemento que está sendo pausado ou retomado.
+const toggling = ref<number | null>(null);
+async function toggle(addon: ChannelAddon) {
+  toggling.value = addon.id;
+  try {
+    await setActive(addon.id, !addon.is_active);
+  } finally {
+    toggling.value = null;
+  }
 }
 async function submitPrice(addon: ChannelAddon) {
   if (editPriceQ.value === null) return;
@@ -136,18 +147,17 @@ async function submitPrice(addon: ChannelAddon) {
         <div class="max-w-3xl space-y-1">
           <h2 class="op-title">Complementos no iFood</h2>
           <p class="text-sm text-muted-foreground">
-            Escolha o produto e cadastre os grupos de complementos. Nome e foto
-            vão com o item inteiro; preço e pausa vão sozinhos. Nada fica gravado
-            sem a confirmação do iFood.
+            O Catálogo da casa não tem complementos; eles moram no produto do
+            canal iFood, com o mesmo SKU, e vão junto com o item.
           </p>
         </div>
 
-        <NuxtFormField label="Produto" class="max-w-md">
+        <NuxtFormField label="Produto do canal iFood" class="max-w-md">
           <NuxtSelectMenu
             v-model="sku"
             :items="productItems"
             value-key="value"
-            placeholder="Escolha um produto do iFood"
+            placeholder="Escolha um produto"
             class="w-full"
             :loading="pending"
             :disabled="busy"
@@ -160,7 +170,11 @@ async function submitPrice(addon: ChannelAddon) {
           :color="receipt.ok ? 'success' : 'error'"
           variant="subtle"
           :icon="receipt.ok ? 'i-lucide-circle-check' : 'i-lucide-circle-alert'"
-          :title="receipt.ok ? `Confirmado às ${receipt.at}` : `Recusado às ${receipt.at}`"
+          :title="
+            receipt.ok
+              ? `Gravado no iFood às ${receipt.at}`
+              : `O iFood recusou às ${receipt.at}`
+          "
           :description="receipt.message"
           close
           data-addon-receipt
@@ -206,7 +220,14 @@ async function submitPrice(addon: ChannelAddon) {
                   color="neutral"
                   variant="outline"
                   :disabled="blocked"
-                  @click="Object.assign(addonDraft, { group: group.id, name: '', price: '', file: null })"
+                  @click="
+                    Object.assign(addonDraft, {
+                      group: group.id,
+                      name: '',
+                      price: '',
+                      file: null,
+                    })
+                  "
                 />
               </div>
 
@@ -262,12 +283,14 @@ async function submitPrice(addon: ChannelAddon) {
                     />
                     <NuxtButton
                       :label="addon.is_active ? 'Pausar' : 'Retomar'"
-                      :icon="addon.is_active ? 'i-lucide-pause' : 'i-lucide-play'"
+                      :icon="
+                        addon.is_active ? 'i-lucide-pause' : 'i-lucide-play'
+                      "
                       color="neutral"
                       variant="ghost"
-                      :loading="busy"
+                      :loading="busy && toggling === addon.id"
                       :disabled="blocked"
-                      @click="setActive(addon.id, !addon.is_active)"
+                      @click="toggle(addon)"
                     />
                   </div>
                   <div
@@ -301,9 +324,17 @@ async function submitPrice(addon: ChannelAddon) {
                   <div v-else class="flex w-full flex-wrap items-end gap-2">
                     <NuxtFormField
                       label="Preço (R$)"
-                      :error="editing.price && editPriceQ === null ? 'Use o formato 12,50' : false"
+                      :error="
+                        editing.price && editPriceQ === null
+                          ? 'Use o formato 12,50'
+                          : false
+                      "
                     >
-                      <NuxtInput v-model="editing.price" inputmode="decimal" class="w-32" />
+                      <NuxtInput
+                        v-model="editing.price"
+                        inputmode="decimal"
+                        class="w-32"
+                      />
                     </NuxtFormField>
                     <NuxtButton
                       label="Enviar ao iFood"
@@ -327,14 +358,25 @@ async function submitPrice(addon: ChannelAddon) {
                 class="flex flex-wrap items-end gap-2 rounded-md border border-default p-3"
                 data-addon-new
               >
-                <NuxtFormField label="Nome do complemento" class="min-w-56 flex-1">
+                <NuxtFormField
+                  label="Nome do complemento"
+                  class="min-w-56 flex-1"
+                >
                   <NuxtInput v-model="addonDraft.name" class="w-full" />
                 </NuxtFormField>
                 <NuxtFormField
                   label="Preço (R$)"
-                  :error="addonDraft.price && addonPriceQ === null ? 'Use o formato 12,50' : false"
+                  :error="
+                    addonDraft.price && addonPriceQ === null
+                      ? 'Use o formato 12,50'
+                      : false
+                  "
                 >
-                  <NuxtInput v-model="addonDraft.price" inputmode="decimal" class="w-32" />
+                  <NuxtInput
+                    v-model="addonDraft.price"
+                    inputmode="decimal"
+                    class="w-32"
+                  />
                 </NuxtFormField>
                 <NuxtFormField label="Foto (JPG ou PNG)">
                   <NuxtInput
@@ -346,7 +388,9 @@ async function submitPrice(addon: ChannelAddon) {
                 <NuxtButton
                   label="Criar no iFood"
                   :loading="busy || addonDraft.uploading"
-                  :disabled="blocked || !addonDraft.name.trim() || addonPriceQ === null"
+                  :disabled="
+                    blocked || !addonDraft.name.trim() || addonPriceQ === null
+                  "
                   @click="submitAddon(group.id)"
                 />
                 <NuxtButton
@@ -360,15 +404,31 @@ async function submitPrice(addon: ChannelAddon) {
             </div>
           </NuxtCard>
 
-          <div v-if="groupDraft.open" class="flex flex-wrap items-end gap-2" data-addon-group-new>
+          <div
+            v-if="groupDraft.open"
+            class="flex flex-wrap items-end gap-2"
+            data-addon-group-new
+          >
             <NuxtFormField label="Nome do grupo" class="min-w-56 flex-1">
               <NuxtInput v-model="groupDraft.name" class="w-full" />
             </NuxtFormField>
             <NuxtFormField label="Mínimo">
-              <NuxtInput v-model.number="groupDraft.min" type="number" min="0" max="99" class="w-24" />
+              <NuxtInput
+                v-model.number="groupDraft.min"
+                type="number"
+                min="0"
+                max="99"
+                class="w-24"
+              />
             </NuxtFormField>
             <NuxtFormField label="Máximo">
-              <NuxtInput v-model.number="groupDraft.max" type="number" min="1" max="99" class="w-24" />
+              <NuxtInput
+                v-model.number="groupDraft.max"
+                type="number"
+                min="1"
+                max="99"
+                class="w-24"
+              />
             </NuxtFormField>
             <NuxtButton
               label="Criar grupo"

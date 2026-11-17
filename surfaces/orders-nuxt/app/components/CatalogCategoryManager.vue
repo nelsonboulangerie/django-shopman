@@ -19,11 +19,23 @@ const mappings = ref<Record<string, string>>({});
 // Catálogo): mesmo nome, já ligada a ela. Não há nome digitado aqui.
 async function createFromCollection(collectionRef: string) {
   if (blocked.value) return;
-  await props.change({
-    action: "create",
-    catalog_ref: props.board.catalog_ref,
-    collection_ref: collectionRef,
-  });
+  if (
+    await props.change({
+      action: "create",
+      catalog_ref: props.board.catalog_ref,
+      collection_ref: collectionRef,
+    })
+  )
+    stamp(`collection:${collectionRef}`);
+}
+
+// Selo no próprio gesto: "Gravado no iFood às 13h55", por cartão.
+const confirmed = ref<Record<string, string>>({});
+function stamp(key: string) {
+  const at = new Date()
+    .toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    .replace(":", "h");
+  confirmed.value = { ...confirmed.value, [key]: `Gravado no iFood às ${at}` };
 }
 
 const blocked = computed(
@@ -52,8 +64,10 @@ async function saveName(category: CatalogRemoteCategory) {
       category_ref: category.ref,
       name,
     })
-  )
+  ) {
+    stamp(category.ref);
     cancel(category.ref);
+  }
 }
 
 async function savePosition(category: CatalogRemoteCategory) {
@@ -66,8 +80,10 @@ async function savePosition(category: CatalogRemoteCategory) {
       category_ref: category.ref,
       index,
     })
-  )
+  ) {
+    stamp(category.ref);
     cancel(category.ref);
+  }
 }
 
 function selectedCategory(collectionRef: string, current: string) {
@@ -91,6 +107,7 @@ async function saveMapping(collectionRef: string, current: string) {
       collection_ref: collectionRef,
     })
   ) {
+    stamp(`collection:${collectionRef}`);
     const next = { ...mappings.value };
     Reflect.deleteProperty(next, collectionRef);
     mappings.value = next;
@@ -103,14 +120,7 @@ async function saveMapping(collectionRef: string, current: string) {
     <NuxtCard variant="outline">
       <div class="space-y-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
-          <div class="max-w-3xl space-y-1">
-            <h2 class="op-title">Categorias do iFood</h2>
-            <p class="text-sm text-muted-foreground">
-              Cada coleção da casa aparece no iFood como uma categoria: escolha
-              uma que já existe ou crie no iFood com o nome da coleção. Toda
-              alteração só termina depois da confirmação pelo iFood.
-            </p>
-          </div>
+          <h2 class="op-title">Categorias do iFood</h2>
           <NuxtBadge
             color="neutral"
             :label="`${board.categories.length} categorias`"
@@ -168,6 +178,15 @@ async function saveMapping(collectionRef: string, current: string) {
                   "
                 />
               </div>
+              <NuxtBadge
+                v-if="confirmed[category.ref]"
+                color="success"
+                variant="subtle"
+                icon="i-lucide-circle-check"
+                class="self-start"
+                :label="confirmed[category.ref]"
+                data-category-confirmed
+              />
 
               <div v-if="editing[category.ref] === 'name'" class="space-y-2">
                 <NuxtFormField label="Nome da categoria">
@@ -269,6 +288,15 @@ async function saveMapping(collectionRef: string, current: string) {
                     }}
                   </p>
                 </div>
+                <NuxtBadge
+                  v-if="confirmed[`collection:${collection.ref}`]"
+                  color="success"
+                  variant="subtle"
+                  icon="i-lucide-circle-check"
+                  class="self-start"
+                  :label="confirmed[`collection:${collection.ref}`]"
+                  data-collection-confirmed
+                />
                 <NuxtButton
                   v-if="!collection.category_ref"
                   label="Criar no iFood com este nome"

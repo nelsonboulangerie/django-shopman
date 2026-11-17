@@ -224,3 +224,15 @@ def test_addons_exist_only_in_the_ifood_channel():
     Channel.objects.create(ref="web", name="Loja online")
     with pytest.raises(service.AddonError):
         service.create_group(channel_ref="web", sku="PAO", name="Molhos")
+
+
+def test_ifood_refusal_is_shown_with_ifoods_own_reason(group):
+    refused = MagicMock(status_code=400, headers={})
+    refused.json.return_value = {"error": {"code": "BadRequest", "message": "FullItemDto is not valid", "details": [
+        {"code": "NotAnUUID", "field": "OptionGroupDto.optionIds", "message": "each value in optionIds must be a UUID"}]}}
+    with patch.object(adapter.requests, "put", return_value=refused), pytest.raises(adapter.IFoodRejected) as exc:
+        adapter._upsert_item(_item(), adapter._get_config("ifood"), {"Authorization": "x"}, channel="ifood")
+
+    assert str(exc.value) == (
+        "O iFood recusou (HTTP 400): each value in optionIds must be a UUID (OptionGroupDto.optionIds)"
+    )

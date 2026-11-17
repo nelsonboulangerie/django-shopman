@@ -11,7 +11,7 @@ export function channelCatalogTabs(channel: string) {
     ...(channel === "ifood"
       ? [{ label: "Complementos", value: "addons", icon: "i-lucide-list-plus" }]
       : []),
-    { label: "Vínculos", value: "bindings", icon: "i-lucide-link-2" },
+    { label: "Itens no iFood", value: "bindings", icon: "i-lucide-link-2" },
   ] as { label: string; value: ChannelCatalogTab; icon: string }[];
 }
 

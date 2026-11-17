@@ -95,6 +95,36 @@ class IFoodConfirmationError(Exception):
     """O PATCH não pôde ser confirmado por uma leitura remota equivalente."""
 
 
+class IFoodRejected(Exception):
+    """O iFood recusou a escrita; a mensagem é a que ele mesmo devolveu."""
+
+
+def _raise_for_ifood(resp) -> None:
+    """Como ``raise_for_status``, mas com o motivo que o iFood escreveu.
+
+    O iFood responde ``{"error": {"message", "details": [{"field", "message"}]}}``;
+    a tela mostra isso ("image could not be processed, em ProductDto.imagePath")
+    em vez de "400 Client Error ... for url" com o endereço da API.
+    """
+    status = getattr(resp, "status_code", None)
+    if not isinstance(status, int):
+        resp.raise_for_status()
+        return
+    if status < 400:
+        return
+    try:
+        error = (resp.json() or {}).get("error") or {}
+    except Exception:  # silêncio-deliberado: corpo não-JSON cai na mensagem genérica.
+        error = {}
+    details = [d for d in (error.get("details") or []) if isinstance(d, dict)]
+    reason = "; ".join(
+        f"{d.get('message')} ({d.get('field')})" if d.get("field") else str(d.get("message"))
+        for d in details
+        if d.get("message")
+    ) or str(error.get("message") or "")
+    raise IFoodRejected(f"O iFood recusou (HTTP {status}): {reason or 'sem motivo informado'}")
+
+
 def _get_config(channel: str = "ifood") -> dict:
     from django.conf import settings
     from django.core.exceptions import AppRegistryNotReady
@@ -536,7 +566,7 @@ def _upsert_item(
         timeout=int(cfg.get("timeout") or 30),
     )
     _check_rate_limit(resp)
-    resp.raise_for_status()
+    _raise_for_ifood(resp)
     # O PUT grava o status na raiz, mas deixa o contexto DEFAULT AVAILABLE
     # (loja de teste, 17/11/2026: raiz UNAVAILABLE, contexto AVAILABLE logo
     # depois do PUT). O PATCH de status acerta os dois; sem ele, um item ou
@@ -693,7 +723,7 @@ def _patch_option(path: str, body: dict, cfg: dict, headers: dict) -> None:
     url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/options/{path}"
     resp = requests.patch(url, json=body, headers=headers, timeout=int(cfg.get("timeout") or 30))
     _check_rate_limit(resp)
-    resp.raise_for_status()
+    _raise_for_ifood(resp)
 
 
 def _addon_ids(addon, cfg: dict, channel: str) -> tuple[str, str]:
