@@ -43,6 +43,7 @@ import {
   hasChanges,
   type KDSBoardFilter,
 } from "~/presentation/board";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const route = useRoute();
 const stationRef = computed(() => String(route.params.ref || ""));
@@ -165,7 +166,7 @@ async function reopenFromHistory(pk: number) {
 const now = ref<Date | null>(null);
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 const clockTime = computed(() =>
-  now.value ? now.value.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "",
+  now.value ? formatClock(now.value) : "",
 );
 onMounted(() => {
   now.value = new Date();
@@ -180,7 +181,7 @@ onBeforeUnmount(() => {
 const lastRead = ref("");
 function markRead() {
   if (import.meta.client && view.value)
-    lastRead.value = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    lastRead.value = formatClock(new Date());
 }
 watch(view, markRead);
 onMounted(markRead);

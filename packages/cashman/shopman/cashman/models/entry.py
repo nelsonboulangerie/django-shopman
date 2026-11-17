@@ -255,7 +255,7 @@ class Entry(models.Model):
     def __str__(self) -> str:
         from shopman.utils.formatting import format_local
 
-        return f"{format_local(self.at, '%d/%m %H:%M')} {self.get_kind_display()} {self.amount_q:+d}"
+        return f"{format_local(self.at, '%d/%m {clock}')} {self.get_kind_display()} {self.amount_q:+d}"
 
     @classmethod
     def sign_allows(cls, kind: str, amount_q: int) -> bool:

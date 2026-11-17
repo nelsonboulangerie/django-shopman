@@ -20,9 +20,11 @@ na §8.
 
 **Premissas do dono que este mapa não reabre:**
 
-- Não existe entregador da casa: toda entrega dos canais próprios sai pela **TaOn**, inclusive
-  a cobrada na porta (valor e troco vão na observação da corrida). No iFood quem entrega é o
-  **iFood**, sempre (`deliveredBy=IFOOD`).
+- Quem leva a entrega dos canais próprios é escolhido por corrida: o serviço padrão do Admin
+  (hoje a **TaOn**) vem marcado, e os **entregadores da casa** livres são opção no mesmo gesto
+  (dono, 16/11/2026, DEV-2026-030; substitui a premissa de 13/10, "não existe entregador da
+  casa"). A cobrança na porta vai com quem levar. No iFood quem entrega é o **iFood**, sempre
+  (`deliveredBy=IFOOD`).
 - Encomenda: a casa dita o fluxo (cliente → recebimento → quando → produtos).
 - "Via Recibo primeiro, Nota depois": a NFC-e acompanha a **saída** da mercadoria.
 - Entrega sem CPF é aceita em todo canal e a nota sai presencial (ADR-035, 13/10/2026).

@@ -13,13 +13,18 @@ import {
   IFOOD_WIDGET_PANEL_MIN_HEIGHT,
   IFOOD_WIDGET_SCRIPT,
   ifoodWidgetInit,
+  ifoodWidgetVisible,
   ifoodWidgetLift,
   type IFoodWidgetState,
 } from "~/presentation/ifoodWidget";
 import type { IFoodWidgetProjection } from "~/types/ifoodWidget";
 
 interface IFoodWidgetApi {
-  init(config: { widgetId: string; merchantIds: string[] }): Promise<void>;
+  init(config: {
+    widgetId: string;
+    merchantIds: string[];
+    autoShow: boolean;
+  }): Promise<void>;
   show(): void;
   hide(): void;
   ready: Promise<void>;
@@ -74,6 +79,21 @@ function loadScript(): Promise<IFoodWidgetApi> {
 
 export function useIFoodWidget() {
   const state = useState<IFoodWidgetState>("ifood-widget-state", () => "off");
+  // Há pedido iFood aberto e ainda não entregue (o servidor diz, a cada evento
+  // de pedido) e o operador está no detalhe de um pedido iFood (a página diz).
+  const inProgress = useState<boolean>("ifood-widget-in-progress", () => false);
+  const viewing = useState<boolean>("ifood-widget-viewing-order", () => false);
+  const visible = computed(() =>
+    ifoodWidgetVisible(inProgress.value, viewing.value),
+  );
+
+  function applyVisibility() {
+    if (import.meta.server || state.value !== "ready") return;
+    const widget = window.iFoodWidget;
+    if (!widget) return;
+    if (visible.value) widget.show();
+    else widget.hide();
+  }
 
   async function start(): Promise<void> {
     if (import.meta.server || started) return started ?? undefined;
@@ -94,6 +114,7 @@ export function useIFoodWidget() {
         state.value = "off";
         return;
       }
+      inProgress.value = projection.has_order_in_progress;
       state.value = "loading";
       // O `init` do iFood pode não responder nunca (iframe que não sobe, widget
       // recusado): "Carregando" para sempre seria um rótulo que mente. Passado o
@@ -106,6 +127,7 @@ export function useIFoodWidget() {
         const widget = await loadScript();
         await widget.init(config);
         state.value = "ready";
+        applyVisibility();
         keepAboveTheBase();
       } catch (error) {
         console.error("[ifood-widget]", error);
@@ -117,5 +139,31 @@ export function useIFoodWidget() {
     return started;
   }
 
-  return { state: readonly(state), start };
+  /** Relê se há pedido iFood em andamento (a cada evento do canal de pedidos). */
+  async function refresh(): Promise<void> {
+    if (import.meta.server || state.value === "off") return;
+    try {
+      const projection = await $fetch<IFoodWidgetProjection>(
+        "/api/v1/backstage/ifood/widget/",
+      );
+      inProgress.value = projection.has_order_in_progress;
+    } catch {
+      // silêncio-deliberado: refresh oportunista; o próximo evento ou o poll relê.
+      // Falha de leitura não muda o que está na tela: na dúvida, o botão fica
+      // como estava, e o próximo evento ou o poll tenta de novo.
+    }
+  }
+
+  function setViewingIFoodOrder(value: boolean) {
+    viewing.value = value;
+  }
+
+  return {
+    state: readonly(state),
+    visible,
+    start,
+    refresh,
+    setViewingIFoodOrder,
+    applyVisibility,
+  };
 }

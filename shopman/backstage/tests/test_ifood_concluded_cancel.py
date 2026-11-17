@@ -18,6 +18,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from django.utils import timezone
 from shopman.orderman.models import Order, OrderItem
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.models import Shop
 from shopman.shop.services.operator_orders import operational_revision
@@ -86,7 +87,7 @@ def test_cancelar_concluido_no_ifood_recusa_com_a_hora_sem_consultar_o_ifood(cli
 
     assert resp.status_code == 409, resp.content
     body = resp.json()
-    hora = f"{timezone.localtime(CONCLUDED_AT):%H:%M}"
+    hora = format_clock(CONCLUDED_AT)
     assert body["detail"] == f"O iFood já concluiu este pedido às {hora}. Não dá mais para cancelar."
     assert body["outcome"] == "not_applied"
     fetch.assert_not_called()

@@ -19,6 +19,7 @@ from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from shopman.utils.formatting import format_local
 
 from shopman.backstage.api.marketing_cursor import (
     InvalidMarketingCursor,
@@ -122,9 +123,7 @@ def _notification_dict(
         "resolved_at": notification.resolved_at.isoformat() if notification.resolved_at else None,
         "version": notification.version,
         "created_at": notification.created_at.isoformat(),
-        "created_at_display": timezone.localtime(notification.created_at).strftime(
-            "%d/%m às %H:%M"
-        ),
+        "created_at_display": format_local(notification.created_at, "%d/%m às {clock}"),
         "actions": projection_data(actions),
     }
 

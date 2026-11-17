@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from shopman.utils.formatting import format_local
 
 
 def _parse(value) -> datetime | None:
@@ -105,7 +106,7 @@ def block_reason(order, *, now: datetime | None = None) -> str:
     if current is None:
         return "Não foi possível validar o horário atual para preparar o pedido iFood."
     if current < start:
-        display = timezone.localtime(start).strftime("%d/%m/%Y às %H:%M")
+        display = format_local(start, "%d/%m/%Y às {clock}")
         return f"Pedido agendado no iFood: aguarde o início do preparo em {display}."
     return ""
 

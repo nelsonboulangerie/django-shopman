@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from shopman.utils.formatting import format_local
+
 
 @dataclass(frozen=True)
 class ReceiptVerification:
@@ -120,6 +122,5 @@ def _shift_label(shift) -> str:
 
 
 def _local(quando) -> str:
-    from django.utils import timezone
 
-    return timezone.localtime(quando).strftime("%d/%m/%Y às %H:%M")
+    return format_local(quando, "%d/%m/%Y às {clock}")
