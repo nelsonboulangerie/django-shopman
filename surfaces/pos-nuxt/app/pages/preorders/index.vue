@@ -675,7 +675,7 @@ function refreshAll() {
             <NuxtButton
               v-if="fact.key === 'to_receive' && fact.urgent"
               color="neutral"
-              variant="link"
+              variant="ghost"
               :class="TO_RECEIVE_LINK_CLASS"
               :aria-label="`${fact.text}. Mostrar só essas.`"
               data-preorders-today-fact="to_receive"
@@ -697,7 +697,7 @@ function refreshAll() {
           <NuxtButton
             v-if="toReceive && periodHasToReceive"
             color="neutral"
-            variant="link"
+            variant="ghost"
             :class="TO_RECEIVE_LINK_CLASS"
             :aria-label="`${toReceive}. Mostrar só essas.`"
             data-preorders-to-receive
@@ -1001,7 +1001,7 @@ function refreshAll() {
                 <NuxtButton
                   v-if="dayToReceiveLine(weekDay)"
                   color="neutral"
-                  variant="link"
+                  variant="ghost"
                   :class="['-mt-1 justify-start px-3', TO_RECEIVE_LINK_CLASS]"
                   :aria-label="`${dayColumnTitle(weekDay)}: ${dayToReceiveLine(weekDay)}. Mostrar só essas.`"
                   data-week-day-to-receive
