@@ -597,6 +597,7 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
   {
     "timestamp": "2026-04-01T14:30:00Z",
     "actor": "operador@loja.com",
+    "approved_by": "gerente",
     "reason": "Cliente insatisfeito",
     "type": "partial",
     "items": [
@@ -609,6 +610,12 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
   }
 ]
 ```
+
+Quem registra é o Gestor (`POST /api/v1/backstage/orders/<ref>/return/`, prévia em
+`GET .../return/preview/`), sempre com o PIN de um Gerente escolhido da lista:
+`approved_by` é o `username` verificado de quem assinou (vazio nos registros anteriores
+a 17/11/2026). A quantidade de uma linha nunca passa do que ainda não voltou nas
+devoluções anteriores (`handlers.returns.returned_qty_by_line`).
 
 `stock_receipt_version=1` identifica devoluções criadas pelo protocolo com recibo local
 atômico. `stock_processed` é gravado pelo ReturnHandler na mesma transação dos Moves,
