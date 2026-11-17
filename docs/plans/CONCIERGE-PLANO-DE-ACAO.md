@@ -165,27 +165,48 @@ Compromisso: DEV-2026-029.
 
 ### WP-03 · Atende sem chave e só manda texto redigido
 
-- **Objetivo:** a Concierge responde pelo caminho sem modelo quando não há conexão de IA ou o freio cortou, e o que vai ao modelo de leitura sai redigido.
+- **Objetivo:** a Concierge responde pelo caminho sem modelo quando não há conexão de IA ou o freio cortou, e tudo que vai a um provedor com mensagem de cliente (leitura de partes, Jev, pré-rótulo) sai redigido, de forma que a frase pública de `/privacidade` seja verdade.
+- **A frase que tem de ficar verdadeira** (aprovada pelo dono em 16/11, PR #2520, que só entra depois deste WP; dono: "precisa ser feito conforme a descrição"): *"ajuda o atendimento automático do WhatsApp a entender a sua mensagem. Recebe só o texto da sua mensagem. Nome, documento, e-mail, telefone, endereço, pagamento, alergia ou doença que você escrever não são enviados: a loja apaga tudo isso do texto antes."* Vale para os três propósitos que levam texto de cliente a um leitor: `intents` (leitura de partes), `decision` (Jev, por `triage.jev_scores`) e `labeling` (pré-rótulo, por `MessageIntentSample.redacted_text`).
 - **Depende de:** WP-02 (linha de base). Convive com o WP-01 em qualquer ordem.
-- **Arquivos:** `shopman/storefront/concierge/service.py` (`disabled_reason`), `shopman/storefront/concierge/intents.py` (pedido da leitura), `shopman/storefront/checks.py`, `shopman/storefront/management/commands/concierge_check.py`, `shopman/storefront/tests/test_concierge_intents.py`, `shopman/storefront/tests/test_concierge_webhook.py`, `shopman/storefront/tests/test_concierge_sem_chave.py` (novo), `docs/guides/whatsapp-concierge.md`.
-- **Fora do escopo:** `triage.py`, `handoff.py`, `agent.py`, `shopman/shop/ai.py`, o cofre de pseudônimos.
-- **Pronto quando:** `pytest shopman/storefront/tests/test_concierge_sem_chave.py` verde com: (1) turno inteiro sem `AIConnection` responde cortesia e pergunta de produto, e nenhum cliente de modelo é criado; (2) para falas com CPF, telefone, e-mail, cartão, endereço, "sou alérgica a X" e "minha filha de 6 anos", o pedido capturado do cliente falso não contém nenhum desses trechos; (3) "tem croissant? minha filha é alérgica a leite" ainda recebe o aviso de alérgenos certo, porque o executor lê o texto original. Placar gratuito igual ou melhor que a linha de base (partes 67/85, várias partes 12/16, memória 47/47).
+- **Arquivos:** `shopman/storefront/concierge/service.py` (`disabled_reason`), `shopman/storefront/concierge/intents.py` (pedido da leitura e nota de estado), `shopman/storefront/concierge/observation_privacy.py` (padrão de nome e nomes conhecidos), `shopman/storefront/models/intents.py` (`MessageIntentSample.redacted_text` passa o nome da conversa), `shopman/storefront/checks.py`, `shopman/storefront/management/commands/concierge_check.py`, `shopman/storefront/tests/test_concierge_intents.py`, `shopman/storefront/tests/test_concierge_observation.py`, `shopman/storefront/tests/test_concierge_webhook.py`, `shopman/storefront/tests/test_concierge_sem_chave.py` (novo), `docs/guides/whatsapp-concierge.md`.
+- **Fora do escopo:** `triage.py` (o Jev já chama `redact_observation_text`; o nome entra pelo redator, não pela triagem, porque o WP-04 edita `triage.py` na mesma onda), `handoff.py`, `agent.py`, `shopman/shop/ai.py`, `shopman/shop/privacy_inventory.py` e os testes dele (são do WP-10), o cofre de pseudônimos. O cartão da equipe continua lendo o nome: a categoria nova não entra em `_CARD_REDACTIONS`.
+- **Pronto quando:**
+  1. `pytest shopman/storefront/tests/test_concierge_sem_chave.py` verde com: (a) turno inteiro sem `AIConnection` responde cortesia e pergunta de produto, e nenhum cliente de modelo é criado; (b) para falas com **nome** ("Oi, aqui é a Maria Souza", "meu nome é", "sou a"), CPF, telefone, e-mail, cartão, endereço, "sou alérgica a X", doença e "minha filha de 6 anos", o pedido capturado do cliente falso da leitura **e** o texto que chega ao Jev não contêm nenhum desses trechos, nem o `customer_name` da conversa; (c) a nota de estado que vai à leitura não leva o número do pedido; (d) "tem croissant? minha filha é alérgica a leite" ainda recebe o aviso de alérgenos certo, porque o executor lê o texto original; (e) nome comum de produto ("pão Maria", "bolo de rolo") não é apagado.
+  2. Os dois testes de contrato do WP-10, `test_o_jev_nao_recebe_o_nome_que_o_cliente_escreve` e `test_a_leitura_nao_recebe_dado_pessoal` (em `shopman/shop/tests/test_privacy_inventory_ai.py`, branch `claude/concierge-wp10-privacidade-ia`), ficam verdes numa mesclagem local do seu branch com o dele, que NÃO se commita; a saída vai no PR. Se você redigir antes de `intents.read_with_model`, ajuste o ponto de captura do teste no PR #2520 (avise a sessão dele), sem afrouxar as asserções.
+  3. Placar gratuito igual ou melhor que a linha de base (partes 67/85, várias partes 12/16, memória 47/47).
 - **Cliente vê:** sim. A coorte (hoje o dono) volta a ser respondida mesmo sem chave.
 - **Tamanho:** M.
 
 ```text
-Tarefa: a Concierge não pode depender de chave de IA para existir, nem mandar texto cru ao modelo.
-Leia: docs/plans/CONCIERGE-PLANO-DE-ACAO.md (WP-03 e seção 2.1), CONCIERGE-ARQUITETURA-ALVO-V2.md
-seções 5.2 e 2.3 (modo de falha 10), ID3A-PLAN.md seção 9 (classes de dado), concierge/intents.py,
-concierge/observation_privacy.py, service.disabled_reason.
+Tarefa: a Concierge não pode depender de chave de IA para existir, e nada que vai a um leitor de
+IA pode levar dado pessoal do cliente. A frase pública de /privacidade, já aprovada pelo dono, tem
+de ficar verdadeira por construção.
+Leia: docs/plans/CONCIERGE-PLANO-DE-ACAO.md (WP-03, WP-10 e seção 2.1), CONCIERGE-ARQUITETURA-ALVO-V2.md
+seções 5.2 e 2.3 (modo de falha 10), ID3A-PLAN.md seção 9 (classes de dado), concierge/intents.py
+(build_request, read_with_model, run), concierge/observation_privacy.py, triage.jev_scores (só
+leitura), service.disabled_reason, a seção "Espera o WP-03" do PR #2520 e os dois testes de
+contrato em shopman/shop/tests/test_privacy_inventory_ai.py do branch claude/concierge-wp10-privacidade-ia.
 Faça:
 1. disabled_reason deixa de exigir conexão de IA. Sem conexão (ou com AINotConfigured do freio),
    o turno segue pelo caminho que já existe: porteiro, divisão local, executores, uma mensagem.
    concierge_check e os checks W022/W023 passam a AVISAR "sem leitura por modelo", sem bloquear.
-2. O texto e a nota de memória que vão à leitura saem redigidos por redact_observation_text
-   (documento, número longo, dado financeiro, endereço, saúde e alergia com detalhe, crença,
-   menor, contatos, link). O executor de cada ato trabalha sobre o texto ORIGINAL, que não sai.
-Não faça: tocar triage.py, handoff.py, agent.py, shop/ai.py; criar variável de ambiente (ADR-042).
+2. Nome, em duas redes, as duas dentro de observation_privacy.py:
+   a) padrão para o nome que o cliente escreve ("aqui é a", "meu nome é", "sou a/o", assinatura);
+   b) nomes conhecidos: o padrão não pega "Maria aqui" nem o nome solto, e o customer_name da
+      conversa pega. O Jev recebe só a fala (triage.jev_scores) e quem o chama é triage.py, que
+      está fora do escopo; então o redator passa a apagar também os nomes de um contextvar
+      (por exemplo observation_privacy.known_names), que service.run_turn define com o
+      customer_name no começo do turno e limpa no fim. O pré-rótulo
+      (MessageIntentSample.redacted_text) passa o nome da conversa da própria mensagem.
+   Achou caminho melhor que não toque triage.py? Use e explique no PR. Não apague nome de produto.
+3. Leitura: o texto e a nota de estado que vão à leitura saem redigidos por redact_observation_text;
+   a nota não leva número de pedido nem nome. O executor de cada ato trabalha sobre o texto
+   ORIGINAL, que não sai.
+4. Rode os dois testes de contrato do WP-10 numa mesclagem local com o branch dele (sem commitar)
+   e cole a saída no PR. Quando o seu PR entrar no main, avise a sessão do WP-10 para ela trazer
+   o main e enfileirar o #2520.
+Não faça: tocar triage.py, handoff.py, agent.py, shop/ai.py, privacy_inventory.py; criar variável
+de ambiente (ADR-042); afrouxar asserção de teste de contrato.
 Pronto: ver "Pronto quando" do WP-03. Mostre no PR a saída do placar antes e depois.
 Compromisso: DEV-2026-029.
 ```
@@ -356,7 +377,7 @@ Compromisso: DEV-2026-029.
 ### WP-10 · `/privacidade` declara quem recebe mensagem de cliente (E9 da ID3A)
 
 - **Objetivo:** o inventário de privacidade passa a ler as conexões de IA, e conexão liberada para mensagem de cliente sem operador declarado reprova no teste.
-- **Depende de:** nada.
+- **Depende de:** nada para escrever; para entrar no `main`, do WP-03, porque a frase aprovada pelo dono (16/11) só é verdade depois dele. O PR #2520 fica em rascunho com dois testes de contrato que reprovam até o WP-03 entrar.
 - **Arquivos:** `shopman/shop/privacy_inventory.py` e os testes dele.
 - **Fora do escopo:** o cofre de pseudônimos; qualquer arquivo de `shopman/storefront/concierge/`.
 - **Pronto quando:** teste novo prova que (1) conexão ativa com "pode receber mensagem de cliente" e sem operador declarado faz o teste falhar com o nome da conexão; (2) com a DeepSeek e a TypeSafe declaradas, `/privacidade` lista cada uma só quando uma rota de texto de cliente aponta para ela; (3) sem conexão liberada, a página não cita nenhuma. O texto novo de cada operador vai no PR para o aval do dono (é copy pública).

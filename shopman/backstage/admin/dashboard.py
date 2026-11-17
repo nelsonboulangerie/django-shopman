@@ -16,6 +16,7 @@ import logging
 from django.urls import reverse
 from django.utils.html import format_html
 from shopman.utils import table_badge
+from shopman.utils.formatting import format_local
 
 from shopman.backstage.admin.gates import can_open_changelist, can_open_view
 from shopman.backstage.projections.dashboard import build_dashboard
@@ -37,6 +38,8 @@ def _omotenashi_health() -> dict:
             OmotenashiCopy.history.order_by("-history_date")
             .values("key", "history_type", "history_date", "history_user__username")[:5]
         )
+        for change in recent_changes:
+            change["history_date_display"] = format_local(change["history_date"], "%d/%m {clock}")
     except Exception:
         logger.debug("omotenashi_health_query_failed", exc_info=True)
         active_overrides = 0

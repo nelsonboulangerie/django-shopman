@@ -6,6 +6,7 @@ import type {
   QCGradeProjection,
   QCOrderCardProjection,
 } from "~/types/production";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 export interface QualityGate {
   /** Fechados, sem revisão e sem exceção: o conjunto de UM ato. */
@@ -161,7 +162,11 @@ export function closersSummary(orders: QCOrderCardProjection[]): {
   const last = times[times.length - 1] ?? "";
   return {
     names: names.join(" · "),
-    window: !first ? "" : first === last ? `às ${first}` : `entre ${first} e ${last}`,
+    window: !first
+      ? ""
+      : first === last
+        ? `às ${formatClock(first)}`
+        : `entre ${formatClock(first)} e ${formatClock(last)}`,
   };
 }
 

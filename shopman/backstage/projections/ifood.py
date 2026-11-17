@@ -1,5 +1,6 @@
 """Operator-facing iFood facts, without creating local payment or cancellation effects."""
 
+from shopman.utils.formatting import format_clock, format_local
 from shopman.utils.monetary import format_money
 
 
@@ -199,7 +200,7 @@ def operation_summary(order) -> tuple[str, ...]:
             lines.append({"MERCHANT": "Entrega própria da loja"}.get(provider, "Responsável pela entrega não informado pelo iFood"))
     takeout = _takeout_local(order)
     if takeout is not None:
-        lines.append(f"Retirada prevista: {takeout.strftime('%d/%m/%Y às %H:%M')}")
+        lines.append(f"Retirada prevista: {format_local(takeout, '%d/%m/%Y às {clock}')}")
     if str(facts.get("order_timing") or "").upper() == "SCHEDULED":
         lines.append("Pedido agendado no iFood")
         raw_schedule = facts.get("schedule")
@@ -211,7 +212,7 @@ def operation_summary(order) -> tuple[str, ...]:
             except (ValueError, TypeError):
                 dt = None
             if dt is not None and timezone.is_aware(dt):
-                lines.append(f"{label}: {timezone.localtime(dt).strftime('%d/%m/%Y às %H:%M')}")
+                lines.append(f"{label}: {format_local(dt, '%d/%m/%Y às {clock}')}")
         reason = ifood_schedule.block_reason(order)
         if reason:
             lines.append(reason)
@@ -400,7 +401,7 @@ def schedule_label(order) -> str:
         from django.utils import timezone
 
         day = "" if takeout.date() == timezone.localdate() else f" {takeout:%d/%m}"
-        return f"Retirada{day} às {takeout:%H:%M}"
+        return f"Retirada{day} às {format_clock(takeout)}"
 
     from django.utils import timezone
     from django.utils.dateparse import parse_datetime
@@ -419,7 +420,7 @@ def schedule_label(order) -> str:
         return "Agendado"
     today = timezone.localdate()
     day = "Hoje" if start.date() == today else start.strftime("%d/%m")
-    window = f"{start:%H:%M}–{end:%H:%M}" if end is not None else f"a partir de {start:%H:%M}"
+    window = f"{format_clock(start)}–{format_clock(end)}" if end is not None else f"a partir de {format_clock(start)}"
     return f"Agendado · {day} {window}"
 
 
