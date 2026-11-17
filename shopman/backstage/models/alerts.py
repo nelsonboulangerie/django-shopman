@@ -349,6 +349,10 @@ class OperatorAlert(models.Model):
         # marcado (encomenda paga, inclusive). Fechar não cancela nem remarca:
         # o aviso, um por pedido, é para alguém remarcar ou falar com o cliente.
         ("order_on_closed_day", "Pedido marcado para dia fechado"),
+        # O lote foi cancelado e a reserva de um pedido aceito (encomenda paga,
+        # inclusive) ficou sem lastro (#2547). Um aviso por pedido e item, com o
+        # que fazer: avisar o cliente, remarcar ou cancelar. Nada é automático.
+        ("order_promise_lost", "Pedido ficou sem a produção prometida"),
         # O freio da IA (ID3A, E1): a 80% do teto diário de gasto chega o aviso; no
         # teto, a IA paga para até o dia seguinte. O gasto de US$ 1.180 de 28/10 a
         # 11/11 aconteceu sem nenhum dos dois.
@@ -433,6 +437,7 @@ class OperatorAlert(models.Model):
         "ifood_poll_stale",
         "fiscal_return_note_due",
         "order_on_closed_day",
+        "order_promise_lost",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)
