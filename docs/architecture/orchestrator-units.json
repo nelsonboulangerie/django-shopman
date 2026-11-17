@@ -3334,6 +3334,45 @@
       "out_of_extraction": false
     },
     {
+      "id": "preorder.production-promise-lost",
+      "question": "Como o pedido aceito que perdeu a reserva no cancelamento de um lote vira evento do pedido e aviso no Gestor?",
+      "owner": "preorder.production-promise",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.production_promise:announce_lost_holds",
+      "authoritative_symbols": [
+        "shopman.shop.services.production_promise:announce_lost_holds"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/production_promise.py",
+          "symbols": [
+            "order_ref_from_hold_reference",
+            "_format_qty",
+            "_product_name",
+            "announce_lost_holds"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "offerman",
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/integration/test_production_void_announces_lost_order.py::test_cancelar_o_unico_lote_avisa_o_gestor_e_marca_o_pedido"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "stock.materialized-holds-receiver",
       "question": "Como reservas materializadas concluem pré-encomendas e avisam clientes sobre estoque chegado?",
       "owner": "stock.materialized-holds-receiver",
