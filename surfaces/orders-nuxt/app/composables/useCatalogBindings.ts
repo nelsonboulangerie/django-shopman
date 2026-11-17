@@ -140,7 +140,9 @@ export function useCatalogBindings(channel: string) {
       body,
       body.action === "map"
         ? "Coleção ligada à categoria confirmada no iFood."
-        : "Alteração confirmada pela leitura atual do iFood.",
+        : body.action === "create"
+          ? `Categoria ${String(body.name)} criada e confirmada pela leitura do iFood.`
+          : "Alteração confirmada pela leitura atual do iFood.",
     );
   }
   return {

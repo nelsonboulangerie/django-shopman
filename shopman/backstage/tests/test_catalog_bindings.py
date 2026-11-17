@@ -16,7 +16,7 @@ from django.db.models.deletion import ProtectedError
 from shopman.offerman.models import Collection, Listing, ListingItem, Product
 from shopman.orderman.models import Directive, IdempotencyKey
 
-from shopman.backstage.projections.catalog_bindings import build_catalog_binding_review
+from shopman.backstage.projections.catalog_bindings import build_catalog_binding_review, remote_category_revision
 from shopman.backstage.services import catalog_bindings as service
 from shopman.shop.models import CatalogBinding, CatalogSnapshot, CatalogSyncState, Channel
 
@@ -197,6 +197,7 @@ def test_category_edits_are_confirmed_by_the_same_remote_read(
         "catalog_ref": snapshot.catalog_ref,
         "category_ref": "category-A",
         "expected_actor_id": operator.pk,
+        "base_revision": remote_category_revision([remote]),
         **specific,
     }
     target = f"shopman.backstage.api.catalog_bindings.category_service.{action}_category"
@@ -209,7 +210,9 @@ def test_category_edits_are_confirmed_by_the_same_remote_read(
     assert response.status_code == 200, response.content
     assert response.json()["category"] == remote
     assert {key: mutate.call_args.kwargs[key] for key in expected} == expected
-    read.assert_called_once_with(channel_ref=channel.ref, catalog_ref=snapshot.catalog_ref)
+    # Uma leitura confere a revisão que a tela viu; a outra confirma a mudança.
+    assert read.call_count == 2
+    read.assert_called_with(channel_ref=channel.ref, catalog_ref=snapshot.catalog_ref)
 
 
 def test_collection_mapping_requires_a_remotely_confirmed_category(
@@ -225,6 +228,7 @@ def test_collection_mapping_requires_a_remotely_confirmed_category(
         "category_ref": "category-A",
         "collection_ref": collection.ref,
         "expected_actor_id": operator.pk,
+        "base_revision": remote_category_revision([{"id": "category-A", "name": "Padaria"}]),
     }
     with patch(
         "shopman.backstage.api.catalog_bindings.category_service.list_categories",
@@ -249,6 +253,7 @@ def test_category_change_rejects_a_snapshot_from_another_configured_store(
         "category_ref": "category-A",
         "name": "Padaria",
         "expected_actor_id": operator.pk,
+        "base_revision": "0" * 64,
     }
     with patch(
         "shopman.backstage.api.catalog_bindings.category_service.rename_category",
@@ -515,3 +520,66 @@ def test_postgres_parallel_confirmations_keep_binding_audit_and_receipts_consist
         assert audit['after']['sku'] == persisted.product.sku
         assert audit['after']['revision'] == persisted.revision
         assert audit['after']['snapshot_id'] == snapshot.pk
+
+
+def test_category_is_created_in_ifood_and_confirmed_by_reading_it_back(
+    client, channel, operator, snapshot, settings,
+):
+    settings.SHOPMAN_IFOOD = {"merchant_id": "merchant-A"}
+    client.force_login(operator)
+    before = [{"id": "category-A", "name": "Padaria", "index": 0, "status": "AVAILABLE"}]
+    created = {"id": "category-new", "name": "Teste Homologação", "index": 1, "status": "AVAILABLE"}
+    body = {
+        "action": "create",
+        "snapshot_id": snapshot.pk,
+        "catalog_ref": snapshot.catalog_ref,
+        "name": "  Teste   Homologação ",
+        "expected_actor_id": operator.pk,
+        "base_revision": remote_category_revision(before),
+    }
+    with patch(
+        "shopman.backstage.api.catalog_bindings.category_service.create_category",
+        return_value={"id": "category-new"},
+    ) as create, patch(
+        "shopman.backstage.api.catalog_bindings.category_service.list_categories",
+        side_effect=[before, [*before, created]],
+    ):
+        response = post(client, channel, "categories", body)
+
+    assert response.status_code == 200, response.content
+    assert response.json()["category"] == created
+    assert create.call_args.kwargs == {
+        "channel_ref": channel.ref,
+        "catalog_ref": snapshot.catalog_ref,
+        "name": "Teste Homologação",
+        "status": "AVAILABLE",
+        "template": "DEFAULT",
+    }
+
+
+def test_category_change_is_refused_when_ifood_changed_since_the_read(
+    client, channel, operator, snapshot, settings,
+):
+    settings.SHOPMAN_IFOOD = {"merchant_id": "merchant-A"}
+    client.force_login(operator)
+    seen = [{"id": "category-A", "name": "Padaria", "index": 0, "status": "AVAILABLE"}]
+    now = [{"id": "category-A", "name": "Pães", "index": 0, "status": "AVAILABLE"}]
+    body = {
+        "action": "create",
+        "snapshot_id": snapshot.pk,
+        "catalog_ref": snapshot.catalog_ref,
+        "name": "Doces",
+        "expected_actor_id": operator.pk,
+        "base_revision": remote_category_revision(seen),
+    }
+    with patch(
+        "shopman.backstage.api.catalog_bindings.category_service.create_category",
+    ) as create, patch(
+        "shopman.backstage.api.catalog_bindings.category_service.list_categories",
+        return_value=now,
+    ):
+        response = post(client, channel, "categories", body)
+
+    assert response.status_code == 409
+    assert "mudaram" in response.json()["detail"]
+    create.assert_not_called()

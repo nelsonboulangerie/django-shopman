@@ -244,6 +244,7 @@ const phoneHeaderActions = computed(() => [
           :stale="stale"
           :change="changeCategory"
         />
+        <CatalogAddonManager v-if="channel === 'ifood'" :channel="channel" />
         <NuxtCollapsible>
           <NuxtButton
             icon="i-lucide-upload"
