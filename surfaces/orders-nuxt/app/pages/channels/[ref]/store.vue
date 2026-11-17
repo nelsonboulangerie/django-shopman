@@ -280,7 +280,10 @@ const phoneHeaderActions = computed(() => [
                     />
                   </p>
                   <p class="text-xs text-muted-foreground">
-                    {{ pause.origin_label }} · {{ pause.description }}
+                    {{ pause.origin_label
+                    }}<span v-if="pause.description && pause.description !== pause.origin_label">
+                      · {{ pause.description }}</span
+                    >
                   </p>
                   <p v-if="pauseListingNote(pause)" class="text-xs text-muted-foreground" data-ifood-pause-unlisted>
                     {{ pauseListingNote(pause) }}
