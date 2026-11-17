@@ -59,7 +59,7 @@ _VALUE_WORDS = {
 }
 #: Explicação curta da linha que confundiria sem ela.
 _DETAIL_HINTS = {
-    "status": "É o cadastro da loja no iFood. Se ela recebe pedido agora, quem diz é a Disponibilidade.",
+    "status": "É o cadastro da loja no iFood. Se ela recebe pedido agora, quem diz é a aba Agora.",
 }
 _OPERATION_WORDS = {"delivery": "Entrega", "takeout": "Retirada", "indoor": "No salão"}
 _CHANNEL_WORDS = {"ifood-app": "App do iFood", "IFOOD": "App do iFood"}

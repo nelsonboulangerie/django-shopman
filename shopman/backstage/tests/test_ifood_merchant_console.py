@@ -113,7 +113,7 @@ def test_detalhe_mostra_todos_os_campos_e_status_mostra_as_validacoes(fake):
     assert rows["Canal de venda"] == "App do iFood"
     assert rows["Ativo no iFood"] == "Sim"
     situation = next(row for row in projection.detail if row.label == "Situação")
-    assert situation.code == "DISABLED" and "Disponibilidade" in situation.hint
+    assert situation.code == "DISABLED" and "aba Agora" in situation.hint
     assert projection.available is False
     operation = projection.operations[0]
     assert (operation.state_label, operation.title) == ("Fechada", "Loja fechada")

@@ -179,7 +179,6 @@ export function hoursAlert(
       icon: "i-lucide-clock",
       title: `Horário gravado no iFood ${hours.written_at_display}`,
       description: `O iFood confirmou a gravação e leva alguns minutos para mostrar o horário novo${which}.`,
-      action: { label: "Gravar de novo", onSelect: onWrite },
     };
   }
   return {

@@ -142,6 +142,7 @@ describe("aviso do horário", () => {
     const alert = hoursAlert(week({ written_recently: true, written_at_display: "às 13h40" }), () => {})!;
     expect(alert.color).toBe("info");
     expect(alert.title).toBe("Horário gravado no iFood às 13h40");
+    expect(alert.action).toBeUndefined(); // nada a repetir: só o X
   });
   it("igual, sem grade ou sem resposta: nenhum aviso", () => {
     expect(hoursAlert(week({ matches: true }), () => {})).toBeNull();
