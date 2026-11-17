@@ -46,12 +46,18 @@ Exemplo com as portas do WP-G00 (Django `:8062`, loja `:3180`, Cozinha `:3183`, 
    ```bash
    createdb shopman_exc_g00
    .venv/bin/python manage.py migrate --noinput
-   .venv/bin/python manage.py seed --flush
+   SHOPMAN_STAGING_AUTOPILOT=true .venv/bin/python manage.py seed --flush   # loja aberta 24h
    .venv/bin/python manage.py runserver 127.0.0.1:8062 --noreload > /tmp/operador-django.log 2>&1 &
    .venv/bin/python manage.py process_directives --watch > /tmp/operador-worker.log 2>&1 &
    ```
 
    O log do `runserver` é onde a loja escreve o código de entrada: a suíte o lê de lá.
+
+   **Expediente.** A J1 pede retirada para hoje, então a loja tem de estar aberta agora.
+   O seed com `SHOPMAN_STAGING_AUTOPILOT=true` abre a loja 24h (é o único efeito dele no
+   seed); o `runserver` e o worker sobem SEM essa variável, senão o piloto automático
+   daria os passos que a jornada quer ver o Caixa dar. Sem isso, a suíte só passa no
+   horário real da casa e falha dizendo que a loja está fechada.
 
 3. **Loja e Cozinha compiladas** (`nuxt dev` recarrega sozinho e derruba jornada longa):
 
