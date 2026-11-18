@@ -104,7 +104,7 @@ def test_acceptance_prepares_and_consumes_stock_without_collecting_again(status)
     config = _external_config()
     with (
         patch.object(lifecycle.ChannelConfig, "for_channel", return_value=config),
-        patch.object(lifecycle, "_physical_work_deferred", return_value=False),
+        patch.object(lifecycle, "awaits_kitchen_release", return_value=False),
         patch.object(lifecycle, "_counter_handoff", return_value=False),
         patch.object(lifecycle, "_dispatch_physical_work", return_value=True) as kitchen,
         patch.object(lifecycle, "_mark_preparing_after_physical_work_dispatch") as preparing,

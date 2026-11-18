@@ -504,7 +504,7 @@ def _on_accepted(order, config: ChannelConfig) -> None:
     # Encomenda: pedido para data FUTURA confirma hoje, mas o trabalho físico
     # (KDS) e a baixa de estoque só disparam NA data — a directive é o
     # despertador. O pedido de sábado não pode ir pra cozinha na terça.
-    if _physical_work_deferred(order):
+    if awaits_kitchen_release(order):
         _schedule_preorder_activation(order)
         notification.send(order, "order_accepted")
         return
@@ -584,7 +584,7 @@ def _on_paid(order, config: ChannelConfig) -> None:
             )
         notification.send(order, "payment_confirmed")
         return
-    if _physical_work_deferred(order):
+    if awaits_kitchen_release(order):
         # Encomenda paga antes da data: a baixa e o KDS esperam o dia certo.
         _schedule_preorder_activation(order)
         notification.send(order, "payment_confirmed")
@@ -1034,7 +1034,7 @@ def _stock_fulfill_allowed(order, config: ChannelConfig) -> bool:
     return _payment_is_captured(order)
 
 
-def _physical_work_deferred(order) -> bool:
+def awaits_kitchen_release(order) -> bool:
     """True enquanto a encomenda não chegou à hora de ir para a Cozinha.
 
     Data FUTURA espera o dia. NO dia, a encomenda (``is_preorder`` gravado no
@@ -1187,7 +1187,7 @@ def activate_preorder(order, *, early: bool = False) -> None:
         return
     from shopman.shop.services.order_helpers import get_commitment_date
 
-    if _physical_work_deferred(order) and not (early and get_commitment_date(order) == timezone.localdate()):
+    if awaits_kitchen_release(order) and not (early and get_commitment_date(order) == timezone.localdate()):
         # Antes da hora nada dispara (``early`` antecipa só a HORA, no dia; outra
         # data segue esperando). Quem garante que o despertador toque de novo na
         # hora certa é o ``PreorderActivateHandler``: ele confere antes de chamar
@@ -1250,7 +1250,7 @@ def release_preorder_now(order) -> bool:
         return False
     if get_commitment_date(order) != timezone.localdate():
         return False
-    if not _physical_work_deferred(order):
+    if not awaits_kitchen_release(order):
         return False
     activate_preorder(order, early=True)
     order.refresh_from_db()
