@@ -324,3 +324,39 @@ export function gestorRoutePermission(path: string): { perm: string; what: strin
   );
   return hit ? { perm: hit.perm, what: hit.what } : null;
 }
+
+/** A recusa do detalhe do pedido: o que a tela diz e para onde leva. */
+export interface OrderDetailDenial {
+  title: string;
+  description: string;
+  back: { label: string; to: string };
+}
+
+/**
+ * O detalhe do pedido é de quem gerencia pedidos (`shop.manage_orders`, a régua de
+ * `OrderDetailView`). Quem só expede recebe os avisos de pedido no sino e, ao tocar,
+ * lia "Pedido não encontrado ou falha ao carregar": o pedido existe, a conta é que não
+ * abre esta tela (P1-20). A recusa diz por quê e devolve a pessoa ao lugar onde ela
+ * conduz o pedido. `code` é o código curto do pedido ("S84"), como no cabeçalho.
+ */
+export function orderDetailDenial(
+  code: string,
+  {
+    expeditesOnly = false,
+    landingPath = "/",
+  }: { expeditesOnly?: boolean; landingPath?: string } = {},
+): OrderDetailDenial {
+  const title = "Sua conta não abre o detalhe do pedido";
+  if (expeditesOnly)
+    return {
+      title,
+      description: `O detalhe é de quem gerencia pedidos. O pedido ${code} continua no painel da Saída, onde você marca a saída e a retirada.`,
+      back: { label: "Abrir a Saída", to: ORDERS_EXIT_POST },
+    };
+  return {
+    title,
+    description:
+      "O detalhe é de quem gerencia pedidos. Peça o acesso a um gerente.",
+    back: { label: "Voltar ao Gestor", to: landingPath },
+  };
+}

@@ -38,6 +38,47 @@ describe("useOrderDetail", () => {
     expect(useOrderDetail("WEB-1").order.value).toBeNull();
   });
 
+  // WP-G05 (P1-20): três recusas liam a mesma frase. O composable diz qual foi.
+  it("403 de permissão é `forbidden`; 404 é `notFound`; rede não é nenhum dos dois", () => {
+    env.fetchData.value = null;
+    env.fetchError.value = { statusCode: 403, data: { detail: "Você não tem permissão." } };
+    const denied = useOrderDetail("WEB-403");
+    expect([denied.forbidden.value, denied.notFound.value]).toEqual([true, false]);
+
+    env.fetchError.value = { statusCode: 404, data: { detail: "Pedido não encontrado." } };
+    const missing = useOrderDetail("WEB-404");
+    expect([missing.forbidden.value, missing.notFound.value]).toEqual([false, true]);
+
+    env.fetchError.value = { statusCode: 503 };
+    const offline = useOrderDetail("WEB-503");
+    expect([offline.forbidden.value, offline.notFound.value]).toEqual([false, false]);
+  });
+
+  it("estação travada e sessão caída não são falta de permissão", () => {
+    env.fetchData.value = null;
+    env.fetchError.value = { statusCode: 403, data: { error: { code: "station_locked" } } };
+    expect(useOrderDetail("WEB-LOCK").forbidden.value).toBe(false);
+    env.fetchError.value = { statusCode: 403, data: { error: { code: "not_authenticated" } } };
+    expect(useOrderDetail("WEB-OUT").forbidden.value).toBe(false);
+  });
+
+  // WP-G05 (P1-14): a DANFE no detalhe é o MESMO gesto do cartão do painel.
+  it("printDanfe pede a DANFE deste pedido ao servidor e relê o pedido", async () => {
+    env.fetchData.value = { order: { ref: "DLV-7", actions: [] }, device_agent: { can_print: false, reason: "Sem agente." } };
+    env.fetchMock.mockResolvedValueOnce({ via: "relay", reprint: false, target_label: "Balcão" });
+    const d = useOrderDetail("DLV-7");
+
+    expect(d.danfePrinting.value).toBe(false);
+    expect(await d.printDanfe()).toBe(true);
+
+    const [url, options] = env.fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe("/api/v1/backstage/orders/DLV-7/danfe-escpos/");
+    expect(options).toMatchObject({ method: "POST", body: { local_agent: false } });
+    expect(env.sonner.success).toHaveBeenCalledWith("DANFE do pedido DLV-7 enviada para a impressora de Balcão.");
+    expect(env.refresh).toHaveBeenCalled();
+    expect(d.danfePrinting.value).toBe(false);
+  });
+
   it("confirm posta em /orders/{ref}/confirm/ e reconcilia via refresh", async () => {
     env.fetchData.value = { order: { ref: "WEB-1", actions: fixtureActions({ can_confirm: true }) } };
     env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });

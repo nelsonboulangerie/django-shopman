@@ -30,6 +30,12 @@ const markNotPickedUp = vi.fn();
 const authorize = vi.fn();
 const managerChallenge = ref<{ code: string; message: string; action: string } | null>(null);
 const readError = ref<unknown>(null);
+// Por que a leitura falhou (P1-20): a conta não abre o detalhe, ou o pedido não existe.
+const readForbidden = ref(false);
+const readNotFound = ref(false);
+// A DANFE no detalhe (P1-14): o mesmo gesto do cartão do painel.
+const printDanfe = vi.fn();
+const danfePrinting = ref(false);
 // A impressora desta estação (a Via Pedido sai por ela; P2-19).
 const estacao = ref<{ can_print: boolean; agent_url?: string; token?: string; reason: string } | null>(null);
 
@@ -72,6 +78,10 @@ vi.stubGlobal("useOrderDetail", () => ({
   deviceAgent: computed(() => estacao.value),
   pending: ref(false),
   error: readError,
+  forbidden: readForbidden,
+  notFound: readNotFound,
+  printDanfe,
+  danfePrinting,
   refresh: vi.fn(),
   busy: ref(false),
   confirm: confirmFn,
@@ -96,6 +106,7 @@ vi.stubGlobal("useOrderDetail", () => ({
 }));
 
 const { default: OrderDetailPage } = await import("../../app/pages/[ref].vue");
+const { default: OperatorScreenState } = await import("../../../operator-kit/app/components/OperatorScreenState.vue");
 
 function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjection {
   return {
@@ -159,6 +170,12 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     customer_relay_expires_at: "",
     payment_link_notice: "",
     customer_profile: null,
+    pending: [],
+    cancelled_money: null,
+    danfe_printable: false,
+    danfe_printed: false,
+    danfe_state: "",
+    danfe_problem: "",
     revisions: {},
     actions: fixtureActions({ can_confirm: true, ...over }),
     ...over,
@@ -189,6 +206,9 @@ function profile(over: Partial<CustomerProfileProjection> = {}): CustomerProfile
 
 const stubs = {
   Icon: true,
+  OperatorCountChip: { props: ["count"], template: "<span data-count>{{ count }}</span>" },
+  // O estado da tela entra de verdade: a recusa do detalhe (P1-20) é a frase dele.
+  OperatorScreenState,
   // O cabeçalho de uma linha (G14) carrega a ação primária e o ⋯: os slots entram.
   OperatorPageHeader: { template: "<header><slot name='lead' /><slot name='status' /><slot name='actions' /><slot name='phone-actions' /></header>" },
   OperatorLiveStatus: true,
@@ -1062,12 +1082,20 @@ describe("detalhe do pedido: achados do beta 05/11", () => {
   });
 
   // GES-05 / GES-16: Pix vencido tinha só o botão morto; cancelar exigia achar o ⋯.
-  it("Pix vencido: o aviso do bloqueio traz Cancelar com o motivo já marcado", async () => {
+  // WP-G05 (P1-16): o fato é um só e mora na faixa "O que falta", com o gesto ao lado.
+  it("Pix vencido: a faixa do que falta traz Cancelar com o motivo já marcado", async () => {
     const w = abrir(order({
       status: "accepted", can_confirm: false, can_cancel: true, payment_lapsed: true,
-      advance_block_label: "Pix expirado", advance_block_reason: "gerado às 05:51 · expirou às 05:57",
+      advance_block_label: "Pix expirado", advance_block_reason: "gerado às 05h51 · expirou às 05h57",
+      pending: [{
+        key: "payment", tone: "error", label: "Pix expirado", reason: "Gerado às 05h51 · expirou às 05h57.",
+        actions: [{ ref: "cancel", label: "Cancelar pedido", enabled: true, reason: "", href: "" }],
+      }],
     }));
-    await w.get("[data-cancel-unpaid]").trigger("click");
+    // Um fato só: o aviso de bloqueio em vermelho deixou de existir à parte.
+    expect(w.findAll("[data-detail-block]")).toHaveLength(1);
+    expect(w.get('[data-pending="payment"]').text()).toContain("Pix expirado");
+    await w.get('[data-pending-action="cancel"]').trigger("click");
     await flushPromises();
     expect(w.get("order-reason-dialog-stub").attributes("initial-key")).toBe("payment_not_confirmed");
     // Loja online: não há lista viva de códigos para buscar (GES-06).
@@ -1092,8 +1120,11 @@ describe("atalhos gerais da nota do pedido", () => {
   it("explica o escopo sem inferir etiquetas pelo produto nem alterar o cadastro", () => {
     const tags = ["Bem assado", "Pouco assado"];
     const w = abrir(order({ kitchen_note_tags: tags }));
-    expect(w.get("[data-kitchen-note-tags-scope]").text()).toContain("Atalhos gerais do pedido");
-    expect(w.get("[data-kitchen-note-tags-scope]").text()).toContain("Use apenas os que se aplicam aos itens");
+    // P2-28: o rótulo diz o que o toque faz; a instrução ao operador saiu.
+    expect(w.get("[data-kitchen-note-tags-scope]").text()).toBe("Acrescentar à nota:");
+    expect(w.text()).not.toContain("Use apenas os que se aplicam");
+    expect(w.text()).not.toContain("KDS");
+    expect(w.text()).toContain("Aparece no ticket deste pedido, na tela da Cozinha.");
     expect(w.findAll("button").some(b => b.text() === "Bem assado")).toBe(true);
     expect(detalhe.value?.kitchen_note_tags).toEqual(tags);
     w.unmount();
@@ -1102,5 +1133,215 @@ describe("atalhos gerais da nota do pedido", () => {
     const w = abrir(order({ kitchen_note_tags: [] }));
     expect(w.find("[data-kitchen-note-tags-scope]").exists()).toBe(false);
     w.unmount();
+  });
+});
+
+
+// WP-G05: o detalhe abre com "O que falta neste pedido", e cada linha tem o gesto que a
+// página já sabia fazer. A faixa só aponta: quem decide o que falta é o servidor.
+describe("detalhe do pedido — o que falta, com o gesto ao lado", () => {
+  const line = (over: Partial<OperatorOrderProjection["pending"][number]>) => ({
+    key: "nfce", tone: "error", label: "NFC-e não autorizada", reason: "", actions: [], ...over,
+  });
+  const gesture = (ref: string, label: string, over: Record<string, unknown> = {}) => ({
+    ref, label, enabled: true, reason: "", href: "", ...over,
+  });
+  beforeEach(() => {
+    requeueFiscal.mockClear();
+    resendPaymentLink.mockClear();
+    printDanfe.mockClear();
+    danfePrinting.value = false;
+  });
+
+  it("sem pendência e sem dinheiro de cancelado, a faixa não existe", () => {
+    const w = abrir(order({ can_confirm: false }));
+    expect(w.find("[data-order-pending]").exists()).toBe(false);
+    w.unmount();
+  });
+
+  it("a nota recusada traz a resposta do emissor e o Reprocessar na própria linha (P1-13)", async () => {
+    const w = abrir(order({
+      status: "ready", can_confirm: false, fiscal_status: "failed", fiscal_status_label: "NFC-e não autorizada",
+      pending: [line({
+        reason: "Resposta do emissor: Rejeição 778: NCM inexistente. Se reprocessar não resolver, chame o contador.",
+        actions: [gesture("requeue-fiscal", "Reprocessar NFC-e")],
+      })],
+    }));
+    const row = w.get('[data-pending="nfce"]');
+    expect(row.attributes("data-pending-tone")).toBe("error");
+    expect(row.text()).toContain("Rejeição 778: NCM inexistente");
+    await w.get('[data-pending-action="requeue-fiscal"]').trigger("click");
+    expect(requeueFiscal).toHaveBeenCalledTimes(1);
+    w.unmount();
+  });
+
+  it("a DANFE que não saiu se imprime da faixa, e o ⋯ do pedido também imprime (P1-14)", async () => {
+    const w = abrir(order({
+      status: "dispatched", can_confirm: false, fulfillment_type: "delivery",
+      danfe_printable: true, danfe_printed: false, danfe_state: "not_printed",
+      danfe_problem: "A impressora de Balcão não buscou a DANFE. Confira se o computador dela está ligado.",
+      pending: [line({
+        key: "danfe", tone: "warning", label: "DANFE não impressa",
+        reason: "A impressora de Balcão não buscou a DANFE. Confira se o computador dela está ligado.",
+        actions: [gesture("print-danfe", "Imprimir DANFE")],
+      })],
+    }));
+    await w.get('[data-pending-action="print-danfe"]').trigger("click");
+    expect(printDanfe).toHaveBeenCalledTimes(1);
+    await w.get('[data-action="menu"]').trigger("click");
+    const item = w.findAll("button").find((button) => button.text().includes("Imprimir DANFE") && !button.attributes("data-pending-action"))!;
+    await item.trigger("click");
+    expect(printDanfe).toHaveBeenCalledTimes(2);
+    w.unmount();
+  });
+
+  it("DANFE já impressa: o ⋯ do pedido oferece Reimprimir, sem linha na faixa", async () => {
+    const w = abrir(order({
+      status: "ready", can_confirm: false, danfe_printable: true, danfe_printed: true, danfe_state: "printed",
+    }));
+    expect(w.find("[data-order-pending]").exists()).toBe(false);
+    await w.get('[data-action="menu"]').trigger("click");
+    expect(w.findAll("button").some((button) => button.text().includes("Reimprimir DANFE"))).toBe(true);
+    w.unmount();
+  });
+
+  it("sem nota, o ⋯ do pedido não oferece DANFE", async () => {
+    const w = abrir(order({ status: "ready", can_confirm: false }));
+    await w.get('[data-action="menu"]').trigger("click");
+    expect(w.findAll("button").some((button) => button.text().includes("DANFE"))).toBe(false);
+    w.unmount();
+  });
+
+  it("o link que pode não ter chegado se reenvia da faixa", async () => {
+    const w = abrir(order({
+      status: "accepted", can_confirm: false, payment_method: "link",
+      pending: [line({
+        key: "payment", tone: "warning", label: "Aguardando pagamento", reason: "O envio do link falhou. Reenvie o link.",
+        actions: [gesture("resend-payment-link", "Reenviar link de pagamento")],
+      })],
+    }));
+    await w.get('[data-pending-action="resend-payment-link"]').trigger("click");
+    expect(resendPaymentLink).toHaveBeenCalledTimes(1);
+    w.unmount();
+  });
+
+  it("espera saudável: sem cor de erro, e o botão travado guarda o nome do gesto (P2-26)", () => {
+    // Como o servidor manda: a ação travada guarda o nome do gesto, e o motivo vai em `reason`.
+    const actions = fixtureActions({ can_advance: true, next_action_label: "Iniciar preparo" }).map((action) =>
+      action.ref === "advance"
+        ? { ...action, enabled: false, reason: "Encomenda para uma data futura. O preparo abre no dia combinado." }
+        : action,
+    );
+    const w = abrir(order({
+      status: "accepted", can_confirm: false, can_advance: false, actions,
+      advance_block_label: "Aguardando o dia da encomenda…",
+      advance_block_reason: "Encomenda para uma data futura. O preparo abre no dia combinado.",
+      pending: [line({
+        key: "advance", tone: "info", label: "Aguardando o dia da encomenda",
+        reason: "Combinado: Amanhã · 08h às 10h. O preparo abre nesse dia.",
+      })],
+    }));
+    const row = w.get('[data-pending="advance"]');
+    expect(row.attributes("data-pending-tone")).toBe("info");
+    expect(row.text()).toContain("Combinado: Amanhã · 08h às 10h");
+    // O fato não se repete no rótulo do botão principal.
+    const blocked = w.get('[data-action="advance-blocked"]');
+    expect(blocked.text()).toContain("Iniciar preparo");
+    expect(blocked.text()).not.toContain("Aguardando");
+    expect(blocked.attributes("disabled")).toBeDefined();
+    w.unmount();
+  });
+
+  it("cancelado com estorno pedido, e depois estornado, com a frase que o cliente lê (P1-15, P2-25)", async () => {
+    const w = abrir(order({
+      status: "cancelled", can_confirm: false, payment_method_label: "Pix", payment_status_label: "Estorno pedido",
+      cancelled_money: { state: "refund_requested", label: "Estorno pedido", amount_display: "R$ 18,70", customer_line: "Estamos devolvendo os R$ 18,70 do seu Pix para a mesma conta.", settled: false },
+      pending: [line({
+        key: "refund", tone: "info", label: "Estorno pedido",
+        reason: "A devolução de R$ 18,70 foi pedida e ainda não foi confirmada. O cliente lê na loja: “Estamos devolvendo os R$ 18,70 do seu Pix para a mesma conta.”",
+      })],
+      actions: [],
+    }));
+    expect(w.get('[data-pending="refund"]').text()).toContain("Estorno pedido");
+    expect(w.get('[data-pending="refund"]').text()).toContain("Estamos devolvendo os R$ 18,70 do seu Pix para a mesma conta.");
+    expect(w.find("[data-order-money]").exists()).toBe(false);
+
+    detalhe.value = order({
+      status: "cancelled", can_confirm: false, payment_method_label: "Pix", payment_status_label: "Estornado",
+      cancelled_money: { state: "refunded", label: "Estornado", amount_display: "R$ 18,70", customer_line: "Devolvemos os R$ 18,70 do seu Pix para a mesma conta.", settled: true },
+      pending: [], actions: [],
+    });
+    await w.vm.$nextTick();
+    expect(w.find('[data-pending="refund"]').exists()).toBe(false);
+    const money = w.get("[data-order-money]");
+    expect(money.attributes("data-order-money-state")).toBe("refunded");
+    expect(money.text()).toContain("Dinheiro do pedido cancelado: Estornado");
+    expect(money.text()).toContain("O cliente lê na loja: “Devolvemos os R$ 18,70 do seu Pix para a mesma conta.”");
+    w.unmount();
+  });
+});
+
+// P1-20: quem só expede abre um pedido pelo sino. O servidor recusa o detalhe (403 de
+// permissão), e a tela dizia "Pedido não encontrado ou falha ao carregar".
+describe("detalhe do pedido — a leitura que falhou diz por quê", () => {
+  const sessao = (role: string) => vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { id: 1 }, surface_role: role }) }));
+  beforeEach(() => {
+    readForbidden.value = false;
+    readNotFound.value = false;
+    readError.value = null;
+    sessao("orders");
+  });
+  const semLeitura = () => {
+    detalhe.value = null;
+    return mount(OrderDetailPage, { global: { stubs, mocks: { $router: { go: vi.fn() } } } });
+  };
+
+  it("quem só expede lê por que não abre, e volta para a Saída", () => {
+    sessao("expedition");
+    readError.value = { statusCode: 403, data: { detail: "Sem permissão." } };
+    readForbidden.value = true;
+    const w = semLeitura();
+    try {
+      const denial = w.get("[data-order-forbidden]");
+      expect(denial.text()).toContain("Sua conta não abre o detalhe do pedido");
+      expect(denial.text()).toContain("O detalhe é de quem gerencia pedidos.");
+      expect(denial.text()).toContain("continua no painel da Saída, onde você marca a saída e a retirada.");
+      expect(denial.text()).toContain("Abrir a Saída");
+      expect(w.text()).not.toContain("não encontrado");
+      expect(w.find("[data-order-error]").exists()).toBe(false);
+    } finally { w.unmount(); }
+  });
+
+  it("outra conta sem a permissão: pede o acesso a um gerente", () => {
+    sessao("catalog");
+    readError.value = { statusCode: 403 };
+    readForbidden.value = true;
+    const w = semLeitura();
+    try {
+      expect(w.get("[data-order-forbidden]").text()).toContain("Peça o acesso a um gerente.");
+      expect(w.get("[data-order-forbidden]").text()).toContain("Voltar ao Gestor");
+    } finally { w.unmount(); }
+  });
+
+  it("pedido que não existe diz o código procurado", () => {
+    readError.value = { statusCode: 404 };
+    readNotFound.value = true;
+    const w = semLeitura();
+    try {
+      expect(w.find("[data-order-forbidden]").exists()).toBe(false);
+      expect(w.get("[data-order-error]").text()).toContain("Pedido não encontrado");
+      expect(w.get("[data-order-error]").text()).toContain("Não existe pedido com o código WEB-1.");
+    } finally { w.unmount(); }
+  });
+
+  it("falha de rede não é pedido inexistente", () => {
+    readError.value = { statusCode: 503 };
+    const w = semLeitura();
+    try {
+      const failure = w.get("[data-order-error]").text();
+      expect(failure).toContain("Não foi possível carregar o pedido");
+      expect(failure).toContain("A leitura falhou. Confira a conexão e toque em Atualizar, no menu do pedido.");
+      expect(failure).not.toContain("não encontrado");
+    } finally { w.unmount(); }
   });
 });

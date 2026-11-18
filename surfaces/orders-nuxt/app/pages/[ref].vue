@@ -4,10 +4,15 @@ import OrderIFoodNegotiations from "~/components/OrderIFoodNegotiations.vue";
 import ActionList from "~/components/ActionList.vue";
 import OrderIFoodSummary from "~/components/OrderIFoodSummary.vue";
 import OrderNotificationReceipts from "~/components/OrderNotificationReceipts.vue";
+import OrderDetailPending from "~/components/OrderDetailPending.vue";
+import { useGestorAccess } from "~/composables/useGestorAccess";
+import { orderDetailDenial } from "~/presentation/gestorSections";
+import { danfeLine } from "~/presentation/danfe";
 // Detalhe do pedido no GESTOR. As seções (resumo, cliente, nota fiscal, itens,
 // observação, nota da cozinha, histórico) são do `OperatorOrderDetail` do kit — a
 // MESMA tela do detalhe da encomenda no PDV (decisão do dono, 28/09/2026). Aqui
-// fica só o que é do Gestor: a barra de ações do fluxo, o iFood, o entregador, o
+// fica só o que é do Gestor: a faixa "O que falta neste pedido" (acima do kit), a barra
+// de ações do fluxo, o iFood, o entregador, o
 // editor da nota da cozinha e os diálogos. Lê a projeção no contexto "orders"
 // (useOrderDetail); as ações vão pelo proxy do Django e a leitura se refaz.
 import {
@@ -71,7 +76,11 @@ const {
   deviceAgent,
   pending,
   error,
+  forbidden,
+  notFound,
   refresh,
+  printDanfe,
+  danfePrinting,
   busy,
   mutationError,
   confirm,
@@ -102,6 +111,29 @@ const {
   dismissManagerChallenge,
 } = useOrderDetail(orderRef.value);
 
+// "O que falta neste pedido" (WP-G05): a faixa só aponta; o gesto é o que a página já
+// tem. Cancelar a cobrança que venceu abre com o motivo marcado, como no cartão.
+function onPendingAction(ref_: string) {
+  if (ref_ === "requeue-fiscal") void requeueFiscal();
+  else if (ref_ === "resend-payment-link") void resendPaymentLink();
+  else if (ref_ === "print-danfe") void printDanfe();
+  else if (ref_ === "cancel")
+    void openDialog("cancel", {
+      reasonKey: order.value?.payment_lapsed ? PAYMENT_NOT_CONFIRMED : "",
+    });
+}
+// A DANFE no ⋯ do pedido (P1-14): imprimir e reimprimir, o mesmo gesto do cartão.
+const danfe = computed(() => (order.value ? danfeLine(order.value) : null));
+// Quem só expede abre o pedido pelo sino: a recusa diz por quê e onde ele conduz o
+// pedido (P1-20).
+const { expeditesOnly, landingPath } = useGestorAccess();
+const denial = computed(() =>
+  orderDetailDenial(code.value.code, {
+    expeditesOnly: expeditesOnly.value,
+    landingPath: landingPath.value,
+  }),
+);
+
 // Ouvidoria: o cliente avaliou mal e pediu para falar com o responsável. O caso fica
 // aberto no pedido até alguém marcar "Resolvido", com uma frase do que foi feito.
 const contactResolveOpen = ref(false);
@@ -115,7 +147,9 @@ const ticketPrinter = provideOrderTicketPrinter(deviceAgent);
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
 // Mantém o painel da corrida (entregador/status) vivo sem F5.
 // O push espera a rajada assentar: uma leitura por rajada, não uma por evento (GES-17).
-const pushRefresh = settledRefresh(() => refresh());
+// Conta que não abre o detalhe (403 de permissão): reler não concede nada, e o servidor
+// não precisa receber a mesma recusa a cada evento ou a cada 30 s.
+const pushRefresh = settledRefresh(() => (forbidden.value ? undefined : refresh()));
 onBeforeUnmount(() => pushRefresh.cancel());
 const { realtime } = useOrderEvents(orderRef.value, pushRefresh);
 
@@ -700,6 +734,21 @@ const detailMenuItems = computed(() => [
         },
       ]
     : []),
+  ...(danfe.value
+    ? [
+        {
+          label:
+            danfePrinting.value || danfe.value.sending
+              ? "Imprimindo…"
+              : danfe.value.action,
+          description: danfe.value.status,
+          icon: "i-lucide-printer",
+          "data-action": "print-danfe",
+          disabled: danfePrinting.value || danfe.value.sending,
+          onSelect: () => menuDo(printDanfe),
+        },
+      ]
+    : []),
   ...(order.value?.can_resend_payment_link
     ? [
         {
@@ -797,8 +846,10 @@ const primary = computed(() => {
           reason: "",
         }
       : {
+          // Travado, o botão continua com o nome do gesto: o motivo é um fato só e
+          // mora na faixa "O que falta neste pedido" (P1-16, P2-26).
           key: "advance" as const,
-          label: (o.advance_block_label || advance.label).replace(/…$/, ""),
+          label: advance.label,
           icon: "lucide:lock",
           enabled: false,
           reason: advance.reason,
@@ -885,7 +936,7 @@ const custodyLines = computed(() => {
   ].filter((line) => line.text);
 });
 // Pix ou link vencido: o avanço não destrava mais sozinho. O próximo passo vem
-// pronto no aviso do bloqueio: cancelar com o motivo já marcado.
+// pronto na faixa "O que falta": cancelar com o motivo já marcado.
 const cancelUnpaid = computed(() =>
   Boolean(order.value?.payment_lapsed && order.value?.can_cancel),
 );
@@ -901,26 +952,15 @@ watch(
   },
   { immediate: true },
 );
-// O trinco escrito na tela: o avanço travado ou o Aceitar travado pelo pagamento
-// (pedido novo esperando o Pix, com a hora do vencimento). O motivo do Aceitar
-// morava só no `title` do botão, que tablet e celular não mostram (beta 06/11,
-// PIXEXP-05).
-const lockShown = computed(() => {
-  const o = order.value;
-  if (!o?.advance_block_reason) return false;
-  const confirm = projectedAction("confirm");
-  return Boolean(
-    (advanceAction.value && !advanceAction.value.enabled) ||
-      (confirm && !confirm.enabled),
-  );
-});
+// O trinco do avanço (o pagamento que falta, o dia da encomenda, o lote) é linha da
+// faixa "O que falta neste pedido", escrito em toda largura; aqui fica o que é do
+// momento: o aceite do iFood, o prazo, o desfazer e o que saiu com o entregador.
 const stateInEveryWidth = computed(() =>
   Boolean(
     custodyLines.value.length ||
     acceptNotice.value ||
     deadlineText.value ||
-      undo.value ||
-      lockShown.value,
+      undo.value,
   ),
 );
 const BACK_VARIANTS = [
@@ -1390,6 +1430,29 @@ const outside = useOutsideStore(
         <NuxtSkeleton class="h-24 w-full" />
         <NuxtSkeleton class="h-64 w-full" />
       </div>
+      <!-- A conta não abre o detalhe (403 de permissão): quem só expede chega aqui pelo
+           sino. A recusa diz por quê e devolve a pessoa ao lugar onde ela conduz o
+           pedido, sem "tentar de novo" (P1-20). -->
+      <div
+        v-else-if="forbidden && !order"
+        class="grid flex-1 place-items-center"
+        data-order-forbidden
+      >
+        <OperatorScreenState
+          state="forbidden"
+          :title="denial.title"
+          :description="denial.description"
+        >
+          <template #actions>
+            <NuxtButton
+              :label="denial.back.label"
+              :to="denial.back.to"
+              color="neutral"
+              variant="outline"
+            />
+          </template>
+        </OperatorScreenState>
+      </div>
       <!-- `!stationLocked`: com a estação travada a leitura volta 403 e este aviso
          dizia "Pedido não encontrado", que é falso e assusta. Nesse estado quem
          fala é a identificação, que sobe por cima. -->
@@ -1398,13 +1461,30 @@ const outside = useOutsideStore(
         color="error"
         variant="subtle"
         icon="i-lucide-triangle-alert"
-        title="Não foi possível carregar o pedido"
+        :title="
+          !order && notFound
+            ? 'Pedido não encontrado'
+            : 'Não foi possível carregar o pedido'
+        "
         :description="
           order
             ? 'Mantivemos a última leitura e seu rascunho; atualize antes de confirmar ações.'
-            : 'Pedido não encontrado ou falha ao carregar.'
+            : notFound
+              ? `Não existe pedido com o código ${orderRef}.`
+              : 'A leitura falhou. Confira a conexão e toque em Atualizar, no menu do pedido.'
         "
         data-order-error
+      />
+
+      <!-- O que falta neste pedido: cada pendência com o gesto que resolve, acima do
+           detalhe do kit (WP-G05). Some sozinha quando nada falta. -->
+      <OrderDetailPending
+        v-if="order"
+        :pending="order.pending"
+        :money="order.cancelled_money"
+        :busy="busy"
+        :danfe-printing="danfePrinting"
+        @act="onPendingAction"
       />
 
       <OperatorOrderDetail
@@ -1438,7 +1518,8 @@ const outside = useOutsideStore(
         </template>
 
         <!-- O estado do momento, escrito: no celular as pílulas e o prazo (v3 (c)); em todo
-           tamanho, o "o sistema fez · desfazer" e o bloqueio do avanço com o motivo. -->
+           tamanho, o "o sistema fez · desfazer". O bloqueio do avanço mora na faixa
+           "O que falta neste pedido", acima. -->
         <template #actions>
           <section
             v-if="order.payment_method_label || stateInEveryWidth"
@@ -1527,34 +1608,6 @@ const outside = useOutsideStore(
               <!-- A saída tocada: o aviso diz o fato; o Desfazer mora no botão que a
                    fez (o primário do cabeçalho, a ação na base no celular). -->
             </NuxtAlert>
-            <NuxtAlert
-              v-if="lockShown"
-              color="error"
-              variant="subtle"
-              icon="i-lucide-lock"
-              :title="
-                order.advance_block_label.replace(/…$/, '') || 'Bloqueado'
-              "
-              :description="order.advance_block_reason"
-              :actions="
-                alertActions('error', cancelUnpaid
-                  ? [
-                      Object.assign(
-                        {
-                          icon: 'i-lucide-ban',
-                          label: order.cancel_requires_approval
-                            ? 'Cancelar pedido (pede gerente)'
-                            : 'Cancelar pedido',
-                          disabled: busy,
-                          onClick: () => openCancelUnpaid(),
-                        },
-                        { 'data-cancel-unpaid': '' },
-                      ),
-                    ]
-                  : [])
-              "
-              data-detail-block
-            />
             <ul
               v-if="custodyLines.length"
               class="flex flex-col gap-1 text-sm"
@@ -1628,7 +1681,7 @@ const outside = useOutsideStore(
             <div class="flex flex-col gap-2">
               <!-- one-tap tags (configuráveis no Admin) — anexam ao texto, sem duplicar -->
               <p v-if="noteTags.length" class="text-sm text-muted-foreground" data-kitchen-note-tags-scope>
-                Atalhos gerais do pedido. Use apenas os que se aplicam aos itens.
+                Acrescentar à nota:
               </p>
               <div v-if="noteTags.length" class="flex flex-wrap gap-1.5">
                 <NuxtButton
@@ -1644,7 +1697,7 @@ const outside = useOutsideStore(
               </div>
               <NuxtFormField
                 label="Nota para a cozinha"
-                description="Aparece no ticket da cozinha (KDS)."
+                description="Aparece no ticket deste pedido, na tela da Cozinha."
               >
                 <NuxtTextarea
                   id="order-notes"

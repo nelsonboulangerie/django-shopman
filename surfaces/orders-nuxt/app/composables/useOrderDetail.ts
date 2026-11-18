@@ -2,6 +2,11 @@ import { useReadMetadata } from "./useReadMetadata";
 import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { useOrderIntention } from "./useOrderIntention";
+import { useDanfePrint } from "./useDanfePrint";
+import {
+  httpError,
+  isForbiddenError,
+} from "../../../operator-kit/app/utils/httpError";
 // Order detail read-side. Reads the expanded operator projection (items, timeline,
 // notes, fiscal links) and exposes the full action set. Writes go through the django
 // proxy and reconcile via refresh. Mirrors useOrdersBoard's in-flight guard.
@@ -87,6 +92,24 @@ export function useOrderDetail(orderRef: string) {
 
   // A impressora desta estação, a mesma que o painel recebe (a Via Pedido sai por ela).
   const deviceAgent = computed(() => data.value?.device_agent ?? null);
+
+  // ── Por que a leitura falhou ───────────────────────────────────────────────
+  //
+  // Três recusas liam a mesma frase ("Pedido não encontrado ou falha ao carregar"):
+  // a conta que não abre o detalhe (403 de permissão: quem só expede chega aqui pelo
+  // sino), o pedido que não existe (404) e a rede. A tela diz qual foi (P1-20).
+  const forbidden = computed(
+    () => Boolean(error.value) && isForbiddenError(error.value),
+  );
+  const notFound = computed(
+    () => Boolean(error.value) && httpError(error.value).status === 404,
+  );
+
+  // A DANFE no detalhe (P1-14): o MESMO gesto do cartão do painel, que pede ao
+  // servidor a impressão (ou reimpressão) pela impressora do despacho.
+  const danfe = useDanfePrint(deviceAgent, () => refresh());
+  const printDanfe = () => danfe.printDanfe(orderRef);
+  const danfePrinting = computed(() => danfe.isPrinting(orderRef));
 
   const busy = ref(false);
   const mutationError = ref("");
@@ -429,7 +452,11 @@ export function useOrderDetail(orderRef: string) {
     deviceAgent,
     pending,
     error,
+    forbidden,
+    notFound,
     refresh,
+    printDanfe,
+    danfePrinting,
     busy,
     mutationError,
     confirm,
