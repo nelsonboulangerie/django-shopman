@@ -72,11 +72,12 @@ export interface PreorderDay {
   day_display: string;
   is_today: boolean;
   orders_count: number;
-  total_q: number;
-  total_display: string;
+  /** As SOMAS do dia vêm `null` para quem não audita o caixa (D4: contagem cega). */
+  total_q: number | null;
+  total_display: string | null;
   /** Soma dos saldos "a receber" do dia (sem conta da casa, sem "a conferir"). */
-  to_receive_q: number;
-  to_receive_display: string;
+  to_receive_q: number | null;
+  to_receive_display: string | null;
   orders: PreorderCard[];
 }
 
@@ -86,10 +87,11 @@ export interface PreorderListResponse {
   date_to: string;
   today: string;
   count: number;
-  total_q: number;
-  total_display: string;
-  to_receive_q: number;
-  to_receive_display: string;
+  /** Somas do período: `null` para quem não audita o caixa, como no dia. */
+  total_q: number | null;
+  total_display: string | null;
+  to_receive_q: number | null;
+  to_receive_display: string | null;
   days: PreorderDay[];
   /** O teto do lote da Via Pedido (servidor). */
   max_batch: number;

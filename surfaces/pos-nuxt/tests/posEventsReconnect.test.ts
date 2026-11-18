@@ -40,34 +40,41 @@ describe("usePosEvents: tempo real que reconecta", () => {
     const { realtime } = usePosEvents(onPush);
     mounted();
 
-    const [cash, tabs] = FakeEventSource.instances;
+    const [cash, tabs, stock] = FakeEventSource.instances;
     expect(cash!.url).toBe("/sse/cash");
     expect(tabs!.url).toBe("/sse/tabs");
+    expect(stock!.url).toBe("/sse/stock");
     cash!.open();
     tabs!.open();
+    stock!.open();
     expect(realtime.value).toBe("live");
     expect(onPush).not.toHaveBeenCalled();
 
     cash!.emit("backstage-cash-update");
     expect(onPush).toHaveBeenLastCalledWith(POS_TERMINAL_CHANNELS[0]);
+    // O aviso de estoque diz qual canal avisou: a tela relê só os selos.
+    stock!.emit("stock-update");
+    expect(onPush).toHaveBeenLastCalledWith(POS_TERMINAL_CHANNELS[2]);
 
-    // Um canal caído não devolve a tela ao poll enquanto o outro está de pé.
+    // Um canal caído não devolve a tela ao poll enquanto outro está de pé.
     cash!.failForGood();
     expect(realtime.value).toBe("live");
     tabs!.failForGood();
+    expect(realtime.value).toBe("live");
+    stock!.failForGood();
     expect(realtime.value).toBe("polling");
 
     await vi.advanceTimersByTimeAsync(2_000);
-    expect(FakeEventSource.instances).toHaveLength(4);
+    expect(FakeEventSource.instances).toHaveLength(6);
     // A reabertura do caixa cai de novo com 502: a espera dele dobra.
-    FakeEventSource.instances[2]!.failForGood();
+    FakeEventSource.instances[3]!.failForGood();
     await vi.advanceTimersByTimeAsync(3_999);
-    expect(FakeEventSource.instances).toHaveLength(4);
+    expect(FakeEventSource.instances).toHaveLength(6);
     await vi.advanceTimersByTimeAsync(1);
-    expect(FakeEventSource.instances).toHaveLength(5);
+    expect(FakeEventSource.instances).toHaveLength(7);
 
     onPush.mockClear();
-    FakeEventSource.instances[4]!.open();
+    FakeEventSource.instances[6]!.open();
     expect(realtime.value).toBe("live");
     expect(onPush).toHaveBeenCalledOnce();
     expect(onPush).toHaveBeenCalledWith(POS_TERMINAL_CHANNELS[0]);

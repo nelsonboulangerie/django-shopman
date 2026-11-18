@@ -1248,14 +1248,225 @@ def _archive_current_ride(block: dict) -> None:
             **({"final_value_q": block["final_value_q"]} if block.get("final_value_q") is not None else {}),
             **({"estimate": dict(block["estimate"])} if block.get("status") == "F" and block.get("estimate") else {}),
             **({"ride_orders": list(block["ride_orders"])} if block.get("ride_orders") else {}),
+            **({"reopens": list(block["reopens"])} if block.get("reopens") else {}),
         }
     )
     block["attempts"] = attempts
     for key in ("id_mch", "status", "status_at", "dispatched_at", "finished_at", "driver",
                 "tracking_url", "confirmation_code", "tracking_match", "final_value_q", "progress", "sync",
                 "door_charge_note",
-                "ride_orders"):
+                "ride_orders", "reopens", "last_provider_at"):
         block.pop(key, None)
+
+
+# ── Desistência do entregador: a TaOn reabre a MESMA corrida ─────────
+
+#: O que o entregador que saiu deixou no andamento: vai embora com ele.
+_DRIVER_PROGRESS_KEYS = ("accepted_at", "pickup_eta_at", "pickup_eta_minutes", "pickup_km",
+                         "near_pickup_at", "arrived_pickup_at", "cancelled_at", "cancelled_reason")
+
+_REOPEN_EVENT = "courier_ride_reopened"
+
+
+def provider_instant(value):
+    """Instante com fuso de um texto ISO, ou ``None`` (ilegível ou sem fuso não ordena nada)."""
+    from django.utils.dateparse import parse_datetime
+
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        moment = parse_datetime(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment is not None and moment.tzinfo is not None else None
+
+
+def _reopen(block: dict, *, at: str, source: str) -> str:
+    """O entregador saiu da corrida e a TaOn voltou a procurar: devolve o nome dele.
+
+    A corrida é a mesma (``id_mch``, paradas, custódia, número): só o entregador
+    e o que era dele saem. O aceite dele sai de ``status_at`` para o próximo
+    aceite registrar a própria hora, e fica guardado em ``reopens``. O link de
+    rastreio e o código da parada saem também: o entregador novo pode ter link
+    novo, e o próximo aceite busca de novo.
+    """
+    driver = block.get("driver") if isinstance(block.get("driver"), dict) else {}
+    name = str(driver.get("name") or "")
+    status_at = dict(block.get("status_at") or {})
+    accepted_at = status_at.pop("A", None)
+    status_at.pop("S", None)
+    entry = {"at": at, "driver": name, "source": source}
+    if accepted_at:
+        entry["accepted_at"] = accepted_at
+    block["reopens"] = [*list(block.get("reopens") or []), entry]
+    block["status_at"] = status_at
+    for key in ("driver", "tracking_url", "confirmation_code", "tracking_match"):
+        block.pop(key, None)
+    progress = {key: value for key, value in (block.get("progress") or {}).items() if key not in _DRIVER_PROGRESS_KEYS}
+    if progress:
+        block["progress"] = progress
+    else:
+        block.pop("progress", None)
+    return name
+
+
+def reopen_view(block: dict) -> dict:
+    """A desistência que ainda vale na tela: ``{"at", "driver"}`` (vazios quando não há).
+
+    Vale enquanto a TaOn procura outro entregador (D/G/P depois de uma
+    desistência). Aceita de novo, a corrida volta a ter dono e a frase some.
+    """
+    reopens = block.get("reopens") if isinstance(block.get("reopens"), list) else []
+    last = reopens[-1] if reopens and isinstance(reopens[-1], dict) else None
+    if last is None or not block.get("id_mch") or str(block.get("status") or "") not in ("D", "G", "P"):
+        return {"at": "", "driver": ""}
+    return {"at": str(last.get("at") or ""), "driver": str(last.get("driver") or "")}
+
+
+def record_reopen(order, *, at: str | None = None, source: str = "webhook") -> str:
+    """O entregador desistiu e a TaOn reabriu a corrida sozinha (``will_reopen``).
+
+    A doc da TaOn diz: com ``will_reopen``, "não abra outra solicitação". A
+    corrida continua a mesma e chamada: mantém o ``id_mch``, volta a procurar
+    (``D``), perde o entregador e grava ``reopens``. Não arquiva, não avisa
+    "chame de novo" e não devolve a custódia: o troco e a maquininha seguem
+    separados para o próximo entregador. Chamar de novo aqui seria uma segunda
+    corrida paga.
+
+    Devolve ``"applied"``, ``"noop"`` (a mesma desistência, de novo), ``"stale"``
+    (chegou fora de hora) ou vazio (o pedido não tem esta corrida).
+    """
+    ride_id = get_block(order).get("id_mch")
+    if not ride_id:
+        return ""
+    with transaction.atomic():
+        Order.objects.select_for_update().get(pk=order.pk)
+        order.refresh_from_db()
+        block = dict(get_block(order))
+        if block.get("id_mch") != ride_id:
+            return ""
+        previous = str(block.get("status") or "")
+        reopens = block.get("reopens") if isinstance(block.get("reopens"), list) else []
+        if at and reopens and isinstance(reopens[-1], dict) and reopens[-1].get("at") == at:
+            return "noop"
+        provider_at, last = provider_instant(at), provider_instant(block.get("last_provider_at"))
+        if previous in TERMINAL_STATUSES or block.get("dispatched_at") or (provider_at and last and provider_at < last):
+            # Depois da coleta ou do fim não há o que reabrir; aviso mais velho
+            # que o último aplicado chegou fora de ordem.
+            logger.info("courier_status_ignored order=%s id_mch=%s previous=%s received=C(will_reopen) source=%s",
+                        order.ref, ride_id, previous, source)
+            return "stale"
+        now_iso = timezone.now().isoformat()
+        name = _reopen(block, at=at or now_iso, source=source)
+        block.update(status="D", last_event_at=now_iso, last_source=source)
+        if provider_at:
+            block["last_provider_at"] = at
+        order.emit_event(event_type=_REOPEN_EVENT, actor=source, payload={"id_mch": ride_id, "driver": name})
+        _save_block(order, block, emit={"kind": "reopened", "status": "D"})
+    _forget_driver_caches(ride_id)
+    return "applied"
+
+
+def _forget_driver_caches(ride_id: str) -> None:
+    """A posição e os links em cache eram do entregador que saiu."""
+    cache.delete_many([f"courier:pos:{ride_id}", f"courier:tracking_links:{ride_id}"])
+
+
+#: Tipo existente (sem migração) e fora da resolução automática da corrida viva:
+#: o aviso de corrida retomada só sai quando o operador confere.
+_RESTORED_ALERT_TYPE = "integration_failed"
+
+_RESTORED_ALERT_MARKER = "constava como encerrada"
+
+
+def orders_with_archived_ride(ride_id: str) -> list:
+    """Pedidos ainda em andamento que têm esta corrida no histórico (``attempts``)."""
+    ride_id = str(ride_id or "")
+    if not ride_id:
+        return []
+    candidates = Order.objects.filter(status__in=RIDE_ORDER_STATUSES, data__courier__has_key="attempts").order_by("pk")
+    return [order for order in candidates
+            if any(isinstance(attempt, dict) and str(attempt.get("id_mch") or "") == ride_id
+                   for attempt in get_block(order).get("attempts") or [])]
+
+
+def archived_ride_ended_at(order, ride_id: str):
+    """Quando a corrida arquivada terminou (a hora da letra final; sem ela, a do arquivamento)."""
+    for attempt in reversed(get_block(order).get("attempts") or []):
+        if isinstance(attempt, dict) and str(attempt.get("id_mch") or "") == str(ride_id):
+            status_at = attempt.get("status_at") if isinstance(attempt.get("status_at"), dict) else {}
+            return provider_instant(status_at.get(str(attempt.get("status") or ""))) or provider_instant(attempt.get("ended_at"))
+    return None
+
+
+def restore_archived_ride(order, ride_id: str, *, source: str) -> str:
+    """A corrida que constava como encerrada (N/C) deu sinal de vida: volta a ser a corrida do pedido.
+
+    Quem chama já provou que o sinal é mais novo que o encerramento. Devolve
+    ``"restored"``, ``"live"`` (já é a corrida do pedido), ``"conflict"`` (o
+    pedido já tem outra corrida) ou vazio (não achou no histórico). Avisa o
+    operador nos dois casos que pedem conferência.
+    """
+    ride_id = str(ride_id)
+    with transaction.atomic():
+        Order.objects.select_for_update().get(pk=order.pk)
+        order.refresh_from_db()
+        block = dict(get_block(order))
+        if block.get("id_mch") == ride_id:
+            return "live"
+        attempts = [dict(attempt) for attempt in block.get("attempts") or [] if isinstance(attempt, dict)]
+        index = next((i for i in range(len(attempts) - 1, -1, -1) if str(attempts[i].get("id_mch") or "") == ride_id), None)
+        if index is None:
+            return ""
+        if block.get("id_mch") or order.status not in RIDE_ORDER_STATUSES:
+            outcome = "conflict"
+        else:
+            attempt = attempts.pop(index)
+            now_iso = timezone.now().isoformat()
+            status_at = {letter: moment for letter, moment in (attempt.get("status_at") or {}).items()
+                         if letter not in TERMINAL_STATUSES and letter not in ("A", "S")}
+            block.update(provider="machine", id_mch=ride_id, status="D", status_at=status_at or {"D": now_iso},
+                         requested_at=str(attempt.get("requested_at") or now_iso), last_event_at=now_iso, last_source=source)
+            if attempt.get("ride_orders"):
+                block["ride_orders"] = list(attempt["ride_orders"])
+            if attempt.get("reopens"):
+                block["reopens"] = list(attempt["reopens"])
+            if attempts:
+                block["attempts"] = attempts
+            else:
+                block.pop("attempts", None)
+            block.pop("error", None)
+            order.emit_event(event_type="courier_ride_restored", actor=source, payload={"id_mch": ride_id})
+            _save_block(order, block, emit={"kind": "restored", "status": "D"})
+            outcome = "restored"
+    _alert_ride_restored(order, ride_id, outcome)
+    return outcome
+
+
+def _alert_ride_restored(order, ride_id: str, outcome: str) -> None:
+    from shopman.shop.adapters import alert as alert_adapter
+    from shopman.shop.services.operator_orders import short_ref
+
+    letter = ride_letter(get_block(order).get("ride_number"))
+    code = short_ref(order.ref)
+    if outcome == "restored":
+        severity, message = "warning", (
+            f"A TaOn retomou a corrida {letter + ' ' if letter else ''}do pedido {code}, que {_RESTORED_ALERT_MARKER}. "
+            "Não chame outro entregador. Se o troco ou a maquininha voltaram para a casa, "
+            "separe de novo antes de entregar a sacola."
+        )
+    else:
+        severity, message = "critical", (
+            f"A TaOn deu notícia de uma corrida do pedido {code} que {_RESTORED_ALERT_MARKER}, e o pedido já tem outra. "
+            "Confira na central da TaOn para a casa não pagar duas corridas."
+        )
+    logger.warning("courier.archived_ride_alive order=%s id_mch=%s outcome=%s", order.ref, ride_id, outcome)
+    try:
+        if alert_adapter.recent_exists(_RESTORED_ALERT_TYPE, None, order_ref=order.ref, message_contains=_RESTORED_ALERT_MARKER):
+            return
+        alert_adapter.create(_RESTORED_ALERT_TYPE, severity, message, order_ref=order.ref)
+    except Exception:
+        logger.warning("courier.alert_failed order=%s", order.ref, exc_info=True)
 
 
 # ── Status (funil único: webhook + polling) ─────────────────────────
@@ -1263,8 +1474,35 @@ def _archive_current_ride(block: dict) -> None:
 _STATUS_EVENT = "courier_status"
 
 
+def _status_out_of_order(block: dict, status: str, *, source: str, at: str | None) -> bool:
+    """Esta letra chegou fora de ordem e não pode mexer na corrida?
+
+    A régua (:data:`_STATUS_RANK`) vale para as duas vias. Voltar atrás só é
+    verdade num caso: aceita (A/S) que volta a procurar (D/G/P/U) antes da
+    coleta, quando o entregador sai e a TaOn procura outro. Depois da coleta
+    nada volta: um ``A`` atrasado não desfaz a sacola na moto, nem devolve o
+    botão de cancelar. Entre avisos do webhook vale também a hora do evento
+    (``last_provider_at``): o mais velho que o último aplicado é atraso de
+    entrega, mesmo quando a letra é "maior".
+    """
+    previous = str(block.get("status") or "")
+    if previous in TERMINAL_STATUSES:
+        return True
+    if source == "webhook":
+        # Mais velho que o último aviso aplicado, ou que a hora em que a letra
+        # de agora aconteceu (a leitura pode ter chegado antes do aviso).
+        status_at = block.get("status_at") if isinstance(block.get("status_at"), dict) else {}
+        provider_at = provider_instant(at)
+        marks = [provider_instant(block.get("last_provider_at")), provider_instant(status_at.get(previous))]
+        if provider_at and any(mark and provider_at < mark for mark in marks):
+            return True
+    if _STATUS_RANK.get(status, 0) >= _STATUS_RANK.get(previous, 0):
+        return False
+    return _STATUS_RANK.get(previous, 0) != 1 or bool(block.get("dispatched_at"))
+
+
 def apply_status(order, machine_status: str, *, source: str, details: dict | None = None,
-                 at: str | None = None) -> None:
+                 at: str | None = None) -> str:
     """Persist the external fact once; every replay retries its local derivation.
 
     ``at`` is when the provider says the step happened (``status_at``); absent,
@@ -1272,12 +1510,16 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
 
     Enrichment uses the observed ride outside the lock. A replacement ride cannot
     adopt its response. A local custody refusal never rolls back the external fact.
+
+    Devolve ``"applied"``, ``"noop"`` (a mesma letra de novo), ``"stale"`` (letra
+    fora de ordem, recusada: ver :func:`_status_out_of_order`) ou vazio (o
+    pedido não tem esta corrida).
     """
     status = (machine_status or "").strip().upper()
     observed = dict(get_block(order))
     ride_id = observed.get("id_mch")
     if not status or not ride_id:
-        return
+        return ""
     enrichment = dict(observed)
     if status == "A" and observed.get("status") != status and not observed.get("driver"):
         _enrich_accepted(enrichment, details, order_ref=order.ref)
@@ -1285,21 +1527,33 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
         _enrich_finished(enrichment, details)
 
     failed_ride = False
+    outcome = "noop"
     with transaction.atomic():
         Order.objects.select_for_update().get(pk=order.pk)
         order.refresh_from_db()
         block = dict(get_block(order))
         if block.get("id_mch") != ride_id:
-            return
+            return ""
         previous = block.get("status")
-        if previous in TERMINAL_STATUSES and previous != status:
-            return
+        if previous != status and _status_out_of_order(block, status, source=source, at=at):
+            logger.info("courier_status_ignored order=%s id_mch=%s previous=%s received=%s source=%s",
+                        order.ref, ride_id, previous, status, source)
+            return "stale"
         if previous != status:
+            outcome = "applied"
             now_iso = timezone.now().isoformat()
             for key in ("driver", "tracking_url", "confirmation_code", "tracking_match", "final_value_q"):
                 if key in enrichment:
                     block[key] = enrichment[key]
+            went_back = _STATUS_RANK.get(status, 0) < _STATUS_RANK.get(str(previous or ""), 0)
+            if went_back:
+                # Aceita que voltou a procurar: o entregador saiu (a mesma
+                # desistência que o webhook traz com ``will_reopen``).
+                name = _reopen(block, at=at or now_iso, source=source)
+                order.emit_event(event_type=_REOPEN_EVENT, actor=source, payload={"id_mch": ride_id, "driver": name})
             block.update(status=status, last_event_at=now_iso, last_source=source)
+            if source == "webhook" and provider_instant(at):
+                block["last_provider_at"] = at
             # Cada letra com a hora em que chegou pela primeira vez (A aceita, S em
             # espera, E coletou, F finalizou): o B.I. mede daqui o tempo de chegada do
             # entregador. ``last_event_at`` só guarda a última.
@@ -1317,7 +1571,10 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
             failed_ride = status in ("N", "C")
             if failed_ride:
                 _archive_current_ride(block)
-            _save_block(order, block, emit={"kind": "ride_ended" if failed_ride else "status", "status": status})
+            kind = "ride_ended" if failed_ride else "reopened" if went_back else "status"
+            _save_block(order, block, emit={"kind": kind, "status": status})
+            if went_back:
+                _forget_driver_caches(ride_id)
     if failed_ride and not source.startswith("operator:"):
         _alert_ride_failed(order, status)
     if failed_ride and not observed.get("dispatched_at"):
@@ -1336,6 +1593,7 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
             # Coleta que chegou depois do cancelamento (a corrida não cancelou
             # a tempo): o mesmo aviso de "já coletou", uma vez por pedido.
             on_order_cancelled(order)
+    return outcome
 
 
 def recover_local_status(order, *, ride_id: str) -> None:
@@ -1605,11 +1863,52 @@ def _sync_alert_marker(ride_id: str) -> str:
 #: O que cada marco do progresso lido prova sobre a corrida, na ordem em que acontece.
 _PROGRESS_STEPS = (("accepted_at", "A"), ("picked_up_at", "E"), ("finished_at", "F"))
 
-#: Quão adiantada está cada letra (D/G/P, a procura, valem zero).
+#: Quão adiantada está cada letra (D/G/P/U, a procura, valem zero).
 _STATUS_RANK = {"A": 1, "S": 1, "E": 2, "F": 3, "N": 3, "C": 3}
 
 
-def statuses_from_reading(current: str | None, reported: str, progress: dict | None) -> list[tuple[str, str | None]]:
+def _last_reopen_at(block: dict) -> str:
+    reopens = block.get("reopens") if isinstance(block.get("reopens"), list) else []
+    return str(reopens[-1].get("at") or "") if reopens and isinstance(reopens[-1], dict) else ""
+
+
+def progress_since(progress: dict | None, since: str | None) -> dict:
+    """O andamento lido, sem o que é do entregador que desistiu.
+
+    A leitura pode seguir trazendo o aceite e a chegada de quem saiu da corrida.
+    Marco com hora até a desistência (``since``) não é do entregador de agora:
+    sai, e leva junto o que deriva dele (a previsão de chegada à loja).
+    """
+    from datetime import UTC
+
+    from django.utils.dateparse import parse_datetime
+
+    progress = dict(progress) if isinstance(progress, dict) else {}
+    cutoff = provider_instant(since)
+    if cutoff is None:
+        return progress
+    for key in ("accepted_at", "near_pickup_at", "arrived_pickup_at", "cancelled_at"):
+        if not progress.get(key):
+            continue
+        try:
+            moment = parse_datetime(str(progress[key]).replace("Z", "+00:00"))
+        except ValueError:
+            moment = None
+        if moment is not None and moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)  # os campos ``*_utc`` da listagem
+        # Hora ilegível não prova que o marco é do entregador de agora: sai.
+        if moment is None or moment <= cutoff:
+            progress.pop(key, None)
+    if not progress.get("accepted_at"):
+        for key in ("pickup_eta_at", "pickup_eta_minutes", "pickup_km"):
+            progress.pop(key, None)
+    if not progress.get("cancelled_at"):
+        progress.pop("cancelled_reason", None)
+    return progress
+
+
+def statuses_from_reading(current: str | None, reported: str, progress: dict | None, *,
+                          letter_only: bool = False) -> list[tuple[str, str | None]]:
     """As letras que uma leitura prova, em ordem, cada uma com a hora em que aconteceu.
 
     A letra que a central devolve pode ficar para trás do progresso da mesma
@@ -1619,18 +1918,29 @@ def statuses_from_reading(current: str | None, reported: str, progress: dict | N
     20:26, quando a letra mudou. Vale o que estiver mais adiante: um marco do
     progresso avança o status sozinho, e os marcos pulados entram no caminho
     (a coleta registra a cobrança que saiu com o entregador antes do fim).
+
+    Cancelada, só quando a letra lida é ``C``. Um ``cancelled_at`` no progresso
+    não prova: a desistência de um entregador entra em ``cancellation[]`` e a
+    TaOn segue procurando outro; concluir "cancelada" dali arquivava a corrida
+    viva e mandava chamar de novo (duas corridas pagas).
+
+    Uma letra sozinha (``letter_only``: a via que só devolve a letra) também
+    não prova que a corrida voltou atrás, porque a letra pode estar atrasada:
+    quem prova é a leitura completa, sem o aceite no andamento.
     """
     current = (current or "").strip().upper()
     reported = (reported or "").strip().upper()
-    if reported in ("N", "C"):
-        return [(reported, None)]
     progress = progress if isinstance(progress, dict) else {}
+    if reported == "C":
+        return [("C", str(progress["cancelled_at"]) if progress.get("cancelled_at") else None)]
+    if reported == "N":
+        return [("N", None)]
     floor = _STATUS_RANK.get(current, 0)
     steps = [(letter, str(progress[key])) for key, letter in _PROGRESS_STEPS
              if progress.get(key) and _STATUS_RANK[letter] > floor]
-    if progress.get("cancelled_at") and not progress.get("finished_at") and current not in TERMINAL_STATUSES:
-        return [("C", str(progress["cancelled_at"]))]
     reached = max((_STATUS_RANK[letter] for key, letter in _PROGRESS_STEPS if progress.get(key)), default=0)
+    if reported and _STATUS_RANK.get(reported, 0) < floor and letter_only:
+        return steps
     if reported and _STATUS_RANK.get(reported, 0) >= reached and all(letter != reported for letter, _ in steps):
         steps.append((reported, None))
     return steps
@@ -1650,10 +1960,16 @@ def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
     if not ride_id:
         return
     status = str(snapshot.get("status") or "")
-    for step, at in statuses_from_reading(get_block(order).get("status"), status, snapshot.get("progress")):
-        apply_status(order, step, source=source, details=snapshot, at=at)
+    # Depois de uma desistência, o que a leitura ainda traz do entregador que
+    # saiu não conta: nem avança a letra, nem volta para o andamento.
+    letter_only = snapshot.get("via") == "status" or "progress" not in snapshot
+    reading = progress_since(snapshot.get("progress"), _last_reopen_at(get_block(order)))
+    for step, at in statuses_from_reading(get_block(order).get("status"), status, reading, letter_only=letter_only):
+        apply_status(order, step, source=source, details={**snapshot, "progress": reading}, at=at)
     cache.delete(_sync_failures_key(ride_id))
     order.refresh_from_db()
+    # A própria leitura pode ter registrado a desistência (aceita que voltou a procurar).
+    reading = progress_since(snapshot.get("progress"), _last_reopen_at(get_block(order)))
     tracking = _tracking_retry(order.ref, get_block(order), ride_id, status)
 
     had_sync = False
@@ -1664,14 +1980,17 @@ def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
         if block.get("id_mch") == ride_id:
             had_sync = block.pop("sync", None) is not None
             changed = had_sync
-            fresh = {k: v for k, v in (snapshot.get("progress") or {}).items() if v not in (None, "")}
+            fresh = {k: v for k, v in reading.items() if v not in (None, "")}
             previous = dict(block.get("progress") or {})
             merged = {**previous, **fresh}
             if merged != previous:
                 block["progress"] = merged
                 changed = True
             driver = snapshot.get("driver")
-            if isinstance(driver, dict) and driver.get("name") and driver != block.get("driver"):
+            # Enquanto a TaOn procura (inclusive depois de uma desistência), o
+            # entregador que a leitura ainda traz não é o da corrida.
+            has_driver = _STATUS_RANK.get(str(block.get("status") or ""), 0) >= 1
+            if has_driver and isinstance(driver, dict) and driver.get("name") and driver != block.get("driver"):
                 block["driver"] = driver
                 changed = True
             final_value_q = snapshot.get("final_value_q")

@@ -49,7 +49,10 @@ def _check(client, pin: str, username: str = "joyce"):
 def test_pin_certo_responde_quem_assina(balcao):
     response = _check(balcao["client"], PIN)
     assert response.status_code == 200, response.content
-    assert response.json() == {"approved_by": "joyce"}
+    body = response.json()
+    assert body["approved_by"] == "joyce"
+    # O que sai do diálogo é o carimbo assinado, nunca o PIN (#2558).
+    assert body["token"] and PIN not in body["token"]
 
 
 def test_pin_errado_recusa_no_dialogo_e_conta_na_trava(balcao):
