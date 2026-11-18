@@ -1648,7 +1648,7 @@ useSeoMeta({
 
         <template v-else-if="checkout">
           <!-- Faltou estoque no envio: qual item, e o caminho para resolver. -->
-          <UiAlert v-if="stockRefusal" variant="warning" data-checkout-stock-refusal>
+          <UiAlert v-if="stockRefusal" variant="warning" data-checkout-stock-refusal data-focus-target="stock-refusal">
             <UiAlertTitle>{{ stockRefusal.message }}</UiAlertTitle>
             <UiAlertDescription>
               <p>Abra a sacola para ver o que dá para levar no lugar. O resto do pedido continua como você deixou.</p>
