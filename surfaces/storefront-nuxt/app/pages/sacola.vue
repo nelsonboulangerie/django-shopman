@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { cartBatchFloor, cartHoldBanner, holdBannerVariant, holdCountdown, lineHoldState, linePrice } from '~/presentation/cart'
+import { cartBatchFloor, cartHoldBanner, holdBannerVariant, holdCountdown, isOptimisticLine, lineHoldState, linePrice } from '~/presentation/cart'
+import { cartLinePromise, cartReadyLine } from '~/presentation/promise'
 import { metaForCartLine } from '~/composables/useCartState'
 import type { CartItemProjection } from '~/types/shopman'
 import { formatCount } from '~/utils/display'
@@ -57,6 +58,12 @@ const orderDate = computed(() => cartBatchFloor(cart.value.items)?.date || '')
 function holdFor (line: CartItemProjection) {
   return lineHoldState(line, orderDate.value)
 }
+
+// Para quando fica o pedido, dito uma vez no alto: com a casa fechada, o corte
+// do dia ou um item de fornada, a cliente sabe o dia antes do checkout. A linha
+// recém-adicionada, que ainda espera a resposta do servidor, não cala a frase
+// das outras.
+const readyLine = computed(() => cartReadyLine(cart.value.items.filter(line => !isOptimisticLine(line))))
 
 // Lixeira e "Usar N disponíveis" mostram que estão em andamento até a sacola
 // responder; a trava é por linha (remover A não trava B). A chave é a `line_id`:
@@ -128,6 +135,10 @@ useSeoMeta({
         <h1 class="shop-title">Sua sacola</h1>
         <p v-if="!cart.is_empty" class="mt-2 shop-muted">
           {{ `${formatCount(cart.items_count, 'item', 'itens')} · ${cart.grand_total_display}` }}
+        </p>
+        <p v-if="!cart.is_empty && readyLine" class="mt-1 flex items-start gap-1.5 shop-body" data-cart-ready-line>
+          <Icon name="lucide:clock" class="mt-0.5 size-4 shrink-0" />
+          {{ readyLine }}
         </p>
       </div>
 
@@ -224,14 +235,15 @@ useSeoMeta({
                       @click="removeLine(line)"
                     />
                   </div>
+                  <!-- O unitário que a cliente paga; com promoção do produto, o
+                       cheio vem riscado depois, com "antes" (como no cardápio). -->
                   <p class="mt-0.5 shop-meta" data-cart-line-price>
                     {{ line.qty }} ×
                     <template v-if="linePrice(line).original">
-                      <span class="line-through">{{ linePrice(line).original }}</span>
                       <span class="font-semibold text-foreground">{{ linePrice(line).current }}</span>
+                      cada, antes <span class="line-through">{{ linePrice(line).original }}</span>
                     </template>
-                    <template v-else>{{ linePrice(line).current }}</template>
-                    cada
+                    <template v-else>{{ linePrice(line).current }} cada</template>
                   </p>
                   <p v-if="line.discount_label" class="mt-0.5 text-xs font-semibold text-primary">{{ line.discount_label }}</p>
                   <p v-if="line.availability_warning && !holdFor(line)" class="mt-0.5 text-xs text-destructive">{{ line.availability_warning }}</p>
@@ -247,16 +259,23 @@ useSeoMeta({
                     </UiBadge>
                   </div>
 
+                  <!-- Quando ESTE item fica pronto: a mesma frase do card e do
+                       produto, escrita pelo servidor. Só a de fornada aparece na
+                       linha; pronto agora é o normal, e casa fechada é dito uma
+                       vez no alto da sacola. -->
+                  <p v-if="cartLinePromise(line.promise)" class="mt-2 flex items-start gap-1 shop-meta text-foreground" data-cart-line-promise>
+                    <Icon name="lucide:clock" class="mt-px size-3.5 shrink-0" />
+                    {{ cartLinePromise(line.promise) }}
+                  </p>
+
                   <template v-if="holdFor(line)">
-                    <div v-if="holdFor(line)!.kind === 'awaiting'" class="mt-2" data-cart-line-awaiting>
-                      <UiBadge variant="outline">
+                    <div v-if="holdFor(line)!.kind === 'awaiting'" :class="cartLinePromise(line.promise) ? 'mt-1' : 'mt-2'" data-cart-line-awaiting>
+                      <!-- O selo antigo só sobra quando a promessa não veio. -->
+                      <UiBadge v-if="!cartLinePromise(line.promise)" variant="outline" class="mb-1">
                         <Icon name="lucide:clock" class="mr-1 size-3.5" />
                         Lista de espera
                       </UiBadge>
-                      <p v-if="holdFor(line)!.plannedForNotice" class="mt-1 shop-meta text-foreground" data-cart-line-planned-for>
-                        {{ holdFor(line)!.plannedForNotice }}
-                      </p>
-                      <p class="mt-1 shop-meta">{{ cart.awaiting_confirmation_notice || 'Envie o pedido para garantir a sua prioridade.' }}</p>
+                      <p class="shop-meta">{{ cart.awaiting_confirmation_notice || 'Envie o pedido para garantir a sua prioridade.' }}</p>
                     </div>
                     <div v-else-if="holdFor(line)!.kind === 'ready'" class="mt-2" data-cart-line-ready>
                       <UiBadge variant="default">
@@ -295,7 +314,7 @@ useSeoMeta({
                       :subscribed="line.is_notify_subscribed"
                       compact
                     />
-                    <p class="ml-auto shop-price" :class="cart.summary_pending ? 'opacity-60' : ''">{{ line.total_display }}</p>
+                    <CartLineTotal :line="line" stacked class="ml-auto" :class="cart.summary_pending ? 'opacity-60' : ''" />
                   </div>
                   <p
                     v-if="availabilityCeiling(line) !== null"

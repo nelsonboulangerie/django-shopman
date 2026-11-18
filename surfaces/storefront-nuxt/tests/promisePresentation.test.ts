@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { ReadyPromise } from '~/types/shopman'
 import {
+  cartLinePromise,
+  cartReadyLine,
   inCartWhenLine,
   orderReadyLine,
   pickupStoreLines,
@@ -110,5 +112,50 @@ describe('orderReadyLine: o checkout diz quando o pedido fica pronto para retira
     expect(orderReadyLine([{ promise: READY }, { promise: null }])).toBe('')
     expect(orderReadyLine([])).toBe('')
     expect(orderReadyLine(null)).toBe('')
+  })
+})
+
+// WP-L03: a sacola fala a mesma promessa. A linha diz a fornada do item; o alto
+// da sacola diz para quando fica o pedido (P2-12: com a casa fechada a cliente
+// só descobria o "amanhã" no checkout).
+describe('cartLinePromise: a linha da sacola diz a fornada do item', () => {
+  it('o item de fornada leva a frase inteira do servidor', () => {
+    expect(cartLinePromise(TOMORROW)).toBe('Fica pronto amanhã, quarta, a partir das 15h30')
+    expect(cartLinePromise(LATER)).toBe('Fica pronto hoje às 15h')
+  })
+  it('pronto agora é o normal: sem frase', () => {
+    expect(cartLinePromise(READY)).toBe('')
+  })
+  it('casa fechada é fato da casa, dito uma vez no alto, não em cada linha', () => {
+    expect(cartLinePromise(CLOSED)).toBe('')
+  })
+  it('sem promessa, a linha não promete', () => {
+    expect(cartLinePromise(null)).toBe('')
+    expect(cartLinePromise(undefined)).toBe('')
+  })
+})
+
+describe('cartReadyLine: o alto da sacola diz para quando fica o pedido', () => {
+  it('tudo pronto agora não tem frase', () => {
+    expect(cartReadyLine([{ promise: READY }, { promise: READY }])).toBe('')
+  })
+  it('com a casa fechada, diz o dia e a hora antes do checkout', () => {
+    expect(cartReadyLine([{ promise: CLOSED }, { promise: CLOSED }]))
+      .toBe('Seu pedido fica pronto amanhã, quarta, a partir das 9h.')
+  })
+  it('o item mais tardio manda: o pedido só fica pronto inteiro', () => {
+    expect(cartReadyLine([{ promise: READY }, { promise: LATER }])).toBe('Seu pedido fica pronto hoje, a partir das 15h.')
+    expect(cartReadyLine([{ promise: CLOSED }, { promise: TOMORROW }]))
+      .toBe('Seu pedido fica pronto amanhã, quarta, a partir das 15h30.')
+    expect(cartReadyLine([{ promise: READY }, { promise: THURSDAY }]))
+      .toBe('Seu pedido fica pronto quinta, 19/11, a partir das 9h.')
+  })
+  it('uma linha sem promessa cala a frase, e sacola vazia também', () => {
+    expect(cartReadyLine([{ promise: CLOSED }, { promise: null }])).toBe('')
+    expect(cartReadyLine([])).toBe('')
+    expect(cartReadyLine(null)).toBe('')
+  })
+  it('o verbo é "fica pronto", nunca "sai"', () => {
+    expect(cartReadyLine([{ promise: TOMORROW }]).split(' ')).not.toContain('sai')
   })
 })
