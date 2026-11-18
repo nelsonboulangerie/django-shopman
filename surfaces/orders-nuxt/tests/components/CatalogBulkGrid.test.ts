@@ -218,3 +218,72 @@ describe("arquivamento no tabelão", () => {
     ]);
   });
 });
+
+describe("o Tabelão não perde edição", () => {
+  const close = (wrapper: ReturnType<typeof grid>) =>
+    wrapper
+      .findComponent({ name: "NuxtSlideover" })
+      .vm.$emit("update:open", false);
+
+  it("fechar sem alteração fecha direto, sem pergunta", async () => {
+    const wrapper = grid();
+    archiveDialog = mount(OperatorConfirmDialog, { attachTo: document.body });
+    close(wrapper);
+    await flushPromises();
+    expect(document.body.textContent).not.toContain("Fechar o Tabelão");
+    expect(wrapper.emitted("update:open")).toEqual([[false]]);
+  });
+
+  it("fechar com alteração pergunta; ficar mantém o rascunho, descartar fecha", async () => {
+    const wrapper = grid();
+    const inputs = wrapper.findAll("[data-cell$='|web|price']");
+    await inputs[0]!.setValue("7,50");
+    await inputs[1]!.setValue("8,25");
+    expect(wrapper.emitted("update:dirty")?.at(-1)).toEqual([2]);
+
+    archiveDialog = mount(OperatorConfirmDialog, { attachTo: document.body });
+    close(wrapper);
+    await flushPromises();
+    expect(document.body.textContent).toContain(
+      "Fechar o Tabelão sem salvar 2 alterações?",
+    );
+    expect(archiveDialog.get("[data-operator-confirm-act]").text()).toBe(
+      "Descartar 2 alterações",
+    );
+    expect(document.body.textContent).toContain("Continuar editando");
+
+    answerConfirm(false);
+    await flushPromises();
+    expect(wrapper.emitted("update:open")).toBeUndefined();
+    expect(wrapper.get("[data-cell='A|web|price']").attributes("value")).toBe(
+      "7,50",
+    );
+
+    close(wrapper);
+    await flushPromises();
+    await archiveDialog.get("[data-operator-confirm-act]").trigger("click");
+    await flushPromises();
+    expect(wrapper.emitted("update:open")).toEqual([[false]]);
+  });
+
+  it("marca a célula alterada, com descrição para leitor de tela", async () => {
+    const wrapper = grid();
+    expect(wrapper.find("[data-cell-changed]").exists()).toBe(false);
+    await wrapper.get("[data-cell='A|web|price']").setValue("7,50");
+
+    const marked = wrapper.get("[data-cell-changed='A|web']");
+    expect(marked.classes()).toContain("bg-warning/10");
+    expect(wrapper.find("[data-cell-changed='B|web']").exists()).toBe(false);
+    const describedBy = wrapper
+      .get("[data-cell='A|web|price']")
+      .attributes("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    expect(wrapper.get(`#${describedBy}`).text()).toBe(
+      "Alterado e ainda não salvo: Preço.",
+    );
+
+    await wrapper.get("[data-bulk-undo]").trigger("click");
+    expect(wrapper.find("[data-cell-changed]").exists()).toBe(false);
+    expect(wrapper.emitted("update:dirty")?.at(-1)).toEqual([0]);
+  });
+});

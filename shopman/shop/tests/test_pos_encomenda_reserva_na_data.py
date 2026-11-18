@@ -89,3 +89,50 @@ def test_pronto_de_hoje_nao_serve_encomenda_de_amanha(balcao, django_capture_on_
     assert holds, "a encomenda registra a demanda da data"
     assert all(h.quant is None for h in holds), "o pão do dia de hoje não é reservado para amanhã"
     assert {h.target_date for h in holds} == {_amanha()}
+
+
+def test_encomenda_acima_do_plano_grava_o_disponivel_real_e_avisa_a_producao(balcao, django_capture_on_commit_callbacks):  # noqa: F811
+    """#2559: a encomenda PDV-261116-K16 pediu 200 baguetes contra 22 planejadas.
+
+    A reserva ficou sem fornada, a decisão gravou ``available_qty 200`` e
+    ninguém na Produção soube. Agora a decisão diz o que tem lastro e o que é
+    demanda, e a Produção recebe o aviso com o pedido e os dois números.
+    """
+    from shopman.backstage.models import OperatorAlert
+
+    operator, shift = balcao
+    product = _croissant_do_dia()
+    stock.plan(quantity=Decimal("4"), product=product, target_date=_amanha(), position=_position(), reason="fornada")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        result = _close(operator, _payload(
+            shift, client_request_id="enc-acima-do-plano", delivery_date=_amanha().isoformat(),
+            items=[{"sku": "CR", "name": "Croissant", "qty": 10, "unit_price_q": 900}],
+        ))
+
+    order = Order.objects.get(ref=result.order_ref)
+    [decision] = [d for d in order.data["availability_decision"]["decisions"] if d["sku"] == "CR"]
+    demand = sum(h.quantity for h in _holds_do_pedido(order) if h.quant_id is None)
+    assert demand > 0, "o que passa do plano fica como demanda"
+    assert Decimal(str(decision["available_qty"])) == Decimal("4"), "o plano da data, não o pedido"
+    assert Decimal(str(decision["demand_qty"])) == demand
+    assert decision["reason_code"] == "demand_over_plan"
+
+    alert = OperatorAlert.objects.get(type="order_demand_over_plan", order_ref=order.ref)
+    assert alert.audience == "production"
+    day = _amanha().strftime("%d/%m")
+    assert f"10 Croissant para {day}, e o plano da data cobre 4" in alert.message
+    assert f"Planeje mais 6 para {day}" in alert.message
+
+
+def test_a_ressalva_da_encomenda_fala_de_plano_e_nao_de_balcao():
+    """#2559: "só 44 em estoque. A venda de balcão vale" numa encomenda para amanhã."""
+    from shopman.shop.services.pos import _availability_shortfall
+
+    text = _availability_shortfall({"available_qty": Decimal("22")}, requested_qty=Decimal("200"), target_date=_amanha())
+    assert text.startswith("200 pedidas, 22 planejadas para ")
+    assert "balcão" not in text and "estoque" not in text
+    assert "Produção é avisada" in text
+    # Hoje continua sendo o balcão.
+    hoje = _availability_shortfall({"available_qty": 2}, requested_qty=3, target_date=timezone.localdate())
+    assert "em estoque" in hoje

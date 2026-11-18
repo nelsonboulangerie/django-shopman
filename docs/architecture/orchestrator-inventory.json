@@ -1707,6 +1707,7 @@
             "get_availability",
             "get_availability_for_skus",
             "get_channel_scope",
+            "hold_backing",
             "hold_state",
             "hold_target_date",
             "is_cart_hold",
@@ -9110,16 +9111,20 @@
             "REASSIGNED",
             "REISSUED",
             "REVOKED",
+            "UNCLAIMED",
             "UNKNOWN"
           ]
         },
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_check",
             "_hash",
             "_live",
+            "claim",
             "close",
             "issue",
+            "release",
             "resolve",
             "revoke"
           ]
@@ -14255,6 +14260,32 @@
           "symbols": [
             "app_name",
             "urlpatterns"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/production_promise.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "preorder.production-promise-lost"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "EVENT_TYPE",
+            "OPEN_STATUSES",
+            "ORDER_REFERENCE_PREFIX",
+            "logger"
           ]
         }
       ]
