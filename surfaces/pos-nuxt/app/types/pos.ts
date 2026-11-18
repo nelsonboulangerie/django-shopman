@@ -661,15 +661,13 @@ export interface POSPriceWindowProjection {
   next_change_at: string;
 }
 
+/** Só CONTAGENS: o dinheiro do dia não viaja para o balcão (D4, contagem cega). */
 export interface POSShiftSummaryProjection {
   count: number;
-  total_display: string;
   pickup_count: number;
   delivery_count: number;
   last_ref: string;
-  last_total_display: string;
   cod_pending_count: number;
-  cod_pending_display: string;
 }
 
 export interface POSTabProjection {

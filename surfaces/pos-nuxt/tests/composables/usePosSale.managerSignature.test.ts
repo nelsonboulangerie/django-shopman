@@ -20,6 +20,8 @@ vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: 
 
 const GUARD_KEY = "shopman:pos:close-outcome-uncertain";
 const PIN = "1234";
+/** O carimbo que o diálogo devolve no lugar do PIN (#2558). */
+const TOKEN = "carimbo-assinado";
 
 let storageValues: Map<string, string>;
 /** Tudo o que a tela escreveu no `localStorage`, na ordem, inclusive o que já saiu. */
@@ -66,7 +68,7 @@ function router(closeReplies: Array<(body: Record<string, unknown>) => unknown>)
         },
       };
     }
-    if (String(path).includes("/manager-approval/check/")) return { ok: true };
+    if (String(path).includes("/manager-approval/check/")) return { approved_by: "joyce", token: TOKEN };
     if (String(path).includes("/sale/close/")) return closeReplies[closeIdx++]!(body);
     return {};
   });
@@ -149,7 +151,7 @@ describe("usePosSale — a assinatura do gerente vale para o retrato que ele viu
     const actionCall = vi.fn().mockImplementation(async (path: string, options?: { body?: Record<string, unknown> }) => {
       if (String(path).includes("/manager-approval/check/")) {
         await new Promise<void>((resolve) => { release = resolve; });
-        return { ok: true };
+        return { approved_by: "joyce", token: TOKEN };
       }
       return router([])(path, options);
     });
@@ -181,14 +183,22 @@ describe("usePosSale — o PIN do gerente nunca fica no navegador (P1-4)", () =>
     await closeOnce(h, actionCall);
 
     const [close] = bodiesTo(actionCall, "/sale/close/");
-    expect(close?.manager_approval).toEqual({ username: "joyce", pin: PIN });
+    // O carimbo do diálogo, preso ao que o gerente viu; o PIN não sai do diálogo.
+    expect(close?.manager_approval).toEqual({ token: TOKEN });
+    expect(JSON.stringify(close)).not.toContain(PIN);
+    const [check] = bodiesTo(actionCall, "/manager-approval/check/");
+    expect(check?.scope).toEqual({ tab_ref: "", discount_q: 600, account_over_q: 0 });
     // O guarda estava gravado durante a cobrança, e sem o PIN.
     expect(guardDuringClose).toContain("client_request_id");
     expect(guardDuringClose).not.toContain(PIN);
     expect(guardDuringClose).not.toContain("manager_approval");
+    expect(guardDuringClose).not.toContain(TOKEN);
     // Ele guarda o VALOR que o gerente vê ao reconferir, nada que autorize.
     expect(JSON.parse(guardDuringClose).approval).toMatchObject({ discount_q: 600, threshold_q: 500 });
-    for (const written of storageWrites) expect(written).not.toContain(PIN);
+    for (const written of storageWrites) {
+      expect(written).not.toContain(PIN);
+      expect(written).not.toContain(TOKEN);
+    }
     for (const body of [...bodiesTo(actionCall, "/tabs/save/"), ...bodiesTo(actionCall, "/sale/review/")]) {
       expect(body).not.toHaveProperty("manager_approval");
     }
@@ -213,7 +223,7 @@ describe("usePosSale — o PIN do gerente nunca fica no navegador (P1-4)", () =>
 
     await closeOnce(h, actionCall);
     const [first, second] = bodiesTo(actionCall, "/sale/close/");
-    expect(first?.manager_approval).toEqual({ username: "joyce", pin: PIN });
+    expect(first?.manager_approval).toEqual({ token: TOKEN });
     expect(second).not.toHaveProperty("manager_approval");
     h.handles.dispose();
   });
@@ -265,33 +275,64 @@ describe("usePosSale — a conferência da venda sem resposta pede o gerente de 
   });
 
   it("com a assinatura nova, reenvia o mesmo corpo com ela, e ela não volta ao disco", async () => {
-    storeMarker({ manual_discount: { type: "fixed", value: 30 } }, { discount_q: 3000, threshold_q: 500, reasons: [] });
+    storeMarker(
+      { tab_ref: "M7", manual_discount: { type: "fixed", value: 30 } },
+      { discount_q: 3000, threshold_q: 500, reasons: ["discount_over_threshold"] },
+    );
     const actionCall = router([() => ({ ok: true, order_ref: "PED-3" })]);
     const h = makeSale({ projection: freeCartProjection(), actionCall });
 
     expect(await h.sale.recheckUncertainClose({ username: "joyce", pin: PIN })).toBe("resolved");
     const [replay] = bodiesTo(actionCall, "/sale/close/");
-    expect(replay).toMatchObject({ client_request_id: "pos:incerta-1", manager_approval: { username: "joyce", pin: PIN } });
+    // O PIN vira carimbo no diálogo, preso à comanda e ao valor daquela venda.
+    const [check] = bodiesTo(actionCall, "/manager-approval/check/");
+    expect(check).toEqual({
+      manager_approval: { username: "joyce", pin: PIN },
+      scope: { tab_ref: "M7", discount_q: 3000, account_over_q: 0 },
+    });
+    expect(replay).toMatchObject({ client_request_id: "pos:incerta-1", manager_approval: { token: TOKEN } });
+    expect(JSON.stringify(replay)).not.toContain(PIN);
     expect(storageValues.get(GUARD_KEY)).toBeUndefined();
-    for (const written of storageWrites) expect(written).not.toContain(PIN);
+    for (const written of storageWrites) {
+      expect(written).not.toContain(PIN);
+      expect(written).not.toContain(TOKEN);
+    }
     expect(h.sale.closeRecheckApproval.value).toBeNull();
     h.handles.dispose();
   });
 
   it("o PIN recusado na conferência fica no diálogo, com a frase do servidor", async () => {
-    storeMarker({}, { discount_q: 3000, threshold_q: 500, reasons: [] });
+    storeMarker({}, { discount_q: 3000, threshold_q: 500, reasons: ["discount_over_threshold"] });
+    const refused = {
+      status: 422,
+      data: { error: { code: "manager_approval_invalid", message: "Aprovação gerencial inválida.", recovery: "Revise o gerente e o PIN." } },
+    };
+    const actionCall = vi.fn().mockImplementation(async (path: string, options?: { body?: Record<string, unknown> }) => {
+      if (String(path).includes("/manager-approval/check/")) throw refused;
+      return router([])(path, options);
+    });
+    const h = makeSale({ projection: freeCartProjection(), actionCall });
+
+    expect(await h.sale.recheckUncertainClose({ username: "joyce", pin: "0000" })).toBe("approval");
+    expect(h.sale.closeRecheckApprovalError.value).toBe("Revise o gerente e o PIN.");
+    expect(bodiesTo(actionCall, "/sale/close/")).toHaveLength(0);
+    h.handles.dispose();
+  });
+
+  it("o carimbo recusado no reenvio também volta ao diálogo", async () => {
+    storeMarker({}, { discount_q: 3000, threshold_q: 500, reasons: ["discount_over_threshold"] });
     const actionCall = router([
       () => {
         throw {
           status: 422,
-          data: { error: { code: "manager_approval_invalid", message: "Aprovação gerencial inválida.", recovery: "Revise o gerente e o PIN." } },
+          data: { error: { code: "manager_approval_invalid", message: "A aprovação do gerente não vale para esta venda.", recovery: "Peça a aprovação do gerente de novo." } },
         };
       },
     ]);
     const h = makeSale({ projection: freeCartProjection(), actionCall });
 
-    expect(await h.sale.recheckUncertainClose({ username: "joyce", pin: "0000" })).toBe("approval");
-    expect(h.sale.closeRecheckApprovalError.value).toBe("Revise o gerente e o PIN.");
+    expect(await h.sale.recheckUncertainClose({ username: "joyce", pin: PIN })).toBe("approval");
+    expect(h.sale.closeRecheckApprovalError.value).toBe("Peça a aprovação do gerente de novo.");
     h.handles.dispose();
   });
 

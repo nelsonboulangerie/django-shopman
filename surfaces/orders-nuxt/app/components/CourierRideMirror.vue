@@ -24,7 +24,7 @@ const showBags = computed(() => beforeHandoff(props.ride));
     <span class="grid size-8 shrink-0 place-items-center rounded-lg op-label font-bold" :style="{ background: tone.bg, color: tone.fg }">{{ ride.letter }}</span>
     <span class="min-w-0 flex-1">
       <span class="flex items-center gap-1.5 op-body font-semibold text-highlighted">
-        <NuxtIcon :name="line.icon" class="size-4 shrink-0 text-muted" :class="ride.state === 'searching' ? 'animate-pulse' : ''" />
+        <NuxtIcon :name="line.icon" class="size-4 shrink-0 text-muted" :class="ride.state === 'searching' || ride.state === 'reopened' ? 'animate-pulse' : ''" />
         <span class="truncate">{{ line.title }}</span>
       </span>
       <span class="flex flex-wrap items-center gap-x-1.5 op-micro text-muted">

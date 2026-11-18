@@ -26,6 +26,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Exists, F, Max, OuterRef, Q
 from django.utils import timezone
 
+from shopman.shop.ai import AINotConfigured
 from shopman.shop.models import (
     Conversation,
     ConversationBinding,
@@ -33,7 +34,7 @@ from shopman.shop.models import (
     OutboundAttempt,
 )
 
-from . import metrics
+from . import metrics, observation_privacy
 from .contracts import IdentityResolution, InboundEvent, TransportScope
 
 logger = logging.getLogger(__name__)
@@ -81,9 +82,10 @@ def operation_mode() -> str:
 def disabled_reason() -> str:
     """Por que o concierge não atende, ou vazio quando atende.
 
-    Duas chaves, dois motivos com nome: a chave de ligar (``SHOPMAN_CONCIERGE_ENABLED``)
-    e a conexão de IA do propósito ``concierge`` (``shopman.shop.ai``). Um ``disabled`` sem motivo
-    custou uma noite: a chave estava ligada e a credencial, vazia no painel.
+    Contrato, modo e a chave de ligar (``SHOPMAN_CONCIERGE_ENABLED``), cada um com nome:
+    um ``disabled`` sem motivo custou uma noite. A conexão de IA NÃO é motivo (WP-03 do
+    plano da Concierge): sem ela, ou com o freio cortando, o turno segue pelo caminho sem
+    modelo (porteiro, divisão local, executores) e o check avisa ``sem leitura por modelo``.
     """
     if config().get("contract_version") != 3:
         return "contract_gate"
@@ -94,11 +96,14 @@ def disabled_reason() -> str:
         return "operation_mode_gate"
     if not config().get("enabled"):
         return "switch_off"
+    return ""
+
+
+def answers_with_model() -> bool:
+    """O agente com modelo (propósito ``concierge``) pode responder agora? Freio incluso."""
     from shopman.shop import ai
 
-    if not ai.is_configured("concierge"):
-        return "ai_key_missing"
-    return ""
+    return ai.is_configured("concierge")
 
 
 def is_enabled() -> bool:
@@ -913,6 +918,9 @@ def run_turn(
     meter = metrics.TurnMeter()
     meter.received_at = max(message.created_at for message in inbound)
     conversation._meter = meter
+    # O nome que a casa conhece desta conversa sai de todo texto que vai a um leitor
+    # de IA no turno (Jev, leitura de partes), pelo redator, sem a triagem saber dele.
+    names_token = observation_privacy.bind_known_names(conversation.customer_name or "")
     try:
         assert_turn_authority(conversation, for_mutation=False)
         from . import triage as triage_module
@@ -950,7 +958,9 @@ def run_turn(
         # Intenções no plural (OBS0310-Q), atrás da chave: a parte sensível não cala as
         # outras. A decisão de equipe vai junto para o turno, que responde as dúvidas
         # simples, não mexe no pedido e chama a equipe (decisão do dono, 03/10/2026).
-        plural = intents_module.enabled_for(binding)
+        # Sem conexão de IA (ou com o freio cortando), o turno vai pelo caminho sem
+        # modelo das intenções no plural: a Concierge existe sem chave (WP-03).
+        plural = intents_module.enabled_for(binding) or not answers_with_model()
         if decision.escalates and not plural:
             meter.layer = metrics.LAYER_TEAM
             mark_handoff(
@@ -963,6 +973,8 @@ def run_turn(
             and not conversation._limited_event_assurance
         ):
             identify(conversation, binding, inbound[0].envelope.get("profile") or {})
+            # O nome que a identificação trouxe agora também sai do que vai à leitura.
+            observation_privacy.bind_known_names(conversation.customer_name or "")
             conversation._commercial_authority = bool(
                 conversation.customer_ref
                 and binding.identity_assurance == "verified_customer"
@@ -989,12 +1001,19 @@ def run_turn(
                     )
                     meter.intents = getattr(outcome, "intents", {}) or {}
                 else:
-                    with meter.stage("agent"):
-                        outcome = agent_module.run_agent(
-                            conversation=conversation,
-                            history=agent_module.history_for(conversation),
-                            client=meter.wrap(client, "model", factory=agent_module.build_client),
+                    try:
+                        with meter.stage("agent"):
+                            outcome = agent_module.run_agent(
+                                conversation=conversation,
+                                history=agent_module.history_for(conversation),
+                                client=meter.wrap(client, "model", factory=agent_module.build_client),
+                            )
+                    except AINotConfigured:
+                        # O freio cortou no meio do turno: vale o caminho sem modelo.
+                        outcome = intents_module.run(
+                            conversation, binding=binding, decision=decision, client=intents_client
                         )
+                        meter.intents = getattr(outcome, "intents", {}) or {}
             except TurnRevoked:
                 raise
             except Exception:
@@ -1173,6 +1192,7 @@ def run_turn(
     except TurnRevoked:
         result.fallback = "revoked"
     finally:
+        observation_privacy.release_known_names(names_token)
         Conversation.objects.filter(
             pk=conversation.pk, turn_fence=conversation.turn_fence
         ).update(claim_until=None)

@@ -11,7 +11,7 @@ import type {
   DeliveryRideProjection,
 } from "~/generated/ordersContract";
 import { rideColor } from "~/presentation/ridePalette";
-import { rideLine, whatsappLink } from "~/presentation/deliveries";
+import { rideLine, rideNotice, whatsappLink } from "~/presentation/deliveries";
 import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
 
@@ -25,6 +25,14 @@ const props = defineProps<{
 const emit = defineEmits<{ close: []; back: []; cancel: [reasonId?: number] }>();
 const tone = computed(() => rideColor(props.ride.number - 1));
 const line = computed(() => rideLine(props.ride, props.now));
+// O aviso de "não chame de novo" se dispensa, e volta se a causa mudar
+// (outra desistência na mesma corrida).
+const notice = computed(() => rideNotice(props.ride, props.now));
+const noticeDismissedFor = ref("");
+const showNotice = computed(() => notice.value !== null && noticeDismissedFor.value !== notice.value.key);
+function dismissNotice() {
+  noticeDismissedFor.value = notice.value?.key ?? "";
+}
 const located = computed(() =>
   props.ride.stops
     .filter((stop) => stop.latitude !== null && stop.longitude !== null)
@@ -79,6 +87,20 @@ const showCancelState = computed(
     </header>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
+      <NuxtAlert
+        v-if="notice && showNotice"
+        class="mx-5 mt-4 w-auto"
+        :color="notice.color"
+        variant="subtle"
+        :icon="notice.icon"
+        :title="notice.title"
+        :description="notice.description"
+        close
+        role="status"
+        data-ride-notice
+        @update:open="dismissNotice"
+      />
+
       <!-- A margem mora no invólucro: o aviso é `w-full`, e com a margem nele o X vazava do painel. -->
       <div v-if="showCancelState && cancelState" class="mx-5 mt-4">
         <NuxtAlert
@@ -150,6 +172,7 @@ const showCancelState = computed(
         <p class="op-micro font-semibold text-muted">O que aconteceu</p>
         <ul class="mt-2 flex flex-col gap-1.5 op-body">
           <li v-if="ride.called_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.called_at) }}</span><span class="text-highlighted">Corrida chamada</span></li>
+          <li v-if="ride.state === 'reopened' && ride.reopened_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.reopened_at) }}</span><span class="font-semibold text-highlighted">{{ ride.reopened_driver || "O entregador" }} desistiu</span></li>
           <li v-if="ride.pickup_eta_at && ride.state === 'coming'" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.pickup_eta_at) }}</span><span class="text-highlighted">Chegada prevista na loja</span></li>
           <li v-if="ride.arrived_pickup_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.arrived_pickup_at) }}</span><span class="text-highlighted">Chegou na loja</span></li>
           <li v-if="ride.picked_up_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.picked_up_at) }}</span><span class="text-highlighted">Saiu com as sacolas</span></li>
@@ -177,12 +200,12 @@ const showCancelState = computed(
       <template v-else-if="ride.cancel_action">
         <CourierCancelConfirm v-if="confirmingCancel" :action="ride.cancel_action" :busy="busy" @confirm="confirmCancel" @keep="confirmingCancel = false" />
         <template v-else>
-          <p class="min-w-0 flex-1 op-micro text-muted">Antes de ele sair com as sacolas, dá para cancelar.</p>
+          <p class="min-w-0 flex-1 op-micro text-muted">{{ notice?.footer ?? "Antes de ele sair com as sacolas, dá para cancelar." }}</p>
           <NuxtButton color="error" variant="ghost" icon="i-lucide-circle-x" :label="ride.cancel_action.label" :loading="busy" :disabled="!ride.cancel_action.enabled" :title="ride.cancel_action.reason || undefined" data-ride-cancel @click="confirmingCancel = true" />
         </template>
       </template>
       <p v-else-if="ride.cancel_state === 'unknown'" class="min-w-0 flex-1 op-micro text-muted">Confira esta corrida na central da TaOn antes de pedir o cancelamento de novo.</p>
-      <p v-else class="min-w-0 flex-1 op-micro text-muted">Ele já saiu com as sacolas: cancelar agora só pela central da TaOn.</p>
+      <p v-else class="min-w-0 flex-1 op-micro text-muted">{{ notice?.footer ?? "Ele já saiu com as sacolas: cancelar agora só pela central da TaOn." }}</p>
     </footer>
   </aside>
 </template>

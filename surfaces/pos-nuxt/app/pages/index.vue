@@ -235,6 +235,7 @@ const {
   customerReleaseBusy,
   customerSearchResults,
   customerSearchBusy,
+  customerSearchError,
   customerResolvedNew,
   pendingCustomerPrefs,
   applyCustomerPreference,
@@ -1404,6 +1405,7 @@ onBeforeUnmount(() => {
               :lookup-busy="lookupBusy"
               :search-results="customerSearchResults"
               :search-busy="customerSearchBusy"
+              :search-error="customerSearchError"
               :customer-resolved-new="customerResolvedNew"
               :new-customer-prefs="pendingCustomerPrefs"
               :customer-decision="customerDecision"
@@ -1578,6 +1580,7 @@ onBeforeUnmount(() => {
         :customer-lookup="customerLookup"
         :search-results="customerSearchResults"
         :search-busy="customerSearchBusy"
+        :search-error="customerSearchError"
         :customer-resolved-new="customerResolvedNew"
         :new-customer-prefs="pendingCustomerPrefs"
         :customer-decision="customerDecision"

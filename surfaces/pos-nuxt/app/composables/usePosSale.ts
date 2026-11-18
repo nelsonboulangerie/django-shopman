@@ -69,6 +69,7 @@ import {
 } from "~/utils/posTabLifecycle";
 import { saleTotalView } from "~/presentation/saleTotal";
 import { composedAddressLine, emptyAddressDraft } from "~/presentation/address";
+import { customerSearchErrorMessage } from "~/presentation/customerSearch";
 import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, receiptItemFromCart, type PosReceiptSnapshot } from "~/presentation/receipt";
 import {
   applyLinePrices,
@@ -620,13 +621,34 @@ export function usePosSale(deps: PosSaleDeps) {
           closeRecheckApprovalError.value = "";
           return "approval" as const;
         }
+        // O PIN é conferido no diálogo e vira o carimbo (#2558) dos números que o
+        // gerente viu, para a comanda do corpo gravado. O carimbo viaja só no
+        // POST abaixo e não volta ao disco.
+        let signature: { token: string } | null = null;
+        if (approval) {
+          const shown = marker.approval || NO_APPROVAL_FIGURES;
+          try {
+            const token = await requestSaleApprovalToken(approval.username, approval.pin, {
+              tab_ref: typeof marker.body.tab_ref === "string" ? marker.body.tab_ref : "",
+              reasons: shown.reasons,
+              discount_q: shown.discount_q,
+              account_over_q: shown.house_account_limit?.over_q || 0,
+            });
+            if (token) signature = { token };
+          } catch (error) {
+            const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
+            closeRecheckApproval.value = shown;
+            closeRecheckApprovalError.value = failure?.recovery || failure?.message
+              || httpErrorMessage(error, "Não deu para conferir o PIN. Tente de novo.");
+            return "approval" as const;
+          }
+        }
         let raw: unknown;
         try {
           raw = await action.call<unknown>(
             actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
             {
-              // A assinatura viaja só neste POST e não volta ao disco.
-              body: approval ? { ...marker.body, manager_approval: approval } : marker.body,
+              body: signature ? { ...marker.body, manager_approval: signature } : marker.body,
               timeoutMs: POS_CLOSE_SALE_TIMEOUT_MS,
             },
           );
@@ -1195,11 +1217,13 @@ export function usePosSale(deps: PosSaleDeps) {
   // A ASSINATURA DO GERENTE (P0-1 e P1-4, WP-E1). Vale para um retrato (a comanda,
   // os itens, o desconto, a forma) e para nenhum outro: a Caixa voltava da
   // maquininha, trocava R$ 6 por R$ 30 e a venda fechava em nome de quem só viu
-  // R$ 6. Mora só na memória desta aba, fora do carrinho: não vai ao autosave, à
-  // revisão, ao guarda do fechamento nem à fila sem conexão. Sai quando o retrato
-  // muda, quando a venda acaba e depois de cada tentativa de fechar (a retentativa
-  // pede a assinatura de novo).
-  const managerSignature = shallowRef<{ username: string; pin: string; portrait: string } | null>(null);
+  // R$ 6. O que fica aqui é o CARIMBO que o servidor emite no diálogo (#2558),
+  // nunca o PIN, e ele mora só na memória desta aba, fora do carrinho: não vai ao
+  // autosave, à revisão, ao guarda do fechamento nem à fila sem conexão. Sai
+  // quando o retrato muda, quando a venda acaba e depois de cada tentativa de
+  // fechar (a retentativa pede a assinatura de novo). O servidor confere o mesmo
+  // do lado dele: carimbo de outro valor ou de outra comanda é recusa.
+  const managerSignature = shallowRef<{ token: string; portrait: string } | null>(null);
   const currentApprovalPortrait = computed(() => approvalPortrait({
     tabRef: cart.localTab ? "" : cart.tabRef,
     tabSessionKey: cart.tabSessionKey,
@@ -1213,7 +1237,7 @@ export function usePosSale(deps: PosSaleDeps) {
   }));
   /** O gerente assinou ESTE retrato. É o que libera "Validar". */
   const managerApproved = computed(() => managerSignature.value?.portrait === currentApprovalPortrait.value);
-  // O PIN não espera o próximo fechamento para sumir: mudou o retrato, sai agora.
+  // A assinatura não espera o próximo fechamento para sumir: mudou o retrato, sai agora.
   watch(currentApprovalPortrait, (portrait) => {
     if (managerSignature.value && managerSignature.value.portrait !== portrait) managerSignature.value = null;
   });
@@ -1221,10 +1245,10 @@ export function usePosSale(deps: PosSaleDeps) {
     managerSignature.value = null;
   }
   /** A assinatura que acompanha o POST do fechamento, se ainda vale para a tela. */
-  function signedManagerApproval(): { username: string; pin: string } | null {
+  function signedManagerApproval(): { token: string } | null {
     const signature = managerSignature.value;
     if (!signature || signature.portrait !== currentApprovalPortrait.value) return null;
-    return { username: signature.username, pin: signature.pin };
+    return { token: signature.token };
   }
   /** O que o gerente vê, guardado no marcador quando a venda pedia gerente. */
   function approvalViewForGuard(): CloseGuardApprovalView | undefined {
@@ -2737,6 +2761,27 @@ export function usePosSale(deps: PosSaleDeps) {
   // diálogo guardava o PIN e fechava, e o PIN errado só voltava no fechamento,
   // depois de o operador já ter confirmado "Recebi o Pix" com o cliente. A
   // conferência é a mesma do fechamento, com a mesma trava; não grava nada.
+  /**
+   * Confere o PIN no servidor e devolve o CARIMBO (#2558): preso ao operador, à
+   * comanda e aos números que o diálogo mostrou ao gerente. Só o gatilho que
+   * chamou o gerente leva número; o outro vai zero, como o servidor confere.
+   * Lança o erro do servidor (PIN errado, trava) para quem chamou mostrar.
+   */
+  async function requestSaleApprovalToken(
+    username: string,
+    pin: string,
+    shown: { tab_ref: string; reasons: string[]; discount_q: number; account_over_q: number },
+  ): Promise<string> {
+    const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
+    const scope = {
+      tab_ref: shown.tab_ref,
+      discount_q: shown.reasons.includes("discount_over_threshold") ? shown.discount_q : 0,
+      account_over_q: shown.reasons.includes("house_account_over_limit") ? shown.account_over_q : 0,
+    };
+    const answer = await action.call<{ token?: string }>(path, { body: { manager_approval: { username, pin }, scope } });
+    return typeof answer?.token === "string" ? answer.token : "";
+  }
+
   const managerCheckBusy = ref(false);
   async function checkManagerApproval(username: string, pin: string): Promise<boolean> {
     if (managerCheckBusy.value) return false;
@@ -2746,9 +2791,18 @@ export function usePosSale(deps: PosSaleDeps) {
     // da conferência: um toque feito durante a ida já não é o que ele assinou.
     const portrait = currentApprovalPortrait.value;
     try {
-      const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
-      await action.call(path, { body: { manager_approval: { username, pin } } });
-      managerSignature.value = { username, pin, portrait };
+      // O que o gerente VIU no diálogo vai junto (#2558), e o carimbo que volta
+      // vale só para isso. O PIN fica no diálogo; o carimbo mora na memória da
+      // aba, preso ao retrato (`managerSignature`).
+      const current = review.value;
+      const token = await requestSaleApprovalToken(username, pin, {
+        tab_ref: cart.localTab ? "" : cart.tabRef,
+        reasons: current?.approval_reasons || [],
+        discount_q: (current?.line_discount_q || 0) + (current?.order_discount_q || 0),
+        account_over_q: current?.house_account_limit?.over_q || 0,
+      });
+      if (!token) return false;
+      managerSignature.value = { token, portrait };
       return currentApprovalPortrait.value === portrait;
     } catch (error) {
       const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
@@ -3191,6 +3245,10 @@ export function usePosSale(deps: PosSaleDeps) {
   // and runs the full lookup (memory + saved address).
   const customerSearchResults = ref<POSCustomerSearchResult[]>([]);
   const customerSearchBusy = ref(false);
+  // A busca FALHOU (rede, servidor, limite de buscas): não é "nenhum cadastro".
+  // A lista vazia de antes dizia que a pessoa não existe e oferecia cadastrá-la
+  // de novo (P1-8). Vazio quando a última busca respondeu.
+  const customerSearchError = ref("");
   // O cliente associado foi CRIADO agora (resolve just-in-time devolveu
   // created=true) — a confirmação do modal distingue novo × encontrado.
   const customerResolvedNew = ref(false);
@@ -3210,6 +3268,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // Só número (telefone, CPF) pede 4 dígitos, a mesma régua do servidor
     // (`CUSTOMER_SEARCH_MIN_DIGITS`): com "11" a lista varria a base (beta 07/11).
     const onlyNumber = !/\p{L}/u.test(q);
+    customerSearchError.value = "";
     if (q.length < 2 || (onlyNumber && q.replace(/\D/g, "").length < 4)) {
       customerSearchResults.value = [];
       customerSearchBusy.value = false;
@@ -3217,23 +3276,22 @@ export function usePosSale(deps: PosSaleDeps) {
     }
     customerSearchBusy.value = true;
     try {
-      const path = concreteActionHref(
-        actions.value,
-        "customer_search",
-        "/api/v1/backstage/pos/customer/search/?q={query}",
-        { query: q },
-      );
+      // POST: o termo (nome, telefone, CPF, e-mail) viaja no CORPO, fora do log
+      // de acesso e do cache, como o telefone do lookup (#2335).
+      const path = concreteActionHref(actions.value, "customer_search", "/api/v1/backstage/pos/customer/search/", {});
       const response = await $fetch<POSCustomerSearchResponse>(apiPath(path), {
-        method: "GET",
+        method: "POST",
+        body: { q },
         credentials: "include",
         headers: requestHeaders,
         signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
       });
       if (seq !== customerSearchSeq) return;
       customerSearchResults.value = response.results || [];
-    } catch {
+    } catch (error) {
       if (seq !== customerSearchSeq) return;
       customerSearchResults.value = [];
+      customerSearchError.value = customerSearchErrorMessage(httpError(error).status);
     } finally {
       if (seq === customerSearchSeq) customerSearchBusy.value = false;
     }
@@ -4767,6 +4825,7 @@ export function usePosSale(deps: PosSaleDeps) {
     customerReleaseBusy,
     customerSearchResults,
     customerSearchBusy,
+    customerSearchError,
     customerResolvedNew,
     pendingCustomerPrefs,
     applyCustomerPreference,

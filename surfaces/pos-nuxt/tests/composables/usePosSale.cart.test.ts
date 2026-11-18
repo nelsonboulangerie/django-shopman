@@ -496,3 +496,31 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
     h.handles.dispose();
   });
 });
+
+describe("usePosSale — autorização do gerente presa ao que ele viu (#2558)", () => {
+  it("o diálogo manda o desconto e a comanda; o carimbo fica na memória da aba, fora do carrinho", async () => {
+    const actionCall = vi.fn().mockResolvedValue({ approved_by: "joyce", token: "carimbo-6" });
+    const h = makeSale({ projection: freeCartProjection(), actionCall });
+    h.sale.cart.tabRef = "M1";
+    h.sale.review.value = {
+      approval_reasons: ["discount_over_threshold"],
+      line_discount_q: 100,
+      order_discount_q: 500,
+      house_account_limit: null,
+    } as never;
+
+    const ok = await h.sale.checkManagerApproval("joyce", "4321");
+
+    expect(ok).toBe(true);
+    const [path, opts] = actionCall.mock.calls.find((c) => String(c[0]).includes("manager-approval/check"))!;
+    expect(String(path)).toContain("manager-approval/check");
+    expect((opts as { body: Record<string, unknown> }).body.scope).toEqual({
+      tab_ref: "M1", discount_q: 600, account_over_q: 0,
+    });
+    // O carimbo vale para o retrato desta tela (WP-E1) e não entra no carrinho.
+    expect(h.sale.managerApproved.value).toBe(true);
+    expect(JSON.stringify(h.sale.cart)).not.toContain("4321");
+    expect(JSON.stringify(h.sale.cart)).not.toContain("carimbo-6");
+    h.handles.dispose();
+  });
+});
