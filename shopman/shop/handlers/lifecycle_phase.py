@@ -12,6 +12,19 @@ from shopman.shop.services.observability import create_operator_alert
 
 logger = logging.getLogger(__name__)
 
+# Fase que chegou atrasada com o pedido já adiante dela (alerta do dono, 18/11:
+# IFOOD-261118-3030 "Phase on_ready cannot resume in dispatched"). No iFood o
+# "Saiu" vem logo depois do "Pronto", e a fase do pronto, que roda em segundo
+# plano, encontra o pedido já despachado. O que ela faz (nota da sacola,
+# atendimento, aviso, entregador automático) continua devido e é idempotente; o
+# mesmo vale para o despacho que encontra o pedido entregue. O preparo NÃO entra:
+# rodar tarde abriria trabalho na cozinha para um pedido que já saiu.
+_LATE_RESUME = {
+    "on_ready": ("dispatched", "delivered", "completed"),
+    "on_dispatched": ("delivered", "completed"),
+    "on_delivered": ("completed",),  # crash after the canonical automatic close
+}
+
 
 class LifecyclePhaseHandler:
     topic = ORDER_LIFECYCLE_PHASE
@@ -42,9 +55,7 @@ class LifecyclePhaseHandler:
                         return
                     lifecycle.dispatch(order, phase)
                     return
-                allowed = {phase.removeprefix("on_")}
-                if phase == "on_delivered":
-                    allowed.add("completed")  # crash after the canonical automatic close
+                allowed = set(_LATE_RESUME.get(phase, ())) | {phase.removeprefix("on_")}
                 if order.status not in allowed:
                     raise DirectiveTerminalError(f"Phase {phase} cannot resume in {order.status}")
                 if phase == "on_returned" and not (order.data or {}).get("returns"):

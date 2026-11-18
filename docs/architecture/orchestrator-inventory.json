@@ -3660,6 +3660,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_LATE_RESUME",
             "logger"
           ]
         }
