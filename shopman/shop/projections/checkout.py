@@ -8,9 +8,80 @@ is not here: it is Stockman's, read by the cart and by the commit
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class AcceptanceWindow:
+    """O prazo que a casa tem para aceitar um pedido enviado AGORA.
+
+    ``minutes`` é o prazo do pedido (curto no pedido do dia com a casa aberta,
+    longo na encomenda e com a casa fechada); ``deadline`` é quando ele vence,
+    contado em tempo de loja aberta; ``runs_now`` diz que o prazo cabe inteiro
+    no expediente em curso, então "em até N minutos" é verdade. Quando não
+    cabe (casa fechada, ou o fechamento chega antes), só o ``deadline`` é.
+    """
+
+    minutes: int
+    deadline: datetime
+    runs_now: bool
+
+
+def shop_today(*, now: datetime | None = None) -> date:
+    """O "hoje" da loja, no fuso dela: o mesmo de ``availability_dates``.
+
+    A tela do checkout lia o dia do relógio do aparelho; "hoje", "amanhã" e os
+    limites do calendário passam a sair daqui.
+    """
+    from shopman.shop.services import fulfillment_window
+
+    return fulfillment_window._local_today(now=now)
+
+
+def acceptance_window(
+    channel_ref: str, *, order_date: date | None, now: datetime | None = None,
+) -> AcceptanceWindow | None:
+    """O prazo de aceite de um pedido para ``order_date`` enviado agora.
+
+    Só no modo ``auto_cancel`` (a loja aceita ou o pedido cancela e o valor
+    volta): é o único em que existe um prazo a prometer. A régua é a mesma de
+    ``lifecycle.acceptance_timeout_minutes``: prazo longo na encomenda para
+    outro dia e no pedido que chega com a casa fechada; e o vencimento sai de
+    ``business_calendar.next_operational_deadline``, o mesmo que agenda o
+    cancelamento. ``None`` quando não há prazo a prometer (outro modo, canal
+    sem prazo, casa sem próxima abertura) ou quando a leitura falha: a tela não
+    promete o que não sabe.
+    """
+    try:
+        from django.utils import timezone
+
+        from shopman.shop.config import ChannelConfig
+        from shopman.shop.services import business_calendar
+
+        moment = now or timezone.now()
+        confirmation = ChannelConfig.for_channel(channel_ref).confirmation
+        if confirmation.mode != "auto_cancel":
+            return None
+        state = business_calendar.current_business_state(now=moment)
+        preorder = order_date is not None and order_date > timezone.localdate(moment)
+        minutes = confirmation.acceptance_timeout_minutes(long_deadline=preorder or state.is_closed)
+        if minutes <= 0:
+            return None
+        timeout = timedelta(minutes=minutes)
+        deadline, _state = business_calendar.next_operational_deadline(timeout=timeout, now=moment)
+        if deadline is None:
+            return None
+        return AcceptanceWindow(
+            minutes=minutes,
+            deadline=deadline,
+            runs_now=state.is_open and deadline - moment <= timeout + timedelta(seconds=1),
+        )
+    except Exception:
+        logger.debug("checkout_projection_acceptance_window_failed", exc_info=True)
+        return None
 
 
 def availability_dates(
