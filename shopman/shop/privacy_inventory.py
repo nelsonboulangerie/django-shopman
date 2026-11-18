@@ -288,10 +288,6 @@ AI_PROCESSORS: tuple[AIProcessor, ...] = (
     AIProcessor(key="typesafe", name="TypeSafe", hosts=("typesafe.ai",)),
 )
 
-#: O endereço que a porta usa quando a conexão deixa o campo vazio. O do Jev vem de
-#: `ai.JEV_DEFAULT_URL`; o do formato Anthropic é o padrão do SDK.
-_ANTHROPIC_DEFAULT_URL = "https://api.anthropic.com"
-
 
 @dataclass(frozen=True)
 class AIUse:
@@ -494,7 +490,8 @@ def _host_of(protocol: str, base_url: str) -> str:
 
     url = (base_url or "").strip()
     if not url:
-        url = ai.JEV_DEFAULT_URL if protocol == AIProtocol.JEV else _ANTHROPIC_DEFAULT_URL
+        # O endereço que a porta usa quando a conexão deixa o campo vazio: vem de `ai`.
+        url = ai.JEV_DEFAULT_URL if protocol == AIProtocol.JEV else ai.ANTHROPIC_DEFAULT_URL
     return (urlparse(url).hostname or "").lower()
 
 

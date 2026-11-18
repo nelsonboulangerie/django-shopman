@@ -2245,6 +2245,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "AINotConfigured",
+            "ANTHROPIC_DEFAULT_URL",
             "CUSTOMER_TEXT_PURPOSES",
             "EXTRAS",
             "EXTRAS_BY_HOST",
@@ -6990,7 +6991,6 @@
             "AI_USES",
             "PROCESSORS",
             "Processor",
-            "_ANTHROPIC_DEFAULT_URL",
             "_NAO_SAI_DA_CASA",
             "_PROFILE_STAYS",
             "_REDACTION",
