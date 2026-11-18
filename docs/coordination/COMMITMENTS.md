@@ -96,5 +96,6 @@ que ele criou. Solicitação que não virou trabalho também fica `ABERTO`, com
 | DEV-2026-043 | solicitacao | chat 2026-11-17 | sim! (pesado só na fila, filtro por pasta, leve no PR) | Engenharia | 2026-11-17 | 2026-11-24 | - | EM_EXECUCAO | PR da CI por escopo |
 | DEV-2026-042 | solicitacao | chat | Tudo bem, mas prefiro 'Suporte', não é para cliente externo, é para operador interno. No mais, ok. (Suporte: um nome só, no pé da barra lateral em todos os apps e na Central, no menu do operador no celular, e o contexto mostra o nome da tela) | Engenharia | 2026-11-16 | 2026-11-23 | - | ABERTO | - |
 | DEV-2026-050 | solicitacao | chat | Supply chain do npm reprova todo PR (picomatch e Nuxt) | Engenharia | 2026-11-17 | 2026-11-24 | - | ABERTO | - |
+| DEV-2026-053 | solicitacao | chat | O alerta lifecycle_phase_stuck exige atenção no Gestor. Referência: IFOOD-261118-3030 | Engenharia | 2026-11-18 | 2026-11-25 | - | ABERTO | - |
 | DEV-2026-052 | solicitacao | chat | Urgente: não estou conseguindo visualizar normalmente a pagina do Gestor... Esta tudo em branco... depois de testar o modo escuro | Engenharia | 2026-11-18 | 2026-11-25 | - | ABERTO | - |
 <!-- commitments:end -->
