@@ -69,7 +69,7 @@ export function kitchenHandoffNote(
   if (!naCozinha && !aEnviar) return "";
   if (!naCozinha) {
     // Encomenda para outro dia não vai para a cozinha ao finalizar: o pedido
-    // espera a data combinada (`lifecycle._physical_work_deferred`) e só então
+    // espera a data combinada (`lifecycle.awaits_kitchen_release`) e só então
     // aparece no KDS. "Ao finalizar, vai para a cozinha" era promessa falsa.
     if (options.deferred) {
       return `${aEnviar === 1 ? "O item vai" : `Os ${aEnviar} itens vão`} para a cozinha no dia da encomenda.`;
