@@ -3357,7 +3357,7 @@ def _payment_link_delivery(order: Order) -> tuple[str, bool]:
     delivery = (directive.payload or {}).get("notification_delivery") or {}
     if delivery.get("status") in {"started", "unknown"}:
         return (
-            "O provedor ainda não confirmou o envio do link. Antes de reenviar, pergunte ao cliente se o link chegou.",
+            "Envio do link não confirmado pelo provedor. Antes de reenviar, pergunte ao cliente se o link chegou.",
             True,
         )
     if delivery.get("status") == "accepted":
