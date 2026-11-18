@@ -48,6 +48,30 @@ export interface PriceQuote {
   adjustments: PriceAdjustment[]
 }
 
+// Quando o item fica pronto, escrito pelo servidor (shopman/storefront/
+// presentation/promise.py): UMA função para o card, o produto e a linha da
+// sacola, lendo a fornada, a hora de pronto e a mesma grade de horários do
+// checkout. A tela mostra `text` como veio e nunca recalcula "hoje" no aparelho.
+// `kind`: 'ready' (pronto agora), 'batch' (espera uma fornada, hoje mais tarde
+// ou num dia planejado), 'preorder' (hoje já não dá: casa fechada, corte do dia
+// ou dia sem expediente; fica para o próximo dia com horário).
+// `date` ISO do dia; `ready_at` "HH:MM" do primeiro horário que o checkout
+// oferece; `day_label` "hoje" | "amanhã, terça" | "quinta, 19/11".
+export interface ReadyPromise {
+  kind: 'ready' | 'batch' | 'preorder'
+  date: string
+  ready_at: string
+  day_label: string
+  text: string
+}
+
+// A loja onde a cliente retira (nome e endereço, da `Shop`). A página do produto
+// a nomeia e o JSON-LD de Offer a declara como local de retirada (#2652).
+export interface PickupStoreProjection {
+  name: string
+  address: string
+}
+
 export interface CatalogItemProjection {
   sku: string
   slug: string
@@ -93,6 +117,8 @@ export interface CatalogItemProjection {
   // Grupos de opções do produto; [] quando não tem. Com grupos, o card não usa o
   // stepper por SKU: "Adicionar" abre a folha de opções.
   option_groups?: ProductOptionGroup[]
+  // Quando fica pronto (ver ReadyPromise). null = nada a prometer.
+  promise?: ReadyPromise | null
 }
 
 // O que a API manda: a seção diz QUAIS cards mostra (`skus`, na ordem dela) e o
@@ -225,6 +251,10 @@ export interface ProductDetailProjection {
   category_icon: string | null
   // Grupos de opções do produto; [] quando não tem (ver CatalogItemProjection).
   option_groups?: ProductOptionGroup[]
+  // Quando fica pronto: a mesma promessa do card (ver ReadyPromise).
+  promise?: ReadyPromise | null
+  // Onde retirar; null quando a casa não tem endereço cadastrado.
+  pickup_store?: PickupStoreProjection | null
 }
 
 export interface MinimumOrderProgressProjection {
@@ -291,6 +321,13 @@ export interface CartItemProjection {
   // SEMPRE pela `line_id`: duas linhas podem ter o mesmo SKU.
   options_summary?: string
   has_options?: boolean
+  // O total da linha como a cliente paga e o cheio para riscar ao lado (decisão
+  // do dono 1, 16/11/2026). Com promoção do produto: o total com desconto e o
+  // cheio; sem promoção: o total cheio e null. Cupom não entra (mora no resumo).
+  line_total_display?: string
+  line_total_struck_display?: string | null
+  // Quando fica pronto: a mesma promessa do card e do produto (ver ReadyPromise).
+  promise?: ReadyPromise | null
 }
 
 export interface CartProjection {

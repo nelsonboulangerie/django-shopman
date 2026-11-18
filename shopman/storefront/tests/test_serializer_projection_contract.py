@@ -52,6 +52,7 @@ from shopman.storefront.presentation.order_tracking import (
     TrackingDiscountLineProjection,
     TrackingGiftProjection,
 )
+from shopman.storefront.presentation.promise import PromiseProjection
 from shopman.storefront.presentation.types import (
     FulfillmentProjection,
     OrderProgressStepProjection,
@@ -66,6 +67,7 @@ MIRROR_CONTRACTS = [
         set(),
     ),
     (api_serializers.PriceQuoteSerializer, PriceQuoteProjection, set()),
+    (api_serializers.ReadyPromiseSerializer, PromiseProjection, set()),
     # Timeline do storefront mostra só label/hora; actor/detail servem a outras superfícies.
     (api_serializers.TimelineEventSerializer, TimelineEventProjection, {"actor", "detail"}),
     # A instrução do item é do balcão (Gestor/cozinha); a loja não a repete.
