@@ -144,7 +144,8 @@ export interface ContextRow {
 
 const CONTEXT_LABELS: Record<string, string> = {
   app: "Aplicativo",
-  route: "Tela",
+  screen: "Tela",
+  route: "Endereço",
   shop_ref: "Loja",
   sector_ref: "Setor",
   workstation_ref: "Posto",
@@ -159,10 +160,19 @@ const CONTEXT_LABELS: Record<string, string> = {
 };
 
 /** O contexto que o sistema já sabe, em linhas legíveis. Refs, nunca PII. */
-export function contextRows(context: Record<string, unknown> | null | undefined): ContextRow[] {
+/**
+ * O contexto do chamado em linhas legíveis. A tela sai pelo nome que o operador lê no
+ * topo; o endereço técnico (`route`) só aparece para quem corrige (`technical`, quem
+ * liga o chamado a um DEV-), dono 16/11/2026.
+ */
+export function contextRows(
+  context: Record<string, unknown> | null | undefined,
+  { technical = false }: { technical?: boolean } = {},
+): ContextRow[] {
   if (!context || typeof context !== "object") return [];
   const rows: ContextRow[] = [];
   for (const [key, label] of Object.entries(CONTEXT_LABELS)) {
+    if (key === "route" && !technical) continue;
     const value = context[key];
     if (typeof value === "string" || typeof value === "number") {
       const raw = String(value).trim();

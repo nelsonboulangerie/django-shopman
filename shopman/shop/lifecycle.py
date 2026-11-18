@@ -356,21 +356,16 @@ def _on_commit(order, config: ChannelConfig) -> None:
 
     decisions = (order.data or {}).get("availability_decision", {}).get("decisions")
     if not decisions:
-        decisions = [
-            {
-                "approved": True,
-                "sku": item.get("sku"),
-                "requested_qty": item.get("qty"),
-                "available_qty": item.get("qty"),
-                "reason_code": None,
-                "is_paused": False,
-                "is_planned": False,
-                "target_date": get_commitment_date(order).isoformat() if get_commitment_date(order) else None,
-                "failed_sku": None,
-                "source": "stock.hold",
-            }
-            for item in order.snapshot.get("items", [])
-        ]
+        # O disponível é o que a reserva achou, não o pedido (#2559): sem portão
+        # no commit, ``available_qty`` saía igual ao pedido e a demanda sem
+        # fornada sumia da decisão.
+        decisions = stock.availability_decisions_from_holds(order)
+    if not defer_hold:
+        try:
+            stock.alert_demand_over_plan(order)
+        except Exception:
+            # O aviso é rastro para a Produção; não pode derrubar o commit.
+            logger.exception("stock.alert_demand_over_plan_failed order=%s", order.ref)
     _record_availability_decision(
         order,
         approved=True,

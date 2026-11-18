@@ -411,10 +411,20 @@ const vehicle = computed(() =>
 
       <!-- o andamento: quando chega para coletar e quando a entrega está prevista -->
       <div
-        v-if="progress.pickup || progress.delivery"
+        v-if="progress.waiting || progress.pickup || progress.delivery"
         class="flex flex-col gap-0.5"
         data-testid="courier-progress"
       >
+        <!-- o entregador desistiu (a TaOn redistribui a mesma corrida) ou a TaOn
+             juntou com outra: a corrida segue chamada, sem nada a fazer -->
+        <p
+          v-if="progress.waiting"
+          class="font-medium tabular-nums"
+          role="status"
+          data-testid="courier-waiting"
+        >
+          {{ progress.waiting }}
+        </p>
         <p
           v-if="progress.pickup"
           class="font-medium tabular-nums"
