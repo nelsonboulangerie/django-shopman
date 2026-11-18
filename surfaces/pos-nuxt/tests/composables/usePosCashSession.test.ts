@@ -507,6 +507,22 @@ describe("usePosCashSession — pedido de troco (o dinheiro fica no balcão)", (
     expect(second).toBe(first);
   });
 
+  it("o reenvio ASSINADO pelo gerente, e o retry depois da rede cortada, usam a MESMA chave (P1-5)", async () => {
+    // Sem gerente o servidor pede a assinatura; com ela a resposta se perde; a
+    // Caixa toca de novo, agora sem a assinatura. Os três são um lançamento só.
+    const actionCall = vi.fn().mockRejectedValue(new Error("timeout"));
+    const { session } = makeCashSession({ actionCall });
+    const movement = { kind: "sangria", amount: "50,00", reason: "Sangria" };
+
+    await session.registerCashMovement(movement);
+    await session.registerCashMovement({ ...movement, managerApproval: { username: "joyce", pin: "1234" } });
+    await session.registerCashMovement(movement);
+
+    const keys = actionCall.mock.calls.map((call) => (call[1].body as Record<string, unknown>).client_request_id);
+    expect(new Set(keys).size).toBe(1);
+    expect(actionCall.mock.calls[1]![1].body.manager_approval).toEqual({ username: "joyce", pin: "1234" });
+  });
+
   it("depois do SUCESSO a chave é descartada — duas sangrias iguais são duas linhas", async () => {
     // É o outro lado, e sem ele a trava viraria uma porta fechada: o operador que
     // precisa fazer a mesma sangria duas vezes de propósito não conseguiria.

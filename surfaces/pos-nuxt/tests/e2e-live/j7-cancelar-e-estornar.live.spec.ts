@@ -1,9 +1,9 @@
 // JORNADA J7 — cancelar e estornar (EXCELENCIA-PDV WP-E6).
 //
-// A Caixa (Fran) vende em dinheiro, cancela a venda pela lista das Últimas vendas e
-// devolve o dinheiro; depois tira R$ 50 da gaveta. Em cada gesto a Gerente (Joyce),
-// escolhida da lista, assina com o próprio PIN VENDO O VALOR: o da venda cancelada,
-// o da devolução, o da saída. Na saída a rede cai depois de o servidor gravar: a
+// A Caixa (Fran) vende em dinheiro e cancela a venda pela lista das Últimas vendas
+// (dentro da janela, cancelar em dinheiro devolve na hora); depois tira R$ 50 da
+// gaveta. Em cada gesto a Gerente (Joyce), escolhida da lista, assina com o próprio
+// PIN VENDO O VALOR: o da venda cancelada e o da saída. Na saída a rede cai depois de o servidor gravar: a
 // Fran toca de novo e o livro-caixa fica com UM lançamento (a chave do gesto ignora
 // a assinatura do gerente, P1-5). Tudo pela tela, no celular (375 px) e no balcão
 // (1366 px). Como rodar: README.md desta pasta.
@@ -26,7 +26,12 @@ async function managerSigns(page: Page, dialogName: string | RegExp) {
 
 /** Espera o diálogo parar de animar antes de medir ou capturar. */
 async function still(page: Page) {
-  await page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
+  // Só as animações que terminam: um spinner infinito (o "Ao vivo") nunca para.
+  await page.waitForFunction(() =>
+    document.getAnimations().every(
+      (animation) => animation.playState !== "running" || animation.effect?.getTiming().iterations === Infinity,
+    ),
+  );
 }
 
 /**
@@ -156,6 +161,9 @@ async function sellsInCash(page: Page): Promise<string> {
   await settled(page);
   const tile = page.locator("button[data-pos-product]").and(page.locator(":enabled")).locator("visible=true").first();
   await tile.click({ timeout: 30_000 });
+  // No celular a comanda é a folha de baixo: abre para chegar ao Pagamento.
+  const sheet = page.getByRole("button", { name: "Ver a comanda" }).locator("visible=true").first();
+  if (await sheet.isVisible().catch(() => false)) await sheet.click();
   await page.getByRole("button", { name: /^Pagamento|^Outras formas|^Cobrar/ }).locator("visible=true").first().click();
   await page.getByRole("button", { name: /^Dinheiro/ }).and(page.locator(":enabled")).locator("visible=true").first().click();
   const finish = page.getByRole("button", { name: /^Validar/ }).and(page.locator(":enabled")).locator("visible=true").first();
@@ -173,7 +181,7 @@ async function opensRecentSales(page: Page) {
   } else {
     await direct.click();
   }
-  await expect(page.locator("[data-recent-sales-sheet]")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("dialog", { name: "Últimas vendas" })).toBeVisible({ timeout: 30_000 });
 }
 
 async function opensSession(page: Page) {
@@ -191,7 +199,7 @@ for (const device of ["phone", "counter"] as const) {
   test.describe(`J7 Cancelar e estornar · ${device === "phone" ? "375 px" : "1366 px"}`, () => {
     test.use({ device });
 
-    test("cancelar pela lista, devolver e tirar R$ 50: o gerente vê o valor, e repetir grava uma vez", async (
+    test("cancelar pela lista e tirar R$ 50: o gerente vê o valor, e repetir grava uma vez", async (
       { cashierAtCounter: page },
       testInfo,
     ) => {
@@ -203,8 +211,8 @@ for (const device of ["phone", "counter"] as const) {
 
       // 2 · Cancela pela lista das Últimas vendas: o gerente vê o valor da venda.
       await opensRecentSales(page);
-      const sheet = page.locator("[data-recent-sales-sheet]");
-      const firstSale = sheet.locator("li").filter({ has: page.getByRole("button", { name: "Cancelar venda" }) }).first();
+      const sheet = page.getByRole("dialog", { name: "Últimas vendas" });
+      const firstSale = sheet.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Cancelar venda" }) }).first();
       const saleTotal = ((await firstSale.textContent()) || "").match(/R\$ ?[\d.]+,\d{2}/)?.[0] ?? "";
       expect(saleTotal, "a linha da venda mostra o total").not.toBe("");
       await firstSale.getByRole("button", { name: "Cancelar venda" }).click();
@@ -225,22 +233,15 @@ for (const device of ["phone", "counter"] as const) {
       await expect(page.getByText("Venda cancelada").first()).toBeVisible({ timeout: 30_000 });
       await page.keyboard.press("Escape");
 
-      // 3 · A devolução em dinheiro: a Fran devolve, o gerente vê o valor.
+      // No balcão, dentro da janela, cancelar a venda em dinheiro JÁ devolve: o
+      // dinheiro sai da gaveta no mesmo gesto, com a mesma assinatura (por isso o
+      // gerente precisa ver o valor). A devolução pendente da antessala é a da venda
+      // cancelada fora daqui (gestor, de noite), e o diálogo dela já mostrava o valor.
       await opensSession(page);
-      await opensTile(page, /^Devoluç(ão|ões) em dinheiro/);
-      await page.getByRole("button", { name: "Devolvi em dinheiro" }).first().click();
-      const refundDialog = page.getByRole("dialog", { name: "Autorizar devolução" });
-      await expect(refundDialog).toBeVisible({ timeout: 30_000 });
-      await still(page);
-      await expect(refundDialog).toContainText(/Devolução de R\$ [\d.]+,\d{2} em dinheiro\./);
-      await capture(page, testInfo, "devolucao-mostra-o-valor");
-      await managerSigns(page, "Autorizar devolução");
-      await expect(refundDialog).toBeHidden({ timeout: 60_000 });
 
-      // 4 · A saída de R$ 50: o gerente vê o valor; a rede cai DEPOIS de o servidor
+      // 3 · A saída de R$ 50: o gerente vê o valor; a rede cai DEPOIS de o servidor
       // gravar; a Fran toca de novo e o livro fica com um lançamento só.
-      await page.keyboard.press("Escape");
-      await opensTile(page, /^Saída de caixa/);
+      await opensTile(page, /Saída de caixa/);
       const amount = page.getByPlaceholder("0,00").locator("visible=true").first();
       await amount.click();
       await amount.pressSequentially(OUT_AMOUNT);
@@ -252,7 +253,13 @@ for (const device of ["phone", "counter"] as const) {
       await page.route("**/pos/cash/movement/", async (route) => {
         const body = route.request().postDataJSON() as Record<string, unknown>;
         const signed = Boolean(body.manager_approval);
-        const response = await route.fetch();
+        // O Node do Playwright não resolve `*.localhost` como o Chromium: a ida vai ao
+        // loopback com o mesmo Host, cookies e corpo do navegador.
+        const original = new URL(route.request().url());
+        const response = await route.fetch({
+          url: route.request().url().replace(original.hostname, "127.0.0.1"),
+          headers: { ...(await route.request().allHeaders()), host: original.host },
+        });
         const data = (await response.json().catch(() => ({}))) as { entry_id?: number };
         recorded.push({ status: response.status(), entry_id: data.entry_id, signed });
         if (signed && response.status() === 200 && !cutOnce) {
@@ -277,13 +284,23 @@ for (const device of ["phone", "counter"] as const) {
 
       // A Fran toca de novo, sem chamar o gerente outra vez.
       await page.getByRole("button", { name: "Registrar movimento" }).click();
-      await expect.poll(() => recorded.filter((r) => r.status === 200).length, { timeout: 60_000 }).toBe(2);
-      await expect(outDialog).toBeHidden();
-      const accepted = recorded.filter((r) => r.status === 200);
+      // Na base (antes), a chave mudava com a assinatura: o servidor pedia o gerente
+      // de novo, e a segunda assinatura gravaria a segunda saída.
+      await expect
+        .poll(async () => recorded.filter((r) => r.status === 200).length === 2 || (await outDialog.isVisible()), { timeout: 60_000 })
+        .toBe(true);
+      await still(page);
+      await capture(page, testInfo, "repetir-depois-da-rede");
       console.log(`J7 saída: ${JSON.stringify(recorded)}`);
+      await expect(outDialog, "repetir não pode pedir o gerente de novo").toBeHidden();
+      await expect.poll(() => recorded.filter((r) => r.status === 200).length, { timeout: 30_000 }).toBe(2);
+      const accepted = recorded.filter((r) => r.status === 200);
       // O mesmo lançamento: o servidor devolveu a linha da primeira vez.
       expect(accepted[1]!.entry_id).toBe(accepted[0]!.entry_id);
       await expect(page.getByText(`R$ ${OUT_AMOUNT} saiu da gaveta.`).first()).toBeVisible({ timeout: 30_000 });
+      // O aviso da tentativa perdida sai da tela quando a repetição confirma.
+      await expect(page.getByText(/O movimento não entrou no livro-caixa/)).toHaveCount(0, { timeout: 10_000 });
+      await still(page);
       await capture(page, testInfo, "saida-registrada-uma-vez");
       await page.unroute("**/pos/cash/movement/");
     });

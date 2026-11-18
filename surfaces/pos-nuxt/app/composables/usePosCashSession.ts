@@ -85,6 +85,10 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   // PIN, ou com outro gerente depois da rede cortada, é o MESMO lançamento. A
   // regra inteira mora em `utils/cashGestureKey.ts`.
   const chaves = createCashGestureKeys();
+  // O aviso da tentativa que falhou. Quando a repetição dá certo (o servidor já
+  // tinha gravado e devolve o mesmo lançamento), ele sai da tela: "não entrou no
+  // livro-caixa" ao lado de "R$ 50,00 saiu da gaveta" seriam duas verdades.
+  let failureToast: string | number | null = null;
 
   async function run(
     path: string,
@@ -99,6 +103,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       const resposta = await action.call<{ entry_id?: number }>(path, { body: comChave });
       lastEntryId.value = resposta?.entry_id ?? null;
       chaves.settled(); // gesto concluído: o próximo é outro lançamento
+      if (failureToast != null) toast.dismiss(failureToast);
+      failureToast = null;
       await refresh();
       return true;
     } catch (error) {
@@ -113,7 +119,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       // A saída vive FORA do `httpErrorMessage`: ele substitui o fallback pelo
       // `detail` do servidor, então gesto escrito dentro da causa some exatamente
       // quando o servidor explica o que houve — que é quando ele mais importa.
-      toast.error(`${httpErrorMessage(error, causa)} ${saida}`);
+      if (failureToast != null) toast.dismiss(failureToast);
+      failureToast = toast.error(`${httpErrorMessage(error, causa)} ${saida}`);
       return false;
     } finally {
       busy.value = false;
