@@ -226,6 +226,71 @@ def _qty_text(value: Decimal) -> str:
     return format(value.normalize(), "f").replace(".", ",")
 
 
+def plan_backing_on(skus, day, *, channel_ref: str | None) -> dict[str, dict[str, Decimal]]:
+    """O lastro de cada SKU numa data de ENCOMENDA: a fornada planejada e o livre.
+
+    ``planned_qty`` é a fornada planejada para a data (o plano, sem descontar
+    reserva); ``free_qty``, o que a data ainda promete a um pedido novo (vitrine
+    válida + fornada, já sem as reservas), a mesma régua da reserva. Só entra o
+    SKU com estoque controlado que tem fornada ou livre na data: o que não tem
+    nada (data sem plano) é outra pergunta (WP-E3).
+
+    É o que o PDV mostra na linha da encomenda e o que decide se a encomenda
+    passa do plano (WP-E2, D-041). Hoje não é encomenda: devolve vazio.
+    """
+    from shopman.shop.services import availability
+
+    wanted = [sku for sku in dict.fromkeys(skus or ()) if sku]
+    if day is None or day <= timezone.localdate() or not wanted:
+        return {}
+    planned = get_adapter("stock").planned_on_date(wanted, day)
+    answers = availability.decide_many(
+        [(sku, Decimal("1")) for sku in wanted], channel_ref=channel_ref, target_date=day,
+    )
+    backing: dict[str, dict[str, Decimal]] = {}
+    for sku, answer in zip(wanted, answers, strict=True):
+        if not answer.get("is_tracked"):
+            continue
+        raw = answer.get("available_qty")
+        free = max(Decimal("0"), Decimal(str(raw))) if raw is not None else Decimal("0")
+        plan = planned.get(sku, Decimal("0"))
+        if plan <= 0 and free <= 0:
+            continue
+        backing[sku] = {"planned_qty": plan, "free_qty": free}
+    return backing
+
+
+def over_plan_lines(lines, day, *, channel_ref: str | None) -> list[dict]:
+    """As linhas da encomenda que passam do plano da data, com os dois números.
+
+    ``lines`` é ``[(sku, nome, quantidade)]``; o mesmo SKU em duas linhas soma.
+    Passa do plano quando o pedido é maior que o livre da data. Encomenda acima
+    do plano BLOQUEIA e só o gerente libera, vendo os dois números (D-041).
+    """
+    requested: dict[str, Decimal] = {}
+    names: dict[str, str] = {}
+    for sku, name, qty in lines:
+        if not sku or qty is None:
+            continue
+        requested[sku] = requested.get(sku, Decimal("0")) + Decimal(str(qty))
+        names.setdefault(sku, str(name or sku))
+    backing = plan_backing_on(list(requested), day, channel_ref=channel_ref)
+    over = []
+    for sku, qty in requested.items():
+        info = backing.get(sku)
+        if info is None or qty <= info["free_qty"]:
+            continue
+        over.append({
+            "sku": sku,
+            "name": names[sku],
+            "requested_qty": qty,
+            "planned_qty": info["planned_qty"],
+            "free_qty": info["free_qty"],
+            "date": day.isoformat(),
+        })
+    return over
+
+
 def _items_to_hold(order) -> list[dict]:
     """As linhas que a reserva cobre: as que VALEM agora.
 

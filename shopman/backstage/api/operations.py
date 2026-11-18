@@ -607,6 +607,22 @@ def _delivery_fee_waiver_payload(waiver: dict | None) -> dict | None:
     }
 
 
+def _qty_number(value) -> int | float:
+    number = Decimal(str(value or 0))
+    return int(number) if number == number.to_integral_value() else float(number)
+
+
+def _over_plan_line_payload(line: dict) -> dict:
+    return {
+        "sku": line["sku"],
+        "name": line["name"],
+        "date": line["date"],
+        "requested_qty": _qty_number(line["requested_qty"]),
+        "planned_qty": _qty_number(line["planned_qty"]),
+        "free_qty": _qty_number(line["free_qty"]),
+    }
+
+
 def _pos_sale_review_payload(review) -> dict:
     return {
         "intent_version": review.intent_version,
@@ -640,6 +656,9 @@ def _pos_sale_review_payload(review) -> dict:
         # Conta na casa acima do limite: saldo de hoje, limite e quanto passa,
         # para o aviso e o diálogo do gerente dizerem o que ele assina.
         "house_account_limit": review.house_account_limit,
+        # Encomenda acima do plano da data (D-041): por linha, o pedido, a fornada
+        # planejada e o livre, para o Validar travar e o gerente ver os números.
+        "preorder_over_plan": [_over_plan_line_payload(line) for line in review.preorder_over_plan],
         "receipt_channels": list(review.receipt_channels),
         "fiscal_tax_id_requested": review.fiscal_tax_id_requested,
         "warnings": list(review.warnings),

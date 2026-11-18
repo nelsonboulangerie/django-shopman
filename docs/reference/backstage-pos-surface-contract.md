@@ -227,6 +227,14 @@ Demais chaves canônicas (cliente e data são obrigatórios em `order`, como aci
   operador, de outra comanda, de outro valor ou já gasto por outra venda (a mesma
   venda, com o mesmo `client_request_id`, pode reapresentá-lo). Vale 15 minutos;
   na venda que sincroniza da fila sem conexão, a janela dela (24 h).
+  Encomenda de outro dia acima do plano da data (D-041, WP-E2) também pede o
+  gerente: a review publica `preorder_over_plan` (pedido, fornada planejada e
+  livre por linha) com o motivo `preorder_over_plan`, o check recebe as linhas em
+  `scope.over_plan`, e o fechamento recusa carimbo de outros números. Sem carimbo,
+  `manager_approval_required` com os dois números na mensagem.
+- `payment_collection = on_delivery` em RETIRADA de outro dia é recusado com
+  `pay_at_pickup_other_day` (D-041: encomenda de outro dia cobra antes; a tela não
+  oferece "Na retirada").
 - runtime: `cash_shift_id`, `pos_terminal_ref` injected by backend API.
 
 Unknown fields are rejected with `unexpected_intent_field`. Unknown versions are
@@ -415,6 +423,7 @@ Expected important codes:
 - `cash_tendered_amount_too_low`
 - `manager_approval_required`
 - `manager_approval_invalid`
+- `pay_at_pickup_other_day`
 - `receipt_email_required`
 - `cart_empty`
 

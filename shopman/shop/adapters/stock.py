@@ -834,6 +834,28 @@ def hold_backing(hold_ids: list[str]) -> dict[str, dict]:
     }
 
 
+def planned_on_date(skus: list[str], day: date) -> dict[str, Decimal]:
+    """Por SKU, a fornada planejada PARA ``day``: a soma dos saldos com essa data.
+
+    Leitura pura, sem descontar reservas (o livre é a leitura de
+    disponibilidade). É o primeiro dos dois números que o PDV mostra na linha da
+    encomenda (WP-E2, D-041): "22 planejadas para 17/11". SKU sem fornada na data
+    some da resposta.
+    """
+    from django.db.models import Sum
+    from shopman.stockman import Quant
+
+    wanted = [sku for sku in dict.fromkeys(skus or ()) if sku]
+    if not wanted:
+        return {}
+    rows = (
+        Quant.objects.filter(sku__in=wanted, target_date=day, _quantity__gt=0)
+        .values("sku")
+        .annotate(total=Sum("_quantity"))
+    )
+    return {row["sku"]: Decimal(str(row["total"])) for row in rows if row["total"]}
+
+
 def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason: str) -> bool:
     """Devolve ao ledger o estoque de um hold FULFILLED (cancelamento tardio).
 

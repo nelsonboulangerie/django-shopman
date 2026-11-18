@@ -99,6 +99,10 @@ class PosSaleReview:
     #: ``house_account_over_limit`` para o gerente ver o saldo de hoje, o limite
     #: e quanto esta venda passa ANTES de assinar.
     house_account_limit: dict | None = None
+    #: Encomenda acima do plano da data (WP-E2, D-041): por linha, ``{sku, name,
+    #: requested_qty, planned_qty, free_qty, date}``. Vem junto do motivo
+    #: ``preorder_over_plan`` para o gerente ver os dois números antes de liberar.
+    preorder_over_plan: tuple[dict, ...] = ()
     warnings: tuple[dict, ...] = ()
     # OS DOIS ESCOPOS DO DESCONTO, separados.
     #
@@ -404,11 +408,12 @@ def close_sale(
     _ensure_expected_total(payload, channel_ref=channel.ref)
     # Guardado, não descartado: é este nome — o VERIFICADO — que assina a linha do
     # desconto lá embaixo. Ver `build_session_ops`.
-    approver = validate_manager_approval(payload, operator_username=operator_username)
+    approver = validate_manager_approval(payload, operator_username=operator_username, channel_ref=channel.ref)
     approved_by = approver.get_username() if approver is not None else ""
     _validate_schedule(payload)
     _require_customer_if_scheduled(payload)
     _require_order_mode_if_payment_link(payload)
+    _refuse_pay_at_pickup_other_day(payload)
     _require_contact_if_payment_link(payload)
     _validate_payment_completion(payload)
     _require_delivery_fiscal_identity(payload, channel_ref=channel.ref)
@@ -1086,8 +1091,9 @@ def review_sale(
         warnings.append(pix_warning)
 
     account_excess = _house_account_excess(payload, total_q=total_q)
+    over_plan = _payload_over_plan(payload, channel_ref=channel.ref)
     approval_reasons = _approval_reasons(
-        discount_q=discount_q, threshold_q=threshold_q, account_excess=account_excess,
+        discount_q=discount_q, threshold_q=threshold_q, account_excess=account_excess, over_plan=over_plan,
     )
 
     # Aviso não-bloqueante de disponibilidade: no balcão a venda vale mesmo sem
@@ -1178,6 +1184,7 @@ def review_sale(
         fiscal_tax_id_requested=bool(str(payload.get("fiscal_tax_id") or "").strip()),
         approval_reasons=tuple(approval_reasons),
         house_account_limit=account_excess.as_dict() if account_excess is not None else None,
+        preorder_over_plan=tuple(over_plan),
         warnings=tuple(warnings),
         delivery_fee_source=delivery.source,
         delivery_distance_km=delivery.distance_km,
@@ -3382,7 +3389,7 @@ def _verify_manager_badge(badge: str):
     return user
 
 
-def _approval_reasons(*, discount_q: int, threshold_q: int, account_excess=None) -> list[str]:
+def _approval_reasons(*, discount_q: int, threshold_q: int, account_excess=None, over_plan=()) -> list[str]:
     """Os gatilhos que chamaram o gerente, na ordem em que a tela deve contá-los.
 
     Publicado na review para o diálogo de autorização dizer o que está sendo
@@ -3402,7 +3409,64 @@ def _approval_reasons(*, discount_q: int, threshold_q: int, account_excess=None)
     # conta que levaria o saldo acima dele não é recusada, é assinada.
     if account_excess is not None:
         reasons.append("house_account_over_limit")
+    # Encomenda acima da fornada planejada da data: bloqueia e só o gerente
+    # libera, vendo os dois números (D-041, WP-E2).
+    if over_plan:
+        reasons.append("preorder_over_plan")
     return reasons
+
+
+def _payload_over_plan(payload: dict, *, channel_ref: str | None) -> list[dict]:
+    """As linhas da encomenda que passam do plano da data (vazio no balcão de hoje).
+
+    O PDV não decide estoque: a régua é a de ``stock.over_plan_lines``, a mesma
+    leitura da reserva. Vale na review (para a tela travar o Validar e o gerente
+    ver os números) e no fechamento (para a trava não ser só enfeite de tela).
+    """
+    from shopman.shop.services import stock as stock_service
+
+    day = _payload_commitment_date(payload)
+    if day <= timezone.localdate():
+        return []
+    lines = []
+    for item in payload.get("items") or []:
+        if not isinstance(item, dict) or _is_delivery_fee_item(item):
+            continue
+        sku = str(item.get("sku") or "")
+        qty = _line_qty(item)
+        if sku and qty and qty > 0:
+            lines.append((sku, item.get("name") or sku, qty))
+    return stock_service.over_plan_lines(lines, day, channel_ref=channel_ref)
+
+
+def over_plan_scope(lines) -> tuple[tuple[str, str, str, str, str], ...]:
+    """A forma canônica do que o gerente liberou: ``(data, sku, pedidas, planejadas, livres)``.
+
+    Ordenada e com as quantidades normalizadas, para o carimbo e a venda de
+    agora se compararem sem depender da ordem das linhas nem de ``200`` × ``200.0``.
+    """
+    canonical = []
+    for line in lines or ():
+        if not isinstance(line, dict):
+            continue
+        canonical.append((
+            str(line.get("date") or ""),
+            str(line.get("sku") or ""),
+            _scope_qty(line.get("requested_qty")),
+            _scope_qty(line.get("planned_qty")),
+            _scope_qty(line.get("free_qty")),
+        ))
+    return tuple(sorted(canonical))
+
+
+def _scope_qty(value) -> str:
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return ""
+    if not number.is_finite():
+        return ""
+    return format(number.normalize(), "f") if number != number.to_integral_value() else str(int(number))
 
 
 def _payload_account_charge_q(payload: dict, *, total_q: int) -> int:
@@ -3440,7 +3504,7 @@ def _house_account_excess(payload: dict, *, total_q: int):
     return house_account.over_limit(customer_ref, charge_q)
 
 
-def validate_manager_approval(payload: dict, *, operator_username: str):
+def validate_manager_approval(payload: dict, *, operator_username: str, channel_ref: str | None = None):
     """O desafio gerencial do desconto. Devolve o ``User`` que assinou, ou ``None``.
 
     Devolve, e não apenas valida, porque **quem assina a linha é o aprovador
@@ -3457,7 +3521,10 @@ def validate_manager_approval(payload: dict, *, operator_username: str):
     threshold_q = discount_approval_threshold_q()
     discount_q = _payload_discount_q(payload)
     account_excess = _house_account_excess(payload, total_q=_payload_total_q(payload))
-    reasons = _approval_reasons(discount_q=discount_q, threshold_q=threshold_q, account_excess=account_excess)
+    over_plan = _payload_over_plan(payload, channel_ref=channel_ref)
+    reasons = _approval_reasons(
+        discount_q=discount_q, threshold_q=threshold_q, account_excess=account_excess, over_plan=over_plan,
+    )
     if not reasons:
         return None
     # A assinatura vale para o RETRATO que o gerente viu (EXCELENCIA-PDV F1, #2558).
@@ -3473,7 +3540,11 @@ def validate_manager_approval(payload: dict, *, operator_username: str):
     if not token:
         raise PosIntentError(
             code="manager_approval_required",
-            message="Esta venda exige aprovação gerencial.",
+            message=(
+                f"A encomenda passa do plano ({_over_plan_numbers(over_plan)}). Só o gerente libera."
+                if reasons == ["preorder_over_plan"]
+                else "Esta venda exige aprovação gerencial."
+            ),
             field="manager_approval",
             focus="approval",
             recovery="Peça a um gerente autorizado para aprovar com o crachá ou o PIN antes de finalizar.",
@@ -3485,17 +3556,19 @@ def validate_manager_approval(payload: dict, *, operator_username: str):
             tab_ref=_payload_tab_ref(payload),
             discount_q=discount_q if "discount_over_threshold" in reasons else 0,
             account_over_q=account_excess.over_q if account_excess is not None else 0,
+            over_plan=over_plan_scope(over_plan),
         ),
         client_request_id=_payload_client_request_id(payload),
         max_age_s=_sale_approval_max_age_s(payload),
     )
     logger.info(
-        "pos_manager_approval operator=%s approved_by=%s discount_q=%s reasons=%s account_over_q=%s",
+        "pos_manager_approval operator=%s approved_by=%s discount_q=%s reasons=%s account_over_q=%s over_plan=%s",
         operator_username,
         approver.get_username(),
         discount_q,
         ",".join(reasons),
         account_excess.over_q if account_excess is not None else 0,
+        over_plan_scope(over_plan),
     )
     return approver
 
@@ -3513,12 +3586,15 @@ class SaleApprovalScope:
 
     ``discount_q`` é o desconto manual (linha + venda) quando o desconto chamou o
     gerente; ``account_over_q`` é quanto a conta na casa passa do limite quando
-    foi ela. Zero no gatilho que não houve.
+    foi ela; ``over_plan`` são as linhas da encomenda acima do plano da data
+    (``over_plan_scope``), com os dois números que o gerente viu. Zero (ou vazio)
+    no gatilho que não houve.
     """
 
     tab_ref: str = ""
     discount_q: int = 0
     account_over_q: int = 0
+    over_plan: tuple[tuple[str, str, str, str, str], ...] = ()
 
     @classmethod
     def from_request(cls, raw) -> SaleApprovalScope:
@@ -3528,6 +3604,7 @@ class SaleApprovalScope:
             tab_ref=normalize_tab_ref(tab) if tab else "",
             discount_q=max(0, _int_q(raw.get("discount_q"))),
             account_over_q=max(0, _int_q(raw.get("account_over_q"))),
+            over_plan=over_plan_scope(raw.get("over_plan") if isinstance(raw.get("over_plan"), list) else ()),
         )
 
 
@@ -3559,6 +3636,7 @@ def issue_sale_approval(approver, *, operator_username: str, scope: SaleApproval
             "t": scope.tab_ref,
             "d": int(scope.discount_q),
             "a": int(scope.account_over_q),
+            "p": [list(line) for line in scope.over_plan],
             "n": secrets.token_urlsafe(16),
         },
         salt=_SALE_APPROVAL_SALT,
@@ -3625,6 +3703,9 @@ def _redeem_sale_approval(
             f"O gerente aprovou passar o limite da conta em R$ {format_money(signed_over_q)} e a venda passa "
             f"R$ {format_money(snapshot.account_over_q)}. Peça a aprovação do novo valor."
         )
+    signed_plan = tuple(tuple(str(part) for part in line) for line in (data.get("p") or ()) if isinstance(line, list))
+    if signed_plan != snapshot.over_plan:
+        raise _sale_approval_refused(_over_plan_refusal(signed_plan, snapshot.over_plan))
 
     # O gerente continua podendo assinar AGORA: desligado ou sem a permissão
     # depois do diálogo, o carimbo dele não vale mais.
@@ -3639,6 +3720,41 @@ def _redeem_sale_approval(
         if not client_request_id or cache.get(key) != client_request_id:
             raise _sale_approval_refused("Esta aprovação já foi usada em outra venda. Peça a aprovação de novo.")
     return approver
+
+
+def _over_plan_numbers(lines) -> str:
+    """``Baguette: 200 pedidas, 22 planejadas para 17/11`` por linha acima do plano."""
+    from datetime import date as _date
+
+    parts = []
+    for line in lines or ():
+        try:
+            day = _date.fromisoformat(str(line.get("date") or "")).strftime("%d/%m")
+        except ValueError:
+            day = ""
+        parts.append(
+            f"{line.get('name') or line.get('sku')}: {_qty_display(line.get('requested_qty'))} pedidas, "
+            f"{_qty_display(line.get('planned_qty'))} planejadas{f' para {day}' if day else ''}"
+        )
+    return "; ".join(parts)
+
+
+def _over_plan_refusal(signed, current) -> str:
+    """Por que a liberação da encomenda acima do plano não vale mais, com os números."""
+    def numbers(lines) -> str:
+        return "; ".join(
+            f"{_qty_display(requested)} pedidas, {_qty_display(planned)} planejadas"
+            for _day, _sku, requested, planned, _free in lines
+        )
+
+    if not current:
+        return "A encomenda não passa mais do plano. Peça a aprovação de novo."
+    if not signed:
+        return f"A encomenda passa do plano ({numbers(current)}). Peça ao gerente para liberar."
+    return (
+        f"O gerente liberou {numbers(signed)} e a encomenda agora tem {numbers(current)}. "
+        "Peça a liberação de novo."
+    )
 
 
 def validate_manager_override(
@@ -3763,6 +3879,34 @@ def _payload_fulfillment_type(payload: dict) -> str:
     if value == "delivery":
         return "delivery"
     return "pickup"
+
+
+def pay_at_pickup_other_day(payload: dict) -> bool:
+    """A encomenda de OUTRO dia veio para pagar na retirada, sem cobrança agora?"""
+    fulfillment_type = _payload_fulfillment_type(payload)
+    return (
+        fulfillment_type == "pickup"
+        and _payload_payment_collection(payload, fulfillment_type) == "on_delivery"
+        and _payload_commitment_date(payload) > timezone.localdate()
+    )
+
+
+def _refuse_pay_at_pickup_other_day(payload: dict) -> None:
+    """Encomenda de outro dia não fica "Na retirada" (D-041, decisão 3: "KISS").
+
+    Vale a regra de 28/08, "encomenda cobra antes". Na K16 os R$ 2.747,00 de 200
+    baguetes entraram sem cobrança, pela Caixa sozinha. A tela não oferece mais a
+    opção; aqui a recusa, para a regra não morar só na tela.
+    """
+    if not pay_at_pickup_other_day(payload):
+        return
+    raise PosIntentError(
+        code="pay_at_pickup_other_day",
+        message="Encomenda de outro dia cobra antes: não fica para pagar na retirada.",
+        field="payment_collection",
+        focus="payment",
+        recovery="Escolha a forma de pagamento e receba agora.",
+    )
 
 
 def _payload_payment_collection(payload: dict, fulfillment_type: str) -> str:
