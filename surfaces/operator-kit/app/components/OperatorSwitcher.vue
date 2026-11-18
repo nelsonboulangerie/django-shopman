@@ -7,12 +7,15 @@
 //      "escritório" são palavras de quem desenha, não de quem opera (dono, 02/11/2026);
 //   2. Outros apps: cada um com a pendência mais urgente (a mesma da Central), e a Central;
 //   3. Quem opera: o nome, e Trocar ou bloquear.
+// O Suporte entra entre as seções e os outros apps: no celular precisa aparecer sem rolar
+// (prévia de 17/11/2026), e no fim da folha só aparecia rolando a 844 px.
 // Celular e tablet: folha de baixo. Computador: painel da esquerda, ao lado da barra.
 import { computed, reactive, resolveComponent, watch } from "vue";
 
 import { OPERATOR_APPS, OPERATOR_ICON_FOREGROUND, operatorAppForTile, operatorShortcutIconSrc } from "../../appIdentity";
 import type { OperatorSection } from "../presentation/appBar";
 import { useScreen } from "../composables/useScreen";
+import { SUPPORT_ENTRY_ICON, SUPPORT_ENTRY_LABEL, useSupportEntry } from "../composables/useSupportEntry";
 
 const props = defineProps<{
   sections: readonly OperatorSection[];
@@ -20,6 +23,8 @@ const props = defineProps<{
   operatorName?: string;
 }>();
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
+// O Suporte da casca (no celular, o trocador é o menu de quem opera).
+const supportEntry = useSupportEntry();
 
 const open = useState<boolean>("suite-switcher-open", () => false);
 const screen = useScreen();
@@ -121,6 +126,18 @@ function go(section: OperatorSection) {
               <span v-else-if="section.attention" class="text-xs text-warning">{{ section.attention }}</span>
             </NuxtButton>
           </div>
+        </section>
+
+        <section v-if="supportEntry" aria-label="Suporte">
+          <NuxtButton
+            :label="SUPPORT_ENTRY_LABEL"
+            :icon="SUPPORT_ENTRY_ICON"
+            color="neutral"
+            variant="ghost"
+            class="min-h-11 w-full justify-start"
+            data-switcher-support
+            @click="open = false; supportEntry()"
+          />
         </section>
 
         <section aria-label="Outros apps">

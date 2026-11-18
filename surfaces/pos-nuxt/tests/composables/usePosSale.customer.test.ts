@@ -264,6 +264,38 @@ describe("usePosSale — a busca de cliente só aceita a resposta do termo atual
   });
 });
 
+describe("usePosSale — a busca vai no corpo e falha dizendo que falhou", () => {
+  it("POST com o termo no corpo, nunca na URL (#2335)", async () => {
+    const { sale, handles } = makeSale();
+    dollarFetch.mockReset().mockResolvedValue({ results: [] });
+    await sale.searchCustomers("Maria 43999");
+    const [url, options] = dollarFetch.mock.calls[0]!;
+    expect(String(url)).not.toContain("Maria");
+    expect(String(url)).not.toContain("?");
+    expect(options).toMatchObject({ method: "POST", body: { q: "Maria 43999" } });
+    expect(sale.customerSearchError.value).toBe("");
+    handles.dispose();
+  });
+
+  it("erro não vira lista vazia calada: diz 'não consegui buscar' e o limite diz quando tentar", async () => {
+    // P1-8: a lista vazia de antes era um falso "não existe".
+    const { sale, handles } = makeSale();
+    dollarFetch.mockReset().mockRejectedValueOnce(new Error("offline"));
+    await sale.searchCustomers("Maria");
+    expect(sale.customerSearchResults.value).toEqual([]);
+    expect(sale.customerSearchError.value).toBe("Não consegui buscar agora. Tente de novo.");
+
+    dollarFetch.mockRejectedValueOnce(Object.assign(new Error("429"), { status: 429 }));
+    await sale.searchCustomers("Marta");
+    expect(sale.customerSearchError.value).toMatch(/^Não consegui buscar: foram muitas buscas seguidas/);
+
+    dollarFetch.mockResolvedValueOnce({ results: [] });
+    await sale.searchCustomers("Marta");
+    expect(sale.customerSearchError.value).toBe("");
+    handles.dispose();
+  });
+});
+
 /**
  * Beta 07/11: a lista de clientes expunha telefone, CPF e e-mail inteiros a partir
  * de 2 dígitos. Agora o servidor manda os contatos mascarados e a busca por número

@@ -110,6 +110,9 @@ _PATTERNS = (
     ("supplier_offer", (
         r"\b(?:fornecedor\w*|fornecemos|representante|distribuidor\w*|proposta comercial|"
         r"apresentar\s+(?:nossa|nosso|meu|minha)\s+(?:empresa|produto|servico|linha))\b",
+        # Quem vende para a casa (WP-04): "tenho uma empresa que fornece…", "falar com o setor de compras".
+        r"\bempresa\s+(?:que\s+)?(?:fornece|vende|distribui|fabrica|produz)\b",
+        r"\b(?:setor|departamento|area|responsavel|encarregad\w*|comprador\w*)\s+(?:de|das|pelas?)\s+compras\b",
     )),
     ("partnership", (
         r"\b(?:parceria|permuta|influenciador\w*|influencer|divulga\w*|imprensa|jornalista|reportagem|"

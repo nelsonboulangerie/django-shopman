@@ -284,6 +284,7 @@ SHOPMAN_OPERATOR_API_HOST = ""
 # ── DRF: rate limit no default do CI ─────────────────────────────────────────
 REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {  # noqa: F405
     "anon": "120/minute",
+    "pos_customer_search": "10000/minute",
     "marketing_audience_user": "10000/minute",
     "marketing_audience_shop": "10000/minute",
     "marketing_dangerous_user": "10000/minute",

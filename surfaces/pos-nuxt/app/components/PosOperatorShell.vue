@@ -24,7 +24,7 @@ import { posCorridorRoute } from "~/presentation/sections";
 // Resiliência de rede (kit): reconciliação ao reconectar/reganhar foco — o tablet do
 // balcão que dormiu não fica com dados velhos. O <OfflineBanner> (auto-import do kit)
 // dá o aviso calmo enquanto offline.
-const { pos, refresh, refreshTabs } = await usePosTerminal();
+const { pos, refresh, refreshTabs, refreshAvailability } = await usePosTerminal();
 const { onReconnect } = useConnectivity();
 
 // Re-gate global de sessão (kit): um 401 no meio do turno (sessão expirada do
@@ -79,13 +79,17 @@ const forbidden = computed(() => surface.value.showForbidden);
 // O SSE só conecta com a estação identificada e desbloqueada (F3): no gate
 // (login/lock) os canais são negados e o EventSource entraria no ciclo de
 // reconexão com 400 — quem garante a tela ali é o poll de fallback.
-// O aviso de comanda relê só o quadro (`refreshTabs`); o do caixa, o poll e a
-// volta à aba relêem a projeção inteira.
+// O aviso de comanda relê só o quadro (`refreshTabs`); o de estoque, só os selos
+// da grade (`refreshAvailability`); o do caixa, o poll e a volta à aba relêem a
+// projeção inteira.
 // Recusado não relê: a resposta seria o mesmo 403.
 const { realtime } = usePosEvents(
   (channel) => {
     if (forbidden.value) return;
-    return refreshScopeForChannel(channel?.path) === "tabs" ? refreshTabs() : refresh();
+    const scope = refreshScopeForChannel(channel?.path);
+    if (scope === "tabs") return refreshTabs();
+    if (scope === "availability") return refreshAvailability();
+    return refresh();
   },
   { enabled: () => canIdentify.value && !locked.value && !forbidden.value },
 );

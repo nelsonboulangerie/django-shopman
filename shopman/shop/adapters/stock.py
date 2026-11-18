@@ -810,6 +810,30 @@ def hold_target_date(hold_id: str) -> date | None:
     return Hold.objects.filter(pk=pk).values_list("target_date", flat=True).first()
 
 
+def hold_backing(hold_ids: list[str]) -> dict[str, dict]:
+    """Por hold: SKU, quantidade e se tem lastro (``backed``) ou é demanda sem saldo.
+
+    Leitura pura. É a pergunta da decisão de disponibilidade e do aviso à
+    Produção (#2559): a reserva da encomenda ficou presa a um saldo (vitrine ou
+    fornada planejada) ou registrou demanda (``quant=None``)? Id que não é de
+    hold some da resposta, como em ``hold_state``.
+    """
+    from shopman.stockman import Hold
+
+    pks: dict[int, str] = {}
+    for hold_id in hold_ids or ():
+        try:
+            pks[int(str(hold_id).split(":")[1])] = hold_id
+        except (AttributeError, IndexError, ValueError):
+            continue
+    if not pks:
+        return {}
+    return {
+        pks[row["pk"]]: {"sku": row["sku"], "quantity": row["quantity"], "backed": row["quant_id"] is not None}
+        for row in Hold.objects.filter(pk__in=list(pks)).values("pk", "sku", "quantity", "quant_id")
+    }
+
+
 def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason: str) -> bool:
     """Devolve ao ledger o estoque de um hold FULFILLED (cancelamento tardio).
 
