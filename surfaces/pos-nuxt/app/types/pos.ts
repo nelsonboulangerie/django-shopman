@@ -992,6 +992,27 @@ export interface POSScheduleResponse {
   readiness_unavailable: boolean;
   /** Outro dia: os SKUs da grade sem saldo NAQUELA data (vazio para hoje). */
   sold_out_skus?: string[];
+  /** Outro dia: o lastro de cada SKU do carrinho na data (vazio para hoje). */
+  plan_by_sku?: Record<string, POSPlanBacking>;
+}
+
+/** O lastro de um SKU na data da encomenda (WP-E2): a fornada e o livre. */
+export interface POSPlanBacking {
+  /** A fornada planejada para a data, sem descontar reservas. */
+  planned_qty: number;
+  /** O que a data ainda promete a um pedido novo (já sem as reservas). */
+  free_qty: number;
+}
+
+/** Uma linha da encomenda acima do plano, como o gerente a vê e assina. */
+export interface POSOverPlanLine {
+  sku: string;
+  name: string;
+  /** AAAA-MM-DD, a data da encomenda. */
+  date: string;
+  requested_qty: number;
+  planned_qty: number;
+  free_qty: number;
 }
 
 /** A renúncia de frete que a loja aplicou (P2-21). `promotion`: a promoção
@@ -1042,6 +1063,10 @@ export interface POSSaleReviewProjection {
   /** Conta na casa acima do limite (motivo `house_account_over_limit`): saldo
    *  em aberto antes da venda, limite, o que a venda põe na conta e quanto passa. */
   house_account_limit?: { balance_q: number; limit_q: number; charge_q: number; over_q: number } | null;
+  /** Encomenda acima do plano da data (motivo `preorder_over_plan`, D-041): por
+   *  linha, o pedido, a fornada planejada e o livre. O Validar trava e o gerente
+   *  vê os dois números antes de liberar. */
+  preorder_over_plan?: POSOverPlanLine[];
   receipt_channels: string[];
   /** Vai sair nota com CPF? (o consumidor pediu o documento nesta venda) */
   fiscal_tax_id_requested: boolean;

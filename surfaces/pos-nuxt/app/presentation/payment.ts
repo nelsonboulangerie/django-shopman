@@ -382,16 +382,97 @@ export function cashNotesQ(contract: POSCheckoutContractProjection | null = null
   return positive.length ? positive : BRL_CASH_NOTES_Q;
 }
 
-/** Collections offered for the current fulfillment type (e.g. on-delivery vs terminal). */
+/**
+ * Collections offered for the current fulfillment type (e.g. on-delivery vs terminal).
+ *
+ * Encomenda de OUTRO dia não oferece "Na retirada" (D-041, decisão 3: "KISS"):
+ * vale a regra de 28/08, "encomenda cobra antes". Na K16 os R$ 2.747,00 de 200
+ * baguetes ficaram para a retirada, sem cobrança e sem gerente. O servidor recusa
+ * o mesmo (`pay_at_pickup_other_day`); aqui a opção simplesmente não aparece.
+ */
 export function collectionsForFulfillment(
   collections: POSPaymentCollectionProjection[],
   fulfillmentType: string,
   salesMode?: "counter" | "order",
+  otherDay = false,
 ): POSPaymentCollectionProjection[] {
   return collections.filter((collection) =>
     collection.fulfillment_types.includes(fulfillmentType as "pickup" | "delivery")
-    && !(collection.ref === "on_delivery" && fulfillmentType === "pickup" && salesMode !== "order"),
+    && !(collection.ref === "on_delivery" && fulfillmentType === "pickup" && (salesMode !== "order" || otherDay)),
   );
+}
+
+// ── O LASTRO DA ENCOMENDA (WP-E2, D-041) ──────────────────────────────────
+//
+// A encomenda para outro dia promete o que a fornada da data cobre. Na K16 a
+// Caixa prometeu 200 baguetes contra 22 planejadas, e a tela só mostrava uma
+// ressalva recolhida. Os números vêm do servidor (`/pos/schedule/` na linha,
+// `review.preorder_over_plan` no Validar); a tela só os diz.
+
+/** Quantidade na língua do balcão: `22`, `0,5`. */
+function qtyText(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(3))).replace(".", ",");
+}
+
+/** `2026-11-17` → `17/11`. */
+function dayMonth(iso: string): string {
+  const [, month, day] = String(iso || "").split("-");
+  return day && month ? `${day}/${month}` : "";
+}
+
+export interface PlanLineFact {
+  text: string;
+  /** O pedido desta linha passa do livre da data: o Validar vai pedir o gerente. */
+  over: boolean;
+}
+
+/**
+ * O fato da linha da encomenda: "22 planejadas para 17/11". Com reservas de
+ * outras encomendas, o livre vem junto ("22 planejadas para 17/11, 7 livres"),
+ * porque é contra o livre que o pedido é medido. Sem lastro informado, nada.
+ */
+export function planLineFact(
+  qty: number,
+  backing: { planned_qty: number; free_qty: number } | null | undefined,
+  dateIso: string,
+): PlanLineFact | null {
+  if (!backing) return null;
+  const day = dayMonth(dateIso);
+  if (!day) return null;
+  const planned = Number(backing.planned_qty) || 0;
+  const free = Number(backing.free_qty) || 0;
+  let text: string;
+  if (planned > 0) {
+    text = `${qtyText(planned)} planejadas para ${day}`;
+    if (free < planned) text += `, ${qtyText(free)} livres`;
+  } else {
+    text = `${qtyText(free)} livres para ${day}`;
+  }
+  return { text, over: (Number(qty) || 0) > free };
+}
+
+/** Os dois números de uma linha acima do plano: "200 pedidas, 22 planejadas para 17/11". */
+export function overPlanNumbers(line: {
+  requested_qty: number;
+  planned_qty: number;
+  free_qty: number;
+  date: string;
+}): string {
+  const day = dayMonth(line.date);
+  const planned = Number(line.planned_qty) || 0;
+  const free = Number(line.free_qty) || 0;
+  const base = `${qtyText(Number(line.requested_qty) || 0)} pedidas, ${qtyText(planned)} planejadas${day ? ` para ${day}` : ""}`;
+  return free < planned ? `${base} (${qtyText(free)} livres)` : base;
+}
+
+/**
+ * O aviso que trava o Validar quando a encomenda passa do plano, com o produto e
+ * os dois números. É também o que o gerente lê no diálogo antes de liberar.
+ */
+export function overPlanSummary(
+  lines: Array<{ name: string; requested_qty: number; planned_qty: number; free_qty: number; date: string }> | null | undefined,
+): string {
+  return (lines ?? []).map((line) => `${line.name}: ${overPlanNumbers(line)}.`).join(" ");
 }
 
 /**
