@@ -19,8 +19,12 @@ defineProps<{
     <UiDescriptionListTerm>Subtotal</UiDescriptionListTerm>
     <UiDescriptionListDetails class="tabular-nums sm:text-right" data-summary-subtotal>
       {{ cart.lines_subtotal_display }}
-      <span v-if="promoSavingsNote(cart)" class="block shop-meta" data-summary-promo-savings>{{ promoSavingsNote(cart) }}</span>
     </UiDescriptionListDetails>
+    <!-- A nota ocupa a largura inteira do resumo, logo abaixo do Subtotal: presa à
+         coluna do valor, quebrava em duas linhas no computador. -->
+    <dd v-if="promoSavingsNote(cart)" class="col-span-full -mt-2 pb-3 shop-meta sm:text-right" data-summary-promo-savings>
+      {{ promoSavingsNote(cart) }}
+    </dd>
 
     <template v-for="discount in cart.order_discount_lines" :key="discount.label">
       <UiDescriptionListTerm>{{ discount.label }}</UiDescriptionListTerm>

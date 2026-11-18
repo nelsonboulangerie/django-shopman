@@ -60,9 +60,7 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CART_UNAVAILABLE_BANNER": (
         ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
     ),
-    "CART_WAITLIST_NOTICE": (
-        ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
-    ),
+    "CART_WAITLIST_NOTICE": (),
     "CART_WAITLIST_PLANNED_DATE": (
         ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
     ),

@@ -51,7 +51,6 @@ function cart (overrides: Partial<CartProjection> = {}): CartProjection {
     has_awaiting_confirmation_items: false,
     has_ready_for_confirmation_items: false,
     unavailable_banner: '',
-    awaiting_confirmation_notice: '',
     minimum_order_progress: null,
     delivery_minimum_progress: null,
     free_delivery_progress: null,

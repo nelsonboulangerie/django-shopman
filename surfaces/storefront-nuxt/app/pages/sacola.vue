@@ -269,13 +269,13 @@ useSeoMeta({
                   </p>
 
                   <template v-if="holdFor(line)">
-                    <div v-if="holdFor(line)!.kind === 'awaiting'" :class="cartLinePromise(line.promise) ? 'mt-1' : 'mt-2'" data-cart-line-awaiting>
-                      <!-- O selo antigo só sobra quando a promessa não veio. -->
-                      <UiBadge v-if="!cartLinePromise(line.promise)" variant="outline" class="mb-1">
+                    <!-- O selo antigo só sobra quando a promessa não veio: com ela, a
+                         frase acima já diz o dia e a hora, e a linha não repete aviso. -->
+                    <div v-if="holdFor(line)!.kind === 'awaiting' && !cartLinePromise(line.promise)" class="mt-2" data-cart-line-awaiting>
+                      <UiBadge variant="outline">
                         <Icon name="lucide:clock" class="mr-1 size-3.5" />
                         Lista de espera
                       </UiBadge>
-                      <p class="shop-meta">{{ cart.awaiting_confirmation_notice || 'Envie o pedido para garantir a sua prioridade.' }}</p>
                     </div>
                     <div v-else-if="holdFor(line)!.kind === 'ready'" class="mt-2" data-cart-line-ready>
                       <UiBadge variant="default">
@@ -334,11 +334,15 @@ useSeoMeta({
 
             <CartUpsellRail v-if="cart.upsell" :upsell="cart.upsell" heading="Que tal adicionar?" class="mt-4" />
 
+            <!-- No celular o resumo não tem botões (o dock leva ao checkout), então o
+                 caminho de volta ao cardápio mora aqui. No computador ele já está no
+                 resumo, ao lado: duas vezes na mesma tela é repetição. -->
             <UiButton
               to="/menu"
               variant="ghost"
               icon="lucide:arrow-left"
-              class="mt-4 w-full justify-center text-muted-foreground"
+              class="mt-4 w-full justify-center text-muted-foreground md:hidden"
+              data-cart-continue-mobile
             >
               Continuar comprando
             </UiButton>

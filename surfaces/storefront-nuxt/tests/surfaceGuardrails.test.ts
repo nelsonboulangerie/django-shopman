@@ -941,8 +941,12 @@ describe('surface UX guardrails', () => {
     expect(cartPage).toContain('data-cart-line-awaiting')
     expect(cartPage).toContain('data-cart-line-ready')
     expect(cartPage).toContain('data-cart-hold-banner')
-    // O selo antigo só sobra quando a promessa não veio.
-    expect(cartPage).toContain('<UiBadge v-if="!cartLinePromise(line.promise)"')
+    // O selo antigo só sobra quando a promessa não veio, e a linha não repete
+    // aviso de prioridade (auditoria da prévia, 18/11/2026).
+    expect(cartPage).toContain(`v-if="holdFor(line)!.kind === 'awaiting' && !cartLinePromise(line.promise)"`)
+    expect(cartPage).not.toContain('prioridade')
+    // "Continuar comprando" uma vez por tela: embaixo da lista só no celular.
+    expect(cartPage).toContain('md:hidden"\n              data-cart-continue-mobile')
     expect(cartPage).toContain('Tudo pronto! Confirme')
     expect(cartPage).toContain('Tempo restante:')
   })
