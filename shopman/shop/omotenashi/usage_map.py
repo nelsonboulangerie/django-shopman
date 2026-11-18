@@ -877,27 +877,35 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_MONEY_CARD_HOLD_RELEASED": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_MONEY_LATE_PIX_REFUNDED": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_MONEY_LATE_PIX_REFUNDING": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_MONEY_NOTHING_CHARGED": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_MONEY_REFUNDED_CARD": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_MONEY_REFUNDED_PIX": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_MONEY_REFUNDING_CARD": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_MONEY_REFUNDING_PIX": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_NOT_FOUND_MESSAGE": (
