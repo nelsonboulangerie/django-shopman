@@ -268,7 +268,7 @@ Não existe no modo balcão por desenho (`pos_sales_mode.py:78-84`): entrega é 
 | Desconto manual acima do teto | PIN de gerente; o teto inclui a taxa de entrega no subtotal | `pos.py:3247`, `:3471` | ATRITO (P2-22), resolvido #1746 |
 | Sem conexão | fila local, dinheiro/maquininha offline, envio na volta, preço da hora da venda | #1634, #1635 | OK |
 | Cupom | não há campo de cupom no PDV. Decisão do dono (14/10/2026): no balcão o desconto é do GRUPO do cliente (faixa de preço com desconto automático no Admin), não cupom; identificar o cliente basta | `shop/admin/price_tier.py`; `services/promotions.py` (`customer_group_promotion`); `pos.py` (`_review_priced_lines`) | RESOLVIDO por outro caminho (P2-21), resolvido #1766 |
-| Devolução depois da venda | só no Gestor | — | ATRITO (P2) |
+| Devolução depois da venda | no detalhe do pedido do Gestor: "Registrar devolução", com itens, quantidade, motivo e o PIN de um Gerente da lista; o valor e o destino do dinheiro aparecem antes de confirmar (iFood fica no portal deles; venda na conta da casa ainda não) | `backstage/api/operations.py` (`OrderReturnView`, `OrderReturnPreviewView`); `backstage/projections/order_return.py`; `shop/handlers/returns.py` | OK (WP-G12, decisão do dono de 17/11/2026) |
 
 ### 2.4 Matriz
 
@@ -688,5 +688,5 @@ a resposta do contador.
 | P0-3 no vivo | espera a janela do dono | O código está no `main` (#1719); falta o resolver `intermediated_sale` na env `SHOPMAN_FISCAL_EMISSION_RESOLVER` do spec vivo, junto do delta do go-live |
 | P1-12, emissão da nota de estorno | espera o contador | Desde #1774 o sistema abre a pendência "nota de estorno" no Gestor com o que juntar; emitir a nota fica para depois de o contador dizer qual procedimento quer |
 | Prazo de cancelar a NFC-e | espera o contador | `docs/reference/fiscal-parametrizacao-nfce.md` §5 diz 24 h; o código e este mapa usam 30 min (`SHOPMAN_NFCE_CANCELLATION_WINDOW_MINUTES`, RICMS/PR art. 35). Confirmar qual vale, sem mudar nada antes da resposta |
-| Devolução depois da venda (§2.3) | ATRITO sem número | Só no Gestor; não entrou na §8 como item |
+| Devolução depois da venda (§2.3) | resolvido (WP-G12) | O Gestor registra a devolução no detalhe do pedido, com PIN de Gerente; antes o serviço existia e nenhuma tela o chamava |
 | iFood, mudança de endereço (§6.3) | ATRITO sem número | Só alerta; quem entrega é o iFood |

@@ -480,14 +480,83 @@ def parse_acts(raw: str, text: str) -> list[Act]:
     return acts
 
 
+#: As marcas que o redator (``observation_privacy``) deixa no lugar do que apagou.
+_PLACEHOLDER_RE = re.compile(r"\[[^\[\]]*omitid[oa][^\[\]]*\]|\[(?:email|phone)\]|\[REDACTED\]")
+
+
+#: Um caractere da mesma frase: ponto só no meio de palavra (CPF, e-mail, "r.").
+_CLAUSE = r"(?:[^.;!?\n]|\.(?=\S))"
+#: A marca no fim do trecho vai até a vírgula ou a pontuação, como o próprio redator.
+_CLAUSE_END = r"(?:[^,.;!?\n]|\.(?=\S))+"
+
+
+def _literal(piece: str) -> str:
+    return r"\s+".join(re.escape(word) for word in piece.split())
+
+
+def original_span(span: str, original: str) -> str:
+    """O trecho do texto ORIGINAL que corresponde ao trecho redigido que a leitura devolveu.
+
+    A leitura só vê o texto redigido; o executor trabalha sobre o original, que não sai
+    da casa (WP-03). Cada marca do redator vira "algum texto" entre os pedaços literais;
+    sem casar, vale a fala inteira, como a regra local de equipe já faz.
+    """
+    if not _PLACEHOLDER_RE.search(span):
+        return span
+    pieces = [piece.strip() for piece in _PLACEHOLDER_RE.split(span)]
+    parts: list[str] = []
+    for index, piece in enumerate(pieces):
+        if index:
+            # A marca cobre um trecho dentro da mesma frase: no fim, até a pontuação.
+            last = index == len(pieces) - 1
+            parts.append(_CLAUSE_END if last and not piece else _CLAUSE + "+?")
+        if piece:
+            parts.append(_literal(piece))
+    match = re.search("".join(parts), original, re.IGNORECASE | re.DOTALL)
+    if match is None:
+        return original.strip()[:300]
+    return " ".join(match.group(0).split())[:300]
+
+
+def reading_note(memory) -> str:
+    """O estado da conversa para a leitura: sem número de pedido e sem nome (WP-03).
+
+    A leitura só separa partes; o rótulo do pedido (número, dia, faixa) não a ajuda e
+    é dado que não sai. O agente com modelo segue com ``prompt_lines``.
+    """
+    from .dialogue import CLOSED_STATUS_LABEL, _context_note
+
+    lines = []
+    note = _context_note(memory.state)
+    if note:
+        lines.append(note)
+    if memory.facts.open_order:
+        lines.append(f"O cliente tem um pedido em aberto ({memory.facts.open_order.status}).")
+    if memory.facts.recent_order:
+        order = memory.facts.recent_order
+        status = CLOSED_STATUS_LABEL.get(order.status, order.status)
+        lines.append(f"Um pedido do cliente fechou há pouco ({status}): acréscimo vira outro pedido.")
+    return "\n".join(lines)
+
+
 def read_with_model(text: str, *, memory_note: str = "", client=None) -> tuple[list[Act], float, str]:
-    """(atos, ms, erro). Erro não vazio: quem chama usa a divisão local."""
+    """(atos, ms, erro). Erro não vazio: quem chama usa a divisão local.
+
+    O texto e a nota saem REDIGIDOS (``redact_observation_text``, com os nomes conhecidos
+    do turno): a frase pública de /privacidade diz que nome, documento, contato,
+    endereço, pagamento, alergia e doença escritos na mensagem não vão ao leitor de IA.
+    Os trechos que voltam são levados de volta ao texto original (``original_span``).
+    """
+    from .observation_privacy import redact_observation_text
+
     client = client if client is not None else build_client()
     if client is None:
         return [], 0.0, "no_client"
+    redacted = redact_observation_text(text).text
+    note = redact_observation_text(memory_note).text if memory_note else ""
     started = time.perf_counter()
     try:
-        response = client.messages.create(**build_request(text, memory_note=memory_note))
+        response = client.messages.create(**build_request(redacted, memory_note=note))
     except Exception as exc:  # rede, cota, chave, tempo: vale a divisão local
         logger.warning("concierge.intents.read_failed exception_type=%s", type(exc).__name__)
         return [], (time.perf_counter() - started) * 1000, type(exc).__name__
@@ -499,10 +568,14 @@ def read_with_model(text: str, *, memory_note: str = "", client=None) -> tuple[l
         if getattr(block, "type", "") == "text"
     )
     try:
-        acts = parse_acts(raw, text)
+        acts = parse_acts(raw, redacted)
     except (ValueError, json.JSONDecodeError):
         logger.warning("concierge.intents.read_unreadable")
         return [], elapsed, "unreadable"
+    for act in acts:
+        act.span = original_span(act.span, text)
+        if _PLACEHOLDER_RE.search(act.product):
+            act.product = ""
     return acts, elapsed, ""
 
 
@@ -1020,7 +1093,7 @@ def run(conversation, *, binding, decision, client=None):
         rules_intent=rules_intent,
         rules_source=rules_source,
         jev_scores=getattr(decision, "jev_scores", None),
-        memory_note=memory.prompt_lines(),
+        memory_note=reading_note(memory),
         client=reader,
         use_model=reader is not None or has_key,
     )
@@ -1154,7 +1227,7 @@ def _answer_again(conversation, *, binding, decision, memory, channel_ref: str, 
                                 intents={"acts": [], "source": "memory", "reason": "asked_again_nothing"})
         rules_intent, rules_source = triage.classify_rules(text)
         has_key = _ai_ready()
-        found = plan(text, rules_intent=rules_intent, rules_source=rules_source, memory_note=memory.prompt_lines(),
+        found = plan(text, rules_intent=rules_intent, rules_source=rules_source, memory_note=reading_note(memory),
                      client=client, use_model=client is not None or has_key)
         found.reason = f"asked_again:{found.reason}"
     executed = execute(found, conversation=conversation, channel_ref=channel_ref, binding=binding)

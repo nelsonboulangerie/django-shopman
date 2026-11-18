@@ -177,6 +177,82 @@ def test_pickup_orders_never_show(shop):
     assert build_deliveries().waiting == ()
 
 
+# ── a corrida segue chamada: desistência e agrupada pela TaOn ───────
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_withdrawal_shows_as_the_same_ride_looking_for_another_driver(shop):
+    """O entregador desistiu: a corrida não volta para Aguardando nem pede outra chamada."""
+    from shopman.backstage.projections.order_queue import _card_courier_label, _courier_block
+
+    order = _at("EN-A", -23.30, -51.16)
+    _call(order)
+    courier.apply_status(order, "A", source="poll")
+    order.refresh_from_db()
+    assert courier.record_reopen(order, at="2026-11-16T17:32:00+00:00") == "applied"
+
+    deliveries = build_deliveries()
+    assert deliveries.waiting == ()  # segue sendo uma corrida, não um pedido a chamar
+    (ride,) = deliveries.rides
+    assert (ride.state, ride.status_label) == ("reopened", "Procurando outro entregador")
+    assert (ride.reopened_at, ride.reopened_driver) == ("2026-11-16T17:32:00+00:00", "Entregador Mock")
+    assert ride.driver is None and ride.number == 1
+
+    order.refresh_from_db()
+    block = _courier_block(order)
+    assert block["status_label"] == "Procurando outro entregador"
+    assert (block["reopened_at"], block["reopened_driver"]) == ("2026-11-16T17:32:00+00:00", "Entregador Mock")
+    # A corrida está viva: nem "Chamar entregador", nem "Chamar de novo".
+    assert block["can_dispatch"] is False and block["can_dispatch_again"] is False
+    assert _card_courier_label(order) == "Procurando outro entregador"
+
+    # Outro entregador aceitou: a corrida volta a ter dono e a frase some.
+    courier.apply_status(order, "A", source="poll")
+    (ride,) = build_deliveries().rides
+    assert ride.state == "coming" and ride.reopened_at == ""
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_withdrawal_never_turns_into_nobody_accepted(shop):
+    """A espera recomeça na desistência: não é a chamada antiga que "ninguém aceitou"."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    order = _at("EN-A", -23.30, -51.16)
+    _call(order)
+    courier.apply_status(order, "A", source="poll")
+    order.refresh_from_db()
+    long_ago = (timezone.now() - timedelta(minutes=40)).isoformat()
+    order.data = {**order.data, "courier": {**order.data["courier"], "called_at": long_ago, "requested_at": long_ago}}
+    order.save(update_fields=["data"])
+    courier.record_reopen(order)
+
+    assert build_deliveries().rides[0].state == "reopened"
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_ride_grouped_by_the_provider_is_never_nobody_accepted(shop):
+    """Letra U: a TaOn juntou a outra corrida, que já tem entregador. Antes virava "Ninguém aceitou ainda"."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    order = _at("EN-A", -23.30, -51.16)
+    _call(order)
+    courier.apply_status(order, "U", source="poll")
+    order.refresh_from_db()
+    long_ago = (timezone.now() - timedelta(minutes=40)).isoformat()
+    order.data = {**order.data, "courier": {**order.data["courier"], "called_at": long_ago, "requested_at": long_ago}}
+    order.save(update_fields=["data"])
+
+    deliveries = build_deliveries()
+    assert deliveries.waiting == ()
+    (ride,) = deliveries.rides
+    assert (ride.state, ride.status_label) == ("grouped", "Junto com outra corrida")
+    assert ride.cancel_action is None
+
+
 # ── cancelar a corrida: a mesma régua e o mesmo estado do Painel do pedido ──
 
 

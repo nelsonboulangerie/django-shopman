@@ -61,6 +61,10 @@ def on_production_voided(sender, product_ref, date, action, work_order, **kwargs
     de produção a contribuição desta fornada. Ver
     ``_overbooked_holds_on_production_quants`` para o que fica e o que sai.
 
+    O pedido aceito que perde a reserva vira fato do pedido: evento na linha do
+    tempo e aviso no sino do Gestor (``services.production_promise``, #2547). A
+    sacola aberta segue avisada pela notificação ``production_cancelled``.
+
     Best-effort por desenho (a liberação de cada hold já é engolida em DEBUG); o
     wrapper fecha o único ponto que faltava — a query de topo — para o void de
     uma WO nunca abortar a cadeia de receivers nem o caller.
@@ -68,13 +72,17 @@ def on_production_voided(sender, product_ref, date, action, work_order, **kwargs
     if action != "voided" or not date:
         return
 
+    from decimal import Decimal
+
     from shopman.stockman.service import Stock as stock
 
+    from shopman.shop.services import production_promise
+
     session_keys = set()
+    lost_by_order: dict[str, Decimal] = {}
     for hold in _overbooked_holds_on_production_quants(product_ref, date):
         ref = (hold.metadata or {}).get("reference")
-        if ref:
-            session_keys.add(ref)
+        order_ref = production_promise.order_ref_from_hold_reference(ref)
         try:
             stock.release(hold.hold_id, reason="Produção cancelada")
         except Exception:
@@ -82,6 +90,20 @@ def on_production_voided(sender, product_ref, date, action, work_order, **kwargs
             logger.warning(
                 "on_production_voided: could not release hold %s", hold.hold_id, exc_info=True,
             )
+        if order_ref:
+            # O pedido aceito perdeu a reserva: vira fato DELE (#2547), não só
+            # linha de estoque. A reserva que não saiu também perdeu o lastro.
+            lost_by_order[order_ref] = lost_by_order.get(order_ref, Decimal("0")) + hold.quantity
+        elif ref:
+            session_keys.add(ref)
+
+    if lost_by_order:
+        try:
+            production_promise.announce_lost_holds(
+                lost_by_order, sku=product_ref, date=date, work_order=work_order,
+            )
+        except Exception:
+            logger.warning("on_production_voided: failed to announce lost order holds", exc_info=True)
 
     if not session_keys:
         return
