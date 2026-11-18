@@ -133,6 +133,10 @@ const denial = computed(() =>
     landingPath: landingPath.value,
   }),
 );
+// A conta não abre este pedido: o cabeçalho não fala de conexão nem oferece o menu de um
+// pedido que a pessoa não pode ler. "Sem conexão" em vermelho, ali, era mentira: a rede
+// respondeu, quem não abre é a conta (visto na prévia do WP-G05).
+const accessDenied = computed(() => forbidden.value && !order.value);
 
 // Ouvidoria: o cliente avaliou mal e pediu para falar com o responsável. O caso fica
 // aberto no pedido até alguém marcar "Resolvido", com uma frase do que foi feito.
@@ -1186,7 +1190,7 @@ const outside = useOutsideStore(
         />
         <!-- `min-w-0`: sem ele o invólucro segura a largura do rótulo completo e o
              selo não encolhe (cortava "Atualiza sozinho a cada" a 800 px). -->
-        <span class="hidden min-w-0 md:inline-flex">
+        <span v-if="!accessDenied" class="hidden min-w-0 md:inline-flex">
           <OperatorLiveStatus
             :tone="liveTone"
             :time="readClock"
@@ -1221,6 +1225,7 @@ const outside = useOutsideStore(
           data-detail-return
         />
         <NuxtButton
+          v-if="!accessDenied"
           icon="i-lucide-ellipsis-vertical"
           label="Mais ações do pedido"
           color="neutral"

@@ -1309,6 +1309,11 @@ describe("detalhe do pedido — a leitura que falhou diz por quê", () => {
       expect(denial.text()).toContain("Abrir a Saída");
       expect(w.text()).not.toContain("não encontrado");
       expect(w.find("[data-order-error]").exists()).toBe(false);
+      // A rede respondeu; quem não abre é a conta. O cabeçalho não diz "Sem conexão"
+      // nem oferece o menu de um pedido que a pessoa não pode ler.
+      expect(w.text()).not.toContain("Sem conexão");
+      expect(w.text()).not.toContain("Atualização falhou");
+      expect(w.find('[data-action="menu"]').exists()).toBe(false);
     } finally { w.unmount(); }
   });
 
