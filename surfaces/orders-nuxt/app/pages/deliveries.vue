@@ -252,8 +252,11 @@ const mapBuilding = computed(() =>
 const mapLive = computed<MapLiveRide[]>(() =>
   rides.value.map((ride) => ({ number: ride.number, stops: ride.stops.filter(located), courier: ride.position })),
 );
-const origin = computed(
-  () => data.value?.origin ?? mapWaiting.value[0] ?? mapLive.value[0]?.stops[0] ?? null,
+// A loja sem coordenada NÃO vira o primeiro cliente (o ícone da loja ia parar na casa
+// dele): o mapa desenha só o que tem lugar, e a rota começa na primeira parada.
+const origin = computed(() => data.value?.origin ?? null);
+const hasMap = computed(
+  () => Boolean(origin.value) || mapWaiting.value.length > 0 || mapLive.value.some((ride) => ride.stops.length > 0),
 );
 const unlocated = computed(() => waitingAll.value.filter((stop) => !located(stop)).length);
 const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride.refs.length, 0));
@@ -282,7 +285,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
     <div v-else-if="data" class="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)]">
       <div class="h-[38dvh] shrink-0 border-b border-default lg:h-auto lg:border-r lg:border-b-0">
         <CourierDeliveriesMap
-          v-if="origin"
+          v-if="hasMap"
           :origin="origin"
           :waiting="mapWaiting"
           :building="mapBuilding"

@@ -59,10 +59,10 @@ def test_only_one_default_in_the_database(taon, casa):
         casa.save()
 
 
-def test_admin_validation_names_the_current_default(taon, casa):
-    casa.is_default = True
+def test_admin_validation_names_the_current_default(taon):
+    other = DeliveryService(ref="outra", name="Outra central", kind=DeliveryService.KIND_MACHINE, is_default=True)
     with pytest.raises(ValidationError) as err:
-        casa.full_clean()
+        other.full_clean()
     assert "O padrão hoje é TaOn" in str(err.value)
 
 
@@ -72,13 +72,14 @@ def test_default_must_be_active(taon):
         taon.full_clean()
 
 
-def test_switching_the_default_moves_it(taon, casa):
+def test_switching_the_default_moves_it(taon):
+    other = DeliveryService.objects.create(ref="outra", name="Outra central", kind=DeliveryService.KIND_MACHINE)
     taon.is_default = False
     taon.save()
-    casa.is_default = True
-    casa.full_clean()
-    casa.save()
-    assert DeliveryService.default() == casa
+    other.is_default = True
+    other.full_clean()
+    other.save()
+    assert DeliveryService.default() == other
 
 
 # ── entregador ──────────────────────────────────────────────────────────────

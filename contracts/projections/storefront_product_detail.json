@@ -35,6 +35,17 @@
   "name": "Croissant do Contrato",
   "nutrition": null,
   "option_groups": [],
+  "pickup_store": {
+    "address": "Rua do Contrato, 100, Centro, Londrina/PR, CEP 86000-000",
+    "name": "Padaria Contrato"
+  },
+  "promise": {
+    "date": "<today>",
+    "day_label": "hoje",
+    "kind": "ready",
+    "ready_at": "10:30",
+    "text": "Pronto agora"
+  },
   "qty_in_cart": 0,
   "quote": {
     "adjustments": [],

@@ -207,9 +207,9 @@ class MachineWebhookView(APIView):
                 if len(orders) > 1 and ride_status in ("A", "F"):
                     # Corrida com várias paradas: os detalhes (entregador, valor final)
                     # vêm da central UMA vez, não uma consulta por pedido.
-                    from shopman.shop.adapters import get_adapter
+                    from shopman.shop.services import delivery_services
 
-                    adapter = get_adapter("courier")
+                    adapter = delivery_services.courier_backend()
                     try:
                         details = {**event, **(adapter.get_details(str(ride_ref)) if adapter else {})}
                     except Exception:  # silêncio-deliberado: cada pedido busca sozinho, como antes
@@ -317,15 +317,14 @@ def _revive_archived(archived: list, ride_ref: str, ride_status: str, *, at: str
     letra final. Sem prova, é aviso atrasado (``stale``) e nada muda. Devolve os
     pedidos que voltaram a ter a corrida e o que aconteceu.
     """
-    from shopman.shop.adapters import get_adapter
     from shopman.shop.adapters.courier_machine import TERMINAL_STATUSES
-    from shopman.shop.services import courier
+    from shopman.shop.services import courier, delivery_services
 
     event_at = courier.provider_instant(at)
     ended = [courier.archived_ride_ended_at(order, ride_ref) for order in archived]
     proven = event_at is not None and all(moment is not None and event_at > moment for moment in ended)
     if not proven:
-        adapter = get_adapter("courier")
+        adapter = delivery_services.courier_backend()
         read_ride = getattr(adapter, "read_ride", None) if adapter else None
         try:
             reading = read_ride(ride_ref) if read_ride else {}

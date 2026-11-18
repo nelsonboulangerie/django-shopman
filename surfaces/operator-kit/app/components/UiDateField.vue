@@ -53,9 +53,15 @@ const value = computed<DateValue | undefined>({
 const minValue = computed(() => asDate(props.min));
 const maxValue = computed(() => asDate(props.max));
 
+// Escolher o dia FECHA o calendário: o toque no dia é a resposta, e o calendário
+// aberto por cima do que vem depois (os horários, no PDV) escondia a próxima
+// pergunta (P2-8 do laudo do PDV, 16/11/2026).
+const calendarOpen = ref(false);
+
 function pick(next: unknown) {
   if (!next || Array.isArray(next) || typeof next !== "object" || "start" in next) return;
   value.value = next as DateValue;
+  calendarOpen.value = false;
 }
 </script>
 
@@ -86,7 +92,7 @@ function pick(next: unknown) {
       <template #trailing>
         <!-- Sem `:ui` por instância: o calendário nasce no portal DEPOIS do popover ou
              do modal que contém o campo, e com o mesmo z do tema fica por cima dele. -->
-        <NuxtPopover :reference="inputDate?.inputsRef?.[3]?.$el">
+        <NuxtPopover v-model:open="calendarOpen" :reference="inputDate?.inputsRef?.[3]?.$el">
           <NuxtButton
             color="neutral"
             variant="link"

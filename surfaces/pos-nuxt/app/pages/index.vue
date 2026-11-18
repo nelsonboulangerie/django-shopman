@@ -120,6 +120,7 @@ const {
   cancelSaleError,
   lookupBusy,
   managerApprovalError,
+  managerApproved,
   managerCheckBusy,
   checkManagerApproval,
   gridProducts,
@@ -130,6 +131,9 @@ const {
   acknowledgeUncertainClose,
   recheckUncertainClose,
   closeRecheckBusy,
+  closeRecheckApproval,
+  closeRecheckApprovalError,
+  dismissCloseRecheckApproval,
   pendingPixOrderRefs,
   reopenablePixOrderRefs,
   reopenPendingPix,
@@ -392,6 +396,17 @@ watch(closeGuardNotice, (notice) => {
 async function recheckFromGuard() {
   const outcome = await recheckUncertainClose();
   if (outcome === "unknown") openUncertainCloseRecovery();
+  // "approval": a venda pedia gerente e o PIN não ficou guardado (WP-E1). O
+  // diálogo dele abre sozinho (`closeRecheckApproval`), com o valor da venda.
+  if (outcome === "approval") uncertainCloseRecoveryOpen.value = false;
+}
+async function recheckWithManager(username: string, pin: string) {
+  const outcome = await recheckUncertainClose({ username, pin });
+  if (outcome === "resolved") dismissCloseRecheckApproval();
+  if (outcome === "unknown") {
+    dismissCloseRecheckApproval();
+    openUncertainCloseRecovery();
+  }
 }
 async function confirmUncertainCloseRecovery() {
   if (!uncertainCloseReviewed.value || uncertainCloseRecoveryBusy.value) return;
@@ -776,6 +791,24 @@ function openScheduleHere() {
   if (checkoutMode.value) paymentWorkspaceRef.value?.openSchedule();
   else scheduleSheetOpen.value = true;
 }
+// O ASSISTENTE DA ENCOMENDA pergunta no próprio cartão (P2-8): retirada ou
+// entrega é um toque na etapa, e o dia e o horário são o mesmo `PosSchedulePicker`
+// do diálogo "Quando", com a mesma resposta da agenda. Entrega sem endereço segue
+// para a etapa do endereço, que abre o formulário de entrega.
+function pickFulfillmentInOrderEntry(type: "pickup" | "delivery") {
+  cart.fulfillmentType = type;
+  cart.fulfillmentConfirmed = true;
+}
+const orderEntrySchedule = computed(() => ({
+  today: scheduleToday.value,
+  availableDates: scheduleAvailableDates.value,
+  maxDate: scheduleMaxDate.value,
+  windows: deliverySlots.value,
+  bottleneckName: scheduleBottleneckName.value,
+  readyAt: scheduleReadyAt.value,
+  pending: deliverySlotsPending.value,
+  failed: scheduleFailed.value,
+}));
 // O rótulo do terceiro chip. "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um
 // campo vazio: a esmagadora maioria das vendas é para agora, e a barra não pode
 // parecer que falta preencher alguma coisa.
@@ -1503,7 +1536,7 @@ onBeforeUnmount(() => {
         v-model:discount-type="cart.discountType"
         v-model:discount-value="cart.discountValue"
         v-model:discount-reason="cart.discountReason"
-        :manager-approved="!!cart.managerApprovalToken"
+        :manager-approved="managerApproved"
         :manager-approval-error="managerApprovalError"
         :manager-check-busy="managerCheckBusy"
         @check-manager="(username, pin, done) => { void checkManagerApproval(username, pin).then(done) }"
@@ -1666,9 +1699,15 @@ onBeforeUnmount(() => {
           :schedule-label="scheduleChipLabel"
           :schedule-window="deliveryWindowLabel"
           :loading="busy"
+          :fulfillment-options="pos?.fulfillment_options || []"
+          :chosen-fulfillment="cart.fulfillmentConfirmed ? cart.fulfillmentType : ''"
+          v-model:schedule-date="cart.deliveryDate"
+          v-model:schedule-time-slot="cart.deliveryTimeSlot"
+          :schedule="orderEntrySchedule"
           @customer="tabHeaderRef?.openCustomer()"
           @fulfillment="openFulfillmentHere"
-          @schedule="openScheduleHere"
+          @pick-fulfillment="pickFulfillmentInOrderEntry"
+          @schedule="refreshSchedule"
           @complete="completeOrderSetup"
         />
         <PosProductGrid
@@ -1917,6 +1956,24 @@ onBeforeUnmount(() => {
       @update:open="(value) => { if (!value) drawerLock.backToLock(); }"
       @authorize="drawerLock.unlock"
       @authorize-badge="drawerLock.unlockWithBadge"
+    />
+
+    <!-- A conferência da venda sem resposta que pedia gerente: o PIN não ficou
+         guardado (WP-E1), e o reenvio sai com o gerente assinando de novo. -->
+    <OperatorManagerAuth
+      :open="closeRecheckApproval !== null"
+      action="sale_approval"
+      :threshold-q="closeRecheckApproval?.threshold_q || 0"
+      :discount-q="closeRecheckApproval?.discount_q || 0"
+      :reasons="closeRecheckApproval?.reasons"
+      :house-account-limit="closeRecheckApproval?.house_account_limit"
+      :operator-name="activeOperator?.name || ''"
+      :managers="pos?.managers || []"
+      :busy="closeRecheckBusy"
+      :error="closeRecheckApprovalError"
+      data-close-guard-manager
+      @update:open="(value) => { if (!value) dismissCloseRecheckApproval(); }"
+      @authorize="recheckWithManager"
     />
 
     <PosOfflineSalesDialog
