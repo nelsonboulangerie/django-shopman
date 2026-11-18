@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Ajustes do Gestor (D, 13/11/2026): o andar do cadastro que se mexe fora do turno,
-// Clientes e Postos. Histórico, Catálogo e Canais são operação e moram no rail; Rotinas
+// Postos. Histórico, Clientes, Catálogo e Canais são operação e moram no rail; Rotinas
 // mora no PDV.
 import { SETTINGS_SKELETON_CARDS } from "~/presentation/gestorSections";
 

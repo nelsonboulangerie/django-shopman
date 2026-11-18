@@ -73,3 +73,18 @@ describe("managerAuth: cancelar pedido no Gestor", () => {
     expect(managerAuthReason({ action: "cancel_order" })).toBe("O pedido já foi pago.");
   });
 });
+
+// Devolução depois da venda, no Gestor (WP-G12, dono 17/11/2026): o Gerente lê o
+// valor e o destino do dinheiro, montados pela prévia do servidor.
+describe("managerAuth: devolução no Gestor", () => {
+  it("o motivo é o valor que volta e para onde", () => {
+    expect(managerAuthTitle("order_return")).toBe("Autorizar a devolução");
+    expect(
+      managerAuthReason({ action: "order_return", detail: "R$ 12,00 serão estornados ao Pix do cliente." }),
+    ).toBe("R$ 12,00 serão estornados ao Pix do cliente.");
+  });
+
+  it("sem o valor, a frase fixa do ato", () => {
+    expect(managerAuthReason({ action: "order_return" })).toBe("Volta dinheiro ou produto do cliente.");
+  });
+});

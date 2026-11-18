@@ -1056,6 +1056,17 @@ class POSHeadlessSurfaceContractTests(TestCase):
         manager = get_user_model().objects.create_user(username="pos-manager-api", password="secret", is_staff=True)
         _grant_adjust_shift_perm(manager)
         PinCredential.set_for(manager, "4321")
+        # O PIN é conferido no diálogo, que devolve o carimbo preso ao desconto
+        # que o gerente viu (#2558); o fechamento leva o carimbo, nunca o PIN.
+        checked = self.client.post(
+            "/api/v1/backstage/pos/manager-approval/check/",
+            data=json.dumps({
+                "manager_approval": {"username": "pos-manager-api", "pin": "4321"},
+                "scope": {"tab_ref": "", "discount_q": 100},
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(checked.status_code, 200, checked.content)
         payload = {
             "intent_version": POS_SALE_INTENT_VERSION,
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
@@ -1063,7 +1074,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "payment_method": "cash",
             "payment_collection": "terminal",
             "manual_discount": {"type": "fixed", "value": "1,00", "reason": "cortesia"},
-            "manager_approval": {"username": "pos-manager-api", "pin": "4321"},
+            "manager_approval": {"token": checked.json()["token"]},
             "client_request_id": "pos-headless-manager-approval-002",
         }
 
@@ -1294,7 +1305,9 @@ class POSHeadlessSurfaceContractTests(TestCase):
         )
 
         def refs(query: str) -> list[str]:
-            response = self.client.get(f"/api/v1/backstage/pos/customer/search/?q={query}")
+            response = self.client.post(
+                "/api/v1/backstage/pos/customer/search/", {"q": query}, content_type="application/json",
+            )
             self.assertEqual(response.status_code, 200)
             return [row["ref"] for row in response.json()["results"]]
 
@@ -1303,7 +1316,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertIn("CUST-SEARCH-1", refs("bruno@example"))  # by email
         self.assertIn("CUST-SEARCH-1", refs("11122233"))    # by document (CPF)
         # too short → no results (avoid scanning on a single character)
-        self.assertEqual(self.client.get("/api/v1/backstage/pos/customer/search/?q=b").json()["results"], [])
+        self.assertEqual(refs("b"), [])
 
     def test_api_customer_search_masks_contacts_and_needs_four_digits(self) -> None:
         """Beta 07/11: "11" devolvia telefone, CPF e e-mail inteiros de 8 clientes
@@ -1315,7 +1328,9 @@ class POSHeadlessSurfaceContractTests(TestCase):
         )
 
         def search(query: str) -> list[dict]:
-            response = self.client.get("/api/v1/backstage/pos/customer/search/", {"q": query})
+            response = self.client.post(
+                "/api/v1/backstage/pos/customer/search/", {"q": query}, content_type="application/json",
+            )
             self.assertEqual(response.status_code, 200)
             return response.json()["results"]
 
@@ -1399,6 +1414,55 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.json()["customer"])
 
+    def test_api_customer_search_goes_by_post_never_in_the_url(self) -> None:
+        """#2335: o termo (nome, telefone, CPF, e-mail) ia na query string, e
+        dali para o log de acesso e o cache. A busca é POST; GET não existe."""
+        response = self.client.get("/api/v1/backstage/pos/customer/search/", {"q": "Bruno"})
+        self.assertEqual(response.status_code, 405)
+        actions = {a["ref"]: a for a in self.client.get("/api/v1/backstage/pos/").json()["pos"]["actions"]}
+        self.assertEqual(actions["customer_search"]["method"], "POST")
+        self.assertNotIn("?", actions["customer_search"]["href"])
+
+    def test_api_customer_search_locks_after_the_limit(self) -> None:
+        """#2336: sem teto, "aa", "ab", "ac"... percorria a base de clientes. O
+        limite é por operador e responde 429 no dialeto de erro da casa."""
+        from unittest.mock import patch
+
+        from django.core.cache import cache
+
+        from shopman.backstage.api.throttles import POSCustomerSearchThrottle
+
+        def search(term: str):
+            return self.client.post(
+                "/api/v1/backstage/pos/customer/search/", {"q": term}, content_type="application/json",
+            )
+
+        cache.clear()
+        rates = {**POSCustomerSearchThrottle.THROTTLE_RATES, "pos_customer_search": "3/minute"}
+        with patch.object(POSCustomerSearchThrottle, "THROTTLE_RATES", rates):
+            statuses = [search(f"a{c}").status_code for c in "abcd"]
+            blocked = search("ae")
+        cache.clear()
+        self.assertEqual(statuses, [200, 200, 200, 429])
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("detail", blocked.json())
+
+    def test_pos_projection_carries_no_money_sum_for_anyone(self) -> None:
+        """D4 / P1-7: a resposta de ``/pos/`` trazia ``shift.total_display`` (o
+        faturamento do dia) à Caixa, cuja contagem do fechamento é cega. A tela
+        só usa a contagem: o dinheiro do dia sai do payload, para todo papel
+        (quem audita o lê na leitura X e no Admin)."""
+        for status in ("new", "confirmed"):
+            Order.objects.create(ref=f"POS-SUM-{status}", channel_ref="pdv", status=status, total_q=4500, data={})
+
+        shift = self.client.get("/api/v1/backstage/pos/").json()["shift"]
+
+        self.assertEqual(shift["count"], 2)
+        self.assertEqual(shift["last_ref"], "POS-SUM-confirmed")
+        for key in ("total_display", "last_total_display", "cod_pending_display", "total_q"):
+            self.assertNotIn(key, shift)
+        self.assertFalse(any("45" in str(value) for value in shift.values()))
+
     def test_api_customer_search_normalizes_formatted_digits(self) -> None:
         # Telefone e CPF são armazenados só com dígitos: a query FORMATADA
         # ("111.222.333-44", "(43) 98888-7777") precisa encontrar mesmo assim.
@@ -1411,8 +1475,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
         )
 
         def refs(query: str) -> list[str]:
-            response = self.client.get(
-                "/api/v1/backstage/pos/customer/search/", {"q": query},
+            response = self.client.post(
+                "/api/v1/backstage/pos/customer/search/", {"q": query}, content_type="application/json",
             )
             self.assertEqual(response.status_code, 200)
             return [row["ref"] for row in response.json()["results"]]

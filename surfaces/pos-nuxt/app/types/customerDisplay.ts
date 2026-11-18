@@ -6,8 +6,10 @@ import type { POSCartItem, POSProjection, POSSaleReviewProjection } from "~/type
 import type { PaymentProofView } from "~/presentation/payment";
 import type { PosReceiptSnapshot } from "~/presentation/receipt";
 
-/** Em que momento da venda o cliente está olhando. */
-export type CustomerDisplayPhase = "idle" | "sale" | "payment" | "result";
+/** Em que momento da venda o cliente está olhando. `payment_failed` = a venda
+ *  foi registrada e a cobrança não: a parede não agradece por dinheiro que não
+ *  entrou. */
+export type CustomerDisplayPhase = "idle" | "sale" | "payment" | "payment_failed" | "result";
 
 export interface CustomerDisplayItem {
   name: string;
