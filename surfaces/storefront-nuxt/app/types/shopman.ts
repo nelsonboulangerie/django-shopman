@@ -1057,6 +1057,9 @@ export interface OrderItemProjection {
   qty: number
   unit_price_display: string
   total_display: string
+  // O valor cheio riscado ao lado, quando a promoção do produto abateu a linha
+  // (dono, 16/11/2026). Vazio sem promoção.
+  full_total_display?: string
 }
 
 export interface TrackingFulfillmentProjection {

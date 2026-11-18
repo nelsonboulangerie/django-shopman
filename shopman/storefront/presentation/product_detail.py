@@ -24,6 +24,7 @@ from shopman.utils.monetary import format_money
 from shopman.shop.config import ChannelConfig
 from shopman.shop.projections import catalog_context
 from shopman.shop.projections.pricing_quote import PriceQuoteProjection
+from shopman.shop.projections.ready_promise import read_promise_facts
 from shopman.shop.projections.storefront_context import session_pricing_hints
 from shopman.shop.projections.types import (
     Availability,
@@ -34,7 +35,6 @@ from shopman.storefront.presentation.catalog import unit_weight_label, viewer_co
 from shopman.storefront.presentation.promise import PromiseProjection, promise_for
 from shopman.storefront.presentation.status import availability_label as resolve_availability_label
 from shopman.storefront.presentation.types import ComponentProjection
-from shopman.storefront.services.promise_facts import read_promise_facts
 
 from .catalog import (
     CatalogItemProjection,
