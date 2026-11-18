@@ -94,11 +94,11 @@ def _stock_refusal_payload(exc: Exception) -> dict | None:
     as outras recusas com destino (``total_changed``). A frase é da loja:
     sacola, nunca carrinho.
     """
-    from shopman.orderman.exceptions import ValidationError as OrderingValidationError
-
-    if not isinstance(exc, OrderingValidationError) or exc.code != STOCK_REFUSAL_CODE:
+    # Pelo código da recusa, sem importar o Orderman: a API da loja não fala com o
+    # Core direto (``test_import_boundaries``), e o código é o contrato da recusa.
+    if getattr(exc, "code", None) != STOCK_REFUSAL_CODE:
         return None
-    context = dict(exc.context or {})
+    context = dict(getattr(exc, "context", None) or {})
     sku = str(context.get("sku") or "")
     name = _product_name(sku) or sku
     detail = (
@@ -124,9 +124,9 @@ def _product_name(sku: str) -> str:
     if not sku:
         return ""
     try:
-        from shopman.offerman.models import Product
+        from shopman.shop.services import product_readiness
 
-        return str(Product.objects.filter(sku=sku).values_list("name", flat=True).first() or "")
+        return str(product_readiness.product_names([sku]).get(sku) or "")
     except Exception:
         logger.debug("checkout_stock_refusal_product_name_failed", exc_info=True)
         return ""
