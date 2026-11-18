@@ -5714,7 +5714,8 @@
           "symbols": [
             "Command",
             "DEFAULT_MIN_INTERVAL_HOURS",
-            "RETRY_AFTER_FAILURE_HOURS"
+            "RETRY_AFTER_FAILURE_HOURS",
+            "logger"
           ]
         }
       ]
@@ -12794,6 +12795,33 @@
             "get_payment_status",
             "has_sufficient_captured_payment",
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/pickup_turn.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "CACHE_KEY",
+            "CACHE_TTL_SECONDS",
+            "CLOSED",
+            "OPEN",
+            "TRIGGER",
+            "current_phase",
+            "logger",
+            "resend_on_turn",
+            "visible_skus"
           ]
         }
       ]
