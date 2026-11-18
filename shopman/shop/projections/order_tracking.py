@@ -2161,7 +2161,9 @@ def _cancellation_customer_text(order_data: dict) -> str:
     reason = cancel_reasons.cancel_reason(cancel_reasons.reason_key_of(order_data))
     if reason is None or reason.key == cancel_reasons.OTHER:
         return ""
-    return reason.customer_text
+    # Pela função, não pelo campo: o "Não retirado" completa a frase com o
+    # destino do dinheiro (``order.data["no_show"]``).
+    return cancel_reasons.customer_text(order_data)
 
 
 def _note_says_card_hold_released(order_data: dict, money_outcome) -> bool:

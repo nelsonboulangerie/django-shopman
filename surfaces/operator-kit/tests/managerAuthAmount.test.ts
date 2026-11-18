@@ -88,3 +88,19 @@ describe("managerAuth: devolução no Gestor", () => {
     expect(managerAuthReason({ action: "order_return" })).toBe("Volta dinheiro ou produto do cliente.");
   });
 });
+
+// Não retirado, no Gestor (WP-G11): o Gerente lê o que volta ao cliente e o que
+// fica com a loja, na frase que a prévia do servidor montou (`money_sentence`).
+describe("managerAuth: não retirado no Gestor", () => {
+  it("o ato tem nome, e o motivo é a frase do dinheiro da prévia", () => {
+    expect(managerAuthTitle("order_no_show")).toBe("Autorizar encerrar como não retirado");
+    const sentence = "R$ 12,00 serão estornados ao Pix do cliente. R$ 8,00 ficam com a loja, pelo que se perdeu.";
+    expect(managerAuthReason({ action: "order_no_show", detail: sentence })).toBe(sentence);
+  });
+
+  it("sem a frase do dinheiro, a frase fixa do ato, sem travessão", () => {
+    const fixed = managerAuthReason({ action: "order_no_show" });
+    expect(fixed).toBe("Encerrar o pedido como não retirado pede a autorização de um gerente.");
+    expect(`${managerAuthTitle("order_no_show")} ${fixed}`).not.toMatch(/[—–]/);
+  });
+});

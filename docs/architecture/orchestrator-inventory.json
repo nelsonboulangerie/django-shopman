@@ -346,31 +346,50 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "IFOOD_ORIGINAL_MARK",
+            "IFoodAddonProjection",
             "IFoodCatalogProjection",
             "IFoodCatalogWriteBlocked",
             "IFoodCategoryError",
             "IFoodConfirmationError",
             "IFoodImageError",
             "IFoodRateLimitError",
+            "IFoodRejected",
+            "_ADDON_NS",
+            "_CONFIRM_WAITS",
             "_IMAGE_PATHS",
             "_MAX_IMAGE_BYTES",
+            "_REJECTION_REASONS",
+            "_addon_groups",
+            "_addon_ids",
+            "_addon_payload",
             "_base_url",
             "_check_rate_limit",
             "_confirm_item_price",
             "_confirm_item_status",
+            "_confirm_option",
             "_download_image",
             "_get_config",
             "_headers",
             "_image_path",
             "_item_payload",
             "_patch_item_price",
+            "_patch_option",
+            "_patch_status",
+            "_raise_for_ifood",
+            "_read_flat",
             "_read_item",
+            "_remote_option",
             "_resolve_category_id",
             "_set_item_status",
             "_storage_image",
             "_upload_image",
             "_upsert_item",
+            "_uuid4_shaped",
             "_validated_image",
+            "addon_external_code",
+            "addon_identity",
+            "ifood_rejection_text",
             "logger"
           ]
         }
@@ -1734,6 +1753,7 @@
             "_MAX_PARTIAL_HOLDS",
             "_copied",
             "_free_by_eligible_quant",
+            "_fulfilled_hold",
             "_get_product",
             "_return_remainder_to_cart",
             "create_hold",
@@ -1745,6 +1765,7 @@
             "get_availability_for_skus",
             "get_channel_scope",
             "hold_backing",
+            "hold_lot_facts",
             "hold_state",
             "hold_target_date",
             "is_cart_hold",
@@ -1756,7 +1777,8 @@
             "retag_hold_reference",
             "return_fulfilled_hold",
             "return_hold_remainder",
-            "stock_error_code"
+            "stock_error_code",
+            "waste_fulfilled_hold"
           ]
         }
       ]
@@ -2178,6 +2200,7 @@
             "GOOGLE_MERCHANT_KEY",
             "GoogleMerchantForm",
             "GoogleMerchantRegistrationForm",
+            "MAX_NO_SHOW_MINUTES",
             "MAX_PREORDER_KITCHEN_MINUTES",
             "MONTH_CHOICES",
             "NOTIFICATION_BACKEND_CHOICES",
@@ -3400,7 +3423,9 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
-            "logger"
+            "enqueue_collection_items",
+            "logger",
+            "on_collection_membership_changed"
           ]
         }
       ]
@@ -6118,6 +6143,26 @@
       ]
     },
     {
+      "path": "shopman/shop/models/channel_addon.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "ChannelAddon",
+            "ChannelAddonGroup"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/models/concierge.py",
       "touchpoints": [
         "model"
@@ -6937,6 +6982,34 @@
       "out_of_extraction": false,
       "unit_ids": [
         "marketing.public-link"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/no_show_policy.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.no-show-policy"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/no_show_reason.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.no-show-customer-copy"
       ],
       "responsibilities": [
         "decisão"
@@ -8944,6 +9017,50 @@
         "decisão"
       ],
       "support_claims": []
+    },
+    {
+      "path": "shopman/shop/services/channel_addons.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "AddonError",
+            "AddonReceipt",
+            "AddonRemoteError",
+            "IFOOD_CHANNEL",
+            "_CONFIRM_WAITS",
+            "_backend",
+            "_channel",
+            "_group_id",
+            "_ids",
+            "_merchant",
+            "_name",
+            "_price_q",
+            "_projected_item",
+            "_push_item",
+            "_raise_remote",
+            "_read_item",
+            "_read_until",
+            "_remote_option",
+            "_remote_product",
+            "_slug",
+            "add_addon",
+            "change_addon_price",
+            "create_group",
+            "edit_addon",
+            "groups_for",
+            "set_addon_active"
+          ]
+        }
+      ]
     },
     {
       "path": "shopman/shop/services/channel_policy.py",
@@ -14556,6 +14673,28 @@
           "symbols": [
             "ALERT_TYPE",
             "OPEN_STATUSES"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/no_show.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.no-show"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "logger"
           ]
         }
       ]

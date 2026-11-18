@@ -47,6 +47,13 @@ def test_bijection_rejects_missing_and_nonexistent_packages(tmp_path):
     assert "semantic map names nonexistent packages: ['ghost']" in errors
 
 
+def test_bijection_accepts_hyphenated_package_directory(tmp_path):
+    (tmp_path / "packages" / "pure-package").mkdir(parents=True)
+    _write(tmp_path / "docs/reference/semantic-map.md", _package_section("pure-package"))
+
+    assert gate.check_package_bijection(tmp_path) == []
+
+
 def test_constitution_link_rejects_nonexistent_anchor(tmp_path):
     _write(tmp_path / "docs/constitution.md", "# Constituição\n\n## C1. Lei\n")
     _write(tmp_path / "docs/_archive/constitution-v1.md", "# Constituição v1\n")

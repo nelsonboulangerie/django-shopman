@@ -80,6 +80,11 @@ from shopman.shop.operator_capacity_policy import (
     SUSTAIN_MINUTES_CEILING,
     SUSTAIN_MINUTES_FLOOR,
 )
+from shopman.shop.policies.no_show_policy import (
+    DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE,
+    DEFAULT_TOLERANCE_MINUTES,
+    NoShowPolicy,
+)
 from shopman.shop.policies.preorder_kitchen_policy import (
     DEFAULT_LEAD_MINUTES,
     DEFAULT_PREP_MINUTES,
@@ -550,6 +555,7 @@ def _parse_markup_by_collection(raw: str) -> dict[str, int]:
 
 #: Teto de cada tempo da encomenda na Cozinha (preparo, antecedência), em minutos.
 MAX_PREORDER_KITCHEN_MINUTES = 720
+MAX_NO_SHOW_MINUTES = 1440
 
 
 def _parse_prep_minutes_by_sku(raw: str) -> dict[str, int]:
@@ -1074,6 +1080,39 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         help_text=(
             "SKU e minutos de preparo, separados por ponto e vírgula. Encomenda com vários produtos "
             "usa o maior preparo entre eles. Produto fora da lista usa o preparo padrão."
+        ),
+    )
+    fields["defaults_no_show_tolerance_minutes"] = forms.IntegerField(
+        label="Tolerância depois da hora combinada (min)",
+        required=False,
+        min_value=0,
+        max_value=MAX_NO_SHOW_MINUTES,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_TOLERANCE_MINUTES)}),
+        help_text=(
+            "Quanto a casa espera antes de poder marcar um pedido como não retirado. Com 60 min, a "
+            "retirada combinada para as 17h libera às 18h. Pedido sem hora combinada conta a partir "
+            f"de quando ficou pronto. Em branco = {DEFAULT_TOLERANCE_MINUTES} min."
+        ),
+    )
+    fields["defaults_no_show_cutoff_minutes_before_close"] = forms.IntegerField(
+        label="Corte do pedido pago: minutos antes de fechar",
+        required=False,
+        min_value=0,
+        max_value=MAX_NO_SHOW_MINUTES,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE)}),
+        help_text=(
+            "Pedido pago só pode ser marcado como não retirado a partir do corte do dia combinado: "
+            "o fechamento da loja menos estes minutos. "
+            f"Em branco = {DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE} (o corte é o fechamento)."
+        ),
+    )
+    fields["defaults_no_show_paid_waits_cutoff"] = forms.BooleanField(
+        label="Pedido pago espera o corte do dia",
+        required=False,
+        widget=UnfoldBooleanSwitchWidget,
+        help_text=(
+            "Ligado, o pedido pago só libera no corte do dia combinado, como dizem os Termos "
+            "(\"até o fim do expediente\"). Desligado, o pago segue a mesma tolerância do não pago."
         ),
     )
     fields["defaults_marketing_whatsapp_minimum_audience"] = forms.IntegerField(
@@ -1790,6 +1829,12 @@ class ShopForm(forms.ModelForm):
                 f"{sku}: {minutes}" for sku, minutes in sorted(kitchen.prep_minutes_by_sku.items())
             )
 
+        if self._has("defaults_no_show_tolerance_minutes"):
+            no_show = NoShowPolicy.from_defaults(defaults)
+            self.fields["defaults_no_show_tolerance_minutes"].initial = no_show.tolerance_minutes
+            self.fields["defaults_no_show_cutoff_minutes_before_close"].initial = no_show.cutoff_minutes_before_close
+            self.fields["defaults_no_show_paid_waits_cutoff"].initial = no_show.paid_waits_cutoff
+
         if self._has("defaults_purchase_resale_markup_pct"):
             markup = ResaleMarkup.from_defaults(defaults)
             self.fields["defaults_purchase_resale_markup_pct"].initial = markup.default_pct
@@ -2453,6 +2498,17 @@ class ShopForm(forms.ModelForm):
             ) or {}
             defaults["preorder_kitchen"] = kitchen_cfg
 
+        if self._has("defaults_no_show_tolerance_minutes"):
+            no_show_cfg = dict(defaults.get("no_show") if isinstance(defaults.get("no_show"), dict) else {})
+            tolerance = self.cleaned_data.get("defaults_no_show_tolerance_minutes")
+            cutoff = self.cleaned_data.get("defaults_no_show_cutoff_minutes_before_close")
+            no_show_cfg["tolerance_minutes"] = int(tolerance) if tolerance is not None else DEFAULT_TOLERANCE_MINUTES
+            no_show_cfg["cutoff_minutes_before_close"] = (
+                int(cutoff) if cutoff is not None else DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE
+            )
+            no_show_cfg["paid_waits_cutoff"] = bool(self.cleaned_data.get("defaults_no_show_paid_waits_cutoff"))
+            defaults["no_show"] = no_show_cfg
+
         return defaults
 
 
@@ -2738,6 +2794,19 @@ _ORDERING_FIELDSETS = (
                 "No dia da encomenda, o card chega à Cozinha na hora combinada menos o preparo e a "
                 "antecedência. Chegar não é começar: o posto ainda toca em Iniciar. Encomenda sem "
                 "hora combinada chega na abertura da loja."
+            ),
+        },
+    ),
+    (
+        "Pedido não retirado",
+        {
+            "fields": (
+                ("defaults_no_show_tolerance_minutes", "defaults_no_show_cutoff_minutes_before_close"),
+                "defaults_no_show_paid_waits_cutoff",
+            ),
+            "description": (
+                "Quando o Gestor passa a oferecer Não retirado num pedido de retirada que ficou pronto. "
+                "O que ainda pode voltar à venda é devolvido ao cliente; o que se perdeu fica com a loja."
             ),
         },
     ),

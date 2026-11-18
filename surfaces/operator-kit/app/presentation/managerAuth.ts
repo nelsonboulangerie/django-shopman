@@ -25,6 +25,7 @@ export type ManagerAction =
   | "cancel_sale"
   | "cancel_order"
   | "order_return"
+  | "order_no_show"
   | "order_edit_refund"
   | "card_machine_refund"
   | "settle_account"
@@ -81,6 +82,13 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
   order_return: {
     title: "Autorizar a devolução",
     reason: "Volta dinheiro ou produto do cliente.",
+  },
+  // Pedido pronto que o cliente não veio buscar, encerrado no Gestor (WP-G11). O
+  // que volta ao cliente e o que fica com a loja vêm prontos em `detail`, da
+  // prévia do servidor (`money_sentence`).
+  order_no_show: {
+    title: "Autorizar encerrar como não retirado",
+    reason: "Encerrar o pedido como não retirado pede a autorização de um gerente.",
   },
   order_edit_refund: {
     title: "Autorizar a devolução",
@@ -214,7 +222,12 @@ export function managerAuthReason(input: ManagerAuthReasonInput): string {
   }
   if (
     detail
-    && (input.action === "day_closing_production" || input.action === "cancel_order" || input.action === "order_return")
+    && (
+      input.action === "day_closing_production"
+      || input.action === "cancel_order"
+      || input.action === "order_return"
+      || input.action === "order_no_show"
+    )
   )
     return detail;
   const fixa = input.action && MANAGER_ACTIONS[input.action]?.reason;

@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=77.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "conversational-commerce"
+dynamic = ["version"]
+description = "Contracts, policy and conformance suite for conversational commerce, with no infrastructure dependency"
+readme = "README.md"
+license = "FSL-1.1-ALv2"
+license-files = ["LICENSE.md"]
+authors = [
+    {name = "Pablo Valentini", email = "pablondrina@gmail.com"}
+]
+keywords = ["commerce", "conversational", "contracts", "conformance"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12",
+    "Typing :: Typed",
+]
+requires-python = ">=3.12"
+# Nenhuma dependência, de propósito e para sempre (ADR-049). O teste K38
+# (conversational_commerce/tests/test_k38_no_infrastructure.py) reprova import
+# fora da biblioteca padrão; o wheel limpo (scripts/wheel_suite.py) prova que
+# o pacote instala e passa a própria suíte sem Django no venv.
+dependencies = []
+
+[project.optional-dependencies]
+# A suíte de conformidade (F3 em diante) roda sobre pytest. Só os módulos
+# `tests` e `testing` podem importá-lo; o resto do pacote, nunca.
+testing = [
+    "pytest",
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "conversational_commerce.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["conversational_commerce*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["conversational_commerce/tests"]
+# A .venv do monorepo tem pytest-django; aqui ele não carrega. Sem Django
+# configurado, ele só atrapalharia, e com ele carregado a suíte deixaria de
+# provar que não precisa de Django.
+addopts = "-p no:django"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP"]
+ignore = ["E501"]

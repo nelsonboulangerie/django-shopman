@@ -25,6 +25,10 @@ const saveNotes = vi.fn();
 const confirmFn = vi.fn();
 const advanceFn = vi.fn();
 const fetchCancellationReasons = vi.fn(async () => []);
+// Não retirado (WP-G11): o gesto, o desafio do gerente e a assinatura.
+const markNotPickedUp = vi.fn();
+const authorize = vi.fn();
+const managerChallenge = ref<{ code: string; message: string; action: string } | null>(null);
 const readError = ref<unknown>(null);
 // A impressora desta estação (a Via Pedido sai por ela; P2-19).
 const estacao = ref<{ can_print: boolean; agent_url?: string; token?: string; reason: string } | null>(null);
@@ -85,6 +89,10 @@ vi.stubGlobal("useOrderDetail", () => ({
   courierDispatch: vi.fn(),
   courierCancel: vi.fn(),
   courierQuote: vi.fn(),
+  markNotPickedUp,
+  authorize,
+  managerChallenge,
+  dismissManagerChallenge: vi.fn(),
 }));
 
 const { default: OrderDetailPage } = await import("../../app/pages/[ref].vue");
@@ -197,6 +205,8 @@ const stubs = {
   OrderCourierPanel: true,
   OrderIFoodNegotiations: true,
   OrderReasonDialog: true,
+  OrderNoShowDialog: defineComponent({ name: "OrderNoShowDialog", props: { open: Boolean, orderRef: { type: String, default: "" }, busy: Boolean }, emits: ["update:open", "confirm"], template: "<div />" }),
+  OperatorManagerAuth: defineComponent({ name: "OperatorManagerAuth", props: { open: Boolean, action: { type: String, default: "" }, detail: { type: String, default: "" } }, emits: ["update:open", "authorize", "authorize-badge"], template: "<div />" }),
   CourierBackDialog: defineComponent({ name: "CourierBackDialog", props: { card: { type: Object, default: null }, busy: Boolean }, template: "<div />" }),
   UiDialog: { template: "<div><slot /></div>" },
   UiDialogContent: { template: "<div><slot /></div>" },
@@ -672,6 +682,136 @@ it("keeps a confirmed note when the following useful read fails", async () => {
     await flushPromises();
     expect((note.element as HTMLTextAreaElement).value).toBe("Nota nova confirmada");
   } finally { readError.value = null; w.unmount(); }
+});
+
+// Não retirado (WP-G11): quem decide se a porta existe, e se já pode ser tocada, é
+// o servidor, pela ação `no-show` de `order.actions`. A tela não repete a régua
+// (pronto, de retirada, fora do iFood, a hora): sem a ação, não há item.
+describe("detalhe do pedido — não retirado", () => {
+  const noShow = (over: Partial<OperatorOrderProjection["actions"][number]> = {}) => ({
+    ...fixtureActions({ can_confirm: true })[0]!,
+    ref: "no-show",
+    label: "Não retirado",
+    priority: "menu",
+    payload_schema: { base_revision: "detail-base", expected_actor_id: 1 },
+    confirmation: { required: true, manager_approval: true },
+    ...over,
+  });
+  const ready = (over: Partial<OperatorOrderProjection> = {}) =>
+    order({ status: "ready", status_label: "Pronto", can_confirm: false, actions: [noShow()], ...over });
+  const moneySentence = "R$ 12,00 serão estornados ao Pix do cliente. R$ 8,00 ficam com a loja, pelo que se perdeu.";
+
+  beforeEach(() => {
+    markNotPickedUp.mockReset();
+    authorize.mockReset();
+    managerChallenge.value = null;
+    vi.mocked(useSonner.success).mockClear();
+  });
+
+  it("a ação veio do servidor: o item existe, avisa que pede gerente e abre o diálogo", async () => {
+    const w = abrir(ready());
+    await w.get('[data-action="menu"]').trigger("click");
+    const item = w.get('[data-action="no-show"]');
+
+    expect(item.text()).toContain("Não retirado (pede gerente)");
+    expect(item.attributes("disabled")).toBeUndefined();
+    expect(w.getComponent({ name: "OrderNoShowDialog" }).props("open")).toBe(false);
+
+    await item.trigger("click");
+    const dialog = w.getComponent({ name: "OrderNoShowDialog" });
+    expect(dialog.props("open")).toBe(true);
+    expect(dialog.props("orderRef")).toBe("WEB-1");
+    w.unmount();
+  });
+
+  it("antes da hora: o item fica no lugar, desabilitado, com o motivo do servidor à vista", async () => {
+    const reason = "Pedido pago: o não retirado libera no corte do dia, às 18h.";
+    const w = abrir(ready({ actions: [noShow({ enabled: false, reason })] }));
+    await w.get('[data-action="menu"]').trigger("click");
+    const item = w.get('[data-action="no-show"]');
+
+    expect(item.attributes("disabled")).toBeDefined();
+    expect(item.attributes("title")).toBe(reason);
+    expect(item.text()).toContain(reason);
+    await item.trigger("click");
+    expect(w.getComponent({ name: "OrderNoShowDialog" }).props("open")).toBe(false);
+    w.unmount();
+  });
+
+  it("pedido sem a ação (iFood, entrega, ainda não pronto): o item não existe", async () => {
+    const semAcao = [
+      order({ status: "ready", can_confirm: false, channel_ref: "ifood", actions: [] }),
+      order({ status: "ready", can_confirm: false, fulfillment_type: "delivery", actions: [] }),
+      order({ status: "new" }),
+    ];
+    for (const projection of semAcao) {
+      const w = abrir(projection);
+      await w.get('[data-action="menu"]').trigger("click");
+      expect(w.find('[data-action="no-show"]').exists()).toBe(false);
+      w.unmount();
+    }
+  });
+
+  it("confirmar leva a ação da PRÉVIA; o gerente lê a frase do dinheiro e, assinado, o diálogo fecha", async () => {
+    const contract = noShow({ label: "Encerrar como não retirado", priority: "danger", payload_schema: { base_revision: "preview-base", expected_actor_id: 1 } });
+    // O servidor pede o gerente: o gesto volta `false` e o desafio sobe.
+    markNotPickedUp.mockImplementationOnce(async () => {
+      managerChallenge.value = { code: "manager_approval_required", message: "Não retirado pede a autorização de um gerente.", action: "no-show" };
+      return false;
+    });
+    authorize.mockImplementationOnce(async () => {
+      managerChallenge.value = null;
+      return true;
+    });
+    const w = abrir(ready());
+    await w.get('[data-action="menu"]').trigger("click");
+    await w.get('[data-action="no-show"]').trigger("click");
+
+    w.getComponent({ name: "OrderNoShowDialog" }).vm.$emit("confirm", { contract, moneySentence });
+    await flushPromises();
+    expect(markNotPickedUp).toHaveBeenCalledWith(contract);
+    const auth = w.getComponent({ name: "OperatorManagerAuth" });
+    expect(auth.props("open")).toBe(true);
+    expect(auth.props("action")).toBe("order_no_show");
+    expect(auth.props("detail")).toBe(moneySentence);
+    // O diálogo do gesto continua por baixo da assinatura.
+    expect(w.getComponent({ name: "OrderNoShowDialog" }).props("open")).toBe(true);
+
+    auth.vm.$emit("authorize", "joyce", "1234");
+    await flushPromises();
+    expect(authorize).toHaveBeenCalledWith({ username: "joyce", pin: "1234" });
+    expect(w.getComponent({ name: "OrderNoShowDialog" }).props("open")).toBe(false);
+    expect(useSonner.success).toHaveBeenCalledWith("Pedido encerrado como não retirado.");
+    w.unmount();
+  });
+
+  it("PIN recusado: o diálogo do gesto continua aberto e nada é dado como feito", async () => {
+    markNotPickedUp.mockImplementationOnce(async () => {
+      managerChallenge.value = { code: "manager_approval_required", message: "", action: "no-show" };
+      return false;
+    });
+    authorize.mockResolvedValueOnce(false);
+    const w = abrir(ready());
+    await w.get('[data-action="menu"]').trigger("click");
+    await w.get('[data-action="no-show"]').trigger("click");
+    w.getComponent({ name: "OrderNoShowDialog" }).vm.$emit("confirm", { contract: noShow(), moneySentence });
+    await flushPromises();
+
+    w.getComponent({ name: "OperatorManagerAuth" }).vm.$emit("authorize", "joyce", "0000");
+    await flushPromises();
+    expect(w.getComponent({ name: "OrderNoShowDialog" }).props("open")).toBe(true);
+    expect(useSonner.success).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("o cancelamento de pedido pago segue com o ato e o motivo dele", async () => {
+    managerChallenge.value = { code: "manager_approval_required", message: "", action: "cancel" };
+    const w = abrir(ready({ cancel_money_effect: "R$ 5,10 serão estornados no cartão do cliente." } as Partial<OperatorOrderProjection>));
+    const auth = w.getComponent({ name: "OperatorManagerAuth" });
+    expect(auth.props("action")).toBe("cancel_order");
+    expect(auth.props("detail")).toBe("R$ 5,10 serão estornados no cartão do cliente.");
+    w.unmount();
+  });
 });
 
 // Beta 06/11: o atalho "Bem assado" só preenchia o rascunho; o operador tocou

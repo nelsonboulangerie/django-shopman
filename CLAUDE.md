@@ -218,7 +218,9 @@ packages/               13 apps pip-instaláveis (sem dependência entre si)
 ├── buyman/             Compras: fornecedores, materiais, custos (procurement, Fase 1) [shopman-buyman]
 ├── fiscalman/          Fiscal: classificação NFC-e (schema em Product.metadata)      [shopman-fiscalman]
 ├── cashman/            Caixa: terminal, turno (custódia) e livro-caixa imutável       [shopman-cashman]
-└── watchman/           Saúde: contrato, registry, runner, sondas e CLI                [shopman-watchman]
+├── watchman/           Saúde: contrato, registry, runner, sondas e CLI                [shopman-watchman]
+└── conversational-commerce/  Núcleo de comércio conversacional: Python PURO, zero dependência, fora da
+                        família dos cores; o K38 reprova import fora da stdlib (ADR-049)  [conversational-commerce]
 
 shopman/                Namespace package (PEP 420) — sem __init__.py
 ├── shop/               Orquestrador (app Django, label="shop") — health/readiness views [django-shopman]

@@ -152,6 +152,26 @@ def _category_rows(value):
     return rows
 
 
+def category_revision(rows) -> str:
+    """Revisão da lista de categorias que a tela leu (nome, posição e estado).
+
+    ``rows`` é a lista já normalizada por ``_category_rows``; a resposta crua do
+    iFood passa por ``remote_category_revision``.
+
+    A gravação relê a lista do iFood e compara: se outra pessoa (ou o Portal)
+    mudou alguma categoria nesse meio tempo, a mudança volta com 409.
+    """
+    import hashlib
+    import json
+
+    state = sorted([row["ref"], row["name"], row["index"], row["status"]] for row in rows)
+    return hashlib.sha256(json.dumps(state, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def remote_category_revision(raw) -> str:
+    return category_revision(_category_rows(raw))
+
+
 def _snapshot_categories(snapshot):
     if snapshot is None:
         return []
@@ -252,4 +272,5 @@ def build_catalog_binding_review(*, channel_ref, snapshot_id=None, user=None, ca
             href=base_path + "categories/", method="POST", idempotency="required",
             payload_schema={"expected_actor_id": actor_id,
                 "snapshot_id": snapshot.pk if snapshot else None,
-                "catalog_ref": snapshot.catalog_ref if snapshot else ""}))
+                "catalog_ref": snapshot.catalog_ref if snapshot else "",
+                "base_revision": category_revision(category_rows) if snapshot else ""}))

@@ -387,6 +387,8 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/order_pricing.py",
             # A prévia da devolução (o que volta, o valor e o destino do dinheiro), no detalhe do pedido.
             ROOT / "shopman/backstage/projections/order_return.py",
+            # A prévia do "Não retirado" (destino de cada linha e do dinheiro), no detalhe do pedido.
+            ROOT / "shopman/backstage/projections/order_no_show.py",
             ROOT / "shopman/backstage/projections/ifood.py",
             ROOT / "shopman/backstage/projections/ifood_handshake.py",
             ROOT / "shopman/backstage/projections/ifood_store.py",
