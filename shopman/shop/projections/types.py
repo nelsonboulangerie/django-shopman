@@ -199,6 +199,9 @@ class OrderItemProjection:
     qty: str  # Exact decimal, without insignificant trailing zeros.
     unit_price_display: str
     total_display: str
+    # O valor cheio riscado ao lado, quando a promoção do produto abateu a linha
+    # (dono, 16/11/2026, #2570 decisão 1). Vazio sem promoção.
+    full_total_display: str = ""
     # Instrução do item (observação do cliente, complementos do iFood): a mesma
     # que o ticket da cozinha mostra. Vazio quando o item não tem nenhuma.
     notes: str = ""

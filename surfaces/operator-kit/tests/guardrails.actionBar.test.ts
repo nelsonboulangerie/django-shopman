@@ -43,6 +43,10 @@ const CEILING: Record<string, { max: number; reason: string; arriving?: string }
     max: 1,
     reason: "o aviso de versão nova do app instalado, acima da barra inferior",
   },
+  "operator-kit/app/components/IFoodHomologationBand.vue": {
+    max: 1,
+    reason: "a faixa de data, hora e client_id dos vídeos de homologação do iFood: só existe no runtime local de teste, sem clique (pointer-events-none), não é ação",
+  },
 };
 
 function vueFiles(dir: string, found: string[] = []): string[] {

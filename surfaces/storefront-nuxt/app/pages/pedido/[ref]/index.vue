@@ -914,7 +914,10 @@ useSeoMeta({
                           <span class="font-semibold tabular-nums">{{ item.qty }}×</span>
                           {{ item.name }}
                         </span>
-                        <span class="shrink-0 tabular-nums">{{ item.total_display }}</span>
+                        <span class="flex shrink-0 items-baseline gap-2 tabular-nums" data-tracking-item-price>
+                          <span v-if="item.full_total_display" class="shop-meta text-muted-foreground" data-tracking-item-full-price><span class="sr-only">antes </span><s>{{ item.full_total_display }}</s></span>
+                          <span>{{ item.total_display }}</span>
+                        </span>
                       </li>
                     </ul>
                     <p v-else class="shop-muted">Os itens deste pedido aparecem aqui.</p>

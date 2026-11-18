@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 from datetime import date, timedelta
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import Permission, User
@@ -280,11 +281,15 @@ def test_a_venda_do_DIA_no_PDV_imprime_o_par_de_horas(shop):
     assert "14H ÀS 14H30" in papel
 
 
-def test_janela_desconhecida_sai_crua_em_vez_de_sumir(shop):
-    """Ref cru é feio; janela em branco é o compromisso sumindo do papel."""
+def test_janela_desconhecida_nao_sai_crua_nem_some(shop):
+    """Ref cru é identificador vazando; em branco é o compromisso sumindo do papel."""
     order = _order("ORD-T10", delivery_time_slot="slot-inexistente")
 
-    assert "SLOT-INEXISTENTE" in _texto(order_ticket(order))
+    with patch("shopman.shop.services.fulfillment_window.logger"):
+        papel = _texto(order_ticket(order))
+
+    assert "HORÁRIO NÃO RECONHECIDO" in papel
+    assert "SLOT-INEXISTENTE" not in papel
 
 
 # ── ⚠️ O pedido SEM agendamento ───────────────────────────────────────────

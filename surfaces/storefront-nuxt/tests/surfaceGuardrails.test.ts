@@ -772,7 +772,8 @@ describe('surface UX guardrails', () => {
     const sheet = read('app/components/MarketingPromptSheet.vue')
     expect(read('app/app.vue')).toContain('<MarketingPromptSheet />')
     expect(sheet).toContain('<BottomSheet')
-    expect(sheet).toContain('isMarketingPromptRouteExcluded(route.path)')
+    expect(sheet).toContain('isShopInviteRouteExcluded(route.path)')
+    expect(sheet).toContain('orderSecured.value')
     expect(sheet).toContain('session.welcomeAsksMarketing.value')
     expect(sheet).toContain('<UiSwitch')
     expect(sheet).toContain('id="marketing-prompt-whatsapp"')
@@ -1655,7 +1656,9 @@ describe('surface claims stay inside what the projection actually says', () => {
     // mesma peça. A PDP já fazia certo; só o tile mentia.
     const tile = read('app/components/ProductTile.vue')
 
-    expect(tile).toContain("'Adicionar' : 'Indisponível'")
+    // O rótulo do addable vem da promessa ("Adicionar" ou "Encomendar para
+    // amanhã", WP-L02); o não addable segue "Indisponível".
+    expect(tile).toContain("item.can_add_to_cart ? promiseAddLabel(item.promise) : 'Indisponível'")
     expect(tile).not.toContain('is_paused')
   })
 

@@ -1256,7 +1256,7 @@ def _commitment_phrase(order) -> str:
         phrase = "amanhã"
     else:
         phrase = f"{formats.date_format(day, 'l')}, {formats.date_format(day, 'd/m')}"
-    window = fulfillment_window.window_label(data.get("delivery_time_slot"))
+    window = fulfillment_window.window_label(data.get("delivery_time_slot"), for_customer=True)
     if window:
         phrase = f"{phrase}, {window[:1].lower()}{window[1:]}"
     return phrase
