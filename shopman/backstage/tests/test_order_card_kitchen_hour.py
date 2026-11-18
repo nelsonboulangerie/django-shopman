@@ -7,6 +7,8 @@ antecedência); o card não lia. Esta suíte prende:
 
 - antes da hora, o card diz "Vai para a Cozinha às 16h15", não entra em
   ``attention`` e o gesto de iniciar é "Adiantar", secundário;
+- enquanto espera, ele mora na lista "Encomendas", fora do quadro (dono,
+  18/11/2026), e só entra em "Em preparo" quando chega a hora dela;
 - o detalhe dá ao gesto o mesmo nome e a mesma frase;
 - depois que a encomenda chega à Cozinha, o card pede "Iniciar preparo" e o
   relógio conta da chegada (``kitchen_released_at``), nunca da compra;
@@ -173,15 +175,54 @@ def test_depois_que_chega_a_cozinha_o_card_pede_iniciar_e_conta_da_chegada(opera
     assert card.goal_label == "combinado para as 17h"
 
 
-def test_a_fila_do_dia_traz_a_encomenda_que_espera_sem_pedir_ninguem(operator, relogio):
+def test_quem_espera_mora_na_lista_de_encomendas_e_nao_no_quadro(operator, relogio):
+    """Decisão do dono (18/11/2026): a encomenda aceita espera na lista "Encomendas"."""
     relogio(10)
-    order = _order("G02-FILA")
+    order = _order("G02-LISTA")
+
+    queue = build_two_zone_queue(user=operator)
+    card = next(card for card in queue.preorders if card.ref == order.ref)
+
+    assert order.ref not in {card.ref for card in queue.prep}
+    assert queue.preparing_count == 0
+    assert queue.preorders_count == 1
+    assert card.kitchen_release_label == "Vai para a Cozinha às 16h15"
+    assert card.attention == ""
+    # O grupo dela na lista tem nome de dia, como os das encomendas de outro dia.
+    assert (card.commitment_date_display, card.is_preorder) == ("hoje", False)
+
+
+def test_na_hora_da_cozinha_a_encomenda_entra_no_quadro_pedindo_iniciar(operator, relogio):
+    relogio(16, 20)
+    order = _order("G02-QUADRO", **{KITCHEN_RELEASED_AT_KEY: _at(16, 15).isoformat()})
 
     queue = build_two_zone_queue(user=operator)
     card = next(card for card in queue.prep if card.ref == order.ref)
 
-    assert card.kitchen_release_label == "Vai para a Cozinha às 16h15"
-    assert card.attention == ""
+    assert order.ref not in {card.ref for card in queue.preorders}
+    assert card.attention == "start"
+    assert _advance(card).label == "Iniciar preparo"
+
+
+def test_a_lista_traz_hoje_antes_dos_proximos_dias_pela_hora_da_cozinha(operator, relogio):
+    relogio(10)
+    tomorrow = _order("G02-AMANHA-L", days=1)
+    late = _order("G02-HOJE-19", slot="19:00-19:30")
+    early = _order("G02-HOJE-17")
+
+    queue = build_two_zone_queue(user=operator)
+
+    assert [card.ref for card in queue.preorders] == [early.ref, late.ref, tomorrow.ref]
+
+
+def test_pedido_de_agora_aceito_segue_no_quadro(operator, relogio):
+    relogio(10)
+    order = _order("G02-AGORA-Q", is_preorder=False)
+
+    queue = build_two_zone_queue(user=operator)
+
+    assert order.ref in {card.ref for card in queue.prep}
+    assert queue.preorders_count == 0
 
 
 def test_passada_a_hora_sem_o_despertador_o_card_nao_promete_hora_vencida(operator, relogio):

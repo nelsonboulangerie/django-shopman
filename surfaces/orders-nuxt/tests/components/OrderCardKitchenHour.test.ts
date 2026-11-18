@@ -6,6 +6,7 @@ import { computed, ref } from "vue";
 import { mount } from "@vue/test-utils";
 
 import OrderCard from "../../app/components/OrderCard.vue";
+import OrderPreorderList from "../../app/components/OrderPreorderList.vue";
 import type { Action } from "../../app/generated/ordersContract";
 import type { OrderCardProjection } from "../../app/types/orders";
 
@@ -138,5 +139,43 @@ describe("OrderCard: depois que a encomenda chega à Cozinha", () => {
     expect(w.get("[data-card-primary]").text()).toBe("Iniciar preparo");
     expect(w.get("[data-card-clock]").text()).toContain("há 5 min");
     expect(w.get("article").attributes("data-highlight")).toBe("true");
+  });
+});
+
+// Decisão do dono (18/11/2026): a encomenda aceita espera a hora da Cozinha na lista
+// "Encomendas", abaixo do quadro, e não numa coluna do dia.
+describe("Encomendas: a de hoje que espera a hora da Cozinha", () => {
+  vi.stubGlobal("useRuntimeConfig", () => ({ public: { posUrl: "" } }));
+  const listStubs = {
+    ...stubs,
+    NuxtLink: { props: ["to"], template: '<a :href="to"><slot /></a>' },
+    OperatorCountChip: { props: ["count"], template: "<span>{{ count }}</span>" },
+  };
+
+  it("a linha diz quando ela vai para a Cozinha", () => {
+    const w = mount(OrderPreorderList, {
+      props: {
+        groups: [{ date: "2026-11-18", label: "hoje", cards: [card({ commitment_date_display: "hoje" })] }],
+        count: 1,
+      },
+      global: { stubs: listStubs },
+    });
+
+    expect(w.text()).toContain("hoje");
+    const row = w.get('[data-preorder-row="WEB-261115-E17"]');
+    expect(row.get("[data-preorder-kitchen-wait]").html()).toContain("Vai para a Cozinha às 16h15");
+    expect(row.attributes("href")).toBe("/WEB-261115-E17");
+  });
+
+  it("a de outro dia não ganha a frase", () => {
+    const w = mount(OrderPreorderList, {
+      props: {
+        groups: [{ date: "2026-11-19", label: "amanhã", cards: [card({ kitchen_release_label: "", kitchen_release_at_iso: "" })] }],
+        count: 1,
+      },
+      global: { stubs: listStubs },
+    });
+
+    expect(w.find("[data-preorder-kitchen-wait]").exists()).toBe(false);
   });
 });

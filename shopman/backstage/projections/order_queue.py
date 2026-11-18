@@ -2052,7 +2052,15 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     kitchen = kitchen_station_chips([o for o in (*prep_orders, *ready_orders) if not _is_future_preorder(o)])
     ready_moments = ready_moments_for(ready_orders)
     expectation = prep_expectation(now=timezone.now())
-    prep = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, expectation=expectation) for o in prep_orders if not _is_future_preorder(o))
+    day_cards = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, expectation=expectation) for o in prep_orders if not _is_future_preorder(o))
+    # A encomenda do dia que ainda espera a hora da Cozinha não é trabalho do quadro
+    # (dono, 18/11/2026): mora na lista "Encomendas", abaixo das colunas, com "Vai
+    # para a Cozinha às 17h15", e só entra em "Em preparo" quando chega a hora dela.
+    prep = tuple(card for card in day_cards if not card.kitchen_release_at_iso)
+    waiting_today = sorted(
+        (card for card in day_cards if card.kitchen_release_at_iso),
+        key=lambda card: card.kitchen_release_at_iso,
+    )
     # Só a encomenda já aceita e ainda antes da expedição vira "Agendados" (a nova
     # está na Entrada); ready/dispatched/delivered seguem nas colunas de expedição
     # mesmo que a data combinada seja futura.
@@ -2060,10 +2068,12 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         o for o in all_orders
         if o.status in ("accepted", "preparing") and _is_future_preorder(o)
     ]
-    preorders = tuple(
+    future_cards = tuple(
         _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user)
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
+    # Hoje primeiro (pela hora em que cada uma chega à Cozinha), depois os próximos dias.
+    preorders = (*waiting_today, *future_cards)
     preparing_count = len(prep)
 
     expedition_pickup = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if not _is_delivery(o))
@@ -2537,7 +2547,11 @@ def _build_card(
         courier_status_label=_card_courier_label(order),
         is_preorder=is_preorder,
         commitment_date=commitment.isoformat() if commitment else "",
-        commitment_date_display=_commitment_date_display(commitment) if is_preorder else "",
+        # A que espera a hora da Cozinha hoje também mora na lista "Encomendas": o
+        # grupo dela precisa do nome do dia ("hoje"), como o das de outro dia.
+        commitment_date_display=(
+            _commitment_date_display(commitment) if is_preorder or (kitchen_release_at and commitment) else ""
+        ),
         schedule_label=schedule_label if schedule_state else "",
         schedule_state=schedule_state,
         kitchen_release_at_iso=kitchen_release_at.isoformat() if kitchen_release_at else "",
