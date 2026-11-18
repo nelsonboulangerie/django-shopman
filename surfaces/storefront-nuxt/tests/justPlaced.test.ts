@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest'
 import { markJustPlaced, takeJustPlaced } from '../app/utils/justPlaced'
-import { hasSecuredOrder } from '../app/utils/orderSecured'
+import { orderSecuredThisVisit } from '../app/utils/orderSecured'
 
 describe('momento yoin no navegador', () => {
   beforeEach(() => window.sessionStorage.clear())
@@ -28,14 +28,14 @@ describe('momento yoin no navegador', () => {
     expect(takeJustPlaced('NB-2')).toBe(true)
   })
 
-  it('o pedido comemorado libera o convite de instalar; marca alheia não', () => {
-    window.localStorage.clear()
+  it('o pedido comemorado libera os convites desta visita; marca alheia não', () => {
+    window.sessionStorage.removeItem('shopman-order-secured')
     markJustPlaced('NB-1')
 
     expect(takeJustPlaced('NB-2')).toBe(false)
-    expect(hasSecuredOrder()).toBe(false)
+    expect(orderSecuredThisVisit()).toBe(false)
     expect(takeJustPlaced('NB-1')).toBe(true)
-    expect(hasSecuredOrder()).toBe(true)
+    expect(orderSecuredThisVisit()).toBe(true)
   })
 
   it('sem marca não há comemoração', () => {

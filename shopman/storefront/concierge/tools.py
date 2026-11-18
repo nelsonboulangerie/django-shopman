@@ -348,7 +348,7 @@ def _slot_label(fulfillment_type: str, slot_ref: str) -> str:
     from shopman.shop.services.fulfillment_window import window_label
 
     try:
-        return window_label(slot_ref) or slot_ref
+        return window_label(slot_ref, for_customer=True) or slot_ref
     except Exception:
         logger.debug("concierge.slot_label degraded slot=%s", slot_ref, exc_info=True)
         return slot_ref

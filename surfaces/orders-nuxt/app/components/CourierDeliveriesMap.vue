@@ -19,7 +19,16 @@
 // verdade?"), com a chave pública do navegador. As camadas acima são as nossas,
 // presas ao mapa por um OverlayView: arrastar e dar zoom levam tudo junto. Sem chave,
 // ou se o Google recusar, o desenho próprio (trama de ruas) fica no lugar.
+//
+// Legível e tocável (revisão das Entregas, 16/11/2026, F7a): toda parada leva a LETRA
+// da corrida num selo no canto (a cor nunca vem sozinha); a linha tem um contorno na
+// tinta da corrida por baixo, para o amarelo e o laranja lerem sobre o papel; as cores
+// do mapa são fixas por tema (acompanham o claro e o escuro, dono 17/11); todo alvo tem 44 px; pinos no
+// mesmo ponto se abrem em círculo; o enquadramento não corre atrás da moto e, depois
+// que o operador mexe no mapa, "Ver tudo" devolve o quadro inteiro. Loja sem
+// coordenada não se desenha (antes ia parar na casa de um cliente).
 import { rideColor } from "~/presentation/ridePalette";
+import { PIN_TEXT, fitKey, googleMapStyles, lineOutline, mapTokens, spreadOverlaps } from "~/presentation/deliveriesMap";
 import { rideLetter } from "~/presentation/deliveries";
 import { metroLines } from "~/presentation/metroLines";
 import type { GMap, GOverlayView } from "~/composables/useGoogleMap";
@@ -42,7 +51,8 @@ export interface MapLiveRide {
 }
 type LatLng = { latitude: number; longitude: number };
 const props = defineProps<{
-  origin: LatLng;
+  /** A loja; null quando ela não tem coordenada (a rota começa na primeira parada). */
+  origin: LatLng | null;
   waiting: MapPoint[];
   building: { number: number; stops: MapPoint[] }[];
   live: MapLiveRide[];
@@ -56,14 +66,23 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ toggle: [ref: string]; fill: [place: string]; open: [number: number] }>();
 
+// O tema da tela decide as cores do mapa (dono, 17/11).
+const colorMode = useColorMode();
+const dark = computed(() => colorMode.value === "dark");
+const tokens = computed(() => mapTokens(dark.value));
 const liveAlpha = computed(() => props.liveOpacity ?? 0.5);
 const OCTAGON = "32.8,24.1 24.1,32.8 11.9,32.8 3.2,24.1 3.2,11.9 11.9,3.2 24.1,3.2 32.8,11.9";
 
-const everyPoint = computed<LatLng[]>(() => [
-  props.origin,
+/** O que se entrega e a loja: o que decide o enquadramento. */
+const framePoints = computed<LatLng[]>(() => [
+  ...(props.origin ? [props.origin] : []),
   ...props.waiting,
   ...props.building.flatMap((r) => r.stops),
-  ...props.live.flatMap((r) => [...r.stops, ...(r.courier ? [r.courier] : [])]),
+  ...props.live.flatMap((r) => r.stops),
+]);
+const everyPoint = computed<LatLng[]>(() => [
+  ...framePoints.value,
+  ...props.live.flatMap((r) => (r.courier ? [r.courier] : [])),
 ]);
 
 // ── o desenho próprio: a caixa do mapa vira o retângulo que cabe todos os pontos ──
@@ -86,6 +105,9 @@ const tick = ref(0);
 let map: GMap | null = null;
 let overlay: GOverlayView | null = null;
 let fitted = "";
+/** O operador arrastou ou deu zoom: o mapa para de se reenquadrar sozinho. */
+const userMoved = ref(false);
+let programmatic = false;
 const google = useGoogleMap();
 let mapLibs: Awaited<ReturnType<typeof google.load>> | null = null;
 const real = computed(() => Boolean(pane.value) && !google.refused.value);
@@ -103,14 +125,19 @@ function px(p: LatLng): { x: number; y: number } {
   };
 }
 
-function fit() {
+function fit(force = false) {
   if (!map || !mapLibs) return;
-  const key = everyPoint.value.map((p) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`).sort().join("|");
-  if (key === fitted) return;
+  const key = fitKey(framePoints.value);
+  if (!force && (key === fitted || userMoved.value)) return;
   fitted = key;
   const area = new mapLibs.core.LatLngBounds();
   for (const p of everyPoint.value) area.extend({ lat: p.latitude, lng: p.longitude });
+  programmatic = true;
   map.fitBounds(area, props.bare ? 28 : 56);
+}
+function showAll() {
+  userMoved.value = false;
+  fit(true);
 }
 async function mountRealMap() {
   if (!props.mapsKey || !canvas.value) return;
@@ -122,18 +149,15 @@ async function mountRealMap() {
   if (!canvas.value) return;
   const libs = mapLibs;
   map = new libs.maps.Map(canvas.value, {
-    center: { lat: props.origin.latitude, lng: props.origin.longitude },
+    center: { lat: (props.origin ?? framePoints.value[0])?.latitude ?? 0, lng: (props.origin ?? framePoints.value[0])?.longitude ?? 0 },
     zoom: 14,
     disableDefaultUI: true,
     zoomControl: !props.bare,
     clickableIcons: false,
     keyboardShortcuts: false,
     gestureHandling: "greedy",
-    // Sem comércio, ônibus e rótulos de lugar: o que importa são as nossas paradas.
-    styles: [
-      { featureType: "poi", stylers: [{ visibility: "off" }] },
-      { featureType: "transit", stylers: [{ visibility: "off" }] },
-    ],
+    // Sem comércio, ônibus e rótulos de lugar; no escuro, o papel escuro.
+    styles: googleMapStyles(dark.value),
   });
   const view = new libs.maps.OverlayView();
   view.onAdd = () => {
@@ -147,12 +171,23 @@ async function mountRealMap() {
   };
   overlay = view;
   view.setMap(map);
+  map.addListener("dragstart", () => {
+    userMoved.value = true;
+  });
+  map.addListener("zoom_changed", () => {
+    if (!programmatic) userMoved.value = true;
+  });
+  map.addListener("idle", () => {
+    programmatic = false;
+  });
   fit();
 }
 watch(layer, (el) => {
   if (el && mapLibs) mapLibs.maps.OverlayView.preventMapHitsAndGesturesFrom(el);
 });
-watch(everyPoint, () => fit());
+watch(framePoints, () => fit());
+// Trocar o tema com a tela aberta repinta o Google sem recriar o mapa.
+watch(dark, (value) => map?.setOptions({ styles: googleMapStyles(value) }));
 
 onMounted(() => {
   observer = new ResizeObserver(([entry]) => {
@@ -172,8 +207,8 @@ onBeforeUnmount(() => {
 const GAP = 5; // 4 px de traço + 1 de respiro
 const lines = computed(() => {
   const all = [
-    ...props.live.map((r) => ({ id: r.number, points: [props.origin, ...r.stops].map(px), live: true })),
-    ...props.building.filter((r) => r.stops.length).map((r) => ({ id: r.number, points: [props.origin, ...r.stops].map(px), live: false })),
+    ...props.live.map((r) => ({ id: r.number, points: [...(props.origin ? [props.origin] : []), ...r.stops].map(px), live: true })),
+    ...props.building.filter((r) => r.stops.length).map((r) => ({ id: r.number, points: [...(props.origin ? [props.origin] : []), ...r.stops].map(px), live: false })),
   ];
   const laid = metroLines(all, GAP);
   return laid.map((l, i) => ({
@@ -182,10 +217,23 @@ const lines = computed(() => {
     d: l.points.map((p, k) => `${k ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" "),
   }));
 });
-const at = (p: LatLng) => {
+// Pinos no mesmo ponto se abrem em círculo: cada um com o seu toque.
+const offsets = computed(() =>
+  spreadOverlaps([
+    ...props.waiting.map((o) => ({ key: o.ref, ...px(o) })),
+    ...props.building.flatMap((r) => r.stops.map((s) => ({ key: s.ref, ...px(s) }))),
+    ...props.live.flatMap((r) => [
+      ...r.stops.map((s) => ({ key: s.ref, ...px(s) })),
+      ...(r.courier ? [{ key: `courier:${r.number}`, ...px(r.courier), w: 64, h: 40 }] : []),
+    ]),
+  ]),
+);
+const at = (p: LatLng, key = "") => {
   const q = px(p);
-  return { left: `${q.x}px`, top: `${q.y}px` };
+  const d = (key && offsets.value.get(key)) || { dx: 0, dy: 0 };
+  return { left: `${q.x + d.dx}px`, top: `${q.y + d.dy}px` };
 };
+const MARKER = "absolute -translate-x-1/2 -translate-y-1/2 hover:z-30 focus-within:z-30";
 
 // O bairro escrito uma vez, abaixo dos seus pedidos que ainda esperam ou montam.
 const places = computed(() => {
@@ -199,13 +247,13 @@ const places = computed(() => {
 </script>
 
 <template>
-  <div ref="box" class="relative size-full overflow-hidden bg-[#f3ede3]" data-deliveries-map :data-map-real="real ? '' : undefined">
+  <div ref="box" class="relative size-full overflow-hidden" :style="{ background: tokens.paper }" data-deliveries-map :data-map-real="real ? '' : undefined">
     <div ref="canvas" class="absolute inset-0" :class="real ? '' : 'invisible'" />
     <svg v-if="!real" class="absolute inset-0 size-full" aria-hidden="true">
       <defs>
         <pattern id="deliv-streets" width="46" height="46" patternUnits="userSpaceOnUse" patternTransform="rotate(-12)">
-          <path d="M46 0H0V46" fill="none" stroke="#fff" stroke-width="5" />
-          <path d="M46 0H0V46" fill="none" stroke="#e4dccd" stroke-width="1" />
+          <path d="M46 0H0V46" fill="none" :stroke="tokens.street" stroke-width="5" />
+          <path d="M46 0H0V46" fill="none" :stroke="tokens.streetEdge" stroke-width="1" />
         </pattern>
       </defs>
       <rect width="100%" height="100%" fill="url(#deliv-streets)" />
@@ -217,6 +265,20 @@ const places = computed(() => {
     <div ref="layer" :class="real ? 'absolute top-0 left-0 size-0 overflow-visible' : 'absolute inset-0'">
     <!-- as linhas: lado a lado onde se encontram, como metrô; nenhuma some -->
     <svg class="pointer-events-none absolute top-0 left-0 size-px overflow-visible" aria-hidden="true">
+      <!-- o contorno na tinta da corrida, por baixo: o amarelo e o laranja leem sobre o papel -->
+      <path
+        v-for="l in lines"
+        :key="`o${l.live ? 'l' : 'b'}${l.id}`"
+        :d="l.d"
+        fill="none"
+        :stroke="lineOutline(tokens, rideColor(l.id - 1))"
+        stroke-width="7"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        :stroke-dasharray="l.live ? undefined : '0.1 8'"
+        :opacity="l.live ? 0.85 : l.id === active ? 1 : 0.55"
+        data-line-outline
+      />
       <path
         v-for="l in lines"
         :key="`${l.live ? 'l' : 'b'}${l.id}`"
@@ -239,25 +301,26 @@ const places = computed(() => {
       class="absolute -translate-x-1/2 translate-y-5"
       :style="{ left: `${label.x}px`, top: `${label.y}px` }"
     >
-      <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="active ? `Pôr ${label.place} na corrida ${rideLetter(active)}` : `Pôr ${label.place} numa corrida nova`" @click="emit('fill', label.place)">
-        <span class="whitespace-nowrap rounded-full bg-white/85 px-2 py-0.5 op-micro font-semibold text-toned shadow-sm transition hover:bg-white hover:text-highlighted">{{ label.place }}</span>
+      <NuxtButton color="neutral" variant="ghost" class="min-h-11 p-0" :aria-label="active ? `Pôr ${label.place} na corrida ${rideLetter(active)}` : `Pôr ${label.place} numa corrida nova`" @click="emit('fill', label.place)">
+        <span class="whitespace-nowrap rounded-full px-2 py-0.5 op-micro font-semibold shadow-sm" :style="{ background: tokens.chip, color: tokens.text }">{{ label.place }}</span>
       </NuxtButton>
     </span>
 
-    <span class="absolute z-10 grid size-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-inverted text-inverted shadow-lg ring-4 ring-white" :style="at(origin)" title="A loja">
+    <span v-if="origin" class="absolute z-10 grid size-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full shadow-lg ring-4 ring-white" :style="{ ...at(origin), background: tokens.store, color: tokens.storeText }" title="A loja" data-map-store>
       <NuxtIcon name="i-lucide-store" class="size-4" />
     </span>
 
     <!-- corrida chamada: octógono branco de borda contínua; entregue fica sólido, com o visto -->
     <template v-for="r in live" :key="`ls${r.number}`">
-      <span v-for="(s, k) in r.stops" :key="s.ref" class="absolute -translate-x-1/2 -translate-y-1/2" :style="at(s)">
-        <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Corrida ${rideLetter(r.number)}, parada ${k + 1}, pedido ${s.code}`" @click="emit('open', r.number)">
+      <span v-for="(s, k) in r.stops" :key="s.ref" :class="MARKER" :style="at(s, s.ref)">
+        <NuxtButton color="neutral" variant="ghost" class="p-1" :aria-label="`Corrida ${rideLetter(r.number)}, parada ${k + 1}, pedido ${s.code}${s.done ? ', entregue' : ''}`" @click="emit('open', r.number)">
           <span class="relative grid size-9 place-items-center op-label font-bold tabular-nums" :style="{ color: s.done ? rideColor(r.number - 1).fg : rideColor(r.number - 1).ink }">
             <svg class="absolute inset-0 size-full drop-shadow-sm" viewBox="0 0 36 36" aria-hidden="true">
-              <polygon v-if="s.done" :points="OCTAGON" :fill="rideColor(r.number - 1).bg" stroke-width="4" stroke-linejoin="round" :stroke="rideColor(r.number - 1).bg" />
+              <polygon v-if="s.done" :points="OCTAGON" :fill="rideColor(r.number - 1).bg" stroke-width="4" stroke-linejoin="round" :stroke="dark ? lineOutline(tokens, rideColor(r.number - 1)) : rideColor(r.number - 1).bg" />
               <polygon v-else :points="OCTAGON" fill="#fff" stroke-width="4" stroke-linejoin="round" :stroke="rideColor(r.number - 1).bg" :stroke-opacity="liveAlpha" />
             </svg>
             <span class="relative"><NuxtIcon v-if="s.done" name="i-lucide-check" class="size-3.5" /><template v-else>{{ k + 1 }}</template></span>
+            <span class="absolute -top-1.5 -right-1.5 grid size-4.5 place-items-center rounded-[4px] op-micro leading-none font-bold ring-1 ring-white" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }" aria-hidden="true" data-stop-letter>{{ rideLetter(r.number) }}</span>
           </span>
         </NuxtButton>
       </span>
@@ -265,33 +328,34 @@ const places = computed(() => {
 
     <!-- editando: octógono de borda pontilhada na cor da corrida -->
     <template v-for="r in building" :key="`bs${r.number}`">
-      <span v-for="(s, k) in r.stops" :key="s.ref" class="absolute z-10 -translate-x-1/2 -translate-y-1/2" :style="at(s)">
-        <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Pedido ${s.code}, corrida ${rideLetter(r.number)}`" @click="emit('toggle', s.ref)">
+      <span v-for="(s, k) in r.stops" :key="s.ref" :class="[MARKER, 'z-10']" :style="at(s, s.ref)">
+        <NuxtButton color="neutral" variant="ghost" class="p-1" :aria-label="`Pedido ${s.code}, corrida ${rideLetter(r.number)}`" @click="emit('toggle', s.ref)">
           <span class="relative grid size-9 place-items-center op-label font-bold tabular-nums transition hover:scale-110" :style="{ color: rideColor(r.number - 1).ink }">
             <svg class="absolute inset-0 size-full drop-shadow-sm" viewBox="0 0 36 36" aria-hidden="true">
               <defs><pattern :id="`stripe-b${r.number}`" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#fff" /><rect width="1.5" height="4" :fill="rideColor(r.number - 1).bg" /></pattern></defs>
               <polygon :points="OCTAGON" :fill="`url(#stripe-b${r.number})`" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 6" :stroke="rideColor(r.number - 1).bg" />
             </svg>
             <span class="relative">{{ k + 1 }}</span>
+            <span class="absolute -top-1.5 -right-1.5 grid size-4.5 place-items-center rounded-[4px] op-micro leading-none font-bold ring-1 ring-white" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }" aria-hidden="true" data-stop-letter>{{ rideLetter(r.number) }}</span>
           </span>
         </NuxtButton>
       </span>
     </template>
 
     <!-- aguardando: redondos, preto e branco, com o código (parada de corrida é octógono na cor) -->
-    <span v-for="o in waiting" :key="o.ref" class="absolute z-10 -translate-x-1/2 -translate-y-1/2" :style="at(o)">
-      <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Pedido ${o.code}, ${o.place}`" @click="emit('toggle', o.ref)">
+    <span v-for="o in waiting" :key="o.ref" :class="[MARKER, 'z-10']" :style="at(o, o.ref)">
+      <NuxtButton color="neutral" variant="ghost" class="p-1" :aria-label="`Pedido ${o.code}, ${o.place}${o.preparing ? ', em preparo' : ''}`" @click="emit('toggle', o.ref)">
         <span class="relative grid size-9 place-items-center rounded-full border-2 border-black bg-white op-micro font-semibold tabular-nums text-black shadow-md transition hover:scale-110">
           {{ o.code }}
-          <span v-if="o.preparing" class="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-white text-toned ring-1 ring-default" title="Em preparo"><NuxtIcon name="i-lucide-chef-hat" class="size-2.5" /></span>
+          <span v-if="o.preparing" class="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-white ring-1 ring-black/20" :style="{ color: PIN_TEXT }" title="Em preparo"><NuxtIcon name="i-lucide-chef-hat" class="size-2.5" /></span>
         </span>
       </NuxtButton>
     </span>
 
     <!-- o entregador: o único cheio de cor -->
     <template v-for="r in live" :key="`c${r.number}`">
-      <span v-if="r.courier" class="absolute z-20 -translate-x-1/2 -translate-y-1/2" :style="at(r.courier)">
-        <NuxtButton color="neutral" variant="ghost" class="p-0" :aria-label="`Entregador da corrida ${rideLetter(r.number)}`" @click="emit('open', r.number)">
+      <span v-if="r.courier" :class="[MARKER, 'z-20']" :style="at(r.courier, `courier:${r.number}`)">
+        <NuxtButton color="neutral" variant="ghost" class="p-1.5" :aria-label="`Entregador da corrida ${rideLetter(r.number)}`" @click="emit('open', r.number)">
           <span class="flex items-center gap-1 rounded-full py-1 pr-2 pl-1 shadow-lg ring-2 ring-white transition hover:scale-105" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }">
             <span class="grid size-6 place-items-center rounded-full bg-white/20"><NuxtIcon name="i-lucide-bike" class="size-4" /></span>
             <span class="op-label font-bold">{{ rideLetter(r.number) }}</span>
@@ -304,13 +368,17 @@ const places = computed(() => {
     </Teleport>
 
     <!-- legenda pela FORMA, nunca pela cor: a cor é sempre a da corrida -->
-    <div v-if="!bare" class="absolute inset-x-3 top-3 mx-auto hidden w-fit flex-wrap justify-center sm:flex items-center gap-x-3 gap-y-1 rounded-md bg-white/90 px-2.5 py-1.5 op-micro text-toned shadow-sm" data-map-legend>
+    <div v-if="!bare" class="absolute inset-x-3 top-3 mx-auto flex w-fit flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md px-2.5 py-1.5 op-micro shadow-sm" :style="{ background: tokens.chip, color: tokens.text }" data-map-legend>
       <span class="flex items-center gap-1"><span class="size-3.5 rounded-full border-2 border-black bg-white" />Aguardando</span>
-      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" stroke="#5f6670" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><defs><pattern id="legend-stripe" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="3" fill="#fff" /><rect width="1.1" height="3" fill="#5f6670" /></pattern></defs><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="url(#legend-stripe)" stroke="#5f6670" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 3.2" /></svg>Editando</span>
-      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" stroke="#5f6670" stroke-width="3" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="#fff" stroke="#5f6670" stroke-width="2.5" stroke-linejoin="round" /></svg>Corrida</span>
-      <span class="flex items-center gap-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="#5f6670" stroke="#5f6670" stroke-width="2.5" stroke-linejoin="round" /></svg>Entregue</span>
-      <span class="flex items-center gap-1"><span class="grid h-4 w-6 place-items-center rounded-full bg-[#5f6670] text-white"><NuxtIcon name="i-lucide-bike" class="size-3" /></span>Entregador</span>
+      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" :stroke="tokens.neutral" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><defs><pattern id="legend-stripe" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="3" fill="#fff" /><rect width="1.1" height="3" :fill="tokens.neutral" /></pattern></defs><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="url(#legend-stripe)" :stroke="tokens.neutral" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 3.2" /></svg>Editando</span>
+      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" :stroke="tokens.neutral" stroke-width="3" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="#fff" :stroke="tokens.neutral" stroke-width="2.5" stroke-linejoin="round" /></svg>Corrida</span>
+      <span class="flex items-center gap-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" :fill="tokens.neutral" :stroke="tokens.neutral" stroke-width="2.5" stroke-linejoin="round" /></svg>Entregue</span>
+      <span class="flex items-center gap-1"><span class="grid h-4 w-6 place-items-center rounded-full" :style="{ background: tokens.neutral, color: tokens.chip }"><NuxtIcon name="i-lucide-bike" class="size-3" /></span>Entregador</span>
     </div>
 
+    <!-- Depois do gesto do operador o mapa fica onde ele deixou; isto devolve o quadro inteiro. -->
+    <div v-if="userMoved && real" class="absolute bottom-3 left-3">
+      <NuxtButton color="neutral" variant="outline" icon="i-lucide-scan" label="Ver tudo" data-map-show-all @click="showAll" />
+    </div>
   </div>
 </template>

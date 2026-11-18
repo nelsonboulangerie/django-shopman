@@ -8,11 +8,13 @@ futura, o checkout com "sai amanhã" calculado no aparelho e "sai às 15:00" de
 outro serviço (plano EXCELENCIA-STOREFRONT, seção 4.1, P1-01, P1-02, P2-12).
 
 Aqui existe uma função só, :func:`promise_for`, e o card do cardápio, o detalhe
-do produto e a linha da sacola leem dela. Os fatos vêm de
-``storefront/services/promise_facts``, que lê os mesmos serviços que o checkout
-e o envio do pedido conferem: o dia da fornada (``waitlist``), a hora de pronto
-(``product_readiness``) e a grade de horários (``fulfillment_window``). O que a
-tela promete é o que o checkout oferece.
+do produto e a linha da sacola leem dela. O dia e a hora vêm de
+``shop/projections/ready_promise`` (:func:`ready_window`), que lê os mesmos
+serviços que o checkout e o envio do pedido conferem: o dia da fornada
+(``waitlist``), a hora de pronto (``product_readiness``) e a grade de horários
+(``fulfillment_window``). O que a tela promete é o que o checkout oferece, e é o
+mesmo dia que vai ao Google no ``pickupSla`` de cada item. Aqui só se escreve a
+frase.
 
 Três tipos (``kind``):
 
@@ -35,12 +37,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, time, timedelta
-from typing import TYPE_CHECKING
 
 from shopman.utils.formatting import format_clock
 
-if TYPE_CHECKING:
-    from shopman.storefront.services.promise_facts import PromiseFacts
+from shopman.shop.projections.ready_promise import PromiseFacts, ready_window
 
 KIND_READY = "ready"
 KIND_BATCH = "batch"
@@ -81,24 +81,11 @@ def promise_for(
     Adicionar acende). ``planned_for`` é o dia da fornada que uma linha da
     sacola já reservou: ali a data é fato da reserva, não estimativa.
     """
-    if not orderable or facts.readiness_unavailable:
+    window = ready_window(sku, facts, orderable=orderable, planned_for=planned_for)
+    if window is None:
         return None
-
     today = facts.today
-    if planned_for is not None:
-        target = max(planned_for, today)
-    elif facts.today_orderable.get(sku, True):
-        target = today
-    else:
-        target = facts.next_batch.get(sku)
-        if target is None:
-            return None
-
-    ready_at = facts.ready_at.get(sku)
-    found = facts.first_window(target, ready_at)
-    if found is None:
-        return None
-    day, start = found
+    target, day, start, ready_at = window.target, window.day, window.start, window.ready_at
 
     day_label = _day_label(day, today=today)
     if day == today:

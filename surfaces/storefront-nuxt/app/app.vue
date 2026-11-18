@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { absoluteImage, siteVerificationMeta } from '~/presentation/seo'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
+import type { ShellResponse } from '~/types/shopman'
 
 const session = useShopSession()
 const { setFromServer, refreshCart } = useCartState()
@@ -17,12 +18,24 @@ function focusMainContent () {
 
 // Reconexão / retorno de foco reconcilia o carrinho (a fonte de verdade que muda
 // fora da aba). Falha silenciosa aqui é aceitável: é reconciliação de fundo.
-watchConnectivity(() => { void refreshCart().catch(() => null) })
+watchConnectivity(() => {
+  if (route.path === '/rota' || route.path.startsWith('/rota/')) return
+  void refreshCart().catch(() => null)
+})
+
+// A página do entregador da casa (`/rota`, DEV-2026-030) é outro app no mesmo domínio:
+// hiperfoco, sem cabeçalho, rodapé, sacola, convite nem estado de cliente. Ela não pede o
+// shell da loja (nada de sessão de cliente nem cookie no celular do entregador).
+const courierShell = route.path === '/rota' || route.path.startsWith('/rota/')
 
 // Disparada antes do estado do shell, para as duas buscas correrem juntas.
-const { site: siteSeo, ready: siteSeoReady } = useSiteSeo()
+const { site: siteSeo, ready: siteSeoReady } = courierShell
+  ? { site: computed(() => null), ready: Promise.resolve() }
+  : useSiteSeo()
 
-const { data: shellState, refresh: refreshShellState } = await useStorefrontShell()
+const { data: shellState, refresh: refreshShellState } = courierShell
+  ? { data: ref<ShellResponse | undefined>(undefined), refresh: async () => {} }
+  : await useStorefrontShell()
 
 await siteSeoReady
 
@@ -121,7 +134,10 @@ useSeoMeta({
 </script>
 
 <template>
-  <div class="shop-shell flex min-h-dvh flex-col">
+  <div v-if="courierShell" class="courier-shell">
+    <NuxtPage />
+  </div>
+  <div v-else class="shop-shell flex min-h-dvh flex-col">
     <NavigationFeedback />
     <!-- No PWA instalado este é o único viewport rolável. A bottom-nav fica fora
          dele, em fluxo normal, para não depender do position:fixed que deriva no

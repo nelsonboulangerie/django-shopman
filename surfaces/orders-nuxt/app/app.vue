@@ -115,11 +115,11 @@ onMounted(() => {
 const switcherSections = computed(() =>
   gestorSwitcherSections(sections.value, mounted.value ? settings.value : []),
 );
-const { alerts, activeCount, ack, accept, isAccepting } = useAlerts();
+const { alerts, readableAlerts, activeCount, ack, accept, isAccepting } = useAlerts();
 provideOperatorInboxAlerts(() => ({
   title: "Gerais",
   emptyText: "Nenhum alerta de pedido agora.",
-  items: alerts.value.map(operatorAlertToInbox),
+  items: readableAlerts.value.map(operatorAlertToInbox),
   count: activeCount.value,
   ack: (key) => {
     const alert = alerts.value.find((item) => item.pk === key);
@@ -144,6 +144,7 @@ useOperatorWindowTitle();
       <NuxtRouteAnnouncer />
       <!-- Aviso calmo de conexão (kit) — global, só aparece offline (paridade c/ POS/KDS/hub). -->
       <OfflineBanner />
+      <IFoodHomologationBand />
       <OperatorSuiteShell
         v-if="surface.showPage && !redirectingToRoleLanding"
         storage-key="gestor"
