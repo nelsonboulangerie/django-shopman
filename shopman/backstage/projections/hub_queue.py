@@ -193,6 +193,31 @@ def _truncate(text: str, limit: int = 140) -> str:
 # ── Fontes ─────────────────────────────────────────────────────────────
 
 
+def _waits_outside_the_board(order) -> bool:
+    """A encomenda aceita que ainda não é trabalho do dia no Gestor.
+
+    Duas esperas, as mesmas do quadro: a de data futura, e a de HOJE que ainda
+    não chegou à hora de ir para a Cozinha (``lifecycle.awaits_kitchen_release``:
+    combinado − preparo − antecedência). Contar a segunda fazia a Central dizer
+    "3 ativos" com o quadro do Gestor vazio (dono, 18/11/2026: a encomenda que
+    espera mora em "Encomendas"). O agendado do iFood fica de fora da segunda
+    régua: ele segue o relógio do iFood e o quadro o mantém à vista.
+    """
+    from shopman.backstage.projections import order_queue
+    from shopman.shop import lifecycle
+    from shopman.shop.services import ifood_schedule
+
+    if order.status not in ("accepted", "preparing"):
+        return False
+    if order_queue._is_future_preorder(order):
+        return True
+    return (
+        order.status == "accepted"
+        and not ifood_schedule.is_scheduled(order)
+        and lifecycle.awaits_kitchen_release(order)
+    )
+
+
 def _orders(user, base: str, label: str, now: datetime, out: _Collected) -> None:
     """Gestor: pedido novo esperando aceite (a Entrada do quadro)."""
     from shopman.orderman.models import Order
@@ -208,13 +233,9 @@ def _orders(user, base: str, label: str, now: datetime, out: _Collected) -> None
         if not is_pos_counter_order(order)
     ]
     # Mesma régua do quadro: todo pedido novo espera aceite, inclusive a encomenda
-    # (60 min de prazo, dono 09/11); a encomenda de data futura já aceita vive em
-    # "Agendados" e não é trabalho do dia.
-    today_work = [
-        order
-        for order in active
-        if not (order.status in ("accepted", "preparing") and order_queue._is_future_preorder(order))
-    ]
+    # (60 min de prazo, dono 09/11); a encomenda já aceita que ainda não chegou à
+    # hora dela vive na lista "Encomendas" e não é trabalho do dia.
+    today_work = [order for order in active if not _waits_outside_the_board(order)]
     to_accept = [order for order in today_work if order.status == "new"]
     deadlines = order_queue._confirmation_deadlines([order.ref for order in to_accept])
     channels = _channel_labels({order.channel_ref or "" for order in to_accept})

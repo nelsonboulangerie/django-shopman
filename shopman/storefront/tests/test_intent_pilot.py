@@ -33,6 +33,8 @@ from shopman.storefront.concierge.intent_benchmark import (
     gold_samples,
     load_categories,
     parse_jev_boolean,
+    prices_for,
+    render_report,
     run,
 )
 from shopman.storefront.models import IntentCategory, MessageIntentSample, SampleStatus
@@ -364,6 +366,57 @@ def test_run_survives_a_failing_contender():
     boards = run([Sample(1, "oi", frozenset({"order"}))], CATS, [Broken()], prices={})
     assert boards[0].errors == 1 and "TimeoutError" in boards[0].rows[0][4]
 
+
+
+# K34 (invariante N21 da v2): modelo sem preço cadastrado tem custo DESCONHECIDO,
+# nunca US$ 0,00, e o placar veta a comparação econômica enquanto ele existir.
+UNPRICED_MODEL = "claude-modelo-sem-preco"
+
+
+def test_k34_unpriced_model_is_unknown_cost_listed_and_vetoes_cost_comparison():
+    reply = '{"intents": [{"ref": "order", "confidence": 0.9}]}'
+    unpriced = LLMContender(model=UNPRICED_MODEL, client=_FakeClient(reply))
+    priced = LLMContender(model="claude-haiku-4-5", client=_FakeClient(reply))
+    contenders = [RegexContender(), unpriced, priced]
+    samples = [Sample(1, "Quero pão", frozenset({"order"}))]
+
+    # 1. Preço ausente fica explícito: ``None``, nunca ``Price(0.0, 0.0)``.
+    prices, missing = prices_for(contenders)
+    assert missing == [UNPRICED_MODEL]
+    assert prices[unpriced.name] is None
+    assert prices[priced.name] == Price(1.00, 5.00)
+    boards = {board.contender: board for board in run(samples, CATS, contenders, prices=prices)}
+    assert boards[unpriced.name].input_tokens == 500  # gastou tokens, só não sabemos quanto custou
+    assert boards[unpriced.name].cost_usd is None
+    assert boards[priced.name].cost_usd > 0
+    assert boards["regex"].cost_usd == 0.0  # roda na casa: zero de fato, não desconhecido
+
+    # 2. A lista dos sem preço sai no relatório; 3. e a comparação de custo é vetada.
+    report = render_report(list(boards.values()), samples, CATS, unpriced=missing)
+    assert f"Sem preço cadastrado, custo desconhecido: {unpriced.name}." in report
+    assert "Comparação de custo vetada" in report
+    unpriced_block = report.split(f"■ {unpriced.name}")[1].split("■ ")[0]
+    assert "custo desconhecido" in unpriced_block and "US$" not in unpriced_block
+
+    # Com preço cadastrado (argumento), o veto some e o custo volta a ser número.
+    prices, missing = prices_for(contenders, llm_price_in=3.0, llm_price_out=15.0)
+    assert missing == [] and prices[unpriced.name] == Price(3.0, 15.0)
+    report = render_report(run(samples, CATS, contenders, prices=prices), samples, CATS, unpriced=missing)
+    assert "vetada" not in report and "desconhecido" not in report
+
+
+@pytest.mark.django_db
+def test_k34_measure_records_unpriced_models_in_the_saved_report(categories, monkeypatch):
+    from shopman.storefront.concierge import intent_pilot
+
+    contender = LLMContender(model=UNPRICED_MODEL, client=_FakeClient('{"intents": []}'))
+    monkeypatch.setattr(intent_pilot, "MIN_LABELED_TO_MEASURE", 1)
+    monkeypatch.setattr(intent_pilot, "build_contenders", lambda *a, **kw: ([RegexContender(), contender], []))
+    _labeled("Vocês abrem domingo?", "hours_delivery", categories=categories)
+
+    report = intent_pilot.maybe_measure().report.report
+    assert f"custo desconhecido: llm:{UNPRICED_MODEL}" in report
+    assert "Comparação de custo vetada" in report
 
 
 # ── Ciclo automático: a máquina faz, a casa confere ─────────────────────────

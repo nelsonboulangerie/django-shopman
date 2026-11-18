@@ -68,3 +68,4 @@ altera o status da sucessora nem cria uma relação circular.
 | [044](adr-044-substituibilidade-na-borda.md) | Substituibilidade vive na borda de capability; kernel é substituível só por quem implementa o contrato | Aceito | Arquitetura dos kernels | 2026-11-10 | Fronteiras |
 | [045](adr-045-envelope-de-fato-operacional.md) | Envelope de fato operacional (ator, dispositivo, workstation, setor, business_date, correlação, causalidade) | Aceito | Suite | 2026-11-10 | Operação |
 | [046](adr-046-suporte-helpdesk-interno.md) | Suporte: helpdesk interno com gate de dev | Aceito | Backstage e Hub | 2026-11-12 | Operação |
+| [049](adr-049-comercio-conversacional-pacote-puro.md) | Comércio conversacional: pacote puro no monorepo, contratos em dataclass, conformidade como segunda implementação | Aceito | conversational-commerce | 2026-11-17 | Conversação |

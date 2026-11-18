@@ -26,12 +26,14 @@ As setas indicam consumo, não transferência de titularidade. A API é a
 
 ### 1. Kernel
 
-`packages/*` contém 13 distribuições pip independentes:
+`packages/*` contém 14 distribuições pip independentes:
 
 - dez kernels de domínio: `offerman`, `stockman`, `craftsman`, `orderman`,
   `guestman`, `doorman`, `payman`, `buyman`, `fiscalman`, `cashman`;
 - duas primitivas compartilhadas sem regra de negócio: `utils`, `refs`;
-- uma capacidade operacional horizontal: `watchman`.
+- uma capacidade operacional horizontal: `watchman`;
+- um framework em Python puro, fora da família dos cores e sem Django:
+  `conversational-commerce` ([ADR-049](decisions/adr-049-comercio-conversacional-pacote-puro.md)).
 
 Cada kernel possui sua pergunta canônica, seus invariantes e, quando existe,
 seu ledger. Código de domínio de kernel não importa outro kernel. Bridges

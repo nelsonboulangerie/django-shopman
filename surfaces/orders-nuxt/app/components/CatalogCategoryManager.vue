@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 import type {
   CatalogBindingReviewProjection,
   CatalogRemoteCategory,
@@ -15,6 +16,26 @@ const editing = ref<Record<string, "name" | "index">>({});
 const names = ref<Record<string, string>>({});
 const positions = ref<Record<string, number>>({});
 const mappings = ref<Record<string, string>>({});
+// A categoria do iFood nasce de uma coleção da casa (o iFood é reflexo do
+// Catálogo): mesmo nome, já ligada a ela. Não há nome digitado aqui.
+async function createFromCollection(collectionRef: string) {
+  if (blocked.value) return;
+  if (
+    await props.change({
+      action: "create",
+      catalog_ref: props.board.catalog_ref,
+      collection_ref: collectionRef,
+    })
+  )
+    stamp(`collection:${collectionRef}`);
+}
+
+// Selo no próprio gesto: "Gravado no iFood às 13h55", por cartão.
+const confirmed = ref<Record<string, string>>({});
+function stamp(key: string) {
+  const at = formatClock(new Date());
+  confirmed.value = { ...confirmed.value, [key]: `Gravado no iFood às ${at}` };
+}
 
 const blocked = computed(
   () => props.busy || props.stale || !props.board.category_action.enabled,
@@ -42,8 +63,10 @@ async function saveName(category: CatalogRemoteCategory) {
       category_ref: category.ref,
       name,
     })
-  )
+  ) {
+    stamp(category.ref);
     cancel(category.ref);
+  }
 }
 
 async function savePosition(category: CatalogRemoteCategory) {
@@ -56,8 +79,10 @@ async function savePosition(category: CatalogRemoteCategory) {
       category_ref: category.ref,
       index,
     })
-  )
+  ) {
+    stamp(category.ref);
     cancel(category.ref);
+  }
 }
 
 function selectedCategory(collectionRef: string, current: string) {
@@ -81,6 +106,7 @@ async function saveMapping(collectionRef: string, current: string) {
       collection_ref: collectionRef,
     })
   ) {
+    stamp(`collection:${collectionRef}`);
     const next = { ...mappings.value };
     Reflect.deleteProperty(next, collectionRef);
     mappings.value = next;
@@ -93,14 +119,7 @@ async function saveMapping(collectionRef: string, current: string) {
     <NuxtCard variant="outline">
       <div class="space-y-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
-          <div class="max-w-3xl space-y-1">
-            <h2 class="op-title">Categorias do iFood</h2>
-            <p class="text-sm text-muted-foreground">
-              Organize as categorias e escolha onde cada coleção da casa
-              aparece. Toda alteração externa só termina depois da confirmação
-              pelo iFood.
-            </p>
-          </div>
+          <h2 class="op-title">Categorias do iFood</h2>
           <NuxtBadge
             color="neutral"
             :label="`${board.categories.length} categorias`"
@@ -158,6 +177,14 @@ async function saveMapping(collectionRef: string, current: string) {
                   "
                 />
               </div>
+              <NuxtBadge
+                v-if="confirmed[category.ref]"
+                color="success"
+                icon="i-lucide-circle-check"
+                class="self-start"
+                :label="confirmed[category.ref]"
+                data-category-confirmed
+              />
 
               <div v-if="editing[category.ref] === 'name'" class="space-y-2">
                 <NuxtFormField label="Nome da categoria">
@@ -259,7 +286,33 @@ async function saveMapping(collectionRef: string, current: string) {
                     }}
                   </p>
                 </div>
-                <NuxtFormField label="Categoria no iFood">
+                <NuxtBadge
+                  v-if="confirmed[`collection:${collection.ref}`]"
+                  color="success"
+                  icon="i-lucide-circle-check"
+                  class="self-start"
+                  :label="confirmed[`collection:${collection.ref}`]"
+                  data-collection-confirmed
+                />
+                <NuxtButton
+                  v-if="!collection.category_ref"
+                  label="Criar no iFood com este nome"
+                  icon="i-lucide-plus"
+                  color="neutral"
+                  variant="outline"
+                  class="self-start"
+                  :loading="busy"
+                  :disabled="blocked"
+                  data-category-from-collection
+                  @click="createFromCollection(collection.ref)"
+                />
+                <NuxtFormField
+                  :label="
+                    collection.category_ref
+                      ? 'Categoria no iFood'
+                      : 'Ou escolha uma categoria que já existe'
+                  "
+                >
                   <NuxtSelect
                     class="w-full"
                     :model-value="

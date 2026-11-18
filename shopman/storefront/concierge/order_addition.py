@@ -324,12 +324,14 @@ def apply(conversation, pending: dict) -> Outcome:
     from shopman.shop.models import ConversationMessage
     from shopman.shop.services import order_edit
 
+    from .effect_authority import lock_turn_authority
     from .service import assert_turn_authority
 
     order_ref = str(pending.get("order_ref") or "")
     entries = _normalize(pending.get("add"))
     if not getattr(conversation, "_commercial_authority", False):
         return _refused(None, [], "Não consigo mexer em pedido já feito por aqui agora.", order_ref=order_ref)
+    # Sem posse, nem a leitura do pedido segue; a conferência que vale é a do bloco abaixo.
     assert_turn_authority(conversation, for_mutation=True)
     order = own_order(conversation, order_ref)
     if order is None or not entries:
@@ -345,6 +347,9 @@ def apply(conversation, pending: dict) -> Outcome:
 
     try:
         with transaction.atomic():
+            # Reconferida com a conversa travada, na transação que edita: se a equipe
+            # assumiu depois da conferência acima, o pedido segue como está (#2625).
+            lock_turn_authority(conversation)
             # Uma mensagem só: a resposta da Concierge leva o que o aviso
             # ``order_updated`` diria (total novo, saldo e destino da diferença).
             result = order_edit.edit(

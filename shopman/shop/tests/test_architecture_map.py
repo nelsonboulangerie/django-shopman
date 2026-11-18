@@ -16,11 +16,13 @@ def test_architecture_map_matches_kernel_directories():
     architecture = _load(REPO_ROOT / "docs" / "architecture-map.json")
     declared = set(architecture["kernel"]["domain_packages"])
     declared.update(architecture["kernel"]["shared_capabilities"])
+    declared.update(architecture["kernel"]["pure_frameworks"])
     physical = {path.name for path in (REPO_ROOT / "packages").iterdir() if path.is_dir()}
 
     assert declared == physical
     assert len(architecture["kernel"]["domain_packages"]) == 10
-    assert len(physical) == 13
+    assert architecture["kernel"]["pure_frameworks"] == ["conversational-commerce"]
+    assert len(physical) == 14
 
 
 def test_architecture_map_matches_surface_registry_and_support_directories():
