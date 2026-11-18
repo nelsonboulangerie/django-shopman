@@ -41,15 +41,14 @@ describe("PosPaymentWorkspace: o PIN do gerente é conferido antes de seguir", (
     await w.vm.$nextTick();
     expect(dialog.props("open")).toBe(true);
     expect(w.emitted("submit")).toBeUndefined();
-    expect(w.emitted("update:managerPin")).toBeUndefined();
   });
 
-  it("PIN conferido: grava a assinatura, fecha e segue", async () => {
+  it("PIN conferido: fecha e segue, sem o PIN sair do diálogo (#2558)", async () => {
     const { w, dialog, done } = await autorizar("4321");
     done(true);
     await w.vm.$nextTick();
-    expect(w.emitted("update:managerUsername")).toEqual([["joyce"]]);
-    expect(w.emitted("update:managerPin")).toEqual([["4321"]]);
+    // O carimbo do servidor mora no carrinho; o PIN não vira estado da tela.
+    expect(Object.keys(w.emitted()).filter((e) => /manager(Pin|Username)/.test(e))).toEqual([]);
     expect(dialog.props("open")).toBe(false);
     expect(w.emitted("submit")).toHaveLength(1);
   });

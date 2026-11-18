@@ -57,6 +57,31 @@ describe("andamento da corrida", () => {
     wrapper.unmount();
   });
 
+  it("o entregador desistiu: a linha diz quem, quando e que a TaOn já procura outro", () => {
+    const wrapper = mountPanel(
+      ride({
+        status: "D", status_label: "Procurando outro entregador",
+        reopened_at: "2026-10-13T17:32:00+00:00", reopened_driver: "Diego",
+      }),
+    );
+    expect(wrapper.get('[data-testid="courier-waiting"]').text()).toBe(
+      "Diego desistiu às 14h32. A TaOn já procura outro.",
+    );
+    expect(wrapper.text()).toContain("Procurando outro entregador");
+    // A corrida segue chamada: nenhum botão de chamar outra.
+    expect(wrapper.text()).not.toContain("Chamar de novo");
+    expect(wrapper.text()).not.toContain("Chamar entregador");
+    wrapper.unmount();
+  });
+
+  it("a TaOn juntou com outra corrida: diz que ela já tem entregador", () => {
+    const wrapper = mountPanel(ride({ status: "U", status_label: "Junto com outra corrida" }));
+    expect(wrapper.get('[data-testid="courier-waiting"]').text()).toBe(
+      "A TaOn juntou com outra corrida. Ela já tem entregador.",
+    );
+    wrapper.unmount();
+  });
+
   it("o veículo diz modelo, cor e placa", () => {
     const wrapper = mountPanel(
       ride({

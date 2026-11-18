@@ -35,7 +35,7 @@ surface depends on it.
 | Clear tab | DELETE | `/api/v1/backstage/pos/tabs/{session_key}/clear/` | `clear_pos_tab` |
 | Review sale | POST | `/api/v1/backstage/pos/sale/review/` | `review_sale` |
 | Close sale | POST | `/api/v1/backstage/pos/sale/close/` | `close_sale` |
-| Manager approval check | POST | `/api/v1/backstage/pos/manager-approval/check/` | `validate_manager_override` (confere o PIN ou o crachá no próprio diálogo, com a mesma trava; não grava nada) |
+| Manager approval check | POST | `/api/v1/backstage/pos/manager-approval/check/` | `validate_manager_override` + `issue_sale_approval` (confere o PIN ou o crachá no próprio diálogo, com a mesma trava, e devolve `token`: o carimbo assinado preso a `scope` = operador, `tab_ref`, `discount_q` e `account_over_q` que o diálogo mostrou) |
 | Cancel recent sale | POST | `/api/v1/backstage/pos/sale/recent/cancel/` | `cancel_recent_order` / `reopen_recent_order_for_correction` |
 | Open cash shift | POST | `/api/v1/backstage/pos/cash/open/` | `open_cash_shift` |
 | Close cash shift | POST | `/api/v1/backstage/pos/cash/close/` | `close_cash_shift` |
@@ -221,7 +221,12 @@ Demais chaves canônicas (cliente e data são obrigatórios em `order`, como aci
   Quando o valor já é de outro cadastro, a resposta é o conflito rico
   (`customer_conflict`, 422, com `field` e `candidates`), nunca 500.
 - approval: `manual_discount`, `manager_approval`. `manual_discount`
-  carries type/value/reason; backend normalizes `discount_q`.
+  carries type/value/reason; backend normalizes `discount_q`. No fechamento da
+  venda, `manager_approval` é `{token}` (o carimbo do check), nunca usuário e PIN
+  (#2558): o servidor recusa com `manager_approval_invalid` carimbo de outro
+  operador, de outra comanda, de outro valor ou já gasto por outra venda (a mesma
+  venda, com o mesmo `client_request_id`, pode reapresentá-lo). Vale 15 minutos;
+  na venda que sincroniza da fila sem conexão, a janela dela (24 h).
 - runtime: `cash_shift_id`, `pos_terminal_ref` injected by backend API.
 
 Unknown fields are rejected with `unexpected_intent_field`. Unknown versions are
