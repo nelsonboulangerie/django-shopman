@@ -564,19 +564,19 @@ def test_not_picked_up_is_not_a_reason_the_operator_picks():
     [
         (
             {"paid_q": 1870, "refund_q": 1870, "retained_q": 0},
-            "Ele ficou pronto e não foi retirado. Vamos devolver R$ 18,70 pelo mesmo meio de pagamento.",
+            "O pedido ficou pronto e não foi retirado. Vamos devolver R$ 18,70 pelo mesmo meio de pagamento.",
         ),
         (
             {"paid_q": 3000, "refund_q": 0, "retained_q": 3000},
-            "Ele ficou pronto e não foi retirado. O valor ficou com a loja, como dizem os Termos.",
+            "O pedido ficou pronto e não foi retirado. O valor ficou com a loja, como dizem os Termos.",
         ),
         (
             {"paid_q": 4870, "refund_q": 1870, "retained_q": 3000},
-            "Ele ficou pronto e não foi retirado. Vamos devolver R$ 18,70 pelo mesmo meio de pagamento, "
+            "O pedido ficou pronto e não foi retirado. Vamos devolver R$ 18,70 pelo mesmo meio de pagamento, "
             "pelo que ainda pôde voltar à venda. R$ 30,00 ficaram com a loja, como dizem os Termos.",
         ),
         # Não pago: nenhuma frase de dinheiro.
-        ({"paid_q": 0, "refund_q": 0, "retained_q": 0}, "Ele ficou pronto e não foi retirado."),
+        ({"paid_q": 0, "refund_q": 0, "retained_q": 0}, "O pedido ficou pronto e não foi retirado."),
     ],
 )
 def test_customer_text_says_where_the_money_went(block, expected):
@@ -602,6 +602,6 @@ def test_cancellation_notice_carries_the_text_with_the_money(paes, relogio, djan
 
     ((template, kwargs),) = [entry for entry in sent if entry[0] == "order_cancelled"]
     assert kwargs["reason_key"] == "not_picked_up"
-    assert kwargs["status_note"] == "Ele ficou pronto e não foi retirado."
+    assert kwargs["status_note"] == "O pedido ficou pronto e não foi retirado."
     context = derive_context({"order_ref": order.ref, "status_note": kwargs["status_note"]})
-    assert context["cancellation_reason_suffix"] == ". Ele ficou pronto e não foi retirado."
+    assert context["cancellation_reason_suffix"] == ". O pedido ficou pronto e não foi retirado."
