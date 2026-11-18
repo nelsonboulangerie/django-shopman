@@ -366,7 +366,7 @@ for key in (
 | `courier_ticket_printed_at` | `string` | `CourierTicketEscposView` (`_stamp_first_print`) | `CourierTicketEscposView` (decisão de 2ª via) | ISO datetime da PRIMEIRA composição da **via do entregador** (`courier-ticket-escpos`). Carimbo PRÓPRIO, separado de `ticket_printed_at`: são dois papéis com destinatários diferentes, e a ficha já ter ido para o painel não faz da primeira via do entregador uma segunda |
 | `fiscal.tax_id` | `string` | POS checkout ("CPF na nota") · checkout da loja na entrega (`fiscal_tax_id` do payload, só dígitos) · concierge `set_fulfillment(tax_id)` | `on_request_or_tax_id`, `_fiscal_customer` (payload da emissão), `DeliveryFiscalIdentityRule` (porta do pedido de entrega) | CPF/CNPJ **pedido NESTA venda** ("CPF na nota"). ⚠️ Nunca ler `customer.tax_id` para fins fiscais: aquele é cadastro/CRM — usá-lo tornava o CPF compulsório para cliente identificado |
 | `fiscal.issue_override` | `dict` | `backstage.services.orders.emit_fiscal_on_demand` (Últimas vendas do PDV, `POST pos/orders/<ref>/emit-fiscal/`, sempre após `validate_manager_override`) | `shop.services.fiscal.emission_resolver` (passa por cima da regra), `fiscal.issue_override` | Emissão AVULSA da NFC-e que a regra da casa não emitiu: `{approved_by, requested_by, at}` — `approved_by` é o username do gerente VERIFICADO pelo desafio (crachá ou PIN), `requested_by` o ator do PDV, `at` ISO datetime. Presente ⇒ `emission_resolver` diz sim para ESTE pedido. Escritor único; gravada na mesma transação da Directive (sem Directive, a chave não fica). Evento `fiscal_issue_override` no OrderEvent. Só vale para venda sem nota em andamento (`fiscal_state == not_expected`), do dia de operação da venda, ou até `pos.late_fiscal_emission_days` dias depois (Shop.defaults) e com pagamento capturado quando a cobrança exige. ⚠️ A nota sai com a data e a hora da emissão, não da venda |
-| `availability_decision` | `dict` | `lifecycle.approve_with_adjustments()`, `lifecycle.approve_order()`, `lifecycle.reject_order()` | `lifecycle.has_availability_approval()`, `lifecycle.ensure_confirmable()`, `services/stock.py` | Decisão do operador sobre disponibilidade: `{approved: bool, decisions: [{sku, original_qty, approved_qty, action}], decided_at, decided_by}`. Guard para confirmação |
+| `availability_decision` | `dict` | `lifecycle.approve_with_adjustments()`, `lifecycle.approve_order()`, `lifecycle.reject_order()` | `lifecycle.has_availability_approval()`, `lifecycle.ensure_confirmable()`, `services/stock.py` | Decisão do operador sobre disponibilidade: `{approved: bool, decisions: [{sku, original_qty, approved_qty, action}], decided_at, decided_by}`. Guard para confirmação. No commit sem portão de estoque (PDV, marketplace), `lifecycle._on_commit` grava `decisions` a partir das reservas (`stock.availability_decisions_from_holds`): `available_qty` é o que tem lastro, `demand_qty` o que ficou como demanda sem fornada, e `reason_code: "demand_over_plan"` quando há demanda (#2559) |
 | `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer.self_cancel"` (o cliente, pelo site), `"concierge"` (a Concierge, a pedido do cliente, pela mesma régua do site) ou `"operator:<username>"` |
 | `session_key` | `string` | hooks._on_cancelled | hooks._on_cancelled | Chave de sessão original (referência para release holds) |
 | `hold_ids` | `list[dict]` | `StockService.hold(order)` | `StockService.fulfill(order)`, `StockService.release(order)` | Holds do Stockman adotados no commit. Cada entry rastreada: `{sku, hold_id, qty}`. SKU sem ledger usa exclusivamente `{sku, hold_id: null, qty: 0, is_tracked: false}`. |
@@ -421,12 +421,20 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "door_charge_note": "Pedido A47 · Cobrar R$ 58,00 em dinheiro · troco para R$ 100,00",  // a observação que FOI à TaOn na abertura (recibo `dispatch_attempt.note`); a TaOn não altera corrida aberta, e `courier.charge_outdated` compara com a de agora para o aviso "O pedido mudou depois da chamada" (Gestor e PDV); sai no arquivamento
   "last_event_at": "iso",
   "last_source": "webhook",        // "webhook" | "poll" | "dispatch" | "operator:<nome>"
-  "status_at": {"D": "iso", "A": "iso", "S": "iso", "E": "iso"},  // 1ª vez de cada letra (D na abertura); o B.I. mede daqui a chegada do entregador
+  "status_at": {"D": "iso", "A": "iso", "S": "iso", "E": "iso"},  // 1ª vez de cada letra (D na abertura); o B.I. mede daqui a chegada do entregador. Na desistência (`reopens`) o `A`/`S` de quem saiu sai daqui, e o próximo aceite grava a própria hora
+  "last_provider_at": "iso",       // `datetime` do último aviso do WEBHOOK aplicado (`apply_status`/`record_reopen`); aviso mais velho que este chegou fora de ordem e é recusado (`courier_status_ignored`). A leitura (poll) não lê nem grava. Sai no arquivamento
+  "reopens": [                     // desistências do entregador na MESMA corrida (`courier.record_reopen`: webhook `C` com `will_reopen`; ou `apply_status` quando uma aceita volta a procurar antes da coleta). A corrida NÃO é arquivada: mantém `id_mch`, volta a `D`, perde `driver` e o andamento dele. Enquanto o status for D/G/P, a última entrada é a frase da tela (`courier.reopen_view`: "Diego desistiu às 14:32. A TaOn já procura outro."). Vai com a corrida para `attempts` no arquivamento
+    {"at": "iso",                  // quando (o `datetime` do aviso; sem ele, a hora em que chegou)
+     "driver": "Diego",            // o nome de quem saiu ("" quando o aceite dele nunca chegou aqui)
+     "source": "webhook",          // "webhook" | "poll"
+     "accepted_at": "iso"}         // o `status_at.A` dele, quando havia (para o B.I.)
+  ],
   "attempts": [                    // corridas anteriores (N/C ou canceladas p/ re-despacho)
     {"id_mch": "184501", "status": "N", "requested_at": "iso", "status_at": {"D": "iso", "N": "iso"}, "ended_at": "iso",
      "final_value_q": 1200,        // só quando a TaOn fechou valor (inclusive taxa de cancelamento): o B.I. soma o custo daqui
      "estimate": {...},            // só da corrida terminada (F), cotação para quando falta o valor final
-     "ride_orders": ["NB-A", "NB-B"]}  // só da corrida com várias paradas
+     "ride_orders": ["NB-A", "NB-B"],  // só da corrida com várias paradas
+     "reopens": [...]}             // só quando houve desistência nela (mesmo formato de `courier.reopens`)
   ],
   "error": {"message": "...", "at": "iso"},  // falha terminal do despacho; limpo no re-despacho
   "progress": {                    // andamento lido da central (`courier.apply_snapshot`); só chaves com valor; sai no arquivamento
@@ -597,6 +605,7 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
   {
     "timestamp": "2026-04-01T14:30:00Z",
     "actor": "operador@loja.com",
+    "approved_by": "gerente",
     "reason": "Cliente insatisfeito",
     "type": "partial",
     "items": [
@@ -609,6 +618,12 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
   }
 ]
 ```
+
+Quem registra é o Gestor (`POST /api/v1/backstage/orders/<ref>/return/`, prévia em
+`GET .../return/preview/`), sempre com o PIN de um Gerente escolhido da lista:
+`approved_by` é o `username` verificado de quem assinou (vazio nos registros anteriores
+a 17/11/2026). A quantidade de uma linha nunca passa do que ainda não voltou nas
+devoluções anteriores (`handlers.returns.returned_qty_by_line`).
 
 `stock_receipt_version=1` identifica devoluções criadas pelo protocolo com recibo local
 atômico. `stock_processed` é gravado pelo ReturnHandler na mesma transação dos Moves,
@@ -1186,8 +1201,12 @@ Write-back em `Order.data["courier"]` (ver detalhamento). `dedupe_key` =
 `courier.dispatch:{primeiro}:{tentativa}:{demais refs com +}`).
 
 `dispatch_attempt` (recibo da tentativa, escrito pelo handler): `state` ∈ `started`,
-`unknown`, `accepted`, `not_applied`, `inert`, `released`. `started`/`unknown`/`accepted`
-sem vínculo travam outra chamada (`courier.unresolved_dispatch`). `released` é o gesto
+`unknown`, `accepted`, `not_applied`, `inert`, `released`, `deferred`. `started`/`unknown`/`accepted`
+sem vínculo travam outra chamada (`courier.unresolved_dispatch`). `deferred` é a espera
+do limite de chamadas da TaOn (HTTP 429 com `Retry-After`): a TaOn não abriu nada, o
+recibo sai de `started`, a MESMA tarefa volta à fila pelo prazo pedido (teto de 300 s) e
+tenta de novo do zero, sem falha na tela; `deferrals` conta as esperas, e depois de
+`courier_dispatch.MAX_RATE_LIMIT_DEFERRALS` (5) vira falha terminal com aviso. `released` é o gesto
 "Chamar de novo" do Gestor (`courier.release_unresolved_dispatch`): quem conferiu na
 central libera a chamada sem resposta da TaOn, com `released_from`, `released_by`,
 `released_at`, e uma chamada nova é enfileirada no mesmo gesto; a tentativa liberada
@@ -1240,7 +1259,12 @@ depois `/solicitacaoStatus`; a via que responder é lembrada no cache) e aplica 
 `courier.apply_snapshot`. Auto-reagendável a cada `Shop.defaults.delivery.courier_poll_seconds`
 (default 60; `0` desliga). Morre em status terminal (F/N/C) ou com a corrida mais velha
 que `courier.MAX_POLL_HOURS` (6 h). O webhook de status agenda uma batida imediata
-(`delay_seconds=0`). Leitura que falha grava `courier.sync` e vira aviso.
+(`delay_seconds=0`), inclusive quando o aviso é repetição. Leitura que falha grava
+`courier.sync` e vira aviso. Leitura limitada pela TaOn (HTTP 429) não é falha: não
+grava `courier.sync`, não conta para o aviso e a próxima batida espera o `Retry-After`
+(sem tentar as outras vias de leitura enquanto isso). A leitura só conclui `C`
+(cancelada) quando a letra lida é `C`: `cancellation[]`/`cancelled_at` guarda a
+desistência de um entregador, e a corrida segue viva.
 
 #### `loyalty.earn`
 
@@ -2979,7 +3003,7 @@ cancelada, encolheu); o KDS o mostra como qualquer cancelamento, com "Recebi o c
 ### courier.dispatch — recibo da tentativa externa
 
 `Directive.payload.dispatch_attempt` é escrito pelo CourierDispatchHandler: `state`
-(`started`, `unknown`, `not_applied`, `accepted`, `inert`), `started_at`, `updated_at`,
+(`started`, `unknown`, `not_applied`, `accepted`, `inert`, `deferred`), `started_at`, `updated_at`,
 `fingerprint` do payload exato, `note` (a observação da parada que foi à TaOn, adotada em `courier.door_charge_note`), `notes` (`{order_ref: observação}`, uma por parada) e `stops` (os pedidos na ordem das paradas que foi à TaOn, adotada em `courier.ride_orders`) e, quando recebido, `courier_ref`. Não duplica endereço/
 telefone. A tentativa started é persistida antes do POST; accepted com referência é
 persistido antes da adoção local. Retry de accepted só adota o fato; started/unknown

@@ -3193,7 +3193,8 @@
           "path": "shopman/shop/handlers/returns.py",
           "symbols": [
             "ReturnResult",
-            "ReturnService"
+            "ReturnService",
+            "returned_qty_by_line"
           ]
         }
       ],
@@ -3328,6 +3329,45 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/integration/test_production_void_releases_only_its_holds.py::test_void_receiver_directly_releases_only_the_hold_left_without_backing"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "preorder.production-promise-lost",
+      "question": "Como o pedido aceito que perdeu a reserva no cancelamento de um lote vira evento do pedido e aviso no Gestor?",
+      "owner": "preorder.production-promise",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.production_promise:announce_lost_holds",
+      "authoritative_symbols": [
+        "shopman.shop.services.production_promise:announce_lost_holds"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/production_promise.py",
+          "symbols": [
+            "order_ref_from_hold_reference",
+            "_format_qty",
+            "_product_name",
+            "announce_lost_holds"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "offerman",
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/integration/test_production_void_announces_lost_order.py::test_o_mesmo_cancelamento_nao_avisa_duas_vezes"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -8410,7 +8450,14 @@
             "_BEFORE_READY_STATUSES",
             "_STATUS_EVENT",
             "_PROGRESS_STEPS",
-            "_STATUS_RANK"
+            "_STATUS_RANK",
+            "_status_out_of_order",
+            "record_reopen",
+            "reopen_view",
+            "progress_since",
+            "restore_archived_ride",
+            "orders_with_archived_ride",
+            "archived_ride_ended_at"
           ]
         }
       ],
@@ -14827,7 +14874,14 @@
             "validate_manager_override",
             "_MANAGER_PIN_VERDICTS",
             "manager_pin_checked_before_transaction",
-            "_check_manager_pin"
+            "_check_manager_pin",
+            "SaleApprovalScope",
+            "SALE_APPROVAL_MAX_AGE_S",
+            "_SALE_APPROVAL_SALT",
+            "issue_sale_approval",
+            "_redeem_sale_approval",
+            "_sale_approval_max_age_s",
+            "_sale_approval_refused"
           ]
         }
       ],
@@ -16512,6 +16566,12 @@
             "untracked_hold_entry",
             "is_untracked_hold_entry",
             "hold_pks",
+            "DEMAND_OVER_PLAN_ALERT",
+            "held_supply_by_sku",
+            "_free_supply_on",
+            "availability_decisions_from_holds",
+            "alert_demand_over_plan",
+            "_qty_text",
             "hold",
             "fulfill",
             "release",

@@ -470,6 +470,9 @@
             "CourierDispatchResult",
             "CourierError",
             "CourierEstimate",
+            "CourierRateLimited",
+            "RATE_LIMIT_DEFAULT_SECONDS",
+            "RATE_LIMIT_MAX_SECONDS",
             "READ_VIAS",
             "RIDE_STATUSES",
             "TERMINAL_STATUSES",
@@ -488,6 +491,7 @@
             "_number",
             "_read_via",
             "_request",
+            "_retry_after_seconds",
             "_status_letter",
             "_text",
             "_to_q",
@@ -1703,6 +1707,7 @@
             "get_availability",
             "get_availability_for_skus",
             "get_channel_scope",
+            "hold_backing",
             "hold_state",
             "hold_target_date",
             "is_cart_hold",
@@ -3425,6 +3430,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "MAX_RATE_LIMIT_DEFERRALS",
             "logger"
           ]
         }
@@ -9067,19 +9073,27 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_DRIVER_PROGRESS_KEYS",
             "_LINK_ORDER_KEYS",
+            "_REOPEN_EVENT",
+            "_RESTORED_ALERT_MARKER",
+            "_RESTORED_ALERT_TYPE",
             "_RIDE_NUMBER_LOCK",
             "_TRACKING_LINKS_SHARED_SECONDS",
             "_TRACKING_RETRY_SECONDS",
             "_alert_ride_failed",
+            "_alert_ride_restored",
             "_alert_sync_failed",
             "_archive_current_ride",
             "_collected_before_ready",
             "_emit_sse",
             "_enrich_accepted",
             "_enrich_finished",
+            "_forget_driver_caches",
+            "_last_reopen_at",
             "_link_names",
             "_lock_ride_numbers",
+            "_reopen",
             "_resolve_sync_alert",
             "_ride_links",
             "_save_block",
@@ -9087,7 +9101,8 @@
             "_sync_failures_key",
             "_tracking_for",
             "_tracking_retry",
-            "logger"
+            "logger",
+            "provider_instant"
           ]
         },
         {
@@ -9124,16 +9139,20 @@
             "REASSIGNED",
             "REISSUED",
             "REVOKED",
+            "UNCLAIMED",
             "UNKNOWN"
           ]
         },
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_check",
             "_hash",
             "_live",
+            "claim",
             "close",
             "issue",
+            "release",
             "resolve",
             "revoke"
           ]
@@ -13825,14 +13844,18 @@
             "_EDGE_REFERENCE_SLOT",
             "_EMAIL_RE",
             "_ISO_DATE_RE",
+            "_JSON_PAIR_RE",
             "_PERSONAL_ASSIGNMENT_RE",
             "_PHONE_RE",
+            "_RIDE_REFERENCE_RE",
             "_SAFE_SENTRY_HEADERS",
             "_SECRET_ASSIGNMENT_RE",
             "_SENSITIVE_KEYS",
             "_SENSITIVE_KEY_SUFFIXES",
             "_URL_KEYS",
             "_URL_RE",
+            "_is_sensitive_key",
+            "_redact_json_pair",
             "_safe_headers",
             "redact_observability_value",
             "redact_text",
@@ -14213,11 +14236,14 @@
             "_RIDE_STATUSES",
             "_STATUS_KEYS",
             "_alert_signature_failure",
+            "_body_digest",
             "_cache_position",
             "_cfg",
             "_check_signature",
             "_first",
+            "_revive_archived",
             "_store_position",
+            "_truthy",
             "logger",
             "signature_for"
           ]
@@ -14262,6 +14288,32 @@
           "symbols": [
             "app_name",
             "urlpatterns"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/production_promise.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "preorder.production-promise-lost"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "EVENT_TYPE",
+            "OPEN_STATUSES",
+            "ORDER_REFERENCE_PREFIX",
+            "logger"
           ]
         }
       ]

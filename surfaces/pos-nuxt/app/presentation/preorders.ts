@@ -191,8 +191,20 @@ export function preorderCountLabel(count: number): string {
 }
 
 /** O resumo do topo de uma lista: "3 encomendas · R$ 120,00". Vazio sem nada. */
-export function listSummary(count: number, totalDisplay: string): string {
-  return count > 0 ? `${preorderCountLabel(count)} · ${totalDisplay}` : "";
+/**
+ * "20 encomendas · R$ 4.241,00", ou só "20 encomendas" para quem não audita o
+ * caixa: a soma em dinheiro do período é apuração (D4, contagem cega), e o
+ * servidor a manda `null` para a Caixa e o Gerente.
+ */
+export function listSummary(count: number, totalDisplay: string | null): string {
+  if (count <= 0) return "";
+  return totalDisplay ? `${preorderCountLabel(count)} · ${totalDisplay}` : preorderCountLabel(count);
+}
+
+/** A conta de um dia da grade: a contagem, e a soma só para quem a recebe. */
+export function dayCountLine(day: Pick<PreorderDay, "orders_count" | "total_display">, separator = " · "): string {
+  if (!day.orders_count) return "Nenhuma encomenda";
+  return day.total_display ? `${preorderCountLabel(day.orders_count)}${separator}${day.total_display}` : preorderCountLabel(day.orders_count);
 }
 
 /**
@@ -464,20 +476,52 @@ export function filterEmptyMessage(mode: PreordersMode): string {
 
 /** O peso do "A receber" onde quer que ele apareça. */
 export const TO_RECEIVE_CLASS = "text-sm font-semibold tabular-nums text-foreground";
+/** A mesma frase quando é atalho para o filtro "A receber": o mesmo peso, com o
+ *  sublinhado pontilhado dizendo que se toca. Sem cor nova (amarelo demais é ruído). */
+export const TO_RECEIVE_LINK_CLASS = `${TO_RECEIVE_CLASS} inline-flex min-h-8 items-center px-0 py-1 underline decoration-dotted underline-offset-4 hover:decoration-solid`;
 
 /** "A receber R$ 62,00". A frase única do que falta cobrar. */
 export function toReceiveLabel(display: string): string {
   return `A receber ${display}`;
 }
 
-/** O "A receber" do período; sem nada, a frase inteira. Zero não é código. */
-export function toReceiveLine(toReceiveQ: number, toReceiveDisplay: string): string {
+/**
+ * Sem a soma (quem não audita o caixa), a linha diz QUANTAS encomendas têm
+ * pagamento pendente: o balcão sabe que tem o que cobrar sem ler o gabarito da
+ * gaveta. Frase do dono (prévia do #2597): "3 encomendas com pagamento pendente".
+ */
+function toReceiveCountLabel(count: number): string {
+  return `${preorderCountLabel(count)} com pagamento pendente`;
+}
+
+/** Quantas encomendas têm saldo a cobrar (a mesma régua do destaque do cartão). */
+export function cardsToReceive(cards: readonly Pick<PreorderCard, "payment_state" | "balance_q">[]): number {
+  return cards.filter(balanceStandsOut).length;
+}
+
+/**
+ * O "A receber" do período; sem nada, a frase inteira. Zero não é código.
+ * `toReceiveQ` nulo: a soma não veio (quem não audita), e a linha conta
+ * encomendas (`cardsCount`) em vez de somar dinheiro.
+ */
+export function toReceiveLine(toReceiveQ: number | null, toReceiveDisplay: string | null, cardsCount = 0): string {
+  if (toReceiveQ === null || toReceiveDisplay === null) {
+    return cardsCount > 0 ? toReceiveCountLabel(cardsCount) : "Nada a receber";
+  }
   return toReceiveQ > 0 ? toReceiveLabel(toReceiveDisplay) : "Nada a receber";
 }
 
+/** O dia tem saldo a cobrar? Pela soma, quando ela veio; senão, pelos cartões. */
+export function dayHasToReceive(day: Pick<PreorderDay, "to_receive_q" | "orders">): boolean {
+  return day.to_receive_q === null ? cardsToReceive(day.orders) > 0 : day.to_receive_q > 0;
+}
+
 /** O "A receber" de um dia da grade, só quando há o que receber. */
-export function dayToReceiveLine(day: Pick<PreorderDay, "to_receive_q" | "to_receive_display">): string {
-  return day.to_receive_q > 0 ? toReceiveLabel(day.to_receive_display) : "";
+export function dayToReceiveLine(day: Pick<PreorderDay, "to_receive_q" | "to_receive_display" | "orders">): string {
+  if (!dayHasToReceive(day)) return "";
+  return day.to_receive_q === null || day.to_receive_display === null
+    ? toReceiveCountLabel(cardsToReceive(day.orders))
+    : toReceiveLabel(day.to_receive_display);
 }
 
 /** O saldo pede destaque na linha: é o que o balcão cobra. */
@@ -696,7 +740,7 @@ export interface TodayIndicator {
 
 const TODAY_CAPTIONS: Record<TodayFact["key"], string> = {
   leaving: "Entregar",
-  to_receive: "A Receber",
+  to_receive: "A receber",
   tickets: "Sem Via",
   check: "Conferir",
 };
@@ -723,8 +767,10 @@ export function todayIndicators(facts: readonly TodayFact[]): TodayIndicator[] {
   return facts.map((fact) => {
     const count = /^(\d+)/.exec(fact.text)?.[1];
     const money = /R\$\s?[\d.,]+/.exec(fact.text)?.[0];
+    // Sem a soma (quem não audita o caixa), o "a receber" urgente mostra
+    // QUANTAS encomendas: "2 encomendas com pagamento pendente" vira [moedas 2].
     const value = fact.key === "to_receive"
-      ? (fact.urgent && money ? money : "✓")
+      ? (fact.urgent ? (money ?? count ?? "✓") : "✓")
       : fact.key === "leaving"
         ? (count ?? "✓")
         : (fact.urgent && count ? count : "✓");
@@ -758,8 +804,8 @@ export function todayFacts(day: PreorderDay | null): TodayFact[] {
     { key: "leaving", text: `${pending.length} para entregar`, urgent: false },
     {
       key: "to_receive",
-      text: day.to_receive_q > 0 ? toReceiveLabel(day.to_receive_display) : "Nada a receber",
-      urgent: day.to_receive_q > 0,
+      text: dayToReceiveLine(day) || "Nada a receber",
+      urgent: dayHasToReceive(day),
     },
     {
       key: "tickets",
@@ -932,8 +978,10 @@ export interface PhonePill {
 
 /**
  * As duas pílulas do cartão do celular (v3 `depois-pdv-celular` 3): o preparo
- * (só quando diz algo que o dinheiro não diz) e o pagamento, na voz do balcão
- * ("Pago", "Pagar na retirada", "Pagar na entrega").
+ * (só quando diz algo que o dinheiro não diz) e o pagamento com o MESMO nome do
+ * selo da linha no computador (`moneyBadge`): "A receber", "Conferir pagamento",
+ * "Na conta da casa", "Pago". Um campo, um nome (prévia do #2597: o celular
+ * dizia "Pagar na retirada" onde o computador dizia "A receber").
  */
 export function phoneCardPills(
   card: Pick<PreorderCard, "situation" | "situation_label" | "balance_q" | "fulfillment_type">,
@@ -941,10 +989,9 @@ export function phoneCardPills(
   const pills: PhonePill[] = [];
   if (rowShowsSituation(card.situation)) pills.push({ label: card.situation_label, tone: situationTone(card.situation) });
   if (card.balance_q === null) pills.push({ label: "Conferir pagamento", tone: "warning" });
-  else if (card.situation === "on_account") pills.push({ label: "Conta da casa", tone: "neutral" });
-  else if (card.balance_q > 0) {
-    pills.push({ label: card.fulfillment_type === "delivery" ? "Pagar na entrega" : "Pagar na retirada", tone: "warning" });
-  } else pills.push({ label: "Pago", tone: "success" });
+  else if (card.situation === "on_account") pills.push({ label: "Na conta da casa", tone: "info" });
+  else if (card.balance_q > 0) pills.push({ label: "A receber", tone: "warning" });
+  else pills.push({ label: "Pago", tone: "success" });
   return pills;
 }
 
@@ -976,19 +1023,28 @@ export interface MoneyBadge {
   of: string;
   label: string;
   tone: BadgeTone;
+  /** Pendência financeira (falta receber, ou o pagamento está a conferir): o selo
+   *  vem ANTES do valor, para se distinguir dos outros selos da linha. */
+  pending: boolean;
 }
 
 /**
  * O dinheiro da linha em duas peças: o valor e o selo semântico do estado (dono,
- * 03/11/2026: "A receber" e "Pago" viram selos). Amarelo só para o que pede gesto.
+ * 03/11/2026: "A receber" e "Pago" viram selos).
+ *
+ * Pendência financeira ("A receber", "Conferir pagamento") À FRENTE do valor:
+ * teste pedido pelo dono na prévia do #2597 ("colocar o badge 'A receber' à
+ * frente/à esquerda do valor [...]"). Variante em âmbar (`warning`), para
+ * comparar com a vermelha ("Preciso ver o ambar na posição à esquerda,
+ * comparativamente"). Os outros selos seguem depois do valor.
  */
 export function moneyBadge(card: Pick<PreorderCard, "balance_q" | "balance_display" | "total_q" | "total_display" | "payment_state">): MoneyBadge {
-  if (card.balance_q === null) return { amount: card.total_display, of: "", label: "Conferir pagamento", tone: "warning" };
+  if (card.balance_q === null) return { amount: card.total_display, of: "", label: "Conferir pagamento", tone: "warning", pending: true };
   if (card.balance_q > 0) {
     const partial = card.balance_q < card.total_q;
-    return { amount: partial ? card.balance_display : card.total_display, of: partial ? `de ${card.total_display}` : "", label: "A Receber", tone: "warning" };
+    return { amount: partial ? card.balance_display : card.total_display, of: partial ? `de ${card.total_display}` : "", label: "A receber", tone: "warning", pending: true };
   }
-  if (card.payment_state === "on_account") return { amount: card.total_display, of: "", label: "Na Conta da Casa", tone: "info" };
-  return { amount: card.total_display, of: "", label: "Pago", tone: "success" };
+  if (card.payment_state === "on_account") return { amount: card.total_display, of: "", label: "Na conta da casa", tone: "info", pending: false };
+  return { amount: card.total_display, of: "", label: "Pago", tone: "success", pending: false };
 }
 

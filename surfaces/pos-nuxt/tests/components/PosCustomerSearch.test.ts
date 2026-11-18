@@ -63,6 +63,22 @@ describe("PosCustomerSearch — Enter decide", () => {
     expect(wrapper.emitted("select")?.[0]).toEqual([second]);
   });
 
+  it("busca que FALHOU: diz que não buscou, não oferece cadastrar, e Enter busca de novo", async () => {
+    // P1-8: a lista vazia de um erro dizia "Nenhum cadastro encontrado" e
+    // oferecia cadastrar de novo quem já existe.
+    const wrapper = await mount({ error: "Não consegui buscar agora. Tente de novo." });
+    const input = await type(wrapper, "529.982.247-25");
+    vi.advanceTimersByTime(400);
+    await wrapper.vm.$nextTick(); // o debounce acabou: a tela sai do "Buscando…"
+    expect(wrapper.find("[data-customer-search-error]").text()).toContain("Não consegui buscar agora. Tente de novo.");
+    expect(wrapper.text()).not.toContain("Nenhum cadastro");
+    const searchesBefore = wrapper.emitted("search")?.length ?? 0;
+    await input.trigger("keydown", { key: "Enter" });
+    expect(wrapper.emitted("resolveCpf")).toBeUndefined();
+    expect(wrapper.emitted("search")?.length).toBe(searchesBefore + 1);
+    expect(wrapper.emitted("search")?.at(-1)).toEqual(["529.982.247-25"]);
+  });
+
   it("0 resultados + CPF válido → emite resolveCpf com os dígitos", async () => {
     const wrapper = await mount();
     const input = await type(wrapper, "529.982.247-25");
