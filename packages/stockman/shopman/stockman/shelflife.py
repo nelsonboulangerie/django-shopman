@@ -8,6 +8,15 @@ Examples:
     - Croissant (shelf_life_days=0): only valid on production day
     - Bolo (shelf_life_days=3): valid for 3 days after production
     - Wine (shelf_life_days=None): no expiration
+
+Margem de validade (``margin_days``): o chamador pode exigir que o saldo ainda
+tenha N dias de validade DEPOIS da data-alvo. É a mesma margem que o escopo já
+aplica ao lote datado (``Batch.expiry_date``, ``expiry_margin_days``); aqui ela
+alcança a validade IMPLÍCITA do saldo sem lote (dia de produção +
+``shelf_life_days``), que é o caso de toda fornada planejada. Sem isso, a
+fornada de quinta de um pão de um dia contava inteira como lastro de uma
+promessa para sexta. A fornada planejada PARA a própria data-alvo sempre conta:
+na data dela o produto é o do dia, com qualquer validade (inclusive zero).
 """
 
 from datetime import date, timedelta
@@ -16,7 +25,17 @@ from django.db.models import Q
 from django.utils import timezone
 
 
-def is_valid_for_date(quant, product, target_date: date) -> bool:
+def _production_floors(shelflife: int, target_date: date, margin_days: int) -> tuple[date, date]:
+    """Dia de produção mais antigo que ainda vale: ``(saldo físico, fornada planejada)``.
+
+    O saldo vale enquanto ``produção + shelf_life_days >= alvo + margem``. A
+    fornada planejada para a própria data-alvo nunca cai pela margem.
+    """
+    floor = target_date - timedelta(days=shelflife) + timedelta(days=max(0, margin_days))
+    return floor, min(floor, target_date)
+
+
+def is_valid_for_date(quant, product, target_date: date, *, margin_days: int = 0) -> bool:
     """
     Check if a specific quant is still valid for the target date.
 
@@ -24,6 +43,9 @@ def is_valid_for_date(quant, product, target_date: date) -> bool:
         quant: Quant instance (needs .target_date, .created_at)
         product: Product instance (needs .shelf_life_days attribute or None)
         target_date: The date we want to use/sell the product
+        margin_days: Days of validity the quant must still have AFTER
+            ``target_date`` (0 = valid on the target date is enough). Planned
+            production for the target date itself always qualifies.
 
     Returns:
         True if the quant is still valid for the target date
@@ -36,7 +58,7 @@ def is_valid_for_date(quant, product, target_date: date) -> bool:
             return True
         return quant.target_date <= target_date
 
-    min_production = target_date - timedelta(days=shelflife)
+    min_production, min_planned = _production_floors(shelflife, target_date, margin_days)
 
     if quant.target_date is None:
         # Physical stock: check creation date
@@ -46,10 +68,10 @@ def is_valid_for_date(quant, product, target_date: date) -> bool:
         return timezone.localdate(quant.created_at) >= min_production
 
     # Planned stock: must be within shelflife window
-    return min_production <= quant.target_date <= target_date
+    return min_planned <= quant.target_date <= target_date
 
 
-def filter_valid_quants(quants, product, target_date: date):
+def filter_valid_quants(quants, product, target_date: date, *, margin_days: int = 0):
     """
     Filter a Quant queryset to only include quants valid for the target date.
 
@@ -60,6 +82,7 @@ def filter_valid_quants(quants, product, target_date: date):
         quants: Quant QuerySet
         product: Product instance (needs .shelf_life_days attribute or None)
         target_date: The date we want to check validity for
+        margin_days: Same as :func:`is_valid_for_date`.
 
     Returns:
         Filtered QuerySet
@@ -67,10 +90,10 @@ def filter_valid_quants(quants, product, target_date: date):
     shelflife = getattr(product, 'shelf_life_days', None)
 
     if shelflife is not None:
-        min_production = target_date - timedelta(days=shelflife)
+        min_production, min_planned = _production_floors(shelflife, target_date, margin_days)
         return quants.filter(
             Q(target_date__isnull=True, created_at__date__gte=min_production)
-            | Q(target_date__gte=min_production, target_date__lte=target_date)
+            | Q(target_date__gte=min_planned, target_date__lte=target_date)
         )
 
     return quants.filter(

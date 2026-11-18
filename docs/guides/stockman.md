@@ -37,6 +37,15 @@ Definida no Product (`shopman.offerman`), respeitada pelo Stockman:
 - `planned_ok` — aceita produção planejada
 - `demand_ok` — aceita holds sem estoque (demanda)
 
+### Validade e margem
+O saldo conta para uma data-alvo enquanto estiver válido nela. A validade tem duas fontes, e as duas valem juntas (a mais restritiva ganha):
+- **Lote datado** — `Batch.expiry_date`.
+- **Saldo sem lote** — validade implícita: dia de produção + `shelf_life_days` do produto. É o caso de toda fornada planejada (`Quant.target_date` preenchido) e do que está em produção.
+
+`expiry_margin_days` (parâmetro de `quants_eligible_for`, das leituras de disponibilidade e do `hold`) pede que o saldo ainda tenha N dias de validade DEPOIS da data-alvo, e alcança as duas fontes. A fornada planejada para a própria data-alvo sempre conta, com qualquer validade. Margem 0 (o default) é "válido na data basta".
+
+`availability_for_skus_on_dates` aceita `expiry_margin_days_by_date` para quem lê, numa varredura só, datas que pedem margens diferentes. O orquestrador usa isso para a regra da casa: sobra de hoje não lastreia encomenda (`shopman/shop/policies/promise_expiry_margin.py`).
+
 ## Modelos
 
 ### Position

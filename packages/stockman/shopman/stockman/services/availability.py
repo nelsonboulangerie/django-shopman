@@ -6,6 +6,7 @@ Não importar de ``shopman.stockman.api.views``; views importam daqui.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -200,7 +201,9 @@ def availability_for_sku(
     channel-visible quants. Ignored when ``position`` is set (single-position
     query). ``expiry_margin_days`` / ``include_nonconforming`` are the lot
     gates (see :func:`quants_eligible_for`) — likewise ignored for the
-    single-position query, which is an internal/ops view.
+    single-position query, which is an internal/ops view. The expiry margin
+    also reaches batchless stock through its implicit validity (production
+    day + ``shelf_life_days``).
 
     ``availability_policy``: a política que o chamador já resolveu (o hold
     recebe o produto e lê a política dele). Ausente, vem do contrato de oferta.
@@ -453,6 +456,7 @@ def availability_for_skus_on_dates(
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
     allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
+    expiry_margin_days_by_date: Mapping[date, int] | None = None,
 ) -> dict[date, dict[str, dict]]:
     """
     :func:`availability_for_skus` para várias datas numa varredura só.
@@ -469,6 +473,13 @@ def availability_for_skus_on_dates(
 
     Quem pergunta "hoje e as próximas fornadas" (a fila de espera) fazia uma
     leitura inteira por data candidata; aqui é uma.
+
+    ``expiry_margin_days_by_date``: a margem de validade de cada data, para
+    quem lê na mesma varredura datas que pedem margens diferentes (a venda de
+    hoje e a promessa para depois). Data ausente do mapa usa
+    ``expiry_margin_days``. Cada ``[data]`` continua sendo o que
+    ``availability_for_skus(target_date=data, expiry_margin_days=<a dela>)``
+    devolve.
     """
     from shopman.stockman.models import Batch
 
@@ -480,7 +491,11 @@ def availability_for_skus_on_dates(
 
     today = timezone.localdate()
     horizon = max(dates)
-    expiry_margin = timedelta(days=max(0, expiry_margin_days))
+    margin_by_date: dict[date, int] = {
+        target: max(0, int((expiry_margin_days_by_date or {}).get(target, expiry_margin_days)))
+        for target in dates
+    }
+    widest_cutoff = max(target + timedelta(days=margin) for target, margin in margin_by_date.items())
 
     # ── Query 1: orderable SKUs from the offering contract ───────────────────
     validator = get_sku_validator()
@@ -504,7 +519,7 @@ def availability_for_skus_on_dates(
     expiring_batches: list[tuple[str, str, date]] = list(
         Batch.objects.filter(
             sku__in=skus,
-            expiry_date__lt=horizon + expiry_margin,
+            expiry_date__lt=widest_cutoff,
         ).values_list("sku", "ref", "expiry_date")
     )
     nonconforming_refs_by_sku: dict[str, set[str]] = {}
@@ -581,7 +596,7 @@ def availability_for_skus_on_dates(
 
     by_date: dict[date, dict[str, dict]] = {}
     for target in dates:
-        cutoff = target + expiry_margin
+        cutoff = target + timedelta(days=margin_by_date[target])
         excluded_refs_by_sku: dict[str, set[str]] = {}
         for sku, ref, expiry_date in expiring_batches:
             if expiry_date < cutoff:
@@ -592,6 +607,7 @@ def availability_for_skus_on_dates(
             skus,
             target,
             safety_margin=safety_margin,
+            expiry_margin_days=margin_by_date[target],
             orderable_skus=orderable_skus,
             sku_infos=sku_infos,
             shelflife_by_sku=shelflife_by_sku,
@@ -610,6 +626,7 @@ def _availability_on_date(
     target: date,
     *,
     safety_margin: int,
+    expiry_margin_days: int,
     orderable_skus: set[str],
     sku_infos: dict,
     shelflife_by_sku: dict[str, int | None],
@@ -676,7 +693,7 @@ def _availability_on_date(
                 # not batchless stock. Match the canonical queryset and the
                 # fulfill recheck by failing them closed under an allowlist.
                 continue
-            if not is_valid_for_date(quant, shelflife_ns, target):
+            if not is_valid_for_date(quant, shelflife_ns, target, margin_days=expiry_margin_days):
                 continue
 
             qty = quant._quantity

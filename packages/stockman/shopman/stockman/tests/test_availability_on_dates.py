@@ -14,6 +14,12 @@ nome). Ela fica congelada aqui de propósito: é a régua contra a qual a leitur
 nova é medida, campo a campo, para toda combinação de recorte de canal e para
 datas no passado, hoje, nas fornadas e depois delas.
 
+Uma linha do oráculo mudou em 18/11/2026 (#2693), e só ela: a chamada de
+``is_valid_for_date`` passa a margem adiante (``margin_days``). O que fica
+congelado é a COMPOSIÇÃO (uma leitura inteira por data); a regra de validade
+sempre foi a viva, chamada daqui, e desde o #2693 a margem alcança também a
+validade implícita do saldo sem lote. Com margem 0 a linha não muda nada.
+
 O cenário cobre o que muda com a data: estoque de hoje, fornadas futuras,
 lote que vence no meio do intervalo (com e sem margem), validade de
 prateleira (0 e 3 dias, contada pela criação ou pela fornada), holds ativos,
@@ -214,7 +220,7 @@ def _reference_availability_for_skus(
                 # not batchless stock. Match the canonical queryset and the
                 # fulfill recheck by failing them closed under an allowlist.
                 continue
-            if not is_valid_for_date(quant, shelflife_ns, target):
+            if not is_valid_for_date(quant, shelflife_ns, target, margin_days=expiry_margin_days):
                 continue
 
             qty = quant._quantity
