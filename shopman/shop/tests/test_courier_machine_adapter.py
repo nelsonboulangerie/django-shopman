@@ -564,3 +564,69 @@ def test_read_ride_only_reads(_clear_read_via):
         with pytest.raises(CourierError):
             courier_machine.read_ride("1")
     assert {call.args[0] for call in mock_request.call_args_list} == {"GET"}
+
+
+# ── desistência não é cancelamento ──────────────────────────────────
+
+
+def test_details_snapshot_never_concludes_cancelled_from_the_cancellation_list():
+    """``cancellation[]`` guarda a desistência de um entregador; a corrida segue viva.
+
+    Antes, um código de evento com a lista preenchida virava ``C``: a corrida
+    que a TaOn já redistribuía era arquivada e o operador mandado chamar outra.
+    """
+    withdrawn = {**DETAILS_ACCEPTED, "short_code": "AP", "full_code": "ARRIVED_AT_LOCATION",
+                 "cancellation": [{"cancelled_at": "2026-10-13T18:50:00Z", "cancelled_reason": "Desistência"}]}
+    snap = courier_machine.snapshot_from_details(withdrawn)
+    assert snap["status"] == ""  # sem letra não há conclusão: outra via responde
+    assert snap["progress"]["cancelled_at"] == "2026-10-13T18:50:00Z"
+
+    searching = {**withdrawn, "short_code": "D", "full_code": "DISTRIBUTING"}
+    assert courier_machine.snapshot_from_details(searching)["status"] == "D"
+    cancelled = {**withdrawn, "short_code": "C", "full_code": "CANCELLED"}
+    assert courier_machine.snapshot_from_details(cancelled)["status"] == "C"
+
+
+# ── HTTP 429: a TaOn limitou as chamadas ────────────────────────────
+
+
+class _RateLimited(_FakeResponse):
+    def __init__(self, headers=None):
+        super().__init__(429, {"success": False, "errors": [{"code": 429, "message": "Too Many Requests"}]})
+        self.headers = headers or {}
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_429_is_a_known_transient_refusal_with_the_wait_the_provider_asked():
+    limited = _RateLimited({"Retry-After": "42", "X-RateLimit-Remaining": "0"})
+    with patch("shopman.shop.adapters.courier_machine.requests.request", return_value=limited):
+        with pytest.raises(courier_machine.CourierRateLimited) as raised:
+            courier_machine.dispatch({"paradas": []})
+    assert raised.value.retry_after == 42
+    assert raised.value.transient is True
+    # Nada foi aplicado do lado de lá: repetir a chamada não arrisca corrida em dobro.
+    assert raised.value.outcome_unknown is False
+    assert isinstance(raised.value, CourierError)
+
+
+@pytest.mark.parametrize(("header", "expected"), [
+    (None, courier_machine.RATE_LIMIT_DEFAULT_SECONDS),
+    ("", courier_machine.RATE_LIMIT_DEFAULT_SECONDS),
+    ("não é número", courier_machine.RATE_LIMIT_DEFAULT_SECONDS),
+    ("0", 1),
+    ("7.6", 7),
+    ("86400", courier_machine.RATE_LIMIT_MAX_SECONDS),
+    ("Wed, 21 Oct 2015 07:28:00 GMT", 1),  # data no passado: tenta logo
+])
+def test_retry_after_is_read_and_bounded(header, expected):
+    assert courier_machine._retry_after_seconds(header) == expected
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_read_ride_under_rate_limit_does_not_try_the_other_vias(_clear_read_via):
+    """Sob limite, bater nas outras duas vias só gasta mais cota."""
+    with patch("shopman.shop.adapters.courier_machine.requests.request",
+               return_value=_RateLimited({"Retry-After": "20"})) as mock_request:
+        with pytest.raises(courier_machine.CourierRateLimited):
+            courier_machine.read_ride("1")
+    assert mock_request.call_count == 1

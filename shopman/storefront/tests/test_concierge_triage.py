@@ -314,9 +314,28 @@ def test_check_names_each_missing_piece(settings):
         response_window={},
     )
     messages = " | ".join(message for _id, message, _hint in concierge_findings(config))
-    for piece in ("Concierge ligado sem conexão de IA utilizável", "lista de assinantes vazia", "sem chave de ingresso",
+    for piece in ("lista de assinantes vazia", "sem chave de ingresso",
                   "MANYCHAT_API_TOKEN", "campo de atendimento humano", "fuso da janela"):
         assert piece in messages
+    # Sem conexão de IA não é pendência (WP-03): é aviso, à parte.
+    assert "conexão de IA" not in messages
+
+
+def test_without_ai_connection_the_check_only_warns(settings):
+    """WP-03: sem conexão de IA a Concierge responde sem modelo; o check avisa e o
+    ``concierge_check`` não reprova por isso."""
+    from shopman.storefront.checks import check_concierge_readiness, concierge_notices
+
+    configure_ai("")
+    settings.MANYCHAT_API_TOKEN = "tok"
+    settings.SHOPMAN_CONCIERGE = _ready_config()
+    assert concierge_findings() == []
+    notices = concierge_notices()
+    assert notices and all("sem leitura por modelo" in message for _id, message, _hint in notices)
+    assert {warning.id for warning in check_concierge_readiness(None)} == {"SHOPMAN_W022"}
+    out = io.StringIO()
+    call_command("concierge_check", stdout=out)
+    assert "sem leitura por modelo" in out.getvalue()
 
 
 def test_concierge_check_command_when_off(settings):
