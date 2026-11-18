@@ -17,8 +17,8 @@ base `docs/coordination/ROUNDS/EXCELENCIA-base.md`. Medido em 16/11/2026 contra 
   a ação pronta. Nenhum dos cinco benchmarks liga produção real a pedido aceito.
 - **14 WPs em 6 ondas**. O primeiro a delegar é o **WP-G01** (a encomenda se anuncia), junto
   com o **WP-G00** (harness de operador de verdade).
-- **4 decisões do dono**, no fim. Em 17/11/2026 ele respondeu sim à 2, à 3 e à 4; a 1 segue
-  aberta.
+- **4 decisões do dono**, no fim. Em 17/11/2026 ele respondeu sim à 2 e à 3, escolheu a API
+  na 4 e decidiu a 1: no pedido não retirado, a casa fica só com o valor da perda.
 - **O que este PR deixou de fora tem issue**: execução do plano (#2546), o lado de fronteira do
   P0 (#2547), o pedido de hoje com hora combinada (#2548), as demais fronteiras (#2549) e as
   jornadas ainda não percorridas pela UI (#2550).
@@ -453,26 +453,33 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
   retirada, pagamento não confirmado num pago), mantém o confirmar sempre à vista e recebe o
   erro e o `field`. Botão secundário respeita `disabled` e mostra o motivo como texto.
 
-### WP-G07 · Avisar o cliente com a mensagem pronta
+### WP-G07 · Avisar o cliente com um toque (decisão 4: pela API, 17/11/2026)
 
-- **Objetivo:** "Avisar o cliente" abre o WhatsApp com a mensagem escrita para o caso, e o
-  recibo com falha tem o botão que a frase pede.
+- **Objetivo:** "Avisar o cliente" envia a mensagem certa para o caso com um toque, pela API,
+  e o pedido guarda o que foi enviado. O recibo com falha tem o botão que a frase pede.
 - **Achados que fecha:** P1-18. Fecha a #2407 se cobrir o "Copiar mensagem".
-- **Dependências:** WP-G05 (mesmo arquivo `[ref].vue`).
+- **Dependências:** WP-G05 e WP-G12 (mesmo arquivo `[ref].vue`); a #2421 resolvida antes ou
+  dentro deste WP; os três modelos aprovados pela Meta.
 - **Arquivos:** `presentation/contactRequest.ts`, `pages/[ref].vue`,
-  `OrderNotificationReceipts.vue`, testes.
-- **Fora do escopo:** envio automático pelo sistema; contato no card do painel (#2434,
-  privacidade).
+  `OrderNotificationReceipts.vue`, a rota em `operations.py` e `urls.py`, testes. O envio usa o
+  caminho de notificação que o `shop` já tem; se ele precisar mudar, é fronteira: pare,
+  escreva o que falta no PR e abra a issue.
+- **Fora do escopo:** contato no card do painel (#2434, privacidade); mensagem livre digitada
+  pelo operador.
 - **Pronto quando:**
   - roteiro: no detalhe de uma encomenda, o Caixa escolhe "Vai atrasar", "Faltou um item" ou
-    "Precisamos remarcar" e o WhatsApp abre com o nome, o pedido e a hora já escritos, na voz
-    da casa. Nenhuma mensagem é enviada pelo teste. Capturas em 375 e 1366.
-  - testes: apresentação pura das três mensagens e componente.
-- **Muda tela:** sim (prévia, e a copy das três mensagens passa pelo dono).
-  **Tamanho:** M.
-- **Brief:** leia o achado P1-18, a voz da concierge em `docs/reference/omotenashi-copy.md` e
-  a #2407. A mensagem é montada na apresentação e vai no `text=` do `wa.me`; quem envia é o
-  operador. Sem travessão; emoji só os da casa.
+    "Precisamos remarcar", lê a mensagem com o nome, o pedido e a hora já escritos, na voz da
+    casa, e toca em enviar. A tela diz que enviou, o recibo aparece no pedido, e a falha de
+    envio aparece como falha, com o plano B (abrir o WhatsApp do operador com o mesmo texto).
+    O roteiro roda com o adapter de simulação: nenhuma mensagem real é enviada pelo teste.
+    Capturas em 375 e 1366.
+  - testes: apresentação pura das três mensagens, a rota (permissão, idempotência, falha do
+    provedor) e o componente.
+- **Muda tela:** sim (prévia, e a copy das três mensagens passa pelo dono antes de ir à
+  aprovação da Meta). **Tamanho:** G.
+- **Brief:** leia o achado P1-18, a decisão 4 na seção 10, a voz da concierge em
+  `docs/reference/omotenashi-copy.md`, a #2407 e a #2421. Um toque, sem campo para preencher.
+  Sem travessão; emoji só os da casa. Nunca diga "enviado" sem a confirmação do provedor.
 
 ### WP-G08 · Promessa em risco
 
@@ -537,17 +544,22 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Brief:** leia o salto S3 e o `production-nuxt` só para saber para onde o atalho aponta.
   Leitura do plano por dia e produto, sem escrever. Em tela de operador é "lote".
 
-### WP-G11 · Não retirado (depois da decisão 1)
+### WP-G11 · Não retirado (decisão 1: a casa fica só com a perda, 17/11/2026)
 
 - **Objetivo:** o pedido pronto que ninguém veio buscar tem saída, com o destino do dinheiro
   e do produto.
 - **Achados que fecha:** P1-08.
-- **Dependências:** decisão 1; a transição e o serviço são do shop e do canal (fronteira):
-  este WP só entra depois deles.
+- **Dependências:** a regra da retenção escrita nos Termos da loja e mostrada à cliente antes
+  de pagar a encomenda (frente da loja, #2613); o lado do `shop` no `main`
+  (política, serviço, régua do pagamento, conciliação, perda, transição dos canais: fronteira,
+  frente da coordenação); a #2604; WP-G12 (mesmos arquivos).
 - **Arquivos:** `operations.py` e `urls.py` (a rota), `pages/[ref].vue`, `OrderCardMenu.vue`,
   testes.
 - **Muda tela:** sim (prévia). **Tamanho:** M.
-- **Brief:** leia o P1-08 e a resposta do dono à decisão 1. Gesto de Gerente, com PIN.
+- **Brief:** leia o P1-08 e o mapa da decisão 1 na seção 10. Gesto de Gerente, da lista, com
+  PIN, numa autorização só. A prévia vem calculada do servidor: destino de cada linha, o
+  dinheiro por extenso e o texto ao cliente, antes de confirmar. Antes da hora o item aparece
+  desabilitado com o motivo; no iFood o item não aparece.
 
 ### WP-G12 · Registrar devolução (decisão 2: sim, 17/11/2026)
 
@@ -599,9 +611,9 @@ um WP por onda escreve nele.
 | 0 | **G00** (harness) · **G01** (a encomenda se anuncia) | G01 |
 | 1 | **G02** (hora da Cozinha) · **G03** (lista de Encomendas) · **G04** (Histórico) | G02 |
 | 2 | **G05** (o detalhe tem o gesto) · **G06** (recusar e bloquear) | G05 |
-| 3 | **G07** (avisar o cliente) · **G08** (promessa em risco) | G08 |
+| 3 | **G07** (avisar o cliente, depois do G12) · **G08** (promessa em risco) | G08 |
 | 4 | **G09** (contrato limpo) · **G10** (agenda com cobertura) | G09 |
-| 5 | **G12 → G13**, em fila (mesmos arquivos), liberados em 17/11/2026; **G11** entra depois, quando a decisão 1 sair | nenhum |
+| 5 | **G12 → G11 → G13**, em fila (mesmos arquivos). G12 e G13 liberados em 17/11/2026; o G11 espera os Termos da loja e o lado do `shop`, e se demorar o G13 passa à frente | nenhum |
 
 Conferência dos arquivos por onda:
 
@@ -611,7 +623,8 @@ Conferência dos arquivos por onda:
   Histórico.
 - Onda 2: G05 fica com `[ref].vue` e `gestorSections.ts`; G06 com `pages/index.vue`,
   `OrderReasonDialog.vue`, `OrderCardActions.vue` e `OrderCardNotices.vue`.
-- Onda 3: G07 fica com `[ref].vue`, `contactRequest.ts` e `OrderNotificationReceipts.vue`;
+- Onda 3: G07 fica com `[ref].vue`, `contactRequest.ts`, `OrderNotificationReceipts.vue` e a
+  rota de envio em `operations.py` e `urls.py` (por isso só depois do G12);
   G08 com `OrderCard.vue`, `QueueView.vue`, `board.ts` e `queue.ts`.
 - Onda 4: G09 fica com `pages/index.vue`, `QueueView.vue`, `board.ts`, `queue.ts` e
   `kitchen.ts`; G10 com
@@ -622,28 +635,88 @@ Conferência dos arquivos por onda:
 Procurado antes em `docs/coordination/DECISIONS.md`, `docs/reference/` e ADR-035 e ADR-036:
 nenhuma das quatro tinha resposta escrita.
 
-**Respostas do dono em 17/11/2026** (fala literal, dada à coordenação: "2) ok 3) ok 4) ok.
-Precisa de template aprovado no Manychat?"):
+**Respostas do dono em 17/11/2026** (falas literais, dadas à coordenação e conferidas no
+transcript dela):
 
 | Decisão | Resposta | Efeito |
 |---|---|---|
-| 1. "Não retirado" | **Aberta.** O dono não aceitou a pergunta como está: quer um mapa de decisões por caso (horário e perda do produto, forma e estado do pagamento, motivo para o B.I.). A coordenação monta a proposta. | WP-G11 segue bloqueado. |
-| 2. Devolução pelo Gestor | **Sim.** | WP-G12 liberado. |
-| 3. Gerente tenta de novo o estorno que falhou | **Sim.** | WP-G13 liberado. |
-| 4. Três mensagens prontas pelo WhatsApp do próprio operador | **Sim.** | WP-G07 liberado. |
+| 1. "Não retirado" | **Decidida no principal: a casa fica só com o valor da perda.** "Dependendo do horário isso vira perda! Precisa de alguma regra para isso. Sugestões? Sobre o dinheiro, depende de como está o status do pagamento e da forma de pagamento: estorno, retorno do troco para o Caixa, simples cancelamento com motivo (BI)... um mapa de decisões." O mapa e as respostas estão abaixo. | WP-G11 espera os Termos da loja e o lado do `shop`. |
+| 2. Devolução pelo Gestor | **Sim** ("2) ok"). | WP-G12 liberado (PR #2607). |
+| 3. Gerente tenta de novo o estorno que falhou | **Sim** ("3) ok"). | WP-G13 liberado. |
+| 4. Três mensagens prontas de "Avisar o cliente" | **Pela API, não pelo WhatsApp do operador.** "API, claro! Deve ser ridiculamente facil para o operador, alem de sempre buscarmos as soluções mais simples, robustas e ELEGANTES!!!" | WP-G07 muda de desenho (abaixo). |
 
-**Sobre o modelo aprovado (pergunta do dono na decisão 4): não precisa.** A mensagem sai do
-WhatsApp do próprio operador, por um link que abre o aplicativo com o texto pronto
-(`wa.me/<telefone>?text=...`), e quem toca em enviar é a pessoa. Ela não passa pela API do
-WhatsApp nem pelo ManyChat, e modelo aprovado pela Meta só é exigido de mensagem que a empresa
-inicia pela API. Se um dia o envio virar automático, aí sim passa a exigir modelo, e isso é
-outra decisão.
+**Decisão 4, como fica.** As três mensagens saem pela API (ManyChat), com um toque no Gestor,
+e o envio fica registrado no pedido. Como é mensagem que a casa inicia pela API, cada uma das
+três precisa de **um modelo aprovado pela Meta**; a aprovação é etapa do WP-G07 e pode ter
+custo por mensagem, conforme a tabela da Meta. O link `wa.me` (o WhatsApp do próprio operador
+com o texto pronto) fica só como plano B, quando o envio pela API falha, e a tela avisa que
+falhou. Pré-requisito: a #2421 (o ManyChat responde sucesso sem entregar) resolvida antes ou
+dentro do WP-G07, porque "enviado" que não chegou é pior que não enviar.
 
-**Ordem depois das respostas.** Decisão liberada não desfaz a fila dos arquivos: G12 e G07
-escrevem em `pages/[ref].vue`, e G12 e G13 escrevem em `operations.py` e `urls.py`. Como o G11
-espera a decisão 1, o G12 passa à frente dele. A fila fica **G12, depois G13**, e o **G07 depois
-do G05 e do G12** (mesmo `[ref].vue`), nunca dois ao mesmo tempo. O G11, quando vier, entra
-depois do que estiver em voo nesses arquivos.
+**Decisão 1, o mapa (coordenação, 17/11/2026).** A regra cabe numa frase: **o dinheiro
+segue o produto.** Produto que volta a ser vendável devolve o dinheiro ao cliente; produto que
+vira perda deixa com a casa o valor daquela perda. O pedido termina sempre como cancelado, com
+motivo próprio (`not_picked_up`), e a retenção fica escrita num bloco só
+(`order.data["no_show"]`).
+
+| Caso | Dinheiro | Produto |
+|---|---|---|
+| Não pago (cobrar na retirada) | nada a devolver | vendável volta ao balcão no mesmo lote; o resto vira perda com motivo |
+| Conta da casa | a dívida das linhas devolvidas morre; a das perdidas segue a pergunta 1 | igual |
+| Pago em dinheiro | o devolvível entra em "Devolver em dinheiro" e espera o cliente; o retido fica na gaveta | igual |
+| Pago na maquininha | o devolvível vira "Estornar na maquininha"; o retido fica | igual |
+| Pago por Pix ou cartão online | estorno automático do devolvível; o retido não volta | igual |
+| iFood | fora do gesto: quem encerra é o iFood | nada local |
+| Entrega que já saiu | não é "não retirado": é devolução | segue a devolução |
+
+Hora: o botão aparece, para o **não pago**, depois da hora combinada mais a tolerância; para o
+**pago**, só a partir do corte do dia. Antes da hora o item aparece desabilitado, com o motivo.
+Quem faz é o Gerente, escolhido da lista, com PIN, numa autorização só; a tela mostra antes de
+confirmar o destino de cada linha, o dinheiro por extenso e o texto que o cliente recebe.
+
+**As cinco perguntas do mapa, e como ficaram em 17/11/2026:**
+
+1. Pedido pago em que parte virou perda: **a casa fica só com o valor do que virou perda e
+   devolve o resto.** Resposta literal do dono: "Sim, só a perda. Mas isso precisa estar
+   amparado em algum documento do tipo Políticas comerciais, Termos de serviço ou algo que o
+   valha, confere?"
+2. O pedido pago espera o corte do dia para o botão aparecer: **sim** (padrão).
+3. Tolerância do não pago: **60 minutos** depois da hora combinada (padrão).
+4. Corte do dia: **no fechamento** (padrão de 0 minuto antes de fechar). A recomendação era
+   30 minutos antes, mas os Termos da loja já prometem que a loja "guarda até o fim do
+   expediente do dia combinado" (`surfaces/storefront-nuxt/app/pages/termos.vue`), e o gesto
+   não pode chegar antes da promessa (#2613).
+5. O fechamento do dia segura enquanto houver pedido pronto não resolvido: **sim**, lista e
+   resolve com uma autorização só (padrão).
+
+Só a 1 tem a palavra escrita do dono. As de 2 a 5 entram como padrão pela recomendação: a
+coordenação informa que ele as viu e não discordou. Os valores de 2 a 4 ficam editáveis no
+Admin (`Shop.defaults["no_show"]`), nunca em env, e a casa troca sem código.
+
+**Pré-requisito que a resposta do dono criou.** Reter o valor da perda só vale se a regra
+estiver escrita nos Termos da loja (ou política comercial equivalente) e aparecer à cliente
+**antes de pagar a encomenda**. Sem isso o WP-G11 não liga a retenção. É frente da loja
+(Storefront e documentos legais), fora deste plano, na issue #2613: a cláusula do pedido não
+retirado, a linha no checkout antes do pagamento, a versão nova dos Termos arquivada e a
+leitura de advogado ou contador antes de publicar.
+
+Para o contador, não para o dono: valor retido de pedido que não saiu pede algum documento?
+
+**O que o mapa mediu e muda o WP-G11.** O gesto no Gestor é a parte pequena. Antes dele, o
+`shop` precisa de: a política e o serviço de não retirado, a régua do pagamento que aceite o
+retido, a conciliação financeira que não acuse o retido como erro, a perda das linhas vencidas,
+a transição `ready→cancelled` nos canais `web` e `whatsapp`, e a lista no fechamento do dia.
+Tudo isso é fronteira deste plano (services do `shop`) e vira frente própria da coordenação.
+Defeito achado no caminho: o produto de pedido cancelado volta ao balcão com o lote de hoje,
+de validade renovada (#2604); entra antes do WP-G11 ou junto.
+
+**Ordem depois das respostas.** Decisão liberada não desfaz a fila dos arquivos: G12, G11 e
+G07 escrevem em `pages/[ref].vue`, e G12, G11 e G13 escrevem em `operations.py` e `urls.py`.
+A fila fica **G12, depois G11, depois G13**, e o **G07 depois do G05 e do G12**, nunca dois ao
+mesmo tempo. O G11 só começa com a regra nos Termos da loja e com o lado do `shop` no `main`;
+se ele demorar, o G13 passa à frente.
+
+As perguntas como foram feitas em 16/11/2026:
 
 1. **Pedido pronto que ninguém veio buscar: criar o gesto "Não retirado"?** Recomendo **sim**:
    gesto do Gerente, com PIN, que encerra o pedido e devolve o produto ao balcão. Sobre o

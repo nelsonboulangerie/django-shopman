@@ -1,4 +1,4 @@
-"""Low-cardinality Marketing abuse limits from approved gate G-H04."""
+"""Limites de abuso do backstage: Marketing (gate G-H04) e a busca de cliente do PDV."""
 
 from __future__ import annotations
 
@@ -88,3 +88,15 @@ class MarketingAIThrottle(_MarketingThrottleAuditMixin, UserRateThrottle):
     """Provider-cost and prompt-abuse budget, scoped to the signed-in operator."""
 
     scope = "marketing_ai"
+
+
+class POSCustomerSearchThrottle(UserRateThrottle):
+    """A busca de cliente do PDV, por operador (#2336).
+
+    A lista sai mascarada, mas sem teto "aa", "ab", "ac"... enumerava a base de
+    clientes. A régua (``pos_customer_search``) deixa folga para quem digita um
+    nome letra a letra (a tela espera a pausa antes de buscar) e trava o
+    varredor. Por operador, não por loja: dois balcões não se travam.
+    """
+
+    scope = "pos_customer_search"

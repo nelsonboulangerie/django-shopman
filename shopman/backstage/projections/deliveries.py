@@ -87,7 +87,7 @@ class DeliveryRideProjection:
     number: int
     #: O nome da corrida na tela e na fala: A, B, C… (``courier.ride_letter``).
     letter: str
-    #: searching · late · coming · atStore · route · back
+    #: searching · late · reopened · grouped · coming · atStore · route · back
     state: str
     status_label: str
     stops: tuple[DeliveryStopProjection, ...]
@@ -112,6 +112,11 @@ class DeliveryRideProjection:
     #: Cancelar a corrida (``courier-cancel``), só antes da coleta. A confirmação
     #: traz a pergunta e, depois do aceite, os motivos (``confirmation.reasons``).
     cancel_action: Action | None = None
+    #: O entregador desistiu e a TaOn procura outro para a MESMA corrida
+    #: (``courier.reopen_view``): quando, e o nome de quem saiu (pode faltar).
+    #: Só com ``state == "reopened"``.
+    reopened_at: str = ""
+    reopened_driver: str = ""
     #: O cancelamento pedido desta corrida: "" · pending · unknown · failed
     #: (``courier.cancel_state``, a mesma fonte do Painel do pedido) e a frase.
     cancel_state: str = ""
@@ -208,10 +213,20 @@ def _minutes_since(iso: str) -> float | None:
 
 
 def _state(block: dict, progress: dict, *, back: bool) -> str:
+    from shopman.shop.services import courier
+
     status = str(block.get("status") or "")
     if back:
         return "back"
-    if not block.get("id_mch") or status in ("D", "G", "P", "U"):
+    if block.get("id_mch") and status == "U":
+        # A própria TaOn juntou esta corrida a outra, que já tem entregador:
+        # nunca é "Ninguém aceitou", e não há o que chamar de novo.
+        return "grouped"
+    if courier.reopen_view(block)["at"]:
+        # O entregador desistiu e a TaOn já redistribui a mesma corrida: a
+        # espera conta de novo, e chamar outra seria pagar duas.
+        return "reopened"
+    if not block.get("id_mch") or status in ("D", "G", "P"):
         waited = _minutes_since(str(block.get("called_at") or block.get("requested_at") or ""))
         return "late" if waited is not None and waited >= LATE_SEARCH_MINUTES else "searching"
     if status in ("A", "S"):
@@ -222,6 +237,8 @@ def _state(block: dict, progress: dict, *, back: bool) -> str:
 _STATE_LABELS = {
     "searching": "Procurando entregador",
     "late": "Ninguém aceitou ainda",
+    "reopened": "Procurando outro entregador",
+    "grouped": "Junto com outra corrida",
     "coming": "Entregador a caminho da loja",
     "atStore": "Entregador na loja",
     "route": "Em rota",
@@ -268,6 +285,7 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
     trip = _trip_fields(lead) if back else {}
     cancel = courier_cancel_state(lead)
     can_cancel = courier_can_cancel(lead, cancel)
+    reopened = courier.reopen_view(block) if state == "reopened" else {"at": "", "driver": ""}
     return DeliveryRideProjection(
         key=str(block.get("id_mch") or f"call:{lead.ref}"),
         number=int(block.get("ride_number") or 0),
@@ -296,6 +314,8 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
                               confirmation=courier_cancel_confirmation(lead)) if can_cancel else None,
         cancel_state=cancel["state"],
         cancel_message=cancel["message"],
+        reopened_at=reopened["at"],
+        reopened_driver=reopened["driver"],
     )
 
 

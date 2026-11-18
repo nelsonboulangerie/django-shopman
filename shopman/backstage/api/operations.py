@@ -94,9 +94,11 @@ from shopman.backstage.api.production_freshness import (
     validate_override_proof,
 )
 from shopman.backstage.api.telemetry import OperationalObservationMixin
+from shopman.backstage.api.throttles import POSCustomerSearchThrottle
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.models import SignInMethod, SignInOutcome
 from shopman.backstage.parsing import as_bool
+from shopman.backstage.permissions import can_audit_cash
 from shopman.backstage.projections.cash_session import build_cash_session_report
 from shopman.backstage.projections.closing import build_day_closing
 from shopman.backstage.projections.hub import purchase_surface_url
@@ -3009,6 +3011,120 @@ class OrderCancelView(_OrderActionBase):
 
 
 @extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Return preview: what can still come back, and where the money goes",
+        responses={200: OpenApiResponse(description="Return preview.")},
+    ),
+)
+class OrderReturnPreviewView(OperationalObservationMixin, APIView):
+    """A prévia da devolução (WP-G12): itens que ainda podem voltar, o preço pago de
+    cada um, para onde o dinheiro volta e a ação com a base que o comando confere."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        from shopman.backstage.projections.order_return import build_order_return
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        return Response(build_order_return(order, user=request.user))
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Register a return after the sale (items, reason and the manager's PIN)",
+        responses={200: OpenApiResponse(description="Return registered.")},
+    ),
+)
+class OrderReturnView(_OrderActionBase):
+    """Registrar devolução depois da venda (decisão 2 do dono, 17/11/2026).
+
+    ``POST {items: [{line_id, qty}], reason, base_revision, expected_actor_id,
+    manager_approval}``. Sempre com o PIN de um Gerente escolhido da lista (ou o
+    crachá): devolver é dinheiro saindo da casa. O comando é o
+    ``ReturnService.initiate_return``, que grava o registro e enfileira o estoque e
+    o estorno (``return.process``); o dinheiro volta pelo caminho que já existe para
+    cada meio (gateway sozinho; dinheiro e maquininha pendentes no PDV).
+    """
+
+    intention_operation = "return"
+
+    def post(self, request, ref: str):
+        from shopman.orderman.exceptions import InvalidTransition
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.projections.order_return import return_block_reason, return_revision
+        from shopman.shop.handlers.returns import ReturnService
+        from shopman.shop.services.operator_orders import OrderStateConflict
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        reason = str(request.data.get("reason") or "").strip()
+        if not reason:
+            problem = "Escreva o motivo da devolução."
+            return Response({"detail": problem, "field": "reason", "errors": {"reason": [problem]}}, status=400)
+        raw_items = request.data.get("items")
+        items: list[dict] = []
+        for raw in raw_items if isinstance(raw_items, list) else []:
+            if not isinstance(raw, dict):
+                continue
+            line_id = str(raw.get("line_id") or "").strip()
+            try:
+                qty = Decimal(str(raw.get("qty") or "0"))
+            except (ArithmeticError, ValueError):
+                qty = Decimal("0")
+            if line_id and qty > 0:
+                items.append({"line_id": line_id, "qty": format(qty.normalize(), "f")})
+        if not items:
+            problem = "Escolha ao menos um item e quanto dele volta."
+            return Response({"detail": problem, "field": "items", "errors": {"items": [problem]}}, status=400)
+        prepared: dict = {}
+
+        def prepare():
+            blocked = return_block_reason(order)
+            if blocked:
+                return Response({"detail": blocked, "error": {"code": "return_not_allowed"}}, status=409)
+            try:
+                prepared["approver"] = pos_tabs_service.validate_manager_override(
+                    request.data.get("manager_approval"),
+                    operator_username=_username(request),
+                    action="order_return",
+                    message="Devolução pede a autorização de um gerente.",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+        def execute(base):
+            with transaction.atomic():
+                locked = Order.objects.select_for_update().get(pk=order.pk)
+                if return_revision(locked) != base:
+                    raise OrderStateConflict("O pedido mudou depois que você abriu a devolução. Confira e tente de novo.")
+                blocked = return_block_reason(locked)
+                if blocked:
+                    raise OrderConflict(blocked)
+                try:
+                    result = ReturnService.initiate_return(
+                        locked, items, reason, _actor(request),
+                        approved_by=prepared["approver"].get_username(),
+                    )
+                except InvalidTransition as exc:
+                    raise OrderConflict(str(exc)) from exc
+                if not result.success:
+                    raise OrderError(result.error or "Não foi possível registrar a devolução.")
+            return {"refund_total_q": result.refund_total_q, "return_type": result.return_type}
+
+        # A assinatura é conferida e descartada: nunca entra na impressão digital da intenção.
+        return self._context_response(
+            request, order, "return", {"items": items, "reason": reason}, execute, prepare=prepare,
+        )
+
+
+@extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
         summary="Register payment collected at pickup or delivery in the operator's open shift",
@@ -3537,7 +3653,11 @@ class POSPreorderListView(APIView):
         date_from, date_to = preorders.parse_range(
             request.GET.get("date_from"), request.GET.get("date_to"), week=request.GET.get("week"),
         )
-        projection = preorders.build_preorder_list(date_from=date_from, date_to=date_to)
+        projection = preorders.build_preorder_list(
+            date_from=date_from,
+            date_to=date_to,
+            show_money_sums=can_audit_cash(request.user),
+        )
         return Response({"ok": True, **asdict(projection)})
 
 
@@ -6916,18 +7036,28 @@ class POSCustomerLookupView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Search customers by any unique key (name/phone/CPF/email)",
         responses={200: OpenApiResponse(description="List of matching customers.")},
     ),
 )
 class POSCustomerSearchView(APIView):
+    """A busca de cliente do PDV: leitura pura, mas por POST e com limite.
+
+    O termo viaja no CORPO, como o telefone do lookup: na query string ele ficava
+    no log de acesso e no cache (#2335). E a busca tem teto por operador (#2336):
+    sem ele, "aa", "ab", "ac"... percorria a base de clientes inteira, ainda que
+    mascarada. A régua é ``pos_customer_search`` em ``DEFAULT_THROTTLE_RATES``.
+    """
+
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
+    throttle_classes = [POSCustomerSearchThrottle]
 
-    def get(self, request):
-        query = (request.query_params.get("q") or "").strip()
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        query = str(body.get("q") or "").strip()
         results = build_pos_customer_search(query)
         return Response({"results": [projection_data(result) for result in results]})
 
@@ -7003,8 +7133,8 @@ def _pos_customer_integrity_response(exc: Exception, *, action: str) -> Response
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Check a manager approval (PIN or badge) without recording anything",
-        responses={200: OpenApiResponse(description="The approving manager's username.")},
+        summary="Check a manager approval (PIN or badge) and issue the single-use sale approval token",
+        responses={200: OpenApiResponse(description="The approving manager's username and the signed approval token.")},
     ),
 )
 class POSManagerApprovalCheckView(APIView):
@@ -7017,8 +7147,8 @@ class POSManagerApprovalCheckView(APIView):
 
     É o MESMO desafio do fechamento (``validate_manager_override``: permissão
     ``cashman.adjust_shift``, ``PinCredential`` com trava progressiva), então
-    errar aqui conta na mesma trava. Não grava nada: o fechamento confere de
-    novo, porque é ele que assina a linha.
+    errar aqui conta na mesma trava. Não grava nada no livro: devolve o carimbo
+    assinado (``issue_sale_approval``) que o fechamento resgata e confere.
     """
 
     permission_classes = [HasBackstagePermission]
@@ -7037,7 +7167,15 @@ class POSManagerApprovalCheckView(APIView):
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=422)
-        return Response({"approved_by": approver.get_username()})
+        # O que sai daqui é o CARIMBO, não um "pode": preso ao operador, à comanda
+        # e aos números que o diálogo mostrou ao gerente (#2558). O PIN fica no
+        # diálogo; o fechamento resgata o carimbo uma vez e recusa valor diferente
+        # do assinado.
+        scope = pos_tabs_service.SaleApprovalScope.from_request((request.data or {}).get("scope"))
+        token = pos_tabs_service.issue_sale_approval(
+            approver, operator_username=_username(request), scope=scope,
+        )
+        return Response({"approved_by": approver.get_username(), "token": token})
 
 
 @extend_schema_view(

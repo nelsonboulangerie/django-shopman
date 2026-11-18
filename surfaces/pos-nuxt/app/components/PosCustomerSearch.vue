@@ -28,6 +28,10 @@ import {
 const props = defineProps<{
   results: POSCustomerSearchResult[];
   busy: boolean;
+  /** A busca falhou: a frase vem pronta (`customerSearchErrorMessage`). Vazio
+   *  quando a última busca respondeu. Com erro, a tela NUNCA diz "nenhum
+   *  cadastro" nem oferece cadastrar: não buscar não é não existir (P1-8). */
+  error?: string;
   /** Já existe cadastro ASSOCIADO (com ref): Enter com o campo vazio conclui. */
   hasCustomerRef?: boolean;
   /** Nome já no formulário e ainda sem cadastro — a criação pendente, que o
@@ -130,6 +134,12 @@ function onEnter(event: KeyboardEvent) {
   } else if (props.busy) {
     return;
   }
+  // A busca falhou: o Enter busca de novo (o botão visível faz o mesmo). Nunca
+  // decide sobre uma lista que não veio, nem cadastra quem pode já existir.
+  if (props.error && query.value.trim().length >= 2) {
+    emit("search", query.value);
+    return;
+  }
   decide();
 }
 
@@ -211,6 +221,26 @@ onBeforeUnmount(() => {
       <Icon name="lucide:loader-circle" class="size-3.5 shrink-0 animate-spin" />
       Buscando…
     </p>
+    <div
+      v-else-if="error && query.trim().length >= 2"
+      class="grid gap-2"
+      data-customer-search-error
+    >
+      <p class="flex items-start justify-center gap-1.5 text-center text-xs text-destructive" role="alert">
+        <Icon name="lucide:triangle-alert" class="mt-0.5 size-3.5 shrink-0" />
+        <span class="min-w-0">{{ error }}</span>
+      </p>
+      <NuxtButton
+        type="button"
+        color="neutral" variant="outline"
+        class="h-8 w-full justify-center gap-2 text-sm"
+        @click="emit('search', query)"
+      >
+        <Icon name="lucide:rotate-cw" class="size-4 shrink-0" />
+        Buscar de novo
+        <OperatorKbd aria-hidden="true">Enter</OperatorKbd>
+      </NuxtButton>
+    </div>
     <div
       v-else-if="results.length"
       id="pos-customer-search-listbox"
