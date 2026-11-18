@@ -469,6 +469,7 @@
             "CANCEL_REASON_OPERATOR_DEFAULT",
             "CANCEL_REASON_ORDER_CANCELLED",
             "CANCEL_REASON_REFUSED_CODE",
+            "CAPABILITIES",
             "CourierDispatchResult",
             "CourierError",
             "CourierEstimate",
@@ -476,6 +477,7 @@
             "RATE_LIMIT_DEFAULT_SECONDS",
             "RATE_LIMIT_MAX_SECONDS",
             "READ_VIAS",
+            "RIDE_STATES",
             "RIDE_STATUSES",
             "TERMINAL_STATUSES",
             "USER_AGENT_PRODUCT",
@@ -509,6 +511,7 @@
             "logger",
             "read_ride",
             "register_webhook",
+            "ride_state",
             "snapshot_from_details",
             "snapshot_from_listing",
             "tracking_links",
@@ -551,6 +554,38 @@
             "set_progress",
             "set_status",
             "set_tracking_links",
+            "tracking_links"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/adapters/courier_own_fleet.py",
+      "touchpoints": [
+        "adapter"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "CAPABILITIES",
+            "CITY_SPEED_KMH",
+            "RIDE_PREFIX",
+            "_km",
+            "_point",
+            "cancel",
+            "dispatch",
+            "estimate",
+            "get_details",
+            "get_status",
+            "is_configured",
+            "read_ride",
+            "route_km",
             "tracking_links"
           ]
         }
@@ -2753,6 +2788,25 @@
             "_section",
             "deep_merge",
             "quality_grade_refs_for_channel"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/courier_link_urls.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "urlpatterns"
           ]
         }
       ]
@@ -7833,8 +7887,10 @@
         {
           "responsibility": "contrato",
           "symbols": [
+            "DeliveryCapabilities",
             "NotificationResult",
-            "ReserveRefusal"
+            "ReserveRefusal",
+            "RideState"
           ]
         }
       ]
@@ -9518,6 +9574,37 @@
             "_publication_readiness",
             "_switched_off_readiness",
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/delivery_services.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura",
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_KIND_BY_REF",
+            "_kind",
+            "courier_backend"
+          ]
+        },
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "capabilities",
+            "new_ride_service_ref",
+            "ride_state",
+            "service_for_new_ride"
           ]
         }
       ]
@@ -14339,6 +14426,73 @@
           "symbols": [
             "ALERT_TYPE",
             "OPEN_STATUSES"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/own_fleet.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ADDRESS_NOT_FOUND",
+            "Assignment",
+            "NO_ANSWER",
+            "ORDER_PROBLEM",
+            "OTHER_PAYMENT",
+            "OwnFleetRefused",
+            "PAYMENT_METHODS",
+            "PROBLEMS",
+            "REFUSED",
+            "SOURCE",
+            "_RIDE_PREFIX",
+            "_estimate",
+            "_live",
+            "_order_label",
+            "_ride_orders",
+            "_stop_view",
+            "_today_q",
+            "assign",
+            "close_if_settled",
+            "deliver",
+            "depart",
+            "logger",
+            "report_problem",
+            "ride_view"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/views/courier_link.py",
+      "touchpoints": [
+        "API"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "CourierRideClaimView",
+            "CourierRideEventView",
+            "CourierRideView",
+            "DEVICE_HEADER",
+            "_LinkView",
+            "_REFUSALS",
+            "_private"
           ]
         }
       ]

@@ -16,7 +16,6 @@ from django.utils import timezone
 from shopman.orderman.exceptions import DirectiveTerminalError
 from shopman.orderman.models import Directive, Order
 
-from shopman.shop.adapters import get_adapter
 from shopman.shop.adapters.courier_machine import (
     BEFORE_ACCEPT_STATUSES,
     CANCEL_INTENT_OPERATOR,
@@ -27,7 +26,7 @@ from shopman.shop.adapters.courier_machine import (
     cancel_reason_for,
 )
 from shopman.shop.directives import COURIER_CANCEL
-from shopman.shop.services import courier
+from shopman.shop.services import courier, delivery_services
 from shopman.shop.services.observability import operational_event_on_commit
 
 logger = logging.getLogger(__name__)
@@ -60,7 +59,7 @@ class CourierCancelHandler:
                 if block.get("id_mch") != ride_id or not courier.ride_cancellable(block):
                     self._record(message, "not_applied")
                     return
-                adapter = get_adapter("courier")
+                adapter = delivery_services.courier_backend(block)
                 if adapter is None:
                     self._record(message, "not_applied")
                     raise DirectiveTerminalError("Adapter indisponível; nenhum cancelamento foi enviado.")

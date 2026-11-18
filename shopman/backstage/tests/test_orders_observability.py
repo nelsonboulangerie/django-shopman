@@ -179,7 +179,7 @@ def test_courier_attempt_trace_precedes_network_and_keeps_remote_classification(
         if unknown:
             raise CourierError("SECRET PROVIDER DETAIL", transient=True)
         return True
-    monkeypatch.setattr("shopman.shop.handlers.courier_cancel.get_adapter", lambda name: SimpleNamespace(cancel=cancel))
+    monkeypatch.setattr("shopman.shop.services.delivery_services.get_adapter", lambda name: SimpleNamespace(cancel=cancel))
     if unknown:
         with pytest.raises(DirectiveTerminalError):
             CourierCancelHandler().handle(message=task, ctx={})
