@@ -24,13 +24,13 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from shopman.shop.projections.ready_promise import PromiseFacts
 from shopman.storefront.presentation.promise import (
     KIND_BATCH,
     KIND_PREORDER,
     KIND_READY,
     promise_for,
 )
-from shopman.storefront.services.promise_facts import PromiseFacts
 
 SP = ZoneInfo("America/Sao_Paulo")
 # Terça, 17/11/2026. A casa abre de segunda a sábado, das 7h às 18h.

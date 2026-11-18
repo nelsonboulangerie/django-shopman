@@ -35,9 +35,13 @@ export type OrderTimerClass =
   | "timer-urgent"
   | "timer-muted";
 
+/** Em que pé está o combinado do pedido (`order_queue._schedule`). */
+export type OrderScheduleState = "future" | "today" | "overdue" | "";
+
 export interface OrderCardProjection extends OrderCardContract {
   timer_class: OrderTimerClass;
   fulfillment_type: "delivery" | "pickup";
+  schedule_state: OrderScheduleState;
 }
 
 /** Courier ride block (Order.data["courier"] → projections._courier_block).
@@ -157,6 +161,9 @@ export interface AlertProjection {
   created_at_display: string;
   /** Prazo em que a causa decide sozinha (ISO); vazio sem prazo. */
   respond_by_iso?: string;
+  /** O combinado do pedido do aviso, na frase do cartão; vazio sem combinado. */
+  order_schedule_label?: string;
+  order_schedule_state?: OrderScheduleState;
   actions: Array<{
     ref: string;
     kind: string;

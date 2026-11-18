@@ -19,9 +19,8 @@ def context(settings, monkeypatch):
         "fulfillment_type": "delivery", "courier": {"id_mch": "RIDE-LAB", "status": "A"}})
     adapter = Mock()
     adapter.cancel.return_value = True
-    monkeypatch.setattr(courier, "get_adapter", lambda name: adapter)
     monkeypatch.setattr("shopman.shop.adapters.get_adapter", lambda name: adapter)
-    monkeypatch.setattr("shopman.shop.handlers.courier_cancel.get_adapter", lambda name: adapter)
+    monkeypatch.setattr("shopman.shop.services.delivery_services.get_adapter", lambda name: adapter)
     return order, adapter
 
 

@@ -92,3 +92,39 @@ __all__ = [
     # Notification
     "NotificationResult",
 ]
+
+
+# ── Entrega ── (DEV-2026-030, M1: um contrato, várias implementações)
+#
+# O módulo de cada serviço de entrega (hoje ``adapters/courier_machine``, a TaOn; na M2 o
+# entregador da casa) declara o que sabe fazer em ``CAPABILITIES`` e traduz o seu estado
+# próprio para o vocabulário da casa em ``ride_state``. A tela mostra só o que o serviço
+# escolhido sabe fazer. Plano: docs/plans/DELIVERY-MULTI-SERVICE-PLAN.md §2.2.
+
+
+class RideState(StrEnum):
+    """O estado de uma corrida no vocabulário da casa, igual para qualquer serviço."""
+
+    SEARCHING = "searching"  # o serviço procura quem leve
+    GROUPED = "grouped"  # o serviço juntou com outra corrida
+    REASSIGNING = "reassigning"  # trocando de entregador
+    ASSIGNED = "assigned"  # alguém aceitou ou foi designado
+    AT_STORE = "at_store"  # o entregador está na loja
+    ON_ROUTE = "on_route"  # saiu da loja com as sacolas
+    DONE = "done"  # terminou
+    NOT_SERVED = "not_served"  # ninguém atendeu
+    CANCELLED = "cancelled"  # cancelada
+
+
+@dataclass(frozen=True)
+class DeliveryCapabilities:
+    """O que um serviço de entrega sabe fazer. A tela esconde o que ele não sabe."""
+
+    quote: bool  # cota antes de chamar
+    multi_stop: int  # paradas por corrida (1 = uma só); o teto da casa vale por cima
+    cancel_reasons: bool  # cancelar pede motivo da tabela do serviço
+    customer_tracking: bool  # entrega link de rastreio por parada para o cliente
+    push_status: bool  # avisa sozinho (webhook)
+    door_charge: bool  # leva cobrança na porta, troco e maquininha
+    needs_return: bool  # cobrança na porta exige corrida com volta
+    assign: bool  # o operador escolhe a pessoa (a central não distribui)

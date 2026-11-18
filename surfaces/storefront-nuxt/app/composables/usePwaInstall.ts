@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { hasSecuredOrder } from '../utils/orderSecured'
+import { orderSecuredThisVisit } from '../utils/orderSecured'
 import { installPlan, readInstallEnvironment, type InstallEnvironment, type InstallPlan } from '../utils/installGuide'
 
 const DISMISS_STORAGE_KEY = 'storefront-pwa-install-dismissed-until'
@@ -16,22 +16,13 @@ interface NavigatorWithStandalone extends Navigator {
   standalone?: boolean
 }
 
-// Fora de onde a pessoa está no meio de uma tarefa: entrar, a sacola e o checkout.
-// Em /entrar o convite subia por cima do "Prefere receber um código por SMS?" e o
-// toque se perdia (beta 05/11, LOJA-09).
-const INVITE_EXCLUDED_PATHS = ['/entrar', '/sacola', '/finalizar']
-
-export function isPwaInviteRouteExcluded (path: string): boolean {
-  return INVITE_EXCLUDED_PATHS.some(base => path === base || path.startsWith(`${base}/`)) || path.startsWith('/pedido/')
-}
-
 export function usePwaInstall (options: { now?: () => number, environment?: InstallEnvironment } = {}) {
   const now = options.now || Date.now
   const deferredPrompt = ref<BeforeInstallPromptEvent | null>(null)
   const isStandalone = ref(false)
   const dismissedUntil = ref<number | null>(null)
   const environment = ref<InstallEnvironment | null>(options.environment || null)
-  // O convite só existe depois do primeiro pedido concluído neste navegador
+  // O convite só existe depois do pedido enviado NESTA visita
   // (`~/utils/orderSecured`). Falso até o mount: no servidor ninguém sabe.
   const hasOrdered = ref(false)
 
@@ -46,7 +37,7 @@ export function usePwaInstall (options: { now?: () => number, environment?: Inst
   })
 
   function refreshHasOrdered () {
-    hasOrdered.value = hasSecuredOrder()
+    hasOrdered.value = orderSecuredThisVisit()
   }
 
   function readEnvironment () {

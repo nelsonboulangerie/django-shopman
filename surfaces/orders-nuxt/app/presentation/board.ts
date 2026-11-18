@@ -10,6 +10,7 @@ import type {
 } from "~/generated/ordersContract";
 import type {
   OrderCardProjection,
+  OrderScheduleState,
   OrderTimerClass,
   TwoZoneQueueProjection,
 } from "~/types/orders";
@@ -427,6 +428,56 @@ export function negotiationZoneView(
 }
 
 // ── Encomendas (pedidos confirmados para datas futuras) ────────────────────
+
+// ── O combinado (WP-G01) ──────────────────────────────────────────────────────
+
+export interface SchedulePromise {
+  /** A frase inteira, a mesma no cartão, na Fila, na Tabela e no sino. */
+  label: string;
+  color: "neutral" | "error";
+  icon: string;
+  state: Exclude<OrderScheduleState, "">;
+}
+
+/**
+ * O combinado do pedido como o Gestor o diz, em toda forma em que o pedido aparece.
+ *
+ * O servidor manda a frase (`schedule_label`, a mesma do detalhe) e o estado; aqui
+ * só entra a palavra "Encomenda" no pedido de outro dia e a cor do que venceu. Uma
+ * função só, para o Painel, a Fila, a Tabela e o sino não falarem cada um a sua.
+ *
+ * - `future`: "Encomenda · Amanhã · A partir das 15h"
+ * - `today`: "Hoje · 14h às 14h30" (pedido de hoje com hora combinada)
+ * - `overdue`: "Era para ontem · A partir das 15h", em vermelho
+ */
+export function schedulePromise(source: {
+  schedule_label?: string | null;
+  schedule_state?: string | null;
+}): SchedulePromise | null {
+  const label = String(source.schedule_label ?? "").trim();
+  const state = source.schedule_state;
+  if (!label) return null;
+  if (state === "future")
+    return { label: `Encomenda · ${label}`, color: "neutral", icon: "i-lucide-calendar-clock", state };
+  if (state === "today")
+    return { label, color: "neutral", icon: "i-lucide-clock", state };
+  if (state === "overdue")
+    return { label, color: "error", icon: "i-lucide-calendar-x", state };
+  return null;
+}
+
+/** O aviso do sino com o combinado do pedido à frente: quem toca "Aceitar" lê para quando. */
+export function alertMessageWithSchedule(alert: {
+  message: string;
+  order_schedule_label?: string | null;
+  order_schedule_state?: string | null;
+}): string {
+  const promise = schedulePromise({
+    schedule_label: alert.order_schedule_label,
+    schedule_state: alert.order_schedule_state,
+  });
+  return promise ? `${promise.label}. ${alert.message}` : alert.message;
+}
 
 export interface PreorderGroup {
   /** ISO date the group is committed to (sort key). */

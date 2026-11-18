@@ -323,9 +323,8 @@ def build_deliveries(*, user=None) -> DeliveriesProjection:
     from shopman.backstage.models import DeliveryDevice
     from shopman.backstage.projections.order_queue import _is_delivery, _is_future_preorder, courier_ride_action
     from shopman.backstage.services.delivery_devices import PREFIX
-    from shopman.shop.adapters import get_adapter
     from shopman.shop.models import Shop
-    from shopman.shop.services import courier
+    from shopman.shop.services import courier, delivery_services
     from shopman.shop.services.pos_sales_mode import is_pos_counter_order
 
     shop = Shop.load()
@@ -359,7 +358,7 @@ def build_deliveries(*, user=None) -> DeliveriesProjection:
         rides=tuple(ride_rows),
         max_stops=courier.MAX_RIDE_STOPS,
         machines=tuple({"ref": PREFIX + str(device.ref), "label": device.label} for device in devices),
-        courier_on=get_adapter("courier") is not None,
+        courier_on=delivery_services.courier_backend() is not None,
         maps_key=browser_api_key(),
         group_action=courier_ride_action([order for order in waiting if order.ref in joinable], user=user),
         free_numbers=free_numbers,

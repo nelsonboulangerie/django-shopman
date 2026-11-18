@@ -5,6 +5,9 @@ const STOREFRONT_API_PREFIXES = [
   'cart/',
   'catalog/',
   'checkout/',
+  // A página do entregador da casa (`/rota/<token>`, DEV-2026-030): sem login nem cookie,
+  // a chave é o token e o cabeçalho `X-Courier-Device` (ver `djangoProxy`).
+  'courier/',
   'fomo/',
   'geocode/',
   'offers/',
