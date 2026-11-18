@@ -401,6 +401,12 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
 ```jsonc
 "courier": {
   "provider": "machine",
+  "service": "taon",               // o serviço de entrega da corrida (`DeliveryService.ref`), gravado quando ela abre: o padrão do Admin (DEV-2026-030, M1). Quem fala com ele é `services/delivery_services.courier_backend(block)`; corrida sem a chave (aberta antes) segue com a central configurada
+  // Corrida dos entregadores da casa (DEV-2026-030, M2; `services/own_fleet`): `provider` = "own_fleet", `service` = "casa",
+  // `id_mch` = "CASA-…" (o identificador da corrida até a M1b renomear), as mesmas letras internas (A designada, E saiu,
+  // F entregue, C cancelada), `driver` = {name, phone, vehicle_model} do cadastro, `courier_ref` = o `Courier.ref`,
+  // `estimate.value_q` = o valor da tabela (vira `final_value_q` na entrega) e
+  // "problems": [{"kind": "no_answer", "at": "iso", "by": "courier:diego", "payment": "card"}]  // a folha "Problema" do link
   "id_mch": "184532",              // corrida ATIVA (string); some quando N/C arquiva
   "status": "E",                   // letra Machine crua
   "called_at": "iso",              // a PRIMEIRA chamada pedida (courier.request_dispatch), antes da central responder

@@ -776,6 +776,24 @@ function openScheduleHere() {
   if (checkoutMode.value) paymentWorkspaceRef.value?.openSchedule();
   else scheduleSheetOpen.value = true;
 }
+// O ASSISTENTE DA ENCOMENDA pergunta no próprio cartão (P2-8): retirada ou
+// entrega é um toque na etapa, e o dia e o horário são o mesmo `PosSchedulePicker`
+// do diálogo "Quando", com a mesma resposta da agenda. Entrega sem endereço segue
+// para a etapa do endereço, que abre o formulário de entrega.
+function pickFulfillmentInOrderEntry(type: "pickup" | "delivery") {
+  cart.fulfillmentType = type;
+  cart.fulfillmentConfirmed = true;
+}
+const orderEntrySchedule = computed(() => ({
+  today: scheduleToday.value,
+  availableDates: scheduleAvailableDates.value,
+  maxDate: scheduleMaxDate.value,
+  windows: deliverySlots.value,
+  bottleneckName: scheduleBottleneckName.value,
+  readyAt: scheduleReadyAt.value,
+  pending: deliverySlotsPending.value,
+  failed: scheduleFailed.value,
+}));
 // O rótulo do terceiro chip. "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um
 // campo vazio: a esmagadora maioria das vendas é para agora, e a barra não pode
 // parecer que falta preencher alguma coisa.
@@ -1666,9 +1684,15 @@ onBeforeUnmount(() => {
           :schedule-label="scheduleChipLabel"
           :schedule-window="deliveryWindowLabel"
           :loading="busy"
+          :fulfillment-options="pos?.fulfillment_options || []"
+          :chosen-fulfillment="cart.fulfillmentConfirmed ? cart.fulfillmentType : ''"
+          v-model:schedule-date="cart.deliveryDate"
+          v-model:schedule-time-slot="cart.deliveryTimeSlot"
+          :schedule="orderEntrySchedule"
           @customer="tabHeaderRef?.openCustomer()"
           @fulfillment="openFulfillmentHere"
-          @schedule="openScheduleHere"
+          @pick-fulfillment="pickFulfillmentInOrderEntry"
+          @schedule="refreshSchedule"
           @complete="completeOrderSetup"
         />
         <PosProductGrid

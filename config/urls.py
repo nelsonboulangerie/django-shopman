@@ -233,6 +233,8 @@ urlpatterns += _include_optional("api/webhooks/", "shopman.storefront.concierge.
 urlpatterns += _include_optional(
     "api/webhooks/manychat/", "shopman.guestman.contrib.manychat.urls"
 )
+# Página do entregador da casa (pública, pelo token do link): DEV-2026-030.
+urlpatterns += _include_optional("api/v1/courier/", "shopman.shop.courier_link_urls")
 urlpatterns += _include_optional("api/v1/", "shopman.storefront.api.urls")
 urlpatterns += _include_optional("api/v1/backstage/", "shopman.backstage.api.urls")
 

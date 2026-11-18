@@ -24,6 +24,7 @@ import {
   cardAuthorizationNotice,
   cardDeadlineLabel,
   confirmationRemainingLabel,
+  schedulePromise,
   splitRef,
   undoLine,
 } from "~/presentation/board";
@@ -344,6 +345,17 @@ function switchHint(row: {
                 }}</span
               >
             </p>
+            <!-- O combinado, com as palavras do cartão (WP-G01). -->
+            <NuxtBadge
+              v-if="schedulePromise(item.card)"
+              class="max-w-full self-start"
+              :color="schedulePromise(item.card)!.color"
+              :icon="schedulePromise(item.card)!.icon"
+              :data-queue-promise="schedulePromise(item.card)!.state"
+            >
+              <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
+              <span class="whitespace-normal text-start">{{ schedulePromise(item.card)!.label }}</span>
+            </NuxtBadge>
             <p class="op-body text-foreground/85">
               {{ item.card.items_summary }}
             </p>

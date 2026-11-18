@@ -367,6 +367,12 @@ def _scoped_observations(
                 if isinstance(node.func, ast.Attribute)
                 else ""
             )
+            # O serviço de entrega da corrida é pedido ao resolvedor único
+            # (``services/delivery_services.courier_backend``, DEV-2026-030), que
+            # devolve o adapter ``courier``: é a mesma porta.
+            if callable_name == "courier_backend":
+                ports.add("adapter:courier")
+                continue
             if callable_name != "get_adapter":
                 continue
             adapter_origin = bindings.get("get_adapter")
