@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick } from 'vue'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
-import {
-  isPwaInviteRouteExcluded,
-  usePwaInstall
-} from '~/composables/usePwaInstall'
+import { usePwaInstall } from '~/composables/usePwaInstall'
 
 const NOW = Date.UTC(2026, 8, 14)
 
@@ -125,13 +122,5 @@ describe('usePwaInstall', () => {
     expect(state.dismissedUntil.value).toBe(NOW + 7 * 24 * 60 * 60 * 1000)
     expect(state.isDismissed.value).toBe(true)
     wrapper.unmount()
-  })
-
-  it('excludes checkout and order tracking routes', () => {
-    expect(isPwaInviteRouteExcluded('/finalizar')).toBe(true)
-    expect(isPwaInviteRouteExcluded('/entrar')).toBe(true)
-    expect(isPwaInviteRouteExcluded('/sacola')).toBe(true)
-    expect(isPwaInviteRouteExcluded('/pedido/PED-123')).toBe(true)
-    expect(isPwaInviteRouteExcluded('/menu')).toBe(false)
   })
 })

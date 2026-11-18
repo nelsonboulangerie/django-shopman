@@ -10,7 +10,8 @@ import MarketingPromptSheet from '~/components/MarketingPromptSheet.vue'
 //   sem Termos, sem "Continuar", sem "Deixar para depois", sem "Conta ›");
 // - LIGAR salva na hora (`whatsapp: true`), fecha e agradece;
 // - FECHAR sem ligar grava só o carimbo (`whatsapp: false`) — nunca um opt-out;
-// - nunca sobe em /entrar, /a, no checkout ou no pedido;
+// - só sobe depois do pedido enviado nesta visita (decisão 3, 16/11/2026);
+// - nunca sobe em /entrar, /a, no produto, na sacola, no checkout ou no pedido;
 // - não volta depois de respondido/fechado, nem quando o carimbo falhou.
 
 const { fetchMock, mocks, sonner } = vi.hoisted(() => {
@@ -98,7 +99,10 @@ describe('MarketingPromptSheet — o convite de novidades', () => {
     sessionStorage.removeItem(SHOWN_KEY)
     // Um convite por página (useShopInvite): a vez marcada num teste não pode
     // segurar a página do seguinte.
-    useState('shop-invite-open').value = { open: null, shownOnPath: null }
+    sessionStorage.removeItem('shopman-invite-shown')
+    useState('shop-invite').value = { open: null, shownThisVisit: false, synced: false }
+    // Decisão 3 (16/11/2026): o convite só existe depois do pedido enviado nesta visita.
+    sessionStorage.setItem('shopman-order-secured', '1')
     mocks.path = '/menu'
   })
 
@@ -205,6 +209,22 @@ describe('MarketingPromptSheet — o convite de novidades', () => {
     expect(page.find('[data-testid="sheet-open"]').exists()).toBe(false)
   })
 
+  it('antes do pedido enviado nesta visita, não sobe (decisão 3, 16/11)', async () => {
+    sessionStorage.removeItem('shopman-order-secured')
+    seedSession()
+    const page = await mountSheet()
+
+    expect(page.find('[data-testid="sheet-open"]').exists()).toBe(false)
+    expect(sessionStorage.getItem(SHOWN_KEY)).toBeNull()
+
+    // O pedido se conclui no acompanhamento; na próxima página elegível, sobe.
+    page.unmount()
+    sessionStorage.setItem('shopman-order-secured', '1')
+    mocks.path = '/'
+    const next = await mountSheet()
+    expect(next.find('[data-testid="sheet-open"]').exists()).toBe(true)
+  })
+
   it('depois de ligar, o fechamento não grava uma segunda resposta', async () => {
     seedSession()
     const page = await mountSheet()
@@ -219,7 +239,7 @@ describe('MarketingPromptSheet — o convite de novidades', () => {
     expect((answers()[0]![1] as any).body).toEqual({ whatsapp: true })
   })
 
-  it.each(['/entrar', '/a', '/finalizar', '/finalizar/endereco', '/pedido/NB-123', '/pedido/NB-123/pagamento'])(
+  it.each(['/entrar', '/a', '/produto/croissant', '/sacola', '/finalizar', '/finalizar/endereco', '/pedido/NB-123', '/pedido/NB-123/pagamento'])(
     'nunca sobe em %s',
     async path => {
       mocks.path = path
