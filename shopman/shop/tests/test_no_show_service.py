@@ -301,9 +301,37 @@ def test_line_whose_lot_expired_by_the_time_of_the_gesture_is_a_loss(shop, relog
     world.lot("BRIOCHE", expires=today)
     order = world.ready_order("NS-VENCIDO", [("BRIOCHE", 1, 1200)])
 
-    # No dia da validade ainda volta à venda; no dia seguinte, o lote venceu.
+    # No dia da validade, com a loja aberta, ainda volta à venda; no dia
+    # seguinte, o lote venceu.
     assert _destinies(order) == {"BRIOCHE": ("restock", "")}
     assert _destinies(order, now=world.at(8, days=1)) == {"BRIOCHE": ("loss", "lot_expired")}
+
+
+def test_lot_that_expires_today_is_a_loss_once_the_shop_has_closed(shop, relogio):
+    """Depois do fechamento não há balcão para o lote de hoje voltar: é perda.
+
+    É o caso do pedido PAGO, que só libera no corte do dia (o fechamento): o pão
+    cujo último dia de venda é hoje não "volta à venda" numa loja fechada.
+    """
+    relogio(10)
+    today = timezone.localdate()
+    world.product("PAO-DO-DIA", price_q=1500)
+    world.lot("PAO-DO-DIA", expires=today)
+    world.product("BOLO-2D", price_q=3000)
+    world.lot("BOLO-2D", expires=today + timedelta(days=1))
+    order = world.ready_order("NS-FECHOU", [("PAO-DO-DIA", 1, 1500), ("BOLO-2D", 1, 3000)])
+
+    # A loja de teste fecha às 19h.
+    assert _destinies(order, now=world.at(18, 59)) == {"PAO-DO-DIA": ("restock", ""), "BOLO-2D": ("restock", "")}
+    assert _destinies(order, now=world.at(19)) == {"PAO-DO-DIA": ("loss", "lot_expired"), "BOLO-2D": ("restock", "")}
+
+
+def test_next_selling_day_is_today_while_open_and_tomorrow_after_closing(shop):
+    today = timezone.localdate()
+
+    assert no_show.next_selling_day(world.at(10)) == today
+    assert no_show.next_selling_day(world.at(19)) == today + timedelta(days=1)
+    assert no_show.next_selling_day(world.at(23, 30)) == today + timedelta(days=1)
 
 
 def test_lot_without_expiry_falls_back_to_the_product_shelf_life(shop, relogio):
@@ -343,11 +371,17 @@ def _line(destiny: str, value_q: int) -> dict:
         ([_line("restock", 1870), _line("loss", 3000)], 4870, (1870, 3000)),
         # Não pago: nada a devolver, nada retido.
         ([_line("restock", 1870), _line("loss", 3000)], 0, (0, 0)),
-        # O devolvível nunca passa do que foi de fato capturado.
-        ([_line("restock", 1870), _line("loss", 3000)], 1000, (1000, 0)),
+        # Pagou só um sinal, menor que a perda: a loja fica com o sinal todo.
+        ([_line("restock", 1870), _line("loss", 3000)], 1000, (0, 1000)),
+        # Sinal maior que a perda: a loja fica com a perda, o resto volta.
+        ([_line("restock", 1870), _line("loss", 3000)], 4000, (1000, 3000)),
+        # Pagou a mais (pedido reduzido depois de pago): o excedente volta junto.
+        ([_line("restock", 1870), _line("loss", 3000)], 6000, (3000, 3000)),
+        # Tudo volta e havia excedente: volta tudo o que entrou.
+        ([_line("restock", 1870)], 2500, (2500, 0)),
     ],
 )
-def test_refund_is_the_value_of_the_lines_that_go_back_limited_to_what_was_paid(lines, paid_q, expected):
+def test_the_shop_keeps_the_value_of_what_was_lost_and_only_that(lines, paid_q, expected):
     assert no_show.money_split(lines, paid_q) == expected
 
 

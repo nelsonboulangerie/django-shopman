@@ -88,7 +88,8 @@ class LineFacts:
     made_to_order: bool
     #: A reserva de estoque da linha foi baixada: há o que devolver ao balcão.
     stock_fulfilled: bool
-    #: O lote de onde a linha saiu já venceu na hora do gesto.
+    #: O lote de onde a linha saiu não chega ao próximo dia de venda
+    #: (:func:`next_selling_day`): vencido, ou vence hoje com a loja já fechada.
     lot_expired: bool
 
 
@@ -158,7 +159,7 @@ def _line_facts(order, items, *, now: datetime) -> dict[str, LineFacts]:
     recipes = made_to_order.made_to_order_recipes(skus)
     entries = _hold_entries(order)
     lots = get_adapter("stock").hold_lot_facts(
-        [entry["hold_id"] for entry in entries], on=timezone.localtime(now).date()
+        [entry["hold_id"] for entry in entries], on=next_selling_day(now)
     )
     by_sku: dict[str, list[dict]] = {}
     for entry in entries:
@@ -174,6 +175,31 @@ def _line_facts(order, items, *, now: datetime) -> dict[str, LineFacts]:
             lot_expired=any(fact.get("expired") for lot in held for fact in lot),
         )
     return facts
+
+
+def next_selling_day(now: datetime):
+    """O primeiro dia em que a mercadoria devolvida ainda poderia ser vendida.
+
+    "O que ainda puder voltar à venda" depende da hora (dono, 17/11/2026:
+    "dependendo do horário isso vira perda"). Com a loja aberta, é hoje. Depois
+    do fechamento de hoje (ou em dia sem expediente), é amanhã: o lote cujo
+    último dia de venda é hoje já não tem balcão para voltar, e é perda. Sem
+    essa régua, o pão de hoje não retirado no fechamento "voltava à venda" numa
+    loja fechada, e a loja devolvia o dinheiro de um produto que ia para o lixo.
+    """
+    from shopman.shop.services import business_calendar
+
+    local = timezone.localtime(now)
+    today = local.date()
+    try:
+        hours = business_calendar.selling_hours_for(today)
+    except Exception:
+        # Sem ler o expediente, não se afirma que a loja fechou: vale hoje.
+        logger.warning("no_show.selling_hours_unreadable day=%s", today, exc_info=True)
+        return today
+    if hours is not None and local < timezone.make_aware(datetime.combine(today, hours[1])):
+        return today
+    return today + timedelta(days=1)
 
 
 def line_decisions(order, *, now: datetime | None = None) -> list[dict]:
@@ -205,15 +231,22 @@ def line_decisions(order, *, now: datetime | None = None) -> list[dict]:
 
 
 def money_split(lines: list[dict], paid_q: int) -> tuple[int, int]:
-    """``(refund_q, retained_q)``: volta o valor das linhas que voltam à venda.
+    """``(refund_q, retained_q)``: a loja fica com o valor do que se perdeu, e só com ele.
 
-    Limitado ao que foi de fato capturado; o resto do capturado fica com a
-    loja. Pedido não pago: zero e zero.
+    A cláusula dos Termos tem duas metades, e a conta parte da segunda: "o que
+    se perdeu fica com a loja". O retido é o valor das linhas perdidas, limitado
+    ao que foi de fato capturado; TODO o resto do capturado volta ao cliente.
+
+    Partir do retido (e não do devolvível) é o que protege os dois lados fora do
+    caso redondo: quem pagou só um sinal não leva de volta o valor do que se
+    perdeu, e quem pagou a mais (pedido reduzido depois de pago) recebe de volta
+    também o excedente, que nunca foi de produto nenhum. Pedido não pago: zero e
+    zero.
     """
     paid_q = max(0, int(paid_q or 0))
-    restock_q = sum(int(line["value_q"]) for line in lines if line["destiny"] == RESTOCK)
-    refund_q = min(paid_q, max(0, restock_q))
-    return refund_q, paid_q - refund_q
+    loss_q = sum(int(line["value_q"]) for line in lines if line["destiny"] == LOSS)
+    retained_q = min(paid_q, max(0, loss_q))
+    return paid_q - retained_q, retained_q
 
 
 def _refund_destination(order) -> str:
@@ -570,6 +603,7 @@ __all__ = [
     "mark_not_picked_up",
     "money_sentence",
     "money_split",
+    "next_selling_day",
     "preview",
     "release_gate",
     "revision",
