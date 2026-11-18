@@ -52,6 +52,18 @@ export function availabilitySchemaUrl (availability: string | null | undefined):
   }
 }
 
+// A disponibilidade do Offer segue a MESMA promessa que a página escreve (#2652):
+// promessa de hoje = em estoque; promessa de outro dia = encomenda; sem promessa,
+// o estado do catálogo de sempre. Indisponível é indisponível.
+export function offerAvailability (
+  product: Pick<ProductDetailProjection, 'availability' | 'can_add_to_cart'> & { promise?: ProductDetailProjection['promise'] }
+): string {
+  if (product.can_add_to_cart === false) return 'https://schema.org/OutOfStock'
+  const promise = product.promise
+  if (promise) return promise.day_label === 'hoje' ? 'https://schema.org/InStock' : 'https://schema.org/PreOrder'
+  return availabilitySchemaUrl(product.availability)
+}
+
 // ── Meta description ─────────────────────────────────────────────────────────
 // Prioriza a curada (seo_description), cai para short_description; corta limpo
 // em ~160 chars sem quebrar palavra.
@@ -100,8 +112,25 @@ export function productJsonLd (params: {
     '@type': 'Offer',
     price: priceFromQ(product.quote.final_unit_price_q),
     priceCurrency: CURRENCY,
-    availability: availabilitySchemaUrl(product.availability),
+    availability: offerAvailability(product),
     url
+  }
+  // Fica pronto em outro dia: o dia em que a encomenda pode ser retirada, o
+  // mesmo da linha "Fica pronto amanhã..." da página (#2652). Só a data: a
+  // hora do servidor é local e o dia basta para o Google.
+  const promise = product.promise
+  if (promise && promise.day_label !== 'hoje' && product.can_add_to_cart !== false) {
+    offer.availabilityStarts = promise.date
+  }
+  // A loja onde se retira, a mesma que a página nomeia. O @id liga ao Bakery da home.
+  const store = product.pickup_store
+  if (store?.name && store.address) {
+    offer.availableAtOrFrom = {
+      '@type': 'Place',
+      '@id': businessJsonLdId(origin),
+      name: store.name,
+      address: { '@type': 'PostalAddress', streetAddress: store.address }
+    }
   }
   const condition = ITEM_CONDITION[cleanText(product.item_condition)]
   if (condition) offer.itemCondition = condition
