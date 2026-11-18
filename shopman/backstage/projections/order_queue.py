@@ -127,6 +127,14 @@ def _order_payment_status_label(order, payment_status: str) -> str:
         return CARD_CAPTURE_FAILED_LABEL
     if payment_status not in _PAYMENT_COMPLETE and payment_svc.awaiting_repayment(order) is not None:
         return AWAITING_REPAYMENT_LABEL
+    if (order.data or {}).get("no_show"):
+        # Pedido não retirado (WP-G11): só parte do valor volta. "Reembolsado"
+        # sozinho mentiria sobre o que ficou com a loja.
+        from shopman.backstage.projections.order_no_show import payment_outcome_label
+
+        outcome = payment_outcome_label(order)
+        if outcome:
+            return outcome
     return payment_status_label(payment_status)
 
 
@@ -3706,6 +3714,15 @@ def _cancellation_detail(order: Order) -> str:
     reason = cancel_reasons.cancel_reason(data.get("cancellation_reason_key"))
     label = reason.label if reason else ""
     note = str(data.get("cancellation_internal_note") or "").strip()
+    if data.get("no_show"):
+        # Não retirado (WP-G11): o gesto é assinado por um Gerente, e quem chega
+        # no turno seguinte lê quem assinou ao lado do motivo.
+        from shopman.backstage.projections.order_no_show import approver_username
+
+        approver = approver_username(order)
+        if approver:
+            name = _actor_names([approver]).get(approver, approver)
+            label = f"{label} · autorizado por {name}" if label else f"Autorizado por {name}"
     if label and note:
         return f"{label}: {note}"
     return label or note

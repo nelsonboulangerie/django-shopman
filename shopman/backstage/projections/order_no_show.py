@@ -126,4 +126,47 @@ def build_order_no_show(order: Order, *, user=None, now: datetime | None = None)
     }
 
 
-__all__ = ["ACTION_REF", "build_order_no_show", "detail_action"]
+def _block(order: Order) -> dict | None:
+    block = (order.data or {}).get(no_show.ORDER_DATA_KEY)
+    return block if isinstance(block, dict) else None
+
+
+def _amount(block: dict, key: str) -> int:
+    try:
+        return max(0, int(block.get(key) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def payment_outcome_label(order: Order) -> str:
+    """O pagamento de um pedido não retirado, dito inteiro: o que voltou e o que ficou.
+
+    Sem isto o detalhe dizia "Reembolsado" para um pedido em que só parte do
+    valor voltou. ``""`` quando o pedido não tem o bloco ou nada ficou com a loja
+    (aí o rótulo comum do pagamento já diz a verdade).
+    """
+    from shopman.shop.services import payment
+
+    block = _block(order)
+    if block is None:
+        return ""
+    refund_q, retained_q = _amount(block, "refund_q"), _amount(block, "retained_q")
+    if retained_q <= 0:
+        return ""
+    if refund_q <= 0:
+        return f"{_money(retained_q)} ficaram com a loja"
+    # Voltou de fato quando o saldo capturado desceu até o retido; antes disso
+    # (dinheiro e maquininha esperam o gesto no PDV) ainda está a devolver.
+    balance_q = payment.captured_balance_q(order)
+    returned = balance_q is not None and balance_q <= retained_q
+    verb = "devolvidos" if returned else "a devolver"
+    return f"{_money(refund_q)} {verb}, {_money(retained_q)} com a loja"
+
+
+def approver_username(order: Order) -> str:
+    """Quem assinou o "Não retirado" (o ``username`` gravado no bloco), ou ``""``."""
+    block = _block(order)
+    return str(block.get("approved_by") or "").strip() if block else ""
+
+
+__all__ = ["ACTION_REF", "approver_username", "build_order_no_show", "detail_action", "payment_outcome_label"]

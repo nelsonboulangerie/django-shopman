@@ -19457,6 +19457,7 @@
             "_components",
             "_hold_entries",
             "_line_facts",
+            "next_selling_day",
             "line_decisions",
             "money_split",
             "_refund_destination",

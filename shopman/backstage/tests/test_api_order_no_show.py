@@ -184,6 +184,48 @@ def test_signed_no_show_cancels_and_records_who_signed(client, operador, relogio
     assert "SYNTHETIC-NOT-A-PIN" not in str(IdempotencyKey.objects.get(key=key).response_body)
 
 
+def test_detail_of_a_closed_no_show_says_what_went_back_what_stayed_and_who_signed(
+    client, operador, relogio, django_capture_on_commit_callbacks,
+):
+    """O detalhe dizia "Reembolsado" num pedido em que só parte do valor voltou."""
+    relogio(10)
+    order = _order()
+    world.pay(order, "pix")
+    operador.first_name = "Joyce"
+    operador.save(update_fields=["first_name"])
+
+    relogio(19)
+    with patch(SIGN, return_value=operador), django_capture_on_commit_callbacks(execute=True):
+        resp = _no_show(client, operador, order, manager_approval={"username": "gerente", "pin": "SYNTHETIC-NOT-A-PIN"})
+    assert resp.status_code == 200, resp.content
+    order.refresh_from_db()
+
+    detail = build_operator_order(order, user=operador)
+
+    assert detail.payment_status_label == "R$ 18,70 devolvidos, R$ 30,00 com a loja"
+    cancelled = next(event for event in detail.timeline if event.label == "Cancelado")
+    assert cancelled.detail == "Não retirado · autorizado por Joyce"
+
+
+def test_payment_label_says_to_be_returned_while_the_money_has_not_left(operador, relogio):
+    """Dinheiro e maquininha esperam o gesto no PDV: ainda não voltou."""
+    from shopman.backstage.projections.order_no_show import payment_outcome_label
+
+    relogio(19)
+    order = _order("NS-A-DEVOLVER")
+    world.pay(order, "cash")
+    order.data["no_show"] = {"paid_q": 4870, "refund_q": 1870, "retained_q": 3000}
+
+    assert payment_outcome_label(order) == "R$ 18,70 a devolver, R$ 30,00 com a loja"
+
+    order.data["no_show"] = {"paid_q": 3000, "refund_q": 0, "retained_q": 3000}
+    assert payment_outcome_label(order) == "R$ 30,00 ficaram com a loja"
+
+    # Nada ficou com a loja: o rótulo comum do pagamento já diz a verdade.
+    order.data["no_show"] = {"paid_q": 1870, "refund_q": 1870, "retained_q": 0}
+    assert payment_outcome_label(order) == ""
+
+
 def test_repeating_the_same_intention_does_not_run_twice(client, operador, relogio):
     relogio(19)
     order = _order()
