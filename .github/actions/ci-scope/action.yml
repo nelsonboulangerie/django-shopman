@@ -1,0 +1,45 @@
+name: Escopo da CI
+description: >-
+  Lista os arquivos do PR (dorny/paths-filter, versão fixada por SHA) e os
+  classifica com scripts/ci_scope.py. Fora do pull_request não lista nada e
+  devolve "roda tudo". Regra e tabela em docs/reference/ci-escopo.md.
+
+outputs:
+  full:
+    description: true quando o alcance é desconhecido (infra, fila, push); liga todo o leve
+    value: ${{ steps.scope.outputs.full }}
+  heavy:
+    description: true fora do pull_request; liga as suítes pesadas
+    value: ${{ steps.scope.outputs.heavy }}
+  code:
+    description: algum arquivo que não é documentação
+    value: ${{ steps.scope.outputs.code }}
+  python:
+    description: algum arquivo das suítes Python
+    value: ${{ steps.scope.outputs.python }}
+  surfaces:
+    description: all ou lista JSON dos diretórios de surfaces/ tocados
+    value: ${{ steps.scope.outputs.surfaces }}
+
+runs:
+  using: composite
+  steps:
+    - name: Arquivos do PR
+      id: files
+      if: github.event_name == 'pull_request'
+      # v4.0.3 (Node 24). Fixado por SHA: action de terceiro decide o que a CI
+      # deixa de rodar, e tag móvel mudaria essa decisão sem PR nosso.
+      uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+      with:
+        filters: |
+          changed:
+            - '**'
+        list-files: json
+
+    - name: Classificar
+      id: scope
+      shell: bash
+      env:
+        CI_EVENT: ${{ github.event_name }}
+        CI_FILES: ${{ steps.files.outputs.changed_files }}
+      run: python3 scripts/ci_scope.py >> "$GITHUB_OUTPUT"

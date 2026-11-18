@@ -13,8 +13,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Escopo (17/11/2026, docs/reference/ci-escopo.md): PR só de documentação
+  # não roda o contrato; a fila roda sempre.
+  scope:
+    name: Escopo do PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            .github/actions
+            scripts/ci_scope.py
+          sparse-checkout-cone-mode: false
+      - name: Escopo
+        id: scope
+        uses: ./.github/actions/ci-scope
+
   production-contract:
     name: Production Contract
+    needs: scope
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.code != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
