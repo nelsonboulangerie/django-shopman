@@ -3717,6 +3717,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_LATE_RESUME",
             "logger"
           ]
         }
@@ -9993,6 +9994,41 @@
             "forward_geocode_structured",
             "logger",
             "reverse_geocode"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/google_store_review.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ACTION_REQUIRED",
+            "ACTIVE",
+            "CACHE_KEY",
+            "CACHE_TTL_SECONDS",
+            "FAILED",
+            "NOT_REQUESTED",
+            "READ_EVERY",
+            "REGION",
+            "RUNNING",
+            "StoreReview",
+            "_state",
+            "_store",
+            "last_review",
+            "logger",
+            "read",
+            "refresh",
+            "refresh_if_due"
           ]
         }
       ]
