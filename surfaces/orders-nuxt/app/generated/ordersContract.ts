@@ -325,6 +325,7 @@ export interface OrderItemProjection {
   qty: string;
   unit_price_display: string;
   total_display: string;
+  full_total_display: string;
   notes: string;
 }
 

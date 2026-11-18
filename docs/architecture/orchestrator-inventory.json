@@ -7538,6 +7538,7 @@
             "_WAITLIST_NONE",
             "_action",
             "_active_progress_key",
+            "_bill_line_of",
             "_build_fulfillments",
             "_build_items",
             "_build_order_actions",
