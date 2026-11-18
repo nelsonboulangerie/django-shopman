@@ -351,6 +351,49 @@ def on_availability_changed(sender, instance, listing_ref: str, sku: str, **kwar
     _enqueue_project(sku, listing_ref, trigger="availability_changed", extra={})
 
 
+def on_collection_membership_changed(sender, instance, **kwargs) -> None:
+    """A coleção primária decide a categoria do item no canal (iFood).
+
+    Trocar a coleção de um produto que já está num canal empurrado tem que
+    reenviar o item com a categoria nova: o iFood é reflexo do Catálogo. Só os
+    canais em que o produto JÁ está no listing; incluir no canal continua sendo
+    gesto explícito (ficha do produto, "Incluir no canal").
+    """
+    from shopman.offerman.models import ListingItem
+
+    product_id = getattr(instance, "product_id", None)
+    refs = _projection_listing_refs()
+    if not product_id or not refs:
+        return
+    listed = (
+        ListingItem.objects.filter(product_id=product_id, listing__ref__in=refs)
+        .values_list("listing__ref", "product__sku")
+        .distinct()
+    )
+    for listing_ref, sku in listed:
+        _enqueue_project(sku, listing_ref, trigger="collection_changed", extra={})
+
+
+def enqueue_collection_items(listing_ref: str, collection_ref: str) -> int:
+    """Reenvia os itens cuja coleção primária é ``collection_ref`` (mapa de categoria mudou)."""
+    from shopman.offerman.models import ListingItem
+
+    if listing_ref not in _projection_listing_refs():
+        return 0
+    skus = list(
+        ListingItem.objects.filter(
+            listing__ref=listing_ref,
+            product__collection_items__collection__ref=collection_ref,
+            product__collection_items__is_primary=True,
+        )
+        .values_list("product__sku", flat=True)
+        .distinct()
+    )
+    for sku in skus:
+        _enqueue_project(sku, listing_ref, trigger="category_changed", extra={})
+    return len(skus)
+
+
 def enqueue_project(sku: str, listing_ref: str, *, trigger: str = "manual_resync") -> Directive | None:
     """Public re-projection enqueue — used by the backstage "sincronizar agora" action."""
     return _enqueue_project(sku, listing_ref, trigger=trigger, extra={})

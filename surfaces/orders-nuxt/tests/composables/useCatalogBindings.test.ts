@@ -65,7 +65,8 @@ it("envia a edição de categoria pela mesma intenção recuperável", async () 
       }),
     }),
   ]);
-  expect(api.message.value).toContain("confirmada pela leitura atual do iFood");
+  // A confirmação de categoria é o selo no cartão, não a faixa do topo.
+  expect(api.message.value).toBe("");
 });
 
 it("resposta perdida busca recibo da mesma intenção sem segundo POST", async () => {
