@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-026",
+  "tipo": "solicitacao",
+  "origem": "chat 2026-11-16",
+  "compromisso": "Executar a revisão adversarial das Entregas do Gestor e da integração com a TaOn, que eu já aprovei, até tudo estar no ar. Meta: chamar uma corrida e juntar corridas próximas custam o mesmo gesto; sem brecha, sem falha, sem desculpa (frentes F1a a F10 + hora 12h45; referência no PR draft #2484)",
+  "dono": "Engenharia",
+  "criado": "2026-11-16",
+  "revisar_em": "2026-11-23",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

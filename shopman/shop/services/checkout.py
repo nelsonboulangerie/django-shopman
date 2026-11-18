@@ -8,6 +8,8 @@ Orderman via ``shopman.shop.services.sessions``.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 
@@ -56,8 +58,13 @@ def process(
     expected_revision: int,
     ctx: dict | None = None,
     expected_grand_total_q: int | None = None,
+    effect_guard: Callable[[], None] | None = None,
 ) -> CheckoutResult:
-    """Convert checkout data to session operations and commit."""
+    """Convert checkout data to session operations and commit.
+
+    ``effect_guard`` roda na MESMA transação do commit do pedido, antes dele
+    (ver ``process_ops``); os efeitos pós-commit (Pix, conveniências) ficam fora.
+    """
     completed = CommitService.completed_response(session_key, channel_ref, idempotency_key)
     if completed is not None:
         result = _checkout_result(completed)
@@ -73,6 +80,7 @@ def process(
         expected_total_q=expected_total_q,
         expected_grand_total_q=expected_grand_total_q,
         expected_revision=expected_revision,
+        effect_guard=effect_guard,
     )
     pending = _apply_post_commit_side_effects(data, channel_ref, order_ref=result.order_ref)
     return replace(result, convenience_pending=tuple(pending or ()))
@@ -88,8 +96,17 @@ def process_ops(
     expected_revision: int,
     ctx: dict | None = None,
     expected_grand_total_q: int | None = None,
+    effect_guard: Callable[[], None] | None = None,
 ) -> CheckoutResult:
-    """Reprice one reviewed revision, then seal that exact resulting revision."""
+    """Reprice one reviewed revision, then seal that exact resulting revision.
+
+    ``effect_guard`` é a reconferência de quem manda o comando, feita no instante
+    do efeito: abre a transação que contém o commit do Orderman, roda antes dele e
+    recusa levantando exceção, e então nenhum pedido nasce. A Concierge passa a
+    trava da posse da conversa (#2625); o site não passa nada e segue como sempre.
+    Com a guarda, uma recusa do commit desfaz também a marca ``failed`` da chave de
+    idempotência, o que equivale à chave ausente: a mesma chave pode tentar de novo.
+    """
     completed = CommitService.completed_response(session_key, channel_ref, idempotency_key)
     if completed is not None:
         return _checkout_result(completed)
@@ -113,17 +130,20 @@ def process_ops(
         raise prepared.refusal
     repriced = prepared.session
 
-    commit = sessions.commit_session(
-        session_key=session_key,
-        channel_ref=channel_ref,
-        idempotency_key=idempotency_key,
-        seal=CommitSeal(
-            expected_revision=repriced.rev,
-            expected_total_q=expected_total_q,
-            authority=CommitAuthority.REVIEWED,
-        ),
-        ctx=ctx,
-    )
+    with transaction.atomic() if effect_guard is not None else nullcontext():
+        if effect_guard is not None:
+            effect_guard()
+        commit = sessions.commit_session(
+            session_key=session_key,
+            channel_ref=channel_ref,
+            idempotency_key=idempotency_key,
+            seal=CommitSeal(
+                expected_revision=repriced.rev,
+                expected_total_q=expected_total_q,
+                authority=CommitAuthority.REVIEWED,
+            ),
+            ctx=ctx,
+        )
 
     logger.info("checkout.process: order %s committed for channel %s", commit.order_ref, channel_ref)
     return _checkout_result(commit)

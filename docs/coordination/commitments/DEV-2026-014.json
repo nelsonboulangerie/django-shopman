@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-014",
+  "tipo": "compromisso",
+  "origem": "chat 2026-11-12",
+  "compromisso": "Webhook do app de produção do iFood em standby (decisão do dono 12/11: só polling); reavaliar depois de dias estável",
+  "dono": "Engenharia · iFood",
+  "criado": "2026-11-12",
+  "revisar_em": "2026-11-26",
+  "gatilho": "dias estáveis só com polling",
+  "estado": "ABERTO",
+  "prova": "-"
+}

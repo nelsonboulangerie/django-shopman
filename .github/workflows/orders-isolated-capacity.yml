@@ -29,7 +29,7 @@ env:
 
 jobs:
   synthetic:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     services:
       postgres:
