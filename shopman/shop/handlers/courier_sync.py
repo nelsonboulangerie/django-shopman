@@ -32,7 +32,7 @@ class CourierSyncHandler:
 
     def handle(self, *, message: Directive, ctx: dict) -> None:
         from shopman.shop.adapters import get_adapter
-        from shopman.shop.adapters.courier_machine import TERMINAL_STATUSES, CourierError
+        from shopman.shop.adapters.courier_machine import TERMINAL_STATUSES, CourierError, CourierRateLimited
         from shopman.shop.services import courier
 
         payload = message.payload or {}
@@ -74,6 +74,16 @@ class CourierSyncHandler:
         try:
             read_ride = getattr(adapter, "read_ride", None)
             snapshot = read_ride(ride_id) if read_ride else {"status": adapter.get_status(ride_id)}
+        except CourierRateLimited as exc:
+            # A TaOn limitou as chamadas: não é a corrida que parou de informar,
+            # é a casa que tem de esperar. Não conta como falha de leitura (sem
+            # "sem notícias" na tela, sem aviso) e a próxima batida respeita o
+            # prazo que a TaOn pediu.
+            logger.warning("courier.sync_rate_limited order=%s id_mch=%s retry_after=%s",
+                           order.ref, ride_id, exc.retry_after)
+            if seconds > 0:
+                courier.schedule_sync(order, delay_seconds=max(seconds, exc.retry_after))
+            return
         except CourierError as exc:
             # A batida não "falha" (o heartbeat segue), mas não fica calada: a
             # tela do Gestor diz desde quando a TaOn não informa a corrida, e

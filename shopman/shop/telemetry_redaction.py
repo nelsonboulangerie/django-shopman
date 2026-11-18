@@ -46,6 +46,8 @@ _SENSITIVE_KEYS = frozenset({
     "nome",
     "password",
     "phone",
+    "photo_url",
+    "pix_key",
     "prompt",
     "provider_body",
     "provider_response",
@@ -59,10 +61,12 @@ _SENSITIVE_KEYS = frozenset({
     "subscriber_ref",
     "subject_id",
     "target_key",
+    "telefone",
     "token",
     "user",
     "user_id",
     "username",
+    "vehicle_plate",
 })
 _SENSITIVE_KEY_SUFFIXES = (
     "_address",
@@ -89,6 +93,15 @@ _PERSONAL_ASSIGNMENT_RE = re.compile(
     r"address[_-]?id|actor[_-]?ref|cpf|cnpj|endere[cç]o|address|lat(?:itude)?|"
     r"l(?:o)?ng(?:itude)?)\s*[:=]\s*[^,;]+"
 )
+# A mesma atribuição, na forma JSON: ``"pix_key": "..."``. As duas expressões
+# acima param na aspa que fecha a chave e deixavam o valor inteiro no texto
+# (medido em 16/11/2026: o corpo cru do webhook da TaOn, com CPF, chave Pix,
+# foto e telefone do entregador, passava pelos dois formatters sem um corte).
+# Casa o par ``"chave": valor`` com valor escalar; quem decide é a chave, pela
+# mesma lista da forma em dicionário.
+_JSON_PAIR_RE = re.compile(
+    r'"([A-Za-z_][\w-]{0,63})"\s*:\s*("(?:[^"\\]|\\.)*"|-?\d[\d.eE+-]*|true|false|null)'
+)
 _DOCUMENT_RE = re.compile(
     r"(?<!\d)(?:\d{3}\.?\d{3}\.?\d{3}-?\d{2}|"
     r"\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2})(?!\d)"
@@ -106,6 +119,13 @@ _URL_RE = re.compile(r"https?://[^\s<>\]\[\"']+")
 # essa referência de um telefone — nenhuma corrida de dígitos sozinha casa aqui.
 _EDGE_REFERENCE_RE = re.compile(r"\b\d{1,3}\.[0-9a-f]{4,}\.\d{9,11}\.[0-9a-f]{4,}\b")
 _EDGE_REFERENCE_SLOT = "\x00ref{}\x00"
+# O id da corrida na TaOn tem nove dígitos (776753357, a primeira corrida real,
+# em 13/10/2026): forma de telefone, e o log saía `id_mch=[phone]`. É o id que
+# casa a nossa linha com a corrida na central, e não é dado de pessoa. Passa só
+# a FORMA `chave=valor` destas chaves técnicas, com valor em dígitos ou
+# hexadecimal (o resumo SHA-256 do corpo do webhook, que pode sair só com
+# dígitos): um telefone solto no texto continua sem passagem.
+_RIDE_REFERENCE_RE = re.compile(r"\b(?:id_mch|request|request_id|sha256)=[0-9a-f]{1,64}\b")
 # Data ISO (`2026-09-21`) e data-hora (`2026-09-21T14:30:00Z`, `2026-09-21 14:30`)
 # têm oito dígitos com hífen — forma que o regex de telefone casa. A mensagem da
 # reconciliação financeira chegava ao Sentry como "Reconciliação financeira de
@@ -118,6 +138,17 @@ _ISO_DATE_RE = re.compile(
 )
 
 
+def _is_sensitive_key(key: str) -> bool:
+    normalized = str(key).strip().lower().replace("-", "_")
+    return normalized in _SENSITIVE_KEYS or normalized.endswith(_SENSITIVE_KEY_SUFFIXES)
+
+
+def _redact_json_pair(match: re.Match) -> str:
+    if _is_sensitive_key(match.group(1)):
+        return f'"{match.group(1)}": "{REDACTED}"'
+    return match.group(0)
+
+
 def redact_text(value: str) -> str:
     """Remove common PII/secret shapes and URL query/fragment values."""
 
@@ -128,7 +159,8 @@ def redact_text(value: str) -> str:
     # fica DEPOIS da URL, senão o `[^,;]+` engoliria a URL inteira.
     # Teto antes dos regex: vários deles são superlineares, e texto de cliente
     # (concierge, relatório de erro) não tem tamanho garantido.
-    text = _BEARER_RE.sub(REDACTED, str(value)[:REDACT_INPUT_MAX_CHARS])
+    text = _JSON_PAIR_RE.sub(_redact_json_pair, str(value)[:REDACT_INPUT_MAX_CHARS])
+    text = _BEARER_RE.sub(REDACTED, text)
     text = _SECRET_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}={REDACTED}", text)
     text = _URL_RE.sub(lambda match: strip_url_query(match.group(0)), text)
     text = _PERSONAL_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}={REDACTED}", text)
@@ -144,6 +176,7 @@ def redact_text(value: str) -> str:
         return _EDGE_REFERENCE_SLOT.format(len(guardadas) - 1)
 
     text = _EDGE_REFERENCE_RE.sub(_guardar, text)
+    text = _RIDE_REFERENCE_RE.sub(_guardar, text)
     text = _ISO_DATE_RE.sub(_guardar, text)
     text = _PHONE_RE.sub("[phone]", text)
     text = _DOCUMENT_RE.sub("[document]", text)
@@ -187,7 +220,7 @@ def redact_observability_value(value: Any, *, key: str = "") -> Any:
     """Recursively sanitize a value before it enters logs or error telemetry."""
 
     normalized_key = str(key).strip().lower().replace("-", "_")
-    if normalized_key in _SENSITIVE_KEYS or normalized_key.endswith(_SENSITIVE_KEY_SUFFIXES):
+    if _is_sensitive_key(normalized_key):
         return REDACTED
     if value is None or isinstance(value, bool | int | float):
         return value

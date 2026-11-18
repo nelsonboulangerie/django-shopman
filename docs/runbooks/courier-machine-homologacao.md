@@ -278,7 +278,10 @@ na tela, e o conserto é no painel da TaOn, não no código.
 3. **Cadastrar o aviso** (escreve na TaOn, por isso é do dono):
    `python manage.py machine_register_webhook https://api.boulangerie.com.br`. Repetir não duplica
    (o comando lista antes e pula o tipo já cadastrado). Depois, na próxima corrida, o log do
-   `web-operator` mostra `machine.webhook raw=...` a cada mudança.
+   `web-operator` mostra `machine.webhook kind=status request=<id> code=<letra> ...` a cada mudança.
+   O corpo cru não vai mais para o log (ele traz nome, telefone, CPF, chave Pix e foto do
+   entregador): a linha é de lista fechada, com `event`, `stop`, `will_reopen`, `size` e
+   `sha256` (os 12 primeiros caracteres, para casar com o envio da TaOn).
 
 O contrato endereço a endereço está em
 [DELIVERY-EXTERNAL-LOGISTICS-PLAN §2.1](../plans/DELIVERY-EXTERNAL-LOGISTICS-PLAN.md).
@@ -423,8 +426,10 @@ MACHINE_API_USER=... MACHINE_API_PASSWORD=... MACHINE_API_KEY=... MACHINE_WEBHOO
 python manage.py machine_register_webhook https://api.boulangerie.com.br
 ```
 
-O que conferir no log do `web` (`machine.webhook raw=...`), contra o payload documentado
-(DELIVERY-EXTERNAL-LOGISTICS-PLAN §2.1):
+O que conferir no log do `web` (`machine.webhook kind=status request=... code=... event=...
+stop=... will_reopen=... company=... size=... sha256=...`), contra o payload documentado
+(DELIVERY-EXTERNAL-LOGISTICS-PLAN §2.1). O corpo cru não é logado; para ver um corpo
+inteiro na homologação, use o painel da TaOn ou um `curl` de ensaio, nunca o log de produção:
 
 - **status**: `request_id` igual ao `ride`, `status_code` com a letra, `event_id` e `links.request`.
   A resposta do nosso endpoint é `kind: unknown_ride` (a corrida de ensaio não tem pedido): está
@@ -432,9 +437,20 @@ O que conferir no log do `web` (`machine.webhook raw=...`), contra o payload doc
 - **posicao**: só chega com corrida aceita (`A`, `S`, `E`), em lote a cada 10 s, com `data[]`.
   Na homologação sem entregador simulado ele pode não chegar; anote se chegou.
 - Header `Signature-V2` conferido pelo nosso endpoint (HMAC-SHA-512 hexadecimal do corpo cru com
-  o `MACHINE_API_KEY` do `web`). Resposta `401` com `Signature-V2 não confere` no log e o corpo cru
-  logado logo antes: a chave do `web` não é a que a TaOn usa para assinar (a homologação pode ter
-  chave própria), ou a conta da Machine difere da documentada. Anote qual dos dois.
+  o `MACHINE_API_KEY` do `web`). Resposta `401` com `Signature-V2 não confere` no log, seguida de
+  `size=... sha256=... signature=<8 caracteres>...`: a chave do `web` não é a que a TaOn usa para
+  assinar (a homologação pode ter chave própria), ou a conta da Machine difere da documentada.
+  Anote qual dos dois (o `sha256` casa a linha com o envio; o corpo não é logado).
+- **Token na URL.** A URL cadastrada na TaOn leva `?token=` (é assim que ela autentica o POST).
+  O token aparece nos logs de acesso da borda que guardam a query; por isso ele sozinho não
+  basta: todo POST precisa também da `Signature-V2`, que não trafega na URL. Rotacionar o
+  token = trocar `MACHINE_WEBHOOK_TOKEN` e recadastrar o webhook.
+- **Desistência e limite de chamadas** se medem pelas sondas C3 e L7 do roteiro, no topo. O
+  que o código aceita hoje, para conferir contra o medido: `will_reopen` na raiz do aviso,
+  valendo `true`, `"true"`, `1`, `"1"`, `"S"` ou `"sim"`; depois dela a leitura pode seguir
+  trazendo `cancellation[]` e o `accepted_at` de quem saiu (o pedido não os aceita de volta), e
+  no Gestor a corrida segue a mesma, em "Procurando outro entregador". No `429` o log mostra
+  `courier.rate_limited path=... retry_after=... remaining=... reset=...`.
 
 ## Depois do ensaio
 
