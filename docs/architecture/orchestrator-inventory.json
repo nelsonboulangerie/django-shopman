@@ -300,6 +300,7 @@
             "DeveloperRegistration",
             "GoogleMerchantProjection",
             "GoogleMerchantRateLimitError",
+            "PICKUP_SLA_BY_DAYS",
             "_CONDITIONS",
             "_SCOPE",
             "_TOKEN_MARGIN_SECONDS",
@@ -321,6 +322,7 @@
             "build_local_inventory",
             "build_product_input",
             "logger",
+            "pickup_sla",
             "product_input_id",
             "register_gcp"
           ]
@@ -7660,6 +7662,33 @@
             "PriceAdjustmentProjection",
             "PriceQuoteProjection",
             "project_price_quote"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/projections/ready_promise.py",
+      "touchpoints": [
+        "projection"
+      ],
+      "out_of_extraction": true,
+      "unit_ids": [],
+      "responsibilities": [
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "PromiseFacts",
+            "ReadyWindow",
+            "SEARCH_DAYS",
+            "_next_batches",
+            "_read_grid",
+            "_today_orderable",
+            "logger",
+            "read_promise_facts",
+            "ready_window"
           ]
         }
       ]

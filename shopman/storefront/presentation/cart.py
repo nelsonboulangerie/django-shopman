@@ -23,10 +23,10 @@ from shopman.utils.monetary import format_money
 from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.projections import cart as cart_data
 from shopman.shop.projections import catalog_context
+from shopman.shop.projections.ready_promise import PromiseFacts, read_promise_facts
 from shopman.shop.projections.types import Action, Availability
 from shopman.storefront.presentation.catalog import notify_subscribed_skus
 from shopman.storefront.presentation.promise import PromiseProjection, promise_for
-from shopman.storefront.services.promise_facts import PromiseFacts, read_promise_facts
 
 if TYPE_CHECKING:
     from django.http import HttpRequest  # noqa: F401
