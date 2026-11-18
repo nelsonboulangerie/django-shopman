@@ -38,7 +38,8 @@ const located = computed(() =>
     .filter((stop) => stop.latitude !== null && stop.longitude !== null)
     .map((stop) => ({ ...stop, latitude: stop.latitude as number, longitude: stop.longitude as number })),
 );
-const mapOrigin = computed(() => props.origin ?? located.value[0] ?? null);
+// Sem coordenada da loja, o mapa desenha só as paradas (a loja não vai para a casa do cliente).
+const mapOrigin = computed(() => props.origin ?? null);
 const nextRef = computed(() => props.ride.stops.find((stop) => !stop.done)?.ref ?? "");
 const copied = ref(false);
 function copyLink() {
@@ -114,7 +115,7 @@ const showCancelState = computed(
           @update:open="cancelDismissed = `${ride.key}:${ride.cancel_state}`"
         />
       </div>
-      <div v-if="mapOrigin && located.length" class="relative mx-5 mt-4 h-48 overflow-hidden rounded-xl ring-1 ring-default">
+      <div v-if="located.length" class="relative mx-5 mt-4 h-48 overflow-hidden rounded-xl ring-1 ring-default">
         <CourierDeliveriesMap
           :origin="mapOrigin"
           :waiting="[]"
@@ -125,8 +126,9 @@ const showCancelState = computed(
           :maps-key="mapsKey"
           bare
         />
-        <p v-if="ride.position" class="absolute right-2 bottom-2 rounded-md bg-white/90 px-2 py-1 op-micro text-toned shadow-sm">Posição pela TaOn</p>
       </div>
+      <!-- Fora do mapa: dentro, a loja ou uma parada no canto cobria a etiqueta ("Posição pe…"). -->
+      <p v-if="located.length && ride.position" class="mx-5 mt-1 op-micro text-muted" data-ride-position-source>Posição do entregador pela TaOn</p>
 
       <div v-if="ride.driver" class="mx-5 mt-4 flex items-center gap-3 rounded-xl bg-elevated/60 p-3">
         <NuxtAvatar :text="ride.driver.name.slice(0, 1)" size="lg" />
@@ -145,14 +147,14 @@ const showCancelState = computed(
         <ol class="mt-2 flex flex-col">
           <li v-for="(stop, i) in ride.stops" :key="stop.ref" class="relative flex gap-3 pb-4 last:pb-0">
             <span v-if="i < ride.stops.length - 1" class="absolute top-7 bottom-0 left-3.5 w-px bg-default" aria-hidden="true" />
-            <span class="relative z-10 grid size-7 shrink-0 place-items-center rounded-full border-[3px] bg-white op-micro font-bold text-highlighted" :style="{ borderColor: tone.bg }">
+            <span class="relative z-10 grid size-7 shrink-0 place-items-center rounded-full border-[3px] bg-white op-micro font-bold" :style="{ borderColor: tone.bg, color: tone.ink }" data-ride-stop-step>
               <NuxtIcon v-if="stop.done" name="i-lucide-check" class="size-3.5" /><template v-else>{{ i + 1 }}</template>
             </span>
             <div class="min-w-0 flex-1">
               <p class="flex items-baseline gap-2">
                 <span class="op-body font-medium" :class="stop.done ? 'text-muted' : 'text-highlighted'">{{ stop.code }} · {{ stop.customer }}</span>
                 <span class="ml-auto shrink-0 op-micro" :class="stop.done ? 'text-success' : stop.ref === nextRef && ride.state === 'route' ? 'font-semibold text-highlighted' : 'text-muted'">
-                  {{ stop.done ? "entregue" : stop.ref === nextRef && ride.state === "route" ? "indo para cá" : stop.volumes ? `${stop.volumes} ${stop.volumes === 1 ? "sacola" : "sacolas"}` : "sacolas?" }}
+                  {{ stop.done ? "Entregue" : stop.ref === nextRef && ride.state === "route" ? "Indo para cá" : stop.volumes ? `${stop.volumes} ${stop.volumes === 1 ? "sacola" : "sacolas"}` : "Sacolas?" }}
                 </span>
               </p>
               <p class="truncate op-micro text-muted">{{ stop.address }}</p>
