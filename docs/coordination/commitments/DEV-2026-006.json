@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-006",
+  "tipo": "achado",
+  "origem": "STATUS-CONSOLIDACAO-2026-11-10.md",
+  "compromisso": "Triar o que restou das 5 frentes sem dono (ADR-025 Doorman, ledger C11, ciclo C6, leitura paralela)",
+  "dono": "Coordenação",
+  "criado": "2026-11-10",
+  "revisar_em": "2026-11-19",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

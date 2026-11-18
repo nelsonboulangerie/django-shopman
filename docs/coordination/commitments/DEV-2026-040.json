@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-040",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "1) segue a mesma linha de raciocinio sobre essas cores que já decidimos antes. 2) Sobe 3) Mantém comanda primeiro. Eventualmente, poderemos mudar isso depois, em produção. Ok! (revisão adversarial de UX: zonas do Gestor no celular #2470; Clientes no rail do Gestor; venda do PDV começa pela comanda; corrigir A1 A3 A4 A5 B5)",
+  "dono": "Engenharia",
+  "criado": "2026-11-16",
+  "revisar_em": "2026-11-23",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

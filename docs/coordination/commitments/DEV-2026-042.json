@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-042",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Tudo bem, mas prefiro 'Suporte', não é para cliente externo, é para operador interno. No mais, ok. (Suporte: um nome só, no pé da barra lateral em todos os apps e na Central, no menu do operador no celular, e o contexto mostra o nome da tela)",
+  "dono": "Engenharia",
+  "criado": "2026-11-16",
+  "revisar_em": "2026-11-23",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}
