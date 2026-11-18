@@ -25,7 +25,6 @@ from django.db import transaction
 from django.utils import timezone
 from shopman.orderman.models import Directive, Order
 
-from shopman.shop.adapters import get_adapter
 from shopman.shop.adapters.courier_machine import (
     BEFORE_ACCEPT_STATUSES,
     CANCEL_INTENT_OPERATOR,
@@ -35,6 +34,7 @@ from shopman.shop.adapters.courier_machine import (
     TERMINAL_STATUSES,
     CourierError,
 )
+from shopman.shop.services import delivery_services
 from shopman.shop.services.order_helpers import get_fulfillment_type, merge_order_data
 
 logger = logging.getLogger(__name__)
@@ -141,7 +141,7 @@ def not_house_dispatch_message(order) -> str:
 def is_enabled_for(order) -> bool:
     """Adapter configurado + entrega da casa. (O "auto" por canal é gate do lifecycle.)"""
     return (
-        get_adapter("courier") is not None
+        delivery_services.courier_backend() is not None
         and get_fulfillment_type(order) == "delivery"
         and house_dispatches(order)
     )
@@ -398,7 +398,7 @@ def estimate_for_ride(orders) -> dict | None:
     from shopman.shop.models import Shop
     from shopman.shop.services.dispatch_handoff import build_dispatch_payload
 
-    adapter = get_adapter("courier")
+    adapter = delivery_services.courier_backend()
     shop = Shop.load()
     if adapter is None or shop is None or None in (shop.latitude, shop.longitude) or len(orders) < 2:
         return None
@@ -437,7 +437,7 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
     grava o resultado em ``Order.data["courier"]["estimate"]``.
     """
     base_revision = dispatch_revision(order) if store else None
-    adapter = get_adapter("courier")
+    adapter = delivery_services.courier_backend()
     if adapter is None or get_fulfillment_type(order) != "delivery":
         return None
 
@@ -746,7 +746,7 @@ def group_refusal(order) -> str:
     from shopman.shop.services.operator_orders import short_ref
 
     code = short_ref(order.ref)
-    if get_adapter("courier") is None:
+    if delivery_services.courier_backend() is None:
         return "Nenhuma central de entregas configurada."
     if get_fulfillment_type(order) != "delivery":
         return f"O pedido {code} não é entrega."
@@ -938,7 +938,7 @@ def redispatch(order, *, actor: str, expected_revision: str | None = None, ride_
     if expected_revision is not None and dispatch_revision(order) != expected_revision:
         raise OrderStateConflict("O pedido ou a corrida mudou. Confira o contexto antes de despachar.")
     ensure_dispatch_resolved(order)
-    if get_adapter("courier") is None:
+    if delivery_services.courier_backend() is None:
         raise ValueError("Nenhum adapter de courier configurado.")
     if get_fulfillment_type(order) != "delivery":
         raise ValueError("Re-despacho só se aplica a pedidos de entrega.")
@@ -1111,7 +1111,7 @@ def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_rev
     order = Order.objects.select_for_update().get(pk=order.pk)
     if expected_revision is not None and dispatch_revision(order) != expected_revision:
         raise OrderStateConflict("O pedido ou a corrida mudou. Confira antes de solicitar cancelamento.")
-    if get_adapter("courier") is None:
+    if delivery_services.courier_backend() is None:
         raise ValueError("Nenhum adapter de courier configurado.")
     if reason_id is not None and reason_id not in CANCEL_REASONS_AFTER_ACCEPT:
         raise ValueError("Motivo de cancelamento desconhecido. Atualize a tela e escolha de novo.")
@@ -1427,6 +1427,8 @@ def restore_archived_ride(order, ride_id: str, *, source: str) -> str:
                          if letter not in TERMINAL_STATUSES and letter not in ("A", "S")}
             block.update(provider="machine", id_mch=ride_id, status="D", status_at=status_at or {"D": now_iso},
                          requested_at=str(attempt.get("requested_at") or now_iso), last_event_at=now_iso, last_source=source)
+            if service_ref := delivery_services.new_ride_service_ref():
+                block["service"] = service_ref
             if attempt.get("ride_orders"):
                 block["ride_orders"] = list(attempt["ride_orders"])
             if attempt.get("reopens"):
@@ -1743,7 +1745,7 @@ def _ride_links(ride_id: str) -> list[dict]:
     cached = cache.get(key)
     if cached is not None:
         return cached
-    adapter = get_adapter("courier")
+    adapter = delivery_services.courier_backend()
     if adapter is None:
         return []
     links = [dict(entry) for entry in adapter.tracking_links(ride_id) or [] if isinstance(entry, dict)]
@@ -1773,7 +1775,7 @@ def _tracking_for(order_ref: str, block: dict, ride_id: str) -> dict:
 
 def _enrich_accepted(block: dict, details: dict | None, *, order_ref: str) -> None:
     """Corrida aceita: busca entregador + link de rastreio da parada (best-effort)."""
-    adapter = get_adapter("courier")
+    adapter = delivery_services.courier_backend(block)
     if adapter is None:
         return
     try:
@@ -1796,7 +1798,7 @@ def _enrich_accepted(block: dict, details: dict | None, *, order_ref: str) -> No
 
 def _enrich_finished(block: dict, details: dict | None) -> None:
     """Corrida finalizada: valor final cobrado pela central (best-effort)."""
-    adapter = get_adapter("courier")
+    adapter = delivery_services.courier_backend(block)
     if adapter is None:
         return
     if isinstance(details, dict) and details.get("final_value_q") is not None:

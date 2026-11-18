@@ -313,6 +313,9 @@ class FittedClient:
         return getattr(self._client, name)
 
 
+#: Endereço do formato Anthropic quando a conexão deixa o campo vazio (o padrão do SDK).
+ANTHROPIC_DEFAULT_URL = "https://api.anthropic.com"
+
 #: Endereço oficial do Jev quando a conexão não diz outro.
 JEV_DEFAULT_URL = "https://api.typesafe.ai/v1/systemone"
 

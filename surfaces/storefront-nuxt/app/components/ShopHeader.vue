@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { headerCollapsed } from '~/presentation/scroll'
+import { headerStatusParts } from '~/presentation/shopStatus'
 import { accountNavEntry } from '~/utils/accountNavEntry'
 
 const session = useShopSession()
@@ -12,6 +13,7 @@ const menuOpen = ref(false)
 const shop = computed(() => session.shop.value)
 const openingHours = computed(() => session.openingHours.value)
 const statusLabel = computed(() => session.shopStatus.value?.label?.trim() || '')
+const statusParts = computed(() => headerStatusParts(statusLabel.value))
 const statusOpen = computed(() => !!session.shopStatus.value?.is_open)
 const whatsappUrl = computed(() => session.publicConfig.value?.whatsapp_url || shop.value?.whatsapp_url || '')
 const socialLinks = computed(() => shop.value?.social_links || [])
@@ -114,7 +116,10 @@ onBeforeUnmount(() => {
       <div class="shop-container flex h-9 items-center justify-between gap-3 text-sm">
         <span class="flex min-w-0 items-center gap-2 opacity-90">
           <Icon name="lucide:clock" class="size-3.5 shrink-0" />
-          <span class="truncate">{{ statusLabel || 'Confira nossos horários' }}</span>
+          <!-- Na tela estreita o estado ("Fechado agora.") sai e a hora de abertura
+               fica inteira; o leitor de tela ouve a frase toda. -->
+          <span v-if="statusParts.lead" class="sr-only sm:not-sr-only sm:truncate" data-shop-status-lead>{{ statusParts.lead }}</span>
+          <span class="whitespace-nowrap" data-shop-status-tail>{{ statusParts.tail || 'Confira nossos horários' }}</span>
         </span>
         <a
           v-if="statusOpen && shop?.phone_url"

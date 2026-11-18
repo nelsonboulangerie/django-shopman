@@ -18,10 +18,12 @@ from .courier_machine import (  # noqa: F401 — mesma semântica de status
     CANCEL_REASON_REFUSED_CODE,
     CANCEL_REASONS_AFTER_ACCEPT,
     CANCELLABLE_STATUSES,
+    CAPABILITIES,
     TERMINAL_STATUSES,
     CourierDispatchResult,
     CourierError,
     CourierEstimate,
+    ride_state,
 )
 
 _rides: dict[str, dict] = {}

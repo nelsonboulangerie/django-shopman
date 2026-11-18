@@ -151,7 +151,7 @@ describe("a linha pesada no resto do PDV", () => {
       deliveryDate: "", deliveryTimeSlot: "", deliveryFeeOverrideQ: null, orderNotes: "",
       paymentMethod: "cash", paymentCollection: "terminal" as const, paymentTenders: [],
       tenderedQ: null, changeForQ: 0, receiptChannels: [],
-      receiptEmail: "", manualDiscount: null, managerApproval: null,
+      receiptEmail: "", manualDiscount: null,
       saveReceiptTaxIdConfirmed: false,
       clientRequestId: "pos:peso-1",
       items: [queijo()],
