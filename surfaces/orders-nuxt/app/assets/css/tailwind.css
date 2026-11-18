@@ -11,3 +11,14 @@
 @plugin "@tailwindcss/forms" {
   strategy: "class";
 }
+
+/* O WIDGET DO IFOOD NÃO APAGA A TELA NO MODO ESCURO (dono, 18/11: "está tudo em
+   branco... depois de testar o modo escuro"). O widget põe um iframe fixo, da tela
+   inteira, transparente e sem toque, por cima do Gestor. Com o Gestor em
+   color-scheme dark e a página do iFood em normal, o navegador pinta o fundo do
+   iframe opaco (branco), e ele tampa tudo. Com o iframe em normal, os dois lados
+   concordam e o fundo volta a ser transparente. */
+.embeddables-focus-wrapper iframe,
+iframe.embeddables-iframe {
+  color-scheme: normal;
+}
