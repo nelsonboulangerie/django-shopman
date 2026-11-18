@@ -985,6 +985,47 @@ def build_pos_shift_summary(*, channel_ref: str = POS_CHANNEL_REF) -> POSShiftSu
     )
 
 
+def build_pos_availability() -> list[dict]:
+    """Só os selos da grade: ``[{sku, sold_out, sold_out_reason}]`` por produto do PDV.
+
+    É a releitura do aviso de estoque (SSE ``stock-update`` no canal do PDV): outro
+    balcão vendeu a última unidade, a Produção lançou o lote, e o tile troca o
+    selo sem ninguém tocar. A leitura inteira (preço, coleção, escolhas, turno,
+    comandas) não muda com o estoque, e custa segundos de CPU a cada aviso.
+
+    Mesma régua do ``_load_products``: os mesmos itens publicados e vendáveis do
+    canal, o mesmo ``_sold_out_skus`` e o mesmo "Sem caixa" do kit. O SKU sem
+    preço sai da grade inteira e é ignorado por quem recebe.
+    """
+    try:
+        from shopman.offerman.models import ListingItem
+
+        skus = sorted(
+            set(
+                ListingItem.objects.filter(
+                    listing__ref=POS_CHANNEL_REF,
+                    is_published=True,
+                    is_sellable=True,
+                    product__is_published=True,
+                    product__is_sellable=True,
+                ).values_list("product__sku", flat=True)
+            )
+        )
+    except Exception:
+        logger.exception("pos_availability_listing_failed")
+        return []
+    sold_out = _sold_out_skus(skus)
+    without_box = _kits_without_box(skus)
+    return [
+        {
+            "sku": sku,
+            "sold_out": sku in sold_out or sku in without_box,
+            "sold_out_reason": "Sem caixa" if sku in without_box else "",
+        }
+        for sku in skus
+    ]
+
+
 def build_pos_tabs(
     *,
     channel_ref: str = POS_CHANNEL_REF,
