@@ -8,7 +8,8 @@
   },
   "kernel": {
     "domain_packages": ["buyman", "cashman", "craftsman", "doorman", "fiscalman", "guestman", "offerman", "orderman", "payman", "stockman"],
-    "shared_capabilities": ["refs", "utils", "watchman"]
+    "shared_capabilities": ["refs", "utils", "watchman"],
+    "pure_frameworks": ["conversational-commerce"]
   },
   "orchestrator": ["shopman/shop"],
   "query_read_side": [

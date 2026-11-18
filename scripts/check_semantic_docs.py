@@ -16,8 +16,10 @@ CONSTITUTIONS = {
     Path("docs/_archive/constitution-v1.md"),
 }
 
+# Hífen entra: `packages/conversational-commerce/` (ADR-049) é diretório de
+# distribuição com hífen. Sem ele, o pacote nunca casava e o gate o dava por ausente.
 PACKAGE_ENTRY_RE = re.compile(
-    r"^\*\*Diretório físico:\*\* `packages/([a-z][a-z0-9_]*)/`\s*$", re.MULTILINE
+    r"^\*\*Diretório físico:\*\* `packages/([a-z][a-z0-9_-]*)/`\s*$", re.MULTILINE
 )
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 REFERENCE_DEFINITION_RE = re.compile(r"^\s*\[([^\]]+)\]:\s*(\S+)", re.MULTILINE)
