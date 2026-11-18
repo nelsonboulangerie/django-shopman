@@ -392,6 +392,7 @@ export interface CartProjection {
   has_awaiting_confirmation_items: boolean
   has_ready_for_confirmation_items: boolean
   unavailable_banner: string
+  awaiting_confirmation_notice: string
   minimum_order_progress: MinimumOrderProgressProjection | null
   delivery_minimum_progress: MinimumOrderProgressProjection | null
   free_delivery_progress: FreeDeliveryProgressProjection | null
