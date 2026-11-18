@@ -447,10 +447,6 @@ envs:
   scope: RUN_TIME
   value: 'F'
   type: GENERAL
-- key: MACHINE_CANCEL_REASON_ID
-  scope: RUN_TIME
-  value: '1'
-  type: GENERAL
 - key: MACHINE_TIMEOUT
   scope: RUN_TIME
   value: '15'

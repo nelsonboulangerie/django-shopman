@@ -36,7 +36,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        from shopman.storefront.checks import concierge_findings
+        from shopman.storefront.checks import concierge_findings, concierge_notices
         from shopman.storefront.concierge.transport import configured_connections
 
         config = getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}
@@ -55,7 +55,11 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f"  {check_id} {message}"))
             self.stdout.write(f"      {hint}")
         if not findings:
-            self.stdout.write("  OK: modo assist, contrato 3, chave da Anthropic, conexão, coorte e ManyChat.")
+            self.stdout.write("  OK: modo assist, contrato 3, conexão, coorte e ManyChat.")
+        # Sem conexão de IA a Concierge responde sem modelo: aviso, não pendência.
+        for check_id, message, hint in concierge_notices(config):
+            self.stdout.write(self.style.WARNING(f"  {check_id} {message}"))
+            self.stdout.write(f"      {hint}")
 
         if options["live"]:
             self.stdout.write(self.style.MIGRATE_HEADING("ManyChat"))

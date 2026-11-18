@@ -116,7 +116,7 @@ const pushState = computed(() =>
 );
 const pushSettingsOpen = ref(false);
 
-// Suporte: o chamado nasce aqui, com o contexto que a Central conhece.
+// Suporte: no pé da barra lateral, como em todo app (dono, 16/11/2026); o painel é da casca.
 const supportOpen = ref(false);
 
 // `/support` é o link que a equipe guarda. O hub é one-page; o painel abre
@@ -254,13 +254,6 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
     onSelect: () => void refresh(),
   },
   {
-    label: "Suporte",
-    icon: "i-lucide-life-buoy",
-    onSelect: () => {
-      supportOpen.value = true;
-    },
-  },
-  {
     label: "Avisos neste dispositivo",
     icon: "i-lucide-bell",
     onSelect: () => {
@@ -318,12 +311,14 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
       <!-- Launcher, no shell da suíte. -->
       <OperatorSuiteShell
         v-else
+        v-model:support-open="supportOpen"
         storage-key="hub"
         home
         :sections="HUB_SECTIONS"
         current="home"
         :label="`Seções ${HUB_NAMED_OF}`"
         :operator-name="operatorName || undefined"
+        :support-context="{ app: 'hub', route: '/' }"
         @lock="lockDevice"
       >
         <!-- `data-compact-page`: no celular a linha do chão é o cabeçalho inteiro (o kit
@@ -453,7 +448,6 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
           <OperatorPushSettings class="mt-0! border-0! bg-transparent! p-0!" />
         </template>
       </NuxtModal>
-      <SupportPanel v-model:open="supportOpen" :context="{ app: 'hub', route: '/' }" />
       <OperatorSonner />
       <OperatorPwaRuntime />
     </div>

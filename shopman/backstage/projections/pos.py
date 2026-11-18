@@ -449,19 +449,21 @@ class POSCustomerSearchResult:
 
 @dataclass(frozen=True)
 class POSShiftSummaryProjection:
-    """Today's shift totals for the POS."""
+    """As CONTAGENS de hoje no canal do PDV. Nenhuma soma em dinheiro.
+
+    Caixa cego (§2.6, D4 do plano de excelência do PDV): quem opera o balcão
+    conta a gaveta às cegas, e o faturamento do dia é o gabarito dessa
+    contagem. Por isso o total do dia, o valor da última venda e a soma do
+    "receber na entrega" NÃO viajam no payload, para ninguém: a tela só usava a
+    contagem, e quem audita (``cashman.audit_shift``) lê o dinheiro na leitura
+    X (``/session/report``) e no Admin. Contagem é operação; valor é apuração.
+    """
 
     count: int
-    total_display: str
     pickup_count: int
     delivery_count: int
-    # Caixa cego (§2.6): o breakdown esperado (cash/digital) NÃO viaja no payload —
-    # a contagem é cega e a conferência (esperado×contado) vive no gestor/Unfold.
-    # (Removido com a morte do POS-HTMX legado que o consumia — WP1.)
     last_ref: str
-    last_total_display: str
     cod_pending_count: int
-    cod_pending_display: str
 
 
 @dataclass(frozen=True)
@@ -951,16 +953,13 @@ def build_pos_shift_summary(*, channel_ref: str = POS_CHANNEL_REF) -> POSShiftSu
         Order.objects.filter(channel_ref=channel_ref, created_at__gte=start, created_at__lt=end)
         .exclude(status="cancelled")
         .order_by("created_at", "pk")
-        .values_list("ref", "total_q", "data")
+        .values_list("ref", "data")
     )
 
-    shift_count = len(rows)
-    shift_total_q = sum(int(total_q or 0) for _ref, total_q, _data in rows)
     pickup_count = 0
     delivery_count = 0
     cod_pending_count = 0
-    cod_pending_q = 0
-    for _ref, total_q, data in rows:
+    for _ref, data in rows:
         data = data or {}
         if data.get("fulfillment_type") == "delivery":
             delivery_count += 1
@@ -969,20 +968,55 @@ def build_pos_shift_summary(*, channel_ref: str = POS_CHANNEL_REF) -> POSShiftSu
         payment = data.get("payment") or {}
         if payment.get("collection") == "on_delivery" and not payment.get("cod_settled_at"):
             cod_pending_count += 1
-            cod_pending_q += int(total_q or 0)
-
-    last_ref, last_total_q = (rows[-1][0], rows[-1][1]) if rows else ("", None)
 
     return POSShiftSummaryProjection(
-        count=shift_count,
-        total_display=format_money(shift_total_q),
+        count=len(rows),
         pickup_count=pickup_count,
         delivery_count=delivery_count,
-        last_ref=last_ref,
-        last_total_display=format_money(last_total_q) if rows else "",
+        last_ref=rows[-1][0] if rows else "",
         cod_pending_count=cod_pending_count,
-        cod_pending_display=format_money(cod_pending_q),
     )
+
+
+def build_pos_availability() -> list[dict]:
+    """Só os selos da grade: ``[{sku, sold_out, sold_out_reason}]`` por produto do PDV.
+
+    É a releitura do aviso de estoque (SSE ``stock-update`` no canal do PDV): outro
+    balcão vendeu a última unidade, a Produção lançou o lote, e o tile troca o
+    selo sem ninguém tocar. A leitura inteira (preço, coleção, escolhas, turno,
+    comandas) não muda com o estoque, e custa segundos de CPU a cada aviso.
+
+    Mesma régua do ``_load_products``: os mesmos itens publicados e vendáveis do
+    canal, o mesmo ``_sold_out_skus`` e o mesmo "Sem caixa" do kit. O SKU sem
+    preço sai da grade inteira e é ignorado por quem recebe.
+    """
+    try:
+        from shopman.offerman.models import ListingItem
+
+        skus = sorted(
+            set(
+                ListingItem.objects.filter(
+                    listing__ref=POS_CHANNEL_REF,
+                    is_published=True,
+                    is_sellable=True,
+                    product__is_published=True,
+                    product__is_sellable=True,
+                ).values_list("product__sku", flat=True)
+            )
+        )
+    except Exception:
+        logger.exception("pos_availability_listing_failed")
+        return []
+    sold_out = _sold_out_skus(skus)
+    without_box = _kits_without_box(skus)
+    return [
+        {
+            "sku": sku,
+            "sold_out": sku in sold_out or sku in without_box,
+            "sold_out_reason": "Sem caixa" if sku in without_box else "",
+        }
+        for sku in skus
+    ]
 
 
 def build_pos_tabs(
@@ -1708,9 +1742,11 @@ def _pos_actions() -> tuple[Action, ...]:
             kind="query",
             label="Buscar cliente",
             priority="quiet",
-            method="GET",
-            href="/api/v1/backstage/pos/customer/search/?q={query}",
-            payload_schema={"query": {"q": "string"}},
+            # POST: o termo é nome, telefone, CPF ou e-mail, e na query string
+            # ele ficava no log de acesso e no cache, como o do lookup (#2335).
+            method="POST",
+            href="/api/v1/backstage/pos/customer/search/",
+            payload_schema={"required": ["q"]},
             idempotency="none",
         ),
         Action(

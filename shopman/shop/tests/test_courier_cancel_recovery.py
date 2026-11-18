@@ -54,7 +54,8 @@ def test_remote_timeout_never_reposts(context):
             run(task)
     with pytest.raises(ValueError, match="já iniciado"):
         courier.cancel_ride(order, actor="operator")
-    adapter.cancel.assert_called_once_with("RIDE-LAB", reason_id=None)
+    # A corrida está aceita (A): sem motivo escolhido vai o padrão de depois do aceite.
+    adapter.cancel.assert_called_once_with("RIDE-LAB", reason_id=12)
     order.refresh_from_db()
     assert courier.get_block(order)["status"] == "A"
 
@@ -180,7 +181,7 @@ def test_definitive_rejection_is_not_success(context):
     order.refresh_from_db()
     assert courier.get_block(order)["status"] == "A"
     task.refresh_from_db()
-    assert task.payload["cancel_attempt"]["state"] == "not_applied"
+    assert task.payload["cancel_attempt"]["state"] == "refused"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -228,4 +229,9 @@ def test_definitive_worker_refusal_remains_visible_in_existing_panel(context):
     _process_directive(task)
     panel = _courier_block(order)
     assert panel["can_cancel"]
-    assert "recusou" in panel["error"]["message"]
+    # A recusa mora no estado do cancelamento, não na falha de abrir a corrida.
+    assert panel["error"] is None
+    assert panel["cancel_state"]["state"] == "failed"
+    assert panel["cancel_state"]["message"] == (
+        "A TaOn não cancelou a corrida do pedido LAB. Cancele pela central da TaOn."
+    )

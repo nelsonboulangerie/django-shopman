@@ -163,6 +163,38 @@ describe("KdsTicketCard — render", () => {
     expect(w.find("ul").html()).not.toContain("line-clamp");
   });
 
+  it("observação curta e longa saem na mesma caixa âmbar, em negrito, abaixo do item", () => {
+    const w = mountCard({
+      ticket: ticket({
+        items: [
+          { sku: "A", name: "Croque monsieur", qty: 1, notes: "sem glúten", stock_warning: "" },
+          { sku: "B", name: "Quiche", qty: 1, notes: "sem açúcar de confeiteiro, embalar separado", stock_warning: "" },
+          { sku: "C", name: "Pão", qty: 1, notes: "", stock_warning: "" },
+        ],
+      }),
+    });
+    const boxes = w.findAll("[data-kds-item-note]");
+    expect(boxes.map((box) => box.text())).toEqual([
+      "Obs.: sem glúten",
+      "Obs.: sem açúcar de confeiteiro, embalar separado",
+    ]);
+    expect(boxes[0]!.classes()).toEqual(boxes[1]!.classes());
+    for (const box of boxes) {
+      expect(box.classes()).toEqual(expect.arrayContaining(["font-bold", "bg-warning/15", "text-warning"]));
+    }
+    // A curta não fica mais colada ao nome.
+    const names = w.findAll("li p.font-semibold").map((p) => p.text());
+    expect(names).toEqual(["Croque monsieur", "Quiche", "Pão"]);
+  });
+
+  it("a observação do item acompanha a densidade: um passo abaixo do corpo do item", () => {
+    const note = (density: "compact" | "cozy" | "roomy") =>
+      mountCard({ ticket: ticket(), density }).get("[data-kds-item-note]").classes();
+    expect(note("compact")).toContain("text-sm");
+    expect(note("cozy")).toContain("text-base");
+    expect(note("roomy")).toContain("text-lg");
+  });
+
   it("marca ticket adicional e pedido de entrega na linha de contexto", () => {
     const t = mountCard({
       ticket: ticket({ fulfillment_icon: "local_shipping" }),

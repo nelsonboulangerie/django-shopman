@@ -209,7 +209,6 @@ SHOPMAN_MACHINE.update(  # noqa: F405
     forma_pagamento="F",
     retorno=False,
     timeout=15,
-    cancel_reason_id=1,
 )
 STRIPE_PUBLISHABLE_KEY = ""
 STRIPE_SECRET_KEY = ""
@@ -285,6 +284,7 @@ SHOPMAN_OPERATOR_API_HOST = ""
 # ── DRF: rate limit no default do CI ─────────────────────────────────────────
 REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {  # noqa: F405
     "anon": "120/minute",
+    "pos_customer_search": "10000/minute",
     "marketing_audience_user": "10000/minute",
     "marketing_audience_shop": "10000/minute",
     "marketing_dangerous_user": "10000/minute",
