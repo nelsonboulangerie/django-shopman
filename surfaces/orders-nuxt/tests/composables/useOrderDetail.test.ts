@@ -130,6 +130,29 @@ describe("useOrderDetail", () => {
     expect(d.managerChallenge.value).toBeNull();
   });
 
+  it("devolução usa a ação da prévia, pede o gerente e reenvia os itens e o motivo com a assinatura", async () => {
+    // WP-G12: a ação `return` não mora na projeção do detalhe; vem da prévia
+    // (`return/preview/`), com a base que o comando confere.
+    const contract = { ...fixtureActions({ can_confirm: true })[0]!, ref: "return", enabled: true, payload_schema: { base_revision: "return-base", expected_actor_id: 1 } };
+    env.fetchMock.mockRejectedValueOnce({
+      status: 422,
+      data: { detail: "Devolução pede a autorização de um gerente.", error: { code: "manager_approval_required" } },
+    });
+    const d = useOrderDetail("WEB-DEV");
+    const choice = { items: [{ line_id: "L1", qty: "2" }], reason: "Croissant cru" };
+
+    expect(await d.returnOrder(choice, contract)).toBe(false);
+    expect(d.managerChallenge.value).toMatchObject({ code: "manager_approval_required", action: "return" });
+    expect(String(env.fetchMock.mock.calls[0]![0])).toBe("/api/v1/backstage/orders/WEB-DEV/return/");
+    expect(env.fetchMock.mock.calls[0]![1].body).toMatchObject({ base_revision: "return-base", items: choice.items, reason: "Croissant cru" });
+
+    expect(await d.authorize({ username: "joyce", pin: "1234" })).toBe(true);
+    const body = env.fetchMock.mock.calls[1]![1].body;
+    expect(body.items).toEqual(choice.items);
+    expect(body.manager_approval).toEqual({ username: "joyce", pin: "1234" });
+    expect(d.managerChallenge.value).toBeNull();
+  });
+
   it("saveNotes/addComment enviam o corpo e tostam sucesso", async () => {
     env.fetchData.value = { order: { actions: [{ ...fixtureActions({ can_advance: true })[0], ref: "notes", payload_schema: { base_revision: "note-base" } }, { ...fixtureActions({ can_advance: true })[0], ref: "comment", payload_schema: { base_revision: "comment-base" } }] } };
     env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });

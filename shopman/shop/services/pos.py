@@ -1136,7 +1136,7 @@ def review_sale(
             "code": "item_low_stock",
             "field": "items",
             "sku": sku,
-            "message": f"{name}: {_availability_shortfall(decision)}",
+            "message": f"{name}: {_availability_shortfall(decision, requested_qty=qty, target_date=target_date)}",
         })
     if not_ready:
         started = _started_lot_qty([sku for _name, sku, _missing in not_ready], target_date)
@@ -1355,7 +1355,7 @@ def _lot_stage(started_qty: Decimal, missing: Decimal) -> str:
     return "Previsto" if started_qty >= missing else "Planejado"
 
 
-def _availability_shortfall(decision: dict) -> str:
+def _availability_shortfall(decision: dict, *, requested_qty=None, target_date=None) -> str:
     """Por que este item não foi aprovado — na língua do balcão.
 
     Três causas distintas saíam com a MESMA frase ("só N em estoque"), o que
@@ -1368,6 +1368,17 @@ def _availability_shortfall(decision: dict) -> str:
     if decision.get("reason_code") == "not_in_listing":
         return "fora do cardápio do balcão. A venda vale; confira o cadastro."
     available = decision.get("available_qty") or 0
+    if target_date is not None and target_date > timezone.localdate():
+        # ENCOMENDA (#2559): o número é o PLANO da data, não o estoque, e a venda
+        # não é de balcão. Na encomenda PDV-261116-K16 a frase dizia "só 44 em
+        # estoque. A venda de balcão vale" para 200 baguetes pedidas contra 22
+        # planejadas. O que passa do plano fica registrado como demanda e a
+        # Produção recebe o aviso no fechamento (``stock.alert_demand_over_plan``).
+        asked = f"{_qty_display(requested_qty)} pedidas, " if requested_qty is not None else ""
+        return (
+            f"{asked}{_qty_display(available)} planejadas para {target_date.strftime('%d/%m')}. "
+            "O que passa do plano fica como encomenda sem fornada, e a Produção é avisada."
+        )
     return f"só {_qty_display(available)} em estoque. A venda de balcão vale; confira o estoque depois."
 
 
@@ -3449,23 +3460,34 @@ def validate_manager_approval(payload: dict, *, operator_username: str):
     reasons = _approval_reasons(discount_q=discount_q, threshold_q=threshold_q, account_excess=account_excess)
     if not reasons:
         return None
-    if reasons == ["house_account_over_limit"]:
-        recovery_invalid = "Revise o gerente e o PIN, ou receba parte da venda em outro meio de pagamento."
-    else:
-        recovery_invalid = "Revise o gerente e o PIN, ou reduza o desconto / ajuste o preço."
-
-    # A copy viaja junto com a delegação. O desafio é o mesmo, mas o que o operador
-    # pode FAZER a respeito não é: no caixa ele chama o gerente; aqui ele também pode
-    # reduzir o desconto. Delegar sem levar o texto trocaria uma saída por um beco.
-    approver = validate_manager_override(
-        payload.get("manager_approval"),
+    # A assinatura vale para o RETRATO que o gerente viu (EXCELENCIA-PDV F1, #2558).
+    # Antes a tela guardava usuário e PIN no carrinho e os reenviava em todo
+    # fechamento; o servidor conferia só a credencial, e na venda PDV-261116-U44 a
+    # Joyce aprovou R$ 6,00 e o livro saiu "approved_by=joyce" com R$ 30,00. Agora
+    # o PIN é conferido UMA vez, no diálogo, e o que sai de lá é um carimbo
+    # assinado (``issue_sale_approval``) preso ao operador, à comanda e aos números
+    # que o diálogo mostrou. Aqui ele é resgatado uma vez só, e qualquer diferença
+    # entre o assinado e o que a venda tem agora é recusa.
+    approval = payload.get("manager_approval") if isinstance(payload.get("manager_approval"), dict) else {}
+    token = str(approval.get("token") or "").strip()
+    if not token:
+        raise PosIntentError(
+            code="manager_approval_required",
+            message="Esta venda exige aprovação gerencial.",
+            field="manager_approval",
+            focus="approval",
+            recovery="Peça a um gerente autorizado para aprovar com o crachá ou o PIN antes de finalizar.",
+        )
+    approver = _redeem_sale_approval(
+        token,
         operator_username=operator_username,
-        action="discount",
-        message="Esta venda exige aprovação gerencial.",
-        recovery_required=(
-            "Peça a um gerente autorizado para aprovar com o crachá ou o PIN antes de finalizar."
+        snapshot=SaleApprovalScope(
+            tab_ref=_payload_tab_ref(payload),
+            discount_q=discount_q if "discount_over_threshold" in reasons else 0,
+            account_over_q=account_excess.over_q if account_excess is not None else 0,
         ),
-        recovery_invalid=recovery_invalid,
+        client_request_id=_payload_client_request_id(payload),
+        max_age_s=_sale_approval_max_age_s(payload),
     )
     logger.info(
         "pos_manager_approval operator=%s approved_by=%s discount_q=%s reasons=%s account_over_q=%s",
@@ -3475,6 +3497,147 @@ def validate_manager_approval(payload: dict, *, operator_username: str):
         ",".join(reasons),
         account_excess.over_q if account_excess is not None else 0,
     )
+    return approver
+
+
+#: O carimbo da aprovação de venda: assinado com a SECRET_KEY, com prazo curto.
+_SALE_APPROVAL_SALT = "shopman.pos.sale-approval"
+#: O diálogo do gerente sobe ANTES da maquininha e do "Recebi o Pix"; quinze
+#: minutos cobrem a cobrança mais lenta sem deixar o carimbo valendo pelo turno.
+SALE_APPROVAL_MAX_AGE_S = 15 * 60
+
+
+@dataclass(frozen=True)
+class SaleApprovalScope:
+    """O que o gerente viu no diálogo e assinou: a comanda e os números.
+
+    ``discount_q`` é o desconto manual (linha + venda) quando o desconto chamou o
+    gerente; ``account_over_q`` é quanto a conta na casa passa do limite quando
+    foi ela. Zero no gatilho que não houve.
+    """
+
+    tab_ref: str = ""
+    discount_q: int = 0
+    account_over_q: int = 0
+
+    @classmethod
+    def from_request(cls, raw) -> SaleApprovalScope:
+        raw = raw if isinstance(raw, dict) else {}
+        tab = str(raw.get("tab_ref") or "").strip()
+        return cls(
+            tab_ref=normalize_tab_ref(tab) if tab else "",
+            discount_q=max(0, _int_q(raw.get("discount_q"))),
+            account_over_q=max(0, _int_q(raw.get("account_over_q"))),
+        )
+
+
+def _sale_approval_refused(recovery: str) -> PosIntentError:
+    return PosIntentError(
+        code="manager_approval_invalid",
+        message="A aprovação do gerente não vale para esta venda.",
+        field="manager_approval",
+        focus="approval",
+        recovery=recovery,
+    )
+
+
+def issue_sale_approval(approver, *, operator_username: str, scope: SaleApprovalScope) -> str:
+    """O carimbo que o diálogo do gerente devolve no lugar do PIN.
+
+    Só é emitido DEPOIS de ``validate_manager_override`` aprovar a credencial. Vale
+    para um operador, uma comanda (ou a venda de balcão sem comanda) e os números
+    que o diálogo mostrou; o ``nonce`` faz dele uso único (``_redeem_sale_approval``).
+    """
+    import secrets
+
+    from django.core import signing
+
+    return signing.dumps(
+        {
+            "u": approver.get_username(),
+            "o": _bare_username(operator_username),
+            "t": scope.tab_ref,
+            "d": int(scope.discount_q),
+            "a": int(scope.account_over_q),
+            "n": secrets.token_urlsafe(16),
+        },
+        salt=_SALE_APPROVAL_SALT,
+    )
+
+
+def _sale_approval_max_age_s(payload: dict) -> int:
+    """Quanto o carimbo vale nesta venda.
+
+    A venda que ficou na fila sem conexão foi assinada online, antes de a rede
+    cair, e chega ao servidor quando a fila sincroniza: vale a janela da própria
+    venda sem conexão (``pos_offline_sale.MAX_AGE``), que já é a régua de quanto
+    tempo uma cobrança na fila continua valendo. As demais, quinze minutos.
+    """
+    from shopman.shop.services import pos_offline_sale
+
+    if pos_offline_sale.pricing_instant(payload) is not None:
+        return int(pos_offline_sale.MAX_AGE.total_seconds())
+    return SALE_APPROVAL_MAX_AGE_S
+
+
+def _redeem_sale_approval(
+    token: str,
+    *,
+    operator_username: str,
+    snapshot: SaleApprovalScope,
+    client_request_id: str,
+    max_age_s: int = SALE_APPROVAL_MAX_AGE_S,
+):
+    """Confere o carimbo contra a venda de agora e o gasta. Devolve o gerente.
+
+    Uso único com uma exceção deliberada: a MESMA venda (mesmo
+    ``client_request_id``) pode reapresentá-lo. A fila sem conexão reenvia o
+    fechamento com a mesma chave, e uma recusa da maquininha devolve o operador ao
+    mesmo "Concluir"; nos dois casos é a mesma venda, com os mesmos números (que
+    continuam conferidos). Venda nova, com chave nova, pede o gerente de novo.
+    """
+    from django.contrib.auth import get_user_model
+    from django.core import signing
+    from django.core.cache import cache
+
+    try:
+        data = signing.loads(token, salt=_SALE_APPROVAL_SALT, max_age=max_age_s)
+    except signing.SignatureExpired as exc:
+        raise _sale_approval_refused("A aprovação do gerente expirou. Peça a aprovação de novo.") from exc
+    except signing.BadSignature as exc:
+        raise _sale_approval_refused("Peça a aprovação do gerente de novo.") from exc
+    if not isinstance(data, dict):
+        raise _sale_approval_refused("Peça a aprovação do gerente de novo.")
+
+    if str(data.get("o") or "") != _bare_username(operator_username):
+        raise _sale_approval_refused("A aprovação foi dada a outro operador. Peça a aprovação de novo.")
+    if str(data.get("t") or "") != snapshot.tab_ref:
+        raise _sale_approval_refused("A aprovação foi dada a outra comanda. Peça a aprovação de novo.")
+    signed_discount_q = int(data.get("d") or 0)
+    if signed_discount_q != snapshot.discount_q:
+        raise _sale_approval_refused(
+            f"O gerente aprovou desconto de R$ {format_money(signed_discount_q)} e a venda tem "
+            f"R$ {format_money(snapshot.discount_q)}. Peça a aprovação do novo valor."
+        )
+    signed_over_q = int(data.get("a") or 0)
+    if signed_over_q != snapshot.account_over_q:
+        raise _sale_approval_refused(
+            f"O gerente aprovou passar o limite da conta em R$ {format_money(signed_over_q)} e a venda passa "
+            f"R$ {format_money(snapshot.account_over_q)}. Peça a aprovação do novo valor."
+        )
+
+    # O gerente continua podendo assinar AGORA: desligado ou sem a permissão
+    # depois do diálogo, o carimbo dele não vale mais.
+    user_model = get_user_model()
+    approver = user_model.objects.filter(username=str(data.get("u") or ""), is_active=True, is_staff=True).first()
+    if approver is None or not approver.has_perm("cashman.adjust_shift"):
+        raise _sale_approval_refused("Este gerente não pode mais autorizar. Peça a outro gerente.")
+
+    key = f"pos:sale-approval:{data.get('n')}"
+    owner = client_request_id or "-"
+    if not cache.add(key, owner, timeout=max_age_s + 60):
+        if not client_request_id or cache.get(key) != client_request_id:
+            raise _sale_approval_refused("Esta aprovação já foi usada em outra venda. Peça a aprovação de novo.")
     return approver
 
 

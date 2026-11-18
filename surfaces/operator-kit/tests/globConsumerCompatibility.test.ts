@@ -18,13 +18,9 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(fixture, { recursive: true, force: true }));
 
+// O archiver-utils (consumidor de glob.sync) saiu da árvore com o archiver 8, que
+// chega pelo nitropack 2.13.6 do Nuxt 4.6.4 e só usa o readdir-glob, coberto abaixo.
 describe("contratos dos consumidores de glob e minimatch", () => {
-  it("preserva glob.sync e exclusões do archiver-utils", () => {
-    const { file } = load("archiver-utils");
-    expect(file.expand({ cwd: fixture, filter: "isFile" }, ["**/*.txt", "!nested/**"]))
-      .toEqual(["bread.txt"]);
-  });
-
   it("preserva inclusão e exclusão do FileList com minimatch.match", () => {
     const { FileList } = load("filelist");
     const files = new FileList();

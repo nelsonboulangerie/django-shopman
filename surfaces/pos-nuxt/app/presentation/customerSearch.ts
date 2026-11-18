@@ -152,3 +152,15 @@ export function moveHighlight(current: number, delta: 1 | -1, resultsCount: numb
   const base = current < 0 ? (delta === 1 ? -1 : 0) : current;
   return (base + delta + resultsCount) % resultsCount;
 }
+
+/**
+ * A busca FALHOU: a frase diz que não deu para buscar, nunca "nenhum cadastro".
+ * A lista vazia de antes era um falso "não existe" e convidava a cadastrar de
+ * novo quem já tem cadastro (P1-8). 429 é o limite de buscas por operador
+ * (#2336): passa sozinho, e a frase diz quando tentar.
+ */
+export function customerSearchErrorMessage(status: number): string {
+  return status === 429
+    ? "Não consegui buscar: foram muitas buscas seguidas. Espere um minuto e tente de novo."
+    : "Não consegui buscar agora. Tente de novo.";
+}

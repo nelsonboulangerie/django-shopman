@@ -68,6 +68,7 @@ import {
 } from "~/utils/posTabLifecycle";
 import { saleTotalView } from "~/presentation/saleTotal";
 import { composedAddressLine, emptyAddressDraft } from "~/presentation/address";
+import { customerSearchErrorMessage } from "~/presentation/customerSearch";
 import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, receiptItemFromCart, type PosReceiptSnapshot } from "~/presentation/receipt";
 import {
   applyLinePrices,
@@ -998,8 +999,13 @@ export function usePosSale(deps: PosSaleDeps) {
     discountType: "percent" as "percent" | "fixed",
     discountValue: "",
     discountReason: "",
-    managerUsername: "",
-    managerPin: "",
+    /**
+     * O CARIMBO da autorização do gerente (#2558), nunca o PIN. O servidor o
+     * emite no diálogo, preso a esta comanda e aos números que o gerente viu, e o
+     * fechamento o gasta uma vez: valor diferente do assinado é recusa, e o
+     * diálogo volta com o valor novo.
+     */
+    managerApprovalToken: "",
     clientRequestId: "",
     /**
      * Comanda aberta SEM CONEXÃO: só o número, na tela, sem sessão no servidor
@@ -2037,8 +2043,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.discountType = "percent";
     cart.discountValue = "";
     cart.discountReason = "";
-    cart.managerUsername = "";
-    cart.managerPin = "";
+    cart.managerApprovalToken = "";
     cart.clientRequestId = "";
     cart.localTab = false;
     customerLookup.value = null;
@@ -2120,8 +2125,7 @@ export function usePosSale(deps: PosSaleDeps) {
       cart.discountType = "percent";
       cart.discountValue = "";
       cart.discountReason = "";
-      cart.managerUsername = "";
-      cart.managerPin = "";
+      cart.managerApprovalToken = "";
     }
     if (!sameTab || !receiptIdentityChoices.value.length) cart.clientRequestId = "";
     if (!cart.customerRef) customerLookup.value = null;
@@ -2329,9 +2333,7 @@ export function usePosSale(deps: PosSaleDeps) {
     const manualDiscount = discountValueNum > 0
       ? { type: cart.discountType, value: discountValueNum, reason: cart.discountReason || "cortesia" }
       : null;
-    const managerApproval = cart.managerUsername.trim() && cart.managerPin.trim()
-      ? { username: cart.managerUsername.trim(), pin: cart.managerPin.trim() }
-      : null;
+    const managerApproval = cart.managerApprovalToken ? { token: cart.managerApprovalToken } : null;
     const resolvedPayment = resolvePayment(cart.paymentTenders, paymentTotalQ.value);
     return {
       // A comanda aberta sem conexão não existe no servidor: a venda sobe como
@@ -2623,8 +2625,22 @@ export function usePosSale(deps: PosSaleDeps) {
     managerApprovalError.value = "";
     try {
       const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
-      await action.call(path, { body: { manager_approval: { username, pin } } });
-      return true;
+      // O que o gerente VIU no diálogo vai junto, e o carimbo que volta vale só
+      // para isso (#2558): o PIN não fica no carrinho.
+      const current = review.value;
+      const reasons = current?.approval_reasons || [];
+      const scope = {
+        tab_ref: cart.localTab ? "" : cart.tabRef,
+        discount_q: reasons.includes("discount_over_threshold")
+          ? (current?.line_discount_q || 0) + (current?.order_discount_q || 0)
+          : 0,
+        account_over_q: reasons.includes("house_account_over_limit")
+          ? current?.house_account_limit?.over_q || 0
+          : 0,
+      };
+      const answer = await action.call<{ token?: string }>(path, { body: { manager_approval: { username, pin }, scope } });
+      cart.managerApprovalToken = answer?.token || "";
+      return !!cart.managerApprovalToken;
     } catch (error) {
       const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
       managerApprovalError.value = failure?.recovery || failure?.message
@@ -3066,6 +3082,10 @@ export function usePosSale(deps: PosSaleDeps) {
   // and runs the full lookup (memory + saved address).
   const customerSearchResults = ref<POSCustomerSearchResult[]>([]);
   const customerSearchBusy = ref(false);
+  // A busca FALHOU (rede, servidor, limite de buscas): não é "nenhum cadastro".
+  // A lista vazia de antes dizia que a pessoa não existe e oferecia cadastrá-la
+  // de novo (P1-8). Vazio quando a última busca respondeu.
+  const customerSearchError = ref("");
   // O cliente associado foi CRIADO agora (resolve just-in-time devolveu
   // created=true) — a confirmação do modal distingue novo × encontrado.
   const customerResolvedNew = ref(false);
@@ -3085,6 +3105,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // Só número (telefone, CPF) pede 4 dígitos, a mesma régua do servidor
     // (`CUSTOMER_SEARCH_MIN_DIGITS`): com "11" a lista varria a base (beta 07/11).
     const onlyNumber = !/\p{L}/u.test(q);
+    customerSearchError.value = "";
     if (q.length < 2 || (onlyNumber && q.replace(/\D/g, "").length < 4)) {
       customerSearchResults.value = [];
       customerSearchBusy.value = false;
@@ -3092,23 +3113,22 @@ export function usePosSale(deps: PosSaleDeps) {
     }
     customerSearchBusy.value = true;
     try {
-      const path = concreteActionHref(
-        actions.value,
-        "customer_search",
-        "/api/v1/backstage/pos/customer/search/?q={query}",
-        { query: q },
-      );
+      // POST: o termo (nome, telefone, CPF, e-mail) viaja no CORPO, fora do log
+      // de acesso e do cache, como o telefone do lookup (#2335).
+      const path = concreteActionHref(actions.value, "customer_search", "/api/v1/backstage/pos/customer/search/", {});
       const response = await $fetch<POSCustomerSearchResponse>(apiPath(path), {
-        method: "GET",
+        method: "POST",
+        body: { q },
         credentials: "include",
         headers: requestHeaders,
         signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
       });
       if (seq !== customerSearchSeq) return;
       customerSearchResults.value = response.results || [];
-    } catch {
+    } catch (error) {
       if (seq !== customerSearchSeq) return;
       customerSearchResults.value = [];
+      customerSearchError.value = customerSearchErrorMessage(httpError(error).status);
     } finally {
       if (seq === customerSearchSeq) customerSearchBusy.value = false;
     }
@@ -3758,8 +3778,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (failure?.code === "manager_approval_invalid" || failure?.code === "manager_approval_required") {
         // Aprovação recusada: limpa o gerente/PIN e reabre o diálogo com a mensagem,
         // em vez de deixar o CTA reenviar as mesmas credenciais erradas.
-        cart.managerUsername = "";
-        cart.managerPin = "";
+        cart.managerApprovalToken = "";
         managerApprovalError.value = failure.recovery || failure.message || "Aprovação gerencial inválida.";
       } else if (failure?.focus === "customer") {
         // Recusa que se resolve identificando o cliente (ex.: agendado sem
@@ -4629,6 +4648,7 @@ export function usePosSale(deps: PosSaleDeps) {
     customerReleaseBusy,
     customerSearchResults,
     customerSearchBusy,
+    customerSearchError,
     customerResolvedNew,
     pendingCustomerPrefs,
     applyCustomerPreference,

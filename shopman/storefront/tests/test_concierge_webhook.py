@@ -293,6 +293,17 @@ def test_disabled_still_authenticates_before_ack(url, intake, settings):
     assert intake == []
 
 
+def test_without_ai_connection_the_concierge_still_answers(url, intake, settings):
+    """WP-03: a conexão de IA deixou de ser motivo de ``disabled``; sem ela o turno vai
+    pelo caminho sem modelo."""
+    settings.SHOPMAN_CONCIERGE = CONFIG
+    configure_ai("")
+    assert service.disabled_reason() == ""
+    response = post(url, event())
+    assert response.json().get("status") != "disabled"
+    assert len(intake) == 1
+
+
 def _webhook_errors(url, caplog):
     """Posta uma mensagem e devolve os ERROR do logger do webhook (``shopman`` não propaga)."""
     webhook_logger = logging.getLogger(webhook.__name__)
@@ -336,7 +347,6 @@ def test_deliberate_standby_does_not_raise_an_error_per_message(url, intake, set
     [
         ({"contract_version": 2}, "fake", "contract_gate"),
         ({"operation_mode": "whatever"}, "fake", "operation_mode_gate"),
-        ({}, "", "ai_key_missing"),
     ],
 )
 def test_misconfiguration_still_raises_an_error(url, intake, settings, caplog, override, api_key, reason):
