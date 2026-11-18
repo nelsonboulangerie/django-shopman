@@ -668,7 +668,9 @@ RULES: tuple[HouseRule, ...] = (
         when=(
             "reclamação, reação alérgica ou mal-estar, cancelamento de pedido que o cliente não poderia "
             "cancelar pelo site (preparo já começado, de outra pessoa, ou mais de um pedido sem dizer qual), "
-            "Pix ou link que não funcionou, desistência pela taxa de entrega, pedido de pessoa"
+            "Pix ou link que não funcionou, desistência pela taxa de entrega, pedido de pessoa; e a "
+            "reclamação sem a palavra reclamação: como o cliente se sentiu, cobrança da demora, \"por que "
+            "me ofereceu/cobrou…\", produto com defeito ou diferente do de sempre"
         ),
         demands=(
             "equipe, agora; a regra local nunca é tirada pelo modelo. Cancelamento que o próprio cliente "
@@ -690,12 +692,36 @@ RULES: tuple[HouseRule, ...] = (
             "Não consegui pagar o pedido",
             "Acabei pedindo em outro lugar para compensar a taxa de entrega",
             "Com essa taxa de entrega vou desistir",
+            # Padrões do WP-04: cada um com a frase que dispara e, abaixo, a que não pode disparar.
+            "Quero falar com uma pessoa",
+            "Me senti ofendida com a resposta",
+            "Fiquei bem chateado com o atendimento",
+            "Que falta de respeito",
+            "Por que demorou tanto pra responder?",
+            "O pedido demorou demais",
+            "Ninguém me respondeu até agora",
+            "Por que me ofereceu um pão que não tem?",
+            "Por que me cobraram duas vezes?",
+            "O pão veio mofado",
+            "O croissant chegou murcho",
+            "Sempre compro o de brioche e hoje estava diferente",
+            "O sabor está diferente do normal",
         ),
         entry_pass=(
             "Qual a taxa de entrega?",
             "Vocês aceitam pix?",
             "Tem croissant hoje?",
             "Cancela",
+            "O bolo serve quantas pessoas?",
+            "Estou com pressa, tem croissant?",
+            "Fiquei curiosa com o pão de fermentação natural",
+            "Quanto tempo demora a entrega?",
+            "Demora muito para ficar pronto?",
+            "Porque me disseram que vocês fazem bolo, fazem?",
+            "Por que o croissant de vocês é tão bom?",
+            "O pão italiano é diferente do francês?",
+            "Tem algum sabor diferente hoje?",
+            "O pão de queijo vem cru para assar em casa?",
         ),
         entry_check=_entry_team,
     ),
@@ -880,7 +906,7 @@ RULES: tuple[HouseRule, ...] = (
         ),
         must_pass=(
             "Pedido ORD-20261003-0001 registrado. Total: R$ 52,00.",
-            "Retirada: 03/10 das 16:00 às 16:30.",
+            "Retirada: 03/10 das 16h às 16h30.",
         ),
         output_check=_check_personal_data,
     ),

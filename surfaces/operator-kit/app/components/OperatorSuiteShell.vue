@@ -25,6 +25,7 @@
 // a peça se chama "barra lateral"; `rail` é só o nome no código.
 import type { ChipProps } from "@nuxt/ui";
 import { useScreen } from "../composables/useScreen";
+import { SUPPORT_ENTRY, SUPPORT_ENTRY_ICON, SUPPORT_ENTRY_LABEL } from "../composables/useSupportEntry";
 
 import { activeSectionKey, type OperatorSection } from "../presentation/appBar";
 import {
@@ -77,7 +78,22 @@ const props = defineProps<{
    * de volta fica só no selo. Pede `floorBar`.
    */
   officeUsesFloorBar?: boolean;
+  /**
+   * Liga o Suporte (dono, 16/11/2026): item no pé da barra lateral, entre Atalhos e
+   * Bloquear, e a mesma entrada no trocador e no menu do celular. O chamado abre com
+   * este contexto mais o nome da tela de agora (ADR-045). Sem ele, nada aparece.
+   */
+  supportContext?: Record<string, unknown>;
 }>();
+// Quem monta pode abrir o painel de fora (o link `/support` da Central).
+const supportOpen = defineModel<boolean>("supportOpen", { default: false });
+function openSupport(): void {
+  supportOpen.value = true;
+}
+provide(
+  SUPPORT_ENTRY,
+  computed(() => (props.supportContext ? openSupport : null)),
+);
 
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
 const route = useRoute();
@@ -124,6 +140,14 @@ function exactKey(path: string): string | undefined {
   return best?.key;
 }
 const switcherCurrent = computed(() => props.current ?? exactKey(route.path));
+// O chamado leva o NOME da tela de agora (o que o operador lê no topo), não o caminho.
+const supportContextHere = computed(() => {
+  if (!props.supportContext) return undefined;
+  const section =
+    pool.value.find((s) => s.key === switcherCurrent.value) ??
+    props.sections.find((s) => s.key === active.value);
+  return section ? { ...props.supportContext, screen: section.label } : props.supportContext;
+});
 const form = computed(
   () => pool.value.find((s) => s.key === switcherCurrent.value)?.form ?? props.defaultForm ?? "office",
 );
@@ -265,6 +289,18 @@ function footItems(isCollapsed: boolean) {
         shortcuts.open.value = true;
       },
     },
+    ...(props.supportContext
+      ? [
+          {
+            label: SUPPORT_ENTRY_LABEL,
+            icon: SUPPORT_ENTRY_ICON,
+            tooltip: { text: SUPPORT_ENTRY_LABEL },
+            "aria-label": SUPPORT_ENTRY_LABEL,
+            "data-rail-support": "",
+            onSelect: openSupport,
+          },
+        ]
+      : []),
     ...(props.operatorName
       ? [
           {
@@ -460,4 +496,5 @@ function menuDotSize(size: string): ChipProps["size"] {
     :app-label="label.replace(/^Seções d[oa] /, '')"
     rail
   />
+  <SupportPanel v-if="supportContextHere" v-model:open="supportOpen" :context="supportContextHere" />
 </template>

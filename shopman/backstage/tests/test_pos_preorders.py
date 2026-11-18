@@ -43,9 +43,15 @@ def _pay(order: Order, amount_q: int, *, method: str = "cash") -> str:
     return intent.ref
 
 
-def _list(date_from=None, date_to=None):
+def _list(date_from=None, date_to=None, *, show_money_sums=True):
+    # As somas são de quem audita o caixa; a conta delas se prova aqui, e o
+    # corte por papel, nas rotas (``test_a_caixa_nao_recebe_soma_em_dinheiro``).
     today = timezone.localdate()
-    return preorders.build_preorder_list(date_from=date_from or today, date_to=date_to or today + timedelta(days=6))
+    return preorders.build_preorder_list(
+        date_from=date_from or today,
+        date_to=date_to or today + timedelta(days=6),
+        show_money_sums=show_money_sums,
+    )
 
 
 def _search(query, *, include_completed=False):
@@ -122,7 +128,7 @@ def test_dentro_do_dia_a_ordem_e_a_da_janela():
     projection = _list()
 
     assert [c.ref for c in projection.days[0].orders] == ["CEDO", "TARDE"]
-    assert projection.days[0].orders[0].window_start == "09:00"
+    assert projection.days[0].orders[0].window_start == "9h"
     assert projection.days[0].orders[0].window_label
 
 
@@ -435,7 +441,52 @@ def test_a_rota_lista_com_os_params_canonicos(caixa):
     assert body["days"][0]["orders"][0]["ref"] == "ROTA-1"
     assert body["days"][0]["orders"][0]["situation_label"] == "A pagar"
     assert body["days"][0]["orders"][0]["payment_state"] == "to_receive"
-    assert body["to_receive_display"] == "R$ 36,00"
+    # O valor DA encomenda segue no cartão: é com ele que o balcão recebe.
+    assert body["days"][0]["orders"][0]["balance_display"] == "R$ 36,00"
+
+
+def test_a_caixa_nao_recebe_soma_em_dinheiro(caixa):
+    """D4: a contagem do fechamento é cega, e a soma das encomendas é o gabarito.
+
+    Beta 16/11 (P1-7): a aba mostrava à Caixa "A receber R$ 547,00" e
+    "20 encomendas · R$ 4.241,00". Sem ``cashman.audit_shift`` as somas do
+    período e de cada dia saem ``None``; a contagem e os cartões seguem.
+    """
+    today = timezone.localdate().isoformat()
+    _order("SOMA-1", delivery_date=today)
+    _order("SOMA-2", delivery_date=today)
+
+    body = caixa.get("/api/v1/backstage/pos/preorders/", {"date_from": today, "date_to": today}).json()
+
+    assert body["count"] == 2
+    assert [body[key] for key in ("total_q", "total_display", "to_receive_q", "to_receive_display")] == [None] * 4
+    (day,) = body["days"]
+    assert day["orders_count"] == 2
+    assert [day[key] for key in ("total_q", "total_display", "to_receive_q", "to_receive_display")] == [None] * 4
+    assert {card["balance_display"] for card in day["orders"]} == {"R$ 36,00"}
+
+
+def test_gerente_sem_audit_shift_tambem_nao_recebe_a_soma(client):
+    """O gerente opera e conta às cegas como todo mundo (rbac-personas)."""
+    client.force_login(_operator("operate_pos", "manage_orders", "adjust_shift", "manage_operators"))
+    today = timezone.localdate().isoformat()
+    _order("SOMA-G", delivery_date=today)
+
+    body = client.get("/api/v1/backstage/pos/preorders/", {"date_from": today, "date_to": today}).json()
+
+    assert body["total_display"] is None and body["to_receive_display"] is None
+
+
+def test_quem_audita_o_caixa_recebe_as_somas(client):
+    client.force_login(_operator("operate_pos", "manage_orders", "audit_shift"))
+    today = timezone.localdate().isoformat()
+    _order("SOMA-A1", delivery_date=today)
+    _order("SOMA-A2", delivery_date=today)
+
+    body = client.get("/api/v1/backstage/pos/preorders/", {"date_from": today, "date_to": today}).json()
+
+    assert (body["total_display"], body["to_receive_display"]) == ("R$ 72,00", "R$ 72,00")
+    assert body["days"][0]["to_receive_q"] == 7200
 
 
 def test_a_rota_aceita_a_semana_ISO(caixa):

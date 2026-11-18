@@ -9,6 +9,7 @@
 // aviso de desde quando.
 
 import { STORE_TIME_ZONE } from "./dates";
+import { formatClock } from "./clock";
 
 export interface CourierProgressInput {
   status: string;
@@ -16,6 +17,9 @@ export interface CourierProgressInput {
   arrived_pickup_at?: string;
   delivery_eta_at?: string;
   sync_since?: string;
+  /** O entregador desistiu e a TaOn procura outro para a MESMA corrida (`courier.reopen_view`). */
+  reopened_at?: string;
+  reopened_driver?: string;
 }
 
 export interface CourierProgressView {
@@ -23,11 +27,29 @@ export interface CourierProgressView {
   pickup: string;
   /** "Entrega prevista ~16:05". */
   delivery: string;
-  /** "A TaOn não informa a corrida desde 15:42." (vazio com a leitura em dia). */
+  /** "A TaOn não informa a corrida desde 15h42." (vazio com a leitura em dia). */
   stale: string;
+  /**
+   * A corrida segue chamada, sem ninguém a caminho e sem nada a fazer:
+   * "Diego desistiu às 14:32. A TaOn já procura outro." ou
+   * "A TaOn juntou com outra corrida. Ela já tem entregador."
+   */
+  waiting: string;
 }
 
-const EMPTY: CourierProgressView = { pickup: "", delivery: "", stale: "" };
+const EMPTY: CourierProgressView = { pickup: "", delivery: "", stale: "", waiting: "" };
+
+/** O que a TaOn faz depois da desistência: a mesma corrida, outro entregador. */
+export const REOPENED_HINT = "A TaOn já procura outro";
+
+/** A TaOn juntou a corrida a outra, que já tem entregador (letra U). */
+export const GROUPED_TITLE = "A TaOn juntou com outra corrida";
+export const GROUPED_HINT = "Ela já tem entregador";
+
+/** "Diego desistiu às 14:32" (sem o nome: "O entregador desistiu às 14:32"). */
+export function withdrawalTitle(driver: string | null | undefined, atMs: number): string {
+  return `${driver?.trim() || "O entregador"} desistiu às ${clockHHMM(atMs)}`;
+}
 
 function epoch(iso: string | undefined): number | null {
   if (!iso) return null;
@@ -35,13 +57,9 @@ function epoch(iso: string | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-/** "15:50", no fuso da loja (o dispositivo pode estar em outro). */
+/** "15h50", no fuso da loja (o dispositivo pode estar em outro). */
 export function clockHHMM(ms: number): string {
-  return new Date(ms).toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: STORE_TIME_ZONE,
-  });
+  return formatClock(new Date(ms), STORE_TIME_ZONE);
 }
 
 export function courierProgress(
@@ -55,6 +73,11 @@ export function courierProgress(
   const sync = epoch(courier.sync_since);
   if (sync !== null && !ended)
     view.stale = `A TaOn não informa a corrida desde ${clockHHMM(sync)}.`;
+
+  const reopened = epoch(courier.reopened_at);
+  if (courier.status === "U") view.waiting = `${GROUPED_TITLE}. ${GROUPED_HINT}.`;
+  else if (reopened !== null && !ended)
+    view.waiting = `${withdrawalTitle(courier.reopened_driver, reopened)}. ${REOPENED_HINT}.`;
 
   const arrived = epoch(courier.arrived_pickup_at);
   const pickupEta = epoch(courier.pickup_eta_at);

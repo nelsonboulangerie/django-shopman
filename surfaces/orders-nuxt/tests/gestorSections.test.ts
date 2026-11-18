@@ -22,10 +22,10 @@ describe("gestorSections (rail)", () => {
       channelsAttention: "",
       canManageCustomers: true,
     });
-    expect(sections.map((s) => s.key)).toEqual(["orders", "deliveries", "history", "settings"]);
+    expect(sections.map((s) => s.key)).toEqual(["orders", "deliveries", "history", "customers", "settings"]);
     expect(
       sections.filter((s) => s.group === "Operação").map((s) => s.key),
-    ).toEqual(["orders", "deliveries", "history"]);
+    ).toEqual(["orders", "deliveries", "history", "customers"]);
     expect(sections.find((s) => s.key === "settings")?.foot).toBe(true);
   });
 
@@ -129,36 +129,66 @@ describe("gestorSections (rail)", () => {
       channelsAttention: "",
       canManageCustomers: true,
     });
-    for (const path of [
-      "/customers/groups",
-      "/customers/merges",
-      "/workstations",
-      "/settings",
-    ]) {
+    for (const path of ["/workstations", "/settings"]) {
       expect(activeSectionKey(path, sections)).toBe("settings");
     }
     expect(activeSectionKey("/", sections)).toBe("orders");
-    expect(SETTINGS_ROUTES).toContain("/customers");
+    expect(sections.find((s) => s.key === "settings")?.match).not.toContain("/customers");
   });
-});
 
-describe("gestorSettingsSections (andar Ajustes)", () => {
-  it("Clientes aparece para quem pode gerir clientes (Histórico, Catálogo e Canais moram no rail)", () => {
-    const keys = gestorSettingsSections({
+  // Dono, 16/11/2026 ("Sobe"): Clientes é o que o gerente procura quando um cliente
+  // liga no meio do turno.
+  it("Clientes sobe para a operação, logo depois de Histórico, com o ícone de sempre", () => {
+    const sections = gestorSections({
       channelsAttention: "",
       canManageCustomers: true,
       canManageCatalog: true,
-    }).map((s) => s.key);
-    expect(keys).toEqual(["customers"]);
+    });
+    expect(
+      sections.filter((s) => s.group === "Operação").map((s) => s.label),
+    ).toEqual(["Pedidos", "Entregas", "Histórico", "Clientes", "Catálogo", "Canais"]);
+    expect(sections.find((s) => s.key === "customers")).toMatchObject({
+      label: "Clientes",
+      icon: "lucide:users",
+      to: "/customers",
+      group: "Operação",
+    });
+    expect(sections.find((s) => s.key === "customers")?.foot).toBeUndefined();
   });
 
-  it("sem a permissão (ou sem resposta ainda) a linha não existe", () => {
-    const keys = gestorSettingsSections({
+  it("em /customers e subrotas o item ativo é Clientes, não Ajustes", () => {
+    const sections = gestorSections({
+      channelsAttention: "",
+      canManageCustomers: true,
+    });
+    for (const path of ["/customers", "/customers/groups", "/customers/merges", "/customers/CLI-003"]) {
+      expect(activeSectionKey(path, sections), path).toBe("customers");
+    }
+    // A recusa pela URL direta continua conhecendo a rota.
+    expect(SETTINGS_ROUTES).toContain("/customers");
+  });
+
+  it("sem shop.manage_customers (ou sem resposta ainda) Clientes não aparece no rail", () => {
+    const keys = gestorSections({
       channelsAttention: "",
       canManageCustomers: false,
       canManageCatalog: true,
     }).map((s) => s.key);
-    expect(keys).toEqual([]);
+    expect(keys).not.toContain("customers");
+    expect(keys).toEqual(["orders", "deliveries", "history", "catalog", "feeds", "settings"]);
+  });
+});
+
+describe("gestorSettingsSections (andar Ajustes)", () => {
+  it("Clientes saiu de Ajustes: mora no rail, como Histórico, Catálogo e Canais", () => {
+    const keys = gestorSettingsSections({
+      channelsAttention: "",
+      canManageCustomers: true,
+      canManageCatalog: true,
+      canManageWorkstations: true,
+    }).map((s) => s.key);
+    expect(keys).toEqual(["workstations"]);
+    expect(keys).not.toContain("customers");
   });
 
   it("Canais não se repete em Ajustes: mora no rail", () => {
@@ -209,10 +239,12 @@ describe("gestorSwitcherSections (trocador e barra de baixo)", () => {
       "orders:floor",
       "deliveries:floor",
       "history:floor",
+      "customers:office",
       "catalog:floor",
       "feeds:floor",
-      "customers:office",
     ]);
+    // Nada duplicado entre o rail e Ajustes.
+    expect(all().filter((s) => s.key === "customers")).toHaveLength(1);
   });
 
   it("a barra de baixo do chão: a operação inteira", () => {
@@ -233,19 +265,16 @@ describe("gestorSwitcherSections (trocador e barra de baixo)", () => {
   it("antes de montar (Ajustes ainda sem resposta) o trocador já tem a operação inteira", () => {
     expect(
       gestorSwitcherSections(gestorSections(input), []).map((s) => s.key),
-    ).toEqual(["orders", "deliveries", "history", "catalog", "feeds"]);
+    ).toEqual(["orders", "deliveries", "history", "customers", "catalog", "feeds"]);
   });
 });
 
 // Beta 05/11 (CEN-05, GES-17): a Caixa via Catálogo e Canais em Ajustes e, ao abrir,
 // "Sem conexão" com "Tentar de novo"; o servidor respondia 403 a cada minuto.
 describe("Ajustes só lista o que a conta abre", () => {
-  it("sem shop.manage_catalog, Catálogo e Canais saem de Ajustes", () => {
-    const keys = gestorSettingsSections({
-      channelsAttention: "",
-      canManageCustomers: true,
-      canManageCatalog: false,
-    }).map((s) => s.key);
+  it("sem shop.manage_catalog, Catálogo e Canais saem de Ajustes e do rail", () => {
+    const access = { channelsAttention: "", canManageCustomers: true, canManageCatalog: false };
+    const keys = [...gestorSections(access), ...gestorSettingsSections(access)].map((s) => s.key);
     expect(keys).not.toContain("catalog");
     expect(keys).not.toContain("feeds");
     expect(keys).toContain("customers");

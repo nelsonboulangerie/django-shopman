@@ -61,6 +61,7 @@ import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation
 import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 
 import { periodLabel, resolvePeriod, todayIso, STORE_TIME_ZONE, type PeriodSelection } from "../../../operator-kit/app/presentation/dates";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 const DEFAULT_PERIOD: PeriodSelection = { preset: "day", from: "", to: "" };
 const validityPeriod = ref<PeriodSelection>({ ...DEFAULT_PERIOD });
 const today = useState("catalog-validity-today", () => todayIso(new Date(), STORE_TIME_ZONE));
@@ -140,10 +141,7 @@ const surfaces = computed(() => matrix.value?.surfaces ?? []);
 const readClock = computed(() => {
   const at = readMetadata.value?.generated_at;
   return at
-    ? new Date(at).toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+    ? formatClock(new Date(at))
     : "";
 });
 // O tom da leitura: o mesmo do `OperatorLiveStatus` da mesa e do ponto no selo do
@@ -410,7 +408,7 @@ onBeforeRouteLeave(() => {
     confirmDiscard({
       title: "Sair sem salvar as alterações do catálogo?",
       description:
-        "O que você alterou e ainda não salvou se perde (ordem, preço, publicação ou ficha do produto). O que já foi salvo continua salvo.",
+        "O que você alterou e ainda não salvou se perde (ordem, preço, publicação, Tabelão ou ficha do produto). O que já foi salvo continua salvo.",
       confirmLabel: "Descartar e sair",
     })
   );
@@ -1089,11 +1087,14 @@ const detail = ref<ProductDetailProjection | null>(null);
 const detailLoading = ref(false);
 const detailTab = ref("geral");
 const detailDirty = ref(false);
+// Células do Tabelão alteradas e não salvas (o grid informa por update:dirty).
+const bulkGridDirty = ref(0);
 const hasUnsavedDraft = computed(
   () =>
     !!orderDraft.value ||
     !!publicationDraft.value ||
     detailDirty.value ||
+    bulkGridDirty.value > 0 ||
     !!(editing.value && priceInput.value !== editing.value.original) ||
     !!(priceOpen.value && priceInputBulk.value.trim()),
 );
@@ -2543,6 +2544,7 @@ v-for="validity in rowValidities(row, surfaces)" :key="validity.label"
           }
         }
       "
+      @update:dirty="(count) => (bulkGridDirty = count)"
       @save="saveBulkCells"
       @archive="setBulkActive"
     />

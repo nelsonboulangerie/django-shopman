@@ -278,7 +278,10 @@ na tela, e o conserto é no painel da TaOn, não no código.
 3. **Cadastrar o aviso** (escreve na TaOn, por isso é do dono):
    `python manage.py machine_register_webhook https://api.boulangerie.com.br`. Repetir não duplica
    (o comando lista antes e pula o tipo já cadastrado). Depois, na próxima corrida, o log do
-   `web-operator` mostra `machine.webhook raw=...` a cada mudança.
+   `web-operator` mostra `machine.webhook kind=status request=<id> code=<letra> ...` a cada mudança.
+   O corpo cru não vai mais para o log (ele traz nome, telefone, CPF, chave Pix e foto do
+   entregador): a linha é de lista fechada, com `event`, `stop`, `will_reopen`, `size` e
+   `sha256` (os 12 primeiros caracteres, para casar com o envio da TaOn).
 
 O contrato endereço a endereço está em
 [DELIVERY-EXTERNAL-LOGISTICS-PLAN §2.1](../plans/DELIVERY-EXTERNAL-LOGISTICS-PLAN.md).
@@ -311,7 +314,7 @@ alpha (`doctl apps console 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f web --context sh
 | 5 | **E (coletou)** ao entregar a sacola | o pedido vai sozinho para Despachado (também com cobrança na porta); sai o aviso "saiu para entrega" com o link de rastreio (SMS/e-mail); `order.data["courier"]["door_charge"]` gravado. Anote se veio por webhook (`last_source: webhook`) e o atraso | ligar para a central; o pedido segue o fluxo de entrega |
 | 6 | **F (finalizou)** na porta | o pedido vai para Entregue; `final_value_q` gravado. Na volta, **Entregador voltou** fecha o acerto do dinheiro | acerto à mão no pedido, se o valor divergir |
 | 6a | **Corrida de 2 paradas (link por parada).** Dois pedidos de entrega Prontos, chamados juntos na seção Entregas. No aceite (A), no console: `m.tracking_links("<id_mch>")` e, em cada pedido, `courier.get_block(order)["tracking_match"]` | anote a resposta crua: lista com uma entrada por parada, ou o objeto único `{"link"}`? A lista vem na ordem das paradas enviadas? Cada entrada traz `parada_id`, `id_externo` ou `numero_pedido`? O `tracking_match` diz como o link casou com o pedido (`id`, `stop` ou `position`); sem casamento provado o link não é gravado, e o cliente fica sem o sufixo no aviso e sem o botão na página (falha fechada). Abra os dois links: cada um mostra só a entrega do próprio cliente? | **Solicitar cancelamento** da corrida, como no passo 7 |
-| 7 | **Pedido B (cancelar antes da coleta).** Outro pedido de entrega (pode ser pago online), Pronto, Chamar entregador; assim que aparecer D/G/P ou A, **Solicitar cancelamento** | corrida C no painel da TaOn; no Gestor a corrida volta ao histórico sem aviso de falha (quem cancelou foi o operador); o pedido continua Pronto, pronto para chamar de novo ou ser cancelado. Se a TaOn recusar o `motivo_id` (default 1), anote o id certo para `MACHINE_CANCEL_REASON_ID` | se o cancelamento não confirmar, ligar para a central e cancelar lá; depois cancelar o pedido B |
+| 7 | **Pedido B (cancelar antes da coleta).** Outro pedido de entrega (pode ser pago online), Pronto, Chamar entregador; assim que aparecer D/G/P ou A, **Cancelar corrida** e confirme (depois do aceite a confirmação pede o motivo) | corrida C no painel da TaOn; no Gestor a corrida volta ao histórico sem aviso de falha (quem cancelou foi o operador); o pedido continua Pronto, pronto para chamar de novo ou ser cancelado. O `motivo_id` sai da fase da corrida, sem configuração (10 antes do aceite; depois do aceite, o motivo que o operador escolhe na confirmação, 12 por padrão). Se a TaOn recusar (erro 102), o Gestor mostra "A TaOn não cancelou a corrida" e abre um aviso crítico: anote a letra da corrida e o motivo enviado (`cancel_attempt` da Directive `courier.cancel`) | se o cancelamento não confirmar, ligar para a central e cancelar lá; depois cancelar o pedido B |
 | 8 | **Depois** | anotar no PR desta prova: formato do link de rastreio, atraso do webhook, `motivo_id` aceito, custo final. Decidir com o dono se o polling cai para 0 (`Shop.defaults.delivery.courier_poll_seconds`) | — |
 
 - Homologação: `https://api-vendas.taximachine.com.br/api/integracao` (detalhes em
@@ -379,7 +382,7 @@ Confira: a base impressa é a `api-vendas` e `is_configured()` é `True`. Se nã
 | 0:03 | 4. Detalhes | `m.get_details(ride)` | dicionário sem envelope, com `request_id == ride`; `driver` vazio até alguém aceitar. Erro 404 aqui é base de detalhes errada (`/api/integracao/v1`) |
 | 0:04 | 5. Posição | `m.get_position(ride)` | `None` enquanto `D`/`G`/`P` (a doc devolve lat/lng nulos fora de A/S/E) |
 | 0:05 | 6. Link de rastreio | `m.tracking_links(ride)` | lista com `link_rastreio`. **Anote o formato cru** (rode também `m._request("GET", f"/obterLinkRastreio/{ride}")`): a doc v1 mostra `{"link": ...}`, a coleção antiga mostrava lista por parada; o adaptador aceita os dois. Anote também a **parte fixa** do link (tudo antes do pedaço que muda por corrida): ela vira `MACHINE_TRACKING_LINK_BASE` e o prefixo do botão do `pedido_saiu_entrega_rastreio` (docs/reference/whatsapp-templates-meta.md) |
-| 0:06 | 7. Cancelar | `m.cancel(ride)` | `True`; em seguida `m.get_status(ride) == "C"`. Recusa por `motivo_id` inválido: peça à central o id certo e use `m.cancel(ride, reason_id=<id>)`, depois ajuste `MACHINE_CANCEL_REASON_ID` |
+| 0:06 | 7. Cancelar | `m.cancel(ride, reason_id=m.cancel_reason_for(m.get_status(ride)))` | `True`; em seguida `m.get_status(ride) == "C"`. O motivo sai da letra da corrida (10 em D/T/P/G; 12 em A/S). Recusa com erro 102: anote a letra e o motivo enviado, e leve à central |
 | 0:08 | 8. Webhook (só forma B) | ver bloco 8 | dois "Webhook ... cadastrado"; abra e cancele uma segunda corrida (blocos 2 e 7) e veja o evento chegar no log do `web` |
 
 Bloco 1, estimar (endereço da loja e um destino de teste em Londrina; a API de entregas exige o
@@ -423,8 +426,10 @@ MACHINE_API_USER=... MACHINE_API_PASSWORD=... MACHINE_API_KEY=... MACHINE_WEBHOO
 python manage.py machine_register_webhook https://api.boulangerie.com.br
 ```
 
-O que conferir no log do `web` (`machine.webhook raw=...`), contra o payload documentado
-(DELIVERY-EXTERNAL-LOGISTICS-PLAN §2.1):
+O que conferir no log do `web` (`machine.webhook kind=status request=... code=... event=...
+stop=... will_reopen=... company=... size=... sha256=...`), contra o payload documentado
+(DELIVERY-EXTERNAL-LOGISTICS-PLAN §2.1). O corpo cru não é logado; para ver um corpo
+inteiro na homologação, use o painel da TaOn ou um `curl` de ensaio, nunca o log de produção:
 
 - **status**: `request_id` igual ao `ride`, `status_code` com a letra, `event_id` e `links.request`.
   A resposta do nosso endpoint é `kind: unknown_ride` (a corrida de ensaio não tem pedido): está
@@ -432,9 +437,20 @@ O que conferir no log do `web` (`machine.webhook raw=...`), contra o payload doc
 - **posicao**: só chega com corrida aceita (`A`, `S`, `E`), em lote a cada 10 s, com `data[]`.
   Na homologação sem entregador simulado ele pode não chegar; anote se chegou.
 - Header `Signature-V2` conferido pelo nosso endpoint (HMAC-SHA-512 hexadecimal do corpo cru com
-  o `MACHINE_API_KEY` do `web`). Resposta `401` com `Signature-V2 não confere` no log e o corpo cru
-  logado logo antes: a chave do `web` não é a que a TaOn usa para assinar (a homologação pode ter
-  chave própria), ou a conta da Machine difere da documentada. Anote qual dos dois.
+  o `MACHINE_API_KEY` do `web`). Resposta `401` com `Signature-V2 não confere` no log, seguida de
+  `size=... sha256=... signature=<8 caracteres>...`: a chave do `web` não é a que a TaOn usa para
+  assinar (a homologação pode ter chave própria), ou a conta da Machine difere da documentada.
+  Anote qual dos dois (o `sha256` casa a linha com o envio; o corpo não é logado).
+- **Token na URL.** A URL cadastrada na TaOn leva `?token=` (é assim que ela autentica o POST).
+  O token aparece nos logs de acesso da borda que guardam a query; por isso ele sozinho não
+  basta: todo POST precisa também da `Signature-V2`, que não trafega na URL. Rotacionar o
+  token = trocar `MACHINE_WEBHOOK_TOKEN` e recadastrar o webhook.
+- **Desistência e limite de chamadas** se medem pelas sondas C3 e L7 do roteiro, no topo. O
+  que o código aceita hoje, para conferir contra o medido: `will_reopen` na raiz do aviso,
+  valendo `true`, `"true"`, `1`, `"1"`, `"S"` ou `"sim"`; depois dela a leitura pode seguir
+  trazendo `cancellation[]` e o `accepted_at` de quem saiu (o pedido não os aceita de volta), e
+  no Gestor a corrida segue a mesma, em "Procurando outro entregador". No `429` o log mostra
+  `courier.rate_limited path=... retry_after=... remaining=... reset=...`.
 
 ## Depois do ensaio
 

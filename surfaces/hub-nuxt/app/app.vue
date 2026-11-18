@@ -115,6 +115,16 @@ const pushState = computed(() =>
   }),
 );
 const pushSettingsOpen = ref(false);
+
+// Suporte: no pé da barra lateral, como em todo app (dono, 16/11/2026); o painel é da casca.
+const supportOpen = ref(false);
+
+// `/support` é o link que a equipe guarda. O hub é one-page; o painel abre
+// por `?support=1`. Quando o hub ganhar pages/, esta rota vira a página.
+const route = useRoute();
+onMounted(() => {
+  if (route.query.support === "1") supportOpen.value = true;
+});
 function reloadPage(): void {
   window.location.reload();
 }
@@ -301,12 +311,14 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
       <!-- Launcher, no shell da suíte. -->
       <OperatorSuiteShell
         v-else
+        v-model:support-open="supportOpen"
         storage-key="hub"
         home
         :sections="HUB_SECTIONS"
         current="home"
         :label="`Seções ${HUB_NAMED_OF}`"
         :operator-name="operatorName || undefined"
+        :support-context="{ app: 'hub', route: '/' }"
         @lock="lockDevice"
       >
         <!-- `data-compact-page`: no celular a linha do chão é o cabeçalho inteiro (o kit

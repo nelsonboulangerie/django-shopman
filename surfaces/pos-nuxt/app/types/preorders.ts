@@ -7,6 +7,7 @@
 import type { OperatorOrderDetail } from "../../../operator-kit/app/types/orderDetail";
 import type { KeyedReason } from "../../../operator-kit/app/types/reason";
 import type { CourierChargeOutdated } from "../../../operator-kit/app/presentation/courierCharge";
+import type { CourierCancelState } from "../../../operator-kit/app/presentation/courierCancel";
 
 import type { POSManagerProjection, POSTabPayload } from "./pos";
 
@@ -71,11 +72,12 @@ export interface PreorderDay {
   day_display: string;
   is_today: boolean;
   orders_count: number;
-  total_q: number;
-  total_display: string;
+  /** As SOMAS do dia vêm `null` para quem não audita o caixa (D4: contagem cega). */
+  total_q: number | null;
+  total_display: string | null;
   /** Soma dos saldos "a receber" do dia (sem conta da casa, sem "a conferir"). */
-  to_receive_q: number;
-  to_receive_display: string;
+  to_receive_q: number | null;
+  to_receive_display: string | null;
   orders: PreorderCard[];
 }
 
@@ -85,10 +87,11 @@ export interface PreorderListResponse {
   date_to: string;
   today: string;
   count: number;
-  total_q: number;
-  total_display: string;
-  to_receive_q: number;
-  to_receive_display: string;
+  /** Somas do período: `null` para quem não audita o caixa, como no dia. */
+  total_q: number | null;
+  total_display: string | null;
+  to_receive_q: number | null;
+  to_receive_display: string | null;
   days: PreorderDay[];
   /** O teto do lote da Via Pedido (servidor). */
   max_batch: number;
@@ -174,6 +177,8 @@ export interface PreorderCourier {
   can_dispatch_again?: boolean;
   /** A corrida pode ser cancelada (antes da coleta, régua da central). */
   can_cancel?: boolean;
+  /** O cancelamento pedido (`courier.cancel_state`): `pending`, `unknown` ou `failed`; vazio sem pedido. */
+  cancel_state?: CourierCancelState;
   /** O que a chamada pergunta: troco da gaveta e maquininha da casa. */
   custody?: { change_out_suggested_q: number; needs_machine: boolean; recorded: boolean };
   /** O pedido mudou depois da chamada e a corrida leva a cobrança antiga (`courier.charge_outdated`). */

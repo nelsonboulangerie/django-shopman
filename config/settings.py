@@ -1125,7 +1125,6 @@ SHOPMAN_MACHINE = {
     # créditos, D=dinheiro. Confirmar com a central junto com as credenciais.
     "forma_pagamento": os.environ.get("MACHINE_FORMA_PAGAMENTO", "F"),
     "timeout": int(os.environ.get("MACHINE_TIMEOUT", "15")),
-    "cancel_reason_id": int(os.environ.get("MACHINE_CANCEL_REASON_ID", "1")),
     # Parte FIXA do link de rastreio do entregador (tudo antes do pedaço que muda por
     # corrida). O botão "Acompanhar entregador" do template `pedido_saiu_entrega_rastreio`
     # é `<esta base>{{1}}`, e a Meta só aceita a variável no FIM de um prefixo fixo.
@@ -1230,6 +1229,9 @@ LANGUAGE_CODE = "pt-br"
 TIME_ZONE = "America/Sao_Paulo"
 USE_I18N = True
 USE_TZ = True
+# A hora que o Django formata sozinho (coluna de data do Admin) sai como a casa
+# escreve, "12h45": ver config/formats/pt_BR/formats.py.
+FORMAT_MODULE_PATH = ["config.formats"]
 
 # Catálogo de tradução do projeto. O django-unfold não embarca traduções, então
 # suas strings próprias ("Add new item", filtros, etc.) caem para o inglês — aqui
@@ -1308,10 +1310,19 @@ UNFOLD = {
             ],
         },
         {
-            "models": ["shop.deliveryzone", "shop.deliverydistanceband"],
+            "models": [
+                "shop.deliveryzone",
+                "shop.deliverydistanceband",
+                "shop.deliveryservice",
+                "shop.courier",
+                "shop.courierrate",
+            ],
             "items": [
                 {"title": "Zonas de entrega", "link": reverse_lazy("admin:shop_deliveryzone_changelist")},
                 {"title": "Faixas de distância", "link": reverse_lazy("admin:shop_deliverydistanceband_changelist")},
+                {"title": "Serviços de entrega", "link": reverse_lazy("admin:shop_deliveryservice_changelist")},
+                {"title": "Entregadores da casa", "link": reverse_lazy("admin:shop_courier_changelist")},
+                {"title": "Valores dos entregadores", "link": reverse_lazy("admin:shop_courierrate_changelist")},
             ],
         },
         {
@@ -1511,6 +1522,7 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_RATES": {
         "anon": _ANON_THROTTLE_RATE or None,
+        "pos_customer_search": "30/minute",
         "marketing_audience_user": "30/minute",
         "marketing_audience_shop": "120/minute",
         "marketing_dangerous_user": "10/minute",

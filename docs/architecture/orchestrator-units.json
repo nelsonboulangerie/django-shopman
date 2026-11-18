@@ -3193,7 +3193,8 @@
           "path": "shopman/shop/handlers/returns.py",
           "symbols": [
             "ReturnResult",
-            "ReturnService"
+            "ReturnService",
+            "returned_qty_by_line"
           ]
         }
       ],
@@ -3328,6 +3329,45 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/integration/test_production_void_releases_only_its_holds.py::test_void_receiver_directly_releases_only_the_hold_left_without_backing"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "preorder.production-promise-lost",
+      "question": "Como o pedido aceito que perdeu a reserva no cancelamento de um lote vira evento do pedido e aviso no Gestor?",
+      "owner": "preorder.production-promise",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.production_promise:announce_lost_holds",
+      "authoritative_symbols": [
+        "shopman.shop.services.production_promise:announce_lost_holds"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/production_promise.py",
+          "symbols": [
+            "order_ref_from_hold_reference",
+            "_format_qty",
+            "_product_name",
+            "announce_lost_holds"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "offerman",
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/integration/test_production_void_announces_lost_order.py::test_o_mesmo_cancelamento_nao_avisa_duas_vezes"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -8199,7 +8239,17 @@
           "path": "shopman/shop/services/courier.py",
           "symbols": [
             "latest_cancellation",
-            "cancel_ride"
+            "cancel_ride",
+            "ride_cancellable",
+            "cancel_state",
+            "cancel_question",
+            "cancel_consequence",
+            "cancel_asks_reason",
+            "cancel_refused_message",
+            "ride_name",
+            "CANCEL_PENDING_MESSAGE",
+            "CANCEL_UNKNOWN_MESSAGE",
+            "CANCEL_NOT_SENT_MESSAGE"
           ]
         }
       ],
@@ -8365,7 +8415,14 @@
             "_BEFORE_READY_STATUSES",
             "_STATUS_EVENT",
             "_PROGRESS_STEPS",
-            "_STATUS_RANK"
+            "_STATUS_RANK",
+            "_status_out_of_order",
+            "record_reopen",
+            "reopen_view",
+            "progress_since",
+            "restore_archived_ride",
+            "orders_with_archived_ride",
+            "archived_ride_ended_at"
           ]
         }
       ],
@@ -8559,7 +8616,8 @@
             "dispatch_task_filter",
             "request_group_dispatch",
             "ride_companions",
-            "ride_orders"
+            "ride_orders",
+            "stranded_companions"
           ]
         }
       ],
@@ -8585,7 +8643,7 @@
     },
     {
       "id": "delivery.courier-ride-number",
-      "question": "Que número (e cor) a corrida ganha na tela, e quando ele volta a ficar livre?",
+      "question": "Que número a corrida ganha (a letra e a cor dela na tela), e quando ele volta a ficar livre?",
       "owner": "delivery.ride-number",
       "responsibility": "composição",
       "public_entrypoint": "shopman.shop.services.courier:next_ride_number",
@@ -14781,7 +14839,14 @@
             "validate_manager_override",
             "_MANAGER_PIN_VERDICTS",
             "manager_pin_checked_before_transaction",
-            "_check_manager_pin"
+            "_check_manager_pin",
+            "SaleApprovalScope",
+            "SALE_APPROVAL_MAX_AGE_S",
+            "_SALE_APPROVAL_SALT",
+            "issue_sale_approval",
+            "_redeem_sale_approval",
+            "_sale_approval_max_age_s",
+            "_sale_approval_refused"
           ]
         }
       ],
@@ -16466,6 +16531,12 @@
             "untracked_hold_entry",
             "is_untracked_hold_entry",
             "hold_pks",
+            "DEMAND_OVER_PLAN_ALERT",
+            "held_supply_by_sku",
+            "_free_supply_on",
+            "availability_decisions_from_holds",
+            "alert_demand_over_plan",
+            "_qty_text",
             "hold",
             "fulfill",
             "release",
@@ -19224,6 +19295,42 @@
       ],
       "test_gap_reason": null,
       "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "preorder.closed-day-orders",
+      "question": "Como o fechamento de uma data no calendário encontra e avisa os pedidos em aberto comprometidos para aquele dia?",
+      "owner": "preorder.closed-day",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.closed_day_orders:alert_orders_on_closed_day",
+      "authoritative_symbols": [
+        "shopman.shop.services.closed_day_orders:alert_orders_on_closed_day"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/closed_day_orders.py",
+          "symbols": [
+            "open_orders_committed_between",
+            "alert_orders_on_closed_day"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_closed_day_orders.py::test_closed_day_orders_finds_open_orders_and_alerts"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
       "out_of_extraction": false
     }
   ]

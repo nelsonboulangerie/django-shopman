@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -486,16 +487,23 @@ class Resolution:
         return self.outcome in {"ask", "handoff", "courtesy", "add_preview", "add_apply"}
 
 
-_TIME_RE = re.compile(r"\b(\d{1,2})\s*(?:[:h]\s*(\d{2}))?\b")
+_TIME_RE = re.compile(r"\b(\d{1,2})\s*(?:[:h]\s*(\d{2})?)?\b")
 
 
 def _slot_by_time(text: str, options: list[dict]) -> int:
-    """"14:30" escolhe o horário que começa às 14:30 (só quando um único bate)."""
+    """"14:30" ou "14h30" escolhe o horário que começa às 14h30 (só quando um único bate)."""
     match = _TIME_RE.search(str(text or ""))
     if not match:
         return 0
-    wanted = f"{int(match.group(1)):02d}:{match.group(2) or '00'}"
-    hits = [index for index, option in enumerate(options, 1) if str(option.get("name", "")).startswith(wanted)]
+    wanted = format_clock(f"{match.group(1)}:{match.group(2) or '00'}")
+    # O nome da opção é o rótulo da tela ("14h30 às 15h"): bate a primeira hora
+    # inteira, para "14h" não escolher "14h30 às 15h". As duas pontas passam pelo
+    # mesmo formatador, então a opção guardada como "14:30 às 15:00" também bate.
+    def starts_at(option: dict) -> str:
+        first = str(option.get("name", "")).split(" ")[0]
+        return format_clock(first, empty=first)
+
+    hits = [index for index, option in enumerate(options, 1) if wanted and starts_at(option) == wanted]
     return hits[0] if len(hits) == 1 else 0
 
 
@@ -740,7 +748,7 @@ def _context_note(memory: dict) -> str:
     parts = []
     pending = memory.get("pending") or {}
     if pending.get("kind") == CONFIRM_ORDER:
-        parts.append("Há um resumo de pedido esperando a confirmação do cliente.")
+        parts.append("Há um resumo do pedido à espera da confirmação do cliente.")
     if memory.get("focus"):
         parts.append(f"Produto em foco: {memory['focus'].get('name', '')}.")
     if memory.get("listed"):

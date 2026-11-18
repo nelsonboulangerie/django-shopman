@@ -206,6 +206,8 @@ from .operations import (
     OrderRequeueFiscalView,
     OrderRescheduleView,
     OrderResendPaymentLinkView,
+    OrderReturnPreviewView,
+    OrderReturnView,
     OrderSettleDeliveryCashView,
     OrderTicketBatchEscposView,
     OrderTicketBatchView,
@@ -361,6 +363,7 @@ from .search import SuiteSearchView
 from .seating import POSSeatingView
 from .sign_ins import SignInListView
 from .support import (
+    SupportCapabilitiesView,
     SupportTicketDecisionView,
     SupportTicketDetailView,
     SupportTicketLinkDevView,
@@ -936,6 +939,8 @@ urlpatterns = [
     ),
     path("orders/<str:ref>/reject/", OrderRejectView.as_view(), name="api-backstage-order-reject"),
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-backstage-order-cancel"),
+    path("orders/<str:ref>/return/", OrderReturnView.as_view(), name="api-backstage-order-return"),
+    path("orders/<str:ref>/return/preview/", OrderReturnPreviewView.as_view(), name="api-backstage-order-return-preview"),
     path(
         "orders/<str:ref>/settle-delivery-cash/",
         OrderSettleDeliveryCashView.as_view(),
@@ -990,6 +995,11 @@ urlpatterns = [
     path("alerts/", AlertListView.as_view(), name="api-backstage-alerts"),
     path("alerts/<int:pk>/ack/", AlertAckView.as_view(), name="api-backstage-alert-ack"),
     # Suporte (helpdesk interno)
+    path(
+        "support/capabilities/",
+        SupportCapabilitiesView.as_view(),
+        name="api-backstage-support-capabilities",
+    ),
     path(
         "support/tickets/",
         SupportTicketListCreateView.as_view(),

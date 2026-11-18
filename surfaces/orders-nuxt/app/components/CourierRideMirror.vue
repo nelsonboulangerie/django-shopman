@@ -21,10 +21,10 @@ const showBags = computed(() => beforeHandoff(props.ride));
     :style="{ borderLeft: `6px solid ${tone.bg}` }"
     data-ride-mirror
   >
-    <span class="grid size-8 shrink-0 place-items-center rounded-lg op-label font-bold tabular-nums" :style="{ background: tone.bg, color: tone.fg }">{{ ride.number }}</span>
+    <span class="grid size-8 shrink-0 place-items-center rounded-lg op-label font-bold" :style="{ background: tone.bg, color: tone.fg }">{{ ride.letter }}</span>
     <span class="min-w-0 flex-1">
       <span class="flex items-center gap-1.5 op-body font-semibold text-highlighted">
-        <NuxtIcon :name="line.icon" class="size-4 shrink-0 text-muted" :class="ride.state === 'searching' ? 'animate-pulse' : ''" />
+        <NuxtIcon :name="line.icon" class="size-4 shrink-0 text-muted" :class="ride.state === 'searching' || ride.state === 'reopened' ? 'animate-pulse' : ''" />
         <span class="truncate">{{ line.title }}</span>
       </span>
       <span class="flex flex-wrap items-center gap-x-1.5 op-micro text-muted">
@@ -33,6 +33,7 @@ const showBags = computed(() => beforeHandoff(props.ride));
         </span>
         <template v-if="line.hint"><span aria-hidden="true">·</span><span>{{ line.hint }}</span></template>
       </span>
+      <span v-if="ride.cancel_message" class="mt-0.5 block op-micro" :class="ride.cancel_state === 'failed' ? 'font-medium text-error' : 'text-toned'" data-ride-mirror-cancel>{{ ride.cancel_message }}</span>
       <span v-if="ride.state === 'atStore' && ride.bags && !ride.undeclared.length" class="mt-1 flex items-center gap-1 op-body font-semibold text-primary">
         <NuxtIcon name="i-lucide-package-check" class="size-4" />Entregue {{ ride.bags === 1 ? "a sacola" : `as ${bagsWord(ride.bags)}` }} {{ ride.driver?.name ? `para ${ride.driver.name}` : "para o entregador" }}
       </span>

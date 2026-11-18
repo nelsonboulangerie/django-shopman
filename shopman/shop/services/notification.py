@@ -19,6 +19,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Directive
+from shopman.utils.formatting import format_clock
 from shopman.utils.monetary import format_money
 
 from shopman.shop.notifications import notify
@@ -1318,8 +1319,7 @@ def _eta_clock(order) -> str:
     eta = parse_datetime(eta_iso) if eta_iso else None
     if eta is None:
         return ""
-    local = timezone.localtime(eta)
-    return f"{local.hour}h{local.minute:02d}" if local.minute else f"{local.hour}h"
+    return format_clock(eta)
 
 
 def _qualify_template(template: str, context: dict) -> str:

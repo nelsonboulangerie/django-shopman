@@ -40,7 +40,7 @@ test.describe("PDV — venda sem conexão", () => {
     await expect(page.locator("[data-operator-offline-band]")).toContainText("Sem conexão");
 
     await page.getByRole("button", { name: /Pagamento/ }).click();
-    await expect(page.getByText(/^Total pelos preços das \d\d:\d\d/)).toBeVisible();
+    await expect(page.getByText(/^Total pelos preços das \d{1,2}h(\d\d)?/)).toBeVisible();
     await expect(page.getByText(/^Sem conexão/)).toHaveCount(1);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/pdvoff-pagamento-${page.viewportSize()?.width}.png` });
     await page.locator('[data-payment-method="cash"]').click();

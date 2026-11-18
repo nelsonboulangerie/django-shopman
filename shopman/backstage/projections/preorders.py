@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from django.utils import formats, timezone
+from shopman.utils.formatting import format_clock
 from shopman.utils.monetary import format_money
 
 logger = logging.getLogger(__name__)
@@ -112,7 +113,7 @@ class PreorderCardProjection:
     commitment_date: str  # ISO
     commitment_date_display: str  # "hoje" · "amanhã" · "sáb, 27/09"
     window_label: str  # "" quando não houve janela combinada
-    window_start: str  # "HH:MM" ou ""
+    window_start: str  # "12h45" (como a tela lê) ou ""
     status: str
     situation: str
     situation_label: str
@@ -148,12 +149,15 @@ class PreorderDayProjection:
     day_display: str  # "27/09"
     is_today: bool
     orders_count: int
-    total_q: int
-    total_display: str
+    # As SOMAS do dia são apuração, não operação: só saem para quem audita o
+    # caixa (``cashman.audit_shift``); para o resto, ``None`` (ver
+    # :func:`build_preorder_list`). O valor de CADA encomenda segue no cartão.
+    total_q: int | None
+    total_display: str | None
     # A soma dos saldos das encomendas "a receber" do dia (conta da casa e
     # pagamento a conferir ficam de fora — ver :data:`PAYMENT_STATES`).
-    to_receive_q: int
-    to_receive_display: str
+    to_receive_q: int | None
+    to_receive_display: str | None
     orders: tuple[PreorderCardProjection, ...]
 
 
@@ -163,10 +167,11 @@ class PreorderListProjection:
     date_to: str
     today: str
     count: int
-    total_q: int
-    total_display: str
-    to_receive_q: int
-    to_receive_display: str
+    # Somas do período: ``None`` para quem não audita o caixa (como no dia).
+    total_q: int | None
+    total_display: str | None
+    to_receive_q: int | None
+    to_receive_display: str | None
     # TODOS os dias do intervalo, inclusive os vazios: a grade semanal tem sete
     # colunas mesmo quando terça não tem nada, e a coluna vazia é informação.
     days: tuple[PreorderDayProjection, ...]
@@ -327,8 +332,16 @@ def parse_range(raw_from, raw_to, *, week=None, today: date | None = None) -> tu
     return date_from, date_to
 
 
-def build_preorder_list(*, date_from: date, date_to: date) -> PreorderListProjection:
-    """As encomendas do período (o dia, ou a semana), agrupadas por dia."""
+def build_preorder_list(*, date_from: date, date_to: date, show_money_sums: bool = False) -> PreorderListProjection:
+    """As encomendas do período (o dia, ou a semana), agrupadas por dia.
+
+    ``show_money_sums``: as SOMAS em dinheiro (total e "a receber", do período e
+    de cada dia) só saem para quem audita o caixa (``cashman.audit_shift``). A
+    contagem do fechamento é cega, e "20 encomendas · R$ 4.241,00" na aba do
+    balcão é o gabarito dela (D4 do plano de excelência do PDV). Fechado por
+    padrão: quem esquecer de perguntar a permissão entrega menos, não mais. O
+    valor de CADA encomenda segue no cartão: é com ele que o balcão recebe.
+    """
     from shopman.backstage.services import order_ticket
 
     orders = order_ticket.orders_for_period(date_from, date_to)
@@ -352,10 +365,10 @@ def build_preorder_list(*, date_from: date, date_to: date) -> PreorderListProjec
                 day_display=formats.date_format(cursor, "d/m"),
                 is_today=cursor == today,
                 orders_count=len(day_cards),
-                total_q=day_total,
-                total_display=_money(day_total),
-                to_receive_q=day_to_receive,
-                to_receive_display=_money(day_to_receive),
+                total_q=day_total if show_money_sums else None,
+                total_display=_money(day_total) if show_money_sums else None,
+                to_receive_q=day_to_receive if show_money_sums else None,
+                to_receive_display=_money(day_to_receive) if show_money_sums else None,
                 orders=tuple(day_cards),
             )
         )
@@ -368,10 +381,10 @@ def build_preorder_list(*, date_from: date, date_to: date) -> PreorderListProjec
         date_to=date_to.isoformat(),
         today=today.isoformat(),
         count=len(cards),
-        total_q=total,
-        total_display=_money(total),
-        to_receive_q=to_receive,
-        to_receive_display=_money(to_receive),
+        total_q=total if show_money_sums else None,
+        total_display=_money(total) if show_money_sums else None,
+        to_receive_q=to_receive if show_money_sums else None,
+        to_receive_display=_money(to_receive) if show_money_sums else None,
         days=tuple(days),
         max_batch=order_ticket.MAX_BATCH,
     )
@@ -590,7 +603,7 @@ def _card(order, *, reads, channel_labels: dict[str, str]) -> PreorderCardProjec
         commitment_date=commitment.isoformat(),
         commitment_date_display=_date_display(commitment, timezone.localdate()),
         window_label=window_label(slot),
-        window_start=start.strftime("%H:%M") if start else "",
+        window_start=format_clock(start) if start else "",
         status=order.status,
         situation=situation,
         situation_label=SITUATION_LABELS[situation],

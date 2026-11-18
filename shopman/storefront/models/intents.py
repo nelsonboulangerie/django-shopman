@@ -20,6 +20,7 @@ from __future__ import annotations
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+from shopman.utils.formatting import format_local
 
 
 class IntentCategory(models.Model):
@@ -99,7 +100,10 @@ class MessageIntentSample(models.Model):
     def redacted_text(self) -> str:
         from shopman.storefront.concierge.observation_privacy import redact_observation_text
 
-        return redact_observation_text(self.message.text or "").text
+        # O nome que a conversa já conhece sai junto ("Maria aqui"), além do padrão.
+        conversation = getattr(self.message, "conversation", None)
+        name = str(getattr(conversation, "customer_name", "") or "")
+        return redact_observation_text(self.message.text or "", names=[name] if name else ()).text
 
 
 class IntentPilotReport(models.Model):
@@ -121,4 +125,4 @@ class IntentPilotReport(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"Placar de {self.created_at:%d/%m/%Y %H:%M}"
+        return f"Placar de {format_local(self.created_at, '%d/%m/%Y {clock}')}"

@@ -11,7 +11,8 @@ import type {
   DeliveryRideProjection,
 } from "~/generated/ordersContract";
 import { rideColor } from "~/presentation/ridePalette";
-import { rideLine, whatsappLink } from "~/presentation/deliveries";
+import { rideLine, rideNotice, whatsappLink } from "~/presentation/deliveries";
+import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
 
 const props = defineProps<{
@@ -21,9 +22,17 @@ const props = defineProps<{
   busy?: boolean;
   mapsKey?: string;
 }>();
-const emit = defineEmits<{ close: []; back: []; cancel: [] }>();
+const emit = defineEmits<{ close: []; back: []; cancel: [reasonId?: number] }>();
 const tone = computed(() => rideColor(props.ride.number - 1));
 const line = computed(() => rideLine(props.ride, props.now));
+// O aviso de "não chame de novo" se dispensa, e volta se a causa mudar
+// (outra desistência na mesma corrida).
+const notice = computed(() => rideNotice(props.ride, props.now));
+const noticeDismissedFor = ref("");
+const showNotice = computed(() => notice.value !== null && noticeDismissedFor.value !== notice.value.key);
+function dismissNotice() {
+  noticeDismissedFor.value = notice.value?.key ?? "";
+}
 const located = computed(() =>
   props.ride.stops
     .filter((stop) => stop.latitude !== null && stop.longitude !== null)
@@ -42,20 +51,69 @@ function copyLink() {
     .catch(() => (copied.value = false));
 }
 const at = (iso: string) => (iso ? clockHHMM(Date.parse(iso)) : "");
+
+// Cancelar a corrida: o primeiro toque só arma a confirmação (um toque nunca
+// cancela); o segundo confirma e, depois do aceite, já diz o motivo. Se a corrida
+// muda enquanto a confirmação está aberta (aceite, coleta), ela desarma: a
+// pergunta de antes já não é a de agora.
+const confirmingCancel = ref(false);
+watch(
+  () => JSON.stringify(props.ride.cancel_action?.payload_schema ?? null),
+  () => (confirmingCancel.value = false),
+);
+function confirmCancel(reasonId?: number) {
+  confirmingCancel.value = false;
+  emit("cancel", reasonId);
+}
+
+// O cancelamento pedido: espera, dúvida ou recusa da TaOn. Dispensável, e volta
+// se o estado mudar (a recusa depois da espera é outro aviso).
+const cancelState = computed(() => courierCancelNotice(props.ride.cancel_state, props.ride.cancel_message));
+const cancelDismissed = ref("");
+const showCancelState = computed(
+  () => Boolean(cancelState.value) && cancelDismissed.value !== `${props.ride.key}:${props.ride.cancel_state}`,
+);
 </script>
 
 <template>
   <aside class="flex h-full w-full flex-col overflow-hidden bg-default" data-ride-detail>
     <header class="flex items-start gap-3 border-b border-default px-5 py-4" :style="{ borderTop: `6px solid ${tone.bg}` }">
-      <span class="grid size-9 shrink-0 place-items-center rounded-lg text-lg font-bold" :style="{ background: tone.bg, color: tone.fg }">{{ ride.number }}</span>
+      <span class="grid size-9 shrink-0 place-items-center rounded-lg text-lg font-bold" :style="{ background: tone.bg, color: tone.fg }">{{ ride.letter }}</span>
       <div class="min-w-0 flex-1">
-        <p class="op-title font-semibold text-highlighted">Corrida {{ ride.number }} · {{ ride.status_label }}</p>
+        <p class="op-title font-semibold text-highlighted">Corrida {{ ride.letter }} · {{ ride.status_label }}</p>
         <p class="op-body text-muted">{{ line.hint || line.title }}</p>
       </div>
       <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" aria-label="Fechar" @click="emit('close')" />
     </header>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
+      <NuxtAlert
+        v-if="notice && showNotice"
+        class="mx-5 mt-4 w-auto"
+        :color="notice.color"
+        variant="subtle"
+        :icon="notice.icon"
+        :title="notice.title"
+        :description="notice.description"
+        close
+        role="status"
+        data-ride-notice
+        @update:open="dismissNotice"
+      />
+
+      <!-- A margem mora no invólucro: o aviso é `w-full`, e com a margem nele o X vazava do painel. -->
+      <div v-if="showCancelState && cancelState" class="mx-5 mt-4">
+        <NuxtAlert
+          :color="cancelState.color"
+          variant="subtle"
+          :icon="cancelState.icon"
+          :title="cancelState.message"
+          close
+          role="status"
+          data-ride-cancel-state
+          @update:open="cancelDismissed = `${ride.key}:${ride.cancel_state}`"
+        />
+      </div>
       <div v-if="mapOrigin && located.length" class="relative mx-5 mt-4 h-48 overflow-hidden rounded-xl ring-1 ring-default">
         <CourierDeliveriesMap
           :origin="mapOrigin"
@@ -114,6 +172,7 @@ const at = (iso: string) => (iso ? clockHHMM(Date.parse(iso)) : "");
         <p class="op-micro font-semibold text-muted">O que aconteceu</p>
         <ul class="mt-2 flex flex-col gap-1.5 op-body">
           <li v-if="ride.called_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.called_at) }}</span><span class="text-highlighted">Corrida chamada</span></li>
+          <li v-if="ride.state === 'reopened' && ride.reopened_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.reopened_at) }}</span><span class="font-semibold text-highlighted">{{ ride.reopened_driver || "O entregador" }} desistiu</span></li>
           <li v-if="ride.pickup_eta_at && ride.state === 'coming'" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.pickup_eta_at) }}</span><span class="text-highlighted">Chegada prevista na loja</span></li>
           <li v-if="ride.arrived_pickup_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.arrived_pickup_at) }}</span><span class="text-highlighted">Chegou na loja</span></li>
           <li v-if="ride.picked_up_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.picked_up_at) }}</span><span class="text-highlighted">Saiu com as sacolas</span></li>
@@ -133,15 +192,20 @@ const at = (iso: string) => (iso ? clockHHMM(Date.parse(iso)) : "");
       </section>
     </div>
 
-    <footer class="flex flex-wrap items-center gap-2 border-t border-default px-5 py-3">
+    <!-- Com o cancelamento pedido, o aviso do topo já diz tudo: o rodapé não repete nem oferece gesto. -->
+    <footer v-if="ride.back_action || ride.cancel_action || ride.cancel_state !== 'pending'" class="flex flex-wrap items-center gap-2 border-t border-default px-5 py-3" data-ride-footer>
       <template v-if="ride.back_action">
         <NuxtButton class="flex-1 justify-center" color="primary" icon="i-lucide-undo-2" :label="ride.back_action.label" :loading="busy" :disabled="!ride.back_action.enabled" @click="emit('back')" />
       </template>
       <template v-else-if="ride.cancel_action">
-        <p class="min-w-0 flex-1 op-micro text-muted">Antes de ele sair com as sacolas, dá para cancelar.</p>
-        <NuxtButton color="error" variant="ghost" icon="i-lucide-circle-x" :label="ride.cancel_action.label" :loading="busy" :disabled="!ride.cancel_action.enabled" @click="emit('cancel')" />
+        <CourierCancelConfirm v-if="confirmingCancel" :action="ride.cancel_action" :busy="busy" @confirm="confirmCancel" @keep="confirmingCancel = false" />
+        <template v-else>
+          <p class="min-w-0 flex-1 op-micro text-muted">{{ notice?.footer ?? "Antes de ele sair com as sacolas, dá para cancelar." }}</p>
+          <NuxtButton color="error" variant="ghost" icon="i-lucide-circle-x" :label="ride.cancel_action.label" :loading="busy" :disabled="!ride.cancel_action.enabled" :title="ride.cancel_action.reason || undefined" data-ride-cancel @click="confirmingCancel = true" />
+        </template>
       </template>
-      <p v-else class="min-w-0 flex-1 op-micro text-muted">Ele já saiu com as sacolas: cancelar agora só pela central da TaOn.</p>
+      <p v-else-if="ride.cancel_state === 'unknown'" class="min-w-0 flex-1 op-micro text-muted">Confira esta corrida na central da TaOn antes de pedir o cancelamento de novo.</p>
+      <p v-else class="min-w-0 flex-1 op-micro text-muted">{{ notice?.footer ?? "Ele já saiu com as sacolas: cancelar agora só pela central da TaOn." }}</p>
     </footer>
   </aside>
 </template>

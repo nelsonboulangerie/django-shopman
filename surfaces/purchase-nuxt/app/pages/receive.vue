@@ -30,6 +30,7 @@ import { plural } from "~/presentation/purchaseUi";
 import { RECEIPT_LINE_STATUS_COLOR, RECEIPT_LINE_STATUS_ROW, RECEIPT_LINE_STATUS_TEXT } from "~/utils/receiptLineStatus";
 import { FLASH_RING, receiptFieldSelector, waitForElement } from "~/utils/receiptFocus";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const route = useRoute();
 const router = useRouter();
@@ -63,6 +64,7 @@ const {
   receiptHasRejectionReason,
   receiptReady,
   receiptPreferredCostChanges,
+  receiptPriceCheck,
   setReceiptPreferredCost,
   receiptTotalPending,
   readonlyFallback,
@@ -143,7 +145,7 @@ watch(
   () => [invoiceStatus.value.accessKey, receiptLinePreviews.value.length] as const,
   ([key, count]) => {
     if (key && count && !invoiceReadAt.value) {
-      invoiceReadAt.value = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      invoiceReadAt.value = formatClock(new Date());
     }
     if (!key) invoiceReadAt.value = "";
   },
@@ -1042,6 +1044,7 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
                 :line-count="receiptLinePreviews.length"
                 :total-cost-q="receiptTotalCostQ"
                 :declared-volumes="receiptInvoiceVolumes"
+                :price-check="receiptPriceCheck"
                 :pending="readonlyFallback || actionPending"
                 :volumes-ring="anchorRing('volumes')"
                 :count-in-thumb="phone"
