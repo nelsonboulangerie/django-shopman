@@ -937,7 +937,15 @@ class IFoodCatalogProjection:
             channel=channel,
         )
 
-    # ── Complementos ──────────────────────────────────────────────────────────
+
+class IFoodAddonProjection(IFoodCatalogProjection):
+    """Os gestos de complemento, que só o iFood tem.
+
+    O ``IFoodCatalogProjection`` honra o contrato fechado do Offerman
+    (``IncrementalCatalogProjectionBackend``), que não conhece complemento. Os
+    verbos de opção do iFood moram aqui, e só o serviço de complementos do canal
+    (``shop.services.channel_addons``) os usa.
+    """
 
     def _addon_call(self, channel: str, call):
         cfg = _get_config(channel)

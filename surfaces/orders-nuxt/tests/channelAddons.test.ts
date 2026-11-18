@@ -65,7 +65,7 @@ describe("abas do catálogo do canal", () => {
         context: "DEFAULT",
         item_count: 9,
       }),
-    ).toBe("Captura nº 1 · 17/11/2026 12:26 · DEFAULT · 9 anúncios");
+    ).toBe("Captura nº 1 · 17/11/2026 12h26 · DEFAULT · 9 anúncios");
   });
 });
 

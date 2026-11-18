@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from django.core.validators import MinValueValidator
 from django.db import models
+from shopman.utils.refs import RefField
 
 
 class ChannelAddonGroup(models.Model):
@@ -23,7 +24,7 @@ class ChannelAddonGroup(models.Model):
         related_name="addon_groups",
         verbose_name="canal",
     )
-    sku = models.CharField("SKU do produto", max_length=100, db_index=True)
+    sku = RefField(ref_type="SKU", verbose_name="SKU do produto", max_length=100, db_index=True)
     ref = models.SlugField("referência", max_length=64)
     name = models.CharField("nome", max_length=128)
     min_choices = models.PositiveSmallIntegerField("mínimo de escolhas", default=0)

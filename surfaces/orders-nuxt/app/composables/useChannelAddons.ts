@@ -1,5 +1,6 @@
 import { useOrderIntention } from "./useOrderIntention";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 export type ChannelAddon = {
   id: number;
@@ -39,9 +40,7 @@ type AddonsResponse = {
  * a resposta traz a frase da confirmação, que a tela mostra com a hora.
  */
 function clockNow() {
-  return new Date()
-    .toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
-    .replace(":", "h");
+  return formatClock(new Date());
 }
 
 export function useChannelAddons(channel: string) {

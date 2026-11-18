@@ -80,9 +80,9 @@ def _channel(channel_ref: str) -> Channel:
 
 
 def _backend():
-    from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
+    from shopman.shop.adapters.catalog_projection_ifood import IFoodAddonProjection
 
-    return IFoodCatalogProjection()
+    return IFoodAddonProjection()
 
 
 def _projected_item(sku: str, channel_ref: str):
@@ -148,23 +148,24 @@ def _read_item(sku: str, channel_ref: str) -> dict:
         raise AddonRemoteError("Não foi possível ler o item no iFood.") from exc
 
 
-def _ids(addon: ChannelAddon) -> dict[str, str]:
-    from django.conf import settings
+def _merchant() -> str:
+    """O merchant do iFood, lido pela mesma configuração do adapter (ADR-042)."""
+    from shopman.shop.adapters.catalog_projection_ifood import _get_config
 
+    return str(_get_config(IFOOD_CHANNEL).get("merchant_id") or "")
+
+
+def _ids(addon: ChannelAddon) -> dict[str, str]:
     from shopman.shop.adapters.catalog_projection_ifood import addon_identity
 
-    merchant = str((getattr(settings, "SHOPMAN_IFOOD", {}) or {}).get("merchant_id") or "")
     group = addon.group
-    return addon_identity(merchant, group.sku, group.ref, addon.ref)
+    return addon_identity(_merchant(), group.sku, group.ref, addon.ref)
 
 
 def _group_id(group: ChannelAddonGroup) -> str:
-    from django.conf import settings
-
     from shopman.shop.adapters.catalog_projection_ifood import addon_identity
 
-    merchant = str((getattr(settings, "SHOPMAN_IFOOD", {}) or {}).get("merchant_id") or "")
-    return addon_identity(merchant, group.sku, group.ref)["group_id"]
+    return addon_identity(_merchant(), group.sku, group.ref)["group_id"]
 
 
 def _remote_product(body: dict, product_id: str) -> dict:

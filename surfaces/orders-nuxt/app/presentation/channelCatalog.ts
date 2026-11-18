@@ -3,6 +3,8 @@
  * captura do inventário. A página faz três trabalhos diferentes (organizar
  * categorias, cadastrar complementos, revisar vínculos); cada um é uma aba.
  */
+import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
+
 export type ChannelCatalogTab = "categories" | "addons" | "bindings";
 
 export function channelCatalogTabs(channel: string) {
@@ -32,19 +34,12 @@ export function snapshotLabel(snapshot: {
   context: string;
   item_count: number;
 }): string {
-  const when = new Date(snapshot.captured_at);
-  const shown = Number.isNaN(when.getTime())
-    ? snapshot.captured_at
-    : new Intl.DateTimeFormat("pt-BR", {
-        timeZone: "America/Sao_Paulo",
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-        .format(when)
-        .replace(",", "");
+  const shown =
+    formatDateClock(
+      snapshot.captured_at,
+      { day: "2-digit", month: "2-digit", year: "numeric" },
+      { timeZone: "America/Sao_Paulo", joiner: " " },
+    ) || snapshot.captured_at;
   const ads = snapshot.item_count === 1 ? "anúncio" : "anúncios";
   return `Captura nº ${snapshot.id} · ${shown} · ${snapshot.context} · ${snapshot.item_count} ${ads}`;
 }

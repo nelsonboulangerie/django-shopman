@@ -272,7 +272,6 @@ async function submitPrice(addon: ChannelAddon) {
                   </div>
                   <NuxtBadge
                     :color="addon.is_active ? 'success' : 'neutral'"
-                    variant="subtle"
                     :label="addonStatusLabel(addon.is_active)"
                   />
                   <div

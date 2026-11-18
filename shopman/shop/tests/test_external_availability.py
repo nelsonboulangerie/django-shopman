@@ -147,6 +147,9 @@ def ifood_push(settings):
         ),
         patch("shopman.shop.adapters.catalog_projection_ifood.requests.post", return_value=upload),
         patch("shopman.shop.adapters.catalog_projection_ifood.requests.put", return_value=response) as put,
+        # Item pausado recebe PATCH /items/status depois do PUT (o PUT deixa o
+        # contexto DEFAULT disponível).
+        patch("shopman.shop.adapters.catalog_projection_ifood.requests.patch", return_value=response),
     ):
         yield put
 

@@ -135,7 +135,7 @@ def test_option_price_goes_by_patch_and_is_confirmed_by_reading_the_item(group):
     with patch.object(adapter.ifood_auth, "headers_with_reason", return_value=({"Authorization": "x"}, "")), patch.object(
         adapter.requests, "patch", return_value=_ok()
     ) as patch_call, patch.object(adapter.requests, "get", return_value=_ok(flat)):
-        result = adapter.IFoodCatalogProjection().update_addon_price(mel, channel="ifood")
+        result = adapter.IFoodAddonProjection().update_addon_price(mel, channel="ifood")
 
     assert result.success, result.errors
     assert patch_call.call_args.args[0].endswith("/options/price")
@@ -157,7 +157,7 @@ def test_option_pause_waits_for_the_eventually_consistent_read(group, monkeypatc
     with patch.object(adapter.ifood_auth, "headers_with_reason", return_value=({"Authorization": "x"}, "")), patch.object(
         adapter.requests, "patch", return_value=_ok()
     ) as patch_call, patch.object(adapter.requests, "get", side_effect=reads):
-        result = adapter.IFoodCatalogProjection().set_addon_status(mel, channel="ifood")
+        result = adapter.IFoodAddonProjection().set_addon_status(mel, channel="ifood")
 
     assert result.success, result.errors
     assert patch_call.call_args.kwargs["json"] == {"optionId": option_id, "status": "UNAVAILABLE"}
@@ -166,7 +166,7 @@ def test_option_pause_waits_for_the_eventually_consistent_read(group, monkeypatc
 def test_option_writes_are_blocked_outside_the_test_store(group, settings):
     settings.SHOPMAN_IFOOD_CATALOG_WRITE_POLICY = None
     with patch.object(adapter.requests, "patch") as patch_call:
-        result = adapter.IFoodCatalogProjection().update_addon_price(group.addons.first(), channel="ifood")
+        result = adapter.IFoodAddonProjection().update_addon_price(group.addons.first(), channel="ifood")
 
     assert not result.success
     patch_call.assert_not_called()

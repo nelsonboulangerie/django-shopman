@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 import type {
   CatalogBindingReviewProjection,
   CatalogRemoteCategory,
@@ -32,9 +33,7 @@ async function createFromCollection(collectionRef: string) {
 // Selo no próprio gesto: "Gravado no iFood às 13h55", por cartão.
 const confirmed = ref<Record<string, string>>({});
 function stamp(key: string) {
-  const at = new Date()
-    .toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
-    .replace(":", "h");
+  const at = formatClock(new Date());
   confirmed.value = { ...confirmed.value, [key]: `Gravado no iFood às ${at}` };
 }
 
@@ -181,7 +180,6 @@ async function saveMapping(collectionRef: string, current: string) {
               <NuxtBadge
                 v-if="confirmed[category.ref]"
                 color="success"
-                variant="subtle"
                 icon="i-lucide-circle-check"
                 class="self-start"
                 :label="confirmed[category.ref]"
@@ -291,7 +289,6 @@ async function saveMapping(collectionRef: string, current: string) {
                 <NuxtBadge
                   v-if="confirmed[`collection:${collection.ref}`]"
                   color="success"
-                  variant="subtle"
                   icon="i-lucide-circle-check"
                   class="self-start"
                   :label="confirmed[`collection:${collection.ref}`]"
