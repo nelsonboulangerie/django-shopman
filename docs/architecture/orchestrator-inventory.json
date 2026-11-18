@@ -2183,6 +2183,7 @@
             "NOTIFICATION_BACKEND_CHOICES",
             "NotificationTemplateAdmin",
             "NotificationTemplateForm",
+            "OPENING_BREAKS_HELP",
             "OPENING_HOUR_DAYS",
             "OPENING_STATUS_CHOICES",
             "OPERATOR_CAPACITY_FIELDS",
@@ -2227,10 +2228,12 @@
             "_dynamic_collection_choices",
             "_format_admin_date",
             "_format_admin_time",
+            "_format_breaks",
             "_integrations_form_fields",
             "_months_to_choice",
             "_oklch_raw_to_hex",
             "_opening_field",
+            "_parse_breaks",
             "_parse_markup_by_collection",
             "_parse_prep_minutes_by_sku",
             "_people",
@@ -7584,6 +7587,30 @@
       ]
     },
     {
+      "path": "shopman/shop/projections/opening_hours.py",
+      "touchpoints": [
+        "projection"
+      ],
+      "out_of_extraction": true,
+      "unit_ids": [],
+      "responsibilities": [
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "_time",
+            "day_breaks",
+            "entry_shifts",
+            "format_shifts",
+            "logger",
+            "split_by_breaks"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/projections/order_tracking.py",
       "touchpoints": [
         "projection"
@@ -8607,6 +8634,7 @@
       "unit_ids": [
         "calendar.closed-weekdays",
         "calendar.closure-exception",
+        "calendar.day-shifts",
         "calendar.next-opening-copy",
         "calendar.operating-day",
         "calendar.operational-state",

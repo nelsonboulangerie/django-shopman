@@ -127,13 +127,14 @@ def build_pages(shop) -> SitePagesProjection:
 
 def build_opening_hours(opening_hours: dict | None) -> tuple[OpeningHoursSpecProjection, ...]:
     """Agrupa os dias com o mesmo horário, na ordem da semana; dia ausente é fechado."""
+    from shopman.shop.projections.opening_hours import entry_shifts
+
     groups: dict[tuple[str, str], list[str]] = {}
     for day in DAY_ORDER:
-        entry = (opening_hours or {}).get(day) or {}
-        opens, closes = _clean(entry.get("open")), _clean(entry.get("close"))
-        if not opens or not closes:
-            continue
-        groups.setdefault((opens, closes), []).append(day.capitalize())
+        # Um turno por especificação: dia com intervalo vira duas ou mais linhas.
+        for opens_at, closes_at in entry_shifts((opening_hours or {}).get(day)):
+            key = (opens_at.strftime("%H:%M"), closes_at.strftime("%H:%M"))  # hora-ok: schema.org HH:MM
+            groups.setdefault(key, []).append(day.capitalize())
     return tuple(
         OpeningHoursSpecProjection(days=tuple(days), opens=opens, closes=closes)
         for (opens, closes), days in groups.items()

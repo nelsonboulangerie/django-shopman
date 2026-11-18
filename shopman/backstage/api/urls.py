@@ -87,7 +87,16 @@ from .ifood_reviews import (
     IFoodReviewReplyView,
     IFoodReviewSummaryView,
 )
-from .ifood_store import IFoodStoreView, IFoodWidgetView
+from .ifood_store import (
+    IFoodInterruptionDetailView,
+    IFoodInterruptionsView,
+    IFoodMerchantsView,
+    IFoodMerchantView,
+    IFoodOpeningHoursView,
+    IFoodOpeningHoursWriteView,
+    IFoodStoreView,
+    IFoodWidgetView,
+)
 from .kds import (
     KDSBoardView,
     KDSCustomerStatusView,
@@ -784,6 +793,20 @@ urlpatterns = [
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
     path("ifood/store/", IFoodStoreView.as_view(), name="api-backstage-ifood-store"),
     path("ifood/widget/", IFoodWidgetView.as_view(), name="api-backstage-ifood-widget"),
+    path("ifood/merchants/", IFoodMerchantsView.as_view(), name="api-backstage-ifood-merchants"),
+    path("ifood/merchant/", IFoodMerchantView.as_view(), name="api-backstage-ifood-merchant"),
+    path("ifood/interruptions/", IFoodInterruptionsView.as_view(), name="api-backstage-ifood-interruptions"),
+    path(
+        "ifood/interruptions/<str:interruption_id>/",
+        IFoodInterruptionDetailView.as_view(),
+        name="api-backstage-ifood-interruption",
+    ),
+    path("ifood/opening-hours/", IFoodOpeningHoursView.as_view(), name="api-backstage-ifood-opening-hours"),
+    path(
+        "ifood/opening-hours/write/",
+        IFoodOpeningHoursWriteView.as_view(),
+        name="api-backstage-ifood-opening-hours-write",
+    ),
     # Avaliações dos clientes no iFood (módulo Review). `summary/` ANTES de `<id>/`.
     path("ifood/reviews/", IFoodReviewListView.as_view(), name="api-backstage-ifood-reviews"),
     path("ifood/reviews/summary/", IFoodReviewSummaryView.as_view(), name="api-backstage-ifood-review-summary"),
