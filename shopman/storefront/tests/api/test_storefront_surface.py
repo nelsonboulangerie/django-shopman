@@ -279,7 +279,10 @@ def test_api_storefront_recommendations_has_a_query_budget(client, django_assert
     _seed_surface()
     _seed_cross_sell()
 
-    with django_assert_num_queries(27):
+    # 29 = 27 + as duas leituras da promessa de quando (WP-L01), uma vez por
+    # lote: a hora de pronto declarada (``ready_from``) e a observada (fornadas
+    # terminadas). O dia da fornada e o estoque de hoje vêm do memo do request.
+    with django_assert_num_queries(29):
         response = client.get("/api/v1/storefront/products/PAO-FRANCES/recommendations/")
 
     assert response.status_code == 200
@@ -294,7 +297,7 @@ def test_api_public_recommendations_twin_costs_no_extra_query(client, django_ass
     _seed_surface()
     _seed_cross_sell()
 
-    with django_assert_num_queries(27):
+    with django_assert_num_queries(29):
         response = client.get("/api/v1/storefront/public/products/PAO-FRANCES/recommendations/")
 
     assert response.status_code == 200

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { crossSellItems, detailDescription, galleryImages, inStorePickupLine, nutritionTable } from '~/presentation/product'
+import { crossSellItems, detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
 import type { CatalogItemProjection, ProductNutritionProjection } from '~/types/shopman'
 
 function nutrition (overrides: Partial<ProductNutritionProjection> = {}): ProductNutritionProjection {
@@ -18,25 +18,8 @@ function nutrition (overrides: Partial<ProductNutritionProjection> = {}): Produc
 }
 
 describe('product presentation', () => {
-  it('says the item is in the store with free pickup only when stock is ready today', () => {
-    const line = 'Disponível hoje na loja, com retirada grátis.'
-    expect(inStorePickupLine({ availability: 'available', can_add_to_cart: true })).toBe(line)
-    expect(inStorePickupLine({ availability: 'low_stock', can_add_to_cart: true })).toBe(line)
-    expect(inStorePickupLine({ availability: 'planned_ok', can_add_to_cart: true })).toBe('')
-    expect(inStorePickupLine({ availability: 'unavailable', can_add_to_cart: false })).toBe('')
-    expect(inStorePickupLine({ availability: 'available', can_add_to_cart: false })).toBe('')
-    expect(inStorePickupLine({ availability: 'available', can_add_to_cart: true }, { is_open: true, next_opening: null })).toBe(line)
-  })
-
-  it('with the shop closed, speaks of the next opening instead of "hoje"', () => {
-    const product = { availability: 'available', can_add_to_cart: true } as const
-    expect(inStorePickupLine(product, { is_open: false, next_opening: 'amanhã às 9h' }))
-      .toBe('Retirada grátis na loja quando abrirmos, amanhã às 9h.')
-    expect(inStorePickupLine(product, { is_open: false, next_opening: null }))
-      .toBe('Retirada grátis na loja quando abrirmos.')
-    expect(inStorePickupLine({ availability: 'planned_ok', can_add_to_cart: true }, { is_open: false, next_opening: 'amanhã às 9h' })).toBe('')
-  })
-
+  // A linha de retirada saiu daqui: a página lê a promessa do servidor e a loja
+  // (presentation/promise.ts, testada em promisePresentation.test.ts).
   it('suppresses the long description when it merely echoes the short one', () => {
     expect(detailDescription({ short_description: 'Crocante.', long_description: 'Crocante.' })).toBe('')
     expect(detailDescription({ short_description: 'Crocante.', long_description: 'Feito com levain.' })).toBe('Feito com levain.')

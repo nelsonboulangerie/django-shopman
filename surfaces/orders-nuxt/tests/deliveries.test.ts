@@ -212,14 +212,14 @@ describe("a corrida que segue chamada sem nada a fazer", () => {
       reopened_at: "2026-11-16T14:32:00-03:00", reopened_driver: "Diego",
     });
     expect(rideLine(reopened, now)).toEqual({
-      icon: "i-lucide-user-x", title: "Diego desistiu às 14:32", hint: "A TaOn já procura outro",
+      icon: "i-lucide-user-x", title: "Diego desistiu às 14h32", hint: "A TaOn já procura outro",
     });
     const notice = rideNotice(reopened, now);
-    expect(notice?.title).toBe("Diego desistiu às 14:32. A TaOn já procura outro.");
+    expect(notice?.title).toBe("Diego desistiu às 14h32. A TaOn já procura outro.");
     expect(notice?.description).toContain("Chamar de novo faria uma segunda corrida paga.");
     expect(notice?.key).toBe("reopened:2026-11-16T14:32:00-03:00");
     // A TaOn nem sempre manda o nome de quem saiu.
-    expect(rideLine({ ...reopened, reopened_driver: "" }, now).title).toBe("O entregador desistiu às 14:32");
+    expect(rideLine({ ...reopened, reopened_driver: "" }, now).title).toBe("O entregador desistiu às 14h32");
     // As sacolas seguem no balcão: ainda não saíram da loja.
     expect(beforeHandoff(reopened)).toBe(true);
   });

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { tileBadge } from '~/presentation/menu'
-import { detailDescription, galleryImages, inStorePickupLine, nutritionTable } from '~/presentation/product'
+import { detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
+import { inCartWhenLine, pickupStoreLines, promiseAddLabel } from '~/presentation/promise'
 import {
   absoluteImage,
   breadcrumbJsonLd,
@@ -20,7 +21,6 @@ const apiPath = useShopmanApiPath()
 const requestUrl = useRequestURL()
 const sku = computed(() => String(route.params.sku || ''))
 const { setFromServer, qtyForSku } = useCartState()
-const session = useShopSession()
 
 const { data, pending, error, refresh } = await useFetch<ProductResponse>(
   () => apiPath(`/api/v1/storefront/products/${encodeURIComponent(sku.value)}/`),
@@ -58,6 +58,14 @@ const meta = computed<ProductMutationMeta | null>(() => product.value
   : null)
 const currentQty = computed(() => product.value ? qtyForSku(product.value.sku) : 0)
 const badge = computed(() => product.value ? tileBadge(product.value) : null)
+// Quando fica pronto e onde retirar (WP-L02, #2652): a promessa do servidor
+// como veio, e a loja da `Shop`. Tudo vem na resposta do produto, então sai no
+// HTML do servidor (o robô do Google lê sem JavaScript). Sem promessa, nada é
+// prometido: nem "hoje", nem a loja.
+const promise = computed(() => product.value?.promise || null)
+const storeLines = computed(() => pickupStoreLines(promise.value, product.value?.pickup_store))
+const addLabel = computed(() => promiseAddLabel(promise.value))
+const inCartWhen = computed(() => inCartWhenLine(currentQty.value, promise.value))
 // O cliente lê o ESTADO, nunca o motivo: esgotado, pausado pela casa ou fora do
 // canal chegam à tela como o mesmo "Indisponível". O porquê é assunto da casa
 // (AVAILABILITY-PLAN §2) e vive nas superfícies de operador.
@@ -73,7 +81,6 @@ const similarItemsTo = computed(() => {
   return ref ? `/menu?secao=${encodeURIComponent(ref)}` : '/menu'
 })
 const longDescription = computed(() => product.value ? detailDescription(product.value) : '')
-const pickupLine = computed(() => product.value ? inStorePickupLine(product.value, session.shopStatus.value) : '')
 // Carrossel: lista vazia = foto única (moldura estática de sempre). A principal
 // (image_url) abre o carrossel; o índice segue o scroll real do slider.
 const carouselImages = computed(() => product.value ? galleryImages(product.value) : [])
@@ -328,11 +335,19 @@ useHead({
                     {{ product.unit_weight_label }}
                   </p>
                 </div>
-                <p v-if="pickupLine" class="mt-1 flex items-center gap-1 shop-meta" data-pdp-in-store-pickup>
-                  <Icon name="lucide:store" class="size-3.5 shrink-0" />
-                  {{ pickupLine }}
+                <p v-if="promise" class="mt-1 flex items-center gap-1 shop-body" data-pdp-ready-promise>
+                  <Icon name="lucide:clock" class="size-3.5 shrink-0" />
+                  {{ promise.text }}
                 </p>
-                <p v-if="hasOptionGroups(product.option_groups) && currentQty" class="shop-meta" data-product-options-in-cart>
+                <div v-if="storeLines" class="mt-1 flex items-start gap-1 shop-meta" data-pdp-in-store-pickup>
+                  <Icon name="lucide:store" class="mt-0.5 size-3.5 shrink-0" />
+                  <p>
+                    <span class="block" :data-pdp-available-today="storeLines.availableToday">{{ storeLines.availability }}</span>
+                    <span class="block">{{ storeLines.address }}</span>
+                  </p>
+                </div>
+                <p v-if="inCartWhen" class="shop-meta" data-pdp-in-cart-when>{{ inCartWhen }}</p>
+                <p v-else-if="hasOptionGroups(product.option_groups) && currentQty" class="shop-meta" data-product-options-in-cart>
                   {{ formatCount(currentQty, 'na sacola', 'na sacola') }}
                 </p>
               </div>
@@ -346,7 +361,7 @@ useHead({
                   :disabled="!product.can_add_to_cart"
                   :max-qty="product.available_qty ?? product.max_qty"
                   :option-groups="product.option_groups"
-                  add-label="Adicionar"
+                  :add-label="addLabel"
                 />
                 <p v-if="unavailableReason" class="mt-2 max-w-48 text-right shop-meta">{{ unavailableReason }}</p>
               </div>
@@ -434,7 +449,7 @@ useHead({
               :disabled="!product.can_add_to_cart"
               :max-qty="product.available_qty ?? product.max_qty"
               :option-groups="product.option_groups"
-              add-label="Adicionar"
+              :add-label="addLabel"
               tone="inverted"
             />
           </div>

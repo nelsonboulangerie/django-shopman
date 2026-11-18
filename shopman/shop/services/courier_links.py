@@ -4,8 +4,12 @@ Plano: ``docs/plans/DELIVERY-MULTI-SERVICE-PLAN.md`` §4.2 e §4.4 (DEV-2026-030
 Regras, todas decididas no plano:
 
 - Um link vivo por rota. Emitir de novo (troca de entregador, reenvio) revoga o anterior.
-- O link se prende ao PRIMEIRO celular que o abre. Guardamos só o hash da chave que o
-  celular gera; outro celular com o mesmo link vê "aberto em outro celular".
+- O link se prende ao celular que CONFIRMA ser do entregador ("Sou o Diego, abrir"), não
+  ao primeiro que o abre (dono, 17/11): quem abre por curiosidade ou sem querer (um
+  operador da casa, por exemplo) vê só o nome de quem é a rota e não prende nada. Guardamos
+  só o hash da chave do celular; outro celular depois disso vê "aberto em outro celular".
+- O balcão pode soltar o link (``release``) quando ele ficou preso no celular errado ou o
+  entregador trocou de celular; o próximo a confirmar fica com ele.
 - Ele vence 2 h depois de a rota fechar, e morre na hora quando a rota é cancelada.
 
 Quem decide o que a tela mostra para cada estado é a página do entregador (M2); aqui só se
@@ -36,6 +40,9 @@ REVOKED = "revoked"
 EXPIRED = "expired"
 OTHER_DEVICE = "other_device"
 BAD_DEVICE = "bad_device"
+#: O link ainda não foi confirmado por celular nenhum: a página pede a confirmação e não
+#: mostra nada da rota além do nome do entregador.
+UNCLAIMED = "unclaimed"
 
 #: Motivos de revogação.
 REISSUED = "reissued"
@@ -82,30 +89,63 @@ def issue(courier: Courier, ride_ref: str, order_refs: list[str], *, now: dateti
     )
 
 
+def _check(link: CourierLink | None, device_key: str, now: datetime) -> str | None:
+    if link is None:
+        return UNKNOWN
+    if link.revoked_at is not None:
+        return REVOKED
+    if link.expires_at is not None and now >= link.expires_at:
+        return EXPIRED
+    if not device_key or len(device_key) < MIN_DEVICE_KEY:
+        return BAD_DEVICE
+    if link.device_hash and link.device_hash != _hash(device_key):
+        return OTHER_DEVICE
+    return None
+
+
 @transaction.atomic
 def resolve(token: str, device_key: str, *, now: datetime | None = None) -> LinkAccess:
-    """Abre o link: diz se pode mostrar a rota a este celular, e prende o link ao primeiro."""
+    """Abre o link: diz se este celular pode ver a rota. Abrir não prende nada."""
     now = now or timezone.now()
     link = CourierLink.objects.select_for_update().filter(token=token).first() if token else None
-    if link is None:
-        return LinkAccess(UNKNOWN)
-    if link.revoked_at is not None:
-        return LinkAccess(REVOKED, link)
-    if link.expires_at is not None and now >= link.expires_at:
-        return LinkAccess(EXPIRED, link)
-    if not device_key or len(device_key) < MIN_DEVICE_KEY:
-        return LinkAccess(BAD_DEVICE, link)
-    device_hash = _hash(device_key)
-    if link.device_hash and link.device_hash != device_hash:
-        return LinkAccess(OTHER_DEVICE, link)
+    refused = _check(link, device_key, now)
+    if refused:
+        return LinkAccess(refused, link)
+    if not link.device_hash:
+        return LinkAccess(UNCLAIMED, link)
+    link.last_seen_at = now
+    link.save(update_fields=["last_seen_at"])
+    return LinkAccess(OK, link)
+
+
+@transaction.atomic
+def claim(token: str, device_key: str, *, now: datetime | None = None) -> LinkAccess:
+    """ "Sou o Diego, abrir": prende o link a este celular. Repetir no mesmo celular é inócuo."""
+    now = now or timezone.now()
+    link = CourierLink.objects.select_for_update().filter(token=token).first() if token else None
+    refused = _check(link, device_key, now)
+    if refused:
+        return LinkAccess(refused, link)
     fields = ["last_seen_at"]
     link.last_seen_at = now
     if not link.device_hash:
-        link.device_hash = device_hash
+        link.device_hash = _hash(device_key)
         link.opened_at = now
         fields += ["device_hash", "opened_at"]
     link.save(update_fields=fields)
     return LinkAccess(OK, link)
+
+
+@transaction.atomic
+def release(ride_ref: str) -> CourierLink | None:
+    """O balcão solta o link do celular em que ele está preso; o próximo a confirmar fica com ele."""
+    link = _live(ride_ref).first()
+    if link is None:
+        return None
+    link.device_hash = ""
+    link.opened_at = None
+    link.save(update_fields=["device_hash", "opened_at"])
+    return link
 
 
 @transaction.atomic

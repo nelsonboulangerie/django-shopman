@@ -57,11 +57,11 @@ describe("courierProgress", () => {
       { status: "D", reopened_at: "2026-10-13T17:32:00+00:00", reopened_driver: "Diego" },
       NOW,
     );
-    expect(view.waiting).toBe("Diego desistiu às 14:32. A TaOn já procura outro.");
+    expect(view.waiting).toBe("Diego desistiu às 14h32. A TaOn já procura outro.");
     expect(view.pickup).toBe("");
     // Sem o nome (a TaOn nem sempre manda): a frase continua inteira.
     expect(courierProgress({ status: "D", reopened_at: "2026-10-13T17:32:00+00:00" }, NOW).waiting).toBe(
-      "O entregador desistiu às 14:32. A TaOn já procura outro.",
+      "O entregador desistiu às 14h32. A TaOn já procura outro.",
     );
     // Corrida encerrada não fala mais da desistência.
     expect(courierProgress({ status: "C", reopened_at: "2026-10-13T17:32:00+00:00" }, NOW).waiting).toBe("");
