@@ -32,12 +32,32 @@ class ReturnResult:
     error: str | None = None
 
 
+def returned_qty_by_line(order: Order) -> dict[str, Decimal]:
+    """O que já voltou de cada linha, somando as devoluções registradas (``Order.data.returns``)."""
+    totals: dict[str, Decimal] = {}
+    for record in (order.data or {}).get("returns") or []:
+        if not isinstance(record, dict):
+            continue
+        for item in record.get("items") or []:
+            if not isinstance(item, dict) or not item.get("line_id"):
+                continue
+            totals[item["line_id"]] = totals.get(item["line_id"], Decimal("0")) + Decimal(str(item.get("qty") or "0"))
+    return totals
+
+
 class ReturnService:
     """Service para devoluções de pedidos."""
 
     @classmethod
     @transaction.atomic
-    def initiate_return(cls, order: Order, items: list[dict], reason: str, actor: str) -> ReturnResult:
+    def initiate_return(
+        cls, order: Order, items: list[dict], reason: str, actor: str, *, approved_by: str = "",
+    ) -> ReturnResult:
+        """Registra a devolução e enfileira o estoque e o estorno (``return.process``).
+
+        ``approved_by`` é o Gerente que assinou (o ``username`` verificado pelo
+        PIN, nunca o nome que veio no corpo); vai para o registro e o evento.
+        """
         from shopman.orderman.exceptions import InvalidTransition
 
         order = Order.objects.select_for_update().get(pk=order.pk)
@@ -53,12 +73,24 @@ class ReturnService:
         # Pedido + ajustes: devolver linha que o cliente já tinha tirado, ou
         # recusar linha que ele acrescentou, seria devolver o pedido errado.
         from shopman.shop.services import order_composition
+        from shopman.shop.services.order_edit import DELIVERY_FEE_SKU
 
+        # A taxa de entrega não é mercadoria: não volta ao estoque e não entra na
+        # conta do "devolveu tudo" (com ela na lista, pedido de entrega nunca era
+        # devolução total).
         order_items_by_line = {
-            item.line_id: item for item in order_composition.effective_items(order)
+            item.line_id: item
+            for item in order_composition.effective_items(order)
+            if str(item.sku or "") != DELIVERY_FEE_SKU
+            and (item.meta if isinstance(item.meta, dict) else {}).get("type") != "delivery_fee"
         }
+        already_returned = returned_qty_by_line(order)
         items_detail = []
         refund_total_q = 0
+        if not items:
+            return ReturnResult(success=False, error="Escolha ao menos um item para devolver.")
+        if len({item_req["line_id"] for item_req in items}) != len(items):
+            return ReturnResult(success=False, error="O mesmo item veio duas vezes na devolução.")
 
         for item_req in items:
             line_id = item_req["line_id"]
@@ -68,8 +100,18 @@ class ReturnService:
                 return ReturnResult(success=False, error=f"Item não encontrado no pedido: {line_id}")
 
             order_item = order_items_by_line[line_id]
+            if qty <= 0:
+                return ReturnResult(success=False, error=f"Quantidade de devolução inválida ({qty}) para o item {line_id}")
             if qty > order_item.qty:
                 return ReturnResult(success=False, error=f"Quantidade de devolução ({qty}) excede quantidade do pedido ({order_item.qty}) para item {line_id}")
+            # Uma segunda devolução do mesmo item só leva o que ainda não voltou:
+            # sem isto, devolver 2 de 3 duas vezes estornava 4.
+            returnable = order_item.qty - already_returned.get(line_id, Decimal("0"))
+            if qty > returnable:
+                return ReturnResult(
+                    success=False,
+                    error=f"Do item {order_item.name or order_item.sku} só {format(returnable.normalize(), 'f')} ainda pode voltar.",
+                )
 
             refund_q = int(order_item.unit_price_q * qty)
             refund_total_q += refund_q
@@ -83,7 +125,7 @@ class ReturnService:
         return_type = "total" if is_total else "partial"
 
         return_record = {
-            "timestamp": timezone.now().isoformat(), "actor": actor, "reason": reason,
+            "timestamp": timezone.now().isoformat(), "actor": actor, "approved_by": approved_by, "reason": reason,
             "type": return_type, "items": items_detail, "refund_total_q": refund_total_q,
             "refund_processed": False, "stock_receipt_version": 1, "stock_processed": False,
         }
@@ -95,7 +137,10 @@ class ReturnService:
 
         order.emit_event(
             event_type="return_initiated", actor=actor,
-            payload={"reason": reason, "return_type": return_type, "items": items_detail, "refund_total_q": refund_total_q},
+            payload={
+                "reason": reason, "return_type": return_type, "items": items_detail,
+                "refund_total_q": refund_total_q, "approved_by": approved_by,
+            },
         )
 
         if is_total:
@@ -261,4 +306,4 @@ class ReturnHandler:
         fiscal.open_return_note(order, return_index=return_index)
 
 
-__all__ = ["ReturnHandler", "ReturnService", "ReturnResult"]
+__all__ = ["ReturnHandler", "ReturnService", "ReturnResult", "returned_qty_by_line"]

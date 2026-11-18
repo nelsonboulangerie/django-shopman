@@ -22,6 +22,7 @@ type Result = { outcome?: string; detail?: string; count?: number } & Omit<
 /** O que a incerteza é, dito pelo ato: "se o cancelamento foi gravado". */
 const ORDER_OPERATION_SUBJECT: Record<string, string> = {
   cancel: "o cancelamento foi gravado",
+  return: "a devolução foi gravada",
   reject: "a recusa foi gravada",
   confirm: "o aceite foi gravado",
   advance: "o avanço do pedido foi gravado",

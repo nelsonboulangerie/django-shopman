@@ -748,7 +748,7 @@ def _context_note(memory: dict) -> str:
     parts = []
     pending = memory.get("pending") or {}
     if pending.get("kind") == CONFIRM_ORDER:
-        parts.append("Há um resumo de pedido esperando a confirmação do cliente.")
+        parts.append("Há um resumo do pedido à espera da confirmação do cliente.")
     if memory.get("focus"):
         parts.append(f"Produto em foco: {memory['focus'].get('name', '')}.")
     if memory.get("listed"):

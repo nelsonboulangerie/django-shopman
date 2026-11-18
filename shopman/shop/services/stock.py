@@ -77,6 +77,155 @@ def hold_pks(entries) -> list[int]:
     return pks
 
 
+#: O aviso à Produção: encomenda que registrou demanda acima do plano da data (#2559).
+DEMAND_OVER_PLAN_ALERT = "order_demand_over_plan"
+
+
+def held_supply_by_sku(order) -> dict[str, dict[str, Decimal]]:
+    """Por SKU, quanto da reserva do pedido tem lastro e quanto é demanda sem fornada.
+
+    ``backed``: reserva presa a um saldo (vitrine ou fornada planejada da data).
+    ``demand``: reserva sem saldo (``quant=None``), o "registra a demanda" da
+    encomenda para uma data sem plano que cubra. É a diferença que a decisão de
+    disponibilidade e o aviso à Produção precisam enxergar.
+    """
+    hold_ids = [
+        entry.get("hold_id")
+        for entry in (order.data or {}).get("hold_ids") or ()
+        if isinstance(entry, dict) and entry.get("hold_id")
+    ]
+    if not hold_ids:
+        return {}
+    # Pela porta do estoque, como o resto deste módulo: o formato do id é dela.
+    backing = get_adapter("stock").hold_backing(hold_ids)
+    supply: dict[str, dict[str, Decimal]] = {}
+    for info in (backing or {}).values():
+        if not isinstance(info, dict):
+            continue
+        bucket = supply.setdefault(info["sku"], {"backed": Decimal("0"), "demand": Decimal("0")})
+        bucket["backed" if info["backed"] else "demand"] += Decimal(str(info["quantity"]))
+    return supply
+
+
+def _free_supply_on(order, skus, target) -> dict[str, Decimal]:
+    """O que a data ainda tem livre por SKU (vitrine + fornada planejada), já sem
+    as reservas, este pedido incluído. Só é perguntado quando há demanda."""
+    if not skus:
+        return {}
+    from shopman.shop.services import availability
+
+    try:
+        answers = availability.decide_many(
+            [(sku, Decimal("1")) for sku in skus],
+            channel_ref=getattr(order, "channel_ref", None),
+            target_date=target,
+        )
+    except Exception:
+        logger.warning("stock.free_supply_on: decide_many failed order=%s", order.ref, exc_info=True)
+        return {}
+    free: dict[str, Decimal] = {}
+    for sku, answer in zip(skus, answers, strict=True):
+        raw = answer.get("available_qty")
+        free[sku] = max(Decimal("0"), Decimal(str(raw))) if raw is not None else Decimal("0")
+    return free
+
+
+def availability_decisions_from_holds(order) -> list[dict]:
+    """A decisão de disponibilidade que o pedido realmente teve, item a item.
+
+    O canal sem portão de estoque no commit (PDV, marketplace pago) gravava
+    ``available_qty`` igual ao pedido, sempre: a encomenda PDV-261116-K16 saiu
+    com ``available_qty 200`` para 200 baguetes contra um plano de 22 (#2559).
+    Aqui o disponível vem das reservas: o que tem lastro é ``available_qty``; o
+    que é demanda sem fornada aparece em ``demand_qty`` e no ``reason_code``.
+    """
+    supply = held_supply_by_sku(order)
+    target = get_commitment_date(order)
+    free = _free_supply_on(order, [sku for sku, held in supply.items() if held["demand"] > 0], target)
+    decisions = []
+    for item in (getattr(order, "snapshot", None) or {}).get("items", []):
+        sku = item.get("sku")
+        requested = Decimal(str(item.get("qty") or 0))
+        held = supply.get(sku)
+        if held is None:
+            # Sem reserva rastreada (SKU sem ledger, item de serviço): nada a
+            # medir; vale o pedido, como antes.
+            available, demand = requested, Decimal("0")
+        else:
+            demand = held["demand"]
+            # O que a data tinha para este pedido: o que a reserva prendeu mais o
+            # que ainda está livre no plano (a demanda não se ancora sozinha).
+            available = min(requested, held["backed"] + free.get(sku, Decimal("0")))
+        decisions.append({
+            "approved": True,
+            "sku": sku,
+            "requested_qty": item.get("qty"),
+            "available_qty": float(available),
+            "demand_qty": float(demand),
+            "reason_code": "demand_over_plan" if demand > 0 else None,
+            "is_paused": False,
+            "is_planned": demand > 0,
+            "target_date": target.isoformat() if target else None,
+            "failed_sku": None,
+            "source": "stock.hold",
+        })
+    return decisions
+
+
+def alert_demand_over_plan(order) -> int:
+    """Avisa a Produção da encomenda que passou do plano da data. Devolve quantos avisos.
+
+    A reserva sem fornada só aparecia para quem abrisse o planejamento: o pedido
+    fechava, a cliente recebia a confirmação com "200x Baguette de Tradition" e
+    ninguém na Produção ficava sabendo (#2559). Um aviso por pedido e item, ao
+    público ``production``, com o pedido, a data e os dois números.
+    """
+    from shopman.shop.services.observability import create_operator_alert
+
+    target = get_commitment_date(order)
+    if target is None or target <= timezone.localdate():
+        # Venda de hoje acima do saldo é o ``stock_hold_gap`` do balcão.
+        return 0
+    supply = held_supply_by_sku(order)
+    over = [sku for sku, held in supply.items() if held["demand"] > 0]
+    if not over:
+        return 0
+    free = _free_supply_on(order, over, target)
+    created = 0
+    day = target.strftime("%d/%m")
+    for item in (getattr(order, "snapshot", None) or {}).get("items", []):
+        sku = item.get("sku")
+        held = supply.get(sku)
+        if not held or held["demand"] <= 0:
+            continue
+        name = str(item.get("name") or sku)
+        requested = Decimal(str(item.get("qty") or 0))
+        covered = min(requested, held["backed"] + free.get(sku, Decimal("0")))
+        missing = max(Decimal("0"), requested - covered)
+        alert = create_operator_alert(
+            type=DEMAND_OVER_PLAN_ALERT,
+            severity="warning",
+            message=(
+                f"Encomenda {order.ref}: {_qty_text(requested)} {name} para {day}, e o plano da "
+                f"data cobre {_qty_text(covered)}. Planeje mais {_qty_text(missing)} para {day} "
+                "ou combine outra data com o cliente."
+            ),
+            order_ref=order.ref,
+            dedupe_key=f"{name} para {day}",
+            debounce_minutes=24 * 60,
+            sku=sku,
+        )
+        if alert is not None:
+            created += 1
+    return created
+
+
+def _qty_text(value: Decimal) -> str:
+    if value == value.to_integral_value():
+        return str(value.quantize(Decimal("1")))
+    return format(value.normalize(), "f").replace(".", ",")
+
+
 def _items_to_hold(order) -> list[dict]:
     """As linhas que a reserva cobre: as que VALEM agora.
 

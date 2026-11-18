@@ -68,6 +68,35 @@ function pixProof(overrides: Partial<PaymentProofView> = {}): PaymentProofView {
   };
 }
 
+function cardProof(overrides: Partial<PaymentProofView> = {}): PaymentProofView {
+  return pixProof({
+    method: "card",
+    icon: "lucide:credit-card",
+    status: "captured",
+    tone: "neutral",
+    qrCodeSrc: "",
+    copyPaste: "",
+    isPix: false,
+    isCard: true,
+    hasProof: false,
+    ...overrides,
+  });
+}
+
+function linkProof(overrides: Partial<PaymentProofView> = {}): PaymentProofView {
+  return pixProof({
+    method: "link",
+    icon: "lucide:link",
+    status: "pending",
+    qrCodeSrc: "",
+    copyPaste: "",
+    checkoutUrl: "https://pay.example/abc",
+    isPix: false,
+    isLink: true,
+    ...overrides,
+  });
+}
+
 /** Resultado congelado do fechamento — o troco (`changeQ`) viaja dentro dele. */
 function res(payment: PaymentProofView | null, receiptSnap: PosReceiptSnapshot, changeQ = 0) {
   return { payment, receipt: receiptSnap, changeQ };
@@ -210,6 +239,26 @@ describe("displayPhase — as transições que o cliente acompanha", () => {
     const result = res(pixProof(), receipt());
     expect(displayPhase(inputs({ result, pixStatus: "expired" }))).toBe("payment");
   });
+  it("cartão recusado: falha, nunca o obrigado", () => {
+    const result = res(cardProof({ status: "error" }), receipt());
+    expect(displayPhase(inputs({ result }))).toBe("payment_failed");
+  });
+  it("link de pagamento não criado: falha, nunca o obrigado", () => {
+    const result = res(linkProof({ status: "unavailable", hasProof: false }), receipt());
+    expect(displayPhase(inputs({ result }))).toBe("payment_failed");
+  });
+  it("Pix sem QR (gateway recusou): falha, não espera um QR que não existe", () => {
+    const result = res(pixProof({ status: "error", hasProof: false, qrCodeSrc: "" }), receipt());
+    expect(displayPhase(inputs({ result, pixStatus: "idle" }))).toBe("payment_failed");
+  });
+  it("cartão aprovado: resultado (obrigado)", () => {
+    const result = res(cardProof(), receipt());
+    expect(displayPhase(inputs({ result }))).toBe("result");
+  });
+  it("Pix pendente com QR segue em pagamento (não é falha)", () => {
+    const result = res(pixProof({ status: "pending" }), receipt());
+    expect(displayPhase(inputs({ result, pixStatus: "polling" }))).toBe("payment");
+  });
   it("a próxima venda derruba o resultado: comanda nova com itens volta a 'sale'", () => {
     expect(displayPhase(inputs({ items: [item()], result: null }))).toBe("sale");
   });
@@ -287,6 +336,20 @@ describe("buildCustomerDisplaySnapshot — o que viaja para a parede", () => {
       pixStatus: "expired",
     }));
     expect(snap.pix?.status).toBe("expired");
+  });
+
+  it("cobrança falhada: o total, sem troco e sem nome para o obrigado", () => {
+    const snap = buildCustomerDisplaySnapshot(inputs({
+      result: res(
+        cardProof({ status: "error", amountDisplay: "R$ 23,50" }),
+        receipt({ customerName: "Maria da Silva", orderRef: "PDV-043", totalDisplay: "R$ 23,50" }),
+      ),
+    }));
+    expect(snap.phase).toBe("payment_failed");
+    expect(snap.totalDisplay).toBe("R$ 23,50");
+    expect(snap.changeDisplay).toBe("");
+    expect(snap.customerFirstName).toBe("");
+    expect(snap.pix).toBeNull();
   });
 
   it("resultado em dinheiro: troco congelado em destaque + obrigado com nome", () => {

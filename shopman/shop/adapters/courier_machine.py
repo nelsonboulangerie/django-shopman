@@ -36,8 +36,58 @@ logger = logging.getLogger(__name__)
 #: Letras de status terminais — a corrida não muda mais depois delas.
 TERMINAL_STATUSES = frozenset({"F", "N", "C"})
 
-#: Fases em que a corrida ainda pode ser cancelada (antes da coleta).
-CANCELLABLE_STATUSES = frozenset({"D", "G", "P", "A", "S"})
+#: Fases em que a corrida ainda pode ser cancelada (antes da coleta). O ``T``
+#: (a central trocando de entregador) é procura, como o ``D``.
+CANCELLABLE_STATUSES = frozenset({"D", "G", "P", "T", "A", "S"})
+
+# ── Motivo do cancelamento, por fase ────────────────────────────────
+#
+# ``POST /cancelar`` exige ``motivo_id``, e o motivo aceito depende da letra da
+# corrida (OpenAPI v1 da TaOn, usuário de empresa): antes do aceite só o 10;
+# depois do aceite, a lista abaixo; fora disso a central devolve o erro 102.
+# Um motivo fixo por deployment fazia o cancelamento antes do aceite falhar
+# sempre (issue #2463): o motivo é da fase, não da configuração.
+
+#: Letras em que ninguém aceitou a corrida ainda.
+BEFORE_ACCEPT_STATUSES = frozenset({"D", "T", "P", "G"})
+
+#: O único motivo que a central aceita antes do aceite.
+CANCEL_REASON_BEFORE_ACCEPT = 10
+
+#: Os motivos que a central aceita depois do aceite (``A``/``S``).
+CANCEL_REASONS_AFTER_ACCEPT = frozenset({1, 2, 6, 12, 18, *range(32, 42)})
+
+#: O que o operador escolhe na confirmação, depois do aceite (os rótulos moram
+#: na projeção, ``order_queue.COURIER_CANCEL_REASONS``): 12 o entregador não
+#: está vindo, 37 está demorando demais, 40 não consegui falar com o entregador.
+CANCEL_REASON_OPERATOR_DEFAULT = 12
+CANCEL_REASONS_OPERATOR = (12, 37, 40)
+
+#: O pedido foi cancelado pela casa e a corrida já tinha entregador.
+CANCEL_REASON_ORDER_CANCELLED = 33
+
+#: Código de erro da central para "este motivo não vale nesta fase".
+CANCEL_REASON_REFUSED_CODE = 102
+
+#: Quem pede o cancelamento, quando não é o operador escolhendo um motivo.
+CANCEL_INTENT_OPERATOR = "operator"
+CANCEL_INTENT_ORDER_CANCELLED = "order_cancelled"
+
+
+def cancel_reason_for(status: str, intent=CANCEL_INTENT_OPERATOR) -> int:
+    """O ``motivo_id`` que a central aceita para cancelar a corrida nesta letra.
+
+    ``intent`` é o motivo escolhido pelo operador (inteiro da lista de depois do
+    aceite) ou quem pede (``"operator"``, ``"order_cancelled"``). Antes do
+    aceite a escolha não importa: a central só aceita o 10.
+    """
+    if (status or "").strip().upper() in BEFORE_ACCEPT_STATUSES:
+        return CANCEL_REASON_BEFORE_ACCEPT
+    if type(intent) is int and intent in CANCEL_REASONS_AFTER_ACCEPT:
+        return intent
+    if intent == CANCEL_INTENT_ORDER_CANCELLED:
+        return CANCEL_REASON_ORDER_CANCELLED
+    return CANCEL_REASON_OPERATOR_DEFAULT
 
 #: User-Agent próprio. A borda da Machine recusa o padrão do `requests`
 #: (`python-requests/x.y`) com 403 e uma página HTML, nos dois ambientes; com qualquer
@@ -61,10 +111,58 @@ class CourierError(Exception):
     re-tentar não resolve.
     """
 
-    def __init__(self, message: str, *, transient: bool, outcome_unknown: bool | None = None):
+    def __init__(self, message: str, *, transient: bool, outcome_unknown: bool | None = None,
+                 codes: tuple[int, ...] = ()):
         super().__init__(message)
         self.transient = transient
         self.outcome_unknown = transient if outcome_unknown is None else outcome_unknown
+        #: Os códigos de erro que a central devolveu no envelope (``errors[].code``).
+        self.codes = tuple(codes)
+
+
+#: Espera quando a TaOn limita as chamadas (HTTP 429) e não diz por quanto tempo.
+RATE_LIMIT_DEFAULT_SECONDS = 30
+
+#: Teto da espera pedida pela TaOn: um ``Retry-After`` absurdo não some com a corrida.
+RATE_LIMIT_MAX_SECONDS = 300
+
+
+class CourierRateLimited(CourierError):
+    """A TaOn limitou as chamadas (HTTP 429): a chamada NÃO foi aplicada.
+
+    Transitório e de resultado conhecido (nada aconteceu do lado de lá): quem
+    chama espera ``retry_after`` segundos e tenta de novo. Não é falha de
+    leitura nem de despacho, e por isso não vira aviso ao operador.
+    """
+
+    def __init__(self, message: str, *, retry_after: int):
+        super().__init__(message, transient=True, outcome_unknown=False)
+        self.retry_after = retry_after
+
+
+def _retry_after_seconds(value) -> int:
+    """``Retry-After`` em segundos (número ou data HTTP), dentro do teto."""
+    text = str(value or "").strip()
+    seconds: float | None = None
+    try:
+        seconds = float(text)
+    except ValueError:
+        from datetime import UTC
+        from email.utils import parsedate_to_datetime
+
+        from django.utils import timezone
+
+        try:
+            moment = parsedate_to_datetime(text) if text else None
+        except (TypeError, ValueError):
+            moment = None
+        if moment is not None:
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=UTC)
+            seconds = (moment - timezone.now()).total_seconds()
+    if seconds is None or seconds != seconds:  # sem cabeçalho, ilegível ou NaN
+        return RATE_LIMIT_DEFAULT_SECONDS
+    return int(min(max(seconds, 1), RATE_LIMIT_MAX_SECONDS))
 
 
 @dataclass(frozen=True)
@@ -109,6 +207,16 @@ def _inert() -> bool:
     return False
 
 
+def _error_codes(errors) -> tuple[int, ...]:
+    codes = []
+    for error in errors if isinstance(errors, list) else []:
+        try:
+            codes.append(int(error.get("code")))
+        except (AttributeError, TypeError, ValueError):
+            continue
+    return tuple(codes)
+
+
 def is_configured() -> bool:
     cfg = _cfg()
     return bool(cfg.get("username") and cfg.get("password") and cfg.get("api_key"))
@@ -139,6 +247,16 @@ def _request(method: str, path: str, *, base: str | None = None, params: dict | 
     except requests.RequestException as exc:
         raise CourierError(f"Machine indisponível: {exc}", transient=True) from exc
 
+    if resp.status_code == 429:
+        retry_after = _retry_after_seconds(resp.headers.get("Retry-After"))
+        logger.warning(
+            "courier.rate_limited path=%s retry_after=%s remaining=%s reset=%s",
+            path, retry_after, resp.headers.get("X-RateLimit-Remaining"), resp.headers.get("X-RateLimit-Reset"),
+        )
+        raise CourierRateLimited(
+            f"A TaOn limitou as chamadas (HTTP 429). Nova tentativa em {retry_after} s.", retry_after=retry_after,
+        )
+
     if resp.status_code >= 500:
         raise CourierError(
             f"Machine HTTP {resp.status_code}: {resp.text[:200]}", transient=True
@@ -165,7 +283,8 @@ def _request(method: str, path: str, *, base: str | None = None, params: dict | 
         detail = "; ".join(
             f"[{e.get('code')}] {e.get('message')}" for e in errors if isinstance(e, dict)
         ) or resp.text[:200]
-        raise CourierError(f"Machine recusou ({resp.status_code}): {detail}", transient=False)
+        raise CourierError(f"Machine recusou ({resp.status_code}): {detail}", transient=False,
+                           codes=_error_codes(errors))
 
     response = payload.get("response")
     return response if isinstance(response, (dict, list)) else {}
@@ -341,13 +460,15 @@ def snapshot_from_details(payload: dict) -> dict:
     status = _status_letter(payload.get("short_code"), payload.get("full_code"))
     if not status:
         # Código de evento (chegada, parada) no lugar do estado: o progresso diz qual é.
+        # ``cancellation[]`` NÃO prova corrida cancelada: a desistência de um
+        # entregador entra ali e a TaOn segue procurando outro. Cancelada, só
+        # quando a letra lida é C. E com desistência na lista o aceite do
+        # andamento pode ser de quem saiu: sem letra, outra via responde.
         if _text(finished.get("finished_at")):
             status = "F"
-        elif cancellations:
-            status = "C"
         elif _text(progress.get("start_trip")):
             status = "E"
-        elif _text(progress.get("accepted_at")):
+        elif _text(progress.get("accepted_at")) and not cancellations:
             status = "A"
 
     accepted_at = _text(progress.get("accepted_at"))
@@ -437,6 +558,9 @@ def read_ride(courier_ref: str) -> dict:
     for via in order:
         try:
             snapshot = _read_via(via, courier_ref)
+        except CourierRateLimited:
+            # Sob limite, tentar as outras vias só gasta mais cota: quem lê espera.
+            raise
         except CourierError as exc:
             errors.append(exc)
             continue
@@ -465,18 +589,16 @@ def get_position(courier_ref: str) -> dict | None:
     return {"lat": float(lat), "lng": float(lng)}
 
 
-def cancel(courier_ref: str, *, reason_id: int | None = None) -> bool:
-    """Cancela a corrida (POST /cancelar). Só antes de F/N/C."""
+def cancel(courier_ref: str, *, reason_id: int) -> bool:
+    """Cancela a corrida (POST /cancelar). Só antes de F/N/C.
+
+    ``reason_id`` é obrigatório e depende da letra da corrida
+    (:func:`cancel_reason_for`); com o motivo da fase errada a central devolve
+    o erro 102, que sobe em ``CourierError.codes``.
+    """
     if _inert():
         return True
-    _request(
-        "POST",
-        "/cancelar",
-        json_body={
-            "id_mch": courier_ref,
-            "motivo_id": reason_id if reason_id is not None else int(_cfg().get("cancel_reason_id") or 1),
-        },
-    )
+    _request("POST", "/cancelar", json_body={"id_mch": courier_ref, "motivo_id": int(reason_id)})
     return True
 
 
