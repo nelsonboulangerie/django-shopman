@@ -117,7 +117,7 @@ export function useOrderDetail(orderRef: string) {
     action: string,
     body?: Record<string, unknown>,
     approval?: Record<string, string>,
-    /** A ação que não mora na projeção do detalhe (a devolução vem da prévia dela). */
+    /** A ação que vem da prévia do gesto, não do detalhe (a devolução, o não retirado). */
     contract?: Action,
   ): Promise<boolean> {
     if (busy.value) return false;
@@ -152,6 +152,7 @@ export function useOrderDetail(orderRef: string) {
           "undo-ready",
           "ifood-accept-retry",
           "return",
+          "no-show",
         ].includes(action)
       ) {
         await intentions.execute(
@@ -260,6 +261,11 @@ export function useOrderDetail(orderRef: string) {
     choice: { items: { line_id: string; qty: string }[]; reason: string },
     contract: Action,
   ) => act("return", { items: choice.items, reason: choice.reason }, undefined, contract);
+  // Não retirado (WP-G11): não há o que escolher, o destino de cada linha é do
+  // servidor. A ação é a da prévia (`no-show/preview/`), com a base que o comando
+  // confere; a do detalhe só diz se a porta existe. O PIN vem pelo desafio de sempre.
+  const markNotPickedUp = (contract: Action) =>
+    act("no-show", undefined, undefined, contract);
   const settleCash = (
     amount: string,
     changeBack?: string,
@@ -431,6 +437,7 @@ export function useOrderDetail(orderRef: string) {
     reject,
     cancel,
     returnOrder,
+    markNotPickedUp,
     settleCash,
     equipmentBack,
     courierBack,
