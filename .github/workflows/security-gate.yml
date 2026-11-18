@@ -22,7 +22,7 @@ jobs:
   # não roda o CodeQL; fila, push e agenda rodam sempre.
   scope:
     name: Escopo do PR
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -45,7 +45,7 @@ jobs:
     name: CodeQL (${{ matrix.language }})
     needs: scope
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.code != 'false') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -70,7 +70,7 @@ jobs:
     name: Security Gate
     needs: [scope, codeql]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - name: As duas análises produziram resultado
         env:

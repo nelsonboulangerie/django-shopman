@@ -153,7 +153,7 @@ Payload (JSON, sem PII):
 ## 9. Gate de dev
 
 1. Solicitação de produto aprovada pelo dono (`APPROVED`).
-2. Aprovação cria/liga a linha `DEV-AAAA` no `docs/coordination/COMMITMENTS.md`
+2. Aprovação cria/liga a entrada `DEV-AAAA` em `docs/coordination/commitments/`
    (`tipo=solicitacao`, `origem=HELP-…`, `dono=Engenharia`, `revisar_em`).
 3. O PR cita `Compromisso: DEV-AAAA`; o CI reprova sem a linha.
 4. O merge atualiza o `DEV-` para `FEITO` com `prova: #PR` e fecha/atualiza o ticket.

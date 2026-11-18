@@ -40,7 +40,7 @@ concurrency:
 jobs:
   scope:
     name: Escopo do PR
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -65,7 +65,7 @@ jobs:
     # `!cancelled()`: escopo que falha não pode pular a matriz (os nomes dos
     # apps são checks obrigatórios); sem escopo, CI_SURFACES cai em `all`.
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     outputs:
       quality: ${{ steps.matrix.outputs.quality }}
@@ -95,7 +95,7 @@ jobs:
   # de qualquer um deles.
   surface-versions:
     name: Versões das superfícies
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
 
     steps:
@@ -156,7 +156,7 @@ jobs:
     needs: surface-contract
     # Só na fila (não é check obrigatório): docs/reference/ci-escopo.md.
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     strategy:
@@ -183,7 +183,9 @@ jobs:
     name: ${{ matrix.kind == 'internal' && format('Preview interno — {0}', matrix.dir) || matrix.dir }}
     needs: surface-contract
     if: ${{ !cancelled() && needs.surface-contract.result == 'success' }}
-    runs-on: ${{ matrix.runner }}
+    # Linux com trabalho vai para o runner maior (CI_LINUX_RUNNER); macOS e a
+    # entrada `skip` (verde em segundos) ficam no runner que o contrato dá.
+    runs-on: ${{ (matrix.runner == 'ubuntu-latest' && !matrix.skip) && (vars.CI_LINUX_RUNNER || 'ubuntu-latest') || matrix.runner }}
     timeout-minutes: 45
 
     strategy:
@@ -357,7 +359,7 @@ jobs:
     needs: surface-contract
     # Só na fila (não é check obrigatório): docs/reference/ci-escopo.md.
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     strategy:

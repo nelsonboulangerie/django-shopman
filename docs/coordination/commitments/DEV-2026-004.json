@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-004",
+  "tipo": "compromisso",
+  "origem": "#2292",
+  "compromisso": "Horário especial que encurta o dia não é conferido contra os horários dos pedidos",
+  "dono": "Engenharia · Admin",
+  "criado": "2026-11-12",
+  "revisar_em": "2026-12-03",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

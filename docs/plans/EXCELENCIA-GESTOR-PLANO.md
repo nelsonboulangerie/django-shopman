@@ -15,8 +15,10 @@ base `docs/coordination/ROUNDS/EXCELENCIA-base.md`. Medido em 16/11/2026 contra 
 - **O salto que mais impressiona**: "Promessa em risco". Quando a produção muda (lote
   cancelado, rendeu menos, atrasou), o Gestor mostra pedido a pedido quem ficou sem pão, com
   a ação pronta. Nenhum dos cinco benchmarks liga produção real a pedido aceito.
-- **14 WPs em 6 ondas**. O primeiro a delegar é o **WP-G01** (a encomenda se anuncia), junto
-  com o **WP-G00** (harness de operador de verdade).
+- **15 WPs em 6 ondas, mais um fora delas**. O primeiro a delegar é o **WP-G01** (a encomenda
+  se anuncia), junto com o **WP-G00** (harness de operador de verdade). O **WP-G14** (canal
+  Google: retirada item a item) entrou em 17/11/2026, pela issue #2652, e espera o WP-L01 da
+  Loja no `main`.
 - **4 decisões do dono**, no fim. Em 17/11/2026 ele respondeu sim à 2 e à 3, escolheu a API
   na 4 e decidiu a 1: no pedido não retirado, a casa fica só com o valor da perda.
 - **O que este PR deixou de fora tem issue**: execução do plano (#2546), o lado de fronteira do
@@ -585,6 +587,81 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 - **Brief:** leia o P1-15 e a F-10. A mesma assinatura do cancelamento de pedido pago; chave
   de idempotência por tentativa.
 
+### WP-G14 · Canal Google: a retirada diz a verdade, item a item (17/11/2026, issue #2652)
+
+- **Objetivo:** o que a casa envia ao Google sobre a retirada de cada item é o mesmo fato que a
+  Loja mostra ao cliente, e a aba Canais diz se o Google aprovou ou negou os dois recursos da
+  loja física, sem o dono depender do e-mail.
+- **Achado que fecha (medido no `main` em 17/11/2026, fora do laudo original):**
+  `shopman/shop/adapters/catalog_projection_google.py:186-200` (`build_local_inventory`) envia
+  `pickupSla: "SAME_DAY"` fixo para todo item, inclusive o que só fica pronto amanhã. O Google
+  cruza o inventário local com a página do produto; a divergência sozinha nega a "retirada no
+  mesmo dia" (recusa de 01/11/2026 no Merchant Center, issue #2652). O
+  `display_catalog.DisplayItem` nem carrega o dia de pronto: só `available`.
+- **Dependências:** **WP-L01 da Loja no `main`** (#2582, a promessa de quando). A outra metade
+  da issue é da Loja (WP-L02, a página do produto nomeia a loja e diz quando fica pronto) e
+  **não** é deste WP. Não divide arquivo com nenhum outro WP do Gestor.
+- **Duas entregas, dois PRs:**
+  - **G14a · o envio (não muda tela, vai direto para a fila).** O `pickupSla` sai, item a
+    item, do dia em que o item fica pronto: `SAME_DAY` se é hoje, `NEXT_DAY` se é amanhã,
+    `TWO_DAY` a `SEVEN_DAY` e `MULTI_WEEK` além disso (valores da Merchant API, conferidos na
+    referência de `LocalInventoryAttributes` em 17/11/2026). Arquivos:
+    `shop/adapters/catalog_projection_google.py`, `shop/services/display_catalog.py` (o item
+    passa a carregar o dia de pronto), um service novo do `shop` com o fato de quando fica
+    pronto, `storefront/services/promise_facts.py` (passa a ler do `shop`),
+    `shop/tests/test_catalog_projection_google.py` e os testes do fato.
+  - **G14b · a aba Canais (muda tela, prévia local do dono antes da fila).** O card do Google
+    ganha dois itens no checklist: "Retirada no mesmo dia" e "Disponibilidade na loja", cada
+    um com o estado que o Google devolve. Arquivos: `backstage/projections/channel_health.py`,
+    `backstage/tests/test_channel_health.py`, `contracts/projections/*.json`, e no Gestor
+    `presentation/channelHealth.ts`, `types/channelHealth.ts`,
+    `components/ChannelHealthChecklist.vue` e os testes deles.
+- **Muda tela:** G14a não; G14b sim (prévia). **Tamanho:** M (G14a) + M (G14b).
+- **Fronteira declarada:** o G14a escreve em `shop/adapters`, em services do `shop`
+  (`display_catalog.py` e o service novo do fato) e num arquivo da Loja (`promise_facts.py`),
+  que as regras comuns deixam fora. É exceção atribuída pela coordenação em 17/11/2026 e vale
+  só para esses arquivos.
+- **Decidido pela coordenação em 17/11/2026:**
+  1. **O fato desce para o `shop`.** O WP-L01 junta a promessa em
+     `shopman/storefront/services/promise_facts.py`, e a regra de dependência só deixa o
+     `storefront` importar o `shop`, nunca o contrário. O G14a move o fato de quando fica
+     pronto para um service do `shop`, e o `storefront` passa a ler de lá. Um lugar só: nunca
+     uma segunda conta do dia de pronto. Antes de tocar em `promise_facts.py`, a sessão avisa
+     a sessão da Loja. A prova é um teste que, para os mesmos SKUs e o mesmo instante, compara
+     o dia que vai ao Google com o dia do `ready_promise`, e os testes do WP-L01 seguem verdes
+     sem mudar o que a Loja mostra.
+  2. **Sem motivo na API, Canais mostra o estado e o atalho.** A Merchant API tem
+     `accounts/{conta}/omnichannelSettings` (leitura), com `pickup.state` e `inStock.state`
+     em `ACTIVE`, `FAILED`, `RUNNING` ou `ACTION_REQUIRED`. Pela referência (17/11/2026)
+     **o recurso não traz o motivo da recusa em texto**. Se nenhum outro recurso trouxer,
+     Canais mostra o estado e o atalho para o Merchant Center, onde o motivo está, e o PR
+     declara isso em vez de inventar texto.
+  3. **Quem lê o estado é o próprio app, nunca um agente com credencial.** A leitura entra no
+     app, pela conta de serviço que a produção já usa para o envio (só leitura, no
+     `sync_platform_catalogs` ou numa ação do Admin). Nos testes, respostas gravadas. A
+     medição real se faz olhando Canais depois do deploy.
+- **Uma coisa que a sessão mede antes de escrever, porque o plano não a provou:** quando o
+  envio se refaz. "Pronto hoje" vira "pronto amanhã" quando passa o corte do dia ou quando um
+  lote é cancelado. Medir a cadência do envio ao Google e dizer no PR em quanto tempo o
+  `pickupSla` acompanha a virada.
+- **Critérios de pronto:**
+  - item que só fica pronto amanhã vai com `NEXT_DAY`; o de hoje, com `SAME_DAY`; teste por
+    caso, com relógio congelado antes e depois do corte;
+  - **item sem promessa não anuncia retirada** (recomendação: o dado que falta fecha a
+    promessa, nunca cai em `SAME_DAY`); a sessão confere como a API aceita esse caso;
+  - o código da loja no Perfil da Empresa (`store_code`) está preenchido no ambiente vivo;
+    vazio, o inventário local não é enviado (`catalog_projection_google.py:349`) e Canais
+    passa a dizer isso como item do checklist, com a ação no Admin;
+  - Canais mostra os dois recursos com estado legível ao operador, sem nome de API nem
+    variável (defeito D6 de `docs/reference/omotenashi-copy.md`), e a leitura que falha diz
+    que falhou em vez de mostrar "aprovado";
+  - nenhuma chamada ao Google nos testes (respostas gravadas); nenhum agente lê a conta real.
+- **Fora deste WP:** pedir a revisão dos dois recursos no Merchant Center. É ação do dono,
+  pela coordenação, e só depois de G14a, G14b e WP-L02 no ar (pedir antes repete a recusa).
+- **Brief:** leia a issue #2652 inteira (corpo e os dois comentários), o cabeçalho de
+  `catalog_projection_google.py`, `display_catalog.py` e `promise_facts.py` do WP-L01. Comece
+  pelo G14a.
+
 ## 8. Jornadas a canonizar
 
 Todas em `surfaces/orders-nuxt/tests/operator/`, contra o Django da pilha, com o papel e os
@@ -614,6 +691,7 @@ um WP por onda escreve nele.
 | 3 | **G07** (avisar o cliente, depois do G12) · **G08** (promessa em risco) | G08 |
 | 4 | **G09** (contrato limpo) · **G10** (agenda com cobertura) | G09 |
 | 5 | **G12 → G11 → G13**, em fila (mesmos arquivos). G12 e G13 liberados em 17/11/2026; o G11 espera os Termos da loja e o lado do `shop`, e se demorar o G13 passa à frente | nenhum |
+| fora das ondas | **G14** (canal Google), em dois PRs: G14a (envio) e depois G14b (Canais). Espera o WP-L01 da Loja no `main` (#2582) e não divide arquivo com nenhum outro WP do Gestor | nenhum |
 
 Conferência dos arquivos por onda:
 
@@ -629,6 +707,10 @@ Conferência dos arquivos por onda:
 - Onda 4: G09 fica com `pages/index.vue`, `QueueView.vue`, `board.ts`, `queue.ts` e
   `kitchen.ts`; G10 com
   `OrderPreorderList.vue`, `operations.py` e `urls.py`.
+- Fora das ondas: G14a fica com `catalog_projection_google.py`, `display_catalog.py`, o
+  service novo do fato no `shop` e `promise_facts.py` (da Loja, com aviso à sessão dela); G14b
+  com `channel_health.py`, `channelHealth.ts` e `ChannelHealthChecklist.vue`. Nenhum outro WP
+  deste plano abre esses arquivos.
 
 ## 10. Decisões do dono
 

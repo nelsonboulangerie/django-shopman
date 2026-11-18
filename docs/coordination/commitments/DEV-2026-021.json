@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-021",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "nfce ok, assim que formos pro golive ja estara em producao. faça toda parte do ifood ok",
+  "dono": "Engenharia",
+  "criado": "2026-11-13",
+  "revisar_em": "2026-11-20",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

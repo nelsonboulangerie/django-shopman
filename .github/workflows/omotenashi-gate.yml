@@ -35,7 +35,7 @@ jobs:
   # E2E são pesados e rodam só na fila; o Admin CSP roda no PR que mexe Python.
   scope:
     name: Escopo do PR
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -59,7 +59,7 @@ jobs:
     # Pesado: só na fila (docs/reference/ci-escopo.md). No PR reporta
     # verde ("pulado") com o mesmo nome, que é check obrigatório.
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     services:
@@ -199,7 +199,7 @@ jobs:
     needs: scope
     # Escopo que falha (saída vazia) RODA: só `false` explícito pula.
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.python != 'false') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     services:
@@ -274,7 +274,7 @@ jobs:
     # Pesado: só na fila (docs/reference/ci-escopo.md). No PR reporta
     # verde ("pulado") com o mesmo nome, que é check obrigatório.
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     # ⚠️ Este alvo existia e não rodava em lugar nenhum. Foi assim que a suíte

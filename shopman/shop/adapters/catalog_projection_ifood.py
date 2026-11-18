@@ -33,6 +33,13 @@ Structure: **Merchant → Catálogos → Categorias → Itens**.
   drop ``originalValue`` from the item. Both PATCH paths are confirmed by reading
   ``GET /items/{itemId}/flat`` before the projection is reported as synced.
 
+- **Complementos** (``shop.ChannelAddonGroup``/``ChannelAddon``) viajam no mesmo
+  ``PUT /items``: ``optionGroups`` e ``options`` no topo, um ``products`` por opção
+  (nome e foto) e ``products[0].optionGroups`` com ``min``/``max`` do grupo. Forma
+  lida de volta na loja de teste em 17/11/2026 (``GET /items/{id}/flat``). Preço e
+  pausa de uma opção vão por ``PATCH /options/price`` e ``PATCH /options/status``
+  (``optionId``), confirmados pela mesma leitura.
+
 Authentication is OAuth 2.0 ``client_credentials`` via
 :mod:`shopman.shop.services.ifood_auth` (Bearer + the mandatory own User-Agent —
 iFood's WAF answers ``403`` to a generic UA). Config lives in the
@@ -86,6 +93,59 @@ class IFoodImageError(Exception):
 
 class IFoodConfirmationError(Exception):
     """O PATCH não pôde ser confirmado por uma leitura remota equivalente."""
+
+
+class IFoodRejected(Exception):
+    """O iFood recusou a escrita; a mensagem é a que ele mesmo devolveu."""
+
+
+_REJECTION_REASONS = (
+    # (pedaço do campo ou do código, frase para o operador)
+    ("imagepath", "A foto não foi aceita pelo iFood: formato, tamanho ou endereço inválido."),
+    ("image", "A foto não foi aceita pelo iFood: formato, tamanho ou endereço inválido."),
+    ("price", "O preço não foi aceito pelo iFood."),
+    ("categoryid", "A categoria não foi aceita pelo iFood. Confira a categoria da coleção."),
+    ("template", "A categoria não aceita este tipo de item."),
+    ("name", "O nome não foi aceito pelo iFood."),
+    ("optiongroup", "O grupo de complementos não foi aceito pelo iFood."),
+    ("option", "Um complemento não foi aceito pelo iFood."),
+    ("notanuuid", "O iFood recusou a identificação do item."),
+)
+#: Separa a frase do operador do texto original do iFood; a tela mostra o original em letra pequena.
+IFOOD_ORIGINAL_MARK = " | iFood: "
+
+
+def ifood_rejection_text(details: list[dict], message: str) -> str:
+    """Frase do operador + o texto original do iFood depois de ``IFOOD_ORIGINAL_MARK``."""
+    original = "; ".join(
+        f"{d.get('message')} ({d.get('field')})" if d.get("field") else str(d.get("message"))
+        for d in details
+        if d.get("message")
+    ) or message
+    keys = " ".join(f"{d.get('field', '')} {d.get('code', '')}" for d in details).lower()
+    friendly = next((text for key, text in _REJECTION_REASONS if key in keys), "O iFood recusou o envio.")
+    return f"{friendly}{IFOOD_ORIGINAL_MARK}{original}" if original else friendly
+
+
+def _raise_for_ifood(resp) -> None:
+    """Como ``raise_for_status``, mas com o motivo que o iFood escreveu.
+
+    O iFood responde ``{"error": {"message", "details": [{"field", "code", "message"}]}}``.
+    A tela mostra a frase traduzida ("A foto não foi aceita pelo iFood…") e, em letra
+    pequena, o texto original dele; nunca "400 Client Error ... for url".
+    """
+    status = getattr(resp, "status_code", None)
+    if not isinstance(status, int):
+        resp.raise_for_status()
+        return
+    if status < 400:
+        return
+    try:
+        error = (resp.json() or {}).get("error") or {}
+    except Exception:  # silêncio-deliberado: corpo não-JSON cai na mensagem genérica.
+        error = {}
+    details = [d for d in (error.get("details") or []) if isinstance(d, dict)]
+    raise IFoodRejected(ifood_rejection_text(details, str(error.get("message") or "")))
 
 
 def _get_config(channel: str = "ifood") -> dict:
@@ -163,6 +223,111 @@ def _resolve_category_id(item: ProjectedItem, cfg: dict, *, binding_category: st
     )
 
 
+_ADDON_NS = uuid.UUID("5b0b7c0e-7d6f-5a51-9a3e-2f1d8c4b6a70")
+
+
+def _uuid4_shaped(name: str) -> str:
+    # O iFood valida ``optionIds`` como UUID versão 4 e recusa o uuid5 com
+    # ``NotAnUUID`` (loja de teste, 17/11/2026). O valor continua derivado e
+    # estável; só os bits de versão e variante dizem 4.
+    return str(uuid.UUID(bytes=uuid.uuid5(_ADDON_NS, name).bytes, version=4))
+
+
+def addon_identity(merchant_id: str, sku: str, group_ref: str, addon_ref: str = "") -> dict[str, str]:
+    """UUIDs remotos de um grupo ou de uma opção, derivados como os do item.
+
+    Mesmo ``(merchant, sku, ref)`` → mesmo UUID: reenviar o item atualiza o
+    complemento que já está lá em vez de criar outro.
+    """
+    if not addon_ref:
+        return {"group_id": _uuid4_shaped(f"{merchant_id}:group:{sku}:{group_ref}")}
+    key = f"{merchant_id}:{sku}:{group_ref}:{addon_ref}"
+    return {
+        "option_id": _uuid4_shaped(f"option:{key}"),
+        "product_id": _uuid4_shaped(f"product:{key}"),
+    }
+
+
+def addon_external_code(sku: str, group_ref: str, addon_ref: str = "") -> str:
+    return f"{sku}-{group_ref}-{addon_ref}" if addon_ref else f"{sku}-{group_ref}"
+
+
+def _addon_groups(sku: str, channel: str):
+    if not channel:
+        return []
+    from shopman.shop.models import ChannelAddonGroup
+
+    # Todos os grupos, inclusive desligados: se o SKU tem complemento cadastrado,
+    # o PUT manda a lista inteira (só os ativos), e desligar o último grupo o tira
+    # do iFood. SKU sem nenhum grupo não manda as chaves, e o que a loja tiver
+    # criado no Portal para ele continua lá.
+    return list(
+        ChannelAddonGroup.objects.filter(channel__ref=channel, sku=sku)
+        .prefetch_related("addons")
+        .order_by("index", "pk")
+    )
+
+
+def _addon_payload(
+    sku: str,
+    groups,
+    *,
+    merchant_id: str,
+    image_paths: dict[int, str] | None = None,
+) -> dict:
+    """``optionGroups``, ``options``, os ``products`` das opções e o elo no produto."""
+    image_paths = image_paths or {}
+    option_groups: list[dict] = []
+    options: list[dict] = []
+    products: list[dict] = []
+    links: list[dict] = []
+    for group in groups:
+        if not group.is_active:
+            continue
+        group_id = addon_identity(merchant_id, sku, group.ref)["group_id"]
+        addons = sorted(group.addons.all(), key=lambda addon: (addon.index, addon.pk))
+        if not addons:
+            # O iFood não aceita grupo sem ``optionIds``; o grupo sobe com a 1ª opção.
+            continue
+        option_ids: list[str] = []
+        for addon in addons:
+            ids = addon_identity(merchant_id, sku, group.ref, addon.ref)
+            value = round(addon.price_q / 100, 2)
+            option_ids.append(ids["option_id"])
+            options.append({
+                "id": ids["option_id"],
+                "status": "AVAILABLE" if addon.is_active else "UNAVAILABLE",
+                "index": addon.index,
+                "productId": ids["product_id"],
+                "price": {"value": value, "originalValue": value},
+                "externalCode": addon_external_code(sku, group.ref, addon.ref),
+            })
+            product = {
+                "id": ids["product_id"],
+                "name": addon.name,
+                "externalCode": addon_external_code(sku, group.ref, addon.ref),
+            }
+            if image_paths.get(addon.pk):
+                product["imagePath"] = image_paths[addon.pk]
+            products.append(product)
+        option_groups.append({
+            "id": group_id,
+            "name": group.name,
+            "externalCode": addon_external_code(sku, group.ref),
+            "status": "AVAILABLE",
+            "index": group.index,
+            "optionGroupType": "DEFAULT",
+            "optionIds": option_ids,
+        })
+        links.append({
+            "id": group_id,
+            "min": group.min_choices,
+            "max": group.max_choices,
+            "index": group.index,
+        })
+    return {"optionGroups": option_groups, "options": options, "products": products, "links": links}
+
+
 def _item_payload(
     item: ProjectedItem,
     *,
@@ -173,6 +338,7 @@ def _item_payload(
     channel: str = "",
     config: dict | None = None,
     identity=None,
+    addons: dict | None = None,
 ) -> dict:
     """Build the FullItemDto body for ``PUT /items`` from a ProjectedItem.
 
@@ -197,7 +363,10 @@ def _item_payload(
     }
     if image_path:
         product["imagePath"] = image_path
-    return {
+    payload_addons = addons or {}
+    if addons is not None:
+        product["optionGroups"] = payload_addons.get("links", [])
+    body = {
         "item": {
             "id": identity.item_id,
             "productId": identity.product_id,
@@ -208,8 +377,12 @@ def _item_payload(
             "index": 0,
             "shifts": [],
         },
-        "products": [product],
+        "products": [product, *payload_addons.get("products", [])],
     }
+    if addons is not None:
+        body["optionGroups"] = payload_addons.get("optionGroups", [])
+        body["options"] = payload_addons.get("options", [])
+    return body
 
 
 def _storage_image(image_url: str) -> bytes | None:
@@ -369,29 +542,69 @@ def _upsert_item(
     in_stock: bool = True,
     image_path: str = "",
     channel: str = "",
+    image_errors: list[str] | None = None,
 ) -> None:
     ensure_catalog_write_allowed(cfg)
     merchant_id = cfg["merchant_id"]
     from shopman.shop.policies.catalog_identity import resolve_catalog_identity
 
     identity = resolve_catalog_identity(item.sku, channel, config=cfg)
+    groups = _addon_groups(item.sku, channel)
+    addons = None
+    if groups:
+        image_paths: dict[int, str] = {}
+        for group in groups:
+            if not group.is_active:
+                continue
+            for addon in group.addons.all():
+                if not addon.image_url:
+                    continue
+                try:
+                    image_paths[addon.pk] = _image_path(addon.image_url, cfg, headers, channel=channel)
+                except IFoodRateLimitError:
+                    raise
+                except Exception as exc:
+                    # Como na foto do item: sem imagePath o iFood preserva a foto atual.
+                    logger.warning("catalog_projection_ifood.addon image pending", exc_info=True)
+                    if image_errors is not None:
+                        image_errors.append(f"{item.sku}: foto do complemento {addon.name!r} pendente: {exc}")
+        addons = _addon_payload(item.sku, groups, merchant_id=merchant_id, image_paths=image_paths)
     category_id = _resolve_category_id(item, cfg, binding_category=identity.category_ref)
     url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/items"
+    payload = _item_payload(
+        item,
+        merchant_id=merchant_id,
+        category_id=category_id,
+        in_stock=in_stock,
+        image_path=image_path,
+        channel=channel,
+        config=cfg,
+        identity=identity,
+        addons=addons,
+    )
     resp = requests.put(
         url,
-        json=_item_payload(
-            item,
-            merchant_id=merchant_id,
-            category_id=category_id,
-            in_stock=in_stock,
-            image_path=image_path,
-            channel=channel,
-            config=cfg,
-            identity=identity,
-        ),
+        json=payload,
         headers=headers,
         timeout=int(cfg.get("timeout") or 30),
     )
+    _check_rate_limit(resp)
+    _raise_for_ifood(resp)
+    # O PUT grava o status na raiz, mas deixa o contexto DEFAULT AVAILABLE
+    # (loja de teste, 17/11/2026: raiz UNAVAILABLE, contexto AVAILABLE logo
+    # depois do PUT). O PATCH de status acerta os dois; sem ele, um item ou
+    # complemento pausado voltaria a aparecer à venda a cada reenvio.
+    if payload["item"]["status"] == "UNAVAILABLE":
+        _patch_status("items", {"itemId": identity.item_id, "status": "UNAVAILABLE"}, cfg, headers)
+    for option in payload.get("options", []):
+        if option["status"] == "UNAVAILABLE":
+            _patch_status("options", {"optionId": option["id"], "status": "UNAVAILABLE"}, cfg, headers)
+
+
+def _patch_status(kind: str, body: dict, cfg: dict, headers: dict) -> None:
+    ensure_catalog_write_allowed(cfg)
+    url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{cfg['merchant_id']}/{kind}/status"
+    resp = requests.patch(url, json=body, headers=headers, timeout=int(cfg.get("timeout") or 30))
     _check_rate_limit(resp)
     resp.raise_for_status()
 
@@ -481,6 +694,70 @@ def _confirm_item_status(item_id: str, status: str, cfg: dict, headers: dict) ->
         raise IFoodConfirmationError("iFood did not confirm the requested item status")
 
 
+def _read_flat(item_id: str, cfg: dict, headers: dict) -> dict:
+    ensure_catalog_write_allowed(cfg)
+    merchant_id = cfg["merchant_id"]
+    url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/items/{item_id}/flat"
+    resp = requests.get(url, headers=headers, timeout=int(cfg.get("timeout") or 30))
+    _check_rate_limit(resp)
+    resp.raise_for_status()
+    body = resp.json()
+    if not isinstance(body, dict):
+        raise IFoodConfirmationError("iFood returned an invalid item confirmation")
+    return body
+
+
+_CONFIRM_WAITS = (0.0, 1.0, 2.0, 3.0, 4.0)
+
+
+def _confirm_option(item_id: str, option_id: str, cfg: dict, headers: dict, accept, message: str) -> dict:
+    """Relê o item até a opção mostrar o estado pedido.
+
+    O ``PATCH /options/status`` é eventualmente consistente: na loja de teste, a
+    leitura logo depois ainda mostrou AVAILABLE e a de ~4 s depois mostrou
+    UNAVAILABLE (17/11/2026). Uma leitura só daria falso negativo.
+    """
+    import time
+
+    remote: dict = {}
+    for wait in _CONFIRM_WAITS:
+        if wait:
+            time.sleep(wait)
+        remote = _remote_option(_read_flat(item_id, cfg, headers), option_id)
+        if accept(remote):
+            return remote
+    raise IFoodConfirmationError(message)
+
+
+def _remote_option(body: dict, option_id: str) -> dict:
+    options = body.get("options")
+    match = next(
+        (row for row in options or [] if isinstance(row, dict) and row.get("id") == option_id),
+        None,
+    )
+    if match is None:
+        raise IFoodConfirmationError("O iFood não devolveu o complemento na leitura do item.")
+    return match
+
+
+def _patch_option(path: str, body: dict, cfg: dict, headers: dict) -> None:
+    ensure_catalog_write_allowed(cfg)
+    merchant_id = cfg["merchant_id"]
+    url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/options/{path}"
+    resp = requests.patch(url, json=body, headers=headers, timeout=int(cfg.get("timeout") or 30))
+    _check_rate_limit(resp)
+    _raise_for_ifood(resp)
+
+
+def _addon_ids(addon, cfg: dict, channel: str) -> tuple[str, str]:
+    from shopman.shop.policies.catalog_identity import resolve_catalog_identity
+
+    group = addon.group
+    item_id = resolve_catalog_identity(group.sku, channel, config=cfg).item_id
+    option_id = addon_identity(cfg["merchant_id"], group.sku, group.ref, addon.ref)["option_id"]
+    return item_id, option_id
+
+
 class IFoodCatalogProjection:
     """Pushes catalog items to the iFood Merchant Catalog API (v2.0)."""
 
@@ -542,6 +819,7 @@ class IFoodCatalogProjection:
                     in_stock=in_stock,
                     image_path=image_path,
                     channel=channel,
+                    image_errors=errors,
                 )
                 projected += 1
             except IFoodRateLimitError:
@@ -658,3 +936,80 @@ class IFoodCatalogProjection:
             errors=errors,
             channel=channel,
         )
+
+
+class IFoodAddonProjection(IFoodCatalogProjection):
+    """Os gestos de complemento, que só o iFood tem.
+
+    O ``IFoodCatalogProjection`` honra o contrato fechado do Offerman
+    (``IncrementalCatalogProjectionBackend``), que não conhece complemento. Os
+    verbos de opção do iFood moram aqui, e só o serviço de complementos do canal
+    (``shop.services.channel_addons``) os usa.
+    """
+
+    def _addon_call(self, channel: str, call):
+        cfg = _get_config(channel)
+        try:
+            ensure_catalog_write_allowed(cfg)
+        except IFoodCatalogWriteBlocked as exc:
+            return ProjectionResult(success=False, errors=[str(exc)], channel=channel)
+        headers, reason = _headers(cfg)
+        if not headers:
+            return ProjectionResult(
+                success=False, errors=[ifood_auth.failure_message(reason)], channel=channel,
+            )
+        try:
+            call(cfg, headers)
+        except IFoodRateLimitError:
+            raise
+        except Exception as exc:
+            logger.debug("catalog_projection_ifood.addon degraded", exc_info=True)
+            return ProjectionResult(success=False, errors=[str(exc)], channel=channel)
+        return ProjectionResult(success=True, projected=1, channel=channel)
+
+    def update_addon_price(self, addon, *, channel: str) -> ProjectionResult:
+        """``PATCH /options/price`` só com o preço, confirmado pela leitura do item."""
+
+        def call(cfg, headers):
+            item_id, option_id = _addon_ids(addon, cfg, channel)
+            value = round(addon.price_q / 100, 2)
+            _patch_option(
+                "price",
+                {"optionId": option_id, "price": {"value": value, "originalValue": value}},
+                cfg,
+                headers,
+            )
+            _confirm_option(
+                item_id, option_id, cfg, headers,
+                lambda remote: isinstance(remote.get("price"), dict) and remote["price"].get("value") == value,
+                "O iFood não confirmou o novo preço do complemento.",
+            )
+
+        return self._addon_call(channel, call)
+
+    def set_addon_status(self, addon, *, channel: str) -> ProjectionResult:
+        """``PATCH /options/status`` (pausar ou retomar), confirmado pela leitura."""
+
+        def call(cfg, headers):
+            item_id, option_id = _addon_ids(addon, cfg, channel)
+            status = "AVAILABLE" if addon.is_active else "UNAVAILABLE"
+            _patch_option("status", {"optionId": option_id, "status": status}, cfg, headers)
+            _confirm_option(
+                item_id, option_id, cfg, headers,
+                lambda remote: remote.get("status") == status,
+                "O iFood não confirmou o estado do complemento.",
+            )
+
+        return self._addon_call(channel, call)
+
+    def read_item(self, sku: str, *, channel: str) -> dict:
+        """Leitura do item inteiro no iFood (item, grupos, opções e produtos)."""
+        from shopman.shop.policies.catalog_identity import resolve_catalog_identity
+
+        cfg = _get_config(channel)
+        ensure_catalog_write_allowed(cfg)
+        headers, reason = _headers(cfg)
+        if not headers:
+            raise IFoodConfirmationError(ifood_auth.failure_message(reason))
+        item_id = resolve_catalog_identity(sku, channel, config=cfg).item_id
+        return _read_flat(item_id, cfg, headers)
