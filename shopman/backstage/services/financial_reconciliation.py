@@ -678,7 +678,11 @@ def _check_intent(
             )
         )
 
-    if order.status in (Order.Status.CANCELLED, Order.Status.RETURNED) and net_q > 0:
+    if (
+        order.status in (Order.Status.CANCELLED, Order.Status.RETURNED)
+        and net_q > 0
+        and not _net_is_the_retained_no_show_amount(order)
+    ):
         issues.append(
             FinancialReconciliationIssue(
                 code="terminal_order_with_captured_balance",
@@ -930,6 +934,24 @@ def _check_courier_change(
             },
         )
     )
+
+
+def _net_is_the_retained_no_show_amount(order: Order) -> bool:
+    """O saldo que ficou é exatamente o que a loja retém de um pedido não retirado?
+
+    No "Não retirado" (WP-G11) o dinheiro segue o produto: o valor das linhas
+    que se perderam fica com a loja, por decisão assinada por um Gerente e
+    gravada em ``order.data["no_show"]``. Saldo capturado igual ao retido é o
+    estado CERTO, não um estorno esquecido. Qualquer outro saldo (o devolvível
+    que ainda não saiu, ou estorno a mais) continua sendo divergência. A conta
+    é do pedido inteiro, não do intent: a venda mista retém numa forma só.
+    """
+    from shopman.shop.services import payment as payment_service
+
+    kept_q = payment_service.retained_q(order)
+    if kept_q <= 0:
+        return False
+    return payment_service.captured_balance_q(order) == kept_q
 
 
 def _referenced_intent_refs(payment: dict) -> set[str]:
