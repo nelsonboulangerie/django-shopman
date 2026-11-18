@@ -38,6 +38,14 @@
 // tela, pago ou não, e o valor volta inteiro na hora pelo mesmo meio; a solicitação
 // com protocolo deixou de existir. Depois, não há cancelar: há falar com o
 // responsável (`policies/customer_cancellation.py`).
+//
+// 17 e 18/11/2026, decisão do dono (#2613): o pedido pago e não retirado. "Sim, só a
+// perda. Mas isso precisa estar amparado em algum documento do tipo Políticas
+// comerciais, Termos de serviço ou algo que o valha." A cláusula entra em "Retirada e
+// entrega" com o texto que ele aprovou, e o checkout da encomenda repete a mesma frase
+// antes de enviar (`finalizar.vue`; `tests/legalUnclaimedOrder.test.ts` reprova se uma
+// mudar sem a outra). A casa guarda até o fim do expediente do dia combinado; o corte é
+// no fechamento.
 import type { LegalProjection } from '~/types/shopman'
 
 const session = useShopSession()
@@ -145,6 +153,11 @@ useSeoMeta({
       <p>
         <strong>Retirada:</strong> {{ marca }} avisa quando o pedido fica pronto e guarda até o fim
         do expediente do dia combinado.
+      </p>
+      <p>
+        <strong>Pedido não retirado até o fim do expediente do dia combinado:</strong> o que ainda
+        puder voltar à venda é devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a
+        loja.
       </p>
       <p>
         <strong>Entrega:</strong> a taxa depende do endereço e aparece no total antes de você
