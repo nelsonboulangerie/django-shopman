@@ -22,7 +22,7 @@ concurrency:
 jobs:
   scope:
     name: detectar escopo
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     outputs:
       relevant: ${{ steps.diff.outputs.relevant }}
     steps:
@@ -60,7 +60,7 @@ jobs:
     name: operator-router — testes
     needs: scope
     if: needs.scope.outputs.relevant == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     defaults:
       run:
@@ -83,7 +83,7 @@ jobs:
     name: imagem ${{ matrix.group }}
     needs: [scope, router-tests]
     if: needs.scope.outputs.relevant == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -176,7 +176,7 @@ jobs:
     name: Operator Groups Contract
     needs: [scope, router-tests, group-image]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - name: Validar resultado aplicável ou não aplicável
         env:

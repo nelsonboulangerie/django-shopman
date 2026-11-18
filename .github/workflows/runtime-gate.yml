@@ -28,7 +28,7 @@ env:
 jobs:
   quality:
     name: Quality + deploy contract
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -272,7 +272,7 @@ jobs:
   # repositório trava para sempre.
   silent-swallow-gate:
     name: Gate da meia-correção
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     steps:
@@ -309,7 +309,7 @@ jobs:
   # Aqui ele passa a rodar em todo PR e na fila de merge.
   admin-gate:
     name: Admin/Unfold gate
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     steps:
@@ -341,7 +341,7 @@ jobs:
   # e reprovam cedo o erro bobo.
   tests:
     name: Testes
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     # ⚠️ O relógio do step precisa de folga sobre a suíte mais lenta: em
     # 27/08 o test-backstage passou VERDE em 20min04s e o timeout de 20 min
     # derrubou o job — suíte verde virou check vermelho e a fila de merge
@@ -414,7 +414,7 @@ jobs:
   # BACKSTAGE_HEAVY_TESTS. O nome `Backstage rest` ficou com o shard do resto.
   tests-backstage-shards:
     name: Backstage ${{ matrix.shard }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
@@ -456,7 +456,7 @@ jobs:
   # trocar o contexto obrigatório antes — ver o comentário acima.
   tests-backstage:
     name: Testes (test-backstage)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     needs: tests-backstage-shards
     if: always()
     timeout-minutes: 5
@@ -483,7 +483,7 @@ jobs:
   # a desenha moram no Makefile, junto de SHOP_HEAVY_TESTS.
   tests-shop-shards:
     name: Shop ${{ matrix.shard }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
@@ -525,7 +525,7 @@ jobs:
   # trocar o contexto obrigatório antes.
   tests-shop:
     name: Testes (test-shop)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     needs: tests-shop-shards
     if: always()
     timeout-minutes: 5
@@ -544,7 +544,7 @@ jobs:
     name: Coverage Gate
     needs: [tests, tests-backstage-shards, tests-shop-shards]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Todos os shards de teste passaram
@@ -596,7 +596,7 @@ jobs:
 
   docker-image:
     name: Docker deploy image
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     # ⚠️ SEM `needs: quality`. Não depende do resultado dos testes — é
     # checagem independente. Encadear empurrava ~5 min para o fim do caminho
     # crítico sem proteger nada: se os testes quebram, o PR reprova igual.
@@ -647,7 +647,7 @@ jobs:
 
   runtime-security-reliability:
     name: PostgreSQL + Redis runtime stress gate
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     # ⚠️ SEM `needs: quality`. Não depende do resultado dos testes — é
     # checagem independente. Encadear empurrava ~5 min para o fim do caminho
     # crítico sem proteger nada: se os testes quebram, o PR reprova igual.

@@ -33,7 +33,7 @@ env:
 jobs:
   omotenashi-browser-qa:
     name: Browser QA (Nuxt store + Django operator)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     services:
@@ -170,7 +170,7 @@ jobs:
   # header não traz 'unsafe-inline' no script-src.
   admin-csp:
     name: Admin CSP (production settings)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     services:
@@ -242,7 +242,7 @@ jobs:
 
   storefront-e2e:
     name: Storefront E2E (Playwright)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     # ⚠️ Este alvo existia e não rodava em lugar nenhum. Foi assim que a suíte
