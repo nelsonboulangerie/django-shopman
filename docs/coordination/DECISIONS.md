@@ -1135,3 +1135,31 @@ que o pacote da autoridade de compra vai propor: se mudar o que o cliente digita
 com a frase. E o texto da mensagem aprovada, que ele aprova antes da submissão.
 
 **Fonte.** Conversa de 16/11/2026; PR #2486.
+
+## D-041 · PDV: encomenda acima do plano, sem plano, a pagar na retirada e o que a Caixa vê
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-16 · **revisar_em:** 2026-12-16
+
+**Decisão do dono**, respondendo às perguntas do
+[EXCELENCIA-PDV-PLANO](../plans/EXCELENCIA-PDV-PLANO.md) (#2557, DEV-2026-028):
+
+1. Encomenda acima da fornada planejada da data: *"2"*. Bloqueia acima do plano e só o gerente
+   libera.
+2. Encomenda para data ainda sem plano de produção, liberar no PDV como pedido à Produção:
+   *"Sim"*.
+3. Encomenda de outro dia "a pagar na retirada", sem sinal: *"2. KISS"*. A opção some; vale a
+   regra de 28/08, "encomenda cobra antes".
+4. A Caixa vê o faturamento do dia e as somas de encomendas: *"Não, por óbvio! Porque a
+   pergunta, se temos contagem de fechamento do Caixa às cegas?!!?"* Decorre da D-004 e não
+   precisava de pergunta.
+5. "Nova venda" cai direto na grade da próxima comanda livre: *"Sim"*.
+
+Na mesma conversa, sobre o diálogo "Receber e entregar" da aba Encomendas: *"precisamos dessa
+janela para dizer forma de pagamento/troco etc??? Já não temos mecanismo pra isso??? Porque
+duplicaríamos???"* O recebimento do saldo passa a usar a tela de Pagamento do PDV (WP-E5).
+
+**O que isto NÃO decide.** O teto a partir do qual o gerente libera a encomenda acima do plano
+(hoje: qualquer excedente), e como a Produção responde ao pedido de data sem plano (fronteira
+F2, #2559).
+
+**Fonte.** Conversa de 16/11/2026; PR #2557.
