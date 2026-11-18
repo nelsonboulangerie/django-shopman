@@ -25,7 +25,9 @@ _DESTINY_LABELS = {no_show.RESTOCK: "Volta à venda", no_show.LOSS: "Perda"}
 _LOSS_REASON_LABELS = {
     no_show.WHY_MADE_TO_ORDER: "Feito na hora: não volta à venda.",
     no_show.WHY_NO_STOCK: "Sem estoque baixado: não há o que devolver ao balcão.",
-    no_show.WHY_LOT_EXPIRED: "O lote já venceu.",
+    # Cobre o lote vencido e o que vence hoje com a loja já fechada
+    # (``no_show.next_selling_day``): nos dois, não há balcão para ele voltar.
+    no_show.WHY_LOT_EXPIRED: "O lote vence antes de a loja voltar a vender.",
 }
 
 
