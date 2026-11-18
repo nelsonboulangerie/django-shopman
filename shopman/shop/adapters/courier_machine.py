@@ -120,6 +120,51 @@ class CourierError(Exception):
         self.codes = tuple(codes)
 
 
+#: Espera quando a TaOn limita as chamadas (HTTP 429) e não diz por quanto tempo.
+RATE_LIMIT_DEFAULT_SECONDS = 30
+
+#: Teto da espera pedida pela TaOn: um ``Retry-After`` absurdo não some com a corrida.
+RATE_LIMIT_MAX_SECONDS = 300
+
+
+class CourierRateLimited(CourierError):
+    """A TaOn limitou as chamadas (HTTP 429): a chamada NÃO foi aplicada.
+
+    Transitório e de resultado conhecido (nada aconteceu do lado de lá): quem
+    chama espera ``retry_after`` segundos e tenta de novo. Não é falha de
+    leitura nem de despacho, e por isso não vira aviso ao operador.
+    """
+
+    def __init__(self, message: str, *, retry_after: int):
+        super().__init__(message, transient=True, outcome_unknown=False)
+        self.retry_after = retry_after
+
+
+def _retry_after_seconds(value) -> int:
+    """``Retry-After`` em segundos (número ou data HTTP), dentro do teto."""
+    text = str(value or "").strip()
+    seconds: float | None = None
+    try:
+        seconds = float(text)
+    except ValueError:
+        from datetime import UTC
+        from email.utils import parsedate_to_datetime
+
+        from django.utils import timezone
+
+        try:
+            moment = parsedate_to_datetime(text) if text else None
+        except (TypeError, ValueError):
+            moment = None
+        if moment is not None:
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=UTC)
+            seconds = (moment - timezone.now()).total_seconds()
+    if seconds is None or seconds != seconds:  # sem cabeçalho, ilegível ou NaN
+        return RATE_LIMIT_DEFAULT_SECONDS
+    return int(min(max(seconds, 1), RATE_LIMIT_MAX_SECONDS))
+
+
 @dataclass(frozen=True)
 class CourierEstimate:
     value_q: int
@@ -201,6 +246,16 @@ def _request(method: str, path: str, *, base: str | None = None, params: dict | 
         )
     except requests.RequestException as exc:
         raise CourierError(f"Machine indisponível: {exc}", transient=True) from exc
+
+    if resp.status_code == 429:
+        retry_after = _retry_after_seconds(resp.headers.get("Retry-After"))
+        logger.warning(
+            "courier.rate_limited path=%s retry_after=%s remaining=%s reset=%s",
+            path, retry_after, resp.headers.get("X-RateLimit-Remaining"), resp.headers.get("X-RateLimit-Reset"),
+        )
+        raise CourierRateLimited(
+            f"A TaOn limitou as chamadas (HTTP 429). Nova tentativa em {retry_after} s.", retry_after=retry_after,
+        )
 
     if resp.status_code >= 500:
         raise CourierError(
@@ -405,13 +460,15 @@ def snapshot_from_details(payload: dict) -> dict:
     status = _status_letter(payload.get("short_code"), payload.get("full_code"))
     if not status:
         # Código de evento (chegada, parada) no lugar do estado: o progresso diz qual é.
+        # ``cancellation[]`` NÃO prova corrida cancelada: a desistência de um
+        # entregador entra ali e a TaOn segue procurando outro. Cancelada, só
+        # quando a letra lida é C. E com desistência na lista o aceite do
+        # andamento pode ser de quem saiu: sem letra, outra via responde.
         if _text(finished.get("finished_at")):
             status = "F"
-        elif cancellations:
-            status = "C"
         elif _text(progress.get("start_trip")):
             status = "E"
-        elif _text(progress.get("accepted_at")):
+        elif _text(progress.get("accepted_at")) and not cancellations:
             status = "A"
 
     accepted_at = _text(progress.get("accepted_at"))
@@ -501,6 +558,9 @@ def read_ride(courier_ref: str) -> dict:
     for via in order:
         try:
             snapshot = _read_via(via, courier_ref)
+        except CourierRateLimited:
+            # Sob limite, tentar as outras vias só gasta mais cota: quem lê espera.
+            raise
         except CourierError as exc:
             errors.append(exc)
             continue
