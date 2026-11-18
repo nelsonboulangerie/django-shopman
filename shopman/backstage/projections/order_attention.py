@@ -236,9 +236,12 @@ def card_attention(
         )
     else:
         goal = stage_goal(kind, channel_config)
+        # A encomenda só passa a pedir "Iniciar preparo" quando chega à Cozinha
+        # (WP-G02): o relógio conta dali, não do aceite de dias atrás.
+        released = _parse(getattr(card, "kitchen_released_at_iso", ""))
         since = {
             "blocked": order.accepted_at or order.created_at,
-            "start": order.accepted_at or order.created_at,
+            "start": released or order.accepted_at or order.created_at,
             "station": order.preparing_at or order.created_at,
             "mark_ready": order.preparing_at or order.created_at,
             # A entrega promete o tempo todo, da chegada à saída ("27 min · meta 30").

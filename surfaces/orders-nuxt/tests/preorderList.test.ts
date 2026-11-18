@@ -56,6 +56,15 @@ describe("a linha responde quando, como, pagamento e produção", () => {
     });
   });
 
+  it("a de hoje que espera a hora da Cozinha diz quando chega lá (WP-G02)", () => {
+    const line = preorderLine(
+      card({ schedule_label: "Hoje · 17h às 17h30", kitchen_release_label: "Vai para a Cozinha às 16h15" }),
+    );
+    expect(line.when).toBe("Hoje · 17h às 17h30");
+    expect(line.kitchenWait).toEqual({ label: "Vai para a Cozinha às 16h15", icon: "i-lucide-chef-hat" });
+    expect(preorderLine(card()).kitchenWait).toBeNull();
+  });
+
   it("entrega diz Entrega", () => {
     expect(preorderLine(card({ fulfillment_label: "Entrega" })).how).toBe("Entrega");
   });

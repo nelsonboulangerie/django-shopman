@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // Encomendas no Gestor (dono, 13/11/2026; o vocabulário fechado diz Encomenda, não
 // Agendado): os pedidos dos próximos dias, abaixo do painel. Não entra no fluxo do dia;
-// está ali para conferir o que vem pela frente.
+// está ali para conferir o que vem pela frente. A encomenda de HOJE também mora aqui
+// enquanto espera a hora da Cozinha (dono, 18/11/2026; WP-G02): a linha diz "Vai para a
+// Cozinha às 17h15", e só nessa hora o pedido entra no quadro, pedindo "Iniciar preparo".
 //
 // Cada linha responde, sem abrir o pedido (WP-G03): quando, retirada ou entrega, se
 // está paga e se a produção cobre. A linha abre o pedido; "Remarcar no PDV" abre AQUELA
@@ -87,6 +89,14 @@ const rows = computed(() =>
               <span class="font-semibold tabular-nums text-highlighted">{{ line.code }}</span>
               <span class="min-w-0 truncate">{{ line.who }}</span>
               <span v-if="line.when" class="font-medium text-highlighted" data-preorder-when>{{ line.when }}</span>
+              <!-- A de hoje que espera a hora da Cozinha: a mesma frase do cartão. -->
+              <NuxtBadge
+                v-if="line.kitchenWait"
+                color="neutral"
+                :icon="line.kitchenWait.icon"
+                :label="line.kitchenWait.label"
+                data-preorder-kitchen-wait
+              />
               <span class="ms-auto shrink-0 tabular-nums">{{ line.total }}</span>
             </span>
             <!-- Segunda linha: como recebe, o pagamento, a produção e os itens. -->

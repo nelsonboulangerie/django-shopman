@@ -10,7 +10,12 @@ import type {
   OrderCardProjection,
   TwoZoneQueueProjection,
 } from "~/types/orders";
-import { productionLines, splitRef } from "./board";
+import {
+  kitchenWait,
+  productionLines,
+  splitRef,
+  type KitchenWait,
+} from "./board";
 
 type LineSource = Pick<
   OrderCardProjection,
@@ -25,7 +30,8 @@ type LineSource = Pick<
   | "payment_pending"
   | "attention"
   | "awaiting_work_orders"
->;
+> &
+  Partial<Pick<OrderCardProjection, "kitchen_release_label">>;
 
 export interface PreorderLine {
   ref: string;
@@ -34,6 +40,9 @@ export interface PreorderLine {
   who: string;
   /** "Amanhã · A partir das 15h": o dia e a janela, a mesma frase do cartão. */
   when: string;
+  /** "Vai para a Cozinha às 17h15": a encomenda de hoje que ainda espera a hora dela
+   *  (WP-G02). `null` na de outro dia. */
+  kitchenWait: KitchenWait | null;
   /** "Retirada" ou "Entrega". */
   how: string;
   /** "Pix · Pago" · "Dinheiro" · "Aguardando pagamento". */
@@ -61,6 +70,7 @@ export function preorderLine(card: LineSource): PreorderLine {
     code: splitRef(card.ref).code,
     who: card.customer_name || "Sem cliente",
     when: String(card.schedule_label ?? "").trim(),
+    kitchenWait: kitchenWait(card),
     how: card.fulfillment_label,
     // Quem espera o pagamento lê isso com nome; o meio fica ao lado, quando se sabe.
     payment: awaitingPayment
