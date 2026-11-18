@@ -646,7 +646,7 @@ Cada Core viável standalone (Offerman = e-commerce catálogo, Stockman = estoqu
 - 9 pacotes pip-installable criados.
 - admin_unfold standalone por pacote.
 - shopman.utils zero-dep.
-- `make test` deve passar localmente; `Runtime Gate` deve passar no PR com PostgreSQL/Redis e build Docker. Ver [`../status.md`](../status.md).
+- `make test` deve passar localmente; `Runtime Gate` deve passar na fila de merge com PostgreSQL/Redis e build Docker (no PR roda o leve; ver [`ci-escopo.md`](ci-escopo.md)). Ver [`../status.md`](../status.md).
 
 ### Gate 2 — Domínio vertical
 - Offerman: bundle recursivo + cycle detection; min_qty cascade; two-level AND.

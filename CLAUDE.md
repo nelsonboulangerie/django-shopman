@@ -146,6 +146,8 @@ ou escreve `nada`. Quem fecha a issue é o PR que faz o trabalho (`Closes #N`).
 Decidir **não fazer nunca** também é decisão: escreva na issue e feche como
 `not planned`, para que fique registrado e não volte como pendência.
 
+**CI: leve no PR, pesado na fila** (dono, 17/11/2026): o PR roda lint, typecheck e os testes do que mexe; as suítes pesadas rodam no `merge_group`, e check obrigatório pulado reporta verde com o mesmo nome — regra e tabela em [docs/reference/ci-escopo.md](docs/reference/ci-escopo.md).
+
 **Mecanismo, não lembrete:**
 
 - Check `Ficou de fora declarado` (`.github/workflows/ficou-de-fora.yml`,

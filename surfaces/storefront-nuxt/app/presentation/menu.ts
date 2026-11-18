@@ -1,6 +1,7 @@
 import { normalizeSearchText, formatCount } from '~/utils/display'
 import type { CatalogItemProjection, CatalogProjection, CatalogSection } from '~/types/shopman'
 import { quotePriceDisplay } from '~/presentation/priceQuote'
+import { promiseBadgeLabel } from '~/presentation/promise'
 
 // Transforms puros do cardápio: busca com scoring, filtros multi-select e
 // badges de disponibilidade. Nenhum estado de UI aqui — a página orquestra.
@@ -234,9 +235,17 @@ export function collectionTargetForSearchOption (option: SearchListOption): stri
 // Aceita qualquer projeção com estado de disponibilidade (item de catálogo, PDP).
 // `unavailable` tem UM rótulo só (AVAILABILITY-PLAN §2): esgotado, pausado pela
 // casa e fora do canal chegam ao cliente iguais — o motivo é assunto do operador.
-export function tileBadge (item: Pick<CatalogItemProjection, 'availability' | 'availability_label'>): TileBadge | null {
+//
+// O item que espera fornada (`planned_ok`) diz QUANDO fica pronto, pela promessa
+// do servidor (WP-L02): "Fica pronto amanhã", "Fica pronto hoje às 15h". O
+// rótulo antigo ("Lista de espera") só sobra quando a promessa não veio.
+export function tileBadge (
+  item: Pick<CatalogItemProjection, 'availability' | 'availability_label'> & Partial<Pick<CatalogItemProjection, 'promise'>>
+): TileBadge | null {
   if (item.availability === 'low_stock') return { label: item.availability_label, variant: 'warning' }
-  if (item.availability === 'planned_ok') return { label: item.availability_label, variant: 'outline' }
+  if (item.availability === 'planned_ok') {
+    return { label: promiseBadgeLabel(item.promise) || item.availability_label, variant: 'outline' }
+  }
   if (item.availability === 'unavailable') return { label: item.availability_label, variant: 'destructive' }
   return null
 }
