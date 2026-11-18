@@ -36,6 +36,8 @@ const props = withDefaults(defineProps<{
   customerLookup: POSCustomerLookupProjection | null;
   searchResults: POSCustomerSearchResult[];
   searchBusy: boolean;
+  /** A última busca de cliente falhou: a frase do porquê ("Não consegui buscar…"). */
+  searchError?: string;
   lookupBusy: boolean;
   /** O cliente associado foi CRIADO AGORA (resolve just-in-time): a confirmação
    *  visual distingue "cadastro novo" de "cadastro encontrado". */
@@ -781,6 +783,7 @@ const newCustomerNote = computed(() => {
             ref="searchRef"
             :results="searchResults"
             :busy="searchBusy"
+            :error="searchError"
             :has-customer-ref="hasCustomer"
             :pending-name="hasCustomer ? '' : customerName"
             @search="$emit('search', $event)"
