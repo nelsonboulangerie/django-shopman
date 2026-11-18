@@ -2212,7 +2212,7 @@ def _kitchen_clock(order: Order, now: datetime) -> tuple[datetime | None, dateti
     ``chegou às`` é o carimbo que o lifecycle grava quando a encomenda entra no
     fluxo do dia (``Order.data["kitchen_released_at"]``). ``vai chegar às`` só
     existe para o pedido ACEITO que ainda espera HOJE: a régua é a do lifecycle
-    (``_physical_work_deferred`` decide se espera, ``preorder_activation_at`` diz
+    (``awaits_kitchen_release`` decide se espera, ``preorder_activation_at`` diz
     até quando), lida sem alterar nada. O nome privado é a régua única de quem
     espera; repeti-la aqui seria uma segunda conta. Encomenda de outro dia não
     recebe a frase: o card dela já diz o dia e a janela (``_schedule``). O
@@ -2230,7 +2230,7 @@ def _kitchen_clock(order: Order, now: datetime) -> tuple[datetime | None, dateti
         # "Adiantar" aqui seria oferecer um gesto que não acontece.
         return None, None
     try:
-        if not lifecycle._physical_work_deferred(order):
+        if not lifecycle.awaits_kitchen_release(order):
             return None, None
         release_at, _target = lifecycle.preorder_activation_at(order)
     except Exception:
