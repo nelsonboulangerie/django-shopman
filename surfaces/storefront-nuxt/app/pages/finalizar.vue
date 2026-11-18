@@ -498,6 +498,19 @@ const pixLimitRefusal = ref<{ message: string, totalQ: number } | null>(null)
 // Faltou estoque no envio (`insufficient_supply`): o servidor diz qual item, e a tela
 // guarda isso para o aviso com saída (plano EXCELENCIA-STOREFRONT, P1-11).
 const stockRefusal = ref<{ sku: string, name: string, message: string } | null>(null)
+let revealAfterReviewCloses: (() => void) | null = null
+function revealStockRefusal () {
+  reveal(() => document.querySelector('[data-checkout-stock-refusal]'), { align: 'start', focus: true })
+}
+// Fim do fechamento da folha de revisão. Com um aviso esperando, o foco vai para
+// ele, e não de volta ao botão "Revisar pedido".
+function onReviewClosed (event: Event) {
+  const pending = revealAfterReviewCloses
+  revealAfterReviewCloses = null
+  if (!pending) return
+  event.preventDefault()
+  pending()
+}
 const pixLimitRefusalActive = computed(() =>
   !!pixLimitRefusal.value && state.payment_method === 'pix' &&
   (cart.value?.grand_total_q == null || cart.value.grand_total_q === pixLimitRefusal.value.totalQ)
@@ -1536,10 +1549,15 @@ async function submitCheckout () {
         message: serverError.value
       }
       serverError.value = ''
+      // A folha, ao terminar de fechar, devolve o foco ao botão que a abriu, e o
+      // navegador rola até ele: o aviso ficava fora da tela no computador. A tela
+      // vai até o aviso nesse instante (`onReviewClosed`), e não antes.
+      revealAfterReviewCloses = revealStockRefusal
       confirmOpen.value = false
       await refresh()
       await nextTick()
-      reveal(() => document.querySelector('[data-checkout-stock-refusal]'), { align: 'start', focus: true })
+      // Folha que não avisou o fim do fechamento: a tela vai ao aviso mesmo assim.
+      if (revealAfterReviewCloses) { revealAfterReviewCloses = null; revealStockRefusal() }
       return
     }
     if (data.error_code === 'total_changed' || data.error_code === 'revision_changed') {
@@ -2484,6 +2502,7 @@ useSeoMeta({
             max-width="md"
             title="Revise seu pedido"
             :description="confirmSheetDescription"
+            @close-auto-focus="onReviewClosed"
           >
             <!-- Superfície única, diagramação enxuta. O corpo rola; o rodapé fica
                  mínimo (Total + 1 ação) e sempre visível — nada vaza da tela. -->
