@@ -18,9 +18,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Escopo (17/11/2026, docs/reference/ci-escopo.md): PR só de documentação
+  # não roda o CodeQL; fila, push e agenda rodam sempre.
+  scope:
+    name: Escopo do PR
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            .github/actions
+            scripts/ci_scope.py
+          sparse-checkout-cone-mode: false
+      - name: Escopo
+        id: scope
+        uses: ./.github/actions/ci-scope
+
   codeql:
     name: CodeQL (${{ matrix.language }})
-    runs-on: ubuntu-latest
+    needs: scope
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.code != 'false') }}
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -43,13 +68,18 @@ jobs:
 
   security-gate:
     name: Security Gate
-    needs: codeql
+    needs: [scope, codeql]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - name: As duas análises produziram resultado
         env:
           CODEQL_RESULT: ${{ needs.codeql.result }}
         run: |
           echo "CodeQL matrix: $CODEQL_RESULT" >> "$GITHUB_STEP_SUMMARY"
+          # PR só de documentação pula o CodeQL de propósito; em qualquer outro
+          # caso `skipped` continua reprovando.
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ needs.scope.outputs.code }}" = "false" ] && [ "$CODEQL_RESULT" = "skipped" ]; then
+            exit 0
+          fi
           test "$CODEQL_RESULT" = "success"

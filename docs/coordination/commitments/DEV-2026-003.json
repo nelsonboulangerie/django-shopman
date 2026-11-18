@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-003",
+  "tipo": "compromisso",
+  "origem": "#2292",
+  "compromisso": "Aviso antes de salvar o fechamento do dia (padrão de confirmação em dois passos)",
+  "dono": "Engenharia · Admin",
+  "criado": "2026-11-12",
+  "revisar_em": "2026-12-03",
+  "gatilho": "padrão de confirmação existir no Admin",
+  "estado": "ABERTO",
+  "prova": "-"
+}

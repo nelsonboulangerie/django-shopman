@@ -727,6 +727,17 @@ class TestDailySync:
         cache.delete(pickup_turn.CACHE_KEY.format(ref="google"))
         assert pickup_turn.resend_on_turn("google") == 0
 
+    def test_reads_the_google_store_review_with_the_reconciliation(self, push, stocked):
+        """A aba Canais lê o estado da loja física do que o worker guardou aqui."""
+        from shopman.shop.services import google_store_review
+
+        failed = google_store_review.StoreReview(checked_at=timezone.now(), ok=False, error="sem resposta")
+        err = StringIO()
+        with mock.patch.object(google_store_review, "refresh_if_due", return_value=failed) as refresh:
+            call_command("sync_platform_catalogs", stdout=StringIO(), stderr=err)
+        refresh.assert_called_once_with()
+        assert "estado da loja física não lido: sem resposta" in err.getvalue()
+
     def test_dry_run_prints_the_api_payload_without_credentials(self, settings, stocked):
         settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, service_account_b64="")
         out = StringIO()

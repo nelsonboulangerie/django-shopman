@@ -112,6 +112,12 @@ momento — aos contextos obrigatórios.
 
 ---
 
+## 4. Runner maior pago (`linux-4core`), liga e desliga por variável
+
+Os jobs Linux de PR e merge queue rodam em `${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}`; deploy, release, alpha-smoke, watchman e o espelho de imagens ficam fixos em `ubuntu-latest`, fora do pool pago. **Ligar:** `gh variable set CI_LINUX_RUNNER -b linux-4core -R nelsonboulangerie/django-shopman`. **Desligar (volta ao normal):** `gh variable delete CI_LINUX_RUNNER -R nelsonboulangerie/django-shopman` (ou deixá-la vazia). Motivo: o plano Team limita a 60 jobs simultâneos nos runners padrão; o `linux-4core` custa US$ 0,012/min e o orçamento de Actions é US$ 50 com parada no limite.
+
+---
+
 ## Resumo do que precisa da sua mão
 
 | # | Decisão | Recomendação | Custo |
@@ -119,3 +125,4 @@ momento — aos contextos obrigatórios.
 | 1 | `admin-csp` obrigatório? | **Sim, agora** | zero — já roda |
 | 2 | `strict: true`? | **Não** — a fila de merge já cobre | ligar custaria fila lenta |
 | 3 | Gate da meia-correção obrigatório? | **Ainda não** — quando 💸 e 🧾 zerarem | zero — já roda |
+| 4 | Runner maior `linux-4core`? | **Ligado enquanto a fila estiver presa** — desligar com `gh variable delete CI_LINUX_RUNNER` | US$ 0,012/min, teto US$ 50 |

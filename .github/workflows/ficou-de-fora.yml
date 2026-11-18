@@ -25,7 +25,7 @@ permissions:
 jobs:
   ficou-de-fora:
     name: Ficou de fora declarado
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v7

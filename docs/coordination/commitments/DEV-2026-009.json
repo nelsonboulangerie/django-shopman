@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-009",
+  "tipo": "compromisso",
+  "origem": "#2303 / #2304",
+  "compromisso": "Preparo da encomenda no painel do produto do Catálogo (Gestor)",
+  "dono": "Engenharia · Catálogo",
+  "criado": "2026-11-12",
+  "revisar_em": "2026-12-03",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

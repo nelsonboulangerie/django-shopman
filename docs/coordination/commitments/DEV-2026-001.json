@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-001",
+  "tipo": "compromisso",
+  "origem": "#2298 / #2300",
+  "compromisso": "B.I.: tempo corrido desde kitchen_released_at e tempo de preparo (Iniciar a Pronto)",
+  "dono": "Engenharia · B.I.",
+  "criado": "2026-11-12",
+  "revisar_em": "2026-11-26",
+  "gatilho": "encomenda futura no ar",
+  "estado": "EM_EXECUCAO",
+  "prova": "#2300"
+}

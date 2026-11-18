@@ -5,7 +5,9 @@ import {
   historyDimensions,
   historyQueryFromRoute,
   historyStatusClass,
+  offersWiderSearch,
   routeQueryFromHistory,
+  widerSearch,
 } from "../app/presentation/history";
 
 // Histórico do Gestor: a URL é a fonte (período, busca, página e recortes) e o
@@ -136,5 +138,45 @@ describe("historyStatusClass", () => {
   it("traduz o tom do servidor em cor", () => {
     expect(historyStatusClass("danger")).toContain("error");
     expect(historyStatusClass("outro")).toContain("muted");
+  });
+});
+
+// WP-G04 (P1-21): a busca que não acha nada num período curto oferece ampliar.
+describe("offersWiderSearch / widerSearch", () => {
+  const today = "2026-11-16";
+
+  it("busca sem resultado em hoje oferece os últimos 28 dias", () => {
+    const query = historyQueryFromRoute({ q: "maria" });
+    expect(offersWiderSearch(query, today, 0)).toBe(true);
+    const wider = widerSearch({ ...query, page: 3 });
+    expect(wider.period).toEqual({ preset: "28d", from: "", to: "" });
+    expect(wider.q).toBe("maria");
+    expect(wider.page).toBe(1);
+    expect(routeQueryFromHistory(wider)).toEqual({ period: "28d", q: "maria" });
+    expect(historyApiQuery(wider, today)).toMatchObject({
+      date_from: "2026-10-20",
+      date_to: "2026-11-16",
+      q: "maria",
+    });
+  });
+
+  it("recorte sem resultado também oferece; a lista vazia sem busca nem recorte, não", () => {
+    expect(
+      offersWiderSearch(historyQueryFromRoute({ status: "cancelled" }), today, 0),
+    ).toBe(true);
+    expect(offersWiderSearch(historyQueryFromRoute({}), today, 0)).toBe(false);
+  });
+
+  it("com resultado, ou já em 28 dias ou mais, não oferece", () => {
+    expect(offersWiderSearch(historyQueryFromRoute({ q: "maria" }), today, 2)).toBe(false);
+    expect(
+      offersWiderSearch(historyQueryFromRoute({ q: "maria", period: "28d" }), today, 0),
+    ).toBe(false);
+    expect(
+      offersWiderSearch(historyQueryFromRoute({ q: "maria", period: "3m" }), today, 0),
+    ).toBe(false);
+    expect(
+      offersWiderSearch(historyQueryFromRoute({ q: "maria", period: "7d" }), today, 0),
+    ).toBe(true);
   });
 });

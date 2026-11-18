@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-015",
+  "tipo": "achado",
+  "origem": "logs 2026-11-12",
+  "compromisso": "Itens do cardápio iFood sem de-para com SKU do catálogo (alertas stock_unknown_sku no 1º pedido real)",
+  "dono": "Engenharia · iFood",
+  "criado": "2026-11-12",
+  "revisar_em": "2026-11-19",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

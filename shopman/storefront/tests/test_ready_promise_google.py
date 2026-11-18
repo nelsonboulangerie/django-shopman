@@ -68,3 +68,31 @@ def test_o_pickup_sla_de_cada_item_e_o_dia_da_promessa_da_loja(moment, settings)
 
         sent = build_local_inventory(items["MELON"], {"store_code": "123"})["localInventoryAttributes"]
         assert sent["pickupSla"] == EXPECTED_SLA[moment]["MELON"]
+
+
+#: O contrato do campo ``promise`` que a API da Loja publica (card, produto e
+#: sacola). O WP-L02 consome exatamente estas chaves; mover o fato para o
+#: ``shop`` (WP-G14a) não pode mudar nenhuma.
+PROMISE_KEYS = {"kind", "date", "ready_at", "day_label", "text"}
+
+
+@pytest.mark.django_db
+@pytest.mark.channels("web")
+def test_o_contrato_do_campo_promise_da_api_fica_identico():
+    from django.core.cache import cache
+    from django.test import Client
+
+    from shopman.storefront.tests.test_ready_promise import _cart_promise
+
+    cache.clear()
+    with _frozen(CLOCKS["aberta"]):
+        _qa_world()
+        promises = _promises_from_api(Client())  # card e produto, iguais entre si
+        assert promises["MELON"] is not None and promises["TABAT"] is not None
+        for sku in ("MELON", "TABAT"):
+            promise = promises[sku]
+            assert set(promise) == PROMISE_KEYS, sku
+            assert all(isinstance(promise[key], str) for key in PROMISE_KEYS), sku
+            date.fromisoformat(promise["date"])
+            assert len(promise["ready_at"]) == 5 and promise["ready_at"][2] == ":", sku
+            assert set(_cart_promise(Client(), sku)) == PROMISE_KEYS, sku

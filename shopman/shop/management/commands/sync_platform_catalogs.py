@@ -14,6 +14,10 @@ No Google, também reenvia os itens visíveis na virada do dia (o corte da grade
 retirada e a meia-noite local), porque o ``pickupSla`` muda sem o estoque mudar
 (``services/pickup_turn``, issue #2655).
 
+No Google, também lê (no máximo de hora em hora, só leitura) o estado da retirada no
+mesmo dia e da disponibilidade na loja, que a aba Canais mostra
+(``services/google_store_review``).
+
 Por isso ele reenvia todo SKU do canal cujo último envio passou de
 ``--min-interval-hours`` (24h), e retira o que saiu da composição. Barato quando
 não há nada a fazer: lê a composição e o estado de sync, sem calcular estoque. Roda
@@ -88,6 +92,9 @@ class Command(BaseCommand):
                 if turned:
                     self.stdout.write(f"{ref}: virada do dia, {turned} item(ns) reenviado(s) com a nova retirada.")
 
+        if any(display_catalog.resolve_channel(ref)[1] == "google_merchant" for ref in channels):
+            self._read_google_store_review()
+
     def _turn_of_the_day(self, ref: str) -> int:
         """No corte e à meia-noite, o ``pickupSla`` muda sem o estoque mudar: reenvia."""
         from shopman.shop.services import pickup_turn
@@ -98,6 +105,14 @@ class Command(BaseCommand):
             logger.exception("sync_platform_catalogs: virada do dia de %s não reenviou", ref)
             self.stderr.write(f"{ref}: virada do dia não reenviou: {exc}")
             return 0
+
+    def _read_google_store_review(self) -> None:
+        """O estado da retirada e da disponibilidade na loja, para a aba Canais (só leitura)."""
+        from shopman.shop.services import google_store_review
+
+        reading = google_store_review.refresh_if_due()
+        if reading is not None and not reading.ok:
+            self.stderr.write(f"Google: estado da loja física não lido: {reading.error}")
 
     def _reconcile(self, ref: str, options) -> tuple[int, int]:
         from shopman.shop.handlers.catalog_projection import enqueue_project

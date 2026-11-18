@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-050",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Supply chain do npm reprova todo PR (picomatch e Nuxt)",
+  "dono": "Engenharia",
+  "criado": "2026-11-17",
+  "revisar_em": "2026-11-24",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

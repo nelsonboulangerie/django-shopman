@@ -967,7 +967,6 @@ export interface POSIntentCartState {
   saveReceiptTaxIdConfirmed: boolean;
   receiptIdentityChoices?: POSReceiptIdentityChoice[];
   manualDiscount: Record<string, unknown> | null;
-  managerApproval: Record<string, unknown> | null;
   clientRequestId: string;
 }
 

@@ -142,18 +142,11 @@ export const LOGIN_ADULT_DECLARATION = `${LOGIN_ADULT_DECLARATION_LEAD} ${LOGIN_
 
 // ── O convite de novidades NÃO é passo do login ────────────────────────────
 //
-// A pergunta "avisos pelo WhatsApp?" sobe como bottom sheet (MarketingPromptSheet)
-// na página em que a pessoa cai depois de entrar — não é pré-condição nem
-// bloqueia nada. Ela nunca interrompe o que a pessoa veio fazer: fica fora das
-// portas de entrada (/entrar, /a), do checkout e do pedido (pagamento e
-// acompanhamento). A chave nasce DESLIGADA — consentimento de marketing é
-// manifestação afirmativa (LGPD art. 8 §4), nunca pré-marcado.
-export function isMarketingPromptRouteExcluded (path: string): boolean {
-  return path === '/entrar' || path.startsWith('/entrar/')
-    || path === '/a' || path.startsWith('/a/')
-    || path === '/finalizar' || path.startsWith('/finalizar/')
-    || path === '/pedido' || path.startsWith('/pedido/')
-}
+// A pergunta "avisos pelo WhatsApp?" sobe como bottom sheet (MarketingPromptSheet),
+// não é pré-condição nem bloqueia nada. Onde e quando ela pode subir é a regra
+// comum dos convites da loja (`~/presentation/invites`): só depois do pedido
+// enviado, fora do caminho da compra. A chave nasce DESLIGADA — consentimento de
+// marketing é manifestação afirmativa (LGPD art. 8 §4), nunca pré-marcado.
 
 // Aterrissagem do access link (a.vue): quem entra por link e ainda precisa
 // confirmar o NOME passa pelo passo de boas-vindas ANTES do destino — o mesmo
