@@ -157,16 +157,19 @@ useHead({ title: "Avaliações do iFood" });
         </span>
       </template>
       <template #filters>
-        <form class="flex items-end gap-2" @submit.prevent="reviews.search()">
+        <NuxtForm
+          :state="{ dateFrom, dateTo }"
+          class="flex items-end gap-2"
+          @submit="reviews.search()"
+        >
           <NuxtFormField label="De" size="sm">
-            <NuxtInput v-model="dateFrom" type="date" size="sm" data-review-date-from />
+            <UiDateField v-model="dateFrom" label="Avaliações desde" data-review-date-from />
           </NuxtFormField>
           <NuxtFormField label="Até" size="sm">
-            <NuxtInput v-model="dateTo" type="date" size="sm" data-review-date-to />
+            <UiDateField v-model="dateTo" label="Avaliações até" data-review-date-to />
           </NuxtFormField>
           <NuxtButton
             type="submit"
-            size="sm"
             label="Filtrar"
             icon="i-lucide-calendar-search"
             color="neutral"
@@ -174,7 +177,7 @@ useHead({ title: "Avaliações do iFood" });
             :loading="loading"
             data-review-filter
           />
-        </form>
+        </NuxtForm>
       </template>
       <template #more>
         <OperatorMoreMenu :items="moreItems" label="Mais ações das avaliações" data-review-more />
@@ -219,12 +222,11 @@ useHead({ title: "Avaliações do iFood" });
           icon="i-lucide-triangle-alert"
           :title="listError.title"
           :description="listError.ifood || undefined"
-          :ui="{ description: 'text-xs opacity-80' }"
           data-review-list-error
         />
         <NuxtAlert
           v-else-if="list && !list.enabled"
-          color="neutral"
+          color="info"
           variant="subtle"
           icon="i-lucide-plug-zap"
           title="A integração com o iFood não está configurada neste ambiente"
@@ -248,7 +250,7 @@ useHead({ title: "Avaliações do iFood" });
           />
           <ul v-else class="flex flex-col gap-2" data-review-list>
             <li v-for="review in list.reviews" :key="review.id">
-              <NuxtCard :ui="{ body: 'p-4 sm:p-4' }">
+              <NuxtCard>
                 <div class="flex flex-wrap items-start justify-between gap-3">
                   <div class="min-w-0 flex-1 space-y-1.5">
                     <div class="flex flex-wrap items-center gap-2">
@@ -258,7 +260,6 @@ useHead({ title: "Avaliações do iFood" });
                       </span>
                       <NuxtBadge
                         :color="statusColor(review.status)"
-                        variant="subtle"
                         :label="review.status_label"
                       />
                       <span class="text-sm text-muted">{{ review.created_at_display }}</span>
@@ -304,7 +305,11 @@ useHead({ title: "Avaliações do iFood" });
             {{ list && !listError ? pageLine(list.page, list.page_count, list.total) : "" }}
           </p>
           <div class="flex flex-wrap items-end gap-3">
-            <form class="flex items-end gap-2" @submit.prevent="reviews.search()">
+            <NuxtForm
+              :state="{ pageSize }"
+              class="flex items-end gap-2"
+              @submit="reviews.search()"
+            >
               <NuxtFormField :label="`Por página (máximo do iFood: ${ifoodMaxPage})`" size="sm">
                 <NuxtInput
                   v-model.number="pageSize"
@@ -318,13 +323,12 @@ useHead({ title: "Avaliações do iFood" });
               </NuxtFormField>
               <NuxtButton
                 type="submit"
-                size="sm"
                 label="Aplicar"
                 color="neutral"
                 variant="outline"
                 data-review-page-apply
               />
-            </form>
+            </NuxtForm>
             <NuxtPagination
               v-if="list && !listError && (list.page_count ?? 0) > 1"
               :page="list.page"
@@ -343,7 +347,7 @@ useHead({ title: "Avaliações do iFood" });
       description="O ID é o código da avaliação no iFood."
     >
       <template #body>
-        <form class="flex flex-col gap-3" @submit.prevent="openById">
+        <NuxtForm :state="{ idToOpen }" class="flex flex-col gap-3" @submit="openById">
           <NuxtFormField label="ID da avaliação">
             <NuxtInput
               v-model="idToOpen"
@@ -360,7 +364,7 @@ useHead({ title: "Avaliações do iFood" });
             :disabled="!idToOpen.trim()"
             data-review-open-id-submit
           />
-        </form>
+        </NuxtForm>
       </template>
     </NuxtModal>
 
@@ -381,8 +385,7 @@ useHead({ title: "Avaliações do iFood" });
             icon="i-lucide-triangle-alert"
             :title="detailError.title"
             :description="detailError.ifood || undefined"
-            :ui="{ description: 'text-xs opacity-80' }"
-            data-review-detail-error
+              data-review-detail-error
           />
           <template v-if="detail">
             <section class="space-y-2">
@@ -393,7 +396,6 @@ useHead({ title: "Avaliações do iFood" });
                 </span>
                 <NuxtBadge
                   :color="statusColor(detail.status)"
-                  variant="subtle"
                   :label="detail.status_label"
                 />
                 <span
@@ -452,7 +454,12 @@ useHead({ title: "Avaliações do iFood" });
               </ul>
             </section>
 
-            <form class="space-y-2" data-review-reply @submit.prevent="sendReply">
+            <NuxtForm
+              :state="{ replyText }"
+              class="space-y-2"
+              data-review-reply
+              @submit="sendReply"
+            >
               <NuxtFormField label="Responder ao cliente">
                 <NuxtTextarea
                   v-model="replyText"
@@ -482,8 +489,7 @@ useHead({ title: "Avaliações do iFood" });
                 icon="i-lucide-triangle-alert"
                 :title="replyError.title"
                 :description="replyError.ifood || undefined"
-                :ui="{ description: 'text-xs opacity-80' }"
-                data-review-reply-error
+                      data-review-reply-error
               />
               <NuxtAlert
                 v-if="replyDone"
@@ -498,7 +504,7 @@ useHead({ title: "Avaliações do iFood" });
                 icon="i-lucide-send"
                 :loading="replying"
               />
-            </form>
+            </NuxtForm>
 
             <NuxtCollapsible class="border-t border-default pt-3">
               <NuxtButton
@@ -507,7 +513,6 @@ useHead({ title: "Avaliações do iFood" });
                 trailing-icon="i-lucide-chevron-down"
                 color="neutral"
                 variant="ghost"
-                size="sm"
                 data-review-ifood-data-toggle
               />
               <template #content>
