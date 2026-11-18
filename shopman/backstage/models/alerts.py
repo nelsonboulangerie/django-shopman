@@ -211,6 +211,9 @@ class OperatorAlert(models.Model):
         # receita perdida que some sem ninguém ver.
         ("loyalty_redeem_uncovered", "Desconto de pontos sem baixa no saldo"),
         ("production_late", "Produção atrasada"),
+        # Encomenda fechada com mais do que o plano da data cobre: o que passa
+        # ficou como demanda sem fornada (#2559). Um aviso por pedido e item.
+        ("order_demand_over_plan", "Encomenda acima do plano de produção"),
         ("production_low_yield", "Lote fechado com aproveitamento baixo"),
         ("production_stock_short", "Produção sem insumo suficiente"),
         # Falta PREVISTA (production_stock_short) vs. falta REAL: esta é a
@@ -353,6 +356,10 @@ class OperatorAlert(models.Model):
         # marcado (encomenda paga, inclusive). Fechar não cancela nem remarca:
         # o aviso, um por pedido, é para alguém remarcar ou falar com o cliente.
         ("order_on_closed_day", "Pedido marcado para dia fechado"),
+        # O lote foi cancelado e a reserva de um pedido aceito (encomenda paga,
+        # inclusive) ficou sem lastro (#2547). Um aviso por pedido e item, com o
+        # que fazer: avisar o cliente, remarcar ou cancelar. Nada é automático.
+        ("order_promise_lost", "Pedido ficou sem a produção prometida"),
         # O freio da IA (ID3A, E1): a 80% do teto diário de gasto chega o aviso; no
         # teto, a IA paga para até o dia seguinte. O gasto de US$ 1.180 de 28/10 a
         # 11/11 aconteceu sem nenhum dos dois.
@@ -376,6 +383,7 @@ class OperatorAlert(models.Model):
         ("operations", "Operação geral"),
     ]
     PRODUCTION_TYPES = {
+        "order_demand_over_plan",
         "production_late",
         "production_low_yield",
         "production_stock_short",
@@ -437,6 +445,7 @@ class OperatorAlert(models.Model):
         "ifood_poll_stale",
         "fiscal_return_note_due",
         "order_on_closed_day",
+        "order_promise_lost",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)

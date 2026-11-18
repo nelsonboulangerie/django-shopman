@@ -16,7 +16,13 @@ compara com o rótulo conferido:
   tempo das respostas do alpha gravado no caso (``alpha.reply_ms``).
 
 Sem rede por padrão (``classifier="rules"``). Com ``model`` ou ``jev`` a triagem
-chama o provedor de verdade com o texto já redigido do caso.
+chama o provedor de verdade com o texto já redigido do caso. Rodada com rede custa
+dinheiro: o comando só a aceita com ``--paid`` (``network_reason``), e ``Budget`` é o
+teto de gasto, pelo custo da tabela ``LLM_PRICES``, que vale para todas as repetições.
+
+``consistency`` junta N rodadas dos mesmos casos e diz cada medida também "em todas as
+N": um modelo que acha a equipe em 2 de 3 rodadas perde a equipe de verdade uma vez em
+três, e a média esconde isso.
 
 O agente (laço com o modelo e as ferramentas) não roda aqui: ele precisa do
 catálogo e da sacola vivos. O custo e o tempo dele saem do que a régua grava em
@@ -60,6 +66,54 @@ TARGET_MODEL_LAYERS = frozenset({"answer", "agent"})
 #: ``jev-shadow`` não chama ninguém: usa a intenção que o Jev deu em sombra no
 #: alpha, gravada no caso (``alpha.jev``), e mede só os casos observados.
 CLASSIFIERS = ("rules", "model", "jev", "jev-shadow")
+#: Classificadores que chamam um provedor (custam). ``jev-shadow`` lê o caso, não a rede.
+NETWORK_CLASSIFIERS = frozenset({"model", "jev"})
+
+
+class PaidRunRefused(ValueError):
+    """Rodada com rede pedida sem autorização explícita de gasto (``--paid``)."""
+
+
+def network_reason(*, classifier: str = "rules", plural: bool = False, reader: str = "local") -> str:
+    """O argumento que faz a rodada chamar a rede (e custar), ou ``""`` se ela é gratuita."""
+    if plural:
+        return "--reader model" if reader == "model" else ""
+    return f"--classifier {classifier}" if classifier in NETWORK_CLASSIFIERS else ""
+
+
+class Budget:
+    """Teto de gasto da rodada inteira (todas as repetições), em US$ pela tabela ``LLM_PRICES``.
+
+    Antes de cada caso, quem mede pergunta ``stop_reason()``: gasto que chegou no teto
+    para a rodada ali. Custo desconhecido (modelo fora da tabela) também para: o teto
+    não contém o que não sabe contar, e falhar fechado é mais barato que a surpresa.
+    """
+
+    def __init__(self, limit_usd: float):
+        if limit_usd <= 0:
+            raise ValueError("o teto de gasto precisa ser maior que zero.")
+        self.limit_usd = float(limit_usd)
+        self.spent_usd = 0.0
+        self.unpriced = False
+
+    def charge(self, cost_usd: float | None) -> None:
+        if cost_usd is None:
+            self.unpriced = True
+            return
+        self.spent_usd += float(cost_usd)
+
+    def stop_reason(self, *, measured: int, total: int) -> str:
+        if self.unpriced:
+            return (
+                f"parou: custo desconhecido (modelo fora de LLM_PRICES), o teto não o contém; "
+                f"{measured} de {total} casos medidos"
+            )
+        if self.spent_usd >= self.limit_usd:
+            return (
+                f"parou no teto de gasto: US$ {self.spent_usd:.4f} de US$ {self.limit_usd:.4f} "
+                f"depois de {measured} de {total} casos"
+            )
+        return ""
 
 
 def load_golden(path=None) -> list[dict]:
@@ -111,14 +165,16 @@ class CaseResult:
 class Report:
     classifier: str
     results: list[CaseResult] = field(default_factory=list)
+    stopped: str = ""
 
     def render(self, *, show_misses: int = 15) -> str:
         results = self.results
         total = len(results)
         if not total:
-            return "Conjunto vazio."
+            return self.stopped or "Conjunto vazio."
         by_layer = Counter(r.expected["layer"] for r in results)
-        lines = [
+        lines = [f"⚠ {self.stopped}.", ""] if self.stopped else []
+        lines += [
             f"{total} mensagens reais ("
             + ", ".join(f"{by_layer[layer]} {LAYER_LABELS[layer]}" for layer in LAYERS if by_layer[layer])
             + f"). Triagem por: {self.classifier}.",
@@ -206,8 +262,20 @@ def _alpha_lines(results: list[CaseResult]) -> list[str]:
     return lines
 
 
-def run(cases: list[dict], *, classifier: str = "rules", model: str = "", client=None) -> Report:
-    """Cada caso pela triagem de hoje, medida pela régua. Erro do provedor vale a regra (como em produção)."""
+def run(
+    cases: list[dict],
+    *,
+    classifier: str = "rules",
+    model: str = "",
+    client=None,
+    budget: Budget | None = None,
+    max_cases: int = 0,
+) -> Report:
+    """Cada caso pela triagem de hoje, medida pela régua. Erro do provedor vale a regra (como em produção).
+
+    ``budget`` para a rodada no teto de gasto; ``max_cases`` (0 = todos) para depois de
+    tantos casos medidos. Os dois deixam o motivo em ``Report.stopped``.
+    """
     from django.conf import settings
 
     from . import metrics, triage
@@ -224,6 +292,9 @@ def run(cases: list[dict], *, classifier: str = "rules", model: str = "", client
     report = Report(classifier=classifier if not model else f"{classifier}:{model}")
     with override_settings(SHOPMAN_CONCIERGE=config), triage.model_override(model):
         for case in cases:
+            report.stopped = _stop_reason(budget, max_cases, measured=len(report.results), total=len(cases))
+            if report.stopped:
+                break
             meter = metrics.TurnMeter()
             context = [(line["who"], line["text"]) for line in case.get("previous", [])]
             triage_client = metrics.triage_client_for(meter, client) if classifier != "rules" else None
@@ -234,6 +305,8 @@ def run(cases: list[dict], *, classifier: str = "rules", model: str = "", client
             with meter.stage("triage"):
                 decision = triage.decide(case["text"], context=context, client=triage_client)
             usage = meter.as_usage()
+            if budget is not None:
+                budget.charge(usage["cost_usd"])
             report.results.append(
                 CaseResult(
                     case=case,
@@ -246,6 +319,16 @@ def run(cases: list[dict], *, classifier: str = "rules", model: str = "", client
                 )
             )
     return report
+
+
+def _stop_reason(budget: Budget | None, max_cases: int, *, measured: int, total: int) -> str:
+    if budget is not None:
+        reason = budget.stop_reason(measured=measured, total=total)
+        if reason:
+            return reason
+    if max_cases and measured >= max_cases:
+        return f"parou no limite de casos (--max-cases {max_cases}): {measured} de {total} casos medidos"
+    return ""
 
 
 def house_rules_summary(cases: list[dict]) -> str:
@@ -463,6 +546,7 @@ class PluralCase:
 class PluralReport:
     reader: str
     results: list[PluralCase] = field(default_factory=list)
+    stopped: str = ""
 
     def render(self, *, show_misses: int = 15) -> str:
         from .intents import COURTESY
@@ -470,7 +554,7 @@ class PluralReport:
         results = self.results
         total = len(results)
         if not total:
-            return "Conjunto vazio."
+            return self.stopped or "Conjunto vazio."
         scored = [r for r in results if expected_parts(r.case)]
         multi = [r for r in scored if len(expected_parts(r.case)) >= 2]
 
@@ -478,7 +562,8 @@ class PluralReport:
             wanted = expected_parts(r.case)
             return parts_found(wanted, acts) == len(wanted)
 
-        lines = [
+        lines = [f"⚠ {self.stopped}.", ""] if self.stopped else []
+        lines += [
             f"{total} casos ({len(multi)} com mais de uma parte). Leitura: {self.reader}. "
             "Porteiro: regra local e, nos casos observados, as notas do Jev gravadas em sombra.",
             "",
@@ -549,14 +634,21 @@ class PluralReport:
         return "\n".join(lines)
 
 
-def run_plural(cases: list[dict], *, reader: str = "local", client=None) -> PluralReport:
+def run_plural(
+    cases: list[dict],
+    *,
+    reader: str = "local",
+    client=None,
+    budget: Budget | None = None,
+    max_cases: int = 0,
+) -> PluralReport:
     """Cada caso pelo porteiro e pela leitura das intenções no plural, contra a intenção única de hoje.
 
     "Antes" é a triagem de hoje com a regra local (uma intenção por mensagem). "Depois" é a
     lista de partes. O Jev entra pelas notas gravadas em sombra no alpha (``alpha.jev_scores``,
     sem a pergunta "mais de uma parte", que a sombra não fazia). A execução de cada parte
     precisa do catálogo vivo e fica nos testes; aqui se mede quem entendeu o quê, quanto
-    custou e quanto demorou.
+    custou e quanto demorou. ``budget`` e ``max_cases`` como em ``run``.
     """
     import time as _time
 
@@ -578,6 +670,9 @@ def run_plural(cases: list[dict], *, reader: str = "local", client=None) -> Plur
             text = case["text"]
             if small_talk_kind(text) or case.get("message_type", "text") not in CONVERSATIONAL_MESSAGE_TYPES:
                 continue  # cortesia sozinha e mídia respondem antes das partes (``intents.run``)
+            report.stopped = _stop_reason(budget, max_cases, measured=len(report.results), total=len(cases))
+            if report.stopped:
+                break
             rules_intent, rules_source = triage.classify_rules(text)
             decision = triage.decide(
                 text, context=[(line["who"], line["text"]) for line in case.get("previous", [])]
@@ -600,6 +695,8 @@ def run_plural(cases: list[dict], *, reader: str = "local", client=None) -> Plur
                     found.acts.append(intents.Act(needed, span=text))
             elapsed = (_time.perf_counter() - started) * 1000
             usage = meter.as_usage()
+            if budget is not None:
+                budget.charge(usage["cost_usd"])
             after = [act.act for act in found.acts]
             report.results.append(
                 PluralCase(
@@ -617,3 +714,124 @@ def run_plural(cases: list[dict], *, reader: str = "local", client=None) -> Plur
                 )
             )
     return report
+
+
+# ── Repetição: a mesma rodada N vezes (``--repeat``) ──────────────────
+
+
+def _good_line(label: str, runs: list[list], ok) -> tuple[str, list[str], str]:
+    """Medida boa: quantos acertaram em cada rodada, e quantos acertaram em TODAS."""
+    per_run = [f"{sum(bool(ok(r)) for r in group)}/{len(group)}" for group in runs]
+    every = sum(all(bool(ok(group[i])) for group in runs) for i in range(len(runs[0])))
+    return label, per_run, f"{every}/{len(runs[0])}"
+
+
+def _bad_line(label: str, runs: list[list], bad) -> tuple[str, list[str], str]:
+    """Medida ruim: quantos erraram em cada rodada, e quantos ficaram limpos em TODAS."""
+    per_run = [str(sum(bool(bad(r)) for r in group)) for group in runs]
+    clean = sum(not any(bool(bad(group[i])) for group in runs) for i in range(len(runs[0])))
+    return label, per_run, f"limpos {clean}/{len(runs[0])}"
+
+
+def _aligned(reports: list) -> list[list]:
+    """Os resultados de cada rodada, só dos casos medidos em todas, na mesma ordem."""
+    refs = [r.case["ref"] for r in reports[0].results]
+    common = set(refs)
+    for report in reports[1:]:
+        common &= {r.case["ref"] for r in report.results}
+    order = [ref for ref in refs if ref in common]
+    return [[{r.case["ref"]: r for r in report.results}[ref] for ref in order] for report in reports]
+
+
+def consistency(reports: list) -> str:
+    """Cada medida em cada uma das N rodadas e "em todas as N" (o pior caso por mensagem).
+
+    Medida boa (destino certo, equipe achada, partes achadas): "em todas" conta a
+    mensagem que acertou nas N rodadas. Medida ruim (equipe sem precisar, uma parte
+    lida como várias): por rodada conta o erro, e "em todas" conta a mensagem que ficou
+    limpa nas N. Rodada cortada pelo teto conta só os casos medidos em todas.
+    """
+    n = len(reports)
+    if n < 2:
+        return ""
+    runs = _aligned(reports)
+    if not runs[0]:
+        return f"Repetição: nenhum caso medido nas {n} rodadas."
+    if isinstance(reports[0], PluralReport):
+        rows = _plural_rows(runs)
+        team_ok = lambda r: r.team_after  # noqa: E731
+    else:
+        rows = _single_rows(runs)
+        team_ok = lambda r: r.destination_ok  # noqa: E731
+    head = f"Repetição: {n} rodadas, {len(runs[0])} casos medidos em todas."
+    width = max(len(label) for label, _, _ in rows) + 2
+    lines = [head, "", f"  {'Medida':<{width}}" + "".join(f"{f'rodada {i + 1}':<12}" for i in range(n))
+             + f"em todas as {n}"]
+    for label, per_run, every in rows:
+        lines.append(f"  {label:<{width}}" + "".join(f"{value:<12}" for value in per_run) + every)
+    lost = [
+        group_0.case["ref"]
+        for i, group_0 in enumerate(runs[0])
+        if group_0.case["expected"]["destination"] != "answer"
+        and not all(team_ok(group[i]) for group in runs)
+        and any(team_ok(group[i]) for group in runs)
+    ]
+    if lost:
+        lines.append("")
+        lines.append("Equipe achada em alguma rodada mas perdida em outra: " + ", ".join(lost))
+    return "\n".join(lines)
+
+
+def _single_rows(runs: list[list[CaseResult]]) -> list[tuple[str, list[str], str]]:
+    def sensitive(groups):
+        return [[r for r in group if r.expected["destination"] != "answer"] for group in groups]
+
+    def plain(groups):
+        return [[r for r in group if r.expected["destination"] == "answer"] for group in groups]
+
+    def scored(groups):
+        return [[r for r in group if r.intent_ok is not None] for group in groups]
+
+    rows = [
+        _good_line("Destino certo", runs, lambda r: r.destination_ok),
+        _good_line("Equipe e outra mesa achadas", sensitive(runs), lambda r: r.destination_ok),
+        _bad_line("À equipe sem precisar", plain(runs), lambda r: not r.destination_ok),
+    ]
+    if scored(runs)[0]:
+        rows.append(_good_line("Intenção certa", scored(runs), lambda r: r.intent_ok))
+    return rows
+
+
+def _plural_rows(runs: list[list[PluralCase]]) -> list[tuple[str, list[str], str]]:
+    from .intents import COURTESY
+
+    def keep(groups, predicate):
+        return [[r for r in group if predicate(r)] for group in groups]
+
+    def all_found(r):
+        wanted = expected_parts(r.case)
+        return parts_found(wanted, r.after) == len(wanted)
+
+    scored = keep(runs, lambda r: expected_parts(r.case))
+    multi = keep(scored, lambda r: len(expected_parts(r.case)) >= 2)
+    single = keep(scored, lambda r: len(expected_parts(r.case)) == 1)
+    sensitive = keep(runs, lambda r: r.case["expected"]["destination"] != "answer")
+    plain = keep(runs, lambda r: r.case["expected"]["destination"] == "answer")
+
+    wanted_total = sum(len(expected_parts(r.case)) for r in scored[0])
+    per_run = [f"{sum(parts_found(expected_parts(r.case), r.after) for r in group)}/{wanted_total}" for group in scored]
+    worst = sum(
+        min(parts_found(expected_parts(group[i].case), group[i].after) for group in scored)
+        for i in range(len(scored[0]))
+    )
+    return [
+        _good_line("Várias partes, todas achadas", multi, all_found),
+        _good_line("Todos os casos, todas achadas", scored, all_found),
+        ("Partes achadas (mínimo por caso)", per_run, f"{worst}/{wanted_total}"),
+        _good_line("Equipe achada", sensitive, lambda r: r.team_after),
+        _bad_line("Equipe sem precisar", plain, lambda r: r.team_after),
+        _bad_line(
+            "Uma parte lida como várias", single,
+            lambda r: len([a for a in r.after if a not in COURTESY]) > 1,
+        ),
+    ]

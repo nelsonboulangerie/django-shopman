@@ -250,7 +250,7 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     const { event, res } = makeEvent({
       method: 'PUT',
       path: '/api/v1/cart/skus/X/',
-      headers: { cookie: 'csrftoken=t', 'content-type': 'application/json' },
+      headers: { cookie: 'sessionid=s1; csrftoken=t', 'content-type': 'application/json' },
       body: '{"qty":9}'
     })
 
@@ -303,7 +303,7 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     expect(String(res.getHeader('server-timing'))).toMatch(/bff;dur=\d+\.\d{2}/)
   })
 
-  it('faz o handshake de CSRF quando falta token em método unsafe', async () => {
+  it('semeia token e sessão quando falta o token em método unsafe', async () => {
     // 1ª chamada raw = seed do cart (GET) devolvendo csrftoken; 2ª = a mutação real.
     ;($fetch.raw as any)
       .mockResolvedValueOnce(upstream(200, {}, { 'set-cookie': 'csrftoken=seeded; Path=/' }))
@@ -327,7 +327,7 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     expect(mutationHeaders['x-csrftoken']).toBe('seeded')
   })
 
-  it('carimba a duração da semente de CSRF em separado do total do BFF', async () => {
+  it('carimba a duração da semente em separado do total do BFF', async () => {
     ;($fetch.raw as any)
       .mockResolvedValueOnce(upstream(200, {}, { 'set-cookie': 'csrftoken=seeded; Path=/' }))
       .mockResolvedValueOnce(upstream(200, { ok: true }))
@@ -340,24 +340,24 @@ describe('proxyDjangoPath — transporte do BFF', () => {
 
     await proxyDjangoPath(event, '/api/v1/cart/skus/X')
 
-    expect(String(res.getHeader('server-timing'))).toMatch(/csrf;dur=\d+\.\d{2}, bff;dur=\d+\.\d{2}/)
+    expect(String(res.getHeader('server-timing'))).toMatch(/seed;dur=\d+\.\d{2}, bff;dur=\d+\.\d{2}/)
   })
 
-  it('sem semente, nada de csrf;dur: só o primeiro pedido unsafe paga a semente', async () => {
+  it('sem semente, nada de seed;dur: só o primeiro pedido unsafe paga a semente', async () => {
     const { event, res } = makeEvent({
       method: 'PUT',
       path: '/api/v1/cart/skus/X/',
-      headers: { cookie: 'csrftoken=t', 'content-type': 'application/json' },
+      headers: { cookie: 'sessionid=s1; csrftoken=t', 'content-type': 'application/json' },
       body: '{"qty":1}'
     })
 
     await proxyDjangoPath(event, '/api/v1/cart/skus/X')
 
     expect((($fetch.raw as any).mock.calls as unknown[]).length).toBe(1)
-    expect(String(res.getHeader('server-timing'))).not.toContain('csrf;dur')
+    expect(String(res.getHeader('server-timing'))).not.toContain('seed;dur')
   })
 
-  it('semente de CSRF que cai na rede não derruba a mutação: ela segue sem token', async () => {
+  it('semente que cai na rede não derruba a mutação: ela segue sem token', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     ;($fetch.raw as any)
       .mockRejectedValueOnce(new TypeError('fetch failed'))
@@ -378,6 +378,100 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     expect(mutation[1].headers['x-csrftoken']).toBeUndefined()
     expect(warn).toHaveBeenCalledOnce() // a falha é dita no log do BFF, não engolida
     warn.mockRestore()
+  })
+
+  describe('a semente garante a sessão antes da primeira escrita (P2-06)', () => {
+    it('pede a sessão ao Django e a escrita já sai com o sessionid da semente', async () => {
+      ;($fetch.raw as any)
+        .mockResolvedValueOnce(upstream(200, {}, {
+          'set-cookie': 'csrftoken=seeded; Path=/, sessionid=semente; Domain=.boulangerie.com.br; HttpOnly; Path=/'
+        }))
+        .mockResolvedValueOnce(upstream(200, { ok: true }))
+      const { event, res } = makeEvent({
+        method: 'PUT',
+        path: '/api/v1/cart/skus/MELONPAN/',
+        headers: { 'content-type': 'application/json' }, // cliente nova: nenhum cookie
+        body: '{"qty":1}'
+      })
+
+      await proxyDjangoPath(event, '/api/v1/cart/skus/MELONPAN')
+
+      const [seed, write] = ($fetch.raw as any).mock.calls
+      expect(seed[0]).toBe(`${DJANGO}/api/v1/storefront/cart/`)
+      expect(seed[1].headers['x-shopman-session-seed']).toBe('1')
+      expect(write[1].headers.cookie).toContain('sessionid=semente')
+      expect(write[1].headers['x-csrftoken']).toBe('seeded')
+      // O navegador recebe o sessionid na resposta da escrita, host-only, mesmo
+      // que ela falhe depois: a nova tentativa cai na mesma sessão.
+      const raw = res.getHeader('set-cookie')
+      const setCookies = Array.isArray(raw) ? raw : [String(raw)]
+      expect(setCookies.some(c => c.startsWith('sessionid=semente'))).toBe(true)
+      expect(setCookies.every(c => !/;\s*domain=/i.test(c))).toBe(true)
+    })
+
+    it('com token e sem sessão, ainda semeia a sessão e não perde o token', async () => {
+      ;($fetch.raw as any)
+        .mockResolvedValueOnce(upstream(200, {}, {
+          'set-cookie': 'csrftoken=tok-123; Path=/, sessionid=semente; HttpOnly; Path=/'
+        }))
+        .mockResolvedValueOnce(upstream(200, { ok: true }))
+      const { event } = makeEvent({
+        method: 'PUT',
+        path: '/api/v1/cart/skus/MELONPAN/',
+        headers: { cookie: 'csrftoken=tok-123', 'content-type': 'application/json' },
+        body: '{"qty":1}'
+      })
+
+      await proxyDjangoPath(event, '/api/v1/cart/skus/MELONPAN')
+
+      const [seed, write] = ($fetch.raw as any).mock.calls
+      expect(seed[0]).toBe(`${DJANGO}/api/v1/storefront/cart/`)
+      expect(seed[1].headers.cookie).toBe('csrftoken=tok-123')
+      expect(write[1].headers.cookie).toContain('sessionid=semente')
+      expect(write[1].headers['x-csrftoken']).toBe('tok-123')
+    })
+
+    it('semente que cai mantém o token que o navegador já tinha', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      ;($fetch.raw as any)
+        .mockRejectedValueOnce(new TypeError('fetch failed'))
+        .mockResolvedValueOnce(upstream(200, { ok: true }))
+      const { event } = makeEvent({
+        method: 'PUT',
+        path: '/api/v1/cart/skus/MELONPAN/',
+        headers: { cookie: 'csrftoken=tok-123', 'content-type': 'application/json' },
+        body: '{"qty":1}'
+      })
+
+      await proxyDjangoPath(event, '/api/v1/cart/skus/MELONPAN')
+
+      const write = ($fetch.raw as any).mock.calls[1]
+      expect(write[1].headers['x-csrftoken']).toBe('tok-123')
+      warn.mockRestore()
+    })
+
+    it('quem já tem sessão e token não paga a semente', async () => {
+      const { event } = makeEvent({
+        method: 'PUT',
+        path: '/api/v1/cart/skus/MELONPAN/',
+        headers: { cookie: 'sessionid=s1; csrftoken=t', 'content-type': 'application/json' },
+        body: '{"qty":1}'
+      })
+
+      await proxyDjangoPath(event, '/api/v1/cart/skus/MELONPAN')
+
+      expect(calls).toHaveLength(1)
+      expect(calls[0]!.url).toBe(`${DJANGO}/api/v1/cart/skus/MELONPAN/`)
+    })
+
+    it('leitura não semeia: GET sem sessão não cria sessão nenhuma', async () => {
+      const { event } = makeEvent({ path: '/api/v1/storefront/cart/' })
+
+      await proxyDjangoPath(event, '/api/v1/storefront/cart')
+
+      expect(calls).toHaveLength(1)
+      expect(calls[0]!.options.headers['x-shopman-session-seed']).toBeUndefined()
+    })
   })
 
   it('apresenta o segredo do BFF ao Django junto do XFF recebido, quando configurado', async () => {

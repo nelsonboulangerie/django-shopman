@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { tileBadge } from '~/presentation/menu'
+import { promiseAddLabel } from '~/presentation/promise'
 import { hasOptionGroups } from '~/presentation/productOptions'
 import type { CatalogItemProjection, ProductMutationMeta } from '~/types/shopman'
 import { compactUnitWeightLabel, formatCount } from '~/utils/display'
@@ -121,7 +122,7 @@ function productRoute (sku: string) {
               :qty="currentQty"
               :disabled="!item.can_add_to_cart"
               :max-qty="item.available_qty"
-              :add-label="item.can_add_to_cart ? 'Adicionar' : 'Indisponível'"
+              :add-label="item.can_add_to_cart ? promiseAddLabel(item.promise) : 'Indisponível'"
               :option-groups="item.option_groups"
               compact
             />

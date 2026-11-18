@@ -3,6 +3,7 @@ import { navigateTo } from '#app'
 import type { CartProjection, CartResponse, CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman'
 import type { AddressSelection } from '~/presentation/address'
 import { cartBatchFloor, cartBatchFloorReason, reviewWaitlist } from '~/presentation/cart'
+import { orderReadyLine } from '~/presentation/promise'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
@@ -279,6 +280,8 @@ watch(() => state.fiscal_tax_id_on_pickup, on => {
 // Em RETIRADA: "embalar para presente" — só mensagem + sem preços no papel (o
 // comprador leva; sem destinatário). Desligar descarta os dados do presente.
 const isPickup = computed(() => state.fulfillment_type === 'pickup')
+// Retirada: quando o pedido fica pronto, pela promessa das linhas (WP-L02, #2652).
+const orderReadyNotice = computed(() => isPickup.value ? orderReadyLine(cart.value?.items) : '')
 const giftTitle = computed(() => (isPickup.value ? 'Embalar para presente' : 'É para presente?'))
 const notesCopy = computed(() => checkoutNotesCopy(isPickup.value))
 const rememberDescription = computed(() => rememberChoicesDescription(isPickup.value))
@@ -1905,6 +1908,12 @@ useSeoMeta({
               body-class="shop-stack-block"
               @edit="goToStep('when')"
             >
+              <!-- Quando o pedido fica pronto para retirada (#2652): a promessa
+                   do item mais tardio, a mesma do produto e da sacola. -->
+              <p v-if="orderReadyNotice" class="flex items-center gap-1 shop-body" data-checkout-ready-promise>
+                <Icon name="lucide:clock" class="size-3.5 shrink-0" />
+                {{ orderReadyNotice }}
+              </p>
               <div class="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                 <div class="space-y-2">
                   <UiLabel>Data</UiLabel>

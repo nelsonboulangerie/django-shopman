@@ -751,11 +751,31 @@ describe("Encomendas — a semana no centro", () => {
     expect(wrapper.find("[data-preorders-to-receive]").text()).toBe("A receber R$ 36,00");
   });
 
+  it("D4: para quem não audita o caixa, a aba conta encomendas e não soma dinheiro", async () => {
+    // O servidor manda as somas `null` para a Caixa e o Gerente (contagem cega).
+    const hidden = { total_q: null, total_display: null, to_receive_q: null, to_receive_display: null };
+    week = { ...week, ...hidden, days: week.days.map((d) => ({ ...d, ...hidden })) };
+    const wrapper = await mount(PreordersPage);
+    const columns = wrapper.find("[data-week-grid]").findAll("[data-week-day]");
+    expect(columns[0]!.find("[data-week-day-total]").text()).toBe("2 encomendas");
+    expect(columns[0]!.find("[data-week-day-to-receive]").text()).toBe("1 encomenda com pagamento pendente");
+    expect(wrapper.find("[data-preorders-total]").text()).toBe("2 encomendas");
+    expect(wrapper.find("[data-preorders-to-receive]").text()).toBe("1 encomenda com pagamento pendente");
+    // O valor de CADA encomenda segue no cartão: é com ele que o balcão recebe.
+    expect(wrapper.find('[data-week-grid] [data-preorder="NB-7"] [data-preorder-money]').text()).toBe("R$ 36,00");
+    expect(wrapper.text()).not.toContain("R$ 60,00");
+  });
+
   it("o card da grade: o valor e o selo semântico do estado (dono, 03/11), e o sinal da Via Pedido impressa", async () => {
     const wrapper = await mount(PreordersPage);
     const grid = wrapper.find("[data-week-grid]");
     expect(grid.find('[data-preorder="NB-7"] [data-preorder-money]').text()).toBe("R$ 36,00");
-    expect(grid.find('[data-preorder="NB-7"] [data-preorder-money-badge]').text()).toBe("A Receber");
+    expect(grid.find('[data-preorder="NB-7"] [data-preorder-money-badge]').text()).toBe("A receber");
+    // Pendência financeira: o selo vem ANTES do valor; o "Pago" segue depois (teste do dono, #2597).
+    const order = (ref: string) => grid.find(`[data-preorder="${ref}"] [data-preorder-money-badge]`).element
+      .compareDocumentPosition(grid.find(`[data-preorder="${ref}"] [data-preorder-money]`).element);
+    expect(order("NB-7") & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(order("NB-8") & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-money]').text()).toBe("R$ 24,00");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-money-badge]').text()).toBe("Pago");
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-printed]').exists()).toBe(true);
@@ -860,10 +880,10 @@ describe("Encomendas — um controle por estado, uma porta por destino", () => {
     const day = wrapper.find("[data-week-day-to-receive]");
     for (const node of [period, day]) {
       expect(node.text()).toBe("A receber R$ 36,00");
-      expect(node.classes().join(" ")).toBe(TO_RECEIVE_CLASS);
+      expect(node.classes()).toEqual(expect.arrayContaining(TO_RECEIVE_CLASS.split(" ")));
     }
     // Na linha da semana o estado do dinheiro é um selo semântico (dono, 03/11/2026).
-    expect(wrapper.find('[data-preorder="NB-7"] [data-preorder-money-badge]').text()).toBe("A Receber");
+    expect(wrapper.find('[data-preorder="NB-7"] [data-preorder-money-badge]').text()).toBe("A receber");
   });
 
   it("R4: o selo de situação é a peça do kit, na linha e no detalhe", async () => {
@@ -1072,7 +1092,53 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
     const today = wrapper.find("[data-preorders-today]");
     expect(today.findAll("[data-preorders-today-fact]").map((f) => f.text()))
       .toEqual(["2 para entregar", "A receber R$ 36,00", "1 sem Via Pedido"]);
-    expect(today.find('[data-preorders-today-fact="to_receive"]').classes().join(" ")).toBe(TO_RECEIVE_CLASS);
+    expect(today.find('[data-preorders-today-fact="to_receive"]').classes()).toEqual(expect.arrayContaining(TO_RECEIVE_CLASS.split(" ")));
+  });
+
+  it("o que falta receber é atalho: o toque liga o filtro 'A receber' (dono, prévia do #2597)", async () => {
+    const wrapper = await mount(PreordersPage);
+    expect(wrapper.find("[data-preorders-to-receive]").attributes("aria-label")).toBe("A receber R$ 36,00. Mostrar só essas.");
+    await wrapper.find("[data-preorders-to-receive]").trigger("click");
+    await flushPromises();
+    expect(route.query.pay).toBe("to_receive");
+
+    route.query = {};
+    await flushPromises();
+    await wrapper.find("[data-week-day-to-receive]").trigger("click");
+    await flushPromises();
+    expect(route.query).toMatchObject({ pay: "to_receive", date: "2026-09-26" });
+
+    route.query = {};
+    await flushPromises();
+    await wrapper.find('[data-preorders-today] [data-preorders-today-fact="to_receive"]').trigger("click");
+    await flushPromises();
+    expect(route.query.pay).toBe("to_receive");
+  });
+
+  it("o atalho conta o período sem filtro e mostra exatamente essas: limpa os outros filtros (prévia do #2597)", async () => {
+    // Para a Caixa a frase é contagem: "1 encomenda com pagamento pendente" (NB-7, retirada).
+    const hidden = { total_q: null, total_display: null, to_receive_q: null, to_receive_display: null };
+    week = { ...week, ...hidden, days: week.days.map((d) => ({ ...d, ...hidden })) };
+    const wrapper = await mount(PreordersPage);
+    const shown = () => wrapper.findAll("[data-preorder]").map((row) => row.attributes("data-preorder"));
+    const pending = wrapper.find("[data-preorders-to-receive]").text();
+    expect(pending).toBe("1 encomenda com pagamento pendente");
+
+    for (const shortcut of ["[data-preorders-to-receive]", "[data-week-day-to-receive]"]) {
+      // Outro filtro ligado: "Entregas" esconde a NB-7, que é retirada; a frase segue contando 1.
+      route.query = { fulfillment: "delivery" };
+      await flushPromises();
+      expect(shown()).toEqual(["NB-8"]);
+      expect(wrapper.find("[data-preorders-to-receive]").text()).toBe(pending);
+
+      await wrapper.find(shortcut).trigger("click");
+      await flushPromises();
+      expect(route.query.pay).toBe("to_receive");
+      expect(route.query.fulfillment).toBeUndefined();
+      expect(route.query.q).toBeUndefined();
+      // A lista mostra exatamente a 1 que a frase contou.
+      expect(shown()).toEqual(["NB-7"]);
+    }
   });
 
   it("'Hoje' é sempre de hoje: fora da semana de hoje, vem da leitura do selo, sem pergunta nova", async () => {

@@ -3482,6 +3482,8 @@ _EVENT_LABELS = {
     "partner_custody_recorded": "Separado para o entregador da TaOn (troco ou maquininha)",
     "partner_custody_returned": "A corrida não coletou: o que ia com o entregador voltou",
     "order_rescheduled": "Data combinada alterada",
+    # O lote foi cancelado e a reserva deste pedido ficou sem lastro (#2547).
+    "production_hold_lost": "Produção cancelada: item ficou sem reserva",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
     "fiscal_requeued": "NFC-e enviada de novo",
@@ -3493,6 +3495,10 @@ _EVENT_LABELS = {
     "courier_dispatch_released": "Chamada da TaOn feita de novo",
     "courier_cancel_requested": "Cancelamento da corrida pedido à TaOn",
     "courier_reminder_dismissed": "Lembrete de chamar o entregador dispensado",
+    # Entregador da casa (``services/own_fleet``): a casa escolheu a pessoa, e ela
+    # marcou um caso na folha "Problema" do link.
+    "courier_assigned": "Entregador da casa escolhido para a entrega",
+    "courier_problem": "Entregador da casa marcou um problema na entrega",
     "fiscal_issue_override": "NFC-e emitida com autorização do gerente",
     "cash_refund_recorded": "Devolução em dinheiro registrada no caixa",
     "return_initiated": "Devolução iniciada",
