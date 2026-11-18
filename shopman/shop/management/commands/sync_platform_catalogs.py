@@ -10,6 +10,10 @@ e ela cobre três buracos:
 - produto que entrou numa coleção do canal não dispara sinal nenhum;
 - envio que falhou de vez (credencial vencida, queda longa) fica para trás.
 
+No Google, também lê (no máximo de hora em hora, só leitura) o estado da retirada no
+mesmo dia e da disponibilidade na loja, que a aba Canais mostra
+(``services/google_store_review``).
+
 Por isso ele reenvia todo SKU do canal cujo último envio passou de
 ``--min-interval-hours`` (24h), e retira o que saiu da composição. Barato quando
 não há nada a fazer: lê a composição e o estado de sync, sem calcular estoque. Roda
@@ -76,6 +80,17 @@ class Command(BaseCommand):
             sent, retracted = self._reconcile(ref, options)
             if sent or retracted:
                 self.stdout.write(f"{ref}: {sent} reenviado(s), {retracted} retirado(s).")
+
+        if any(display_catalog.resolve_channel(ref)[1] == "google_merchant" for ref in channels):
+            self._read_google_store_review()
+
+    def _read_google_store_review(self) -> None:
+        """O estado da retirada e da disponibilidade na loja, para a aba Canais (só leitura)."""
+        from shopman.shop.services import google_store_review
+
+        reading = google_store_review.refresh_if_due()
+        if reading is not None and not reading.ok:
+            self.stderr.write(f"Google: estado da loja física não lido: {reading.error}")
 
     def _reconcile(self, ref: str, options) -> tuple[int, int]:
         from shopman.shop.handlers.catalog_projection import enqueue_project

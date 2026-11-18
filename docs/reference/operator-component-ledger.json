@@ -1258,6 +1258,32 @@
           }
         },
         {
+          "id": "channel-ifood-store",
+          "source_files": [
+            "app/pages/channels/[ref]/store.vue"
+          ],
+          "routes": [
+            "/channels/:ref/store"
+          ],
+          "variants": [
+            "now",
+            "hours",
+            "registry"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
+        },
+        {
           "id": "customers",
           "source_files": [
             "app/pages/customers/index.vue"

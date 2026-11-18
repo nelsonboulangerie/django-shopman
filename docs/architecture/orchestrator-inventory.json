@@ -2183,6 +2183,7 @@
             "NOTIFICATION_BACKEND_CHOICES",
             "NotificationTemplateAdmin",
             "NotificationTemplateForm",
+            "OPENING_BREAKS_HELP",
             "OPENING_HOUR_DAYS",
             "OPENING_STATUS_CHOICES",
             "OPERATOR_CAPACITY_FIELDS",
@@ -2227,10 +2228,12 @@
             "_dynamic_collection_choices",
             "_format_admin_date",
             "_format_admin_time",
+            "_format_breaks",
             "_integrations_form_fields",
             "_months_to_choice",
             "_oklch_raw_to_hex",
             "_opening_field",
+            "_parse_breaks",
             "_parse_markup_by_collection",
             "_parse_prep_minutes_by_sku",
             "_people",
@@ -3717,6 +3720,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "_LATE_RESUME",
             "logger"
           ]
         }
@@ -7583,6 +7587,30 @@
       ]
     },
     {
+      "path": "shopman/shop/projections/opening_hours.py",
+      "touchpoints": [
+        "projection"
+      ],
+      "out_of_extraction": true,
+      "unit_ids": [],
+      "responsibilities": [
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "_time",
+            "day_breaks",
+            "entry_shifts",
+            "format_shifts",
+            "logger",
+            "split_by_breaks"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/projections/order_tracking.py",
       "touchpoints": [
         "projection"
@@ -8606,6 +8634,7 @@
       "unit_ids": [
         "calendar.closed-weekdays",
         "calendar.closure-exception",
+        "calendar.day-shifts",
         "calendar.next-opening-copy",
         "calendar.operating-day",
         "calendar.operational-state",
@@ -9993,6 +10022,41 @@
             "forward_geocode_structured",
             "logger",
             "reverse_geocode"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/google_store_review.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ACTION_REQUIRED",
+            "ACTIVE",
+            "CACHE_KEY",
+            "CACHE_TTL_SECONDS",
+            "FAILED",
+            "NOT_REQUESTED",
+            "READ_EVERY",
+            "REGION",
+            "RUNNING",
+            "StoreReview",
+            "_state",
+            "_store",
+            "last_review",
+            "logger",
+            "read",
+            "refresh",
+            "refresh_if_due"
           ]
         }
       ]

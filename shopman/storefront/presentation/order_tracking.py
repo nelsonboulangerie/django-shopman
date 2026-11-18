@@ -26,6 +26,7 @@ from shopman.utils.formatting import format_clock, format_local
 from shopman.utils.monetary import format_money
 
 from shopman.shop.projections.copy import CopyCatalog, build_copy
+from shopman.shop.projections.opening_hours import entry_shifts, format_shifts
 from shopman.shop.projections.order_tracking import (
     TrackingData,
     TrackingFulfillmentData,
@@ -1671,14 +1672,11 @@ def _format_opening_hours(opening_hours: dict) -> str:
     if not opening_hours:
         return ""
 
-    def _fmt_time(value: str) -> str:
-        return format_clock(value if ":" in value else f"{value}:00")
-
     day_hours: list[tuple[str, str]] = []
     for day in DAY_ORDER:
-        info = opening_hours.get(day)
-        if info and info.get("open") and info.get("close"):
-            day_hours.append((day, f"{_fmt_time(info['open'])} às {_fmt_time(info['close'])}"))
+        shifts = entry_shifts(opening_hours.get(day))
+        if shifts:
+            day_hours.append((day, format_shifts(shifts)))
         else:
             day_hours.append((day, "Fechado"))
 

@@ -6223,6 +6223,41 @@
       "out_of_extraction": true
     },
     {
+      "id": "calendar.day-shifts",
+      "question": "Em quais turnos a loja vende neste dia, descontados os intervalos?",
+      "owner": "calendar.day-shifts",
+      "responsibility": "leitura",
+      "public_entrypoint": "shopman.shop.services.business_calendar:shifts_for",
+      "authoritative_symbols": [
+        "shopman.shop.services.business_calendar:shifts_for"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/business_calendar.py",
+          "symbols": [
+            "_day_shifts",
+            "shifts_for",
+            "weekly_shifts"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_turnos_por_dia.py::test_o_intervalo_parte_o_dia_em_turnos"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": true
+    },
+    {
       "id": "calendar.closure-exception",
       "question": "Uma exceção do calendário fecha esta data e com qual motivo?",
       "owner": "calendar.closure-exception",

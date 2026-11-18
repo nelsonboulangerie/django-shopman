@@ -64,7 +64,21 @@ const emptyMessage = computed(() => {
 const isToday = computed(() => Boolean(props.today) && props.date === props.today);
 const asapSelected = computed(() => isToday.value && !props.timeSlot);
 
+// SEM DIA, SEM HORÁRIO (P2-8 do laudo de 16/11). Os horários são de UM dia: sem
+// dia escolhido, ou com "Outra data" aberta e o dia novo ainda por escolher, a
+// grade que estava na tela era a de hoje (a data efetiva cai no hoje da loja), e
+// o operador lia horário de um dia que não é o da encomenda. O "Outra data" é do
+// kit e não avisa que abriu: o clique é ouvido aqui, na captura.
+const choosingOtherDay = ref(false);
+function onDayPickerClick(event: MouseEvent) {
+  const option = (event.target as HTMLElement | null)?.closest?.("[data-day-option]");
+  if (!option) return;
+  choosingOtherDay.value = option.getAttribute("data-day-option") === "other";
+}
+const waitingForDay = computed(() => !props.date || choosingOtherDay.value);
+
 function pickDate(iso: string) {
+  choosingOtherDay.value = false;
   if (iso === props.date) return;
   emit("update:date", iso);
   // A janela escolhida pertencia ao dia ANTERIOR. Mantê-la faria o operador
@@ -83,6 +97,7 @@ function pickDate(iso: string) {
            motivo, e nada passa do limite de dias da casa. -->
       <OperatorDayPicker
         v-if="today"
+        @click.capture="onDayPickerClick"
         :model-value="date"
         :today="today"
         :min="today"
@@ -98,11 +113,17 @@ function pickDate(iso: string) {
 
     <!-- O motivo dito UMA vez, no topo, em vez de repetido em dez janelas
          apagadas. É a frase que o operador repete ao cliente. -->
-    <p v-if="note" class="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs" data-schedule-readiness>
+    <p v-if="note && !waitingForDay" class="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs" data-schedule-readiness>
       {{ note }}
     </p>
 
-    <div class="grid gap-2">
+    <div v-if="waitingForDay" class="grid gap-2">
+      <span class="text-sm font-medium">Horário</span>
+      <p class="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground" data-schedule-waiting-day>
+        Escolha o dia para ver os horários.
+      </p>
+    </div>
+    <div v-else class="grid gap-2">
       <div class="flex items-baseline justify-between gap-2">
         <span class="text-sm font-medium">Horário</span>
         <NuxtButton
