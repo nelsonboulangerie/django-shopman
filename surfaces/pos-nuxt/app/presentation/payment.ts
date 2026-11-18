@@ -427,9 +427,10 @@ export interface PlanLineFact {
 }
 
 /**
- * O fato da linha da encomenda: "22 planejadas para 17/11". Com reservas de
- * outras encomendas, o livre vem junto ("22 planejadas para 17/11, 7 livres"),
- * porque é contra o livre que o pedido é medido. Sem lastro informado, nada.
+ * O fato da linha da encomenda: "22 planejadas para 17/11". Quando o livre da
+ * data é outro (reservas de outras encomendas, ou a vitrine de hoje que ainda vale
+ * na data), ele vem junto ("22 planejadas para 17/11, 7 livres"), porque é contra
+ * o livre que o pedido é medido. Sem lastro informado, nada.
  */
 export function planLineFact(
   qty: number,
@@ -444,7 +445,9 @@ export function planLineFact(
   let text: string;
   if (planned > 0) {
     text = `${qtyText(planned)} planejadas para ${day}`;
-    if (free < planned) text += `, ${qtyText(free)} livres`;
+    // O livre difere do plano quando outras encomendas já reservaram (menos) ou
+    // quando a vitrine de hoje ainda vale na data (mais): é contra ele que se mede.
+    if (free !== planned) text += `, ${qtyText(free)} livres`;
   } else {
     text = `${qtyText(free)} livres para ${day}`;
   }
@@ -462,7 +465,7 @@ export function overPlanNumbers(line: {
   const planned = Number(line.planned_qty) || 0;
   const free = Number(line.free_qty) || 0;
   const base = `${qtyText(Number(line.requested_qty) || 0)} pedidas, ${qtyText(planned)} planejadas${day ? ` para ${day}` : ""}`;
-  return free < planned ? `${base} (${qtyText(free)} livres)` : base;
+  return free !== planned ? `${base} (${qtyText(free)} livres)` : base;
 }
 
 /**

@@ -3732,9 +3732,13 @@ def _over_plan_numbers(lines) -> str:
             day = _date.fromisoformat(str(line.get("date") or "")).strftime("%d/%m")
         except ValueError:
             day = ""
+        planned, free = line.get("planned_qty"), line.get("free_qty")
+        # O livre difere do plano com reservas de outras encomendas (menos) ou com a
+        # vitrine de hoje ainda valendo na data (mais): é contra ele que se mede.
+        extra = f" ({_qty_display(free)} livres)" if _scope_qty(free) != _scope_qty(planned) else ""
         parts.append(
             f"{line.get('name') or line.get('sku')}: {_qty_display(line.get('requested_qty'))} pedidas, "
-            f"{_qty_display(line.get('planned_qty'))} planejadas{f' para {day}' if day else ''}"
+            f"{_qty_display(planned)} planejadas{f' para {day}' if day else ''}{extra}"
         )
     return "; ".join(parts)
 

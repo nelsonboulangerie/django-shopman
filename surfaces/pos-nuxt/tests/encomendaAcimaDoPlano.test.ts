@@ -32,6 +32,12 @@ describe("a linha da encomenda mostra a fornada da data", () => {
       over: true,
     });
   });
+  it("com a vitrine de hoje ainda valendo na data, o livre passa do plano e vem junto", () => {
+    expect(planLineFact(30, { planned_qty: 22, free_qty: 44 }, "2026-11-17")).toEqual({
+      text: "22 planejadas para 17/11, 44 livres",
+      over: false,
+    });
+  });
   it("sem lastro informado (hoje, ou SKU sem controle), a linha não inventa nada", () => {
     expect(planLineFact(3, undefined, "2026-11-17")).toBeNull();
     expect(planLineFact(3, { planned_qty: 22, free_qty: 22 }, "")).toBeNull();
@@ -49,6 +55,9 @@ describe("o Validar travado diz os dois números", () => {
   });
   it("com o livre abaixo do plano, os três números", () => {
     expect(overPlanNumbers({ ...k16, requested_qty: 10, free_qty: 7 })).toBe("10 pedidas, 22 planejadas para 17/11 (7 livres)");
+  });
+  it("com o livre acima do plano, também os três números", () => {
+    expect(overPlanNumbers({ ...k16, free_qty: 44 })).toBe("200 pedidas, 22 planejadas para 17/11 (44 livres)");
   });
   it("sem linha, nada", () => {
     expect(overPlanSummary([])).toBe("");
