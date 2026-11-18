@@ -66,7 +66,7 @@ describe('CartLineTotal', () => {
     const wrapper = await mountSuspended(CartLineTotal, {
       props: { line: { line_total_display: 'R$ 10,20', line_total_struck_display: 'R$ 12,00' } }
     })
-    expect(wrapper.find('.shop-price').text()).toBe('R$ 10,20')
+    expect(wrapper.find('[data-line-total-value]').text()).toBe('R$ 10,20')
     const struck = wrapper.find('[data-line-total-struck]')
     expect(struck.text()).toBe('antes R$ 12,00')
     expect(struck.find('.line-through').text()).toBe('R$ 12,00')

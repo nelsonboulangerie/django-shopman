@@ -60,7 +60,7 @@ test('a sacola diz quando fica pronto e o preço fecha com o resumo', async ({ p
       'a Tabatière precisa estar na promoção Semana do Pão (seed qa com menos de 7 dias)'
     ).toBeVisible()
     await expect(batchLine.locator('[data-cart-line-price]')).toContainText(/1 × R\$ \d+,\d{2} cada, antes R\$ \d+,\d{2}/)
-    const paid = cents(await batchLine.locator('[data-line-total] .shop-price').innerText())
+    const paid = cents(await batchLine.locator('[data-line-total-value]').innerText())
     const full = cents(await batchLine.locator('[data-line-total-struck]').innerText())
     expect(paid).toBeLessThan(full)
     // O unitário com desconto é o mesmo valor do total da linha (uma unidade): a linha
@@ -80,7 +80,7 @@ test('a sacola diz quando fica pronto e o preço fecha com o resumo', async ({ p
   })
 
   await test.step('o resumo fecha com as linhas', async () => {
-    const lineTotals = await page.locator('[data-cart-line-item] [data-line-total] .shop-price').allInnerTexts()
+    const lineTotals = await page.locator('[data-cart-line-item] [data-line-total-value]').allInnerTexts()
     const sum = lineTotals.reduce((total, text) => total + cents(text), 0)
     const subtotal = page.locator('[data-summary-subtotal]').first()
     expect(cents(await subtotal.innerText())).toBe(sum)

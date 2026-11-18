@@ -2431,7 +2431,7 @@ useSeoMeta({
                       <span class="font-semibold tabular-nums">{{ line.qty }}×</span>
                       {{ line.name }}
                     </span>
-                    <CartLineTotal :line="line" class="shrink-0" data-review-line-total />
+                    <CartLineTotal :line="line" value-class="tabular-nums" class="shrink-0" data-review-line-total />
                   </span>
                   <!-- Lista de espera = história do MESMO dia (fila de espera da produção).
                        Pedido agendado para outra data não tem fila: a reserva nasce na

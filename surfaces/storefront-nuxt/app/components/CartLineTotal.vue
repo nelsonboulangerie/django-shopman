@@ -10,6 +10,8 @@ const props = defineProps<{
   line: Pick<CartItemProjection, 'line_total_display' | 'line_total_struck_display'>
   // Empilhado: o cheio em cima e o total embaixo, alinhados à direita (linha da sacola).
   stacked?: boolean
+  // O peso do valor: preço de linha (padrão) ou o do texto em volta (lista da revisão).
+  valueClass?: string
 }>()
 
 const total = computed(() => lineTotal(props.line))
@@ -21,6 +23,6 @@ const total = computed(() => lineTotal(props.line))
     data-line-total
   >
     <span v-if="total.original" class="shop-meta" data-line-total-struck>antes <span class="line-through">{{ total.original }}</span></span>
-    <span class="shop-price">{{ total.current }}</span>
+    <span :class="valueClass || 'shop-price'" data-line-total-value>{{ total.current }}</span>
   </span>
 </template>
