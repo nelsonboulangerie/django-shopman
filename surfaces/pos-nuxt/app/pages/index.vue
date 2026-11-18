@@ -120,6 +120,7 @@ const {
   cancelSaleError,
   lookupBusy,
   managerApprovalError,
+  managerApproved,
   managerCheckBusy,
   checkManagerApproval,
   gridProducts,
@@ -130,6 +131,9 @@ const {
   acknowledgeUncertainClose,
   recheckUncertainClose,
   closeRecheckBusy,
+  closeRecheckApproval,
+  closeRecheckApprovalError,
+  dismissCloseRecheckApproval,
   pendingPixOrderRefs,
   reopenablePixOrderRefs,
   reopenPendingPix,
@@ -392,6 +396,17 @@ watch(closeGuardNotice, (notice) => {
 async function recheckFromGuard() {
   const outcome = await recheckUncertainClose();
   if (outcome === "unknown") openUncertainCloseRecovery();
+  // "approval": a venda pedia gerente e o PIN não ficou guardado (WP-E1). O
+  // diálogo dele abre sozinho (`closeRecheckApproval`), com o valor da venda.
+  if (outcome === "approval") uncertainCloseRecoveryOpen.value = false;
+}
+async function recheckWithManager(username: string, pin: string) {
+  const outcome = await recheckUncertainClose({ username, pin });
+  if (outcome === "resolved") dismissCloseRecheckApproval();
+  if (outcome === "unknown") {
+    dismissCloseRecheckApproval();
+    openUncertainCloseRecovery();
+  }
 }
 async function confirmUncertainCloseRecovery() {
   if (!uncertainCloseReviewed.value || uncertainCloseRecoveryBusy.value) return;
@@ -1521,7 +1536,7 @@ onBeforeUnmount(() => {
         v-model:discount-type="cart.discountType"
         v-model:discount-value="cart.discountValue"
         v-model:discount-reason="cart.discountReason"
-        :manager-approved="!!cart.managerApprovalToken"
+        :manager-approved="managerApproved"
         :manager-approval-error="managerApprovalError"
         :manager-check-busy="managerCheckBusy"
         @check-manager="(username, pin, done) => { void checkManagerApproval(username, pin).then(done) }"
@@ -1941,6 +1956,24 @@ onBeforeUnmount(() => {
       @update:open="(value) => { if (!value) drawerLock.backToLock(); }"
       @authorize="drawerLock.unlock"
       @authorize-badge="drawerLock.unlockWithBadge"
+    />
+
+    <!-- A conferência da venda sem resposta que pedia gerente: o PIN não ficou
+         guardado (WP-E1), e o reenvio sai com o gerente assinando de novo. -->
+    <OperatorManagerAuth
+      :open="closeRecheckApproval !== null"
+      action="sale_approval"
+      :threshold-q="closeRecheckApproval?.threshold_q || 0"
+      :discount-q="closeRecheckApproval?.discount_q || 0"
+      :reasons="closeRecheckApproval?.reasons"
+      :house-account-limit="closeRecheckApproval?.house_account_limit"
+      :operator-name="activeOperator?.name || ''"
+      :managers="pos?.managers || []"
+      :busy="closeRecheckBusy"
+      :error="closeRecheckApprovalError"
+      data-close-guard-manager
+      @update:open="(value) => { if (!value) dismissCloseRecheckApproval(); }"
+      @authorize="recheckWithManager"
     />
 
     <PosOfflineSalesDialog
