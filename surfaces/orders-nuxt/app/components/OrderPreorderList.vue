@@ -11,6 +11,7 @@
 import type { PreorderGroup } from "~/presentation/board";
 import {
   preorderFocusKey,
+  preorderGroupLabel,
   preorderLine,
   preorderRescheduleHref,
 } from "~/presentation/preorderList";
@@ -35,7 +36,7 @@ const total = computed(() => props.count);
 const rows = computed(() =>
   props.groups.map((group) => ({
     date: group.date,
-    label: group.label,
+    label: preorderGroupLabel(group.label),
     lines: group.cards.map((card) => {
       const href = preorderRescheduleHref(posUrl.value, card.ref);
       return { ...preorderLine(card), href, link: attrsFor(href) };
@@ -118,9 +119,25 @@ const rows = computed(() =>
               <span class="min-w-0" data-preorder-items>{{ line.items }}</span>
             </span>
           </NuxtLink>
+          <!-- No celular o botão vai para a direita e perde a seta: a dica "tem mais
+               abaixo" flutua no centro da base, e os dois não podem se encontrar
+               (auditoria da prévia, 18/11/2026). O nome do gesto é o mesmo. -->
           <NuxtButton
             v-if="line.href"
-            class="shrink-0"
+            class="ms-auto shrink-0 sm:hidden"
+            :to="line.href"
+            :target="line.link.target"
+            :rel="line.link.rel"
+            external
+            color="neutral"
+            variant="outline"
+            label="Remarcar no PDV"
+            :aria-label="`Remarcar a encomenda ${line.code} no PDV`"
+            data-preorder-reschedule="narrow"
+          />
+          <NuxtButton
+            v-if="line.href"
+            class="hidden shrink-0 sm:inline-flex"
             :to="line.href"
             :target="line.link.target"
             :rel="line.link.rel"

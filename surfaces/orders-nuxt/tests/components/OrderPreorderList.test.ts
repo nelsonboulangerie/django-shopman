@@ -74,12 +74,27 @@ describe("OrderPreorderList: a linha responde", () => {
 describe("OrderPreorderList: \"Remarcar no PDV\"", () => {
   it("abre aquela encomenda no PDV, não a lista geral", () => {
     const w = mountList({ groups: groups(card()), count: 1 });
-    const button = w.get("[data-preorder-reschedule]");
+    const button = w.get('[data-preorder-reschedule=""]');
 
     expect(button.text()).toContain("Remarcar no PDV");
     expect(button.html()).toContain("https://pdv.exemplo/preorders/NB-261116-C73");
     // A lista geral continua no cabeçalho.
     expect(w.get("[data-preorders-open]").html()).toContain("https://pdv.exemplo/preorders");
+  });
+
+  it("no celular o botão vai para a direita, sem a seta, com o mesmo nome", () => {
+    const w = mountList({ groups: groups(card()), count: 1 });
+    const narrow = w.get('[data-preorder-reschedule="narrow"]');
+
+    expect(narrow.text()).toContain("Remarcar no PDV");
+    expect(narrow.classes()).toEqual(expect.arrayContaining(["ms-auto", "sm:hidden"]));
+    expect(narrow.html()).toContain("https://pdv.exemplo/preorders/NB-261116-C73");
+  });
+
+  it("o grupo começa com maiúscula", () => {
+    const w = mountList({ groups: groups(card()), count: 1 });
+
+    expect(w.get("h3").text()).toBe("Amanhã");
   });
 
   it("sem o endereço do PDV, nenhum atalho aparece", () => {

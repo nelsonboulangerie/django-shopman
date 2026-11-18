@@ -9,6 +9,7 @@ import {
   acceptedIntoPreorders,
   AWAITING_PAYMENT_LABEL,
   preorderFocusKey,
+  preorderGroupLabel,
   preorderLine,
   preorderRescheduleHref,
 } from "../app/presentation/preorderList";
@@ -87,6 +88,16 @@ describe("a linha responde quando, como, pagamento e produção", () => {
 
   it("sem cliente, diz que não há, em vez de deixar o lugar vazio", () => {
     expect(preorderLine(card({ customer_name: "" })).who).toBe("Sem cliente");
+  });
+});
+
+describe("o nome do grupo é valor isolado: começa com maiúscula", () => {
+  it("hoje e amanhã ganham a maiúscula que \"Sex, 20/11\" já tem", () => {
+    expect(preorderGroupLabel("hoje")).toBe("Hoje");
+    expect(preorderGroupLabel("amanhã")).toBe("Amanhã");
+    expect(preorderGroupLabel("sex, 20/11")).toBe("Sex, 20/11");
+    expect(preorderGroupLabel("Sex, 20/11")).toBe("Sex, 20/11");
+    expect(preorderGroupLabel("")).toBe("");
   });
 });
 

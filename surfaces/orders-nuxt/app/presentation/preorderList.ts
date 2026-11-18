@@ -88,6 +88,18 @@ export function preorderLine(card: LineSource): PreorderLine {
   };
 }
 
+/**
+ * O nome do grupo da lista: o dia, com maiúscula ("Hoje", "Amanhã", "Sex, 20/11").
+ *
+ * O servidor manda o dia em minúscula porque o usa no meio de frase ("combinado para
+ * amanhã às 9h"). Aqui ele é valor isolado, e valor isolado começa com maiúscula
+ * (dono, 16/11/2026): "hoje" ao lado de "Sex, 20/11" lia como duas regras.
+ */
+export function preorderGroupLabel(label: string): string {
+  const text = String(label ?? "").trim();
+  return text ? text.charAt(0).toLocaleUpperCase("pt-BR") + text.slice(1) : "";
+}
+
 /** A encomenda aberta no PDV, onde mora o remarcar (D-003). Vazio sem o endereço do PDV. */
 export function preorderRescheduleHref(posUrl: string, ref: string): string {
   const base = String(posUrl || "").replace(/\/$/, "");
