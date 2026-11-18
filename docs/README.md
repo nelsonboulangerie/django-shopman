@@ -97,6 +97,7 @@ Documentação de consulta rápida gerada a partir do código.
 | Documento | Conteúdo |
 |-----------|----------|
 | [Protocols e Adapters](reference/protocols.md) | Mapa de todos os protocols, dataclasses e adapters disponíveis |
+| [Escopo da CI](reference/ci-escopo.md) | Leve no PR, pesado na fila: o que cada PR roda conforme o que mexe, e como manter os checks obrigatórios reportando |
 | [Runtime dependencies](reference/runtime-dependencies.md) | Contrato PostgreSQL/Redis/SQLite, SSE, deploy e Django 6 |
 | [Deploy](guides/deploy.md) | Docker/compose encapsulado por Makefile, release checks e app ASGI |
 | [Runbooks operacionais](runbooks/README.md) | Webhook, pagamento, Redis, PostgreSQL, worker, estoque e estado da loja |
