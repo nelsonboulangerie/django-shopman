@@ -3011,6 +3011,120 @@ class OrderCancelView(_OrderActionBase):
 
 
 @extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Return preview: what can still come back, and where the money goes",
+        responses={200: OpenApiResponse(description="Return preview.")},
+    ),
+)
+class OrderReturnPreviewView(OperationalObservationMixin, APIView):
+    """A prévia da devolução (WP-G12): itens que ainda podem voltar, o preço pago de
+    cada um, para onde o dinheiro volta e a ação com a base que o comando confere."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        from shopman.backstage.projections.order_return import build_order_return
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        return Response(build_order_return(order, user=request.user))
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Register a return after the sale (items, reason and the manager's PIN)",
+        responses={200: OpenApiResponse(description="Return registered.")},
+    ),
+)
+class OrderReturnView(_OrderActionBase):
+    """Registrar devolução depois da venda (decisão 2 do dono, 17/11/2026).
+
+    ``POST {items: [{line_id, qty}], reason, base_revision, expected_actor_id,
+    manager_approval}``. Sempre com o PIN de um Gerente escolhido da lista (ou o
+    crachá): devolver é dinheiro saindo da casa. O comando é o
+    ``ReturnService.initiate_return``, que grava o registro e enfileira o estoque e
+    o estorno (``return.process``); o dinheiro volta pelo caminho que já existe para
+    cada meio (gateway sozinho; dinheiro e maquininha pendentes no PDV).
+    """
+
+    intention_operation = "return"
+
+    def post(self, request, ref: str):
+        from shopman.orderman.exceptions import InvalidTransition
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.projections.order_return import return_block_reason, return_revision
+        from shopman.shop.handlers.returns import ReturnService
+        from shopman.shop.services.operator_orders import OrderStateConflict
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        reason = str(request.data.get("reason") or "").strip()
+        if not reason:
+            problem = "Escreva o motivo da devolução."
+            return Response({"detail": problem, "field": "reason", "errors": {"reason": [problem]}}, status=400)
+        raw_items = request.data.get("items")
+        items: list[dict] = []
+        for raw in raw_items if isinstance(raw_items, list) else []:
+            if not isinstance(raw, dict):
+                continue
+            line_id = str(raw.get("line_id") or "").strip()
+            try:
+                qty = Decimal(str(raw.get("qty") or "0"))
+            except (ArithmeticError, ValueError):
+                qty = Decimal("0")
+            if line_id and qty > 0:
+                items.append({"line_id": line_id, "qty": format(qty.normalize(), "f")})
+        if not items:
+            problem = "Escolha ao menos um item e quanto dele volta."
+            return Response({"detail": problem, "field": "items", "errors": {"items": [problem]}}, status=400)
+        prepared: dict = {}
+
+        def prepare():
+            blocked = return_block_reason(order)
+            if blocked:
+                return Response({"detail": blocked, "error": {"code": "return_not_allowed"}}, status=409)
+            try:
+                prepared["approver"] = pos_tabs_service.validate_manager_override(
+                    request.data.get("manager_approval"),
+                    operator_username=_username(request),
+                    action="order_return",
+                    message="Devolução pede a autorização de um gerente.",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+        def execute(base):
+            with transaction.atomic():
+                locked = Order.objects.select_for_update().get(pk=order.pk)
+                if return_revision(locked) != base:
+                    raise OrderStateConflict("O pedido mudou depois que você abriu a devolução. Confira e tente de novo.")
+                blocked = return_block_reason(locked)
+                if blocked:
+                    raise OrderConflict(blocked)
+                try:
+                    result = ReturnService.initiate_return(
+                        locked, items, reason, _actor(request),
+                        approved_by=prepared["approver"].get_username(),
+                    )
+                except InvalidTransition as exc:
+                    raise OrderConflict(str(exc)) from exc
+                if not result.success:
+                    raise OrderError(result.error or "Não foi possível registrar a devolução.")
+            return {"refund_total_q": result.refund_total_q, "return_type": result.return_type}
+
+        # A assinatura é conferida e descartada: nunca entra na impressão digital da intenção.
+        return self._context_response(
+            request, order, "return", {"items": items, "reason": reason}, execute, prepare=prepare,
+        )
+
+
+@extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
         summary="Register payment collected at pickup or delivery in the operator's open shift",

@@ -26,6 +26,7 @@ import {
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import { onMounted, onBeforeUnmount } from "vue";
 import { settledRefresh } from "~/utils/settledRefresh";
+import type { Action } from "~/generated/ordersContract";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { COURIER_CALL_HASH } from "~/presentation/courier";
 import { contactRequestNotice } from "~/presentation/contactRequest";
@@ -76,6 +77,7 @@ const {
   advance,
   reject,
   cancel,
+  returnOrder,
   settleCash,
   equipmentBack,
   courierBack,
@@ -329,7 +331,7 @@ function applyNoteTag(tag: string) {
 // reason list (`cancel_reasons`) in every channel; on iFood orders the server already
 // left out the reasons iFood does not offer, and maps the reason to iFood's code.
 const dialog = ref<
-  "" | "reject" | "cancel" | "settle" | "dispatch" | "courier-back"
+  "" | "reject" | "cancel" | "settle" | "dispatch" | "courier-back" | "return"
 >("");
 // O motivo já marcado quando a tela sabe o porquê: cancelar o Pix vencido abre com
 // "Pagamento não confirmado" (o operador ainda pode trocar).
@@ -473,6 +475,23 @@ async function submitReason(payload: { reasonKey: string; internalNote: string }
 // pedido" com o Confirmar aceso sobre um pedido JÁ cancelado. Achado na prova
 // de navegador — nenhum teste de componente ou de composable alcança este
 // estado, porque `dialog` é estado da PÁGINA.
+// Devolução: o diálogo diz o valor e o destino do dinheiro; o PIN vem depois, no
+// mesmo `OperatorManagerAuth`, com a mesma frase (`returnMoneySentence`).
+const RETURNABLE_STATUSES = new Set(["delivered", "completed"]);
+const returnMoneySentence = ref("");
+async function submitReturn(payload: {
+  items: { line_id: string; qty: string }[];
+  reason: string;
+  contract: Action;
+  moneySentence: string;
+}) {
+  returnMoneySentence.value = payload.moneySentence;
+  if (await returnOrder(payload, payload.contract)) {
+    dialog.value = "";
+    useSonner.success("Devolução registrada.");
+  }
+}
+
 async function signWithPin(username: string, pin: string) {
   if (await authorize({ username, pin })) dialog.value = "";
 }
@@ -644,6 +663,22 @@ const detailMenuItems = computed(() => [
           "data-action": "resend-payment-link",
           disabled: busy.value,
           onSelect: () => menuDo(resendPaymentLink),
+        },
+      ]
+    : []),
+  // Devolução depois da venda (WP-G12): pedido entregue ou concluído, fora do
+  // iFood (lá o reembolso é do portal deles). A régua inteira é da prévia do
+  // servidor, que o diálogo lê ao abrir; aqui só se decide se a porta aparece.
+  ...(order.value &&
+  RETURNABLE_STATUSES.has(order.value.status) &&
+  order.value.channel_ref !== "ifood"
+    ? [
+        {
+          label: "Registrar devolução (pede gerente)",
+          icon: "i-lucide-undo-2",
+          "data-action": "return",
+          disabled: busy.value,
+          onSelect: () => menuDo(() => (dialog.value = "return")),
         },
       ]
     : []),
@@ -1628,6 +1663,19 @@ const outside = useOutsideStore(
       @confirm="submitReason"
     />
 
+    <!-- devolução depois da venda: itens, quantidade, motivo e o valor que volta -->
+    <OrderReturnDialog
+      :open="dialog === 'return'"
+      :order-ref="orderRef"
+      :busy="busy"
+      @update:open="
+        (v) => {
+          if (!v) dialog = '';
+        }
+      "
+      @confirm="submitReturn"
+    />
+
     <!-- entregador voltou: o MESMO diálogo da Fila (confere e fecha a saída inteira) -->
     <CourierBackDialog
       :card="dialog === 'courier-back' ? order : null"
@@ -1795,12 +1843,16 @@ const outside = useOutsideStore(
          há outro gerente e deixa o crachá valendo; nunca vira campo de nome. -->
     <OperatorManagerAuth
       :open="!!managerChallenge"
-      action="cancel_order"
-      :detail="order?.cancel_money_effect || ''"
+      :action="managerChallenge?.action === 'return' ? 'order_return' : 'cancel_order'"
+      :detail="
+        managerChallenge?.action === 'return'
+          ? returnMoneySentence
+          : order?.cancel_money_effect || ''
+      "
       :managers="order?.managers || []"
       :busy="busy"
       :busy-text="
-        order?.cancel_waits_for_gateway
+        managerChallenge?.action !== 'return' && order?.cancel_waits_for_gateway
           ? 'Cancelando e falando com o meio de pagamento. Leva alguns segundos.'
           : ''
       "
