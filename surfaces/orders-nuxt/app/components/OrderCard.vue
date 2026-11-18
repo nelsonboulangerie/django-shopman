@@ -27,6 +27,7 @@ import {
   packLabel,
   primaryVerb,
   splitRef,
+  kitchenWait,
   kitchenWaiting,
   productionLines,
   schedulePromise,
@@ -473,6 +474,8 @@ const compactPill = computed<{ label: string; color: "error" | "warning" | "succ
   if (clock.value.countdown) return { label: clock.value.text, color: timeColor };
   if (seal.value.tone === "error" || seal.value.tone === "warning")
     return { label: seal.value.label, color: seal.value.tone };
+  // Quem espera a hora da Cozinha não tem tempo a contar: o selo diz só a situação.
+  if (!clock.value.text) return { label: props.card.status_label, color: "neutral" };
   const status =
     seal.value.label !== props.card.status_label &&
     !props.card.ready_at_iso &&
@@ -484,6 +487,9 @@ const compactPill = computed<{ label: string; color: "error" | "warning" | "succ
 // O combinado (WP-G01): "Encomenda · Amanhã · A partir das 15h", a hora de hoje ou o
 // que venceu. Nas duas formas do cartão: o enxuto é o do Painel de mesa, onde se aceita.
 const promise = computed(() => schedulePromise(props.card));
+// A hora da Cozinha (WP-G02): a encomenda do dia que ainda espera a hora dela diz
+// quando chega. Sem relógio e sem gesto em primeiro plano até lá.
+const wait = computed(() => kitchenWait(props.card));
 // A terceira linha: o que saiu com o entregador (maquininha, troco) ou o andamento;
 // sem nada disso, os itens.
 const compactDetail = computed(() =>
@@ -576,6 +582,15 @@ function nuxtIcon(icon: string): string {
     >
       <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
       <span class="whitespace-normal text-start">{{ promise.label }}</span>
+    </NuxtBadge>
+    <NuxtBadge
+      v-if="wait && !handoff"
+      class="max-w-full self-start"
+      color="neutral"
+      :icon="wait.icon"
+      data-card-kitchen-wait
+    >
+      <span class="whitespace-normal text-start">{{ wait.label }}</span>
     </NuxtBadge>
     <p
       v-if="card.items_summary"
@@ -741,7 +756,7 @@ function nuxtIcon(icon: string): string {
               aria-live="off"
             />
             <NuxtBadge
-              v-else
+              v-else-if="clock.text"
               :color="
                 clock.tone === 'late'
                   ? 'error'
@@ -829,6 +844,14 @@ function nuxtIcon(icon: string): string {
           >
             <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
             <span class="whitespace-normal text-start">{{ promise.label }}</span>
+          </NuxtBadge>
+          <NuxtBadge
+            v-if="wait"
+            color="neutral"
+            :icon="wait.icon"
+            data-card-kitchen-wait
+          >
+            <span class="whitespace-normal text-start">{{ wait.label }}</span>
           </NuxtBadge>
           <!-- fila de espera: o pedido não está parado, está esperando o lote -->
           <NuxtBadge

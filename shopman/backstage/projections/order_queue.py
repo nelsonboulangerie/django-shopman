@@ -489,6 +489,20 @@ class OrderCardProjection:
     # ver o dia e a hora era prometer às cegas.
     schedule_label: str = ""
     schedule_state: str = ""
+    # A hora da Cozinha (WP-G02). A encomenda do dia espera a hora dela
+    # (``lifecycle.preorder_activation_at``: combinado − preparo − antecedência)
+    # antes de pedir qualquer gesto. Enquanto espera, ``kitchen_release_at_iso``
+    # diz quando chega e ``kitchen_release_label`` é a frase pronta ("Vai para a
+    # Cozinha às 16h15"); o "Iniciar preparo" vira "Adiantar", secundário, e o
+    # card não entra em ``attention``. Depois que chegou, ``kitchen_released_at_iso``
+    # guarda o instante, e é dele que o relógio conta (``clock_since_iso``).
+    kitchen_release_at_iso: str = ""
+    kitchen_release_label: str = ""
+    kitchen_released_at_iso: str = ""
+    # De quando o relógio do pedido conta: a chegada à Cozinha, na encomenda; a
+    # criação, no pedido de agora. ``elapsed_seconds`` usa a mesma base. Contar a
+    # encomenda desde a compra fazia o cartão dizer "há 3d 4h" como tempo de preparo.
+    clock_since_iso: str = ""
     # Troco da entrega (WP-9): o que a loja coletou no checkout e o que o livro
     # do caixa diz. ``change_for_q`` é com quanto o cliente paga (0 = não disse);
     # ``change_out_suggested_q`` é o troco que a loja sugere levar
@@ -1233,14 +1247,20 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else refusal.message if refusal else ""),
             method="POST", idempotency="required",
             payload_schema={"base_revision": notification_svc.payment_link_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    operational = operator_orders.operational_actions(order, user=user)
+    # A encomenda que ainda espera a hora da Cozinha (WP-G02): o detalhe dá ao
+    # gesto o mesmo nome e o mesmo peso do card.
+    waits_kitchen = _kitchen_clock(order, timezone.now())[0] is not None
+    if waits_kitchen:
+        operational = _early_start_actions(operational)
     return OperatorOrderProjection(
         **common,
-        actions=(*operator_orders.operational_actions(order, user=user), *extra_actions),
+        actions=(*operational, *extra_actions),
         ifood_negotiations=negotiations(order, user=user),
         can_confirm=not operator_orders.confirmation_block_reason(order),
         can_advance=bool(next_status) and undo_block_allows_advance(order),
         **cancel_capability,
-        next_action_label=_next_label(order),
+        next_action_label=EARLY_START_LABEL if waits_kitchen else _next_label(order),
         undo=_undo_projection(order),
         advance_block_label=block_label,
         advance_block_reason=block_reason,
@@ -2167,6 +2187,64 @@ def _confirmation_deadlines(refs: list[str]) -> dict[str, AcceptanceTimer]:
     return out
 
 
+#: O gesto de quem inicia o preparo antes de a encomenda chegar à Cozinha.
+EARLY_START_LABEL = "Adiantar"
+
+
+def _kitchen_clock(order: Order, now: datetime) -> tuple[datetime | None, datetime | None]:
+    """A hora da Cozinha da encomenda: ``(vai chegar às, chegou às)``.
+
+    ``chegou às`` é o carimbo que o lifecycle grava quando a encomenda entra no
+    fluxo do dia (``Order.data["kitchen_released_at"]``). ``vai chegar às`` só
+    existe para o pedido ACEITO que ainda espera HOJE: a régua é a do lifecycle
+    (``_physical_work_deferred`` decide se espera, ``preorder_activation_at`` diz
+    até quando), lida sem alterar nada. O nome privado é a régua única de quem
+    espera; repeti-la aqui seria uma segunda conta. Encomenda de outro dia não
+    recebe a frase: o card dela já diz o dia e a janela (``_schedule``).
+    """
+    from shopman.shop import lifecycle
+
+    released = _parse_iso((order.data or {}).get(lifecycle.KITCHEN_RELEASED_AT_KEY))
+    if released is not None or order.status != Order.Status.ACCEPTED:
+        return None, released
+    try:
+        if not lifecycle._physical_work_deferred(order):
+            return None, None
+        release_at, _target = lifecycle.preorder_activation_at(order)
+    except Exception:
+        # Ausência de resposta não é resposta: sem a régua, o card não promete hora.
+        logger.warning("order_queue.kitchen_clock_failed order=%s", order.ref, exc_info=True)
+        return None, None
+    if release_at is None or timezone.localtime(release_at).date() != timezone.localtime(now).date():
+        return None, None
+    return release_at, None
+
+
+def _early_start_actions(actions) -> tuple:
+    """As ações do pedido que ainda espera a hora da Cozinha.
+
+    O gesto de iniciar existe, mas não é o que a tela pede agora: sai do primeiro
+    plano e ganha o nome do que faz (antecipa a chegada à Cozinha). Card e
+    detalhe passam por aqui, para o mesmo gesto ter um nome só.
+    """
+    return tuple(
+        replace(action, label=EARLY_START_LABEL, priority="secondary")
+        if action.ref == "advance" and action.priority == "primary"
+        else action
+        for action in actions
+    )
+
+
+def _parse_iso(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
+
+
 def _is_future_preorder(order: Order) -> bool:
     """Encomenda = data combinada no futuro (régua do lifecycle)."""
     commitment = get_commitment_date(order)
@@ -2302,7 +2380,9 @@ def _build_card(
     expectation: PrepExpectation | None = None,
 ) -> OrderCardProjection:
     now = timezone.now()
-    elapsed = (now - order.created_at).total_seconds()
+    kitchen_release_at, kitchen_released_at = _kitchen_clock(order, now)
+    clock_since = kitchen_released_at or order.created_at
+    elapsed = max(0.0, (now - clock_since).total_seconds())
 
     timer_class = _timer_class(order.status, *_acceptance_clock(order, deadline, now))
 
@@ -2351,6 +2431,9 @@ def _build_card(
     danfe = order_danfe.card_state(order, reads=danfe_reads, now=now)
 
     actions = operator_orders.operational_actions(order, user=user, waitlist_state=batch_state, payment_reads=payment_reads, channel_config=channel_config)
+    if kitchen_release_at is not None:
+        actions = _early_start_actions(actions)
+        next_label = EARLY_START_LABEL
     from shopman.shop.services import ifood_accept_sync
 
     accept = ifood_accept_sync.state_for(order, batch=accept_batch)
@@ -2440,6 +2523,10 @@ def _build_card(
         commitment_date_display=_commitment_date_display(commitment) if is_preorder else "",
         schedule_label=schedule_label if schedule_state else "",
         schedule_state=schedule_state,
+        kitchen_release_at_iso=kitchen_release_at.isoformat() if kitchen_release_at else "",
+        kitchen_release_label=f"Vai para a Cozinha às {format_clock(kitchen_release_at)}" if kitchen_release_at else "",
+        kitchen_released_at_iso=kitchen_released_at.isoformat() if kitchen_released_at else "",
+        clock_since_iso=clock_since.isoformat(),
         **_courier_change_fields(order, courier_change),
         **_equipment_fields(order, channel_config=channel_config),
         waitlist_state=waitlist_state,

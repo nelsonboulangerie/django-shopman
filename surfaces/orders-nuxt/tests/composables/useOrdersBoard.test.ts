@@ -8,6 +8,7 @@ import {
   GESTOR_ALERT,
   gestorAttentionDecision,
   gestorAttentionStorageKey,
+  gestorSeenKeys,
   gestorServiceDayBoundaryDelay,
   useOrdersBoard,
 } from "../../app/composables/useOrdersBoard";
@@ -138,12 +139,18 @@ describe("useOrdersBoard — atenção diária", () => {
     ).toBe(1_250);
   });
 
-  it("na virada do dia o mesmo pedido volta a ser unseen na nova memória diária", () => {
+  it("na virada do dia o pedido já visto ontem não toca de novo (WP-G02, P1-04)", () => {
     const queue = dueQueue("PRE-1");
     const yesterday = gestorAttentionDecision(queue, new Set(["PRE-1"]), "", "2026-09-15");
-    const today = gestorAttentionDecision(queue, new Set(), yesterday.signature, "2026-09-16");
+    // A memória do dia novo carrega a da véspera (`gestorSeenKeys`).
+    const seen = gestorSeenKeys(
+      (key) => (key === gestorAttentionStorageKey("2026-09-15") ? '["PRE-1"]' : null),
+      "2026-09-16",
+    );
+    const today = gestorAttentionDecision(queue, seen, yesterday.signature, "2026-09-16");
 
-    expect(today.firstUnseen).toBe("PRE-1");
+    expect(today.firstUnseen).toBe("");
+    expect(today.shouldStop).toBe(true);
     expect(today.signature).toBe("2026-09-16:PRE-1");
   });
 

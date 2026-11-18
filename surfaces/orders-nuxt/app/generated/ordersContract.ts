@@ -546,6 +546,10 @@ export interface OrderCardProjection {
   commitment_date_display: string;
   schedule_label: string;
   schedule_state: string;
+  kitchen_release_at_iso: string;
+  kitchen_release_label: string;
+  kitchen_released_at_iso: string;
+  clock_since_iso: string;
   change_for_q: number;
   change_out_suggested_q: number;
   change_out_q: number;
