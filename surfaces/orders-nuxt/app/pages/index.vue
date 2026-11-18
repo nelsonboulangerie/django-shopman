@@ -62,6 +62,11 @@ import {
 } from "~/presentation/queue";
 import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import {
+  acceptedIntoPreorders,
+  preorderFocusKey,
+  type AcceptedPreorder,
+} from "~/presentation/preorderList";
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const {
@@ -1415,6 +1420,24 @@ function seeAttention() {
 // o próximo pedido que pedir atenção traz a pílula de volta. Visto continua sendo o "eu vi,
 // pode parar de avisar".
 const notices = useAlertDismissals();
+
+// A encomenda recém-aceita (WP-G03): sai das colunas do dia e vai morar na lista
+// "Encomendas", abaixo da dobra. O aviso diz para onde ela foi e em que dia, e leva
+// até a linha. Sem ele, depois do aceite o painel dizia só "Nenhum pedido novo agora.".
+const acceptedPreorder = ref<AcceptedPreorder | null>(null);
+watch(queue, (after, before) => {
+  const [accepted] = acceptedIntoPreorders(before ?? null, after ?? null);
+  if (accepted) acceptedPreorder.value = accepted;
+  else if (
+    acceptedPreorder.value &&
+    !(after?.preorders ?? []).some((card) => card.ref === acceptedPreorder.value?.ref)
+  )
+    acceptedPreorder.value = null;
+});
+const { reveal: revealFocus } = useNextFocus();
+function showAcceptedPreorder() {
+  if (acceptedPreorder.value) revealFocus(preorderFocusKey(acceptedPreorder.value.ref));
+}
 // "Falha ao atualizar a fila" fecha e volta na próxima leitura que falhar: cada falha nova
 // (outro erro) é outra chave.
 const queueFailures = ref(0);
@@ -1852,6 +1875,21 @@ function compactClear() {
         @update:open="notices.onOpen(`queue-error:${queueFailures}`, $event)"
       />
 
+      <!-- O aceite de uma encomenda aponta a linha dela em "Encomendas" (WP-G03). -->
+      <NuxtAlert
+        v-if="acceptedPreorder && notices.isOpen(`preorder-accepted:${acceptedPreorder.ref}`)"
+        v-bind="notices.closeProps"
+        color="neutral"
+        variant="subtle"
+        icon="i-lucide-calendar-check"
+        :title="acceptedPreorder.message"
+        :actions="alertActions('neutral', [
+          { label: 'Ver em Encomendas', onClick: showAcceptedPreorder },
+        ])"
+        data-preorder-accepted
+        @update:open="notices.onOpen(`preorder-accepted:${acceptedPreorder.ref}`, $event)"
+      />
+
       <template v-if="queue">
         <!-- no results across all zones for the active filters -->
         <NuxtEmpty
@@ -2250,8 +2288,12 @@ function compactClear() {
           v-if="preordersCount"
           :groups="triagedPreorders"
           :count="preordersCount"
+          :highlight-ref="acceptedPreorder?.ref"
         />
       </template>
+      <!-- Tem mais abaixo: a lista de Encomendas fica depois do painel de altura cheia.
+           Contida, porque quem rola é esta seção, não a janela. -->
+      <MoreBelow v-if="preordersCount" contained />
     </section>
 
     <!-- A barra de seleção da suíte, abaixo do `lg`: na base (a da mesa toma o lugar
