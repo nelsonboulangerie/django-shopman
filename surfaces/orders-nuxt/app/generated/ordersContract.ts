@@ -325,6 +325,7 @@ export interface OrderItemProjection {
   qty: string;
   unit_price_display: string;
   total_display: string;
+  full_total_display: string;
   notes: string;
 }
 
@@ -543,6 +544,8 @@ export interface OrderCardProjection {
   is_preorder: boolean;
   commitment_date: string;
   commitment_date_display: string;
+  schedule_label: string;
+  schedule_state: string;
   change_for_q: number;
   change_out_suggested_q: number;
   change_out_q: number;
@@ -1128,7 +1131,7 @@ export interface HistoryFacet {
   options: HistoryFacetOption[];
 }
 
-/** OrderHistoryRowProjection(ref: 'str', status: 'str', status_label: 'str', status_tone: 'str', channel_ref: 'str', channel_label: 'str', customer_label: 'str', fulfillment: 'str', fulfillment_label: 'str', payment_method: 'str', payment_label: 'str', total_q: 'int', total_display: 'str', closed_at: 'str', closed_display: 'str') */
+/** OrderHistoryRowProjection(ref: 'str', status: 'str', status_label: 'str', status_tone: 'str', channel_ref: 'str', channel_label: 'str', customer_label: 'str', fulfillment: 'str', fulfillment_label: 'str', payment_method: 'str', payment_label: 'str', total_q: 'int', total_display: 'str', closed_at: 'str', closed_display: 'str', closed_label: 'str', money_outcome: 'str', money_outcome_pending: 'bool') */
 export interface OrderHistoryRowProjection {
   ref: string;
   status: string;
@@ -1145,12 +1148,17 @@ export interface OrderHistoryRowProjection {
   total_display: string;
   closed_at: string;
   closed_display: string;
+  closed_label: string;
+  money_outcome: string;
+  money_outcome_pending: boolean;
 }
 
-/** OrderHistoryProjection(date_from: 'str', date_to: 'str', query: 'str', sku: 'str', sku_name: 'str', facets: 'tuple[HistoryFacet, ...]', items: 'tuple[OrderHistoryRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str') */
+/** OrderHistoryProjection(date_from: 'str', date_to: 'str', today: 'str', period_label: 'str', query: 'str', sku: 'str', sku_name: 'str', facets: 'tuple[HistoryFacet, ...]', items: 'tuple[OrderHistoryRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str') */
 export interface OrderHistoryProjection {
   date_from: string;
   date_to: string;
+  today: string;
+  period_label: string;
   query: string;
   sku: string;
   sku_name: string;

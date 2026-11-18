@@ -149,7 +149,7 @@ def _hour_pair(slot_ref: str) -> tuple[time, time] | None:
     return hora_inicio, hora_fim
 
 
-def window_label(slot_ref: str | None) -> str:
+def window_label(slot_ref: str | None, *, for_customer: bool = False) -> str:
     """Rótulo humano da janela combinada — tolerando os DOIS vocabulários da chave.
 
     ``Order.data["delivery_time_slot"]`` carrega duas grades (data-schemas):
@@ -162,8 +162,14 @@ def window_label(slot_ref: str | None) -> str:
     ``fulfillment_type`` erra na encomenda de ENTREGA (ref canônico num pedido
     de entrega) e na retirada de hoje no balcão (par de horas numa retirada).
 
-    Ref desconhecido devolve o próprio ref: um ref cru é feio, uma janela em
-    branco é o compromisso sumindo do papel.
+    Ref que nenhuma das duas grades conhece (a casa tirou a janela do Admin, ou
+    o dado nasceu errado) grita no log como erro e sai com a frase de quem lê:
+    a equipe (Gestor, Cozinha, PDV, Admin, ficha) lê "horário não reconhecido",
+    o cliente (acompanhamento, notificação, Concierge, exportação da conta)
+    lê "horário a confirmar", com ``for_customer=True``; o cliente não lê
+    frase de erro do sistema (coordenação, 17/11/2026, #2555). Nunca o ref cru ("manha" na tela é identificador vazando), e
+    nunca em branco (em branco o compromisso some e o card diria "sem horário
+    combinado", que é falso: houve um combinado, só não se sabe ler).
     """
     ref = str(slot_ref or "").strip()
     if not ref:
@@ -174,7 +180,8 @@ def window_label(slot_ref: str | None) -> str:
     for slot in canonical_slots():
         if str(slot.get("ref") or "") == ref:
             return str(slot.get("label") or "").strip() or ref
-    return ref
+    logger.error("fulfillment_window: slot ref %r is not in the house grid", ref)
+    return "horário a confirmar" if for_customer else "horário não reconhecido"
 
 
 def window_start_time(slot_ref: str | None) -> time | None:

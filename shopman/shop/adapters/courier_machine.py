@@ -31,6 +31,8 @@ from dataclasses import dataclass
 import requests
 from django.conf import settings
 
+from shopman.shop.protocols import DeliveryCapabilities, RideState
+
 logger = logging.getLogger(__name__)
 
 #: Letras de status terminais — a corrida não muda mais depois delas.
@@ -389,6 +391,40 @@ _LABEL_TO_STATUS = {
 }
 
 RIDE_STATUSES = frozenset(_LABEL_TO_STATUS.values())
+
+#: O que a TaOn sabe fazer (DEV-2026-030, contrato em ``shopman.shop.protocols``).
+CAPABILITIES = DeliveryCapabilities(
+    quote=True,
+    multi_stop=4,
+    cancel_reasons=True,
+    customer_tracking=True,
+    push_status=True,
+    door_charge=True,
+    needs_return=True,
+    assign=False,
+)
+
+#: Letra da TaOn → estado da casa. A letra crua continua no bloco (``status``); este é o
+#: vocabulário que serve a qualquer serviço. ``S`` (em espera) é corrida aceita, ainda
+#: sem coleta.
+RIDE_STATES: dict[str, RideState] = {
+    "D": RideState.SEARCHING,
+    "G": RideState.SEARCHING,
+    "P": RideState.SEARCHING,
+    "U": RideState.GROUPED,
+    "T": RideState.REASSIGNING,
+    "A": RideState.ASSIGNED,
+    "S": RideState.ASSIGNED,
+    "E": RideState.ON_ROUTE,
+    "F": RideState.DONE,
+    "N": RideState.NOT_SERVED,
+    "C": RideState.CANCELLED,
+}
+
+
+def ride_state(status: str) -> RideState | None:
+    """O estado da casa para a letra da TaOn, ou None para letra desconhecida."""
+    return RIDE_STATES.get(str(status or "").strip().upper())
 
 #: Ordem da leitura. Medido no alpha em 13/10/2026: ``/solicitacaoStatus``
 #: devolveu 400 ``[67] O usuário informado não pode realizar essa operação.``

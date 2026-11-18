@@ -107,7 +107,9 @@ def test_default_is_today_closed_orders_without_counter_sales(client, manager, o
     assert sorted(_refs(response)) == ["H-1", "H-2", "H-3", "H-5"]
     history = response.json()["history"]
     assert history["total"] == 4
-    assert history["total_label"] == "4 pedidos"
+    assert history["total_label"] == "4 pedidos hoje"
+    assert history["period_label"] == "hoje"
+    assert history["today"] == orders.isoformat()
     assert history["date_from"] == history["date_to"] == orders.isoformat()
 
 
@@ -162,6 +164,9 @@ def test_row_contract(client, manager, orders):
     assert row["channel_label"] == "iFood"
     assert row["total_display"] == "R$ 25,00"
     assert row["closed_display"].endswith("12h")
+    assert row["closed_label"] == "Cancelado hoje às 12h"
+    # iFood: o dinheiro não passa pela casa, a linha não inventa destino.
+    assert row["money_outcome"] == ""
 
 
 def test_pagination(client, manager, orders, monkeypatch):
@@ -233,3 +238,100 @@ def test_history_and_detail_show_the_edited_total(client, manager, orders):
     assert row["total_display"] == "R$ 17,00"
     order.refresh_from_db()
     assert order.total_q == 800
+
+
+# ── WP-G04: Histórico honesto (P1-21, P2-23) ─────────────────────────────────
+
+
+def test_search_that_finds_nothing_says_where_it_looked(client, manager, orders):
+    """P1-21: a busca presa a hoje diz que procurou só em hoje."""
+    _order("H-ONTEM", name="Carla Souza", day=orders - timedelta(days=1))
+
+    today_only = _get(client, manager, q="carla").json()["history"]
+    assert today_only["total"] == 0
+    assert today_only["total_label"] == "Nenhum pedido com “carla” hoje"
+
+    wider = _get(
+        client, manager, q="carla", date_from=(orders - timedelta(days=27)).isoformat(), date_to=orders.isoformat()
+    ).json()["history"]
+    assert [row["ref"] for row in wider["items"]] == ["H-ONTEM"]
+    assert wider["total_label"] == f"1 pedido de {(orders - timedelta(days=27)):%d/%m} até hoje"
+    assert wider["items"][0]["closed_label"] == "Concluído ontem às 12h"
+
+
+def test_period_words():
+    from datetime import date
+
+    today = date(2026, 11, 16)
+    words = order_history.period_words
+    assert words(today, today, today) == "hoje"
+    assert words(date(2026, 11, 15), date(2026, 11, 15), today) == "ontem"
+    assert words(date(2026, 11, 12), date(2026, 11, 12), today) == "em 12/11"
+    assert words(date(2026, 10, 20), today, today) == "de 20/10 até hoje"
+    assert words(date(2026, 11, 9), date(2026, 11, 15), today) == "de 09/11 até ontem"
+    assert words(date(2026, 11, 1), date(2026, 11, 7), today) == "de 01/11 a 07/11"
+    assert words(date(2025, 12, 1), date(2025, 12, 1), today) == "em 01/12/2025"
+
+
+def test_day_is_the_stamp_of_the_current_status(client, manager, orders):
+    """P2-23: o devolvido depois de concluído conta no dia da devolução."""
+    order = _order("H-RET", status="returned", day=orders)
+    Order.objects.filter(pk=order.pk).update(completed_at=_at(orders - timedelta(days=5)))
+    late_cancel = _order("H-LATE", status="cancelled", day=orders)
+    Order.objects.filter(pk=late_cancel.pk).update(completed_at=_at(orders - timedelta(days=2)))
+
+    today_refs = _refs(_get(client, manager))
+    assert "H-RET" in today_refs and "H-LATE" in today_refs
+    five_days_ago = (orders - timedelta(days=5)).isoformat()
+    assert "H-RET" not in _refs(_get(client, manager, date_from=five_days_ago, date_to=five_days_ago))
+    row = next(r for r in _get(client, manager, q="H-RET").json()["history"]["items"])
+    assert row["closed_label"] == "Devolvido hoje às 12h"
+
+
+def _paid(order, method, amount_q=2500, refund_q=0):
+    from shopman.payman import PaymentService
+
+    intent = PaymentService.create_intent(order.ref, amount_q, method, ref=f"INT-{order.ref}")
+    PaymentService.authorize(intent.ref)
+    PaymentService.capture(intent.ref)
+    if refund_q:
+        PaymentService.refund(intent.ref, amount_q=refund_q)
+    return intent
+
+
+def test_cancelled_row_says_where_the_money_went(client, manager, orders):
+    """P2-23: o cancelado não lê "Pix · R$ 25,00" igual a um concluído."""
+    _paid(_order("H-REFUNDED", status="cancelled", method="pix"), "pix", refund_q=2500)
+    _paid(_order("H-PENDING", status="cancelled", method="pix"), "pix")
+    _paid(_order("H-PARTIAL", status="returned", method="card"), "card", refund_q=1000)
+    _paid(_order("H-CASH", status="cancelled", method="cash"), "cash")
+    _order("H-NEVER", status="cancelled", method="pix")
+    _paid(_order("H-DONE", status="completed", method="pix"), "pix")
+
+    rows = {row["ref"]: row for row in _get(client, manager, q="H-").json()["history"]["items"]}
+    outcome = {ref: (row["money_outcome"], row["money_outcome_pending"]) for ref, row in rows.items()}
+    assert outcome["H-REFUNDED"] == ("R$ 25,00 estornado", False)
+    assert outcome["H-PENDING"] == ("R$ 25,00 a estornar", True)
+    assert outcome["H-PARTIAL"] == ("R$ 10,00 de R$ 25,00 estornado, R$ 15,00 a estornar", True)
+    assert outcome["H-CASH"] == ("R$ 25,00 a devolver", True)
+    assert outcome["H-NEVER"] == ("Nada foi cobrado", False)
+    assert outcome["H-DONE"] == ("", False)
+
+
+def test_journey_j7_find_yesterdays_order(client, manager, orders):
+    """J7: o Gerente busca pelo nome, amplia para 28 dias e abre o pedido."""
+    _order("H-J7", name="Marta Lima", day=orders - timedelta(days=1))
+
+    first = _get(client, manager, q="Marta").json()["history"]
+    assert first["items"] == []
+    assert first["period_label"] == "hoje"
+
+    wider = _get(
+        client, manager, q="Marta", date_from=(orders - timedelta(days=27)).isoformat(), date_to=orders.isoformat()
+    ).json()["history"]
+    [row] = wider["items"]
+    assert row["ref"] == "H-J7"
+    assert row["customer_label"].startswith("Marta")
+
+    detail = client.get(f"/api/v1/backstage/orders/{row['ref']}/")
+    assert detail.status_code == 200, detail.content

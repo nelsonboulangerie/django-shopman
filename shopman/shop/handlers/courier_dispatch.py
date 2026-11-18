@@ -32,9 +32,8 @@ class CourierDispatchHandler:
     topic = COURIER_DISPATCH
 
     def handle(self, *, message: Directive, ctx: dict) -> None:
-        from shopman.shop.adapters import get_adapter
         from shopman.shop.adapters.courier_machine import CourierError, CourierRateLimited
-        from shopman.shop.services import courier
+        from shopman.shop.services import courier, delivery_services
         from shopman.shop.services.order_helpers import get_fulfillment_type
         from shopman.shop.services.remote_mutations import mutation_fingerprint
 
@@ -69,7 +68,7 @@ class CourierDispatchHandler:
             return
         if any(courier.has_active_ride(order) for order in orders):
             return
-        adapter = get_adapter("courier")
+        adapter = delivery_services.courier_backend()
         if adapter is None:
             self._set_attempt(message, "inert")
             return
@@ -218,13 +217,14 @@ class CourierDispatchHandler:
 
     def _adopt(self, orders, message, courier_ref):
         """Grava a corrida aberta em cada pedido dela; só o primeiro agenda a leitura."""
-        from shopman.shop.services import courier
+        from shopman.shop.services import courier, delivery_services
 
         receipt = (message.payload or {}).get("dispatch_attempt") or {}
         notes = receipt.get("notes") if isinstance(receipt.get("notes"), dict) else {}
         # A ordem das paradas que foi à TaOn (recibo); sem ela, a da tarefa.
         stops = [str(ref) for ref in receipt.get("stops") or [] if ref] or [order.ref for order in orders]
         actor = str((message.payload or {}).get("actor") or "courier.dispatch")
+        service_ref = delivery_services.new_ride_service_ref()
         with transaction.atomic():
             locked = list(Order.objects.select_for_update().filter(pk__in=[o.pk for o in orders]).order_by("pk"))
             for order in locked:
@@ -237,6 +237,8 @@ class CourierDispatchHandler:
                 opened_at = timezone.now().isoformat()
                 block.update(provider="machine", id_mch=courier_ref, status="D", status_at={"D": opened_at},
                     requested_at=opened_at, last_event_at=opened_at, last_source="dispatch")
+                if service_ref:
+                    block["service"] = service_ref
                 if len(stops) > 1:
                     block["ride_orders"] = stops
                 else:

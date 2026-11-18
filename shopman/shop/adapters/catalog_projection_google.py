@@ -16,8 +16,13 @@ Contrato (Merchant API, ``products_v1``)
   liberadas pelo Google (developers.google.com/merchant/api/latest-updates).
 - **retirada na loja** → ``POST /inventories/v1/accounts/{conta}/products/{id}/localInventories:insert``
   com o estoque da loja física (``storeCode`` do Perfil da Empresa): a MESMA
-  disponibilidade e o mesmo preço do item online, retirada grátis no mesmo dia
-  (``pickupMethod=BUY``, ``pickupSla=SAME_DAY``). É o que faz o Google mostrar
+  disponibilidade e o mesmo preço do item online, e a retirada (``pickupMethod=BUY``)
+  no dia em que o item fica pronto, item a item: ``pickupSla`` ``SAME_DAY`` hoje,
+  ``NEXT_DAY`` amanhã, até ``SEVEN_DAY``, e ``MULTI_WEEK`` além disso. O dia é o da
+  promessa da Loja (``projections/ready_promise``), o mesmo que a página do produto
+  diz: o Google cruza os dois, e a divergência nega a "retirada no mesmo dia"
+  (issue #2652). Item sem promessa vai com ``pickupMethod=NOT_SUPPORTED`` e sem
+  ``pickupSla``: o dado que falta não anuncia retirada. É o que faz o Google mostrar
   "Retirada na loja". Só vai para item visível; sem ``store_code`` não vai nada.
 - **retract** → ``DELETE /products/v1/accounts/{conta}/productInputs/{id}?dataSource=…``.
   Só para o item que SAIU da composição do canal. Pausado, oculto e esgotado
@@ -183,21 +188,48 @@ def _store_code(cfg: dict) -> str:
     return str(cfg.get("store_code") or "").strip()
 
 
+#: ``LocalInventoryAttributes.PickupSla`` da Merchant API, pelo número de dias
+#: até o item ficar pronto (referência conferida em 17/11/2026). Além de sete
+#: dias, ``MULTI_WEEK``.
+PICKUP_SLA_BY_DAYS = (
+    "SAME_DAY",
+    "NEXT_DAY",
+    "TWO_DAY",
+    "THREE_DAY",
+    "FOUR_DAY",
+    "FIVE_DAY",
+    "SIX_DAY",
+    "SEVEN_DAY",
+)
+
+
+def pickup_sla(ready_in_days: int | None) -> str | None:
+    """O ``pickupSla`` de quem fica pronto em ``ready_in_days`` dias; ``None`` sem promessa."""
+    if ready_in_days is None or ready_in_days < 0:
+        return None
+    if ready_in_days < len(PICKUP_SLA_BY_DAYS):
+        return PICKUP_SLA_BY_DAYS[ready_in_days]
+    return "MULTI_WEEK"
+
+
 def build_local_inventory(item: display_catalog.DisplayItem, cfg: dict) -> dict:
     """O ``LocalInventory`` da loja física: o mesmo estoque do online, com retirada.
 
     O estoque é um só; o Google só pede que a retirada chegue em outro recurso,
-    preso ao código da loja no Perfil da Empresa.
+    preso ao código da loja no Perfil da Empresa. A retirada é anunciada para o
+    dia em que o item fica pronto; sem promessa, não é anunciada.
     """
-    return {
-        "storeCode": _store_code(cfg),
-        "localInventoryAttributes": {
-            "availability": "IN_STOCK" if item.available else "OUT_OF_STOCK",
-            "price": {"amountMicros": str(int(item.price_q) * 10_000), "currencyCode": "BRL"},
-            "pickupMethod": "BUY",
-            "pickupSla": "SAME_DAY",
-        },
+    attributes: dict = {
+        "availability": "IN_STOCK" if item.available else "OUT_OF_STOCK",
+        "price": {"amountMicros": str(int(item.price_q) * 10_000), "currencyCode": "BRL"},
     }
+    sla = pickup_sla(item.ready_in_days)
+    if sla is None:
+        attributes["pickupMethod"] = "NOT_SUPPORTED"
+    else:
+        attributes["pickupMethod"] = "BUY"
+        attributes["pickupSla"] = sla
+    return {"storeCode": _store_code(cfg), "localInventoryAttributes": attributes}
 
 
 def build_product_input(

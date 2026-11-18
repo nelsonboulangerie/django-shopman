@@ -148,6 +148,10 @@ class OperatorAlert(models.Model):
         ("courier_dispatch_failed", "Corrida não abriu na central"),
         ("courier_not_attended", "Nenhum entregador aceitou a corrida"),
         ("courier_ride_cancelled", "A central cancelou a corrida"),
+        # Entregador da casa: o caso que ele marcou na folha "Problema" do link
+        # (não atendeu, não achou, recusou, pagou de outro jeito, pedido com
+        # problema). O pedido não muda sozinho: a casa liga e decide.
+        ("courier_stop_problem", "Entregador da casa com problema numa entrega"),
         # A maquininha não aparece na tela enquanto está na rua (o card da saída
         # basta). Só quando passa do tempo vira alerta: "Maquininha fora há 2 h".
         ("card_machine_overdue", "Maquininha fora há muito tempo"),

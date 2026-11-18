@@ -772,7 +772,7 @@ useSeoMeta({
                 />
               </UiInputGroup>
               <UiFieldError v-if="phoneErrorInline && error" id="login-phone-error" data-login-phone-error :errors="[error.message]" />
-              <UiFieldDescription v-else>Enviamos um código por SMS para este número.</UiFieldDescription>
+              <UiFieldDescription v-else>Vamos enviar um código por SMS para este número.</UiFieldDescription>
             </UiField>
 
             <div class="grid gap-3">

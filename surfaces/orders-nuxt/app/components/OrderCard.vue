@@ -29,6 +29,7 @@ import {
   splitRef,
   kitchenWaiting,
   productionLines,
+  schedulePromise,
   undoLine,
   type AffordanceRef,
   type Tone,
@@ -480,6 +481,9 @@ const compactPill = computed<{ label: string; color: "error" | "warning" | "succ
       : "";
   return { label: `${status}${clock.value.text}`, color: timeColor };
 });
+// O combinado (WP-G01): "Encomenda · Amanhã · A partir das 15h", a hora de hoje ou o
+// que venceu. Nas duas formas do cartão: o enxuto é o do Painel de mesa, onde se aceita.
+const promise = computed(() => schedulePromise(props.card));
 // A terceira linha: o que saiu com o entregador (maquininha, troco) ou o andamento;
 // sem nada disso, os itens.
 const compactDetail = computed(() =>
@@ -549,14 +553,30 @@ function nuxtIcon(icon: string): string {
       />
       <span class="ms-auto shrink-0 tnum text-muted">{{ card.total_display }}</span>
     </div>
+    <!-- Quem e como recebe. O corte cai no nome e no canal, nunca em "Retirada" ou
+         "Entrega": é o que decide para onde o pedido vai (P2-04). -->
     <p
-      class="truncate"
+      class="flex min-w-0 gap-1"
       :title="`${card.customer_name || 'Sem cliente'} · ${channelLabel(card.channel_ref)} · ${card.fulfillment_label}`"
       data-card-who
     >
-      {{ card.customer_name || "Sem cliente" }} · {{ channelLabel(card.channel_ref) }} ·
-      {{ card.fulfillment_label }}
+      <span class="min-w-0 truncate"
+        >{{ card.customer_name || "Sem cliente" }} ·
+        {{ channelLabel(card.channel_ref) }}</span
+      ><span class="shrink-0" data-card-fulfillment
+        >· {{ card.fulfillment_label }}</span
+      >
     </p>
+    <NuxtBadge
+      v-if="promise && !handoff"
+      class="max-w-full self-start"
+      :color="promise.color"
+      :icon="promise.icon"
+      :data-card-promise="promise.state"
+    >
+      <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
+      <span class="whitespace-normal text-start">{{ promise.label }}</span>
+    </NuxtBadge>
     <p
       v-if="card.items_summary"
       class="truncate op-micro text-muted"
@@ -802,12 +822,14 @@ function nuxtIcon(icon: string): string {
             :data-card-volume-check="checkBadge.complete ? 'complete' : 'partial'"
           />
           <NuxtBadge
-            v-if="card.is_preorder"
-            color="neutral"
-            icon="i-lucide-calendar-clock"
-            :label="`Encomenda${card.commitment_date_display ? ` · ${card.commitment_date_display}` : ''}`"
-            data-preorder-badge
-          />
+            v-if="promise"
+            :color="promise.color"
+            :icon="promise.icon"
+            :data-card-promise="promise.state"
+          >
+            <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
+            <span class="whitespace-normal text-start">{{ promise.label }}</span>
+          </NuxtBadge>
           <!-- fila de espera: o pedido não está parado, está esperando o lote -->
           <NuxtBadge
             v-if="card.waitlist_label"

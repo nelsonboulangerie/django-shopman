@@ -1594,6 +1594,55 @@ class TestTrackingSummary:
 
         assert proj.subtotal_display == "R$ 27,00"
         assert [(d.label, d.amount_display) for d in proj.discount_lines] == [("Cupom BEMVINDO", "R$ 3,00")]
+        # O cupom sai uma vez só, embaixo (beta 09/11): a linha volta ao preço
+        # sem cupom, e as linhas somam o Subtotal. Cupom não risca a linha.
+        assert [i.total_display for i in proj.items] == ["R$ 8,00", "R$ 19,00"]
+        assert proj.items[1].unit_price_display == "R$ 9,50"
+        assert [i.full_total_display for i in proj.items] == ["", ""]
+
+    def test_promotion_line_shows_discounted_price_with_full_price_struck(self, order_items):
+        # Dono, 16/11/2026 (#2570, decisão 1): na linha com promoção, o preço com
+        # desconto e o cheio riscado ao lado; o Subtotal soma as linhas com
+        # desconto, e embaixo só sai o que é da conta (cupom, pontos).
+        from shopman.orderman.models import Order as _Order
+        from shopman.orderman.models import OrderItem
+
+        OrderItem.objects.filter(order=order_items, line_id="line-2").update(meta={"_list_q": 950})
+        _Order.objects.filter(pk=order_items.pk).update(total_q=2400)
+        order = self._seal(order_items, pricing={
+            "discount": {
+                "total_discount_q": 300,
+                "items": [{"line_id": "line-2", "type": "promotion", "name": "Semana", "discount_q": 150, "qty": 2}],
+            },
+        })
+
+        proj = build_order_tracking(order)
+
+        cents = lambda display: int(display.replace("R$ ", "").replace(".", "").replace(",", ""))  # noqa: E731
+        assert [i.total_display for i in proj.items] == ["R$ 8,00", "R$ 16,00"]
+        assert [i.full_total_display for i in proj.items] == ["", "R$ 19,00"]
+        assert proj.discount_lines == ()
+        lines_q = sum(cents(i.total_display) for i in proj.items)
+        assert cents(proj.subtotal_display) == lines_q == cents(proj.total_display) == 2400
+
+    def test_edited_order_lines_show_what_was_charged(self, order_items):
+        from shopman.orderman.models import OrderItem
+
+        OrderItem.objects.filter(order=order_items, line_id="line-2").update(meta={"_list_q": 950})
+        order = self._seal(
+            order_items,
+            data={"adjustment": {"total_q": 2400, "items": [
+                {"line_id": "line-2", "sku": "CROISSANT", "name": "Croissant", "qty": 2,
+                 "unit_price_q": 800, "line_total_q": 1600, "meta": {"_list_q": 950}},
+            ]}},
+            pricing={"discount": {"items": [{"line_id": "line-2", "type": "coupon", "name": "X", "discount_q": 150, "qty": 2}]}},
+        )
+
+        proj = build_order_tracking(order)
+
+        assert proj.discount_lines == ()
+        assert [i.total_display for i in proj.items] == ["R$ 16,00"]
+        assert proj.subtotal_display == "R$ 16,00"
 
     def test_bill_without_discount_has_items_subtotal(self, order_items):
         proj = build_order_tracking(order_items)
