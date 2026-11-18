@@ -524,7 +524,7 @@ Todas em `surfaces/storefront-nuxt/tests/journeys/`, contra o Django da pilha.
 | J4 | Paguei e a loja não aceitou | cliente que volta; operadora | pagar, ler valor e frase da devolução, recusa no Gestor, "Devolvido" no histórico e na conta | L06 |
 | J5 | Casa fechada | cliente que volta | pedir à noite para a abertura; a revisão diz quando a loja confirma; o checkout aberto atravessa o fechamento | L05 |
 | J6 | Cancelar antes do preparo, com cartão | cliente que volta; operadora | cartão, aceite, cancelar, ler o destino da reserva | L06 (depende da F-7) |
-| J7 | Repetir o pedido | cliente que volta | "Repetir pedido" do acompanhamento, sacola, checkout com as escolhas lembradas | L03 |
+| J7 | Repetir o pedido | cliente que volta | "Repetir pedido" do acompanhamento, sacola, checkout com as escolhas lembradas | #2681 (saiu do L03: precisa do acompanhamento e do checkout) |
 | J8 | Entrega com cartão | cliente que volta | entrega, abaixo do mínimo, trocar por retirada, voltar à entrega com o mínimo, cartão em um toque | L05 (depende da F-7) |
 | J9 | Um toque, uma reserva | cliente nova | rede lenta, um toque em Adicionar, uma unidade na sacola | L08 |
 
