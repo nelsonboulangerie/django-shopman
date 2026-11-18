@@ -444,6 +444,21 @@ def test_hora_combinada_da_entrega_nao_estoura_aos_30_min(operator):
     assert card.goal_label.startswith("combinado para as ")
 
 
+def test_combinado_de_outro_dia_diz_o_dia_como_o_selo(operator):
+    """A meta e o selo do mesmo pedido não discordam sobre o dia (WP-G01)."""
+    ontem = timezone.localdate() - timedelta(days=1)
+    order = _order("ATT-HC-ONTEM", status=Order.Status.READY, fulfillment="delivery")
+    order.data["delivery_date"] = ontem.isoformat()
+    order.data["delivery_time_slot"] = "15:00-15:30"
+    order.save(update_fields=["data"])
+    _, cards = _cards(operator)
+    card = cards[order.ref]
+
+    assert card.attention == "dispatch"
+    assert card.goal_label.startswith("combinado para ontem às 15h")
+    assert card.schedule_label.startswith("Era para ontem · ")
+
+
 def test_pronto_antes_da_hora_combinada_nao_e_atraso_no_balcao(operator):
     order = _agreed("ATT-HC-BAL", status=Order.Status.PREPARING, at=timezone.now() + timedelta(hours=1))
     order.transition_status(Order.Status.READY)

@@ -543,6 +543,8 @@ export interface OrderCardProjection {
   is_preorder: boolean;
   commitment_date: string;
   commitment_date_display: string;
+  schedule_label: string;
+  schedule_state: string;
   change_for_q: number;
   change_out_suggested_q: number;
   change_out_q: number;
