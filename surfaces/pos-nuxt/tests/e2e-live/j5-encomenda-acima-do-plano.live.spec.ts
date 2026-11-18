@@ -117,6 +117,32 @@ async function audits(page: Page, label: string, selector: string) {
         const [r, g, b, a = "1"] = srgb[1]!.split(/[\s/]+/).filter(Boolean);
         return [Number(r) * 255, Number(g) * 255, Number(b) * 255, Number(a)];
       }
+      // Os tokens de cor da suíte saem em OKLab/OKLCH (`bg-warning/10`): converte
+      // para sRGB pela matriz de Björn Ottosson.
+      const ok = value.match(/okl(ab|ch)\(([^)]+)\)/);
+      if (ok) {
+        const [p0, p1, p2, alpha = "1"] = ok[2]!.split(/[\s/]+/).filter(Boolean);
+        const L = Number.parseFloat(p0!) / (p0!.endsWith("%") ? 100 : 1);
+        let A = Number(p1);
+        let B = Number(p2);
+        if (ok[1] === "ch") {
+          const h = (Number.parseFloat(p2!) * Math.PI) / 180;
+          [A, B] = [Number(p1) * Math.cos(h), Number(p1) * Math.sin(h)];
+        }
+        const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
+        const m2 = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
+        const s2 = (L - 0.0894841775 * A - 1.291485548 * B) ** 3;
+        const linear = [
+          4.0767416621 * l - 3.3077115913 * m2 + 0.2309699292 * s2,
+          -1.2684380046 * l + 2.6097574011 * m2 - 0.3413193965 * s2,
+          -0.0041960863 * l - 0.7034186147 * m2 + 1.707614701 * s2,
+        ];
+        const encoded = linear.map((c) => {
+          const v = Math.min(1, Math.max(0, c));
+          return 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
+        });
+        return [...encoded, Number.parseFloat(alpha) / (alpha.endsWith("%") ? 100 : 1)];
+      }
       const m = value.match(/rgba?\(([^)]+)\)/);
       if (!m) {
         if (value && value !== "transparent") unparsed.push(value);
