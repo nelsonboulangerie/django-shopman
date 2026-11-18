@@ -90,7 +90,7 @@ def test_preview_says_the_destiny_of_each_line_and_of_the_money(client, operador
     assert body["money_sentence"] == (
         "R$ 18,70 serão estornados ao Pix do cliente. R$ 30,00 ficam com a loja, pelo que se perdeu."
     )
-    assert body["customer_text"].startswith("Ele ficou pronto e não foi retirado. Vamos devolver R$ 18,70")
+    assert body["customer_text"].startswith("O pedido ficou pronto e não foi retirado. Vamos devolver R$ 18,70")
     assert body["action"]["ref"] == "no-show"
     assert body["action"]["enabled"] is True
     assert body["action"]["confirmation"] == {"required": True, "manager_approval": True}

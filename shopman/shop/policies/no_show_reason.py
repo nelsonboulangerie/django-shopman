@@ -20,8 +20,12 @@ from __future__ import annotations
 KEY = "not_picked_up"
 LABEL = "Não retirado"
 
-#: O fato, sem dinheiro: é a frase inteira do pedido que não foi pago.
-BASE_TEXT = "Ele ficou pronto e não foi retirado."
+#: O fato, sem dinheiro: é a frase inteira do pedido que não foi pago. Com o
+#: sujeito escrito ("O pedido"), porque a frase também é lida sozinha, fora do
+#: aviso: na prévia do Gestor ("Mensagem que o cliente vai receber") e na página
+#: do pedido. Um pronome no lugar do sujeito só teria a quem se referir colado
+#: em "Seu pedido foi cancelado."
+BASE_TEXT = "O pedido ficou pronto e não foi retirado."
 
 
 def customer_text(no_show: dict | None) -> str:
