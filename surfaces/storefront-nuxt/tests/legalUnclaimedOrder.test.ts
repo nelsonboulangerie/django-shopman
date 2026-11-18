@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { parse } from 'vue/compiler-sfc'
 import { describe, expect, it } from 'vitest'
 
 // O pedido não retirado (#2613, decisão do dono de 17 e 18/11/2026).
@@ -13,15 +14,29 @@ const REGRA = 'Pedido não retirado até o fim do expediente do dia combinado: o
 
 const raiz = resolve(__dirname, '..')
 
-/** O texto do template, sem comentário nem marcação, com os espaços colapsados. */
+// Nó da árvore do template, como o compilador do Vue o entrega: texto (tipo 2),
+// comentário (tipo 3), elemento e raiz (com filhos).
+interface NoDoTemplate { type: number, content?: string, children?: NoDoTemplate[] }
+
+const NO_DE_TEXTO = 2
+
+function textosDe (no: NoDoTemplate, saida: string[]): string[] {
+  if (no.type === NO_DE_TEXTO && typeof no.content === 'string') saida.push(no.content)
+  for (const filho of no.children || []) textosDe(filho, saida)
+  return saida
+}
+
+/**
+ * O texto que a cliente lê no template, tirado da ÁRVORE que o compilador do Vue
+ * monta, e não de uma limpeza de marcação por expressão regular (que pode deixar
+ * pedaço de comentário para trás). Comentário e marcação não são nós de texto; o
+ * que sobra são as palavras, com os espaços colapsados.
+ */
 function texto (caminho: string): string {
-  const fonte = readFileSync(resolve(raiz, caminho), 'utf8')
-  return fonte
-    .slice(fonte.indexOf('<template>'))
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/ ([:;.,])/g, '$1')
+  const { descriptor } = parse(readFileSync(resolve(raiz, caminho), 'utf8'))
+  const arvore = descriptor.template?.ast as NoDoTemplate | undefined
+  if (!arvore) throw new Error(`${caminho} não tem <template>`)
+  return textosDe(arvore, []).join(' ').replace(/\s+/g, ' ').replace(/ ([:;.,])/g, '$1')
 }
 
 describe('pedido não retirado: uma regra, o mesmo texto nos Termos e no checkout', () => {
