@@ -16,7 +16,7 @@ npm run build          # e2e roda sobre o preview de produção
 npm run test:e2e
 ```
 
-## 2. Fluxo crítico com dados: mora no E2E do Django, e roda no CI
+## 2. Fluxo crítico com dados no CI: o E2E do Django
 
 O caminho do Dia 1 (PDP → sacola → OTP → checkout → pedido → acompanhamento)
 precisa do Django real semeado, e por isso não vive aqui. Ele está em
@@ -38,4 +38,118 @@ make storefront-e2e args="-k test_12"     # só o Dia 1
 ```
 
 O antigo `criticalFlow.spec.ts` (sempre `skip`) foi apagado: o fluxo que ele
-prometia é o `test_12`.
+prometia é o `test_12`. Os dois testes param antes do aceite; a jornada inteira, com a
+operadora aceitando pela tela, é a J1 da seção 3.
+
+## 3. Jornadas da cliente de verdade (`tests/journeys/`, contra uma pilha de pé)
+
+A loja **compilada** e o Gestor compilado contra o Django de uma pilha já de pé, com as
+pessoas fazendo o que fazem: a cliente nova abre o cardápio, põe um item na sacola, entra
+pelo código que chegou, escolhe retirada para hoje, paga o Pix simulado e fica olhando o
+acompanhamento; a operadora entra no Gestor com o usuário e a senha dela e aceita; a tela da
+cliente muda sozinha. Nenhum estado nasce por API, Admin ou banco. Regra da casa:
+`docs/coordination/ROUNDS/EXCELENCIA-base.md`, seção "Teste como um operador de verdade".
+As jornadas a canonizar estão na seção 8 de `docs/plans/EXCELENCIA-STOREFRONT-PLANO.md`.
+
+| Spec | Jornada | Papéis |
+|---|---|---|
+| `j1-retirada-hoje-pix.spec.ts` | J1: retirada para hoje com Pix, do cardápio ao aceite | cliente nova (375 e 1366 px) · Gerente no Gestor (1366 px) |
+
+A suíte **não sobe servidor nenhum** e recusa rodar sem as três variáveis abaixo. Cada
+projeto (`cliente-375`, `cliente-1366`) é uma cliente nova, com telefone sorteado, e faz um
+pedido de verdade na pilha. A operadora é a Gerente `joyce` (senha `admin`) do elenco de dev
+(`shopman/shop/management/commands/setup_operators.py`, que o `seed` roda). Nunca o
+superusuário.
+
+### Subir a pilha
+
+O exemplo usa as portas e o banco do WP-L00 (Django `:8090`, loja `:3190`, Gestor `:3194`,
+banco `shopman_exc_l00`). Outra sessão pode estar com as suas: confira com
+`lsof -nP -iTCP:<porta> -sTCP:LISTEN` e troque as portas em todos os lugares.
+
+Use **hosts próprios `*.localhost`**, não `127.0.0.1`: o navegador divide os cookies de um
+host entre todas as portas, e a sessão de outra pilha (ou do Gestor) apaga a da loja. O
+Chromium resolve `*.localhost` para o próprio computador sem mexer no `/etc/hosts`.
+
+1. **Ambiente do Django** (na raiz do repositório ou da worktree; Node 22 no `PATH`):
+
+   ```bash
+   export DATABASE_URL=postgres://localhost:5432/shopman_exc_l00
+   export DJANGO_DEBUG=true DJANGO_ALLOWED_HOSTS='*' DJANGO_SECRET_KEY=dev-local-jornadas-1234567890
+   unset REDIS_URL
+   # O código de entrada sai num arquivo, como o SMS da cliente (E2EFileSender).
+   mkdir -p /tmp/shopman-jornadas && chmod 700 /tmp/shopman-jornadas
+   export SHOPMAN_E2E_OTP_FILE=/tmp/shopman-jornadas/code
+   export DOORMAN_MESSAGE_SENDER_CLASS=shopman.shop.tests.e2e.otp_sender.E2EFileSender
+   export SHOPMAN_OTP_DELIVERY_CHAIN=""
+   # O settings do harness (sem limite de taxa por IP) exige as chaves falsas do Stripe.
+   # A J1 é Pix: o Stripe falso não precisa estar de pé.
+   export SHOPMAN_E2E_STRIPE_API_BASE=http://127.0.0.1:12190
+   export STRIPE_SECRET_KEY=sk_test_e2e_fake_local_only STRIPE_PUBLISHABLE_KEY=pk_test_e2e_fake_local_only STRIPE_WEBHOOK_SECRET=whsec_e2e_fake_local_only
+   export SHOPMAN_STOREFRONT_BASE_URL=http://loja.l00.localhost:3190
+   export SHOPMAN_ORDERS_BASE_URL=http://gestor.l00.localhost:3194
+   export CSRF_TRUSTED_ORIGINS=http://loja.l00.localhost:3190,http://gestor.l00.localhost:3194
+   ```
+
+   Numa worktree, o `PYTHONPATH` precisa da worktree e de cada `packages/*` (o `.venv` da
+   raiz aponta para a árvore principal):
+   `PP="$PWD"; for d in "$PWD"/packages/*/; do PP="$PP:${d%/}"; done; export PYTHONPATH="$PP"`.
+   Se o Postgres local quebrar com `wait_c() got an unexpected keyword argument 'timeout'`,
+   o `.venv` está com `psycopg-binary` atrás do `psycopg`: instale a mesma versão com
+   `.venv/bin/python -m pip install --no-deps --target <pasta> "psycopg-binary==<versão do psycopg>"`
+   e ponha a pasta na frente do `PYTHONPATH`, sem mexer no `.venv` compartilhado
+   (`PSYCOPG_IMPL=python` também serve, mas é lento demais para o seed).
+
+2. **Banco e seed, com a loja aberta a qualquer hora.** A J1 é "retirada para hoje": com o
+   horário real da casa (9h às 18h), a jornada só roda de dia. O mesmo interruptor do
+   piloto de staging abre a loja 24/7 no seed; restrito a um canal que não existe, ele
+   não aceita nenhum pedido sozinho. Só o seed o recebe: o `runserver` sobe sem ele, e
+   quem aceita é a operadora.
+
+   ```bash
+   createdb shopman_exc_l00
+   .venv/bin/python manage.py migrate --noinput
+   SHOPMAN_STAGING_AUTOPILOT=true SHOPMAN_STAGING_AUTOPILOT_CHANNELS=nenhum-canal \
+     .venv/bin/python manage.py seed --flush --profile qa
+   ```
+
+   Use o perfil `qa`: o `demo` não termina numa máquina carregada. O `qa` deixa o
+   Croissant pronto na vitrine, que é o item da J1.
+
+3. **Django e worker de directives**, com o settings do harness:
+
+   ```bash
+   DJANGO_SETTINGS_MODULE=shopman.shop.tests.e2e.settings_e2e \
+     .venv/bin/python manage.py runserver 127.0.0.1:8090 --noreload > /tmp/shopman-jornadas/django.log 2>&1 &
+   DJANGO_SETTINGS_MODULE=shopman.shop.tests.e2e.settings_e2e \
+     .venv/bin/python manage.py process_directives --watch > /tmp/shopman-jornadas/worker.log 2>&1 &
+   ```
+
+4. **Loja e Gestor compilados** (`nuxt dev` recarrega sozinho e derruba jornada longa;
+   rode `npm ci` de verdade em `surfaces/operator-kit`, `surfaces/storefront-nuxt` e
+   `surfaces/orders-nuxt` antes, numa worktree também):
+
+   ```bash
+   (cd surfaces/storefront-nuxt && npx nuxt build)
+   (cd surfaces/orders-nuxt && npx nuxt build)
+   (cd surfaces/storefront-nuxt && NUXT_DJANGO_BASE_URL=http://127.0.0.1:8090 HOST=127.0.0.1 PORT=3190 node .output/server/index.mjs > /tmp/shopman-jornadas/loja.log 2>&1 &)
+   (cd surfaces/orders-nuxt && NUXT_DJANGO_BASE_URL=http://127.0.0.1:8090 NUXT_PUBLIC_DJANGO_BASE_URL=http://127.0.0.1:8090 HOST=127.0.0.1 PORT=3194 node .output/server/index.mjs > /tmp/shopman-jornadas/gestor.log 2>&1 &)
+   ```
+
+### Rodar
+
+```bash
+cd surfaces/storefront-nuxt
+JOURNEY_STORE_URL=http://loja.l00.localhost:3190 \
+JOURNEY_GESTOR_URL=http://gestor.l00.localhost:3194 \
+JOURNEY_OTP_FILE=/tmp/shopman-jornadas/code \
+npm run test:journeys
+```
+
+Só uma largura: `npm run test:journeys -- --project=cliente-375`. As capturas de cada passo
+ficam em `test-results/journeys/` e no relatório (`--reporter=html`).
+
+### Desligar
+
+Derrube o que subiu (`kill` nos processos do `runserver`, do worker e dos dois
+`node .output/server/index.mjs`) e, se o banco era só da jornada, `dropdb shopman_exc_l00`.

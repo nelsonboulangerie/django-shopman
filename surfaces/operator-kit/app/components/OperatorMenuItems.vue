@@ -12,6 +12,7 @@ import { useNow } from "@vueuse/core";
 
 import { useOperatorCapacity } from "../composables/useOperatorCapacity";
 import { useSharedCapacity } from "../composables/useSuiteChrome";
+import { SUPPORT_ENTRY_ICON, SUPPORT_ENTRY_LABEL, useSupportEntry } from "../composables/useSupportEntry";
 import {
   CAPACITY_LEVEL_META,
   capacityLevel,
@@ -33,6 +34,8 @@ const props = withDefaults(defineProps<{
 }>(), { operatorName: undefined, railHidable: true });
 
 const emit = defineEmits<{ lock: []; hide: [] }>();
+// No celular não há pé de barra lateral: o Suporte vem para o menu, igual ao Bloquear.
+const supportEntry = useSupportEntry();
 
 const { data: operatorSession } = useNuxtData<OperatorSession>("operator-session");
 const workstationContext = computed(() => operatorSession.value?.workstation?.context_label ?? "");
@@ -91,6 +94,18 @@ const { run: toggleOrientation, pending: orientationPending } = usePendingAction
         {{ workstationContext }} · este dispositivo
       </p>
     </div>
+
+    <NuxtButton
+      v-if="props.mode === 'phone' && supportEntry"
+      block
+      class="justify-start"
+      color="neutral"
+      variant="ghost"
+      :icon="SUPPORT_ENTRY_ICON"
+      :label="SUPPORT_ENTRY_LABEL"
+      data-operator-menu-support
+      @click="supportEntry()"
+    />
 
     <NuxtButton
       v-if="props.mode === 'phone' && operatorName"

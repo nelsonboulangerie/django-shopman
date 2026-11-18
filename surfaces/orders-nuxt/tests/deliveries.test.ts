@@ -14,6 +14,7 @@ import {
   rideCalls,
   rideLetter,
   rideLine,
+  rideNotice,
   whatsappLink,
 } from "~/presentation/deliveries";
 import { metroLines } from "~/presentation/metroLines";
@@ -31,7 +32,7 @@ function ride(extra: Partial<DeliveryRideProjection> = {}): DeliveryRideProjecti
     key: "1", number: 1, letter: "A", state: "searching", status_label: "", stops: [stop("NB-A01")], driver: null, position: null,
     called_at: "", called_by: "", pickup_eta_at: "", arrived_pickup_at: "", picked_up_at: "", delivery_eta_at: "",
     tracking_url: "", cost_display: "", bags: 1, undeclared: [], lead_ref: "NB-A01", back_action: null,
-    back_lines: [], cancel_action: null, cancel_state: "", cancel_message: "", ...extra,
+    back_lines: [], cancel_action: null, cancel_state: "", cancel_message: "", reopened_at: "", reopened_driver: "", ...extra,
   };
 }
 
@@ -199,6 +200,47 @@ describe("a corrida numa linha", () => {
     expect(beforeHandoff({ state: "atStore" })).toBe(true);
     expect(beforeHandoff({ state: "route" })).toBe(false);
     expect(bagsWord(1)).toBe("1 sacola");
+  });
+});
+
+describe("a corrida que segue chamada sem nada a fazer", () => {
+  const now = Date.parse("2026-11-16T14:40:00-03:00");
+
+  it("o entregador desistiu: diz quem e quando, e que a TaOn já procura outro", () => {
+    const reopened = ride({
+      state: "reopened", status_label: "Procurando outro entregador",
+      reopened_at: "2026-11-16T14:32:00-03:00", reopened_driver: "Diego",
+    });
+    expect(rideLine(reopened, now)).toEqual({
+      icon: "i-lucide-user-x", title: "Diego desistiu às 14h32", hint: "A TaOn já procura outro",
+    });
+    const notice = rideNotice(reopened, now);
+    expect(notice?.title).toBe("Diego desistiu às 14h32. A TaOn já procura outro.");
+    expect(notice?.description).toContain("Chamar de novo faria uma segunda corrida paga.");
+    expect(notice?.key).toBe("reopened:2026-11-16T14:32:00-03:00");
+    // A TaOn nem sempre manda o nome de quem saiu.
+    expect(rideLine({ ...reopened, reopened_driver: "" }, now).title).toBe("O entregador desistiu às 14h32");
+    // As sacolas seguem no balcão: ainda não saíram da loja.
+    expect(beforeHandoff(reopened)).toBe(true);
+  });
+
+  it("a TaOn juntou com outra corrida: nunca é \"Ninguém aceitou\"", () => {
+    const grouped = ride({ state: "grouped", status_label: "Junto com outra corrida", stops: [stop("NB-E09")] });
+    expect(rideLine(grouped, now)).toEqual({
+      icon: "i-lucide-link", title: "A TaOn juntou com outra corrida", hint: "Ela já tem entregador",
+    });
+    expect(rideNotice(grouped, now)?.description).toBe(
+      "E09 foi para uma corrida que já tem entregador. Não precisa chamar de novo.",
+    );
+    const two = ride({ state: "grouped", stops: [stop("NB-A47"), stop("NB-C03")] });
+    expect(rideNotice(two, now)?.description).toBe(
+      "A47 e C03 foram para uma corrida que já tem entregador. Não precisa chamar de novo.",
+    );
+  });
+
+  it("corrida no caminho de sempre não tem aviso", () => {
+    expect(rideNotice(ride({ state: "searching" }), now)).toBeNull();
+    expect(rideNotice(ride({ state: "late" }), now)).toBeNull();
   });
 });
 
