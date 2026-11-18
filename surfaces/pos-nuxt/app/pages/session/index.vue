@@ -17,6 +17,7 @@ import type { OperatorActionBarAction } from "../../../../operator-kit/app/prese
 // organização (quais cards, em que ordem, com que destaque) é pura, em
 // `presentation/cash`; a página só abre o que o card nomeia.
 import { toast } from "vue-sonner";
+import { formatBRL } from "~/utils/posIntent";
 
 import {
   amountEcho,
@@ -697,6 +698,8 @@ const justClosedShift = ref(false);
 // lista cada item, e o servidor só fecha com o gerente. A recusa abre "Quem
 // autoriza?" e a MESMA contagem é reenviada com a assinatura.
 const offlineReviewNotice = computed(() => offlineReviewClosingNotice(offlineReviewSales.value));
+// O valor contado, como o gerente o lê no diálogo da assinatura (P1-6).
+const closingManagerAmount = computed(() => formatBRL(amountToQ(closingAmount.value) ?? 0));
 async function confirmClose(managerApproval: ManagerApproval | null = null) {
   if (!canClose.value) return;
   managerIntent.value = { action: "close_shift" };
@@ -1520,6 +1523,28 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
       :error="managerChallenge?.code === 'manager_approval_invalid' ? managerChallenge.message : ''"
       @authorize="onManagerAuthorize"
       @authorize-badge="onManagerBadge"
-    />
+    >
+      <!-- Fechar com venda a conferir: o gerente assina o fechamento E as vendas
+           que o catálogo não explica. O diálogo dizia só "Há venda sem conexão a
+           conferir", e ele assinava sem ver o valor contado nem o que foi cobrado
+           (P1-6). -->
+      <template v-if="managerIntent.action === 'close_shift'" #context>
+        <div class="grid gap-2" data-close-shift-manager-context>
+          <p class="text-base font-semibold text-highlighted">
+            Fechar o caixa com <span class="tabular-nums">{{ closingManagerAmount }}</span> contados
+          </p>
+          <ul v-if="offlineReviewSales.length" class="grid gap-1 text-sm text-muted-foreground">
+            <li
+              v-for="(sale, index) in offlineReviewSales"
+              :key="`${sale.order_ref}-${index}`"
+              class="tabular-nums"
+              data-close-shift-manager-review-line
+            >
+              {{ offlineReviewLine(sale) }}
+            </li>
+          </ul>
+        </div>
+      </template>
+    </OperatorManagerAuth>
   </main>
 </template>

@@ -4,6 +4,7 @@ import { toast } from "vue-sonner";
 import type { PrintOutcome } from "~/composables/useCounterAgent";
 import type { Action, POSCashManagementCapability, POSProjection } from "~/types/pos";
 import { cashMovementDoneMessage, changeServedMessage, requiresOpenShiftForSale } from "~/presentation/cash";
+import { createCashGestureKeys } from "~/utils/cashGestureKey";
 import { actionHref } from "~/utils/posIntent";
 import { cashCloseBlockedByQueue } from "~/presentation/offlineSales";
 
@@ -80,27 +81,10 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   // ajuste, com o gerente, no fechamento, com o dono perguntando por que faltam
   // R$ 200.
   //
-  // A chave identifica ESTE GESTO, e a regra é o que a torna correta nos dois casos:
-  //
-  //   * a MESMA chave volta enquanto a tentativa anterior, com o MESMO conteúdo,
-  //     tiver falhado — é o retry depois do timeout, onde o servidor já gravou e a
-  //     resposta se perdeu;
-  //   * a chave é DESCARTADA no sucesso — então duas sangrias deliberadamente
-  //     iguais nascem com chaves diferentes e viram dois lançamentos, que é o certo.
-  let ultimaTentativa: { assinatura: string; chave: string } | null = null;
-
-  function novaChave(): string {
-    const aleatorio =
-      globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    return `pos-cash:${aleatorio}`;
-  }
-
-  function chaveDoGesto(path: string, body: Record<string, unknown>): string {
-    const assinatura = `${path}:${JSON.stringify(body)}`;
-    if (ultimaTentativa?.assinatura === assinatura) return ultimaTentativa.chave;
-    ultimaTentativa = { assinatura, chave: novaChave() };
-    return ultimaTentativa.chave;
-  }
+  // A chave identifica ESTE GESTO, sem a assinatura do gerente: o reenvio com o
+  // PIN, ou com outro gerente depois da rede cortada, é o MESMO lançamento. A
+  // regra inteira mora em `utils/cashGestureKey.ts`.
+  const chaves = createCashGestureKeys();
 
   async function run(
     path: string,
@@ -110,11 +94,11 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   ): Promise<boolean> {
     if (busy.value) return false;
     busy.value = true;
-    const comChave = { ...body, client_request_id: chaveDoGesto(path, body) };
+    const comChave = { ...body, client_request_id: chaves.keyFor(path, body) };
     try {
       const resposta = await action.call<{ entry_id?: number }>(path, { body: comChave });
       lastEntryId.value = resposta?.entry_id ?? null;
-      ultimaTentativa = null; // gesto concluído: o próximo é outro lançamento
+      chaves.settled(); // gesto concluído: o próximo é outro lançamento
       await refresh();
       return true;
     } catch (error) {
