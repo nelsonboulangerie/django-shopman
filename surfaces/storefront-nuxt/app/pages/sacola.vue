@@ -136,7 +136,7 @@ useSeoMeta({
         <p v-if="!cart.is_empty" class="mt-2 shop-muted">
           {{ `${formatCount(cart.items_count, 'item', 'itens')} · ${cart.grand_total_display}` }}
         </p>
-        <p v-if="!cart.is_empty && readyLine" class="mt-1 flex items-start gap-1.5 shop-body" data-cart-ready-line>
+        <p v-if="!cart.is_empty && readyLine" class="mt-1 flex items-start gap-2 shop-body" data-cart-ready-line>
           <Icon name="lucide:clock" class="mt-0.5 size-4 shrink-0" />
           {{ readyLine }}
         </p>

@@ -19,7 +19,7 @@ const total = computed(() => lineTotal(props.line))
 
 <template>
   <span
-    :class="stacked ? 'flex flex-col items-end' : 'inline-flex flex-wrap items-baseline justify-end gap-x-1.5'"
+    :class="stacked ? 'flex flex-col items-end' : 'inline-flex flex-wrap items-baseline justify-end gap-x-2'"
     data-line-total
   >
     <span v-if="total.original" class="shop-meta" data-line-total-struck>antes <span class="line-through">{{ total.original }}</span></span>
