@@ -8,7 +8,8 @@ import { capture, settled } from './support/stack'
 // um pão em promoção que só fica pronto amanhã e um item pronto agora, e lê a sacola: cada
 // linha tem um preço só (o que ela paga, com o cheio riscado quando há promoção), a linha
 // da fornada diz quando fica pronta, o alto da sacola diz para quando fica o pedido, e o
-// resumo fecha com as linhas.
+// resumo fecha com as linhas. Um pedido tem uma data só: com a Tabatière de amanhã na sacola,
+// o Croissant também fica para amanhã, e a linha dele diz isso.
 //
 // O que a jornada supõe do seed `--profile qa`: a Tabatière está na promoção "Semana do
 // Pão" (15% nos rústicos, por 7 dias a partir do seed) e só tem fornada amanhã; o Croissant
@@ -30,7 +31,11 @@ async function addFromProductPage (page: Page, testInfo: TestInfo, product: stri
   await expect(page).toHaveURL(/\/produto\//)
   await settled(page)
   await expect(page.getByRole('heading', { name: product, level: 1 })).toBeVisible()
+  // A tela mostra a quantidade na hora; a sacola só existe quando o servidor responde, e
+  // sair da página antes disso aborta a escrita.
+  const written = page.waitForResponse(response => /\/cart\//.test(response.url()) && response.request().method() !== 'GET' && response.ok())
   await page.getByRole('button', { name: addButton }).first().click()
+  await written
   await expect(page.getByRole('group', { name: `Quantidade de ${product}` })).toContainText('1')
   await capture(page, testInfo, `produto-${product.toLowerCase().normalize('NFD').replace(/[^a-z]/g, '')}`)
 }
@@ -71,9 +76,10 @@ test('a sacola diz quando fica pronto e o preço fecha com o resumo', async ({ p
   })
 
   await test.step('a linha da fornada diz quando fica pronta, e o alto da sacola diz para quando fica o pedido', async () => {
-    await expect(batchLine.locator('[data-cart-line-promise]')).toContainText(/^Fica pronto /)
-    await expect(readyLine.locator('[data-cart-line-promise]')).toHaveCount(0)
-    await expect(page.locator('[data-cart-ready-line]')).toContainText(/^Seu pedido fica pronto .+, a partir das \d{1,2}h(\d{2})?\.$/)
+    await expect(batchLine.locator('[data-cart-line-promise]')).toContainText(/Fica pronto .+, a partir das \d{1,2}h(\d{2})?$/)
+    // O Croissant, pronto na vitrine, vai junto no pedido de amanhã: a linha dele diz o dia.
+    await expect(readyLine.locator('[data-cart-line-promise]')).toContainText(/Fica pronto /)
+    await expect(page.locator('[data-cart-ready-line]')).toContainText(/Seu pedido fica pronto .+, a partir das \d{1,2}h(\d{2})?\.$/)
     // O selo e a frase antigos saíram da sacola: a promessa do servidor diz o dia e a hora.
     await expect(page.getByText('Lista de espera')).toHaveCount(0)
     await expect(page.getByText(/^Previsto para/)).toHaveCount(0)

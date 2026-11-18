@@ -309,11 +309,16 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 
 - **Objetivo:** a linha da sacola mostra a promessa do servidor e um preço que não se
   contradiz.
-- **Achados que fecha:** P1-05 (sacola), P2-02 (sacola), P2-12.
+- **Achados que fecha:** P1-05 (sacola e checkout: o total da linha e o resumo da revisão),
+  P2-02 (sacola), P2-12.
 - **Dependências:** WP-L01.
 - **Arquivos:** `surfaces/storefront-nuxt/app/pages/sacola.vue`, `app/presentation/cart.ts`,
-  `app/components/CartSummaryBreakdown.vue`, testes.
-- **Fora do escopo:** checkout e revisão (L05); prazo da reserva (L11).
+  `app/components/CartSummaryBreakdown.vue`, `app/components/CartLineTotal.vue`, as linhas e
+  o resumo de `app/pages/finalizar.vue`, `shopman/storefront/presentation/cart.py`, testes.
+- **Fora do escopo:** o restante do checkout e da revisão (L05); prazo da reserva (L11).
+- **Executado no #2673.** O preço da revisão entrou aqui, e não no L05: a sacola e o checkout
+  mostram a linha e o resumo pelo mesmo componente, e migrar só a sacola deixaria o checkout
+  com linha cheia sob um Subtotal com desconto.
 - **Pronto quando:**
   - roteiro: cliente adiciona um item em promoção e um de fornada futura; cada linha mostra um
     preço só e a promessa; o resumo fecha com as linhas. Com a casa fechada, a sacola diz para
@@ -359,8 +364,8 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
 
 - **Objetivo:** o checkout se mantém verdadeiro enquanto está aberto, e a revisão diz o que
   vai acontecer com o dinheiro.
-- **Achados que fecha:** P1-06, P1-11 (lado da loja), P1-05 (revisão), P2-03 (título e
-  calendário), P2-08, P2-09.
+- **Achados que fecha:** P1-06, P1-11 (lado da loja), P2-03 (título e calendário), P2-08,
+  P2-09. O preço da revisão (P1-05) já foi fechado pelo WP-L03 (#2673).
 - **Dependências:** WP-L01 (promessa e total da linha).
 - **Arquivos:** `surfaces/storefront-nuxt/app/pages/finalizar.vue`,
   `app/utils/checkoutFlow.ts`, `shopman/storefront/presentation/checkout.py`,
@@ -380,8 +385,10 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
   das recusas de estoque, como já se faz com `total_changed`, e trate cada código com destino
   (fechar a revisão, mostrar o item, oferecer a alternativa); nenhuma recusa termina em toast
   sozinho. A frase do dinheiro usa o prazo de 5 ou 60 minutos da política do canal. Título da
-  aba: "Finalizar pedido". Legenda: "Encomendas até". Vocabulário: sacola, nunca carrinho. A
-  linha da revisão e a do recibo seguem a decisão 1, iguais às da sacola.
+  aba: "Finalizar pedido". Legenda: "Encomendas até". Vocabulário: sacola, nunca carrinho. O
+  total da linha e o resumo da revisão já seguem a decisão 1 (WP-L03): não refaça. Na revisão
+  falta trocar o selo "Lista de espera" e o "Previsto para" pela promessa do WP-L01, como a
+  sacola já faz.
 
 ### WP-L06 · O dinheiro às claras no acompanhamento
 
