@@ -1212,6 +1212,13 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         confirmation={"required": True, "manager_approval": cancel_capability["cancel_requires_approval"]},
     )
     extra_actions = [cancel_action, *_cash_settlement_actions(order, user, None)]
+    # "Não retirado" (WP-G11): só para pedido pronto, de retirada, fora do iFood e
+    # do balcão. A régua (quem, a hora, o motivo) é de ``projections/order_no_show``.
+    from shopman.backstage.projections.order_no_show import detail_action as no_show_detail_action
+
+    no_show_action = no_show_detail_action(order, user)
+    if no_show_action is not None:
+        extra_actions.append(no_show_action)
     courier_block = _courier_block(order)
     extra_actions.extend(_courier_actions(order, user, courier_block, authorized=authorized))
     if fiscal_status == "failed":
