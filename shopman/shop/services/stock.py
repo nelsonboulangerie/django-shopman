@@ -502,12 +502,26 @@ def hold(order, *, require_all: bool = False) -> None:
                 "apply_safety_margin": False,
                 "priority": _ORDER_HOLD_PRIORITY,
             }
-            result = adapter.create_hold(
-                sku=comp_sku,
-                qty=unmet_qty,
-                allow_demand=comp_allow_demand,
-                **order_hold_kwargs,
-            )
+            if comp_allow_demand:
+                # Encomenda: primeiro o que a data TEM. A reserva que não cabe
+                # num saldo só prende, em pedaços, o que a fornada da data
+                # ainda cobre; só o que sobra é demanda sem fornada (#2685).
+                # Registrar tudo como demanda deixava a fornada livre para
+                # outro pedido, e a encomenda liberada ficava sem nada.
+                result = adapter.create_hold(sku=comp_sku, qty=unmet_qty, **order_hold_kwargs)
+                if not result.get("success") and result.get("error_code") == ReserveRefusal.INSUFFICIENT_SUPPLY:
+                    for part_id, part_qty in adapter.create_holds_up_to(
+                        sku=comp_sku, qty=unmet_qty, **order_hold_kwargs,
+                    ):
+                        hold_ids.append({"sku": comp_sku, "hold_id": part_id, "qty": float(part_qty)})
+                        unmet_qty -= part_qty
+                    if unmet_qty <= 0:
+                        continue
+                    result = adapter.create_hold(
+                        sku=comp_sku, qty=unmet_qty, allow_demand=True, **order_hold_kwargs,
+                    )
+            else:
+                result = adapter.create_hold(sku=comp_sku, qty=unmet_qty, **order_hold_kwargs)
             if not result.get("success") and require_all and (
                 result.get("error_code") == ReserveRefusal.INSUFFICIENT_SUPPLY
             ):

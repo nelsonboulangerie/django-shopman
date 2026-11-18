@@ -14,6 +14,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError
 from django.utils import timezone
 
+from shopman.shop.policies.promise_expiry_margin import expiry_margin_for_target
 from shopman.shop.protocols import ReserveRefusal
 
 logger = logging.getLogger(__name__)
@@ -90,19 +91,21 @@ def create_hold(
     allowed_positions = scope.get("allowed_positions")
     excluded_positions = scope.get("excluded_positions")
     safety_margin = int(scope.get("safety_margin") or 0) if apply_safety_margin else 0
+    target = target_date or timezone.localdate()
 
     try:
         hold_id = stock.hold(
             qty,
             product,
-            target_date=target_date or timezone.localdate(),
+            target_date=target,
             expires_at=expires_at,
             allowed_positions=allowed_positions,
             excluded_positions=excluded_positions,
             safety_margin=safety_margin,
             # Gates de LOTE do canal (C2): a reserva respeita o mesmo escopo
-            # da leitura — vitrine e hold nunca discordam.
-            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            # da leitura — vitrine e hold nunca discordam. A margem é a do
+            # ALVO: a reserva para data futura não ancora na sobra de hoje.
+            expiry_margin_days=expiry_margin_for_target(scope.get("expiry_margin_days", 0), target),
             include_nonconforming=scope.get("sells_nonconforming", True),
             allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
             allow_demand=allow_demand,
@@ -261,12 +264,13 @@ def _free_by_eligible_quant(sku: str, *, target_date: date | None, channel_ref: 
     from shopman.stockman.services.scope import quants_eligible_for
 
     scope = get_channel_scope(channel_ref) if channel_ref else {}
+    target = target_date or timezone.localdate()
     eligible = quants_eligible_for(
         sku,
-        target_date=target_date or timezone.localdate(),
+        target_date=target,
         allowed_positions=scope.get("allowed_positions"),
         excluded_positions=scope.get("excluded_positions"),
-        expiry_margin_days=scope.get("expiry_margin_days", 0),
+        expiry_margin_days=expiry_margin_for_target(scope.get("expiry_margin_days", 0), target),
         include_nonconforming=scope.get("sells_nonconforming", True),
         allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
     )

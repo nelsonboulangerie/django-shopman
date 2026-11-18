@@ -16700,6 +16700,41 @@
       "out_of_extraction": false
     },
     {
+      "id": "stock.promise-expiry-margin",
+      "question": "Quantos dias de validade o saldo precisa ter depois da data que se lê ou reserva?",
+      "owner": "stock.promise-expiry-margin",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.promise_expiry_margin:expiry_margin_for_target",
+      "authoritative_symbols": [
+        "shopman.shop.policies.promise_expiry_margin:expiry_margin_for_target"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/promise_expiry_margin.py",
+          "symbols": [
+            "FUTURE_TARGET_EXPIRY_MARGIN_DAYS",
+            "expiry_margin_for_target"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_sobra_de_hoje_nao_lastreia_encomenda.py::TestTheRule::test_today_keeps_the_channel_margin",
+        "shopman/shop/tests/test_sobra_de_hoje_nao_lastreia_encomenda.py::TestTheRule::test_future_target_asks_for_one_more_day_of_validity"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
       "id": "shop.services-substitutes",
       "question": "Quais produtos disponíveis podem substituir este SKU no canal da loja?",
       "owner": "catalog.substitutes",
