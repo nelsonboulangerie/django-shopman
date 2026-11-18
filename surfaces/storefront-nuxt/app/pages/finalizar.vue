@@ -582,6 +582,9 @@ const isCustomDate = computed(() => isCustomCheckoutDate(state.delivery_date, qu
 // "Hoje" fora das opções porque o dia já encerrou: a tela diz, em vez de sumir calado.
 const todayOverNotice = computed(() => (checkout.value?.today_over ? todayOverMessage(state.fulfillment_type) : ''))
 const isTodaySelected = computed(() => state.delivery_date === dateBounds.value.todayValue)
+// Encomenda para retirar (retirada em outro dia): a revisão diz a regra do pedido não
+// retirado antes de a cliente enviar (#2613).
+const showUnclaimedOrderRule = computed(() => isPickup.value && Boolean(state.delivery_date) && !isTodaySelected.value)
 const contactState = computed<CheckoutSectionState>(() => {
   if (fieldErrors.value.name || fieldErrors.value.phone) return 'error'
   // `nameEditing` entra aqui junto com `contactEditing`, e esta é a METADE
@@ -2469,6 +2472,17 @@ useSeoMeta({
 
               <!-- Como/onde/pgto/contato: ícone + valor, sem rótulo (o valor já se explica). -->
               <OrderSummaryRows :rows="reviewSummaryRows" />
+
+              <!-- Encomenda para retirar: a regra do pedido não retirado, dita antes de
+                   enviar e de pagar (#2613, decisão do dono de 18/11/2026). A frase é a da
+                   cláusula dos Termos, palavra por palavra: `tests/legalUnclaimedOrder.test.ts`
+                   reprova se uma mudar sem a outra. -->
+              <p v-if="showUnclaimedOrderRule" class="mt-3 shop-meta" data-review-unclaimed-rule>
+                Pedido não retirado até o fim do expediente do dia combinado: o que ainda puder
+                voltar à venda é devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a
+                loja.
+                <NuxtLink to="/termos#pickup-and-delivery" target="_blank" class="underline underline-offset-2">Termos de uso</NuxtLink>
+              </p>
 
               <!-- Cartão do presente / observação: bilhete em superfície destacada (muted). -->
               <p v-if="state.is_gift && state.gift_message" class="mt-3 rounded-lg bg-muted/50 p-3">
