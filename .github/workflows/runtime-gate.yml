@@ -141,8 +141,9 @@ jobs:
           python scripts/check_canonical_docs.py
 
       # Gate de nascimento dos compromissos: PR que adia trabalho numa seção
-      # "Fora deste PR / Seguimento / Pendências" precisa citar um C-AAAA-NNN
-      # que exista em docs/coordination/COMMITMENTS.md. Sem isto, o adiamento
+      # "Fora deste PR / Seguimento / Pendências" precisa citar um DEV-AAAA-NNN
+      # que exista em docs/coordination/commitments/ (um arquivo por entrada;
+      # a tabela COMMITMENTS.md está congelada até 25/11). Sem isto, o adiamento
       # morre no merge (foi o #2298: dois itens reais, sem ID, dono ou data).
       # No merge_group não há corpo de PR; o PR já passou por aqui antes.
       - name: "Compromissos: adiamento tem ID, dono, prazo e prova"

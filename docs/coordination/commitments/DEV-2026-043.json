@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-043",
+  "tipo": "solicitacao",
+  "origem": "chat 2026-11-17",
+  "compromisso": "sim! (pesado só na fila, filtro por pasta, leve no PR)",
+  "dono": "Engenharia",
+  "criado": "2026-11-17",
+  "revisar_em": "2026-11-24",
+  "gatilho": "-",
+  "estado": "EM_EXECUCAO",
+  "prova": "PR da CI por escopo"
+}

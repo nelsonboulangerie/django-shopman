@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-011",
+  "tipo": "solicitacao",
+  "origem": "chat 2026-11-12",
+  "compromisso": "Suporte (helpdesk interno): chamado, hub na Central, gate de aprovação do dono e DEV-",
+  "dono": "Engenharia · Suporte",
+  "criado": "2026-11-12",
+  "revisar_em": "2026-11-19",
+  "gatilho": "#2310 na fila",
+  "estado": "EM_EXECUCAO",
+  "prova": "#2310 · #2314 · #2315"
+}

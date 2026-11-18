@@ -737,23 +737,31 @@ inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branche
 	@bash scripts/inflight.sh
 
 # ── Compromissos: o que o repo deve, com dono, prazo e prova ──────────
-# O ledger é docs/coordination/COMMITMENTS.md. `intake` registra a fala do
-# dono ANTES do primeiro edit e devolve o ID que o PR cita. `commitments`
-# mostra o que venceu, incluindo as decisões legadas de DECISIONS.md.
+# O ledger é um arquivo por entrada em docs/coordination/commitments/
+# (DEV-AAAA-NNN.json): dois PRs nunca tocam o mesmo arquivo, e o merge de um não
+# deixa o outro CONFLICTING. `intake` registra a fala do dono ANTES do primeiro
+# edit e devolve o ID que o PR cita; o ID pula os que estão em PR aberto, branch
+# local ou worktree, e sem `gh` o intake falha em vez de chutar (offline=1 força).
+# `commitments` mostra o que venceu, incluindo as decisões legadas de
+# DECISIONS.md; `commitments-index` imprime a tabela legível (gerada, nunca
+# commitada).
 dono ?= Engenharia
 tipo ?= solicitacao
 origem ?= chat
 gatilho ?= -
 
-.PHONY: commitments intake commitments-pr
+.PHONY: commitments commitments-index intake commitments-pr
 
 commitments: ## O que o repo deve: ledger válido, vencidos e decisões legadas (issues=1 inclui issues com label; não falha por vencido)
 	@echo "── Compromissos ──"
 	$(PYTHON) scripts/check_commitments.py --no-fail-overdue $(if $(issues),--with-issues,)
 
-intake: ## Registra a fala do dono e devolve o ID: make intake q="..." [dono=...] [tipo=...]
-	@test -n "$(q)" || (echo 'uso: make intake q="<fala literal do dono>" [dono="Engenharia"] [tipo=solicitacao] [revisar_em=YYYY-MM-DD]' >&2; exit 2)
-	$(PYTHON) scripts/check_commitments.py --add --quote "$(q)" --dono "$(dono)" --tipo "$(tipo)" --origem "$(origem)" --gatilho "$(gatilho)" $(if $(revisar_em),--revisar-em "$(revisar_em)",)
+commitments-index: ## Tabela legível de todas as entradas do ledger (gerada na hora, não se commita)
+	@$(PYTHON) scripts/check_commitments.py --format table
+
+intake: ## Registra a fala do dono e devolve o ID: make intake q="..." [dono=...] [tipo=...] [offline=1]
+	@test -n "$(q)" || (echo 'uso: make intake q="<fala literal do dono>" [dono="Engenharia"] [tipo=solicitacao] [revisar_em=YYYY-MM-DD] [offline=1]' >&2; exit 2)
+	$(PYTHON) scripts/check_commitments.py --add --quote "$(q)" --dono "$(dono)" --tipo "$(tipo)" --origem "$(origem)" --gatilho "$(gatilho)" $(if $(revisar_em),--revisar-em "$(revisar_em)",) $(if $(offline),--offline,)
 
 commitments-pr: ## Gate de nascimento: make commitments-pr body=<arquivo> [created=YYYY-MM-DD] [author=login]
 	@test -n "$(body)" || (echo 'uso: make commitments-pr body=<arquivo>' >&2; exit 2)

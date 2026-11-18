@@ -9,7 +9,7 @@
 | Pergunta | Fonte | Comando |
 |---|---|---|
 | O que está em voo agora? | worktrees, branches e PRs | `make inflight` |
-| O que o repo deve, e o que venceu? | [COMMITMENTS.md](COMMITMENTS.md) | `make commitments issues=1` |
+| O que o repo deve, e o que venceu? | [commitments/](commitments/README.md), um arquivo por entrada | `make commitments issues=1` |
 | O que o dono decidiu? | [DECISIONS.md](DECISIONS.md), histórico até a migração | leitura |
 | O produto está pronto para o go-live? | [GO-LIVE-READINESS-PLAN.md](../plans/GO-LIVE-READINESS-PLAN.md) | `make production-readiness` |
 

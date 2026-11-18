@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-030",
+  "tipo": "solicitacao",
+  "origem": "chat 2026-11-16",
+  "compromisso": "Um ponto importante que esqueci de frisar: O sistema de entrega precisa estar pronto para aceitar escolher facilmente para QUAL serviço envia aquela entrega/rota. Poderemos configurar outras APIs de serviços de terceiros, bem como (caso de uso real desde já) direcionar entregas para entregadores próprios.",
+  "dono": "Engenharia",
+  "criado": "2026-11-16",
+  "revisar_em": "2026-11-23",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

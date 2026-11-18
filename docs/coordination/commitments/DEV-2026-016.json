@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-016",
+  "tipo": "compromisso",
+  "origem": "chat 2026-11-12",
+  "compromisso": "Desligar o webhook do app de teste NB Teste (C), que passou a receber 401 com o segredo de produção",
+  "dono": "Engenharia · iFood",
+  "criado": "2026-11-12",
+  "revisar_em": "2026-11-19",
+  "gatilho": "-",
+  "estado": "FEITO",
+  "prova": "portal iFood 12/11: webhook do NB Teste (C) desligado, 'Suas alterações foram salvas'"
+}

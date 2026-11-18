@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-024",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Tente usar a seção de entregas pela UI, como um usuário operador... tem vários problemas! Tela travada, não rola... O mapa não é um mapa real do Google Maps? botão do IFood está tampando a barra inferior",
+  "dono": "Engenharia",
+  "criado": "2026-11-14",
+  "revisar_em": "2026-11-21",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}
