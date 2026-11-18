@@ -67,6 +67,7 @@ import {
   preorderFocusKey,
   type AcceptedPreorder,
 } from "~/presentation/preorderList";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const {
@@ -1438,6 +1439,22 @@ const { reveal: revealFocus } = useNextFocus();
 function showAcceptedPreorder() {
   if (acceptedPreorder.value) revealFocus(preorderFocusKey(acceptedPreorder.value.ref));
 }
+// O aviso mora nas `alerts` do cabeçalho (o lugar declarado do kit): fica fixo com ele,
+// fecha no X e não rola com o conteúdo. O `id` leva o pedido: outra encomenda aceita é
+// aviso novo.
+const screenAlerts = computed<OperatorScreenAlert[]>(() =>
+  acceptedPreorder.value
+    ? [
+        {
+          id: `preorder-accepted:${acceptedPreorder.value.ref}`,
+          color: "info",
+          icon: "i-lucide-calendar-check",
+          title: acceptedPreorder.value.message,
+          action: { label: "Ver em Encomendas", onSelect: showAcceptedPreorder },
+        },
+      ]
+    : [],
+);
 // "Falha ao atualizar a fila" fecha e volta na próxima leitura que falhar: cada falha nova
 // (outro erro) é outra chave.
 const queueFailures = ref(0);
@@ -1532,6 +1549,7 @@ function compactClear() {
     </div>
     <OperatorPageHeader
       title="Pedidos"
+      :alerts="screenAlerts"
       :filters-wrap="false"
       :phone-actions="phoneHeaderActions"
       actions-from="md"
@@ -1873,21 +1891,6 @@ function compactClear() {
         description="Mantivemos a última leitura; atualize antes de confirmar ações."
         data-queue-error
         @update:open="notices.onOpen(`queue-error:${queueFailures}`, $event)"
-      />
-
-      <!-- O aceite de uma encomenda aponta a linha dela em "Encomendas" (WP-G03). -->
-      <NuxtAlert
-        v-if="acceptedPreorder && notices.isOpen(`preorder-accepted:${acceptedPreorder.ref}`)"
-        v-bind="notices.closeProps"
-        color="neutral"
-        variant="subtle"
-        icon="i-lucide-calendar-check"
-        :title="acceptedPreorder.message"
-        :actions="alertActions('neutral', [
-          { label: 'Ver em Encomendas', onClick: showAcceptedPreorder },
-        ])"
-        data-preorder-accepted
-        @update:open="notices.onOpen(`preorder-accepted:${acceptedPreorder.ref}`, $event)"
       />
 
       <template v-if="queue">

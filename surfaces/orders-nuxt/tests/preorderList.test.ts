@@ -175,11 +175,17 @@ describe("a página leva até a lista", () => {
   const page = readFileSync(new URL("../app/pages/index.vue", import.meta.url), "utf8");
   const list = readFileSync(new URL("../app/components/OrderPreorderList.vue", import.meta.url), "utf8");
 
-  it("o aviso do aceite fecha e tem o gesto que leva à linha", () => {
-    const alert = page.slice(page.indexOf('v-if="acceptedPreorder &&'), page.indexOf("data-preorder-accepted"));
-    expect(alert).toContain("notices.closeProps");
-    expect(alert).toContain("Ver em Encomendas");
+  it("o aviso do aceite mora nas alerts do cabeçalho, com o gesto que leva à linha", () => {
+    // O lugar declarado do kit: fixo com o cabeçalho, com X, na cor do conjunto mínimo.
+    const header = page.slice(page.indexOf("<OperatorPageHeader"), page.indexOf("<template #status>"));
+    expect(header).toContain(':alerts="screenAlerts"');
+    const alerts = page.slice(page.indexOf("const screenAlerts"), page.indexOf("const screenAlerts") + 600);
+    expect(alerts).toContain('color: "info"');
+    expect(alerts).toContain('label: "Ver em Encomendas"');
+    expect(alerts).toContain("`preorder-accepted:${acceptedPreorder.value.ref}`");
     expect(page).toContain("revealFocus(preorderFocusKey(");
+    // Nenhum aviso solto no topo da página para isso.
+    expect(page).not.toContain("data-preorder-accepted");
   });
 
   it("\"tem mais abaixo\" vem depois da lista, dentro da área que rola", () => {
