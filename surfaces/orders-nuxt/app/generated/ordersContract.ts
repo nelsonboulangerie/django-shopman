@@ -757,6 +757,7 @@ export interface OperatorOrderProjection {
   ifood_payment_summary: string[];
   ifood_operation_summary: string[];
   ifood_logistics_label: string;
+  kitchen_release_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
   ifood_accept_failed: boolean;
   ifood_accept_notice: string;

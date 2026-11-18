@@ -7,7 +7,7 @@ antecedência); o card não lia. Esta suíte prende:
 
 - antes da hora, o card diz "Vai para a Cozinha às 16h15", não entra em
   ``attention`` e o gesto de iniciar é "Adiantar", secundário;
-- o detalhe dá ao gesto o mesmo nome;
+- o detalhe dá ao gesto o mesmo nome e a mesma frase;
 - depois que a encomenda chega à Cozinha, o card pede "Iniciar preparo" e o
   relógio conta da chegada (``kitchen_released_at``), nunca da compra;
 - o pedido de agora e a encomenda de outro dia não ganham a frase.
@@ -137,6 +137,20 @@ def test_o_detalhe_da_o_mesmo_nome_ao_gesto(operator, relogio):
 
     assert (advance.label, advance.priority) == ("Adiantar", "secondary")
     assert detail.next_action_label == "Adiantar"
+    # E a mesma frase do card, para o gesto não aparecer sem a hora ao lado.
+    assert detail.kitchen_release_label == build_order_card(order, user=operator).kitchen_release_label
+    assert detail.kitchen_release_label == "Vai para a Cozinha às 16h15"
+
+
+def test_o_detalhe_de_quem_ja_chegou_nao_tem_a_frase(operator, relogio):
+    relogio(16, 20)
+    order = _order("G02-DETALHE-CHEGOU", **{KITCHEN_RELEASED_AT_KEY: _at(16, 15).isoformat()})
+
+    detail = build_operator_order(order, user=operator)
+    advance = next(action for action in detail.actions if action.ref == "advance")
+
+    assert detail.kitchen_release_label == ""
+    assert (advance.label, advance.priority) == ("Iniciar preparo", "primary")
 
 
 def test_depois_que_chega_a_cozinha_o_card_pede_iniciar_e_conta_da_chegada(operator, relogio):

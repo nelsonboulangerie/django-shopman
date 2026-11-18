@@ -845,6 +845,9 @@ class OperatorOrderProjection:
     ifood_operation_summary: tuple[str, ...] = ()
     # O mesmo selo do card: onde está o entregador do iFood.
     ifood_logistics_label: str = ""
+    # A mesma frase do card (WP-G02): "Vai para a Cozinha às 16h15", enquanto a
+    # encomenda do dia espera a hora dela. Vazia depois que chega.
+    kitchen_release_label: str = ""
     ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
     # O mesmo aviso do card (P1-3): o aceite não chegou ao iFood.
     ifood_accept_failed: bool = False
@@ -1250,11 +1253,13 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     operational = operator_orders.operational_actions(order, user=user)
     # A encomenda que ainda espera a hora da Cozinha (WP-G02): o detalhe dá ao
     # gesto o mesmo nome e o mesmo peso do card.
-    waits_kitchen = _kitchen_clock(order, timezone.now())[0] is not None
+    kitchen_release_at = _kitchen_clock(order, timezone.now())[0]
+    waits_kitchen = kitchen_release_at is not None
     if waits_kitchen:
         operational = _early_start_actions(operational)
     return OperatorOrderProjection(
         **common,
+        kitchen_release_label=_kitchen_release_label(kitchen_release_at),
         actions=(*operational, *extra_actions),
         ifood_negotiations=negotiations(order, user=user),
         can_confirm=not operator_orders.confirmation_block_reason(order),
@@ -2220,6 +2225,11 @@ def _kitchen_clock(order: Order, now: datetime) -> tuple[datetime | None, dateti
     return release_at, None
 
 
+def _kitchen_release_label(release_at: datetime | None) -> str:
+    """A frase de quem espera a hora da Cozinha, a mesma no card e no detalhe."""
+    return f"Vai para a Cozinha às {format_clock(release_at)}" if release_at else ""
+
+
 def _early_start_actions(actions) -> tuple:
     """As ações do pedido que ainda espera a hora da Cozinha.
 
@@ -2524,7 +2534,7 @@ def _build_card(
         schedule_label=schedule_label if schedule_state else "",
         schedule_state=schedule_state,
         kitchen_release_at_iso=kitchen_release_at.isoformat() if kitchen_release_at else "",
-        kitchen_release_label=f"Vai para a Cozinha às {format_clock(kitchen_release_at)}" if kitchen_release_at else "",
+        kitchen_release_label=_kitchen_release_label(kitchen_release_at),
         kitchen_released_at_iso=kitchen_released_at.isoformat() if kitchen_released_at else "",
         clock_since_iso=clock_since.isoformat(),
         **_courier_change_fields(order, courier_change),
