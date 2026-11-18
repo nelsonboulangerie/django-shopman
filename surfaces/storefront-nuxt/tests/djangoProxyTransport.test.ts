@@ -16,7 +16,7 @@ async function request (headers: Record<string, string> = {}, status = 200) {
   const app = createApp().use(eventHandler(event => proxyDjangoPath(event, '/api/v1/checkout/')))
   return toWebHandler(app)(new Request('http://store.test/api/v1/checkout/', {
     method: 'POST', body: JSON.stringify({ idempotency_key: 'intent-A' }),
-    headers: { host: 'store.test', 'content-type': 'application/json', cookie: 'csrftoken=synthetic', ...headers }
+    headers: { host: 'store.test', 'content-type': 'application/json', cookie: 'sessionid=synthetic; csrftoken=synthetic', ...headers }
   }))
 }
 

@@ -1384,11 +1384,11 @@ def _courier_actions(order: Order, user, courier_block: dict | None, *, authoriz
         method="POST", idempotency="required",
         confirmation={"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION},
         payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
-    extra_actions.append(Action(ref="courier-cancel", kind="mutation", label="Solicitar cancelamento da corrida",
+    extra_actions.append(Action(ref="courier-cancel", kind="mutation", label="Cancelar corrida",
         enabled=authorized and courier_block["can_cancel"],
         reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
             "" if courier_block["can_cancel"] else "Confira o estado da corrida e de solicitações anteriores."),
-        method="POST", idempotency="required", confirmation={"required": True},
+        method="POST", idempotency="required", confirmation=courier_cancel_confirmation(order),
         payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
     extra_actions.append(Action(ref="courier-quote", kind="mutation", label="Cotar entrega",
         enabled=authorized and courier_block["can_quote"],
@@ -1404,6 +1404,60 @@ def _courier_actions(order: Order, user, courier_block: dict | None, *, authoriz
         if ride is not None:
             extra_actions.append(ride)
     return [action for action in extra_actions if refs is None or action.ref in refs]
+
+
+#: Os motivos que a confirmação oferece depois do aceite: cada botão já é o
+#: ``motivo_id`` que vai à central (``courier_machine.CANCEL_REASONS_OPERATOR``).
+COURIER_CANCEL_REASONS = (
+    (12, "O entregador não está vindo"),
+    (37, "Está demorando demais"),
+    (40, "Não consegui falar com o entregador"),
+)
+
+
+def courier_cancel_state(order: Order) -> dict:
+    """O estado do cancelamento da corrida, igual no pedido e na seção Entregas."""
+    from shopman.shop.services import courier
+
+    return courier.cancel_state(order)
+
+
+def courier_can_cancel(order: Order, cancel: dict | None = None) -> bool:
+    """Oferecer "Cancelar corrida"? Antes da coleta e sem cancelamento em curso.
+
+    A recusa da central (``failed``) não esconde o botão: a corrida segue
+    aberta, e tentar de novo depois que ela muda de fase pode dar certo.
+    """
+    from shopman.shop.services import courier
+
+    cancel = cancel if cancel is not None else courier.cancel_state(order)
+    return courier.ride_cancellable(courier.get_block(order)) and cancel["state"] not in ("pending", "unknown")
+
+
+def courier_cancel_confirmation(order: Order) -> dict:
+    """A confirmação do cancelar: a pergunta e, depois do aceite, os motivos.
+
+    Antes do aceite basta confirmar (a central só aceita um motivo, o 10):
+    ``description`` é a pergunta e ``confirm_label`` o botão que confirma.
+    Depois do aceite o motivo é o próprio botão: ``reason_question`` e
+    ``consequence`` abrem a escolha, ``reasons`` leva ``{id, label}`` e a tela
+    manda o ``reason_id`` escolhido.
+    """
+    from shopman.shop.services import courier
+
+    name = courier.ride_name(order)
+    confirmation: dict = {
+        "required": True,
+        "description": courier.cancel_question(order),
+        "confirm_label": f"Cancelar {name}",
+    }
+    if courier.cancel_asks_reason(order):
+        confirmation.update(
+            reason_question=f"Por que cancelar {name}?",
+            consequence=courier.cancel_consequence(order),
+            reasons=[{"id": reason, "label": label} for reason, label in COURIER_CANCEL_REASONS],
+        )
+    return confirmation
 
 
 def _detail_deadline(order: Order, accept=None) -> dict[str, str]:
@@ -1448,6 +1502,9 @@ COURIER_STATUS_LABELS = {
     "U": "Junto com outra corrida",
 }
 
+#: A corrida voltou a procurar depois de um entregador desistir (``courier.reopen_view``).
+COURIER_REOPENED_LABEL = "Procurando outro entregador"
+
 
 def _courier_dispatch_question(order: Order) -> str:
     """A pergunta do toque de confirmação: quem vem, para qual pedido, quem paga.
@@ -1485,10 +1542,7 @@ def _courier_block(order: Order) -> dict | None:
         from django.core.cache import cache
 
         from shopman.shop.adapters import get_adapter
-        from shopman.shop.adapters.courier_machine import (
-            CANCELLABLE_STATUSES,
-            TERMINAL_STATUSES,
-        )
+        from shopman.shop.adapters.courier_machine import TERMINAL_STATUSES
 
         data = order.data or {}
         block = data.get("courier") if isinstance(data.get("courier"), dict) else {}
@@ -1515,37 +1569,36 @@ def _courier_block(order: Order) -> dict | None:
         if active and block.get("id_mch"):
             position = cache.get(f"courier:pos:{block['id_mch']}")
 
-        from shopman.shop.services.courier import can_quote, charge_outdated, latest_cancellation, unresolved_dispatch
+        from shopman.shop.services.courier import can_quote, charge_outdated, unresolved_dispatch
 
         unresolved = unresolved_dispatch(order)
-        cancellation = latest_cancellation(order) if active else None
-        cancellation_pending = False
+        # A falha de ABRIR a corrida mora em ``error``; o cancelamento tem o
+        # estado dele (``cancel_state``), o mesmo da seção Entregas.
         error = block.get("error") if isinstance(block.get("error"), dict) else None
+        cancel = courier_cancel_state(order)
 
         if unresolved is not None:
             error = {"message": COURIER_NO_ANSWER_MESSAGE, "at": unresolved.updated_at.isoformat()}
-        if cancellation is not None:
-            cancel_state = (cancellation.payload or {}).get("cancel_attempt", {}).get("state")
-            cancellation_pending = cancellation.status in {"queued", "running"} or cancel_state in {"started", "unknown", "accepted"}
-            error = {"message": ("Cancelamento sem resultado confirmado. Confira esta corrida na central antes de reenviar."
-                if cancel_state in {"started", "unknown"} else "Solicitação de cancelamento registrada; aguardando confirmação da corrida."),
-                "at": cancellation.updated_at.isoformat()}
-            if not cancellation_pending:
-                error = {"message": cancellation.last_error or "Solicitação não aplicada. Confira o estado atual antes de tentar novamente.",
-                    "at": cancellation.updated_at.isoformat()}
-        from shopman.shop.services.courier import progress_view, proven_tracking
+        from shopman.shop.services.courier import progress_view, proven_tracking, reopen_view
 
         progress = progress_view(block)
         tracking = proven_tracking(block)
+        reopened = reopen_view(block) if active else {"at": "", "driver": ""}
         status_label = COURIER_STATUS_LABELS.get(ride_status, "")
         if ride_status in ("A", "S") and progress["arrived_pickup_at"]:
             status_label = "Entregador na loja"
+        if reopened["at"]:
+            status_label = COURIER_REOPENED_LABEL
         return {
             "provider": str(block.get("provider") or ("machine" if adapter_on else "")),
             "status": ride_status,
             "status_label": "Sem resposta da TaOn" if unresolved is not None else status_label,
             # O andamento, em instantes ISO; a tela conta os minutos com o relógio dela.
             **progress,
+            # O entregador desistiu e a TaOn procura outro para a MESMA corrida:
+            # quando, e quem saiu. Vazios fora disso.
+            "reopened_at": reopened["at"],
+            "reopened_driver": reopened["driver"],
             "active": active,
             "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
             # Só o link e o código casados com a parada DESTE pedido (``courier.proven_tracking``).
@@ -1566,7 +1619,10 @@ def _courier_block(order: Order) -> dict | None:
             "can_quote": can_quote(order),
             "can_dispatch": adapter_on and house and not active and order_can_ride and unresolved is None,
             "can_dispatch_again": adapter_on and house and not active and order_can_ride and unresolved is not None,
-            "can_cancel": adapter_on and active and ride_status in CANCELLABLE_STATUSES and not cancellation_pending,
+            "can_cancel": adapter_on and courier_can_cancel(order, cancel),
+            # Em que pé está o cancelamento pedido: ``{state, message, at}``
+            # (``pending`` · ``unknown`` · ``failed``; vazio sem pedido).
+            "cancel_state": cancel,
             # O lembrete temporário de chamar (o mesmo do cartão), ou ``None``.
             "reminder": asdict(reminder) if (reminder := courier_reminder(order)) is not None else None,
             # O que a chamada pergunta: troco da gaveta e maquininha da casa
@@ -2684,7 +2740,10 @@ def _card_courier_label(order: Order) -> str:
         return ""
     from shopman.shop.services import courier
 
-    others = [operator_orders.short_ref(ref) for ref in courier.ride_orders(order) if ref != order.ref]
+    if courier.reopen_view(courier.get_block(order))["at"]:
+        # O entregador desistiu e a TaOn redistribui a mesma corrida.
+        label = COURIER_REOPENED_LABEL
+    others =[operator_orders.short_ref(ref) for ref in courier.ride_orders(order) if ref != order.ref]
     return f"{label} · corrida com {', '.join(others)}" if others else label
 
 
@@ -3424,11 +3483,16 @@ _EVENT_LABELS = {
     "partner_custody_recorded": "Separado para o entregador da TaOn (troco ou maquininha)",
     "partner_custody_returned": "A corrida não coletou: o que ia com o entregador voltou",
     "order_rescheduled": "Data combinada alterada",
+    # O lote foi cancelado e a reserva deste pedido ficou sem lastro (#2547).
+    "production_hold_lost": "Produção cancelada: item ficou sem reserva",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
     "fiscal_requeued": "NFC-e enviada de novo",
     "courier_dispatch_requested": "Entregador da TaOn chamado",
     "courier_ride_opened": "Corrida aberta na TaOn",
+    # A mesma corrida segue chamada: a TaOn redistribui sozinha (``will_reopen``).
+    "courier_ride_reopened": "O entregador desistiu e a TaOn procura outro",
+    "courier_ride_restored": "A TaOn retomou a corrida que constava como encerrada",
     "courier_dispatch_released": "Chamada da TaOn feita de novo",
     "courier_cancel_requested": "Cancelamento da corrida pedido à TaOn",
     "courier_reminder_dismissed": "Lembrete de chamar o entregador dispensado",
