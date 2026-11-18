@@ -1783,9 +1783,12 @@ defineExpose({
               class="flex flex-wrap items-center gap-3 rounded-md border border-warning bg-warning/10 p-3 text-warning"
             >
               <Icon :name="note.icon" class="size-6 shrink-0" :class="note.accent || ''" />
+              <!-- O porquê leva os números (os dois do plano, o valor do desconto): letra
+                   menor, nunca mais clara. Com `opacity-80` o âmbar sobre o âmbar dava
+                   3,7:1, abaixo do mínimo (auditoria da prévia do WP-E2). -->
               <span class="min-w-0 flex-1">
                 <span class="block text-lg leading-snug font-semibold">{{ note.message }}</span>
-                <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug opacity-80">{{ note.hint }}</span>
+                <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug">{{ note.hint }}</span>
               </span>
               <!-- O toque que resolve vai EMBAIXO da frase, na largura toda do aviso. -->
               <div v-if="noticeActions(note).length" class="flex w-full flex-wrap gap-2">

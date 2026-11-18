@@ -102,6 +102,93 @@ async function ordersQuantity(page: Page) {
   }
 }
 
+/**
+ * A AUDITORIA da prévia (regra da casa, 16/11): contraste do texto contra o fundo
+ * efetivo, tamanho da letra, caixa dentro da tela e sem texto cortado. Mede o que
+ * este WP pôs na tela e reprova abaixo de 4,5:1, abaixo de 12 px ou fora da tela.
+ */
+async function audits(page: Page, label: string, selector: string) {
+  const report = await page.evaluate((sel) => {
+    const unparsed: string[] = [];
+    const parse = (value: string) => {
+      // `bg-warning/10` sai como `color(srgb r g b / a)`, com canais de 0 a 1.
+      const srgb = value.match(/color\(srgb ([^)]+)\)/);
+      if (srgb) {
+        const [r, g, b, a = "1"] = srgb[1]!.split(/[\s/]+/).filter(Boolean);
+        return [Number(r) * 255, Number(g) * 255, Number(b) * 255, Number(a)];
+      }
+      const m = value.match(/rgba?\(([^)]+)\)/);
+      if (!m) {
+        if (value && value !== "transparent") unparsed.push(value);
+        return null;
+      }
+      const [r, g, b, a = "1"] = m[1]!.split(/[\s,/]+/).filter(Boolean);
+      return [Number(r), Number(g), Number(b), Number(a)];
+    };
+    const luminance = ([r, g, b]: number[]) => {
+      const [R, G, B] = [r, g, b].map((c) => {
+        const v = c! / 255;
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * R! + 0.7152 * G! + 0.0722 * B!;
+    };
+    // O fundo efetivo: as camadas de baixo para cima, com a transparência de cada uma.
+    const background = (el: Element) => {
+      const layers: number[][] = [];
+      for (let node: Element | null = el; node; node = node.parentElement) {
+        const c = parse(getComputedStyle(node).backgroundColor);
+        if (c && c[3]! > 0) {
+          layers.push(c);
+          if (c[3] === 1) break;
+        }
+      }
+      let out = [255, 255, 255];
+      for (const layer of layers.reverse()) {
+        const alpha = layer[3]!;
+        out = out.map((v, i) => layer[i]! * alpha + v * (1 - alpha));
+      }
+      return out;
+    };
+    const rows = Array.from(document.querySelectorAll(sel))
+      .filter((el) => (el as HTMLElement).offsetParent !== null)
+      .map((el) => {
+        const style = getComputedStyle(el);
+        const fg = parse(style.color)!;
+        // A opacidade do elemento (e dos pais) também clareia a letra: `opacity-80`.
+        for (let node: Element | null = el; node; node = node.parentElement) fg[3] = fg[3]! * Number(getComputedStyle(node).opacity);
+        const bg = background(el);
+        const blended = fg.slice(0, 3).map((v, i) => v * fg[3]! + bg[i]! * (1 - fg[3]!));
+        const [l1, l2] = [luminance(blended), luminance(bg)].sort((x, y) => y - x);
+        const box = el.getBoundingClientRect();
+        return {
+          text: (el.textContent || "").trim().slice(0, 70),
+          contrast: Math.round(((l1! + 0.05) / (l2! + 0.05)) * 100) / 100,
+          fontPx: Number.parseFloat(style.fontSize),
+          color: style.color,
+          background: `rgb(${bg.map(Math.round).join(", ")})`,
+          left: Math.round(box.left),
+          right: Math.round(box.right),
+          clipped: (el as HTMLElement).scrollWidth > (el as HTMLElement).clientWidth + 1,
+          inside: box.left >= 0 && box.right <= window.innerWidth + 0.5,
+        };
+      });
+    return { rows, unparsed: [...new Set(unparsed)] };
+  }, selector).then(({ rows, unparsed }) => {
+    // Cor que o parser não lê seria um fundo ignorado: a auditoria não pode passar por omissão.
+    expect(unparsed, `cores não lidas pela auditoria: ${unparsed.join(" | ")}`).toEqual([]);
+    return rows;
+  });
+  console.log(`AUDITORIA ${label}: ${JSON.stringify(report)}`);
+  expect(report.length, `${label}: nada medido`).toBeGreaterThan(0);
+  for (const row of report) {
+    expect(row.contrast, `${label}: contraste de "${row.text}"`).toBeGreaterThanOrEqual(4.5);
+    expect(row.fontPx, `${label}: letra de "${row.text}"`).toBeGreaterThanOrEqual(12);
+    expect(row.inside, `${label}: "${row.text}" fora da tela`).toBe(true);
+    expect(row.clipped, `${label}: "${row.text}" cortado`).toBe(false);
+  }
+  return report;
+}
+
 test.describe.configure({ mode: "serial" });
 
 for (const device of ["phone", "counter"] as const) {
@@ -121,6 +208,7 @@ for (const device of ["phone", "counter"] as const) {
       // 1 · A linha mostra a fornada da data e que o pedido passa dela.
       const fact = page.locator('[data-pos-line-plan="over"]').locator("visible=true").first();
       await expect(fact).toContainText(`Passa do plano: ${PLANNED} planejadas para ${day}`, { timeout: 30_000 });
+      await audits(page, "linha", '[data-pos-line-plan="over"] > span');
       await capture(page, testInfo, "linha-passa-do-plano");
 
       // 2 · No Pagamento: o aviso que trava diz os dois números; "Na retirada" não existe.
@@ -135,6 +223,7 @@ for (const device of ["phone", "counter"] as const) {
       await expect(page.getByText(`${PRODUCT}: ${QTY} pedidas, ${PLANNED} planejadas para ${day}`).locator("visible=true").first()).toBeVisible();
       const ask = page.getByRole("button", { name: /^Pedir autorização/ }).locator("visible=true").first();
       await expect(ask).toBeEnabled({ timeout: 30_000 });
+      await audits(page, "aviso", "li.border-warning > span > span");
       await capture(page, testInfo, "validar-travado");
 
       // 3 · Sem a assinatura não fecha: o diálogo abre, a Fran fecha, nada muda.
@@ -144,6 +233,16 @@ for (const device of ["phone", "counter"] as const) {
       await expect(dialog.locator("[data-over-plan-context]")).toContainText(`${QTY} pedidas, ${PLANNED} planejadas para ${day}`);
       // A captura espera a animação de entrada do diálogo terminar.
       await page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
+      const context = await audits(page, "dialogo", "[data-over-plan-context] p");
+      // Alinhamento: o quadro dos números bate borda com o aviso "Você continua como".
+      const edges = await page.evaluate(() => {
+        const ctx = document.querySelector("[data-over-plan-context]")!.getBoundingClientRect();
+        const sibling = (document.querySelector("[data-over-plan-context]")!.parentElement!.firstElementChild as HTMLElement).getBoundingClientRect();
+        return { ctx: [Math.round(ctx.left), Math.round(ctx.right)], alert: [Math.round(sibling.left), Math.round(sibling.right)] };
+      });
+      console.log(`AUDITORIA alinhamento do diálogo: ${JSON.stringify(edges)}`);
+      expect(edges.ctx).toEqual(edges.alert);
+      void context;
       await capture(page, testInfo, "gerente-ve-os-numeros");
       await page.keyboard.press("Escape");
       await expect(dialog).toBeHidden();
