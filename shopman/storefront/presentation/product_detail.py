@@ -121,6 +121,14 @@ class ConservationInfoProjection:
 
 
 @dataclass(frozen=True)
+class PickupStoreProjection:
+    """A loja onde a cliente retira: o nome que ela reconhece e o endereço."""
+
+    name: str
+    address: str
+
+
+@dataclass(frozen=True)
 class ProductDetailProjection:
     """Full projection for the storefront PDP."""
 
@@ -216,6 +224,14 @@ class ProductDetailProjection:
     # (``presentation/promise``), nunca uma frase montada no aparelho a partir
     # do estado da loja em cache. ``None`` = nada a prometer.
     promise: PromiseProjection | None = None
+
+    # Onde retirar: a loja (nome e endereço) que a linha de retirada nomeia e que
+    # o JSON-LD de Offer declara como local (``availableAtOrFrom``). O Google só
+    # libera "retirada no mesmo dia" e "disponibilidade na loja" quando a página
+    # do produto diz, no HTML do servidor, em qual loja o item está e quando fica
+    # pronto (#2652). Vem da ``Shop``, nunca fixo no código. ``None`` quando a
+    # casa não tem endereço cadastrado: sem endereço, a página não nomeia loja.
+    pickup_store: PickupStoreProjection | None = None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -408,7 +424,21 @@ def build_product_detail(
         category_icon=str(primary_meta.get("icon") or "") or None,
         option_groups=tuple(catalog_context.option_groups(product)),
         promise=promise,
+        pickup_store=_pickup_store(),
     )
+
+
+def _pickup_store() -> PickupStoreProjection | None:
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    if shop is None:
+        return None
+    address = str(shop.full_address or "").replace("\n", ", ").strip()
+    name = str(shop.brand_name or shop.name or "").strip()
+    if not address or not name:
+        return None
+    return PickupStoreProjection(name=name, address=address)
 
 
 # ──────────────────────────────────────────────────────────────────────
