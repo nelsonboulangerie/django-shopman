@@ -183,6 +183,14 @@ export interface ReceiptPreferredCostChange {
   decision: "update" | "keep" | "";
 }
 
+/** O preço da entrada conferido contra o custo preferencial do fornecedor. */
+export interface ReceiptPriceCheck {
+  /** Itens que têm custo preferencial deste fornecedor para comparar. */
+  compared: number;
+  /** Desses, quantos chegaram pelo mesmo preço. */
+  same: number;
+}
+
 export interface ReceiptHistoryEntry {
   sourceRef: string;
   mode: string;

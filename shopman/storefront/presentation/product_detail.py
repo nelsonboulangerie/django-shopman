@@ -31,8 +31,10 @@ from shopman.shop.projections.types import (
 )
 from shopman.storefront.identity import customer_pricing_hints
 from shopman.storefront.presentation.catalog import unit_weight_label, viewer_collection_access
+from shopman.storefront.presentation.promise import PromiseProjection, promise_for
 from shopman.storefront.presentation.status import availability_label as resolve_availability_label
 from shopman.storefront.presentation.types import ComponentProjection
+from shopman.storefront.services.promise_facts import read_promise_facts
 
 from .catalog import (
     CatalogItemProjection,
@@ -116,6 +118,14 @@ class ConservationInfoProjection:
     @property
     def has_any(self) -> bool:
         return bool(self.shelf_life_label or self.storage_tip)
+
+
+@dataclass(frozen=True)
+class PickupStoreProjection:
+    """A loja onde a cliente retira: o nome que ela reconhece e o endereço."""
+
+    name: str
+    address: str
 
 
 @dataclass(frozen=True)
@@ -209,6 +219,19 @@ class ProductDetailProjection:
     # Escolhas no produto (sabor obrigatório, adicionais com preço), no formato
     # público de ``catalog_context.option_groups``. Vazio = adiciona direto.
     option_groups: tuple[dict, ...] = ()
+
+    # Quando fica pronto: a MESMA promessa do card do cardápio
+    # (``presentation/promise``), nunca uma frase montada no aparelho a partir
+    # do estado da loja em cache. ``None`` = nada a prometer.
+    promise: PromiseProjection | None = None
+
+    # Onde retirar: a loja (nome e endereço) que a linha de retirada nomeia e que
+    # o JSON-LD de Offer declara como local (``availableAtOrFrom``). O Google só
+    # libera "retirada no mesmo dia" e "disponibilidade na loja" quando a página
+    # do produto diz, no HTML do servidor, em qual loja o item está e quando fica
+    # pronto (#2652). Vem da ``Shop``, nunca fixo no código. ``None`` quando a
+    # casa não tem endereço cadastrado: sem endereço, a página não nomeia loja.
+    pickup_store: PickupStoreProjection | None = None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -352,6 +375,12 @@ def build_product_detail(
     )
 
     is_made_to_order = _is_made_to_order(product)
+    promise = promise_for(
+        product.sku,
+        read_promise_facts([product.sku], channel_ref=channel_ref, own_holds={product.sku: own_hold}),
+        orderable=can_add_to_cart,
+        made_to_order=is_made_to_order,
+    )
 
     return ProductDetailProjection(
         sku=product.sku,
@@ -394,7 +423,22 @@ def build_product_detail(
         category_color=str(primary_meta.get("color") or "") or None,
         category_icon=str(primary_meta.get("icon") or "") or None,
         option_groups=tuple(catalog_context.option_groups(product)),
+        promise=promise,
+        pickup_store=_pickup_store(),
     )
+
+
+def _pickup_store() -> PickupStoreProjection | None:
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    if shop is None:
+        return None
+    address = str(shop.full_address or "").replace("\n", ", ").strip()
+    name = str(shop.brand_name or shop.name or "").strip()
+    if not address or not name:
+        return None
+    return PickupStoreProjection(name=name, address=address)
 
 
 # ──────────────────────────────────────────────────────────────────────

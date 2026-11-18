@@ -30,9 +30,10 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from django.utils import timezone
@@ -89,9 +90,20 @@ def _assert_matches_contract(payload, name: str) -> None:
     )
 
 
+#: O relógio do contrato: terça, 17/11/2026, 10h em São Paulo, com a casa aberta.
+#: A promessa de quando ("Fica pronto amanhã, quarta, a partir das 9h") traz o dia
+#: da semana e depende da hora; sem relógio fixo o contrato mudaria todo dia.
+CONTRACT_NOW = datetime(2026, 11, 17, 13, 0, tzinfo=UTC)
+
+
 @pytest.fixture
 def canonical_catalog(db):
     """O cardápio canônico: um produto por estado de disponibilidade."""
+    with patch("django.utils.timezone.now", return_value=CONTRACT_NOW):
+        yield _canonical_catalog()
+
+
+def _canonical_catalog():
     from shopman.offerman.models import (
         Collection,
         CollectionItem,
@@ -103,7 +115,13 @@ def canonical_catalog(db):
 
     from shopman.shop.models import Shop
 
-    Shop.load() or Shop.objects.create(name="Padaria Contrato")
+    shop = Shop.load() or Shop.objects.create(name="Padaria Contrato")
+    # Expediente de segunda a sábado: a promessa precisa de horário para dizer o dia.
+    shop.opening_hours = {
+        day: {"open": "07:00", "close": "18:00"}
+        for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday")
+    }
+    shop.save(update_fields=["opening_hours"])
     vitrine, _ = Position.objects.get_or_create(
         ref="vitrine",
         defaults={
@@ -157,9 +175,23 @@ def test_storefront_catalog_matches_shared_contract(canonical_catalog):
 
 
 def test_storefront_product_detail_matches_shared_contract(canonical_catalog):
+    from shopman.shop.models import Shop
     from shopman.storefront.api.projections import projection_data
     from shopman.storefront.presentation.product_detail import build_product_detail
 
+    # A página do produto nomeia a loja onde se retira (#2652): o contrato traz
+    # o objeto, com o endereço montado pela ``Shop``.
+    Shop.objects.filter(pk=Shop.load().pk).update(
+        route="Rua do Contrato",
+        street_number="100",
+        neighborhood="Centro",
+        city="Londrina",
+        state_code="PR",
+        postal_code="86000-000",
+    )
+    from django.core.cache import cache
+
+    cache.clear()
     payload = projection_data(
         build_product_detail(sku="CROISSANT-CONTRATO", channel_ref="web")
     )

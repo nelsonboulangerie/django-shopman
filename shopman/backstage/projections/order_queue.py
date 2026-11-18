@@ -3482,6 +3482,8 @@ _EVENT_LABELS = {
     "partner_custody_recorded": "Separado para o entregador da TaOn (troco ou maquininha)",
     "partner_custody_returned": "A corrida não coletou: o que ia com o entregador voltou",
     "order_rescheduled": "Data combinada alterada",
+    # O lote foi cancelado e a reserva deste pedido ficou sem lastro (#2547).
+    "production_hold_lost": "Produção cancelada: item ficou sem reserva",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
     "fiscal_requeued": "NFC-e enviada de novo",
