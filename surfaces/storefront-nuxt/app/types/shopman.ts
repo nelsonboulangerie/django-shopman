@@ -65,6 +65,13 @@ export interface ReadyPromise {
   text: string
 }
 
+// A loja onde a cliente retira (nome e endereço, da `Shop`). A página do produto
+// a nomeia e o JSON-LD de Offer a declara como local de retirada (#2652).
+export interface PickupStoreProjection {
+  name: string
+  address: string
+}
+
 export interface CatalogItemProjection {
   sku: string
   slug: string
@@ -246,6 +253,8 @@ export interface ProductDetailProjection {
   option_groups?: ProductOptionGroup[]
   // Quando fica pronto: a mesma promessa do card (ver ReadyPromise).
   promise?: ReadyPromise | null
+  // Onde retirar; null quando a casa não tem endereço cadastrado.
+  pickup_store?: PickupStoreProjection | null
 }
 
 export interface MinimumOrderProgressProjection {
