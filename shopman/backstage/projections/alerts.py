@@ -46,6 +46,11 @@ class OperatorAlertProjection:
     origin_label: str = ""
     origin_icon: str = ""
     subject: str = ""
+    #: O combinado do pedido do aviso, na frase do cartão (``order_queue._schedule``):
+    #: o "Aceitar" do sino aceita uma encomenda, e quem toca precisa ler para quando.
+    #: Só no Gestor; vazio sem pedido ou sem combinado.
+    order_schedule_label: str = ""
+    order_schedule_state: str = ""
 
 
 @dataclass(frozen=True)
@@ -85,6 +90,7 @@ def _spec_value(alert, field: str) -> str:
 def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=None) -> OperatorAlertsProjection:
     alert_rows = tuple(alerts)
     acceptable = _acceptable_orders(alert_rows, surface=surface, user=user)
+    schedules = _order_schedules(alert_rows, surface=surface)
     production_refs = {alert.order_ref for alert in alert_rows if alert.order_ref and alert.audience == "production"}
     target_dates: dict[str, str] = {}
     if production_refs:
@@ -114,6 +120,8 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
             origin_label=_spec_value(alert, "origin"),
             origin_icon=_spec_value(alert, "origin_icon"),
             subject=_spec_value(alert, "subject") or alert.get_type_display(),
+            order_schedule_label=schedules.get(alert.order_ref, ("", ""))[0],
+            order_schedule_state=schedules.get(alert.order_ref, ("", ""))[1],
             actions=_alert_actions(
                 alert,
                 target_date=target_dates.get(alert.order_ref, ""),
@@ -321,6 +329,29 @@ def _acceptable_orders(alert_rows, *, surface: str, user) -> frozenset[str]:
         if confirm is not None and confirm.enabled:
             acceptable.add(order.ref)
     return frozenset(acceptable)
+
+
+def _order_schedules(alert_rows, *, surface: str) -> dict[str, tuple[str, str]]:
+    """O combinado de cada pedido destes avisos, pela régua do cartão do Gestor.
+
+    Só no Gestor, que mostra o "Aceitar" ao lado. Pedido sem combinado (ou já
+    cumprido) não entra: o aviso não tem o que dizer sobre ele.
+    """
+    if surface != "orders":
+        return {}
+    refs = {alert.order_ref for alert in alert_rows if alert.order_ref}
+    if not refs:
+        return {}
+    from shopman.orderman.models import Order
+
+    from shopman.backstage.projections.order_queue import _schedule
+
+    out = {}
+    for order in Order.objects.filter(ref__in=refs):
+        label, state = _schedule(order)
+        if state:
+            out[order.ref] = (label, state)
+    return out
 
 
 def _accept_order_action(alert) -> ProductionActionProjection:

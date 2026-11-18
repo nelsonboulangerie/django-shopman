@@ -378,7 +378,7 @@ def _project_order_data(value: Any) -> dict[str, Any]:
         # resolvido pelas duas grades como em toda superfície.
         from shopman.shop.services.fulfillment_window import window_label
 
-        projected["delivery_time_slot_label"] = window_label(str(projected["delivery_time_slot"]))
+        projected["delivery_time_slot_label"] = window_label(str(projected["delivery_time_slot"]), for_customer=True)
     for container, fields in ORDER_DATA_NESTED_FIELDS.items():
         nested = {
             field: _clean_embedded(value[path])

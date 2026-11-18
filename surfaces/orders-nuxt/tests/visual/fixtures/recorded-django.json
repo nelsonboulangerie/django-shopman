@@ -2105,6 +2105,8 @@
   "history": {
    "date_from": "2026-10-07",
    "date_to": "2026-10-07",
+   "today": "2026-10-07",
+   "period_label": "hoje",
    "query": "",
    "sku": "",
    "sku_name": "",
@@ -2157,7 +2159,7 @@
    "page_size": 30,
    "total": 0,
    "has_next": false,
-   "total_label": "Nenhum pedido fechado neste período"
+   "total_label": "Nenhum pedido fechado hoje"
   },
   "generated_at": "2026-10-07T18:36:22.529931+00:00",
   "contract_version": 1

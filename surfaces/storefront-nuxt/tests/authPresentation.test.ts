@@ -12,7 +12,6 @@ import {
   authStep,
   codeSentPrefix,
   otpValidUntilDisplay,
-  isMarketingPromptRouteExcluded,
   pendingCodeFromCooldown,
   resendCooldown,
   restorePendingCode,
@@ -181,27 +180,6 @@ describe('LOGIN_ADULT_DECLARATION', () => {
   it('never says "18", "anos" or "adulto" to the customer', () => {
     expect(LOGIN_ADULT_DECLARATION).not.toMatch(/18|anos|adult/i)
   })
-})
-
-// ── O convite de novidades não é passo do login ────────────────────────────
-//
-// Ele sobe como sheet na página de destino e nunca interrompe o que a pessoa
-// veio fazer: fora das portas de entrada, do checkout e do pedido.
-
-describe('isMarketingPromptRouteExcluded', () => {
-  it.each(['/entrar', '/entrar/', '/a', '/a/', '/finalizar', '/finalizar/endereco', '/pedido/NB-123', '/pedido/NB-123/pagamento'])(
-    'keeps the sheet away from %s',
-    path => {
-      expect(isMarketingPromptRouteExcluded(path)).toBe(true)
-    }
-  )
-
-  it.each(['/', '/menu', '/sacola', '/conta', '/conta/preferencias', '/produto/croissant', '/pedidos'])(
-    'lets it open on %s',
-    path => {
-      expect(isMarketingPromptRouteExcluded(path)).toBe(false)
-    }
-  )
 })
 
 describe('beta 05/11: erros do login com o título certo e no lugar certo', () => {

@@ -26,6 +26,33 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
+  # ── Escopo do PR (17/11/2026, docs/reference/ci-escopo.md) ─────────────
+  # No pull_request roda o leve e só o que o PR mexe; o pesado (shards do shop e
+  # do backstage, cobertura, imagem Docker, estresse Postgres+Redis) roda na
+  # fila (merge_group), que testa a árvore exata que pousa no main. Check
+  # obrigatório que não roda no PR reporta verde ("pulado") com o MESMO nome.
+  # Quality, meia-correção e os agregadores rodam sempre.
+  scope:
+    name: Escopo do PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      python: ${{ steps.scope.outputs.python }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            .github/actions
+            scripts/ci_scope.py
+          sparse-checkout-cone-mode: false
+      - name: Escopo
+        id: scope
+        uses: ./.github/actions/ci-scope
+
   quality:
     name: Quality + deploy contract
     runs-on: ubuntu-latest
@@ -67,6 +94,11 @@ jobs:
       # `sleep 420` — dezesseis runs cancelados, asserção nenhuma, e nada
       # vermelho, porque run cancelado não fica vermelho. Defeito aritmético,
       # visível sem rodar nada; a CI lembra no lugar de alguém.
+      # O classificador decide o que o PR deixa de rodar: erro nele solta código
+      # sem teste no PR (a fila ainda pega). Ver docs/reference/ci-escopo.md.
+      - name: Escopo da CI erra para o lado de rodar
+        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_ci_scope.py -q
+
       - name: Teto do job cabe a espera do job
         run: .venv/bin/python scripts/check_workflow_budgets.py
 
@@ -309,6 +341,9 @@ jobs:
   # Aqui ele passa a rodar em todo PR e na fila de merge.
   admin-gate:
     name: Admin/Unfold gate
+    needs: scope
+    # Escopo que falha (saída vazia) RODA: só `false` explícito pula.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.python != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -341,6 +376,13 @@ jobs:
   # e reprovam cedo o erro bobo.
   tests:
     name: Testes
+    needs: scope
+    # Sem `if:` de escopo no JOB, de propósito: matriz pulada no nível do job
+    # reporta um check só, com o nome sem a matriz ("Testes"), e os três
+    # obrigatórios "Testes (test-*)" nunca chegam. O escopo decide nos passos.
+    if: ${{ !cancelled() }}
+    env:
+      RUN_SUITE: ${{ github.event_name != 'pull_request' || needs.scope.outputs.python != 'false' }}
     runs-on: ubuntu-latest
     # ⚠️ O relógio do step precisa de folga sobre a suíte mais lenta: em
     # 27/08 o test-backstage passou VERDE em 20min04s e o timeout de 20 min
@@ -362,22 +404,31 @@ jobs:
         suite: [test-cores, test-storefront, test-counter-agent]
 
     steps:
+      - name: Fora do escopo deste PR
+        if: env.RUN_SUITE != 'true'
+        run: echo "Nenhum arquivo Python mudou neste PR; ${{ matrix.suite }} roda na fila (merge_group)." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout
+        if: env.RUN_SUITE == 'true'
         uses: actions/checkout@v7
 
       - name: Set up Python
+        if: env.RUN_SUITE == 'true'
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Create virtualenv
+        if: env.RUN_SUITE == 'true'
         run: python -m venv .venv
 
       - name: Install dependencies
+        if: env.RUN_SUITE == 'true'
         run: make install
 
       - name: ${{ matrix.suite }}
+        if: env.RUN_SUITE == 'true'
         timeout-minutes: 30
         env:
           COVERAGE_FILE: .coverage.${{ matrix.suite }}
@@ -388,7 +439,7 @@ jobs:
           make ${{ matrix.suite }}
 
       - name: Publicar cobertura do shard
-        if: matrix.suite == 'test-storefront'
+        if: env.RUN_SUITE == 'true' && matrix.suite == 'test-storefront'
         uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ matrix.suite }}
@@ -414,6 +465,8 @@ jobs:
   # BACKSTAGE_HEAVY_TESTS. O nome `Backstage rest` ficou com o shard do resto.
   tests-backstage-shards:
     name: Backstage ${{ matrix.shard }}
+    # Pesado: só na fila (docs/reference/ci-escopo.md).
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     strategy:
@@ -466,6 +519,12 @@ jobs:
         run: |
           resultado='${{ needs.tests-backstage-shards.result }}'
           echo "shards: $resultado"
+          # No pull_request os shards não rodam (só na fila): `skipped` ali é o
+          # esperado. Em qualquer outro evento continua reprovando.
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "$resultado" = "skipped" ]; then
+            echo "pull_request: os shards rodam na fila (merge_group)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           # `success` é o único resultado aceitável — a comparação é por
           # igualdade, não uma lista de falhas conhecidas. `failure`,
           # `cancelled` e `skipped` reprovam sem precisar ser enumerados, e um
@@ -483,6 +542,8 @@ jobs:
   # a desenha moram no Makefile, junto de SHOP_HEAVY_TESTS.
   tests-shop-shards:
     name: Shop ${{ matrix.shard }}
+    # Pesado: só na fila (docs/reference/ci-escopo.md).
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     strategy:
@@ -535,6 +596,11 @@ jobs:
         run: |
           resultado='${{ needs.tests-shop-shards.result }}'
           echo "shards: $resultado"
+          # Mesmo contrato do agregador do backstage: `skipped` só no PR.
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "$resultado" = "skipped" ]; then
+            echo "pull_request: os shards rodam na fila (merge_group)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           # Igualdade com `success`, não lista de falhas: `failure`,
           # `cancelled` e `skipped` reprovam sem enumerar (ver o agregador do
           # backstage acima).
@@ -543,7 +609,9 @@ jobs:
   coverage-gate:
     name: Coverage Gate
     needs: [tests, tests-backstage-shards, tests-shop-shards]
-    if: always()
+    # Pesado: só na fila. No PR o job inteiro é pulado (verde, mesmo nome);
+    # fora dele, `always()` mantém a conferência explícita dos shards abaixo.
+    if: always() && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -596,6 +664,8 @@ jobs:
 
   docker-image:
     name: Docker deploy image
+    # Pesado: só na fila (docs/reference/ci-escopo.md).
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     # ⚠️ SEM `needs: quality`. Não depende do resultado dos testes — é
     # checagem independente. Encadear empurrava ~5 min para o fim do caminho
@@ -647,6 +717,8 @@ jobs:
 
   runtime-security-reliability:
     name: PostgreSQL + Redis runtime stress gate
+    # Pesado: só na fila (docs/reference/ci-escopo.md).
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     # ⚠️ SEM `needs: quality`. Não depende do resultado dos testes — é
     # checagem independente. Encadear empurrava ~5 min para o fim do caminho

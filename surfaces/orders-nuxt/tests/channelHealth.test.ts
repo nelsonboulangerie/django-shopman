@@ -17,6 +17,8 @@ describe("checklist do canal — ação de cada item", () => {
       .toEqual({ kind: "route", label: "Vincular", to: "/channels/ifood/catalog" });
     expect(itemAction(item({ action_label: "Ver integrações", action_target: "admin", action_path: "/admin/diagnostics/" }), bases))
       .toEqual({ kind: "external", label: "Ver integrações", href: "https://admin.loja/admin/diagnostics/" });
+    expect(itemAction(item({ action_label: "Abrir o Merchant Center", action_target: "external", action_path: "https://merchants.google.com/mc/overview?a=1" }), bases))
+      .toEqual({ kind: "external", label: "Abrir o Merchant Center", href: "https://merchants.google.com/mc/overview?a=1" });
     expect(itemAction(item({ action_label: "Parear uma TV", action_target: "pair" }), bases)).toEqual({ kind: "pair", label: "Parear uma TV" });
     expect(itemAction(item({ action_label: "Escolher coleções", action_target: "collections" }), bases)?.kind).toBe("collections");
   });
@@ -25,6 +27,7 @@ describe("checklist do canal — ação de cada item", () => {
     expect(itemAction(item({}), bases)).toBeNull();
     expect(itemAction(item({ action_label: "X", action_target: "outro" }), bases)).toBeNull();
     expect(itemAction(item({ action_label: "X", action_target: "gestor" }), bases)).toBeNull();
+    expect(itemAction(item({ action_label: "X", action_target: "external", action_path: "javascript:alert(1)" }), bases)).toBeNull();
   });
 
   it("pendência primeiro, na ordem do servidor", () => {

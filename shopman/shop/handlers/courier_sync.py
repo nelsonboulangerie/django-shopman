@@ -31,9 +31,8 @@ class CourierSyncHandler:
     topic = COURIER_SYNC
 
     def handle(self, *, message: Directive, ctx: dict) -> None:
-        from shopman.shop.adapters import get_adapter
         from shopman.shop.adapters.courier_machine import TERMINAL_STATUSES, CourierError, CourierRateLimited
-        from shopman.shop.services import courier
+        from shopman.shop.services import courier, delivery_services
 
         payload = message.payload or {}
         try:
@@ -61,7 +60,7 @@ class CourierSyncHandler:
         if block.get("status") in TERMINAL_STATUSES:
             return
 
-        adapter = get_adapter("courier")
+        adapter = delivery_services.courier_backend(block)
         if adapter is None:
             return
 

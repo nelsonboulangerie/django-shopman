@@ -127,6 +127,16 @@ class PriceQuoteSerializer(serializers.Serializer):
     adjustments = PriceAdjustmentSerializer(many=True)
 
 
+class ReadyPromiseSerializer(serializers.Serializer):
+    """Quando o item fica pronto, escrito pelo servidor (``presentation/promise``)."""
+
+    kind = serializers.ChoiceField(choices=("ready", "batch", "preorder"))
+    date = serializers.CharField()
+    ready_at = serializers.CharField()
+    day_label = serializers.CharField()
+    text = serializers.CharField()
+
+
 class ProductListItemSerializer(serializers.Serializer):
     """Public product card — serializes a ``CatalogItemProjection`` directly.
 
@@ -152,6 +162,9 @@ class ProductListItemSerializer(serializers.Serializer):
     # propósito — o motivo da indisponibilidade é do operador, nunca do cliente.
     is_notifiable = serializers.BooleanField()
     is_notify_subscribed = serializers.BooleanField()
+    # Quando fica pronto: a mesma promessa do cardápio, do produto e da sacola.
+    # ``null`` = nada a prometer (indisponível, ou sem dado para afirmar um dia).
+    promise = ReadyPromiseSerializer(allow_null=True)
 
 
 @extend_schema_serializer(component_name="StorefrontCollection")
@@ -282,6 +295,8 @@ class OrderItemSerializer(serializers.Serializer):
     qty = serializers.IntegerField()
     unit_price_display = serializers.CharField()
     total_display = serializers.CharField()
+    # Valor cheio riscado ao lado (linha com promoção); vazio sem promoção.
+    full_total_display = serializers.CharField(allow_blank=True, required=False)
 
 
 class FulfillmentSerializer(serializers.Serializer):

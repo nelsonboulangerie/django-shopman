@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import timedelta
+from dataclasses import replace
+from datetime import time, timedelta
 from decimal import Decimal
 from io import StringIO
 from unittest import mock
@@ -360,7 +361,13 @@ class TestBackend:
         return result, calls
 
     def test_store_code_sends_pickup_with_the_same_stock(self, token, settings, stocked):
-        result, calls = self._project_with_store(settings, self._item())
+        from shopman.shop.projections import ready_promise
+
+        today = timezone.localdate()
+        ready_today = ready_promise.ReadyWindow(target=today, day=today, start=time(9, 0), ready_at=None)
+        with mock.patch.object(ready_promise, "ready_window", return_value=ready_today):
+            item = self._item()
+        result, calls = self._project_with_store(settings, item)
         assert result.success is True and result.projected == 1
         url, body = calls[1]
         assert url == (
@@ -376,6 +383,22 @@ class TestBackend:
                 "pickupSla": "SAME_DAY",
             },
         }
+
+    @pytest.mark.parametrize(
+        ("ready_in_days", "sla"),
+        [(0, "SAME_DAY"), (1, "NEXT_DAY"), (2, "TWO_DAY"), (7, "SEVEN_DAY"), (8, "MULTI_WEEK"), (14, "MULTI_WEEK")],
+    )
+    def test_pickup_sla_is_the_day_the_item_is_ready(self, stocked, ready_in_days, sla):
+        decided = replace(display_catalog.display_item("google", "PAO"), ready_in_days=ready_in_days)
+        attributes = google.build_local_inventory(decided, _CFG)["localInventoryAttributes"]
+        assert (attributes["pickupMethod"], attributes["pickupSla"]) == ("BUY", sla)
+
+    def test_item_without_promise_announces_no_pickup(self, stocked):
+        """O dado que falta fecha a promessa: nunca cai em SAME_DAY."""
+        decided = replace(display_catalog.display_item("google", "PAO"), ready_in_days=None)
+        attributes = google.build_local_inventory(decided, _CFG)["localInventoryAttributes"]
+        assert attributes["pickupMethod"] == "NOT_SUPPORTED"
+        assert "pickupSla" not in attributes
 
     def test_paused_pickup_is_out_of_stock(self, token, settings, stocked):
         from shopman.backstage.services import feeds
@@ -632,6 +655,17 @@ class TestDailySync:
         CatalogSyncState.objects.filter(sku="PAO").update(status="synced", last_synced_at=timezone.now())
         call_command("sync_platform_catalogs", stdout=StringIO())
         assert [(d.payload["sku"], d.payload["trigger"]) for d in _queued()] == [("SUMIU", "left_channel")]
+
+    def test_reads_the_google_store_review_with_the_reconciliation(self, push, stocked):
+        """A aba Canais lê o estado da loja física do que o worker guardou aqui."""
+        from shopman.shop.services import google_store_review
+
+        failed = google_store_review.StoreReview(checked_at=timezone.now(), ok=False, error="sem resposta")
+        err = StringIO()
+        with mock.patch.object(google_store_review, "refresh_if_due", return_value=failed) as refresh:
+            call_command("sync_platform_catalogs", stdout=StringIO(), stderr=err)
+        refresh.assert_called_once_with()
+        assert "estado da loja física não lido: sem resposta" in err.getvalue()
 
     def test_dry_run_prints_the_api_payload_without_credentials(self, settings, stocked):
         settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, service_account_b64="")
