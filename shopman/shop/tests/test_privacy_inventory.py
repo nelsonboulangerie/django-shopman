@@ -25,6 +25,7 @@ import pytest
 from shopman.shop.privacy_inventory import (
     ADAPTERS_SEM_DADO_DE_CLIENTE,
     PROCESSORS,
+    active_ai_processors,
     active_processors,
 )
 
@@ -107,9 +108,11 @@ def test_o_texto_do_cliente_nao_tem_jargao(settings):
         assert not achadas, f"jargão em {processor.key}: {achadas} — {frase}"
 
 
+@pytest.mark.django_db
 def test_active_processors_e_um_subconjunto_honesto():
     ativos = active_processors()
-    assert set(ativos) <= set(PROCESSORS)
+    # Os de IA não moram em PROCESSORS: nascem das conexões (`active_ai_processors`).
+    assert set(ativos) - set(active_ai_processors()) <= set(PROCESSORS)
     # A loja não declara ao cliente um terceiro que este deployment não usa: seria
     # verdade no catálogo e mentira na vida dele.
     for processor in ativos:
@@ -144,6 +147,7 @@ def test_o_sinal_de_ligado_realmente_liga(processor, settings):
     )
 
 
+@pytest.mark.django_db
 def test_login_pelo_whatsapp_declara_o_manychat_mesmo_sem_notificacao(settings):
     """Beta 05/11 (LOJA-08): a tela oferece "Entre pelo WhatsApp" e a política dizia
     "mais ninguém recebe os seus dados" sem o ManyChat, porque o único sinal dele era
@@ -183,6 +187,7 @@ def test_hospedagem_declara_o_pais_dos_specs_de_deploy():
         assert pais in hospedagem.role, f"a política não diz {pais}: {hospedagem.role}"
 
 
+@pytest.mark.django_db
 def test_maquina_de_desenvolvimento_nao_declara_hospedagem(settings):
     settings.SHOPMAN_ENVIRONMENT = "development"
     assert "digitalocean" not in {processor.key for processor in active_processors()}

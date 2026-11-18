@@ -159,6 +159,11 @@ export default defineNuxtConfig({
     // Vazio = a identidade do app (`operatorPwa.app`), certo com um app por contêiner.
     operatorServiceName: "",
     public: {
+      // Faixa de homologação do iFood (DEV-2026-044, `IFoodHomologationBand`): o
+      // iFood exige data, hora e client_id do app de TESTE visíveis em todo vídeo
+      // de evidência. Vazia em qualquer ambiente de verdade; só o runtime local de
+      // teste a preenche (NUXT_PUBLIC_IFOOD_HOMOLOGATION_CLIENT_ID).
+      ifoodHomologationClientId: "",
       // URL da Central (a home) — o ícone do app no topo do OperatorRail leva
       // pra cá (padrão Odoo). Dev: hub-nuxt em :3001; prod: central.<zona> via env.
       operatorHubUrl: process.env.NUXT_PUBLIC_OPERATOR_HUB_URL || "http://127.0.0.1:3001/",

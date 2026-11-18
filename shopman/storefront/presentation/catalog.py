@@ -27,6 +27,7 @@ from shopman.shop.policies.exclusive_collections import CollectionAccess
 from shopman.shop.projections import catalog_context
 from shopman.shop.projections.copy import build_copy
 from shopman.shop.projections.pricing_quote import PriceQuoteProjection
+from shopman.shop.projections.ready_promise import read_promise_facts
 from shopman.shop.projections.storefront_context import (
     popular_skus,
     session_pricing_hints,
@@ -40,7 +41,6 @@ from shopman.storefront.presentation.dietary import dietary_warnings as _dietary
 from shopman.storefront.presentation.icons import collection_icon
 from shopman.storefront.presentation.promise import PromiseProjection, promise_for
 from shopman.storefront.presentation.status import availability_label
-from shopman.storefront.services.promise_facts import read_promise_facts
 
 if TYPE_CHECKING:
     from django.http import HttpRequest  # noqa: F401

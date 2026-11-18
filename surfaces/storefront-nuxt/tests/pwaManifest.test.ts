@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildCourierManifest,
   buildStorefrontManifest,
   STOREFRONT_PWA_FALLBACK
 } from '../server/utils/pwaManifest'
+
+describe('manifesto das rotas do entregador (/rota, DEV-2026-030)', () => {
+  it('é outro app, preso em /rota/, com nome próprio', () => {
+    const manifest = buildCourierManifest()
+    expect(manifest.id).toBe('/rota/')
+    expect(manifest.scope).toBe('/rota/')
+    expect(manifest.start_url.startsWith('/rota/')).toBe(true)
+    expect(manifest.name).toBe('Rotas · Nelson')
+    expect(manifest.id).not.toBe(buildStorefrontManifest().id)
+    expect(manifest.icons.some(icon => icon.sizes === '512x512' && icon.purpose === 'any')).toBe(true)
+  })
+})
 
 describe('storefront PWA manifest', () => {
   it('keeps the install contract and brand fallbacks complete', () => {

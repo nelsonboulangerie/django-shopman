@@ -6,14 +6,15 @@ import MarketingPromptSheet from '~/components/MarketingPromptSheet.vue'
 import PwaInstallInvite from '~/components/PwaInstallInvite.vue'
 import type { PwaCopyProjection } from '~/types/shopman'
 
-// UM convite por visualização de página (useShopInvite). Monta os dois convites
-// do shell juntos, como no app.vue, e prova a regra:
+// UM convite por visita (useShopInvite; decisão 3 do plano de excelência da loja,
+// 16/11/2026). Monta os dois convites do shell juntos, como no app.vue, e prova a
+// regra:
 //
 // - com o convite de instalar aberto, o de novidades não sobe;
-// - fechado o de instalar, o de novidades ainda espera: ele abriu NESTA página;
-// - navegou, o de novidades sobe;
-// - quando o de instalar não vai abrir, o de novidades tem a vez — e, aberto ele,
-//   o de instalar que ficou elegível depois espera a próxima página.
+// - fechado o de instalar, o de novidades não sobe nem na próxima página nem na
+//   recarga: um convite já subiu nesta visita;
+// - quando o de instalar não vai abrir, o de novidades tem a vez, e, aberto ele,
+//   o de instalar que ficou elegível depois fica para a próxima visita.
 
 const mocks = vi.hoisted(() => ({
   route: null as unknown as { path: string },
@@ -89,7 +90,7 @@ async function settle () {
 const pwaOpen = (w: any) => w.find('[data-testid="pwa-install-invite"]').exists()
 const marketingOpen = (w: any) => w.find('[data-testid="marketing-prompt-sheet"]').exists()
 
-describe('convites do shell — um por página', () => {
+describe('convites do shell: um por visita', () => {
   beforeEach(() => {
     document.cookie = 'csrftoken=synthetic'
     mocks.route = reactive({ path: '/menu' })
@@ -97,7 +98,9 @@ describe('convites do shell — um por página', () => {
     mocks.isDismissed = ref(false)
     mocks.fetch = vi.fn().mockResolvedValue({ ok: true, whatsapp_opted_in: true })
     sessionStorage.removeItem('shopman-marketing-prompt-shown')
-    useState('shop-invite-open').value = { open: null, shownOnPath: null }
+    sessionStorage.removeItem('shopman-invite-shown')
+    useState('shop-invite').value = { open: null, shownThisVisit: false, synced: false }
+    sessionStorage.setItem('shopman-order-secured', '1')
     const session = useShopSession()
     session.reset()
     session.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana Silva', welcome_asks_name: false, welcome_asks_marketing: true })
@@ -107,25 +110,32 @@ describe('convites do shell — um por página', () => {
     for (const page of mounted.splice(0)) page.unmount()
   })
 
-  it('com o de instalar aberto, o de novidades não sobe; fechado e navegado, sobe', async () => {
+  it('com o de instalar aberto, o de novidades não sobe; fechado, nem na próxima página', async () => {
     const { pwa, marketing } = await mountShell()
 
     expect(pwaOpen(pwa)).toBe(true)
     expect(marketingOpen(marketing)).toBe(false)
 
-    // Fecha o de instalar: nesta página ele já abriu, o de novidades espera.
     await pwa.findAll('button').find((b: any) => b.text().includes('Agora não'))!.trigger('click')
     await settle()
     expect(pwaOpen(pwa)).toBe(false)
     expect(marketingOpen(marketing)).toBe(false)
 
-    // Próxima navegação: a vez é do de novidades.
+    // Navegou: nesta visita um convite já subiu, o de novidades fica para a próxima.
     mocks.route.path = '/conta'
     await settle()
-    expect(marketingOpen(marketing)).toBe(true)
+    expect(marketingOpen(marketing)).toBe(false)
     expect(pwaOpen(pwa)).toBe(false)
-    // Nada foi respondido por baixo dos panos enquanto esperava.
+    expect(sessionStorage.getItem('shopman-invite-shown')).toBe('1')
     expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
+  it('a marca da visita sobrevive à recarga: nenhum convite sobe de novo', async () => {
+    sessionStorage.setItem('shopman-invite-shown', '1')
+    const { pwa, marketing } = await mountShell()
+
+    expect(pwaOpen(pwa)).toBe(false)
+    expect(marketingOpen(marketing)).toBe(false)
   })
 
   it('quando o de instalar não vai abrir, o de novidades tem a vez — e segura a página', async () => {

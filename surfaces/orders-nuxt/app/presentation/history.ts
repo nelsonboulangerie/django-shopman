@@ -145,3 +145,41 @@ export function historyStatusClass(tone: string): string {
   if (tone === "warning") return "bg-warning/10 text-warning";
   return "bg-muted text-muted-foreground";
 }
+
+/** O período da oferta de busca mais larga: "Buscar nos últimos 28 dias". */
+export const WIDER_SEARCH_PRESET = "28d";
+export const WIDER_SEARCH_LABEL = "Buscar nos últimos 28 dias";
+const WIDER_SEARCH_DAYS = 28;
+
+function isoDayNumber(iso: string): number {
+  const [y, m, d] = iso.split("-").map(Number);
+  return Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1) / 86_400_000;
+}
+
+/**
+ * A busca (ou o recorte) não achou nada num período mais curto que 28 dias: a tela
+ * oferece ampliar. Quem procura "o pedido da Maria" quase nunca lembra o dia, e o
+ * Histórico abre em "hoje" (P1-21).
+ */
+export function offersWiderSearch(
+  history: HistoryQuery,
+  today: string,
+  total: number,
+): boolean {
+  if (total > 0) return false;
+  if (!history.q && !Object.values(history.filters).some((v) => v?.length)) {
+    return false;
+  }
+  const range = resolvePeriod(history.period, { today, max: today });
+  const days = isoDayNumber(range.date_to) - isoDayNumber(range.date_from) + 1;
+  return days < WIDER_SEARCH_DAYS;
+}
+
+/** A mesma busca, com os mesmos recortes, nos últimos 28 dias. */
+export function widerSearch(history: HistoryQuery): HistoryQuery {
+  return {
+    ...history,
+    period: { preset: WIDER_SEARCH_PRESET, from: "", to: "" },
+    page: 1,
+  };
+}
