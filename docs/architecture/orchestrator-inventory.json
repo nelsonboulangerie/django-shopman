@@ -2282,6 +2282,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "AINotConfigured",
+            "ANTHROPIC_DEFAULT_URL",
             "CUSTOMER_TEXT_PURPOSES",
             "EXTRAS",
             "EXTRAS_BY_HOST",
@@ -7040,12 +7041,32 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "ADAPTERS_SEM_DADO_DE_CLIENTE",
+            "AIProcessor",
+            "AIUse",
+            "AI_PROCESSORS",
+            "AI_USES",
             "PROCESSORS",
             "Processor",
             "_NAO_SAI_DA_CASA",
+            "_PROFILE_STAYS",
+            "_REDACTION",
+            "_ROLE_PREFIX",
+            "_concierge_answers",
+            "_concierge_setting",
+            "_customer_text_purposes",
+            "_declared_for",
+            "_host_of",
+            "_intents_mode",
+            "_join",
+            "_purpose_sends",
             "_setting_is_set",
+            "_setting_value",
             "_wired",
-            "active_processors"
+            "active_ai_processors",
+            "active_processors",
+            "ai_role_and_shares",
+            "logger",
+            "undeclared_ai_connections"
           ]
         }
       ]
