@@ -35,7 +35,7 @@ function props(overrides: Record<string, unknown> = {}) {
 }
 
 describe("PosCartPanel: o lastro da encomenda na linha", () => {
-  it("acima do plano: a linha diz a fornada da data e que passa do plano", async () => {
+  it("acima do plano: a linha diz o plano da data e que passa dele", async () => {
     const w = await mountSuspended(PosCartPanel, { props: props() });
     const fact = w.find("[data-pos-line-plan]");
     expect(fact.attributes("data-pos-line-plan")).toBe("over");
@@ -44,7 +44,7 @@ describe("PosCartPanel: o lastro da encomenda na linha", () => {
     expect(w.findAll("[data-pos-line-plan]")).toHaveLength(1);
   });
 
-  it("dentro do plano: só a fornada da data", async () => {
+  it("dentro do plano: só o plano da data", async () => {
     const w = await mountSuspended(PosCartPanel, {
       props: props({ items: [item({ sku: "BF", name: "Baguette de Tradition", qty: 20 })] }),
     });

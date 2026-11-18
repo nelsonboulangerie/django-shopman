@@ -16,7 +16,7 @@ const collections: POSPaymentCollectionProjection[] = [
   { ref: "on_delivery", label: "Receber ao entregar o pedido", description: "", fulfillment_types: ["pickup", "delivery"], payment_method_refs: ["cash", "credit"] },
 ];
 
-describe("a linha da encomenda mostra a fornada da data", () => {
+describe("a linha da encomenda mostra o plano da data", () => {
   it("dentro do plano: '22 planejadas para 17/11'", () => {
     expect(planLineFact(20, { planned_qty: 22, free_qty: 22 }, "2026-11-17")).toEqual({
       text: "22 planejadas para 17/11",
@@ -42,7 +42,7 @@ describe("a linha da encomenda mostra a fornada da data", () => {
     expect(planLineFact(3, undefined, "2026-11-17")).toBeNull();
     expect(planLineFact(3, { planned_qty: 22, free_qty: 22 }, "")).toBeNull();
   });
-  it("vitrine que dura sem fornada da data: diz o livre", () => {
+  it("vitrine que dura, sem lote planejado na data: diz o livre", () => {
     expect(planLineFact(3, { planned_qty: 0, free_qty: 5 }, "2026-11-17")?.text).toBe("5 livres para 17/11");
   });
 });

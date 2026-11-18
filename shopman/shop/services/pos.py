@@ -3705,7 +3705,7 @@ def _redeem_sale_approval(
         )
     signed_plan = tuple(tuple(str(part) for part in line) for line in (data.get("p") or ()) if isinstance(line, list))
     if signed_plan != snapshot.over_plan:
-        raise _sale_approval_refused(_over_plan_refusal(signed_plan, snapshot.over_plan))
+        raise _sale_approval_refused(_over_plan_recovery(signed_plan, snapshot.over_plan))
 
     # O gerente continua podendo assinar AGORA: desligado ou sem a permissão
     # depois do diálogo, o carimbo dele não vale mais.
@@ -3743,7 +3743,7 @@ def _over_plan_numbers(lines) -> str:
     return "; ".join(parts)
 
 
-def _over_plan_refusal(signed, current) -> str:
+def _over_plan_recovery(signed, current) -> str:
     """Por que a liberação da encomenda acima do plano não vale mais, com os números."""
     def numbers(lines) -> str:
         return "; ".join(

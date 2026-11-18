@@ -22,7 +22,7 @@ describe("PosPaymentWorkspace: encomenda acima do plano pede o gerente com os n�
         code: "item_low_stock",
         field: "items",
         sku: "BF",
-        message: "Baguette de Tradition: 200 pedidas, 22 planejadas para 17/11. O que passa do plano fica como encomenda sem fornada, e a Produção é avisada.",
+        message: "Baguette de Tradition: 200 pedidas, 22 planejadas para 17/11. O que passa do plano fica para a Produção planejar.",
       }],
     }),
     salesMode: "order",
