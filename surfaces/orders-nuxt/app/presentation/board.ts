@@ -793,13 +793,24 @@ export function treatableOrderRefs(
   return new Set(treatableCards(cards).map((card) => card.ref));
 }
 
-/** O cartão como a projeção do quadro o entrega (o contrato gerado). */
-type QueueCard = TwoZoneQueueProjection["prep"][number];
+/** O que a régua do "tratável" lê do cartão. Estrutural de propósito: as zonas do quadro
+ *  e as negociações do iFood chegam com tipos diferentes do mesmo contrato. */
+type TreatableSource = Pick<
+  OrderCardProjection,
+  | "ref"
+  | "status"
+  | "can_confirm"
+  | "can_advance"
+  | "can_settle_delivery_cash"
+  | "equipment_back_pending"
+  | "kitchen_release_label"
+  | "kitchen_released_at_iso"
+>;
 
 /** Os cartões que pedem trabalho agora. A encomenda do dia que ainda espera a hora da
  *  Cozinha tem o "Adiantar" disponível, mas não é trabalho do turno: contá-la fazia o
  *  aviso tocar à meia-noite para toda encomenda do dia (WP-G02, P1-04). */
-function treatableCards(cards: QueueCard[]): QueueCard[] {
+function treatableCards<C extends TreatableSource>(cards: C[]): C[] {
   return cards.filter(
     (card) =>
       card.can_confirm ||
