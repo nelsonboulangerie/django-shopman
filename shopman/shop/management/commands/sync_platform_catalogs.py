@@ -29,11 +29,14 @@ Usage::
 from __future__ import annotations
 
 import json
+import logging
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_INTERVAL_HOURS = 24
 #: Envio que falhou não é reenfileirado a cada ciclo: espera este tanto antes de tentar.
@@ -92,6 +95,7 @@ class Command(BaseCommand):
         try:
             return pickup_turn.resend_on_turn(ref)
         except Exception as exc:
+            logger.exception("sync_platform_catalogs: virada do dia de %s não reenviou", ref)
             self.stderr.write(f"{ref}: virada do dia não reenviou: {exc}")
             return 0
 
