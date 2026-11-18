@@ -530,7 +530,7 @@ def test_not_picked_up_is_not_a_reason_the_operator_picks():
     [
         (
             {"paid_q": 1870, "refund_q": 1870, "retained_q": 0},
-            "Ele ficou pronto e não foi retirado. Devolvemos R$ 18,70 pelo mesmo meio de pagamento.",
+            "Ele ficou pronto e não foi retirado. Vamos devolver R$ 18,70 pelo mesmo meio de pagamento.",
         ),
         (
             {"paid_q": 3000, "refund_q": 0, "retained_q": 3000},
@@ -538,7 +538,7 @@ def test_not_picked_up_is_not_a_reason_the_operator_picks():
         ),
         (
             {"paid_q": 4870, "refund_q": 1870, "retained_q": 3000},
-            "Ele ficou pronto e não foi retirado. Devolvemos R$ 18,70 pelo mesmo meio de pagamento, "
+            "Ele ficou pronto e não foi retirado. Vamos devolver R$ 18,70 pelo mesmo meio de pagamento, "
             "pelo que ainda pôde voltar à venda. R$ 30,00 ficaram com a loja, como dizem os Termos.",
         ),
         # Não pago: nenhuma frase de dinheiro.

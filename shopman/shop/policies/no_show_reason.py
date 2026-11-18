@@ -28,7 +28,7 @@ def customer_text(no_show: dict | None) -> str:
     """A frase do "Não retirado" com o destino do dinheiro.
 
     - nada foi pago: só o fato, sem frase de dinheiro;
-    - tudo volta: quanto, e que volta pelo mesmo meio de pagamento;
+    - tudo volta: quanto, e que vai voltar pelo mesmo meio de pagamento;
     - nada volta (tudo se perdeu): o valor ficou com a loja, como dizem os Termos;
     - volta uma parte: as duas metades, para o cliente não procurar a diferença.
     """
@@ -42,7 +42,10 @@ def customer_text(no_show: dict | None) -> str:
         return BASE_TEXT
     if refund_q <= 0:
         return f"{BASE_TEXT} O valor ficou com a loja, como dizem os Termos."
-    refund = f"Devolvemos R$ {format_money(refund_q)} pelo mesmo meio de pagamento"
+    # "Vamos devolver", no futuro, de propósito: quando o aviso sai, o gateway
+    # só recebeu o pedido de estorno, e dinheiro e maquininha ainda esperam o
+    # gesto de alguém da casa no PDV. "Devolvemos" afirmaria o que não aconteceu.
+    refund = f"Vamos devolver R$ {format_money(refund_q)} pelo mesmo meio de pagamento"
     if retained_q > 0:
         return (
             f"{BASE_TEXT} {refund}, pelo que ainda pôde voltar à venda. "
