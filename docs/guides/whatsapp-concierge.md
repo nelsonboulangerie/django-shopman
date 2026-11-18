@@ -155,7 +155,7 @@ nem adicionar uma mensagem estática de sucesso no flow.
 | `200 queued` | Recebimento persistido e trabalho agendado. A resposta ao cliente ocorre pela saída do adapter. |
 | `200 duplicate` | Mesmo evento verificado e mesmo payload; o trabalho pode ser reparado sem nova mensagem. Não se aplica ao corpo atual sem ID. |
 | `200 handoff` | Contexto preservado; a conversa continua sob posse humana. |
-| `200 disabled` | Núcleo contido. Verificar `reason`, contrato, switch e credencial do modelo. |
+| `200 disabled` | Núcleo contido. Verificar `reason`: contrato, modo ou switch. A conexão de IA não é motivo: sem ela a Concierge responde pelo caminho sem modelo. |
 | `200 not_allowed` | Subject fora da coorte explícita. Nenhum turno automático. |
 | `200 observed` | Pergunta preservada em modo passivo; nenhuma fila, IA ou resposta. |
 | `200 observation_disabled` | Um gate de observação está fechado; nada foi persistido. O flow normal deve continuar. |
@@ -193,10 +193,33 @@ CONCIERGE_OUTPUT_RETRY_ENABLED=false
 CONCIERGE_TRANSFER_ENABLED=false
 ```
 
-Além disso, o ambiente precisa da chave dedicada `CONCIERGE_API_KEY`, de
-uma conexão de IA para o propósito `concierge` liberada para mensagem de cliente
-(Admin → Conexões de IA; ver [ai-connections](../reference/ai-connections.md)) e do worker canônico. A lista de subjects vazia
-fecha a connection. Telefone ou nome no body não substituem essa lista.
+Além disso, o ambiente precisa da chave dedicada `CONCIERGE_API_KEY` e do worker
+canônico. A lista de subjects vazia fecha a connection. Telefone ou nome no body
+não substituem essa lista.
+
+### Sem conexão de IA, ela responde mesmo assim
+
+A conexão de IA (Admin → Conexões de IA; ver [ai-connections](../reference/ai-connections.md))
+melhora a leitura, mas não é condição para atender. Sem conexão para `concierge` e
+`intents`, ou com o freio de gasto cortando, o turno segue pelo caminho sem modelo:
+porteiro, divisão local das partes, executores e uma mensagem só. O `check --deploy`
+(`SHOPMAN_W022`) e o `concierge_check` **avisam** "sem leitura por modelo" e não
+reprovam por isso.
+
+### O que vai a um leitor de IA sai redigido
+
+Leitura de partes (`intents`), Jev (`decision`, por `triage.jev_scores`) e pré-rótulo
+(`labeling`, por `MessageIntentSample.redacted_text`) recebem o texto da mensagem
+**redigido** por `observation_privacy.redact_observation_text`: sem nome, documento,
+e-mail, telefone, endereço, pagamento, alergia, doença e referência a menor. É o que
+a frase pública de `/privacidade` promete. O nome sai por duas redes: o padrão de
+quem se apresenta ("aqui é a Maria", "meu nome é", "sou a", assinatura no fim) e os
+nomes que a conversa já conhece (`customer_name`), que o `service.run_turn` liga no
+redator durante o turno (`observation_privacy.bind_known_names`). Nome após palavra de
+produto ("pão Maria") fica. A nota de estado que vai à leitura (`intents.reading_note`)
+não leva número de pedido. O executor de cada parte trabalha sobre o texto
+**original**, que não sai da casa: o trecho que a leitura devolve é levado de volta ao
+original (`intents.original_span`). O cartão da equipe continua lendo o nome.
 
 Para uma homologação autorizada, os dois switches de admissão são independentes:
 

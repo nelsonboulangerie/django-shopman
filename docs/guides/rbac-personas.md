@@ -92,6 +92,12 @@ tela do Admin.
 O que o balcão **não** perde: a antesala segue mostrando a contagem de vendas do
 próprio turno. Contagem é operação; valor é apuração.
 
+No PDV a régua vale para toda projeção (WP-E7, 17/11/2026): `/pos/` não manda o
+faturamento do dia a ninguém (só contagens), e a aba Encomendas manda as somas do
+período e de cada dia (total e "a receber") só a quem tem `cashman.audit_shift`;
+para os outros elas vêm `null`, e a tela diz "A receber em 2 encomendas". O valor
+de CADA encomenda segue no cartão: é com ele que o balcão recebe.
+
 ## Como adicionar um novo operador
 
 ```bash

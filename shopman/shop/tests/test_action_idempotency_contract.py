@@ -44,7 +44,7 @@ IDEMPOTENT_BY_NATURE = {
     "reverse_geocode": "leitura pura: resolve lat/lng em endereco",
     "retry_payment": "conferencia do pagamento: pergunta ao gateway com throttle e payment.initiate e idempotente por chave; repetir nao cria segunda cobranca",
     "customer_lookup": "leitura pura: POST so para o telefone viajar no corpo, fora do log de acesso",
-    "customer_search": "GET",
+    "customer_search": "leitura pura: POST so para o termo (nome, telefone, CPF, e-mail) viajar no corpo, fora do log de acesso",
     "open_tab": "abre a comanda pelo ref — abrir duas vezes deixa a mesma comanda aberta",
     "save_tab": "grava a lista inteira da comanda (replace por session_key), nao acumula",
     "rename_tab": "renomear para X duas vezes deixa o nome X",

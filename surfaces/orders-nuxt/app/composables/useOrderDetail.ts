@@ -9,6 +9,7 @@ import type {
   OperatorOrderProjection,
   OrderDetailResponse,
 } from "~/types/orders";
+import type { Action } from "~/generated/ordersContract";
 
 export function useOrderDetail(orderRef: string) {
   const intentions = useOrderIntention();
@@ -100,14 +101,24 @@ export function useOrderDetail(orderRef: string) {
   //
   // Guardamos a tentativa para REENVIAR o mesmo ato com a autorização, em vez de
   // pedir ao gerente que refaça o gesto (e escolha o motivo de novo).
-  const managerChallenge = ref<{ code: string; message: string } | null>(null);
-  let lastAttempt: { action: string; body?: Record<string, unknown> } | null =
-    null;
+  const managerChallenge = ref<{
+    code: string;
+    message: string;
+    /** O ato que pediu a assinatura: o diálogo do PIN nomeia o que o gerente assina. */
+    action: string;
+  } | null>(null);
+  let lastAttempt: {
+    action: string;
+    body?: Record<string, unknown>;
+    contract?: Action;
+  } | null = null;
 
   async function act(
     action: string,
     body?: Record<string, unknown>,
     approval?: Record<string, string>,
+    /** A ação que não mora na projeção do detalhe (a devolução vem da prévia dela). */
+    contract?: Action,
   ): Promise<boolean> {
     if (busy.value) return false;
     if (error.value) {
@@ -140,12 +151,13 @@ export function useOrderDetail(orderRef: string) {
           "undo-handoff",
           "undo-ready",
           "ifood-accept-retry",
+          "return",
         ].includes(action)
       ) {
         await intentions.execute(
           orderRef,
           action,
-          order.value?.actions?.find((item) => item.ref === action),
+          contract ?? order.value?.actions?.find((item) => item.ref === action),
           body ?? {},
           approval,
         );
@@ -181,8 +193,9 @@ export function useOrderDetail(orderRef: string) {
       ) {
         // Sem toast: o desafio NÃO é falha, é um passo do fluxo. Um toast
         // vermelho aqui ensina o gerente que o sistema quebrou.
-        lastAttempt = { action, body };
+        lastAttempt = { action, body, contract };
         managerChallenge.value = {
+          action,
           code,
           message: httpErrorMessage(
             error,
@@ -213,7 +226,7 @@ export function useOrderDetail(orderRef: string) {
   /** Reenvia o ato que pediu assinatura, agora com ela. PIN ou crachá. */
   async function authorize(approval: Record<string, string>): Promise<boolean> {
     if (!lastAttempt) return false;
-    return act(lastAttempt.action, lastAttempt.body, approval);
+    return act(lastAttempt.action, lastAttempt.body, approval, lastAttempt.contract);
   }
 
   function dismissManagerChallenge() {
@@ -241,6 +254,12 @@ export function useOrderDetail(orderRef: string) {
     act("reject", { reason_key: choice.reasonKey, internal_note: choice.internalNote });
   const cancel = (choice: { reasonKey: string; internalNote: string }) =>
     act("cancel", { reason_key: choice.reasonKey, internal_note: choice.internalNote });
+  // Devolução depois da venda (WP-G12): itens, quantidade e motivo, com a ação
+  // da prévia (`return/preview/`). O PIN do gerente vem pelo desafio de sempre.
+  const returnOrder = (
+    choice: { items: { line_id: string; qty: string }[]; reason: string },
+    contract: Action,
+  ) => act("return", { items: choice.items, reason: choice.reason }, undefined, contract);
   const settleCash = (
     amount: string,
     changeBack?: string,
@@ -411,6 +430,7 @@ export function useOrderDetail(orderRef: string) {
     advance,
     reject,
     cancel,
+    returnOrder,
     settleCash,
     equipmentBack,
     courierBack,

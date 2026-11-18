@@ -20,6 +20,7 @@ import type {
   ReceiptLineDifference,
   ReceiptLinePreview,
   ReceiptPreferredCostChange,
+  ReceiptPriceCheck,
   ReceiptLineRow,
   ReceiptLineStatus,
   ReceiptLineStatusBadge,
@@ -233,6 +234,51 @@ export function receiptPreferredCostChanges(
   supplierRef: string,
   conversions: MaterialConversion[],
 ): ReceiptPreferredCostChange[] {
+  return receiptPriceComparisons(previews, costs, supplierRef, conversions).flatMap(({ preview, cost, incomingQ }) =>
+    incomingQ === cost.costQ ? []
+    : [
+        {
+          lineId: preview.line.id,
+          materialName: preview.material.name,
+          unitLabel: pricedUnitLabel(cost, preview.material, conversions),
+          currentQ: cost.costQ,
+          incomingQ,
+          decision: preview.line.preferredCost ?? "",
+        },
+      ],
+  );
+}
+
+/**
+ * Quantos itens desta entrada têm o preço conferido contra o custo preferencial
+ * do fornecedor, e em quantos deles o preço é o mesmo. É a mesma conta de
+ * `receiptPreferredCostChanges`: só entra quem tem esse custo para comparar.
+ */
+export function receiptPriceCheck(
+  previews: ReceiptLinePreview[],
+  costs: SupplierMaterialCost[],
+  supplierRef: string,
+  conversions: MaterialConversion[],
+): ReceiptPriceCheck {
+  const comparisons = receiptPriceComparisons(previews, costs, supplierRef, conversions);
+  return {
+    compared: comparisons.length,
+    same: comparisons.filter(({ cost, incomingQ }) => incomingQ === cost.costQ).length,
+  };
+}
+
+/**
+ * O preço recebido de cada item, levado à unidade de preço do custo
+ * preferencial deste fornecedor (embalagem, ou kg/L sem embalagem; CMP-07),
+ * arredondado ao centavo. A conta é a mesma do servidor. Item sem esse custo
+ * fica de fora: não há com o que comparar.
+ */
+function receiptPriceComparisons(
+  previews: ReceiptLinePreview[],
+  costs: SupplierMaterialCost[],
+  supplierRef: string,
+  conversions: MaterialConversion[],
+): { preview: ReceiptLinePreview; cost: SupplierMaterialCost; incomingQ: number }[] {
   if (!supplierRef) return [];
   return previews.flatMap((preview) => {
     const { line } = preview;
@@ -242,24 +288,33 @@ export function receiptPreferredCostChanges(
       (item) => item.isPreferred && item.materialSku === line.materialSku && item.supplierRef === supplierRef,
     );
     if (!cost) return [];
-    // Na unidade de preço do custo preferencial: a embalagem dele, ou o kg/L de
-    // quem é contado em g/ml (CMP-07).
     const baseQty = purchaseQty * (preview.conversion?.toBaseFactor ?? 1);
     const incomingQ = Math.round(
       (preview.totalCostQ / baseQty) * pricedUnitFactor(preview.material, conversionFor(cost, conversions)),
     );
-    if (incomingQ === cost.costQ) return [];
-    return [
-      {
-        lineId: line.id,
-        materialName: preview.material.name,
-        unitLabel: pricedUnitLabel(cost, preview.material, conversions),
-        currentQ: cost.costQ,
-        incomingQ,
-        decision: line.preferredCost ?? "",
-      },
-    ];
+    return [{ preview, cost, incomingQ }];
   });
+}
+
+/**
+ * O que o sistema conferiu sozinho numa entrada em que tudo bate com a nota.
+ *
+ * Cada frase só existe se foi medida: o número vem da conferência, nunca de um
+ * texto fixo. Hoje só o preço é medido aqui. Que o item foi reconhecido pelo
+ * cadastro do fornecedor e que a embalagem confere com a nota não chegam à tela
+ * como fato (a linha não diz de onde veio o insumo, e o servidor cala a sugestão
+ * de embalagem tanto quando concorda quanto quando a nota não diz nada), e por
+ * isso não são ditos. Lista vazia: o bloco some.
+ */
+export function receiptAutoFacts(priceCheck: ReceiptPriceCheck | null | undefined, lineCount: number): string[] {
+  const facts: string[] = [];
+  if (priceCheck && priceCheck.compared > 0) {
+    const { compared, same } = priceCheck;
+    const base = `Preço igual ao custo preferencial do fornecedor em ${same} de ${compared} ${compared === 1 ? "item" : "itens"}`;
+    const left = lineCount - compared;
+    facts.push(left > 0 ? `${base} (${left} sem custo preferencial para comparar)` : base);
+  }
+  return facts;
 }
 
 export function quotePreview(

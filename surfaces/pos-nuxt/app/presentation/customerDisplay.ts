@@ -20,6 +20,7 @@ import type {
 } from "~/types/customerDisplay";
 import { lineDiscountBadge, lineTotalQ, unitChargedQ } from "~/presentation/lineDiscounts";
 import { formatBRL } from "~/utils/posIntent";
+import { paymentFailed } from "~/presentation/saleResult";
 import { isWeighedLine, lineQtyLabel, lineUnits } from "~/presentation/weighed";
 
 export interface CustomerDisplayInputs {
@@ -58,9 +59,11 @@ export function displayItemView(
 }
 
 /**
- * A fase que o cliente vê. O resultado com PIX ainda não confirmado continua em
- * "payment" (o QR é o que importa na parede); confirmou (ou não era PIX), vira
- * "result" — troco e obrigado.
+ * A fase que o cliente vê. Cobrança falhada (a mesma regra do título do
+ * operador, `paymentFailed`) vira "payment_failed": a venda existe, o dinheiro
+ * não entrou, e a parede não pode agradecer por ele. O resultado com PIX ainda
+ * não confirmado continua em "payment" (o QR é o que importa na parede);
+ * confirmou (ou não era PIX), vira "result" — troco e obrigado.
  */
 export function displayPhase(inputs: {
   checkoutMode: boolean;
@@ -70,6 +73,7 @@ export function displayPhase(inputs: {
 }): CustomerDisplayPhase {
   if (inputs.result) {
     const proof = inputs.result.payment;
+    if (paymentFailed(proof)) return "payment_failed";
     const pixPending = Boolean(proof?.isPix && proof?.hasProof) && inputs.pixStatus !== "paid";
     return pixPending ? "payment" : "result";
   }
@@ -147,6 +151,13 @@ export function buildCustomerDisplaySnapshot(
       qrCodeSrc: proof?.qrCodeSrc || "",
       status: inputs.pixStatus === "expired" ? "expired" : "waiting",
     };
+    return snapshot;
+  }
+
+  if (phase === "payment_failed" && inputs.result) {
+    // Só o total: o motivo da falha é conversa do atendente, não da parede.
+    snapshot.totalDisplay = inputs.result.payment?.amountDisplay || inputs.result.receipt.totalDisplay;
+    snapshot.orderRef = inputs.result.receipt.orderRef;
     return snapshot;
   }
 
