@@ -10372,6 +10372,51 @@
       ]
     },
     {
+      "path": "shopman/shop/services/ifood_review.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "COLLECT_MAX_PAGES",
+            "DEFAULT_PAGE_SIZE",
+            "IFOOD_MAX_PAGE_SIZE",
+            "MAX_PAGE_SIZE_FORWARDED",
+            "REPLYABLE_STATUS",
+            "REPLY_MAX_CHARS",
+            "REPLY_MIN_CHARS",
+            "ReviewAPIError",
+            "ReviewPage",
+            "ReviewUnavailable",
+            "STATUSES",
+            "_KNOWN_MESSAGES",
+            "_OPERATOR_COPY",
+            "_RETRYABLE_STATUS",
+            "_REVIEW_PATH",
+            "_base",
+            "_iso",
+            "_json",
+            "_raise_for",
+            "collect_reviews",
+            "enabled",
+            "get_review",
+            "ifood_error_message",
+            "list_reviews",
+            "logger",
+            "reply",
+            "summary"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/ifood_evidence.py",
       "touchpoints": [
         "service"
