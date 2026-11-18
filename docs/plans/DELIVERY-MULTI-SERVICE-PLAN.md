@@ -284,6 +284,8 @@ Sem o link (sem celular, sem bateria), o Gestor tem os mesmos gestos no cartão 
 
 - Primeiro nome, endereço e instruções. **Sem CPF, sem e-mail, sem itens com preço** (só as
   sacolas). Telefone só como botão "Ligar para o cliente" enquanto a parada está aberta.
+- O link só se prende a um celular depois do toque "Sou o Diego, abrir" (dono, 17/11): abrir
+  não prende nem mostra endereço. Preso no celular errado, o balcão solta e o próximo confirma.
 - O link é um token aleatório de 32 bytes por corrida, **vale até a corrida fechar, mais 2 h**,
   e morre no cancelamento ou na troca de entregador. Depois disso: "Esta corrida terminou."
 - `noindex`, `no-store`, sem cookie, sem analytics. Cada abertura do link grava `opened_at`.
@@ -379,6 +381,7 @@ Pedido B12" (um só). No Gestor e na sacola continua "Corrida A". Telas: "Pegue 
 |---|---|---|
 | Tela inicial (sem corrida) | Não há corrida | nenhum |
 | A chamada chega | O balcão enviou; primeira vez pelo link no WhatsApp | nenhum |
+| Confirmar o link | Só na primeira abertura de um link ainda não confirmado: "Esta rota é do Diego." e "Sou o Diego, abrir". Nada da rota aparece antes; quem abre por curiosidade ou sem querer (um operador da casa) não prende o link (dono, 17/11) | Sou o Diego, abrir (uma vez) |
 | No balcão | A 60 m da loja; cada pedido diz se está pronto; "Dica" de arrumação da bag | Saí da loja |
 | Esperando um pedido | Algum pedido não ficou pronto; o botão só aparece com tudo pronto | nenhum |
 | Dirigindo | Depois de Saí e de cada entrega; endereço em destaque, manobra no topo, "Abrir no Waze" | nenhum |

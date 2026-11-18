@@ -29,6 +29,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
+  // Quantas células têm alteração não salva: o pai soma isso ao rascunho da página
+  // (saída de rota e beforeunload perguntam antes de perder o Tabelão).
+  "update:dirty": [count: number];
   save: [cells: BulkCell[]];
   archive: [
     products: { sku: string; base_is_active: boolean }[],
@@ -37,6 +40,7 @@ const emit = defineEmits<{
 }>();
 
 const confirmArchive = useConfirm();
+const confirmDiscard = useConfirm();
 
 const edit = useGridEdit<string | boolean>();
 const pendingCells = ref<BulkCell[]>([]);
@@ -59,13 +63,78 @@ const archiveReceiptDescription = computed(() => {
   return lines.join(" · ");
 });
 
+// Fechar só acontece depois da pergunta (ou do lote salvo), então o rascunho que
+// sobra ao fechar já foi descartado pelo gerente: limpa na ida e na volta.
 watch(
   () => props.open,
   (open) => {
-    if (open) edit.clear();
+    edit.clear();
     if (open) rowSelection.value = {};
   },
 );
+
+watch(
+  () => edit.dirty.value,
+  (count) => emit("update:dirty", count),
+  { immediate: true },
+);
+
+const changesLabel = (count: number) =>
+  `${count} ${count === 1 ? "alteração" : "alterações"}`;
+
+async function confirmDiscardEdits(title: string): Promise<boolean> {
+  const count = edit.dirty.value;
+  if (!count) return true;
+  return confirmDiscard({
+    title,
+    description:
+      "O que você mudou aqui em preço e publicação se perde. O que já foi salvo continua salvo.",
+    confirmLabel: `Descartar ${changesLabel(count)}`,
+    cancelLabel: "Continuar editando",
+  });
+}
+
+// Esc, toque fora e o X passam por aqui: com alteração não salva, pergunta antes.
+async function onOpenChange(value: boolean) {
+  if (value) return emit("update:open", true);
+  const count = edit.dirty.value;
+  if (
+    !(await confirmDiscardEdits(
+      `Fechar o Tabelão sem salvar ${changesLabel(count)}?`,
+    ))
+  )
+    return;
+  emit("update:open", false);
+}
+
+async function discardEdits() {
+  const count = edit.dirty.value;
+  if (!(await confirmDiscardEdits(`Descartar ${changesLabel(count)} do Tabelão?`)))
+    return;
+  edit.clear();
+}
+
+const FIELD_LABELS = {
+  price: "Preço",
+  published: "Exibido",
+  sellable: "Vendável",
+} as const;
+
+// Campos com rascunho nesta célula (produto × canal), na ordem da tela.
+function changedFields(sku: string, surfaceRef: string): string[] {
+  const draft = edit.draft.value;
+  return (Object.keys(FIELD_LABELS) as (keyof typeof FIELD_LABELS)[])
+    .filter((field) => editKey(sku, surfaceRef, field) in draft)
+    .map((field) => FIELD_LABELS[field]);
+}
+
+function changedDescription(sku: string, surfaceRef: string): string {
+  const fields = changedFields(sku, surfaceRef);
+  return fields.length ? `Alterado e ainda não salvo: ${fields.join(", ")}.` : "";
+}
+
+const changedId = (sku: string, surfaceRef: string) =>
+  `bulk-changed-${columnId(`${sku}_${surfaceRef}`)}`;
 
 const centsToText = (q: number) => (q / 100).toFixed(2).replace(".", ",");
 
@@ -306,7 +375,7 @@ function undoArchive() {
     :description="'Edite preço e publicação por canal. Cole uma coluna de preços, desfaça e salve tudo numa ida.'"
     side="right"
     class="sm:max-w-4xl"
-    @update:open="(value: boolean) => emit('update:open', value)"
+    @update:open="onOpenChange"
   >
     <template #body>
       <div class="flex flex-col gap-3">
@@ -361,12 +430,31 @@ function undoArchive() {
             #[`${columnId(surface.ref)}-cell`]="{ row: tableRow }"
           >
             <template v-for="row in [tableRow.original]" :key="row.sku">
-              <div class="flex flex-col gap-1">
+              <div
+                class="-m-1 flex flex-col gap-1 rounded-md p-1"
+                :class="changedFields(row.sku, surface.ref).length ? 'bg-warning/10' : ''"
+                :data-cell-changed="
+                  changedFields(row.sku, surface.ref).length
+                    ? `${row.sku}|${surface.ref}`
+                    : undefined
+                "
+              >
+                <span
+                  v-if="changedFields(row.sku, surface.ref).length"
+                  :id="changedId(row.sku, surface.ref)"
+                  class="sr-only"
+                  >{{ changedDescription(row.sku, surface.ref) }}</span
+                >
                 <NuxtInput
                   :model-value="priceText(row, surface.ref)"
                   inputmode="decimal"
                   :aria-label="`Preço de ${row.name} em ${surface.name}`"
                   :aria-invalid="Boolean(cellFailure(row.sku, surface.ref))"
+                  :aria-describedby="
+                    changedFields(row.sku, surface.ref).length
+                      ? changedId(row.sku, surface.ref)
+                      : undefined
+                  "
                   :data-cell="`${row.sku}|${surface.ref}|price`"
                   @update:model-value="
                     (value: string | number) =>
@@ -462,7 +550,8 @@ function undoArchive() {
             variant="outline"
             label="Descartar"
             :disabled="!edit.dirty.value"
-            @click="edit.clear()"
+            data-bulk-discard
+            @click="discardEdits"
           />
           <NuxtButton
             :label="`Salvar ${edit.dirty.value} ${edit.dirty.value === 1 ? 'alteração' : 'alterações'}`"

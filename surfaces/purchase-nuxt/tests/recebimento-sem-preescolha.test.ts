@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Material, MaterialConversion, ReceiptLine, SupplierMaterialCost } from "~/types/purchase";
-import { receiptLinePreview, receiptPreferredCostChanges } from "~/presentation/purchase";
+import { receiptLinePreview, receiptPreferredCostChanges, receiptPriceCheck } from "~/presentation/purchase";
 
 // Beta test 05/11/2026, achado CMP-06; decisão do dono em 06/11.
 // (a) No recebimento, fornecedor e item nascem vazios: o primeiro da ordem
@@ -132,5 +132,28 @@ describe("preço diferente do custo preferencial pergunta antes (CMP-06 b)", () 
     expect(page).toContain("Atualizar para ${formatMoney(change.incomingQ)}");
     expect(page).toContain("Manter ${formatMoney(change.currentQ)}");
     expect(page).toMatch(/:disabled="!preferredCostAnswered"/);
+  });
+});
+
+// DEV-2026-032: "Preços dentro do último pago" era frase fixa. O que se mede é o
+// preço contra o custo preferencial deste fornecedor, pela mesma conta do CMP-06.
+describe("o preço conferido conta só quem tem custo para comparar", () => {
+  function check(lines: ReceiptLine[], costs = [preferido], supplierRef = "moinho") {
+    const previews = lines
+      .map((item) => receiptLinePreview(item, "manual", [farinha], conversions))
+      .filter((preview) => preview !== null);
+    return receiptPriceCheck(previews, costs, supplierRef, conversions);
+  }
+
+  it("mesmo preço e preço diferente entram na conta; sem custo, fica de fora", () => {
+    const igual = line({ id: "a" });
+    const diferente = line({ id: "b", costInput: "190,00" });
+    const semItem = line({ id: "c", materialSku: "" });
+    expect(check([igual, diferente, semItem])).toEqual({ compared: 2, same: 1 });
+  });
+
+  it("sem custo preferencial deste fornecedor, nada foi comparado", () => {
+    expect(check([line()], [])).toEqual({ compared: 0, same: 0 });
+    expect(check([line()], [preferido], "outro")).toEqual({ compared: 0, same: 0 });
   });
 });

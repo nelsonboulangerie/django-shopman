@@ -214,18 +214,23 @@ function close() {
   void router.replace({ query: { ...route.query, ride: undefined } });
 }
 const busyRide = ref("");
-async function rideAction(ride: DeliveryRideProjection, operation: "courier-back" | "courier-cancel") {
+async function rideAction(ride: DeliveryRideProjection, operation: "courier-back" | "courier-cancel", reasonId?: number) {
   const action = operation === "courier-back" ? ride.back_action : ride.cancel_action;
   busyRide.value = ride.key;
   try {
-    await intentions.execute(ride.lead_ref, operation, action ?? undefined, {});
-    useSonner.success(operation === "courier-back" ? "Saída fechada." : "Cancelamento pedido à TaOn.");
+    // Cancelar só chega aqui pela confirmação do detalhe (`CourierCancelConfirm`);
+    // depois do aceite ela já traz o motivo, que vai à TaOn como `reason_id`.
+    await intentions.execute(ride.lead_ref, operation, action ?? undefined, reasonId ? { reason_id: reasonId } : {});
+    useSonner.success(operation === "courier-back" ? "Saída fechada." : "Pedido de cancelamento enviado à TaOn.");
   } catch (err) {
     useSonner.error(httpErrorMessage(err, "Não foi possível. Atualize e tente de novo."));
   } finally {
     busyRide.value = "";
     await refresh();
   }
+}
+function cancelOpenRide(reasonId?: number) {
+  if (openRide.value) void rideAction(openRide.value, "courier-cancel", reasonId);
 }
 
 // ── mapa ────────────────────────────────────────────────────────────────────
@@ -421,7 +426,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
           :busy="busyRide === openRide.key"
           @close="close"
           @back="rideAction(openRide, 'courier-back')"
-          @cancel="rideAction(openRide, 'courier-cancel')"
+          @cancel="cancelOpenRide"
         />
       </template>
     </NuxtSlideover>
