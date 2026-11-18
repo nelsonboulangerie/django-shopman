@@ -82,6 +82,11 @@ REORDER_RATE_LIMIT_RETRY_SECONDS = 60
 COUPON_RATE_LIMIT_RETRY_SECONDS = 60
 
 
+# Cabeçalho da semente do BFF (`server/utils/djangoProxy.ts`): pede à leitura da
+# sacola que garanta a sessão do Django antes da primeira escrita.
+SESSION_SEED_HEADER = "X-Shopman-Session-Seed"
+
+
 def _unit_count_label(qty: int) -> str:
     unit_word = "unidade disponível" if qty == 1 else "unidades disponíveis"
     return f"{qty} {unit_word}"
@@ -658,15 +663,26 @@ class StorefrontCartView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/cart/
 
     É a ÚNICA leitura que ainda entrega o ``csrftoken``, e de propósito: quem vai
-    mutar e ainda não tem o token (o ``useShopmanCsrfHeaders`` do navegador e o
-    ``ensureDjangoCsrfCookie`` do BFF) busca-o aqui. As demais leituras deixaram
-    de carimbar o cookie, que só serve para mutação.
+    mutar e ainda não tem o token (o ``seedDjangoSession`` do BFF) busca-o aqui.
+    As demais leituras deixaram de carimbar o cookie, que só serve para mutação.
+
+    Com ``X-Shopman-Session-Seed: 1`` (só a semente do BFF manda) a leitura
+    também garante a sessão do Django. Sem isso, a sessão nascia na primeira
+    escrita, e se o BFF desistisse dela pelo prazo o ``sessionid`` se perdia
+    com a resposta: a nova tentativa abria outra sessão e outra reserva, e a
+    primeira ficava segurando o item (laudo da loja, P2-06). Com a sessão
+    garantida antes, a nova tentativa cai na mesma sacola. A leitura comum da
+    sacola não cria sessão: quem só olha segue anônimo e servido pela borda.
     """
 
     permission_classes = [AllowAny]
     authentication_classes = []
 
     def get(self, request):
+        if request.headers.get(SESSION_SEED_HEADER) == "1" and not request.session.session_key:
+            # ``create()`` grava a linha e marca a sessão como modificada, então o
+            # SessionMiddleware devolve o ``sessionid`` nesta mesma resposta.
+            request.session.create()
         return Response({"cart": _cart_payload(request)})
 
 
