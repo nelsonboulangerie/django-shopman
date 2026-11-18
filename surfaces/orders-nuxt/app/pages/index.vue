@@ -28,6 +28,7 @@ import {
   resolveShortcut,
   rideChoices,
   rowsToCsv,
+  schedulePromise,
   SORT_OPTIONS,
   splitRef,
   statusTone,
@@ -2046,6 +2047,17 @@ function compactClear() {
                   row.original.card.customer_name || "Sem cliente"
                 }}</span>
               </span>
+              <!-- O combinado, com as palavras do cartão (WP-G01). -->
+              <NuxtBadge
+                v-if="schedulePromise(row.original.card)"
+                class="mt-1 max-w-full self-start"
+                :color="schedulePromise(row.original.card)!.color"
+                :icon="schedulePromise(row.original.card)!.icon"
+                :data-table-promise="schedulePromise(row.original.card)!.state"
+              >
+                <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
+                <span class="whitespace-normal text-start">{{ schedulePromise(row.original.card)!.label }}</span>
+              </NuxtBadge>
             </div>
           </template>
           <template #stage-cell="{ row }">

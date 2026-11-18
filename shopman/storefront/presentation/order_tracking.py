@@ -518,8 +518,9 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
 
 
 def _list_subtotal_q(data: TrackingData) -> int:
-    """Os itens pelo preço de etiqueta: o que vem antes dos descontos na conta."""
-    return sum(item.line_total_q for item in data.items) + sum(line.amount_q for line in data.discount_lines)
+    """A soma das linhas da conta (com a promoção já abatida): o que vem antes
+    do cupom, dos pontos e da entrega."""
+    return sum(item.bill_line_total_q or item.line_total_q for item in data.items)
 
 
 def _schedule_display(data: TrackingData, when_display: str | None) -> str | None:
@@ -1556,8 +1557,9 @@ def _present_items(data: TrackingData) -> tuple[OrderItemProjection, ...]:
             sku=item.sku,
             name=item.name,
             qty=item.qty,
-            unit_price_display=f"R$ {format_money(item.unit_price_q)}",
-            total_display=f"R$ {format_money(item.line_total_q)}",
+            unit_price_display=f"R$ {format_money(item.bill_unit_price_q or item.unit_price_q)}",
+            total_display=f"R$ {format_money(item.bill_line_total_q or item.line_total_q)}",
+            full_total_display=f"R$ {format_money(item.full_line_total_q)}" if item.full_line_total_q else "",
         )
         for item in data.items
     )

@@ -14,7 +14,7 @@ import { getRequestURL, setResponseHeader, type H3Event } from 'h3'
 // cai junto. O robots.txt fica só com o que não é página (`/api/`).
 
 /** Rotas que existem para quem compra, não para quem busca. */
-export const PRIVATE_ROUTE_PREFIXES = ['/conta', '/finalizar', '/sacola', '/entrar', '/pedido'] as const
+export const PRIVATE_ROUTE_PREFIXES = ['/conta', '/finalizar', '/sacola', '/entrar', '/pedido', '/rota'] as const
 
 /** Caminhos que o crawler não deve nem ler: não são páginas. */
 export const CRAWL_DISALLOWED_PREFIXES = ['/api/'] as const

@@ -81,6 +81,12 @@ from .feeds import (
     FeedSwitchView,
 )
 from .hub import HubView
+from .ifood_reviews import (
+    IFoodReviewDetailView,
+    IFoodReviewListView,
+    IFoodReviewReplyView,
+    IFoodReviewSummaryView,
+)
 from .ifood_store import (
     IFoodInterruptionDetailView,
     IFoodInterruptionsView,
@@ -800,6 +806,15 @@ urlpatterns = [
         "ifood/opening-hours/write/",
         IFoodOpeningHoursWriteView.as_view(),
         name="api-backstage-ifood-opening-hours-write",
+    ),
+    # Avaliações dos clientes no iFood (módulo Review). `summary/` ANTES de `<id>/`.
+    path("ifood/reviews/", IFoodReviewListView.as_view(), name="api-backstage-ifood-reviews"),
+    path("ifood/reviews/summary/", IFoodReviewSummaryView.as_view(), name="api-backstage-ifood-review-summary"),
+    path("ifood/reviews/<str:review_id>/", IFoodReviewDetailView.as_view(), name="api-backstage-ifood-review"),
+    path(
+        "ifood/reviews/<str:review_id>/reply/",
+        IFoodReviewReplyView.as_view(),
+        name="api-backstage-ifood-review-reply",
     ),
     # Catalog matrix (produto × superfície)
     path(

@@ -1324,7 +1324,8 @@
       ],
       "domains": [
         "offerman",
-        "orderman"
+        "orderman",
+        "stockman"
       ],
       "ports": [
         "shopman.offerman.protocols.projection"

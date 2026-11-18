@@ -40,6 +40,7 @@
       "is_paused": false,
       "name": "Bolo do Contrato",
       "option_groups": [],
+      "promise": null,
       "qty_in_cart": 0,
       "quote": {
         "adjustments": [],
@@ -82,6 +83,13 @@
       "is_paused": false,
       "name": "Croissant do Contrato",
       "option_groups": [],
+      "promise": {
+        "date": "<today>",
+        "day_label": "hoje",
+        "kind": "ready",
+        "ready_at": "10:30",
+        "text": "Pronto agora"
+      },
       "qty_in_cart": 0,
       "quote": {
         "adjustments": [],
@@ -124,6 +132,13 @@
       "is_paused": false,
       "name": "Pão do Contrato",
       "option_groups": [],
+      "promise": {
+        "date": "<today>",
+        "day_label": "hoje",
+        "kind": "ready",
+        "ready_at": "10:30",
+        "text": "Pronto agora"
+      },
       "qty_in_cart": 0,
       "quote": {
         "adjustments": [],
@@ -166,6 +181,7 @@
       "is_paused": false,
       "name": "Sonho do Contrato",
       "option_groups": [],
+      "promise": null,
       "qty_in_cart": 0,
       "quote": {
         "adjustments": [],

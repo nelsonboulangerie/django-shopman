@@ -27,6 +27,7 @@ from shopman.shop.policies.exclusive_collections import CollectionAccess
 from shopman.shop.projections import catalog_context
 from shopman.shop.projections.copy import build_copy
 from shopman.shop.projections.pricing_quote import PriceQuoteProjection
+from shopman.shop.projections.ready_promise import read_promise_facts
 from shopman.shop.projections.storefront_context import (
     popular_skus,
     session_pricing_hints,
@@ -38,6 +39,7 @@ from shopman.shop.projections.types import (
 from shopman.storefront.identity import customer_pricing_hints
 from shopman.storefront.presentation.dietary import dietary_warnings as _dietary_warnings
 from shopman.storefront.presentation.icons import collection_icon
+from shopman.storefront.presentation.promise import PromiseProjection, promise_for
 from shopman.storefront.presentation.status import availability_label
 
 if TYPE_CHECKING:
@@ -142,6 +144,11 @@ class CatalogItemProjection:
     # ``[{ref, label, min, max, options: [{ref, label, price_q, available}]}]``.
     # Vazio = o item entra na sacola direto, como sempre.
     option_groups: tuple[dict, ...] = field(default_factory=tuple)
+
+    # Quando fica pronto, já escrito pelo servidor (``presentation/promise``):
+    # pronto, fornada ou encomenda, o dia, a hora e a frase. ``None`` quando não
+    # há promessa (indisponível, pausado, ou sem dado para afirmar um dia).
+    promise: PromiseProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -596,6 +603,11 @@ def _build_items(
     # cards: resolvido uma vez, e não uma vez por card.
     availability_copy = build_copy("AVAILABILITY")
 
+    # A promessa de quando: os fatos em lote, a mesma leitura de estoque (memo
+    # do request) e a mesma grade que o checkout usa.
+    with catalog_stage("availability"):
+        promise_facts = read_promise_facts(skus, channel_ref=channel_ref, own_holds=own_holds)
+
     result: list[CatalogItemProjection] = []
     for p in products:
         base_q = price_map[p.sku] if p.sku in price_map else p.base_price_q
@@ -676,6 +688,12 @@ def _build_items(
                 choice_group=catalog_context.choice_group(p) or None,
                 choice_group_label=catalog_context.choice_group_label(p) or None,
                 option_groups=tuple(catalog_context.option_groups(p)),
+                promise=promise_for(
+                    p.sku,
+                    promise_facts,
+                    orderable=can_add,
+                    made_to_order=bool(meta.get("made_to_order")),
+                ),
             ),
         )
     return result

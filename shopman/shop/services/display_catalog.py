@@ -72,6 +72,12 @@ class DisplayItem:
     #: Ocultado aqui ou no produto: fica na plataforma, fora de todos os destinos.
     hidden: bool
     additional_image_links: tuple[str, ...] = ()
+    #: Em quantos dias, a contar de hoje, a casa entrega o item na loja: 0 = hoje,
+    #: 1 = amanhã. É o dia da promessa da Loja (``projections/ready_promise``), o
+    #: mesmo que a página do produto diz. ``None``: não há promessa (indisponível,
+    #: prontidão que não se apurou, nenhum dia com horário), e o Google não recebe
+    #: retirada para o item.
+    ready_in_days: int | None = None
 
 
 @dataclass(frozen=True)
@@ -190,6 +196,7 @@ def display_items(ref: str, *, skus: set[str] | None = None) -> list[DisplayItem
     """Os itens do canal com a decisão tomada. ``skus`` limita a conta a esses SKUs."""
     from shopman.offerman import get_social_attributes
 
+    from shopman.shop.projections.ready_promise import read_promise_facts, ready_window
     from shopman.shop.services import external_availability
     from shopman.shop.services.channel_switch import effective_active
     from shopman.shop.services.display_prices import resolve_prices
@@ -205,6 +212,10 @@ def display_items(ref: str, *, skus: set[str] | None = None) -> list[DisplayItem
     pairs = [(p, c) for p, c in _composition(channel) if skus is None or p.sku in skus]
     # Preço de todos de uma vez: uma consulta para o lote, não uma por item.
     prices = resolve_prices(channel, [product for product, _coll in pairs])
+    # Quando fica pronto, de todos de uma vez, no canal onde quem clicou compra:
+    # a mesma leitura que a página do produto faz.
+    stock_ref = external_availability.stock_channel_ref(channel.ref)
+    promise_facts = read_promise_facts([product.sku for product, _coll in pairs], channel_ref=stock_ref)
 
     items: list[DisplayItem] = []
     for product, coll in pairs:
@@ -226,6 +237,8 @@ def display_items(ref: str, *, skus: set[str] | None = None) -> list[DisplayItem
             and external_availability.in_stock(product.sku, channel_ref=channel.ref)
         )
         metadata = product.metadata if isinstance(product.metadata, dict) else {}
+        window = ready_window(product.sku, promise_facts, orderable=bool(available))
+        ready_in_days = (window.day - promise_facts.today).days if window is not None else None
         gallery = metadata.get("gallery") or []
         extra = tuple(
             str(url) for url in gallery if url and str(url) != product.image_url
@@ -247,6 +260,7 @@ def display_items(ref: str, *, skus: set[str] | None = None) -> list[DisplayItem
             available=bool(available),
             hidden=is_hidden,
             additional_image_links=extra,
+            ready_in_days=ready_in_days,
         ))
     return items
 

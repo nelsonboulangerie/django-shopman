@@ -104,8 +104,42 @@ function matrix(kind) {
       pwa_browser: Boolean(surface.capabilities?.pwaBrowser),
       browser_engines: surface.browserEngines ?? "chromium",
       browser_with_deps: Boolean(surface.browserWithDeps),
-    }));
+    }))
+    .map((entry) => (kind === "quality" ? scoped(entry) : entry));
   process.stdout.write(JSON.stringify({ include }));
+}
+
+// Escopo da CI (docs/reference/ci-escopo.md). A matriz `quality` sai SEMPRE com
+// todas as superfícies: o nome de cada app é check obrigatório do `main`, e app
+// que some da matriz nunca reporta e trava o PR. O que muda é o que cada entrada
+// faz. No pull_request (CI_HEAVY=false) roda só o leve (unit, component, lint,
+// typecheck, em Linux) e só nos apps que o PR tocou (CI_SURFACES, lista JSON ou `all`); o
+// resto sai com `skip`, verde em segundos e no runner Linux. Navegador, visual,
+// geometria, a11y, segurança e catálogo rodam na fila (merge_group), sem filtro.
+// Sem as variáveis (rodada local, push, fila) a matriz é a de sempre.
+function scoped(entry) {
+  const heavy = process.env.CI_HEAVY !== "false";
+  const raw = process.env.CI_SURFACES || "all";
+  const wanted = raw === "all" ? null : new Set(JSON.parse(raw));
+  if (heavy && !wanted) return { ...entry, skip: false };
+  const light = {
+    ...entry,
+    skip: false,
+    // O macOS só existe pelas baselines visuais e pelo WebKit; unit, lint e
+    // typecheck não dependem dele, e o minuto de macOS custa dez de Linux.
+    runner: "ubuntu-latest",
+    python_mock: false,
+    catalog: false,
+    visual: false,
+    geometry: false,
+    browser: false,
+    browser_suite: false,
+    a11y: false,
+    security: false,
+  };
+  const out = heavy ? { ...entry, skip: false } : light;
+  if (wanted && !wanted.has(entry.dir)) return { ...out, skip: true, component: false, runner: "ubuntu-latest" };
+  return out;
 }
 
 function run(id, phase) {

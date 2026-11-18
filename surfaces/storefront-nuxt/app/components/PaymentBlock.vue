@@ -85,6 +85,11 @@ async function copyPix () {
 }
 
 onBeforeUnmount(() => { if (copiedTimer) clearTimeout(copiedTimer) })
+
+// QR recolhido no celular (WP-L07). Só recolhe quando há código para copiar:
+// sem copia-e-cola, o QR é o único caminho e fica à vista em qualquer largura.
+const qrAberto = ref(false)
+const qrRecolhido = computed(() => Boolean(props.promise.pix_copy_paste) && !qrAberto.value)
 </script>
 
 <template>
@@ -119,18 +124,24 @@ onBeforeUnmount(() => { if (copiedTimer) clearTimeout(copiedTimer) })
         <p class="shop-meta text-center">{{ copy.pix_pending_note }}</p>
       </div>
 
-      <!-- Pix com código: QR + copia-e-cola. O countdown do prazo já é mostrado
-           no painel de status (promise.deadline_at). -->
-      <div v-if="hasPixCode" class="shop-stack-block">
-        <div v-if="promise.pix_qr_code" class="flex flex-col items-center gap-3">
-          <div class="rounded-lg border bg-white p-4">
-            <img :src="promise.pix_qr_code" alt="QR Code Pix" class="size-48 max-w-full" />
-          </div>
-          <p class="shop-muted text-center">{{ copy.pix_instruction }}</p>
-        </div>
-
-        <div v-if="promise.pix_copy_paste" class="shop-stack-tight">
+      <!-- Pix com código (WP-L07, P1-09). O countdown do prazo já é mostrado no
+           painel de status (promise.deadline_at), logo acima deste cartão.
+           Celular: o QR não serve no próprio aparelho, então o primeiro gesto é
+           copiar o código; o QR fica recolhido em "Mostrar QR Code". Computador
+           (md+): o QR vem primeiro e sempre à vista, para ler com o celular.
+           A ordem é CSS (md:order-first), não JS: o SSR já sai certo nas duas. -->
+      <div v-if="hasPixCode" class="flex flex-col gap-4" data-pix-block>
+        <div v-if="promise.pix_copy_paste" class="flex flex-col gap-2" data-pix-copy>
           <p class="shop-meta">{{ copy.pix_copy_label }}</p>
+          <UiButton
+            size="lg"
+            :icon="copyState === 'copied' ? 'lucide:check' : 'lucide:copy'"
+            class="w-full md:w-auto md:self-start"
+            data-pix-copy-button
+            @click="copyPix"
+          >
+            {{ copyState === 'copied' ? 'Copiado' : copy.pix_copy_btn }}
+          </UiButton>
           <!-- O código inteiro, sempre: é o plano B quando copiar não funciona. -->
           <UiTextarea
             id="pix-copy-paste"
@@ -144,19 +155,36 @@ onBeforeUnmount(() => { if (copiedTimer) clearTimeout(copiedTimer) })
             data-pix-copy-field
             @focus="selectPixCode"
           />
-          <UiButton
-            variant="outline"
-            :icon="copyState === 'copied' ? 'lucide:check' : 'lucide:copy'"
-            class="w-full sm:w-auto sm:self-start"
-            data-pix-copy-button
-            @click="copyPix"
-          >
-            {{ copyState === 'copied' ? 'Copiado' : copy.pix_copy_btn }}
-          </UiButton>
           <p v-if="copyState === 'failed'" class="shop-meta text-foreground" role="status" data-pix-copy-fallback>
             Não deu para copiar por aqui. O código acima já está selecionado: toque e segure nele e escolha Copiar.
           </p>
           <p v-else class="sr-only" role="status">{{ copyState === 'copied' ? copy.pix_copied : '' }}</p>
+        </div>
+
+        <div v-if="promise.pix_qr_code" class="flex flex-col items-center gap-3 md:order-first" data-pix-qr>
+          <UiButton
+            v-if="promise.pix_copy_paste"
+            variant="outline"
+            :icon="qrAberto ? 'lucide:chevron-up' : 'lucide:qr-code'"
+            class="w-full md:hidden"
+            :aria-expanded="qrAberto"
+            aria-controls="pix-qr-code"
+            data-pix-qr-toggle
+            @click="qrAberto = !qrAberto"
+          >
+            {{ qrAberto ? 'Esconder QR Code' : 'Mostrar QR Code' }}
+          </UiButton>
+          <div
+            id="pix-qr-code"
+            :class="qrRecolhido ? 'hidden md:flex' : 'flex'"
+            class="flex-col items-center gap-3"
+            data-pix-qr-content
+          >
+            <div class="rounded-lg border bg-white p-4">
+              <img :src="promise.pix_qr_code" alt="QR Code Pix" class="size-48 max-w-full" />
+            </div>
+            <p class="shop-muted text-center">{{ copy.pix_instruction }}</p>
+          </div>
         </div>
 
         <p class="shop-meta">{{ copy.pix_auto_update_note }}</p>

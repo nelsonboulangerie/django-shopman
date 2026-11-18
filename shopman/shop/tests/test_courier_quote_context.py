@@ -25,7 +25,7 @@ def test_estimate_does_not_adopt_old_destination(monkeypatch):
         other.save(update_fields=["data"])
         return SimpleNamespace(value_q=1250, minutes=15, km=4)
 
-    monkeypatch.setattr(courier, "get_adapter", lambda name: Mock(estimate=estimate))
+    monkeypatch.setattr("shopman.shop.services.delivery_services.get_adapter", lambda name: Mock(estimate=estimate))
     with pytest.raises(OrderStateConflict):
         courier.estimate_for_order(order, store=True)
     order.refresh_from_db()

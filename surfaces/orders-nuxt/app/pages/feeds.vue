@@ -852,6 +852,15 @@ const phoneHeaderActions = computed(() => [
                   variant="outline"
                 />
                 <NuxtButton
+                  v-if="channel.ref === IFOOD_CHANNEL_REF"
+                  :to="`/channels/${IFOOD_CHANNEL_REF}/reviews`"
+                  label="Avaliações"
+                  icon="i-lucide-star"
+                  color="neutral"
+                  variant="outline"
+                  data-ifood-reviews-link
+                />
+                <NuxtButton
                   :to="channel.catalog_path"
                   label="Ver produtos no Catálogo"
                   color="neutral"
