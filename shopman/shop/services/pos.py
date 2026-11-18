@@ -100,7 +100,7 @@ class PosSaleReview:
     #: e quanto esta venda passa ANTES de assinar.
     house_account_limit: dict | None = None
     #: Encomenda acima do plano da data (WP-E2, D-041): por linha, ``{sku, name,
-    #: requested_qty, planned_qty, free_qty, date}``. Vem junto do motivo
+    #: requested_qty, planned_qty, unclaimed_qty, date}``. Vem junto do motivo
     #: ``preorder_over_plan`` para o gerente ver os dois números antes de liberar.
     preorder_over_plan: tuple[dict, ...] = ()
     warnings: tuple[dict, ...] = ()
@@ -3440,7 +3440,7 @@ def _payload_over_plan(payload: dict, *, channel_ref: str | None) -> list[dict]:
 
 
 def over_plan_scope(lines) -> tuple[tuple[str, str, str, str, str], ...]:
-    """A forma canônica do que o gerente liberou: ``(data, sku, pedidas, planejadas, livres)``.
+    """A forma canônica do que o gerente liberou: ``(data, sku, pedidas, planejadas, sem encomenda)``.
 
     Ordenada e com as quantidades normalizadas, para o carimbo e a venda de
     agora se compararem sem depender da ordem das linhas nem de ``200`` × ``200.0``.
@@ -3454,7 +3454,7 @@ def over_plan_scope(lines) -> tuple[tuple[str, str, str, str, str], ...]:
             str(line.get("sku") or ""),
             _scope_qty(line.get("requested_qty")),
             _scope_qty(line.get("planned_qty")),
-            _scope_qty(line.get("free_qty")),
+            _scope_qty(line.get("unclaimed_qty")),
         ))
     return tuple(sorted(canonical))
 
@@ -3732,10 +3732,14 @@ def _over_plan_numbers(lines) -> str:
             day = _date.fromisoformat(str(line.get("date") or "")).strftime("%d/%m")
         except ValueError:
             day = ""
-        planned, free = line.get("planned_qty"), line.get("free_qty")
-        # O livre difere do plano com reservas de outras encomendas (menos) ou com a
-        # vitrine de hoje ainda valendo na data (mais): é contra ele que se mede.
-        extra = f" ({_qty_display(free)} livres)" if _scope_qty(free) != _scope_qty(planned) else ""
+        planned, unclaimed = line.get("planned_qty"), line.get("unclaimed_qty")
+        # O segundo número só quando o próprio lote já tem parte prometida a outra
+        # encomenda: é contra o que sobra dele que se mede (nunca a vitrine de hoje).
+        extra = (
+            f" ({_qty_display(unclaimed)} ainda sem encomenda)"
+            if _scope_qty(unclaimed) != _scope_qty(planned)
+            else ""
+        )
         parts.append(
             f"{line.get('name') or line.get('sku')}: {_qty_display(line.get('requested_qty'))} pedidas, "
             f"{_qty_display(planned)} planejadas{f' para {day}' if day else ''}{extra}"

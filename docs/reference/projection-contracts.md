@@ -93,21 +93,24 @@ existe sem número. Travas: `shopman/backstage/tests/test_hub_queue.py`
 
 ### PDV: o lastro da encomenda (WP-E2, D-041)
 
-A encomenda de outro dia promete o que a fornada da data cobre. Duas chaves, as duas
-apuradas pelo servidor com a régua da reserva (`shop/services/stock.py`,
-`plan_backing_on` e `over_plan_lines`); o PDV só as diz:
+A encomenda de outro dia promete o que o lote planejado PARA a data cobre. Duas chaves,
+apuradas pelo servidor (`shop/services/stock.py`, `plan_backing_on` e `over_plan_lines`,
+sobre `adapters/stock.planned_on_date`: saldos com `target_date == data` e as reservas
+ativas presas a eles); o PDV só as diz:
 
 | Onde | Chave | Forma |
 |---|---|---|
-| `GET /pos/schedule/` (`build_pos_schedule`) | `plan_by_sku` | `{sku: {planned_qty, free_qty}}` para os SKUs do carrinho na data; `{}` hoje |
-| `POST /pos/sale/review/` | `preorder_over_plan` | `[{sku, name, date, requested_qty, planned_qty, free_qty}]`, com o motivo `preorder_over_plan` em `approval_reasons` |
+| `GET /pos/schedule/` (`build_pos_schedule`) | `plan_by_sku` | `{sku: {planned_qty, unclaimed_qty}}` para os SKUs do carrinho com lote planejado na data; `{}` hoje |
+| `POST /pos/sale/review/` | `preorder_over_plan` | `[{sku, name, date, requested_qty, planned_qty, unclaimed_qty}]`, com o motivo `preorder_over_plan` em `approval_reasons` |
 
-`planned_qty` é a fornada planejada para a data, sem descontar reservas; `free_qty`, o
-que a data ainda promete a um pedido novo. Passa do plano quando o pedido é maior que o
-livre: o Validar trava e só o gerente libera. A liberação é o carimbo do WP-E1
-(`issue_sale_approval`), com as linhas em `scope.over_plan`; o fechamento recusa
-carimbo de outros números. SKU sem fornada nem livre na data fica de fora (data sem
-plano, WP-E3). Travas: `shopman/shop/tests/test_pos_encomenda_acima_do_plano_bloqueia.py`,
+`planned_qty` é o lote planejado para a data, sem descontar reservas; `unclaimed_qty`, o que
+desse lote ainda não está preso a outra encomenda (nunca maior que `planned_qty`). **A sobra
+de hoje e a vitrine não entram em nenhum dos dois** (dono, 18/11/2026: "não oferecemos pães
+de um dia para o outro! eles não ficam disponíveis para encomenda!"). Passa do plano quando o
+pedido é maior que `unclaimed_qty`: o Validar trava e só o gerente libera. A liberação é o
+carimbo do WP-E1 (`issue_sale_approval`), com as linhas em `scope.over_plan`; o fechamento
+recusa carimbo de outros números. SKU sem lote planejado na data fica de fora (data sem plano,
+WP-E3). Travas: `shopman/shop/tests/test_pos_encomenda_acima_do_plano_bloqueia.py`,
 `surfaces/pos-nuxt/tests/encomendaAcimaDoPlano.test.ts` e os testes de componente
 `PosPaymentWorkspace.overPlan` e `PosCartPanel.plan`.
 

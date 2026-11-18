@@ -422,50 +422,50 @@ function dayMonth(iso: string): string {
 
 export interface PlanLineFact {
   text: string;
-  /** O pedido desta linha passa do livre da data: o Validar vai pedir o gerente. */
+  /** O pedido desta linha passa do que o lote da data ainda tem sem encomenda:
+   *  o Validar vai pedir o gerente. */
   over: boolean;
 }
 
+/** O que do lote ainda está sem encomenda, nunca maior que o planejado. */
+function unclaimedOf(planned: number, unclaimed: number): number {
+  return Math.min(planned, Math.max(0, unclaimed));
+}
+
 /**
- * O fato da linha da encomenda: "22 planejadas para 17/11". Quando o livre da
- * data é outro (reservas de outras encomendas, ou a vitrine de hoje que ainda vale
- * na data), ele vem junto ("22 planejadas para 17/11, 7 livres"), porque é contra
- * o livre que o pedido é medido. Sem lastro informado, nada.
+ * O fato da linha da encomenda: "22 planejadas para 17/11". Quando outras
+ * encomendas já prometeram parte do lote, o que sobra dele vem junto ("22
+ * planejadas para 17/11, 12 ainda sem encomenda"), porque é contra isso que o
+ * pedido é medido. A régua é só o lote planejado PARA a data: a sobra de hoje não
+ * lastreia encomenda (dono, 18/11/2026). Sem lote planejado informado, nada.
  */
 export function planLineFact(
   qty: number,
-  backing: { planned_qty: number; free_qty: number } | null | undefined,
+  backing: { planned_qty: number; unclaimed_qty: number } | null | undefined,
   dateIso: string,
 ): PlanLineFact | null {
   if (!backing) return null;
   const day = dayMonth(dateIso);
-  if (!day) return null;
   const planned = Number(backing.planned_qty) || 0;
-  const free = Number(backing.free_qty) || 0;
-  let text: string;
-  if (planned > 0) {
-    text = `${qtyText(planned)} planejadas para ${day}`;
-    // O livre difere do plano quando outras encomendas já reservaram (menos) ou
-    // quando a vitrine de hoje ainda vale na data (mais): é contra ele que se mede.
-    if (free !== planned) text += `, ${qtyText(free)} livres`;
-  } else {
-    text = `${qtyText(free)} livres para ${day}`;
-  }
-  return { text, over: (Number(qty) || 0) > free };
+  if (!day || planned <= 0) return null;
+  const unclaimed = unclaimedOf(planned, Number(backing.unclaimed_qty) || 0);
+  let text = `${qtyText(planned)} planejadas para ${day}`;
+  if (unclaimed < planned) text += `, ${qtyText(unclaimed)} ainda sem encomenda`;
+  return { text, over: (Number(qty) || 0) > unclaimed };
 }
 
-/** Os dois números de uma linha acima do plano: "200 pedidas, 22 planejadas para 17/11". */
+/** Os números de uma linha acima do plano: "200 pedidas, 22 planejadas para 17/11". */
 export function overPlanNumbers(line: {
   requested_qty: number;
   planned_qty: number;
-  free_qty: number;
+  unclaimed_qty: number;
   date: string;
 }): string {
   const day = dayMonth(line.date);
   const planned = Number(line.planned_qty) || 0;
-  const free = Number(line.free_qty) || 0;
+  const unclaimed = unclaimedOf(planned, Number(line.unclaimed_qty) || 0);
   const base = `${qtyText(Number(line.requested_qty) || 0)} pedidas, ${qtyText(planned)} planejadas${day ? ` para ${day}` : ""}`;
-  return free !== planned ? `${base} (${qtyText(free)} livres)` : base;
+  return unclaimed < planned ? `${base} (${qtyText(unclaimed)} ainda sem encomenda)` : base;
 }
 
 /**
@@ -473,7 +473,7 @@ export function overPlanNumbers(line: {
  * os dois números. É também o que o gerente lê no diálogo antes de liberar.
  */
 export function overPlanSummary(
-  lines: Array<{ name: string; requested_qty: number; planned_qty: number; free_qty: number; date: string }> | null | undefined,
+  lines: Array<{ name: string; requested_qty: number; planned_qty: number; unclaimed_qty: number; date: string }> | null | undefined,
 ): string {
   return (lines ?? []).map((line) => `${line.name}: ${overPlanNumbers(line)}.`).join(" ");
 }

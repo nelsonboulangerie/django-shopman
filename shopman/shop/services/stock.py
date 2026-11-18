@@ -226,46 +226,40 @@ def _qty_text(value: Decimal) -> str:
     return format(value.normalize(), "f").replace(".", ",")
 
 
-def plan_backing_on(skus, day, *, channel_ref: str | None) -> dict[str, dict[str, Decimal]]:
-    """O lastro de cada SKU numa data de ENCOMENDA: a fornada planejada e o livre.
+def plan_backing_on(skus, day, *, channel_ref: str | None = None) -> dict[str, dict[str, Decimal]]:
+    """O lastro de cada SKU numa data de ENCOMENDA: o lote planejado e o que dele está sem encomenda.
 
-    ``planned_qty`` é a fornada planejada para a data (o plano, sem descontar
-    reserva); ``free_qty``, o que a data ainda promete a um pedido novo (vitrine
-    válida + fornada, já sem as reservas), a mesma régua da reserva. Só entra o
-    SKU com estoque controlado que tem fornada ou livre na data: o que não tem
-    nada (data sem plano) é outra pergunta (WP-E3).
+    ``planned_qty`` é o lote planejado para a data; ``unclaimed_qty``, o que desse
+    lote ainda não está preso a outra encomenda (nunca maior que o planejado). A
+    régua é só o plano DA DATA: a sobra de hoje e a vitrine não lastreiam
+    encomenda (dono, 18/11/2026: "não oferecemos pães de um dia para o outro!").
+    SKU sem lote planejado na data fica de fora (data sem plano, WP-E3).
 
     É o que o PDV mostra na linha da encomenda e o que decide se a encomenda
     passa do plano (WP-E2, D-041). Hoje não é encomenda: devolve vazio.
+    ``channel_ref`` não recorta: o plano da data é da casa, não do canal.
     """
-    from shopman.shop.services import availability
-
     wanted = [sku for sku in dict.fromkeys(skus or ()) if sku]
     if day is None or day <= timezone.localdate() or not wanted:
         return {}
-    planned = get_adapter("stock").planned_on_date(wanted, day)
-    answers = availability.decide_many(
-        [(sku, Decimal("1")) for sku in wanted], channel_ref=channel_ref, target_date=day,
-    )
     backing: dict[str, dict[str, Decimal]] = {}
-    for sku, answer in zip(wanted, answers, strict=True):
-        if not answer.get("is_tracked"):
+    for sku, info in get_adapter("stock").planned_on_date(wanted, day).items():
+        planned = info["planned_qty"]
+        if planned <= 0:
             continue
-        raw = answer.get("available_qty")
-        free = max(Decimal("0"), Decimal(str(raw))) if raw is not None else Decimal("0")
-        plan = planned.get(sku, Decimal("0"))
-        if plan <= 0 and free <= 0:
-            continue
-        backing[sku] = {"planned_qty": plan, "free_qty": free}
+        unclaimed = min(planned, max(Decimal("0"), planned - info["held_qty"]))
+        backing[sku] = {"planned_qty": planned, "unclaimed_qty": unclaimed}
     return backing
 
 
-def over_plan_lines(lines, day, *, channel_ref: str | None) -> list[dict]:
-    """As linhas da encomenda que passam do plano da data, com os dois números.
+def over_plan_lines(lines, day, *, channel_ref: str | None = None) -> list[dict]:
+    """As linhas da encomenda que passam do plano da data, com os números.
 
     ``lines`` é ``[(sku, nome, quantidade)]``; o mesmo SKU em duas linhas soma.
-    Passa do plano quando o pedido é maior que o livre da data. Encomenda acima
-    do plano BLOQUEIA e só o gerente libera, vendo os dois números (D-041).
+    Passa do plano quando o pedido é maior que o que o lote da data ainda tem sem
+    encomenda: duas encomendas de 20 contra 22 planejadas não passam as duas sem
+    gerente. Encomenda acima do plano BLOQUEIA e só o gerente libera, vendo os
+    números (D-041).
     """
     requested: dict[str, Decimal] = {}
     names: dict[str, str] = {}
@@ -278,14 +272,14 @@ def over_plan_lines(lines, day, *, channel_ref: str | None) -> list[dict]:
     over = []
     for sku, qty in requested.items():
         info = backing.get(sku)
-        if info is None or qty <= info["free_qty"]:
+        if info is None or qty <= info["unclaimed_qty"]:
             continue
         over.append({
             "sku": sku,
             "name": names[sku],
             "requested_qty": qty,
             "planned_qty": info["planned_qty"],
-            "free_qty": info["free_qty"],
+            "unclaimed_qty": info["unclaimed_qty"],
             "date": day.isoformat(),
         })
     return over

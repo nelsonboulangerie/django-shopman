@@ -619,7 +619,7 @@ def _over_plan_line_payload(line: dict) -> dict:
         "date": line["date"],
         "requested_qty": _qty_number(line["requested_qty"]),
         "planned_qty": _qty_number(line["planned_qty"]),
-        "free_qty": _qty_number(line["free_qty"]),
+        "unclaimed_qty": _qty_number(line["unclaimed_qty"]),
     }
 
 
@@ -657,7 +657,7 @@ def _pos_sale_review_payload(review) -> dict:
         # para o aviso e o diálogo do gerente dizerem o que ele assina.
         "house_account_limit": review.house_account_limit,
         # Encomenda acima do plano da data (D-041): por linha, o pedido, a fornada
-        # planejada e o livre, para o Validar travar e o gerente ver os números.
+        # planejada e o que dela segue sem encomenda, para o Validar travar e o gerente ver os números.
         "preorder_over_plan": [_over_plan_line_payload(line) for line in review.preorder_over_plan],
         "receipt_channels": list(review.receipt_channels),
         "fiscal_tax_id_requested": review.fiscal_tax_id_requested,

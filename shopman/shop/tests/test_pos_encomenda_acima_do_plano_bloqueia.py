@@ -108,8 +108,9 @@ def test_a_review_publica_pedido_plano_e_livre_e_chama_o_gerente(balcao):  # noq
     assert line["sku"] == "CR"
     assert line["requested_qty"] == Decimal("200")
     assert line["planned_qty"] == Decimal("22")
-    assert line["free_qty"] == Decimal("22")
+    assert line["unclaimed_qty"] == Decimal("22")
     assert line["date"] == _amanha().isoformat()
+    assert set(line) == {"sku", "name", "requested_qty", "planned_qty", "unclaimed_qty", "date"}
 
 
 def test_dentro_do_plano_nao_chama_ninguem(balcao):  # noqa: F811
@@ -122,7 +123,7 @@ def test_dentro_do_plano_nao_chama_ninguem(balcao):  # noqa: F811
     assert "preorder_over_plan" not in review.approval_reasons
 
 
-def test_o_livre_desconta_o_que_outros_ja_reservaram(balcao):  # noqa: F811
+def test_lote_parcialmente_prometido_mede_contra_o_que_sobra_dele(balcao):  # noqa: F811
     """22 planejadas, 15 já prometidas a outra encomenda: 10 passa do plano."""
     operator, shift = balcao
     _plano("22")
@@ -131,7 +132,43 @@ def test_o_livre_desconta_o_que_outros_ja_reservaram(balcao):  # noqa: F811
     [line] = _review(operator, _encomenda(shift, qty=10)).preorder_over_plan
 
     assert line["planned_qty"] == Decimal("22")
-    assert line["free_qty"] == Decimal("7")
+    assert line["unclaimed_qty"] == Decimal("7")
+
+
+def test_a_sobra_de_hoje_nao_lastreia_encomenda_de_amanha(balcao):  # noqa: F811
+    """Dono, 18/11/2026: "não oferecemos pães de um dia para o outro!".
+
+    O pão que sobra hoje vira "Ontem" (D-1, só no balcão) e nunca lastreia
+    encomenda, mesmo com validade que o deixaria vendável amanhã.
+    """
+    operator, shift = balcao
+    _plano("22")
+    product = Product.objects.get(sku="CR")
+    product.shelf_life_days = 1
+    product.save(update_fields=["shelf_life_days"])
+    position = Position.objects.get(ref="loja")
+    stock.receive(quantity=Decimal("22"), sku="CR", position=position, target_date=None, reason="sobra de hoje")
+
+    [line] = _review(operator, _encomenda(shift, qty=30)).preorder_over_plan
+
+    assert line["planned_qty"] == Decimal("22")
+    assert line["unclaimed_qty"] == Decimal("22"), "a vitrine de hoje não entra em nenhum dos números"
+
+
+def test_duas_encomendas_de_20_contra_22_nao_passam_as_duas_sem_gerente(balcao, django_capture_on_commit_callbacks):  # noqa: F811
+    operator, shift = balcao
+    _plano("22")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        _fechar(operator, _encomenda(shift, qty=20, client_request_id="primeira"))
+
+    [line] = _review(operator, _encomenda(shift, qty=20, client_request_id="segunda")).preorder_over_plan
+    assert line["planned_qty"] == Decimal("22")
+    assert line["unclaimed_qty"] == Decimal("2")
+    with pytest.raises(PosIntentError) as exc:
+        _fechar(operator, _encomenda(shift, qty=20, client_request_id="segunda"))
+    assert "20 pedidas, 22 planejadas" in exc.value.message
+    assert "2 ainda sem encomenda" in exc.value.message
 
 
 def test_venda_de_hoje_nao_e_encomenda(balcao):  # noqa: F811
@@ -218,7 +255,7 @@ def test_o_escopo_do_dialogo_vem_do_corpo_do_pedido():
     """O diálogo manda as linhas como a review publicou; o carimbo as normaliza."""
     scope = SaleApprovalScope.from_request({
         "tab_ref": "",
-        "over_plan": [{"sku": "CR", "date": "2026-11-17", "requested_qty": 200.0, "planned_qty": 22, "free_qty": "22"}],
+        "over_plan": [{"sku": "CR", "date": "2026-11-17", "requested_qty": 200.0, "planned_qty": 22, "unclaimed_qty": "22"}],
     })
     assert scope.over_plan == (("2026-11-17", "CR", "200", "22", "22"),)
 
@@ -253,7 +290,21 @@ def test_o_agendamento_devolve_planejado_e_livre_por_sku(balcao):  # noqa: F811
 
     schedule = build_pos_schedule(delivery_date=_amanha().isoformat(), skus=["CR", "BF"])
 
-    assert schedule["plan_by_sku"] == {"CR": {"planned_qty": 22, "free_qty": 17}}
+    assert schedule["plan_by_sku"] == {"CR": {"planned_qty": 22, "unclaimed_qty": 17}}
+
+
+def test_o_agendamento_nao_soma_a_sobra_de_hoje(balcao):  # noqa: F811
+    from shopman.backstage.projections.pos import build_pos_schedule
+
+    _plano("22")
+    product = Product.objects.get(sku="CR")
+    product.shelf_life_days = 1
+    product.save(update_fields=["shelf_life_days"])
+    stock.receive(quantity=Decimal("22"), sku="CR", position=Position.objects.get(ref="loja"), target_date=None, reason="sobra")
+
+    assert build_pos_schedule(delivery_date=_amanha().isoformat(), skus=["CR"])["plan_by_sku"] == {
+        "CR": {"planned_qty": 22, "unclaimed_qty": 22},
+    }
 
 
 def test_o_agendamento_de_hoje_nao_tem_lastro_de_encomenda(balcao):  # noqa: F811

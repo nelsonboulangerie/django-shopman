@@ -18,46 +18,47 @@ const collections: POSPaymentCollectionProjection[] = [
 
 describe("a linha da encomenda mostra o plano da data", () => {
   it("dentro do plano: '22 planejadas para 17/11'", () => {
-    expect(planLineFact(20, { planned_qty: 22, free_qty: 22 }, "2026-11-17")).toEqual({
+    expect(planLineFact(20, { planned_qty: 22, unclaimed_qty: 22 }, "2026-11-17")).toEqual({
       text: "22 planejadas para 17/11",
       over: false,
     });
   });
   it("acima do livre: a linha avisa que passa do plano", () => {
-    expect(planLineFact(200, { planned_qty: 22, free_qty: 22 }, "2026-11-17")?.over).toBe(true);
+    expect(planLineFact(200, { planned_qty: 22, unclaimed_qty: 22 }, "2026-11-17")?.over).toBe(true);
   });
-  it("com reservas de outras encomendas, o livre vem junto (é contra ele que se mede)", () => {
-    expect(planLineFact(10, { planned_qty: 22, free_qty: 7 }, "2026-11-17")).toEqual({
-      text: "22 planejadas para 17/11, 7 livres",
+  it("lote parcialmente prometido: o que sobra dele vem junto (é contra isso que se mede)", () => {
+    expect(planLineFact(10, { planned_qty: 22, unclaimed_qty: 7 }, "2026-11-17")).toEqual({
+      text: "22 planejadas para 17/11, 7 ainda sem encomenda",
       over: true,
     });
   });
-  it("com a vitrine de hoje ainda valendo na data, o livre passa do plano e vem junto", () => {
-    expect(planLineFact(30, { planned_qty: 22, free_qty: 44 }, "2026-11-17")).toEqual({
-      text: "22 planejadas para 17/11, 44 livres",
-      over: false,
+  it("o segundo número nunca passa do planejado (a sobra de hoje não lastreia encomenda)", () => {
+    expect(planLineFact(30, { planned_qty: 22, unclaimed_qty: 44 }, "2026-11-17")).toEqual({
+      text: "22 planejadas para 17/11",
+      over: true,
     });
   });
   it("sem lastro informado (hoje, ou SKU sem controle), a linha não inventa nada", () => {
     expect(planLineFact(3, undefined, "2026-11-17")).toBeNull();
-    expect(planLineFact(3, { planned_qty: 22, free_qty: 22 }, "")).toBeNull();
+    expect(planLineFact(3, { planned_qty: 22, unclaimed_qty: 22 }, "")).toBeNull();
   });
-  it("vitrine que dura, sem lote planejado na data: diz o livre", () => {
-    expect(planLineFact(3, { planned_qty: 0, free_qty: 5 }, "2026-11-17")?.text).toBe("5 livres para 17/11");
+  it("sem lote planejado na data, a linha não diz nada (data sem plano é o WP-E3)", () => {
+    expect(planLineFact(3, { planned_qty: 0, unclaimed_qty: 5 }, "2026-11-17")).toBeNull();
   });
 });
 
 describe("o Validar travado diz os dois números", () => {
-  const k16 = { sku: "BF", name: "Baguette de Tradition", date: "2026-11-17", requested_qty: 200, planned_qty: 22, free_qty: 22 };
+  const k16 = { sku: "BF", name: "Baguette de Tradition", date: "2026-11-17", requested_qty: 200, planned_qty: 22, unclaimed_qty: 22 };
   it("'200 pedidas, 22 planejadas para 17/11'", () => {
     expect(overPlanNumbers(k16)).toBe("200 pedidas, 22 planejadas para 17/11");
     expect(overPlanSummary([k16])).toBe("Baguette de Tradition: 200 pedidas, 22 planejadas para 17/11.");
   });
-  it("com o livre abaixo do plano, os três números", () => {
-    expect(overPlanNumbers({ ...k16, requested_qty: 10, free_qty: 7 })).toBe("10 pedidas, 22 planejadas para 17/11 (7 livres)");
+  it("com parte do lote já prometida, o que sobra dele vem junto", () => {
+    expect(overPlanNumbers({ ...k16, requested_qty: 10, unclaimed_qty: 12 })).toBe("10 pedidas, 22 planejadas para 17/11 (12 ainda sem encomenda)");
   });
-  it("com o livre acima do plano, também os três números", () => {
-    expect(overPlanNumbers({ ...k16, free_qty: 44 })).toBe("200 pedidas, 22 planejadas para 17/11 (44 livres)");
+  it("nunca diz mais do que o planejado", () => {
+    expect(overPlanNumbers({ ...k16, unclaimed_qty: 44 })).toBe("200 pedidas, 22 planejadas para 17/11");
+    expect(overPlanSummary([{ ...k16, unclaimed_qty: 44 }])).not.toContain("44");
   });
   it("sem linha, nada", () => {
     expect(overPlanSummary([])).toBe("");

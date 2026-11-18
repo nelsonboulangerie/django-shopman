@@ -28,7 +28,7 @@ function props(overrides: Record<string, unknown> = {}) {
     fireAction: fire,
     unfireAction: { ...fire, ref: "unfire_tab", label: "Cancelar envio" },
     firing: false,
-    planBySku: { BF: { planned_qty: 22, free_qty: 22 } },
+    planBySku: { BF: { planned_qty: 22, unclaimed_qty: 22 } },
     planDate: "2026-11-17",
     ...overrides,
   };
@@ -53,7 +53,19 @@ describe("PosCartPanel: o lastro da encomenda na linha", () => {
     expect(fact.text()).toBe("22 planejadas para 17/11");
   });
 
-  it("o mesmo SKU em duas linhas soma contra o livre", async () => {
+  it("lote já parcialmente prometido: a linha diz o que sobra dele", async () => {
+    const w = await mountSuspended(PosCartPanel, {
+      props: props({
+        items: [item({ sku: "BF", name: "Baguette de Tradition", qty: 10 })],
+        planBySku: { BF: { planned_qty: 22, unclaimed_qty: 12 } },
+      }),
+    });
+    const fact = w.find("[data-pos-line-plan]");
+    expect(fact.attributes("data-pos-line-plan")).toBe("within");
+    expect(fact.text()).toBe("22 planejadas para 17/11, 12 ainda sem encomenda");
+  });
+
+  it("o mesmo SKU em duas linhas soma contra o que o lote tem sem encomenda", async () => {
     const w = await mountSuspended(PosCartPanel, {
       props: props({
         items: [

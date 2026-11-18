@@ -7,9 +7,8 @@
 // retirada" não aparece para outro dia. Tudo pela tela, no celular (375 px) e no
 // balcão (1366 px). Como rodar: README.md desta pasta.
 //
-// O seed planeja 22 Baguette de Tradition para amanhã. Cada execução consome parte do
-// livre da data (a encomenda fecha), e o teste lê o plano na tela, sem supor o livre:
-// a frase da linha e a do Validar trazem "22 planejadas" enquanto o seed for o mesmo.
+// O seed planeja 22 Baguette de Tradition para amanhã. A régua é o lote planejado PARA
+// a data; a sobra de hoje (que o seed deixa na vitrine) não entra em nenhum número.
 import { capture, cast, expect, settled, test, type Page } from "./support/operator";
 
 const PRODUCT = process.env.PDV_LIVE_OVER_PLAN_PRODUCT || "Baguette de Tradition";
@@ -234,6 +233,8 @@ for (const device of ["phone", "counter"] as const) {
       // 1 · A linha mostra a fornada da data e que o pedido passa dela.
       const fact = page.locator('[data-pos-line-plan="over"]').locator("visible=true").first();
       await expect(fact).toContainText(`Passa do plano: ${PLANNED} planejadas para ${day}`, { timeout: 30_000 });
+      // A sobra de hoje não lastreia encomenda (dono, 18/11/2026): nenhum número além do plano.
+      await expect(fact).not.toContainText("livres");
       await audits(page, "linha", '[data-pos-line-plan="over"] > span');
       await capture(page, testInfo, "linha-passa-do-plano");
 

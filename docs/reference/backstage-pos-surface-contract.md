@@ -228,8 +228,9 @@ Demais chaves canônicas (cliente e data são obrigatórios em `order`, como aci
   venda, com o mesmo `client_request_id`, pode reapresentá-lo). Vale 15 minutos;
   na venda que sincroniza da fila sem conexão, a janela dela (24 h).
   Encomenda de outro dia acima do plano da data (D-041, WP-E2) também pede o
-  gerente: a review publica `preorder_over_plan` (pedido, fornada planejada e
-  livre por linha) com o motivo `preorder_over_plan`, o check recebe as linhas em
+  gerente: a review publica `preorder_over_plan` (pedido, lote planejado para a
+  data e o que dele está sem encomenda, por linha; a sobra de hoje nunca conta)
+  com o motivo `preorder_over_plan`, o check recebe as linhas em
   `scope.over_plan`, e o fechamento recusa carimbo de outros números. Sem carimbo,
   `manager_approval_required` com os dois números na mensagem.
 - `payment_collection = on_delivery` em RETIRADA de outro dia é recusado com

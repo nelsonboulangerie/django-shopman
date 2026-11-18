@@ -12,7 +12,7 @@ import { review, workspaceProps } from "../support/paymentWorkspaceProps";
 describe("PosPaymentWorkspace: encomenda acima do plano pede o gerente com os números", () => {
   afterEach(() => { document.body.innerHTML = ""; });
 
-  const k16 = { sku: "BF", name: "Baguette de Tradition", date: "2026-11-17", requested_qty: 200, planned_qty: 22, free_qty: 22 };
+  const k16 = { sku: "BF", name: "Baguette de Tradition", date: "2026-11-17", requested_qty: 200, planned_qty: 22, unclaimed_qty: 22 };
   const props = (overrides: Record<string, unknown> = {}) => workspaceProps({
     review: review({
       requires_manager_approval: true,

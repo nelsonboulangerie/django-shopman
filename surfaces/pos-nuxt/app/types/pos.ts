@@ -996,12 +996,13 @@ export interface POSScheduleResponse {
   plan_by_sku?: Record<string, POSPlanBacking>;
 }
 
-/** O lastro de um SKU na data da encomenda (WP-E2): a fornada e o livre. */
+/** O lastro de um SKU na data da encomenda (WP-E2): o lote planejado PARA a data
+ *  e o que dele está sem encomenda. A sobra de hoje não entra (dono, 18/11/2026). */
 export interface POSPlanBacking {
-  /** A fornada planejada para a data, sem descontar reservas. */
+  /** O lote planejado para a data, sem descontar reservas. */
   planned_qty: number;
-  /** O que a data ainda promete a um pedido novo (já sem as reservas). */
-  free_qty: number;
+  /** O que desse lote ainda não está preso a outra encomenda (≤ planejado). */
+  unclaimed_qty: number;
 }
 
 /** Uma linha da encomenda acima do plano, como o gerente a vê e assina. */
@@ -1012,7 +1013,7 @@ export interface POSOverPlanLine {
   date: string;
   requested_qty: number;
   planned_qty: number;
-  free_qty: number;
+  unclaimed_qty: number;
 }
 
 /** A renúncia de frete que a loja aplicou (P2-21). `promotion`: a promoção
@@ -1064,7 +1065,7 @@ export interface POSSaleReviewProjection {
    *  em aberto antes da venda, limite, o que a venda põe na conta e quanto passa. */
   house_account_limit?: { balance_q: number; limit_q: number; charge_q: number; over_q: number } | null;
   /** Encomenda acima do plano da data (motivo `preorder_over_plan`, D-041): por
-   *  linha, o pedido, a fornada planejada e o livre. O Validar trava e o gerente
+   *  linha, o pedido, o lote planejado e o que dele está sem encomenda. O Validar trava e o gerente
    *  vê os dois números antes de liberar. */
   preorder_over_plan?: POSOverPlanLine[];
   receipt_channels: string[];
