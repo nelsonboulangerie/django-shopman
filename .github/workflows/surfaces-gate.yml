@@ -2,9 +2,14 @@ name: Surfaces Gate
 
 # Rede de segurança das superfícies Nuxt: vitest + typecheck para CADA app de
 # surfaces/ (incluindo o layer operator-kit, dono dos guardrails de design system
-# que leem os tailwind.css dos apps irmãos). Roda em TODO pull_request, sem
-# paths filter: os jobs são required checks do main, e required check que não
-# reporta (workflow pulado pelo filtro) trava o merge para sempre.
+# que leem os tailwind.css dos apps irmãos). O workflow dispara em TODO
+# pull_request, sem `paths:` no gatilho: os jobs são required checks do main, e
+# required check que não reporta (workflow pulado pelo filtro) trava o merge.
+#
+# Escopo (17/11/2026, docs/reference/ci-escopo.md): no pull_request cada app
+# roda só o leve (unit, component, lint, typecheck) e só se o PR o tocou; os
+# outros reportam verde em segundos com o MESMO nome. Navegador, visual, PWA,
+# supply chain e imagem rodam inteiros na fila (merge_group), que é o portão.
 #
 # Node 22 SEMPRE (buildpack DigitalOcean = node 22; locks regenerados com outro
 # node quebram `npm ci` no deploy — ver memória do projeto).
@@ -33,8 +38,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    name: Escopo do PR
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      surfaces: ${{ steps.scope.outputs.surfaces }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            .github/actions
+            scripts/ci_scope.py
+          sparse-checkout-cone-mode: false
+      - name: Escopo
+        id: scope
+        uses: ./.github/actions/ci-scope
+
   surface-contract:
     name: Contrato canônico das superfícies
+    needs: scope
+    # `!cancelled()`: escopo que falha não pode pular a matriz (os nomes dos
+    # apps são checks obrigatórios); sem escopo, CI_SURFACES cai em `all`.
+    if: ${{ !cancelled() }}
     runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     outputs:
@@ -48,6 +78,9 @@ jobs:
         run: node scripts/surface_contract.mjs validate
       - name: Gerar matrizes por capability
         id: matrix
+        env:
+          CI_HEAVY: ${{ github.event_name != 'pull_request' }}
+          CI_SURFACES: ${{ github.event_name == 'pull_request' && needs.scope.outputs.surfaces || 'all' }}
         run: |
           echo "quality=$(node scripts/surface_contract.mjs matrix quality)" >> "$GITHUB_OUTPUT"
           echo "pwa=$(node scripts/surface_contract.mjs matrix pwa)" >> "$GITHUB_OUTPUT"
@@ -121,6 +154,8 @@ jobs:
   supply-chain:
     name: Supply chain — ${{ matrix.id }}
     needs: surface-contract
+    # Só na fila (não é check obrigatório): docs/reference/ci-escopo.md.
+    if: github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
 
@@ -147,7 +182,10 @@ jobs:
   app-quality:
     name: ${{ matrix.kind == 'internal' && format('Preview interno — {0}', matrix.dir) || matrix.dir }}
     needs: surface-contract
-    runs-on: ${{ matrix.runner == 'ubuntu-latest' && (vars.CI_LINUX_RUNNER || 'ubuntu-latest') || matrix.runner }}
+    if: ${{ !cancelled() && needs.surface-contract.result == 'success' }}
+    # Linux com trabalho vai para o runner maior (CI_LINUX_RUNNER); macOS e a
+    # entrada `skip` (verde em segundos) ficam no runner que o contrato dá.
+    runs-on: ${{ (matrix.runner == 'ubuntu-latest' && !matrix.skip) && (vars.CI_LINUX_RUNNER || 'ubuntu-latest') || matrix.runner }}
     timeout-minutes: 45
 
     strategy:
@@ -159,10 +197,19 @@ jobs:
         working-directory: surfaces/${{ matrix.dir }}
 
     steps:
+      # Entrada com `skip`: o PR não tocou este app. O job existe para o check
+      # obrigatório reportar verde com o nome do app; o trabalho roda na fila.
+      - name: Fora do escopo deste PR
+        if: matrix.skip
+        working-directory: .
+        run: echo "${{ matrix.id }} não mudou neste PR; a suíte inteira roda na fila (merge_group)." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout
+        if: ${{ !matrix.skip }}
         uses: actions/checkout@v7
 
       - name: Set up Node
+        if: ${{ !matrix.skip }}
         uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -181,18 +228,20 @@ jobs:
       # no `nuxt prepare` do postinstall. Portanto o kit precisa existir antes
       # do `npm ci` da surface, não apenas antes do typecheck.
       - name: Install operator-kit layer deps
-        if: matrix.install_layer
+        if: ${{ !matrix.skip && matrix.install_layer }}
         working-directory: surfaces/operator-kit
         run: npm ci
 
       - name: Install dependencies
+        if: ${{ !matrix.skip }}
         run: npm ci
 
       - name: Unit tests
+        if: ${{ !matrix.skip }}
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" unit
 
       - name: Component tests
-        if: matrix.component
+        if: ${{ !matrix.skip && matrix.component }}
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" component
 
       # `eslint .` roda a partir do diretório de cada app e NUNCA alcança
@@ -203,12 +252,14 @@ jobs:
       # opt-in (só Marketing e Produção o rodavam, nos seus jobs de browser).
       # `--if-present` pelo mesmo motivo do typecheck: mantém a matriz uniforme.
       - name: Lint
+        if: ${{ !matrix.skip }}
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" lint
 
       # `--if-present`: o operator-kit (layer, sem app Nuxt próprio) não tem
       # typecheck; todos os 6 apps têm — storefront e pos ganharam o script
       # junto com este gate.
       - name: Typecheck
+        if: ${{ !matrix.skip }}
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" typecheck
 
       - name: Build do catálogo canônico
@@ -306,6 +357,8 @@ jobs:
   pwa-quality:
     name: PWA — ${{ matrix.id }}
     needs: surface-contract
+    # Só na fila (não é check obrigatório): docs/reference/ci-escopo.md.
+    if: github.event_name != 'pull_request'
     runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
