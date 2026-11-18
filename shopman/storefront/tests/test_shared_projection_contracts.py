@@ -175,8 +175,8 @@ def test_storefront_catalog_matches_shared_contract(canonical_catalog):
 
 
 def test_storefront_product_detail_matches_shared_contract(canonical_catalog):
-    from shopman.storefront.api.projections import projection_data
     from shopman.shop.models import Shop
+    from shopman.storefront.api.projections import projection_data
     from shopman.storefront.presentation.product_detail import build_product_detail
 
     # A página do produto nomeia a loja onde se retira (#2652): o contrato traz

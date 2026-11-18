@@ -63,7 +63,11 @@ from playwright.sync_api import expect  # noqa: E402
 # Nuxt store and the Django API are up.
 pytestmark = pytest.mark.browser
 
-ADD_TO_CART = re.compile(r"Adicionar", re.IGNORECASE)
+# O botão principal da PDP diz "Adicionar" no que é de hoje e "Encomendar para
+# amanhã" no que fica pronto em outro dia (WP-L02), o que inclui todo produto
+# com a casa fechada. Só "Adicionar" pegaria o botão de um produto do rail de
+# recomendações, mais abaixo, e o teste poria na sacola outro item.
+ADD_TO_CART = re.compile(r"Adicionar|Encomendar para", re.IGNORECASE)
 
 
 def _product_link(page, store_base_url):
