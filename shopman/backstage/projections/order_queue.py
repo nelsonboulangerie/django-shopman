@@ -3495,6 +3495,10 @@ _EVENT_LABELS = {
     "courier_dispatch_released": "Chamada da TaOn feita de novo",
     "courier_cancel_requested": "Cancelamento da corrida pedido à TaOn",
     "courier_reminder_dismissed": "Lembrete de chamar o entregador dispensado",
+    # Entregador da casa (``services/own_fleet``): a casa escolheu a pessoa, e ela
+    # marcou um caso na folha "Problema" do link.
+    "courier_assigned": "Entregador da casa escolhido para a entrega",
+    "courier_problem": "Entregador da casa marcou um problema na entrega",
     "fiscal_issue_override": "NFC-e emitida com autorização do gerente",
     "cash_refund_recorded": "Devolução em dinheiro registrada no caixa",
     "return_initiated": "Devolução iniciada",
