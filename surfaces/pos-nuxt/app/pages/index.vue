@@ -231,6 +231,7 @@ const {
   customerReleaseBusy,
   customerSearchResults,
   customerSearchBusy,
+  customerSearchError,
   customerResolvedNew,
   pendingCustomerPrefs,
   applyCustomerPreference,
@@ -1407,6 +1408,7 @@ onBeforeUnmount(() => {
               :lookup-busy="lookupBusy"
               :search-results="customerSearchResults"
               :search-busy="customerSearchBusy"
+              :search-error="customerSearchError"
               :customer-resolved-new="customerResolvedNew"
               :new-customer-prefs="pendingCustomerPrefs"
               :customer-decision="customerDecision"
@@ -1519,8 +1521,7 @@ onBeforeUnmount(() => {
         v-model:discount-type="cart.discountType"
         v-model:discount-value="cart.discountValue"
         v-model:discount-reason="cart.discountReason"
-        v-model:manager-username="cart.managerUsername"
-        v-model:manager-pin="cart.managerPin"
+        :manager-approved="!!cart.managerApprovalToken"
         :manager-approval-error="managerApprovalError"
         :manager-check-busy="managerCheckBusy"
         @check-manager="(username, pin, done) => { void checkManagerApproval(username, pin).then(done) }"
@@ -1582,6 +1583,7 @@ onBeforeUnmount(() => {
         :customer-lookup="customerLookup"
         :search-results="customerSearchResults"
         :search-busy="customerSearchBusy"
+        :search-error="customerSearchError"
         :customer-resolved-new="customerResolvedNew"
         :new-customer-prefs="pendingCustomerPrefs"
         :customer-decision="customerDecision"

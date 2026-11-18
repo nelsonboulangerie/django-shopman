@@ -29,8 +29,12 @@ const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 // 25 s cabe o checkout mais lento medido (gera o Pix no gateway dentro do
 // pedido) e fica abaixo do corte do ingress, para que a resposta seja nossa.
 export const UPSTREAM_TIMEOUT_MS = 25_000
-// A semente de CSRF é um meio: se ela demora, a mutação segue sem token.
-export const CSRF_SEED_TIMEOUT_MS = 5_000
+// A semente é um meio: se ela demora, a mutação segue sem token e sem sessão.
+export const SESSION_SEED_TIMEOUT_MS = 5_000
+// Pede ao Django que a leitura da semente também garanta a sessão
+// (`shopman/storefront/api/surface.py`, `SESSION_SEED_HEADER`).
+export const SESSION_SEED_HEADER = 'x-shopman-session-seed'
+
 
 export const UPSTREAM_TIMEOUT_DETAIL = 'A loja demorou para responder. Confira antes de tentar de novo.'
 export const UPSTREAM_UNREACHABLE_DETAIL = 'Não foi possível falar com a loja agora. Tente de novo em instantes.'
@@ -85,12 +89,21 @@ export function storefrontSetCookieHeader (setCookie: string): string {
     .join(';')
 }
 
-async function ensureDjangoCsrfCookie (event: H3Event, djangoBaseUrl: string, cookie: string | undefined): Promise<{ cookie: string | undefined, token: string }> {
-  let token = csrfTokenFromCookieHeader(cookie)
-  if (token) return { cookie, token: decodeURIComponent(token) }
-
+/**
+ * A semente: antes da primeira escrita, o navegador precisa do `csrftoken` E da
+ * sessão do Django.
+ *
+ * O token, para o endpoint que cobra CSRF. A sessão, para que a escrita não
+ * seja a que a cria (laudo da loja, P2-06): se o BFF desiste da escrita pelo
+ * prazo, o Django já reservou, e o `sessionid` que nasceu nela se perde com a
+ * resposta. A nova tentativa chegava sem sessão, abria outra sacola e outra
+ * reserva, e a primeira ficava segurando o item. Com a sessão garantida aqui, a
+ * resposta da semente já leva o `sessionid` ao navegador, e a nova tentativa
+ * cai na mesma sacola.
+ */
+async function seedDjangoSession (event: H3Event, djangoBaseUrl: string, cookie: string | undefined): Promise<{ cookie: string | undefined, token: string }> {
   // A semente é um meio, não o pedido. Se ela cai (rede, timeout), a mutação
-  // segue sem token e quem decide é o Django: a sacola do anônimo não exige CSRF
+  // segue como veio e quem decide é o Django: a sacola do anônimo não exige CSRF
   // (DRF só cobra de sessão autenticada) e o endpoint que exige responde 403
   // explícito. Derrubar o pedido aqui fazia o PRIMEIRO clique, o único que
   // semeia, falhar por um passo que o segundo clique nem dá.
@@ -98,15 +111,19 @@ async function ensureDjangoCsrfCookie (event: H3Event, djangoBaseUrl: string, co
     method: 'GET',
     headers: {
       accept: 'application/json',
+      [SESSION_SEED_HEADER]: '1',
       ...(cookie ? { cookie } : {})
     },
     ignoreResponseError: true,
-    signal: AbortSignal.timeout(CSRF_SEED_TIMEOUT_MS)
+    signal: AbortSignal.timeout(SESSION_SEED_TIMEOUT_MS)
   }).catch((error: unknown) => {
-    console.warn('[bff] semente de CSRF falhou; a mutação segue sem token', error)
+    console.warn('[bff] semente da sessão falhou; a mutação segue sem ela', error)
     return null
   })
-  if (!response) return { cookie, token: '' }
+  if (!response) {
+    const token = csrfTokenFromCookieHeader(cookie)
+    return { cookie, token: token ? decodeURIComponent(token) : '' }
+  }
 
   let mergedCookie = cookie
   const setCookie = response.headers.get('set-cookie')
@@ -117,7 +134,7 @@ async function ensureDjangoCsrfCookie (event: H3Event, djangoBaseUrl: string, co
     }
   }
 
-  token = csrfTokenFromCookieHeader(mergedCookie)
+  const token = csrfTokenFromCookieHeader(mergedCookie)
   return { cookie: mergedCookie, token: token ? decodeURIComponent(token) : '' }
 }
 
@@ -141,6 +158,11 @@ function cookieNames (cookie: string | undefined): string[] {
     .filter(Boolean)
 }
 
+/** O navegador já tem a sessão do Django? */
+export function hasDjangoSession (cookie: string | undefined): boolean {
+  return cookieNames(cookie).includes(DJANGO_SESSION_COOKIE)
+}
+
 /**
  * Para onde vai uma leitura que pode ser servida pela borda: a gêmea pública,
  * ou `null` (fica na rota privada de sempre).
@@ -152,7 +174,7 @@ function cookieNames (cookie: string | undefined): string[] {
 export function publicTwinPath (method: string, fullPath: string, cookie: string | undefined, hasQuery: boolean): string | null {
   if (method !== 'GET' && method !== 'HEAD') return null
   if (hasQuery) return null
-  if (cookieNames(cookie).includes(DJANGO_SESSION_COOKIE)) return null
+  if (hasDjangoSession(cookie)) return null
   const match = PUBLIC_TWIN_PATH.exec(fullPath)
   return match ? `/api/v1/storefront/public/${match[1]}/` : null
 }
@@ -283,16 +305,16 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   else if (clientCsrfHeader) headers['x-csrftoken'] = clientCsrfHeader
 
   // Duração da semente, em separado do total: só o primeiro pedido unsafe de um
-  // navegador sem `csrftoken` paga esta ida a mais, e o `bff;dur` sozinho não
-  // distingue o clique 1 do clique 2.
-  let csrfSeedTiming = ''
-  if (isUnsafeMethod && !headers['x-csrftoken']) {
+  // navegador sem `csrftoken` ou sem sessão paga esta ida a mais, e o `bff;dur`
+  // sozinho não distingue o clique 1 do clique 2.
+  let seedTiming = ''
+  if (isUnsafeMethod && (!headers['x-csrftoken'] || !hasDjangoSession(cookie))) {
     const seedStarted = performance.now()
-    const csrf = await ensureDjangoCsrfCookie(event, djangoBaseUrl, cookie)
-    csrfSeedTiming = `csrf;dur=${Math.max(0, performance.now() - seedStarted).toFixed(2)}`
-    cookie = csrf.cookie
+    const seed = await seedDjangoSession(event, djangoBaseUrl, cookie)
+    seedTiming = `seed;dur=${Math.max(0, performance.now() - seedStarted).toFixed(2)}`
+    cookie = seed.cookie
     if (cookie) headers.cookie = cookie
-    if (csrf.token) headers['x-csrftoken'] = csrf.token
+    if (seed.token) headers['x-csrftoken'] = seed.token
   }
 
   const body = ['GET', 'HEAD'].includes(method)
@@ -334,7 +356,7 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   setResponseHeader(
     event,
     'server-timing',
-    [upstreamServerTiming, csrfSeedTiming, bffTiming].filter(Boolean).join(', ')
+    [upstreamServerTiming, seedTiming, bffTiming].filter(Boolean).join(', ')
   )
 
   const setCookie = response.headers.get('set-cookie')

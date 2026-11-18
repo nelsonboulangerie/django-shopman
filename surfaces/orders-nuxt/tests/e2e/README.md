@@ -23,6 +23,10 @@ confere que a recusa NÃO aparece).
 
 ## Fora daqui (Django real — reviewer local)
 
+Com Django de verdade, login, PIN e pedido nascido pela loja: a suíte de operador,
+`tests/operator/` (`npm run test:operator`; como subir a pilha em `tests/operator/README.md`).
+
+
 - **Login efetivo** + sessão cross-subdomínio `.boulangerie`.
 - **Trava do operador** — PIN/crachá na antessala de uma estação provisionada.
 - **Ações** (confirmar/avançar/recusar/atribuir) + SSE realtime + catálogo/expositores.

@@ -199,21 +199,17 @@ watch(
   },
   { immediate: true },
 );
-// Observação curta mora na linha do item ("Pão de Hambúrguer · sem gergelim"); a longa
-// ganha a caixa "Obs.:" embaixo dele, inteira. As duas em âmbar (v4).
-function isShortNote(notes: string): boolean {
-  return Boolean(notes) && notes.length <= 24 && !notes.includes("\n");
-}
-
 // Moldura comum (margem, ritmo, código, botão) + o que só o preparo tem: o relógio e
 // o corpo dos itens e das notas. `timerH` segue a escada do canon do kit
 // (operator-base.css, "ALTURAS DE CONTROLE"): h-9 = chip, h-11 = controle.
+// `itemNote` é a observação do item: um passo abaixo do item, nunca dois. Ela é a
+// ressalva que o cozinheiro lê a dois metros no rush ("Croque monsieur" / "sem glúten").
 const d = computed(() => ({
   ...cardScale(props.density),
   ...{
-    compact: { timer: "text-base", timerH: "h-9", item: "text-base leading-snug", note: "text-xs" },
-    cozy: { timer: "text-lg", timerH: "h-9", item: "text-lg leading-[1.375rem]", note: "text-sm" },
-    roomy: { timer: "text-xl", timerH: "h-11", item: "text-xl leading-snug", note: "text-base" },
+    compact: { timer: "text-base", timerH: "h-9", item: "text-base leading-snug", itemNote: "text-sm", note: "text-xs" },
+    cozy: { timer: "text-lg", timerH: "h-9", item: "text-lg leading-[1.375rem]", itemNote: "text-base", note: "text-sm" },
+    roomy: { timer: "text-xl", timerH: "h-11", item: "text-xl leading-snug", itemNote: "text-lg", note: "text-base" },
   }[props.density],
 }));
 </script>
@@ -376,14 +372,14 @@ const d = computed(() => ({
               >{{ item.qty }}×</span
             >
             <div class="min-w-0 flex-1">
-              <p class="break-words font-semibold" :class="d.item">
-                {{ item.name
-                }}<span v-if="isShortNote(item.notes)" class="text-sm text-warning"> · {{ item.notes }}</span>
-              </p>
+              <p class="break-words font-semibold" :class="d.item">{{ item.name }}</p>
+              <!-- Toda observação do item ganha a caixa âmbar, curta ou longa: o
+                   comprimento não decide o destaque (dono, DEV-2026-032). -->
               <p
-                v-if="item.notes && !isShortNote(item.notes)"
-                class="mt-1 flex w-fit max-w-full items-start gap-1.5 rounded-md bg-warning/15 px-2.5 py-1 font-semibold leading-snug text-warning"
-                :class="d.note"
+                v-if="item.notes"
+                class="mt-1 flex w-fit max-w-full items-start gap-1.5 rounded-md bg-warning/15 px-2.5 py-1 font-bold leading-snug text-warning"
+                :class="d.itemNote"
+                data-kds-item-note
               >
                 <Icon name="lucide:message-square-warning" class="mt-0.5 size-4 shrink-0" />
                 <span class="min-w-0 whitespace-pre-wrap break-words">Obs.: {{ item.notes }}</span>

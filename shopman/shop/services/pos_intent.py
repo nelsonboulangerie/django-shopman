@@ -726,9 +726,12 @@ def _manager_approval(raw) -> dict | None:
     username = _text(raw.get("username"), limit=150)
     pin = str(raw.get("pin") or "")
     badge = _text(raw.get("badge"), limit=150)
-    if not username and not pin and not badge:
+    # O carimbo assinado que o diálogo do gerente devolve na venda (#2558): é
+    # ele, e não o PIN, que o fechamento resgata. Ver ``issue_sale_approval``.
+    token = str(raw.get("token") or "").strip()[:1024]
+    if not username and not pin and not badge and not token:
         return None
-    return {"username": username, "pin": pin, "badge": badge}
+    return {"username": username, "pin": pin, "badge": badge, "token": token}
 
 
 def _fulfillment_type(value) -> str:
