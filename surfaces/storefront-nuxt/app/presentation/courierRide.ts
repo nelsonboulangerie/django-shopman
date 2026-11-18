@@ -419,7 +419,7 @@ export function parsePending (raw: string | null): PendingDelivery | null {
 // ── A chave do celular ───────────────────────────────────────────────────────
 
 /** 32 bytes aleatórios em base64url (43 caracteres). O servidor guarda só o hash. */
-export function newDeviceKey (random: (bytes: Uint8Array) => Uint8Array): string {
+export function newDeviceKey (random: (bytes: Uint8Array<ArrayBuffer>) => Uint8Array<ArrayBuffer>): string {
   const bytes = random(new Uint8Array(32))
   let binary = ''
   for (const byte of bytes) binary += String.fromCharCode(byte)
