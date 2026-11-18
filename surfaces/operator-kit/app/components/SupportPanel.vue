@@ -207,7 +207,7 @@ async function submitDev(): Promise<void> {
           </div>
 
           <NuxtCollapsible
-            v-if="contextRows(ticket.context).length"
+            v-if="contextRows(ticket.context, { technical: capabilities.link_dev }).length"
             class="rounded border border-default px-3 py-1"
             data-support-context
           >
@@ -221,7 +221,7 @@ async function submitDev(): Promise<void> {
             />
             <template #content>
               <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 pb-2 text-xs">
-                <template v-for="row in contextRows(ticket.context)" :key="row.label">
+                <template v-for="row in contextRows(ticket.context, { technical: capabilities.link_dev })" :key="row.label">
                   <dt class="text-muted">{{ row.label }}</dt>
                   <dd class="break-words">{{ row.value }}</dd>
                 </template>

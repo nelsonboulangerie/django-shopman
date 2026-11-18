@@ -49,7 +49,28 @@ describe("courierProgress", () => {
       { status: "F", delivery_eta_at: "2026-10-13T19:01:00+00:00", sync_since: "2026-10-13T18:42:00+00:00" },
       NOW,
     );
-    expect(done).toEqual({ pickup: "", delivery: "", stale: "" });
+    expect(done).toEqual({ pickup: "", delivery: "", stale: "", waiting: "" });
+  });
+
+  it("o entregador desistiu: a TaOn redistribui a mesma corrida, sem nada a fazer", () => {
+    const view = courierProgress(
+      { status: "D", reopened_at: "2026-10-13T17:32:00+00:00", reopened_driver: "Diego" },
+      NOW,
+    );
+    expect(view.waiting).toBe("Diego desistiu às 14h32. A TaOn já procura outro.");
+    expect(view.pickup).toBe("");
+    // Sem o nome (a TaOn nem sempre manda): a frase continua inteira.
+    expect(courierProgress({ status: "D", reopened_at: "2026-10-13T17:32:00+00:00" }, NOW).waiting).toBe(
+      "O entregador desistiu às 14h32. A TaOn já procura outro.",
+    );
+    // Corrida encerrada não fala mais da desistência.
+    expect(courierProgress({ status: "C", reopened_at: "2026-10-13T17:32:00+00:00" }, NOW).waiting).toBe("");
+  });
+
+  it("a TaOn juntou com outra corrida: já tem entregador", () => {
+    expect(courierProgress({ status: "U" }, NOW).waiting).toBe(
+      "A TaOn juntou com outra corrida. Ela já tem entregador.",
+    );
   });
 
   it("TaOn sem notícias: diz desde quando, sem travessão", () => {
@@ -59,6 +80,6 @@ describe("courierProgress", () => {
   });
 
   it("sem corrida, nada", () => {
-    expect(courierProgress(null, NOW)).toEqual({ pickup: "", delivery: "", stale: "" });
+    expect(courierProgress(null, NOW)).toEqual({ pickup: "", delivery: "", stale: "", waiting: "" });
   });
 });

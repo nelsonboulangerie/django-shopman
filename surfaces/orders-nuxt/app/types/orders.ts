@@ -77,6 +77,9 @@ export type CourierBlock = {
   arrived_dropoff_at?: string;
   /** Desde quando a TaOn não informa a corrida (vazio com a leitura em dia). */
   sync_since?: string;
+  /** O entregador desistiu e a TaOn procura outro para a MESMA corrida: quando, e quem saiu. */
+  reopened_at?: string;
+  reopened_driver?: string;
   position: { lat: string; lng: string } | null;
   error: { message: string; at: string } | null;
   can_quote: boolean;

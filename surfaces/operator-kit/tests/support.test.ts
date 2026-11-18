@@ -98,11 +98,18 @@ describe("presentation/support", () => {
     });
 
     expect(rows).toContainEqual({ label: "Aplicativo", value: "Central" });
-    expect(rows).toContainEqual({ label: "Tela", value: "/pos" });
+    expect(rows.some((row) => row.value === "/pos")).toBe(false);
     expect(rows).toContainEqual({ label: "Posto", value: "pdv-02" });
     expect(rows).toContainEqual({ label: "Terminal", value: "PDV-02" });
     expect(rows).toContainEqual({ label: "Em foco", value: "order ORD-1" });
     expect(rows.some((row) => row.label === "empty")).toBe(false);
+  });
+
+  it("a tela sai pelo nome; o endereço técnico só para quem corrige", () => {
+    const context = { app: "pos", screen: "Encomendas", route: "/preorders" };
+    expect(contextRows(context)).toContainEqual({ label: "Tela", value: "Encomendas" });
+    expect(contextRows(context).some((row) => row.label === "Endereço")).toBe(false);
+    expect(contextRows(context, { technical: true })).toContainEqual({ label: "Endereço", value: "/preorders" });
   });
 
   it("só oferece triagem, decisão e DEV- a quem pode, no estado certo", () => {

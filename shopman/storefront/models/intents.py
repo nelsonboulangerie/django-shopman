@@ -100,7 +100,10 @@ class MessageIntentSample(models.Model):
     def redacted_text(self) -> str:
         from shopman.storefront.concierge.observation_privacy import redact_observation_text
 
-        return redact_observation_text(self.message.text or "").text
+        # O nome que a conversa já conhece sai junto ("Maria aqui"), além do padrão.
+        conversation = getattr(self.message, "conversation", None)
+        name = str(getattr(conversation, "customer_name", "") or "")
+        return redact_observation_text(self.message.text or "", names=[name] if name else ()).text
 
 
 class IntentPilotReport(models.Model):

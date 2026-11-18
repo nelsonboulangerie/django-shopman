@@ -24,6 +24,7 @@ export type ManagerAction =
   | "refund_cash"
   | "cancel_sale"
   | "cancel_order"
+  | "order_return"
   | "order_edit_refund"
   | "card_machine_refund"
   | "settle_account"
@@ -74,6 +75,12 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
   cancel_order: {
     title: "Autorizar cancelamento",
     reason: "O pedido já foi pago.",
+  },
+  // Devolução depois da venda, no Gestor (decisão do dono, 17/11/2026). O valor e
+  // o destino do dinheiro vêm prontos em `detail`, da prévia do servidor.
+  order_return: {
+    title: "Autorizar a devolução",
+    reason: "Volta dinheiro ou produto do cliente.",
   },
   order_edit_refund: {
     title: "Autorizar a devolução",
@@ -205,7 +212,11 @@ export function managerAuthReason(input: ManagerAuthReasonInput): string {
   if (withAmount && typeof input.amountQ === "number" && input.amountQ > 0) {
     return withAmount(formatBRL(input.amountQ), detail);
   }
-  if (detail && (input.action === "day_closing_production" || input.action === "cancel_order")) return detail;
+  if (
+    detail
+    && (input.action === "day_closing_production" || input.action === "cancel_order" || input.action === "order_return")
+  )
+    return detail;
   const fixa = input.action && MANAGER_ACTIONS[input.action]?.reason;
   if (fixa) return fixa;
   // Genérico é a última linha, nunca a primeira: dizer pouco é melhor que dizer
