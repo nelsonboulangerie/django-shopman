@@ -2205,13 +2205,20 @@ def _kitchen_clock(order: Order, now: datetime) -> tuple[datetime | None, dateti
     (``_physical_work_deferred`` decide se espera, ``preorder_activation_at`` diz
     até quando), lida sem alterar nada. O nome privado é a régua única de quem
     espera; repeti-la aqui seria uma segunda conta. Encomenda de outro dia não
-    recebe a frase: o card dela já diz o dia e a janela (``_schedule``).
+    recebe a frase: o card dela já diz o dia e a janela (``_schedule``). O
+    agendado do iFood fica de fora: ele segue o relógio do próprio iFood.
     """
     from shopman.shop import lifecycle
+    from shopman.shop.services import ifood_schedule
 
     released = _parse_iso((order.data or {}).get(lifecycle.KITCHEN_RELEASED_AT_KEY))
     if released is not None or order.status != Order.Status.ACCEPTED:
         return None, released
+    if ifood_schedule.is_scheduled(order):
+        # O agendado do iFood tem o relógio dele (``ifood_schedule_label``) e o
+        # lifecycle não o adianta (``release_preorder_now`` recusa): prometer
+        # "Adiantar" aqui seria oferecer um gesto que não acontece.
+        return None, None
     try:
         if not lifecycle._physical_work_deferred(order):
             return None, None

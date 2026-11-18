@@ -228,3 +228,22 @@ def test_encomenda_de_outro_dia_nao_ganha_a_frase(operator, relogio):
     # O card dela já diz o dia e a janela (WP-G01); a hora da Cozinha é do dia.
     assert card.kitchen_release_label == ""
     assert card.schedule_state == "future"
+
+
+def test_agendado_do_ifood_fica_de_fora_e_segue_o_relogio_do_ifood(operator, relogio):
+    """O lifecycle não adianta o agendado do iFood: o card não oferece "Adiantar"."""
+    relogio(10)
+    Channel.objects.update_or_create(ref="ifood", defaults={"name": "iFood", "config": {}})
+    order = _order("G02-IFOOD", ifood={
+        "order_timing": "SCHEDULED",
+        "preparation_start_at": _at(16, 15).isoformat(),
+        "delivery_start_at": _at(17).isoformat(),
+        "delivery_end_at": _at(17, 30).isoformat(),
+    })
+    Order.objects.filter(pk=order.pk).update(channel_ref="ifood")
+    order.refresh_from_db()
+
+    card = build_order_card(order, user=operator)
+
+    assert (card.kitchen_release_label, card.kitchen_release_at_iso) == ("", "")
+    assert all(action.label != "Adiantar" for action in card.actions)
