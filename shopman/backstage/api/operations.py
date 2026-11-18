@@ -104,6 +104,7 @@ from shopman.backstage.projections.order_queue import build_operator_order, buil
 from shopman.backstage.projections.pos import (
     build_open_tab,
     build_pos,
+    build_pos_availability,
     build_pos_customer_lookup,
     build_pos_customer_lookup_by_ref,
     build_pos_customer_search,
@@ -682,6 +683,12 @@ class POSView(ServerTimingMixin, APIView):
         # segundos de CPU no servidor, na frente da próxima ida dele.
         if request.query_params.get("only") == "tabs":
             return Response({"tabs": projection_data(build_pos_tabs(query=request.query_params.get("q", "")))})
+        # ``?only=availability``: só os selos da grade. É o que o aviso de estoque
+        # (SSE ``stock-update`` do canal do PDV) relê: outro balcão vendeu a
+        # última unidade e o tile vira "Esgotado" sem ninguém tocar. Preço,
+        # coleção e comandas não mudam com o estoque.
+        if request.query_params.get("only") == "availability":
+            return Response({"availability": build_pos_availability()})
 
         # A ESTAÇÃO diz qual gaveta é esta — o cookie de confiança carrega o ref. É o
         # que permite a loja de duas gavetas ler o quadro certo em cada balcão, em vez
