@@ -165,8 +165,10 @@ const situationColor = computed(() => situationTone(props.card.situation));
           </span>
         </span>
         <span class="flex items-center justify-end gap-2 max-md:hidden @max-md:justify-start">
+          <!-- Pendência financeira: o selo vem ANTES do valor (teste do dono, #2597). -->
+          <NuxtBadge v-if="money.pending" :color="money.tone" :label="money.label" size="sm" data-preorder-money-badge />
           <span class="text-sm font-semibold tabular-nums text-highlighted" :data-preorder-money="balanceStandsOut(card) ? 'to-receive' : 'settled'">{{ money.amount }}</span>
-          <NuxtBadge :color="money.tone" :label="money.label" size="sm" data-preorder-money-badge />
+          <NuxtBadge v-if="!money.pending" :color="money.tone" :label="money.label" size="sm" data-preorder-money-badge />
         </span>
         <span class="min-w-0 break-words text-xs text-muted max-md:hidden">{{ [card.items_summary, card.ref].filter(Boolean).join(" · ") }}</span>
         <span class="flex items-center justify-end gap-2 text-xs text-muted max-md:hidden @max-md:justify-start">

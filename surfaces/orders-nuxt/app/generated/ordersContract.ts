@@ -1221,6 +1221,8 @@ export interface DeliveryRideProjection {
   back_action: Action | null;
   back_lines: string[];
   cancel_action: Action | null;
+  reopened_at: string;
+  reopened_driver: string;
   cancel_state: string;
   cancel_message: string;
 }

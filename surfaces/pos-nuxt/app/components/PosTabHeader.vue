@@ -35,6 +35,8 @@ const props = defineProps<{
   lookupBusy: boolean;
   searchResults: POSCustomerSearchResult[];
   searchBusy: boolean;
+  /** A última busca de cliente falhou: a frase do porquê ("Não consegui buscar…"). */
+  searchError?: string;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
   /** Rascunho dos padrões do cliente NOVO — mora no shell, o modal só lê. */
@@ -442,6 +444,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       :customer-lookup="customerLookup"
       :search-results="searchResults"
       :search-busy="searchBusy"
+      :search-error="searchError"
       :lookup-busy="lookupBusy"
       :resolved-new="customerResolvedNew"
       :new-customer-prefs="newCustomerPrefs"

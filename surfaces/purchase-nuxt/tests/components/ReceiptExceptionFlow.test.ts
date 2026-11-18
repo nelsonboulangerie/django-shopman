@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import ReceiptExceptionFlow from "../../app/components/ReceiptExceptionFlow.vue";
 import { receiptExceptionView, receiptLinePreview } from "../../app/presentation/purchase";
-import type { Material, MaterialConversion, ReceiptLine } from "../../app/types/purchase";
+import type { Material, MaterialConversion, ReceiptLine, ReceiptPriceCheck } from "../../app/types/purchase";
 
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
@@ -54,9 +54,9 @@ function viewOf(counted: number | null, patch: Partial<ReceiptLine> = {}) {
   return receiptExceptionView(previews, "invoice", 0, counted);
 }
 
-function mountFlow(counted: number | null = null) {
+function mountFlow(counted: number | null = null, extra: { priceCheck?: ReceiptPriceCheck | null; lineCount?: number } = {}) {
   return mount(ReceiptExceptionFlow, {
-    props: { view: viewOf(counted), materials: [manteiga], lineCount: 1, totalCostQ: 88000, declaredVolumes: 0 },
+    props: { view: viewOf(counted), materials: [manteiga], lineCount: 1, totalCostQ: 88000, declaredVolumes: 0, ...extra },
     global: { stubs: { Icon: true, OperatorDayPicker: true } },
   });
 }
@@ -106,5 +106,34 @@ describe("ReceiptExceptionFlow — a conferência por exceção", () => {
     const [lineId, date] = wrapper.emitted("expiry")![0] as [string, string];
     expect(lineId).toBe("l1");
     expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  // Nenhuma frase de "o sistema conferiu" sem o dado que a sustenta (DEV-2026-032).
+  it("sem preço medido, o bloco do que o sistema conferiu não aparece", () => {
+    const wrapper = mountFlow(null);
+    expect(wrapper.text()).toContain("Tudo bate com a nota");
+    expect(wrapper.find("[data-exception-facts]").exists()).toBe(false);
+    for (const text of ["de-para", "reconhecidos", "Embalagens conferem", "último pago", "Preço"]) {
+      expect(wrapper.text()).not.toContain(text);
+    }
+  });
+
+  it("nenhum item com custo preferencial para comparar: nenhuma frase de preço", () => {
+    const wrapper = mountFlow(null, { priceCheck: { compared: 0, same: 0 } });
+    expect(wrapper.find("[data-exception-facts]").exists()).toBe(false);
+  });
+
+  it("o preço medido vira a frase, com o número da medida", () => {
+    const wrapper = mountFlow(null, { priceCheck: { compared: 12, same: 11 }, lineCount: 12 });
+    const facts = wrapper.findAll("[data-exception-facts] li").map((item) => item.text());
+    expect(facts).toEqual(["Preço igual ao custo preferencial do fornecedor em 11 de 12 itens"]);
+  });
+
+  it("item sem custo para comparar é dito, para o denominador não mentir", () => {
+    const wrapper = mountFlow(null, { priceCheck: { compared: 1, same: 1 }, lineCount: 3 });
+    const facts = wrapper.findAll("[data-exception-facts] li").map((item) => item.text());
+    expect(facts).toEqual([
+      "Preço igual ao custo preferencial do fornecedor em 1 de 1 item (2 sem custo preferencial para comparar)",
+    ]);
   });
 });

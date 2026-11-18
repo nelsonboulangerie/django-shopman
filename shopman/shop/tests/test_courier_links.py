@@ -45,9 +45,13 @@ def test_issue_refuses_a_ride_without_orders(diego):
         links.issue(diego, "WEB-A47", [])
 
 
-def test_first_phone_binds_the_link(diego):
+def test_opening_does_not_bind_only_confirming_does(diego):
     link = links.issue(diego, "WEB-A47", ["WEB-A47"])
-    first = links.resolve(link.token, PHONE_A)
+    # Um operador da casa abre por curiosidade: vê só o pedido de confirmação, nada fica preso.
+    assert links.resolve(link.token, PHONE_B).state == links.UNCLAIMED
+    link.refresh_from_db()
+    assert link.device_hash == "" and link.opened_at is None
+    first = links.claim(link.token, PHONE_A)
     assert first.ok
     link.refresh_from_db()
     assert link.opened_at is not None and link.device_hash
@@ -57,13 +61,14 @@ def test_first_phone_binds_the_link(diego):
 
 def test_forwarded_link_does_not_open_on_another_phone(diego):
     link = links.issue(diego, "WEB-A47", ["WEB-A47"])
-    links.resolve(link.token, PHONE_A)
+    links.claim(link.token, PHONE_A)
     assert links.resolve(link.token, PHONE_B).state == links.OTHER_DEVICE
+    assert links.claim(link.token, PHONE_B).state == links.OTHER_DEVICE
 
 
 def test_short_device_key_is_refused_without_binding(diego):
     link = links.issue(diego, "WEB-A47", ["WEB-A47"])
-    assert links.resolve(link.token, "curta").state == links.BAD_DEVICE
+    assert links.claim(link.token, "curta").state == links.BAD_DEVICE
     link.refresh_from_db()
     assert link.device_hash == ""
 
@@ -79,7 +84,7 @@ def test_reissuing_to_another_courier_revokes_the_first(diego, rui):
     first.refresh_from_db()
     assert first.revoked_reason == links.REASSIGNED
     assert links.resolve(first.token, PHONE_A).state == links.REVOKED
-    assert links.resolve(second.token, PHONE_B).ok
+    assert links.claim(second.token, PHONE_B).ok
 
 
 def test_reissuing_to_the_same_courier_is_a_resend(diego):
@@ -97,7 +102,7 @@ def test_only_one_live_link_per_ride_in_the_database(diego):
 
 def test_closed_ride_keeps_the_link_for_two_hours(diego):
     link = links.issue(diego, "WEB-A47", ["WEB-A47"])
-    links.resolve(link.token, PHONE_A)
+    links.claim(link.token, PHONE_A)
     closed_at = timezone.now()
     links.close("WEB-A47", at=closed_at)
     assert links.resolve(link.token, PHONE_A, now=closed_at + timedelta(minutes=119)).ok
@@ -112,9 +117,19 @@ def test_cancelled_ride_kills_the_link_now(diego):
     assert accessed.link.revoked_reason == links.CANCELLED
 
 
+def test_counter_releases_a_link_stuck_on_the_wrong_phone(diego):
+    link = links.issue(diego, "WEB-A47", ["WEB-A47"])
+    links.claim(link.token, PHONE_B)
+    links.release("WEB-A47")
+    assert links.resolve(link.token, PHONE_A).state == links.UNCLAIMED
+    assert links.claim(link.token, PHONE_A).ok
+    assert links.resolve(link.token, PHONE_B).state == links.OTHER_DEVICE
+
+
 def test_close_and_revoke_without_a_live_link_do_nothing(diego):
     assert links.close("WEB-ZZZ") is None
     assert links.revoke("WEB-ZZZ") is None
+    assert links.release("WEB-ZZZ") is None
 
 
 def test_shift_is_per_day_and_needs_an_active_courier(diego):

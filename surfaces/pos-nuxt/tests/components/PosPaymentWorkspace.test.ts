@@ -44,8 +44,7 @@ function props(overrides: Record<string, unknown> = {}) {
     discountType: "percent",
     discountValue: "",
     discountReason: "",
-    managerUsername: "",
-    managerPin: "",
+    managerApproved: false,
     managers: [],
     fulfillmentType: "pickup",
     fulfillmentConfirmed: true,
@@ -249,8 +248,7 @@ describe("PosPaymentWorkspace — gate do Validar", () => {
       props: props({
         paymentCovered: true,
         review: review({ requires_manager_approval: true }),
-        managerUsername: "",
-        managerPin: "",
+        managerApproved: false,
       }),
     });
     const button = cta(wrapper)!;
