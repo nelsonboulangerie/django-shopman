@@ -235,13 +235,16 @@ class ShopmanCommerceRead:
         ))
 
     def _hold_minutes(self) -> int:
-        """Os termos valem enquanto valem as reservas da sacola (``stock.hold_ttl_minutes`` do canal)."""
-        from shopman.shop.config import ChannelConfig
+        """Os termos valem enquanto valem as reservas da sacola (``stock.hold_ttl_minutes`` do canal).
 
-        try:
-            return max(1, int(ChannelConfig.for_channel(self.channel_ref).stock.hold_ttl_minutes))
-        except Exception:  # noqa: BLE001
-            return 10
+        É a mesma conta que as reservas fazem (``availability._channel_hold_ttl_minutes``,
+        com o padrão seguro que o ``ChannelConfig`` declara para ``None``). Sem substituto
+        aqui: configuração do canal que não se lê levanta, e a cotação falha fechada
+        (trava ``test_instance_runtime_config``).
+        """
+        from shopman.shop.services.availability import _channel_hold_ttl_minutes
+
+        return max(1, _channel_hold_ttl_minutes(self.channel_ref))
 
     # ── pedido, cliente, política ────────────────────────────────────────────
     def read_order(self, ctx: TrustedContext, ref: str):
@@ -251,7 +254,8 @@ class ShopmanCommerceRead:
             raise PortError("object_forbidden", "pedido de outro sujeito")
         try:
             order = Order.objects.filter(ref=ref).first()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - K04: a fonte que falha vira Unknown, nunca o valor velho
+            logger.warning("conversational.read_order: fonte falhou", exc_info=True)
             return Unknown(reason="source_failed")
         if order is None:
             return Unknown(reason="not_found")
@@ -273,7 +277,8 @@ class ShopmanCommerceRead:
 
             state = current_business_state()
             value = {"open": bool(state.is_open), "opens": state.opens_at, "closes": state.closes_at}
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - K04: a fonte que falha vira Unknown, nunca o valor velho
+            logger.warning("conversational.read_policy: fonte falhou", exc_info=True)
             return Unknown(reason="source_failed")
         return self._known(value, "shop:business_calendar")
 
