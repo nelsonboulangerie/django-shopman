@@ -7423,9 +7423,12 @@
         {
           "responsibility": "leitura",
           "symbols": [
+            "AcceptanceWindow",
+            "acceptance_window",
             "availability_dates",
             "customer_checkout_defaults",
-            "logger"
+            "logger",
+            "shop_today"
           ]
         }
       ]
