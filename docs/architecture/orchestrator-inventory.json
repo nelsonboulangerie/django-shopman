@@ -4066,6 +4066,12 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "REFUND_GATEWAY_REFUSED",
+            "REFUND_GATEWAY_UNCONFIRMED",
+            "REFUND_HANDED_OFF",
+            "REFUND_PENDING_COUNTER",
+            "_order_refunded_q",
+            "_refund_not_returned_reason",
             "logger"
           ]
         }

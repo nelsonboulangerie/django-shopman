@@ -647,6 +647,14 @@ atômico. `stock_processed` é gravado pelo ReturnHandler na mesma transação d
 sob lock do Order, para todos os itens exatos daquele índice. `refund_processed` continua
 indicando conclusão do processamento automatizado; não comprova devolução de dinheiro
 físico (fonte: cashman/Payman). Falha explícita de estorno não marca processamento concluído.
+O estorno que não voltou mas já tem dono (`ReturnService.process_refund` devolve
+`refund.success=false` com `reason` ∈ `gateway_refused`, aviso do sino e "Tentar o estorno
+de novo" no Gestor; `gateway_unconfirmed`, a directive `payment.refund` retenta;
+`pending_counter_refund`, gaveta ou maquininha nas listas do PDV) encerra a etapa com
+`refund_processed=true`, porque repetir a devolução não devolve nada. O **evento**
+`refund_processed` do pedido (linha do tempo do Gestor e da loja) é outra coisa: só nasce
+com dinheiro que o Payman registrou como devolvido naquela chamada, e o `amount_q` dele é
+esse valor medido (#2727).
 Registro legado já `refund_processed=true` é preservado, sem novo recebimento. Registro
 legado incompleto sem versão fica pendente de inventário/autorização: um Move antigo pode
 já existir, e não é seguro receber outra vez. A fase returned delega estoque/estorno ao

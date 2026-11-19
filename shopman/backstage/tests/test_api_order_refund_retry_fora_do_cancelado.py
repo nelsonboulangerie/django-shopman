@@ -116,21 +116,32 @@ def _paid_pix(ref: str, *, total_q: int = 3000, status: str = "delivered", pix_q
     return order
 
 
+def _registered_return(order: Order, *, refund_q: int = 1000) -> Order:
+    """A devolução de um pão registrada no pedido (o que o WP-G12 grava antes do estorno)."""
+    order.data["returns"] = [{
+        "type": "partial", "items": [{"line_id": f"{order.ref}-1", "sku": "PAO", "qty": "1", "refund_q": refund_q}],
+        "refund_total_q": refund_q, "refund_processed": False, "stock_receipt_version": 1, "stock_processed": True,
+    }]
+    order.save(update_fields=["data", "updated_at"])
+    return order
+
+
+def _process_return(order: Order, mode: str, *, refund_q: int = 1000) -> dict:
+    """O estorno da devolução pelo caminho de verdade, com o gateway no modo pedido."""
+    with patch(ADAPTER, return_value=Gateway(mode)):
+        result = ReturnService.process_refund(order, refund_q, "return.process", refund_reference=f"return:{order.ref}:0")
+    order.refresh_from_db()
+    return result
+
+
 def _return_refused(ref: str, *, refund_q: int = 1000) -> Order:
     """WP-G12: a devolução de um pão registrada, e o estorno dela recusado pelo gateway.
 
     Pelo caminho de verdade: ``ReturnService.process_refund`` chama o ``payment.refund``
     com a chave da devolução, o gateway recusa e o ``payment.refund`` abre o aviso.
     """
-    order = _paid_pix(ref)
-    order.data["returns"] = [{
-        "type": "partial", "items": [{"line_id": f"{ref}-1", "sku": "PAO", "qty": "1", "refund_q": refund_q}],
-        "refund_total_q": refund_q, "refund_processed": False, "stock_receipt_version": 1, "stock_processed": True,
-    }]
-    order.save(update_fields=["data", "updated_at"])
-    with patch(ADAPTER, return_value=Gateway("refuse")):
-        ReturnService.process_refund(order, refund_q, "return.process", refund_reference=f"return:{ref}:0")
-    order.refresh_from_db()
+    order = _registered_return(_paid_pix(ref), refund_q=refund_q)
+    _process_return(order, "refuse", refund_q=refund_q)
     return order
 
 
@@ -453,3 +464,100 @@ def test_tentativa_sem_resposta_no_gestor_deixa_no_sino_a_frase_do_balcao(client
         "confere esta e não devolve duas vezes."
     )
     assert "painel" not in ambiguous.message
+
+
+# ── A linha do tempo não diz "processado" do que não voltou ──────────────────
+
+
+def _timeline_labels(order: Order) -> list[str]:
+    return [event.label for event in build_operator_order(order).timeline]
+
+
+def test_devolucao_recusada_nao_grava_estorno_processado(operador):
+    """A linha do tempo dizia "Reembolso processado" logo abaixo de "Estorno não saiu"."""
+    order = _registered_return(_paid_pix("DEV-2727-NAO-SAIU"))
+
+    result = _process_return(order, "refuse")
+
+    assert result["refund"] == {"success": False, "amount_q": 0, "reason": "gateway_refused"}
+    assert not order.events.filter(type="refund_processed").exists()
+    assert not any("processado" in label.lower() for label in _timeline_labels(order))
+    _detail, line = _refund_line(order, operador)
+    assert line.label == "Estorno não saiu"
+
+
+def test_devolucao_que_o_gateway_aceita_grava_o_estorno_com_o_valor_que_voltou():
+    order = _registered_return(_paid_pix("DEV-2727-SAIU"))
+
+    result = _process_return(order, "accept")
+
+    assert result["refund"] == {"success": True, "amount_q": 1000}
+    (event,) = order.events.filter(type="refund_processed")
+    assert event.payload == {"amount_q": 1000, "success": True}
+    assert PaymentService.refunded_total(f"INT-{order.ref}") == 1000
+
+
+def test_devolucao_sem_resposta_do_gateway_nao_grava_e_fica_com_o_retry():
+    order = _registered_return(_paid_pix("DEV-2727-MUDO"))
+
+    result = _process_return(order, "silent")
+
+    assert result["refund"] == {"success": False, "amount_q": 0, "reason": "gateway_unconfirmed"}
+    assert not order.events.filter(type="refund_processed").exists()
+    assert Directive.objects.filter(topic="payment.refund", payload__order_ref=order.ref, status="queued").exists()
+
+
+@pytest.mark.parametrize("method", ["cash", "debit"], ids=["gaveta", "maquininha"])
+def test_devolucao_de_dinheiro_ou_maquininha_nao_grava_estorno_processado(method):
+    """O ``refund`` não estorna gaveta nem maquininha: o dinheiro fica nas listas do PDV."""
+    order = Order.objects.create(
+        ref=f"DEV-2727-{method.upper()}", channel_ref="web", session_key=f"s-{method}", status="delivered", total_q=3000,
+        data={"customer": {"name": "Ana"}, "fulfillment_type": "pickup", "payment": {"method": method}},
+    )
+    OrderItem.objects.create(
+        order=order, line_id=f"{order.ref}-1", sku="PAO", name="Pão", qty=3, unit_price_q=1000, line_total_q=3000,
+    )
+    intent = PaymentService.settle(order.ref, 3000, method, idempotency_key=f"test:{order.ref}")
+    order.data["payment"]["intent_ref"] = intent.ref
+    order.save(update_fields=["data", "updated_at"])
+    _registered_return(order)
+
+    result = _process_return(order, "accept")
+
+    assert result["refund"] == {"success": False, "amount_q": 0, "reason": "pending_counter_refund"}
+    assert not order.events.filter(type="refund_processed").exists()
+    assert PaymentService.refunded_total(intent.ref) == 0
+
+
+def test_a_devolucao_recusada_encerra_a_etapa_sem_retentar_nem_travar():
+    """O handler não retenta a devolução por um estorno que já tem dono (sino e Gestor)."""
+    from shopman.shop.handlers.returns import ReturnHandler
+
+    order = _registered_return(_paid_pix("DEV-2727-HANDLER"))
+    record = order.data["returns"][0]
+    task = Directive.objects.create(
+        topic="return.process", status="running", attempts=1,
+        payload={"order_ref": order.ref, "items": record["items"], "refund_total_q": 1000, "return_index": 0},
+    )
+
+    with patch(ADAPTER, return_value=Gateway("refuse")):
+        ReturnHandler().handle(message=task, ctx={})
+
+    order.refresh_from_db()
+    assert order.data["returns"][0]["refund_processed"] is True
+    assert not order.events.filter(type="refund_processed").exists()
+    assert not OperatorAlert.objects.filter(type="lifecycle_phase_stuck", order_ref=order.ref).exists()
+    assert OperatorAlert.objects.filter(type="payment_refund_failed", order_ref=order.ref, resolved_at__isnull=True)
+
+
+def test_tentar_de_novo_com_sucesso_nao_grava_um_segundo_estorno_processado(client, operador, gerente):
+    order = _return_refused("DEV-2727-UM-SO")
+
+    with patch(SIGN, return_value=gerente), patch(ADAPTER, return_value=Gateway()):
+        resp = _retry(client, operador, order, manager_approval=APPROVAL)
+
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["refund"]["outcome"] == "refunded"
+    assert not order.events.filter(type="refund_processed").exists()
+    timeline = {event["event_type"]: event for event in resp.json()["order"]["timeline"]}
+    assert timeline["payment.refund_retry"]["detail"].endswith("o meio de pagamento confirmou")
