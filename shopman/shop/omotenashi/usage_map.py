@@ -1111,6 +1111,12 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_DATE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_DATE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_PROMISE_PREORDER_MESSAGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -1308,6 +1314,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_STEP_RECEIVED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_STEP_REFUNDED": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_STEP_RETURNED": (
