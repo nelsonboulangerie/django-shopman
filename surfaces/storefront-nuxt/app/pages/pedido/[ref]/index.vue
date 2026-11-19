@@ -684,8 +684,9 @@ useSeoMeta({
                   class="mt-2 space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3 text-sm"
                   data-waitlist="confirming"
                 >
-                  <p class="font-semibold">{{ tracking.copy.waitlist_confirm_title }}</p>
-                  <p>{{ tracking.copy.waitlist_confirm_message }}</p>
+                  <!-- O chamado (a fornada ficou pronta, o que fazer e até quando) é a
+                       frase principal do painel, logo acima; aqui ficam só o relógio e
+                       o botão. Antes o cartão repetia o chamado com outras palavras. -->
                   <p v-if="waitlistDeadlineLeft" class="tabular-nums font-semibold" aria-live="polite">
                     Confirme em {{ waitlistDeadlineLeft }}
                   </p>

@@ -216,8 +216,6 @@ class OrderTrackingCopyProjection:
     # mesmo quando a notificação não chegou — ela é a superfície que sempre existe.
     waitlist_waiting_title: str
     waitlist_waiting_message: str
-    waitlist_confirm_title: str
-    waitlist_confirm_message: str
     waitlist_confirm_cta: str
     waitlist_confirmed_title: str
     waitlist_released_title: str
@@ -947,6 +945,11 @@ _PROMISE_COVERS: dict[str, frozenset[str]] = {
     # tentar outro; prazo e aviso seguem os do convite de pagar.
     "payment_card_declined": frozenset({NEXT_STEP, CONSEQUENCE, NOTIFICATION}),
     "payment_retry": frozenset({NEXT_STEP}),
+    # Bola do cliente: a loja chamou a fila. A frase diz o gesto (confirmar), o
+    # prazo e a consequência (a vaga vai para a próxima pessoa). O aviso que o
+    # estado promete é o próprio chamado (``waitlist_available``) que a trouxe
+    # até aqui, e o da vaga liberada se o prazo passar.
+    "waitlist_confirming": frozenset({NEXT_STEP, CONSEQUENCE, NOTIFICATION}),
     "payment_preparing": frozenset({NOTIFICATION}),
     # Bola do gateway: cartão autorizado, capturando.
     "payment_authorized": frozenset(),
@@ -1224,6 +1227,26 @@ def _promise_copy(
             copy.title("TRACKING_PROMISE_CARD_TITLE", "Pague com cartão"),
             card_message,
         )
+
+    if state == "waitlist_confirming":
+        # O chamado da fila é da frase principal: o que aconteceu (a fornada
+        # ficou pronta), o que fazer e até quando, e o que acontece se o prazo
+        # passar. O cartão da fila, logo abaixo, fica com o relógio e o botão
+        # (#2771: antes a frase dizia "Estamos conferindo a disponibilidade.
+        # Avisamos em seguida." ao lado do chamado).
+        title = copy.title("TRACKING_WAITLIST_CONFIRM_TITLE", "Sua fornada ficou pronta!")
+        call_until = _acceptance_until(data.deadline_at)
+        if call_until:
+            message = copy.message(
+                "TRACKING_WAITLIST_CONFIRM_MESSAGE",
+                "Confirme seu pedido {until} para garantir a sua vaga. Se o prazo passar, a vaga vai para a próxima pessoa da fila.",
+            ).replace("{until}", call_until)
+        else:
+            message = copy.message(
+                "TRACKING_WAITLIST_CONFIRM_MESSAGE_NO_DEADLINE",
+                "Confirme seu pedido para garantir a sua vaga. Se não confirmar, a vaga vai para a próxima pessoa da fila.",
+            )
+        return title, message
 
     if state == "payment_retry":
         return (
@@ -2095,11 +2118,6 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         waitlist_waiting_message=copy.message(
             "TRACKING_WAITLIST_WAITING_MESSAGE",
             "Assim que a fornada sair, a gente te avisa para confirmar. Nada foi cobrado ainda.",
-        ),
-        waitlist_confirm_title=copy.title("TRACKING_WAITLIST_CONFIRM_TITLE", "Sua fornada saiu!"),
-        waitlist_confirm_message=copy.message(
-            "TRACKING_WAITLIST_CONFIRM_MESSAGE",
-            "Confirme para garantir o seu. Se não der, a vaga vai para a próxima pessoa da fila.",
         ),
         waitlist_confirm_cta=copy.title("TRACKING_WAITLIST_CONFIRM_CTA", "Confirmar meu pedido"),
         waitlist_confirmed_title=copy.title("TRACKING_WAITLIST_CONFIRMED_TITLE", "Confirmado, já vamos separar"),

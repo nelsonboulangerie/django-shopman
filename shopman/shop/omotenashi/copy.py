@@ -1265,12 +1265,27 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Assim que a fornada sair, a gente te avisa para confirmar. Nada foi cobrado ainda.",
         )},
     },
+    # O chamado é a frase principal do acompanhamento (título e mensagem da
+    # promessa, estado ``waitlist_confirming``); o cartão da fila fica com o
+    # relógio e o botão. {until} = "até 9h52". A casa diz "ficou pronta", nunca
+    # "saiu" (dono, 16/11/2026).
     "TRACKING_WAITLIST_CONFIRM_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Sua fornada saiu!")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Sua fornada ficou pronta!")},
     },
     "TRACKING_WAITLIST_CONFIRM_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Confirme para garantir o seu. Se não der, a vaga vai para a próxima pessoa da fila.",
+            message=(
+                "Confirme seu pedido {until} para garantir a sua vaga. "
+                "Se o prazo passar, a vaga vai para a próxima pessoa da fila."
+            ),
+        )},
+    },
+    "TRACKING_WAITLIST_CONFIRM_MESSAGE_NO_DEADLINE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message=(
+                "Confirme seu pedido para garantir a sua vaga. "
+                "Se não confirmar, a vaga vai para a próxima pessoa da fila."
+            ),
         )},
     },
     "TRACKING_WAITLIST_CONFIRM_CTA": {

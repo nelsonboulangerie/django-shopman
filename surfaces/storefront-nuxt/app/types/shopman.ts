@@ -1170,8 +1170,6 @@ export interface TrackingCopyProjection {
   // Fila de espera: cada fase tem a sua voz — esperar, confirmar, sair.
   waitlist_waiting_title: string
   waitlist_waiting_message: string
-  waitlist_confirm_title: string
-  waitlist_confirm_message: string
   waitlist_confirm_cta: string
   waitlist_confirmed_title: string
   waitlist_released_title: string
