@@ -229,3 +229,39 @@ class TestReservedUntilFacade:
 
         assert cart_data.reserved_until(_session_key(client)) is None
 
+
+def _set_hold_ttl(channel, minutes: int | None):
+    """O prazo da reserva do canal (``stock.hold_ttl_minutes``); ``None`` tira a configuração."""
+    cfg = dict(channel.config or {})
+    stock_cfg = {k: v for k, v in (cfg.get("stock") or {}).items() if k != "hold_ttl_minutes"}
+    if minutes is not None:
+        stock_cfg["hold_ttl_minutes"] = minutes
+    cfg["stock"] = stock_cfg
+    channel.config = cfg
+    channel.save(update_fields=["config"])
+
+
+class TestTheHourFollowsTheChannelTtl:
+    """A hora que a sacola diz é o prazo do canal, na criação e em cada gesto (#2773)."""
+
+    @pytest.mark.parametrize("configured", [30, 45, 10, None])
+    def test_first_item_and_every_gesture_use_the_channel_ttl(self, client, ready, channel, configured):
+        _set_hold_ttl(channel, configured)
+        expected = timedelta(minutes=configured or 30)
+        slack = timedelta(minutes=1)
+
+        first = _set_qty(client, ready.sku, 1).json()["cart"]
+        left = datetime.fromisoformat(first["reserved_until_iso"]) - timezone.now()
+        assert expected - slack < left <= expected
+
+        # A reserva gastou quase todo o prazo; um gesto a renova para o prazo do canal.
+        _timed_holds(client).update(expires_at=timezone.now() + timedelta(minutes=2))
+        renewed = _set_qty(client, ready.sku, 2).json()["cart"]
+
+        left = datetime.fromisoformat(renewed["reserved_until_iso"]) - timezone.now()
+        assert expected - slack < left <= expected
+        # Todas as reservas da sacola ficam com o mesmo prazo: nenhuma com 30 por fora.
+        for hold in _timed_holds(client):
+            hold_left = hold.expires_at - timezone.now()
+            assert expected - slack < hold_left <= expected, (hold.sku, hold_left)
+
