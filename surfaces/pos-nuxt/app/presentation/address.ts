@@ -22,7 +22,6 @@ export {
   addressDraftErrors,
   cepDigits,
   composedAddressLine,
-  draftSummaryLine,
   emptyAddressDraft,
   looksLikeCep,
   maskCepInput,
@@ -106,6 +105,56 @@ export function draftFromDeliveryState(state: DeliveryAddressState): AddressDraf
     coordinates_source: null,
     delivery_instructions: state.instructions,
   };
+}
+
+/**
+ * O ENDEREÇO NA TELA DO PDV, de um jeito só (#2806): em cima a rua com o número e
+ * o complemento, que identificam o endereço sozinhos; depois o bairro e a cidade,
+ * que desempatam duas ruas parecidas. As partes se separam por " · ", na lista dos
+ * endereços do cliente, no resumo do endereço escolhido no Recebimento, no "É
+ * aqui?" do mapa e no assistente da encomenda.
+ *
+ * ⚠️ É o formato da TELA. A linha que vai para o servidor (`formatted_address`,
+ * a da nota, do entregador e do pedido) continua a de `composedAddressLine`, do
+ * módulo gêmeo da loja (`addressForm.ts`), com " - ": ela não muda aqui.
+ */
+export const ADDRESS_PART_SEPARATOR = " · ";
+
+/** As partes do endereço que a tela mostra (o rascunho e o cadastro têm as mesmas). */
+export interface AddressDisplayParts {
+  formatted_address?: string | null;
+  route?: string | null;
+  street_number?: string | null;
+  complement?: string | null;
+  neighborhood?: string | null;
+  city?: string | null;
+  state_code?: string | null;
+}
+
+export interface AddressDisplay {
+  /** Rua, número e complemento (ou a linha inteira, no cadastro sem a rua separada). */
+  street: string;
+  /** Bairro e cidade/UF ("" quando a linha de cima já é a inteira). */
+  place: string;
+}
+
+const part = (value: unknown) => String(value ?? "").replace(/\s+/g, " ").trim();
+
+export function addressDisplay(address: AddressDisplayParts): AddressDisplay {
+  const street = [part(address.route), part(address.street_number)].filter(Boolean).join(", ");
+  // Cadastro antigo, sem a rua separada: a linha inteira é o que há.
+  if (!street) return { street: part(address.formatted_address), place: "" };
+  const cityState = [part(address.city), part(address.state_code)].filter(Boolean).join("/");
+  return {
+    street: [street, part(address.complement)].filter(Boolean).join(", "),
+    place: [part(address.neighborhood), cityState].filter(Boolean).join(ADDRESS_PART_SEPARATOR),
+  };
+}
+
+/** O endereço numa linha só, com as mesmas partes e o mesmo separador da lista. */
+export function addressDisplayLine(address: AddressDisplayParts): string {
+  const { street, place } = addressDisplay(address);
+  return [street, place].filter(Boolean).join(ADDRESS_PART_SEPARATOR);
 }
 
 /**

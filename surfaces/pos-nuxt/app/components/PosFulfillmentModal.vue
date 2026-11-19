@@ -25,10 +25,10 @@ import { chosenSavedAddressValue } from "~/presentation/savedAddress";
 import {
   BR_STATES,
   DRAFT_FIELD_OF,
+  addressDisplayLine,
   addressDraftErrors,
   deliveryValuesFromDraft,
   draftFromDeliveryState,
-  draftSummaryLine,
   emptyAddressDraft,
   firstInvalidField,
   maskCepInput,
@@ -106,6 +106,36 @@ const isOpen = computed({
   get: () => props.open,
   set: (value: boolean) => emit("update:open", value),
 });
+
+// RETIRADA OU ENTREGA, como opções de um grupo de rádio. Nenhuma marcada até o
+// operador escolher ("" e não `undefined`: o grupo continua controlado por aqui).
+type FulfillmentRef = "pickup" | "delivery";
+// O valor é texto (e não o tipo estreito "pickup" | "delivery") para o "" de nenhuma
+// escolha caber no mesmo tipo do grupo.
+const fulfillmentItems = computed(() => props.fulfillmentOptions.map((option) => ({
+  value: String(option.ref),
+  label: option.label,
+  description: option.description,
+})));
+const chosenFulfillment = computed<string>(() => (props.fulfillmentConfirmed ? props.fulfillmentType : ""));
+function pickFulfillment(value: unknown) {
+  const ref = String(value ?? "");
+  if (ref !== "pickup" && ref !== "delivery") return;
+  emit("update:fulfillmentType", ref as FulfillmentRef);
+  emit("update:fulfillmentConfirmed", true);
+}
+// O grupo de rádio do Reka ignora o Enter de propósito; aqui ele escolhe a opção
+// em foco, como o Enter fazia no botão que ela substituiu.
+function onFulfillmentEnter(event: KeyboardEvent) {
+  if (event.isComposing) return;
+  const radio = (event.target as HTMLElement | null)?.closest<HTMLElement>('[role="radio"]');
+  if (!radio) return;
+  const radios = Array.from((event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="radio"]'));
+  const option = props.fulfillmentOptions[radios.indexOf(radio)];
+  if (!option) return;
+  event.preventDefault();
+  pickFulfillment(option.ref);
+}
 
 // OS ENDEREÇOS JÁ CADASTRADOS: uma linha inteira por endereço, com o da entrega
 // em edição marcado (ao escolher Entrega, o padrão do cliente já vem; quem faz
@@ -217,7 +247,9 @@ const draft = computed<AddressDraft>(() => draftFromDeliveryState({
   instructions: props.deliveryInstructions,
   structured: props.deliveryAddressStructured || {},
 }));
-const summaryLine = computed(() => (draft.value.route.trim() ? draftSummaryLine(draft.value) : ""));
+// O endereço escolhido numa linha: o mesmo texto e o mesmo " · " da lista dos
+// endereços do cliente, logo acima (`addressDisplayLine`).
+const summaryLine = computed(() => (draft.value.route.trim() ? addressDisplayLine(draft.value) : ""));
 const stateItems = BR_STATES.map((uf) => ({ label: uf, value: uf }));
 
 // Erros da validação, por campo da tela. Só aparecem depois da primeira tentativa
@@ -389,7 +421,7 @@ const mapPoint = computed<AddressPoint | null>(() => {
   if (!target || target.latitude == null || target.longitude == null) return null;
   return { lat: target.latitude, lng: target.longitude };
 });
-const mapSummary = computed(() => (mapDraft.value ? draftSummaryLine(mapDraft.value) : ""));
+const mapSummary = computed(() => (mapDraft.value ? addressDisplayLine(mapDraft.value) : ""));
 
 function openMap(purpose: "confirm" | "adjust", target: AddressDraft = draft.value) {
   mapPurpose.value = purpose;
@@ -438,28 +470,29 @@ function onMapCancel() {
   <NuxtModal
     v-model:open="isOpen"
     title="Recebimento"
-    description="Escolha uma opção. Cliente e data não definem como o pedido será recebido."
+    description="Escolha como o cliente recebe o pedido."
     :content="{ onOpenAutoFocus }"
     :ui="{ content: 'sm:max-w-lg' }"
     data-pos-fulfillment-modal
   >
     <template #body>
       <div class="grid gap-4">
-        <div class="grid grid-cols-2 gap-2">
-          <NuxtButton
-            v-for="option in fulfillmentOptions"
-            :key="option.ref"
-            color="neutral" variant="outline"
-            class="h-auto justify-start whitespace-normal px-3 py-2 text-left"
-            :class="fulfillmentConfirmed && fulfillmentType === option.ref ? 'border-primary bg-primary/5' : ''"
-            @click="$emit('update:fulfillmentType', option.ref as 'pickup' | 'delivery'); $emit('update:fulfillmentConfirmed', true)"
-            :aria-pressed="!!fulfillmentConfirmed && fulfillmentType === option.ref"
-          >
-            <span>
-              <span class="block text-sm font-semibold">{{ option.label }}</span>
-              <span class="block text-xs opacity-80">{{ option.description }}</span>
-            </span>
-          </NuxtButton>
+        <!-- Retirada ou Entrega: o mesmo grupo de rádio (variante cartão) da lista
+             de endereços logo abaixo, com o mesmo sinal da escolha (o rádio
+             marcado, a borda e o fundo da cor da casa) e o estado no papel
+             (`role="radio"` + `aria-checked`). Era um par de botões em que o
+             escolhido só mudava um tom de fundo (#2806). Nada vem marcado antes do
+             toque: o recebimento é escolha explícita. -->
+        <div data-pos-fulfillment-options @keydown.enter="onFulfillmentEnter">
+          <NuxtRadioGroup
+            :model-value="chosenFulfillment"
+            :items="fulfillmentItems"
+            variant="card"
+            orientation="horizontal"
+            aria-label="Como o cliente recebe"
+            :ui="{ fieldset: 'grid grid-cols-2 gap-2', item: 'w-full min-w-0', wrapper: 'min-w-0', label: 'break-words', description: 'break-words' }"
+            @update:model-value="pickFulfillment"
+          />
         </div>
 
         <div v-if="fulfillmentType === 'delivery'" class="grid gap-3">
