@@ -89,7 +89,7 @@ HANDOFF = "handoff"  # a conversa foi entregue à equipe
 CART = "cart"  # a sacola mudou
 ORDER = "order"  # o pedido foi registrado
 NOTIFY = "notify"  # aviso de disponibilidade registrado
-VERIFY = "verify"  # verificação com prazo aberta (fatia F5; ainda não existe)
+VERIFY = "verify"  # verificação com prazo aberta ou em espera ("vou verificar", ``verification``)
 
 
 def fold(text: str) -> str:
@@ -999,6 +999,10 @@ def receipts_for(outcome=None, *, team_notified: bool = False, handoff: bool = F
         receipts.update({HANDOFF, TEAM_NOTIFIED})
     if getattr(outcome, "order_ref", ""):
         receipts.add(ORDER)
+    verification = getattr(outcome, "verification", None) or {}
+    if verification.get("requests") or verification.get("waiting"):
+        # A pergunta foi para a equipe (ou está em espera): "te respondo por aqui" é verdade.
+        receipts.update({VERIFY, TEAM_NOTIFIED})
     for event in getattr(outcome, "tool_events", None) or ():
         if not event.get("ok", True):
             continue

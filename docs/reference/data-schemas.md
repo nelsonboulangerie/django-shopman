@@ -270,6 +270,30 @@ recente (entregue ou cancelado há até `SHOPMAN_CONCIERGE["recent_order_days"]`
 sem pedido mais novo) NÃO é guardado aqui: vem do Orderman a cada turno. Zerado quando a equipe
 devolve a conversa (`return_to_concierge`). Lido por `dialogue.for_turn`; nada de pedido, sacola ou
 preço mora aqui.
+"Vou verificar" (WP-05, bloco 4 de `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
+`shopman/storefront/concierge/verification.py`): a parte de consulta (produto, horário ou entrega,
+como funciona a casa) sem fato vira pergunta à equipe, e a conversa segue com a Concierge.
+`Conversation.flags["verification"]` = `{v: 1, id, status, opened_at, fence, questions, promise,
+nudge_due_at, handoff_due_at, nudged_at, alert_pk, closed_at?, closed_by?, answer?}`, UMA por
+conversa (dúvida nova enquanto espera entra na mesma). `id` é hexadecimal de 12 caracteres e entra no
+marcador do cartão (`concierge:<conversa>:verify:<id>`); `status` é `open`, `answered` (a resposta da
+equipe saiu ao cliente) ou `taken_over` (alguém assumiu a conversa: handoff); `fence` é o
+`turn_fence` do turno que abriu (gravada na mesma transação da resposta: turno revogado não grava);
+`questions` = `[{text, product, at}]`, até 5, `text` a fala do cliente REDIGIDA (`triage._redacted`,
+até 160 caracteres); `promise` = `{kind, minutes, when}`, com `kind` em `now` ("em até 10 minutos"),
+`later` (a casa fechada ou fechando: "até amanhã às 7h10", `when` de
+`business_calendar.format_deadline`) ou `no_promise` (o segundo prazo passaria da janela de 24 horas:
+nenhuma verificação é gravada, e a Concierge diz quando a equipe volta); `nudge_due_at` e
+`handoff_due_at` são ISO 8601, os dois prazos do `ChannelConfig.confirmation` contados pelo calendário
+da casa (o WP-06 lê); `nudged_at` é ISO 8601 do aviso do primeiro prazo (vazio até ele sair, WP-06);
+`alert_pk` é o `OperatorAlert` `concierge_verify` (sino do Gestor de pedidos, público `orders`);
+`closed_at` ISO 8601, `closed_by` quem respondeu ou assumiu (usuário do Gestor) e `answer` o texto da
+equipe. A memória da conversa lê a verificação aberta como `verifying` = `{id, questions, promise}`
+(`dialogue.for_turn`), sem gravá-la em `flags["dialogue"]`: "e aí?" durante a espera responde por ela.
+Nas partes (`flags["dialogue"]["parts"]`), a parte perguntada à equipe tem `state=verifying` e não
+volta na pergunta repetida. A resposta da equipe sai como `kind=reply` com `envelope["purpose"]=reply`
+pelo envio fora do turno (`service.send_out_of_turn`), com a prova de janela da última entrada; o aviso
+de quem assume, com `purpose=handoff_ack`.
 Message de aceite de disponibilidade liga `subscription_ref` e
 `disclosure_message_id` à StockAlertSubscription canônica; disclosure contém SKU,
 texto, versão/token apresentados. Não replica estado de consentimento.
@@ -1505,6 +1529,8 @@ Chave ausente no override = herda. Chave presente (mesmo None) = sobreescreve.
 | `preorder_timeout_minutes` | `int \| null` | `null` | Prazo LONGO de aceite (encomenda com data combinada posterior a hoje, e pedido que chega com a casa fechada) nos modes auto_confirm/auto_cancel; sem chave, vale o `timeout_minutes`. Recusado em outro modo e quando não é inteiro > 0. Loja online: 60. Lido por `lifecycle.acceptance_timeout_minutes` (prazo e meta do pedido novo no Gestor) |
 | `stale_new_alert_minutes` | `int` | `0` | Opt-in para `mode="manual"`: após X minutos em NEW sem decisão, dispara `OperatorAlert("stale_new_order")`. Recusado no `auto_cancel`: lá o aviso sai a 1/3 do prazo de aceite do próprio pedido (`lifecycle.STALE_ALERT_FRACTION_OF_DEADLINE`) e diz até quando. No iFood tem de ser MENOR que `external_sla_minutes`, senão o alerta toca com o pedido já cancelado (estava 20 contra 8 até 19/09/2026) |
 | `external_sla_minutes` | `int` | `0` | Prazo que o MARKETPLACE impõe para confirmar, contado do `createdAt` dele. Vencido, quem cancela é o marketplace. Gravado no pedido como `ifood.confirm_by` e contado no card. `0` = sem SLA externo (todo canal da casa). iFood: 8 (documentado; medido a 8min10s em 19/09/2026) |
+| `concierge_verify_nudge_minutes` | `int` | `10` | "Vou verificar" da Concierge (WP-05; dono, 16/11/2026: "Sim. Configurável via admin."): o PRIMEIRO prazo, em minutos de loja aberta (`business_calendar.next_operational_deadline`), que a Concierge promete ao cliente ("te respondo por aqui em até 10 minutos"; com a casa fechada, "até amanhã às 7h10") e no qual o cartão `concierge_verify` sobe a urgente e o cliente recebe um aviso (WP-06). Inteiro > 0 e menor que o segundo. Vale o do canal da Concierge (`whatsapp`) ou o de `Shop.defaults` |
+| `concierge_verify_handoff_minutes` | `int` | `30` | O SEGUNDO prazo do "vou verificar", em minutos de loja aberta: sem resposta da equipe até ele, a conversa vai para a equipe (WP-06). É também o teto da promessa: se ele passa da janela de 24 horas do WhatsApp, nada é prometido. Inteiro > 0 e maior que o primeiro |
 
 Lido por: `hooks._on_order_created`, `ConfirmationTimeoutHandler`, `confirmation.py` helpers, `CheckoutView`, `TrackingView`.
 
