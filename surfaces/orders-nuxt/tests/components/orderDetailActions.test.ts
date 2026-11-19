@@ -272,6 +272,30 @@ describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
     expect(w.find('[data-action="advance"]').text()).toContain("Iniciar preparo");
   });
 
+  it("encomenda que espera a hora da Cozinha: \"Adiantar\" à vista, nunca como botão principal (WP-G02)", () => {
+    const actions = fixtureActions({ can_advance: true, next_action_label: "Adiantar" }).map((action) =>
+      action.ref === "advance" ? { ...action, priority: "secondary" } : action,
+    );
+    const w = abrir(order({
+      status: "accepted",
+      can_confirm: false,
+      can_advance: true,
+      next_action_label: "Adiantar",
+      kitchen_release_label: "Vai para a Cozinha às 16h15",
+      actions,
+    }));
+
+    expect(w.find('[data-action="advance"]').exists()).toBe(false);
+    expect(w.get('[data-action="advance-secondary"]').text()).toContain("Adiantar");
+    expect(w.get("[data-detail-kitchen-wait]").text()).toContain("Vai para a Cozinha às 16h15");
+  });
+
+  it("pedido que não espera a Cozinha: nenhum selo de espera", () => {
+    const w = abrir(order({ status: "accepted", can_confirm: false, can_advance: true, next_action_label: "Iniciar preparo" }));
+
+    expect(w.find("[data-detail-kitchen-wait]").exists()).toBe(false);
+  });
+
   it("avanço bloqueado: o lugar continua ocupado dizendo o motivo, sem aceitar clique", () => {
     const w = abrir(order({
       status: "preparing",

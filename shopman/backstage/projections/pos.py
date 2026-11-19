@@ -3445,7 +3445,27 @@ def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None
         # Outro dia: o que a grade NÃO deixa entrar naquela data (a régua da
         # reserva). Hoje a grade já sabe pelo selo do próprio catálogo.
         "sold_out_skus": _pos_sold_out_on(day) if day != today else [],
+        # Outro dia: o LASTRO de cada SKU do carrinho na data (WP-E2, D-041), a
+        # lote planejado e o que dele está sem encomenda. A linha diz "22 planejadas para
+        # 17/11", e o pedido acima do que o lote ainda tem sem encomenda pede o
+        # gerente. O PDV mostra o que o servidor apura; a sobra de hoje não conta.
+        "plan_by_sku": _pos_plan_by_sku(skus, day) if day != today else {},
     }
+
+
+def _pos_plan_by_sku(skus: list[str] | None, day) -> dict[str, dict]:
+    from shopman.shop.services import stock as stock_service
+
+    backing = stock_service.plan_backing_on(list(skus or ()), day, channel_ref=POS_CHANNEL_REF)
+    return {
+        sku: {"planned_qty": _plan_qty(info["planned_qty"]), "unclaimed_qty": _plan_qty(info["unclaimed_qty"])}
+        for sku, info in backing.items()
+    }
+
+
+def _plan_qty(value) -> int | float:
+    number = Decimal(str(value))
+    return int(number) if number == number.to_integral_value() else float(number)
 
 
 def _recent_moment_display(moment) -> str:

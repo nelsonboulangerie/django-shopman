@@ -515,7 +515,7 @@ describe("usePosSale — autorização do gerente presa ao que ele viu (#2558)",
     const [path, opts] = actionCall.mock.calls.find((c) => String(c[0]).includes("manager-approval/check"))!;
     expect(String(path)).toContain("manager-approval/check");
     expect((opts as { body: Record<string, unknown> }).body.scope).toEqual({
-      tab_ref: "M1", discount_q: 600, account_over_q: 0,
+      tab_ref: "M1", discount_q: 600, account_over_q: 0, over_plan: [],
     });
     // O carimbo vale para o retrato desta tela (WP-E1) e não entra no carrinho.
     expect(h.sale.managerApproved.value).toBe(true);

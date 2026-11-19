@@ -2,11 +2,13 @@
 // Encomendas no Gestor (dono, 13/11/2026; o vocabulário fechado diz Encomenda, não
 // Agendado): os pedidos dos próximos dias, abaixo do painel, numa
 // lista simples. Não entra no fluxo do dia; está ali para conferir de relance o que vem
-// pela frente. Cada linha abre o pedido (o mesmo detalhe das Encomendas, com os
+// pela frente. A encomenda de HOJE também mora aqui enquanto espera a hora da Cozinha
+// (dono, 18/11/2026; WP-G02): a linha diz "Vai para a Cozinha às 17h15", e só nessa
+// hora o pedido entra no quadro, pedindo "Iniciar preparo". Cada linha abre o pedido (o mesmo detalhe das Encomendas, com os
 // gestos dele, inclusive o aceite da encomenda nova); o cabeçalho leva às Encomendas
 // do PDV, onde mora o trabalho de planejar e entregar.
 import type { PreorderGroup } from "~/presentation/board";
-import { splitRef } from "~/presentation/board";
+import { kitchenWait, splitRef } from "~/presentation/board";
 import { useOperatorAppLink } from "../../../operator-kit/app/composables/useOperatorAppLink";
 
 const props = defineProps<{ groups: PreorderGroup[]; count: number }>();
@@ -48,7 +50,7 @@ const total = computed(() => props.count);
         <li v-for="card in group.cards" :key="card.ref">
           <NuxtLink
             :to="`/${card.ref}`"
-            class="flex min-h-11 items-center gap-3 py-2 hover:bg-elevated/50"
+            class="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 py-2 hover:bg-elevated/50"
             :data-preorder-row="card.ref"
           >
             <span class="w-16 shrink-0 font-semibold tabular-nums text-highlighted">
@@ -58,6 +60,15 @@ const total = computed(() => props.count);
             <span class="min-w-0 flex-1 truncate text-muted">
               {{ card.items_summary }}
             </span>
+            <!-- A encomenda de hoje que espera a hora da Cozinha: a mesma frase do cartão. -->
+            <NuxtBadge
+              v-if="kitchenWait(card)"
+              class="shrink-0"
+              color="neutral"
+              :icon="kitchenWait(card)!.icon"
+              :label="kitchenWait(card)!.label"
+              data-preorder-kitchen-wait
+            />
             <span
               v-if="card.attention"
               class="shrink-0 op-micro font-semibold text-primary"

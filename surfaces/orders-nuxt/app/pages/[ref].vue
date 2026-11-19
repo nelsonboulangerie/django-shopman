@@ -173,13 +173,15 @@ const projectedAction = (ref_: string) =>
 // O avanço que a tela mostra como botão. "Marcar pronto" com a Cozinha
 // trabalhando vem como ``priority: "menu"``: o pronto chega sozinho quando ela
 // conclui, e o gesto à mão mora no menu do pedido (⋯), não na barra.
+// O mesmo vale para o "Adiantar" da encomenda que ainda espera a hora da Cozinha
+// (WP-G02, ``priority: "secondary"``): o gesto existe, à vista, mas não é o do momento.
 const advanceAction = computed(() => {
   const action = projectedAction("advance");
-  return action && action.priority !== "menu" ? action : undefined;
+  return action && action.priority === "primary" ? action : undefined;
 });
 const menuAdvance = computed(() => {
   const action = projectedAction("advance");
-  return action && action.priority === "menu" ? action : undefined;
+  return action && action.priority !== "primary" ? action : undefined;
 });
 const menuOpen = ref(false);
 async function onMenuAdvance() {
@@ -1134,6 +1136,14 @@ const outside = useOutsideStore(
           :label="order.ifood_logistics_label"
           data-detail-ifood-logistics
         />
+        <!-- A encomenda do dia que espera a hora da Cozinha: a mesma frase do cartão. -->
+        <NuxtBadge
+          v-if="order?.kitchen_release_label"
+          color="neutral"
+          icon="i-lucide-chef-hat"
+          :label="order.kitchen_release_label"
+          data-detail-kitchen-wait
+        />
         <!-- `min-w-0`: sem ele o invólucro segura a largura do rótulo completo e o
              selo não encolhe (cortava "Atualiza sozinho a cada" a 800 px). -->
         <span class="hidden min-w-0 md:inline-flex">
@@ -1185,7 +1195,7 @@ const outside = useOutsideStore(
         <NuxtButton
           v-if="menuAdvance"
           type="button"
-          icon="i-lucide-check"
+          :icon="menuAdvance.priority === 'secondary' ? 'i-lucide-arrow-right' : 'i-lucide-check'"
           :label="menuAdvance.label"
           color="neutral"
           variant="outline"

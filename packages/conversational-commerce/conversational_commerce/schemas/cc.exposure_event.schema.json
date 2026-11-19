@@ -1,0 +1,158 @@
+{
+  "$defs": {
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Contrato ExposureEvent. Contrato de observação: campo desconhecido só com MENOR acima; o leitor o guarda em extensions.",
+  "properties": {
+    "attempt": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "cause_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "content_hash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "decision_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "environment": {
+      "enum": [
+        "test",
+        "shadow",
+        "live"
+      ],
+      "type": "string"
+    },
+    "episode_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "kind": {
+      "const": "ExposureEvent"
+    },
+    "occurred_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "realizer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "recipient": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "recorded_at": {
+      "oneOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schema": {
+      "const": "cc.exposure_event"
+    },
+    "schema_version": {
+      "pattern": "^1\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "prepared",
+        "submitted",
+        "accepted",
+        "not_applied",
+        "unknown",
+        "delivered",
+        "read"
+      ],
+      "type": "string"
+    },
+    "tenant": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "trace_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "schema_version",
+    "id",
+    "tenant",
+    "environment",
+    "trace_id",
+    "occurred_at",
+    "producer",
+    "decision_id",
+    "content_hash",
+    "realizer",
+    "recipient",
+    "attempt",
+    "state"
+  ],
+  "title": "ExposureEvent",
+  "type": "object",
+  "x-contract-version": "1.0"
+}
