@@ -593,7 +593,7 @@ RULES: tuple[HouseRule, ...] = (
         on_violation={HOUSE: Effect.HOLD, MODEL: Effect.HOLD},
         enforced_by="house_rules._check_fact (resposta do modelo); resposta da casa cumpre por construção",
         must_flag=(
-            "Tem croissant hoje, sai às 9h.",
+            "Tem croissant hoje, fica pronto às 9h.",
             "O pão de forma custa R$ 18,00.",
             "Entregamos em até quarenta minutos.",
             "Peça por aqui: https://exemplo.com/loja",
@@ -621,7 +621,7 @@ RULES: tuple[HouseRule, ...] = (
         ),
         must_pass=(
             "O croissant está indisponível hoje.",
-            "A fornada acabou de sair do forno.",
+            "A fornada acabou de ficar pronta.",
             "O atendimento automático está pausado. Suas escolhas foram preservadas.",
         ),
         output_check=_check_unavailable,
