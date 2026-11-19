@@ -154,11 +154,14 @@ class TestPaidPreorderAwaitingTheStorePromisesTheRefund:
 
         assert title == "Pagamento recebido"
         assert message.startswith("A loja confirma sua encomenda")
-        assert message.endswith("Se não puder, devolvemos o valor.")
+        assert "Se não puder, devolvemos o valor." in message
         assert "Pagamento recebido" not in message, "o título já diz; a frase não repete"
         assert "{when}" not in message
         if when:
-            assert f"para {when}" in message
+            # O dia da encomenda vai em frase própria, depois da do aceite (#2749).
+            assert message.endswith(f"Sua encomenda é para {when}.")
+        else:
+            assert message.endswith("Se não puder, devolvemos o valor.")
 
     def test_accepted_preorder_does_not_promise_a_refund(self):
         from shopman.shop.projections.copy import build_copy
